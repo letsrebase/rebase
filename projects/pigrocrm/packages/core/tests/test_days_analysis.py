@@ -29,32 +29,32 @@ from pigrocrm.core.work_units.models import WorkUnit
 
 ADMIN = Actor(id=None, type="system", role="admin")
 READER = Actor(id=None, type="user", role="readonly")
-ANNO = 2026
+YEAR = 2026
 
 
 def _contract(
     session: Session, name: str = "Acme S.r.l.", *, requires_prior_approval: bool = False
 ) -> Contract:
     customer = Customer(
-        ragione_sociale=f"{name} {uuid4().hex[:6]}",
-        partita_iva="01234567890",
-        codice_sdi="ABCDEFG",
-        indirizzo="Corso Italia 5",
+        legal_name=f"{name} {uuid4().hex[:6]}",
+        vat_number="01234567890",
+        sdi_code="ABCDEFG",
+        address="Corso Italia 5",
         cap="00100",
-        comune="Roma",
-        provincia="RM",
-        nazione="IT",
+        city="Roma",
+        province="RM",
+        country="IT",
     )
     session.add(customer)
     session.flush()
     contract = Contract(
         customer_id=customer.id,
-        titolo="Consulenza",
-        inizio=date(2025, 1, 1),
-        tipo_rinnovo="nessuno",
-        preavviso_disdetta_giorni=30,
-        cadenza_fatturazione="mensile",
-        politica_spese={"kind": "non_rimborsabile"},
+        title="Consulenza",
+        start=date(2025, 1, 1),
+        renewal_type="none",
+        termination_notice_days=30,
+        billing_cadence="monthly",
+        expense_policy={"kind": "not_reimbursable"},
         requires_prior_approval=requires_prior_approval,
     )
     session.add(contract)
@@ -63,15 +63,15 @@ def _contract(
 
 
 def _card(
-    session: Session, contract: Contract, importo: str = "500.00", **extra: object
+    session: Session, contract: Contract, amount: str = "500.00", **extra: object
 ) -> RateCard:
     payload: dict[str, object] = {
         "contract_id": contract.id,
-        "valido_da": date(2025, 1, 1),
-        "valido_a": None,
-        "tipo": "giornaliero",
-        "importo": Decimal(importo),
-        "unita": "giorno",
+        "valid_from": date(2025, 1, 1),
+        "valid_to": None,
+        "type": "daily",
+        "amount": Decimal(amount),
+        "unit": "day",
     }
     payload.update(extra)
     card = RateCard(**payload)  # type: ignore[arg-type]
@@ -81,14 +81,14 @@ def _card(
 
 
 def _day(
-    session: Session, contract: Contract, giorno: date, stato: str = "lavorato", q: str = "1.00"
+    session: Session, contract: Contract, day: date, status: str = "worked", q: str = "1.00"
 ) -> WorkUnit:
     work_unit = WorkUnit(
         contract_id=contract.id,
-        data=giorno,
-        quantita=Decimal(q),
-        descrizione="Giornata di consulenza",
-        stato=stato,
+        date=day,
+        quantity=Decimal(q),
+        description="Giornata di consulenza",
+        status=status,
     )
     session.add(work_unit)
     session.flush()
@@ -96,40 +96,40 @@ def _day(
     return work_unit
 
 
-def _stack(month, stato: str) -> Decimal:
-    return next(s.giorni for s in month.per_stato if s.stato == stato)
+def _stack(month, status: str) -> Decimal:
+    return next(s.days for s in month.by_status if s.status == status)
 
 
 def test_a_state_stacks_in_its_own_month_and_a_day_that_never_happened_is_left_out(
     db_session: Session,
 ) -> None:
     contract = _contract(db_session)
-    _day(db_session, contract, date(ANNO, 1, 5), "lavorato")
-    _day(db_session, contract, date(ANNO, 1, 6), "lavorato", "0.50")
-    _day(db_session, contract, date(ANNO, 1, 7), "proposto")
-    _day(db_session, contract, date(ANNO, 2, 3), "proposto")
-    revoked = _day(db_session, contract, date(ANNO, 2, 4), "proposto")
-    revoked.stato = "revocato"
+    _day(db_session, contract, date(YEAR, 1, 5), "worked")
+    _day(db_session, contract, date(YEAR, 1, 6), "worked", "0.50")
+    _day(db_session, contract, date(YEAR, 1, 7), "proposed")
+    _day(db_session, contract, date(YEAR, 2, 3), "proposed")
+    revoked = _day(db_session, contract, date(YEAR, 2, 4), "proposed")
+    revoked.status = "revoked"
     db_session.flush()
 
     analysis = AnalyticsService(db_session).days_analysis(
-        READER, date(ANNO, 1, 1), date(ANNO, 2, 28)
+        READER, date(YEAR, 1, 1), date(YEAR, 2, 28)
     )
 
-    january, february = analysis.mesi
-    assert (january.mese, february.mese) == ("2026-01", "2026-02")
-    assert _stack(january, "lavorato") == Decimal("1.50")
-    assert _stack(january, "proposto") == Decimal("1.00")
-    assert january.totale == Decimal("2.50")
-    assert _stack(february, "proposto") == Decimal("1.00")
-    assert february.totale == Decimal("1.00")
-    assert analysis.giorni_nel_periodo == Decimal("3.50")
+    january, february = analysis.months
+    assert (january.month, february.month) == ("2026-01", "2026-02")
+    assert _stack(january, "worked") == Decimal("1.50")
+    assert _stack(january, "proposed") == Decimal("1.00")
+    assert january.total == Decimal("2.50")
+    assert _stack(february, "proposed") == Decimal("1.00")
+    assert february.total == Decimal("1.00")
+    assert analysis.days_in_period == Decimal("3.50")
     # Only the worked day counts as recorded: a proposal is not work done.
-    assert january.registrati == Decimal("1.50")
-    assert february.registrati == Decimal("0.00")
+    assert january.register == Decimal("1.50")
+    assert february.register == Decimal("0.00")
     # The tallest month is the full bar.
-    assert january.quota_totale == 1.0
-    assert february.quota_totale == pytest.approx(0.4)
+    assert january.total_share == 1.0
+    assert february.total_share == pytest.approx(0.4)
 
 
 def test_a_month_is_averaged_against_the_three_before_it_even_when_they_precede_the_window(
@@ -138,18 +138,18 @@ def test_a_month_is_averaged_against_the_three_before_it_even_when_they_precede_
     contract = _contract(db_session)
     for month, days in ((1, 3), (2, 3), (3, 6)):
         for day in range(1, days + 1):
-            _day(db_session, contract, date(ANNO, month, day))
+            _day(db_session, contract, date(YEAR, month, day))
     for day in range(1, 5):
-        _day(db_session, contract, date(ANNO, 4, day))
+        _day(db_session, contract, date(YEAR, 4, day))
 
     analysis = AnalyticsService(db_session).days_analysis(
-        READER, date(ANNO, 4, 1), date(ANNO, 4, 30)
+        READER, date(YEAR, 4, 1), date(YEAR, 4, 30)
     )
 
-    (april,) = analysis.mesi
-    assert april.registrati == Decimal("4.00")
-    assert april.media_precedente == Decimal("4.00")  # (3 + 3 + 6) / 3
-    assert april.completo is True
+    (april,) = analysis.months
+    assert april.register == Decimal("4.00")
+    assert april.media_previous == Decimal("4.00")  # (3 + 3 + 6) / 3
+    assert april.complete is True
 
 
 def test_the_current_month_is_not_complete_and_is_not_the_last_complete_month(
@@ -158,10 +158,10 @@ def test_the_current_month_is_not_complete_and_is_not_the_last_complete_month(
     today = today_local()
     analysis = AnalyticsService(db_session).days_analysis(READER)
 
-    (month,) = analysis.mesi
-    assert month.mese == today.strftime("%Y-%m")
-    assert month.completo is False
-    assert analysis.ultimo_mese_completo is None
+    (month,) = analysis.months
+    assert month.month == today.strftime("%Y-%m")
+    assert month.complete is False
+    assert analysis.last_complete_month is None
 
 
 def test_the_realised_rate_reads_a_line_once_and_sets_it_against_the_card(
@@ -170,32 +170,32 @@ def test_the_realised_rate_reads_a_line_once_and_sets_it_against_the_card(
     service = _invoice_service(db_session, local_storage)
     contract = _contract(db_session)
     card = _card(db_session, contract, "500.00")
-    _day(db_session, contract, date(ANNO, 3, 5))
-    _day(db_session, contract, date(ANNO, 3, 12))
+    _day(db_session, contract, date(YEAR, 3, 5))
+    _day(db_session, contract, date(YEAR, 3, 12))
     invoice = assemble_unbilled_work_units_into_new_invoice(
         db_session, local_storage, contract.id, ADMIN
     )
-    service.issue(invoice.id, InvoiceIssue(data_emissione=date(ANNO, 3, 31)), ADMIN)
+    service.issue(invoice.id, InvoiceIssue(issue_date=date(YEAR, 3, 31)), ADMIN)
     # The card was revised upwards after the invoice went out: the nominal figure follows
     # the card, the realised one is what was billed.
-    card.importo = Decimal("600.00")
+    card.amount = Decimal("600.00")
     db_session.flush()
 
     analysis = AnalyticsService(db_session).days_analysis(
-        READER, date(ANNO, 3, 1), date(ANNO, 3, 31)
+        READER, date(YEAR, 3, 1), date(YEAR, 3, 31)
     )
 
-    (by_contract,) = analysis.per_contratto
-    (by_customer,) = analysis.per_cliente
+    (by_contract,) = analysis.by_contract
+    (by_customer,) = analysis.by_customer
     for rate in (by_contract, by_customer):
-        assert rate.giorni_fatturati == Decimal("2.00")
+        assert rate.invoiced_days == Decimal("2.00")
         # One line of 1000.00 bills both days: read once, not twice.
-        assert rate.importo_fatturato == Decimal("1000.00")
-        assert rate.tariffa_reale == Decimal("500.00")
-        assert rate.tariffa_nominale == Decimal("600.00")
-        assert rate.giorni_senza_listino == Decimal("0.00")
-    assert analysis.giorni_fatturati == Decimal("2.00")
-    assert analysis.tariffa_reale == Decimal("500.00")
+        assert rate.invoiced_amount == Decimal("1000.00")
+        assert rate.actual_rate == Decimal("500.00")
+        assert rate.nominal_rate == Decimal("600.00")
+        assert rate.days_without_list_price == Decimal("0.00")
+    assert analysis.invoiced_days == Decimal("2.00")
+    assert analysis.actual_rate == Decimal("500.00")
 
 
 def test_a_period_that_cuts_a_line_takes_only_its_days_share_of_it(
@@ -204,22 +204,22 @@ def test_a_period_that_cuts_a_line_takes_only_its_days_share_of_it(
     service = _invoice_service(db_session, local_storage)
     contract = _contract(db_session)
     _card(db_session, contract, "500.00")
-    _day(db_session, contract, date(ANNO, 3, 5))
-    _day(db_session, contract, date(ANNO, 3, 12))
+    _day(db_session, contract, date(YEAR, 3, 5))
+    _day(db_session, contract, date(YEAR, 3, 12))
     invoice = assemble_unbilled_work_units_into_new_invoice(
         db_session, local_storage, contract.id, ADMIN
     )
-    service.issue(invoice.id, InvoiceIssue(data_emissione=date(ANNO, 3, 31)), ADMIN)
+    service.issue(invoice.id, InvoiceIssue(issue_date=date(YEAR, 3, 31)), ADMIN)
 
     analysis = AnalyticsService(db_session).days_analysis(
-        READER, date(ANNO, 3, 1), date(ANNO, 3, 10)
+        READER, date(YEAR, 3, 1), date(YEAR, 3, 10)
     )
 
-    (rate,) = analysis.per_contratto
+    (rate,) = analysis.by_contract
     # One of the line's two days is inside the period: half of the 1000.00 line, not all of it.
-    assert rate.giorni_fatturati == Decimal("1.00")
-    assert rate.importo_fatturato == Decimal("500.00")
-    assert rate.tariffa_reale == Decimal("500.00")
+    assert rate.invoiced_days == Decimal("1.00")
+    assert rate.invoiced_amount == Decimal("500.00")
+    assert rate.actual_rate == Decimal("500.00")
 
 
 def test_an_hourly_card_does_not_price_a_day_so_the_day_counts_as_uncovered(
@@ -228,62 +228,62 @@ def test_an_hourly_card_does_not_price_a_day_so_the_day_counts_as_uncovered(
     service = _invoice_service(db_session, local_storage)
     contract = _contract(db_session)
     card = _card(db_session, contract, "500.00")
-    _day(db_session, contract, date(ANNO, 3, 5))
+    _day(db_session, contract, date(YEAR, 3, 5))
     invoice = assemble_unbilled_work_units_into_new_invoice(
         db_session, local_storage, contract.id, ADMIN
     )
-    service.issue(invoice.id, InvoiceIssue(data_emissione=date(ANNO, 3, 31)), ADMIN)
-    card.tipo = "orario"
-    card.unita = "ora"
+    service.issue(invoice.id, InvoiceIssue(issue_date=date(YEAR, 3, 31)), ADMIN)
+    card.type = "hourly"
+    card.unit = "hour"
     db_session.flush()
 
     analysis = AnalyticsService(db_session).days_analysis(
-        READER, date(ANNO, 3, 1), date(ANNO, 3, 31)
+        READER, date(YEAR, 3, 1), date(YEAR, 3, 31)
     )
 
-    (rate,) = analysis.per_contratto
-    assert rate.tariffa_nominale is None
-    assert rate.giorni_senza_listino == Decimal("1.00")
+    (rate,) = analysis.by_contract
+    assert rate.nominal_rate is None
+    assert rate.days_without_list_price == Decimal("1.00")
 
 
 def test_a_day_written_off_as_unbillable_still_counts_as_recorded(db_session: Session) -> None:
     contract = _contract(db_session)
-    written_off = _day(db_session, contract, date(ANNO, 3, 5))
-    written_off.stato = "non_fatturabile"
+    written_off = _day(db_session, contract, date(YEAR, 3, 5))
+    written_off.status = "non_billable"
     db_session.flush()
 
     analysis = AnalyticsService(db_session).days_analysis(
-        READER, date(ANNO, 3, 1), date(ANNO, 3, 31)
+        READER, date(YEAR, 3, 1), date(YEAR, 3, 31)
     )
 
-    (march,) = analysis.mesi
-    assert _stack(march, "non_fatturabile") == Decimal("1.00")
-    assert march.registrati == Decimal("1.00")
+    (march,) = analysis.months
+    assert _stack(march, "non_billable") == Decimal("1.00")
+    assert march.register == Decimal("1.00")
 
 
-def test_another_aziendas_filter_leaves_the_days_and_the_rate_out(
+def test_another_legal_entitys_filter_leaves_the_days_and_the_rate_out(
     db_session: Session, local_storage: LocalFileStorage
 ) -> None:
     service = _invoice_service(db_session, local_storage)
     contract = _contract(db_session)
     _card(db_session, contract)
-    _day(db_session, contract, date(ANNO, 3, 5))
+    _day(db_session, contract, date(YEAR, 3, 5))
     invoice = assemble_unbilled_work_units_into_new_invoice(
         db_session, local_storage, contract.id, ADMIN
     )
-    service.issue(invoice.id, InvoiceIssue(data_emissione=date(ANNO, 3, 31)), ADMIN)
+    service.issue(invoice.id, InvoiceIssue(issue_date=date(YEAR, 3, 31)), ADMIN)
 
     elsewhere = AnalyticsService(db_session).days_analysis(
-        READER, date(ANNO, 3, 1), date(ANNO, 3, 31), uuid4()
+        READER, date(YEAR, 3, 1), date(YEAR, 3, 31), uuid4()
     )
     here = AnalyticsService(db_session).days_analysis(
-        READER, date(ANNO, 3, 1), date(ANNO, 3, 31), contract.azienda_id
+        READER, date(YEAR, 3, 1), date(YEAR, 3, 31), contract.legal_entity_id
     )
 
-    assert elsewhere.giorni_nel_periodo == Decimal("0.00")
-    assert elsewhere.per_contratto == []
-    assert here.giorni_nel_periodo == Decimal("1.00")
-    assert len(here.per_contratto) == 1
+    assert elsewhere.days_in_period == Decimal("0.00")
+    assert elsewhere.by_contract == []
+    assert here.days_in_period == Decimal("1.00")
+    assert len(here.by_contract) == 1
 
 
 def test_a_billed_day_no_card_covers_is_counted_apart_and_never_priced_at_zero(
@@ -292,22 +292,22 @@ def test_a_billed_day_no_card_covers_is_counted_apart_and_never_priced_at_zero(
     service = _invoice_service(db_session, local_storage)
     contract = _contract(db_session)
     card = _card(db_session, contract, "500.00")
-    _day(db_session, contract, date(ANNO, 3, 5))
+    _day(db_session, contract, date(YEAR, 3, 5))
     invoice = assemble_unbilled_work_units_into_new_invoice(
         db_session, local_storage, contract.id, ADMIN
     )
-    service.issue(invoice.id, InvoiceIssue(data_emissione=date(ANNO, 3, 31)), ADMIN)
-    card.valido_a = date(ANNO, 2, 28)
+    service.issue(invoice.id, InvoiceIssue(issue_date=date(YEAR, 3, 31)), ADMIN)
+    card.valid_to = date(YEAR, 2, 28)
     db_session.flush()
 
     analysis = AnalyticsService(db_session).days_analysis(
-        READER, date(ANNO, 3, 1), date(ANNO, 3, 31)
+        READER, date(YEAR, 3, 1), date(YEAR, 3, 31)
     )
 
-    (rate,) = analysis.per_contratto
-    assert rate.tariffa_reale == Decimal("500.00")
-    assert rate.tariffa_nominale is None
-    assert rate.giorni_senza_listino == Decimal("1.00")
+    (rate,) = analysis.by_contract
+    assert rate.actual_rate == Decimal("500.00")
+    assert rate.nominal_rate is None
+    assert rate.days_without_list_price == Decimal("1.00")
 
 
 def test_a_draft_invoice_and_a_day_outside_the_period_are_not_in_the_rate(
@@ -316,16 +316,16 @@ def test_a_draft_invoice_and_a_day_outside_the_period_are_not_in_the_rate(
     _invoice_service(db_session, local_storage)
     contract = _contract(db_session)
     _card(db_session, contract)
-    _day(db_session, contract, date(ANNO, 3, 5))
+    _day(db_session, contract, date(YEAR, 3, 5))
     assemble_unbilled_work_units_into_new_invoice(db_session, local_storage, contract.id, ADMIN)
 
     analysis = AnalyticsService(db_session).days_analysis(
-        READER, date(ANNO, 3, 1), date(ANNO, 3, 31)
+        READER, date(YEAR, 3, 1), date(YEAR, 3, 31)
     )
 
-    assert analysis.per_contratto == []
-    assert analysis.tariffa_reale is None
-    assert analysis.giorni_fatturati == Decimal("0.00")
+    assert analysis.by_contract == []
+    assert analysis.actual_rate is None
+    assert analysis.invoiced_days == Decimal("0.00")
     assert db_session.query(InvoiceLine).count() == 1
 
 
@@ -336,32 +336,32 @@ def test_a_day_that_slipped_without_approval_is_counted_in_the_month_of_the_slip
     contract = _contract(db_session, requires_prior_approval=True)
     # Asked as worked on a contract that wants prior approval, so the database redirects
     # it: the transition is what the trend counts.
-    slipped = _day(db_session, contract, date(today.year, today.month, 1), "lavorato", "0.50")
-    assert slipped.stato == "lavorato_senza_approvazione"
+    slipped = _day(db_session, contract, date(today.year, today.month, 1), "worked", "0.50")
+    assert slipped.status == "worked_without_approval"
 
     analysis = AnalyticsService(db_session).days_analysis(READER)
-    assert analysis.senza_approvazione_nel_periodo == Decimal("0.50")
-    assert analysis.mesi[0].senza_approvazione == Decimal("0.50")
-    assert analysis.mesi[0].quota_senza_approvazione == 1.0
-    assert analysis.senza_approvazione_sempre == Decimal("0.50")
-    assert _stack(analysis.mesi[0], "lavorato_senza_approvazione") == Decimal("0.50")
+    assert analysis.without_approval_in_period == Decimal("0.50")
+    assert analysis.months[0].without_approval == Decimal("0.50")
+    assert analysis.months[0].share_without_approval == 1.0
+    assert analysis.without_approval_always == Decimal("0.50")
+    assert _stack(analysis.months[0], "worked_without_approval") == Decimal("0.50")
 
 
 def test_a_day_that_slips_twice_counts_once(db_session: Session) -> None:
     today = today_local()
     contract = _contract(db_session, requires_prior_approval=True)
-    slipped = _day(db_session, contract, date(today.year, today.month, 1), "lavorato", "0.50")
-    slipped.stato = "contestato"
+    slipped = _day(db_session, contract, date(today.year, today.month, 1), "worked", "0.50")
+    slipped.status = "disputed"
     db_session.flush()
-    slipped.stato = "lavorato"  # no approval linked: the database flags it again
+    slipped.status = "worked"  # no approval linked: the database flags it again
     db_session.flush()
     db_session.refresh(slipped)
-    assert slipped.stato == "lavorato_senza_approvazione"
+    assert slipped.status == "worked_without_approval"
 
     analysis = AnalyticsService(db_session).days_analysis(READER)
 
-    assert analysis.senza_approvazione_nel_periodo == Decimal("0.50")
-    assert analysis.senza_approvazione_sempre == Decimal("0.50")
+    assert analysis.without_approval_in_period == Decimal("0.50")
+    assert analysis.without_approval_always == Decimal("0.50")
 
 
 def test_one_bound_without_the_other_and_a_backwards_period_are_refused_by_name(
@@ -369,16 +369,16 @@ def test_one_bound_without_the_other_and_a_backwards_period_are_refused_by_name(
 ) -> None:
     service = AnalyticsService(db_session)
     with pytest.raises(ValidationFailed) as only_from:
-        service.days_analysis(READER, da=date(ANNO, 1, 1))
-    assert only_from.value.details["field"] == "a"
+        service.days_analysis(READER, date_from=date(YEAR, 1, 1))
+    assert only_from.value.details["field"] == "to"
     with pytest.raises(ValidationFailed) as backwards:
-        service.days_analysis(READER, date(ANNO, 3, 1), date(ANNO, 1, 1))
-    assert backwards.value.details["field"] == "da"
+        service.days_analysis(READER, date(YEAR, 3, 1), date(YEAR, 1, 1))
+    assert backwards.value.details["field"] == "from"
     with pytest.raises(ValidationFailed) as too_long:
         service.days_analysis(READER, date(2016, 1, 1), date(2026, 1, 31))
-    assert too_long.value.details["field"] == "a"
+    assert too_long.value.details["field"] == "to"
     with pytest.raises(ValidationFailed) as too_early:
         service.days_analysis(READER, date(1, 1, 1), date(1, 1, 31))
-    assert too_early.value.details["field"] == "da"
+    assert too_early.value.details["field"] == "from"
     # Exactly ten years is the largest period admitted.
-    assert len(service.days_analysis(READER, date(2016, 2, 1), date(2026, 1, 31)).mesi) == 120
+    assert len(service.days_analysis(READER, date(2016, 2, 1), date(2026, 1, 31)).months) == 120

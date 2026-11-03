@@ -210,7 +210,7 @@ def test_a_non_transient_client_error_is_not_retried() -> None:
     transport = DriveTransport(tokens=StubTokens(), http=drive, sleep=_fail_if_called)
 
     with pytest.raises(Conflict) as excinfo:
-        transport.json("GET", "https://www.googleapis.com/drive/v3/files", what="richiesta")
+        transport.json("GET", "https://www.googleapis.com/drive/v3/files", what="request")
 
     assert excinfo.value.details["upstream_status"] == 403
 
@@ -228,7 +228,7 @@ def test_a_401_forgets_the_cached_token_and_retries_with_the_next_one() -> None:
     http = ScriptedHttp(statuses=[401])
     transport = DriveTransport(tokens=tokens, http=http, sleep=lambda _: None)
 
-    parsed = transport.json("GET", "https://www.googleapis.com/drive/v3/files", what="richiesta")
+    parsed = transport.json("GET", "https://www.googleapis.com/drive/v3/files", what="request")
 
     assert parsed["id"] == "ok"
     assert tokens.forgotten == 1
@@ -244,7 +244,7 @@ def test_a_401_that_survives_a_fresh_token_is_reported_rather_than_retried_forev
     transport = DriveTransport(tokens=tokens, http=http, sleep=lambda _: None)
 
     with pytest.raises(Conflict) as excinfo:
-        transport.json("GET", "https://www.googleapis.com/drive/v3/files", what="richiesta")
+        transport.json("GET", "https://www.googleapis.com/drive/v3/files", what="request")
 
     assert excinfo.value.details["upstream_status"] == 401
     assert tokens.forgotten == 1

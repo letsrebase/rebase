@@ -21,8 +21,8 @@ from pigrocrm_mcp.tools.params import (
     HoursArg,
     IsoDateStr,
     MoneyArg,
-    OptionalAnno,
     OptionalFactor,
+    OptionalYear,
     TimeEntryChanges,
     iso_date,
     parse_legal_entity_id,
@@ -50,16 +50,16 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
     def log_time(
         deal_id: str,
         user_id: str,
-        data: str,
-        ore: HoursArg,
-        descrizione: str,
-        fatturabile: bool = True,
-        tariffa_applicata: OptionalFactor = None,
-        costo_applicato: OptionalFactor = None,
-        note_interne: str | None = None,
+        date: str,
+        hours: HoursArg,
+        description: str,
+        billable: bool = True,
+        applied_rate: OptionalFactor = None,
+        applied_cost: OptionalFactor = None,
+        internal_notes: str | None = None,
         custom_fields: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        """Registra ore su un deal. `data` in formato YYYY-MM-DD, non futura. `deal_id` deve essere
+        """Registra ore su un deal. `date` in formato YYYY-MM-DD, non futura. `deal_id` deve essere
         un id reale: risolvi il progetto con `search_deals`, ore fatturabili sul cliente
         sbagliato emergono solo in fattura. La tariffa si congela sulla riga: `describe_rates`
         dice quale si applica; se non ce n'è, la voce resta senza tariffa.
@@ -69,13 +69,13 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
             {
                 "deal_id": UUID(deal_id),
                 "user_id": UUID(user_id),
-                "data": data,
-                "ore": ore,
-                "descrizione": descrizione,
-                "fatturabile": fatturabile,
-                "tariffa_applicata": tariffa_applicata,
-                "costo_applicato": costo_applicato,
-                "note_interne": note_interne,
+                "date": date,
+                "hours": hours,
+                "description": description,
+                "billable": billable,
+                "applied_rate": applied_rate,
+                "applied_cost": applied_cost,
+                "internal_notes": internal_notes,
                 "custom_fields": custom_fields or {},
             },
         )
@@ -83,7 +83,7 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
     @mcp.tool(annotations=DESTRUCTIVE)
     @guard
     def update_time_entry(entry_id: str, changes: TimeEntryChanges) -> dict[str, Any]:
-        """Aggiorna una voce di ore. Se è già su una fattura emessa, solo `note_interne` e i campi
+        """Aggiorna una voce di ore. Se è già su una fattura emessa, solo `internal_notes` e i campi
         personalizzati sono modificabili.
         """
         return timetracking.update_time_entry(context, entry_id, changes)
@@ -115,27 +115,27 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
     def list_time_entries(
         deal_id: str | None = None,
         user_id: str | None = None,
-        da: IsoDateStr = None,
-        a: IsoDateStr = None,
-        fatturabile: bool | None = None,
-        fatturato: bool | None = None,
-        azienda_id: str | None = None,
+        date_from: IsoDateStr = None,
+        date_to: IsoDateStr = None,
+        billable: bool | None = None,
+        invoiced: bool | None = None,
+        legal_entity_id: str | None = None,
         limit: BoundedLimit = 50,
         cursor: str | None = None,
     ) -> dict[str, Any]:
-        """Elenca le voci di ore, dalla più recente. `fatturato = false` dice quanto resta da
-        fatturare. `azienda_id` filtra per azienda.
+        """Elenca le voci di ore, dalla più recente. `invoiced = false` dice quanto resta da
+        fatturare. `legal_entity_id` filtra per azienda.
         """
         return timetracking.list_time_entries(
             context,
             TimeEntryListQuery(
                 deal_id=UUID(deal_id) if deal_id else None,
-                azienda_id=parse_legal_entity_id(azienda_id),
+                legal_entity_id=parse_legal_entity_id(legal_entity_id),
                 user_id=UUID(user_id) if user_id else None,
-                da=iso_date(da, "da"),
-                a=iso_date(a, "a"),
-                fatturabile=fatturabile,
-                fatturato=fatturato,
+                date_from=iso_date(date_from, "date_from"),
+                date_to=iso_date(date_to, "date_to"),
+                billable=billable,
+                invoiced=invoiced,
                 limit=cast(int, limit),
                 cursor=UUID(cursor) if cursor else None,
             ),
@@ -152,7 +152,7 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
     @mcp.tool(annotations=ADDITIVE)
     @guard
     def start_timer(
-        deal_id: str | None = None, descrizione: str = "", fatturabile: bool = True
+        deal_id: str | None = None, description: str = "", billable: bool = True
     ) -> dict[str, Any]:
         """Avvia il cronometro. Uno solo alla volta: se ce n'è uno in corso fallisce, fermalo
         (`stop_timer`) o scartalo (`discard_timer`). Il deal si può scegliere dopo con
@@ -162,8 +162,8 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
             context,
             {
                 "deal_id": UUID(deal_id) if deal_id else None,
-                "descrizione": descrizione,
-                "fatturabile": fatturabile,
+                "description": description,
+                "billable": billable,
             },
         )
 
@@ -171,33 +171,33 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
     @guard
     def update_timer(
         deal_id: str | None = None,
-        descrizione: str | None = None,
-        fatturabile: bool | None = None,
+        description: str | None = None,
+        billable: bool | None = None,
     ) -> dict[str, Any]:
         """Cambia deal, descrizione o fatturabilità del timer in corso senza fermarlo."""
         return timetracking.update_timer(
             context,
             {
                 "deal_id": UUID(deal_id) if deal_id else None,
-                "descrizione": descrizione,
-                "fatturabile": fatturabile,
+                "description": description,
+                "billable": billable,
             },
         )
 
     @mcp.tool(annotations=ADDITIVE)
     @guard
     def stop_timer(
-        deal_id: str | None = None, descrizione: str | None = None, data: str | None = None
+        deal_id: str | None = None, description: str | None = None, date: str | None = None
     ) -> dict[str, Any]:
         """Ferma il timer e registra le ore come voce, con tariffa congelata come `log_time`.
-        `data` (YYYY-MM-DD) è il giorno, oggi se omessa. Restituisce la voce creata.
+        `date` (YYYY-MM-DD) è il giorno, oggi se omessa. Restituisce la voce creata.
         """
         return timetracking.stop_timer(
             context,
             {
                 "deal_id": UUID(deal_id) if deal_id else None,
-                "descrizione": descrizione,
-                "data": data,
+                "description": description,
+                "date": date,
             },
         )
 
@@ -219,7 +219,7 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
     @guard
     def describe_rates(deal_id: str, user_id: str) -> dict[str, Any]:
         """Quale tariffa e quale costo verrebbero congelati su una nuova voce e da quale livello
-        (`manuale`, `deal`, `utente`, `assente`). Chiamalo prima di `log_time`.
+        (`manual`, `deal`, `user`, `absent`). Chiamalo prima di `log_time`.
         """
         return timetracking.describe_rates(context, deal_id, user_id)
 
@@ -227,18 +227,18 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
     @guard
     def create_cost(
         category_id: str,
-        data: str,
-        importo: MoneyArg,
-        descrizione: str,
+        date: str,
+        amount: MoneyArg,
+        description: str,
         deal_id: str | None = None,
-        fornitore: str | None = None,
+        supplier: str | None = None,
         document_id: str | None = None,
         custom_fields: dict[str, Any] | None = None,
-        azienda_id: str | None = None,
+        legal_entity_id: str | None = None,
     ) -> dict[str, Any]:
         """Registra un costo. Senza `deal_id` è una spesa generale, nel conto economico di periodo
-        e non ripartita sui deal. `importo` è il totale pagato, IVA inclusa; negativo è un
-        rimborso; zero è rifiutato. Le categorie sono in `list_cost_categories`. `azienda_id`
+        e non ripartita sui deal. `amount` è il totale pagato, IVA inclusa; negativo è un
+        rimborso; zero è rifiutato. Le categorie sono in `list_cost_categories`. `legal_entity_id`
         vale solo per una spesa generale (omesso: condivisa); un costo su un deal è dell'azienda
         del deal.
         """
@@ -246,12 +246,12 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
             context,
             {
                 "category_id": UUID(category_id),
-                "data": data,
-                "importo": importo,
-                "descrizione": descrizione,
+                "date": date,
+                "amount": amount,
+                "description": description,
                 "deal_id": UUID(deal_id) if deal_id else None,
-                "azienda_id": parse_legal_entity_id(azienda_id),
-                "fornitore": fornitore,
+                "legal_entity_id": parse_legal_entity_id(legal_entity_id),
+                "supplier": supplier,
                 "document_id": UUID(document_id) if document_id else None,
                 "custom_fields": custom_fields or {},
             },
@@ -285,27 +285,27 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
     @guard
     def list_costs(
         deal_id: str | None = None,
-        solo_generali: bool = False,
+        only_general: bool = False,
         category_id: str | None = None,
-        da: IsoDateStr = None,
-        a: IsoDateStr = None,
-        azienda_id: str | None = None,
+        date_from: IsoDateStr = None,
+        date_to: IsoDateStr = None,
+        legal_entity_id: str | None = None,
         limit: BoundedLimit = 50,
         cursor: str | None = None,
     ) -> dict[str, Any]:
-        """Elenca i costi, dal più recente. `solo_generali = true` mostra solo le spese senza deal.
-        `azienda_id` filtra per azienda; omesso, tutti, comprese le spese condivise senza
+        """Elenca i costi, dal più recente. `only_general = true` mostra solo le spese senza deal.
+        `legal_entity_id` filtra per azienda; omesso, tutti, comprese le spese condivise senza
         azienda.
         """
         return timetracking.list_costs(
             context,
             CostListQuery(
                 deal_id=UUID(deal_id) if deal_id else None,
-                azienda_id=parse_legal_entity_id(azienda_id),
-                solo_generali=solo_generali,
+                legal_entity_id=parse_legal_entity_id(legal_entity_id),
+                only_general=only_general,
                 category_id=UUID(category_id) if category_id else None,
-                da=iso_date(da, "da"),
-                a=iso_date(a, "a"),
+                date_from=iso_date(date_from, "date_from"),
+                date_to=iso_date(date_to, "date_to"),
                 limit=cast(int, limit),
                 cursor=UUID(cursor) if cursor else None,
             ),
@@ -319,8 +319,8 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
 
     @mcp.tool(annotations=READ_ONLY)
     @guard
-    def list_period_locks(anno: OptionalAnno = None) -> dict[str, Any]:
+    def list_period_locks(year: OptionalYear = None) -> dict[str, Any]:
         """Elenca i mesi chiusi, dal più recente. Un mese chiuso rifiuta ogni scrittura di ore e
         costi datata in quel mese: leggi qui prima di registrare voci vecchie.
         """
-        return timetracking.list_period_locks(context, anno)
+        return timetracking.list_period_locks(context, year)

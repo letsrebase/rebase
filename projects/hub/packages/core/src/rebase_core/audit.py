@@ -104,8 +104,8 @@ def coerce_stored_value(model: type[Any], field: str, value: Any) -> Any:
     storage, so a revert can `setattr` a properly typed value instead of a string that
     merely looks right until the next comparison. `None` passes through untouched -- a
     cleared column reverting to "no value" needs no coercion. Every column this module
-    reverts is either a plain string, a `Decimal` (`tariffa_giornaliera`,
-    `budget_giornaliero`) or a `date` (`periodo_da`); a column whose type declines to
+    reverts is either a plain string, a `Decimal` (`daily_rate`,
+    `daily_budget`) or a `date` (`period_from`); a column whose type declines to
     say what its Python type is (`links`' `JSONB`) is left exactly as stored, since
     `sanitize_payload` never reshapes a list of strings in the first place."""
     if value is None:
@@ -126,9 +126,9 @@ def coerce_stored_value(model: type[Any], field: str, value: Any) -> Any:
 
 # ---- sanitizing a payload before it reaches Postgres --------------------------------
 
-# Bounded above `PROGETTO_MAX_LENGTH`/`COMMENT_MAX_LENGTH` (both 4000, `models.py`) --
+# Bounded above `PROJECT_MAX_LENGTH`/`COMMENT_MAX_LENGTH` (both 4000, `models.py`) --
 # the widest text field `FreelancerOverride`/`CompanyOverride` ever carries (`note`,
-# `progetto`). `revert` reapplies a stored `before` value verbatim: truncating a value
+# `project`). `revert` reapplies a stored `before` value verbatim: truncating a value
 # no wider than the column itself would silently replace a genuine override with a
 # shorter one on the very next revert, corrupting exactly the data this trail exists
 # to protect. What is bounded here is a payload nobody validated, not one of these.
@@ -212,11 +212,11 @@ class AdminActionPayload(TypedDict, total=False):
     amounts decimal strings: that is how `sanitize_payload` stores them.
 
     * a field override or clear (`field_changes`): `changed`, `before`, `after`;
-    * `vetted`: `vetted`; a note or status entry: `fonte`, `testo`, `nota_id`;
-    * `pigro_link`: `esito`, `errore`; `anon_cv_downloaded`: `riusato`;
-    * a merge (REB-800): `into_freelancer_id`/`from_freelancer_id`, `moved`, `lasciati`,
-      `cv`, `scheda_da_rigenerare`, and `rimesse` on the undo;
-    * the AI audit (REB-861): `provider`, `model`, `source`, `azione`, `task`, and for a
+    * `vetted`: `vetted`; a note or status entry: `source`, `text`, `note_id`;
+    * `pigro_link`: `outcome`, `error`; `anon_cv_downloaded`: `reused`;
+    * a merge (REB-800): `into_freelancer_id`/`from_freelancer_id`, `moved`, `left_behind`,
+      `cv`, `card_to_regenerate`, and `put_back` on the undo;
+    * the AI audit (REB-861): `provider`, `model`, `source`, `action`, `task`, and for a
       card regeneration its start (`limit`, `queued`, `batch`, `batch_id`) and its end
       (`start_action_id`, the counts, `cost_eur`, `failures`, `stop_reason`, ...)."""
 
@@ -226,25 +226,24 @@ class AdminActionPayload(TypedDict, total=False):
     before: Annotated[dict[str, Any] | str, _MAY_BE_ABSENT]
     after: Annotated[dict[str, Any] | str, _MAY_BE_ABSENT]
     vetted: Annotated[bool, _MAY_BE_ABSENT]
-    fonte: Annotated[str, _MAY_BE_ABSENT]
-    testo: Annotated[str, _MAY_BE_ABSENT]
-    nota_id: Annotated[str, _MAY_BE_ABSENT]
-    esito: Annotated[str, _MAY_BE_ABSENT]
-    errore: Annotated[str | None, _MAY_BE_ABSENT]
-    riusato: Annotated[bool, _MAY_BE_ABSENT]
+    source: Annotated[str, _MAY_BE_ABSENT]
+    text: Annotated[str, _MAY_BE_ABSENT]
+    note_id: Annotated[str, _MAY_BE_ABSENT]
+    outcome: Annotated[str, _MAY_BE_ABSENT]
+    error: Annotated[str | None, _MAY_BE_ABSENT]
+    reused: Annotated[bool, _MAY_BE_ABSENT]
     reason: Annotated[str, _MAY_BE_ABSENT]
     into_freelancer_id: Annotated[str, _MAY_BE_ABSENT]
     from_freelancer_id: Annotated[str, _MAY_BE_ABSENT]
     moved: Annotated[dict[str, int | list[str]], _MAY_BE_ABSENT]
-    lasciati: Annotated[dict[str, int], _MAY_BE_ABSENT]
-    rimesse: Annotated[dict[str, int], _MAY_BE_ABSENT]
+    left_behind: Annotated[dict[str, int], _MAY_BE_ABSENT]
+    put_back: Annotated[dict[str, int], _MAY_BE_ABSENT]
     cv: Annotated[str, _MAY_BE_ABSENT]
-    scheda_da_rigenerare: Annotated[bool, _MAY_BE_ABSENT]
+    card_to_regenerate: Annotated[bool, _MAY_BE_ABSENT]
     action_id: Annotated[str, _MAY_BE_ABSENT]
     provider: Annotated[str, _MAY_BE_ABSENT]
     model: Annotated[str, _MAY_BE_ABSENT]
-    source: Annotated[str, _MAY_BE_ABSENT]
-    azione: Annotated[str, _MAY_BE_ABSENT]
+    action: Annotated[str, _MAY_BE_ABSENT]
     task: Annotated[str, _MAY_BE_ABSENT]
     limit: Annotated[int, _MAY_BE_ABSENT]
     queued: Annotated[int, _MAY_BE_ABSENT]
@@ -276,7 +275,7 @@ class AdminActionRead(ResponseModel):
     entity_id: UUID
     kind: AdminActionKind
     admin_id: UUID
-    admin_nome: str
+    admin_name: str
     payload: Annotated[AdminActionPayload, SkipValidation]
     created_at: datetime
 
@@ -375,7 +374,7 @@ class AdminActionService:
                 entity_id=action.entity_id,
                 kind=action.kind,
                 admin_id=action.admin_id,
-                admin_nome=f"{admin.nome} {admin.cognome}".strip(),
+                admin_name=f"{admin.first_name} {admin.last_name}".strip(),
                 payload=cast(AdminActionPayload, action.payload),
                 created_at=action.created_at,
             )

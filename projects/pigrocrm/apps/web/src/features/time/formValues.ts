@@ -15,18 +15,18 @@ import type { TimeEntry } from './queries'
  * it is an admin operation with no picker control (`FieldType` has no user type).
  */
 export const NATIVE_FIELDS: FieldDefinition[] = [
-  { key: 'data', label: 'Data', type: 'date', required: true, options: [] },
-  { key: 'ore', label: 'Ore', type: 'number', required: true, options: [] },
-  { key: 'descrizione', label: 'Descrizione', type: 'textarea', required: true, options: [] },
-  { key: 'fatturabile', label: 'Fatturabile', type: 'checkbox', required: false, options: [] },
+  { key: 'date', label: 'Data', type: 'date', required: true, options: [] },
+  { key: 'hours', label: 'Ore', type: 'number', required: true, options: [] },
+  { key: 'description', label: 'Descrizione', type: 'textarea', required: true, options: [] },
+  { key: 'billable', label: 'Fatturabile', type: 'checkbox', required: false, options: [] },
   {
-    key: 'tariffa_applicata',
+    key: 'applied_rate',
     label: 'Tariffa (€/h, lascia vuoto per usare quella predefinita)',
     type: 'number',
     required: false,
     options: [],
   },
-  { key: 'note_interne', label: 'Note interne', type: 'textarea', required: false, options: [] },
+  { key: 'internal_notes', label: 'Note interne', type: 'textarea', required: false, options: [] },
 ]
 
 const NATIVE_FIELD_KEYS = NATIVE_FIELDS.map((field) => field.key)
@@ -37,11 +37,11 @@ const NATIVE_FIELD_KEYS = NATIVE_FIELDS.map((field) => field.key)
  *  `ImmutableField` after pressing Salva is a worse explanation than a field that is
  *  simply not there. */
 export const LOCKED_KEYS = new Set([
-  'data',
-  'ore',
-  'descrizione',
-  'fatturabile',
-  'tariffa_applicata',
+  'date',
+  'hours',
+  'description',
+  'billable',
+  'applied_rate',
 ])
 
 /** The form's state in the API's two namespaces -- see `FormValues`. */
@@ -57,14 +57,14 @@ export type TimeEntryFormValues = FormValues
  * `formatIsoDateItalian` (@/lib/dates) closes.
  */
 export function defaultFormValues(today: Date = new Date()): TimeEntryFormValues {
-  return { native: { fatturabile: true, data: toIsoDate(today) }, custom: {} }
+  return { native: { billable: true, date: toIsoDate(today) }, custom: {} }
 }
 
 /**
  * Builds the form's starting state from an entry that already exists.
  *
  * Deliberately not `{ ...entry, ...entry.custom_fields }`: a `TimeEntryRead` also
- * carries `id`, `tariffa_origine`, `valore_riga`, `invoice_line_id`, `created_at` and
+ * carries `id`, `rate_source`, `line_value`, `invoice_line_id`, `created_at` and
  * the rest, none of which `TimeEntryUpdate` accepts -- sending them back would 422 on
  * every edit. Walking exactly `NATIVE_FIELD_KEYS` keeps the round trip to what the form
  * is allowed to send; `custom_fields` is copied whole into its own namespace, archived
@@ -92,7 +92,7 @@ export function toRequestBody(
   const { initial, locked, isRenderedCustomKey } = options
   // Clearing a rate is the one native clear that matters most here: it is a deliberate
   // "this hour has no price", and `TimeEntryService.update` records it as
-  // `origine = "assente"` rather than letting the deal's rate quietly take over.
+  // `origine = "absent"` rather than letting the deal's rate quietly take over.
   return buildRequestBody(values, {
     fields: NATIVE_FIELDS,
     initial,

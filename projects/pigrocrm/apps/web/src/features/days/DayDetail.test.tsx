@@ -17,8 +17,8 @@ vi.mock('@tanstack/react-router', () => ({
   ),
 }))
 
-const auth = { ruolo: 'collaboratore' as 'readonly' | 'collaboratore' | 'admin' }
-vi.mock('@/lib/auth', () => ({ useCanWrite: () => auth.ruolo !== 'readonly' }))
+const auth = { role: 'collaborator' as 'readonly' | 'collaborator' | 'admin' }
+vi.mock('@/lib/auth', () => ({ useCanWrite: () => auth.role !== 'readonly' }))
 vi.mock('@rebase/ui/sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
 
 function serving(shown = detail()) {
@@ -28,19 +28,19 @@ function serving(shown = detail()) {
 beforeEach(() => {
   vi.mocked(api.GET).mockReset()
   vi.mocked(api.POST).mockReset()
-  auth.ruolo = 'collaboratore'
+  auth.role = 'collaborator'
 })
 
 describe('a day’s page', () => {
   it('shows its state, what was done, and the log in the order it happened', async () => {
     serving(
       detail({
-        stato: 'contestato',
-        azioni: ['lavorato'],
-        transizioni: [
-          { id: 't1', work_unit_id: DAY_ID, stato_precedente: null, stato_nuovo: 'approvato', attore: { kind: 'human', id: 'u1' }, motivo: 'creazione', created_at: '2026-03-01T09:00:00Z', seq: 1 },
-          { id: 't2', work_unit_id: DAY_ID, stato_precedente: 'approvato', stato_nuovo: 'lavorato', attore: { kind: 'human', id: 'u1' }, motivo: 'Giornata svolta', created_at: '2026-03-02T17:00:00Z', seq: 2 },
-          { id: 't3', work_unit_id: DAY_ID, stato_precedente: 'lavorato', stato_nuovo: 'contestato', attore: { kind: 'human', id: 'u1' }, motivo: 'Il cliente contesta le ore', created_at: '2026-03-09T10:00:00Z', seq: 3 },
+        status: 'disputed',
+        actions: ['worked'],
+        transitions: [
+          { id: 't1', work_unit_id: DAY_ID, previous_status: null, new_status: 'approved', actor: { kind: 'human', id: 'u1' }, reason: 'creazione', created_at: '2026-03-01T09:00:00Z', seq: 1 },
+          { id: 't2', work_unit_id: DAY_ID, previous_status: 'approved', new_status: 'worked', actor: { kind: 'human', id: 'u1' }, reason: 'Giornata svolta', created_at: '2026-03-02T17:00:00Z', seq: 2 },
+          { id: 't3', work_unit_id: DAY_ID, previous_status: 'worked', new_status: 'disputed', actor: { kind: 'human', id: 'u1' }, reason: 'Il cliente contesta le ore', created_at: '2026-03-09T10:00:00Z', seq: 3 },
         ],
       }),
     )
@@ -63,7 +63,7 @@ describe('a day’s page', () => {
   })
 
   it('offers exactly the moves the API says the state allows', async () => {
-    serving(detail({ azioni: ['lavorato', 'revocato'] }))
+    serving(detail({ actions: ['worked', 'revoked'] }))
     renderWithQuery(<DayDetail workUnitId={DAY_ID} />)
     expect(await screen.findByRole('button', { name: 'Segna come lavorata' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Revoca' })).toBeInTheDocument()
@@ -75,7 +75,7 @@ describe('a day’s page', () => {
     let current = detail()
     vi.mocked(api.GET).mockImplementation((() => Promise.resolve(ok(current))) as never)
     vi.mocked(api.POST).mockImplementation((() => {
-      current = detail({ stato: 'lavorato', azioni: ['contestato'] })
+      current = detail({ status: 'worked', actions: ['disputed'] })
       return Promise.resolve(ok(current))
     }) as never)
     const user = userEvent.setup()
@@ -88,15 +88,15 @@ describe('a day’s page', () => {
     expect(vi.mocked(api.POST).mock.calls[0]?.[0]).toBe('/api/work-units/{work_unit_id}/transitions')
     expect(vi.mocked(api.POST).mock.calls[0]?.[1]).toMatchObject({
       params: { path: { work_unit_id: DAY_ID } },
-      body: { stato: 'lavorato', motivo: 'Giornata svolta' },
+      body: { status: 'worked', reason: 'Giornata svolta' },
     })
     // The page redraws from the answer: the day is worked and contesting is now on offer.
     expect(await screen.findByRole('button', { name: 'Contesta' })).toBeInTheDocument()
   })
 
   it('will not contest a day without a reason', async () => {
-    serving(detail({ stato: 'lavorato', azioni: ['contestato'] }))
-    vi.mocked(api.POST).mockResolvedValue(ok(detail({ stato: 'contestato', azioni: [] })) as never)
+    serving(detail({ status: 'worked', actions: ['disputed'] }))
+    vi.mocked(api.POST).mockResolvedValue(ok(detail({ status: 'disputed', actions: [] })) as never)
     const user = userEvent.setup()
     renderWithQuery(<DayDetail workUnitId={DAY_ID} />)
 
@@ -108,7 +108,7 @@ describe('a day’s page', () => {
 
     await waitFor(() => expect(api.POST).toHaveBeenCalledTimes(1))
     expect(vi.mocked(api.POST).mock.calls[0]?.[1]).toMatchObject({
-      body: { stato: 'contestato', motivo: 'Il cliente contesta le ore' },
+      body: { status: 'disputed', reason: 'Il cliente contesta le ore' },
     })
   })
 
@@ -125,7 +125,7 @@ describe('a day’s page', () => {
   })
 
   it('says a day worked without the required approval is flagged, with no approval to show', async () => {
-    serving(detail({ stato: 'lavorato_senza_approvazione', requires_prior_approval: true, azioni: ['contestato'] }))
+    serving(detail({ status: 'worked_without_approval', requires_prior_approval: true, actions: ['disputed'] }))
     renderWithQuery(<DayDetail workUnitId={DAY_ID} />)
     expect(await screen.findByText(/non è collegata nessuna/)).toBeInTheDocument()
     expect(screen.getByText('Nessuna approvazione collegata, e il contratto ne richiede una.')).toBeInTheDocument()
@@ -134,21 +134,21 @@ describe('a day’s page', () => {
   it('shows the approval a day rests on and links its document', async () => {
     serving(
       detail({
-        stato: 'lavorato',
+        status: 'worked',
         approval_id: 'a1',
         approval: {
           id: 'a1',
           contract_id: 'c',
-          canale: 'posta_certificata',
-          mittente: 'giulia@nordwind.example',
-          ricevuto_il: '2026-02-20T09:12:00Z',
+          channel: 'certified_mail',
+          sender: 'giulia@nordwind.example',
+          received_at: '2026-02-20T09:12:00Z',
           message_id: null,
           document_id: 'doc-9',
-          estratto: 'Confermo le giornate di marzo.',
-          origine: { kind: 'manuale' },
+          excerpt: 'Confermo le giornate di marzo.',
+          origin: { kind: 'manual' },
           created_at: '2026-02-20T09:12:00Z',
           updated_at: '2026-02-20T09:12:00Z',
-          documento_titolo: 'Mail di conferma',
+          title_document: 'Mail di conferma',
         },
       }),
     )
@@ -159,7 +159,7 @@ describe('a day’s page', () => {
   })
 
   it('offers to record the client’s approval on a day that can use one, and not on one that has it', async () => {
-    serving(detail({ stato: 'lavorato_senza_approvazione', requires_prior_approval: true, azioni: ['contestato'] }))
+    serving(detail({ status: 'worked_without_approval', requires_prior_approval: true, actions: ['disputed'] }))
     renderWithQuery(<DayDetail workUnitId={DAY_ID} />)
     const link = await screen.findByRole('link', { name: /Registra l’approvazione del cliente/ })
     expect(link.getAttribute('href')).toBe('/app/approvals/new')
@@ -173,13 +173,13 @@ describe('a day’s page', () => {
   })
 
   it('says when the date is outside the contract', async () => {
-    serving(detail({ fuori_termine: 'dopo_la_fine', contratto_fine: '2026-02-28' }))
+    serving(detail({ out_of_term: 'after_end', contract_end: '2026-02-28' }))
     renderWithQuery(<DayDetail workUnitId={DAY_ID} />)
     expect(await screen.findByText('La data è dopo la fine del contratto, il 28/02/2026.')).toBeInTheDocument()
   })
 
   it('shows a reader the day and no buttons', async () => {
-    auth.ruolo = 'readonly'
+    auth.role = 'readonly'
     serving()
     renderWithQuery(<DayDetail workUnitId={DAY_ID} />)
     await screen.findByRole('heading', { level: 1 })
@@ -195,8 +195,8 @@ describe('a day’s page', () => {
   })
 
   it('downloads the dispute bundle through the session-refreshing fetch, for a reader too', async () => {
-    auth.ruolo = 'readonly'
-    serving(detail({ stato: 'contestato', azioni: [] }))
+    auth.role = 'readonly'
+    serving(detail({ status: 'disputed', actions: [] }))
     vi.mocked(fetchWithRefresh).mockResolvedValue({
       ok: true,
       headers: new Headers({ 'Content-Disposition': "attachment; filename*=UTF-8''fascicolo-x.zip" }),
@@ -223,7 +223,7 @@ describe('a day’s page', () => {
   })
 
   it('says why when the bundle cannot be downloaded', async () => {
-    serving(detail({ stato: 'contestato', azioni: [] }))
+    serving(detail({ status: 'disputed', actions: [] }))
     vi.mocked(fetchWithRefresh).mockResolvedValue(
       new Response(JSON.stringify({ title: 'x', status: 404, detail: 'work_unit non trovato' }), {
         status: 404,

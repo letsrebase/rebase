@@ -53,9 +53,9 @@ COLUMN_HEADERS = ("DATA", "ORE", "DESCRIZIONE")
 
 def build_time_report_xlsx(
     *,
-    cliente: str,
-    offerta: str,
-    periodo: str,
+    customer: str,
+    offer: str,
+    period: str,
     rows: Sequence[tuple[date, Decimal, str]],
 ) -> bytes:
     workbook = Workbook()
@@ -73,7 +73,7 @@ def build_time_report_xlsx(
     sheet["A1"].font = Font(bold=True, size=14)
     sheet.merge_cells("A1:C1")
     for row, (label, value) in enumerate(
-        (("Cliente", cliente), ("Offerta", offerta), ("Periodo", periodo)), start=2
+        (("Cliente", customer), ("Offerta", offer), ("Periodo", period)), start=2
     ):
         sheet[f"A{row}"] = label
         sheet[f"A{row}"].font = bold
@@ -88,20 +88,20 @@ def build_time_report_xlsx(
     for index, width in enumerate(COLUMN_WIDTHS, start=1):
         sheet.column_dimensions[get_column_letter(index)].width = width
 
-    for offset, (giorno, ore, descrizione) in enumerate(rows):
+    for offset, (day, hours, description) in enumerate(rows):
         row = FIRST_DATA_ROW + offset
-        data_cell = sheet.cell(row=row, column=1, value=giorno)
+        data_cell = sheet.cell(row=row, column=1, value=day)
         data_cell.number_format = DATE_FORMAT
         # `Decimal` handed to openpyxl unchanged: it writes it as a numeric cell, so no
         # float ever exists on this path. Converting to `float` here would reintroduce
         # exactly the drift `Numeric(8,2)` exists to avoid.
-        ore_cell = sheet.cell(row=row, column=2, value=ore)
-        ore_cell.number_format = HOURS_FORMAT
+        hours_cell = sheet.cell(row=row, column=2, value=hours)
+        hours_cell.number_format = HOURS_FORMAT
         # Raw, unescaped, newlines intact. `wrap_text` is what makes a multi-line
         # description readable in the 80-wide column instead of a single clipped line.
         # A string cell whatever it starts with: a description is typed by a person.
-        descrizione_cell = text_cell(sheet, row, 3, descrizione)
-        descrizione_cell.alignment = Alignment(wrap_text=True, vertical="top")
+        description_cell = text_cell(sheet, row, 3, description)
+        description_cell.alignment = Alignment(wrap_text=True, vertical="top")
 
     last_data_row = HEADER_ROW + len(rows)
     total_row = last_data_row + 1

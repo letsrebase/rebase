@@ -1,7 +1,7 @@
 """Reminders on Slack: a direct message per person, a post to the space's channel
 (REB-740), through the real pass against a fake of Slack's HTTP surface.
 
-The proof of the card is the first test: an overdue attività reaches its assignee by direct
+The proof of the card is the first test: an overdue task reaches its assignee by direct
 message once, and not again on the next pass. The pass is `ReminderRun.run_for_space` over a
 database of this module's own (the pass commits, so it cannot run inside the rolled-back
 `db_session`), migrated to head as `test_cli_reminders.py` does it.
@@ -21,7 +21,6 @@ from sqlalchemy import Engine, create_engine, select, text
 from sqlalchemy.engine import make_url
 from sqlalchemy.orm import Session
 
-from pigrocrm.core.attivita.models import Attivita
 from pigrocrm.core.auth.models import User
 from pigrocrm.core.config import Settings
 from pigrocrm.core.db import session_factory
@@ -35,6 +34,7 @@ from pigrocrm.core.reminders.models import (
 from pigrocrm.core.reminders.run import ReminderRun
 from pigrocrm.core.slack.models import SlackChannelPost, SlackUserLink, SlackWorkspace
 from pigrocrm.core.slack.service import SlackService
+from pigrocrm.core.tasks.models import Task
 from pigrocrm.core.tenants import space_base_settings
 from pigrocrm.core.tenants.service import migrate_to_head
 
@@ -84,12 +84,12 @@ class World:
             assert admin is not None
             connect(session, self.fake, admin, settings or self.settings)
 
-    def attivita(self, titolo: str, *, days_late: int = 3, assignee: UUID | None = None) -> UUID:
+    def task(self, title: str, *, days_late: int = 3, assignee: UUID | None = None) -> UUID:
         with self.session() as session:
-            row = Attivita(
-                titolo=titolo,
-                scadenza=self.today - timedelta(days=days_late),
-                assegnata_a=assignee or self.ada,
+            row = Task(
+                title=title,
+                due_date=self.today - timedelta(days=days_late),
+                assigned_to=assignee or self.ada,
             )
             session.add(row)
             session.commit()
@@ -135,22 +135,22 @@ def world(settings: Settings, engine: Engine) -> Iterator[World]:
             text(
                 "TRUNCATE slack_channel_posts, slack_user_links, slack_workspaces, "
                 "reminder_delivery, reminder_ack, reminder_snooze, reminder_preference, "
-                "reminder_job_run, attivita CASCADE"
+                "reminder_job_run, tasks CASCADE"
             )
         )
-        connection.execute(text("UPDATE users SET attivo = false"))
+        connection.execute(text("UPDATE users SET active = false"))
     with session_factory(engine)() as session:
         admin = User(
             email=f"mario-{uuid4().hex[:6]}@example.it",
-            nome="Mario",
+            name="Mario",
             password_hash="x",
-            ruolo="admin",
+            role="admin",
         )
         ada = User(
             email=f"ada-{uuid4().hex[:6]}@example.it",
-            nome="Ada",
+            name="Ada",
             password_hash="x",
-            ruolo="collaboratore",
+            role="collaborator",
         )
         session.add_all([admin, ada])
         session.commit()
@@ -168,10 +168,10 @@ def _text_of(fake: FakeSlack, channel: str) -> str:
 # --- the card's proof --------------------------------------------------------------------
 
 
-def test_an_overdue_attivita_reaches_its_assignee_by_direct_message_once(world: World) -> None:
+def test_an_overdue_task_reaches_its_assignee_by_direct_message_once(world: World) -> None:
     world.preference(quiet_hours=NO_QUIET)
     world.connect()
-    world.attivita("Richiamare Rossi")
+    world.task("Richiamare Rossi")
 
     first = world.pass_()
     assert first.slacks == 1, first
@@ -179,7 +179,7 @@ def test_an_overdue_attivita_reaches_its_assignee_by_direct_message_once(world: 
     message = _text_of(world.fake, "DUADA")
     assert "Richiamare Rossi" in message
     assert "Hai un promemoria" in message
-    assert f"{PUBLIC_URL}/app/activities?apri=" in message
+    assert f"{PUBLIC_URL}/app/activities?open=" in message
     # The direct message was opened with the member's id, and posted with the bot's token.
     (opened,) = world.fake.calls("conversations.open")
     assert opened.form == {"users": "UADA"}
@@ -196,7 +196,7 @@ def test_an_overdue_attivita_reaches_its_assignee_by_direct_message_once(world: 
 def test_a_daily_reminder_is_sent_again_the_next_morning(world: World) -> None:
     world.preference(quiet_hours=NO_QUIET)
     world.connect()
-    world.attivita("Richiamare Rossi")
+    world.task("Richiamare Rossi")
     world.pass_()
     tomorrow = datetime.now(UTC) + timedelta(days=1)
 
@@ -208,9 +208,9 @@ def test_a_daily_reminder_is_sent_again_the_next_morning(world: World) -> None:
 
 def test_the_reminder_a_person_switched_off_for_slack_is_not_sent(world: World) -> None:
     world.preference(quiet_hours=NO_QUIET)
-    world.preference(user=world.ada, type="attivita_overdue", channels=["push"])
+    world.preference(user=world.ada, type="task_overdue", channels=["push"])
     world.connect()
-    world.attivita("Richiamare Rossi")
+    world.task("Richiamare Rossi")
 
     outcome = world.pass_()
 
@@ -222,9 +222,9 @@ def test_the_reminder_a_person_switched_off_for_slack_is_not_sent(world: World) 
 
 def test_a_space_that_turned_slack_off_by_default_does_not_send_either(world: World) -> None:
     world.preference(quiet_hours=NO_QUIET)
-    world.preference(type="attivita_overdue", channels=["push", "email"])
+    world.preference(type="task_overdue", channels=["push", "email"])
     world.connect()
-    world.attivita("Richiamare Rossi")
+    world.task("Richiamare Rossi")
     assert world.pass_().slacks == 0
 
 
@@ -238,11 +238,11 @@ def test_quiet_hours_hold_slack_and_the_first_pass_after_them_sends(world: World
     )
     monday = saturday + timedelta(days=2)
     world.connect()
-    world.attivita("Richiamare Rossi", days_late=3)
-    # The attività is overdue by three days on the Saturday's date.
+    world.task("Richiamare Rossi", days_late=3)
+    # The task is overdue by three days on the Saturday's date.
     with world.session() as session:
         session.execute(
-            text("UPDATE attivita SET scadenza = :d"), {"d": saturday.date() - timedelta(days=3)}
+            text("UPDATE tasks SET due_date = :d"), {"d": saturday.date() - timedelta(days=3)}
         )
         session.commit()
 
@@ -261,7 +261,7 @@ def test_a_reminder_that_was_open_before_the_workspace_was_connected_is_not_sent
     world: World,
 ) -> None:
     world.preference(quiet_hours=NO_QUIET)
-    world.attivita("Richiamare Rossi")
+    world.task("Richiamare Rossi")
     world.pass_()  # in the app only: no workspace yet
     world.connect()
 
@@ -278,7 +278,7 @@ def test_a_person_not_in_the_workspace_costs_one_lookup_a_day_and_hears_nothing(
     del world.fake.members[next(iter(m for m in world.fake.members if m.startswith("ada-")))]
     world.connect()
     lookups = len(world.fake.calls("users.lookupByEmail"))
-    world.attivita("Richiamare Rossi")
+    world.task("Richiamare Rossi")
 
     first = world.pass_()
     second = world.pass_()
@@ -300,7 +300,7 @@ def test_a_person_who_joined_slack_later_is_matched_in_the_pass_and_told_what_is
     with world.session() as session:
         session.execute(text("UPDATE slack_user_links SET checked_at = now() - interval '2 days'"))
         session.commit()
-    world.attivita("Richiamare Rossi")
+    world.task("Richiamare Rossi")
 
     outcome = world.pass_()
 
@@ -317,8 +317,8 @@ def test_a_person_who_joined_slack_later_is_matched_in_the_pass_and_told_what_is
 def test_one_message_carries_every_reminder_of_a_person_severest_first(world: World) -> None:
     world.preference(quiet_hours=NO_QUIET)
     world.connect()
-    world.attivita("Poco in ritardo", days_late=1)
-    world.attivita("Molto in ritardo", days_late=30)
+    world.task("Poco in ritardo", days_late=1)
+    world.task("Molto in ritardo", days_late=30)
 
     outcome = world.pass_()
 
@@ -335,7 +335,7 @@ def test_a_message_carries_at_most_twenty_and_the_rest_follow_in_the_next_pass(
     world.preference(quiet_hours=NO_QUIET)
     world.connect()
     for number in range(25):
-        world.attivita(f"Attività {number:02d}")
+        world.task(f"Attività {number:02d}")
 
     first = world.pass_()
     second = world.pass_()
@@ -351,7 +351,7 @@ def test_a_message_carries_at_most_twenty_and_the_rest_follow_in_the_next_pass(
 def test_a_title_cannot_mention_a_channel_or_inject_a_link(world: World) -> None:
     world.preference(quiet_hours=NO_QUIET)
     world.connect()
-    world.attivita("<!channel> chiama <https://evil.example|qui> & basta")
+    world.task("<!channel> chiama <https://evil.example|qui> & basta")
 
     world.pass_()
 
@@ -365,7 +365,7 @@ def test_a_title_cannot_mention_a_channel_or_inject_a_link(world: World) -> None
 def test_a_rehearsal_counts_the_message_and_sends_and_writes_nothing(world: World) -> None:
     world.preference(quiet_hours=NO_QUIET)
     world.connect()
-    world.attivita("Richiamare Rossi")
+    world.task("Richiamare Rossi")
 
     rehearsal = world.pass_(dry_run=True)
 
@@ -381,7 +381,7 @@ def test_a_rehearsal_counts_the_message_and_sends_and_writes_nothing(world: Worl
 def test_a_message_slack_refused_is_tried_again_next_pass(world: World) -> None:
     world.preference(quiet_hours=NO_QUIET)
     world.connect()
-    world.attivita("Richiamare Rossi")
+    world.task("Richiamare Rossi")
     world.fake.fail["chat.postMessage"] = ["is_archived"]
 
     failed = world.pass_()
@@ -398,12 +398,12 @@ def test_slack_down_during_the_pass_sends_nothing_records_nothing_and_does_not_r
 ) -> None:
     world.preference(quiet_hours=NO_QUIET)
     world.connect()
-    world.attivita("Richiamare Rossi")
+    world.task("Richiamare Rossi")
     world.fake.fail_status = [503] * 12
 
     outcome = world.pass_()
 
-    assert outcome.esito == "eseguito"
+    assert outcome.outcome == "run"
     assert outcome.slacks == 0
     assert outcome.delivered == 1  # the app still has it
     assert world.deliveries() == []
@@ -416,7 +416,7 @@ def test_a_token_slack_revoked_ends_the_pass_and_asks_the_admin_to_reconnect(
 ) -> None:
     world.preference(quiet_hours=NO_QUIET)
     world.connect()
-    world.attivita("Richiamare Rossi")
+    world.task("Richiamare Rossi")
     world.fake.revoked = True
 
     outcome = world.pass_()
@@ -434,7 +434,7 @@ def test_a_token_slack_revoked_ends_the_pass_and_asks_the_admin_to_reconnect(
 
 def test_no_workspace_no_app_or_no_client_is_a_pass_like_before(world: World) -> None:
     world.preference(quiet_hours=NO_QUIET)
-    world.attivita("Richiamare Rossi")
+    world.task("Richiamare Rossi")
     # No workspace connected.
     assert world.pass_().slacks == 0
     assert world.fake.requests == []
@@ -460,7 +460,7 @@ def test_a_disconnected_workspace_receives_nothing(world: World) -> None:
         SlackOAuthService(
             session, settings=world.settings, client=slack_client(world.fake)
         ).disconnect(actor_of(admin))
-    world.attivita("Richiamare Rossi")
+    world.task("Richiamare Rossi")
 
     assert world.pass_().slacks == 0
     assert world.fake.posts == []
@@ -473,7 +473,7 @@ def test_the_pass_of_a_space_opens_the_token_sealed_for_that_space_only(world: W
     world.preference(quiet_hours=NO_QUIET)
     space = space_base_settings(world.settings, "studio-uno")
     world.connect(space)
-    world.attivita("Richiamare Rossi")
+    world.task("Richiamare Rossi")
 
     # The root's pass cannot open a token sealed for a space, and does not raise.
     assert world.pass_(slug="root").slacks == 0
@@ -529,7 +529,7 @@ def test_a_personal_reminder_is_never_posted_to_the_channel(world: World) -> Non
     world.preference(quiet_hours=NO_QUIET)
     world.connect()
     _choose_channel(world)
-    world.attivita("Richiamare Rossi")
+    world.task("Richiamare Rossi")
 
     world.pass_()
 
@@ -615,11 +615,11 @@ def test_the_line_counts_slack_beside_push_and_email_only_when_it_sent(
     from pigrocrm.core.reminders.run import ReminderOutcome
 
     cli_cron._print_reminder_outcome(
-        ReminderOutcome("root", "eseguito", raised=3, delivered=2, ended=0, slacks=2, emails=1),
+        ReminderOutcome("root", "run", raised=3, delivered=2, ended=0, slacks=2, emails=1),
         dry_run=False,
     )
     cli_cron._print_reminder_outcome(
-        ReminderOutcome("root", "eseguito", raised=3, delivered=2, ended=0), dry_run=True
+        ReminderOutcome("root", "run", raised=3, delivered=2, ended=0), dry_run=True
     )
 
     lines = capsys.readouterr().out.splitlines()
@@ -641,14 +641,14 @@ def test_a_write_a_channel_asked_for_that_fails_loses_only_itself(db_session: Se
             session.add(ReminderJobRun(job="duplicated", ran_at=datetime.now(UTC)))
             session.flush()
 
-    def fine(session: Session) -> None:
+    def end(session: Session) -> None:
         session.add(ReminderJobRun(job="kept", ran_at=datetime.now(UTC)))
 
     engine = ReminderEngine(db_session, slack_settings())
     result = engine.record_pass(
         Evaluation((), frozenset(), frozenset(), Directory([], None), ReminderSettings([])),
         job="reminders",
-        sent=ChannelResult(writes=[refused, fine]),
+        sent=ChannelResult(writes=[refused, end]),
     )
 
     assert result.raised == 0
@@ -705,7 +705,7 @@ def test_a_person_unmatched_for_a_day_is_looked_up_even_when_nothing_new_reached
     ada_email = next(m for m in world.fake.members if m.startswith("ada-"))
     ada_member = world.fake.members.pop(ada_email)
     world.connect()
-    world.attivita("Richiamare Rossi")
+    world.task("Richiamare Rossi")
     world.pass_()  # in the app; Ada is not in Slack
     world.fake.members[ada_email] = ada_member
     with world.session() as session:
@@ -743,11 +743,11 @@ def test_what_a_pass_writes_for_an_older_connection_is_ignored(world: World) -> 
 def test_a_key_that_is_not_a_key_stops_slack_and_nothing_else(world: World) -> None:
     world.preference(quiet_hours=NO_QUIET)
     world.connect()
-    world.attivita("Richiamare Rossi")
+    world.task("Richiamare Rossi")
 
     outcome = world.pass_(settings=slack_settings(slack_token_key="not base64 at all!"))
 
-    assert outcome.esito == "eseguito"
+    assert outcome.outcome == "run"
     assert outcome.slacks == 0
     assert outcome.delivered == 1  # the app list still has it
     with world.session() as session:

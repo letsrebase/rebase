@@ -37,14 +37,16 @@ def create(data: TimeEntryCreate, session: SessionDep, actor: ActorDep) -> TimeE
 
 class TimeEntryListParams(KeysetParams, CustomParams):
     deal_id: UUID | None = None
-    azienda_id: UUID | None = Field(
+    legal_entity_id: UUID | None = Field(
         default=None, description="Solo le ore sui deal di questa azienda; omesso, tutte"
     )
     user_id: UUID | None = None
-    da: date | None = Field(default=None, description="Data minima, YYYY-MM-DD")
-    a: date | None = Field(default=None, description="Data massima, YYYY-MM-DD")
-    fatturabile: bool | None = None
-    fatturato: bool | None = Field(
+    date_from: date | None = Field(
+        default=None, alias="from", description="Data minima, YYYY-MM-DD"
+    )
+    date_to: date | None = Field(default=None, alias="to", description="Data massima, YYYY-MM-DD")
+    billable: bool | None = None
+    invoiced: bool | None = Field(
         default=None, description="true = già su una riga di fattura; false = da fatturare"
     )
 

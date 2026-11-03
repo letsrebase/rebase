@@ -32,9 +32,10 @@ Claude was writing gets nothing stored for it; `FreelancerService.clear_cv` take
 same row lock (its `UPDATE`) before it deletes the card, so the two cannot interleave
 into a card for a CV that is gone.
 
-The card's `anni` is `None` when the CV dates no role, and its seniority is brought inside
+The card's `experience_years` is `None` when the CV dates no role, and its seniority is brought
+inside
 the year bands the prompt states (`card_level.banded`, REB-799). An admin's own seniority
-and years sit on `freelancers` (`seniority_admin`, `anni_admin`), so a regenerated or
+and years sit on `freelancers` (`seniority_admin`, `experience_years_admin`), so a regenerated or
 retired card never erases them, and `read` answers the card with them over it.
 
 Bulk writing (REB-853): `refresh_stale` and `regenerate_stale` write with a pool of
@@ -67,17 +68,17 @@ from sqlalchemy import delete, select
 
 from rebase_core.ai_config import TASK_OFF
 from rebase_core.bands import band_for
-from rebase_core.card_draft import CardDraft, clean_persona
+from rebase_core.card_draft import CardDraft, clean_person
 from rebase_core.card_guard import KnownIdentifiers, identifying
 from rebase_core.card_level import banded, card_read
-from rebase_core.card_persona import (
-    fill_persona,
+from rebase_core.card_person import (
+    fill_person,
     gendered_words,
     known_identifiers,
-    persona_differences,
-    persona_of,
-    stored_persona,
-    with_persona,
+    person_differences,
+    person_of,
+    stored_person,
+    with_person,
 )
 from rebase_core.card_prompt import (
     PROMPT_VERSION,
@@ -91,7 +92,7 @@ from rebase_core.card_provenance import hash_inputs, provenance
 from rebase_core.card_regen import REGENERATE_LOCK
 from rebase_core.card_staleness import CardStaleness
 from rebase_core.card_store import CardStore
-from rebase_core.card_types import Composed, Fonte, Outcome, Prepared, Regeneration
+from rebase_core.card_types import Composed, Outcome, Prepared, Regeneration, Source
 from rebase_core.db import SessionOpener, session_factory
 from rebase_core.errors import CvTextUnavailable, LlmNotConfigured, LlmUnavailable
 from rebase_core.freelancers import FreelancerService
@@ -153,7 +154,7 @@ class CardWriter(CardStore, CardStaleness):
             .outerjoin(FreelancerCard, FreelancerCard.freelancer_id == Freelancer.id)
             .where(
                 Freelancer.deleted_at.is_(None),
-                Freelancer.stato != "scartato",
+                Freelancer.status != "discarded",
                 Freelancer.cv_sha256.is_not(None),
                 Freelancer.cv_sha256.is_distinct_from(FreelancerCard.cv_sha256),
                 Freelancer.cv_sha256.is_distinct_from(FreelancerCard.error_cv_sha256),
@@ -255,30 +256,30 @@ class CardWriter(CardStore, CardStaleness):
             return FreelancerCardRead(
                 freelancer_id=freelancer_id,
                 card=None,
-                modalita=row.remoto,
-                fascia=band_for(row.tariffa_giornaliera),
+                mode=row.remote,
+                band=band_for(row.daily_rate),
                 cv_sha256=None,
                 model=None,
                 generated_at=None,
                 error=None,
                 seniority_admin=row.seniority_admin,
-                anni_admin=row.anni_admin,
+                experience_years_admin=row.experience_years_admin,
             )
         return FreelancerCardRead(
             freelancer_id=freelancer_id,
             card=(
-                card_read(stored.card, row.seniority_admin, row.anni_admin)
+                card_read(stored.card, row.seniority_admin, row.experience_years_admin)
                 if stored.card is not None
                 else None
             ),
-            modalita=row.remoto,
-            fascia=band_for(row.tariffa_giornaliera),
+            mode=row.remote,
+            band=band_for(row.daily_rate),
             cv_sha256=stored.cv_sha256,
             model=stored.model,
             generated_at=stored.generated_at,
             error=stored.error,
             seniority_admin=row.seniority_admin,
-            anni_admin=row.anni_admin,
+            experience_years_admin=row.experience_years_admin,
         )
 
     def read_admin(self, freelancer_id: UUID) -> FreelancerCardAdminRead:
@@ -292,7 +293,7 @@ class CardWriter(CardStore, CardStaleness):
             provenance = CardProvenance(
                 prompt_version=stored.prompt_version or 1,
                 provider=stored.provider,
-                fonti=stored.fonti or {},
+                field_sources=stored.sources or {},
                 conflicts=[ConflictRead.model_validate(c) for c in stored.conflicts or []],
                 sources=[
                     SourceProvenance(
@@ -307,18 +308,18 @@ class CardWriter(CardStore, CardStaleness):
                 source_hashes=stored.source_hashes or {},
                 stale=self.stale_of(freelancer_id),
             )
-        persona = stored_persona(self.session, freelancer_id)
+        person = stored_person(self.session, freelancer_id)
         return FreelancerCardAdminRead.model_validate(
             {
                 **base.model_dump(),
                 "provenance": provenance,
-                "persona": persona,
-                "differenze": persona_differences(self.session, persona, freelancer_id),
+                "person": person,
+                "differences": person_differences(self.session, person, freelancer_id),
             }
         )
 
-    def regenerate_stale(self, admin_id: UUID, limit: int, *, fonte: Fonte) -> CardsRefreshed:
-        """An admin's start (`AdminAction` `cards_regenerate`, signed, with its `fonte`: the
+    def regenerate_stale(self, admin_id: UUID, limit: int, *, source: Source) -> CardsRefreshed:
+        """An admin's start (`AdminAction` `cards_regenerate`, signed, with its `source`: the
         web or the command line): the first `limit` of `stale_cards`, each written again
         whatever its CV's hash says. Nothing else
         spends on a version bump or a change of the inputs. A card that is no longer
@@ -348,10 +349,10 @@ class CardWriter(CardStore, CardStaleness):
             waiting = self.stale_cards(limit)
             ids = [item.freelancer_id for item in waiting]
             if self.batches is not None and self.batches.wanted(len(ids)):
-                return self.batches.submit(self, ids, admin_id, fonte=fonte, limit=limit)
-            start = self.record_start(admin_id, fonte, limit, len(ids))
+                return self.batches.submit(self, ids, admin_id, source=source, limit=limit)
+            start = self.record_start(admin_id, source, limit, len(ids))
             outcomes: dict[UUID, Outcome | None] = {}
-            run = Regeneration(admin_id, fonte, bulk=True, start_action_id=start)
+            run = Regeneration(admin_id, source, bulk=True, start_action_id=start)
             try:
                 with self.acting(run):
                     result = self._write_all(ids, force=True, only_stale=True, outcomes=outcomes)
@@ -363,7 +364,7 @@ class CardWriter(CardStore, CardStaleness):
                 left = sum(1 for outcome in outcomes.values() if outcome is None)
                 self.end_regeneration(
                     admin_id=admin_id,
-                    fonte=fonte,
+                    source=source,
                     start_action_id=start,
                     queued=len(ids),
                     stopped=True,
@@ -373,7 +374,7 @@ class CardWriter(CardStore, CardStaleness):
                 raise
             self.end_regeneration(
                 admin_id=admin_id,
-                fonte=fonte,
+                source=source,
                 start_action_id=start,
                 queued=len(ids),
                 stopped=result.stopped,
@@ -400,7 +401,7 @@ class CardWriter(CardStore, CardStaleness):
         the card is a `Composed` with `failure` set.
 
         What the model says it used for each field is checked against the sources that
-        exist (`verify_fonti`); years claimed on no source that dates a profession are
+        exist (`verify_sources`); years claimed on no source that dates a profession are
         dropped and recorded; a hub that shows more real work than the card counts is
         recorded. The employers the model reports are read by the guard and kept, with the
         persona, for the admin's named card (REB-855).
@@ -435,20 +436,23 @@ class CardWriter(CardStore, CardStaleness):
             cv = FreelancerService(self.session).cv_text(freelancer_id)
         except CvTextUnavailable:  # the host's, not the file's: an outage, tried again later
             return Composed(None, "unavailable", "", "", 0, 0, 0)
-        if not cv.testo.strip():
+        if not cv.text.strip():
             return Composed(None, "no_text", "", "", 0, 0, 0)
         owner = self.session.get(User, row.user_id)
-        cognome = owner.cognome if owner is not None else ""
-        nome = owner.nome if owner is not None else ""
+        last_name = owner.last_name if owner is not None else ""
+        first_name = owner.first_name if owner is not None else ""
         if prompt_version == 1:
-            sources, facts = SourceSet([]), HubFacts(seniority_admin=None, anni_admin=None)
-            known = KnownIdentifiers.empty(cognome, nome)
-            request = card_prompt_v1(cv, row.posizione)
+            sources, facts = (
+                SourceSet([]),
+                HubFacts(seniority_admin=None, experience_years_admin=None),
+            )
+            known = KnownIdentifiers.empty(last_name, first_name)
+            request = card_prompt_v1(cv, row.job_title)
         else:
             sources = self.source_service().current(freelancer_id)
             facts = hub_facts(self.session, freelancer_id)
-            known = known_identifiers(cognome, nome, row.links, sources, facts)
-            request = card_prompt(cv, row.posizione, sources, facts)
+            known = known_identifiers(last_name, first_name, row.links, sources, facts)
+            request = card_prompt(cv, row.job_title, sources, facts)
         cv_sha256 = self.cv_digest(freelancer_id) or ""
         return Prepared(
             # The person the call is about goes on its usage row, which is how a card's cost
@@ -457,7 +461,7 @@ class CardWriter(CardStore, CardStaleness):
             known=known,
             sources=sources,
             facts=facts,
-            hashes=hash_inputs(row.posizione, sources, facts),
+            hashes=hash_inputs(row.job_title, sources, facts),
             cv_sha256=cv_sha256,
         )
 
@@ -471,7 +475,7 @@ class CardWriter(CardStore, CardStaleness):
         request, known = prepared.request, prepared.known
         sources, facts, hashes = prepared.sources, prepared.facts, prepared.hashes
         first = draft_from(response, known)
-        parsed = persona_of(response)
+        parsed = person_of(response)
         if not isinstance(first, CardDraft):
             return Composed(
                 None,
@@ -482,10 +486,10 @@ class CardWriter(CardStore, CardStaleness):
                 response.output_tokens,
                 response.thinking_tokens,
                 input_hashes=hashes,
-                persona=parsed[1] if parsed is not None else None,
+                person=parsed[1] if parsed is not None else None,
             )
         draft = first
-        persona = clean_persona(first.persona, first.employers)
+        person = clean_person(first.person, first.employers)
         employers = [*known.employers, *first.employers]
         model, provider = response.model, response.provider
         input_tokens = response.input_tokens
@@ -495,7 +499,7 @@ class CardWriter(CardStore, CardStaleness):
         # The anonymous card is read against the account's identifiers and against what the
         # CV says of the person (REB-855); the persona itself is not read by any guard.
         leaks = identifying(
-            draft.card, replace(with_persona(known, first, persona), employers=employers)
+            draft.card, replace(with_person(known, first, person), employers=employers)
         )
         if (gendered or leaks) and response.text is not None:
             # One rewrite, then a gate (REB-574, REB-802, REB-839): a card that still
@@ -522,9 +526,9 @@ class CardWriter(CardStore, CardStaleness):
             output_tokens += again.output_tokens
             thinking_tokens += again.thinking_tokens
             rewritten = draft_from(again, known)
-            if (again_parsed := persona_of(again)) is not None:
+            if (again_parsed := person_of(again)) is not None:
                 # What the rewrite read, with what the first answer had where it forgot.
-                persona = fill_persona(again_parsed[1], persona)
+                person = fill_person(again_parsed[1], person)
             if isinstance(rewritten, CardDraft):
                 draft, model, provider = rewritten, again.model, again.provider
                 # The rewrite may forget an employer the first answer named; the guard
@@ -540,10 +544,10 @@ class CardWriter(CardStore, CardStaleness):
                     output_tokens,
                     thinking_tokens,
                     input_hashes=hashes,
-                    persona=persona,
+                    person=person,
                 )
             if identifying(
-                draft.card, replace(with_persona(known, draft, persona), employers=employers)
+                draft.card, replace(with_person(known, draft, person), employers=employers)
             ):
                 return Composed(
                     None,
@@ -554,9 +558,9 @@ class CardWriter(CardStore, CardStaleness):
                     output_tokens,
                     thinking_tokens,
                     input_hashes=hashes,
-                    persona=persona,
+                    person=person,
                 )
-        card, fonti, found = provenance(draft, sources, facts)
+        card, field_sources, found = provenance(draft, sources, facts)
         return Composed(
             banded(card),
             None,
@@ -565,10 +569,10 @@ class CardWriter(CardStore, CardStaleness):
             input_tokens,
             output_tokens,
             thinking_tokens,
-            fonti=fonti,
+            sources=field_sources,
             conflicts=found,
             input_hashes=hashes,
-            persona=persona,
+            person=person,
         )
 
     def _write(self, freelancer_id: UUID, *, force: bool, only_stale: bool = False) -> Outcome:
@@ -636,7 +640,7 @@ def regenerate_after_response(
     admin_id: UUID,
     limit: int,
     *,
-    fonte: Fonte,
+    source: Source,
     workers: int = 1,
     batches: "CardBatches | None" = None,
 ) -> None:
@@ -651,7 +655,7 @@ def regenerate_after_response(
     try:
         with open_session() as session:
             CardWriter(session, llm, workers=workers, batches=batches).regenerate_stale(
-                admin_id, limit, fonte=fonte
+                admin_id, limit, source=source
             )
     except Exception as error:
         logger.warning("regeneration of the stale cards stopped: %s", type(error).__name__)

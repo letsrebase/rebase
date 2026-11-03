@@ -13,7 +13,7 @@ from pigrocrm.core.search.schemas import PER_CLASS_LIMIT, SearchQuery
 from pigrocrm_mcp.annotations import READ_ONLY
 from pigrocrm_mcp.context import McpContext
 from pigrocrm_mcp.tools import search as search_tools
-from pigrocrm_mcp.tools.params import BoundedLimit, SearchLimite, parse_legal_entity_id
+from pigrocrm_mcp.tools.params import BoundedLimit, SearchLimit, parse_legal_entity_id
 
 
 def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> None:
@@ -43,7 +43,7 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
     @mcp.tool(annotations=READ_ONLY)
     @guard
     def search_everything(
-        termine: str, limite: SearchLimite = PER_CLASS_LIMIT, azienda_id: str | None = None
+        term: str, limit: SearchLimit = PER_CLASS_LIMIT, legal_entity_id: str | None = None
     ) -> dict[str, Any]:
         """Cerca in tutto il CRM con una chiamata: clienti (ragione sociale, P.IVA, codice fiscale,
         email), persone (nome, cognome, email), deal (nome), documenti (titolo), fatture
@@ -51,23 +51,22 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
         in mezzo a una parola («34567» trova la P.IVA 01234567890). Un numero di fattura si
         scrive «2026/7», «7/2026» o «007»: trova quella fattura, senza anno in ogni anno.
 
-        Servono almeno 3 caratteri. Dà fino a `limite` risultati per classe e il conteggio reale;
-        se `totale_e_un_minimo` è true il conteggio è un minimo e il resto sta nell'elenco della
-        singola entità. `azienda_id` restringe clienti, persone (via il cliente), deal, documenti e
-        fatture a quell'azienda, ma non le attività, che non ne hanno; omesso, cerca in tutto lo
-        spazio. Non cerca contratti, costi, proposte né posta.
+        Servono almeno 3 caratteri. Dà fino a `limit` risultati per classe e il conteggio reale;
+        se `total_is_minimum` è true il conteggio è un minimo e il resto sta nell'elenco della
+        singola entità. `legal_entity_id` restringe clienti, persone (via il cliente), deal,
+        documenti e fatture a quell'azienda, ma non le attività, che non ne hanno; omesso, cerca in
+        tutto lo spazio. Non cerca contratti, costi, proposte né posta.
         """
-        # `termine` is a bare `str` with no `Annotated` bound, following the
+        # `term` is a bare `str` with no `Annotated` bound, following the
         # runtime-permissive / schema-only-strict convention of `tools/params.py`: the
-        # length check happens
-        # inside `SearchQuery`, inside the guarded call, so a two-character term produces a
-        # domain error the agent can act on instead of an SDK rejection whose wording is
-        # not ours.
+        # length check happens inside `SearchQuery`, inside the guarded call, so a
+        # two-character term produces a domain error the agent can act on instead of an SDK
+        # rejection whose wording is not ours.
         return search_tools.search_everything(
             context,
             SearchQuery(
-                termine=termine,
-                limite=cast(int, limite),
-                azienda_id=parse_legal_entity_id(azienda_id),
+                term=term,
+                limit=cast(int, limit),
+                legal_entity_id=parse_legal_entity_id(legal_entity_id),
             ),
         )

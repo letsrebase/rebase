@@ -48,8 +48,8 @@ from rebase_mcp.server import build_server
 GRACE = AdminRead(
     id=UUID("01a00000-0000-7000-8000-000000000002"),
     email="grace@rebase.it",
-    nome="Grace",
-    attivo=True,
+    first_name="Grace",
+    active=True,
     created_at=datetime(2026, 9, 10, tzinfo=UTC),
 )
 # Fiction, like the public example: rebase's own fields as the setting would carry them.
@@ -66,18 +66,18 @@ SIGNED_AT = datetime(2026, 9, 25, 9, 0, tzinfo=UTC)
 # The freelancer's tax data and the client's budget: values no answer may carry, each
 # unlike anything else the flow prints (the client's own VAT number is another).
 TAX = {
-    "codice_fiscale": "LVLDAA85T50H501Z",
-    "partita_iva": "09876543210",
-    "domicilio": "Via dei Segreti 7, Torino",
-    "pec": "ada.lovelace@pec.it",
+    "tax_code": "LVLDAA85T50H501Z",
+    "vat_number": "09876543210",
+    "domicile": "Via dei Segreti 7, Torino",
+    "certified_email": "ada.lovelace@pec.it",
 }
 BUDGET = Decimal("733.33")
 SECRETS = (*TAX.values(), "733.33", "733,33", "%PDF")
-FORBIDDEN_KEYS = {*TAX, "budget_giornaliero", "fiscale", "pdf", "signed_pdf", "data"}
-CLIENTE = {
-    "cliente_ragione_sociale": "ACME S.r.l.",
-    "cliente_piva": "01234567890",
-    "cliente_sede": "Milano",
+FORBIDDEN_KEYS = {*TAX, "daily_budget", "tax", "pdf", "signed_pdf", "data"}
+CUSTOMER = {
+    "customer_legal_name": "ACME S.r.l.",
+    "customer_vat_number": "01234567890",
+    "customer_registered_office": "Milano",
 }
 # What a saved match writes; the seed's own tax data already left one trail entry.
 WRITTEN = (Match, ContractDocument, LetterCounter, AdminAction)
@@ -158,17 +158,23 @@ def _seed(factory: sessionmaker[Session], *, fiscal: bool = True) -> tuple[str, 
     try:
         for admin in (IVAN, GRACE):
             session.add(
-                User(id=admin.id, email=admin.email, nome=admin.nome, cognome="", role="admin")
+                User(
+                    id=admin.id,
+                    email=admin.email,
+                    first_name=admin.first_name,
+                    last_name="",
+                    role="admin",
+                )
             )
         session.commit()
         card, _ = FreelancerService(session).apply(
             FreelancerCreate(
-                nome="Ada",
-                cognome="Lovelace",
+                first_name="Ada",
+                last_name="Lovelace",
                 email="ada@studio.it",
-                tariffa_giornaliera=Decimal("450"),
-                posizione="Backend developer",
-                remoto="remoto",
+                daily_rate=Decimal("450"),
+                job_title="Backend developer",
+                remote="remote",
             ),
             PDF,
             "cv.pdf",
@@ -176,18 +182,18 @@ def _seed(factory: sessionmaker[Session], *, fiscal: bool = True) -> tuple[str, 
         )
         request, _ = CompanyService(session).request(
             CompanyCreate(
-                nome_azienda="ACME Srl",
-                referente_nome="Wile",
-                referente_cognome="E.",
+                company_name="ACME Srl",
+                contact_first_name="Wile",
+                contact_last_name="E.",
                 email="wile@acme.it",
-                telefono="+39 345 1234567",
-                figura_richiesta="Backend developer",
-                progetto="Un backend developer per tre mesi.",
-                periodo_da=date(2026, 10, 1),
-                durata="3 mesi",
-                budget_giornaliero=BUDGET,
-                remoto="remoto",
-                numero_risorse=1,
+                phone="+39 345 1234567",
+                requested_role="Backend developer",
+                project="Un backend developer per tre mesi.",
+                period_from=date(2026, 10, 1),
+                duration="3 mesi",
+                daily_budget=BUDGET,
+                remote="remote",
+                headcount=1,
             )
         )
         if fiscal:
@@ -247,23 +253,23 @@ async def test_preview_match_answers_the_sentences_and_writes_nothing(world: Wor
             "preview_match",
             freelancer_id=world.freelancer_id,
             company_id=world.company_id,
-            cliente=CLIENTE,
-            condizioni={"data_fine": "2026-12-31"},
+            customer=CUSTOMER,
+            terms={"end_date": "2026-12-31"},
         )
-    assert body["riepilogo"][0] == (
+    assert body["recap"][0] == (
         "Ada Lovelace lavorerà per ACME S.r.l. come Backend developer, da remoto, dal 1° ottobre "
         "2026 al 31 dicembre 2026."
     )
-    assert body["cosa_succede"] == (
+    assert body["what_happens"] == (
         "Prima parte il contratto quadro; la lettera di incarico parte da sola dopo la sua firma."
     )
-    assert (body["quadro_necessario"], body["dati_fiscali_mancanti"]) == (True, False)
+    assert (body["required_framework"], body["missing_tax_data"]) == (True, False)
     # What would be written: the client as given, the letter as the hub proposes it with
     # the one field laid over it.
-    assert body["cliente"] == CLIENTE
-    assert body["condizioni"]["data_fine"] == "2026-12-31"
-    assert body["condizioni"]["ruolo"] == "Backend developer"
-    assert Decimal(body["condizioni"]["compenso"]) == Decimal("450")
+    assert body["customer"] == CUSTOMER
+    assert body["terms"]["end_date"] == "2026-12-31"
+    assert body["terms"]["role"] == "Backend developer"
+    assert Decimal(body["terms"]["fee"]) == Decimal("450")
     assert world.written() == before
 
 
@@ -278,19 +284,19 @@ async def test_preview_match_reads_the_fee_the_italian_way(
             "preview_match",
             freelancer_id=world.freelancer_id,
             company_id=world.company_id,
-            cliente=CLIENTE,
-            condizioni={"compenso": typed},
+            customer=CUSTOMER,
+            terms={"fee": typed},
         )
         garbage = await _refused(
             client,
             "preview_match",
             freelancer_id=world.freelancer_id,
             company_id=world.company_id,
-            cliente=CLIENTE,
-            condizioni={"compenso": "tanto"},
+            customer=CUSTOMER,
+            terms={"fee": "tanto"},
         )
-    assert Decimal(body["condizioni"]["compenso"]) == Decimal(fee)
-    assert "condizioni.compenso: non valido" in garbage
+    assert Decimal(body["terms"]["fee"]) == Decimal(fee)
+    assert "terms.fee: non valido" in garbage
 
 
 @pytest.mark.parametrize("typed", ["1e3", "1,000.00"])
@@ -304,50 +310,50 @@ async def test_preview_match_refuses_a_fee_pydantic_alone_would_misread(
             "preview_match",
             freelancer_id=world.freelancer_id,
             company_id=world.company_id,
-            cliente=CLIENTE,
-            condizioni={"compenso": typed},
+            customer=CUSTOMER,
+            terms={"fee": typed},
         )
-    assert "condizioni.compenso: non valido" in refused
+    assert "terms.fee: non valido" in refused
 
 
 async def test_create_match_saves_the_draft_with_the_fields_given(world: World) -> None:
     async with Client(world.server()) as client:
-        body = await _create(client, world, cliente=CLIENTE, condizioni={"ruolo": "Staff engineer"})
-    assert (body["stato"], body["cliente_ragione_sociale"]) == ("bozza", "ACME S.r.l.")
-    assert body["situazione"] == (
-        f"La lettera n. {body['lettera']['numero']} è pronta: il freelance non ha ancora ricevuto "
+        body = await _create(client, world, customer=CUSTOMER, terms={"role": "Staff engineer"})
+    assert (body["status"], body["customer_legal_name"]) == ("draft", "ACME S.r.l.")
+    assert body["situation"] == (
+        f"La lettera n. {body['letter']['number']} è pronta: il freelance non ha ancora ricevuto "
         "nulla."
     )
-    assert (body["prossima_azione"], body["altre_azioni"]) == ("invia", ["annulla"])
-    assert body["lettera"]["pdf_url"] == _link(body["lettera"])
+    assert (body["next_action"], body["other_actions"]) == ("send", ["cancel"])
+    assert body["letter"]["pdf_url"] == _link(body["letter"])
     assert body["created_by"] == str(IVAN.id)
-    assert world.document(body["lettera"]["id"]).data["ruolo"] == "Staff engineer"
+    assert world.document(body["letter"]["id"]).data["ruolo"] == "Staff engineer"
 
 
 async def test_create_match_saves_the_expected_days_beside_the_letter(world: World) -> None:
-    """`giorni_previsti` (REB-501, spec § 3.4) sits on the match, forwarded into
-    `MatchCreate` beside `cliente`/`condizioni` rather than inside them: the letter's own
+    """`expected_days` (REB-501, spec § 3.4) sits on the match, forwarded into
+    `MatchCreate` beside `customer`/`terms` rather than inside them: the letter's own
     fields and text (the summary this asserts against) do not change from this number."""
     async with Client(world.server()) as client:
         body = await _create(
             client,
             world,
-            cliente=CLIENTE,
-            condizioni={"ruolo": "Staff engineer"},
-            giorni_previsti=40,
+            customer=CUSTOMER,
+            terms={"role": "Staff engineer"},
+            expected_days=40,
         )
-    assert body["giorni_previsti"] == 40
-    assert world.document(body["lettera"]["id"]).data["ruolo"] == "Staff engineer"
-    assert "giorni_previsti" not in world.document(body["lettera"]["id"]).data
+    assert body["expected_days"] == 40
+    assert world.document(body["letter"]["id"]).data["ruolo"] == "Staff engineer"
+    assert "expected_days" not in world.document(body["letter"]["id"]).data
 
 
-async def test_create_match_with_no_giorni_previsti_leaves_it_unset(world: World) -> None:
+async def test_create_match_with_no_expected_days_leaves_it_unset(world: World) -> None:
     async with Client(world.server()) as client:
-        body = await _create(client, world, cliente=CLIENTE)
-    assert body["giorni_previsti"] is None
+        body = await _create(client, world, customer=CUSTOMER)
+    assert body["expected_days"] is None
 
 
-async def test_create_match_refuses_an_out_of_range_giorni_previsti(world: World) -> None:
+async def test_create_match_refuses_an_out_of_range_expected_days(world: World) -> None:
     before = world.written()
     async with Client(world.server()) as client:
         refused = await _refused(
@@ -355,11 +361,11 @@ async def test_create_match_refuses_an_out_of_range_giorni_previsti(world: World
             "create_match",
             freelancer_id=world.freelancer_id,
             company_id=world.company_id,
-            cliente=CLIENTE,
-            giorni_previsti=0,
+            customer=CUSTOMER,
+            expected_days=0,
         )
     # The core's own sentence (REB-502), not Pydantic's English and no longer «non valido».
-    assert refused == "giorni_previsti: I giorni previsti vanno da 1 a 366."
+    assert refused == "expected_days: I giorni previsti vanno da 1 a 366."
     assert world.written() == before
 
 
@@ -367,16 +373,16 @@ async def test_create_match_with_no_fields_takes_the_hubs_proposal(world: World)
     """The client as the same company's last match named it, the letter from the request,
     the card and rebase's own terms: a second match for a known client needs nothing."""
     async with Client(world.server()) as client:
-        first = await _create(client, world, cliente=CLIENTE)
+        first = await _create(client, world, customer=CUSTOMER)
         second = await _create(client, world)
     assert second["id"] != first["id"]
-    assert second["lettera"]["numero"] != first["lettera"]["numero"]
+    assert second["letter"]["number"] != first["letter"]["number"]
     assert (
-        second["cliente_ragione_sociale"],
-        second["cliente_piva"],
-        second["cliente_sede"],
-    ) == tuple(CLIENTE.values())
-    letter = world.document(second["lettera"]["id"]).data
+        second["customer_legal_name"],
+        second["customer_vat_number"],
+        second["customer_registered_office"],
+    ) == tuple(CUSTOMER.values())
+    letter = world.document(second["letter"]["id"]).data
     assert (letter["ruolo"], letter["compenso"]) == ("Backend developer", 450)
 
 
@@ -388,46 +394,46 @@ async def test_create_match_refuses_a_field_by_the_name_the_tool_takes(world: Wo
             "create_match",
             freelancer_id=world.freelancer_id,
             company_id=world.company_id,
-            cliente=CLIENTE,
-            condizioni={"stipendio": 1},
+            customer=CUSTOMER,
+            terms={"stipendio": 1},
         )
         emptied = await _refused(
             client,
             "create_match",
             freelancer_id=world.freelancer_id,
             company_id=world.company_id,
-            cliente=CLIENTE,
-            condizioni={"compenso": None},
+            customer=CUSTOMER,
+            terms={"fee": None},
         )
         stranger = await _refused(
             client,
             "preview_match",
             freelancer_id=world.freelancer_id,
             company_id=world.company_id,
-            cliente={**CLIENTE, "nome": "ACME"},
+            customer={**CUSTOMER, "first_name": "ACME"},
         )
-    assert "condizioni.stipendio: non è un campo del match" in unknown
-    assert "condizioni.compenso: manca" in emptied
-    assert "cliente.nome: non è un campo del match" in stranger
+    assert "terms.stipendio: non è un campo del match" in unknown
+    assert "terms.fee: manca" in emptied
+    assert "customer.first_name: non è un campo del match" in stranger
     assert world.written() == before
 
 
 async def test_create_match_with_the_same_match_id_is_written_once(world: World) -> None:
     match_id = str(uuid4())
     async with Client(world.server()) as client:
-        first = await _create(client, world, cliente=CLIENTE, match_id=match_id)
-        again = await _create(client, world, cliente=CLIENTE, match_id=match_id)
+        first = await _create(client, world, customer=CUSTOMER, match_id=match_id)
+        again = await _create(client, world, customer=CUSTOMER, match_id=match_id)
         changed = await _refused(
             client,
             "create_match",
             freelancer_id=world.freelancer_id,
             company_id=world.company_id,
-            cliente=CLIENTE,
-            condizioni={"ruolo": "Staff engineer"},
+            customer=CUSTOMER,
+            terms={"role": "Staff engineer"},
             match_id=match_id,
         )
     assert first["id"] == again["id"] == match_id
-    assert first["lettera"]["numero"] == again["lettera"]["numero"]
+    assert first["letter"]["number"] == again["letter"]["number"]
     assert "già stato salvato con dati diversi" in changed
     assert world.count(Match) == 1
 
@@ -437,18 +443,18 @@ async def test_create_match_with_the_same_match_id_is_written_once(world: World)
 
 async def test_send_match_for_signature_answers_the_pages_sentence(world: World) -> None:
     async with Client(world.server()) as client:
-        match = await _create(client, world, cliente=CLIENTE)
+        match = await _create(client, world, customer=CUSTOMER)
         report = await _call(client, "send_match_for_signature", match_id=match["id"])
-    numero = match["lettera"]["numero"]
-    assert report["messaggio"] == (
-        f"Partito il contratto quadro: la lettera n. {numero} partirà da sola dopo la sua firma."
+    number = match["letter"]["number"]
+    assert report["message"] == (
+        f"Partito il contratto quadro: la lettera n. {number} partirà da sola dopo la sua firma."
     )
-    assert (report["inviato"], report["mail_inviata"]) == ("quadro", True)
-    assert (report["match"]["stato"], report["match"]["lettera"]["stato"]) == (
-        "in_firma",
-        "in_attesa",
+    assert (report["sent"], report["mail_sent"]) == ("framework", True)
+    assert (report["match"]["status"], report["match"]["letter"]["status"]) == (
+        "awaiting_signature",
+        "pending",
     )
-    assert report["match"]["lettera"]["pdf_url"] == _link(report["match"]["lettera"])
+    assert report["match"]["letter"]["pdf_url"] == _link(report["match"]["letter"])
     [mail] = world.sender.sent
     assert mail.subject == "Da firmare: contratto quadro rebase"
 
@@ -457,14 +463,14 @@ async def test_send_over_mcp_audits_the_calling_admin(world: World) -> None:
     """The trail names whoever called the tool, in the same rows the admin API leaves:
     Ivan saves the draft, Grace sends it."""
     async with Client(world.server(IVAN)) as client:
-        match = await _create(client, world, cliente=CLIENTE)
+        match = await _create(client, world, customer=CUSTOMER)
     async with Client(world.server(GRACE)) as client:
         await _call(client, "send_match_for_signature", match_id=match["id"])
     session = world.factory()
     try:
         trail = AdminActionService(session).timeline("match", UUID(match["id"]))
         framework = session.scalars(
-            select(ContractDocument).where(ContractDocument.kind == "quadro")
+            select(ContractDocument).where(ContractDocument.kind == "framework")
         ).one()
     finally:
         session.close()
@@ -472,7 +478,7 @@ async def test_send_over_mcp_audits_the_calling_admin(world: World) -> None:
         ("documents_sent", GRACE.id),
         ("match_created", IVAN.id),
     ]
-    assert trail[0].payload == {"documento": str(framework.id), "kind": "quadro", "mail": True}
+    assert trail[0].payload == {"document": str(framework.id), "kind": "framework", "mail": True}
     assert (framework.created_by, framework.sent_by) == (IVAN.id, GRACE.id)
 
 
@@ -480,41 +486,41 @@ async def test_a_match_goes_from_signature_to_closed_and_its_framework_to_notice
     world: World,
 ) -> None:
     async with Client(world.server(GRACE)) as client:
-        match = await _create(client, world, cliente=CLIENTE)
+        match = await _create(client, world, customer=CUSTOMER)
         await _call(client, "send_match_for_signature", match_id=match["id"])
         contracts = _payload(
             await client.call_tool("list_matches", {"freelancer_id": world.freelancer_id})
         )
-        quadro_id = contracts["quadro"]["id"]
+        framework_id = contracts["framework"]["id"]
 
-        resent = await _call(client, "resend_signing_mail", document_id=quadro_id)
-        assert (resent["stato"], resent["prossima_azione"]) == ("inviato", "reinvia_email")
+        resent = await _call(client, "resend_signing_mail", document_id=framework_id)
+        assert (resent["status"], resent["next_action"]) == ("sent", "resend_email")
         assert resent["pdf_url"] == _link(resent)
         assert len(world.sender.sent) == 2
 
-        world.documenso.sign(str(world.document(quadro_id).documenso_id), SIGNED_AT)
-        signed = await _call(client, "refresh_contract", document_id=quadro_id)
-        assert (signed["stato"], signed["attivo"], signed["ha_pdf_firmato"]) == (
-            "firmato",
+        world.documenso.sign(str(world.document(framework_id).documenso_id), SIGNED_AT)
+        signed = await _call(client, "refresh_contract", document_id=framework_id)
+        assert (signed["status"], signed["active"], signed["has_pdf_signed"]) == (
+            "signed",
             True,
             True,
         )
-        assert signed["pdf_firmato_url"] == f"{_link(signed)}?firmato=true"
+        assert signed["pdf_signed_url"] == f"{_link(signed)}?signed=true"
         # The letter that waited for this framework agreement left by itself.
-        letter_id = match["lettera"]["id"]
-        assert world.document(letter_id).stato == "inviato"
+        letter_id = match["letter"]["id"]
+        assert world.document(letter_id).status == "sent"
 
         world.documenso.sign(str(world.document(letter_id).documenso_id), SIGNED_AT)
         letter = await _call(client, "refresh_contract", document_id=letter_id)
-        assert letter["stato"] == "firmato"
+        assert letter["status"] == "signed"
 
         closed = await _call(client, "close_match", match_id=match["id"])
-        assert closed["stato"] == "concluso"
-        assert closed["situazione"].startswith(f"Lettera n. {closed['lettera']['numero']}")
-        assert closed["lettera"]["pdf_url"] == _link(closed["lettera"])
+        assert closed["status"] == "concluded"
+        assert closed["situation"].startswith(f"Lettera n. {closed['letter']['number']}")
+        assert closed["letter"]["pdf_url"] == _link(closed["letter"])
 
-        notice = await _call(client, "record_notice", document_id=quadro_id)
-        assert (notice["stato"], notice["attivo"]) == ("disdetto", False)
+        notice = await _call(client, "record_notice", document_id=framework_id)
+        assert (notice["status"], notice["active"]) == ("notice_served", False)
     session = world.factory()
     try:
         match_trail = AdminActionService(session).timeline("match", UUID(match["id"]))
@@ -533,16 +539,19 @@ async def test_a_match_goes_from_signature_to_closed_and_its_framework_to_notice
 
 async def test_cancel_contract_cancels_a_framework_out_for_signature(world: World) -> None:
     async with Client(world.server(IVAN)) as client:
-        match = await _create(client, world, cliente=CLIENTE)
+        match = await _create(client, world, customer=CUSTOMER)
         await _call(client, "send_match_for_signature", match_id=match["id"])
-        quadro_id = _payload(
+        framework_id = _payload(
             await client.call_tool("list_matches", {"freelancer_id": world.freelancer_id})
-        )["quadro"]["id"]
+        )["framework"]["id"]
     async with Client(world.server(GRACE)) as client:
-        letter = await _refused(client, "cancel_contract", document_id=match["lettera"]["id"])
-        cancelled = await _call(client, "cancel_contract", document_id=quadro_id)
+        letter = await _refused(client, "cancel_contract", document_id=match["letter"]["id"])
+        cancelled = await _call(client, "cancel_contract", document_id=framework_id)
     assert letter == "Una lettera di incarico si annulla con il suo match."
-    assert (cancelled["stato"], cancelled["cancel_reason"]) == ("annullato", "Annullato da rebase.")
+    assert (cancelled["status"], cancelled["cancel_reason"]) == (
+        "cancelled",
+        "Annullato da rebase.",
+    )
     assert cancelled["pdf_url"] == _link(cancelled)
     [envelope] = world.documenso.envelopes.values()
     assert envelope.status == "CANCELLED"
@@ -552,16 +561,16 @@ async def test_cancel_contract_cancels_a_framework_out_for_signature(world: Worl
 
 async def test_cancel_match_cancels_a_draft_and_one_in_signature(world: World) -> None:
     async with Client(world.server(IVAN)) as client:
-        draft = await _create(client, world, cliente=CLIENTE)
-        sent = await _create(client, world, cliente=CLIENTE)
+        draft = await _create(client, world, customer=CUSTOMER)
+        sent = await _create(client, world, customer=CUSTOMER)
         await _call(client, "send_match_for_signature", match_id=sent["id"])
     async with Client(world.server(GRACE)) as client:
         cancelled = await _call(client, "cancel_match", match_id=draft["id"])
         stopped = await _call(client, "cancel_match", match_id=sent["id"])
         again = await _refused(client, "cancel_match", match_id=sent["id"])
-    assert (cancelled["stato"], cancelled["lettera"]["stato"]) == ("annullato", "annullato")
-    assert cancelled["lettera"]["pdf_url"] == _link(cancelled["lettera"])
-    assert (stopped["stato"], stopped["lettera"]["stato"]) == ("annullato", "annullato")
+    assert (cancelled["status"], cancelled["letter"]["status"]) == ("cancelled", "cancelled")
+    assert cancelled["letter"]["pdf_url"] == _link(cancelled["letter"])
+    assert (stopped["status"], stopped["letter"]["status"]) == ("cancelled", "cancelled")
     assert "questo è annullato" in again
     assert world.trail("match", draft["id"])[0] == ("match_cancelled", GRACE.id)
     assert world.trail("match", sent["id"])[0] == ("match_cancelled", GRACE.id)
@@ -586,17 +595,17 @@ async def test_a_documenso_failure_answers_its_sentence_and_sends_nothing(
     """The service's own Italian sentence, never Documenso's stack trace or ours; the
     send rolls back, so the match is still a draft and nobody got a mail."""
     async with Client(world.server()) as client:
-        match = await _create(client, world, cliente=CLIENTE)
+        match = await _create(client, world, customer=CUSTOMER)
         breaks(world.documenso)
         refused = await _refused(client, "send_match_for_signature", match_id=match["id"])
         after = await _call(client, "get_match", match_id=match["id"])
     assert refused == sentence
     assert "Traceback" not in refused and "node_modules" not in refused
     assert (world.sender.sent, world.documenso.envelopes) == ([], {})
-    assert (after["stato"], after["lettera"]["stato"], after["quadro"]["stato"]) == (
-        "bozza",
-        "in_attesa",
-        "generato",
+    assert (after["status"], after["letter"]["status"], after["framework"]["status"]) == (
+        "draft",
+        "pending",
+        "generated",
     )
     assert [kind for kind, _admin in world.trail("match", match["id"])] == ["match_created"]
 
@@ -618,29 +627,29 @@ async def test_set_freelancer_tax_data_saves_them_and_never_answers_them(
                 "preview_match",
                 freelancer_id=freelancer_id,
                 company_id=company_id,
-                cliente=CLIENTE,
+                customer=CUSTOMER,
             )
             refused = await _refused(
                 client,
                 "set_freelancer_tax_data",
                 freelancer_id=freelancer_id,
-                codice_fiscale="XYZ987",
-                partita_iva=TAX["partita_iva"],
-                domicilio=TAX["domicilio"],
+                tax_code="XYZ987",
+                vat_number=TAX["vat_number"],
+                domicile=TAX["domicile"],
             )
             nul = await _refused(
                 client,
                 "set_freelancer_tax_data",
                 freelancer_id=freelancer_id,
-                codice_fiscale="LVLDAA85\x00T50H501Z",
-                partita_iva=TAX["partita_iva"],
-                domicilio=TAX["domicilio"],
+                tax_code="LVLDAA85\x00T50H501Z",
+                vat_number=TAX["vat_number"],
+                domicile=TAX["domicile"],
             )
-            pec = await _refused(
+            certified_email = await _refused(
                 client,
                 "set_freelancer_tax_data",
                 freelancer_id=freelancer_id,
-                **TAX | {"pec": "no"},
+                **TAX | {"certified_email": "no"},
             )
             saved = await _call(
                 client, "set_freelancer_tax_data", freelancer_id=freelancer_id, **TAX
@@ -650,18 +659,16 @@ async def test_set_freelancer_tax_data_saves_them_and_never_answers_them(
                 "preview_match",
                 freelancer_id=freelancer_id,
                 company_id=company_id,
-                cliente=CLIENTE,
+                customer=CUSTOMER,
             )
-        assert before["dati_fiscali_mancanti"] is True
-        assert (
-            refused == "codice_fiscale: il codice fiscale ha 16 caratteri, o 11 cifre per una ditta"
-        )
+        assert before["missing_tax_data"] is True
+        assert refused == "tax_code: il codice fiscale ha 16 caratteri, o 11 cifre per una ditta"
         assert "XYZ987" not in refused
         # `SafeStr`'s sentence already names the field: said once.
-        assert nul == "codice_fiscale: il testo contiene un carattere nullo (\\x00), non ammesso"
-        assert pec == "pec: non valido"
-        assert saved == {"dati_fiscali": "salvati"}
-        assert after["dati_fiscali_mancanti"] is False
+        assert nul == "tax_code: il testo contiene un carattere nullo (\\x00), non ammesso"
+        assert certified_email == "certified_email: non valido"
+        assert saved == {"tax_data": "saved"}
+        assert after["missing_tax_data"] is False
         session = factory()
         try:
             row = session.scalars(
@@ -671,21 +678,23 @@ async def test_set_freelancer_tax_data_saves_them_and_never_answers_them(
             ).one()
         finally:
             session.close()
-        assert (row.codice_fiscale, row.partita_iva, row.domicilio, row.pec) == tuple(TAX.values())
+        assert (row.tax_code, row.vat_number, row.domicile, row.certified_email) == tuple(
+            TAX.values()
+        )
         assert world.trail("freelancer_fiscal", freelancer_id) == [("fiscal_updated", GRACE.id)]
     finally:
         _wipe(factory)
 
 
-async def test_set_freelancer_tax_data_without_a_partita_iva_saves_none(
+async def test_set_freelancer_tax_data_without_a_vat_number_saves_none(
     factory: sessionmaker[Session],
 ) -> None:
-    """REB-687: `partita_iva` omitted or empty is none; given, it still has 11 digits."""
+    """REB-687: `vat_number` omitted or empty is none; given, it still has 11 digits."""
     freelancer_id, company_id = _seed(factory, fiscal=False)
     world = World(
         factory, freelancer_id, company_id, FakeRenderer(), FakeDocumenso(), RecordingSender()
     )
-    without = {"codice_fiscale": TAX["codice_fiscale"], "domicilio": TAX["domicilio"]}
+    without = {"tax_code": TAX["tax_code"], "domicile": TAX["domicile"]}
     try:
         async with Client(world.server()) as client:
             omitted = await _call(
@@ -695,18 +704,18 @@ async def test_set_freelancer_tax_data_without_a_partita_iva_saves_none(
                 client,
                 "set_freelancer_tax_data",
                 freelancer_id=freelancer_id,
-                partita_iva="",
+                vat_number="",
                 **without,
             )
             short = await _refused(
                 client,
                 "set_freelancer_tax_data",
                 freelancer_id=freelancer_id,
-                partita_iva="0123",
+                vat_number="0123",
                 **without,
             )
-        assert omitted == empty == {"dati_fiscali": "salvati"}
-        assert short == "partita_iva: la partita IVA ha 11 cifre"
+        assert omitted == empty == {"tax_data": "saved"}
+        assert short == "vat_number: la partita IVA ha 11 cifre"
         session = factory()
         try:
             row = session.scalars(
@@ -716,7 +725,7 @@ async def test_set_freelancer_tax_data_without_a_partita_iva_saves_none(
             ).one()
         finally:
             session.close()
-        assert row.partita_iva is None
+        assert row.vat_number is None
     finally:
         _wipe(factory)
 
@@ -728,15 +737,15 @@ async def test_a_soft_deleted_freelancers_match_and_documents_are_not_found(
     world: World,
 ) -> None:
     async with Client(world.server()) as client:
-        match = await _create(client, world, cliente=CLIENTE)
-        letter_id = match["lettera"]["id"]
+        match = await _create(client, world, customer=CUSTOMER)
+        letter_id = match["letter"]["id"]
         await client.call_tool("delete_freelancer", {"freelancer_id": world.freelancer_id})
         for tool in ("send_match_for_signature", "cancel_match", "close_match"):
             text = await _refused(client, tool, match_id=match["id"])
             assert f"match {match['id']} non trovato" in text, tool
         for tool in ("resend_signing_mail", "refresh_contract", "cancel_contract", "record_notice"):
             text = await _refused(client, tool, document_id=letter_id)
-            assert f"documento {letter_id} non trovato" in text, tool
+            assert f"document {letter_id} non trovato" in text, tool
         card = f"freelancer {world.freelancer_id} non trovato"
         for tool in ("preview_match", "create_match"):
             text = await _refused(
@@ -744,7 +753,7 @@ async def test_a_soft_deleted_freelancers_match_and_documents_are_not_found(
                 tool,
                 freelancer_id=world.freelancer_id,
                 company_id=world.company_id,
-                cliente=CLIENTE,
+                customer=CUSTOMER,
             )
             assert card in text, tool
         text = await _refused(
@@ -798,21 +807,21 @@ async def test_the_match_reads_say_which_tool_each_next_step_is(world: World) ->
             for tool in (await client.list_tools()).tools
         }
     listed = tools["list_matches"]
-    for field in ("`situazione`", "`prossima_azione`", "`altre_azioni`", "`lettera.id`"):
+    for field in ("`situation`", "`next_action`", "`other_actions`", "`letter.id`"):
         assert field in listed, field
     for action, tool in (
-        ("invia", "send_match_for_signature"),
-        ("reinvia_email", "resend_signing_mail"),
-        ("aggiorna_stato", "refresh_contract"),
-        ("annulla", "cancel_match"),
-        ("chiudi", "close_match"),
-        ("annulla", "cancel_contract"),
-        ("registra_disdetta", "record_notice"),
+        ("send", "send_match_for_signature"),
+        ("resend_email", "resend_signing_mail"),
+        ("status_refresh", "refresh_contract"),
+        ("cancel", "cancel_match"),
+        ("close", "close_match"),
+        ("cancel", "cancel_contract"),
+        ("record_notice", "record_notice"),
     ):
         assert f"`{action}`" in listed, action
         assert f"`{tool}`" in listed, tool
     assert "`list_matches`" in tools["get_match"]
-    assert "`prossima_azione`" in tools["get_match"]
+    assert "`next_action`" in tools["get_match"]
 
 
 async def test_no_match_tool_speaks_of_the_freelancer_as_he_or_she(world: World) -> None:
@@ -825,13 +834,13 @@ async def test_no_match_tool_speaks_of_the_freelancer_as_he_or_she(world: World)
 # ---- the letter type (REB-687) -----------------------------------------------------------
 
 
-def _seed_without_partita_iva(factory: sessionmaker[Session]) -> tuple[str, str]:
+def _seed_without_vat_number(factory: sessionmaker[Session]) -> tuple[str, str]:
     freelancer_id, company_id = _seed(factory, fiscal=False)
     session = factory()
     try:
         FiscalService(session).save(
             UUID(freelancer_id),
-            FiscalData(codice_fiscale=TAX["codice_fiscale"], domicilio=TAX["domicilio"]),
+            FiscalData(tax_code=TAX["tax_code"], domicile=TAX["domicile"]),
             IVAN.id,
         )
     finally:
@@ -842,7 +851,7 @@ def _seed_without_partita_iva(factory: sessionmaker[Session]) -> tuple[str, str]
 async def test_preview_and_create_match_take_the_hubs_letter_type_unless_told(
     factory: sessionmaker[Session],
 ) -> None:
-    freelancer_id, company_id = _seed_without_partita_iva(factory)
+    freelancer_id, company_id = _seed_without_vat_number(factory)
     world = World(
         factory,
         freelancer_id,
@@ -858,25 +867,25 @@ async def test_preview_and_create_match_take_the_hubs_letter_type_unless_told(
                 "preview_match",
                 freelancer_id=freelancer_id,
                 company_id=company_id,
-                cliente=CLIENTE,
+                customer=CUSTOMER,
             )
             refused = await _refused(
                 client,
                 "preview_match",
                 freelancer_id=freelancer_id,
                 company_id=company_id,
-                cliente=CLIENTE,
-                regime="partita_iva",
+                customer=CUSTOMER,
+                regime="vat_registered",
             )
-            match = await _create(client, world, cliente=CLIENTE)
-        assert proposed["regime"] == "occasionale"
-        assert any("lordi, senza IVA" in sentence for sentence in proposed["riepilogo"])
+            match = await _create(client, world, customer=CUSTOMER)
+        assert proposed["regime"] == "occasional"
+        assert any("lordi, senza IVA" in sentence for sentence in proposed["recap"])
         assert refused.endswith(
             'Senza partita IVA si fa solo la lettera occasionale: scegli "Prestazione '
             'occasionale" o salva la partita IVA.'
         )
-        assert (match["lettera"]["regime"], match["lettera"]["tipo"]) == (
-            "occasionale",
+        assert (match["letter"]["regime"], match["letter"]["label"]) == (
+            "occasional",
             "Lettera di incarico occasionale",
         )
     finally:
@@ -885,14 +894,14 @@ async def test_preview_and_create_match_take_the_hubs_letter_type_unless_told(
 
 async def test_get_match_attaches_the_framework_of_the_matchs_own_regime(world: World) -> None:
     async with Client(world.server()) as client:
-        ordinary = await _create(client, world, cliente=CLIENTE)
-        occasional = await _create(client, world, cliente=CLIENTE, regime="occasionale")
+        ordinary = await _create(client, world, customer=CUSTOMER)
+        occasional = await _create(client, world, customer=CUSTOMER, regime="occasional")
         read_ordinary = await _call(client, "get_match", match_id=ordinary["id"])
         read_occasional = await _call(client, "get_match", match_id=occasional["id"])
         page = await _call(client, "list_matches", freelancer_id=world.freelancer_id)
-    assert read_ordinary["quadro"]["tipo"] == "Contratto quadro"
-    assert read_occasional["quadro"]["tipo"] == "Contratto quadro per prestazioni occasionali"
-    assert read_occasional["quadro"]["id"] != read_ordinary["quadro"]["id"]
-    assert page["quadro"]["id"] == read_ordinary["quadro"]["id"]
-    assert page["quadro_occasionale"]["id"] == read_occasional["quadro"]["id"]
-    assert page["quadro_occasionale"]["pdf_url"] == _link(page["quadro_occasionale"])
+    assert read_ordinary["framework"]["label"] == "Contratto quadro"
+    assert read_occasional["framework"]["label"] == "Contratto quadro per prestazioni occasionali"
+    assert read_occasional["framework"]["id"] != read_ordinary["framework"]["id"]
+    assert page["framework"]["id"] == read_ordinary["framework"]["id"]
+    assert page["occasional_framework"]["id"] == read_occasional["framework"]["id"]
+    assert page["occasional_framework"]["pdf_url"] == _link(page["occasional_framework"])

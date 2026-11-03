@@ -481,11 +481,11 @@ def _write(endpoint: str = "https://fcm.googleapis.com/fcm/send/abc") -> PushSub
     return PushSubscriptionWrite(endpoint=endpoint, p256dh=target.p256dh, auth=target.auth)
 
 
-def _user(session: Session, ruolo: str = "collaboratore") -> tuple[User, Actor]:
-    user = User(email=f"u-{uuid4()}@example.test", password_hash="x", nome="Persona", ruolo=ruolo)
+def _user(session: Session, role: str = "collaborator") -> tuple[User, Actor]:
+    user = User(email=f"u-{uuid4()}@example.test", password_hash="x", name="Persona", role=role)
     session.add(user)
     session.flush()
-    return user, Actor(id=user.id, type="user", role=user.ruolo)  # type: ignore[arg-type]
+    return user, Actor(id=user.id, type="user", role=user.role)  # type: ignore[arg-type]
 
 
 def test_a_person_subscribes_and_sees_their_browsers(db_session: Session) -> None:
@@ -625,21 +625,21 @@ def test_every_record_a_detector_names_has_a_path_or_is_listed_as_having_none() 
 
 
 def test_paths_open_the_record_inside_the_app() -> None:
-    attivita = uuid4()
-    assert record_path("attivita", attivita) == f"/app/activities?apri={attivita}"
-    assert record_path("invoice", attivita) == f"/app/invoices/{attivita}"
-    assert record_path("proforma", attivita) == f"/app/invoices/{attivita}"
-    assert record_path("timer", attivita) == "/app/hours"
-    assert record_path("job", attivita) == "/app/avvisi", "no page of its own: the list"
-    assert record_path("something-new", attivita) == "/app/avvisi"
+    task_id = uuid4()
+    assert record_path("task", task_id) == f"/app/activities?open={task_id}"
+    assert record_path("invoice", task_id) == f"/app/invoices/{task_id}"
+    assert record_path("proforma", task_id) == f"/app/invoices/{task_id}"
+    assert record_path("timer", task_id) == "/app/hours"
+    assert record_path("job", task_id) == "/app/reminders", "no page of its own: the list"
+    assert record_path("something-new", task_id) == "/app/reminders"
 
 
 def test_links_stay_on_the_space_the_person_is_in() -> None:
     assert url_prefix("https://pigro.example.test/acme") == "/acme"
     assert url_prefix("https://pigro.example.test") == ""
     assert url_prefix("") == ""
-    assert absolute("https://pigro.example.test/acme/", "/app/avvisi") == (
-        "https://pigro.example.test/acme/app/avvisi"
+    assert absolute("https://pigro.example.test/acme/", "/app/reminders") == (
+        "https://pigro.example.test/acme/app/reminders"
     )
 
 

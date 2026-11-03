@@ -14,7 +14,7 @@ from datetime import date
 from typing import Annotated, Any
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, Response, status
 from sqlalchemy import Engine
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
@@ -47,10 +47,10 @@ from pigrocrm_api.tenancy import tenant_slug
 
 logger = logging.getLogger(__name__)
 
-SPAZIO_NON_RAGGIUNGIBILE = (
+SPACE_NOT_REACHABLE = (
     "Lo spazio del freelancer non è raggiungibile in questo momento: riprova più tardi."
 )
-SPAZIO_LEAD_NON_RAGGIUNGIBILE = (
+SPACE_LEAD_NOT_REACHABLE = (
     "Lo spazio dei lead non è raggiungibile in questo momento: riprova più tardi."
 )
 
@@ -138,7 +138,7 @@ def _run[T](match_id: UUID, action: Callable[[], T], *, what: str = "match") -> 
         )
         raise HTTPException(
             status.HTTP_503_SERVICE_UNAVAILABLE,
-            SPAZIO_LEAD_NON_RAGGIUNGIBILE if what == "request" else SPAZIO_NON_RAGGIUNGIBILE,
+            SPACE_LEAD_NOT_REACHABLE if what == "request" else SPACE_NOT_REACHABLE,
         ) from exc
     except SQLAlchemyError as exc:
         logger.warning(
@@ -149,7 +149,7 @@ def _run[T](match_id: UUID, action: Callable[[], T], *, what: str = "match") -> 
         )
         raise HTTPException(
             status.HTTP_503_SERVICE_UNAVAILABLE,
-            SPAZIO_LEAD_NON_RAGGIUNGIBILE if what == "request" else SPAZIO_NON_RAGGIUNGIBILE,
+            SPACE_LEAD_NOT_REACHABLE if what == "request" else SPACE_NOT_REACHABLE,
         ) from exc
 
 
@@ -205,7 +205,7 @@ def upsert_engagement(
     lettera per questo match dell'hub, sotto il bearer di `PIGROCRM_ENGAGEMENTS_TOKEN`
     che solo l'hub possiede."""
     answer = _run(match_id, lambda: _service(registry, settings, sender).ensure(match_id, data))
-    response.status_code = status.HTTP_201_CREATED if answer.creato else status.HTTP_200_OK
+    response.status_code = status.HTTP_201_CREATED if answer.created else status.HTTP_200_OK
     return answer
 
 
@@ -219,13 +219,18 @@ def engagement_report(
     registry: TenantsRegistryDep,
     settings: SettingsDep,
     sender: SenderDep,
-    da: date | None = None,
-    a: date | None = None,
+    date_from: Annotated[date | None, Query(alias="from")] = None,
+    date_to: Annotated[date | None, Query(alias="to")] = None,
 ) -> EngagementReport:
     """Legge le ore del deal di questo match nel periodo dato, con le fatture su cui
     siedono, sotto lo stesso bearer di `PIGROCRM_ENGAGEMENTS_TOKEN` che solo l'hub
     possiede."""
-    return _run(match_id, lambda: _service(registry, settings, sender).report(match_id, da=da, a=a))
+    return _run(
+        match_id,
+        lambda: _service(registry, settings, sender).report(
+            match_id, date_from=date_from, date_to=date_to
+        ),
+    )
 
 
 leads_router = APIRouter(
@@ -272,5 +277,5 @@ def file_lead(
         lambda: LeadService(bind, settings).file(request_id, data),
         what="request",
     )
-    response.status_code = status.HTTP_201_CREATED if answer.creato else status.HTTP_200_OK
+    response.status_code = status.HTTP_201_CREATED if answer.created else status.HTTP_200_OK
     return answer

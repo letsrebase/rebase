@@ -62,7 +62,7 @@ def local_date(instant: datetime) -> date:
     return instant.astimezone(ITALY_TZ).date()
 
 
-def month_bounds(anno: int, mese: int) -> tuple[date, date]:
+def month_bounds(year: int, month: int) -> tuple[date, date]:
     """The first and last day of a month, both inclusive.
 
     Inclusive at both ends because every period filter in this slice and in slice 4 is
@@ -77,12 +77,12 @@ def month_bounds(anno: int, mese: int) -> tuple[date, date]:
     product will plausibly see and wrong for 1900 and 2100. A backfilled historical date
     is not a hypothetical in a CRM that imports.
     """
-    if not 1 <= mese <= 12:
-        raise ValidationFailed("periodo", "mese", "mese fuori intervallo", expected="1-12")
-    last = _DAYS_IN_MONTH[mese - 1]
-    if mese == 2 and (anno % 4 == 0 and (anno % 100 != 0 or anno % 400 == 0)):
+    if not 1 <= month <= 12:
+        raise ValidationFailed("period", "month", "mese fuori intervallo", expected="1-12")
+    last = _DAYS_IN_MONTH[month - 1]
+    if month == 2 and (year % 4 == 0 and (year % 100 != 0 or year % 400 == 0)):
         last = 29
-    return date(anno, mese, 1), date(anno, mese, last)
+    return date(year, month, 1), date(year, month, last)
 
 
 def window_from(start: date, days: int) -> tuple[date, date]:

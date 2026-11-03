@@ -6,9 +6,9 @@ from typing import Any
 from uuid import UUID, uuid4
 
 import pytest
-from periodo_fiscale import OGGI
 from sqlalchemy import Connection, Engine, text
 from sqlalchemy.orm import Session
+from tax_period import TODAY
 
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.auth.models import User
@@ -30,11 +30,11 @@ def db_engine(pigrocrm_postgres: Any) -> Iterator[Engine]:
     per worker, and why.
     """
     engine = create_engine_from_settings(Settings(database_url=pigrocrm_postgres.clone("core")))
-    # The one committed default azienda every world on this engine shares (REB-623):
+    # The one committed default legal entity every world on this engine shares (REB-623):
     # the rows a committed test builds by hand take it through the column default.
-    from fakes.azienda_fixtures import ensure_committed_default
+    from fakes.legal_entity_fixtures import ensure_committed_default
 
-    ensure_committed_default(engine, nome="Studio di prova")
+    ensure_committed_default(engine, name="Studio di prova")
     yield engine
     engine.dispose()
 
@@ -44,11 +44,11 @@ def db_session(db_engine: Engine) -> Iterator[Session]:
     """Each test runs in a transaction that is rolled back, so tests never see each other."""
     connection = db_engine.connect()
     transaction = connection.begin()
-    # The space starts with its default azienda, as every provisioned space does
-    # (REB-615): the fiscal profile belongs to an azienda, so a test that saves one or
-    # issues anything needs the row first; the few tests about a space with no azienda
+    # The space starts with its default legal entity, as every provisioned space does
+    # (REB-615): the fiscal profile belongs to an legal entity, so a test that saves one or
+    # issues anything needs the row first; the few tests about a space with no legal entity
     # at all delete it (`test_emitter.py`'s `_bare` fixture).
-    _seed_default_azienda(connection)
+    _seed_default_legal_entity(connection)
     session = session_factory(db_engine)(bind=connection, join_transaction_mode="create_savepoint")
     try:
         yield session
@@ -63,8 +63,8 @@ def seeded_user_id(db_session: Session) -> UUID:
     user = User(
         email=f"tester-{uuid4()}@example.test",
         password_hash="x",
-        nome="Tester",
-        ruolo="collaboratore",
+        name="Tester",
+        role="collaborator",
     )
     db_session.add(user)
     db_session.flush()
@@ -73,9 +73,7 @@ def seeded_user_id(db_session: Session) -> UUID:
 
 @pytest.fixture
 def seeded_open_stage_id(db_session: Session) -> UUID:
-    stage = PipelineStage(
-        nome=f"Aperto {uuid4()}", posizione=0, probabilita_default=10, tipo="open"
-    )
+    stage = PipelineStage(name=f"Aperto {uuid4()}", position=0, default_probability=10, type="open")
     db_session.add(stage)
     db_session.flush()
     return stage.id
@@ -83,7 +81,7 @@ def seeded_open_stage_id(db_session: Session) -> UUID:
 
 @pytest.fixture
 def seeded_won_stage_id(db_session: Session) -> UUID:
-    stage = PipelineStage(nome=f"Vinto {uuid4()}", posizione=9, probabilita_default=100, tipo="won")
+    stage = PipelineStage(name=f"Vinto {uuid4()}", position=9, default_probability=100, type="won")
     db_session.add(stage)
     db_session.flush()
     return stage.id
@@ -91,14 +89,14 @@ def seeded_won_stage_id(db_session: Session) -> UUID:
 
 @pytest.fixture
 def seeded_deal_id(db_session: Session, seeded_open_stage_id: UUID) -> UUID:
-    customer = Customer(ragione_sociale=f"Cliente {uuid4()}")
+    customer = Customer(legal_name=f"Cliente {uuid4()}")
     db_session.add(customer)
     db_session.flush()
     deal = Deal(
-        nome="Progetto di prova",
+        name="Progetto di prova",
         customer_id=customer.id,
         pipeline_stage_id=seeded_open_stage_id,
-        probabilita=10,
+        probability=10,
     )
     db_session.add(deal)
     db_session.flush()
@@ -107,7 +105,7 @@ def seeded_deal_id(db_session: Session, seeded_open_stage_id: UUID) -> UUID:
 
 @pytest.fixture
 def seeded_category_id(db_session: Session) -> UUID:
-    category = CostCategory(nome=f"Categoria {uuid4()}", posizione=0, code=None)
+    category = CostCategory(name=f"Categoria {uuid4()}", position=0, code=None)
     db_session.add(category)
     db_session.flush()
     return category.id
@@ -118,11 +116,11 @@ def seeded_entry_id(db_session: Session, seeded_deal_id: UUID, seeded_user_id: U
     entry = TimeEntry(
         deal_id=seeded_deal_id,
         user_id=seeded_user_id,
-        data=date(2026, 3, 10),
-        ore=Decimal("8.00"),
-        descrizione="Analisi",
-        tariffa_applicata=Decimal("80.000000"),
-        tariffa_origine="manuale",
+        date=date(2026, 3, 10),
+        hours=Decimal("8.00"),
+        description="Analisi",
+        applied_rate=Decimal("80.000000"),
+        rate_source="manual",
     )
     db_session.add(entry)
     db_session.flush()
@@ -142,8 +140,8 @@ def time_entry_factory(
     under test. And it needs `invoice_line_id` populated, which no create path sets: the
     link is written by `bind_time_to_invoice` and by slice 3's line replacement.
 
-    `tariffa=None` also sets `tariffa_origine="assente"`, because a rate and its
-    provenance are one fact: a row claiming `manuale` with no rate is a state no write
+    `rate=None` also sets `rate_source="absent"`, because a rate and its
+    provenance are one fact: a row claiming `manual` with no rate is a state no write
     path can produce, and a fixture that could produce it would let a test pass against
     an implementation that reads the wrong column.
 
@@ -153,25 +151,25 @@ def time_entry_factory(
 
     def _make(
         *,
-        data: date,
-        ore: str = "8.00",
-        tariffa: str | None = "50.000000",
-        costo: str | None = None,
-        fatturabile: bool = True,
+        date: date,
+        hours: str = "8.00",
+        rate: str | None = "50.000000",
+        cost: str | None = None,
+        billable: bool = True,
         invoice_line_id: UUID | None = None,
         deal_id: UUID | None = None,
     ) -> TimeEntry:
         entry = TimeEntry(
             deal_id=seeded_deal_id if deal_id is None else deal_id,
             user_id=seeded_user_id,
-            data=data,
-            ore=Decimal(ore),
-            descrizione="Lavorazione",
-            fatturabile=fatturabile,
-            tariffa_applicata=None if tariffa is None else Decimal(tariffa),
-            tariffa_origine="assente" if tariffa is None else "manuale",
-            costo_applicato=None if costo is None else Decimal(costo),
-            costo_origine="assente" if costo is None else "manuale",
+            date=date,
+            hours=Decimal(hours),
+            description="Lavorazione",
+            billable=billable,
+            applied_rate=None if rate is None else Decimal(rate),
+            rate_source="absent" if rate is None else "manual",
+            applied_cost=None if cost is None else Decimal(cost),
+            cost_source="absent" if cost is None else "manual",
             invoice_line_id=invoice_line_id,
         )
         db_session.add(entry)
@@ -235,7 +233,7 @@ def extract_pdf_text() -> Callable[[LocalFileStorage, Session, UUID], str]:
 # the emitter with it.
 
 
-def _seed_default_azienda(connection: Connection) -> None:
+def _seed_default_legal_entity(connection: Connection) -> None:
     """On the test's outer connection, not in the session: a service that rolls back
     (every `Conflict`, every refused write) rolls back the session's savepoint, and a
     row seeded there would vanish with it. By row and not through the service: no
@@ -244,30 +242,30 @@ def _seed_default_azienda(connection: Connection) -> None:
     else."""
     from sqlalchemy import select
 
-    from pigrocrm.core.emitter.models import LegalEntity
+    from pigrocrm.core.legal_entities.models import LegalEntity
 
     # Since REB-623 the engine fixture commits one, so this is the fallback for a
     # database that has none (a test that removed it and left the worker without).
-    if connection.execute(select(LegalEntity.id).where(LegalEntity.predefinita.is_(True))).first():
+    if connection.execute(select(LegalEntity.id).where(LegalEntity.is_default.is_(True))).first():
         return
     connection.execute(
         LegalEntity.__table__.insert().values(
-            nome="Studio di prova", ragione_sociale="Studio di prova", predefinita=True
+            name="Studio di prova", legal_name="Studio di prova", is_default=True
         )
     )
 
 
 def _invoice_service(session: Session, storage: LocalFileStorage) -> Any:
     """`InvoiceService` with the two profiles `issue()` reads already in place."""
-    from pigrocrm.core.emitter.repository import LegalEntityRepository
-    from pigrocrm.core.emitter.schemas import LegalEntityUpsert
-    from pigrocrm.core.emitter.service import LegalEntityService
     from pigrocrm.core.fiscal.schemas import FiscalProfileUpsert
     from pigrocrm.core.fiscal.service import FiscalProfileService
     from pigrocrm.core.invoices.service import InvoiceService
+    from pigrocrm.core.legal_entities.repository import LegalEntityRepository
+    from pigrocrm.core.legal_entities.schemas import LegalEntityUpsert
+    from pigrocrm.core.legal_entities.service import LegalEntityService
 
     admin = Actor(id=None, type="system", role="admin")
-    # The azienda first, since REB-615 a fiscal profile belongs to one. The session
+    # The legal entity first, since REB-615 a fiscal profile belongs to one. The session
     # seeds a bare default («Studio di prova», nothing fiscal) and `upsert_default`
     # fills in the identity the issue, export and import paths need, but only when no
     # test has already given the default an identity of its own: a fixture must not
@@ -275,39 +273,39 @@ def _invoice_service(session: Session, storage: LocalFileStorage) -> Any:
     # test installing a different regime first -- `rf01_fiscal_profile` does exactly
     # that -- keeps it.
     seeded = LegalEntityRepository(session).default()
-    if seeded is None or not seeded.partita_iva:
+    if seeded is None or not seeded.vat_number:
         LegalEntityService(session).upsert_default(
             LegalEntityUpsert(
-                ragione_sociale="Studio Rossi",
-                partita_iva="01234567890",
-                codice_fiscale="HMCRFT00A01H501K",
-                indirizzo="Via Vittorio Veneto 12",
+                legal_name="Studio Rossi",
+                vat_number="01234567890",
+                tax_code="HMCRFT00A01H501K",
+                address="Via Vittorio Veneto 12",
                 cap="20124",
-                comune="Milano",
-                provincia="MI",
-                nazione="IT",
+                city="Milano",
+                province="MI",
+                country="IT",
                 email="mario@example.com",
             ),
             admin,
         )
-    azienda = LegalEntityRepository(session).default()
-    assert azienda is not None
-    if FiscalProfileRepository(session).get(azienda.id) is None:
-        FiscalProfileService(session).upsert(FiscalProfileUpsert(codice_regime="RF19"), admin)
+    legal_entity = LegalEntityRepository(session).default()
+    assert legal_entity is not None
+    if FiscalProfileRepository(session).get(legal_entity.id) is None:
+        FiscalProfileService(session).upsert(FiscalProfileUpsert(regime_code="RF19"), admin)
     return InvoiceService(session, storage)
 
 
 def _fiscal_customer_id(session: Session) -> UUID:
     """A customer with enough identity to appear on an issued document."""
     customer = Customer(
-        ragione_sociale=f"Acme {uuid4()}",
-        partita_iva="12345678901",
-        codice_sdi="ABCDEFG",
-        indirizzo="Corso Italia 5",
+        legal_name=f"Acme {uuid4()}",
+        vat_number="12345678901",
+        sdi_code="ABCDEFG",
+        address="Corso Italia 5",
         cap="00100",
-        comune="Roma",
-        provincia="RM",
-        nazione="IT",
+        city="Roma",
+        province="RM",
+        country="IT",
     )
     session.add(customer)
     session.flush()
@@ -323,11 +321,11 @@ def _invoice_of(session: Session, line_id: UUID) -> UUID:
 
 @pytest.fixture
 def draft_invoice_line_id(db_session: Session, local_storage: LocalFileStorage) -> UUID:
-    """A line on a `bozza`.
+    """A line on a `draft`.
 
     The invoice carries its own customer and no `deal_id`: `_check_owner` requires the
     deal to belong to the invoice's customer, and the customer `seeded_deal_id` builds
-    has only a `ragione_sociale`, which is not identity enough to issue against. What
+    has only a `legal_name`, which is not identity enough to issue against. What
     the tests using these fixtures need from an invoice is its *state*, never its link
     to a deal.
     """
@@ -336,19 +334,19 @@ def draft_invoice_line_id(db_session: Session, local_storage: LocalFileStorage) 
     invoice = _invoice_service(db_session, local_storage).create(
         InvoiceCreate(
             customer_id=_fiscal_customer_id(db_session),
-            tipo="fattura",
-            righe=[
+            type="invoice",
+            lines=[
                 InvoiceLineIn(
-                    descrizione="Attività",
-                    quantita=Decimal("1.000000"),
-                    prezzo_unitario=Decimal("100.000000"),
+                    description="Attività",
+                    quantity=Decimal("1.000000"),
+                    unit_price=Decimal("100.000000"),
                 )
             ],
         ),
         Actor(id=None, type="system", role="admin"),
     )
     line_id: UUID = db_session.execute(
-        text("SELECT id FROM invoice_lines WHERE invoice_id = :inv ORDER BY numero_linea LIMIT 1"),
+        text("SELECT id FROM invoice_lines WHERE invoice_id = :inv ORDER BY line_number LIMIT 1"),
         {"inv": invoice.id},
     ).scalar_one()
     return line_id
@@ -356,7 +354,7 @@ def draft_invoice_line_id(db_session: Session, local_storage: LocalFileStorage) 
 
 @pytest.fixture
 def proforma_invoice_line_id(db_session: Session, local_storage: LocalFileStorage) -> UUID:
-    """A line on a `confermata` proforma -- the state closest to an emission that is not
+    """A line on a `confirmed` proforma -- the state closest to an emission that is not
     one. It never touches the register (slice 3 §5)."""
     from pigrocrm.core.invoices.schemas import InvoiceCreate, InvoiceLineIn
 
@@ -365,12 +363,12 @@ def proforma_invoice_line_id(db_session: Session, local_storage: LocalFileStorag
     invoice = service.create(
         InvoiceCreate(
             customer_id=_fiscal_customer_id(db_session),
-            tipo="proforma",
-            righe=[
+            type="proforma",
+            lines=[
                 InvoiceLineIn(
-                    descrizione="Attività",
-                    quantita=Decimal("1.000000"),
-                    prezzo_unitario=Decimal("100.000000"),
+                    description="Attività",
+                    quantity=Decimal("1.000000"),
+                    unit_price=Decimal("100.000000"),
                 )
             ],
         ),
@@ -378,7 +376,7 @@ def proforma_invoice_line_id(db_session: Session, local_storage: LocalFileStorag
     )
     service.confirm_proforma(invoice.id, admin)
     line_id: UUID = db_session.execute(
-        text("SELECT id FROM invoice_lines WHERE invoice_id = :inv ORDER BY numero_linea LIMIT 1"),
+        text("SELECT id FROM invoice_lines WHERE invoice_id = :inv ORDER BY line_number LIMIT 1"),
         {"inv": invoice.id},
     ).scalar_one()
     return line_id
@@ -408,7 +406,7 @@ def annulled_invoice_line_id(
 
     _invoice_service(db_session, local_storage).annul(
         _invoice_of(db_session, issued_invoice_line_id),
-        InvoiceAnnul(motivo="errore di emissione"),
+        InvoiceAnnul(reason="errore di emissione"),
         Actor(id=None, type="system", role="admin"),
     )
     return issued_invoice_line_id
@@ -420,30 +418,30 @@ def annulled_invoice_line_id(
 # a freeze test needs from an invoice is its *state*. A P&L is per deal, so the ones
 # below need the opposite: an invoice that carries a `deal_id`. `_check_owner` allows
 # that only when the deal belongs to the invoice's own customer, and the customer
-# `seeded_deal_id` builds has a `ragione_sociale` and nothing else -- not identity
+# `seeded_deal_id` builds has a `legal_name` and nothing else -- not identity
 # enough to issue against -- so these build their own customer, deal and stage.
 
 
 def _deal_of_fiscal_customer(
-    session: Session, nome: str, *, tipo: str = "open"
+    session: Session, name: str, *, type: str = "open"
 ) -> tuple[UUID, UUID]:
     """`(deal_id, customer_id)`, on an **open** stage so the state starts at "in corso".
 
-    `tipo="won"` puts it on a closed-won stage instead, which is the first of the two
-    conditions `deal_summary` requires before it will call a deal `chiuso` -- the second
+    `type="won"` puts it on a closed-won stage instead, which is the first of the two
+    conditions `deal_summary` requires before it will call a deal `closed` -- the second
     being that no billable hour is still unbilled. A period P&L needs both columns
     populated to be worth asserting on at all, so the choice has to be expressible here.
     """
     customer_id = _fiscal_customer_id(session)
     stage = PipelineStage(
-        nome=f"{'Vinto' if tipo == 'won' else 'Aperto'} {uuid4()}",
-        posizione=9 if tipo == "won" else 0,
-        probabilita_default=100 if tipo == "won" else 10,
-        tipo=tipo,
+        name=f"{'Vinto' if type == 'won' else 'Aperto'} {uuid4()}",
+        position=9 if type == "won" else 0,
+        default_probability=100 if type == "won" else 10,
+        type=type,
     )
     session.add(stage)
     session.flush()
-    deal = Deal(nome=nome, customer_id=customer_id, pipeline_stage_id=stage.id, probabilita=10)
+    deal = Deal(name=name, customer_id=customer_id, pipeline_stage_id=stage.id, probability=10)
     session.add(deal)
     session.flush()
     return deal.id, customer_id
@@ -455,22 +453,22 @@ def _draft_for_deal(
     *,
     customer_id: UUID,
     deal_id: UUID,
-    importo: Decimal,
-    tipo: str = "fattura",
+    amount: Decimal,
+    type: str = "invoice",
 ) -> UUID:
-    """One single-line draft of `importo`, through `InvoiceService.create`."""
+    """One single-line draft of `amount`, through `InvoiceService.create`."""
     from pigrocrm.core.invoices.schemas import InvoiceCreate, InvoiceLineIn
 
     invoice = _invoice_service(session, storage).create(
         InvoiceCreate(
             customer_id=customer_id,
             deal_id=deal_id,
-            tipo=tipo,
-            righe=[
+            type=type,
+            lines=[
                 InvoiceLineIn(
-                    descrizione="Attività",
-                    quantita=Decimal("1.000000"),
-                    prezzo_unitario=importo,
+                    description="Attività",
+                    quantity=Decimal("1.000000"),
+                    unit_price=amount,
                 )
             ],
         ),
@@ -484,11 +482,11 @@ def _issue(
     session: Session,
     storage: LocalFileStorage,
     invoice_id: UUID,
-    data_emissione: date | None = None,
+    issue_date: date | None = None,
 ) -> None:
-    """`data_emissione` explicit where the period matters: a period P&L attributes
+    """`issue_date` explicit where the period matters: a period P&L attributes
     revenue by that column, so the caller says which day the revenue lands on rather than
-    inheriting the default. The callers now name `periodo_fiscale.OGGI`, which is the
+    inheriting the default. The callers now name `periodo_fiscale.TODAY`, which is the
     same day the default would have produced -- passing it anyway keeps the date visible
     at the call site next to the hours and costs it has to share a window with, which is
     the coupling that has to stay obvious."""
@@ -496,7 +494,7 @@ def _issue(
 
     _invoice_service(session, storage).issue(
         invoice_id,
-        InvoiceIssue(data_emissione=data_emissione),
+        InvoiceIssue(issue_date=issue_date),
         Actor(id=None, type="system", role="admin"),
     )
 
@@ -509,8 +507,8 @@ def rf01_fiscal_profile(db_session: Session) -> None:
     (`test_invoice_totals.py`, `test_invoice_fatturapa.py`) and by upserting the profile
     inline in one artefact test, never as a shared fixture -- so there was no second
     declaration to reuse and this is the first. It exists because the difference between
-    `imponibile` and `totale` is unobservable under the forfettario the product ships,
-    and a P&L that followed `totale` would pass every test written in that regime.
+    `taxable_amount` and `total` is unobservable under the forfettario the product ships,
+    and a P&L that followed `total` would pass every test written in that regime.
     """
     from pigrocrm.core.fiscal.schemas import FiscalProfileUpsert
     from pigrocrm.core.fiscal.service import FiscalProfileService
@@ -528,16 +526,16 @@ def deal_with_mixed_invoices(db_session: Session, local_storage: LocalFileStorag
     """One deal carrying every invoice state that exists, so a revenue figure has
     something to be wrong about.
 
-    Three issued `fattura` rows -- 1000.00 + 250.50 + 333.33 = **1583.83** -- and, not
+    Three issued `invoice` rows -- 1000.00 + 250.50 + 333.33 = **1583.83** -- and, not
     counting towards it: one issued-then-annulled invoice, which keeps its number and
-    loses its revenue; one `confermata` proforma, which never touches the register; and
-    one `bozza`, which is a proposal. The draft is here beyond the three states §7.1
+    loses its revenue; one `confirmed` proforma, which never touches the register; and
+    one `draft`, which is a proposal. The draft is here beyond the three states §7.1
     names because a soft delete is only expressible on a row with no number
     (`ck_invoices_no_delete_once_consumed`), and one of the tests needs a row it can
     soft-delete.
     """
     deal_id, customer_id = _deal_of_fiscal_customer(db_session, "Progetto fatturato")
-    for importo in (Decimal("1000.00"), Decimal("250.50"), Decimal("333.33")):
+    for amount in (Decimal("1000.00"), Decimal("250.50"), Decimal("333.33")):
         _issue(
             db_session,
             local_storage,
@@ -546,23 +544,23 @@ def deal_with_mixed_invoices(db_session: Session, local_storage: LocalFileStorag
                 local_storage,
                 customer_id=customer_id,
                 deal_id=deal_id,
-                importo=importo,
+                amount=amount,
             ),
         )
 
     from pigrocrm.core.invoices.schemas import InvoiceAnnul
 
-    annullata = _draft_for_deal(
+    cancelled = _draft_for_deal(
         db_session,
         local_storage,
         customer_id=customer_id,
         deal_id=deal_id,
-        importo=Decimal("500.00"),
+        amount=Decimal("500.00"),
     )
-    _issue(db_session, local_storage, annullata)
+    _issue(db_session, local_storage, cancelled)
     _invoice_service(db_session, local_storage).annul(
-        annullata,
-        InvoiceAnnul(motivo="errore di emissione"),
+        cancelled,
+        InvoiceAnnul(reason="errore di emissione"),
         Actor(id=None, type="system", role="admin"),
     )
 
@@ -571,8 +569,8 @@ def deal_with_mixed_invoices(db_session: Session, local_storage: LocalFileStorag
         local_storage,
         customer_id=customer_id,
         deal_id=deal_id,
-        importo=Decimal("999.00"),
-        tipo="proforma",
+        amount=Decimal("999.00"),
+        type="proforma",
     )
     _invoice_service(db_session, local_storage).confirm_proforma(
         proforma, Actor(id=None, type="system", role="admin")
@@ -583,7 +581,7 @@ def deal_with_mixed_invoices(db_session: Session, local_storage: LocalFileStorag
         local_storage,
         customer_id=customer_id,
         deal_id=deal_id,
-        importo=Decimal("120.00"),
+        amount=Decimal("120.00"),
     )
     return deal_id
 
@@ -593,7 +591,7 @@ def deal_with_vat_invoice(
     db_session: Session, local_storage: LocalFileStorage, rf01_fiscal_profile: None
 ) -> UUID:
     """A deal with one issued invoice under `RF01`: 100.00 + 22% = 122.00, so
-    `imponibile` and `totale` are two different numbers and a P&L can follow the wrong
+    `taxable_amount` and `total` are two different numbers and a P&L can follow the wrong
     one."""
     deal_id, customer_id = _deal_of_fiscal_customer(db_session, "Progetto con IVA")
     _issue(
@@ -604,16 +602,16 @@ def deal_with_vat_invoice(
             local_storage,
             customer_id=customer_id,
             deal_id=deal_id,
-            importo=Decimal("100.00"),
+            amount=Decimal("100.00"),
         ),
     )
     return deal_id
 
 
 @pytest.fixture
-def deal_with_bollo_invoice(db_session: Session, local_storage: LocalFileStorage) -> UUID:
+def deal_with_stamp_duty_invoice(db_session: Session, local_storage: LocalFileStorage) -> UUID:
     """A deal with one forfettario invoice over the 77.47 stamp-duty threshold, so
-    `invoices.bollo` is 2.00 and not zero -- which is what makes "the stamp duty is not a
+    `invoices.stamp_duty` is 2.00 and not zero -- which is what makes "the stamp duty is not a
     deal cost" a statement about a real value."""
     deal_id, customer_id = _deal_of_fiscal_customer(db_session, "Progetto con bollo")
     _issue(
@@ -624,7 +622,7 @@ def deal_with_bollo_invoice(db_session: Session, local_storage: LocalFileStorage
             local_storage,
             customer_id=customer_id,
             deal_id=deal_id,
-            importo=Decimal("1000.00"),
+            amount=Decimal("1000.00"),
         ),
     )
     return deal_id
@@ -632,13 +630,13 @@ def deal_with_bollo_invoice(db_session: Session, local_storage: LocalFileStorage
 
 # --- slice 4B: the two columns of a period P&L -------------------------------------
 #
-# `period_pnl` splits deals into `chiusi` and `in corso` and refuses to add the two
+# `period_pnl` splits deals into `closed` and `in_progress` and refuses to add the two
 # together. Testing that refusal needs one deal of each kind inside the same window,
 # each carrying figures of its own that a wrong implementation could move.
 #
-# That window is `periodo_fiscale.OGGI` and the month it belongs to, never a literal
+# That window is `periodo_fiscale.TODAY` and the month it belongs to, never a literal
 # month: one of these deals carries an *issued* invoice, and `issue()` refuses a
-# `data_emissione` outside the current fiscal year. See `periodo_fiscale.py` for why the
+# `issue_date` outside the current fiscal year. See `periodo_fiscale.py` for why the
 # derivation cannot simply be "this year, March" either.
 
 
@@ -655,17 +653,17 @@ def open_deal_with_hours(
     from pigrocrm.core.timetracking.schemas import CostCreate, TimeEntryCreate
     from pigrocrm.core.timetracking.service import TimeEntryService
 
-    writer = Actor(id=None, type="user", role="collaboratore")
+    writer = Actor(id=None, type="user", role="collaborator")
     deal_id, _ = _deal_of_fiscal_customer(db_session, "Progetto in corso")
     TimeEntryService(db_session).create(
         TimeEntryCreate(
             deal_id=deal_id,
             user_id=seeded_user_id,
-            data=OGGI,
-            ore=Decimal("10.00"),
-            descrizione="Sviluppo",
-            tariffa_applicata=Decimal("100.000000"),
-            costo_applicato=Decimal("40.000000"),
+            date=TODAY,
+            hours=Decimal("10.00"),
+            description="Sviluppo",
+            applied_rate=Decimal("100.000000"),
+            applied_cost=Decimal("40.000000"),
         ),
         writer,
     )
@@ -673,9 +671,9 @@ def open_deal_with_hours(
         CostCreate(
             deal_id=deal_id,
             category_id=seeded_category_id,
-            data=OGGI,
-            importo=Decimal("150.00"),
-            descrizione="Licenze",
+            date=TODAY,
+            amount=Decimal("150.00"),
+            description="Licenze",
         ),
         writer,
     )
@@ -689,14 +687,14 @@ def closed_deal_with_invoice(
     """Today: 2000.00 invoiced and issued, 200.00 of direct costs, no hours.
 
     On a won stage and with no billable hour left unbilled, which is what makes
-    `deal_summary` call it `chiuso` -- the state `period_pnl` reads to choose a column.
+    `deal_summary` call it `closed` -- the state `period_pnl` reads to choose a column.
     Margin 1800.00, that is 90.00% of revenue: a reportable figure, and one that would
     move visibly if a general expense were ever apportioned onto it.
     """
     from pigrocrm.core.timetracking.costs import CostService
     from pigrocrm.core.timetracking.schemas import CostCreate
 
-    deal_id, customer_id = _deal_of_fiscal_customer(db_session, "Progetto chiuso", tipo="won")
+    deal_id, customer_id = _deal_of_fiscal_customer(db_session, "Progetto chiuso", type="won")
     _issue(
         db_session,
         local_storage,
@@ -705,19 +703,19 @@ def closed_deal_with_invoice(
             local_storage,
             customer_id=customer_id,
             deal_id=deal_id,
-            importo=Decimal("2000.00"),
+            amount=Decimal("2000.00"),
         ),
-        OGGI,
+        TODAY,
     )
     CostService(db_session).create(
         CostCreate(
             deal_id=deal_id,
             category_id=seeded_category_id,
-            data=OGGI,
-            importo=Decimal("200.00"),
-            descrizione="Stampa",
+            date=TODAY,
+            amount=Decimal("200.00"),
+            description="Stampa",
         ),
-        Actor(id=None, type="user", role="collaboratore"),
+        Actor(id=None, type="user", role="collaborator"),
     )
     return deal_id
 
@@ -747,23 +745,21 @@ def budgeted_deal(
 
     def _make(
         *,
-        ore_preventivate: str | None,
-        valore_preventivato: str | None,
-        ore_registrate: str | None = None,
-        ricavi: str | None = None,
-        nome: str = "Progetto preventivato",
+        budgeted_hours: str | None,
+        budgeted_value: str | None,
+        hours_logged: str | None = None,
+        revenue: str | None = None,
+        name: str = "Progetto preventivato",
     ) -> UUID:
-        deal_id, customer_id = _deal_of_fiscal_customer(db_session, nome)
+        deal_id, customer_id = _deal_of_fiscal_customer(db_session, name)
         deal = db_session.get(Deal, deal_id)
         assert deal is not None
-        deal.ore_preventivate = None if ore_preventivate is None else Decimal(ore_preventivate)
-        deal.valore_preventivato = (
-            None if valore_preventivato is None else Decimal(valore_preventivato)
-        )
+        deal.budgeted_hours = None if budgeted_hours is None else Decimal(budgeted_hours)
+        deal.budgeted_value = None if budgeted_value is None else Decimal(budgeted_value)
         db_session.flush()
 
-        if ore_registrate is not None:
-            # Several entries at up to 8 hours each, not one: `TimeEntryCreate.ore` is
+        if hours_logged is not None:
+            # Several entries at up to 8 hours each, not one: `TimeEntryCreate.hours` is
             # capped at 24 because an entry is one person's one day, and the totals this
             # fixture exists to feed are tens of hours. They all carry today's date
             # rather than consecutive days, which the model allows on purpose -- there is
@@ -772,21 +768,21 @@ def budgeted_deal(
             # from a fixed day was what made this fixture expire: the days have to stay
             # inside the reporting window *and* not run past today, and only today itself
             # satisfies both on every run day (see `periodo_fiscale.py`).
-            residuo = Decimal(ore_registrate)
-            while residuo > 0:
-                quota = min(residuo, Decimal("8.00"))
+            remaining = Decimal(hours_logged)
+            while remaining > 0:
+                share = min(remaining, Decimal("8.00"))
                 TimeEntryService(db_session).create(
                     TimeEntryCreate(
                         deal_id=deal_id,
                         user_id=seeded_user_id,
-                        data=OGGI,
-                        ore=quota,
-                        descrizione="Lavorazione",
+                        date=TODAY,
+                        hours=share,
+                        description="Lavorazione",
                     ),
-                    Actor(id=None, type="user", role="collaboratore"),
+                    Actor(id=None, type="user", role="collaborator"),
                 )
-                residuo -= quota
-        if ricavi is not None:
+                remaining -= share
+        if revenue is not None:
             _issue(
                 db_session,
                 local_storage,
@@ -795,9 +791,9 @@ def budgeted_deal(
                     local_storage,
                     customer_id=customer_id,
                     deal_id=deal_id,
-                    importo=Decimal(ricavi),
+                    amount=Decimal(revenue),
                 ),
-                OGGI,
+                TODAY,
             )
         return deal_id
 
@@ -812,7 +808,7 @@ def billable_deal_id(db_session: Session, local_storage: LocalFileStorage) -> UU
     """A deal whose customer carries enough identity to be **issued** against, with the
     fiscal and emitter profiles already installed.
 
-    `seeded_deal_id`'s customer has a `ragione_sociale` and nothing else, which is right
+    `seeded_deal_id`'s customer has a `legal_name` and nothing else, which is right
     for every test that only needs a deal to hang hours off. `bind_time_to_invoice` goes
     the whole way -- draft, then emission -- so it needs the opposite, and it also needs
     a fiscal profile to exist before `InvoiceService.create` will resolve a regime at

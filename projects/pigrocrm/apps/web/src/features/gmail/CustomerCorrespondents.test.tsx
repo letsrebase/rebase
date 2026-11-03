@@ -29,33 +29,33 @@ function failed(error: unknown, status: number) {
   return { error, response: new Response(null, { status }) } as never
 }
 
-function report(corrispondenti: unknown[] = found()) {
+function report(matching: unknown[] = found()) {
   return ok({
     started_at: '2026-10-20T09:00:00Z',
-    dominio: 'acme.it',
+    domain: 'acme.it',
     threads_scanned: 3,
     messages_seen: 4,
-    corrispondenti,
+    matching,
   })
 }
 
 function found() {
   return [
     {
-      indirizzo: 'marco@acme.it',
-      nome: 'Marco Bianchi',
-      messaggi: 3,
-      conversazioni: 2,
-      ultimo_messaggio: '2026-10-18T10:00:00Z',
-      gia_in_anagrafica: false,
+      address: 'marco@acme.it',
+      name: 'Marco Bianchi',
+      messages: 3,
+      conversations: 2,
+      last_message: '2026-10-18T10:00:00Z',
+      already_in_directory: false,
     },
     {
-      indirizzo: 'sara@acme.it',
-      nome: '',
-      messaggi: 1,
-      conversazioni: 1,
-      ultimo_messaggio: '2026-09-01T10:00:00Z',
-      gia_in_anagrafica: true,
+      address: 'sara@acme.it',
+      name: '',
+      messages: 1,
+      conversations: 1,
+      last_message: '2026-09-01T10:00:00Z',
+      already_in_directory: true,
     },
   ]
 }
@@ -145,7 +145,7 @@ describe('CustomerCorrespondents', () => {
 
     expect(api.POST).toHaveBeenCalledWith('/api/customers/{customer_id}/people-from-mail', {
       params: { path: { customer_id: CUSTOMER_ID } },
-      body: { indirizzo: 'marco@acme.it', nome: 'Marco Bianchi' },
+      body: { address: 'marco@acme.it', name: 'Marco Bianchi' },
     })
     await waitFor(() => expect(toast.success).toHaveBeenCalledWith('Marco Bianchi aggiunto alle persone'))
     await waitFor(() =>
@@ -170,7 +170,7 @@ describe('CustomerCorrespondents', () => {
     vi.mocked(api.GET).mockResolvedValue(report())
     vi.mocked(api.POST).mockResolvedValue(
       failed(
-        { detail: 'customer: marco@acme.it è già in anagrafica', code: 'conflict', indirizzo: 'marco@acme.it' },
+        { detail: 'customer: marco@acme.it è già in anagrafica', code: 'conflict', address: 'marco@acme.it' },
         409,
       ),
     )

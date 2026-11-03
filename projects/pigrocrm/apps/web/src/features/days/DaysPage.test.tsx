@@ -15,10 +15,10 @@ vi.mock('@tanstack/react-router', () => ({
 }))
 vi.mock('@/lib/auth', () => ({ useCanWrite: () => true }))
 
-function serving(items: unknown[], troncato = false) {
+function serving(items: unknown[], truncated = false) {
   vi.mocked(api.GET).mockImplementation(((path: string) => {
     if (path === '/api/contracts') return Promise.resolve(ok({ items: [contract()], next_cursor: null }))
-    if (path === '/api/work-units') return Promise.resolve(ok({ items, troncato }))
+    if (path === '/api/work-units') return Promise.resolve(ok({ items, truncated }))
     return Promise.resolve(ok(undefined))
   }) as never)
 }
@@ -36,8 +36,8 @@ function listQuery(): Record<string, string | undefined> {
 describe('the days register', () => {
   it('lists a contract’s days with their state, each a link to its page', async () => {
     serving([
-      row({ id: 'd1', data: '2026-03-03', stato: 'lavorato_senza_approvazione', descrizione: 'Workshop' }),
-      row({ id: 'd2', data: '2026-03-02', stato: 'contestato', quantita: '1.00', descrizione: 'Revisione' }),
+      row({ id: 'd1', date: '2026-03-03', status: 'worked_without_approval', description: 'Workshop' }),
+      row({ id: 'd2', date: '2026-03-02', status: 'disputed', quantity: '1.00', description: 'Revisione' }),
     ])
     renderWithQuery(<DaysPage search={{ contract: CONTRACT_ID }} onSearchChange={vi.fn()} />)
 
@@ -47,7 +47,7 @@ describe('the days register', () => {
     expect(screen.getByRole('link', { name: /Registra giornata/ })).toHaveAttribute('href', '/app/days/new')
     // The contract narrows the list and no month was asked for: the whole ledger of that
     // contract is requested, with no window.
-    expect(listQuery()).toMatchObject({ contract_id: CONTRACT_ID, da: undefined, a: undefined })
+    expect(listQuery()).toMatchObject({ contract_id: CONTRACT_ID, from: undefined, to: undefined })
   })
 
   it('opens on the current month of every contract when nothing is chosen', async () => {
@@ -55,7 +55,7 @@ describe('the days register', () => {
     renderWithQuery(<DaysPage search={{}} onSearchChange={vi.fn()} />)
     expect(await screen.findByText('Nessuna giornata')).toBeInTheDocument()
     expect(listQuery().contract_id).toBeUndefined()
-    expect(listQuery().da).toMatch(/^\d{4}-\d{2}-01$/)
+    expect(listQuery().from).toMatch(/^\d{4}-\d{2}-01$/)
   })
 
   it('says when the API cut the list', async () => {

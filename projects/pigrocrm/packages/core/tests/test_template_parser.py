@@ -127,7 +127,7 @@ def test_parse_nests_blocks() -> None:
 def test_parse_rejects_an_unclosed_block_naming_the_line() -> None:
     with pytest.raises(ValidationFailed) as excinfo:
         parse_template("prima\n{{#if x}}mai chiuso\n")
-    assert excinfo.value.details["field"] == "corpo_markdown"
+    assert excinfo.value.details["field"] == "body_markdown"
     assert "riga 2" in excinfo.value.details["reason"]
     assert "#if" in excinfo.value.details["reason"]
 
@@ -171,7 +171,7 @@ def test_parse_rejects_a_helper_call_because_the_engine_has_no_helpers() -> None
 # that both omits the "#each r" block's own path entirely and puts the loop-
 # relative "nome" in the same list as the root path "a.b". The coordinator
 # overrode this: a template whose entire behaviour depends on an `#if`/`#each`
-# path (the spec's own example is `offerta.sconto`) used to declare that it
+# path (the spec's own example is `offer.sconto`) used to declare that it
 # needed nothing at all, which defeats what `describe_template` exists for. See
 # `DeclaredPaths` and `declared_paths`'s own docstring in parser.py.
 

@@ -34,20 +34,20 @@ function failed(error: unknown, status: number) {
   return { error, response: new Response(null, { status }) } as never
 }
 
-const DRAFT = { id: 'inv-1', tipo: 'fattura', stato: 'bozza' } as unknown as Invoice
+const DRAFT = { id: 'inv-1', type: 'invoice', status: 'draft' } as unknown as Invoice
 const ISSUED = {
   id: 'inv-1',
-  tipo: 'fattura',
-  stato: 'emessa',
-  stato_pagamento: 'da_incassare',
-  trasmessa_esternamente_il: null,
+  type: 'invoice',
+  status: 'issued',
+  payment_status: 'unpaid',
+  transmitted_externally_at: null,
 } as unknown as Invoice
-const COLLECTED = { ...ISSUED, stato_pagamento: 'incassato', data_incasso: '2026-09-01' } as Invoice
+const COLLECTED = { ...ISSUED, payment_status: 'paid', payment_date: '2026-09-01' } as Invoice
 // REB-168: the download buttons follow the row's document ids, so a fixture that means
 // "an issued invoice with its files" has to say so.
 const RENDERED = { ...ISSUED, pdf_document_id: 'doc-pdf', xml_document_id: 'doc-xml' } as Invoice
-const PROFORMA = { id: 'pf-1', tipo: 'proforma', stato: 'confermata' } as unknown as Invoice
-const DRAFT_PROFORMA = { id: 'pf-1', tipo: 'proforma', stato: 'bozza' } as unknown as Invoice
+const PROFORMA = { id: 'pf-1', type: 'proforma', status: 'confirmed' } as unknown as Invoice
+const DRAFT_PROFORMA = { id: 'pf-1', type: 'proforma', status: 'draft' } as unknown as Invoice
 
 function wrap(children: ReactNode) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
@@ -183,9 +183,9 @@ describe('InvoiceActions', () => {
     const issuedFromProforma = {
       ...ISSUED,
       id: 'inv-18',
-      anno: 2026,
-      numero: 18,
-      origine_proforma_id: 'pf-1',
+      year: 2026,
+      number: 18,
+      origin_proforma_id: 'pf-1',
     } as unknown as Invoice
     vi.mocked(api.POST).mockResolvedValueOnce(ok(issuedFromProforma)).mockResolvedValueOnce(ok([]))
     const onIssued = vi.fn()
@@ -302,11 +302,11 @@ describe('InvoiceActions', () => {
     expect(onDeleted).not.toHaveBeenCalled()
   })
 
-  it.each([['bozza'], ['confermata']])(
+  it.each([['draft'], ['confirmed']])(
     'offers to delete a %s proforma, and names it as such',
-    async (stato) => {
+    async (status) => {
       vi.mocked(api.DELETE).mockResolvedValue(ok(undefined))
-      wrap(<InvoiceActions invoice={{ ...PROFORMA, stato } as Invoice} />)
+      wrap(<InvoiceActions invoice={{ ...PROFORMA, status } as Invoice} />)
       await userEvent.click(screen.getByRole('button', { name: /elimina proforma/i }))
       expect(window.confirm).toHaveBeenCalledWith(
         expect.stringMatching(/Eliminare questa proforma/),
@@ -317,7 +317,7 @@ describe('InvoiceActions', () => {
   )
 
   it('offers no delete on a consumed proforma: it is the antecedent of a numbered document', () => {
-    wrap(<InvoiceActions invoice={{ ...PROFORMA, stato: 'consumata' } as Invoice} />)
+    wrap(<InvoiceActions invoice={{ ...PROFORMA, status: 'consumed' } as Invoice} />)
     expect(screen.queryByRole('button', { name: /elimina/i })).not.toBeInTheDocument()
   })
 
@@ -353,7 +353,7 @@ describe('InvoiceActions', () => {
       { body: unknown },
     ]
     expect(path).toContain('/payment')
-    expect(options.body).toEqual({ stato_pagamento: 'incassato', data_incasso: '2026-09-01' })
+    expect(options.body).toEqual({ payment_status: 'paid', payment_date: '2026-09-01' })
 
     await waitFor(() => expect(toast.success).toHaveBeenCalledWith('Incasso registrato'))
   })
@@ -368,11 +368,11 @@ describe('InvoiceActions', () => {
 
     await waitFor(() => expect(api.PATCH).toHaveBeenCalledTimes(1))
     const [, options] = vi.mocked(api.PATCH).mock.calls[0] as unknown as [string, { body: unknown }]
-    expect(options.body).toEqual({ stato_pagamento: 'da_incassare', data_incasso: null })
+    expect(options.body).toEqual({ payment_status: 'unpaid', payment_date: null })
   })
 
   it('records the external transmission once, and never offers it again', async () => {
-    vi.mocked(api.POST).mockResolvedValue(ok({ ...ISSUED, trasmessa_esternamente_il: '2026-09-02' }))
+    vi.mocked(api.POST).mockResolvedValue(ok({ ...ISSUED, transmitted_externally_at: '2026-09-02' }))
     wrap(<InvoiceActions invoice={ISSUED} />)
 
     await userEvent.click(screen.getByRole('button', { name: /segna trasmessa/i }))
@@ -389,14 +389,14 @@ describe('InvoiceActions', () => {
       { body: unknown },
     ]
     expect(path).toContain('/transmitted')
-    expect(options.body).toEqual({ data: '2026-09-02' })
+    expect(options.body).toEqual({ date: '2026-09-02' })
 
   })
 
   it('never offers the transmission again once it is recorded', () => {
     // The column is frozen on the server (`mark_transmitted_externally`), so the button
     // follows the row and is gone.
-    wrap(<InvoiceActions invoice={{ ...ISSUED, trasmessa_esternamente_il: '2026-09-02' } as Invoice} />)
+    wrap(<InvoiceActions invoice={{ ...ISSUED, transmitted_externally_at: '2026-09-02' } as Invoice} />)
     expect(screen.queryByRole('button', { name: /segna trasmessa/i })).toBeNull()
   })
 
@@ -409,7 +409,7 @@ describe('InvoiceActions', () => {
 
     // Imported: collected here, yes -- the money is still owed to the titolare -- but
     // transmitted by the system that issued it, so only the payment button remains.
-    wrap(<InvoiceActions invoice={{ ...ISSUED, importata_da: 'esterno' } as Invoice} />)
+    wrap(<InvoiceActions invoice={{ ...ISSUED, imported_from: 'external' } as Invoice} />)
     expect(screen.getByRole('button', { name: /segna incassata/i })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /segna trasmessa/i })).toBeNull()
   })
@@ -417,7 +417,7 @@ describe('InvoiceActions', () => {
   it('hides the XML and regenerate actions for an imported invoice', () => {
     // With an XML id on the row, so it is the import that hides the button and not the
     // missing file.
-    const imported = { ...RENDERED, importata_da: 'esterno' } as Invoice
+    const imported = { ...RENDERED, imported_from: 'external' } as Invoice
     wrap(<InvoiceActions invoice={imported} />)
     expect(screen.queryByRole('button', { name: /XML FatturaPA/i })).toBeNull()
     expect(screen.queryByRole('button', { name: /Rigenera/i })).toBeNull()
@@ -532,8 +532,8 @@ describe('InvoiceActions', () => {
           status: 422,
           code: 'validation_failed',
           detail,
-          entity: 'emitter_profile',
-          field: 'codice_fiscale',
+          entity: 'legal_entities',
+          field: 'tax_code',
         }),
         { status: 422, headers: { 'content-type': 'application/problem+json' } },
       ),
@@ -569,10 +569,10 @@ describe('InvoiceActions', () => {
 })
 
 /** The badge lives in its own file (see there for why); its tests live here beside the
- *  actions that read the same `importata_da` flag. */
+ *  actions that read the same `imported_from` flag. */
 describe('InvoiceStateBadge', () => {
   it('shows the "imported" badge next to the state badge, naming no source', () => {
-    const imported = { ...ISSUED, importata_da: 'esterno' } as Invoice
+    const imported = { ...ISSUED, imported_from: 'external' } as Invoice
     wrap(<InvoiceStateBadge invoice={imported} />)
     expect(screen.getByText(/^importata$/i)).toBeInTheDocument()
   })
@@ -580,8 +580,8 @@ describe('InvoiceStateBadge', () => {
   /** The list turns the pill off (ORB-130). Rendered with no option, as the detail page
    *  does, the badge keeps it: that is the test above this one. */
   it('leaves the "imported" badge out when asked to, and keeps the state', () => {
-    const imported = { ...ISSUED, importata_da: 'esterno' } as Invoice
-    wrap(<InvoiceStateBadge invoice={imported} importata={false} />)
+    const imported = { ...ISSUED, imported_from: 'external' } as Invoice
+    wrap(<InvoiceStateBadge invoice={imported} imported={false} />)
     expect(screen.getByText('Emessa')).toBeInTheDocument()
     expect(screen.queryByText(/^importata$/i)).toBeNull()
   })
@@ -590,30 +590,30 @@ describe('InvoiceStateBadge', () => {
   // copy -- the badge says only that the invoice came from elsewhere. A source name
   // reaching the screen is the defect this assertion exists to catch.
   it('never prints the provenance value, whatever it is', () => {
-    const imported = { ...ISSUED, importata_da: 'qualcosaltro' } as Invoice
+    const imported = { ...ISSUED, imported_from: 'qualcosaltro' } as Invoice
     wrap(<InvoiceStateBadge invoice={imported} />)
     expect(screen.getByText(/^importata$/i)).toBeInTheDocument()
     expect(screen.queryByText(/qualcosaltro/i)).toBeNull()
   })
 
-  // REB-368: the two import kinds get two distinct, honest badges -- "esterno" names
+  // REB-368: the two import kinds get two distinct, honest badges -- "external" names
   // no source (assertion above), "fatturapa" names the transmission standard itself,
-  // because unlike a hand-typed "esterno" row this one's original file is on record
+  // because unlike a hand-typed "external" row this one's original file is on record
   // and `export_xml` can hand it back.
   it('shows a distinct "FatturaPA" badge for a fatturapa-imported invoice', () => {
-    const imported = { ...ISSUED, importata_da: 'fatturapa' } as Invoice
+    const imported = { ...ISSUED, imported_from: 'fatturapa' } as Invoice
     wrap(<InvoiceStateBadge invoice={imported} />)
     expect(screen.getByText('FatturaPA')).toBeInTheDocument()
     expect(screen.queryByText(/^importata$/i)).toBeNull()
   })
 
-  /** Unlike the "esterno" pill (test above), the "fatturapa" badge ignores the list's
-   *  own suppression flag: a bulk "esterno" migration explains nothing most rows can
+  /** Unlike the "external" pill (test above), the "fatturapa" badge ignores the list's
+   *  own suppression flag: a bulk "external" migration explains nothing most rows can
    *  act on (ORB-130), but a "fatturapa" row names a fact the list can act on -- the
    *  original file is on record and downloadable. */
   it('keeps the "FatturaPA" badge even where the list suppresses the generic one', () => {
-    const imported = { ...ISSUED, importata_da: 'fatturapa' } as Invoice
-    wrap(<InvoiceStateBadge invoice={imported} importata={false} />)
+    const imported = { ...ISSUED, imported_from: 'fatturapa' } as Invoice
+    wrap(<InvoiceStateBadge invoice={imported} imported={false} />)
     expect(screen.getByText('Emessa')).toBeInTheDocument()
     expect(screen.getByText('FatturaPA')).toBeInTheDocument()
   })

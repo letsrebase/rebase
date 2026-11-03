@@ -6,7 +6,7 @@ from uuid import UUID
 
 from mcp.server import MCPServer
 
-from pigrocrm.core.invoices.schemas import InvoiceListQuery, InvoiceStato, InvoiceTipo
+from pigrocrm.core.invoices.schemas import InvoiceListQuery, InvoiceStatus, InvoiceType
 from pigrocrm_mcp.annotations import ADDITIVE, DESTRUCTIVE, READ_ONLY
 from pigrocrm_mcp.context import McpContext
 from pigrocrm_mcp.tools import (
@@ -39,17 +39,17 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
     def list_invoices(
         customer_id: str | None = None,
         deal_id: str | None = None,
-        tipo: str | None = None,
-        stato: str | None = None,
-        anno: int | None = None,
-        escludi_consumate: bool = False,
-        azienda_id: str | None = None,
+        type: str | None = None,
+        status: str | None = None,
+        year: int | None = None,
+        exclude_consumed: bool = False,
+        legal_entity_id: str | None = None,
         limit: BoundedLimit = 50,
         cursor: str | None = None,
     ) -> dict[str, Any]:
-        """Elenca fatture e proforma. `escludi_consumate` lascia fuori le proforma già emesse come
-        fattura: la fattura porta il loro numero e `origine_proforma_id` punta alla proforma.
-        `azienda_id` filtra per azienda. PDF e XML si scaricano dall'API REST: qui ci sono solo
+        """Elenca fatture e proforma. `exclude_consumed` lascia fuori le proforma già emesse come
+        fattura: la fattura porta il loro numero e `origin_proforma_id` punta alla proforma.
+        `legal_entity_id` filtra per azienda. PDF e XML si scaricano dall'API REST: qui ci sono solo
         identificativi.
         """
         return invoices.search(
@@ -57,11 +57,11 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
             InvoiceListQuery(
                 customer_id=UUID(customer_id) if customer_id else None,
                 deal_id=UUID(deal_id) if deal_id else None,
-                azienda_id=parse_legal_entity_id(azienda_id),
-                tipo=literal_arg("tipo", tipo, InvoiceTipo),
-                stato=literal_arg("stato", stato, InvoiceStato),
-                anno=anno,
-                escludi_consumate=escludi_consumate,
+                legal_entity_id=parse_legal_entity_id(legal_entity_id),
+                type=literal_arg("type", type, InvoiceType),
+                status=literal_arg("status", status, InvoiceStatus),
+                year=year,
+                exclude_consumed=exclude_consumed,
                 limit=cast(int, limit),
                 cursor=UUID(cursor) if cursor else None,
             ),
@@ -70,12 +70,12 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
     @mcp.tool(annotations=READ_ONLY)
     @guard
     def list_invoice_register_gaps(
-        anno: int, azienda_id: str | None = None
+        year: int, legal_entity_id: str | None = None
     ) -> list[dict[str, Any]]:
-        """I numeri che il registro di `anno` non porta per dichiarazione esplicita, con il motivo.
-        Vuoto se non ci sono buchi dichiarati. `azienda_id` omesso: azienda predefinita.
+        """I numeri che il registro di `year` non porta per dichiarazione esplicita, con il motivo.
+        Vuoto se non ci sono buchi dichiarati. `legal_entity_id` omesso: azienda predefinita.
         """
-        return invoices.list_register_gaps(context, anno, azienda_id)
+        return invoices.list_register_gaps(context, year, legal_entity_id)
 
     @mcp.tool(annotations=READ_ONLY)
     @guard
@@ -87,39 +87,40 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
     @guard
     def create_proforma(
         customer_id: str,
-        righe: list[dict[str, Any]],
+        lines: list[dict[str, Any]],
         deal_id: str | None = None,
-        causale: str | None = None,
-        data_emissione: IsoDateStr = None,
-        competenza_da: IsoDateStr = None,
-        competenza_a: IsoDateStr = None,
-        ordine_numero: str | None = None,
-        ordine_data: IsoDateStr = None,
-        ordine_cig: str | None = None,
-        ordine_cup: str | None = None,
+        memo: str | None = None,
+        issue_date: IsoDateStr = None,
+        accrual_from: IsoDateStr = None,
+        accrual_to: IsoDateStr = None,
+        purchase_order_number: str | None = None,
+        purchase_order_date: IsoDateStr = None,
+        purchase_order_tender_code: str | None = None,
+        purchase_order_project_code: str | None = None,
     ) -> dict[str, Any]:
         """Crea una proforma. Non è un documento fiscale: non prende un numero, non produce XML per
         il Sistema di Interscambio e diventa fattura solo quando una persona la emette.
 
-        `data_emissione` (YYYY-MM-DD): oggi se manca; la fattura prenderà la propria data.
-        `competenza_da` e `competenza_a` (YYYY-MM-DD, insieme o nessuno): il periodo di competenza
-        del lavoro, per esempio il mese. `ordine_numero`, `ordine_data` (YYYY-MM-DD), `ordine_cig`
-        (10 caratteri) e `ordine_cup` (15) sono l'ordine d'acquisto del cliente.
+        `issue_date` (YYYY-MM-DD): oggi se manca; la fattura prenderà la propria data.
+        `accrual_from` e `accrual_to` (YYYY-MM-DD, insieme o nessuno): il periodo di competenza
+        del lavoro, per esempio il mese. `purchase_order_number`, `purchase_order_date`
+        (YYYY-MM-DD), `purchase_order_tender_code` (10 caratteri) e `purchase_order_project_code`
+        (15) sono l'ordine d'acquisto del cliente.
         """
         return invoices.create_proforma(
             context,
             {
                 "customer_id": UUID(customer_id),
                 "deal_id": UUID(deal_id) if deal_id else None,
-                "causale": causale,
-                "data_emissione": iso_date(data_emissione),
-                "competenza_da": iso_date(competenza_da),
-                "competenza_a": iso_date(competenza_a),
-                "ordine_numero": ordine_numero,
-                "ordine_data": iso_date(ordine_data),
-                "ordine_cig": ordine_cig,
-                "ordine_cup": ordine_cup,
-                "righe": righe,
+                "memo": memo,
+                "issue_date": iso_date(issue_date),
+                "accrual_from": iso_date(accrual_from),
+                "accrual_to": iso_date(accrual_to),
+                "purchase_order_number": purchase_order_number,
+                "purchase_order_date": iso_date(purchase_order_date),
+                "purchase_order_tender_code": purchase_order_tender_code,
+                "purchase_order_project_code": purchase_order_project_code,
+                "lines": lines,
             },
         )
 
@@ -127,44 +128,44 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
     @guard
     def update_proforma(
         invoice_id: str,
-        causale: str | None = None,
-        data_emissione: IsoDateStr = None,
-        data_scadenza: IsoDateStr = None,
-        competenza_da: IsoDateStr = None,
-        competenza_a: IsoDateStr = None,
-        ordine_numero: str | None = None,
-        ordine_data: IsoDateStr = None,
-        ordine_cig: str | None = None,
-        ordine_cup: str | None = None,
+        memo: str | None = None,
+        issue_date: IsoDateStr = None,
+        due_date: IsoDateStr = None,
+        accrual_from: IsoDateStr = None,
+        accrual_to: IsoDateStr = None,
+        purchase_order_number: str | None = None,
+        purchase_order_date: IsoDateStr = None,
+        purchase_order_tender_code: str | None = None,
+        purchase_order_project_code: str | None = None,
     ) -> dict[str, Any]:
         """Corregge l'intestazione di una proforma ancora modificabile: causale, data, scadenza,
         competenza e ordine d'acquisto. Cambia solo ciò che passi; un campo omesso resta com'è e
-        non si svuota niente. Senza `data_scadenza`, all'emissione la calcolano i termini di
-        pagamento del cliente (`scadenza_prevista` su `get_invoice`). Rifiuta una fattura e una
+        non si svuota niente. Senza `due_date`, all'emissione la calcolano i termini di
+        pagamento del cliente (`expected_due_date` su `get_invoice`). Rifiuta una fattura e una
         proforma già consumata da un'emissione. Le righe si cambiano con
         `replace_proforma_lines`.
         """
         return invoices.update_proforma(
             context,
             invoice_id,
-            causale=causale,
-            data_emissione=iso_date(data_emissione),
-            data_scadenza=iso_date(data_scadenza),
-            competenza_da=iso_date(competenza_da),
-            competenza_a=iso_date(competenza_a),
-            ordine_numero=ordine_numero,
-            ordine_data=iso_date(ordine_data),
-            ordine_cig=ordine_cig,
-            ordine_cup=ordine_cup,
+            memo=memo,
+            issue_date=iso_date(issue_date),
+            due_date=iso_date(due_date),
+            accrual_from=iso_date(accrual_from),
+            accrual_to=iso_date(accrual_to),
+            purchase_order_number=purchase_order_number,
+            purchase_order_date=iso_date(purchase_order_date),
+            purchase_order_tender_code=purchase_order_tender_code,
+            purchase_order_project_code=purchase_order_project_code,
         )
 
     @mcp.tool(annotations=DESTRUCTIVE)
     @guard
-    def replace_proforma_lines(invoice_id: str, righe: list[dict[str, Any]]) -> dict[str, Any]:
+    def replace_proforma_lines(invoice_id: str, lines: list[dict[str, Any]]) -> dict[str, Any]:
         """Sostituisce **tutte** le righe di una proforma e ricalcola i totali. Rifiuta una fattura
         emessa.
         """
-        return invoices.replace_proforma_lines(context, invoice_id, righe)
+        return invoices.replace_proforma_lines(context, invoice_id, lines)
 
     @mcp.tool(annotations=ADDITIVE)
     @guard
@@ -203,9 +204,9 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
     @mcp.tool(annotations=ADDITIVE)
     @guard
     def set_invoice_payment_state(
-        invoice_id: str, stato_pagamento: str, data_incasso: str | None = None
+        invoice_id: str, payment_status: str, payment_date: str | None = None
     ) -> dict[str, Any]:
         """Registra un incasso o lo annulla. Non cambia lo stato fiscale della fattura, che resta
         emessa.
         """
-        return invoices.set_payment_state(context, invoice_id, stato_pagamento, data_incasso)
+        return invoices.set_payment_state(context, invoice_id, payment_status, payment_date)

@@ -28,7 +28,7 @@ class Activity(Base, PrimaryKeyMixin):
         # and a feed that reorders between two reads looks like data changing.
         #
         # `column("occurred_at")` and `column("id")` rather than the mapped attributes,
-        # matching `ix_people_cognome_desc_id`: `id` comes from `PrimaryKeyMixin` and is not
+        # matching `ix_people_last_name_desc_id`: `id` comes from `PrimaryKeyMixin` and is not
         # bound in this class body at all. `column()` is an explicit column reference, not a
         # string literal that would bind as a constant.
         Index(

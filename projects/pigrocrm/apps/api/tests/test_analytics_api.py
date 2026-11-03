@@ -16,8 +16,8 @@ from decimal import Decimal
 from typing import Any
 
 import pytest
-from aziende_helpers import azienda_url
 from fastapi.testclient import TestClient
+from legal_entities_helpers import legal_entity_url
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.contracts.models import Contract
@@ -26,27 +26,27 @@ from pigrocrm.core.db.clock import today_local
 from pigrocrm.core.invoices.models import Invoice
 from pigrocrm.core.work_units.models import WorkUnit
 
-# Never a literal year: `check_issue_date` refuses a `data_emissione` outside the
+# Never a literal year: `check_issue_date` refuses a `issue_date` outside the
 # current year, so a hard-coded 2026 would be a suite that starts failing on the first
 # of January. The window below is the whole of the current year, which always contains
 # both today's hours and today's issued invoices.
-OGGI = today_local()
-ANNO = OGGI.year
-DA = OGGI.replace(month=1, day=1).isoformat()
-A = OGGI.replace(month=12, day=31).isoformat()
-PERIODO = {"from": DA, "to": A}
+TODAY = today_local()
+YEAR = TODAY.year
+DA = TODAY.replace(month=1, day=1).isoformat()
+A = TODAY.replace(month=12, day=31).isoformat()
+PERIOD = {"from": DA, "to": A}
 
 PASSWORD = "supersegreta1"
 
 
-def _second_actor(admin_client: TestClient, ruolo: str) -> TestClient:
+def _second_actor(admin_client: TestClient, role: str) -> TestClient:
     """A genuinely independent session, not `admin_client`'s own cookie jar. Copied from
     `test_invoices_api.py`'s helper of the same name and purpose -- see its docstring for
     why `logged_in` and `collaborator_client` cannot both be requested in one test."""
-    email = f"{ruolo}-analytics-{id(admin_client)}@pigro.it"
+    email = f"{role}-analytics-{id(admin_client)}@pigro.it"
     created = admin_client.post(
         "/api/users",
-        json={"email": email, "password": PASSWORD, "nome": "Test", "ruolo": ruolo},
+        json={"email": email, "password": PASSWORD, "name": "Test", "role": role},
     )
     assert created.status_code == 201, created.text
     client = TestClient(admin_client.app, base_url="https://testserver")
@@ -56,20 +56,20 @@ def _second_actor(admin_client: TestClient, ruolo: str) -> TestClient:
 
 
 @pytest.fixture
-def emitter(logged_in: TestClient) -> dict[str, Any]:
+def legal_entity(logged_in: TestClient) -> dict[str, Any]:
     """Required by `issue`, not by anything analytics does -- only the two tests that
-    take an invoice all the way to `emessa` need it."""
+    take an invoice all the way to `issued` need it."""
     response = logged_in.put(
-        azienda_url(logged_in),
+        legal_entity_url(logged_in),
         json={
-            "ragione_sociale": "Studio Rossi",
-            "partita_iva": "01234567890",
-            "codice_fiscale": "HMCRFT00A01H501K",
-            "indirizzo": "Via Vittorio Veneto 12",
+            "legal_name": "Studio Rossi",
+            "vat_number": "01234567890",
+            "tax_code": "HMCRFT00A01H501K",
+            "address": "Via Vittorio Veneto 12",
             "cap": "20124",
-            "comune": "Milano",
-            "provincia": "MI",
-            "nazione": "IT",
+            "city": "Milano",
+            "province": "MI",
+            "country": "IT",
             "email": "mario@example.com",
         },
     )
@@ -82,12 +82,12 @@ def fiscal_profile(logged_in: TestClient) -> dict[str, Any]:
     """The forfettario rates slice 1 §2.2 found hard-coded in `App.jsx`, now configured
     per installation. `get_fiscal_estimate` reads all three from here."""
     response = logged_in.put(
-        azienda_url(logged_in, "/fiscal-profile"),
+        legal_entity_url(logged_in, "/fiscal-profile"),
         json={
-            "codice_regime": "RF19",
-            "coefficiente_redditivita": "67.00",
-            "aliquota_imposta_sostitutiva": "5.00",
-            "aliquota_inps": "26.07",
+            "regime_code": "RF19",
+            "profitability_coefficient": "67.00",
+            "substitute_tax_rate": "5.00",
+            "social_security_rate": "26.07",
         },
     )
     assert response.status_code == 200, response.text
@@ -97,31 +97,31 @@ def fiscal_profile(logged_in: TestClient) -> dict[str, Any]:
 def _seed_deal_and_user(
     logged_in: TestClient,
     *,
-    ore_preventivate: str | None = None,
-    valore_preventivato: str | None = None,
+    budgeted_hours: str | None = None,
+    budgeted_value: str | None = None,
 ) -> tuple[str, str]:
     """A customer complete enough to be invoiced (the `to-invoice-draft` tests take one
-    all the way to `emessa`), one deal, one collaborator to log hours against."""
+    all the way to `issued`), one deal, one collaborator to log hours against."""
     assert logged_in.post("/api/pipeline-stages/seed").status_code == 200
     customer = logged_in.post(
         "/api/customers",
         json={
-            "ragione_sociale": "Acme S.r.l.",
-            "partita_iva": "12345678901",
-            "codice_sdi": "ABCDEFG",
-            "indirizzo": "Corso Italia 5",
+            "legal_name": "Acme S.r.l.",
+            "vat_number": "12345678901",
+            "sdi_code": "ABCDEFG",
+            "address": "Corso Italia 5",
             "cap": "00100",
-            "comune": "Roma",
-            "provincia": "RM",
-            "nazione": "IT",
+            "city": "Roma",
+            "province": "RM",
+            "country": "IT",
         },
     )
     assert customer.status_code == 201, customer.text
-    body: dict[str, Any] = {"nome": "Progetto", "customer_id": customer.json()["id"]}
-    if ore_preventivate is not None:
-        body["ore_preventivate"] = ore_preventivate
-    if valore_preventivato is not None:
-        body["valore_preventivato"] = valore_preventivato
+    body: dict[str, Any] = {"name": "Progetto", "customer_id": customer.json()["id"]}
+    if budgeted_hours is not None:
+        body["budgeted_hours"] = budgeted_hours
+    if budgeted_value is not None:
+        body["budgeted_value"] = budgeted_value
     deal = logged_in.post("/api/deals", json=body)
     assert deal.status_code == 201, deal.text
     user = logged_in.post(
@@ -129,8 +129,8 @@ def _seed_deal_and_user(
         json={
             "email": f"worker-analytics-{id(logged_in)}@pigro.it",
             "password": PASSWORD,
-            "nome": "Worker",
-            "ruolo": "collaboratore",
+            "name": "Worker",
+            "role": "collaborator",
         },
     )
     assert user.status_code == 201, user.text
@@ -142,20 +142,20 @@ def _log_hours(
     deal_id: str,
     user_id: str,
     *,
-    ore: str = "4.00",
-    tariffa: str = "100.000000",
-    costo: str = "25.000000",
+    hours: str = "4.00",
+    rate: str = "100.000000",
+    cost: str = "25.000000",
 ) -> str:
     response = logged_in.post(
         "/api/time-entries",
         json={
             "deal_id": deal_id,
             "user_id": user_id,
-            "data": OGGI.isoformat(),
-            "ore": ore,
-            "descrizione": "Sviluppo",
-            "tariffa_applicata": tariffa,
-            "costo_applicato": costo,
+            "date": TODAY.isoformat(),
+            "hours": hours,
+            "description": "Sviluppo",
+            "applied_rate": rate,
+            "applied_cost": cost,
         },
     )
     assert response.status_code == 201, response.text
@@ -170,7 +170,7 @@ def test_deal_pnl_serialises_decimals_as_strings_and_null_percentage(
     logged_in: TestClient,
 ) -> None:
     """Four hours at 100 EUR sold and 25 EUR of cost, and not one invoice: revenue is the
-    invoice (§3, decision 2), so `ricavi` is a real zero while `valore_maturato` is 400 --
+    invoice (§3, decision 2), so `revenue` is a real zero while `accrued_value` is 400 --
     two fields precisely because they are two different facts."""
     deal_id, user_id = _seed_deal_and_user(logged_in)
     _log_hours(logged_in, deal_id, user_id)
@@ -178,19 +178,19 @@ def test_deal_pnl_serialises_decimals_as_strings_and_null_percentage(
     response = logged_in.get(f"/api/deals/{deal_id}/pnl")
     assert response.status_code == 200, response.text
     body = response.json()
-    assert body["ricavi"] == "0.00"
-    assert body["fatture_emesse"] == 0
+    assert body["revenue"] == "0.00"
+    assert body["issued_invoices"] == 0
     # `null`, never `"0.00"`: zero per cent means "everything earned went out in costs",
     # a zero denominator means nothing has been earned. The wire keeps them apart.
-    assert body["margine_percentuale"] is None
-    assert body["stato"] == "in corso"
-    assert body["costo_lavoro"] == "100.00"
-    assert body["margine_lordo"] == "-100.00"
-    assert body["valore_maturato"] == "400.00"
-    assert body["valore_maturato"] != body["ricavi"]
+    assert body["percentage_margin"] is None
+    assert body["status"] == "in_progress"
+    assert body["work_cost"] == "100.00"
+    assert body["gross_margin"] == "-100.00"
+    assert body["accrued_value"] == "400.00"
+    assert body["accrued_value"] != body["revenue"]
     # Asserted on the raw text, because `response.json()` would already have parsed it:
     # a `Decimal` reaches the browser as a string, never as a binary float.
-    assert '"costo_lavoro":"100.00"' in response.text.replace(" ", "")
+    assert '"work_cost":"100.00"' in response.text.replace(" ", "")
 
 
 def test_a_readonly_actor_may_read_the_economics(logged_in: TestClient) -> None:
@@ -202,7 +202,7 @@ def test_a_readonly_actor_may_read_the_economics(logged_in: TestClient) -> None:
     readonly = _second_actor(logged_in, "readonly")
 
     assert readonly.get(f"/api/deals/{deal_id}/pnl").status_code == 200
-    assert readonly.get("/api/analytics/pnl", params=PERIODO).status_code == 200
+    assert readonly.get("/api/analytics/pnl", params=PERIOD).status_code == 200
 
 
 def test_the_deal_budget_row_comes_from_the_same_method_as_the_list(
@@ -211,21 +211,21 @@ def test_the_deal_budget_row_comes_from_the_same_method_as_the_list(
     """Served from `budget_vs_actual` rather than reimplemented per deal, so the detail
     page and the report can never show different variances."""
     deal_id, user_id = _seed_deal_and_user(
-        logged_in, ore_preventivate="10.00", valore_preventivato="1000.00"
+        logged_in, budgeted_hours="10.00", budgeted_value="1000.00"
     )
     _log_hours(logged_in, deal_id, user_id)
 
-    response = logged_in.get(f"/api/deals/{deal_id}/budget", params=PERIODO)
+    response = logged_in.get(f"/api/deals/{deal_id}/budget", params=PERIOD)
     assert response.status_code == 200, response.text
     row = response.json()
     assert row["deal_id"] == deal_id
-    assert row["ore_consuntivate"] == "4.00"
-    assert row["avanzamento_ore"] == "40.00"
+    assert row["actuals_hours"] == "4.00"
+    assert row["hours_progress"] == "40.00"
     # The pro-rata budget, not the full one: at 40% of the hours, 400 is the figure the
     # revenue is judged against.
     assert row["budget_pro_rata"] == "400.00"
-    assert row["scostamento_valore"] == "-400.00"
-    assert row["non_preventivato"] is False
+    assert row["value_variance"] == "-400.00"
+    assert row["unbudgeted"] is False
 
 
 def test_a_deal_with_no_activity_in_the_window_has_no_budget_row(
@@ -235,7 +235,7 @@ def test_a_deal_with_no_activity_in_the_window_has_no_budget_row(
     the window, and a deal that had none did not "spend nothing" -- it was not in the
     report at all."""
     deal_id, _ = _seed_deal_and_user(logged_in)
-    response = logged_in.get(f"/api/deals/{deal_id}/budget", params=PERIODO)
+    response = logged_in.get(f"/api/deals/{deal_id}/budget", params=PERIOD)
     assert response.status_code == 404
     assert response.json()["code"] == "not_found"
 
@@ -252,23 +252,23 @@ def test_the_period_report_uses_the_spec_query_names(logged_in: TestClient) -> N
     deal_id, user_id = _seed_deal_and_user(logged_in)
     _log_hours(logged_in, deal_id, user_id)
 
-    response = logged_in.get("/api/analytics/pnl", params=PERIODO)
+    response = logged_in.get("/api/analytics/pnl", params=PERIOD)
     assert response.status_code == 200, response.text
     body = response.json()
     assert set(body) >= {
-        "chiusi",
-        "in_corso",
-        "spese_generali",
-        "periodo_chiuso",
-        "voci_scritte_in_ritardo",
+        "closed",
+        "in_progress",
+        "general_expenses",
+        "closed_period",
+        "written_entries_overdue",
     }
     # No combined total, deliberately: adding a finished job's margin to a half-done one
     # produces a figure that is neither (§7.4).
-    assert "totale" not in body
-    assert body["in_corso"]["deal"] == 1
-    assert body["in_corso"]["costo_lavoro"] == "100.00"
-    assert body["chiusi"]["deal"] == 0
-    assert body["da"] == DA and body["a"] == A
+    assert "total" not in body
+    assert body["in_progress"]["deal"] == 1
+    assert body["in_progress"]["work_cost"] == "100.00"
+    assert body["closed"]["deal"] == 0
+    assert body["date_from"] == DA and body["date_to"] == A
 
     assert logged_in.get("/api/analytics/pnl", params={"da": DA, "a": A}).status_code == 422
 
@@ -280,16 +280,16 @@ def test_the_backlog_takes_no_period_and_serialises_its_decimals_as_strings(
     not a question about March -- so the route must answer with no query parameter at all,
     which is exactly the shape the mandatory-period test below proves `/pnl` refuses."""
     deal_id, user_id = _seed_deal_and_user(logged_in)
-    _log_hours(logged_in, deal_id, user_id, ore="4.00", tariffa="100.000000")
+    _log_hours(logged_in, deal_id, user_id, hours="4.00", rate="100.000000")
 
     response = logged_in.get("/api/analytics/backlog")
     assert response.status_code == 200, response.text
     body = response.json()
     assert body == {
-        "ore_fatturabili_non_fatturate": "4.00",
-        "valore_maturato": "400.00",
-        "voci_senza_tariffa": 0,
-        "voci": 1,
+        "billable_uninvoiced_hours": "4.00",
+        "accrued_value": "400.00",
+        "entries_without_rate": 0,
+        "entries": 1,
     }
 
 
@@ -313,13 +313,13 @@ def test_an_inverted_window_is_a_422_naming_the_field(logged_in: TestClient) -> 
     """The service's own guard, rendered as a problem document rather than a 500."""
     response = logged_in.get("/api/analytics/pnl", params={"from": A, "to": DA})
     assert response.status_code == 422
-    assert response.json()["field"] == "a"
+    assert response.json()["field"] == "to"
 
 
 def test_the_budget_list_is_bounded(logged_in: TestClient) -> None:
-    over = logged_in.get("/api/analytics/budget", params={**PERIODO, "limit": 500})
+    over = logged_in.get("/api/analytics/budget", params={**PERIOD, "limit": 500})
     assert over.status_code == 422
-    at_the_ceiling = logged_in.get("/api/analytics/budget", params={**PERIODO, "limit": 200})
+    at_the_ceiling = logged_in.get("/api/analytics/budget", params={**PERIOD, "limit": 200})
     assert at_the_ceiling.status_code == 200, at_the_ceiling.text
 
 
@@ -331,14 +331,14 @@ def test_an_unestimated_deal_is_excluded_from_the_budget_aggregates(
     deal_id, user_id = _seed_deal_and_user(logged_in)
     _log_hours(logged_in, deal_id, user_id)
 
-    response = logged_in.get("/api/analytics/budget", params=PERIODO)
+    response = logged_in.get("/api/analytics/budget", params=PERIOD)
     assert response.status_code == 200, response.text
     page = response.json()
     assert [row["deal_id"] for row in page["items"]] == [deal_id]
-    assert page["items"][0]["non_preventivato"] is True
-    assert page["deal_non_preventivati"] == 1
-    assert page["deal_preventivati"] == 0
-    assert page["totale_preventivato"] == "0.00"
+    assert page["items"][0]["unbudgeted"] is True
+    assert page["unbudgeted_deals"] == 1
+    assert page["budgeted_deals"] == 0
+    assert page["budgeted_total"] == "0.00"
     assert page["next_cursor"] is None
 
 
@@ -348,33 +348,33 @@ def test_an_unestimated_deal_is_excluded_from_the_budget_aggregates(
 def test_the_ceiling_headroom_route_serialises_decimals_as_strings(
     logged_in: TestClient, fiscal_profile: dict[str, Any]
 ) -> None:
-    response = logged_in.get("/api/analytics/ceilings", params={"anno": ANNO})
+    response = logged_in.get("/api/analytics/ceilings", params={"year": YEAR})
     assert response.status_code == 200, response.text
     body = response.json()
-    assert body["anno"] == ANNO
+    assert body["year"] == YEAR
     assert body["pack_id"] == "it-flat-rate"
-    ricavi_soglia = next(s for s in body["soglie"] if s["id"] == "soglia_ricavi")
-    assert ricavi_soglia["soglia"] == "85000.00"
-    assert isinstance(ricavi_soglia["ricavi"], str)
-    assert isinstance(ricavi_soglia["residuo"], str)
+    revenue_threshold = next(s for s in body["thresholds"] if s["id"] == "revenue_ceiling")
+    assert revenue_threshold["threshold"] == "85000.00"
+    assert isinstance(revenue_threshold["revenue"], str)
+    assert isinstance(revenue_threshold["remaining"], str)
 
 
 def test_the_ceiling_headroom_route_is_readable_by_a_readonly_actor(
     logged_in: TestClient, fiscal_profile: dict[str, Any]
 ) -> None:
     readonly = _second_actor(logged_in, "readonly")
-    assert readonly.get("/api/analytics/ceilings", params={"anno": ANNO}).status_code == 200
+    assert readonly.get("/api/analytics/ceilings", params={"year": YEAR}).status_code == 200
 
 
 def test_the_ceiling_headroom_route_is_a_404_without_a_fiscal_profile(
     logged_in: TestClient,
 ) -> None:
-    response = logged_in.get("/api/analytics/ceilings", params={"anno": ANNO})
+    response = logged_in.get("/api/analytics/ceilings", params={"year": YEAR})
     assert response.status_code == 404, response.text
     assert response.json()["code"] == "not_found"
 
 
-def test_the_ceiling_headroom_route_requires_an_anno(logged_in: TestClient) -> None:
+def test_the_ceiling_headroom_route_requires_an_year(logged_in: TestClient) -> None:
     assert logged_in.get("/api/analytics/ceilings").status_code == 422
 
 
@@ -383,14 +383,14 @@ def test_the_simulator_adds_the_typed_value_and_answers_would_this_fit(
 ) -> None:
     response = logged_in.get(
         "/api/analytics/ceilings/simulate",
-        params={"anno": ANNO, "valore_preventivato": "20000.00"},
+        params={"year": YEAR, "budgeted_value": "20000.00"},
     )
     assert response.status_code == 200, response.text
     body = response.json()
-    assert body["aggiunta_sintetica"] == "20000.00"
-    ricavi_soglia = next(s for s in body["soglie"] if s["id"] == "soglia_ricavi")
-    assert ricavi_soglia["ricavi_simulati"] == "20000.00"
-    assert ricavi_soglia["rientra"] is True
+    assert body["brief_addition"] == "20000.00"
+    revenue_threshold = next(s for s in body["thresholds"] if s["id"] == "revenue_ceiling")
+    assert revenue_threshold["simulated_revenue"] == "20000.00"
+    assert revenue_threshold["falls_within"] is True
 
 
 def test_the_simulator_derives_the_addition_from_hours_and_rate(
@@ -398,18 +398,18 @@ def test_the_simulator_derives_the_addition_from_hours_and_rate(
 ) -> None:
     response = logged_in.get(
         "/api/analytics/ceilings/simulate",
-        params={"anno": ANNO, "ore_preventivate": "100.00", "tariffa_oraria": "250.000000"},
+        params={"year": YEAR, "budgeted_hours": "100.00", "hourly_rate": "250.000000"},
     )
     assert response.status_code == 200, response.text
-    assert response.json()["aggiunta_sintetica"] == "25000.00"
+    assert response.json()["brief_addition"] == "25000.00"
 
 
 def test_the_simulator_without_any_estimate_is_a_422_naming_the_field(
     logged_in: TestClient, fiscal_profile: dict[str, Any]
 ) -> None:
-    response = logged_in.get("/api/analytics/ceilings/simulate", params={"anno": ANNO})
+    response = logged_in.get("/api/analytics/ceilings/simulate", params={"year": YEAR})
     assert response.status_code == 422, response.text
-    assert response.json()["field"] == "valore_preventivato"
+    assert response.json()["field"] == "budgeted_value"
 
 
 def test_the_simulator_is_readable_by_a_readonly_actor(
@@ -418,7 +418,7 @@ def test_the_simulator_is_readable_by_a_readonly_actor(
     readonly = _second_actor(logged_in, "readonly")
     response = readonly.get(
         "/api/analytics/ceilings/simulate",
-        params={"anno": ANNO, "valore_preventivato": "1000.00"},
+        params={"year": YEAR, "budgeted_value": "1000.00"},
     )
     assert response.status_code == 200, response.text
 
@@ -427,19 +427,19 @@ def test_the_simulator_is_readable_by_a_readonly_actor(
 
 
 def test_the_fiscal_report_is_admin_only(logged_in: TestClient) -> None:
-    collaboratore = _second_actor(logged_in, "collaboratore")
-    response = collaboratore.get("/api/analytics/fiscal", params={"anno": ANNO})
+    collaborator = _second_actor(logged_in, "collaborator")
+    response = collaborator.get("/api/analytics/fiscal", params={"year": YEAR})
     assert response.status_code == 403
     assert response.json()["code"] == "permission_denied"
 
 
 def test_the_fiscal_report_is_labelled_an_estimate_in_its_own_payload(
     logged_in: TestClient,
-    emitter: dict[str, Any],
+    legal_entity: dict[str, Any],
     fiscal_profile: dict[str, Any],
 ) -> None:
-    """400 EUR invoiced, at 67% / 5% / 26.07%: imponibile 268.00, imposta 13.40,
-    contributi 66.37, netto 320.23 -- the chain checked end to end over HTTP, because a
+    """400 EUR invoiced, at 67% / 5% / 26.07%: taxable base 268.00, tax 13.40,
+    contributions 66.37, net 320.23 -- the chain checked end to end over HTTP, because a
     report that silently lost a rate would still answer 200 with plausible numbers."""
     deal_id, user_id = _seed_deal_and_user(logged_in)
     entry_id = _log_hours(logged_in, deal_id, user_id)
@@ -449,19 +449,19 @@ def test_the_fiscal_report_is_labelled_an_estimate_in_its_own_payload(
     assert draft.status_code == 200, draft.text
     issued = logged_in.post(f"/api/invoices/{draft.json()['id']}/issue", json={})
     assert issued.status_code == 200, issued.text
-    assert issued.json()["imponibile"] == "400.00"
+    assert issued.json()["taxable_amount"] == "400.00"
 
-    response = logged_in.get("/api/analytics/fiscal", params={"anno": ANNO})
+    response = logged_in.get("/api/analytics/fiscal", params={"year": YEAR})
     assert response.status_code == 200, response.text
     body = response.json()
-    assert body["anno"] == ANNO
-    assert body["stima"] is True
-    assert "Stima indicativa" in body["avvertenza"]
-    assert body["ricavi"] == "400.00"
-    assert body["imponibile"] == "268.00"
-    assert body["imposta_sostitutiva"] == "13.40"
-    assert body["contributi"] == "66.37"
-    assert body["reddito_netto_stimato"] == "320.23"
+    assert body["year"] == YEAR
+    assert body["estimate"] is True
+    assert "Stima indicativa" in body["warning"]
+    assert body["revenue"] == "400.00"
+    assert body["taxable_amount"] == "268.00"
+    assert body["substitute_tax"] == "13.40"
+    assert body["contributions"] == "66.37"
+    assert body["estimated_net_income"] == "320.23"
 
 
 # --- the one writer -----------------------------------------------------------------
@@ -469,8 +469,8 @@ def test_the_fiscal_report_is_labelled_an_estimate_in_its_own_payload(
 
 def test_to_invoice_draft_is_admin_only(logged_in: TestClient) -> None:
     deal_id, _ = _seed_deal_and_user(logged_in)
-    collaboratore = _second_actor(logged_in, "collaboratore")
-    response = collaboratore.post(
+    collaborator = _second_actor(logged_in, "collaborator")
+    response = collaborator.post(
         f"/api/deals/{deal_id}/time-entries/to-invoice-draft",
         json={"entry_ids": ["11111111-1111-7111-8111-111111111111"]},
     )
@@ -493,18 +493,18 @@ def test_the_draft_binds_the_hours_without_becoming_revenue(
     )
     assert response.status_code == 200, response.text
     invoice = response.json()
-    assert invoice["stato"] == "bozza"
+    assert invoice["status"] == "draft"
     assert invoice["deal_id"] == deal_id
-    assert invoice["imponibile"] == "400.00"
+    assert invoice["taxable_amount"] == "400.00"
 
     pnl = logged_in.get(f"/api/deals/{deal_id}/pnl").json()
-    assert pnl["ricavi"] == "0.00"
-    assert pnl["ore_fatturabili_non_fatturate"] == "4.00"
+    assert pnl["revenue"] == "0.00"
+    assert pnl["billable_uninvoiced_hours"] == "4.00"
 
 
 def test_a_draft_can_be_rewritten_but_an_issued_invoice_cannot(
     logged_in: TestClient,
-    emitter: dict[str, Any],
+    legal_entity: dict[str, Any],
     fiscal_profile: dict[str, Any],
 ) -> None:
     """The whole point of the invoice-state reading. Binding the same hours twice while
@@ -527,8 +527,8 @@ def test_a_draft_can_be_rewritten_but_an_issued_invoice_cannot(
     assert refused.status_code == 409
     problem = refused.json()
     assert problem["code"] == "conflict"
-    assert problem["numero"] == issued.json()["numero"]
-    assert problem["anno"] == ANNO
+    assert problem["number"] == issued.json()["number"]
+    assert problem["year"] == YEAR
     assert "due volte" in problem["detail"]
 
 
@@ -537,7 +537,7 @@ def test_an_entry_from_another_deal_is_a_422_naming_the_field(logged_in: TestCli
     other = logged_in.post(
         "/api/deals",
         json={
-            "nome": "Altro progetto",
+            "name": "Altro progetto",
             "customer_id": logged_in.get(f"/api/deals/{deal_id}").json()["customer_id"],
         },
     )
@@ -588,20 +588,20 @@ def test_the_openapi_document_describes_every_analytics_route(logged_in: TestCli
 def test_the_economic_overview_answers_everyone_and_keeps_the_estimate_for_admins(
     logged_in: TestClient, collaborator_client: TestClient
 ) -> None:
-    anno = ANNO
-    admin = logged_in.get("/api/analytics/overview", params={"anno": anno})
+    year = YEAR
+    admin = logged_in.get("/api/analytics/overview", params={"year": year})
     assert admin.status_code == 200, admin.text
     body = admin.json()
-    assert body["cassa"]["anno"] == anno
-    assert len(body["cassa"]["mesi"]) == 12
-    for key in ("incassato", "da_incassare", "bozze", "proiettato", "costi", "lordo_effettivo"):
-        assert key in body["cassa"]
+    assert body["pension_fund"]["year"] == year
+    assert len(body["pension_fund"]["months"]) == 12
+    for key in ("paid", "unpaid", "drafts", "projected", "costs", "actual_gross"):
+        assert key in body["pension_fund"]
     # Without a fiscal profile even an admin gets cash alone, never a 404.
-    assert body["fiscale"] is None
+    assert body["tax"] is None
 
-    other = collaborator_client.get("/api/analytics/overview", params={"anno": anno})
+    other = collaborator_client.get("/api/analytics/overview", params={"year": year})
     assert other.status_code == 200, other.text
-    assert other.json()["fiscale"] is None
+    assert other.json()["tax"] is None
 
 
 # --- the cash view reads by accrual period, or by the money (ORB-133) ------------------
@@ -610,90 +610,92 @@ def test_the_economic_overview_answers_everyone_and_keeps_the_estimate_for_admin
 def test_the_economic_overview_takes_a_cash_base_and_defaults_to_accrual(
     logged_in: TestClient,
 ) -> None:
-    """`base=competenza|incasso` beside `anno`, competenza when omitted (Ivan's default),
-    echoed under `cassa.base` so the page can label what it draws, and a 422 for any
-    other word -- `emissione` included, which is the P&L's base and not this view's. The
+    """`base=accrual|collection` beside `year`, competenza when omitted (Ivan's default),
+    echoed under `pension_fund.base` so the page can label what it draws, and a 422 for any
+    other word -- `issue` included, which is the P&L's base and not this view's. The
     arithmetic of the two readings is `packages/core/tests/test_analytics_cash.py`."""
-    default = logged_in.get("/api/analytics/overview", params={"anno": ANNO})
+    default = logged_in.get("/api/analytics/overview", params={"year": YEAR})
     assert default.status_code == 200, default.text
-    assert default.json()["cassa"]["base"] == "competenza"
+    assert default.json()["pension_fund"]["base"] == "accrual"
 
-    incasso = logged_in.get("/api/analytics/overview", params={"anno": ANNO, "base": "incasso"})
-    assert incasso.status_code == 200, incasso.text
-    assert incasso.json()["cassa"]["base"] == "incasso"
+    collection = logged_in.get(
+        "/api/analytics/overview", params={"year": YEAR, "base": "collection"}
+    )
+    assert collection.status_code == 200, collection.text
+    assert collection.json()["pension_fund"]["base"] == "collection"
 
-    for wrong in ("emissione", "cassa"):
-        refused = logged_in.get("/api/analytics/overview", params={"anno": ANNO, "base": wrong})
+    for wrong in ("issue", "pension_fund"):
+        refused = logged_in.get("/api/analytics/overview", params={"year": YEAR, "base": wrong})
         assert refused.status_code == 422, refused.text
 
     paths: dict[str, Any] = logged_in.get("/openapi.json").json()["paths"]
     params = {p["name"]: p for p in paths["/api/analytics/overview"]["get"]["parameters"]}
     assert params["base"]["required"] is False
-    assert set(params["base"]["schema"]["enum"]) == {"competenza", "incasso"}
-    assert params["base"]["schema"]["default"] == "competenza"
-    assert "competenza" in params["base"]["description"]
+    assert set(params["base"]["schema"]["enum"]) == {"accrual", "collection"}
+    assert params["base"]["schema"]["default"] == "accrual"
+    assert "accrual" in params["base"]["description"]
 
 
 # --- the second reading of revenue, by accrual period (ORB-61) -----------------------
 
 
-def _ricavi(body: dict[str, Any]) -> str:
+def _revenue(body: dict[str, Any]) -> str:
     """The one deal's revenue, whichever column `deal_summary` put it in."""
-    column = body["chiusi"] if body["chiusi"]["deal"] else body["in_corso"]
-    ricavi: str = column["ricavi"]
-    return ricavi
+    column = body["closed"] if body["closed"]["deal"] else body["in_progress"]
+    revenue: str = column["revenue"]
+    return revenue
 
 
 def test_the_period_report_takes_a_base_and_defaults_to_emission(
-    logged_in: TestClient, emitter: dict[str, Any]
+    logged_in: TestClient, legal_entity: dict[str, Any]
 ) -> None:
-    """`base=competenza` is a query parameter beside `from`/`to`; anything else is a 422
+    """`base=accrual` is a query parameter beside `from`/`to`; anything else is a 422
     and an omitted one is the recorded default. The arithmetic of the two readings is
     proven in `packages/core/tests/test_period_pnl.py`; this asserts the wire, with one
     invoice issued today for last month's work so the two readings visibly differ."""
     assert (
         logged_in.put(
-            azienda_url(logged_in, "/fiscal-profile"), json={"codice_regime": "RF19"}
+            legal_entity_url(logged_in, "/fiscal-profile"), json={"regime_code": "RF19"}
         ).status_code
         == 200
     )
     deal_id, _ = _seed_deal_and_user(logged_in)
     customer_id = logged_in.get(f"/api/deals/{deal_id}").json()["customer_id"]
-    primo = OGGI.replace(day=1)
-    fine_mese_prima = primo - timedelta(days=1)
+    first = TODAY.replace(day=1)
+    prev_month_end = first - timedelta(days=1)
     draft = logged_in.post(
         "/api/invoices",
         json={
             "customer_id": customer_id,
             "deal_id": deal_id,
-            "competenza_da": fine_mese_prima.replace(day=1).isoformat(),
-            "competenza_a": fine_mese_prima.isoformat(),
-            "righe": [{"descrizione": "Consulenza", "prezzo_unitario": "1000.00"}],
+            "accrual_from": prev_month_end.replace(day=1).isoformat(),
+            "accrual_to": prev_month_end.isoformat(),
+            "lines": [{"description": "Consulenza", "unit_price": "1000.00"}],
         },
     )
     assert draft.status_code == 201, draft.text
     issued = logged_in.post(f"/api/invoices/{draft.json()['id']}/issue", json={})
     assert issued.status_code == 200, issued.text
 
-    this_month = {"from": primo.isoformat(), "to": OGGI.isoformat()}
+    this_month = {"from": first.isoformat(), "to": TODAY.isoformat()}
     by_emission = logged_in.get("/api/analytics/pnl", params=this_month)
     assert by_emission.status_code == 200, by_emission.text
-    by_accrual = logged_in.get("/api/analytics/pnl", params={**this_month, "base": "competenza"})
+    by_accrual = logged_in.get("/api/analytics/pnl", params={**this_month, "base": "accrual"})
     assert by_accrual.status_code == 200, by_accrual.text
-    assert _ricavi(by_emission.json()) == "1000.00"
-    assert _ricavi(by_accrual.json()) == "0.00"
+    assert _revenue(by_emission.json()) == "1000.00"
+    assert _revenue(by_accrual.json()) == "0.00"
     # The body echoes the reading, so the web client can label the figure it shows
     # without carrying the request around beside it.
-    assert by_emission.json()["base"] == "emissione"
-    assert by_accrual.json()["base"] == "competenza"
+    assert by_emission.json()["base"] == "issue"
+    assert by_accrual.json()["base"] == "accrual"
     last_month = {
-        "from": fine_mese_prima.replace(day=1).isoformat(),
-        "to": fine_mese_prima.isoformat(),
-        "base": "competenza",
+        "from": prev_month_end.replace(day=1).isoformat(),
+        "to": prev_month_end.isoformat(),
+        "base": "accrual",
     }
-    assert _ricavi(logged_in.get("/api/analytics/pnl", params=last_month).json()) == "1000.00"
+    assert _revenue(logged_in.get("/api/analytics/pnl", params=last_month).json()) == "1000.00"
 
-    unknown = logged_in.get("/api/analytics/pnl", params={**this_month, "base": "cassa"})
+    unknown = logged_in.get("/api/analytics/pnl", params={**this_month, "base": "pension_fund"})
     assert unknown.status_code == 422, unknown.text
 
 
@@ -704,194 +706,206 @@ def test_the_openapi_document_describes_the_base_parameter_in_italian(
     params = {p["name"]: p for p in paths["/api/analytics/pnl"]["get"]["parameters"]}
     assert "base" in params
     assert params["base"]["required"] is False
-    assert set(params["base"]["schema"]["enum"]) == {"emissione", "competenza"}
-    assert params["base"]["schema"]["default"] == "emissione"
-    assert "competenza" in params["base"]["description"]
+    assert set(params["base"]["schema"]["enum"]) == {"issue", "accrual"}
+    assert params["base"]["schema"]["default"] == "issue"
+    assert "accrual" in params["base"]["description"]
 
 
-# --- one azienda at a time for the taxes, every azienda for the cash (REB-631) ---------
+# --- one legal entity at a time for the taxes, every legal entity for the cash (REB-631) ---------
 
 LTD = {
-    "nome": "rebase ltd",
-    "ragione_sociale": "Rebase Ltd",
-    "nazione": "GB",
-    "fiscal_profile": {"pack_id": "non-it", "aliquota_iva_default": "20.00"},
+    "name": "rebase ltd",
+    "legal_name": "Rebase Ltd",
+    "country": "GB",
+    "fiscal_profile": {"pack_id": "non-it", "default_vat_rate": "20.00"},
 }
 
 
-def _paid_invoice(session: Session, azienda_id: str, numero: int, importo: str) -> None:
-    """One paid invoice of `importo` on its own customer, written by row on the test's
+def _paid_invoice(session: Session, legal_entity_id: str, number: int, amount: str) -> None:
+    """One paid invoice of `amount` on its own customer, written by row on the test's
     session: enough to move every sum the routes below read, without the whole issue
     flow, which is not what these tests are about."""
-    customer = Customer(ragione_sociale=f"Cliente {azienda_id[:8]} {numero}", nazione="IT")
-    customer.azienda_id = azienda_id  # type: ignore[assignment]
+    customer = Customer(legal_name=f"Cliente {legal_entity_id[:8]} {number}", country="IT")
+    customer.legal_entity_id = legal_entity_id  # type: ignore[assignment]
     session.add(customer)
     session.flush()
     session.add(
         Invoice(
             customer_id=customer.id,
-            azienda_id=azienda_id,
-            tipo="fattura",
-            stato="emessa",
-            anno=ANNO,
-            numero=numero,
-            stato_pagamento="incassato",
-            data_emissione=date(ANNO, 2, 1),
-            data_incasso=date(ANNO, 2, 10),
-            imponibile=Decimal(importo),
-            imposta=Decimal("0.00"),
-            bollo=Decimal("0.00"),
-            totale=Decimal(importo),
+            legal_entity_id=legal_entity_id,
+            type="invoice",
+            status="issued",
+            year=YEAR,
+            number=number,
+            payment_status="paid",
+            issue_date=date(YEAR, 2, 1),
+            payment_date=date(YEAR, 2, 10),
+            taxable_amount=Decimal(amount),
+            vat_amount=Decimal("0.00"),
+            stamp_duty=Decimal("0.00"),
+            total=Decimal(amount),
             custom_fields={},
         )
     )
     session.flush()
 
 
-def test_the_fiscal_routes_resolve_alone_on_one_azienda_and_need_it_on_two(
+def test_the_fiscal_routes_resolve_alone_on_one_legal_entity_and_need_it_on_two(
     logged_in: TestClient, fiscal_profile: dict[str, Any]
 ) -> None:
     """Spec §1.9, §8 «Dashboard»: with one azienda the three routes answer as they always
-    did; from the second on they refuse without `azienda_id`, naming it, and answer for
+    did; from the second on they refuse without `legal_entity_id`, naming it, and answer for
     the one named. The refusal is this project's own 422, the shape `fieldErrorFrom`
     reads, where the spec's prose wrote 400 (REB-630's note in §11)."""
-    default = logged_in.get("/api/aziende").json()[0]["id"]
-    alone = logged_in.get("/api/analytics/fiscal", params={"anno": ANNO})
+    default = logged_in.get("/api/legal-entities").json()[0]["id"]
+    alone = logged_in.get("/api/analytics/fiscal", params={"year": YEAR})
     assert alone.status_code == 200, alone.text
-    assert alone.json()["azienda_id"] == default
+    assert alone.json()["legal_entity_id"] == default
 
-    created = logged_in.post("/api/aziende", json=LTD)
+    created = logged_in.post("/api/legal-entities", json=LTD)
     assert created.status_code == 201, created.text
     second = created.json()["id"]
-    simulate = {"anno": ANNO, "valore_preventivato": "100.00"}
+    simulate = {"year": YEAR, "budgeted_value": "100.00"}
     for path, params in (
-        ("/api/analytics/fiscal", {"anno": ANNO}),
-        ("/api/analytics/ceilings", {"anno": ANNO}),
+        ("/api/analytics/fiscal", {"year": YEAR}),
+        ("/api/analytics/ceilings", {"year": YEAR}),
         ("/api/analytics/ceilings/simulate", simulate),
     ):
         refused = logged_in.get(path, params=params)
         assert refused.status_code == 422, (path, refused.text)
-        assert refused.json()["field"] == "azienda_id", path
-        named = logged_in.get(path, params={**params, "azienda_id": default})
+        assert refused.json()["field"] == "legal_entity_id", path
+        named = logged_in.get(path, params={**params, "legal_entity_id": default})
         assert named.status_code == 200, (path, named.text)
-        assert named.json()["azienda_id"] == default
-    # The foreign azienda has a profile but no ceilings, and no forfettario estimate.
-    estero = logged_in.get("/api/analytics/ceilings", params={"anno": ANNO, "azienda_id": second})
-    assert estero.status_code == 200, estero.text
-    assert (estero.json()["pack_id"], estero.json()["soglie"]) == ("non-it", [])
+        assert named.json()["legal_entity_id"] == default
+    # The foreign legal entity has a profile but no ceilings, and no flat-rate regime estimate.
+    foreign = logged_in.get(
+        "/api/analytics/ceilings", params={"year": YEAR, "legal_entity_id": second}
+    )
+    assert foreign.status_code == 200, foreign.text
+    assert (foreign.json()["pack_id"], foreign.json()["thresholds"]) == ("non-it", [])
 
 
-def test_the_overview_in_tutte_sums_the_aziende_and_keeps_no_estimate(
+def test_the_overview_in_all_sums_the_legal_entities_and_keeps_no_estimate(
     logged_in: TestClient, api_session: Session, fiscal_profile: dict[str, Any]
 ) -> None:
-    default = logged_in.get("/api/aziende").json()[0]["id"]
-    second = logged_in.post("/api/aziende", json=LTD).json()["id"]
+    default = logged_in.get("/api/legal-entities").json()[0]["id"]
+    second = logged_in.post("/api/legal-entities", json=LTD).json()["id"]
     _paid_invoice(api_session, default, 1, "1000.00")
     _paid_invoice(api_session, second, 1, "5000.00")
 
     def overview(**params: Any) -> dict[str, Any]:
-        response = logged_in.get("/api/analytics/overview", params={"anno": ANNO, **params})
+        response = logged_in.get("/api/analytics/overview", params={"year": YEAR, **params})
         assert response.status_code == 200, response.text
         return response.json()
 
-    tutte = overview()
-    studio = overview(azienda_id=default)
-    estero = overview(azienda_id=second)
-    assert (studio["cassa"]["incassato"], estero["cassa"]["incassato"]) == ("1000.00", "5000.00")
-    assert tutte["cassa"]["incassato"] == "6000.00"
-    assert (tutte["azienda_id"], studio["azienda_id"]) == (None, default)
-    # Two aziende, no estimate in «tutte»: the page asks `/fiscal` per azienda instead.
-    assert tutte["fiscale"] is None
-    assert studio["fiscale"] is not None and studio["fiscale"]["ricavi"] == "1000.00"
-    assert {row["azienda_id"] for row in tutte["concentrazione_clienti"]} == {default, second}
-    assert all(row["quota"] == 1.0 for row in tutte["concentrazione_clienti"])
-    pnl = logged_in.get("/api/analytics/pnl", params={**PERIODO, "azienda_id": second})
+    all_entities = overview()
+    studio = overview(legal_entity_id=default)
+    foreign = overview(legal_entity_id=second)
+    assert (studio["pension_fund"]["paid"], foreign["pension_fund"]["paid"]) == (
+        "1000.00",
+        "5000.00",
+    )
+    assert all_entities["pension_fund"]["paid"] == "6000.00"
+    assert (all_entities["legal_entity_id"], studio["legal_entity_id"]) == (None, default)
+    # Two legal entities, no estimate in "all entities": the page asks `/fiscal` per
+    # legal entity instead.
+    assert all_entities["tax"] is None
+    assert studio["tax"] is not None and studio["tax"]["revenue"] == "1000.00"
+    assert {row["legal_entity_id"] for row in all_entities["customer_concentration"]} == {
+        default,
+        second,
+    }
+    assert all(row["share"] == 1.0 for row in all_entities["customer_concentration"])
+    pnl = logged_in.get("/api/analytics/pnl", params={**PERIOD, "legal_entity_id": second})
     assert pnl.status_code == 200, pnl.text
-    assert pnl.json()["azienda_id"] == second
+    assert pnl.json()["legal_entity_id"] == second
 
 
 # --- the year of one azienda, and its CSV for the accountant (REB-757) -----------------
 
 
-def test_the_year_routes_answer_for_one_azienda_and_the_csv_is_a_spreadsheet_download(
+def test_the_year_routes_answer_for_one_legal_entity_and_the_csv_is_to_spreadsheet_download(
     logged_in: TestClient, api_session: Session, fiscal_profile: dict[str, Any]
 ) -> None:
     """The wire only: the register of the default azienda as JSON, then the same year as a
     file whose headers an Italian-locale Excel opens (UTF-8 with BOM, an attachment with an
     ASCII name). What the figures mean is proven in `test_year_overview.py`."""
-    default = logged_in.get("/api/aziende").json()[0]["id"]
+    default = logged_in.get("/api/legal-entities").json()[0]["id"]
     _paid_invoice(api_session, default, 1, "1200.50")
 
-    year = logged_in.get("/api/analytics/year", params={"anno": ANNO})
+    year = logged_in.get("/api/analytics/year", params={"year": YEAR})
     assert year.status_code == 200, year.text
     body = year.json()
-    assert body["azienda_id"] == default
-    assert body["totali"]["imponibile"] == "1200.50"
-    assert [row["numero"] for row in body["registro"]] == [1]
+    assert body["legal_entity_id"] == default
+    assert body["total"]["taxable_amount"] == "1200.50"
+    assert [row["number"] for row in body["register"]] == [1]
 
-    file = logged_in.get("/api/analytics/year/csv", params={"anno": ANNO})
+    file = logged_in.get("/api/analytics/year/csv", params={"year": YEAR})
     assert file.status_code == 200, file.text
     assert file.headers["content-type"] == "text/csv; charset=utf-8"
     assert file.headers["content-disposition"].startswith(
-        f"attachment; filename*=UTF-8''registro-{ANNO}-"
+        f"attachment; filename*=UTF-8''registro-{YEAR}-"
     )
     assert file.content.startswith(b"\xef\xbb\xbf")
     assert "1.200,50" in file.content.decode("utf-8")
 
 
-def test_the_year_routes_need_the_azienda_on_two_and_a_year_in_range(
+def test_the_year_routes_need_the_legal_entity_on_two_and_to_year_in_range(
     logged_in: TestClient, fiscal_profile: dict[str, Any]
 ) -> None:
-    default = logged_in.get("/api/aziende").json()[0]["id"]
-    assert logged_in.post("/api/aziende", json=LTD).status_code == 201
+    default = logged_in.get("/api/legal-entities").json()[0]["id"]
+    assert logged_in.post("/api/legal-entities", json=LTD).status_code == 201
     for path in ("/api/analytics/year", "/api/analytics/year/csv"):
-        refused = logged_in.get(path, params={"anno": ANNO})
+        refused = logged_in.get(path, params={"year": YEAR})
         assert refused.status_code == 422, (path, refused.text)
-        assert refused.json()["field"] == "azienda_id", path
-        named = logged_in.get(path, params={"anno": ANNO, "azienda_id": default})
+        assert refused.json()["field"] == "legal_entity_id", path
+        named = logged_in.get(path, params={"year": YEAR, "legal_entity_id": default})
         assert named.status_code == 200, (path, named.text)
-        assert logged_in.get(path, params={"anno": 1999, "azienda_id": default}).status_code == 422
+        assert (
+            logged_in.get(path, params={"year": 1999, "legal_entity_id": default}).status_code
+            == 422
+        )
 
 
 def test_a_readonly_session_reads_the_year_like_it_reads_the_register(
     logged_in: TestClient, fiscal_profile: dict[str, Any]
 ) -> None:
     reader = _second_actor(logged_in, "readonly")
-    assert reader.get("/api/analytics/year", params={"anno": ANNO}).status_code == 200
-    assert reader.get("/api/analytics/year/csv", params={"anno": ANNO}).status_code == 200
+    assert reader.get("/api/analytics/year", params={"year": YEAR}).status_code == 200
+    assert reader.get("/api/analytics/year/csv", params={"year": YEAR}).status_code == 200
 
 
 # --- the days of a period (REB-756) ------------------------------------------------------
 
 
-def test_the_days_route_answers_by_month_and_state_and_takes_one_azienda(
+def test_the_days_route_answers_by_month_and_state_and_takes_one_legal_entity(
     logged_in: TestClient, api_session: Session
 ) -> None:
     """The wire only: a recorded day lands in its month and state, the period is both
     bounds or neither, and another azienda's filter leaves the figure out. What the
     figures mean is proven in `test_days_analysis.py`."""
-    default = logged_in.get("/api/aziende").json()[0]["id"]
-    customer = Customer(ragione_sociale="Acme S.r.l.")
+    default = logged_in.get("/api/legal-entities").json()[0]["id"]
+    customer = Customer(legal_name="Acme S.r.l.")
     api_session.add(customer)
     api_session.flush()
     contract = Contract(
         customer_id=customer.id,
-        titolo="Consulenza",
-        inizio=OGGI.replace(month=1, day=1),
-        tipo_rinnovo="nessuno",
-        preavviso_disdetta_giorni=30,
-        cadenza_fatturazione="mensile",
-        politica_spese={"kind": "non_rimborsabile"},
+        title="Consulenza",
+        start=TODAY.replace(month=1, day=1),
+        renewal_type="none",
+        termination_notice_days=30,
+        billing_cadence="monthly",
+        expense_policy={"kind": "not_reimbursable"},
     )
     api_session.add(contract)
     api_session.flush()
     api_session.add(
         WorkUnit(
             contract_id=contract.id,
-            data=OGGI,
-            quantita=Decimal("1.00"),
-            descrizione="Giornata di consulenza",
-            stato="lavorato",
+            date=TODAY,
+            quantity=Decimal("1.00"),
+            description="Giornata di consulenza",
+            status="worked",
         )
     )
     api_session.commit()
@@ -899,21 +913,23 @@ def test_the_days_route_answers_by_month_and_state_and_takes_one_azienda(
     month = logged_in.get("/api/analytics/days")
     assert month.status_code == 200, month.text
     body = month.json()
-    assert [m["mese"] for m in body["mesi"]] == [OGGI.strftime("%Y-%m")]
-    assert body["giorni_nel_periodo"] == "1.00"
-    lavorato = next(s for s in body["mesi"][0]["per_stato"] if s["stato"] == "lavorato")
-    assert lavorato["giorni"] == "1.00"
+    assert [m["month"] for m in body["months"]] == [TODAY.strftime("%Y-%m")]
+    assert body["days_in_period"] == "1.00"
+    worked = next(s for s in body["months"][0]["by_status"] if s["status"] == "worked")
+    assert worked["days"] == "1.00"
 
-    year = logged_in.get("/api/analytics/days", params={"da": DA, "a": A, "azienda_id": default})
+    year = logged_in.get(
+        "/api/analytics/days", params={"from": DA, "to": A, "legal_entity_id": default}
+    )
     assert year.status_code == 200, year.text
-    assert len(year.json()["mesi"]) == 12
-    assert year.json()["azienda_id"] == default
+    assert len(year.json()["months"]) == 12
+    assert year.json()["legal_entity_id"] == default
 
-    other = logged_in.post("/api/aziende", json=LTD)
+    other = logged_in.post("/api/legal-entities", json=LTD)
     assert other.status_code == 201, other.text
-    elsewhere = logged_in.get("/api/analytics/days", params={"azienda_id": other.json()["id"]})
-    assert elsewhere.json()["giorni_nel_periodo"] == "0.00"
+    elsewhere = logged_in.get("/api/analytics/days", params={"legal_entity_id": other.json()["id"]})
+    assert elsewhere.json()["days_in_period"] == "0.00"
 
-    half = logged_in.get("/api/analytics/days", params={"da": DA})
+    half = logged_in.get("/api/analytics/days", params={"from": DA})
     assert half.status_code == 422
-    assert half.json()["field"] == "a"
+    assert half.json()["field"] == "to"

@@ -40,8 +40,6 @@ from sqlalchemy.orm import Session
 from pigrocrm.core.activities.models import Activity
 from pigrocrm.core.activities.service import ActivityService
 from pigrocrm.core.actor import Actor
-from pigrocrm.core.attivita.schemas import AttivitaCreate, AttivitaUpdate
-from pigrocrm.core.attivita.service import AttivitaService
 from pigrocrm.core.auth.models import User
 from pigrocrm.core.customers.schemas import CustomerCreate, CustomerUpdate
 from pigrocrm.core.customers.service import CustomerService
@@ -57,6 +55,8 @@ from pigrocrm.core.reminders.preferences import (
     ReminderPreferenceService,
 )
 from pigrocrm.core.reminders.schemas import GENERAL, ReminderPreferenceWrite
+from pigrocrm.core.tasks.schemas import TaskCreate, TaskUpdate
+from pigrocrm.core.tasks.service import TaskService
 from pigrocrm.core.timetracking.costs import CostService
 from pigrocrm.core.timetracking.schemas import (
     CostCreate,
@@ -104,7 +104,7 @@ _GATES = frozenset({"require_write", "require_admin", "require_unscoped_admin"})
 
 # 1. It looks like a write and is a read: a role check on a path that only looks, or a
 #    commit that settles a lazy refresh (a token, a cached figure).
-_LETTURE: dict[Method, str] = {
+_READS: dict[Method, str] = {
     ("AnalyticsService", "economic_overview"): "a figure; nothing is written for the person",
     ("AnalyticsService", "get_fiscal_estimate"): "a figure computed from the profile",
     ("AutomationConfigService", "describe_automations"): "reads the rules",
@@ -128,7 +128,7 @@ _LETTURE: dict[Method, str] = {
 # 2. It writes, through a service that records. The sweep follows `self.` helpers only,
 #    and these reach the record through another class, which that class's own methods
 #    are swept for.
-_DELEGA: dict[Method, str] = {
+_DELEGATION: dict[Method, str] = {
     ("ApprovalRequestService", "prepare"): (
         "creates the days (`WorkUnitService.create` records on the contract) and the draft "
         "(`EmailDraftService.create` records on the record it is about)"
@@ -160,7 +160,7 @@ _DELEGA: dict[Method, str] = {
 # 3. What a person does to their own session or their own notifications, not to the
 #    CRM's records: a login, a snoozed reminder, a running clock. Nobody else reads these
 #    as history, and a row per login would bury the timelines they would be written on.
-_PERSONALE: dict[Method, str] = {
+_PERSONAL: dict[Method, str] = {
     ("IdentityService", "enter"): "opening a session",
     ("IdentityService", "get_or_create"): "an identity of the person across spaces",
     ("IdentityService", "request"): "asking for a sign-in link",
@@ -185,14 +185,14 @@ _PERSONALE: dict[Method, str] = {
 }
 
 # 4. Machinery with no member behind it, whose outcome is recorded where it matters.
-_MACCHINERIA: dict[Method, str] = {
+_MACHINERY: dict[Method, str] = {
     ("SlackOAuthService", "start"): "builds a consent URL; `complete` records",
     ("InvitationService", "record_mail"): "delivery status of a mail already recorded as sent",
     ("InvitationService", "refresh_mail_status"): "delivery status of a mail already recorded",
     ("TenantService", "provision"): "creates a space in the registry; the space has no history yet",
 }
 
-ESCLUSIONI: dict[Method, str] = {**_LETTURE, **_DELEGA, **_PERSONALE, **_MACCHINERIA}
+EXCLUSIONS: dict[Method, str] = {**_READS, **_DELEGATION, **_PERSONAL, **_MACHINERY}
 
 
 # --- the sweep ---------------------------------------------------------------------
@@ -264,13 +264,13 @@ def test_the_sweep_finds_writers_that_record_and_writers_that_do_not() -> None:
 
 @pytest.mark.parametrize(("service", "method"), UNRECORDED_WRITERS)
 def test_every_writer_records_or_is_a_named_exclusion(service: str, method: str) -> None:
-    assert (service, method) in ESCLUSIONI, (
+    assert (service, method) in EXCLUSIONS, (
         f"{service}.{method} writes and reaches no ActivityService.record. Record who did it "
         "(REB-781), or add it to ESCLUSIONI in this file with the reason it need not."
     )
 
 
-@pytest.mark.parametrize(("service", "method"), sorted(ESCLUSIONI))
+@pytest.mark.parametrize(("service", "method"), sorted(EXCLUSIONS))
 def test_every_exclusion_is_still_a_writer_that_does_not_record(service: str, method: str) -> None:
     """A stale entry is a hole with a reason attached: the method was renamed, now
     records, or never wrote at all."""
@@ -282,8 +282,8 @@ def test_every_exclusion_is_still_a_writer_that_does_not_record(service: str, me
 
 def test_no_exclusion_hides_in_two_blocks() -> None:
     """Four blocks, one reason each: a method in two is a method nobody decided about."""
-    blocks = (_LETTURE, _DELEGA, _PERSONALE, _MACCHINERIA)
-    assert sum(len(b) for b in blocks) == len(ESCLUSIONI)
+    blocks = (_READS, _DELEGATION, _PERSONAL, _MACHINERY)
+    assert sum(len(b) for b in blocks) == len(EXCLUSIONS)
 
 
 # --- the attribution ---------------------------------------------------------------
@@ -296,12 +296,12 @@ def members(db_session: Session) -> dict[str, User]:
     """Two members of the space, one of them deactivated afterwards by the test that
     needs it: the one who changes things in a browser and the one whose agent does."""
     made: dict[str, User] = {}
-    for key, nome in (("web", "Giulia Bianchi"), ("mcp", "Marco Verdi")):
+    for key, name in (("web", "Giulia Bianchi"), ("mcp", "Marco Verdi")):
         user = User(
             email=f"{key}-{uuid4()}@example.test",
             password_hash="x",
-            nome=nome,
-            ruolo="admin",
+            name=name,
+            role="admin",
         )
         db_session.add(user)
         made[key] = user
@@ -317,14 +317,14 @@ def _actors(members: dict[str, User]) -> dict[str, Actor]:
 
 
 def _customer(session: Session, actor: Actor, ctx: dict[str, UUID]) -> tuple[str, UUID]:
-    created = CustomerService(session).create(CustomerCreate(ragione_sociale="ACME"), actor)
+    created = CustomerService(session).create(CustomerCreate(legal_name="ACME"), actor)
     ctx["customer"] = created.id
     return "customer", created.id
 
 
 def _customer_update(session: Session, actor: Actor, ctx: dict[str, UUID]) -> tuple[str, UUID]:
     _customer(session, actor, ctx)
-    CustomerService(session).update(ctx["customer"], CustomerUpdate(telefono="02 1234567"), actor)
+    CustomerService(session).update(ctx["customer"], CustomerUpdate(phone="02 1234567"), actor)
     return "customer", ctx["customer"]
 
 
@@ -341,19 +341,19 @@ def _customer_notes(session: Session, actor: Actor, ctx: dict[str, UUID]) -> tup
     """A first note on creation, then one added, edited and deleted: four entries, the first
     from the creating service and the rest from `NoteService`."""
     created = CustomerService(session).create(
-        CustomerCreate(ragione_sociale="ACME", note="Prima nota"), actor
+        CustomerCreate(legal_name="ACME", note="Prima nota"), actor
     )
     service = NoteService(session)
-    added = service.add("customer", created.id, NoteCreate(testo="Seconda nota"), actor)
-    service.update(added.id, NoteUpdate(testo="Seconda nota, corretta"), actor)
+    added = service.add("customer", created.id, NoteCreate(text="Seconda nota"), actor)
+    service.update(added.id, NoteUpdate(text="Seconda nota, corretta"), actor)
     service.delete(added.id, actor)
     return "customer", created.id
 
 
 def _person(session: Session, actor: Actor, ctx: dict[str, UUID]) -> tuple[str, UUID]:
     service = PersonService(session)
-    person = service.create(PersonCreate(nome="Anna"), actor)
-    service.update(person.id, PersonUpdate(ruolo="CTO"), actor)
+    person = service.create(PersonCreate(first_name="Anna"), actor)
+    service.update(person.id, PersonUpdate(role="CTO"), actor)
     service.soft_delete(person.id, actor)
     service.restore(person.id, actor)
     return "person", person.id
@@ -363,27 +363,27 @@ def _deal(session: Session, actor: Actor, ctx: dict[str, UUID]) -> tuple[str, UU
     service = DealService(session)
     deal = service.create(
         DealCreate(
-            nome="Progetto", customer_id=ctx["seed_customer"], pipeline_stage_id=ctx["open"]
+            name="Progetto", customer_id=ctx["seed_customer"], pipeline_stage_id=ctx["open"]
         ),
         actor,
     )
-    service.update(deal.id, DealUpdate(nome="Progetto bis"), actor)
+    service.update(deal.id, DealUpdate(name="Progetto bis"), actor)
     service.move_stage(deal.id, ctx["won"], actor)
     service.soft_delete(deal.id, actor)
     service.restore(deal.id, actor)
     return "deal", deal.id
 
 
-def _attivita(session: Session, actor: Actor, ctx: dict[str, UUID]) -> tuple[str, UUID]:
-    service = AttivitaService(session)
-    created = service.create(AttivitaCreate(titolo="Chiamare"), actor)
-    service.update(created.id, AttivitaUpdate(titolo="Richiamare"), actor)
+def _task(session: Session, actor: Actor, ctx: dict[str, UUID]) -> tuple[str, UUID]:
+    service = TaskService(session)
+    created = service.create(TaskCreate(title="Chiamare"), actor)
+    service.update(created.id, TaskUpdate(title="Richiamare"), actor)
     service.complete(created.id, actor)
     service.reopen(created.id, actor)
     service.cancel(created.id, actor)
     service.soft_delete(created.id, actor)
     service.restore(created.id, actor)
-    return "attivita", created.id
+    return "task", created.id
 
 
 def _time_entry(session: Session, actor: Actor, ctx: dict[str, UUID]) -> tuple[str, UUID]:
@@ -392,14 +392,14 @@ def _time_entry(session: Session, actor: Actor, ctx: dict[str, UUID]) -> tuple[s
         TimeEntryCreate(
             deal_id=ctx["seed_deal"],
             user_id=ctx["worker"],
-            data=date(2026, 3, 10),
-            ore=Decimal("2.00"),
-            descrizione="Analisi",
-            tariffa_applicata=Decimal("80.000000"),
+            date=date(2026, 3, 10),
+            hours=Decimal("2.00"),
+            description="Analisi",
+            applied_rate=Decimal("80.000000"),
         ),
         actor,
     )
-    service.update(entry.id, TimeEntryUpdate(descrizione="Analisi e stesura"), actor)
+    service.update(entry.id, TimeEntryUpdate(description="Analisi e stesura"), actor)
     service.soft_delete(entry.id, actor)
     service.restore(entry.id, actor)
     return "time_entry", entry.id
@@ -411,13 +411,13 @@ def _cost(session: Session, actor: Actor, ctx: dict[str, UUID]) -> tuple[str, UU
         CostCreate(
             deal_id=ctx["seed_deal"],
             category_id=ctx["category"],
-            data=date(2026, 3, 10),
-            importo=Decimal("12.50"),
-            descrizione="Licenza",
+            date=date(2026, 3, 10),
+            amount=Decimal("12.50"),
+            description="Licenza",
         ),
         actor,
     )
-    service.update(cost.id, CostUpdate(descrizione="Licenza annuale"), actor)
+    service.update(cost.id, CostUpdate(description="Licenza annuale"), actor)
     service.soft_delete(cost.id, actor)
     service.restore(cost.id, actor)
     return "cost", cost.id
@@ -453,9 +453,9 @@ SCENARIOS: dict[str, tuple[Scenario, set[str]]] = {
         _deal,
         {"created", "updated", "stage_changed", "deleted", "restored"},
     ),
-    "attivita through every state": (
-        _attivita,
-        {"created", "updated", "completata", "riaperta", "annullata", "archived", "restored"},
+    "task through every state": (
+        _task,
+        {"created", "updated", "completed", "reopened", "cancelled", "archived", "restored"},
     ),
     "time entry created, updated, archived, restored": (
         _time_entry,
@@ -530,7 +530,7 @@ def test_the_timeline_names_the_member_and_keeps_naming_a_deactivated_one(
     actors = _actors(members)
     _, web_id = _customer(db_session, actors["user"], dict(world))
     _, mcp_id = _customer(db_session, actors["mcp"], dict(world))
-    members["web"].attivo = False
+    members["web"].active = False
     db_session.flush()
 
     service = ActivityService(db_session)
@@ -563,10 +563,10 @@ def test_an_automations_entry_names_the_member_who_set_it_off(
         entity,
         "automation.stage_moved",
         Actor.system(),
-        {"attivata_da": str(members["mcp"].id), "attivata_via": "mcp"},
+        {"triggered_by": str(members["mcp"].id), "triggered_via": "mcp"},
     )
     service.record(
-        "deal", entity, "automation.other", Actor.system(), {"attivata_da": "not-a-uuid"}
+        "deal", entity, "automation.other", Actor.system(), {"triggered_by": "not-a-uuid"}
     )
 
     by_kind = {e.kind: e for e in service.timeline("deal", entity)}

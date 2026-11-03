@@ -66,7 +66,7 @@ export function GmailPanel() {
   const sync = useSyncGmail()
   const disconnect = useDisconnectGmail()
   const storeBodies = useSetStoreBodies()
-  const [eliminaMessaggi, setEliminaMessaggi] = useState(false)
+  const [deleteMessages, setDeleteMessages] = useState(false)
 
   // The failure branch comes first, and it is not folded into the line below. On an
   // error `isPending` is false while `data` is still undefined, so a single
@@ -175,19 +175,19 @@ export function GmailPanel() {
       <div className="space-y-2 border-t pt-4">
         <div className="flex items-start gap-2">
           <Checkbox
-            id="gmail-elimina-messaggi"
+            id="gmail-delete-messages"
             className="mt-1"
-            checked={eliminaMessaggi}
-            onCheckedChange={(checked) => setEliminaMessaggi(checked === true)}
+            checked={deleteMessages}
+            onCheckedChange={(checked) => setDeleteMessages(checked === true)}
           />
-          <Label htmlFor="gmail-elimina-messaggi" className="font-normal leading-snug">
+          <Label htmlFor="gmail-delete-messages" className="font-normal leading-snug">
             Elimina anche le email già archiviate nel CRM. È irreversibile.
           </Label>
         </div>
         <Button
           variant="destructive"
           disabled={disconnect.isPending}
-          onClick={() => disconnect.mutate({ eliminaMessaggi })}
+          onClick={() => disconnect.mutate({ deleteMessages })}
         >
           Scollega la casella
         </Button>

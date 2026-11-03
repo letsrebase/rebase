@@ -24,7 +24,6 @@ from uuid import UUID
 
 from pydantic import WithJsonSchema
 
-from pigrocrm.core.attivita.schemas import AttivitaUpdate
 from pigrocrm.core.contract_expenses.schemas import ContractExpenseUpdate
 from pigrocrm.core.contracts.schemas import ClauseNoteUpdate, ContractUpdate, RateCardUpdate
 from pigrocrm.core.customers.schemas import CustomerUpdate
@@ -32,10 +31,11 @@ from pigrocrm.core.deals.schemas import DealUpdate
 from pigrocrm.core.errors import ValidationFailed
 from pigrocrm.core.people.schemas import PersonUpdate
 from pigrocrm.core.search.schemas import PER_CLASS_LIMIT
-from pigrocrm.core.timetracking.schemas import ANNO_MAX, ANNO_MIN, CostUpdate, TimeEntryUpdate
+from pigrocrm.core.tasks.schemas import TaskUpdate
+from pigrocrm.core.timetracking.schemas import YEAR_MAX, YEAR_MIN, CostUpdate, TimeEntryUpdate
 
 # `changes` of an `update_*`: an unvalidated dict at runtime, the real model's schema in the
-# listing, so an agent sees the field names (`update_attivita` included, with the two
+# listing, so an agent sees the field names (`update_task` included, with the two
 # `*_da_rimuovere` flags that clear a field). The model is built inside the call, in
 # `tools/<family>.py`.
 CustomerChanges = Annotated[dict[str, Any], WithJsonSchema(CustomerUpdate.model_json_schema())]
@@ -49,7 +49,7 @@ ContractExpenseChanges = Annotated[
 ]
 TimeEntryChanges = Annotated[dict[str, Any], WithJsonSchema(TimeEntryUpdate.model_json_schema())]
 CostChanges = Annotated[dict[str, Any], WithJsonSchema(CostUpdate.model_json_schema())]
-AttivitaChanges = Annotated[dict[str, Any], WithJsonSchema(AttivitaUpdate.model_json_schema())]
+TaskChanges = Annotated[dict[str, Any], WithJsonSchema(TaskUpdate.model_json_schema())]
 
 # A date: a `str | None` at runtime, `format: date` in the listing.
 IsoDateStr = Annotated[
@@ -60,14 +60,14 @@ IsoDateStr = Annotated[
 ]
 
 
-def iso_date(value: str | None, field: str = "data") -> date | None:
+def iso_date(value: str | None, field: str = "date") -> date | None:
     """An `IsoDateStr` argument as the `date` a core schema takes, or `None` when the
     agent left it out. Called *inside* the guarded tool body: a malformed string is a
     sentence naming the format, not a raw SDK rejection."""
     return required_iso_date(value, field) if value else None
 
 
-def required_iso_date(value: str, field: str = "data") -> date:
+def required_iso_date(value: str, field: str = "date") -> date:
     try:
         return date.fromisoformat(value)
     except ValueError as exc:
@@ -86,7 +86,7 @@ def parse_legal_entity_id(value: str | None) -> UUID | None:
         return UUID(value)
     except ValueError as exc:
         raise ValidationFailed(
-            "emitter_profile", "azienda_id", "non e' l'id di un'azienda", expected="un UUID"
+            "legal_entities", "legal_entity_id", "non e' l'id di un'azienda", expected="un UUID"
         ) from exc
 
 
@@ -109,7 +109,7 @@ def literal_arg(name: str, value: str | None, allowed: Any) -> Any:
 # A closed set of values: a plain `str`, the enum in the listing.
 OfferStateArg = Annotated[
     str,
-    WithJsonSchema({"type": "string", "enum": ["bozza", "inviata", "accettata", "rifiutata"]}),
+    WithJsonSchema({"type": "string", "enum": ["draft", "sent", "accepted", "rejected"]}),
 ]
 
 # The three kinds of record a mail, a draft or a note is filed against.
@@ -128,7 +128,7 @@ BoundedLimit = Annotated[
     int | str,
     WithJsonSchema({"type": "integer", "minimum": 1, "maximum": 200, "default": 50}),
 ]
-SearchLimite = Annotated[
+SearchLimit = Annotated[
     int | str,
     WithJsonSchema({"type": "integer", "minimum": 1, "maximum": 20, "default": PER_CLASS_LIMIT}),
 ]
@@ -152,7 +152,7 @@ def bounded_limit(value: int | str) -> int:
 
 # A percentage, with and without the "unset" reading: `Probabilita` is for a value with no
 # unset meaning (a renewal assumption without a probability is not one).
-OptionalProbabilita = Annotated[
+OptionalProbability = Annotated[
     int | str | None,
     WithJsonSchema(
         {
@@ -161,7 +161,7 @@ OptionalProbabilita = Annotated[
         }
     ),
 ]
-Probabilita = Annotated[
+Probability = Annotated[
     int | str, WithJsonSchema({"type": "integer", "minimum": 0, "maximum": 100})
 ]
 OptionalMoney = Annotated[
@@ -192,23 +192,23 @@ OptionalFactor = Annotated[
 # A year and a version number have no `*ListQuery` behind them: the call-throughs
 # (`tools/timetracking.py::_ANNO`, `tools/documents.py::_NUMERO`) each carry a `TypeAdapter`
 # for the bounds advertised here. `Anno` is the required form (a ceiling is for one year).
-OptionalAnno = Annotated[
+OptionalYear = Annotated[
     int | str | None,
     WithJsonSchema(
         {
             "anyOf": [
-                {"type": "integer", "minimum": ANNO_MIN, "maximum": ANNO_MAX},
+                {"type": "integer", "minimum": YEAR_MIN, "maximum": YEAR_MAX},
                 {"type": "null"},
             ],
             "default": None,
         }
     ),
 ]
-Anno = Annotated[
-    int | str, WithJsonSchema({"type": "integer", "minimum": ANNO_MIN, "maximum": ANNO_MAX})
+Year = Annotated[
+    int | str, WithJsonSchema({"type": "integer", "minimum": YEAR_MIN, "maximum": YEAR_MAX})
 ]
 VersionNumber = Annotated[int | str, WithJsonSchema({"type": "integer", "minimum": 1})]
-# A proposal's confidence and a day's quantity; `ProposalCreate` and `GiornataProposalFields`
+# A proposal's confidence and a day's quantity; `ProposalCreate` and `WorkUnitProposalFields`
 # enforce the bound.
-Confidenza = Annotated[float | str, WithJsonSchema({"type": "number", "minimum": 0, "maximum": 1})]
-QuantitaArg = Annotated[float | str, WithJsonSchema({"type": "number", "exclusiveMinimum": 0})]
+Confidence = Annotated[float | str, WithJsonSchema({"type": "number", "minimum": 0, "maximum": 1})]
+QuantityArg = Annotated[float | str, WithJsonSchema({"type": "number", "exclusiveMinimum": 0})]

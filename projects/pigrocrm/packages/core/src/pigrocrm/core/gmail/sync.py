@@ -48,7 +48,7 @@ from pigrocrm.core.activities.service import ActivityService
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.config import Settings, require_gmail_configured
 from pigrocrm.core.customers.models import Customer
-from pigrocrm.core.customers.schemas import RAGIONE_SOCIALE_MAX_LENGTH
+from pigrocrm.core.customers.schemas import LEGAL_NAME_MAX_LENGTH
 from pigrocrm.core.errors import Conflict, NotFound, ValidationFailed
 from pigrocrm.core.gmail.account import GoogleAccountService
 from pigrocrm.core.gmail.errors import CredentialRevoked, GmailUnavailable, GoogleCallFailed
@@ -239,7 +239,7 @@ class GmailSyncService:
 
         # Before anything else: resolve any send whose outcome we do not know (spec 6.3
         # point 3, «la riconciliazione gira all'inizio di ogni sync»). First, and not
-        # last, for two reasons. A draft left `incerto` because a human never pressed
+        # last, for two reasons. A draft left `uncertain` because a human never pressed
         # «verifica» is a state that stays wrong, and this is the only thing that
         # resolves it without one; and doing it here means the outbound row for an
         # adopted message exists *before* this cycle's own listing reaches the same
@@ -299,7 +299,7 @@ class GmailSyncService:
             self.activities.record(
                 "google_account",
                 account.id,
-                "gmail.backfill_eseguito",
+                "gmail.backfill_run",
                 actor,
                 {"addresses": len(fresh), "days": self.settings.gmail_backfill_days},
             )
@@ -321,7 +321,7 @@ class GmailSyncService:
         self.activities.record(
             "google_account",
             account.id,
-            "gmail.sync_eseguito",
+            "gmail.sync_run",
             actor,
             {
                 "queries_issued": report.queries_issued,
@@ -389,7 +389,7 @@ class GmailSyncService:
                 self.activities.record(
                     "google_account",
                     account.id,
-                    "gmail.backfill_eseguito",
+                    "gmail.backfill_run",
                     actor,
                     {
                         "entity_type": entity_type,
@@ -424,14 +424,14 @@ class GmailSyncService:
         customer = self.session.get(Customer, customer_id)
         if customer is None or customer.deleted_at is not None:
             raise NotFound("customer", customer_id)
-        domain = customer_domain(sito_web=customer.sito_web, email=customer.email)
+        domain = customer_domain(website=customer.website, email=customer.email)
         if domain is None:
             raise Conflict(
                 "gmail_discovery",
                 f"il cliente {customer_id} non ha un dominio da cui partire: indica il sito "
                 "web o un'email aziendale (non webmail) sulla scheda cliente",
             )
-        report = DiscoveryReport(started_at=datetime.now(UTC), dominio=domain)
+        report = DiscoveryReport(started_at=datetime.now(UTC), domain=domain)
         token = self._access_token(account)
         mailbox = account.email_address.strip().lower()
         suffix = f"@{domain}"
@@ -467,26 +467,24 @@ class GmailSyncService:
                     if not entry.name:
                         # Clipped to what the add-as-person request takes (a header can
                         # carry a longer name, and the page sends this one back verbatim).
-                        entry.name = parsed.display_names.get(address, "")[
-                            :RAGIONE_SOCIALE_MAX_LENGTH
-                        ]
+                        entry.name = parsed.display_names.get(address, "")[:LEGAL_NAME_MAX_LENGTH]
         known = self.roster.known_among(tally)
-        report.corrispondenti = [
+        report.matching = [
             DiscoveredCorrespondent(
-                indirizzo=address,
-                nome=entry.name,
-                messaggi=entry.count,
-                conversazioni=len(entry.threads),
-                ultimo_messaggio=entry.last,
-                gia_in_anagrafica=address in known,
+                address=address,
+                name=entry.name,
+                messages=entry.count,
+                conversations=len(entry.threads),
+                last_message=entry.last,
+                already_in_directory=address in known,
             )
             for address, entry in sorted(tally.items(), key=lambda item: (-item[1].count, item[0]))
         ]
         return report
 
-    def suggest_customers(self, *, actor: Actor, mesi: int = 12) -> list[SuggestedCustomer]:
+    def suggest_customers(self, *, actor: Actor, months: int = 12) -> list[SuggestedCustomer]:
         """The organisations the connected mailbox has corresponded with over the last
-        `mesi` months, proposed as customers (spec 2026-09-16 §5, REB-223).
+        `months` months, proposed as customers (spec 2026-09-16 §5, REB-223).
 
         Read from the mail the owner sent (`sent_since_query`): each conversation the
         owner wrote in, as its headers only, and every address it names grouped by
@@ -502,10 +500,10 @@ class GmailSyncService:
         """
         require_gmail_configured(self.settings)
         actor.require_write(_SUGGEST_ACTION)
-        if not 1 <= mesi <= SUGGEST_MAX_MONTHS:
+        if not 1 <= months <= SUGGEST_MAX_MONTHS:
             raise ValidationFailed(
                 "gmail_suggestions",
-                "mesi",
+                "months",
                 f"le proposte leggono da 1 a {SUGGEST_MAX_MONTHS} mesi di posta",
                 expected=f"1-{SUGGEST_MAX_MONTHS}",
             )
@@ -513,7 +511,7 @@ class GmailSyncService:
         self.accounts.usable(actor, scope=SCOPE_READONLY, feature="i clienti proposti")
         mailbox = account.email_address.strip().lower()
         own_domain = mailbox.rpartition("@")[2]
-        since = datetime.now(UTC) - timedelta(days=round(mesi * 365 / 12))
+        since = datetime.now(UTC) - timedelta(days=round(months * 365 / 12))
         token = self._access_token(account)
 
         with _unavailable_on_failure("la lettura della posta inviata"):
@@ -553,13 +551,13 @@ class GmailSyncService:
         )
         proposals = [
             SuggestedCustomer(
-                dominio=domain,
-                nome=company_name_from_domain(domain),
-                conversazioni=len(entry.threads),
-                ultimo_messaggio=entry.last,
-                persone=[
+                domain=domain,
+                name=company_name_from_domain(domain),
+                conversations=len(entry.threads),
+                last_message=entry.last,
+                people=[
                     SuggestedPerson(
-                        indirizzo=address, nome=name, gia_in_anagrafica=address in known
+                        address=address, name=name, already_in_directory=address in known
                     )
                     for address, name in sorted(entry.people.items())
                 ],
@@ -568,9 +566,9 @@ class GmailSyncService:
         ]
         proposals.sort(
             key=lambda proposal: (
-                -proposal.conversazioni,
-                -(proposal.ultimo_messaggio.timestamp() if proposal.ultimo_messaggio else 0),
-                proposal.dominio,
+                -proposal.conversations,
+                -(proposal.last_message.timestamp() if proposal.last_message else 0),
+                proposal.domain,
             )
         )
         return proposals[:SUGGEST_MAX_CUSTOMERS]
@@ -895,7 +893,7 @@ class GmailSyncService:
         """Links one stored message to the thread's entities, and puts an inbound one on
         their timelines.
 
-        Only inbound: `gmail.messaggio_ricevuto` is a claim about direction, and an
+        Only inbound: `gmail.message_received` is a claim about direction, and an
         entry written for our own reply would tell the user their message had arrived.
 
         The payload carries the subject and the sender and stops there. That is the case
@@ -912,7 +910,7 @@ class GmailSyncService:
             self.activities.record(
                 ref.entity_type,
                 ref.entity_id,
-                "gmail.messaggio_ricevuto",
+                "gmail.message_received",
                 actor,
                 {
                     "subject": parsed.subject,
@@ -952,7 +950,7 @@ class GmailSyncService:
             internal_date=parsed.internal_date,
             body_text=parsed.body_text,
             body_truncated=parsed.body_truncated,
-            body_html_scartato=parsed.body_html_scartato,
+            body_html_discarded=parsed.body_html_discarded,
             attachments=[
                 {"filename": a.filename, "mime": a.mime, "size": a.size} for a in parsed.attachments
             ],

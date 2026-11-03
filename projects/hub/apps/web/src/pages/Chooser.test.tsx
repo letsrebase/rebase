@@ -60,12 +60,20 @@ describe('the root chooser', () => {
     expect(await screen.findByRole('link', { name: 'Cerca un team' })).toHaveAttribute('href', '/team')
   })
 
-  it('remembers ?rif= before either door drops the query string (CodeRabbit, P-REB-44)', async () => {
+  it('remembers ?ref= before either door drops the query string (CodeRabbit, P-REB-44)', async () => {
     // Regression: `<Link to="/freelance">` carries no `search`, so a visitor who
-    // opened /hub/?rif=CODE and picked a door lost the code the moment they clicked,
+    // opened /hub/?ref=CODE and picked a door lost the code the moment they clicked,
     // since nothing had stored it yet.
+    mount('/?ref=ABC123')
+    await screen.findByRole('link', { name: /Sono un talento/ })
+    expect(sessionStorage.getItem(REFERRAL_STORAGE_KEY)).toBe('ABC123')
+  })
+
+  it('still remembers `?rif=`, the name of the referral link before the 2026-11 rename, and writes `rebase.ref`', async () => {
+    // Members shared /hub/?rif=CODE: those links are out in the world for good.
     mount('/?rif=ABC123')
     await screen.findByRole('link', { name: /Sono un talento/ })
     expect(sessionStorage.getItem(REFERRAL_STORAGE_KEY)).toBe('ABC123')
+    expect(sessionStorage.getItem('rebase.rif')).toBeNull()
   })
 })

@@ -156,16 +156,16 @@ function filled<T extends object>(params: T): Partial<T> {
 
 // ---- the two wizards ------------------------------------------------------------------
 
-export type Remoto = 'remoto' | 'ibrido' | 'in_sede'
+export type Remote = 'remote' | 'hybrid' | 'on_site'
 
 export interface FreelancerApplication {
-  nome: string
-  cognome: string
+  first_name: string
+  last_name: string
   email: string
   linkedin_url: string
-  tariffa_giornaliera: string
-  posizione: string
-  remoto: Remoto | ''
+  daily_rate: string
+  job_title: string
+  remote: Remote | ''
   links: string[]
   cv: File | null
 }
@@ -176,19 +176,19 @@ export function applyAsFreelancer(
   data: FreelancerApplication,
   utm: Utm,
   distinctId: string | null = null,
-  rif: string | null = null,
+  ref: string | null = null,
 ): Promise<Schemas['Ack']> {
   const form = new FormData()
   // The browser's PostHog id, when the page is measured: the API sends the completion
   // event itself (REB-215), and this is what puts it on the same person as the steps.
   if (distinctId) form.set('distinct_id', distinctId)
-  if (rif) form.set('rif', rif)
-  form.set('nome', data.nome)
-  form.set('cognome', data.cognome)
+  if (ref) form.set('ref', ref)
+  form.set('first_name', data.first_name)
+  form.set('last_name', data.last_name)
   form.set('email', data.email)
-  form.set('tariffa_giornaliera', data.tariffa_giornaliera)
-  form.set('posizione', data.posizione)
-  form.set('remoto', data.remoto)
+  form.set('daily_rate', data.daily_rate)
+  form.set('job_title', data.job_title)
+  form.set('remote', data.remote)
   const linkedin = linkedinProfile(data.linkedin_url)
   if (linkedin) form.set('linkedin_url', linkedin)
   for (const link of data.links) if (link.trim()) form.append('links', link.trim())
@@ -198,19 +198,19 @@ export function applyAsFreelancer(
 }
 
 export interface CompanyRequest {
-  nome_azienda: string
-  figura_richiesta: string
-  referente_nome: string
-  referente_cognome: string
+  company_name: string
+  requested_role: string
+  contact_first_name: string
+  contact_last_name: string
   email: string
-  telefono: string
-  progetto: string
-  periodo_da: string
-  durata: string
-  budget_giornaliero: string
-  remoto: Remoto | ''
-  giorni_presenza: string
-  numero_risorse: string
+  phone: string
+  project: string
+  period_from: string
+  duration: string
+  daily_budget: string
+  remote: Remote | ''
+  onsite_days: string
+  headcount: string
 }
 
 /** What «Nuova richiesta» collects: the wizard's answers, and the CRM deal when it has one. */
@@ -222,20 +222,20 @@ export function requestPeople(
   data: CompanyRequest,
   utm: Utm,
   distinctId: string | null = null,
-  rif: string | null = null,
+  ref: string | null = null,
 ): Promise<Schemas['Ack']> {
   return unwrap(
     client.POST('/api/hub/companies', {
       body: {
         ...data,
-        remoto: asSent<Remoto>(data.remoto),
-        // `''` means "not ibrido, never asked": the API's own `giorni_presenza` is
+        remote: asSent<Remote>(data.remote),
+        // `''` means "not ibrido, never asked": the API's own `onsite_days` is
         // `int | None`, which a blank string does not coerce to.
-        giorni_presenza: data.giorni_presenza ? Number(data.giorni_presenza) : null,
-        numero_risorse: asSent<number>(data.numero_risorse),
+        onsite_days: data.onsite_days ? Number(data.onsite_days) : null,
+        headcount: asSent<number>(data.headcount),
         utm: Object.keys(utm).length ? utm : null,
         ...(distinctId ? { distinct_id: distinctId } : {}),
-        ...(rif ? { rif } : {}),
+        ...(ref ? { ref } : {}),
       },
     }),
   )
@@ -244,21 +244,21 @@ export function requestPeople(
 // ---- the team builder, public (P-REB-43, spec § 3.2, § 3.3) --------------------------------
 
 export type Band = Schemas['Band']
-export type Scheda = Schemas['CardRead']
+export type Card = Schemas['CardRead']
 
 /** One person of a proposed team. The public read has no `freelancer_id` (a visitor
  *  cannot follow a talent across proposals), nor a name. */
 export type TeamMember = Schemas['TeamMemberRead']
 
-/** The team's bands: the sum of its people's, per day and per month at `giorni_mese`
+/** The team's bands: the sum of its people's, per day and per month at `days_month`
  *  (22) days; both `null` when somebody has no band, or nobody is proposed. */
-export type TeamEconomia = {
-  giorno: Band | null
-  mese: Band | null
-  giorni_mese: number
+export type TeamEconomics = {
+  day: Band | null
+  month: Band | null
+  days_month: number
 }
 
-/** `luogo` is what the engine read in the visitor's own description about place. */
+/** `location` is what the engine read in the visitor's own description about place. */
 export type TeamProposal = Schemas['TeamProposalRead']
 
 export type TeamProposalCreate = Schemas['TeamProposalCreate']
@@ -266,7 +266,7 @@ export type TeamRequestCreate = Schemas['TeamRequestCreate']
 export type TeamAvailabilityAnswer = Schemas['TeamAvailabilityAnswer']
 
 /** The answer recorded, or `invalid` for a link unknown, spent or expired alike. */
-export type TeamAvailabilityOutcome = Schemas['TeamAvailabilityOutcome']['esito']
+export type TeamAvailabilityOutcome = Schemas['TeamAvailabilityOutcome']['outcome']
 
 export const team = {
   /** 503 when the builder is off or too busy, 502 when Claude does not answer, 422 on
@@ -274,7 +274,7 @@ export const team = {
    *  the API's own sentence. */
   propose: (body: TeamProposalCreate) =>
     unwrap(client.POST('/api/hub/team/proposals', { body }), reading<TeamProposal>()),
-  /** The public read of a proposal by its id (REB-675, `/hub/team?proposta=`): a 404
+  /** The public read of a proposal by its id (REB-675, `/hub/team?proposal=`): a 404
    *  for one older than a day, a cloud's, an attempt or an unknown id alike. */
   get: (id: string) =>
     unwrap(
@@ -291,10 +291,10 @@ export const team = {
 
 // ---- the team builder, in the admin area (P-REB-43, spec § 2.1, § 3.5, § 5.1) --------------
 
-export type TeamRequestStato = 'nuova' | 'contattata' | 'chiusa'
-export type TeamRequestOrigine = 'pubblico' | 'cloud'
+export type TeamRequestStatus = 'new' | 'contacted' | 'closed'
+export type TeamRequestOrigin = 'public' | 'cloud'
 /** A talent's answer to the availability mail (D1): `null` until they give one. */
-export type TalentAnswer = 'si' | 'no'
+export type TalentAnswer = 'yes' | 'no'
 
 export type TeamRequestTalent = Schemas['TeamRequestTalentRead']
 export type TeamRequest = Schemas['TeamRequestRead']
@@ -302,27 +302,27 @@ export type TeamRequestListItem = Schemas['TeamRequestListItem']
 export type TeamProposalListMember = Schemas['TeamProposalListMember']
 /** The refusal an attempt row keeps: Claude did not answer, or every slot or the day's
  *  proposals were spent. */
-export type TeamProposalErrore = 'llm_unavailable' | 'team_builder_busy'
+export type TeamProposalError = 'llm_unavailable' | 'team_builder_busy'
 export type TeamProposalListItem = Schemas['TeamProposalListItem']
 
 /** What the list takes beside `cursor`/`limit`, and what `/admin/team` carries in its
- *  URL: a state of `TeamRequestStato`, which the API checks. */
+ *  URL: a state of `TeamRequestStatus`, which the API checks. */
 export interface TeamRequestsFilters {
-  stato?: string
+  status?: string
 }
 
-/** What «Proposte» takes beside `cursor`/`limit`, and what `/admin/team/proposte`
- *  carries in its URL: `esito` is `ok` or `errore`, checked by the API. The API and
- *  the MCP tool filter by `origine` too; the page has no control for it yet, so the
+/** What «Proposte» takes beside `cursor`/`limit`, and what `/admin/team/proposals`
+ *  carries in its URL: `outcome` is `ok` or `error`, checked by the API. The API and
+ *  the MCP tool filter by `origin` too; the page has no control for it yet, so the
  *  URL does not carry one. */
 export interface TeamProposalsFilters {
-  esito?: string
+  outcome?: string
 }
 
 export type FreelancerCard = Schemas['FreelancerCardAdminRead']
-export type CardPersona = Schemas['CardPersonaRead']
-export type PersonaDifference = Schemas['PersonaDifference']
-export type PersonaDifferenceField = PersonaDifference['campo']
+export type CardPerson = Schemas['CardPersonRead']
+export type PersonDifference = Schemas['PersonDifference']
+export type PersonDifferenceField = PersonDifference['field']
 export type CardConflict = Schemas['ConflictRead']
 export type CardProvenance = Schemas['CardProvenance']
 
@@ -336,7 +336,7 @@ export type TalentCloudGrant = Schemas['TalentCloudGrantRead']
 export type Company = Schemas['CompanyRead']
 
 /** Where a note came from (REB-856). `null` is a note that predates the tracking. */
-export type NoteSource = 'web' | 'mcp' | 'persona' | 'sistema'
+export type NoteSource = 'web' | 'mcp' | 'person' | 'system'
 
 /** The door a trail entry came through: a note's (`NoteSource`) or, for a regeneration of
  *  the cards, `cli` too (REB-861). */
@@ -358,12 +358,12 @@ export type LoginStats = Schemas['LoginStats']
  *  has no such field yet (HubBackend adds it, `null` for a company contact), so until the
  *  types are regenerated this is the page's own reading. */
 export type GuideStats = Schemas['GuideStats']
-export type Talento = Schemas['TalentoRead']
-export type TalentoList = Schemas['TalentoList']
+export type Talent = Schemas['TalentRead']
+export type TalentList = Schemas['TalentList']
 
 /** Why two cards look like one person (REB-800): the same LinkedIn profile, the same name
  *  or the same telephone number. Only the first is a reason to merge. */
-export type DuplicateSignal = 'linkedin' | 'nome' | 'telefono'
+export type DuplicateSignal = 'linkedin' | 'first_name' | 'phone'
 
 export type DuplicatePerson = Schemas['PersonRead']
 export type DuplicatePair = Schemas['DuplicatePairRead']
@@ -378,73 +378,73 @@ export type CreatedToken = Schemas['CreatedToken']
  *  narrows the merged list of cards and bare sign-ups the same way the state pills
  *  always have. This is also the shape `/admin/talent`'s own `validateSearch` carries in
  *  the URL (`router.tsx`). */
-export interface TalentiFilters {
-  stato?: string
+export interface TalentsFilters {
+  status?: string
   q?: string
-  posizione?: string
-  remoto?: Remoto
-  tariffa_min?: string
-  tariffa_max?: string
-  /** The page of the site the person started from (`home`, `pigrocrm`); `origine`,
+  job_title?: string
+  remote?: Remote
+  min_rate?: string
+  max_rate?: string
+  /** The page of the site the person started from (`home`, `pigrocrm`); `origin`,
    *  the channel a row shows (`form`, `wizard`, `admin`), has no control on the page. */
-  pagina_origine?: string
+  origin_page?: string
   utm_source?: string
   has_cv?: boolean
-  con_accessi?: boolean
-  creato_da?: string
-  creato_a?: string
+  with_logins?: boolean
+  created_from?: string
+  created_to?: string
 }
 
 /** What `GET /api/hub/companies` takes beside `limit` (REB-285/286): the shape
  *  `/admin/companies`'s own `validateSearch` carries in the URL. */
 export interface CompaniesFilters {
-  stato?: string
+  status?: string
   q?: string
   budget_min?: string
   budget_max?: string
-  periodo_da?: string
-  origine?: string
-  creato_da?: string
-  creato_a?: string
+  period_from?: string
+  origin?: string
+  created_from?: string
+  created_to?: string
 }
 
 /** REB-387: a match's state, and a contract document's. */
-export type MatchStato = 'bozza' | 'in_firma' | 'attivo' | 'concluso' | 'annullato'
-export type DocumentStato = 'generato' | 'in_attesa' | 'inviato' | 'firmato' | 'annullato' | 'disdetto'
+export type MatchStatus = 'draft' | 'awaiting_signature' | 'active' | 'concluded' | 'cancelled'
+export type DocumentStatus = 'generated' | 'pending' | 'sent' | 'signed' | 'cancelled' | 'notice_served'
 /** Where an active match's link to its deal on Pigro stands (REB-497): `null` until the
- *  match turns `attivo`. */
-export type PigroStato = 'da_collegare' | 'collegato' | 'errore' | 'rifiutato'
+ *  match turns `active`. */
+export type PigroStatus = 'to_link' | 'linked' | 'error' | 'rejected'
 /** REB-687: a contract document's family, the letter type a match is made with. */
 export type Regime = Schemas['MatchCheck']['regime']
 /** What an admin can do next on a document or a match (REB-477): the page maps each to
  *  its button and its API call. */
-export type Action = NonNullable<Schemas['ContractDocumentRead']['prossima_azione']>
+export type Action = NonNullable<Schemas['ContractDocumentRead']['next_action']>
 
-export type FiscalData = Narrow<Schemas['FiscalData'], { partita_iva: string | null; pec: string | null }>
+export type FiscalData = Narrow<Schemas['FiscalData'], { vat_number: string | null; certified_email: string | null }>
 export type Fiscal = Schemas['FiscalRead']
 export type ContractDocument = Schemas['ContractDocumentRead']
 export type Match = Schemas['MatchRead']
 /** `previsto` while the first letter is not signed (a projection), the reward's own
- *  state after, `gia_maturato` when the referral already paid on another match, and
- *  `da_verificare` for a company whose referente has not logged in yet (REB-658). */
-export type MatchReferralStato = 'previsto' | 'gia_maturato' | 'da_verificare' | RewardStato
+ *  state after, `already_accrued` when the referral already paid on another match, and
+ *  `to_verify` for a company whose referente has not logged in yet (REB-658). */
+export type MatchReferralStatus = 'expected' | 'already_accrued' | 'to_verify' | RewardStatus
 export type MatchReferral = Schemas['MatchReferral']
 export type MatchListItem = Schemas['MatchListItem']
 
-/** What `GET /api/hub/matches` takes beside `limit`/`offset` (REB-413): `stato` one of
- *  `MatchStato`, `q` matching the freelancer's name, surname or email and the
+/** What `GET /api/hub/matches` takes beside `limit`/`offset` (REB-413): `status` one of
+ *  `MatchStatus`, `q` matching the freelancer's name, surname or email and the
  *  company's name. */
 export interface MatchesFilters {
-  stato?: string
+  status?: string
   q?: string
 }
 
 // ---- campaigns (P-REB-41) -------------------------------------------------------------
 
-export type CampaignStato = 'bozza' | 'programmata' | 'in_invio' | 'inviata' | 'annullata'
-export type CampaignAzione = Schemas['CampaignDraft']['azione']
-export type CampaignMeta = Schemas['CampaignDraft']['bottone_meta']
-export type RecipientStato = 'in_coda' | 'inviata' | 'saltata' | 'fallita'
+export type CampaignStatus = 'draft' | 'scheduled' | 'sending' | 'sent' | 'cancelled'
+export type CampaignAction = Schemas['CampaignDraft']['action']
+export type CampaignMeta = Schemas['CampaignDraft']['button_meta']
+export type RecipientStatus = 'queued' | 'sent' | 'skipped' | 'failed'
 
 export type Campaign = Schemas['CampaignRead']
 export type CampaignCounts = Schemas['CampaignCounts']
@@ -453,9 +453,9 @@ export type CampaignRecipient = Schemas['RecipientRead']
 export type AudienceRow = Schemas['AudienceRowRead']
 export type AudiencePreview = Schemas['AudiencePreview']
 export type CampaignTemplate = Schemas['TemplateRead']
-/** The form builds `filtri` and the API validates it by `lista`, so the form's own
+/** The form builds `filters` and the API validates it by `list`, so the form's own
  *  reading is the looser one, narrowed back to the schema's where a body is sent. */
-export type CampaignDraft = Narrow<Schemas['CampaignDraft'], { filtri?: Record<string, unknown> | null }>
+export type CampaignDraft = Narrow<Schemas['CampaignDraft'], { filters?: Record<string, unknown> | null }>
 
 export type MatchReport = Schemas['MatchReport']
 export type ReportDayInvoice = Schemas['ReportDayInvoice']
@@ -470,61 +470,61 @@ export type FreelancerContracts = Schemas['FreelancerContracts']
 export type MatchPrefill = Narrow<
   Schemas['MatchPrefill'],
   {
-    fiscale: Fiscal | null
-    cliente: ClienteDraft
-    lettera: LetteraDraft
-    quadro_attivo: ContractDocument | null
+    tax: Fiscal | null
+    customer: CustomerDraft
+    letter: LetterDraft
+    active_framework: ContractDocument | null
   }
 >
 
-/** The letter's text fields, in the order `lettera-di-incarico.md` asks for them and the
- *  server's `LETTERA_TEXT_FIELDS` lists them. */
-export const LETTERA_TEXT_KEYS = [
-  'ruolo',
-  'attivita',
-  'risultati',
-  'accettazione',
-  'impegno',
-  'periodo_verifica',
-  'luogo',
-  'coordinamento',
-  'referente_cliente',
-  'referente_rebase',
-  'modalita',
-  'unita',
-  'lavoro_extra',
-  'spese',
-  'scadenze_fatturazione',
-  'dati_personali',
-  'dati_finalita',
-  'dati_categorie',
-  'dati_interessati',
-  'dati_autorizzazione',
-  'esclusiva',
+/** The letter's text fields, in the order `engagement-letter.md` asks for them and the
+ *  server's `LETTER_TEXT_FIELDS` lists them. */
+export const LETTER_TEXT_KEYS = [
+  'role',
+  'activities',
+  'results',
+  'acceptance',
+  'commitment',
+  'review_period',
+  'location',
+  'coordination',
+  'customer_contact',
+  'rebase_contact',
+  'mode',
+  'unit',
+  'extra_work',
+  'expenses',
+  'billing_deadlines',
+  'personal_data',
+  'purpose_data',
+  'category_data',
+  'data_subjects',
+  'authorization_data',
+  'exclusivity',
   'portfolio',
-  'assicurazione',
-  'altre_condizioni',
-  'rapporti_precedenti',
+  'insurance',
+  'other_terms',
+  'previous_reports',
 ] as const
-export type LetteraTextKey = (typeof LETTERA_TEXT_KEYS)[number]
+export type LetterTextKey = (typeof LETTER_TEXT_KEYS)[number]
 
-/** What `LetteraFields` takes, as the wizard sends it: an empty text field is `null` and
+/** What `LetterFields` takes, as the wizard sends it: an empty text field is `null` and
  *  prints a blank line, and a missing required one is the API's 422 naming the field, so
  *  this is wider than the schema's own type (see `matchBody`). */
-export type Lettera = Record<LetteraTextKey, string | null> & {
-  data_inizio: string
-  data_fine: string | null
-  compenso: string
-  giorni_pagamento: number
-  fine_mese: boolean
-  giorni_preavviso: number | null
+export type Letter = Record<LetterTextKey, string | null> & {
+  start_date: string
+  end_date: string | null
+  fee: string
+  payment_days: number
+  month_end: boolean
+  notice_days: number | null
 }
-export type LetteraDraft = Narrow<
-  { [K in keyof Lettera]: Lettera[K] | null },
-  { modalita: 'a giornata' | 'a corpo' | null }
+export type LetterDraft = Narrow<
+  { [K in keyof Letter]: Letter[K] | null },
+  { mode: 'to_work_unit' | 'lump_sum' | null }
 >
-export type Cliente = Schemas['ClienteData']
-export type ClienteDraft = { [K in keyof Cliente]: string | null }
+export type Customer = Schemas['CustomerDate']
+export type CustomerDraft = { [K in keyof Customer]: string | null }
 
 /** `id` is optional and client-generated (REB-406): one per wizard run, sent with both
  *  «Salva senza inviare» and «Invia per la firma», so a retry after the response is lost
@@ -532,13 +532,13 @@ export type ClienteDraft = { [K in keyof Cliente]: string | null }
 export interface MatchCreate {
   id?: string
   company_id: string
-  /** REB-687: the letter type, `partita_iva` or `occasionale`. */
+  /** REB-687: the letter type, `vat_number` or `occasional`. */
   regime: Regime
-  cliente: Cliente
-  lettera: Lettera
-  /** «Giorni previsti» (REB-497): beside the letter, never inside it, since `LetteraFields`
+  customer: Customer
+  letter: Letter
+  /** «Giorni previsti» (REB-497): beside the letter, never inside it, since `LetterFields`
    *  refuses a key it does not know and the letter's text does not change with it. */
-  giorni_previsti: number | null
+  expected_days: number | null
 }
 
 /** The wizard's body for the schema's: the same fields, the letter's nulls left for the
@@ -610,15 +610,15 @@ export const admin = {
       reading<Freelancer>(),
     ),
   cvUrl: (id: string) => `/api/hub/freelancers/${encodeURIComponent(id)}/cv`,
-  moveFreelancer: (id: string, stato: string) =>
+  moveFreelancer: (id: string, status: string) =>
     unwrap(
       client.PATCH('/api/hub/freelancers/{freelancer_id}', {
         params: { path: { freelancer_id: id } },
-        body: { stato },
+        body: { status },
       }),
       reading<Freelancer>(),
     ),
-  /** Sets or clears any field beyond `stato` (REB-347/355): a key present and
+  /** Sets or clears any field beyond `status` (REB-347/355): a key present and
    *  `null` clears it, a key left out of `data` leaves it alone. */
   overrideFreelancer: (id: string, body: FreelancerOverride) =>
     unwrap(
@@ -675,7 +675,7 @@ export const admin = {
    *  seconds, and one rewrite at most); the API's sentence comes back as an `ApiError` (no
    *  CV, a leak that survived, the task off). */
   downloadAnonymousCv: async (id: string): Promise<{ blob: Blob; filename: string }> => {
-    const { data, error, response } = await client.POST('/api/hub/freelancers/{freelancer_id}/cv-anonimo', {
+    const { data, error, response } = await client.POST('/api/hub/freelancers/{freelancer_id}/anonymous-cv', {
       params: { path: { freelancer_id: id } },
       parseAs: 'blob',
     })
@@ -695,11 +695,11 @@ export const admin = {
   teamProposals: (filters: TeamProposalsFilters & { cursor?: string; limit?: number } = {}) =>
     unwrap(client.GET('/api/hub/team/proposals', { params: { query: filled(filters) } }), reading<TeamProposalList>()),
   /** «Segna come contattata», «Chiudi», «Riapri». */
-  setTeamRequestStatus: (id: string, stato: TeamRequestStato) =>
+  setTeamRequestStatus: (id: string, status: TeamRequestStatus) =>
     unwrap(
       client.POST('/api/hub/team/requests/{request_id}/status', {
         params: { path: { request_id: id } },
-        body: { stato },
+        body: { status },
       }),
       reading<TeamRequest>(),
     ),
@@ -713,11 +713,11 @@ export const admin = {
       reading<TeamRequest>(),
     ),
   /** «Salva il riassunto»: what the talents will read. */
-  setTeamRequestSummary: (id: string, riassunto: string) =>
+  setTeamRequestSummary: (id: string, summary: string) =>
     unwrap(
       client.PATCH('/api/hub/team/requests/{request_id}/summary', {
         params: { path: { request_id: id } },
-        body: { riassunto },
+        body: { summary },
       }),
       reading<TeamRequest>(),
     ),
@@ -744,23 +744,23 @@ export const admin = {
       client.POST('/api/hub/admin/companies', {
         body: {
           ...data,
-          remoto: asSent<Remoto>(data.remoto),
-          giorni_presenza: data.giorni_presenza ? Number(data.giorni_presenza) : null,
-          numero_risorse: Number(data.numero_risorse),
+          remote: asSent<Remote>(data.remote),
+          onsite_days: data.onsite_days ? Number(data.onsite_days) : null,
+          headcount: Number(data.headcount),
           deal_id: data.deal_id ?? null,
         },
       }),
       reading<Company>(),
     ),
-  moveCompany: (id: string, stato: string) =>
+  moveCompany: (id: string, status: string) =>
     unwrap(
       client.PATCH('/api/hub/companies/{company_id}', {
         params: { path: { company_id: id } },
-        body: { stato },
+        body: { status },
       }),
       reading<Company>(),
     ),
-  /** Sets or clears any field beyond `stato` (REB-347/355), same contract as
+  /** Sets or clears any field beyond `status` (REB-347/355), same contract as
    *  `overrideFreelancer`. */
   overrideCompany: (id: string, body: CompanyOverride) =>
     unwrap(
@@ -808,17 +808,17 @@ export const admin = {
     ),
   /** Every grant, live and closed, newest first (capped by the API, not paginated). */
   talentCloudGrants: () => unwrap(client.GET('/api/hub/cloud/grants'), reading<TalentCloudGrant[]>()),
-  /** Every card and every bare sign-up as one list (REB-282/283), `stato` `lead` for
+  /** Every card and every bare sign-up as one list (REB-282/283), `status` `lead` for
    *  the bare ones alone -- the read model «Talenti» replaced «Developer e CTO» and
-   *  «Iscrizioni» with. `filters` beside `stato` and `cursor` are REB-285's search and
+   *  «Iscrizioni» with. `filters` beside `status` and `cursor` are REB-285's search and
    *  its per-field narrowing, REB-286's own filter row sends straight through; `limit`
-   *  is the one override `AdminTalentoLead` needs to see every lead at once rather
+   *  is the one override `AdminTalentLead` needs to see every lead at once rather
    *  than the server's own default page. */
-  talent: (filters: TalentiFilters & { cursor?: string; limit?: number } = {}) =>
-    unwrap(client.GET('/api/hub/talent', { params: { query: filled(filters) } }), reading<TalentoList>()),
+  talent: (filters: TalentsFilters & { cursor?: string; limit?: number } = {}) =>
+    unwrap(client.GET('/api/hub/talent', { params: { query: filled(filters) } }), reading<TalentList>()),
   /** Who is on the list twice (REB-800): the pairs that share a LinkedIn profile
-   *  (`unibili`) and the ones that only share a name or a number (`da_rivedere`). */
-  duplicates: () => unwrap(client.GET('/api/hub/talent/duplicati'), reading<DuplicateList>()),
+   *  (`mergeable`) and the ones that only share a name or a number (`to_review`). */
+  duplicates: () => unwrap(client.GET('/api/hub/talent/duplicates'), reading<DuplicateList>()),
   /** «Unisci» (REB-800): the card `absorbedId` into the card `survivorId`. A refusal is a
    *  409 carrying the API's sentence; the merge is undone from the shell only. */
   mergeFreelancer: (survivorId: string, absorbedId: string) =>
@@ -833,7 +833,7 @@ export const admin = {
   signup: (id: string) =>
     unwrap(
       client.GET('/api/hub/signups/{signup_id}', { params: { path: { signup_id: id } } }),
-      reading<Talento>(),
+      reading<Talent>(),
     ),
   /** Drafts a card from a bare sign-up in place (ORB-155): the same `draft_from_signup`
    *  the MCP tool `create_freelancer_from_signup` calls, here behind the admin's
@@ -854,7 +854,7 @@ export const admin = {
   /** How the guide is doing: downloads, the members behind them, the latest (ORB-156). */
   guideStats: () => unwrap(client.GET('/api/hub/perks/guide'), reading<GuideStats>()),
   /** Who comes back in: logins, the members behind them, the last week -- unchanged
-   *  aggregate counters. `recenti` is searched and cursor-paginated since REB-313,
+   *  aggregate counters. `recent` is searched and cursor-paginated since REB-313,
    *  no longer a hardcoded top 20 (ORB-158). */
   loginStats: (params: ListPageParams = {}) =>
     unwrap(client.GET('/api/hub/logins', { params: { query: filled(params) } })),
@@ -863,7 +863,7 @@ export const admin = {
   admins: (params: ListPageParams = {}) =>
     unwrap(client.GET('/api/hub/admins', { params: { query: filled(params) } })),
   /** Promotes whatever `users` row already answers to this address, or creates a bare
-   *  one from `nome`/`cognome` when none exists yet (REB-279, no password anywhere). */
+   *  one from `first_name`/`last_name` when none exists yet (REB-279, no password anywhere). */
   promote: (body: Schemas['PromoteRequest']) => unwrap(client.POST('/api/hub/admins/promote', { body })),
   /** Sets `role = 'member'`, fully reversible since nothing is deleted. */
   demote: (id: string) =>
@@ -873,7 +873,7 @@ export const admin = {
    *  REB-313. */
   tokens: (params: ListPageParams = {}) =>
     unwrap(client.GET('/api/hub/tokens', { params: { query: filled(params) } })),
-  createToken: (nome: string) => unwrap(client.POST('/api/hub/tokens', { body: { nome } })),
+  createToken: (name: string) => unwrap(client.POST('/api/hub/tokens', { body: { name } })),
   revokeToken: (id: string) =>
     unwrap(client.DELETE('/api/hub/tokens/{token_id}', { params: { path: { token_id: id } } })),
   notes: (kind: ThreadKind, id: string) =>
@@ -884,26 +884,26 @@ export const admin = {
         )
       : unwrap(client.GET('/api/hub/companies/{company_id}/notes', { params: { path: { company_id: id } } }), reading<Note[]>()),
   /** The author is the session's and the source is `web`, so the body is the text alone. */
-  addNote: (kind: ThreadKind, id: string, testo: string) =>
+  addNote: (kind: ThreadKind, id: string, text: string) =>
     kind === 'freelancers'
       ? unwrap(
           client.POST('/api/hub/freelancers/{freelancer_id}/notes', {
             params: { path: { freelancer_id: id } },
-            body: { testo },
+            body: { text },
           }),
       reading<Note>(),
         )
       : unwrap(
           client.POST('/api/hub/companies/{company_id}/notes', {
             params: { path: { company_id: id } },
-            body: { testo },
+            body: { text },
           }),
       reading<Note>(),
         ),
   /** Replaces the text of a note an admin may edit; refused for the person's own events. */
-  editNote: (noteId: string, testo: string) =>
+  editNote: (noteId: string, text: string) =>
     unwrap(
-      client.PATCH('/api/hub/notes/{note_id}', { params: { path: { note_id: noteId } }, body: { testo } }),
+      client.PATCH('/api/hub/notes/{note_id}', { params: { path: { note_id: noteId } }, body: { text } }),
       reading<Note>(),
     ),
   /** Soft-deletes a note an admin may delete; the trail keeps its text. */
@@ -977,10 +977,10 @@ export const admin = {
       }),
     ),
   /** «Controlla e invia»'s previews: a PDF typeset now and saved nowhere. */
-  matchPreview: (freelancerId: string, body: MatchCreate, documento: 'lettera' | 'quadro') =>
+  matchPreview: (freelancerId: string, body: MatchCreate, document: 'letter' | 'framework') =>
     unwrap(
       client.POST('/api/hub/freelancers/{freelancer_id}/matches/preview', {
-        params: { path: { freelancer_id: freelancerId }, query: { documento } },
+        params: { path: { freelancer_id: freelancerId }, query: { document } },
         body: matchBody(body),
         parseAs: 'blob',
       }),
@@ -1034,21 +1034,21 @@ export const admin = {
       reading<ContractDocument>(),
     ),
   /** A plain href, like `cvUrl`: the route answers an attachment behind the cookie. */
-  contractPdfUrl: (documentId: string, firmato = false) =>
-    `/api/hub/contract-documents/${encodeURIComponent(documentId)}/pdf${firmato ? '?firmato=true' : ''}`,
+  contractPdfUrl: (documentId: string, signed = false) =>
+    `/api/hub/contract-documents/${encodeURIComponent(documentId)}/pdf${signed ? '?signed=true' : ''}`,
   /** The referral ledger (P-REB-44): every reward, newest first. */
   referrals: (params: ReferralLedgerParams = {}) =>
     unwrap(client.GET('/api/hub/referrals', { params: { query: filled(params) } }), reading<ReferralLedgerList>()),
-  /** `da_confermare` to `confermato` to `pagato`, one step at a time. */
-  setReferralState: (id: string, stato: RewardStato) =>
+  /** `to_confirm` to `confirmed` to `paid`, one step at a time. */
+  setReferralState: (id: string, status: RewardStatus) =>
     unwrap(
       client.POST('/api/hub/referrals/{reward_id}/state', {
         params: { path: { reward_id: id } },
-        body: { stato },
+        body: { status },
       }),
       reading<ReferralLedgerItem>(),
     ),
-  /** What an admin prices by hand for a reward left with no figure (an `a corpo`
+  /** What an admin prices by hand for a reward left with no figure (a `lump_sum`
    *  letter with no estimated days). */
   setReferralPrice: (id: string, baseAmount: string, rewardAmount: string) =>
     unwrap(
@@ -1098,8 +1098,8 @@ export const admin = {
   /** «Avvia rigenerazione»: queues up to `limit` of them; they are written afterwards. */
   aiRegenerateStale: (limit: number) =>
     unwrap(client.POST('/api/hub/admin/ai/cards/regenerate-stale', { body: { limit } })),
-  aiProva: (task: string) =>
-    unwrap(client.POST('/api/hub/admin/ai/tasks/{task}/prova', { params: { path: { task } } })),
+  aiTest: (task: string) =>
+    unwrap(client.POST('/api/hub/admin/ai/tasks/{task}/test', { params: { path: { task } } })),
 }
 
 // ---- «Modelli AI» (REB-833) -------------------------------------------------------------
@@ -1109,7 +1109,7 @@ export type AiTask = Schemas['TaskRead']
 export type AiSourceSwitch = Schemas['SourceSwitchRead']
 export type AiStaleCards = Schemas['StaleCardsRead']
 export type AiConfig = Schemas['AiConfigRead']
-export type AiProva = Schemas['ProvaRead']
+export type AiTest = Schemas['TestRead']
 
 /** One entry of the «Registro» of «Modelli AI» (REB-861): what an admin changed in the
  *  configuration and every regeneration of the cards, its start and its end. The payloads
@@ -1126,7 +1126,7 @@ export const matches = {
   get: (matchId: string) =>
     unwrap(client.GET('/api/hub/matches/{match_id}', { params: { path: { match_id: matchId } } }), reading<Match>()),
   /** «Riprova su Pigro»: the link runs now and the match comes back as it stands,
-   *  `collegato` or with the CRM's sentence. The first link of a freelancer opens their
+   *  `linked` or with the CRM's sentence. The first link of a freelancer opens their
    *  space and can take the CRM up to 90 seconds: no timeout here cuts it short. A 503
    *  says this environment has no link to the CRM, a 502 that the CRM did not answer. */
   linkPigro: (matchId: string) =>
@@ -1147,15 +1147,15 @@ export type MemberReferral = Schemas['MemberReferral']
 
 // ---- referrals (P-REB-44) --------------------------------------------------------------
 
-export type RewardStato = 'da_confermare' | 'confermato' | 'pagato'
-export type ReferralStato = 'da_verificare' | 'verificato'
-export type ReferralVerifiedVia = 'accesso' | 'lettera' | 'storico'
+export type RewardStatus = 'to_confirm' | 'confirmed' | 'paid'
+export type ReferralStatus = 'to_verify' | 'verified'
+export type ReferralVerifiedVia = 'access' | 'letter' | 'history'
 export type ReferralLedgerItem = Schemas['ReferralLedgerItem']
 export type ReferralLedgerList = Schemas['ReferralLedgerList']
 export type ReferralSettings = Schemas['ReferralSettingsRead']
 
 export interface ReferralLedgerParams {
-  stato?: RewardStato
+  status?: RewardStatus
   cursor?: string
   limit?: number
 }
@@ -1208,20 +1208,20 @@ export const member = {
 export type CloudTalent = Schemas['CloudTalentRead']
 export type CloudTalentList = Schemas['CloudTalentList']
 
-/** The cloud's filters: a role of `ruoli`, a seniority, one skill, a work mode, and a
+/** The cloud's filters: a role of `roles`, a seniority, one skill, a work mode, and a
  *  band of the client's price per day in whole euro (its bottom and its top). */
 export interface CloudFilters {
-  ruolo?: string
+  role?: string
   seniority?: string
-  competenza?: string
-  modalita?: string
-  fascia_min?: number
-  fascia_max?: number
+  skill?: string
+  mode?: string
+  min_band?: number
+  max_band?: number
 }
 
 /** One person of the builder's proposal in the cloud: the admin's shape and the name,
  *  which the cloud shows (spec § 4.2) and the public read never carries. */
-export type CloudTeamMember = Narrow<TeamMember, { nome: string; cognome: string }>
+export type CloudTeamMember = Narrow<TeamMember, { first_name: string; last_name: string }>
 export type CloudTeamProposal = Narrow<TeamProposal, { team: CloudTeamMember[] }>
 
 export const cloud = {
@@ -1244,5 +1244,5 @@ export const cloud = {
 
 export const campaigns = {
   unsubscribe: (t: string) =>
-    unwrap(client.POST('/api/hub/campagne/disiscrizione', { params: { query: { t } } })),
+    unwrap(client.POST('/api/hub/campaigns/unsubscribe', { params: { query: { t } } })),
 }

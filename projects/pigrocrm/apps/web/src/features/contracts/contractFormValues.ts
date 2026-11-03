@@ -13,74 +13,74 @@ import type { Contract, ContractUpdateBody } from './queries'
  * `YYYY-MM-DD` strings end to end (never a `Date`), and money stays a string.
  */
 export interface ContractFormValues {
-  titolo: string
-  inizio: string
-  fine: string
-  tipo_rinnovo: RenewalType
-  preavviso_rinnovo_giorni: string
-  preavviso_disdetta_giorni: string
+  title: string
+  start: string
+  end: string
+  renewal_type: RenewalType
+  renewal_notice_days: string
+  termination_notice_days: string
   /** `false` means «come il cliente»: both payment-term columns stay null. */
-  pagamento_proprio: boolean
-  giorni_pagamento: string
-  pagamento_fine_mese: boolean
-  cadenza_fatturazione: string
-  divisa: string
+  payment_custom: boolean
+  payment_days: string
+  payment_end_of_month: boolean
+  billing_cadence: string
+  currency: string
   requires_prior_approval: boolean
   applies_social_charge: boolean
   /** The customer's cap on its share of the azienda's invoiced revenue, as a percentage
    *  string («50» or «50.00»); blank means no cap. */
-  tetto_quota_cliente: string
-  spese_kind: ExpensePolicyKind
-  spese_tetto: string
-  spese_preautorizzazione: boolean
+  customer_share_cap: string
+  expenses_kind: ExpensePolicyKind
+  expenses_cap: string
+  expenses_preauthorization: boolean
   note: string
   custom: Record<string, unknown>
 }
 
 export function defaultContractFormValues(): ContractFormValues {
   return {
-    titolo: '',
-    inizio: '',
-    fine: '',
-    tipo_rinnovo: 'nessuno',
-    preavviso_rinnovo_giorni: '',
-    preavviso_disdetta_giorni: '30',
-    pagamento_proprio: false,
-    giorni_pagamento: '',
-    pagamento_fine_mese: false,
-    cadenza_fatturazione: 'mensile',
-    divisa: 'EUR',
+    title: '',
+    start: '',
+    end: '',
+    renewal_type: 'none',
+    renewal_notice_days: '',
+    termination_notice_days: '30',
+    payment_custom: false,
+    payment_days: '',
+    payment_end_of_month: false,
+    billing_cadence: 'monthly',
+    currency: 'EUR',
     requires_prior_approval: false,
     applies_social_charge: false,
-    tetto_quota_cliente: '',
-    spese_kind: 'non_rimborsabile',
-    spese_tetto: '',
-    spese_preautorizzazione: false,
+    customer_share_cap: '',
+    expenses_kind: 'not_reimbursable',
+    expenses_cap: '',
+    expenses_preauthorization: false,
     note: '',
     custom: {},
   }
 }
 
 export function contractToFormValues(contract: Contract): ContractFormValues {
-  const policy = readExpensePolicy(contract.politica_spese)
+  const policy = readExpensePolicy(contract.expense_policy)
   return {
-    titolo: contract.titolo,
-    inizio: contract.inizio,
-    fine: contract.fine ?? '',
-    tipo_rinnovo: contract.tipo_rinnovo as RenewalType,
-    preavviso_rinnovo_giorni: contract.preavviso_rinnovo_giorni?.toString() ?? '',
-    preavviso_disdetta_giorni: contract.preavviso_disdetta_giorni.toString(),
-    pagamento_proprio: contract.giorni_pagamento !== null,
-    giorni_pagamento: contract.giorni_pagamento?.toString() ?? '',
-    pagamento_fine_mese: contract.pagamento_fine_mese ?? false,
-    cadenza_fatturazione: contract.cadenza_fatturazione,
-    divisa: contract.divisa,
+    title: contract.title,
+    start: contract.start,
+    end: contract.end ?? '',
+    renewal_type: contract.renewal_type as RenewalType,
+    renewal_notice_days: contract.renewal_notice_days?.toString() ?? '',
+    termination_notice_days: contract.termination_notice_days.toString(),
+    payment_custom: contract.payment_days !== null,
+    payment_days: contract.payment_days?.toString() ?? '',
+    payment_end_of_month: contract.payment_end_of_month ?? false,
+    billing_cadence: contract.billing_cadence,
+    currency: contract.currency,
     requires_prior_approval: contract.requires_prior_approval,
     applies_social_charge: contract.applies_social_charge,
-    tetto_quota_cliente: contract.tetto_quota_cliente ?? '',
-    spese_kind: policy?.kind ?? 'non_rimborsabile',
-    spese_tetto: policy?.importo_tetto ?? '',
-    spese_preautorizzazione: policy?.richiede_preautorizzazione ?? false,
+    customer_share_cap: contract.customer_share_cap ?? '',
+    expenses_kind: policy?.kind ?? 'not_reimbursable',
+    expenses_cap: policy?.amount_cap ?? '',
+    expenses_preauthorization: policy?.requires_pre_authorization ?? false,
     note: contract.note ?? '',
     custom: { ...contract.custom_fields },
   }
@@ -107,29 +107,29 @@ export function toContractBody(
   isRenderedCustomKey: (key: string) => boolean,
 ): ContractUpdateBody {
   const policy = expensePolicyBody({
-    kind: values.spese_kind,
-    importo_tetto: values.spese_tetto.trim().replace(',', '.'),
-    richiede_preautorizzazione: values.spese_preautorizzazione,
+    kind: values.expenses_kind,
+    amount_cap: values.expenses_cap.trim().replace(',', '.'),
+    requires_pre_authorization: values.expenses_preauthorization,
   })
   const full: ContractUpdateBody = {
-    titolo: values.titolo.trim(),
-    inizio: values.inizio,
-    fine: values.fine === '' ? null : values.fine,
-    tipo_rinnovo: values.tipo_rinnovo,
-    preavviso_rinnovo_giorni:
-      values.tipo_rinnovo === 'nessuno' ? null : asInt(values.preavviso_rinnovo_giorni),
-    preavviso_disdetta_giorni: asInt(values.preavviso_disdetta_giorni),
-    giorni_pagamento: values.pagamento_proprio ? asInt(values.giorni_pagamento) : null,
-    pagamento_fine_mese: values.pagamento_proprio ? values.pagamento_fine_mese : null,
-    cadenza_fatturazione: values.cadenza_fatturazione,
-    divisa: values.divisa.trim().toUpperCase(),
+    title: values.title.trim(),
+    start: values.start,
+    end: values.end === '' ? null : values.end,
+    renewal_type: values.renewal_type,
+    renewal_notice_days:
+      values.renewal_type === 'none' ? null : asInt(values.renewal_notice_days),
+    termination_notice_days: asInt(values.termination_notice_days),
+    payment_days: values.payment_custom ? asInt(values.payment_days) : null,
+    payment_end_of_month: values.payment_custom ? values.payment_end_of_month : null,
+    billing_cadence: values.billing_cadence,
+    currency: values.currency.trim().toUpperCase(),
     requires_prior_approval: values.requires_prior_approval,
     applies_social_charge: values.applies_social_charge,
-    tetto_quota_cliente:
-      values.tetto_quota_cliente.trim() === ''
+    customer_share_cap:
+      values.customer_share_cap.trim() === ''
         ? null
-        : values.tetto_quota_cliente.trim().replace(',', '.'),
-    politica_spese: policy,
+        : values.customer_share_cap.trim().replace(',', '.'),
+    expense_policy: policy,
     note: values.note.trim() === '' ? null : values.note,
   }
 
@@ -158,8 +158,8 @@ export function toContractBody(
     }
   }
   const pairs: [string, string][] = [
-    ['giorni_pagamento', 'pagamento_fine_mese'],
-    ['tipo_rinnovo', 'preavviso_rinnovo_giorni'],
+    ['payment_days', 'payment_end_of_month'],
+    ['renewal_type', 'renewal_notice_days'],
   ]
   for (const [one, other] of pairs) {
     if (one in changed || other in changed) {

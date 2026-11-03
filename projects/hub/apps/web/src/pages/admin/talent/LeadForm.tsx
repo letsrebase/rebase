@@ -7,32 +7,32 @@ import { Input } from '@rebase/ui/input'
 import { Label } from '@rebase/ui/label'
 import { Textarea } from '@rebase/ui/textarea'
 import { WebLink } from '@/components/WebLink'
-import { admin, ApiError, type FreelancerDraft, type Remoto } from '@/lib/api'
+import { admin, ApiError, type FreelancerDraft, type Remote } from '@/lib/api'
 import { AMOUNT_PROBLEM, acceptedAmount, sentAmount } from '@/lib/amount'
-import { REMOTO_LABELS, formatDate } from '@/lib/format'
+import { REMOTE_LABELS, formatDate } from '@/lib/format'
 import { keys } from '@/lib/query-keys'
 import { Empty, Header, Row, StatePill } from '../list-kit'
 
 interface LeadDraft {
-  nome: string
-  cognome: string
+  first_name: string
+  last_name: string
   linkedin_url: string
-  posizione: string
-  tariffa_giornaliera: string
-  remoto: Remoto | ''
+  job_title: string
+  daily_rate: string
+  remote: Remote | ''
   links: string
-  fonti: string
+  sources: string
 }
 
 const LEAD_DRAFT_EMPTY: LeadDraft = {
-  nome: '',
-  cognome: '',
+  first_name: '',
+  last_name: '',
   linkedin_url: '',
-  posizione: '',
-  tariffa_giornaliera: '',
-  remoto: '',
+  job_title: '',
+  daily_rate: '',
+  remote: '',
   links: '',
-  fonti: '',
+  sources: '',
 }
 
 /** A bare sign-up (ORB-163, REB-283): what the landing knows, and the form that turns
@@ -40,7 +40,7 @@ const LEAD_DRAFT_EMPTY: LeadDraft = {
  *  `create_freelancer_from_signup` calls (ORB-155). One line per URL for «Link» and
  *  «Fonti»; at least one source is required, since a card written from research with
  *  no source is a card nobody can check. The row is read on its own, by the sign-up's id. */
-export function AdminTalentoLead() {
+export function AdminTalentLead() {
   const { id } = useParams({ from: '/signedIn/admin/talent/$id' })
   const navigate = useNavigate()
   const client = useQueryClient()
@@ -53,8 +53,8 @@ export function AdminTalentoLead() {
       seeded.current = true
       setDraft((current) => ({
         ...current,
-        nome: lead.nome ?? current.nome,
-        cognome: lead.cognome ?? current.cognome,
+        first_name: lead.first_name ?? current.first_name,
+        last_name: lead.last_name ?? current.last_name,
         linkedin_url: lead.linkedin_url ?? current.linkedin_url,
       }))
     }
@@ -77,20 +77,20 @@ export function AdminTalentoLead() {
   }
 
   // Blank is allowed: a card drafted from research may not know the rate.
-  const rateProblem = draft.tariffa_giornaliera.trim() !== '' && !acceptedAmount(draft.tariffa_giornaliera)
+  const rateProblem = draft.daily_rate.trim() !== '' && !acceptedAmount(draft.daily_rate)
 
   function submit(event: FormEvent) {
     event.preventDefault()
     if (rateProblem) return
     draftCard.mutate({
-      nome: draft.nome.trim(),
-      cognome: draft.cognome.trim(),
+      first_name: draft.first_name.trim(),
+      last_name: draft.last_name.trim(),
       linkedin_url: draft.linkedin_url.trim() || undefined,
-      posizione: draft.posizione.trim() || undefined,
-      tariffa_giornaliera: sentAmount(draft.tariffa_giornaliera) || undefined,
-      remoto: draft.remoto || undefined,
+      job_title: draft.job_title.trim() || undefined,
+      daily_rate: sentAmount(draft.daily_rate) || undefined,
+      remote: draft.remote || undefined,
       links: draft.links.split('\n').map((line) => line.trim()).filter(Boolean),
-      fonti: draft.fonti.split('\n').map((line) => line.trim()).filter(Boolean),
+      sources: draft.sources.split('\n').map((line) => line.trim()).filter(Boolean),
     })
   }
 
@@ -99,8 +99,8 @@ export function AdminTalentoLead() {
   if (!lead) return <Empty>Caricamento…</Empty>
   return (
     <>
-      <Header title={[lead.nome, lead.cognome].filter(Boolean).join(' ') || lead.email}>
-        <StatePill stato="lead" />
+      <Header title={[lead.first_name, lead.last_name].filter(Boolean).join(' ') || lead.email}>
+        <StatePill status="lead" />
       </Header>
       <div className="grid gap-6 p-6 lg:grid-cols-3">
         <dl className="space-y-3 text-sm lg:col-span-2">
@@ -121,25 +121,25 @@ export function AdminTalentoLead() {
           <p className="text-sm font-medium">Scrivi la scheda</p>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <Label htmlFor="lead-nome">Nome</Label>
+              <Label htmlFor="lead-first-name">Nome</Label>
               <Input
-                id="lead-nome"
+                id="lead-first-name"
                 required
                 maxLength={120}
-                value={draft.nome}
-                onChange={(event) => field('nome')(event.target.value)}
-                aria-invalid={wrong('nome')}
+                value={draft.first_name}
+                onChange={(event) => field('first_name')(event.target.value)}
+                aria-invalid={wrong('first_name')}
               />
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="lead-cognome">Cognome</Label>
+              <Label htmlFor="lead-last-name">Cognome</Label>
               <Input
-                id="lead-cognome"
+                id="lead-last-name"
                 required
                 maxLength={120}
-                value={draft.cognome}
-                onChange={(event) => field('cognome')(event.target.value)}
-                aria-invalid={wrong('cognome')}
+                value={draft.last_name}
+                onChange={(event) => field('last_name')(event.target.value)}
+                aria-invalid={wrong('last_name')}
               />
             </div>
           </div>
@@ -153,43 +153,43 @@ export function AdminTalentoLead() {
             />
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor="lead-posizione">Posizione</Label>
+            <Label htmlFor="lead-job-title">Posizione</Label>
             <Input
-              id="lead-posizione"
-              value={draft.posizione}
-              onChange={(event) => field('posizione')(event.target.value)}
-              aria-invalid={wrong('posizione')}
+              id="lead-job-title"
+              value={draft.job_title}
+              onChange={(event) => field('job_title')(event.target.value)}
+              aria-invalid={wrong('job_title')}
             />
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <Label htmlFor="lead-tariffa">Tariffa a giornata</Label>
+              <Label htmlFor="lead-rate">Tariffa a giornata</Label>
               <Input
-                id="lead-tariffa"
+                id="lead-rate"
                 inputMode="decimal"
-                value={draft.tariffa_giornaliera}
-                onChange={(event) => field('tariffa_giornaliera')(event.target.value)}
-                aria-invalid={rateProblem || wrong('tariffa_giornaliera')}
-                aria-describedby={rateProblem ? 'lead-tariffa-error' : undefined}
+                value={draft.daily_rate}
+                onChange={(event) => field('daily_rate')(event.target.value)}
+                aria-invalid={rateProblem || wrong('daily_rate')}
+                aria-describedby={rateProblem ? 'lead-rate-error' : undefined}
               />
               {rateProblem && (
-                <p role="alert" id="lead-tariffa-error" className="text-sm text-destructive">
+                <p role="alert" id="lead-rate-error" className="text-sm text-destructive">
                   {AMOUNT_PROBLEM}
                 </p>
               )}
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="lead-remoto">Modalità</Label>
+              <Label htmlFor="lead-remote">Modalità</Label>
               <select
-                id="lead-remoto"
-                value={draft.remoto}
-                onChange={(event) => field('remoto')(event.target.value)}
+                id="lead-remote"
+                value={draft.remote}
+                onChange={(event) => field('remote')(event.target.value)}
                 className="h-9 w-full border border-input bg-transparent px-2.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
               >
                 <option value="">—</option>
-                {(Object.keys(REMOTO_LABELS) as Remoto[]).map((value) => (
+                {(Object.keys(REMOTE_LABELS) as Remote[]).map((value) => (
                   <option key={value} value={value}>
-                    {REMOTO_LABELS[value]}
+                    {REMOTE_LABELS[value]}
                   </option>
                 ))}
               </select>
@@ -207,15 +207,15 @@ export function AdminTalentoLead() {
             />
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor="lead-fonti">Fonti</Label>
+            <Label htmlFor="lead-sources">Fonti</Label>
             <Textarea
-              id="lead-fonti"
+              id="lead-sources"
               required
               rows={2}
               placeholder="Da dove viene questa scheda: un URL per riga"
-              value={draft.fonti}
-              onChange={(event) => field('fonti')(event.target.value)}
-              aria-invalid={wrong('fonti')}
+              value={draft.sources}
+              onChange={(event) => field('sources')(event.target.value)}
+              aria-invalid={wrong('sources')}
             />
           </div>
           <Button type="submit" size="sm" disabled={draftCard.isPending}>

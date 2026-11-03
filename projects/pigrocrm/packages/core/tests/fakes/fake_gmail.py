@@ -315,7 +315,7 @@ class FakeGmail:
             # `Message-ID` so the right-hand side names their own infrastructure, and
             # whether Gmail's API path does is the one thing nobody has measured. With
             # this set the message really is in the mailbox and the `rfc822msgid` lookup
-            # cannot find it -- which is precisely the shape of "reported `fallito` for
+            # cannot find it -- which is precisely the shape of "reported `failed` for
             # mail sitting in Sent".
             message_id = f"<{gmail_id}@mail.gmail.com>"
         message = FakeMessage(

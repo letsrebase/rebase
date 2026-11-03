@@ -8,7 +8,7 @@ afterEach(resetMocks)
 describe('the enriched detail: sign-up, logins, downloads, Pigro space (REB-284)', () => {
   const ENRICHED = {
     ...COMPLETE,
-    iscrizione_utm: {
+    signup_utm: {
       utm_source: 'newsletter',
       utm_medium: 'email',
       utm_campaign: 'autunno-2026',
@@ -16,11 +16,11 @@ describe('the enriched detail: sign-up, logins, downloads, Pigro space (REB-284)
       utm_term: null,
       utm_id: null,
     },
-    ultimi_accessi: [
+    last_logins: [
       { id: 'l1', logged_at: '2026-09-12T09:00:00Z' },
       { id: 'l2', logged_at: '2026-09-11T09:00:00Z' },
     ],
-    ultimi_download_guida: [{ id: 'd1', downloaded_at: '2026-09-10T09:00:00Z' }],
+    last_download_guide: [{ id: 'd1', downloaded_at: '2026-09-10T09:00:00Z' }],
     pigro_slug: 'studio-grace',
   }
 
@@ -53,9 +53,9 @@ describe('the enriched detail: sign-up, logins, downloads, Pigro space (REB-284)
     routeFetch({
       'GET /api/hub/freelancers/f1': {
         ...INCOMPLETE,
-        iscrizione_utm: null,
-        ultimi_accessi: [],
-        ultimi_download_guida: [],
+        signup_utm: null,
+        last_logins: [],
+        last_download_guide: [],
         pigro_slug: null,
       },
       'GET /api/hub/freelancers/f1/audit': [],
@@ -73,10 +73,10 @@ describe('the enriched detail: sign-up, logins, downloads, Pigro space (REB-284)
   it('keeps the enriched sections after saving a state change from the plain PATCH response', async () => {
     // `PATCH /freelancers/{id}` answers a plain `FreelancerRead`: none of REB-284's
     // keys even exist on the body, since only `get`'s response model carries them.
-    const plainCard: Record<string, unknown> = { ...ENRICHED, stato: 'contattato' }
-    delete plainCard.iscrizione_utm
-    delete plainCard.ultimi_accessi
-    delete plainCard.ultimi_download_guida
+    const plainCard: Record<string, unknown> = { ...ENRICHED, status: 'contacted' }
+    delete plainCard.signup_utm
+    delete plainCard.last_logins
+    delete plainCard.last_download_guide
     delete plainCard.pigro_slug
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
       const url = String(input)

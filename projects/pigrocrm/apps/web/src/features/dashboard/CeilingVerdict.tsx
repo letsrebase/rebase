@@ -8,34 +8,34 @@ import type { CeilingSimulation } from './queries'
 /**
  * The contract's cap read against the addition: the customer's share of the azienda's
  * invoiced revenue over the contract's anniversary year, before and after, with the cap
- * on the same bar. Every figure is the server's (`tetto_contratto`); this prints them.
+ * on the same bar. Every figure is the server's (`contract_cap`); this prints them.
  */
-function CapVerdict({ cap }: { cap: NonNullable<CeilingSimulation['tetto_contratto']> }) {
+function CapVerdict({ cap }: { cap: NonNullable<CeilingSimulation['contract_cap']> }) {
   return (
-    <div role="group" aria-label={`Tetto di ${cap.titolo}`} className="space-y-1.5">
+    <div role="group" aria-label={`Tetto di ${cap.title}`} className="space-y-1.5">
       <p className="flex flex-wrap items-baseline justify-between gap-2 text-sm">
         <span className="font-medium">
-          Tetto del contratto «{cap.titolo}» · anno dal {formatDate(cap.periodo_da)} al{' '}
-          {formatDate(cap.periodo_a)}
+          Tetto del contratto «{cap.title}» · anno dal {formatDate(cap.period_from)} al{' '}
+          {formatDate(cap.period_to)}
         </span>
-        <StatusPill tone={cap.rientra ? 'ink' : 'danger'}>
-          {cap.rientra ? 'Ci sta' : 'Non ci sta'}
+        <StatusPill tone={cap.falls_within ? 'ink' : 'danger'}>
+          {cap.falls_within ? 'Ci sta' : 'Non ci sta'}
         </StatusPill>
       </p>
       <div className="flex items-center gap-3">
         <Meter
-          ratio={cap.quota_simulata}
+          ratio={cap.simulated_share}
           tone={FILL_TONE}
-          color={fill(!cap.rientra, null)}
-          mark={cap.tetto}
+          color={fill(!cap.falls_within, null)}
+          mark={cap.cap}
         />
         <span className="shrink-0 text-sm tabular-nums text-muted-foreground">
-          {sharePercent.format(cap.tetto)}
+          {sharePercent.format(cap.cap)}
         </span>
       </div>
       <p className="text-sm">
-        Il cliente passerebbe dal {sharePercent.format(cap.quota_attuale)} al{' '}
-        {sharePercent.format(cap.quota_simulata)} dei ricavi, tetto {sharePercent.format(cap.tetto)}.
+        Il cliente passerebbe dal {sharePercent.format(cap.current_share)} al{' '}
+        {sharePercent.format(cap.simulated_share)} dei ricavi, tetto {sharePercent.format(cap.cap)}.
       </p>
     </div>
   )
@@ -47,48 +47,48 @@ function CapVerdict({ cap }: { cap: NonNullable<CeilingSimulation['tetto_contrat
  * addition would reach. With no ceilings (the ordinary regime) the cap is all there is.
  */
 export function Verdict({ simulation }: { simulation: CeilingSimulation }) {
-  const cap = simulation.tetto_contratto ?? null
-  if (simulation.soglie.length === 0 && cap === null) return null
-  const fits = simulation.soglie.every((ceiling) => ceiling.rientra) && (cap === null || cap.rientra)
+  const cap = simulation.contract_cap ?? null
+  if (simulation.thresholds.length === 0 && cap === null) return null
+  const fits = simulation.thresholds.every((ceiling) => ceiling.falls_within) && (cap === null || cap.falls_within)
   return (
     <div className="space-y-2 border-t pt-4">
       <p className="text-base font-semibold">
         {fits ? 'Ci sta.' : 'Non ci sta.'}{' '}
         <span className="font-normal">
-          {simulation.soglie.length > 0
-            ? `Aggiungendo ${money(simulation.aggiunta_sintetica)} ai ricavi incassati del ${simulation.anno}:`
-            : `Aggiungendo ${money(simulation.aggiunta_sintetica)} ai ricavi del cliente:`}
+          {simulation.thresholds.length > 0
+            ? `Aggiungendo ${money(simulation.brief_addition)} ai ricavi incassati del ${simulation.year}:`
+            : `Aggiungendo ${money(simulation.brief_addition)} ai ricavi del cliente:`}
         </span>
       </p>
       <ul className="space-y-3">
-        {simulation.soglie.map((ceiling) => (
+        {simulation.thresholds.map((ceiling) => (
           <li key={ceiling.id} className="space-y-1.5">
             <p className="flex flex-wrap items-baseline justify-between gap-2 text-sm">
-              <span className="font-medium">{ceiling.etichetta}</span>
-              <StatusPill tone={ceiling.rientra ? 'ink' : 'danger'}>
-                {ceiling.rientra ? 'Rientra' : 'Non rientra'}
+              <span className="font-medium">{ceiling.label}</span>
+              <StatusPill tone={ceiling.falls_within ? 'ink' : 'danger'}>
+                {ceiling.falls_within ? 'Rientra' : 'Non rientra'}
               </StatusPill>
             </p>
             <div className="flex items-center gap-3">
               <Meter
-                ratio={ceiling.utilizzo_simulato}
+                ratio={ceiling.simulated_usage}
                 tone={FILL_TONE}
-                color={fill(!ceiling.rientra, ceiling.livello_allerta_simulato)}
+                color={fill(!ceiling.falls_within, ceiling.alert_level_simulated)}
               />
               <span className="shrink-0 text-sm tabular-nums text-muted-foreground">
-                {money(ceiling.soglia)}
+                {money(ceiling.threshold)}
               </span>
             </div>
             <p className="text-sm">
-              {money(ceiling.ricavi_attuali)} diventano {money(ceiling.ricavi_simulati)}:{' '}
-              {ceiling.rientra
-                ? `restano ${magnitude(ceiling.residuo_simulato)}`
-                : `superata di ${magnitude(ceiling.residuo_simulato)}`}
-              {ceiling.livello_allerta_simulato ? ` · ${ceiling.livello_allerta_simulato}` : ''}.
+              {money(ceiling.current_revenue)} diventano {money(ceiling.simulated_revenue)}:{' '}
+              {ceiling.falls_within
+                ? `restano ${magnitude(ceiling.simulated_remaining)}`
+                : `superata di ${magnitude(ceiling.simulated_remaining)}`}
+              {ceiling.alert_level_simulated ? ` · ${ceiling.alert_level_simulated}` : ''}.
             </p>
-            {!ceiling.rientra ? (
+            {!ceiling.falls_within ? (
               <p className="text-xs text-muted-foreground">
-                {consequence(ceiling.conseguenza, true)}
+                {consequence(ceiling.consequence, true)}
               </p>
             ) : null}
           </li>

@@ -58,7 +58,7 @@ def cards_regenerate(limit: int, batch: bool, admin_email: str | None) -> int:
     at half the price, which `rebase cards-batch-poll` and the `cards` service carry on. A
     provider with no batch API falls back to the workers, and says so. `--admin` is the
     address of the administrator who asks, and is required: the start, each card and the end
-    are signed in the trail with it, `fonte` `cli`; with none, or one that is not an
+    are signed in the trail with it, `source` `cli`; with none, or one that is not an
     administrator's, nothing is started and the exit code is 2. A start while another is on
     writes nothing and says so."""
     from rebase_core.card_batch import CardBatches
@@ -106,7 +106,7 @@ def cards_regenerate(limit: int, batch: bool, admin_email: str | None) -> int:
         if writer.regeneration_running():
             print("Una rigenerazione è già in corso: nessuna scheda avviata.")
             return 0
-        result = writer.regenerate_stale(admin_id, limit, fonte="cli")
+        result = writer.regenerate_stale(admin_id, limit, source="cli")
     finally:
         session.close()
     if result.batched:
@@ -212,10 +212,10 @@ def cards_eval(
     what was invented. Prints per person and in total the supported fields, the
     contradictions, the guard failures, the identifiers found, the latency and the cost of
     the writing and of the judging apart, and how the run stands against a baseline:
-    `--baseline RUN_ID`, or the newest finished run of the live configuration, or
-    «nessun riferimento». `--prompt-version 1` writes with the CV-alone prompt of before
-    the sources, for a baseline of it. A provider that is switched off is refused, «Il
-    fornitore è spento», unless `--allow-disabled` says this evaluation may send CVs to
+    `--baseline RUN_ID`, or the newest finished run of the live configuration, or a
+    line saying there is none. `--prompt-version 1` writes with the CV-alone prompt of before
+    the sources, for a baseline of it. A provider that is switched off is refused with
+    a sentence, unless `--allow-disabled` says this evaluation may send CVs to
     it (the report says so). No live card and no task setting is touched; the calls are
     recorded under the `card` task with `purpose="eval"`, so they count against its daily
     cap, which can end the run early: it then says so, exits 1 and is never taken as a

@@ -43,50 +43,50 @@ export function displayNative(value: string | null): string {
  */
 export interface CustomerColumnOptions {
   /**
-   * The aziende to name in an «Azienda» column after the name (REB-625, spec 2026-10-03
-   * §5 «Lists»). Given only under «Tutte le aziende» from the second azienda on
-   * (`useLegalEntitiesToName`): with one azienda, or with one selected, the column would say
+   * The legal entities to name in an «Azienda» column after the name (REB-625, spec 2026-10-03
+   * §5 «Lists»). Given only under «Tutte le aziende» from the second legal entity on
+   * (`useLegalEntitiesToName`): with one legal entity, or with one selected, the column would say
    * the same thing on every row.
    */
-  aziende?: LegalEntityRecord[]
+  legal_entities?: LegalEntityRecord[]
 }
 
 export function buildCustomerColumns(
   customFields: FieldDefinition[],
   options: CustomerColumnOptions = {},
 ): ColumnDef<DataTableFeatures, Customer>[] {
-  const aziendaName = new Map((options.aziende ?? []).map((a) => [a.id, a.nome]))
-  const azienda: ColumnDef<DataTableFeatures, Customer>[] = options.aziende
+  const legalEntityName = new Map((options.legal_entities ?? []).map((a) => [a.id, a.name]))
+  const legal_entity: ColumnDef<DataTableFeatures, Customer>[] = options.legal_entities
     ? [
         {
           header: 'Azienda',
-          id: 'azienda',
+          id: 'legal_entity',
           // The dash for an id the active list does not carry: a customer of a
           // deactivated azienda keeps its rows and its history (spec §1.8).
-          accessorFn: (row) => aziendaName.get(row.azienda_id) ?? EMPTY,
+          accessorFn: (row) => legalEntityName.get(row.legal_entity_id) ?? EMPTY,
         },
       ]
     : []
   const native: ColumnDef<DataTableFeatures, Customer>[] = [
     {
       header: 'Ragione sociale',
-      accessorKey: 'ragione_sociale',
+      accessorKey: 'legal_name',
       // The row *is* a company, so the first cell carries its identity: an initials
       // chip beside the name (design spec §4). The accessor stays the bare name, so
       // the table still has one plain text value per cell to sort or export; `cell`
       // only adds the chip on top of it, the same shape «Azienda» in
       // `features/people/columns.tsx` already uses.
-      cell: ({ row }) => <EntityCell name={row.original.ragione_sociale} />,
+      cell: ({ row }) => <EntityCell name={row.original.legal_name} />,
     },
-    ...azienda,
-    { header: 'P.IVA', id: 'partita_iva', accessorFn: (row) => displayNative(row.partita_iva) },
-    { header: 'Comune', id: 'comune', accessorFn: (row) => displayNative(row.comune) },
+    ...legal_entity,
+    { header: 'P.IVA', id: 'vat_number', accessorFn: (row) => displayNative(row.vat_number) },
+    { header: 'Comune', id: 'city', accessorFn: (row) => displayNative(row.city) },
     { header: 'Email', id: 'email', accessorFn: (row) => displayNative(row.email) },
-    { header: 'Telefono', id: 'telefono', accessorFn: (row) => displayNative(row.telefono) },
+    { header: 'Telefono', id: 'phone', accessorFn: (row) => displayNative(row.phone) },
   ]
 
   // Prefixed `custom_` id so a tenant-defined key can never collide with a native
-  // column's own id (`partita_iva`, `comune`, ...) even in the one case that would
+  // column's own id (`vat_number`, `city`, ...) even in the one case that would
   // otherwise be ambiguous: nothing today stops a custom field from being *named*
   // the same as a native column (FieldDefinitionService.create only checks for a
   // collision against other field definitions, not against native columns).

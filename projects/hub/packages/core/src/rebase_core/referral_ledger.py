@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session, aliased
 
 from rebase_core.audit import utcnow
 from rebase_core.errors import NotFound, ValidationFailed
-from rebase_core.match_words import LETTERA
+from rebase_core.match_words import LETTER
 from rebase_core.models import (
     Company,
     ContractDocument,
@@ -47,15 +47,18 @@ _LedgerRow = Row[Referral, ReferralReward | None, str, str, str, UUID | None]
 _SORT = SortSpec("created_at", "datetime")
 LIST_LIMIT_DEFAULT = 100
 LIST_LIMIT_MAX = 500
-STATE_ORDER = ("da_confermare", "confermato", "pagato")
+STATE_ORDER = ("to_confirm", "confirmed", "paid")
+# The word an admin reads for each state, in the 422 that refuses a step: the stored values
+# are English, the sentence is Italian.
+STATE_WORDS = {"to_confirm": "da_confermare", "confirmed": "confermato", "paid": "pagato"}
 
 
 class _MatchFacts(NamedTuple):
     match: Match
-    nome_azienda: str
-    figura_richiesta: str
+    company_name: str
+    requested_role: str
     freelancer_id: UUID
-    freelancer_nome: str
+    freelancer_name: str
     freelancer_deleted: bool
     letter: ContractDocument | None
 
@@ -81,7 +84,7 @@ class ReferralLedgerService:
                     select(literal(kind).label("kind"), column.label("entity_id"), Match.id)
                     .where(
                         Match.cancelled_at.is_(None),
-                        Match.stato.in_(EARNING_MATCH_STATES),
+                        Match.status.in_(EARNING_MATCH_STATES),
                         column.in_(ids),
                     )
                     .ext(distinct_on(column))
@@ -101,7 +104,7 @@ class ReferralLedgerService:
         newer = aliased(ContractDocument)
         current_letter = (
             select(newer.id)
-            .where(newer.match_id == Match.id, newer.kind == LETTERA)
+            .where(newer.match_id == Match.id, newer.kind == LETTER)
             .order_by(newer.created_at.desc(), newer.id.desc())
             .limit(1)
             .correlate(Match)
@@ -118,10 +121,10 @@ class ReferralLedgerService:
         return {
             match.id: _MatchFacts(
                 match,
-                company.nome_azienda,
-                company.figura_richiesta,
+                company.company_name,
+                company.requested_role,
                 match.freelancer_id,
-                f"{user.nome} {user.cognome}".strip(),
+                f"{user.first_name} {user.last_name}".strip(),
                 freelancer_deleted_at is not None,
                 letter,
             )
@@ -141,21 +144,21 @@ class ReferralLedgerService:
         freelancer_ids = {r.Referral.entity_id for r in rows if r.Referral.kind == "freelancer"}
         company_ids = {r.Referral.entity_id for r in rows if r.Referral.kind == "company"}
         if freelancer_ids:
-            for entity_id, nome, cognome, deleted_at in self.session.execute(
-                select(Freelancer.id, User.nome, User.cognome, Freelancer.deleted_at)
+            for entity_id, first_name, last_name, deleted_at in self.session.execute(
+                select(Freelancer.id, User.first_name, User.last_name, Freelancer.deleted_at)
                 .join(User, User.id == Freelancer.user_id)
                 .where(Freelancer.id.in_(freelancer_ids))
             ):
-                names["freelancer", entity_id] = f"{nome} {cognome}".strip()
+                names["freelancer", entity_id] = f"{first_name} {last_name}".strip()
                 if deleted_at is not None:
                     deleted.add(("freelancer", entity_id))
         if company_ids:
-            for entity_id, nome_azienda, deleted_at in self.session.execute(
-                select(Company.id, Company.nome_azienda, Company.deleted_at).where(
+            for entity_id, company_name, deleted_at in self.session.execute(
+                select(Company.id, Company.company_name, Company.deleted_at).where(
                     Company.id.in_(company_ids)
                 )
             ):
-                names["company", entity_id] = nome_azienda
+                names["company", entity_id] = company_name
                 if deleted_at is not None:
                     deleted.add(("company", entity_id))
         reward_ids = [r.ReferralReward.id for r in rows if r.ReferralReward is not None]
@@ -175,7 +178,7 @@ class ReferralLedgerService:
             {
                 (r.Referral.kind, r.Referral.entity_id)
                 for r in rows
-                if r.ReferralReward is None and can_mature(r.Referral.kind, r.Referral.stato)
+                if r.ReferralReward is None and can_mature(r.Referral.kind, r.Referral.status)
             }
         )
         facts = self._match_facts(
@@ -203,26 +206,26 @@ class ReferralLedgerService:
                     reward_id=reward.id if reward is not None else None,
                     kind=referral.kind,
                     referred_id=referral.entity_id,
-                    referrer_nome=f"{row.referrer_nome} {row.referrer_cognome}".strip(),
+                    referrer_name=f"{row.referrer_name} {row.referrer_last_name}".strip(),
                     referrer_email=row.referrer_email,
                     referrer_freelancer_id=row.referrer_freelancer_id,
-                    referred_nome=names.get(key, "-"),
+                    referred_name=names.get(key, "-"),
                     referred_deleted=key in deleted,
                     match_id=match_id if found is not None else None,
                     match_freelancer_id=found.freelancer_id if found is not None else None,
-                    match_freelancer_nome=found.freelancer_nome if found is not None else None,
+                    match_freelancer_name=found.freelancer_name if found is not None else None,
                     match_freelancer_deleted=found.freelancer_deleted
                     if found is not None
                     else False,
-                    match_nome_azienda=found.nome_azienda if found is not None else None,
-                    match_figura_richiesta=found.figura_richiesta if found is not None else None,
+                    match_company_name=found.company_name if found is not None else None,
+                    match_requested_role=found.requested_role if found is not None else None,
                     projected_rate=projected_rate,
                     projected_amount=projected_amount,
                     rate=reward.rate if reward is not None else None,
                     base_amount=reward.base_amount if reward is not None else None,
                     reward_amount=reward.reward_amount if reward is not None else None,
-                    stato=reward.stato if reward is not None else None,
-                    referral_stato=referral.stato,
+                    status=reward.status if reward is not None else None,
+                    referral_status=referral.status,
                     verified_at=referral.verified_at,
                     verified_via=referral.verified_via,
                     note=reward.note if reward is not None else None,
@@ -246,8 +249,8 @@ class ReferralLedgerService:
             select(
                 Referral,
                 ReferralReward,
-                referrer.nome.label("referrer_nome"),
-                referrer.cognome.label("referrer_cognome"),
+                referrer.first_name.label("referrer_name"),
+                referrer.last_name.label("referrer_last_name"),
                 referrer.email.label("referrer_email"),
                 card.id.label("referrer_freelancer_id"),
             )
@@ -261,13 +264,13 @@ class ReferralLedgerService:
         self,
         limit: int = LIST_LIMIT_DEFAULT,
         *,
-        stato: str | None = None,
+        status: str | None = None,
         cursor: str | None = None,
     ) -> ReferralLedgerList:
         limit = max(1, min(limit, LIST_LIMIT_MAX))
         stmt = self._ledger_query()
-        if stato is not None:
-            stmt = stmt.where(ReferralReward.stato == stato)
+        if status is not None:
+            stmt = stmt.where(ReferralReward.status == status)
         if cursor:
             value, row_id = decode_cursor(_SORT, cursor)
             stmt = stmt.where(keyset_predicate(Referral.created_at, Referral.id, value, row_id))
@@ -291,7 +294,7 @@ class ReferralLedgerService:
 
     def _require_reward(self, reward_id: UUID) -> ReferralReward:
         """The reward, locked `FOR UPDATE` until the caller's commit: `set_state` and
-        `set_price` both read `stato`, decide, then write, and two admins (or a double
+        `set_price` both read `status`, decide, then write, and two admins (or a double
         click) must not interleave those steps -- a price written over a reward the other
         request just confirmed would change a figure already recorded against. The
         second request waits here, then re-reads: `populate_existing`, because a locking
@@ -304,29 +307,31 @@ class ReferralLedgerService:
             raise NotFound(ENTITY, reward_id)
         return row
 
-    def set_state(self, reward_id: UUID, stato: str, admin_id: UUID) -> ReferralReward:
-        """`da_confermare` to `confermato` to `pagato`, one step at a time, never
+    def set_state(self, reward_id: UUID, status: str, admin_id: UUID) -> ReferralReward:
+        """`to_confirm` to `confirmed` to `paid`, one step at a time, never
         backwards: a wrong click is undone by an admin, from the ledger, not by this
         service quietly accepting any state from any state. Tracking only -- moving a
-        reward to `pagato` records that the transfer happened outside the hub; nothing
+        reward to `paid` records that the transfer happened outside the hub; nothing
         here moves money. Refuses to confirm a reward with no figure yet -- the same
         rule `set_price` already enforces from the other side, so a fixed-price letter
         with no estimate cannot be confirmed unpriced and then left unpriceable
         forever, whether the call comes from the ledger's own UI or straight at this
         endpoint."""
         row = self._require_reward(reward_id)
-        if stato not in STATE_ORDER:
-            raise ValidationFailed(ENTITY, "stato", "stato non valido")
-        index = STATE_ORDER.index(row.stato)
-        next_state = STATE_ORDER[index + 1] if row.stato != "pagato" else "niente"
-        if STATE_ORDER.index(stato) != index + 1:
-            raise ValidationFailed(ENTITY, "stato", f"da {row.stato} si passa solo a {next_state}")
-        if stato == "confermato" and row.reward_amount is None:
-            raise ValidationFailed(ENTITY, "stato", "il reward va prezzato prima di confermarlo")
-        row.stato = stato
-        if stato == "confermato":
+        if status not in STATE_ORDER:
+            raise ValidationFailed(ENTITY, "status", "stato non valido")
+        index = STATE_ORDER.index(row.status)
+        next_state = STATE_WORDS[STATE_ORDER[index + 1]] if row.status != "paid" else "niente"
+        if STATE_ORDER.index(status) != index + 1:
+            raise ValidationFailed(
+                ENTITY, "status", f"da {STATE_WORDS[row.status]} si passa solo a {next_state}"
+            )
+        if status == "confirmed" and row.reward_amount is None:
+            raise ValidationFailed(ENTITY, "status", "il reward va prezzato prima di confermarlo")
+        row.status = status
+        if status == "confirmed":
             row.confirmed_by, row.confirmed_at = admin_id, utcnow()
-        elif stato == "pagato":
+        elif status == "paid":
             row.paid_at = utcnow()
         self.session.commit()
         return row
@@ -335,13 +340,13 @@ class ReferralLedgerService:
         self, reward_id: UUID, base_amount: Decimal, reward_amount: Decimal
     ) -> ReferralReward:
         """What an admin fills in by hand for a reward `record_reward_if_signed` left
-        with no figure (an `a corpo` letter with no `giorni_previsti` estimate).
-        Refused once a state beyond `da_confermare` was already recorded against the
+        with no figure (a `lump_sum` letter with no `expected_days` estimate).
+        Refused once a state beyond `to_confirm` was already recorded against the
         figure it replaces -- price it, then move it, never the other way."""
         row = self._require_reward(reward_id)
-        if row.stato != "da_confermare":
+        if row.status != "to_confirm":
             raise ValidationFailed(
-                ENTITY, "stato", "il prezzo si corregge solo prima della conferma"
+                ENTITY, "status", "il prezzo si corregge solo prima della conferma"
             )
         row.base_amount, row.reward_amount = base_amount, reward_amount
         self.session.commit()

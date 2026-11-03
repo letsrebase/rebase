@@ -85,8 +85,8 @@ async def test_the_full_journey_an_agent_would_take(server, mcp_session: Session
             await client.call_tool(
                 "create_customer",
                 {
-                    "ragione_sociale": "ACME Srl",
-                    "partita_iva": "12345678901",
+                    "legal_name": "ACME Srl",
+                    "vat_number": "12345678901",
                     "custom_fields": {"settore": "IT"},
                 },
             )
@@ -96,23 +96,23 @@ async def test_the_full_journey_an_agent_would_take(server, mcp_session: Session
         person = _payload(
             await client.call_tool(
                 "create_person",
-                {"nome": "Mario", "cognome": "Rossi", "customer_id": customer["id"]},
+                {"first_name": "Mario", "last_name": "Rossi", "customer_id": customer["id"]},
             )
         )
         assert person["customer_id"] == customer["id"]
 
         deal = _payload(
             await client.call_tool(
-                "create_deal", {"nome": "Progetto X", "customer_id": customer["id"]}
+                "create_deal", {"name": "Progetto X", "customer_id": customer["id"]}
             )
         )
 
         stages = _payload(await client.call_tool("list_pipeline_stages", {}))["stages"]
-        offerta = next(s for s in stages if s["nome"] == "Offerta")
+        offer = next(s for s in stages if s["name"] == "Offerta")
         moved = _payload(
-            await client.call_tool("move_deal", {"deal_id": deal["id"], "stage_id": offerta["id"]})
+            await client.call_tool("move_deal", {"deal_id": deal["id"], "stage_id": offer["id"]})
         )
-        assert moved["pipeline_stage_id"] == offerta["id"]
+        assert moved["pipeline_stage_id"] == offer["id"]
 
         timeline = _payload(
             await client.call_tool("get_timeline", {"entity_type": "deal", "entity_id": deal["id"]})
@@ -139,7 +139,7 @@ async def test_an_invalid_custom_value_returns_guidance_naming_the_options(
     async with Client(server) as client:
         result = await client.call_tool(
             "create_customer",
-            {"ragione_sociale": "Beta", "custom_fields": {"settore": "Altro"}},
+            {"legal_name": "Beta", "custom_fields": {"settore": "Altro"}},
         )
 
     assert result.is_error
@@ -161,7 +161,7 @@ async def test_a_permission_error_tells_the_agent_to_ask_the_user(mcp_session: S
     )
 
     async with Client(server) as client:
-        result = await client.call_tool("create_customer", {"ragione_sociale": "ACME"})
+        result = await client.call_tool("create_customer", {"legal_name": "ACME"})
 
     assert result.is_error
     message = result.content[0].text
@@ -175,15 +175,15 @@ async def test_an_agent_names_a_customers_owner_when_it_creates_it_and_when_it_u
     `changes` (its schema is `CustomerUpdate`'s). The agent here is an admin's."""
     from pigrocrm.core.auth.models import User
 
-    first = User(email=f"a-{uuid4()}@example.test", password_hash="x", nome="A", ruolo="admin")
-    second = User(email=f"b-{uuid4()}@example.test", password_hash="x", nome="B", ruolo="admin")
+    first = User(email=f"a-{uuid4()}@example.test", password_hash="x", name="A", role="admin")
+    second = User(email=f"b-{uuid4()}@example.test", password_hash="x", name="B", role="admin")
     mcp_session.add_all([first, second])
     mcp_session.flush()
 
     async with Client(server) as client:
         created = _payload(
             await client.call_tool(
-                "create_customer", {"ragione_sociale": "ACME", "owner_id": str(first.id)}
+                "create_customer", {"legal_name": "ACME", "owner_id": str(first.id)}
             )
         )
         assert created["owner_id"] == str(first.id)

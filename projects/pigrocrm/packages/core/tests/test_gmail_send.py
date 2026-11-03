@@ -39,7 +39,6 @@ from pigrocrm.core.auth.models import User
 from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.db import session_factory
 from pigrocrm.core.documents.models import Document, DocumentVersion
-from pigrocrm.core.emitter.repository import LegalEntityRepository
 from pigrocrm.core.errors import Conflict, PermissionDenied, ValidationFailed
 from pigrocrm.core.gmail.drafts import EmailDraftService
 from pigrocrm.core.gmail.errors import CredentialRevoked, ScopeMissing
@@ -56,6 +55,7 @@ from pigrocrm.core.gmail.schemas import (
     EmailDraftUpdate,
 )
 from pigrocrm.core.gmail.send import EmailSendService
+from pigrocrm.core.legal_entities.repository import LegalEntityRepository
 from pigrocrm.core.people.models import Person
 from pigrocrm.core.storage.local import LocalFileStorage
 
@@ -102,7 +102,7 @@ def test_a_successful_send_records_the_message_and_the_timeline_entry(
     read = send_service(db_session, fake).send(draft.id, actor_for(account))
     db_session.commit()
 
-    assert read.send_state == "inviato"
+    assert read.send_state == "sent"
     assert read.sent_gmail_message_id
     assert read.last_error is None
     # The outbound row is written *after* Gmail answered, never before.
@@ -115,7 +115,7 @@ def test_a_successful_send_records_the_message_and_the_timeline_entry(
     assert outbound.message_id_header == draft.message_id_header
     assert outbound.from_address == account.email_address
     kinds = db_session.execute(select(Activity.kind)).scalars().all()
-    assert "gmail.messaggio_inviato" in kinds
+    assert "gmail.message_sent" in kinds
 
 
 def test_the_sent_draft_names_the_file_that_left_with_it(
@@ -126,16 +126,16 @@ def test_the_sent_draft_names_the_file_that_left_with_it(
     part that actually left, which is the whole point of reading one before pressing."""
     account = connected_account(db_session)
     customer = make_customer(db_session, email="info@acme.it")
-    document = Document(customer_id=customer.id, tipo="offerta", titolo="Offerta Q1")
+    document = Document(customer_id=customer.id, type="offer", title="Offerta Q1")
     db_session.add(document)
     db_session.flush()
     pdf = b"%PDF-1.7\nfinto\n"
     version = DocumentVersion(
         document_id=document.id,
-        numero=2,
+        number=2,
         storage_key=f"acme/offerta-{uuid4().hex}.pdf",
         content_type="application/pdf",
-        dimensione=len(pdf),
+        size=len(pdf),
         hash_sha256="0" * 64,
     )
     db_session.add(version)
@@ -149,7 +149,7 @@ def test_the_sent_draft_names_the_file_that_left_with_it(
     read = send_service(db_session, fake, storage=storage).send(draft.id, actor_for(account))
     db_session.commit()
 
-    assert read.send_state == "inviato"
+    assert read.send_state == "sent"
     assert [a.filename for a in read.attachments] == ["offerta-q1-v2.pdf"]
     assert 'filename="offerta-q1-v2.pdf"' in _sent_raw(fake)
 
@@ -196,7 +196,7 @@ def test_what_left_parses_back_into_the_message_we_meant(db_session: Session) ->
 def test_the_from_header_is_the_issuer_s_name_and_a_comma_in_it_adds_no_recipient(
     db_session: Session,
 ) -> None:
-    """`emitter_profile.ragione_sociale` is somebody's own business name, and «Bianchi,
+    """`legal_entities.legal_name` is somebody's own business name, and «Bianchi,
     Rossi e Associati» is an ordinary Italian one. Unquoted it parses as **two**
     addresses -- a bare `Bianchi`, then the real one -- because the comma is the
     address-list separator, which is a malformed `From` on every message the
@@ -205,12 +205,12 @@ def test_the_from_header_is_the_issuer_s_name_and_a_comma_in_it_adds_no_recipien
     from email.policy import default as default_policy
     from email.utils import getaddresses
 
-    azienda = LegalEntityRepository(db_session).default()
-    assert azienda is not None
-    azienda.ragione_sociale = "Bianchi, Rossi e Associati"
-    azienda.partita_iva = "12345678901"
-    azienda.codice_fiscale = "BNCRSS80A01H501U"
-    azienda.regime_fiscale = "RF19"
+    legal_entity = LegalEntityRepository(db_session).default()
+    assert legal_entity is not None
+    legal_entity.legal_name = "Bianchi, Rossi e Associati"
+    legal_entity.vat_number = "12345678901"
+    legal_entity.tax_code = "BNCRSS80A01H501U"
+    legal_entity.tax_regime = "RF19"
     db_session.flush()
     account = connected_account(db_session)
     draft = _draft(db_session, account)
@@ -265,7 +265,9 @@ def test_the_sent_message_is_filed_against_the_people_it_actually_concerns(
     customer is the conversation that lies, in the other direction."""
     account = connected_account(db_session)
     customer = make_customer(db_session, email="info@acme.it")
-    person = Person(customer_id=customer.id, nome="Ada", cognome="Rossi", email="ada@acme.it")
+    person = Person(
+        customer_id=customer.id, first_name="Ada", last_name="Rossi", email="ada@acme.it"
+    )
     db_session.add(person)
     db_session.flush()
     draft = _draft(db_session, account, customer)
@@ -301,7 +303,7 @@ def test_a_revoked_credential_fails_before_composing_and_makes_no_http_call(
     row = db_session.get(EmailDraft, draft.id)
     assert row is not None
     # Not even claimed: a refusal before the gate must not consume the draft.
-    assert row.send_state == "bozza"
+    assert row.send_state == "draft"
 
 
 def test_a_grant_without_gmail_send_refuses_by_naming_the_scope(db_session: Session) -> None:
@@ -316,7 +318,7 @@ def test_a_grant_without_gmail_send_refuses_by_naming_the_scope(db_session: Sess
     assert fake.requests == []
     db_session.rollback()
     row = db_session.get(EmailDraft, draft.id)
-    assert row is not None and row.send_state == "bozza"
+    assert row is not None and row.send_state == "draft"
 
 
 def test_a_readonly_actor_cannot_send(db_session: Session) -> None:
@@ -336,18 +338,18 @@ def test_an_oversized_attachment_is_refused_and_the_draft_stays_editable(
 ) -> None:
     """B2-4's cap, on the path it exists for. Nothing reaches Gmail: the refusal happens
     while the message is being composed, and the draft ends up in a state the composer
-    can reopen rather than frozen in `in_invio`."""
+    can reopen rather than frozen in `sending`."""
     account = connected_account(db_session)
     customer = make_customer(db_session, email="info@acme.it")
-    document = Document(customer_id=customer.id, tipo="offerta", titolo="Offerta")
+    document = Document(customer_id=customer.id, type="offer", title="Offerta")
     db_session.add(document)
     db_session.flush()
     version = DocumentVersion(
         document_id=document.id,
-        numero=1,
+        number=1,
         storage_key=f"acme/offerta-{uuid4().hex}.pdf",
         content_type="application/pdf",
-        dimensione=21 * MB,
+        size=21 * MB,
         hash_sha256="0" * 64,
     )
     db_session.add(version)
@@ -365,7 +367,7 @@ def test_an_oversized_attachment_is_refused_and_the_draft_stays_editable(
 
     row = db_session.get(EmailDraft, draft.id)
     assert row is not None
-    assert row.send_state == "fallito", "a draft stranded in `in_invio` can never be fixed"
+    assert row.send_state == "failed", "a draft stranded in `sending` can never be fixed"
     assert row.body_markdown == BODY
     assert row.last_error
 
@@ -391,7 +393,7 @@ def test_gmail_refusing_leaves_the_draft_intact_and_editable(db_session: Session
 
     row = db_session.get(EmailDraft, draft.id)
     assert row is not None
-    assert row.send_state == "fallito"
+    assert row.send_state == "failed"
     assert row.last_error
     assert row.body_markdown == BODY
     assert row.to_addresses == ["ada@acme.it"]
@@ -434,12 +436,12 @@ def test_a_transient_failure_is_not_retried_either_because_a_send_is_not_idempot
     assert len(fake.messages) == 1, "a retried send is a second copy of somebody's email"
     db_session.rollback()
     row = db_session.get(EmailDraft, draft.id)
-    assert row is not None and row.send_state == "incerto"
+    assert row is not None and row.send_state == "uncertain"
 
 
 def test_a_failed_draft_can_be_retried(db_session: Session) -> None:
-    """`fallito` is not terminal: nothing left, so trying again is correct. Only
-    `inviato`, `in_invio` and `incerto` are refused."""
+    """`failed` is not terminal: nothing left, so trying again is correct. Only
+    `sent`, `sending` and `uncertain` are refused."""
     account = connected_account(db_session)
     draft = _draft(db_session, account)
     db_session.commit()
@@ -450,7 +452,7 @@ def test_a_failed_draft_can_be_retried(db_session: Session) -> None:
 
     working = FakeGmail()
     read = send_service(db_session, working).send(draft.id, actor_for(account))
-    assert read.send_state == "inviato"
+    assert read.send_state == "sent"
     # And the stale error is gone: an error sentence next to a message that has now
     # left describes a failure that is no longer true.
     assert read.last_error is None
@@ -511,7 +513,7 @@ def test_the_error_the_user_reads_carries_no_recipient_and_no_body(
 
     for rendered in (row.last_error or "", caught.value.message, str(caught.value.details)):
         assert "ada@acme.it" not in rendered
-        assert "offerta" not in rendered.lower()
+        assert "offer" not in rendered.lower()
         assert "ya29" not in rendered, "the bearer token must never reach a message"
 
 
@@ -605,7 +607,7 @@ def test_two_concurrent_sends_produce_one_email_one_row_and_one_conflict(
                 == 1
             )
             row = check.get(EmailDraft, draft_id)
-            assert row is not None and row.send_state == "inviato"
+            assert row is not None and row.send_state == "sent"
     finally:
         if customer_id is not None and user_id is not None and account_id is not None:
             _cleanup(db_engine, customer_id=customer_id, user_id=user_id, account_id=account_id)
@@ -627,10 +629,10 @@ def _edited_by_someone_else(session: Session, account: GoogleAccount, draft_id: 
 def test_a_send_carrying_an_older_revision_is_refused_and_sends_nothing(
     db_session: Session,
 ) -> None:
-    """REB-419's acceptance test. The Email tab promises «parte esattamente quello che
-    vedi», so a send carries the `updated_at` of the draft as the person read it, and a
-    row that moved since is refused before anything is claimed or composed: no request
-    reaches Gmail, not even the token refresh, and the draft is left as it was."""
+    """REB-419's acceptance test. The Email tab promises that what leaves is exactly
+    what the person sees, so a send carries the `updated_at` of the draft as the person
+    read it, and a row that moved since is refused before anything is claimed or composed:
+    no request reaches Gmail, not even the token refresh, and the draft is left as it was."""
     account = connected_account(db_session)
     read = _draft(db_session, account)
     db_session.commit()
@@ -649,7 +651,7 @@ def test_a_send_carrying_an_older_revision_is_refused_and_sends_nothing(
     db_session.rollback()
     row = db_session.get(EmailDraft, read.id)
     assert row is not None
-    assert row.send_state == "bozza"
+    assert row.send_state == "draft"
     assert row.send_attempted_at is None
     assert row.google_account_id is None
     assert row.body_markdown == "Un testo che nessuno ha riletto."
@@ -688,7 +690,7 @@ def test_the_claim_refuses_a_revision_that_moved_after_the_check(
     row = db_session.get(EmailDraft, read.id)
     assert row is not None
     db_session.refresh(row)
-    assert row.send_state == "bozza"
+    assert row.send_state == "draft"
     assert row.send_attempted_at is None
 
 
@@ -713,7 +715,7 @@ def test_the_revision_the_api_answered_is_the_one_a_send_may_carry(
         created.id, actor_for(account), expected_updated_at=echoed.updated_at
     )
 
-    assert sent.send_state == "inviato"
+    assert sent.send_state == "sent"
     left = message_from_string(_sent_raw(fake), policy=email_policy).get_body(("plain",))
     assert left is not None
     assert "Un testo che nessuno ha riletto." in str(left.get_content())
@@ -740,13 +742,13 @@ def test_an_edit_that_read_the_draft_before_the_claim_is_refused_after_it(
 ) -> None:
     """The other half of the revision: the edit's own answer. Two real connections,
     pinned in the one order the claim alone cannot see. The edit reads the draft while it
-    is still a `bozza` and passes the editability check on that copy, the claim commits,
+    is still a `draft` and passes the editability check on that copy, the claim commits,
     and only then does the edit go on, before the send reloads the row to compose it.
 
     An edit that writes would land on the claimed draft, and the mail would carry text
     nobody reviewed while the revision the person named still matched. An edit that asks
     for nothing writes nothing, but answering 200 from the copy it loaded would describe
-    a `bozza` that no longer exists. Both are refused like any edit of a draft in flight,
+    a `draft` that no longer exists. Both are refused like any edit of a draft in flight,
     and what leaves is what the person read.
     """
     factory = session_factory(db_engine)
@@ -822,8 +824,8 @@ def test_an_edit_that_read_the_draft_before_the_claim_is_refused_after_it(
         with ThreadPoolExecutor(max_workers=2) as pool:
             edited = pool.submit(edit)
             sent = pool.submit(send)
-            assert edited.result(timeout=60) == "refused:in_invio"
-            assert sent.result(timeout=60) == "inviato"
+            assert edited.result(timeout=60) == "refused:sending"
+            assert sent.result(timeout=60) == "sent"
 
         left = message_from_string(_sent_raw(fake), policy=email_policy).get_body(("plain",))
         assert left is not None
@@ -832,7 +834,7 @@ def test_an_edit_that_read_the_draft_before_the_claim_is_refused_after_it(
         with factory() as check:
             row = check.get(EmailDraft, read.id)
             assert row is not None
-            assert row.send_state == "inviato"
+            assert row.send_state == "sent"
             assert row.body_markdown == BODY
     finally:
         if customer_id is not None and user_id is not None and account_id is not None:
@@ -846,7 +848,7 @@ def test_a_delete_that_read_the_draft_before_the_claim_is_refused_after_it(
     db_engine: Engine, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """REB-560's acceptance test. Two real connections, pinned in the one order the
-    claim alone cannot see. The delete reads the draft while it is still a `bozza` and
+    claim alone cannot see. The delete reads the draft while it is still a `draft` and
     passes the editability check on that copy, the claim commits, and only then does the
     delete try to remove the row, before the send reloads the row to compose it.
 
@@ -854,7 +856,7 @@ def test_a_delete_that_read_the_draft_before_the_claim_is_refused_after_it(
     claimed, and the send would have nothing left to record its outcome against -- the
     previous system's `404 Offerta non trovata per registrare l'invio email`, with the
     mail already delivered. Refused instead, like any write of a draft in flight: the row
-    survives, and the send that claimed it finishes and writes `inviato` onto it.
+    survives, and the send that claimed it finishes and writes `sent` onto it.
     """
     factory = session_factory(db_engine)
     customer_id: UUID | None = None
@@ -923,8 +925,8 @@ def test_a_delete_that_read_the_draft_before_the_claim_is_refused_after_it(
         with ThreadPoolExecutor(max_workers=2) as pool:
             deleted = pool.submit(delete)
             sent = pool.submit(send)
-            assert deleted.result(timeout=60) == "refused:in_invio"
-            assert sent.result(timeout=60) == "inviato"
+            assert deleted.result(timeout=60) == "refused:sending"
+            assert sent.result(timeout=60) == "sent"
 
         left = message_from_string(_sent_raw(fake), policy=email_policy).get_body(("plain",))
         assert left is not None
@@ -932,7 +934,7 @@ def test_a_delete_that_read_the_draft_before_the_claim_is_refused_after_it(
         with factory() as check:
             row = check.get(EmailDraft, read.id)
             assert row is not None
-            assert row.send_state == "inviato"
+            assert row.send_state == "sent"
             assert row.body_markdown == BODY
     finally:
         if customer_id is not None and user_id is not None and account_id is not None:

@@ -119,17 +119,17 @@ class IdentitySpace(BaseModel):
     reach (§0's own "an unproven email learns a number, never a list"; this route
     requires a proven one and lists exactly the spaces it proved).
 
-    `invito` is on the rows of a different kind (REB-678), and on no other: a space where
+    `invitation` is on the rows of a different kind (REB-678), and on no other: a space where
     this address holds an open invitation and no account yet, so a mail that never
-    arrived does not leave the invitation unfindable. `ruolo` is then the role it
-    carries, `invitato_da` who sent it and `nome` the name it holds (absent when the
+    arrived does not leave the invitation unfindable. `role` is then the role it
+    carries, `inviter_name` who sent it and `name` the name it holds (absent when the
     acceptance page will ask). The route leaves out whatever is still its default."""
 
     slug: str
-    ruolo: str
-    invito: Literal[True] | None = None
-    invitato_da: str | None = None
-    nome: str | None = None
+    role: str
+    invitation: Literal[True] | None = None
+    inviter_name: str | None = None
+    name: str | None = None
 
 
 class InvitationDoor(BaseModel):
@@ -160,17 +160,17 @@ def _space_entry_for(settings: Settings, slug: str, email: str) -> IdentitySpace
     try:
         with session_factory(engine)() as space:
             user = UserRepository(space).get_by_email(email)
-            if user is not None and user.attivo:
-                return IdentitySpace(slug=slug, ruolo=user.ruolo)
+            if user is not None and user.active:
+                return IdentitySpace(slug=slug, role=user.role)
             offer = InvitationService(space).offer_for(email)
             if offer is None:
                 return None
             return IdentitySpace(
                 slug=slug,
-                ruolo=offer.ruolo,
-                invito=True,
-                invitato_da=offer.invitato_da,
-                nome=offer.nome,
+                role=offer.role,
+                invitation=True,
+                inviter_name=offer.inviter_name,
+                name=offer.name,
             )
     except SQLAlchemyError:
         return None
@@ -189,13 +189,13 @@ def _root_role_for(settings: Settings, email: str) -> str | None:
     try:
         with space_session_factory(None, settings)() as root:
             user = UserRepository(root).get_by_email(email)
-            return user.ruolo if user is not None and user.attivo else None
+            return user.role if user is not None and user.active else None
     except SQLAlchemyError:
         return None
 
 
 # `exclude_defaults`: a row for an account is `{slug, ruolo}` exactly as it was before
-# invitations joined the list, and only an `invito` row carries the three keys it adds.
+# invitations joined the list, and only an `invitation` row carries the three keys it adds.
 @router.get("/spaces", response_model=list[IdentitySpace], response_model_exclude_defaults=True)
 def spaces(
     email: IdentityEmailDep, registry: TenantsRegistryDep, settings: SettingsDep
@@ -203,7 +203,7 @@ def spaces(
     """Every space this identity may enter, per §3's live scan (§7 decision B1): one
     bounded connection per tenant, so one unreachable space is silently absent from
     this one response rather than failing it -- the next visit tries again. A space
-    where the address holds only an open invitation is listed too, as an `invito` row
+    where the address holds only an open invitation is listed too, as an `invitation` row
     (REB-678).
 
     The root comes first, under its own name, when it has one and this email has an
@@ -214,7 +214,7 @@ def spaces(
     if settings.root_slug:
         root_role = _root_role_for(settings, email)
         if root_role is not None:
-            result.append(IdentitySpace(slug=settings.root_slug, ruolo=root_role))
+            result.append(IdentitySpace(slug=settings.root_slug, role=root_role))
     slugs = [
         tenant.slug
         for tenant in TenantService(registry, settings).list()
@@ -227,7 +227,7 @@ def spaces(
         if entry is not None:
             # Spaces first, in the order they were always listed; the invitations after
             # them, so a row that is not a seat yet never sits above one that is.
-            (invitations if entry.invito else result).append(entry)
+            (invitations if entry.invitation else result).append(entry)
     return [*result, *invitations]
 
 
@@ -260,7 +260,7 @@ def enter(
     is_root = is_root_name(settings.root_slug, slug)
     with space_session_factory(None if is_root else slug, settings)() as space:
         user = UserRepository(space).get_by_email(email)
-        if user is None or not user.attivo:
+        if user is None or not user.active:
             raise NotFound("user", email)
         if is_root:
             response.delete_cookie(ACCESS_COOKIE, path=f"/{slug}/")
@@ -270,7 +270,7 @@ def enter(
             settings,
             path="/" if is_root else f"/{slug}/",
             access=issue_access_token(
-                user.id, user.ruolo, settings, space=None if is_root else slug
+                user.id, user.role, settings, space=None if is_root else slug
             ),
             refresh=RefreshTokenService(space).issue(user.id, settings),
         )

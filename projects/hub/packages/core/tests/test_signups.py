@@ -21,21 +21,21 @@ from rebase_core.signup_schemas import (
 
 
 def _create(email: str, **extra: object) -> SignupCreate:
-    """The form's three required answers. `nome` and `cognome` are not optional any
+    """The form's three required answers. `nome` and `last_name` are not optional any
     more, so every test that only cares about the address says so through here."""
-    return SignupCreate(email=email, nome="Ada", cognome="Lovelace", **extra)  # type: ignore[arg-type]
+    return SignupCreate(email=email, first_name="Ada", last_name="Lovelace", **extra)  # type: ignore[arg-type]
 
 
 def _stored(session: Session, email: str) -> SignupListItem:
     """What is actually in the row. `subscribe` deliberately answers with nothing about
     it (see `SignupAck`), so the only way to read a signup is the list an admin reads."""
-    listed = SignupService(session).list_recent(limit=100).iscrizioni
+    listed = SignupService(session).list_recent(limit=100).signups
     return next(item for item in listed if item.email == email)
 
 
 def test_the_first_signup_is_new_and_lowercased(hub_session: Session) -> None:
     result = SignupService(hub_session).subscribe(_create("Ada@Studio.IT"))
-    assert result.nuova is True
+    assert result.new is True
     assert result.email == "ada@studio.it"
     assert result.created_at.tzinfo is not None
 
@@ -46,7 +46,7 @@ def test_the_same_address_again_is_one_row_and_a_second_success(
     service = SignupService(hub_session)
     first = service.subscribe(_create("ada@studio.it"))
     second = service.subscribe(_create("ADA@studio.it"))
-    assert second.nuova is False
+    assert second.new is False
     assert second.id == first.id
     assert hub_session.execute(text("SELECT count(*) FROM signups")).scalar() == 1
 
@@ -61,8 +61,8 @@ def test_the_list_is_newest_first_and_counts_everything(hub_session: Session) ->
     for address in ("prima@studio.it", "seconda@studio.it", "terza@studio.it"):
         service.subscribe(_create(address))
     page = service.list_recent(limit=2)
-    assert page.totale == 3
-    assert [item.email for item in page.iscrizioni] == ["terza@studio.it", "seconda@studio.it"]
+    assert page.total == 3
+    assert [item.email for item in page.signups] == ["terza@studio.it", "seconda@studio.it"]
 
 
 def test_the_attribution_is_stored_with_the_first_signup_and_never_overwritten(
@@ -83,7 +83,7 @@ def test_the_attribution_is_stored_with_the_first_signup_and_never_overwritten(
     )
     assert first.utm_campaign is None
     again = service.subscribe(_create("ada@studio.it", utm=SignupUtm(utm_source="newsletter")))
-    assert again.nuova is False
+    assert again.new is False
     assert _stored(hub_session, "ada@studio.it").utm_source == "linkedin"
 
 
@@ -95,24 +95,24 @@ def test_no_attribution_is_stored_as_nothing(hub_session: Session) -> None:
 
 def test_the_person_signs_with_a_name_and_the_name_is_trimmed(hub_session: Session) -> None:
     SignupService(hub_session).subscribe(
-        SignupCreate(email="ada@studio.it", nome="  Ada  ", cognome=" Lovelace ")
+        SignupCreate(email="ada@studio.it", first_name="  Ada  ", last_name=" Lovelace ")
     )
     stored = _stored(hub_session, "ada@studio.it")
-    assert (stored.nome, stored.cognome) == ("Ada", "Lovelace")
+    assert (stored.first_name, stored.last_name) == ("Ada", "Lovelace")
     assert stored.linkedin_url is None
 
 
 @pytest.mark.parametrize("blank", ["", "   ", "\t"])
 def test_a_name_that_is_only_space_is_refused_before_the_database(blank: str) -> None:
     with pytest.raises(ValidationError):
-        SignupCreate(email="ada@studio.it", nome=blank, cognome="Lovelace")
+        SignupCreate(email="ada@studio.it", first_name=blank, last_name="Lovelace")
     with pytest.raises(ValidationError):
-        SignupCreate(email="ada@studio.it", nome="Ada", cognome=blank)
+        SignupCreate(email="ada@studio.it", first_name="Ada", last_name=blank)
 
 
 def test_a_name_longer_than_the_column_is_refused() -> None:
     with pytest.raises(ValidationError):
-        SignupCreate(email="ada@studio.it", nome="a" * 121, cognome="Lovelace")
+        SignupCreate(email="ada@studio.it", first_name="a" * 121, last_name="Lovelace")
 
 
 @pytest.mark.parametrize(
@@ -220,13 +220,13 @@ def test_the_list_carries_the_name_and_the_profile(hub_session: Session) -> None
     service.subscribe(
         SignupCreate(
             email="ada@studio.it",
-            nome="Ada",
-            cognome="Lovelace",
+            first_name="Ada",
+            last_name="Lovelace",
             linkedin_url="https://www.linkedin.com/in/ada",
         )
     )
-    item = service.list_recent().iscrizioni[0]
-    assert (item.nome, item.cognome) == ("Ada", "Lovelace")
+    item = service.list_recent().signups[0]
+    assert (item.first_name, item.last_name) == ("Ada", "Lovelace")
     assert item.linkedin_url == "https://www.linkedin.com/in/ada"
 
 
@@ -244,9 +244,9 @@ def test_a_row_from_before_the_form_asked_learns_the_name_on_the_next_signup(
     again = SignupService(hub_session).subscribe(
         _create("vecchia@studio.it", linkedin_url="https://www.linkedin.com/in/ada")
     )
-    assert again.nuova is False
+    assert again.new is False
     stored = _stored(hub_session, "vecchia@studio.it")
-    assert (stored.nome, stored.cognome) == ("Ada", "Lovelace")
+    assert (stored.first_name, stored.last_name) == ("Ada", "Lovelace")
     assert stored.linkedin_url == "https://www.linkedin.com/in/ada"
 
 
@@ -256,10 +256,12 @@ def test_a_name_already_on_the_list_is_never_overwritten_and_never_disclosed(
     """The second half is the security half: whoever posts somebody else's address gets
     the same answer either way, and never learns the name that is already there."""
     service = SignupService(hub_session)
-    service.subscribe(SignupCreate(email="ada@studio.it", nome="Ada", cognome="Lovelace"))
-    again = service.subscribe(SignupCreate(email="ada@studio.it", nome="Qualcun", cognome="Altro"))
-    assert _stored(hub_session, "ada@studio.it").nome == "Ada"
-    assert not set(type(again).model_fields) & {"nome", "cognome", "linkedin_url"}
+    service.subscribe(SignupCreate(email="ada@studio.it", first_name="Ada", last_name="Lovelace"))
+    again = service.subscribe(
+        SignupCreate(email="ada@studio.it", first_name="Qualcun", last_name="Altro")
+    )
+    assert _stored(hub_session, "ada@studio.it").first_name == "Ada"
+    assert not set(type(again).model_fields) & {"first_name", "last_name", "linkedin_url"}
 
 
 def test_the_public_answer_says_nothing_about_the_row() -> None:
@@ -267,8 +269,8 @@ def test_the_public_answer_says_nothing_about_the_row() -> None:
     it carried would be readable by anyone who can guess an address."""
     assert set(SignupAck.model_fields) == {"ok"}
     assert not set(SignupRead.model_fields) & {
-        "nome",
-        "cognome",
+        "first_name",
+        "last_name",
         "linkedin_url",
         "utm_source",
         "utm_id",
@@ -292,9 +294,9 @@ def test_the_public_answer_says_nothing_about_the_row() -> None:
 )
 def test_a_name_with_a_control_character_is_refused(value: str) -> None:
     with pytest.raises(ValidationError):
-        SignupCreate(email="ada@studio.it", nome=value, cognome="Lovelace")
+        SignupCreate(email="ada@studio.it", first_name=value, last_name="Lovelace")
     with pytest.raises(ValidationError):
-        SignupCreate(email="ada@studio.it", nome="Ada", cognome=value)
+        SignupCreate(email="ada@studio.it", first_name="Ada", last_name=value)
 
 
 def test_a_key_the_form_does_not_have_is_refused_rather_than_dropped() -> None:
@@ -302,5 +304,10 @@ def test_a_key_the_form_does_not_have_is_refused_rather_than_dropped() -> None:
     notices than a signup silently missing the two fields this change exists for."""
     with pytest.raises(ValidationError):
         SignupCreate.model_validate(
-            {"email": "ada@studio.it", "nome": "Ada", "cognome": "Lovelace", "ruolo": "admin"}
+            {
+                "email": "ada@studio.it",
+                "first_name": "Ada",
+                "last_name": "Lovelace",
+                "role": "admin",
+            }
         )

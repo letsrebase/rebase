@@ -8,7 +8,7 @@ number and both write it to the same row.
 
 The loser's number is the damage, and it is worse than a lost update. It has been
 consumed from `invoice_counters` and is carried by no invoice, so the register skips it
-for ever. `uq_invoices_anno_numero` cannot see the problem -- there is no duplicate, the
+for ever. `uq_invoices_year_number` cannot see the problem -- there is no duplicate, the
 row simply holds the other number -- and no other test in this suite notices, because
 every one of them looks at the invoice rather than at the counter.
 
@@ -29,14 +29,14 @@ from sqlalchemy.orm import Session
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.db import session_factory
-from pigrocrm.core.emitter.schemas import LegalEntityUpsert
-from pigrocrm.core.emitter.service import LegalEntityService
 from pigrocrm.core.errors import Conflict
 from pigrocrm.core.fiscal.schemas import FiscalProfileUpsert
 from pigrocrm.core.fiscal.service import FiscalProfileService
 from pigrocrm.core.invoices.models import Invoice, InvoiceCounter, InvoiceLine
 from pigrocrm.core.invoices.schemas import InvoiceCreate, InvoiceIssue, InvoiceLineIn
 from pigrocrm.core.invoices.service import InvoiceService
+from pigrocrm.core.legal_entities.schemas import LegalEntityUpsert
+from pigrocrm.core.legal_entities.service import LegalEntityService
 from pigrocrm.core.storage.local import LocalFileStorage
 
 HUMAN = Actor(id=None, type="user", role="admin")
@@ -45,32 +45,32 @@ HUMAN = Actor(id=None, type="user", role="admin")
 def _configure(session: Session) -> None:
     LegalEntityService(session).upsert_default(
         LegalEntityUpsert(
-            ragione_sociale="Studio Rossi",
-            partita_iva="12345678901",
-            codice_fiscale="RSSMRA80A01H501U",
-            indirizzo="Via Roma 1",
+            legal_name="Studio Rossi",
+            vat_number="12345678901",
+            tax_code="RSSMRA80A01H501U",
+            address="Via Roma 1",
             cap="20100",
-            comune="Milano",
-            provincia="MI",
-            nazione="IT",
-            pec="studio@pec.it",
+            city="Milano",
+            province="MI",
+            country="IT",
+            certified_email="studio@pec.it",
         ),
         HUMAN,
     )
-    # After the azienda, which the profile belongs to since REB-615.
-    FiscalProfileService(session).upsert(FiscalProfileUpsert(codice_regime="RF19"), HUMAN)
+    # After the legal entity, which the profile belongs to since REB-615.
+    FiscalProfileService(session).upsert(FiscalProfileUpsert(regime_code="RF19"), HUMAN)
 
 
 def _customer(session: Session) -> Customer:
     customer = Customer(
-        ragione_sociale="Acme S.r.l.",
-        partita_iva="98765432109",
-        codice_sdi="ABCDEFG",
-        indirizzo="Corso Italia 5",
+        legal_name="Acme S.r.l.",
+        vat_number="98765432109",
+        sdi_code="ABCDEFG",
+        address="Corso Italia 5",
         cap="00100",
-        comune="Roma",
-        provincia="RM",
-        nazione="IT",
+        city="Roma",
+        province="RM",
+        country="IT",
     )
     session.add(customer)
     session.flush()
@@ -112,7 +112,7 @@ def _cleanup(factory, invoice_id: UUID | None, customer_id: UUID | None) -> None
             cleaner.execute(Invoice.__table__.delete().where(Invoice.__table__.c.id == invoice_id))
         cleaner.execute(text("DELETE FROM invoice_counters"))
         cleaner.execute(text("DELETE FROM fiscal_profile"))
-        cleaner.execute(text("DELETE FROM emitter_profile WHERE NOT predefinita"))
+        cleaner.execute(text("DELETE FROM legal_entities WHERE NOT is_default"))
         if customer_id is not None:
             cleaner.execute(
                 Customer.__table__.delete().where(Customer.__table__.c.id == customer_id)
@@ -139,7 +139,7 @@ def test_two_concurrent_issues_of_one_draft_consume_exactly_one_number(
     storage = LocalFileStorage(tmp_path / "documents")
     invoice_id: UUID | None = None
     customer_id: UUID | None = None
-    anno: int | None = None
+    year: int | None = None
 
     try:
         with factory() as setup:
@@ -149,13 +149,13 @@ def test_two_concurrent_issues_of_one_draft_consume_exactly_one_number(
             draft = InvoiceService(setup, storage).create(
                 InvoiceCreate(
                     customer_id=customer.id,
-                    tipo="fattura",
-                    causale="Gara di emissione",
-                    righe=[
+                    type="invoice",
+                    memo="Gara di emissione",
+                    lines=[
                         InvoiceLineIn(
-                            descrizione="Advisory",
-                            quantita=Decimal("1.000000"),
-                            prezzo_unitario=Decimal("100.000000"),
+                            description="Advisory",
+                            quantity=Decimal("1.000000"),
+                            unit_price=Decimal("100.000000"),
                         )
                     ],
                 ),
@@ -189,18 +189,18 @@ def test_two_concurrent_issues_of_one_draft_consume_exactly_one_number(
         with factory() as reader:
             stored = reader.get(Invoice, invoice_id)
             assert stored is not None
-            assert stored.stato == "emessa"
-            assert stored.numero is not None
-            anno = stored.anno
+            assert stored.status == "issued"
+            assert stored.number is not None
+            year = stored.year
             counter = reader.execute(
-                select(InvoiceCounter).where(InvoiceCounter.anno == anno)
+                select(InvoiceCounter).where(InvoiceCounter.year == year)
             ).scalar_one()
             # The heart of it. The number the register handed out and the number the
             # invoice carries must be the same one; a counter ahead of the document is
             # a hole nothing later can fill.
-            assert counter.ultimo_numero == stored.numero, (
+            assert counter.last_number == stored.number, (
                 "the counter moved further than the register did: "
-                f"consumed {counter.ultimo_numero}, invoice carries {stored.numero}"
+                f"consumed {counter.last_number}, invoice carries {stored.number}"
             )
     finally:
         _cleanup(factory, invoice_id, customer_id)
@@ -230,12 +230,12 @@ def test_a_draft_already_issued_is_refused_without_touching_the_counter(
             draft = service.create(
                 InvoiceCreate(
                     customer_id=customer.id,
-                    tipo="fattura",
-                    righe=[
+                    type="invoice",
+                    lines=[
                         InvoiceLineIn(
-                            descrizione="Advisory",
-                            quantita=Decimal("1.000000"),
-                            prezzo_unitario=Decimal("50.000000"),
+                            description="Advisory",
+                            quantity=Decimal("1.000000"),
+                            unit_price=Decimal("50.000000"),
                         )
                     ],
                 ),
@@ -246,7 +246,7 @@ def test_a_draft_already_issued_is_refused_without_touching_the_counter(
             session.commit()
 
             counter_before = session.execute(
-                select(InvoiceCounter.ultimo_numero).where(InvoiceCounter.anno == issued.anno)
+                select(InvoiceCounter.last_number).where(InvoiceCounter.year == issued.year)
             ).scalar_one()
 
             with pytest.raises(Conflict):
@@ -254,7 +254,7 @@ def test_a_draft_already_issued_is_refused_without_touching_the_counter(
             session.rollback()
 
             counter_after = session.execute(
-                select(InvoiceCounter.ultimo_numero).where(InvoiceCounter.anno == issued.anno)
+                select(InvoiceCounter.last_number).where(InvoiceCounter.year == issued.year)
             ).scalar_one()
             assert counter_after == counter_before, "a refused emission still spent a number"
     finally:

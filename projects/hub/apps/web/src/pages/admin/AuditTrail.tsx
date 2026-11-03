@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Badge } from '@rebase/ui/badge'
 import { Button } from '@rebase/ui/button'
 import { ApiError, admin, type AdminAction, type ThreadKind } from '@/lib/api'
-import { formatDateTime, formatSmallEuro } from '@/lib/format'
+import { STATE_LABELS, formatDateTime, formatSmallEuro } from '@/lib/format'
 import { noteSourceLabel, regenerationReason } from '@/lib/notes'
 import { keys } from '@/lib/query-keys'
 
@@ -42,7 +42,7 @@ function mergeSummary(action: AdminAction): string | null {
   )
   const parts = [moved === 1 ? '1 riga spostata' : `${moved} righe spostate`]
   if (action.payload.cv === 'assorbita') parts.push('CV più recente passato alla scheda tenuta')
-  if (action.payload.scheda_da_rigenerare) parts.push('scheda anonima da riscrivere')
+  if (action.payload.card_to_regenerate) parts.push('scheda anonima da riscrivere')
   return parts.join(' · ')
 }
 
@@ -52,10 +52,10 @@ function kindLabel(action: AdminAction): string {
   if (action.kind === 'vetted' && action.payload.vetted !== undefined) {
     return action.payload.vetted ? 'Segnato come verificato' : 'Verifica tolta'
   }
-  if (action.kind === 'card_regenerated' && action.payload.esito === 'non_scritta') {
+  if (action.kind === 'card_regenerated' && action.payload.outcome === 'not_written') {
     return `Scheda non rigenerata: ${regenerationReason(action.payload.reason)}`
   }
-  if (action.kind === 'anon_cv_downloaded' && action.payload.riusato) return 'CV anonimo scaricato (già pronto)'
+  if (action.kind === 'anon_cv_downloaded' && action.payload.reused) return 'CV anonimo scaricato (già pronto)'
   return KIND_LABELS[action.kind] ?? action.kind
 }
 
@@ -72,24 +72,24 @@ function regenerationDetail(action: AdminAction): string {
 }
 
 const FIELD_LABELS: Record<string, string> = {
-  nome: 'Nome',
-  cognome: 'Cognome',
+  first_name: 'Nome',
+  last_name: 'Cognome',
   linkedin_url: 'LinkedIn',
-  tariffa_giornaliera: 'Tariffa a giornata',
-  posizione: 'Posizione',
-  remoto: 'Modalità',
+  daily_rate: 'Tariffa a giornata',
+  job_title: 'Posizione',
+  remote: 'Modalità',
   links: 'Link',
-  compilata_da: 'Compilata da',
+  filled_by: 'Compilata da',
   seniority_admin: 'Seniority (admin)',
-  anni_admin: 'Anni (admin)',
-  nome_azienda: 'Azienda',
-  figura_richiesta: 'Figura richiesta',
-  progetto: 'Progetto',
-  periodo_da: 'Periodo',
-  durata: 'Durata',
-  budget_giornaliero: 'Budget a giornata',
-  giorni_presenza: 'Giorni in sede',
-  numero_risorse: 'Persone richieste',
+  experience_years_admin: 'Anni (admin)',
+  company_name: 'Azienda',
+  requested_role: 'Figura richiesta',
+  project: 'Progetto',
+  period_from: 'Periodo',
+  duration: 'Durata',
+  daily_budget: 'Budget a giornata',
+  onsite_days: 'Giorni in sede',
+  headcount: 'Persone richieste',
   cv: 'CV',
 }
 
@@ -99,6 +99,14 @@ function fieldsOf(value: unknown): Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : {}
+}
+
+/** A state as the admin reads it, in the lowercase of a sentence (`contacted` is
+ *  «contattato»); a value with no label is shown as it came. */
+function stateWord(value: unknown): string {
+  if (value === null || value === undefined) return '—'
+  const raw = String(value)
+  return STATE_LABELS[raw]?.toLowerCase() ?? raw
 }
 
 function renderValue(value: unknown): string {
@@ -170,7 +178,7 @@ export function AuditTrail({
             // on their own line below; only a field diff is an object per field.
             const before = fieldsOf(action.payload.before)
             const after = fieldsOf(action.payload.after)
-            const source = noteSourceLabel(action.payload.fonte)
+            const source = noteSourceLabel(action.payload.source)
             // `changed` names the field REB-347's own service touched, but is not
             // always a key of `before`/`after`: `clear_cv`'s own payload sets
             // `changed: ["cv"]` while keying its diff by `cv_filename`/`cv_mime`/
@@ -183,14 +191,14 @@ export function AuditTrail({
               <li key={action.id} className="space-y-2 px-4 py-3">
                 <p className="flex flex-wrap items-baseline gap-x-2 text-xs text-muted-foreground">
                   <Badge variant="pill">{kindLabel(action)}</Badge>
-                  <span className="font-medium text-foreground">{action.admin_nome}</span>
+                  <span className="font-medium text-foreground">{action.admin_name}</span>
                   <time dateTime={action.created_at}>{formatDateTime(action.created_at)}</time>
                   {source && <span>{source}</span>}
                 </p>
                 {mergeSummary(action) && <p>{mergeSummary(action)}</p>}
                 {action.kind === 'card_regenerated' && <p>{regenerationDetail(action)}</p>}
-                {(action.kind === 'note_added' || action.kind === 'note_deleted') && action.payload.testo && (
-                  <p className="whitespace-pre-wrap break-words">{action.payload.testo}</p>
+                {(action.kind === 'note_added' || action.kind === 'note_deleted') && action.payload.text && (
+                  <p className="whitespace-pre-wrap break-words">{action.payload.text}</p>
                 )}
                 {action.kind === 'note_edited' && (
                   <p className="break-words">
@@ -201,9 +209,9 @@ export function AuditTrail({
                 )}
                 {action.kind === 'status_changed' && (
                   <p>
-                    <span className="line-through">{String(action.payload.before ?? '—')}</span>
+                    <span className="line-through">{stateWord(action.payload.before)}</span>
                     {' → '}
-                    <span>{String(action.payload.after ?? '—')}</span>
+                    <span>{stateWord(action.payload.after)}</span>
                   </p>
                 )}
                 {fields.length > 0 && (

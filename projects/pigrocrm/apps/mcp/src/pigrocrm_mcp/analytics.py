@@ -12,15 +12,15 @@ response, the duration and the error flag; this module decides five things aroun
   (`shared/analytics/posthog.ts` carries the same one for the browsers), read from the
   environment rather than imported because this process runs in the API image.
 - **The same identity as the web.** The actor's user id is the `distinct_id` and the
-  space's slug is the `spazio` group, so a customer created from Claude and one created
+  space's slug is the `space` group, so a customer created from Claude and one created
   from the UI land on the same person and the same space. An actor with no id (the
   fixtures' `mcp` admin) stays anonymous.
 - **No schema change, no error-tracking noise.** The adapter would inject a required
   `context` argument on every tool to capture the agent's intent; that alters every
   tool's input schema, which the surface tests pin and which every connected agent has
   already learned. Off. It would also file every exception a tool raises as an
-  `$exception` for Error Tracking; `_guard` raises on purpose to hand an agent «cliente
-  non trovato», and that is guidance, not a defect. Off too: `$mcp_tool_call` keeps
+  `$exception` for Error Tracking; `_guard` raises on purpose to hand an agent «customer
+  not found», and that is guidance, not a defect. Off too: `$mcp_tool_call` keeps
   `$mcp_is_error` and the error type regardless. The same goes for the two the SDK turned
   on by default in 7.56.0, model capture (a required `llm_model` argument on every
   tool) and conversation correlation (a `conversation_id` argument whose description
@@ -56,7 +56,7 @@ if TYPE_CHECKING:
     from posthog import Posthog
     from posthog.mcp.types import PostHogCaptureEvent, UserIdentity
 
-GROUP_TYPE = "spazio"
+GROUP_TYPE = "space"
 ROOT_GROUP = "root"
 
 _client: Posthog | None = None
@@ -68,7 +68,7 @@ _lock = threading.Lock()
 # writes for the agent, which names the entity it was about. The adapter puts all of
 # them on `$mcp_tool_call` (and the same on resource reads and prompt gets); none may
 # leave the process. What stays: the tool name, duration, error flag and type, the
-# actor and the `spazio` group.
+# actor and the `space` group.
 _CRM_CONTENT_PROPERTIES = frozenset(
     {
         "$mcp_parameters",
@@ -88,12 +88,12 @@ def without_crm_content(event: PostHogCaptureEvent) -> PostHogCaptureEvent:
 
 
 def space_group(settings: Settings) -> str:
-    """The `spazio` group key: the installation's slug, `root` when it has none."""
+    """The `space` group key: the installation's slug, `root` when it has none."""
     return settings.root_slug or ROOT_GROUP
 
 
 def identity_for(
-    actor_provider: ActorProvider, spazio: str
+    actor_provider: ActorProvider, space: str
 ) -> Callable[[object, object], UserIdentity | None]:
     """The callback the adapter calls per request: the actor of *this* call.
 
@@ -109,8 +109,8 @@ def identity_for(
             return None
         return UserIdentity(
             distinct_id=str(actor.id),
-            properties={"ruolo": actor.role, "via": actor.type},
-            groups={GROUP_TYPE: spazio},
+            properties={"role": actor.role, "via": actor.type},
+            groups={GROUP_TYPE: space},
         )
 
     return identify

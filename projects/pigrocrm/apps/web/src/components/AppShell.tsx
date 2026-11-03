@@ -18,10 +18,10 @@ const DESKTOP = '(min-width: 1024px)'
  *
  * The navigation reads in the order of the brief Lorenzo approved on 2026-11-02 (sidebar A,
  * REB-873): Home; then three sections named by what they are for, drawn as captions that
- * are always open and are never controls, «Da fare» (Attività, Calendario, Avvisi,
- * Proposte), «Vendite» and «Amministrazione»; then, at the foot, «Agenti» and
+ * are always open and are never controls, «Da fare» (Tasks, Calendar, Reminders,
+ * Proposals), «Vendite» and «Amministrazione»; then, at the foot, «Agenti» and
  * «Impostazioni», the only entry that still opens onto sub-items. «Oggi» is no entry of
- * its own: it is the first view of the Attività page, whose overdue count it carries.
+ * its own: it is the first view of the Tasks page, whose overdue count it carries.
  * «Primi passi» is in the profile menu once the space has data.
  *
  * Home is the dashboard, `/app`, and it is where the economic reading of the books lives

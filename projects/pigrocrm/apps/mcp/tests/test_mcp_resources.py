@@ -23,16 +23,14 @@ async def test_a_zero_valued_deal_shows_zero_not_a_dash(server, mcp_session: Ses
     An agent reading "—" concludes the data is missing and may ask a human to
     supply it, when the true answer is already there and is zero."""
     PipelineService(mcp_session).seed_defaults(SETUP)
-    customer = CustomerService(mcp_session).create(
-        CustomerCreate(ragione_sociale="Pro Bono Srl"), SETUP
-    )
+    customer = CustomerService(mcp_session).create(CustomerCreate(legal_name="Pro Bono Srl"), SETUP)
     deal = DealService(mcp_session).create(
         DealCreate(
-            nome="Consulenza gratuita",
+            name="Consulenza gratuita",
             customer_id=customer.id,
-            valore_previsto=Decimal("0.00"),
-            ore_preventivate=Decimal("0.00"),
-            valore_preventivato=Decimal("0.00"),
+            expected_value=Decimal("0.00"),
+            budgeted_hours=Decimal("0.00"),
+            budgeted_value=Decimal("0.00"),
         ),
         SETUP,
     )
@@ -54,7 +52,7 @@ async def test_address_line_omits_missing_parts_cleanly(server, mcp_session: Ses
     appear, and the placeholder dash is reserved for when there is truly
     nothing to show."""
     customer = CustomerService(mcp_session).create(
-        CustomerCreate(ragione_sociale="Solo Nazione Srl"), SETUP
+        CustomerCreate(legal_name="Solo Nazione Srl"), SETUP
     )
 
     async with Client(server) as client:

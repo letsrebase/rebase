@@ -225,7 +225,7 @@ def test_the_callback_never_renders_the_upstream_error_to_the_browser(
     assert response.status_code == 307
     location = response.headers["location"]
     # An empty space, so the Home (REB-222); the page is the next test's subject.
-    assert location == "/app/?esito=negato"
+    assert location == "/app/?outcome=denied"
     assert "access_denied" not in location
 
 
@@ -237,9 +237,9 @@ def test_a_callback_with_a_state_nobody_issued_never_reports_a_connection(
     guard fails any test that opens one, and the exchange is the first thing `complete`
     would do after redeeming the state.
 
-    It comes back as `esito=errore` and not `esito=collegato`, and not as a problem
+    It comes back as `outcome=error` and not `outcome=connected`, and not as a problem
     document either: this is a browser navigation, and the three outcome codes are the
-    whole vocabulary the settings page renders. `errore` and `negato` stay distinct
+    whole vocabulary the settings page renders. `error` and `denied` stay distinct
     because "Google said no" and "this authorisation is not valid here" are different
     things to read after pressing Consenti.
     """
@@ -247,7 +247,7 @@ def test_a_callback_with_a_state_nobody_issued_never_reports_a_connection(
         "/api/gmail/oauth/callback?code=abc&state=mai-emesso", follow_redirects=False
     )
     assert response.status_code == 307, response.text
-    assert response.headers["location"] == "/app/?esito=errore"
+    assert response.headers["location"] == "/app/?outcome=error"
 
 
 def test_the_consent_flow_ends_on_the_home_only_while_the_space_is_empty(
@@ -266,32 +266,32 @@ def test_the_consent_flow_ends_on_the_home_only_while_the_space_is_empty(
         assert response.status_code == 307, response.text
         return str(response.headers["location"])
 
-    assert landing() == "/app/?esito=negato"
+    assert landing() == "/app/?outcome=denied"
 
-    customer = Customer(ragione_sociale="Acme S.r.l.", nazione="IT", custom_fields={})
+    customer = Customer(legal_name="Acme S.r.l.", country="IT", custom_fields={})
     api_session.add(customer)
     api_session.flush()
-    assert landing() == "/app/settings/gmail?esito=negato"
+    assert landing() == "/app/settings/gmail?outcome=denied"
 
     customer.deleted_at = datetime.now(UTC)
     api_session.flush()
-    assert landing() == "/app/?esito=negato"
+    assert landing() == "/app/?outcome=denied"
 
 
-def test_a_collaboratore_is_brought_back_to_primi_passi_not_to_settings_they_cannot_open(
+def test_to_collaborator_is_brought_back_to_first_steps_not_to_settings_they_cannot_open(
     collaborator_client: TestClient, gmail_ready: TestClient, api_session: Session
 ) -> None:
-    """A collaboratore may connect their own mailbox (`require_write`), from the start
-    page's Gmail door, but Impostazioni is admin-only: a consent that ended there would
+    """A collaborator may connect their own mailbox (`require_write`), from the start
+    page's Gmail door, but Settings is admin-only: a consent that ended there would
     answer «Accesso riservato». With work in the space the way back is «Primi passi»,
     the other page that carries the door and reads the same outcome table."""
-    api_session.add(Customer(ragione_sociale="Acme S.r.l.", nazione="IT", custom_fields={}))
+    api_session.add(Customer(legal_name="Acme S.r.l.", country="IT", custom_fields={}))
     api_session.flush()
     response = collaborator_client.get(
         "/api/gmail/oauth/callback?error=access_denied", follow_redirects=False
     )
     assert response.status_code == 307, response.text
-    assert response.headers["location"] == "/app/get-started?esito=negato"
+    assert response.headers["location"] == "/app/get-started?outcome=denied"
 
 
 # --- a session that ran out on Google's screens (REB-446) -----------------------------
@@ -373,7 +373,7 @@ def test_a_consent_that_outlasts_the_access_cookie_still_connects_the_mailbox(
     )
 
     assert back.status_code == 307, back.text
-    assert back.headers["location"] == "/app/?esito=collegato"
+    assert back.headers["location"] == "/app/?outcome=connected"
     assert google.codes == ["4/0A-code"]
     assert "set-cookie" not in back.headers
     assert logged_in.post("/api/auth/refresh").status_code == 200
@@ -388,7 +388,7 @@ def test_a_consent_that_comes_back_with_no_live_session_lands_on_a_page_not_on_j
 ) -> None:
     """No access cookie and no refresh cookie that could renew it: nobody to redeem the
     state for. The browser lands on «Primi passi», whatever the space holds and whoever
-    started, with `sessione`; the SPA's login sends it back there once the person is in,
+    started, with `session_expired`; the SPA's login sends it back there once the person is in,
     and the state is left to run out on its own. `consumed` is a token rotated away a
     minute ago, past the grace a second tab gets."""
     state = _start(logged_in)
@@ -416,7 +416,7 @@ def test_a_consent_that_comes_back_with_no_live_session_lands_on_a_page_not_on_j
     )
 
     assert back.status_code == 307, back.text
-    assert back.headers["location"] == "/app/get-started?esito=sessione"
+    assert back.headers["location"] == "/app/get-started?outcome=session_expired"
     assert google.codes == []
 
 
@@ -443,7 +443,7 @@ def test_a_token_another_tab_rotated_seconds_ago_still_identifies_the_browser(
     )
 
     assert back.status_code == 307, back.text
-    assert back.headers["location"] == "/app/?esito=collegato"
+    assert back.headers["location"] == "/app/?outcome=connected"
     assert google.codes == ["4/0A-code"]
 
 
@@ -453,7 +453,7 @@ def test_the_callback_with_no_cookie_at_all_is_a_page_too(client: TestClient) ->
     for query in ({}, {"code": "c", "state": "s"}, {"error": "access_denied"}):
         back = client.get("/api/gmail/oauth/callback", params=query, follow_redirects=False)
         assert back.status_code == 307, (query, back.text)
-        assert back.headers["location"] == "/app/get-started?esito=sessione"
+        assert back.headers["location"] == "/app/get-started?outcome=session_expired"
 
 
 def test_another_persons_state_is_refused_on_a_refresh_only_session(
@@ -469,8 +469,8 @@ def test_another_persons_state_is_refused_on_a_refresh_only_session(
         json={
             "email": "collab@pigro.it",
             "password": "supersegreta1",
-            "nome": "C",
-            "ruolo": "collaboratore",
+            "name": "C",
+            "role": "collaborator",
         },
     )
     assert created.status_code == 201, created.text
@@ -488,14 +488,14 @@ def test_another_persons_state_is_refused_on_a_refresh_only_session(
     )
 
     assert back.status_code == 307, back.text
-    assert back.headers["location"] == "/app/?esito=errore"
+    assert back.headers["location"] == "/app/?outcome=error"
     assert google.codes == []
     assert logged_in.get("/api/gmail/account").json()["account"] is None
     count = api_session.execute(text("select count(*) from google_accounts")).scalar_one()
     assert count == 0
 
 
-def test_a_refusal_on_googles_side_on_a_refresh_only_session_is_still_negato(
+def test_to_refusal_on_googles_side_on_to_refresh_only_session_is_still_denied(
     logged_in: TestClient, google: _Google
 ) -> None:
     """Whose browser this is comes first, what Google said second: with the session
@@ -507,7 +507,7 @@ def test_a_refusal_on_googles_side_on_a_refresh_only_session_is_still_negato(
         follow_redirects=False,
     )
     assert back.status_code == 307, back.text
-    assert back.headers["location"] == "/app/?esito=negato"
+    assert back.headers["location"] == "/app/?outcome=denied"
     assert google.codes == []
 
 
@@ -523,8 +523,8 @@ def test_a_readonly_person_on_a_refresh_only_session_is_still_refused_as_a_role(
         json={
             "email": "sola@pigro.it",
             "password": "supersegreta1",
-            "nome": "S",
-            "ruolo": "readonly",
+            "name": "S",
+            "role": "readonly",
         },
     )
     assert created.status_code == 201, created.text
@@ -555,7 +555,7 @@ def test_a_deactivated_person_with_a_live_refresh_cookie_has_no_session_here(
     state = _start(logged_in)
     _lose_access_cookie(logged_in)
     api_session.execute(
-        text("update users set attivo = false where email = :e"), {"e": "admin@pigro.it"}
+        text("update users set active = false where email = :e"), {"e": "admin@pigro.it"}
     )
     api_session.flush()
 
@@ -566,7 +566,7 @@ def test_a_deactivated_person_with_a_live_refresh_cookie_has_no_session_here(
     )
 
     assert back.status_code == 307, back.text
-    assert back.headers["location"] == "/app/get-started?esito=sessione"
+    assert back.headers["location"] == "/app/get-started?outcome=session_expired"
     assert google.codes == []
 
 
@@ -661,7 +661,7 @@ def test_the_messages_endpoint_can_read_newest_first_so_the_limit_cuts_the_oldes
     query = {"entity_type": "customer", "entity_id": str(customer_id), "limit": 1}
 
     by_thread = logged_in.get("/api/gmail/messages", params=query)
-    newest = logged_in.get("/api/gmail/messages", params={**query, "ordine": "recenti"})
+    newest = logged_in.get("/api/gmail/messages", params={**query, "order": "recent"})
 
     assert [row["gmail_message_id"] for row in by_thread.json()] == ["old"]
     assert [row["gmail_message_id"] for row in newest.json()] == ["recent"]
@@ -701,7 +701,7 @@ def test_a_revoked_credential_is_reported_with_its_own_sentence_and_no_token(
     """B1-12 made `revoked` and `disconnected` two different states. The settings page
     renders whichever `banner` says, so the adapter has to carry the distinction out
     intact -- and carry nothing else out with it."""
-    _connected_account(api_session, admin_user.id, status="revoked", last_error="revocato")
+    _connected_account(api_session, admin_user.id, status="revoked", last_error="revoked")
 
     response = logged_in.get("/api/gmail/account")
     assert response.status_code == 200, response.text
@@ -735,7 +735,7 @@ def test_a_mailbox_the_user_disconnected_raises_no_banner(
 def test_disconnecting_keeps_the_stored_messages_unless_the_caller_asks(
     logged_in: TestClient, gmail_ready: TestClient, api_session: Session, admin_user: Any
 ) -> None:
-    """`elimina_messaggi` defaults to false and is really plumbed through. Deleting a
+    """`delete_messages` defaults to false and is really plumbed through. Deleting a
     customer's correspondence because a token expired would be a disaster, so the
     default has to be the safe one and the flag has to be the only way to the other."""
     account = _connected_account(api_session, admin_user.id)
@@ -765,7 +765,7 @@ def test_disconnecting_keeps_the_stored_messages_unless_the_caller_asks(
     assert logged_in.delete("/api/gmail/account").status_code == 204
     assert len(logged_in.get("/api/gmail/messages", params=params).json()) == 1
 
-    assert logged_in.delete("/api/gmail/account?elimina_messaggi=true").status_code == 204
+    assert logged_in.delete("/api/gmail/account?delete_messages=true").status_code == 204
     assert logged_in.get("/api/gmail/messages", params=params).json() == []
 
 

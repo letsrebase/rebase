@@ -30,7 +30,9 @@ def _seed_admin(factory: sessionmaker[Session]) -> None:
     other tool only reads its `nome`. `record` writes `admin_id` for real, so this
     file alone needs the row the id names, with the same id."""
     session = factory()
-    session.add(User(id=IVAN.id, email=IVAN.email, nome=IVAN.nome, cognome="", role="admin"))
+    session.add(
+        User(id=IVAN.id, email=IVAN.email, first_name=IVAN.first_name, last_name="", role="admin")
+    )
     session.commit()
     session.close()
 
@@ -40,12 +42,12 @@ def _seed_freelancer(factory: sessionmaker[Session]) -> str:
     try:
         row, _ = FreelancerService(session).apply(
             FreelancerCreate(
-                nome="Ada",
-                cognome="Lovelace",
+                first_name="Ada",
+                last_name="Lovelace",
                 email="ada@studio.it",
-                tariffa_giornaliera=Decimal("450"),
-                posizione="Backend developer",
-                remoto="remoto",
+                daily_rate=Decimal("450"),
+                job_title="Backend developer",
+                remote="remote",
             ),
             PDF,
             "cv.pdf",
@@ -63,18 +65,18 @@ def _seed_company(factory: sessionmaker[Session]) -> str:
     try:
         row, _ = CompanyService(session).request(
             CompanyCreate(
-                nome_azienda="ACME Srl",
-                referente_nome="Wile",
-                referente_cognome="E.",
+                company_name="ACME Srl",
+                contact_first_name="Wile",
+                contact_last_name="E.",
                 email="wile@acme.it",
-                telefono="+39 345 1234567",
-                figura_richiesta="Backend developer",
-                progetto="Un backend developer per tre mesi.",
-                periodo_da=date(2026, 10, 1),
-                durata="3 mesi",
-                budget_giornaliero=Decimal("500"),
-                remoto="remoto",
-                numero_risorse=1,
+                phone="+39 345 1234567",
+                requested_role="Backend developer",
+                project="Un backend developer per tre mesi.",
+                period_from=date(2026, 10, 1),
+                duration="3 mesi",
+                daily_budget=Decimal("500"),
+                remote="remote",
+                headcount=1,
             )
         )
         return str(row.id)
@@ -91,18 +93,18 @@ async def test_override_freelancer_writes_the_delta_and_leaves_untouched_fields_
         overridden = _payload(
             await client.call_tool(
                 "override_freelancer",
-                {"freelancer_id": freelancer_id, "posizione": "Tech lead"},
+                {"freelancer_id": freelancer_id, "job_title": "Tech lead"},
             )
         )
-        assert overridden["posizione"] == "Tech lead"
-        assert overridden["tariffa_giornaliera"] == "450.00"
+        assert overridden["job_title"] == "Tech lead"
+        assert overridden["daily_rate"] == "450.00"
 
         trail = _payload_list(
             await client.call_tool("get_freelancer_audit", {"freelancer_id": freelancer_id})
         )
         assert len(trail) == 1
         assert trail[0]["kind"] == "overridden"
-        assert trail[0]["payload"]["before"] == {"posizione": "Backend developer"}
+        assert trail[0]["payload"]["before"] == {"job_title": "Backend developer"}
     _wipe(factory)
 
 
@@ -117,22 +119,22 @@ async def test_an_override_reads_the_amount_with_italian_thousands(
         card = _payload(
             await client.call_tool(
                 "override_freelancer",
-                {"freelancer_id": freelancer_id, "tariffa_giornaliera": "1.500"},
+                {"freelancer_id": freelancer_id, "daily_rate": "1.500"},
             )
         )
         request = _payload(
             await client.call_tool(
-                "override_company", {"company_id": company_id, "budget_giornaliero": "1.234,50"}
+                "override_company", {"company_id": company_id, "daily_budget": "1.234,50"}
             )
         )
         refused = await client.call_tool(
-            "override_freelancer", {"freelancer_id": freelancer_id, "tariffa_giornaliera": "tanto"}
+            "override_freelancer", {"freelancer_id": freelancer_id, "daily_rate": "tanto"}
         )
     # Compared as numbers: the answer carries the value written, before the column's
     # two decimals.
-    assert Decimal(card["tariffa_giornaliera"]) == Decimal("1500")
-    assert Decimal(request["budget_giornaliero"]) == Decimal("1234.50")
-    assert refused.is_error and "tariffa_giornaliera" in refused.content[0].text
+    assert Decimal(card["daily_rate"]) == Decimal("1500")
+    assert Decimal(request["daily_budget"]) == Decimal("1234.50")
+    assert refused.is_error and "daily_rate" in refused.content[0].text
     _wipe(factory)
 
 
@@ -144,13 +146,13 @@ async def test_an_empty_string_clears_a_nullable_field_and_a_required_one_is_ref
     async with Client(build_server(factory, lambda: IVAN)) as client:
         cleared = _payload(
             await client.call_tool(
-                "override_freelancer", {"freelancer_id": freelancer_id, "posizione": ""}
+                "override_freelancer", {"freelancer_id": freelancer_id, "job_title": ""}
             )
         )
-        assert cleared["posizione"] is None
+        assert cleared["job_title"] is None
 
         refused = await client.call_tool(
-            "override_freelancer", {"freelancer_id": freelancer_id, "stato": ""}
+            "override_freelancer", {"freelancer_id": freelancer_id, "status": ""}
         )
         assert refused.is_error
     _wipe(factory)
@@ -187,15 +189,15 @@ async def test_delete_and_restore_a_freelancer_through_the_mcp(
             await client.call_tool("delete_freelancer", {"freelancer_id": freelancer_id})
         )
         assert deleted["deleted_at"] is not None
-        gone = _payload(await client.call_tool("list_talenti", {}))
-        assert gone["totale"] == 0
+        gone = _payload(await client.call_tool("list_talents", {}))
+        assert gone["total"] == 0
 
         restored = _payload(
             await client.call_tool("restore_freelancer", {"freelancer_id": freelancer_id})
         )
         assert restored["deleted_at"] is None
-        back = _payload(await client.call_tool("list_talenti", {}))
-        assert back["totale"] == 1
+        back = _payload(await client.call_tool("list_talents", {}))
+        assert back["total"] == 1
     _wipe(factory)
 
 
@@ -206,7 +208,7 @@ async def test_revert_freelancer_action_reads_the_before_value_off_the_trail(
     _seed_admin(factory)
     async with Client(build_server(factory, lambda: IVAN)) as client:
         await client.call_tool(
-            "override_freelancer", {"freelancer_id": freelancer_id, "posizione": "Tech lead"}
+            "override_freelancer", {"freelancer_id": freelancer_id, "job_title": "Tech lead"}
         )
         trail = _payload_list(
             await client.call_tool("get_freelancer_audit", {"freelancer_id": freelancer_id})
@@ -219,20 +221,22 @@ async def test_revert_freelancer_action_reads_the_before_value_off_the_trail(
                 {"freelancer_id": freelancer_id, "action_id": action_id},
             )
         )
-        assert reverted["posizione"] == "Backend developer"
+        assert reverted["job_title"] == "Backend developer"
     _wipe(factory)
 
 
-async def test_override_company_touches_the_row_and_the_referente_identity(
+async def test_override_company_touches_the_row_and_the_contact_person_identity(
     factory: sessionmaker[Session],
 ) -> None:
     company_id = _seed_company(factory)
     _seed_admin(factory)
     async with Client(build_server(factory, lambda: IVAN)) as client:
         overridden = _payload(
-            await client.call_tool("override_company", {"company_id": company_id, "nome": "Coyote"})
+            await client.call_tool(
+                "override_company", {"company_id": company_id, "first_name": "Coyote"}
+            )
         )
-        assert overridden["referente"].startswith("Coyote")
+        assert overridden["contact_person"].startswith("Coyote")
 
         trail = _payload_list(
             await client.call_tool("get_company_audit", {"company_id": company_id})
@@ -249,8 +253,8 @@ async def test_delete_and_restore_a_company_through_the_mcp(
     async with Client(build_server(factory, lambda: IVAN)) as client:
         deleted = _payload(await client.call_tool("delete_company", {"company_id": company_id}))
         assert deleted["deleted_at"] is not None
-        gone = _payload(await client.call_tool("list_aziende", {}))
-        assert gone["totale"] == 0
+        gone = _payload(await client.call_tool("list_companies", {}))
+        assert gone["total"] == 0
 
         restored = _payload(await client.call_tool("restore_company", {"company_id": company_id}))
         assert restored["deleted_at"] is None

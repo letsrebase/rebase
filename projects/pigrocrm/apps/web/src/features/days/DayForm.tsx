@@ -19,14 +19,14 @@ import {
   HALF_DAY,
   activeRateCard,
   allowsFraction,
-  quantitaLabel,
-  statoLabel,
-  unitaLabel,
+  quantityLabel,
+  statusLabel,
+  unitLabel,
 } from './labels'
 import { useDayContractOptions, useDayRateCards, useRecordDay, useWorkUnits } from './queries'
 
 /** The states that leave a date free again (`uq_work_units_contract_data_live`). */
-const FREES_THE_DATE = new Set(['revocato', 'rifiutato'])
+const FREES_THE_DATE = new Set(['revoked', 'rejected'])
 
 /**
  * `/app/days/new`: record a day worked against a contract, made to be used on a phone.
@@ -34,8 +34,8 @@ const FREES_THE_DATE = new Set(['revocato', 'rifiutato'])
  * Four things to say (which contract, which date, a whole day or half, what was done) and
  * the two facts that decide what happens next shown beside them before saving: the rate
  * in force on that date, and whether the contract wants an approval first. A day is
- * recorded as worked (`lavorato`); on a contract that requires prior approval and has none
- * linked the ledger itself flags it `lavorato_senza_approvazione`, so this form warns and
+ * recorded as worked (`worked`); on a contract that requires prior approval and has none
+ * linked the ledger itself flags it `worked_without_approval`, so this form warns and
  * never blocks, the way mastro's did. The one thing it does block is a second day on a date
  * the contract already holds one for: the database allows one live day per contract per
  * date and would answer 409.
@@ -55,9 +55,9 @@ export function DayForm({
   const contracts = useDayContractOptions(initialContractId)
   const record = useRecordDay()
   const [contractId, setContractId] = useState(initialContractId ?? '')
-  const [data, setData] = useState(initialDate ?? toIsoDate(new Date()))
-  const [quantita, setQuantita] = useState(FULL_DAY)
-  const [descrizione, setDescrizione] = useState('')
+  const [date, setDate] = useState(initialDate ?? toIsoDate(new Date()))
+  const [quantity, setQuantity] = useState(FULL_DAY)
+  const [description, setDescription] = useState('')
 
   // The only contract on offer is the one to record against: picking it from a list of one
   // is a tap nobody needs. Derived at render, not an effect, so the field never shows
@@ -67,17 +67,17 @@ export function DayForm({
   const contract = options.find((candidate) => candidate.id === effectiveContractId)
 
   const rateCards = useDayRateCards(effectiveContractId)
-  const card = activeRateCard(rateCards.data ?? [], data)
+  const card = activeRateCard(rateCards.data ?? [], date)
   // Half a day on a contract whose rate allows only whole ones is a day the invoice cannot
-  // price: `frazioni_ammesse` is what the rate card says it accepts.
+  // price: `allowed_fractions` is what the rate card says it accepts.
   const halfAllowed = allowsFraction(card, HALF_DAY)
-  const effectiveQuantita = quantita === HALF_DAY && !halfAllowed ? FULL_DAY : quantita
+  const effectiveQuantity = quantity === HALF_DAY && !halfAllowed ? FULL_DAY : quantity
 
   const sameDate = useWorkUnits(
-    { contractId: effectiveContractId, da: data, a: data },
-    { enabled: effectiveContractId !== '' && data !== '' },
+    { contractId: effectiveContractId, from: date, to: date },
+    { enabled: effectiveContractId !== '' && date !== '' },
   )
-  const taken = (sameDate.data?.items ?? []).find((day) => !FREES_THE_DATE.has(day.stato))
+  const taken = (sameDate.data?.items ?? []).find((day) => !FREES_THE_DATE.has(day.status))
 
   if (!canWrite) {
     return (
@@ -91,8 +91,8 @@ export function DayForm({
   }
 
   const outsideTerm =
-    contract !== undefined && data !== '' && (data < contract.inizio || (contract.fine !== null && data > contract.fine))
-  const ready = effectiveContractId !== '' && data !== '' && descrizione.trim() !== '' && taken === undefined
+    contract !== undefined && date !== '' && (date < contract.start || (contract.end !== null && date > contract.end))
+  const ready = effectiveContractId !== '' && date !== '' && description.trim() !== '' && taken === undefined
 
   function submit(event: FormEvent) {
     event.preventDefault()
@@ -100,10 +100,10 @@ export function DayForm({
     record.mutate(
       {
         contract_id: effectiveContractId,
-        data,
-        quantita: effectiveQuantita,
-        descrizione: descrizione.trim(),
-        stato: 'lavorato',
+        date,
+        quantity: effectiveQuantity,
+        description: description.trim(),
+        status: 'worked',
       },
       {
         onSuccess: (day) => {
@@ -133,7 +133,7 @@ export function DayForm({
             <SelectContent>
               {options.map((candidate) => (
                 <SelectItem key={candidate.id} value={candidate.id}>
-                  {candidate.titolo}
+                  {candidate.title}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -147,7 +147,7 @@ export function DayForm({
 
         <div className="space-y-2">
           <Label htmlFor="day-date">Data</Label>
-          <Input id="day-date" type="date" value={data} onChange={(event) => setData(event.target.value)} required />
+          <Input id="day-date" type="date" value={date} onChange={(event) => setDate(event.target.value)} required />
         </div>
 
         <fieldset className="space-y-2">
@@ -156,15 +156,15 @@ export function DayForm({
             <Choice
               name="day-quantity"
               value={FULL_DAY}
-              checked={effectiveQuantita === FULL_DAY}
-              onSelect={setQuantita}
+              checked={effectiveQuantity === FULL_DAY}
+              onSelect={setQuantity}
               label="Giornata intera"
             />
             <Choice
               name="day-quantity"
               value={HALF_DAY}
-              checked={effectiveQuantita === HALF_DAY}
-              onSelect={setQuantita}
+              checked={effectiveQuantity === HALF_DAY}
+              onSelect={setQuantity}
               label="Mezza giornata"
               disabled={!halfAllowed}
             />
@@ -180,31 +180,31 @@ export function DayForm({
           <Label htmlFor="day-task">Cosa hai fatto</Label>
           <Input
             id="day-task"
-            value={descrizione}
-            onChange={(event) => setDescrizione(event.target.value)}
+            value={description}
+            onChange={(event) => setDescription(event.target.value)}
             placeholder="Per esempio: revisione architettura"
             required
           />
         </div>
 
-        <RateLine contractChosen={effectiveContractId !== ''} loading={rateCards.isPending && effectiveContractId !== ''} card={card} data={data} />
+        <RateLine contractChosen={effectiveContractId !== ''} loading={rateCards.isPending && effectiveContractId !== ''} card={card} date={date} />
 
         {contract?.requires_prior_approval ? (
           <Notice>
             Questo contratto richiede l’approvazione preventiva del cliente. La giornata si registra
-            come «{statoLabel('lavorato_senza_approvazione')}» finché non ne colleghi una.
+            come «{statusLabel('worked_without_approval')}» finché non ne colleghi una.
           </Notice>
         ) : null}
         {outsideTerm && contract ? (
           <Notice>
-            La data è fuori dal contratto, che va dal {formatIsoDateItalian(contract.inizio)}
-            {contract.fine ? ` al ${formatIsoDateItalian(contract.fine)}` : ''}.
+            La data è fuori dal contratto, che va dal {formatIsoDateItalian(contract.start)}
+            {contract.end ? ` al ${formatIsoDateItalian(contract.end)}` : ''}.
           </Notice>
         ) : null}
         {taken ? (
           <Notice>
-            Questo contratto ha già una giornata il {formatIsoDateItalian(taken.data)} ({quantitaLabel(taken.quantita).toLowerCase()},{' '}
-            {statoLabel(taken.stato).toLowerCase()}).{' '}
+            Questo contratto ha già una giornata il {formatIsoDateItalian(taken.date)} ({quantityLabel(taken.quantity).toLowerCase()},{' '}
+            {statusLabel(taken.status).toLowerCase()}).{' '}
             <Link to="/app/days/$workUnitId" params={{ workUnitId: taken.id }} className="underline underline-offset-4">
               Aprila
             </Link>
@@ -231,27 +231,27 @@ function RateLine({
   contractChosen,
   loading,
   card,
-  data,
+  date,
 }: {
   contractChosen: boolean
   loading: boolean
   card: ReturnType<typeof activeRateCard>
-  data: string
+  date: string
 }) {
   if (!contractChosen) return null
   if (loading) return <p className="text-sm text-muted-foreground">Cerco la tariffa…</p>
   if (card === null) {
     return (
       <p className="text-sm text-muted-foreground">
-        Nessuna tariffa in vigore il {formatIsoDateItalian(data)}: la giornata si registra e si prezza quando ce n’è una.
+        Nessuna tariffa in vigore il {formatIsoDateItalian(date)}: la giornata si registra e si prezza quando ce n’è una.
       </p>
     )
   }
   return (
     <p className="text-sm">
       <span className="text-muted-foreground">Tariffa in vigore: </span>
-      <strong className="font-semibold tabular-nums">{money(card.importo)}</strong>{' '}
-      <span className="text-muted-foreground">{unitaLabel(card.unita)}</span>
+      <strong className="font-semibold tabular-nums">{money(card.amount)}</strong>{' '}
+      <span className="text-muted-foreground">{unitLabel(card.unit)}</span>
     </p>
   )
 }

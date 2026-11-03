@@ -23,7 +23,7 @@ from pigrocrm.core.gmail.schemas import (
 
 
 def _user(session: Session, email: str) -> User:
-    user = User(email=email, nome="Tester", password_hash="x", ruolo="admin", attivo=True)
+    user = User(email=email, name="Tester", password_hash="x", role="admin", active=True)
     session.add(user)
     session.flush()
     return user
@@ -179,10 +179,10 @@ def committed_state(db_engine: Engine) -> Iterator[tuple[UUID, str]]:
     with factory() as session:
         user = User(
             email=f"race-{uuid4()}@example.it",
-            nome="Race",
+            name="Race",
             password_hash="x",
-            ruolo="admin",
-            attivo=True,
+            role="admin",
+            active=True,
         )
         session.add(user)
         session.flush()

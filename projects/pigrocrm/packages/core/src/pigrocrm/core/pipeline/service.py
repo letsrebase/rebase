@@ -17,30 +17,30 @@ from pigrocrm.core.pipeline.schemas import (
 from pigrocrm.core.schemas import reject_cleared_columns, supplied_changes
 
 # (code, nome, posizione, probabilita_default, tipo). `seed_defaults` deduplicates on
-# `code`, never on `nome` -- see `PipelineStage`'s docstring for why.
+# `code`, never on `name` -- see `PipelineStage`'s docstring for why.
 DEFAULT_STAGES: list[tuple[str, str, int, int, str]] = [
     ("lead", "Lead", 0, 10, "open"),
-    ("contattato", "Contattato", 1, 25, "open"),
-    ("offerta", "Offerta", 2, 50, "open"),
-    ("negoziazione", "Negoziazione", 3, 75, "open"),
-    ("vinto", "Vinto", 4, 100, "won"),
-    ("perso", "Perso", 5, 0, "lost"),
+    ("contacted", "Contattato", 1, 25, "open"),
+    ("offer", "Offerta", 2, 50, "open"),
+    ("negotiation", "Negoziazione", 3, 75, "open"),
+    ("won", "Vinto", 4, 100, "won"),
+    ("lost", "Perso", 5, 0, "lost"),
 ]
 
 
 ENTITY = "pipeline_stage"
 
-# `code` is the stable identity and `tipo` is the only attribute other logic depends
+# `code` is the stable identity and `type` is the only attribute other logic depends
 # on (`default_stage`, and every won/lost reading of a deal), so both belong in an
-# entry that has to stay readable after the stage itself is gone. `nome` is here
-# because it is the only part a human recognises. `posizione` and
-# `probabilita_default` are left out of the identity: they are cosmetic, and their
+# entry that has to stay readable after the stage itself is gone. `name` is here
+# because it is the only part a human recognises. `position` and
+# `default_probability` are left out of the identity: they are cosmetic, and their
 # changes are already carried in full by `updated`.
-_IDENTITY_FIELDS = ("nome", "code", "tipo")
+_IDENTITY_FIELDS = ("name", "code", "type")
 
 # Mirrors `PipelineStageUpdate`'s own fields -- `code` is absent there by design
 # (identity, not a label), so it is absent here too.
-_AUDITED_FIELDS = ("nome", "posizione", "probabilita_default", "tipo")
+_AUDITED_FIELDS = ("name", "position", "default_probability", "type")
 
 
 def _identity(stage: PipelineStage) -> dict[str, object]:
@@ -54,12 +54,12 @@ def _snapshot(stage: PipelineStage) -> dict[str, object]:
 def _check_probability(value: int | None) -> None:
     if value is not None and not 0 <= value <= 100:
         raise ValidationFailed(
-            "pipeline_stage", "probabilita_default", "fuori intervallo", expected="0-100"
+            "pipeline_stage", "default_probability", "fuori intervallo", expected="0-100"
         )
 
 
 def _conflicting_code(code: str | None) -> Conflict:
-    return Conflict("pipeline_stage", "esiste già uno stato con questo code", stage_code=code)
+    return Conflict("pipeline_stage", "esiste già uno stato con questo codice", stage_code=code)
 
 
 class PipelineService:
@@ -70,7 +70,7 @@ class PipelineService:
 
     def create(self, data: PipelineStageCreate, actor: Actor) -> PipelineStageRead:
         actor.require_unscoped_admin("create_pipeline_stage")
-        _check_probability(data.probabilita_default)
+        _check_probability(data.default_probability)
         if data.code is not None and self.repo.get_by_code(data.code) is not None:
             raise _conflicting_code(data.code)
         stage = PipelineStage(**data.model_dump())
@@ -97,12 +97,12 @@ class PipelineService:
             raise NotFound("pipeline_stage", stage_id)
         changes = supplied_changes(data)
         reject_cleared_columns("pipeline_stage", PipelineStage, changes)
-        _check_probability(changes.get("probabilita_default"))
+        _check_probability(changes.get("default_probability"))
         before = _snapshot(stage)
         for key, value in changes.items():
             setattr(stage, key, value)
 
-        # `code` rather than `nome` identifies the stage in the payload: `nome` is
+        # `code` rather than `name` identifies the stage in the payload: `name` is
         # exactly what a rename moves, and pinning the entry to a value that the entry
         # itself is recording a change to would make the timeline unreadable. Nothing
         # is recorded when the patch changed nothing -- see `field_changes`.
@@ -169,15 +169,15 @@ class PipelineService:
         actor.require_unscoped_admin("seed_pipeline")
         existing_codes = {s.code for s in self.repo.list() if s.code is not None}
         try:
-            for code, nome, posizione, probabilita, tipo in DEFAULT_STAGES:
+            for code, name, position, probability, type in DEFAULT_STAGES:
                 if code not in existing_codes:
                     stage = self.repo.add(
                         PipelineStage(
                             code=code,
-                            nome=nome,
-                            posizione=posizione,
-                            probabilita_default=probabilita,
-                            tipo=tipo,
+                            name=name,
+                            position=position,
+                            default_probability=probability,
+                            type=type,
                         )
                     )
                     # `seeded` separates "the installer created this" from "an
@@ -207,15 +207,15 @@ class PipelineService:
         """The lowest-position stage of type `open` -- never a terminal one. A deal
         created without an explicit stage must start somewhere still in progress;
         handing it a `won`/`lost` stage would fabricate an outcome nobody decided."""
-        open_stages = [s for s in self.list() if s.tipo == "open"]
+        open_stages = [s for s in self.list() if s.type == "open"]
         if not open_stages:
             raise ValidationFailed(
                 "pipeline_stage",
-                "tipo",
+                "type",
                 "nessuno stato aperto configurato",
                 expected="almeno uno stato di tipo open",
             )
-        return min(open_stages, key=lambda s: s.posizione)
+        return min(open_stages, key=lambda s: s.position)
 
     def list(self) -> list[PipelineStageRead]:
         return [PipelineStageRead.model_validate(s) for s in self.repo.list()]

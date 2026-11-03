@@ -19,6 +19,7 @@ import {
 } from '@rebase/ui/table'
 import { formatDate } from '@/features/invoices/format'
 import { useCan } from '@/lib/auth'
+import { channelLabel } from '@/features/days/approvals'
 import { toIsoMonth } from '@/lib/dates'
 import { formatItalianQuantity } from '@/lib/decimal'
 import {
@@ -31,19 +32,19 @@ import {
 
 /** The states a day on an invoice can be in now: billed, worked again after a dispute, disputed, paid. */
 const STATE_LABEL: Record<string, string> = {
-  lavorato: 'Lavorato',
-  fatturato: 'Fatturato',
-  contestato: 'Contestato',
-  pagato: 'Pagato',
+  worked: 'Lavorato',
+  invoiced: 'Fatturato',
+  disputed: 'Contestato',
+  paid: 'Pagato',
 }
 
 /** What the proof cell says on screen: the channel and who sent it. The files carry the
  *  whole reference (day and message id); a table cell has no room for it, and the page is
  *  not the document. */
 function proof(entry: RegisterEntry): string {
-  return entry.approvazione === null || entry.approvazione === undefined
+  return entry.approval === null || entry.approval === undefined
     ? '—'
-    : `${entry.approvazione.canale} · ${entry.approvazione.mittente}`
+    : `${channelLabel(entry.approval.channel)} · ${entry.approval.sender}`
 }
 
 /**
@@ -109,7 +110,7 @@ export function RegisterSection({ contractId }: { contractId: string }) {
           <Skeleton className="h-16 w-full" />
         ) : register.isError ? (
           <QueryErrorBanner error={register.error} />
-        ) : register.data === undefined ? null : register.data.voci.length === 0 ? (
+        ) : register.data === undefined ? null : register.data.entries.length === 0 ? (
           <p className="text-muted-foreground">Nessuna giornata fatturata in questo mese.</p>
         ) : (
           <div className="space-y-3">
@@ -125,24 +126,24 @@ export function RegisterSection({ contractId }: { contractId: string }) {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {register.data.voci.map((entry) => (
+                {register.data.entries.map((entry) => (
                   <TableRow key={entry.work_unit_id}>
-                    <TableCell>{formatDate(entry.data)}</TableCell>
-                    <TableCell className="text-right tabular-nums">{formatItalianQuantity(entry.quantita)}</TableCell>
-                    <TableCell>{entry.descrizione}</TableCell>
-                    <TableCell>{STATE_LABEL[entry.stato] ?? entry.stato}</TableCell>
-                    <TableCell>{entry.numero_fattura ?? 'Bozza'}</TableCell>
+                    <TableCell>{formatDate(entry.date)}</TableCell>
+                    <TableCell className="text-right tabular-nums">{formatItalianQuantity(entry.quantity)}</TableCell>
+                    <TableCell>{entry.description}</TableCell>
+                    <TableCell>{STATE_LABEL[entry.status] ?? entry.status}</TableCell>
+                    <TableCell>{entry.invoice_number ?? 'Bozza'}</TableCell>
                     <TableCell>{proof(entry)}</TableCell>
                   </TableRow>
                 ))}
               </TableBody>
             </Table>
-            <p className="text-right font-semibold">Totale: {formatItalianQuantity(register.data.totale_quantita)}</p>
-            {register.data.senza_approvazione > 0 && (
+            <p className="text-right font-semibold">Totale: {formatItalianQuantity(register.data.quantity_total)}</p>
+            {register.data.without_approval > 0 && (
               <p className="text-sm text-muted-foreground">
-                {register.data.senza_approvazione === 1
+                {register.data.without_approval === 1
                   ? '1 giornata è nel registro senza approvazione'
-                  : `${register.data.senza_approvazione} giornate sono nel registro senza approvazione`}
+                  : `${register.data.without_approval} giornate sono nel registro senza approvazione`}
                 : il contratto non la richiede, oppure non è stata ancora registrata.
               </p>
             )}

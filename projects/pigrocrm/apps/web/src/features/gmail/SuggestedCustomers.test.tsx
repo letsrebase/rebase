@@ -21,22 +21,22 @@ vi.mock('@rebase/ui/sonner', () => ({ toast }))
 
 const PROPOSALS: SuggestedCustomer[] = [
   {
-    dominio: 'acme.it',
-    nome: 'Acme',
-    conversazioni: 4,
-    ultimo_messaggio: '2026-09-20T09:30:00Z',
-    persone: [
-      { indirizzo: 'marco@acme.it', nome: 'Marco Bianchi', gia_in_anagrafica: false },
-      { indirizzo: 'sara@acme.it', nome: '', gia_in_anagrafica: false },
-      { indirizzo: 'luca@acme.it', nome: 'Luca', gia_in_anagrafica: true },
+    domain: 'acme.it',
+    name: 'Acme',
+    conversations: 4,
+    last_message: '2026-09-20T09:30:00Z',
+    people: [
+      { address: 'marco@acme.it', name: 'Marco Bianchi', already_in_directory: false },
+      { address: 'sara@acme.it', name: '', already_in_directory: false },
+      { address: 'luca@acme.it', name: 'Luca', already_in_directory: true },
     ],
   },
   {
-    dominio: 'studio-rossi.it',
-    nome: 'Studio Rossi',
-    conversazioni: 1,
-    ultimo_messaggio: null,
-    persone: [{ indirizzo: 'anna@studio-rossi.it', nome: 'Anna', gia_in_anagrafica: false }],
+    domain: 'studio-rossi.it',
+    name: 'Studio Rossi',
+    conversations: 1,
+    last_message: null,
+    people: [{ address: 'anna@studio-rossi.it', name: 'Anna', already_in_directory: false }],
   },
 ]
 
@@ -107,11 +107,11 @@ describe('the proposed customers', () => {
     await waitFor(() =>
       expect(api.POST).toHaveBeenCalledWith('/api/customers/from-suggestions', {
         body: {
-          clienti: [
+          customers: [
             {
-              dominio: 'acme.it',
-              ragione_sociale: 'Acme S.r.l.',
-              persone: [{ indirizzo: 'marco@acme.it', nome: 'Marco Bianchi' }],
+              domain: 'acme.it',
+              legal_name: 'Acme S.r.l.',
+              people: [{ address: 'marco@acme.it', name: 'Marco Bianchi' }],
             },
           ],
         },

@@ -44,7 +44,7 @@ function CompanyFilter({
       ? 'Tutte le aziende'
       : company.isError
         ? 'Azienda non disponibile'
-        : (company.data?.ragione_sociale ?? 'Caricamento…')
+        : (company.data?.legal_name ?? 'Caricamento…')
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
@@ -54,7 +54,7 @@ function CompanyFilter({
       </PopoverTrigger>
       <PopoverContent align="start" className="w-96">
         <CustomerPicker
-          id="filtro-azienda"
+          id="filter-legal-entity"
           value={customerId ?? null}
           ariaLabel="Cerca un'azienda"
           placeholder="Tutte le aziende: cerca per filtrare…"

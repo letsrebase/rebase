@@ -16,11 +16,11 @@ import {
 
 const mockAuth = vi.hoisted(() => ({
   userId: 'u1' as string,
-  aziende: null as string[] | null,
+  legal_entities: null as string[] | null,
 }))
 vi.mock('@/lib/auth', () => ({
   useAuth: () => ({
-    user: mockAuth.userId ? { id: mockAuth.userId, aziende: mockAuth.aziende } : null,
+    user: mockAuth.userId ? { id: mockAuth.userId, legal_entities: mockAuth.legal_entities } : null,
   }),
 }))
 
@@ -38,18 +38,18 @@ import { api } from '@/lib/api'
 
 const GET = api.GET as unknown as Mock
 
-const HUMANCRAFT = { id: 'a1', nome: 'humancraft', predefinita: true, attiva: true } as LegalEntityRecord
-const REBASE = { id: 'a2', nome: 'rebase', predefinita: false, attiva: true } as LegalEntityRecord
-const CLOSED = { id: 'a3', nome: 'chiusa', predefinita: false, attiva: false } as LegalEntityRecord
+const HUMANCRAFT = { id: 'a1', name: 'humancraft', is_default: true, active: true } as LegalEntityRecord
+const REBASE = { id: 'a2', name: 'rebase', is_default: false, active: true } as LegalEntityRecord
+const CLOSED = { id: 'a3', name: 'closed', is_default: false, active: false } as LegalEntityRecord
 
 function ok(data: unknown) {
   return Promise.resolve({ data, response: { status: 200 } })
 }
 
-/** `GET /api/aziende` answers `aziende`; every other read answers an empty page. */
-function serve(aziende: LegalEntityRecord[]) {
+/** `GET /api/aziende` answers `legal_entities`; every other read answers an empty page. */
+function serve(legal_entities: LegalEntityRecord[]) {
   GET.mockImplementation((path: string) =>
-    path === '/api/aziende' ? ok(aziende) : ok({ items: [], next_cursor: null }),
+    path === '/api/legal-entities' ? ok(legal_entities) : ok({ items: [], next_cursor: null }),
   )
 }
 
@@ -65,16 +65,16 @@ function wrapper({ children }: { children: ReactNode }) {
 beforeEach(() => {
   localStorage.clear()
   mockAuth.userId = 'u1'
-  mockAuth.aziende = null
+  mockAuth.legal_entities = null
   GET.mockReset()
   serve([HUMANCRAFT])
 })
 
 describe('LegalEntityProvider', () => {
-  it('is a one-azienda space until the second azienda: nothing selected, nothing several', async () => {
+  it('is a one-legal-entity space until the second azienda: nothing selected, nothing several', async () => {
     localStorage.setItem(legalEntityKey('u1'), 'a1')
     const { result } = renderHook(() => useLegalEntity(), { wrapper })
-    await waitFor(() => expect(result.current.aziende).toHaveLength(1))
+    await waitFor(() => expect(result.current.legal_entities).toHaveLength(1))
     expect(result.current.several).toBe(false)
     expect(result.current.selected).toBeNull()
   })
@@ -83,17 +83,17 @@ describe('LegalEntityProvider', () => {
     serve([HUMANCRAFT, REBASE, CLOSED])
     const { result } = renderHook(() => useLegalEntity(), { wrapper })
     await waitFor(() => expect(result.current.several).toBe(true))
-    expect(result.current.aziende.map((a) => a.nome)).toEqual(['humancraft', 'rebase'])
+    expect(result.current.legal_entities.map((a) => a.name)).toEqual(['humancraft', 'rebase'])
     expect(result.current.selected).toBeNull()
 
     act(() => result.current.select('a2'))
     expect(result.current.selected).toBe('a2')
-    expect(localStorage.getItem('pigrocrm.azienda:/studio:u1')).toBe('a2')
-    expect(result.current.byId('a2')?.nome).toBe('rebase')
+    expect(localStorage.getItem('pigrocrm.legal-entity:/studio:u1')).toBe('a2')
+    expect(result.current.byId('a2')?.name).toBe('rebase')
 
     act(() => result.current.select(null))
     expect(result.current.selected).toBeNull()
-    expect(localStorage.getItem('pigrocrm.azienda:/studio:u1')).toBeNull()
+    expect(localStorage.getItem('pigrocrm.legal-entity:/studio:u1')).toBeNull()
   })
 
   it('reads the stored choice back, and drops one that names no active azienda any more', async () => {
@@ -111,28 +111,28 @@ describe('LegalEntityProvider', () => {
   it('asks for no list without a session', () => {
     mockAuth.userId = ''
     renderHook(() => useLegalEntity(), { wrapper })
-    expect(GET).not.toHaveBeenCalledWith('/api/aziende')
+    expect(GET).not.toHaveBeenCalledWith('/api/legal-entities')
   })
 
   // --- a scoped session (REB-635, spec 2026-10-03 §1.11, §5) ---------------------------
 
   it('pins the selection for a scoped person with one azienda, whatever was stored', async () => {
-    mockAuth.aziende = ['a2']
+    mockAuth.legal_entities = ['a2']
     serve([REBASE]) // what the server answers a person scoped to «rebase»
     localStorage.setItem(legalEntityKey('u1'), 'a1')
     const { result } = renderHook(() => useLegalEntity(), { wrapper })
-    await waitFor(() => expect(result.current.aziende).toHaveLength(1))
+    await waitFor(() => expect(result.current.legal_entities).toHaveLength(1))
     expect(result.current.scoped).toBe(true)
     expect(result.current.pinned).toBe(true)
     expect(result.current.several).toBe(false)
     expect(result.current.selected).toBe('a2')
     // The pinned selection reaches a list's request like a chosen one would.
     const scope = renderHook(() => useLegalEntityScope({ limit: 50 }), { wrapper })
-    await waitFor(() => expect(scope.result.current).toEqual({ limit: 50, azienda_id: 'a2' }))
+    await waitFor(() => expect(scope.result.current).toEqual({ limit: 50, legal_entity_id: 'a2' }))
   })
 
   it('offers a scoped person with several aziende theirs, with nothing pinned', async () => {
-    mockAuth.aziende = ['a1', 'a2']
+    mockAuth.legal_entities = ['a1', 'a2']
     serve([HUMANCRAFT, REBASE])
     const { result } = renderHook(() => useLegalEntity(), { wrapper })
     await waitFor(() => expect(result.current.several).toBe(true))
@@ -145,7 +145,7 @@ describe('LegalEntityProvider', () => {
 
   it('is not pinned for an unscoped person with one azienda: nothing is sent, as before', async () => {
     const { result } = renderHook(() => useLegalEntity(), { wrapper })
-    await waitFor(() => expect(result.current.aziende).toHaveLength(1))
+    await waitFor(() => expect(result.current.legal_entities).toHaveLength(1))
     expect(result.current.scoped).toBe(false)
     expect(result.current.pinned).toBe(false)
     expect(result.current.selected).toBeNull()
@@ -155,7 +155,7 @@ describe('LegalEntityProvider', () => {
 describe('useLegalEntityScope', () => {
   function withSelection(selected: string | null, several = true) {
     const value = {
-      aziende: [HUMANCRAFT, REBASE],
+      legal_entities: [HUMANCRAFT, REBASE],
       selected,
       select: vi.fn(),
       several,
@@ -182,7 +182,7 @@ describe('useLegalEntityScope', () => {
       }),
       { wrapper: withSelection('a2') },
     )
-    expect(result.current.plain).toEqual({ search: 'acme', azienda_id: 'a2' })
+    expect(result.current.plain).toEqual({ search: 'acme', legal_entity_id: 'a2' })
     expect(result.current.ofCustomer).toEqual({ customer_id: 'c1' })
     expect(result.current.ofDeal).toEqual({ deal_id: 'd1' })
   })
@@ -209,8 +209,8 @@ describe('useLegalEntityScope', () => {
     const customers = calls.find(([path]) => path === '/api/customers')
     const hours = calls.find(([path]) => path === '/api/time-entries')
     if (customers === undefined || hours === undefined) throw new Error('one of the two reads is missing')
-    expect(customers[1].params.query).toMatchObject({ limit: 200, azienda_id: 'a2' })
-    expect(hours[1].params.query).not.toHaveProperty('azienda_id')
+    expect(customers[1].params.query).toMatchObject({ limit: 200, legal_entity_id: 'a2' })
+    expect(hours[1].params.query).not.toHaveProperty('legal_entity_id')
   })
 
   it('names the aziende on the rows only under «tutte» from the second azienda on', () => {

@@ -6,31 +6,31 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from pigrocrm.core.validation import SafeStr
 
-AttachmentKind = Literal["fattura_pdf", "registro_pdf"]
+AttachmentKind = Literal["invoice_pdf", "register_pdf"]
 
-NOME_MAX_LENGTH = 120
-OGGETTO_MAX_LENGTH = 300
-CORPO_MAX_LENGTH = 20_000
+NAME_MAX_LENGTH = 120
+SUBJECT_MAX_LENGTH = 300
+BODY_MAX_LENGTH = 20_000
 EMAIL_ADDRESS_MAX_LENGTH = 320
 
 
 class ContractEmailTemplateCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    nome: SafeStr = Field(min_length=1, max_length=NOME_MAX_LENGTH)
-    oggetto: SafeStr = Field(min_length=1, max_length=OGGETTO_MAX_LENGTH)
-    corpo: SafeStr = Field(min_length=1, max_length=CORPO_MAX_LENGTH)
-    allegati: list[AttachmentKind] = []
+    name: SafeStr = Field(min_length=1, max_length=NAME_MAX_LENGTH)
+    subject: SafeStr = Field(min_length=1, max_length=SUBJECT_MAX_LENGTH)
+    body: SafeStr = Field(min_length=1, max_length=BODY_MAX_LENGTH)
+    attachments: list[AttachmentKind] = []
 
 
 class ContractEmailTemplateUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    nome: SafeStr | None = Field(default=None, min_length=1, max_length=NOME_MAX_LENGTH)
-    oggetto: SafeStr | None = Field(default=None, min_length=1, max_length=OGGETTO_MAX_LENGTH)
-    corpo: SafeStr | None = Field(default=None, min_length=1, max_length=CORPO_MAX_LENGTH)
-    allegati: list[AttachmentKind] | None = None
-    attivo: bool | None = None
+    name: SafeStr | None = Field(default=None, min_length=1, max_length=NAME_MAX_LENGTH)
+    subject: SafeStr | None = Field(default=None, min_length=1, max_length=SUBJECT_MAX_LENGTH)
+    body: SafeStr | None = Field(default=None, min_length=1, max_length=BODY_MAX_LENGTH)
+    attachments: list[AttachmentKind] | None = None
+    active: bool | None = None
 
 
 class ContractEmailTemplateRead(BaseModel):
@@ -38,18 +38,18 @@ class ContractEmailTemplateRead(BaseModel):
 
     id: UUID
     contract_id: UUID
-    nome: str
-    oggetto: str
-    corpo: str
-    allegati: list[AttachmentKind]
-    attivo: bool
+    name: str
+    subject: str
+    body: str
+    attachments: list[AttachmentKind]
+    active: bool
     created_at: datetime
     updated_at: datetime
 
 
 class ContractEmailVariable(BaseModel):
-    nome: str
-    etichetta: str
+    name: str
+    label: str
 
 
 class ContractEmailRequest(BaseModel):
@@ -67,8 +67,8 @@ class ContractEmailPrepare(ContractEmailRequest):
 
 
 class ContractEmailAttachment(BaseModel):
-    tipo: AttachmentKind
-    nome: str
+    type: AttachmentKind
+    name: str
 
 
 class ContractEmailPreview(BaseModel):
@@ -77,7 +77,7 @@ class ContractEmailPreview(BaseModel):
 
     subject: str
     body: str
-    to_suggeriti: list[str]
-    allegati: list[ContractEmailAttachment]
-    da: date
-    a: date
+    to_suggested: list[str]
+    attachments: list[ContractEmailAttachment]
+    date_from: date
+    date_to: date

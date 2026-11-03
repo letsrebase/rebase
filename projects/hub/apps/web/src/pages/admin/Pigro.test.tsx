@@ -15,14 +15,14 @@ const ADA = {
   owner_email: 'ada@studio.it',
   created_at: '2026-09-10T09:00:00Z',
   url: 'https://pigro.letsrebase.com/studio-ada/app/',
-  membro: { id: 'f-1', nome: 'Ada', cognome: 'Lovelace' },
+  member: { id: 'f-1', first_name: 'Ada', last_name: 'Lovelace' },
 }
 const BOB = {
   slug: 'bob-dev',
   owner_email: 'bob@example.org',
   created_at: '2026-09-09T09:00:00Z',
   url: 'https://pigro.letsrebase.com/bob-dev/app/',
-  membro: null,
+  member: null,
 }
 
 function answer(status: number, body: unknown) {
@@ -43,7 +43,7 @@ afterEach(() => vi.restoreAllMocks())
 describe('the Istanze Pigro page', () => {
   it('shows a space whose address is not a web address as its name alone, never as a link', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-      answer(200, { totale: 1, items: [{ ...ADA, url: 'javascript:alert(1)' }], next_cursor: null }),
+      answer(200, { total: 1, items: [{ ...ADA, url: 'javascript:alert(1)' }], next_cursor: null }),
     )
     mount()
     expect(await screen.findByText('studio-ada')).toBeInTheDocument()
@@ -54,7 +54,7 @@ describe('the Istanze Pigro page', () => {
     // ORB-142: which spaces exist and whose they are.
     const spy = vi
       .spyOn(globalThis, 'fetch')
-      .mockResolvedValue(answer(200, { totale: 2, items: [ADA, BOB], next_cursor: null }))
+      .mockResolvedValue(answer(200, { total: 2, items: [ADA, BOB], next_cursor: null }))
     mount()
     const space = await screen.findByRole('link', { name: 'studio-ada' })
     expect(space).toHaveAttribute('href', 'https://pigro.letsrebase.com/studio-ada/app/')
@@ -77,15 +77,15 @@ describe('the Istanze Pigro page', () => {
   })
 
   it('says when there is nothing yet', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(200, { totale: 0, items: [], next_cursor: null }))
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(200, { total: 0, items: [], next_cursor: null }))
     mount()
     await screen.findByText('Nessuna istanza ancora.')
   })
 
   it('debounces the search box and asks the server, not the browser, to narrow the list (REB-313)', async () => {
     const spy = vi.spyOn(globalThis, 'fetch')
-    spy.mockResolvedValueOnce(answer(200, { totale: 2, items: [ADA, BOB], next_cursor: null }))
-    spy.mockResolvedValueOnce(answer(200, { totale: 1, items: [BOB], next_cursor: null }))
+    spy.mockResolvedValueOnce(answer(200, { total: 2, items: [ADA, BOB], next_cursor: null }))
+    spy.mockResolvedValueOnce(answer(200, { total: 1, items: [BOB], next_cursor: null }))
     mount()
     await screen.findByRole('link', { name: 'studio-ada' })
     const user = userEvent.setup()
@@ -100,8 +100,8 @@ describe('the Istanze Pigro page', () => {
 
   it('loads the next page on demand, appending rows rather than replacing them', async () => {
     const spy = vi.spyOn(globalThis, 'fetch')
-    spy.mockResolvedValueOnce(answer(200, { totale: 2, items: [ADA], next_cursor: 'cursor-1' }))
-    spy.mockResolvedValueOnce(answer(200, { totale: 2, items: [BOB], next_cursor: null }))
+    spy.mockResolvedValueOnce(answer(200, { total: 2, items: [ADA], next_cursor: 'cursor-1' }))
+    spy.mockResolvedValueOnce(answer(200, { total: 2, items: [BOB], next_cursor: null }))
     mount()
     await screen.findByRole('link', { name: 'studio-ada' })
     expect(screen.getByText('Mostrate 1 istanze, ce ne sono altre.')).toBeInTheDocument()

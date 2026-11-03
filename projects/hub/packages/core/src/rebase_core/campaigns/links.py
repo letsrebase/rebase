@@ -5,7 +5,7 @@ campaign, so it is checked the way the rest of the hub checks a link a person wr
 (`rebase_core.schema_common.https_url`): https with a host, nothing that reads differently
 in a browser than in `urlsplit`, no credentials in front of the host. A link measures
 the one thing the hub can see of a page it does not own, the click Resend reports
-(`campaign_recipients.primo_clic_at`), so «Un link» and the action «clic» go together
+(`campaign_recipients.first_click_at`), so «Un link» and the action «clic» go together
 (DECISIONS.md, 2026-09-28)."""
 
 import re
@@ -15,7 +15,7 @@ from rebase_core.mail_layout import SITE
 from rebase_core.models import CAMPAIGN_BUTTON_URL_MAX_LENGTH
 
 LINK = "link"
-CLICK = "clic"
+CLICK = "click"
 
 LINK_URL_MISSING = "Scrivi il link a cui porta il bottone."
 LINK_URL_TOO_LONG = (
@@ -99,20 +99,20 @@ def _punycode_ok(label: str) -> bool:
     return bool(decoded) and decoded.isprintable()
 
 
-def button_problem(meta: str, url: str | None, azione: str) -> tuple[str, str] | None:
+def button_problem(meta: str, url: str | None, action: str) -> tuple[str, str] | None:
     """The field and the sentence a campaign's button breaks, or `None`: the address
     goes with «Un link» and only with it, and so does the click."""
     if meta == LINK:
         problem = link_problem(url or "")
         if problem is not None:
-            return "bottone_url", problem
-        if azione != CLICK:
-            return "azione", LINK_MEASURES_CLICK
+            return "button_url", problem
+        if action != CLICK:
+            return "action", LINK_MEASURES_CLICK
         return None
     if url is not None:
-        return "bottone_url", LINK_URL_UNUSED
-    if azione == CLICK:
-        return "azione", CLICK_NEEDS_LINK
+        return "button_url", LINK_URL_UNUSED
+    if action == CLICK:
+        return "action", CLICK_NEEDS_LINK
     return None
 
 

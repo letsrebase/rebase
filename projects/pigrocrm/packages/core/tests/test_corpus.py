@@ -8,9 +8,9 @@ generator promises holds at any scale and is checked on SMALL (REB-597).
 
 # Top-level, not `from .corpus import ...`: none of this repository's three test roots
 # has an `__init__.py`, so a relative import has no parent package to resolve against.
-# `orologio.py` and `periodo_fiscale.py` are the shipped precedent for a shared test
+# `frozen_clock.py` and `periodo_fiscale.py` are the shipped precedent for a shared test
 # helper module, and `corpus` is likewise unique across all three roots.
-from corpus import KNOWN_PARTITA_IVA, KNOWN_RAGIONE_SOCIALE, REFERENCE, SMALL, build_corpus
+from corpus import KNOWN_LEGAL_NAME, KNOWN_VAT_NUMBER, REFERENCE, SMALL, build_corpus
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -29,13 +29,13 @@ def test_build_corpus_produces_exactly_the_row_counts_it_claims(db_session: Sess
     assert db_session.scalar(select(func.count()).select_from(Deal)) == 2000
     assert db_session.scalar(select(func.count()).select_from(Document)) == 1000
     assert db_session.scalar(select(func.count()).select_from(Invoice)) == 5000
-    # And `(anno, numero)` really is unique across them, which `uq_invoices_anno_numero`
+    # And `(anno, numero)` really is unique across them, which `uq_invoices_year_number`
     # would have refused anyway -- asserted here so the *reason* the generator divides for
     # the year and takes the remainder for the number is written down where it is checked,
     # rather than surfacing as an IntegrityError somebody has to diagnose.
     assert (
         db_session.scalar(
-            select(func.count(func.distinct(func.concat(Invoice.anno, "/", Invoice.numero))))
+            select(func.count(func.distinct(func.concat(Invoice.year, "/", Invoice.number))))
         )
         == 5000
     )
@@ -46,9 +46,9 @@ def test_build_corpus_plants_the_one_customer_every_search_test_looks_for(
 ) -> None:
     build_corpus(db_session, SMALL)
 
-    row = db_session.scalar(select(Customer).where(Customer.partita_iva == KNOWN_PARTITA_IVA))
+    row = db_session.scalar(select(Customer).where(Customer.vat_number == KNOWN_VAT_NUMBER))
     assert row is not None
-    assert row.ragione_sociale == KNOWN_RAGIONE_SOCIALE
+    assert row.legal_name == KNOWN_LEGAL_NAME
 
 
 def test_build_corpus_is_deterministic_for_a_given_seed(db_session: Session) -> None:
@@ -66,7 +66,7 @@ def test_build_corpus_is_deterministic_for_a_given_seed(db_session: Session) -> 
     build_corpus(db_session, SMALL, seed=7)
     first = list(
         db_session.scalars(
-            select(Customer.ragione_sociale).order_by(Customer.ragione_sociale).limit(20)
+            select(Customer.legal_name).order_by(Customer.legal_name).limit(20)
         ).all()
     )
     savepoint.rollback()
@@ -74,7 +74,7 @@ def test_build_corpus_is_deterministic_for_a_given_seed(db_session: Session) -> 
     build_corpus(db_session, SMALL, seed=7)
     second = list(
         db_session.scalars(
-            select(Customer.ragione_sociale).order_by(Customer.ragione_sociale).limit(20)
+            select(Customer.legal_name).order_by(Customer.legal_name).limit(20)
         ).all()
     )
 
@@ -92,7 +92,7 @@ def test_build_corpus_varies_with_the_seed(db_session: Session) -> None:
     build_corpus(db_session, SMALL, seed=7)
     first = list(
         db_session.scalars(
-            select(Customer.ragione_sociale).order_by(Customer.ragione_sociale).limit(20)
+            select(Customer.legal_name).order_by(Customer.legal_name).limit(20)
         ).all()
     )
     savepoint.rollback()
@@ -100,7 +100,7 @@ def test_build_corpus_varies_with_the_seed(db_session: Session) -> None:
     build_corpus(db_session, SMALL, seed=8)
     second = list(
         db_session.scalars(
-            select(Customer.ragione_sociale).order_by(Customer.ragione_sociale).limit(20)
+            select(Customer.legal_name).order_by(Customer.legal_name).limit(20)
         ).all()
     )
 
@@ -112,7 +112,7 @@ def test_build_corpus_leaves_some_deals_without_a_value(db_session: Session) -> 
     to contain some or that branch is never executed."""
     build_corpus(db_session, SMALL)
     without = db_session.scalar(
-        select(func.count()).select_from(Deal).where(Deal.valore_previsto.is_(None))
+        select(func.count()).select_from(Deal).where(Deal.expected_value.is_(None))
     )
     assert without is not None and without > 0
 
@@ -121,7 +121,7 @@ def test_build_corpus_leaves_some_people_without_a_surname(db_session: Session) 
     """Task A3's `NULLS LAST` cursor has no exerciser without rows in the null tail."""
     build_corpus(db_session, SMALL)
     without = db_session.scalar(
-        select(func.count()).select_from(Person).where(Person.cognome.is_(None))
+        select(func.count()).select_from(Person).where(Person.last_name.is_(None))
     )
     assert without is not None and without > 0
 

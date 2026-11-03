@@ -30,9 +30,9 @@ from pigrocrm.core.invoices.lines import computed_from_stored, persist_lines
 from pigrocrm.core.invoices.models import Invoice, InvoiceLine
 from pigrocrm.core.invoices.register import RegisterGaps
 from pigrocrm.core.invoices.schemas import (
-    DIVISA,
-    SNAPSHOT_VERSIONE,
-    TIPO_DOCUMENTO,
+    CURRENCY,
+    SDI_DOCUMENT_TYPE,
+    SNAPSHOT_VERSION,
     InvoiceAnnul,
     InvoiceIssue,
     InvoiceRead,
@@ -40,7 +40,7 @@ from pigrocrm.core.invoices.schemas import (
     InvoiceTransmitted,
 )
 from pigrocrm.core.invoices.snapshot import build_snapshot
-from pigrocrm.core.invoices.totals import ComputedLine, build_riepilogo, sum_totals
+from pigrocrm.core.invoices.totals import ComputedLine, build_recap, sum_totals
 from pigrocrm.core.work_units.release import ANNULLED_INVOICE_REASON, release_days_of_invoice
 
 
@@ -52,10 +52,10 @@ class InvoiceEmission:
     def issue(self, invoice_id: UUID, data: InvoiceIssue, actor: Actor) -> InvoiceRead:
         """Consume a register number. **One transaction, in this exact order.**
 
-        `invoice_id` names either a `bozza` **fattura**, issued in place, or a
-        `confermata` **proforma**, in which case a *new* `emessa` row is created with
-        the proforma's lines copied and `origine_proforma_id` pointing back at it, and
-        the proforma is marked `consumata` (spec 5). One method, because emitting from
+        `invoice_id` names either a `draft` **fattura**, issued in place, or a
+        `confirmed` **proforma**, in which case a *new* `issued` row is created with
+        the proforma's lines copied and `origin_proforma_id` pointing back at it, and
+        the proforma is marked `consumed` (spec 5). One method, because emitting from
         scratch and from a proforma share the lock, the validations, the freezing and
         the numbering, and splitting them would mean two paths to keep aligned on
         exactly the part that must not diverge.
@@ -77,7 +77,7 @@ class InvoiceEmission:
         5. `COMMIT`.
 
         **The number does not exist before the commit.** If any step fails, the
-        rollback returns `ultimo_numero` to its previous value and nothing was
+        rollback returns `last_number` to its previous value and nothing was
         consumed -- the property a `SEQUENCE` does not have.
 
         The PDF and the XML are produced **after** this commit, in a second
@@ -91,13 +91,13 @@ class InvoiceEmission:
         Two concurrent `issue()` calls on the same `invoice_id` are **in** scope: the
         loser would consume a register number and then overwrite the winner's number on
         the very same row, leaving the first number owned by no invoice.
-        `uq_invoices_azienda_anno_numero` cannot see it, because the row simply carries a
+        `uq_invoices_legal_entity_year_number` cannot see it, because the row simply carries a
         different number. That is a permanent gap in the register. The state is checked
         twice: once before the counter lock, to refuse an obviously-doomed request
         without serialising on it, and once *after* the counter and the row lock, which
         is the authoritative one. `lock_counter` blocks until the other emission's
         transaction ends, so by then the competing commit is visible and the re-read sees
-        `emessa`.
+        `issued`.
 
         Every other writer of the row (`update`, `replace_lines`, `confirm_proforma`,
         `annul`, ...) takes the same row lock before it reads the state, and takes no
@@ -108,20 +108,20 @@ class InvoiceEmission:
         ctx = self.ctx
         today = today_local()
         source = ctx.require(invoice_id)
-        ctx.writing_azienda(source.azienda_id)
-        data_emissione = data.data_emissione or today
-        anno = data_emissione.year
-        check_issue_date(data_emissione, today)
-        from_proforma = source.tipo == "proforma"
+        ctx.writing_legal_entity(source.legal_entity_id)
+        issue_date = data.issue_date or today
+        year = issue_date.year
+        check_issue_date(issue_date, today)
+        from_proforma = source.type == "proforma"
         check_issuable(source, from_proforma=from_proforma)
 
-        # Step 2. From here on, every other emission of this azienda for this year
-        # waits; another azienda's register has a lock of its own (REB-619).
-        counter = ctx.repo.lock_counter(source.azienda_id, anno)
+        # Step 2. From here on, every other emission of this legal entity for this year
+        # waits; another legal entity's register has a lock of its own (REB-619).
+        counter = ctx.repo.lock_counter(source.legal_entity_id, year)
         # Native issuing must not resume on top of a silent gap in an imported register.
         # Checked inside the lock that protects the increment below, so a concurrent
         # import cannot close the gap and let this call through on a stale read.
-        self.register.refuse_undeclared_gaps(anno, source.azienda_id)
+        self.register.refuse_undeclared_gaps(year, source.legal_entity_id)
         # And only now is the state answer trustworthy. The check above ran against a read
         # taken before any lock: a competing `issue()` on this same row could have been
         # between its own check and its own commit. Acquiring the counter lock orders the
@@ -130,30 +130,30 @@ class InvoiceEmission:
         check_issuable(source, from_proforma=from_proforma)
 
         # Step 3. Validations and totals, after the locks and before the increment.
-        strategy, profile = ctx.regime(source.azienda_id)
-        snapshot = build_snapshot(ctx, source.customer_id, profile, actor, source.azienda_id)
+        strategy, profile = ctx.regime(source.legal_entity_id)
+        snapshot = build_snapshot(ctx, source.customer_id, profile, actor, source.legal_entity_id)
         abroad = ctx.issues_abroad(profile)
         # The SdI's own rules on the two parties, and below on the text: what the XML
-        # writer would refuse after the number is spent. A foreign azienda issues no XML
+        # writer would refuse after the number is spent. A foreign legal entity issues no XML
         # (REB-619), so none of them applies to its document.
         if not abroad:
-            check_party_exportable(snapshot.emittente, "emitter_profile")
-            check_party_exportable(snapshot.cliente, "customer")
-            check_recipient_routing(snapshot.cliente)
-            check_recipient_identity(snapshot.cliente)
-        righe = self._issuable_lines(source, snapshot, profile, strategy, abroad=abroad)
-        computed = computed_from_stored(righe)
-        riepilogo = build_riepilogo(computed)
-        imponibile, imposta, totale = sum_totals(riepilogo)
-        check_positive_total(totale)
-        self._check_monotonic(source, anno, data_emissione)
+            check_party_exportable(snapshot.legal_entity, "legal_entity")
+            check_party_exportable(snapshot.customer, "customer")
+            check_recipient_routing(snapshot.customer)
+            check_recipient_identity(snapshot.customer)
+        lines = self._issuable_lines(source, snapshot, profile, strategy, abroad=abroad)
+        computed = computed_from_stored(lines)
+        recap = build_recap(computed)
+        taxable_amount, vat_amount, total = sum_totals(recap)
+        check_positive_total(total)
+        self._check_monotonic(source, year, issue_date)
 
         # Step 4. Increment, write, freeze. One SAVEPOINT: a unique-index hit (see
         # `concurrent_number`) undoes the increment and the writes, not the caller's work.
-        numero = counter.ultimo_numero + 1
+        number = counter.last_number + 1
 
         def concurrent_number(exc: IntegrityError) -> Conflict:
-            # `uq_invoices_azienda_anno_numero` is the net under the row lock, not the
+            # `uq_invoices_legal_entity_year_number` is the net under the row lock, not the
             # mechanism (spec 3). Reaching it means something wrote a number without
             # taking the lock -- an importer, a direct INSERT, a second service -- and
             # this is what makes that failure observable instead of a silent duplicate.
@@ -161,42 +161,42 @@ class InvoiceEmission:
                 ENTITY,
                 "un altro processo ha scritto lo stesso numero senza passare dal "
                 "contatore: riprova e verifica il registro",
-                anno=anno,
-                numero=numero,
+                year=year,
+                number=number,
             )
 
         with savepoint(ctx.session, concurrent_number):
-            counter.ultimo_numero = numero
+            counter.last_number = number
             target = source
             if from_proforma:
-                target = self._fattura_from_proforma(source, computed)
-                source.stato = "consumata"
-            target.stato = "emessa"
-            target.anno = anno
-            target.numero = numero
-            target.data_emissione = data_emissione
+                target = self._invoice_from_proforma(source, computed)
+                source.status = "consumed"
+            target.status = "issued"
+            target.year = year
+            target.number = number
+            target.issue_date = issue_date
             # A date written on the draft (or on the proforma this fattura is born from)
             # is what the person meant; otherwise the customer's own terms, the profile's
             # days as the fallback (REB-326). Read here, at emission, and never again.
-            target.data_scadenza = source.data_scadenza or ctx.due_date_from_terms(
-                data_emissione, source.customer_id, profile.giorni_scadenza
+            target.due_date = source.due_date or ctx.due_date_from_terms(
+                issue_date, source.customer_id, profile.due_days
             )
-            target.imponibile = imponibile
-            target.imposta = imposta
-            target.totale = totale
-            target.bollo = strategy.bollo(riepilogo, profile)
+            target.taxable_amount = taxable_amount
+            target.vat_amount = vat_amount
+            target.total = total
+            target.stamp_duty = strategy.stamp_duty(recap, profile)
             target.snapshot = snapshot.model_dump(mode="json")
-            target.snapshot_versione = SNAPSHOT_VERSIONE
+            target.snapshot_version = SNAPSHOT_VERSION
             ctx.activities.record(
                 ENTITY,
                 target.id,
                 "issued",
                 actor,
                 {
-                    "anno": anno,
-                    "numero": target.numero,
-                    "totale": str(target.totale),
-                    "origine_proforma_id": str(source.id) if from_proforma else None,
+                    "year": year,
+                    "number": target.number,
+                    "total": str(target.total),
+                    "origin_proforma_id": str(source.id) if from_proforma else None,
                 },
             )
         ctx.session.commit()
@@ -216,11 +216,11 @@ class InvoiceEmission:
     ) -> list[InvoiceLine]:
         """The stored lines, once they are known to be what the fiscal regime and the
         document's text allow; every refusal comes before the counter moves."""
-        righe = self.ctx.repo.lines(source.id)
-        if not righe:
+        lines = self.ctx.repo.lines(source.id)
+        if not lines:
             raise ValidationFailed(
                 ENTITY,
-                "righe",
+                "lines",
                 "una fattura senza righe non si emette",
                 expected="almeno una riga",
             )
@@ -233,73 +233,75 @@ class InvoiceEmission:
         # number with the wrong one. So the regime is asked again and any disagreement
         # refuses; `replace_lines` is the remedy and the message says so. `import_issued`
         # is exempt by construction: its lines are declared, not computed.
-        for r in righe:
-            _, natura_attesa, riferimento_atteso = strategy.resolve_line_vat(
-                r.aliquota_iva, profile, nazione_cliente=snapshot.cliente.nazione
+        for r in lines:
+            _, vat_nature_pending, reference_expected = strategy.resolve_line_vat(
+                r.vat_rate, profile, country_customer=snapshot.customer.country
             )
-            if (r.natura, r.riferimento_normativo) != (natura_attesa, riferimento_atteso):
+            if (r.vat_nature, r.legal_reference) != (vat_nature_pending, reference_expected):
                 raise ValidationFailed(
                     ENTITY,
-                    "righe",
-                    f"la riga {r.numero_linea} porta natura {r.natura} e un riferimento "
+                    "lines",
+                    f"la riga {r.line_number} porta natura {r.vat_nature} e un riferimento "
                     "normativo che non corrispondono al cliente e al profilo fiscale "
                     "attuali: sostituisci le righe prima di emettere",
-                    expected=f"natura {natura_attesa} con il riferimento {riferimento_atteso!r}",
+                    expected=(
+                        f"natura {vat_nature_pending} con il riferimento {reference_expected!r}"
+                    ),
                 )
         # The document's own text, by the writer's rules, before the counter moves: an em
         # dash in a causale used to spend a number whose XML was then refused on every
         # export (ORB-140). What the check accepts here is what `export_xml` serialises.
         if not abroad:
             check_document_text_exportable(
-                source.causale,
-                righe,
-                ordine_numero=source.ordine_numero,
-                ordine_cig=source.ordine_cig,
-                ordine_cup=source.ordine_cup,
+                source.memo,
+                lines,
+                purchase_order_number=source.purchase_order_number,
+                purchase_order_tender_code=source.purchase_order_tender_code,
+                purchase_order_project_code=source.purchase_order_project_code,
             )
-        return righe
+        return lines
 
-    def _check_monotonic(self, source: Invoice, anno: int, data_emissione: date) -> None:
-        previous = self.ctx.repo.last_issued_date(source.azienda_id, anno)
-        if previous is not None and data_emissione < previous:
+    def _check_monotonic(self, source: Invoice, year: int, issue_date: date) -> None:
+        previous = self.ctx.repo.last_issued_date(source.legal_entity_id, year)
+        if previous is not None and issue_date < previous:
             raise ValidationFailed(
                 ENTITY,
-                "data_emissione",
+                "issue_date",
                 "il registro deve restare cronologicamente monotono rispetto al numero: "
-                f"l'ultima fattura del {anno} porta la data {previous.isoformat()}",
+                f"l'ultima fattura del {year} porta la data {previous.isoformat()}",
                 expected=f"una data dal {previous.isoformat()} in poi",
             )
 
-    def _fattura_from_proforma(self, source: Invoice, computed: Sequence[ComputedLine]) -> Invoice:
-        """The `bozza` fattura a confirmed proforma becomes, with the proforma's lines."""
+    def _invoice_from_proforma(self, source: Invoice, computed: Sequence[ComputedLine]) -> Invoice:
+        """The `draft` fattura a confirmed proforma becomes, with the proforma's lines."""
         target = self.ctx.repo.add(
             Invoice(
                 customer_id=source.customer_id,
                 deal_id=source.deal_id,
-                azienda_id=source.azienda_id,
-                tipo="fattura",
-                stato="bozza",
-                tipo_documento=TIPO_DOCUMENTO,
-                divisa=DIVISA,
-                causale=source.causale,
+                legal_entity_id=source.legal_entity_id,
+                type="invoice",
+                status="draft",
+                sdi_document_type=SDI_DOCUMENT_TYPE,
+                currency=CURRENCY,
+                memo=source.memo,
                 # The period is a fact about the work and travels with it. The date does
-                # not: the proforma's `data_emissione` is the sender's (ORB-63), and the
+                # not: the proforma's `issue_date` is the sender's (ORB-63), and the
                 # fattura takes the register's.
-                competenza_da=source.competenza_da,
-                competenza_a=source.competenza_a,
+                accrual_from=source.accrual_from,
+                accrual_to=source.accrual_to,
                 # The order is the customer's and the fattura answers it, so it travels
                 # with the work like the period (REB-693).
-                ordine_numero=source.ordine_numero,
-                ordine_data=source.ordine_data,
-                ordine_cig=source.ordine_cig,
-                ordine_cup=source.ordine_cup,
-                note_interne=source.note_interne,
-                imponibile=ZERO,
-                imposta=ZERO,
-                bollo=ZERO,
-                totale=ZERO,
-                stato_pagamento="da_incassare",
-                origine_proforma_id=source.id,
+                purchase_order_number=source.purchase_order_number,
+                purchase_order_date=source.purchase_order_date,
+                purchase_order_tender_code=source.purchase_order_tender_code,
+                purchase_order_project_code=source.purchase_order_project_code,
+                internal_notes=source.internal_notes,
+                taxable_amount=ZERO,
+                vat_amount=ZERO,
+                stamp_duty=ZERO,
+                total=ZERO,
+                payment_status="unpaid",
+                origin_proforma_id=source.id,
                 custom_fields=dict(source.custom_fields),
             )
         )
@@ -322,39 +324,39 @@ class InvoiceEmission:
 
         The row is locked before its state is read: an `annul` and a
         `mark_transmitted_externally` racing on the same invoice would otherwise both
-        pass their checks and leave it both `annullata` and delivered.
+        pass their checks and leave it both `cancelled` and delivered.
         """
         actor.require_admin("annul_invoice")
         ctx = self.ctx
         invoice = ctx.require_locked(invoice_id)
-        if invoice.stato != "emessa":
+        if invoice.status != "issued":
             raise Conflict(
                 ENTITY,
                 "si annulla solo una fattura emessa: una bozza si elimina, "
                 "una fattura gia' annullata non si annulla due volte",
-                stato_attuale=invoice.stato,
+                status_current=invoice.status,
             )
-        if invoice.trasmessa_esternamente_il is not None:
+        if invoice.transmitted_externally_at is not None:
             raise Conflict(
                 ENTITY,
                 "la fattura e' stata consegnata all'intermediario il "
-                f"{invoice.trasmessa_esternamente_il.isoformat()}: da questo punto la "
+                f"{invoice.transmitted_externally_at.isoformat()}: da questo punto la "
                 "correzione richiede una nota di credito, che PigroCRM non emette. "
                 "Va fatta dal tuo intermediario o dal portale dell'Agenzia delle Entrate.",
-                trasmessa_esternamente_il=invoice.trasmessa_esternamente_il.isoformat(),
+                transmitted_externally_at=invoice.transmitted_externally_at.isoformat(),
             )
-        invoice.stato = "annullata"
+        invoice.status = "cancelled"
         # `today_local()`, never a bare `date.today()`: the date printed on an
         # annulment record is subject to the same "issuer's own calendar" requirement as
-        # `data_emissione` (see `db/clock.py`).
-        invoice.annullata_il = today_local()
-        invoice.motivo_annullamento = data.motivo
+        # `issue_date` (see `db/clock.py`).
+        invoice.cancelled_at = today_local()
+        invoice.cancellation_reason = data.reason
         ctx.activities.record(
             ENTITY,
             invoice.id,
             "annulled",
             actor,
-            {"numero": invoice.numero, "anno": invoice.anno, "motivo": data.motivo},
+            {"number": invoice.number, "year": invoice.year, "reason": data.reason},
         )
         # The days billed on it are billable again, as the hours are: an annulled invoice
         # keeps its number but not its revenue (REB-751).
@@ -376,23 +378,23 @@ class InvoiceEmission:
         actor.require_admin("mark_transmitted_externally")
         ctx = self.ctx
         invoice = ctx.require_locked(invoice_id)
-        if invoice.stato != "emessa":
+        if invoice.status != "issued":
             raise Conflict(
                 ENTITY,
                 "solo una fattura emessa si consegna a un intermediario",
-                stato_attuale=invoice.stato,
+                status_current=invoice.status,
             )
-        if invoice.trasmessa_esternamente_il is not None:
+        if invoice.transmitted_externally_at is not None:
             raise ImmutableField(
                 ENTITY,
-                "trasmessa_esternamente_il",
+                "transmitted_externally_at",
                 "la consegna si registra una volta sola: e' il fatto su cui si decide "
                 "se un annullamento e' ancora possibile",
             )
-        check_transmission_date(data.data, invoice.data_emissione, today_local())
-        invoice.trasmessa_esternamente_il = data.data
+        check_transmission_date(data.date, invoice.issue_date, today_local())
+        invoice.transmitted_externally_at = data.date
         ctx.activities.record(
-            ENTITY, invoice.id, "transmitted_externally", actor, {"data": data.data.isoformat()}
+            ENTITY, invoice.id, "transmitted_externally", actor, {"data": data.date.isoformat()}
         )
         ctx.session.commit()
         return ctx.read(invoice)

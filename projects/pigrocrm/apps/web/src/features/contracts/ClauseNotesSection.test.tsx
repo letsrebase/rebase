@@ -23,9 +23,9 @@ function failed(error: unknown, status: number) {
 const RENEWAL = {
   id: 'n1',
   contract_id: 'c1',
-  riferimento_clausola: 'Art. 8.3 Rinnovo',
-  testo_letterale: 'Il contratto si rinnova\nsalvo disdetta.',
-  interpretazione_adottata: 'Il rinnovo è tacito per dodici mesi.',
+  clause_reference: 'Art. 8.3 Rinnovo',
+  literal_text: 'Il contratto si rinnova\nsalvo disdetta.',
+  adopted_interpretation: 'Il rinnovo è tacito per dodici mesi.',
   note: 'Confermato al telefono.',
   created_at: '2026-10-01T09:00:00Z',
   updated_at: '2026-10-01T09:00:00Z',
@@ -33,9 +33,9 @@ const RENEWAL = {
 const PAYMENT = {
   ...RENEWAL,
   id: 'n2',
-  riferimento_clausola: 'Art. 5 Pagamenti',
-  testo_letterale: 'Pagamento a trenta giorni.',
-  interpretazione_adottata: 'Trenta giorni data fattura.',
+  clause_reference: 'Art. 5 Pagamenti',
+  literal_text: 'Pagamento a trenta giorni.',
+  adopted_interpretation: 'Trenta giorni data fattura.',
   note: null,
 }
 
@@ -99,9 +99,9 @@ describe('ClauseNotesSection', () => {
       expect.objectContaining({
         params: { path: { contract_id: 'c1' } },
         body: {
-          riferimento_clausola: 'Art. 9 Recesso',
-          testo_letterale: 'Recesso con preavviso.',
-          interpretazione_adottata: 'Sessanta giorni.',
+          clause_reference: 'Art. 9 Recesso',
+          literal_text: 'Recesso con preavviso.',
+          adopted_interpretation: 'Sessanta giorni.',
           note: null,
         },
       }),
@@ -121,7 +121,7 @@ describe('ClauseNotesSection', () => {
           title: 'Unprocessable',
           status: 422,
           code: 'validation_failed',
-          field: 'testo_letterale',
+          field: 'literal_text',
           detail: 'testo_letterale: il valore non può essere vuoto',
         },
         422,
@@ -153,7 +153,7 @@ describe('ClauseNotesSection', () => {
       expect.objectContaining({
         params: { path: { contract_id: 'c1', note_id: 'n1' } },
         body: {
-          interpretazione_adottata: 'Il rinnovo è tacito per sei mesi.',
+          adopted_interpretation: 'Il rinnovo è tacito per sei mesi.',
           note: null,
         },
       }),

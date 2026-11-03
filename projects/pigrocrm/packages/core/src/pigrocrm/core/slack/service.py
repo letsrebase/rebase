@@ -76,7 +76,7 @@ class SlackService:
             members.append(
                 SlackMemberRead(
                     user_id=user.id,
-                    nome=user.nome,
+                    name=user.name,
                     email=user.email,
                     state=state,
                     slack_email=link.slack_email if link is not None else None,
@@ -140,7 +140,7 @@ class SlackService:
         workspace, token = self._active()
         matcher = SlackMatcher(self.repo, self.client, token)
         self._calling(workspace, lambda: matcher.match_all(self.repo.people(), force=True))
-        self.activities.record(SLACK_ENTITY, workspace.id, "slack.abbinamenti_rifatti", actor)
+        self.activities.record(SLACK_ENTITY, workspace.id, "slack.matches_rebuilt", actor)
         self.session.commit()
         return self.health(actor)
 
@@ -170,7 +170,7 @@ class SlackService:
         # The member it concerns, not their Slack address: the address is on the Team
         # panel already, and the timeline is read by more people than that panel.
         self.activities.record(
-            SLACK_ENTITY, workspace.id, "slack.abbinamento_manuale", actor, {"user_id": user.id}
+            SLACK_ENTITY, workspace.id, "slack.manual_match", actor, {"user_id": user.id}
         )
         self.session.commit()
         return self.health(actor)
@@ -187,7 +187,7 @@ class SlackService:
         matcher = SlackMatcher(self.repo, self.client, token)
         self._calling(workspace, lambda: matcher.match_user(user, force=True))
         self.activities.record(
-            SLACK_ENTITY, workspace.id, "slack.abbinamento_rimosso", actor, {"user_id": user.id}
+            SLACK_ENTITY, workspace.id, "slack.match_removed", actor, {"user_id": user.id}
         )
         self.session.commit()
         return self.health(actor)
@@ -212,14 +212,14 @@ class SlackService:
             workspace.channel_id = found.id
             workspace.channel_name = found.name
         if channel_id is None:
-            self.activities.record(SLACK_ENTITY, workspace.id, "slack.canale_rimosso", actor)
+            self.activities.record(SLACK_ENTITY, workspace.id, "slack.channel_removed", actor)
         else:
             self.activities.record(
                 SLACK_ENTITY,
                 workspace.id,
-                "slack.canale_impostato",
+                "slack.channel_set",
                 actor,
-                {"canale": workspace.channel_name},
+                {"channel": workspace.channel_name},
             )
         self.session.commit()
         return self.health(actor)
@@ -234,7 +234,7 @@ class SlackService:
 
     def _user(self, user_id: UUID) -> User:
         user = self.session.get(User, user_id)
-        if user is None or not user.attivo:
+        if user is None or not user.active:
             raise NotFound("user", user_id)
         return user
 

@@ -20,7 +20,7 @@ from rebase_core.ai_config import AI_CONFIG_ENTITY, AI_CONFIG_ENTITY_ID
 from rebase_core.audit import AdminActionService
 from rebase_core.card_base import CardBase
 from rebase_core.card_prompt import PROMPT_VERSION
-from rebase_core.card_types import FAILURES, Fonte, Regeneration
+from rebase_core.card_types import FAILURES, Regeneration, Source
 from rebase_core.freelancers import ENTITY
 from rebase_core.models import CARD_BATCH_ACTIVE, AdminAction, AiUsage, CardBatch
 
@@ -65,7 +65,7 @@ class RegenerationStart(TypedDict):
 
     limit: int
     queued: int
-    fonte: Fonte
+    source: Source
     batch: bool
     batch_id: NotRequired[UUID]
 
@@ -74,11 +74,11 @@ class CardTrailEntry(TypedDict):
     """The payload of `card_regenerated`: what became of one card of a regeneration. Ours,
     never the model's words and no card text."""
 
-    fonte: Fonte
+    source: Source
     bulk: bool
     prompt_version: int
     model: str | None
-    esito: str
+    outcome: str
     cost_eur: Decimal
     start_action_id: NotRequired[UUID | None]
     reason: NotRequired[str]
@@ -100,16 +100,16 @@ class RegenerationTrail(CardBase):
             self.run = before
 
     def record_start(
-        self, admin_id: UUID, fonte: Fonte, limit: int, queued: int, batch_id: UUID | None = None
+        self, admin_id: UUID, source: Source, limit: int, queued: int, batch_id: UUID | None = None
     ) -> UUID | None:
-        """The signed start of a regeneration, on `ai_config`: who asked (`fonte`: the web or
+        """The signed start of a regeneration, on `ai_config`: who asked (`source`: the web or
         the command line), how many it queued of the `limit` asked, and whether and as which
         Message Batch it was sent. Answers the entry's id, which each card's entry and the end
         point back to."""
         details: RegenerationStart = {
             "limit": limit,
             "queued": queued,
-            "fonte": fonte,
+            "source": source,
             "batch": batch_id is not None,
         }
         if batch_id is not None:
@@ -135,7 +135,7 @@ class RegenerationTrail(CardBase):
         model: str | None = None,
     ) -> None:
         """What became of the card a person asked to have written, signed in the talent's
-        trail (`card_regenerated`): written (`scritta`) or not (`non_scritta`, with the
+        trail (`card_regenerated`): written (`written`) or not (`not_written`, with the
         reason: a `Failure`, `superseded` or one of `NO_ANSWER_REASONS`), by which door, the
         model, the prompt version and what the calls cost (the `ai_usage` rows of the person
         since the write began). No personal data and no card text: ours, never the model's
@@ -153,11 +153,11 @@ class RegenerationTrail(CardBase):
             return
         written = outcome == "written"
         payload: CardTrailEntry = {
-            "fonte": run.fonte,
+            "source": run.source,
             "bulk": run.bulk,
             "prompt_version": PROMPT_VERSION,
             "model": model or None,
-            "esito": "scritta" if written else "non_scritta",
+            "outcome": "written" if written else "not_written",
             "cost_eur": cost,
         }
         if run.bulk:
@@ -203,7 +203,7 @@ class RegenerationTrail(CardBase):
         self,
         *,
         admin_id: UUID,
-        fonte: Fonte,
+        source: Source,
         start_action_id: UUID | None,
         queued: int,
         batch_id: UUID | None = None,
@@ -246,7 +246,7 @@ class RegenerationTrail(CardBase):
         for freelancer_id, payload in cards.items():
             cost += Decimal(str(payload.get("cost_eur") or 0))
             unpriced += int(payload.get("unpriced") or 0)
-            if payload.get("esito") == "scritta":
+            if payload.get("outcome") == "written":
                 written += 1
                 continue
             reason = str(payload.get("reason"))
@@ -260,7 +260,7 @@ class RegenerationTrail(CardBase):
                 failed += 1
             failures.append({"freelancer_id": str(freelancer_id), "reason": reason})
         details: dict[str, object] = {
-            "fonte": fonte,
+            "source": source,
             "start_action_id": start_action_id,
             "written": written,
             "failed": failed,

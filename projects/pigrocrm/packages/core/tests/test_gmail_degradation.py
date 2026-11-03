@@ -54,7 +54,7 @@ def _service(session: Session, *, unverified: bool = False) -> GoogleAccountServ
 
 def _with_a_correspondent(session: Session) -> None:
     """A non-empty roster, so a cycle actually reaches the token refresh."""
-    session.add(Customer(ragione_sociale="Acme", email="info@acme.it"))
+    session.add(Customer(legal_name="Acme", email="info@acme.it"))
     session.flush()
 
 
@@ -79,7 +79,7 @@ def test_invalid_grant_marks_the_account_revoked_and_records_it(db_session: Sess
     assert account.last_error is not None
     assert account.last_error_at is not None
     rows = (
-        db_session.execute(select(Activity).where(Activity.kind == "gmail.credenziale_revocata"))
+        db_session.execute(select(Activity).where(Activity.kind == "gmail.credential_revoked"))
         .scalars()
         .all()
     )
@@ -413,7 +413,7 @@ def test_health_on_an_installation_with_no_account_is_empty_not_an_error(
 ) -> None:
     """An installation that never connected Gmail has nothing to say about Gmail. A
     banner there would be an error message for a feature nobody switched on."""
-    user = User(email="solo@example.it", nome="Solo", password_hash="x", ruolo="admin", attivo=True)
+    user = User(email="solo@example.it", name="Solo", password_hash="x", role="admin", active=True)
     db_session.add(user)
     db_session.flush()
     health = _service(db_session).health(Actor(id=user.id, type="user", role="admin"))
@@ -453,7 +453,7 @@ def test_the_body_store_can_still_be_turned_off_on_a_revoked_account(
     db_session.refresh(account)
     assert account.gmail_store_bodies is False
     kinds = db_session.execute(select(Activity.kind)).scalars().all()
-    assert "gmail.impostazioni_modificate" in kinds
+    assert "gmail.settings_changed" in kinds
 
 
 def test_a_readonly_actor_cannot_change_the_gmail_settings(db_session: Session) -> None:

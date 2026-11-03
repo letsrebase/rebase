@@ -41,7 +41,7 @@ class RateCardService:
         *,
         close_previous: bool = False,
     ) -> RateCardRead:
-        """`close_previous` asks for the card in force on `data.valido_da` to be closed
+        """`close_previous` asks for the card in force on `data.valid_from` to be closed
         the day before it, in the same transaction, instead of the overlap being
         refused. It is an argument of the call and not a field of `RateCardCreate`,
         because that schema is also what a proposal carries for its first card, which
@@ -60,7 +60,7 @@ class RateCardService:
         closed: RateCard | None = None
         with savepoint(self.session, lambda _: _overlap(contract_id)):
             if close_previous:
-                closed = self._close_card_in_force(contract_id, rate_card.valido_da)
+                closed = self._close_card_in_force(contract_id, rate_card.valid_from)
             self.session.add(rate_card)
 
         self.activities.record(
@@ -69,13 +69,13 @@ class RateCardService:
             "rate_card_added",
             actor,
             {
-                "tipo": rate_card.tipo,
-                "valido_da": str(rate_card.valido_da),
+                "type": rate_card.type,
+                "valid_from": str(rate_card.valid_from),
                 # Why another card's end moved, when it did.
                 **(
                     {
-                        "precedente_valido_da": str(closed.valido_da),
-                        "precedente_valido_a": str(closed.valido_a),
+                        "previous_valid_from": str(closed.valid_from),
+                        "previous_valid_to": str(closed.valid_to),
                     }
                     if closed is not None
                     else {}
@@ -92,8 +92,8 @@ class RateCardService:
         after `start` is not touched, so a genuine overlap is refused as ever. Returns
         the card it closed, so the timeline can say why its end moved."""
         for card in self.repo.list_for_contract(contract_id):
-            if card.valido_da < start and (card.valido_a is None or card.valido_a >= start):
-                card.valido_a = start - timedelta(days=1)
+            if card.valid_from < start and (card.valid_to is None or card.valid_to >= start):
+                card.valid_to = start - timedelta(days=1)
                 self.session.flush()
                 return card
         return None
@@ -110,15 +110,15 @@ class RateCardService:
         reject_cleared_columns("rate_card", RateCard, changes)
         merged = {
             key: changes.get(key, getattr(card, key))
-            for key in ("valido_da", "valido_a", "tipo", "ore_minime", "periodo_erogazione")
+            for key in ("valid_from", "valid_to", "type", "minimum_hours", "delivery_period")
         }
         check_rate_card_shape(merged)
-        if merged["valido_a"] is not None and merged["valido_a"] < merged["valido_da"]:
+        if merged["valid_to"] is not None and merged["valid_to"] < merged["valid_from"]:
             raise ValidationFailed(
                 "rate_card",
-                "valido_a",
-                "non può precedere valido_da",
-                expected=f">= {merged['valido_da'].isoformat()}",
+                "valid_to",
+                "non può precedere valid_from",
+                expected=f">= {merged['valid_from'].isoformat()}",
             )
 
         with savepoint(self.session, lambda _: _overlap(contract_id)):
@@ -130,7 +130,7 @@ class RateCardService:
             contract_id,
             "rate_card_updated",
             actor,
-            {"changed": sorted(changes), "valido_da": str(card.valido_da)},
+            {"changed": sorted(changes), "valid_from": str(card.valid_from)},
         )
         self.session.commit()
         return RateCardRead.model_validate(card)

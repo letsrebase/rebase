@@ -23,18 +23,18 @@ from pigrocrm.core.timetracking.schemas import (
 )
 from pigrocrm.core.timetracking.service import TimeEntryService
 
-WRITER = Actor(id=None, type="user", role="collaboratore")
+WRITER = Actor(id=None, type="user", role="collaborator")
 READER = Actor(id=None, type="user", role="readonly")
 
 
-def _log(service, deal_id, user_id, day, ore="8.00"):
+def _log(service, deal_id, user_id, day, hours="8.00"):
     return service.create(
         TimeEntryCreate(
             deal_id=deal_id,
             user_id=user_id,
-            data=date(2026, 3, day),
-            ore=Decimal(ore),
-            descrizione=f"Giorno {day}",
+            date=date(2026, 3, day),
+            hours=Decimal(hours),
+            description=f"Giorno {day}",
         ),
         WRITER,
     )
@@ -45,24 +45,26 @@ def test_it_rewrites_the_interval_and_records_one_activity_per_entry(
 ) -> None:
     admin = Actor(id=seeded_user_id, type="user", role="admin")
     deal = db_session.get(Deal, seeded_deal_id)
-    deal.tariffa_oraria = Decimal("80.000000")
+    deal.hourly_rate = Decimal("80.000000")
     db_session.flush()
     service = TimeEntryService(db_session)
     inside = [_log(service, seeded_deal_id, seeded_user_id, day) for day in (2, 3, 4)]
     outside = _log(service, seeded_deal_id, seeded_user_id, 25)
 
-    deal.tariffa_oraria = Decimal("180.000000")
+    deal.hourly_rate = Decimal("180.000000")
     db_session.flush()
     touched = service.recalculate_rates(
-        seeded_deal_id, RecalculateRatesRequest(da=date(2026, 3, 1), a=date(2026, 3, 10)), admin
+        seeded_deal_id,
+        RecalculateRatesRequest(date_from=date(2026, 3, 1), date_to=date(2026, 3, 10)),
+        admin,
     )
     assert touched == 3
 
     for entry in inside:
         refreshed = service.get(entry.id, READER)
-        assert refreshed.tariffa_applicata == Decimal("180.000000")
-        assert refreshed.tariffa_origine == "deal"
-        assert refreshed.valore_riga == Decimal("1440.00")
+        assert refreshed.applied_rate == Decimal("180.000000")
+        assert refreshed.rate_source == "deal"
+        assert refreshed.line_value == Decimal("1440.00")
         kinds = [e.kind for e in ActivityService(db_session).timeline("time_entry", entry.id)]
         assert "rates_recalculated" in kinds
         payload = next(
@@ -70,46 +72,48 @@ def test_it_rewrites_the_interval_and_records_one_activity_per_entry(
             for e in ActivityService(db_session).timeline("time_entry", entry.id)
             if e.kind == "rates_recalculated"
         )
-        assert payload["tariffa_prima"] == "80.000000"
-        assert payload["tariffa_dopo"] == "180.000000"
+        assert payload["rate_before"] == "80.000000"
+        assert payload["rate_after"] == "180.000000"
 
     # Outside the interval, untouched.
-    assert service.get(outside.id, READER).tariffa_applicata == Decimal("80.000000")
+    assert service.get(outside.id, READER).applied_rate == Decimal("80.000000")
 
 
 def test_an_entry_with_a_rate_written_on_it_keeps_that_rate(
     db_session: Session, seeded_deal_id: UUID, seeded_user_id: UUID
 ) -> None:
-    """A `manuale` rate is a decision (an explicit zero is "free work on purpose"): the
+    """A `manual` rate is a decision (an explicit zero is "free work on purpose"): the
     recalculation re-resolves the entries whose rate came from a level, not that one."""
     admin = Actor(id=seeded_user_id, type="user", role="admin")
     deal = db_session.get(Deal, seeded_deal_id)
-    deal.tariffa_oraria = Decimal("80.000000")
+    deal.hourly_rate = Decimal("80.000000")
     db_session.flush()
     service = TimeEntryService(db_session)
     free = service.create(
         TimeEntryCreate(
             deal_id=seeded_deal_id,
             user_id=seeded_user_id,
-            data=date(2026, 3, 2),
-            ore=Decimal("2.00"),
-            descrizione="Omaggio",
-            tariffa_applicata=Decimal("0.000000"),
+            date=date(2026, 3, 2),
+            hours=Decimal("2.00"),
+            description="Omaggio",
+            applied_rate=Decimal("0.000000"),
         ),
         WRITER,
     )
     resolved = _log(service, seeded_deal_id, seeded_user_id, 3)
 
-    deal.tariffa_oraria = Decimal("180.000000")
+    deal.hourly_rate = Decimal("180.000000")
     db_session.flush()
     touched = service.recalculate_rates(
-        seeded_deal_id, RecalculateRatesRequest(da=date(2026, 3, 1), a=date(2026, 3, 10)), admin
+        seeded_deal_id,
+        RecalculateRatesRequest(date_from=date(2026, 3, 1), date_to=date(2026, 3, 10)),
+        admin,
     )
 
     assert touched == 1
     kept = service.get(free.id, READER)
-    assert (kept.tariffa_applicata, kept.tariffa_origine) == (Decimal("0.000000"), "manuale")
-    assert service.get(resolved.id, READER).tariffa_applicata == Decimal("180.000000")
+    assert (kept.applied_rate, kept.rate_source) == (Decimal("0.000000"), "manual")
+    assert service.get(resolved.id, READER).applied_rate == Decimal("180.000000")
 
 
 def test_a_billed_entry_in_the_interval_refuses_the_whole_call_and_changes_nothing(
@@ -122,7 +126,7 @@ def test_a_billed_entry_in_the_interval_refuses_the_whole_call_and_changes_nothi
     partial rewrite would leave the interval in a state nobody chose."""
     admin = Actor(id=seeded_user_id, type="user", role="admin")
     deal = db_session.get(Deal, seeded_deal_id)
-    deal.tariffa_oraria = Decimal("80.000000")
+    deal.hourly_rate = Decimal("80.000000")
     db_session.flush()
     service = TimeEntryService(db_session)
     entries = [_log(service, seeded_deal_id, seeded_user_id, day) for day in (2, 3, 4)]
@@ -136,20 +140,20 @@ def test_a_billed_entry_in_the_interval_refuses_the_whole_call_and_changes_nothi
     )
     db_session.flush()
 
-    deal.tariffa_oraria = Decimal("180.000000")
+    deal.hourly_rate = Decimal("180.000000")
     db_session.flush()
     with pytest.raises(Conflict) as excinfo:
         service.recalculate_rates(
             seeded_deal_id,
-            RecalculateRatesRequest(da=date(2026, 3, 1), a=date(2026, 3, 10)),
+            RecalculateRatesRequest(date_from=date(2026, 3, 1), date_to=date(2026, 3, 10)),
             admin,
         )
-    assert excinfo.value.details["voci_fatturate"] == 1
-    assert excinfo.value.details["prima_riga"] == str(line_id)
+    assert excinfo.value.details["entries_invoiced"] == 1
+    assert excinfo.value.details["before_line"] == str(line_id)
 
     db_session.rollback()
     for entry in entries:
-        assert service.get(entry.id, READER).tariffa_applicata == Decimal("80.000000")
+        assert service.get(entry.id, READER).applied_rate == Decimal("80.000000")
 
 
 def test_a_collaborator_cannot_call_it(
@@ -161,7 +165,7 @@ def test_a_collaborator_cannot_call_it(
     with pytest.raises(PermissionDenied):
         TimeEntryService(db_session).recalculate_rates(
             seeded_deal_id,
-            RecalculateRatesRequest(da=date(2026, 3, 1), a=date(2026, 3, 10)),
+            RecalculateRatesRequest(date_from=date(2026, 3, 1), date_to=date(2026, 3, 10)),
             WRITER,
         )
 
@@ -174,11 +178,11 @@ def test_it_will_not_rewrite_inside_a_closed_period(
     admin = Actor(id=seeded_user_id, type="user", role="admin")
     service = TimeEntryService(db_session)
     _log(service, seeded_deal_id, seeded_user_id, 2)
-    PeriodLockService(db_session).close_period(PeriodLockCreate(anno=2026, mese=3), admin)
+    PeriodLockService(db_session).close_period(PeriodLockCreate(year=2026, month=3), admin)
     with pytest.raises(Conflict):
         service.recalculate_rates(
             seeded_deal_id,
-            RecalculateRatesRequest(da=date(2026, 3, 1), a=date(2026, 3, 10)),
+            RecalculateRatesRequest(date_from=date(2026, 3, 1), date_to=date(2026, 3, 10)),
             admin,
         )
 
@@ -192,7 +196,7 @@ def test_an_inverted_interval_is_a_validation_failure(
     with pytest.raises(ValidationFailed) as excinfo:
         TimeEntryService(db_session).recalculate_rates(
             seeded_deal_id,
-            RecalculateRatesRequest(da=date(2026, 3, 10), a=date(2026, 3, 1)),
+            RecalculateRatesRequest(date_from=date(2026, 3, 10), date_to=date(2026, 3, 1)),
             admin,
         )
-    assert excinfo.value.details["field"] == "a"
+    assert excinfo.value.details["field"] == "to"

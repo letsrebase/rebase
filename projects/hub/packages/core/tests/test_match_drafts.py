@@ -7,7 +7,7 @@ from uuid import UUID, uuid4
 
 import pytest
 from match_fixtures import (
-    CLIENTE_REST,
+    CUSTOMER_REST,
     TODAY,
     _admin,
     _body,
@@ -27,8 +27,8 @@ from sqlalchemy.orm import Session
 from rebase_core.admin_schemas import StatusChange
 from rebase_core.companies import CompanyService
 from rebase_core.contract_schemas import (
-    ClienteData,
-    LetteraFields,
+    CustomerDate,
+    LetterFields,
     MatchCheck,
     MatchCreate,
 )
@@ -44,7 +44,7 @@ def test_the_client_budget_reaches_neither_the_prefill_nor_the_letter(clean: Ses
     service = _service(clean)
     assert "777.77" not in service.drafts.prefill(freelancer_id, company_id).model_dump_json()
     match = service.create(freelancer_id, _body(company_id), admin_id)
-    letter = clean.get(ContractDocument, match.lettera.id)
+    letter = clean.get(ContractDocument, match.letter.id)
     assert letter is not None
     assert not any("777.77" in str(value) for value in letter.data.values())
     assert not any("budget" in key for key in letter.data)
@@ -55,21 +55,21 @@ def test_the_prefill_suggests_from_the_request_the_card_and_rebases_defaults(
 ) -> None:
     admin_id, freelancer_id, company_id = _setup(clean)
     prefill = _service(clean).drafts.prefill(freelancer_id, company_id)
-    lettera = prefill.lettera
-    assert (lettera.ruolo, lettera.attivita) == (
+    letter = prefill.letter
+    assert (letter.role, letter.activities) == (
         "Backend developer",
         "Le API del prodotto, per tre mesi.",
     )
-    assert (lettera.data_inizio, lettera.impegno) == (date(2026, 10, 1), "3 mesi")
-    assert lettera.luogo == "in parte da remoto, con 2 giornate a settimana presso il Cliente"
-    assert lettera.referente_cliente == "Wile E."
-    assert (lettera.modalita, lettera.unita) == ("a giornata", "a giornata")
-    assert lettera.compenso == Decimal("450.00")
-    assert (lettera.giorni_pagamento, lettera.fine_mese) == (30, True)
-    assert prefill.cliente.cliente_ragione_sociale == "ACME Srl"
-    assert prefill.cliente.cliente_piva is None
-    assert prefill.fiscale is not None and prefill.fiscale.partita_iva == "01234567890"
-    assert (prefill.quadro_attivo, prefill.quadro_necessario, prefill.lettera_in_attesa) == (
+    assert (letter.start_date, letter.commitment) == (date(2026, 10, 1), "3 mesi")
+    assert letter.location == "in parte da remoto, con 2 giornate a settimana presso il Cliente"
+    assert letter.customer_contact == "Wile E."
+    assert (letter.mode, letter.unit) == ("to_work_unit", "a giornata")
+    assert letter.fee == Decimal("450.00")
+    assert (letter.payment_days, letter.month_end) == (30, True)
+    assert prefill.customer.customer_legal_name == "ACME Srl"
+    assert prefill.customer.customer_vat_number is None
+    assert prefill.tax is not None and prefill.tax.vat_number == "01234567890"
+    assert (prefill.active_framework, prefill.required_framework, prefill.letter_pending) == (
         None,
         True,
         True,
@@ -81,16 +81,16 @@ def test_a_card_without_a_day_rate_prefills_no_fee_and_the_letter_needs_one(clea
     admin_id, freelancer_id, company_id = _setup(clean)
     card = clean.get(Freelancer, freelancer_id)
     assert card is not None
-    card.tariffa_giornaliera = None
+    card.daily_rate = None
     clean.commit()
-    assert _service(clean).drafts.prefill(freelancer_id, company_id).lettera.compenso is None
-    with pytest.raises(PydanticValidationError, match="compenso"):
-        LetteraFields(
-            ruolo="Backend developer",
-            attivita="API",
-            data_inizio=date(2026, 10, 1),
-            giorni_pagamento=30,
-            fine_mese=True,
+    assert _service(clean).drafts.prefill(freelancer_id, company_id).letter.fee is None
+    with pytest.raises(PydanticValidationError, match="fee"):
+        LetterFields(
+            role="Backend developer",
+            activities="API",
+            start_date=date(2026, 10, 1),
+            payment_days=30,
+            month_end=True,
         )  # type: ignore[call-arg]
 
 
@@ -98,9 +98,13 @@ def test_the_client_data_come_back_from_the_same_company_users_last_match(clean:
     admin_id, freelancer_id, company_id = _setup(clean)
     _service(clean).create(freelancer_id, _body(company_id), admin_id)
     # The same referente files a second request: another row, the same client.
-    second = _request(clean, nome_azienda="ACME", figura_richiesta="Frontend developer")
-    cliente = _service(clean).drafts.prefill(freelancer_id, second).cliente
-    assert (cliente.cliente_ragione_sociale, cliente.cliente_piva, cliente.cliente_sede) == (
+    second = _request(clean, company_name="ACME", requested_role="Frontend developer")
+    customer = _service(clean).drafts.prefill(freelancer_id, second).customer
+    assert (
+        customer.customer_legal_name,
+        customer.customer_vat_number,
+        customer.customer_registered_office,
+    ) == (
         "ACME S.r.l.",
         "01234567890",
         "Milano",
@@ -112,9 +116,13 @@ def test_a_cancelled_matchs_client_is_never_prefilled(clean: Session) -> None:
     match = _service(clean).create(freelancer_id, _body(company_id), admin_id)
     _service(clean).cancel(match.id, admin_id)
     # The same referente files a second request: another row, the same user.
-    second = _request(clean, nome_azienda="ACME", figura_richiesta="Frontend developer")
-    cliente = _service(clean).drafts.prefill(freelancer_id, second).cliente
-    assert (cliente.cliente_ragione_sociale, cliente.cliente_piva, cliente.cliente_sede) == (
+    second = _request(clean, company_name="ACME", requested_role="Frontend developer")
+    customer = _service(clean).drafts.prefill(freelancer_id, second).customer
+    assert (
+        customer.customer_legal_name,
+        customer.customer_vat_number,
+        customer.customer_registered_office,
+    ) == (
         "ACME",
         None,
         None,
@@ -124,12 +132,12 @@ def test_a_cancelled_matchs_client_is_never_prefilled(clean: Session) -> None:
 def test_a_closed_request_can_be_neither_previewed_nor_matched(clean: Session) -> None:
     admin_id, freelancer_id, company_id = _setup(clean)
     CompanyService(clean).set_status(
-        company_id, StatusChange(stato="chiuso"), admin_id=admin_id, fonte="web"
+        company_id, StatusChange(status="closed"), admin_id=admin_id, source="web"
     )
     service = _service(clean)
     for call in (
         lambda: service.create(freelancer_id, _body(company_id), admin_id),
-        lambda: service.drafts.preview(freelancer_id, _body(company_id), "lettera"),
+        lambda: service.drafts.preview(freelancer_id, _body(company_id), "letter"),
     ):
         with pytest.raises(ValidationFailed) as refused:
             call()
@@ -145,9 +153,9 @@ def test_check_writes_nothing(clean: Session) -> None:
         freelancer_id, _body(company_id)
     )
     clean.commit()
-    assert checked.quadro_necessario is True
+    assert checked.required_framework is True
     assert _rows(clean) == before
-    assert _service(clean).create(freelancer_id, _body(company_id), admin_id).lettera.numero == (
+    assert _service(clean).create(freelancer_id, _body(company_id), admin_id).letter.number == (
         "2026-002"
     )
 
@@ -155,35 +163,35 @@ def test_check_writes_nothing(clean: Session) -> None:
 def test_check_says_what_saving_would_do_and_which_document_leaves_first(clean: Session) -> None:
     admin_id, freelancer_id, company_id = _setup(clean)
     service = _service(clean)
-    riepilogo = [
+    recap = [
         "Ada Lovelace lavorerà per ACME S.r.l. come Backend developer, dal 1° ottobre 2026.",
         "Compenso: 450,00 € a giornata, IVA esclusa, pagato a 30 giorni fine mese.",
     ]
     assert service.drafts.check(freelancer_id, _body(company_id)) == MatchCheck(
-        riepilogo=riepilogo,
-        cosa_succede=(
+        recap=recap,
+        what_happens=(
             "Prima parte il contratto quadro; la lettera di incarico parte da sola dopo la sua "
             "firma."
         ),
-        quadro_necessario=True,
-        dati_fiscali_mancanti=False,
-        regime="partita_iva",
+        required_framework=True,
+        missing_tax_data=False,
+        regime="vat_registered",
     )
     service.create(freelancer_id, _body(company_id), admin_id)
-    _framework_now(clean, freelancer_id, "inviato")
+    _framework_now(clean, freelancer_id, "sent")
     in_signature = service.drafts.check(freelancer_id, _body(company_id))
-    assert (in_signature.quadro_necessario, in_signature.cosa_succede) == (
+    assert (in_signature.required_framework, in_signature.what_happens) == (
         False,
         "Il contratto quadro è già in firma: la lettera di incarico parte da sola dopo la sua "
         "firma.",
     )
     _framework(clean, freelancer_id, admin_id)
     active = service.drafts.check(freelancer_id, _body(company_id))
-    assert (active.quadro_necessario, active.cosa_succede) == (
+    assert (active.required_framework, active.what_happens) == (
         False,
         "Il contratto quadro è già attivo: parte subito la lettera di incarico.",
     )
-    assert active.riepilogo == riepilogo
+    assert active.recap == recap
 
 
 @pytest.mark.parametrize("action", ["create", "check"])
@@ -201,7 +209,7 @@ def test_check_refuses_what_create_refuses(clean: Session, action: str) -> None:
     with pytest.raises(NotFound):
         attempt(uuid4(), _body(company_id))
     CompanyService(clean).set_status(
-        company_id, StatusChange(stato="chiuso"), admin_id=admin_id, fonte="web"
+        company_id, StatusChange(status="closed"), admin_id=admin_id, source="web"
     )
     with pytest.raises(ValidationFailed) as refused:
         attempt(freelancer_id, _body(company_id))
@@ -212,25 +220,23 @@ def test_check_reports_missing_tax_data_that_create_still_refuses(clean: Session
     admin_id, freelancer_id, company_id = _admin(clean), _card(clean), _request(clean)
     service = _service(clean)
     checked = service.drafts.check(freelancer_id, _body(company_id))
-    assert checked.dati_fiscali_mancanti is True
-    assert checked.riepilogo[-1] == (
-        "Mancano i dati fiscali del freelance: servono prima di salvare."
-    )
+    assert checked.missing_tax_data is True
+    assert checked.recap[-1] == ("Mancano i dati fiscali del freelance: servono prima di salvare.")
     with pytest.raises(ValidationFailed) as refused:
         service.create(freelancer_id, _body(company_id), admin_id)
-    assert refused.value.details["field"] == "fiscale"
+    assert refused.value.details["field"] == "tax"
     _fiscal(clean, freelancer_id, admin_id)
-    assert service.drafts.check(freelancer_id, _body(company_id)).dati_fiscali_mancanti is False
+    assert service.drafts.check(freelancer_id, _body(company_id)).missing_tax_data is False
 
 
 def test_the_proposal_keeps_the_prefill(clean: Session) -> None:
     _admin_id, freelancer_id, company_id = _setup(clean)
     service = _service(clean)
-    proposal = service.drafts.proposal(freelancer_id, company_id, cliente=CLIENTE_REST)
+    proposal = service.drafts.proposal(freelancer_id, company_id, customer=CUSTOMER_REST)
     prefill = service.drafts.prefill(freelancer_id, company_id)
     assert (proposal.id, proposal.company_id) == (None, company_id)
-    assert proposal.cliente == ClienteData(cliente_ragione_sociale="ACME Srl", **CLIENTE_REST)
-    assert proposal.lettera.model_dump(exclude_none=True) == prefill.lettera.model_dump(
+    assert proposal.customer == CustomerDate(customer_legal_name="ACME Srl", **CUSTOMER_REST)
+    assert proposal.letter.model_dump(exclude_none=True) == prefill.letter.model_dump(
         exclude_none=True
     )
 
@@ -241,19 +247,19 @@ def test_the_proposal_lays_the_given_fields_over_the_prefill(clean: Session) -> 
     proposal = _service(clean).drafts.proposal(
         freelancer_id,
         company_id,
-        cliente={**CLIENTE_REST, "cliente_ragione_sociale": "ACME S.r.l."},
-        lettera={"ruolo": "Staff engineer", "data_fine": "2026-12-31", "impegno": None},
+        customer={**CUSTOMER_REST, "customer_legal_name": "ACME S.r.l."},
+        letter={"role": "Staff engineer", "end_date": "2026-12-31", "commitment": None},
         match_id=match_id,
     )
     assert proposal.id == match_id
-    assert proposal.cliente.cliente_ragione_sociale == "ACME S.r.l."
-    assert (proposal.lettera.ruolo, proposal.lettera.data_fine, proposal.lettera.impegno) == (
+    assert proposal.customer.customer_legal_name == "ACME S.r.l."
+    assert (proposal.letter.role, proposal.letter.end_date, proposal.letter.commitment) == (
         "Staff engineer",
         date(2026, 12, 31),
         None,
     )
-    assert proposal.lettera.attivita == "Le API del prodotto, per tre mesi."
-    assert proposal.lettera.compenso == Decimal("450")
+    assert proposal.letter.activities == "Le API del prodotto, per tre mesi."
+    assert proposal.letter.fee == Decimal("450")
 
 
 @pytest.mark.parametrize(
@@ -274,9 +280,9 @@ def test_the_proposal_reads_a_fee_typed_the_italian_way(
     """REB-485: «1.500» is fifteen hundred, where Pydantic alone reads one and a half."""
     _admin_id, freelancer_id, company_id = _setup(clean)
     proposal = _service(clean).drafts.proposal(
-        freelancer_id, company_id, cliente=CLIENTE_REST, lettera={"compenso": typed}
+        freelancer_id, company_id, customer=CUSTOMER_REST, letter={"fee": typed}
     )
-    assert proposal.lettera.compenso == fee
+    assert proposal.letter.fee == fee
 
 
 @pytest.mark.parametrize(
@@ -290,70 +296,75 @@ def test_the_proposal_refuses_a_fee_that_is_not_an_amount_by_name(
     _admin_id, freelancer_id, company_id = _setup(clean)
     with pytest.raises(ValidationFailed) as refused:
         _service(clean).drafts.proposal(
-            freelancer_id, company_id, cliente=CLIENTE_REST, lettera={"compenso": typed}
+            freelancer_id, company_id, customer=CUSTOMER_REST, letter={"fee": typed}
         )
     assert (refused.value.details["field"], refused.value.details["reason"]) == (
-        "lettera.compenso",
+        "letter.fee",
         "non valido",
     )
 
 
 @pytest.mark.parametrize(
-    ("cliente", "lettera", "field"),
+    ("customer", "letter", "field"),
     [
-        ({**CLIENTE_REST, "nome": "ACME"}, None, "cliente.nome"),
-        (CLIENTE_REST, {"budget_giornaliero": 777}, "lettera.budget_giornaliero"),
+        ({**CUSTOMER_REST, "first_name": "ACME"}, None, "customer.first_name"),
+        (CUSTOMER_REST, {"daily_budget": 777}, "letter.daily_budget"),
     ],
 )
 def test_the_proposal_refuses_an_unknown_key_by_name(
-    clean: Session, cliente: dict[str, object], lettera: dict[str, object] | None, field: str
+    clean: Session, customer: dict[str, object], letter: dict[str, object] | None, field: str
 ) -> None:
     _admin_id, freelancer_id, company_id = _setup(clean)
     with pytest.raises(ValidationFailed) as refused:
-        _service(clean).drafts.proposal(freelancer_id, company_id, cliente=cliente, lettera=lettera)
+        _service(clean).drafts.proposal(freelancer_id, company_id, customer=customer, letter=letter)
     assert refused.value.details["field"] == field
 
 
 @pytest.mark.parametrize(
-    ("cliente", "lettera", "field", "reason"),
+    ("customer", "letter", "field", "reason"),
     [
         # A client never matched before: the prefill knows only its name.
-        (None, None, "cliente.cliente_piva", "manca"),
-        (CLIENTE_REST, {"compenso": None}, "lettera.compenso", "manca"),
+        (None, None, "customer.customer_vat_number", "manca"),
+        (CUSTOMER_REST, {"fee": None}, "letter.fee", "manca"),
         # Pydantic's own checks say it in English: the admin reads «non valido».
-        (CLIENTE_REST, {"compenso": "abc"}, "lettera.compenso", "non valido"),
-        (CLIENTE_REST, {"giorni_pagamento": "trenta"}, "lettera.giorni_pagamento", "non valido"),
+        (CUSTOMER_REST, {"fee": "abc"}, "letter.fee", "non valido"),
+        (CUSTOMER_REST, {"payment_days": "trenta"}, "letter.payment_days", "non valido"),
         # The hub's own checks already say it in Italian, and say why.
-        (CLIENTE_REST, {"impegno": "   "}, "lettera.impegno", "serve un valore, non solo spazi"),
         (
-            CLIENTE_REST,
-            {"data_fine": "2026-09-01"},
-            "lettera.data_fine",
+            CUSTOMER_REST,
+            {"commitment": "   "},
+            "letter.commitment",
+            "serve un valore, non solo spazi",
+        ),
+        (
+            CUSTOMER_REST,
+            {"end_date": "2026-09-01"},
+            "letter.end_date",
             "la fine prevista viene prima dell'inizio",
         ),
         (
-            CLIENTE_REST,
-            {"giorni_pagamento": 45, "fine_mese": True},
-            "lettera.giorni_pagamento",
+            CUSTOMER_REST,
+            {"payment_days": 45, "month_end": True},
+            "letter.payment_days",
             "contati da fine mese, i giorni di pagamento sono al massimo 30 (legge 81/2017)",
         ),
         # `SafeStr`'s own sentence names the field already: said once, not twice.
         (
-            CLIENTE_REST,
-            {"ruolo": "Backend\x00developer"},
-            "lettera.ruolo",
+            CUSTOMER_REST,
+            {"role": "Backend\x00developer"},
+            "letter.role",
             "il testo contiene un carattere nullo (\\x00), non ammesso",
         ),
     ],
 )
 def test_the_proposal_refuses_a_field_left_empty_or_invalid_by_name(
     clean: Session,
-    cliente: dict[str, object] | None,
-    lettera: dict[str, object] | None,
+    customer: dict[str, object] | None,
+    letter: dict[str, object] | None,
     field: str,
     reason: str,
 ) -> None:
     _admin_id, freelancer_id, company_id = _setup(clean)
     with pytest.raises(ValidationFailed) as refused:
-        _service(clean).drafts.proposal(freelancer_id, company_id, cliente=cliente, lettera=lettera)
+        _service(clean).drafts.proposal(freelancer_id, company_id, customer=customer, letter=letter)
     assert (refused.value.details["field"], refused.value.details["reason"]) == (field, reason)

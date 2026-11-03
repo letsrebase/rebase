@@ -19,10 +19,10 @@ from pigrocrm.core.timetracking.models import TimeEntry
 from pigrocrm.core.timetracking.repository import won_with_unbilled_hours_predicate
 
 
-def _azienda_filter(azienda_id: UUID | None) -> tuple[ColumnElement[bool], ...]:
-    """One azienda's deals, or every azienda's (REB-630, spec 2026-10-03 §1.9): the
+def _legal_entity_filter(legal_entity_id: UUID | None) -> tuple[ColumnElement[bool], ...]:
+    """One legal entity's deals, or every legal entity's (REB-630, spec 2026-10-03 §1.9): the
     deal's own column, which a deal keeps when its customer moves (§1.7)."""
-    return () if azienda_id is None else (Deal.azienda_id == azienda_id,)
+    return () if legal_entity_id is None else (Deal.legal_entity_id == legal_entity_id,)
 
 
 class DealRepository:
@@ -48,7 +48,7 @@ class DealRepository:
         )
 
     def customer_names(self, customer_ids: Collection[UUID]) -> dict[UUID, str]:
-        """The `ragione_sociale` of each given customer, in one query.
+        """The `legal_name` of each given customer, in one query.
 
         The same method, for the same reason, as `PersonRepository.customer_names`: one
         statement for a whole page rather than one per row, so a 50-row deal list costs
@@ -70,12 +70,12 @@ class DealRepository:
         if not customer_ids:
             return {}
         rows = self.session.execute(
-            select(Customer.id, Customer.ragione_sociale).where(Customer.id.in_(customer_ids))
+            select(Customer.id, Customer.legal_name).where(Customer.id.in_(customer_ids))
         ).all()
         return {row[0]: row[1] for row in rows}
 
     def names(self, deal_ids: Collection[UUID]) -> dict[UUID, str]:
-        """The `nome` of each given deal, in one query.
+        """The `name` of each given deal, in one query.
 
         The sibling of `customer_names` above, for rows that arrive naming a deal by id
         and nothing else. Its caller is the weekly report (spec 2026-09-16 §3.1, section
@@ -93,7 +93,7 @@ class DealRepository:
         """
         if not deal_ids:
             return {}
-        rows = self.session.execute(select(Deal.id, Deal.nome).where(Deal.id.in_(deal_ids))).all()
+        rows = self.session.execute(select(Deal.id, Deal.name).where(Deal.id.in_(deal_ids))).all()
         return {row[0]: row[1] for row in rows}
 
     def add(self, deal: Deal) -> Deal:
@@ -123,7 +123,7 @@ class DealRepository:
             .limit(1)
         ).first()
 
-    def pipeline_summary(self, azienda_id: UUID | None = None) -> list[PipelineStageSummary]:
+    def pipeline_summary(self, legal_entity_id: UUID | None = None) -> list[PipelineStageSummary]:
         """Deals per stage: count, `Σ valore_previsto`, count without a value, and the
         weighted estimate.
 
@@ -133,7 +133,7 @@ class DealRepository:
         the deal domain tool and the dashboard tool -- which is exactly the duplication
         this slice exists not to introduce.
 
-        `valore_ponderato` is the first of §3's two declared exceptions: a product of two
+        `weighted_value` is the first of §3's two declared exceptions: a product of two
         columns of `deals`, rounded per row and then summed, HALF_UP. Allowed because both
         operands are columns of this one table and the result is not money received. It is
         labelled *stima* in every rendering and never added to revenue.
@@ -144,16 +144,16 @@ class DealRepository:
 
         **Every** configured stage, not only the open ones (2026-09-09): a card that stops
         at the last open stage never says where the work ended up, and «Vinto» and «Perso»
-        are the two places a pipeline exists to reach. Each row carries its `stage_tipo` so
-        the renderer groups the closed ones by that rather than by `nome`, which the user
+        are the two places a pipeline exists to reach. Each row carries its `stage_type` so
+        the renderer groups the closed ones by that rather than by `name`, which the user
         may rename. The closed rows count what sits in the stage *today* and are not
         filtered by any period -- nothing here ever was; the period question is answered by
         `closed_in_period`, above the same card, and one card with two meanings is how two
         figures come to disagree.
         """
         rounded_weight = func.round(
-            func.cast(Deal.valore_previsto, Numeric(20, 6))
-            * func.cast(Deal.probabilita, Numeric(20, 6))
+            func.cast(Deal.expected_value, Numeric(20, 6))
+            * func.cast(Deal.probability, Numeric(20, 6))
             / literal(100),
             2,
         )
@@ -161,64 +161,66 @@ class DealRepository:
             select(
                 PipelineStage.id,
                 PipelineStage.code,
-                PipelineStage.nome,
-                PipelineStage.tipo,
-                PipelineStage.posizione,
-                func.count(Deal.id).label("numero"),
-                func.coalesce(func.sum(Deal.valore_previsto), literal(0)).label("valore"),
+                PipelineStage.name,
+                PipelineStage.type,
+                PipelineStage.position,
+                func.count(Deal.id).label("number"),
+                func.coalesce(func.sum(Deal.expected_value), literal(0)).label("value"),
                 # `Deal.id IS NOT NULL` is load-bearing and not defensive: under the outer
                 # join a stage with no deals still yields one row whose `deals` columns are
                 # all NULL, so a bare `valore_previsto IS NULL` would count that phantom
                 # row and report one value-less deal in a stage that has none.
                 func.count(
-                    case((and_(Deal.id.is_not(None), Deal.valore_previsto.is_(None)), 1))
-                ).label("senza"),
-                func.coalesce(func.sum(rounded_weight), literal(0)).label("ponderato"),
+                    case((and_(Deal.id.is_not(None), Deal.expected_value.is_(None)), 1))
+                ).label("without"),
+                func.coalesce(func.sum(rounded_weight), literal(0)).label("weighted"),
             )
             .select_from(PipelineStage)
             .outerjoin(
                 Deal,
-                # The azienda goes in the join condition, never in a `where` (REB-630):
+                # The legal entity goes in the join condition, never in a `where` (REB-630):
                 # a `where` on a column of the outer side turns the join inner, and a
-                # stage with none of this azienda's deals would vanish instead of
+                # stage with none of this legal entity's deals would vanish instead of
                 # reading zero, which is the one thing the outer join is here for.
                 (Deal.pipeline_stage_id == PipelineStage.id)
                 & Deal.deleted_at.is_(None)
-                & (true() if azienda_id is None else Deal.azienda_id == azienda_id),
+                & (true() if legal_entity_id is None else Deal.legal_entity_id == legal_entity_id),
             )
             .group_by(
                 PipelineStage.id,
                 PipelineStage.code,
-                PipelineStage.nome,
-                PipelineStage.tipo,
-                PipelineStage.posizione,
+                PipelineStage.name,
+                PipelineStage.type,
+                PipelineStage.position,
             )
-            .order_by(PipelineStage.posizione, PipelineStage.id)
+            .order_by(PipelineStage.position, PipelineStage.id)
         )
         return [
             PipelineStageSummary(
                 stage_id=str(row.id),
                 stage_code=row.code,
-                stage_nome=row.nome,
-                stage_tipo=row.tipo,
-                posizione=row.posizione,
-                numero=row.numero,
-                valore_totale=round_money(Decimal(row.valore)),
-                senza_valore=row.senza,
-                valore_ponderato=round_money(Decimal(row.ponderato)),
+                stage_name=row.name,
+                stage_type=row.type,
+                position=row.position,
+                number=row.number,
+                total_value=round_money(Decimal(row.value)),
+                without_value=row.without,
+                weighted_value=round_money(Decimal(row.weighted)),
             )
             for row in self.session.execute(stmt).all()
         ]
 
-    def closed_in_period(self, da: date, a: date, azienda_id: UUID | None = None) -> ClosedInPeriod:
-        """Deals won and lost in the period, by `chiuso_il`.
+    def closed_in_period(
+        self, date_from: date, date_to: date, legal_entity_id: UUID | None = None
+    ) -> ClosedInPeriod:
+        """Deals won and lost in the period, by `closed_at`.
 
-        `chiuso_il` and not the timeline: `move_stage` records the stage *names*, which a
+        `closed_at` and not the timeline: `move_stage` records the stage *names*, which a
         user may rename (residuo R15), so deducing a historical closure would mean matching
         a mutable string. Rows with `chiuso_il IS NULL` are excluded here and counted by
         `unattributable_closures` so the dashboard can declare them.
 
-        `tasso_conversione` is §3's second declared exception: a ratio of two counts of the
+        `conversion_rate` is §3's second declared exception: a ratio of two counts of the
         same rows. It goes through `money.percentage_of` rather than a local division for
         the reason the spec gives -- it is the *same* rule as slice 4 §7.1's margin
         percentage, `None` and never `0.00` on a zero denominator, so it is one rule with
@@ -227,37 +229,39 @@ class DealRepository:
         """
         stmt = (
             select(
-                PipelineStage.tipo,
-                func.count(Deal.id).label("numero"),
-                func.coalesce(func.sum(Deal.valore_previsto), literal(0)).label("valore"),
+                PipelineStage.type,
+                func.count(Deal.id).label("number"),
+                func.coalesce(func.sum(Deal.expected_value), literal(0)).label("value"),
             )
             .join(PipelineStage, PipelineStage.id == Deal.pipeline_stage_id)
             .where(
                 Deal.deleted_at.is_(None),
-                *_azienda_filter(azienda_id),
-                Deal.chiuso_il.is_not(None),
-                Deal.chiuso_il >= da,
-                Deal.chiuso_il <= a,
-                PipelineStage.tipo.in_(("won", "lost")),
+                *_legal_entity_filter(legal_entity_id),
+                Deal.closed_at.is_not(None),
+                Deal.closed_at >= date_from,
+                Deal.closed_at <= date_to,
+                PipelineStage.type.in_(("won", "lost")),
             )
-            .group_by(PipelineStage.tipo)
+            .group_by(PipelineStage.type)
         )
-        by_tipo = {row.tipo: row for row in self.session.execute(stmt).all()}
-        won = by_tipo.get("won")
-        lost = by_tipo.get("lost")
-        vinti = won.numero if won is not None else 0
-        persi = lost.numero if lost is not None else 0
+        by_type = {row.type: row for row in self.session.execute(stmt).all()}
+        won = by_type.get("won")
+        lost = by_type.get("lost")
+        won_count = won.number if won is not None else 0
+        lost_count = lost.number if lost is not None else 0
         return ClosedInPeriod(
-            vinti=vinti,
-            persi=persi,
-            valore_vinto=(round_money(Decimal(won.valore)) if won is not None else Decimal("0.00")),
-            tasso_conversione=percentage_of(Decimal(vinti), Decimal(vinti + persi)),
+            won=won_count,
+            lost=lost_count,
+            won_value=(round_money(Decimal(won.value)) if won is not None else Decimal("0.00")),
+            conversion_rate=percentage_of(Decimal(won_count), Decimal(won_count + lost_count)),
         )
 
-    def expected_closures(self, da: date, a: date, azienda_id: UUID | None = None) -> int:
-        """Open deals whose `data_chiusura_prevista` falls in the window.
+    def expected_closures(
+        self, date_from: date, date_to: date, legal_entity_id: UUID | None = None
+    ) -> int:
+        """Open deals whose `expected_close_date` falls in the window.
 
-        `tipo='open'` only: a deal already won with a future expected date is not an
+        `type='open'` only: a deal already won with a future expected date is not an
         expected closure, it is a stale field on a finished deal.
         """
         return (
@@ -266,20 +270,20 @@ class DealRepository:
                 .join(PipelineStage, PipelineStage.id == Deal.pipeline_stage_id)
                 .where(
                     Deal.deleted_at.is_(None),
-                    *_azienda_filter(azienda_id),
-                    PipelineStage.tipo == "open",
-                    Deal.data_chiusura_prevista.is_not(None),
-                    Deal.data_chiusura_prevista >= da,
-                    Deal.data_chiusura_prevista <= a,
+                    *_legal_entity_filter(legal_entity_id),
+                    PipelineStage.type == "open",
+                    Deal.expected_close_date.is_not(None),
+                    Deal.expected_close_date >= date_from,
+                    Deal.expected_close_date <= date_to,
                 )
             )
             or 0
         )
 
-    def unattributable_closures(self, azienda_id: UUID | None = None) -> int:
-        """Deals in a terminal stage with no `chiuso_il`.
+    def unattributable_closures(self, legal_entity_id: UUID | None = None) -> int:
+        """Deals in a terminal stage with no `closed_at`.
 
-        §4.1: `chiuso_il` is deliberately not backfilled, so every deal closed before
+        §4.1: `closed_at` is deliberately not backfilled, so every deal closed before
         migration 0023 is unattributable to a period. This count is what lets the dashboard
         say "N deal chiusi prima dell'introduzione di questa misura non sono attribuibili a
         un periodo" instead of quietly reporting a conversion rate computed on a subset.
@@ -290,9 +294,9 @@ class DealRepository:
                 .join(PipelineStage, PipelineStage.id == Deal.pipeline_stage_id)
                 .where(
                     Deal.deleted_at.is_(None),
-                    *_azienda_filter(azienda_id),
-                    Deal.chiuso_il.is_(None),
-                    PipelineStage.tipo.in_(("won", "lost")),
+                    *_legal_entity_filter(legal_entity_id),
+                    Deal.closed_at.is_(None),
+                    PipelineStage.type.in_(("won", "lost")),
                 )
             )
             or 0
@@ -338,17 +342,17 @@ class DealRepository:
             # on ILIKE's default. Mirrors CustomerRepository.list/PersonRepository.list
             # exactly.
             like = f"%{escape_like(query.search.lower())}%"
-            stmt = stmt.where(Deal.nome.ilike(like, escape="\\"))
+            stmt = stmt.where(Deal.name.ilike(like, escape="\\"))
         if query.customer_id:
             stmt = stmt.where(Deal.customer_id == query.customer_id)
-        if query.azienda_id:
-            stmt = stmt.where(Deal.azienda_id == query.azienda_id)
+        if query.legal_entity_id:
+            stmt = stmt.where(Deal.legal_entity_id == query.legal_entity_id)
         if query.stage_id:
             stmt = stmt.where(Deal.pipeline_stage_id == query.stage_id)
         if query.custom:
             # JSONB containment, served by the GIN index.
             stmt = stmt.where(Deal.custom_fields.contains(query.custom))
-        if query.fatturato_non_vinto:
+        if query.invoiced_unwon:
             # The drill-through of §6.2's "fatturato ma non vinto" card. Written as
             # `id IN (subquery)` rather than as joins on the outer statement, unlike
             # `DocumentRepository.list`: a deal has *many* invoices, so joining here would
@@ -368,7 +372,7 @@ class DealRepository:
                     .where(*invoiced_not_won_predicate())
                 )
             )
-        if query.da_fatturare:
+        if query.to_invoice:
             # §6.2's "vinto ma da fatturare", same shape and for the same reason: a deal
             # has many time entries. The predicate is the one `count_won_deals_to_invoice`
             # calls, imported rather than restated.

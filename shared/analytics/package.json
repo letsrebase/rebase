@@ -8,14 +8,14 @@
     ".": "./posthog.ts",
     "./browser": "./browser.ts",
     "./consent": "./consent.ts",
-    "./entra-token": "./entra-token.ts",
+    "./verify-token": "./verify-token.ts",
     "./package.json": "./package.json"
   },
   "files": [
     "posthog.ts",
     "browser.ts",
     "consent.ts",
-    "entra-token.ts"
+    "verify-token.ts"
   ],
   "scripts": {
     "lint": "eslint .",

@@ -9,10 +9,10 @@ import { formatDate } from '@/lib/format'
 import { isHttpUrl } from '@/lib/url'
 
 const STATE_WORDS: Record<string, string> = {
-  da_collegare: 'In attesa di essere registrata nel CRM',
-  collegato: 'Registrata nel CRM',
-  errore: 'Non ancora registrata nel CRM',
-  rifiutato: 'Rifiutata dal CRM',
+  to_link: 'In attesa di essere registrata nel CRM',
+  linked: 'Registrata nel CRM',
+  error: 'Non ancora registrata nel CRM',
+  rejected: 'Rifiutata dal CRM',
 }
 
 /** Where a request stands in rebase's CRM (REB-869): its state, the CRM's sentence when it
@@ -25,7 +25,7 @@ export function CrmLink({
   onLink,
   error,
 }: {
-  company: Pick<Company, 'crm_stato' | 'crm_situazione' | 'crm_deal_url' | 'crm_attempted_at'>
+  company: Pick<Company, 'crm_status' | 'crm_situation' | 'crm_deal_url' | 'crm_attempted_at'>
   pending: boolean
   onLink: (dealId?: string) => void
   error: Error | null
@@ -34,7 +34,7 @@ export function CrmLink({
   const [invalid, setInvalid] = useState(false)
   const failure =
     error instanceof ApiError ? error.message : error ? 'Non riesco a collegare la richiesta al CRM.' : null
-  const linked = company.crm_stato === 'collegato'
+  const linked = company.crm_status === 'linked'
 
   function submit(event: FormEvent) {
     event.preventDefault()
@@ -49,19 +49,19 @@ export function CrmLink({
   return (
     <section aria-label="CRM" className="space-y-3 px-6 pb-6">
       <h2 className="text-sm font-medium">CRM</h2>
-      {company.crm_stato === null ? (
+      {company.crm_status === null ? (
         <p className="text-sm text-muted-foreground">
           Richiesta arrivata prima del collegamento: non è nel CRM finché non la registri qui.
         </p>
       ) : (
         <p className="text-sm">
-          <strong>{STATE_WORDS[company.crm_stato]}.</strong>
+          <strong>{STATE_WORDS[company.crm_status]}.</strong>
           {company.crm_attempted_at ? ` Ultimo tentativo il ${formatDate(company.crm_attempted_at)}.` : ''}
         </p>
       )}
-      {company.crm_situazione && (
+      {company.crm_situation && (
         <p role="status" className="text-sm text-muted-foreground">
-          {company.crm_situazione}
+          {company.crm_situation}
         </p>
       )}
       {linked && company.crm_deal_url && isHttpUrl(company.crm_deal_url) && (
@@ -71,7 +71,7 @@ export function CrmLink({
       )}
       {!linked && (
         <Button type="button" size="sm" onClick={() => onLink()} disabled={pending}>
-          {pending ? 'Collego…' : company.crm_stato === null ? 'Registra nel CRM' : 'Riprova'}
+          {pending ? 'Collego…' : company.crm_status === null ? 'Registra nel CRM' : 'Riprova'}
         </Button>
       )}
       <form onSubmit={submit} className="flex flex-wrap items-end gap-2">

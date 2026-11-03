@@ -27,9 +27,9 @@ from rebase_api.deps import (
     get_admin,
     get_card_batches,
     get_model_factory,
-    get_prova_call,
     get_session_opener,
     get_settings,
+    get_test_call,
 )
 from rebase_core.admin_tokens import AdminRead
 from rebase_core.ai_config import AiConfigService
@@ -68,7 +68,7 @@ class StubCall:
             service = AiConfigService(self.session, Settings(_env_file=None))  # type: ignore[call-arg]
             service.record_usage(
                 task=self.task,
-                purpose="prova",
+                purpose="test",
                 provider="anthropic",
                 model="claude-opus-5",
                 input_tokens=10,
@@ -89,12 +89,16 @@ class StubCall:
 
 @pytest.fixture
 def admin(client: TestClient, api_session: Session) -> Iterator[User]:
-    row = User(email="ivan@rebase.it", nome="Ivan", cognome="Sala", role="admin")
+    row = User(email="ivan@rebase.it", first_name="Ivan", last_name="Sala", role="admin")
     api_session.add(row)
     api_session.commit()
     overrides = client.app.dependency_overrides  # type: ignore[attr-defined]
     overrides[get_admin] = lambda: AdminRead(
-        id=row.id, email=row.email, nome=row.nome, attivo=True, created_at=datetime.now(UTC)
+        id=row.id,
+        email=row.email,
+        first_name=row.first_name,
+        active=True,
+        created_at=datetime.now(UTC),
     )
     overrides[get_settings] = lambda: Settings(secrets_key=SECRETS_KEY, _env_file=None)  # type: ignore[call-arg]
     yield row
@@ -117,7 +121,7 @@ def admin(client: TestClient, api_session: Session) -> Iterator[User]:
 @pytest.fixture
 def stub(client: TestClient, api_session: Session) -> dict[str, Any]:
     state: dict[str, Any] = {"fail": False, "record": True}
-    client.app.dependency_overrides[get_prova_call] = lambda: (  # type: ignore[attr-defined]
+    client.app.dependency_overrides[get_test_call] = lambda: (  # type: ignore[attr-defined]
         lambda task: StubCall(api_session, task, fail=state["fail"], record=state["record"])
     )
     return state
@@ -159,7 +163,7 @@ ROUTES = [
             "output_eur_per_mtok": "2",
         },
     ),
-    ("post", f"{BASE}/tasks/card/prova", {}),
+    ("post", f"{BASE}/tasks/card/test", {}),
     ("put", f"{BASE}/sources/github/enabled", {"enabled": True}),
     ("get", f"{BASE}/cards/stale", None),
     ("post", f"{BASE}/cards/regenerate-stale", {"limit": 5}),
@@ -179,11 +183,11 @@ def test_anonymous_gets_401_on_every_route(
 def member(client: TestClient, api_session: Session, sender: RecordingSender) -> Iterator[User]:
     """A signed-in member who is not an admin: a real session through the magic link, with
     `get_admin` not overridden, which is the point."""
-    row = User(email="ada.member@studio.it", nome="Ada", cognome="Lovelace", role="member")
+    row = User(email="ada.member@studio.it", first_name="Ada", last_name="Lovelace", role="member")
     api_session.add(row)
     api_session.commit()
     assert client.post("/api/hub/auth/link", json={"email": row.email}).status_code == 202
-    match = re.search(r"/entra\?t=([A-Za-z0-9_-]+)", sender.sent[-1].text)
+    match = re.search(r"/verify\?t=([A-Za-z0-9_-]+)", sender.sent[-1].text)
     assert match
     assert client.post("/api/hub/auth/enter", json={"token": match.group(1)}).status_code == 200
     assert client.get("/api/hub/me").json()["role"] == "member"
@@ -289,11 +293,11 @@ def test_an_amount_the_columns_cannot_hold_is_a_422_not_a_500(
     assert client.put(f"{BASE}/tasks/card", json=task).status_code == 422
 
 
-def test_prova_returns_answer_latency_cost_with_stub_model(
+def test_test_returns_answer_latency_cost_with_stub_model(
     client: TestClient, admin: User, stub: dict[str, Any]
 ) -> None:
     _price(client)
-    response = client.post(f"{BASE}/tasks/card/prova")
+    response = client.post(f"{BASE}/tasks/card/test")
     assert response.status_code == 200
     body = response.json()
     assert body["answer"] == "ok"
@@ -302,7 +306,7 @@ def test_prova_returns_answer_latency_cost_with_stub_model(
     assert Decimal(body["cost_eur"]) > 0
 
 
-def test_prova_of_the_crm_draft_answers_a_draft_and_drops_an_out_of_bounds_value(
+def test_test_of_the_crm_draft_answers_to_draft_and_drops_an_out_of_bounds_value(
     client: TestClient, admin: User, api_session: Session
 ) -> None:
     """REB-867: «Prova» on `crm_lead` sends an invented request and shows the draft as the
@@ -323,17 +327,17 @@ def test_prova_of_the_crm_draft_answers_a_draft_and_drops_an_out_of_bounds_value
                 cache_read_tokens=0,
                 parsed=request.output_model.model_validate(
                     {
-                        "ruolo": "Sviluppatrice backend",
-                        "giorni_settimana": 9,
-                        "durata_settimane": 12,
-                        "competenze": ["Python", "Docker"],
-                        "sintesi": "Serve una persona per migrare un gestionale.",
+                        "role": "Sviluppatrice backend",
+                        "week_days": 9,
+                        "duration_weeks": 12,
+                        "skills": ["Python", "Docker"],
+                        "profile_summary": "Serve una persona per migrare un gestionale.",
                     }
                 ),
             )
 
-    client.app.dependency_overrides[get_prova_call] = lambda: lambda task: DraftCall()  # type: ignore[attr-defined]
-    body = client.post(f"{BASE}/tasks/crm_lead/prova").json()
+    client.app.dependency_overrides[get_test_call] = lambda: lambda task: DraftCall()  # type: ignore[attr-defined]
+    body = client.post(f"{BASE}/tasks/crm_lead/test").json()
     assert body["error"] is None
     assert body["answer"].splitlines() == [
         "Ruolo: Sviluppatrice backend",
@@ -345,21 +349,21 @@ def test_prova_of_the_crm_draft_answers_a_draft_and_drops_an_out_of_bounds_value
     assert "sviluppatrice backend Python" in seen[0].messages[0].text
 
 
-def test_prova_error_message_has_no_key(
+def test_test_error_message_has_no_key(
     client: TestClient, admin: User, stub: dict[str, Any]
 ) -> None:
     client.put(f"{BASE}/providers/anthropic/key", json={"key": SECRET})
     stub["fail"] = True
-    response = client.post(f"{BASE}/tasks/card/prova")
+    response = client.post(f"{BASE}/tasks/card/test")
     assert response.status_code == 200
     assert response.json()["error"] == "Il modello non risponde in questo momento."
     assert SECRET not in response.text
 
 
-def test_prova_shows_the_cost_of_its_own_call_not_an_earlier_probe(
+def test_test_shows_the_cost_of_its_own_call_not_an_earlier_probe(
     client: TestClient, admin: User, stub: dict[str, Any], api_session: Session
 ) -> None:
-    """A probe whose usage row was lost used to show the cost of the latest `prova` row of
+    """A probe whose usage row was lost used to show the cost of the latest `test` row of
     the task, an earlier probe's: the cost is read from rows written since this call began."""
     client.put(f"{BASE}/providers/anthropic/key", json={"key": SECRET})
     _price(client)
@@ -367,7 +371,7 @@ def test_prova_shows_the_cost_of_its_own_call_not_an_earlier_probe(
         AiUsage(
             at=datetime.now(UTC) - timedelta(hours=1),
             task="card",
-            purpose="prova",
+            purpose="test",
             provider="anthropic",
             model="claude-opus-5",
             priced=True,
@@ -377,16 +381,16 @@ def test_prova_shows_the_cost_of_its_own_call_not_an_earlier_probe(
     api_session.commit()
 
     stub["record"] = False
-    assert client.post(f"{BASE}/tasks/card/prova").json()["cost_eur"] is None
+    assert client.post(f"{BASE}/tasks/card/test").json()["cost_eur"] is None
 
     stub["record"] = True
-    assert Decimal(client.post(f"{BASE}/tasks/card/prova").json()["cost_eur"]) < Decimal("0.5")
+    assert Decimal(client.post(f"{BASE}/tasks/card/test").json()["cost_eur"]) < Decimal("0.5")
 
 
-def test_prova_goes_through_the_real_seam_and_counts_against_cap(
+def test_test_goes_through_the_real_seam_and_counts_against_postal_code(
     client: TestClient, admin: User, api_engine: Engine
 ) -> None:
-    """Only the provider's model is a stub: `get_prova_call` builds the real `AiCall`, so
+    """Only the provider's model is a stub: `get_test_call` builds the real `AiCall`, so
     the usage row has the purpose and the task the wiring gave it, and the cap sees it."""
     overrides = client.app.dependency_overrides  # type: ignore[attr-defined]
     overrides[get_session_opener] = lambda: lambda: closing(Session(api_engine))
@@ -409,7 +413,7 @@ def test_prova_goes_through_the_real_seam_and_counts_against_cap(
     )
     _price(client)
 
-    body = client.post(f"{BASE}/tasks/card/prova").json()
+    body = client.post(f"{BASE}/tasks/card/test").json()
 
     assert body["error"] is None and body["answer"] == "ok"
     assert Decimal(body["cost_eur"]) > 0
@@ -418,7 +422,7 @@ def test_prova_goes_through_the_real_seam_and_counts_against_cap(
     assert Decimal(spent["spent_today_eur"]) > 0
     with Session(api_engine) as check:
         [usage] = check.scalars(select(AiUsage)).all()
-        assert (usage.task, usage.purpose) == ("card", "prova")
+        assert (usage.task, usage.purpose) == ("card", "test")
 
 
 # ---- the sources and the cards that wait for an admin (REB-839) ---------------------------
@@ -464,12 +468,12 @@ def written_cards(admin: User, api_session: Session) -> Iterator[list[Any]]:
     people = []
     for n in range(1, 4):
         data = FreelancerCreate(
-            nome=f"Persona{n}",
-            cognome=f"Cognome{n}",
+            first_name=f"Persona{n}",
+            last_name=f"Cognome{n}",
             email=f"persona{n}@studio.it",
-            tariffa_giornaliera=Decimal("450.00"),
-            posizione="Backend developer",
-            remoto="remoto",
+            daily_rate=Decimal("450.00"),
+            job_title="Backend developer",
+            remote="remote",
         )
         read, _ = FreelancerService(api_session).apply(
             data, text_pdf(f"Persona{n}, backend developer."), "cv.pdf", ""
@@ -498,7 +502,7 @@ def test_stale_cards_lists_the_count_the_cost_and_the_reason(
     assert (body["count"], body["by_reason"]) == (2, {"prompt": 2})
     assert (body["batch_threshold"], body["batch"]) == (10, None)
     assert body["estimated_cost_eur"] is None  # no `card` call recorded yet: never «free»
-    assert sorted(item["nome"] for item in body["items"]) == [
+    assert sorted(item["first_name"] for item in body["items"]) == [
         "Persona1 Cognome1",
         "Persona2 Cognome2",
     ]
@@ -547,7 +551,7 @@ def test_regenerate_stale_writes_the_limit_after_the_response(
     [action] = api_session.scalars(
         select(AdminAction).where(AdminAction.kind == "cards_regenerate")
     )
-    assert action.payload == {"limit": 1, "queued": 1, "fonte": "web", "batch": False}
+    assert action.payload == {"limit": 1, "queued": 1, "source": "web", "batch": False}
     # The start is signed by the admin who clicked, and ended once the card is written.
     assert action.admin_id == admin.id
     [end] = api_session.scalars(select(AdminAction).where(AdminAction.kind == "cards_regenerated"))
@@ -622,7 +626,7 @@ def test_a_start_from_the_threshold_sends_a_batch_and_the_page_reads_it(
     assert action.payload == {
         "limit": 5,
         "queued": 2,
-        "fonte": "web",
+        "source": "web",
         "batch": True,
         "batch_id": str(batch.id),
     }
@@ -658,12 +662,12 @@ def test_the_audit_lists_the_configuration_and_every_regeneration_newest_first(
         "ai_price",
         "ai_key",
     ]
-    assert {entry["admin_nome"] for entry in body} == {"Ivan Sala"}
+    assert {entry["admin_name"] for entry in body} == {"Ivan Sala"}
     assert {entry["entity_type"] for entry in body} == {"ai_config"}
     end, start = body[0]["payload"], body[1]
     assert end["start_action_id"] == start["id"]
     assert (end["written"], end["failed"], end["failures"]) == (2, 0, [])
-    assert start["payload"] == {"limit": 2, "queued": 2, "fonte": "web", "batch": False}
+    assert start["payload"] == {"limit": 2, "queued": 2, "source": "web", "batch": False}
     for private in ("Persona", "Cognome", SECRET):
         assert private not in audit.text
     assert [e["kind"] for e in client.get(f"{BASE}/audit?limit=2").json()] == [

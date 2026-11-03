@@ -23,4 +23,4 @@ def notes_of(session: Session, entity_type: str, entity_id: UUID) -> list[Note]:
 
 
 def texts(session: Session, entity_type: str, entity_id: UUID) -> list[str]:
-    return [note.testo for note in notes_of(session, entity_type, entity_id)]
+    return [note.text for note in notes_of(session, entity_type, entity_id)]

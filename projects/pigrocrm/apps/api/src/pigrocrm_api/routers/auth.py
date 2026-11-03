@@ -167,7 +167,7 @@ class Ack(BaseModel):
     ok: bool = True
 
 
-def _entra_url(origin: str, prefix: str, raw: str) -> str:
+def _verify_url(origin: str, prefix: str, raw: str) -> str:
     return f"{origin}{prefix}/app/verify?t={raw}"
 
 
@@ -234,7 +234,7 @@ def request_link(
         if raw:
             # Under a prefix `settings` are the space's own, and `deps` already gives
             # them a `public_url` that ends with `/<slug>`: nothing to append.
-            links.append((slug, _entra_url(origin, "", raw)))
+            links.append((slug, _verify_url(origin, "", raw)))
     else:
         for owned_slug in _owned_slugs(settings, email):
             # A registry row wearing the root's own name is the root, not a space
@@ -243,7 +243,7 @@ def request_link(
                 continue
             raw = _space_link(settings, owned_slug, email)
             if raw:
-                links.append((owned_slug, _entra_url(origin, f"/{owned_slug}", raw)))
+                links.append((owned_slug, _verify_url(origin, f"/{owned_slug}", raw)))
         # The token is minted only when the root's link may be mailed: a named root
         # always, an unnamed one as the fallback it always was.
         if settings.root_slug or not links:
@@ -251,7 +251,7 @@ def request_link(
             if raw:
                 # The root logs in on the bare page (decision 2026-09-09); its cookies
                 # live at `/`, so the entry page is the bare one too.
-                links.insert(0, (settings.root_slug or "PigroCRM", _entra_url(origin, "", raw)))
+                links.insert(0, (settings.root_slug or "PigroCRM", _verify_url(origin, "", raw)))
     if links:
         background.add_task(sender.send, magic_link_mail(email, links, settings.magic_link_minutes))
     return Ack()
@@ -290,12 +290,12 @@ def enter_with_link(
 
 
 class InviteAccept(BaseModel):
-    """The token, plus `nome` when the peek answered none. Whether a name is needed
+    """The token, plus `name` when the peek answered none. Whether a name is needed
     is the service's knowledge (it reads the row), so that is where it is enforced --
     a schema constraint here could only duplicate the check or get it wrong."""
 
     t: SafeStr = Field(max_length=128)
-    nome: SafeStr | None = Field(default=None, max_length=200)
+    name: SafeStr | None = Field(default=None, max_length=200)
 
 
 @router.get(
@@ -320,10 +320,10 @@ def peek_invite(
     invitation."""
     spend_one(request, scope="invite_peek", per_minute=INVITE_PEEK_REQUESTS_PER_MINUTE)
     # The space as the page shows it: the prefix it is served under, the way
-    # `space_settings` reads `spazio`, with the root's own name where the router knows
+    # `space_settings` reads `space`, with the root's own name where the router knows
     # it (the same fallback `request_link` labels its root link with).
-    spazio = tenant_slug(request) or settings.root_slug or "PigroCRM"
-    return InvitationService(session).peek(t, spazio=spazio)
+    space = tenant_slug(request) or settings.root_slug or "PigroCRM"
+    return InvitationService(session).peek(t, space=space)
 
 
 @router.post(
@@ -348,7 +348,7 @@ def accept_invite(
     the default five a minute: the same posture as `/api/auth/link`, kept in a bucket
     apart so neither credential can starve the other's."""
     spend_one(request, scope="invite_accept")
-    user = InvitationService(session).accept(payload.t, payload.nome)
+    user = InvitationService(session).accept(payload.t, payload.name)
     open_session(response, request, settings, session, user)
     return user
 
@@ -455,6 +455,6 @@ def update_me(data: MeUpdate, actor: ActorDep, session: SessionDep) -> UserRead:
     domain error is translated to the same 401 `me` just above gives.
     """
     try:
-        return UserService(session).update_own_digest(actor, data.digest_settimanale)
+        return UserService(session).update_own_digest(actor, data.weekly_digest)
     except NotFound as exc:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Utente non trovato") from exc

@@ -56,16 +56,16 @@ def clean(api_session: Session) -> Iterator[None]:
     api_session.commit()
 
 
-def _apply(client: TestClient, email: str, nome: str = "Ada") -> None:
+def _apply(client: TestClient, email: str, first_name: str = "Ada") -> None:
     response = client.post(
         "/api/hub/freelancers",
         data={
-            "nome": nome,
-            "cognome": "Lovelace",
+            "first_name": first_name,
+            "last_name": "Lovelace",
             "email": email,
-            "tariffa_giornaliera": "450",
-            "posizione": "Backend developer",
-            "remoto": "remoto",
+            "daily_rate": "450",
+            "job_title": "Backend developer",
+            "remote": "remote",
         },
         files={"cv": ("Ada CV.pdf", PDF, "application/pdf")},
     )
@@ -74,18 +74,18 @@ def _apply(client: TestClient, email: str, nome: str = "Ada") -> None:
 
 def _request_company(client: TestClient, email: str = "wile@acme.it", **extra: object) -> None:
     payload: dict[str, object] = {
-        "nome_azienda": "ACME Srl",
-        "referente_nome": "Wile",
-        "referente_cognome": "E.",
+        "company_name": "ACME Srl",
+        "contact_first_name": "Wile",
+        "contact_last_name": "E.",
         "email": email,
-        "telefono": "+39 345 1234567",
-        "figura_richiesta": "Backend developer",
-        "progetto": "Serve un backend developer per tre mesi, da ottobre.",
-        "periodo_da": "2026-10-01",
-        "durata": "3 mesi",
-        "budget_giornaliero": "500",
-        "remoto": "remoto",
-        "numero_risorse": 1,
+        "phone": "+39 345 1234567",
+        "requested_role": "Backend developer",
+        "project": "Serve un backend developer per tre mesi, da ottobre.",
+        "period_from": "2026-10-01",
+        "duration": "3 mesi",
+        "daily_budget": "500",
+        "remote": "remote",
+        "headcount": 1,
     }
     payload.update(extra)
     response = client.post("/api/hub/companies", json=payload)
@@ -96,7 +96,7 @@ def _enter(
     client: TestClient, sender: RecordingSender, email: str
 ) -> tuple[dict[str, object], httpx.Response]:
     assert client.post("/api/hub/auth/link", json={"email": email}).status_code == 202
-    match = re.search(r"/entra\?t=([A-Za-z0-9_-]+)", sender.sent[-1].text)
+    match = re.search(r"/verify\?t=([A-Za-z0-9_-]+)", sender.sent[-1].text)
     assert match
     entered = client.post("/api/hub/auth/enter", json={"token": match.group(1)})
     assert entered.status_code == 200, entered.text
@@ -120,7 +120,7 @@ def test_a_link_asked_with_a_campaign_writes_it_on_the_login(
     unknown = client.post("/api/hub/auth/link", json={"email": "nessuno@studio.it", "utm": utm})
     assert known.status_code == unknown.status_code == 202
     assert known.json() == unknown.json()
-    match = re.search(r"/entra\?t=([A-Za-z0-9_-]+)", sender.sent[-1].text)
+    match = re.search(r"/verify\?t=([A-Za-z0-9_-]+)", sender.sent[-1].text)
     assert match
     assert client.post("/api/hub/auth/enter", json={"token": match.group(1)}).status_code == 200
 
@@ -149,7 +149,7 @@ def test_a_malformed_campaign_on_the_link_request_is_a_422(
 ) -> None:
     # The same bounds the wizards' `SignupUtm` holds, reused as it is: a key it does not
     # know is ignored there too, so a stale page never loses a login over one.
-    for utm in ({"utm_campaign": "x" * 201}, {"origine": "Non Uno Slug"}):
+    for utm in ({"utm_campaign": "x" * 201}, {"origin": "Non Uno Slug"}):
         response = client.post("/api/hub/auth/link", json={"email": "ada@studio.it", "utm": utm})
         assert response.status_code == 422, (utm, response.text)
     assert sender.sent == []
@@ -192,7 +192,7 @@ def test_the_link_request_answers_the_same_whether_the_address_applied_or_not(
     assert known.status_code == unknown.status_code == 202
     assert known.json() == unknown.json() == {"ok": True}
     assert [mail.to for mail in sender.sent] == ["ada@studio.it"]
-    assert "/entra?t=" in sender.sent[0].text
+    assert "/verify?t=" in sender.sent[0].text
 
 
 def _tight_budget(client: TestClient, api_session: Session, room: int) -> None:
@@ -267,17 +267,17 @@ def test_one_person_asking_again_and_again_stops_at_their_own_cap_in_silence(
     assert "daily cap" in caplog.text and "ada@studio.it" not in caplog.text
 
 
-def _reapply(client: TestClient, email: str, nome: str) -> int:
+def _reapply(client: TestClient, email: str, first_name: str) -> int:
     """An application, without a CV, from an address that is already on file."""
     return client.post(
         "/api/hub/freelancers",
         data={
-            "nome": nome,
-            "cognome": "Lovelace",
+            "first_name": first_name,
+            "last_name": "Lovelace",
             "email": email,
-            "tariffa_giornaliera": "450",
-            "posizione": "Backend developer",
-            "remoto": "remoto",
+            "daily_rate": "450",
+            "job_title": "Backend developer",
+            "remote": "remote",
         },
     ).status_code
 
@@ -304,7 +304,7 @@ def test_the_link_enters_once_sets_the_member_cookie_and_opens_only_the_members_
 
     profile, entered = _enter(client, sender, "ada@studio.it")
     assert profile["email"] == "ada@studio.it"
-    assert "stato" not in profile and "note" not in profile and "utm_source" not in profile
+    assert "status" not in profile and "note" not in profile and "utm_source" not in profile
     cookie = client.cookies.get("rebase_user")
     assert cookie
     set_cookies = _set_cookies(entered)
@@ -317,10 +317,10 @@ def test_the_link_enters_once_sets_the_member_cookie_and_opens_only_the_members_
     # The name before REB-668 is dropped in the same answer, so a browser that still holds
     # it does not keep two cookies for one session.
     assert any(line.startswith("orbiters_user=") and "max-age=0" in line for line in set_cookies)
-    assert client.get("/api/hub/me").json()["nome"] == "Ada"
+    assert client.get("/api/hub/me").json()["first_name"] == "Ada"
 
     # The same link a second time opens nothing.
-    match = re.search(r"/entra\?t=([A-Za-z0-9_-]+)", sender.sent[-1].text)
+    match = re.search(r"/verify\?t=([A-Za-z0-9_-]+)", sender.sent[-1].text)
     assert match
     again = client.post("/api/hub/auth/enter", json={"token": match.group(1)})
     assert again.status_code == 401
@@ -369,7 +369,7 @@ def test_a_session_opened_under_the_old_cookie_name_stays_signed_in_and_moves_to
 
     me = client.get("/api/hub/me")
     assert me.status_code == 200
-    assert me.json()["nome"] == "Ada"
+    assert me.json()["first_name"] == "Ada"
     moved = _set_cookies(me)
     adopted = next(line for line in moved if line.startswith("rebase_user="))
     assert adopted.startswith(f"rebase_user={raw.lower()};")  # lower-cased with the line
@@ -380,14 +380,14 @@ def test_a_session_opened_under_the_old_cookie_name_stays_signed_in_and_moves_to
     client.cookies.clear()
     client.cookies.set("rebase_user", raw)
     again = client.get("/api/hub/me")
-    assert again.status_code == 200 and again.json()["nome"] == "Ada"
+    assert again.status_code == 200 and again.json()["first_name"] == "Ada"
     assert _set_cookies(again) == []
 
 
 def test_an_admin_session_under_the_old_cookie_name_still_opens_the_admin_routes(
     client: TestClient, sender: RecordingSender, api_session: Session, clean: None
 ) -> None:
-    api_session.add(User(email=ADMIN_EMAIL, nome="Ivan", cognome="", role="admin"))
+    api_session.add(User(email=ADMIN_EMAIL, first_name="Ivan", last_name="", role="admin"))
     api_session.commit()
     _enter(client, sender, ADMIN_EMAIL)
     assert client.get("/api/hub/freelancers").status_code == 200
@@ -406,7 +406,7 @@ def test_the_new_cookie_name_wins_when_a_browser_sends_both(
     client.cookies.set("orbiters_user", "a-token-that-opens-nothing")
 
     me = client.get("/api/hub/me")
-    assert me.status_code == 200 and me.json()["nome"] == "Ada"
+    assert me.status_code == 200 and me.json()["first_name"] == "Ada"
     assert _set_cookies(me) == []
 
 
@@ -422,7 +422,7 @@ def test_a_stale_new_cookie_does_not_hide_a_live_session_under_the_old_name(
     client.cookies.set("rebase_user", "a-token-that-opens-nothing")
 
     me = client.get("/api/hub/me")
-    assert me.status_code == 200 and me.json()["nome"] == "Ada"
+    assert me.status_code == 200 and me.json()["first_name"] == "Ada"
     assert any(line.startswith(f"rebase_user={raw.lower()};") for line in _set_cookies(me))
 
 
@@ -492,12 +492,12 @@ def test_a_cv_filename_outside_latin_1_still_downloads_instead_of_500(
     response = client.post(
         "/api/hub/freelancers",
         data={
-            "nome": "Cheng",
-            "cognome": "Wei",
+            "first_name": "Cheng",
+            "last_name": "Wei",
             "email": "cheng@studio.it",
-            "tariffa_giornaliera": "450",
-            "posizione": "Backend developer",
-            "remoto": "remoto",
+            "daily_rate": "450",
+            "job_title": "Backend developer",
+            "remote": "remote",
         },
         files={"cv": ("简历📄.pdf", PDF, "application/pdf")},
     )
@@ -522,12 +522,12 @@ def test_an_accented_cv_filename_keeps_its_real_name_in_filename_star(
     response = client.post(
         "/api/hub/freelancers",
         data={
-            "nome": "Niccolò",
-            "cognome": "Forlì",
+            "first_name": "Niccolò",
+            "last_name": "Forlì",
             "email": "niccolo@studio.it",
-            "tariffa_giornaliera": "450",
-            "posizione": "Backend developer",
-            "remoto": "remoto",
+            "daily_rate": "450",
+            "job_title": "Backend developer",
+            "remote": "remote",
         },
         files={"cv": ("Niccolò Forlì.pdf", PDF, "application/pdf")},
     )
@@ -614,12 +614,12 @@ def test_a_member_changes_their_answers_and_the_admin_sees_the_comment(
     refused = client.patch(
         "/api/hub/me",
         json={
-            "nome": "Ada",
-            "cognome": "Lovelace",
+            "first_name": "Ada",
+            "last_name": "Lovelace",
             "linkedin_url": "https://example.com/in/ada",
-            "tariffa_giornaliera": "500",
-            "posizione": "Backend developer",
-            "remoto": "remoto",
+            "daily_rate": "500",
+            "job_title": "Backend developer",
+            "remote": "remote",
             "links": [],
         },
     )
@@ -629,17 +629,17 @@ def test_a_member_changes_their_answers_and_the_admin_sees_the_comment(
     changed = client.patch(
         "/api/hub/me",
         json={
-            "nome": "Ada",
-            "cognome": "Lovelace",
+            "first_name": "Ada",
+            "last_name": "Lovelace",
             "linkedin_url": None,
-            "tariffa_giornaliera": "500",
-            "posizione": "Staff engineer",
-            "remoto": "ibrido",
+            "daily_rate": "500",
+            "job_title": "Staff engineer",
+            "remote": "hybrid",
             "links": ["https://github.com/ada"],
         },
     )
     assert changed.status_code == 200, changed.text
-    assert changed.json()["posizione"] == "Staff engineer"
+    assert changed.json()["job_title"] == "Staff engineer"
 
     new_pdf = PDF + b"\n% v2\n"
     replaced = client.put(
@@ -654,7 +654,7 @@ def test_a_member_changes_their_answers_and_the_admin_sees_the_comment(
     # test about the admin's view of the thread, not about the rate limit's budget.
 
     # The admin reads the thread the member wrote into.
-    api_session.add(User(email=ADMIN_EMAIL, nome="Ivan", cognome="", role="admin"))
+    api_session.add(User(email=ADMIN_EMAIL, first_name="Ivan", last_name="", role="admin"))
     api_session.commit()
     # Log the member out first, so the freelancer thread below is read as the admin,
     # not as Ada still holding the earlier session; REB-278's unified identity puts
@@ -664,14 +664,14 @@ def test_a_member_changes_their_answers_and_the_admin_sees_the_comment(
     _enter(client, sender, ADMIN_EMAIL)
     assert client.get("/api/hub/me").json()["role"] == "admin"
     listed = client.get("/api/hub/freelancers").json()["items"]
-    assert len(listed) == 1 and listed[0]["posizione"] == "Staff engineer"
+    assert len(listed) == 1 and listed[0]["job_title"] == "Staff engineer"
     thread = client.get(f"/api/hub/freelancers/{listed[0]['id']}/notes").json()
-    assert [comment["testo"] for comment in thread] == [
+    assert [comment["text"] for comment in thread] == [
         "CV aggiornato dalla persona",
         "Profilo aggiornato dalla persona: tariffa giornaliera, posizione, modalità di lavoro, "
         "link",
     ]
-    assert thread[0]["autore"] == "Ada Lovelace"
+    assert thread[0]["author"] == "Ada Lovelace"
 
 
 def test_replacing_the_cv_schedules_the_card_write(
@@ -700,9 +700,9 @@ def test_replacing_the_cv_schedules_the_card_write(
 def test_a_member_never_sees_another_members_row(
     client: TestClient, sender: RecordingSender, clean: None
 ) -> None:
-    _apply(client, "ada@studio.it", nome="Ada")
-    _apply(client, "grace@studio.it", nome="Grace")
-    assert _enter(client, sender, "grace@studio.it")[0]["nome"] == "Grace"
+    _apply(client, "ada@studio.it", first_name="Ada")
+    _apply(client, "grace@studio.it", first_name="Grace")
+    assert _enter(client, sender, "grace@studio.it")[0]["first_name"] == "Grace"
     assert client.get("/api/hub/me").json()["email"] == "grace@studio.it"
     # There is no route that takes an id: the only row reachable is the session's.
     assert client.get("/api/hub/me/00000000-0000-7000-8000-000000000000").status_code == 404
@@ -713,13 +713,13 @@ def test_a_member_never_sees_another_members_row(
 
 def _company_answers(**extra: object) -> dict[str, object]:
     answers: dict[str, object] = {
-        "progetto": "Serve un backend developer per tre mesi, da ottobre.",
-        "periodo_da": "2026-10-01",
-        "durata": "4 mesi",
-        "budget_giornaliero": "600",
-        "remoto": "remoto",
-        "numero_risorse": 1,
-        "figura_richiesta": "Backend developer",
+        "project": "Serve un backend developer per tre mesi, da ottobre.",
+        "period_from": "2026-10-01",
+        "duration": "4 mesi",
+        "daily_budget": "600",
+        "remote": "remote",
+        "headcount": 1,
+        "requested_role": "Backend developer",
     }
     answers.update(extra)
     return answers
@@ -728,83 +728,83 @@ def _company_answers(**extra: object) -> dict[str, object]:
 def test_the_member_area_lists_every_request_newest_first_without_the_admins_words(
     client: TestClient, sender: RecordingSender, api_session: Session, clean: None
 ) -> None:
-    _request_company(client, durata="1 mese", figura_richiesta="Data engineer")
-    _request_company(client, durata="3 mesi")
-    api_session.execute(text("UPDATE companies SET stato = 'in_corso'"))
+    _request_company(client, duration="1 mese", requested_role="Data engineer")
+    _request_company(client, duration="3 mesi")
+    api_session.execute(text("UPDATE companies SET status = 'in_progress'"))
     api_session.execute(
         text(
-            "INSERT INTO notes (id, entity_type, entity_id, testo, autore) "
+            "INSERT INTO notes (id, entity_type, entity_id, text, author) "
             "SELECT gen_random_uuid(), 'company', id, 'da richiamare', 'Ivan' FROM companies"
         )
     )
     api_session.commit()
     profile, _ = _enter(client, sender, "wile@acme.it")
 
-    assert profile["ha_azienda"] is True
-    assert [item["durata"] for item in profile["richieste"]] == ["3 mesi", "1 mese"]  # type: ignore[index, union-attr]
-    older = profile["richieste"][1]  # type: ignore[index]
-    assert older["figura_richiesta"] == "Data engineer" and older["budget_giornaliero"] == "500.00"
+    assert profile["has_company"] is True
+    assert [item["duration"] for item in profile["requests"]] == ["3 mesi", "1 mese"]  # type: ignore[index, union-attr]
+    older = profile["requests"][1]  # type: ignore[index]
+    assert older["requested_role"] == "Data engineer" and older["daily_budget"] == "500.00"
     assert set(older) == {
         "id",
-        "figura_richiesta",
-        "progetto",
-        "periodo_da",
-        "durata",
-        "budget_giornaliero",
-        "remoto",
-        "giorni_presenza",
-        "numero_risorse",
+        "requested_role",
+        "project",
+        "period_from",
+        "duration",
+        "daily_budget",
+        "remote",
+        "onsite_days",
+        "headcount",
         "created_at",
     }
     # The flattened latest-row fields are gone for good.
-    assert "progetto" not in profile and "azienda_remoto" not in profile
+    assert "project" not in profile and "azienda_remoto" not in profile
 
 
 def test_a_company_contact_edits_their_most_recent_request(
     client: TestClient, sender: RecordingSender, api_session: Session, clean: None
 ) -> None:
-    _request_company(client, durata="1 mese")
-    _request_company(client, durata="3 mesi")
+    _request_company(client, duration="1 mese")
+    _request_company(client, duration="3 mesi")
     profile, _ = _enter(client, sender, "wile@acme.it")
-    assert profile["ha_azienda"] is True
-    assert profile["richieste"][0]["durata"] == "3 mesi"  # type: ignore[index]
+    assert profile["has_company"] is True
+    assert profile["requests"][0]["duration"] == "3 mesi"  # type: ignore[index]
 
-    refused = client.patch("/api/hub/me/company", json=_company_answers(stato="chiuso"))
+    refused = client.patch("/api/hub/me/company", json=_company_answers(status="closed"))
     assert refused.status_code == 422
-    assert refused.json()["detail"][0]["loc"][-1] == "stato"
+    assert refused.json()["detail"][0]["loc"][-1] == "status"
 
     changed = client.patch("/api/hub/me/company", json=_company_answers())
     assert changed.status_code == 200, changed.text
-    assert [item["durata"] for item in changed.json()["richieste"]] == ["4 mesi", "1 mese"]
+    assert [item["duration"] for item in changed.json()["requests"]] == ["4 mesi", "1 mese"]
 
     # The admin reads the comment the referente left, and the older request stands.
     # `POST /auth/link` and `POST /auth/enter` both spend from the public bucket this
     # test's two `_request_company` calls already drew on; a fresh minute here keeps
     # the test about the thread, not about the rate limit's budget.
-    api_session.add(User(email=ADMIN_EMAIL, nome="Ivan", cognome="", role="admin"))
+    api_session.add(User(email=ADMIN_EMAIL, first_name="Ivan", last_name="", role="admin"))
     api_session.commit()
     assert client.post("/api/hub/me/logout").status_code == 204
     _enter(client, sender, ADMIN_EMAIL)
     listed = client.get("/api/hub/companies").json()["items"]
     assert len(listed) == 2
-    newest = next(item for item in listed if item["durata"] == "4 mesi")
+    newest = next(item for item in listed if item["duration"] == "4 mesi")
     thread = client.get(f"/api/hub/companies/{newest['id']}/notes").json()
-    assert [comment["testo"] for comment in thread] == [
+    assert [comment["text"] for comment in thread] == [
         "Richiesta aggiornata dal referente: durata, budget giornaliero"
     ]
-    assert (thread[0]["autore"], thread[0]["fonte"]) == ("Wile E.", "persona")
-    assert thread[0]["modificabile"] is False
-    older = next(item for item in listed if item["durata"] == "1 mese")
-    assert older["budget_giornaliero"] == "500.00"
+    assert (thread[0]["author"], thread[0]["source"]) == ("Wile E.", "person")
+    assert thread[0]["editable"] is False
+    older = next(item for item in listed if item["duration"] == "1 mese")
+    assert older["daily_budget"] == "500.00"
 
 
 def test_a_company_contact_edits_an_older_request_by_its_id(
     client: TestClient, sender: RecordingSender, api_session: Session, clean: None
 ) -> None:
-    _request_company(client, durata="1 mese")
-    _request_company(client, durata="3 mesi")
+    _request_company(client, duration="1 mese")
+    _request_company(client, duration="3 mesi")
     profile, _ = _enter(client, sender, "wile@acme.it")
-    newest, older = profile["richieste"]  # type: ignore[misc]
+    newest, older = profile["requests"]  # type: ignore[misc]
 
     refused = client.patch(
         f"/api/hub/me/company/{older['id']}", json=_company_answers(note="scritta da me")
@@ -812,20 +812,20 @@ def test_a_company_contact_edits_an_older_request_by_its_id(
     assert refused.status_code == 422
 
     changed = client.patch(
-        f"/api/hub/me/company/{older['id']}", json=_company_answers(durata="8 mesi")
+        f"/api/hub/me/company/{older['id']}", json=_company_answers(duration="8 mesi")
     )
     assert changed.status_code == 200, changed.text
-    assert [(item["id"], item["durata"]) for item in changed.json()["richieste"]] == [
+    assert [(item["id"], item["duration"]) for item in changed.json()["requests"]] == [
         (newest["id"], "3 mesi"),
         (older["id"], "8 mesi"),
     ]
 
-    api_session.add(User(email=ADMIN_EMAIL, nome="Ivan", cognome="", role="admin"))
+    api_session.add(User(email=ADMIN_EMAIL, first_name="Ivan", last_name="", role="admin"))
     api_session.commit()
     assert client.post("/api/hub/me/logout").status_code == 204
     _enter(client, sender, ADMIN_EMAIL)
     thread = client.get(f"/api/hub/companies/{older['id']}/notes").json()
-    assert [comment["testo"] for comment in thread] == [
+    assert [comment["text"] for comment in thread] == [
         "Richiesta aggiornata dal referente: durata, budget giornaliero"
     ]
     assert client.get(f"/api/hub/companies/{newest['id']}/notes").json() == []
@@ -834,9 +834,9 @@ def test_a_company_contact_edits_an_older_request_by_its_id(
 def test_a_request_by_id_is_a_404_for_somebody_elses_and_for_a_deleted_one(
     client: TestClient, sender: RecordingSender, api_session: Session, clean: None
 ) -> None:
-    _request_company(client, email="road@runner.it", durata="7 mesi")
-    _request_company(client, email="wile@acme.it", durata="1 mese")
-    _request_company(client, email="wile@acme.it", durata="3 mesi")
+    _request_company(client, email="road@runner.it", duration="7 mesi")
+    _request_company(client, email="wile@acme.it", duration="1 mese")
+    _request_company(client, email="wile@acme.it", duration="3 mesi")
     theirs = api_session.execute(
         text(
             "SELECT c.id FROM companies c JOIN users u ON u.id = c.user_id "
@@ -844,7 +844,7 @@ def test_a_request_by_id_is_a_404_for_somebody_elses_and_for_a_deleted_one(
         )
     ).scalar_one()
     profile, _ = _enter(client, sender, "wile@acme.it")
-    newest, older = profile["richieste"]  # type: ignore[misc]
+    newest, older = profile["requests"]  # type: ignore[misc]
 
     stranger = client.patch(f"/api/hub/me/company/{theirs}", json=_company_answers())
     assert stranger.status_code == 404
@@ -859,31 +859,31 @@ def test_a_request_by_id_is_a_404_for_somebody_elses_and_for_a_deleted_one(
     api_session.commit()
     deleted = client.patch(f"/api/hub/me/company/{newest['id']}", json=_company_answers())
     assert deleted.status_code == 404
-    assert [item["id"] for item in client.get("/api/hub/me").json()["richieste"]] == [older["id"]]
+    assert [item["id"] for item in client.get("/api/hub/me").json()["requests"]] == [older["id"]]
 
     untouched = api_session.execute(
-        text("SELECT durata FROM companies WHERE id = :id"), {"id": theirs}
+        text("SELECT duration FROM companies WHERE id = :id"), {"id": theirs}
     ).scalar_one()
     assert untouched == "7 mesi"
 
 
-def test_a_member_with_no_company_gets_ha_azienda_false_and_a_404_on_edit(
+def test_to_member_with_no_company_gets_has_company_false_and_to_404_on_edit(
     client: TestClient, sender: RecordingSender, clean: None
 ) -> None:
     _apply(client, "ada@studio.it")
     profile, _ = _enter(client, sender, "ada@studio.it")
-    assert profile["ha_azienda"] is False and profile["richieste"] == []
+    assert profile["has_company"] is False and profile["requests"] == []
 
     refused = client.patch(
         "/api/hub/me/company",
         json={
-            "progetto": "Un progetto qualsiasi abbastanza lungo da passare",
-            "periodo_da": "2026-10-01",
-            "durata": "3 mesi",
-            "budget_giornaliero": "500",
-            "remoto": "remoto",
-            "numero_risorse": 1,
-            "figura_richiesta": "Backend developer",
+            "project": "Un progetto qualsiasi abbastanza lungo da passare",
+            "period_from": "2026-10-01",
+            "duration": "3 mesi",
+            "daily_budget": "500",
+            "remote": "remote",
+            "headcount": 1,
+            "requested_role": "Backend developer",
         },
     )
     assert refused.status_code == 404
@@ -895,40 +895,40 @@ def test_a_member_with_no_company_gets_ha_azienda_false_and_a_404_on_edit(
 def test_a_company_contact_files_an_additional_request(
     client: TestClient, sender: RecordingSender, api_session: Session, clean: None
 ) -> None:
-    _request_company(client, durata="1 mese")
+    _request_company(client, duration="1 mese")
     profile, _ = _enter(client, sender, "wile@acme.it")
-    assert profile["ha_azienda"] is True and profile["richieste"][0]["durata"] == "1 mese"  # type: ignore[index]
+    assert profile["has_company"] is True and profile["requests"][0]["duration"] == "1 mese"  # type: ignore[index]
 
     created = client.post(
         "/api/hub/me/company",
         json={
-            "progetto": "Serve un data engineer per un progetto di sei mesi.",
-            "periodo_da": "2027-01-15",
-            "durata": "6 mesi",
-            "budget_giornaliero": "650",
-            "remoto": "ibrido",
-            "giorni_presenza": 2,
-            "numero_risorse": 2,
-            "figura_richiesta": "Data engineer",
+            "project": "Serve un data engineer per un progetto di sei mesi.",
+            "period_from": "2027-01-15",
+            "duration": "6 mesi",
+            "daily_budget": "650",
+            "remote": "hybrid",
+            "onsite_days": 2,
+            "headcount": 2,
+            "requested_role": "Data engineer",
         },
     )
     assert created.status_code == 201, created.text
     body = created.json()
-    assert body["ha_azienda"] is True
-    assert [item["durata"] for item in body["richieste"]] == ["6 mesi", "1 mese"]
-    assert body["richieste"][0]["figura_richiesta"] == "Data engineer"
+    assert body["has_company"] is True
+    assert [item["duration"] for item in body["requests"]] == ["6 mesi", "1 mese"]
+    assert body["requests"][0]["requested_role"] == "Data engineer"
 
     # An admin sees two rows, the same company's name on both, the older untouched.
-    api_session.add(User(email=ADMIN_EMAIL, nome="Ivan", cognome="", role="admin"))
+    api_session.add(User(email=ADMIN_EMAIL, first_name="Ivan", last_name="", role="admin"))
     api_session.commit()
     assert client.post("/api/hub/me/logout").status_code == 204
     _enter(client, sender, ADMIN_EMAIL)
     listed = client.get("/api/hub/companies").json()["items"]
-    matching = [item for item in listed if item["nome_azienda"] == "ACME Srl"]
+    matching = [item for item in listed if item["company_name"] == "ACME Srl"]
     assert len(matching) == 2
-    newest = next(item for item in matching if item["durata"] == "6 mesi")
-    older = next(item for item in matching if item["durata"] == "1 mese")
-    assert newest["referente"] == older["referente"] == "Wile E."
+    newest = next(item for item in matching if item["duration"] == "6 mesi")
+    older = next(item for item in matching if item["duration"] == "1 mese")
+    assert newest["contact_person"] == older["contact_person"] == "Wile E."
     assert newest["utm_source"] is None
 
 
@@ -936,13 +936,13 @@ def test_creating_a_company_request_needs_a_session(client: TestClient, clean: N
     unauthenticated = client.post(
         "/api/hub/me/company",
         json={
-            "progetto": "Un progetto qualsiasi abbastanza lungo da passare",
-            "periodo_da": "2026-10-01",
-            "durata": "3 mesi",
-            "budget_giornaliero": "500",
-            "remoto": "remoto",
-            "numero_risorse": 1,
-            "figura_richiesta": "Backend developer",
+            "project": "Un progetto qualsiasi abbastanza lungo da passare",
+            "period_from": "2026-10-01",
+            "duration": "3 mesi",
+            "daily_budget": "500",
+            "remote": "remote",
+            "headcount": 1,
+            "requested_role": "Backend developer",
         },
     )
     assert unauthenticated.status_code == 401
@@ -956,13 +956,13 @@ def test_creating_a_company_request_with_no_existing_one_is_a_404(
     refused = client.post(
         "/api/hub/me/company",
         json={
-            "progetto": "Un progetto qualsiasi abbastanza lungo da passare",
-            "periodo_da": "2026-10-01",
-            "durata": "3 mesi",
-            "budget_giornaliero": "500",
-            "remoto": "remoto",
-            "numero_risorse": 1,
-            "figura_richiesta": "Backend developer",
+            "project": "Un progetto qualsiasi abbastanza lungo da passare",
+            "period_from": "2026-10-01",
+            "duration": "3 mesi",
+            "daily_budget": "500",
+            "remote": "remote",
+            "headcount": 1,
+            "requested_role": "Backend developer",
         },
     )
     assert refused.status_code == 404
@@ -980,38 +980,38 @@ def test_a_member_completes_the_card_an_admin_drafted(
     from rebase_core.signup_schemas import SignupCreate
 
     signup = SignupService(api_session).subscribe(
-        SignupCreate(email="ada@studio.it", nome="Ada", cognome="Lovelace")
+        SignupCreate(email="ada@studio.it", first_name="Ada", last_name="Lovelace")
     )
-    admin = User(email="claude@rebase.it", nome="Claude", cognome="", role="admin")
+    admin = User(email="claude@rebase.it", first_name="Claude", last_name="", role="admin")
     api_session.add(admin)
     api_session.commit()
     FreelancerService(api_session).draft_from_signup(
         signup.id,
-        FreelancerDraft(nome="Ada", cognome="Lovelace", fonti=["https://ada.dev"]),
+        FreelancerDraft(first_name="Ada", last_name="Lovelace", sources=["https://ada.dev"]),
         admin.id,
         "web",
     )
     profile, _ = _enter(client, sender, "ada@studio.it")
-    assert profile["completa"] is False and profile["cv_filename"] is None
+    assert profile["complete"] is False and profile["cv_filename"] is None
     assert client.get("/api/hub/me/cv").status_code == 404
 
     answered = client.patch(
         "/api/hub/me",
         json={
-            "nome": "Ada",
-            "cognome": "Lovelace",
+            "first_name": "Ada",
+            "last_name": "Lovelace",
             "linkedin_url": None,
-            "tariffa_giornaliera": "500",
-            "posizione": "CTO",
-            "remoto": "ibrido",
+            "daily_rate": "500",
+            "job_title": "CTO",
+            "remote": "hybrid",
             "links": [],
         },
     )
     assert answered.status_code == 200, answered.text
-    assert answered.json()["completa"] is False
+    assert answered.json()["complete"] is False
     with_cv = client.put("/api/hub/me/cv", files={"cv": ("Ada CV.pdf", PDF, "application/pdf")})
     assert with_cv.status_code == 200, with_cv.text
-    assert with_cv.json()["completa"] is True
+    assert with_cv.json()["complete"] is True
     assert client.get("/api/hub/me/cv").status_code == 200
     api_session.execute(text("DELETE FROM signups"))
     api_session.commit()
@@ -1025,19 +1025,19 @@ def test_a_login_shows_up_on_the_admin_side(
     assert client.post("/api/hub/me/logout").status_code == 204
     # The session is gone; the login stays.
     assert client.get("/api/hub/logins").status_code == 401
-    api_session.add(User(email=ADMIN_EMAIL, nome="Ivan", cognome="", role="admin"))
+    api_session.add(User(email=ADMIN_EMAIL, first_name="Ivan", last_name="", role="admin"))
     api_session.commit()
     _enter(client, sender, ADMIN_EMAIL)
     stats = client.get("/api/hub/logins").json()
     # The admin's own entry is a login too, since REB-278 a login is for any
     # signed-in person, not only a freelancer with a card.
-    assert (stats["totale"], stats["membri"], stats["membri_totali"]) == (2, 2, 1)
-    assert stats["recenti"][0]["email"] == ADMIN_EMAIL
-    assert stats["recenti"][1]["email"] == "ada@studio.it"
+    assert (stats["total"], stats["members"], stats["total_members"]) == (2, 2, 1)
+    assert stats["recent"][0]["email"] == ADMIN_EMAIL
+    assert stats["recent"][1]["email"] == "ada@studio.it"
     card = client.get("/api/hub/freelancers").json()["items"][0]
-    assert card["accessi"] == 1 and card["ultimo_accesso"] is not None
+    assert card["logins"] == 1 and card["last_access"] is not None
     detail = client.get(f"/api/hub/freelancers/{card['id']}").json()
-    assert detail["accessi"] == 1
+    assert detail["logins"] == 1
 
 
 # --- what PigroCRM may ask (ORB-173) -------------------------------------------------
@@ -1089,17 +1089,17 @@ def test_the_member_lookup_names_a_member_and_says_no_to_anyone_else(
 
     member = _ask(client, "  ada@studio.IT ", Authorization=bearer)
     assert member.status_code == 200, member.text
-    assert member.json() == {"membro": True, "nome": "Ada", "cognome": "Lovelace"}
+    assert member.json() == {"member": True, "first_name": "Ada", "last_name": "Lovelace"}
 
     unknown = _ask(client, "nessuno@example.org", Authorization=bearer)
     assert unknown.status_code == 200, unknown.text
-    assert unknown.json() == {"membro": False, "nome": None, "cognome": None}
+    assert unknown.json() == {"member": False, "first_name": None, "last_name": None}
 
     # Not an address at all: still a `false`, the CRM decides what to make of the input.
     assert _ask(client, "non-una-mail", Authorization=bearer).json() == {
-        "membro": False,
-        "nome": None,
-        "cognome": None,
+        "member": False,
+        "first_name": None,
+        "last_name": None,
     }
     # No body, or the address in the query string instead: a 422, never a lookup.
     assert client.post(LOOKUP, headers={"Authorization": bearer}).status_code == 422
@@ -1118,17 +1118,17 @@ def test_a_second_request_from_the_member_area_is_queued_for_the_crm(
     clean: None,
     crm_filings: list[UUID],
 ) -> None:
-    """REB-868: the member's additional request is written `da_collegare` with its row and
+    """REB-868: the member's additional request is written `to_link` with its row and
     handed to the CRM filing after the response, as the wizard's is."""
     _request_company(client)
     _enter(client, sender, "wile@acme.it")
     first = crm_filings.copy()
 
-    created = client.post("/api/hub/me/company", json=_company_answers(durata="6 mesi"))
+    created = client.post("/api/hub/me/company", json=_company_answers(duration="6 mesi"))
 
     assert created.status_code == 201, created.text
     assert len(crm_filings) == len(first) + 1
     row = api_session.execute(
-        text("SELECT crm_stato FROM companies WHERE id = :id"), {"id": crm_filings[-1]}
+        text("SELECT crm_status FROM companies WHERE id = :id"), {"id": crm_filings[-1]}
     ).scalar_one()
-    assert row == "da_collegare"
+    assert row == "to_link"

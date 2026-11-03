@@ -89,10 +89,10 @@ export function CommandPalette({
         return void navigate({ to: '/app/documents/$documentId', params: { documentId: hit.id } })
       case 'invoice':
         return void navigate({ to: '/app/invoices/$invoiceId', params: { invoiceId: hit.id } })
-      // No page of its own: the attività opens in its dialog, over the Attività page
-      // (`?apri=`), which is where every other screen opens one from.
-      case 'attivita':
-        return void navigate({ to: '/app/activities', search: { apri: hit.id } })
+      // No page of its own: the tasks opens in its dialog, over the Tasks page
+      // (`?open=`), which is where every other screen opens one from.
+      case 'task':
+        return void navigate({ to: '/app/activities', search: { open: hit.id } })
     }
   }
 
@@ -121,21 +121,21 @@ export function CommandPalette({
       // question from the one the palette was asked.
       case 'invoice':
         return null
-      // An attività has no list of its own to filter by a term: the page has its own
+      // A task has no list of its own to filter by a term: the page has its own
       // filters, not a free-text one, so «vedi tutti» would land on a different question.
-      case 'attivita':
+      case 'task':
         return null
     }
   }
 
   const tooShort = search.debounced.length < MIN_TERM_LENGTH
-  const groups: SearchGroup[] = (search.data?.gruppi ?? []).filter(
+  const groups: SearchGroup[] = (search.data?.groups ?? []).filter(
     (group) => group.hits.length > 0,
   )
 
   /** "5 di 500" and "5 di 5" are different answers; «oltre» is how the ceiling is said. */
   function count(group: SearchGroup): string {
-    return group.totale_e_un_minimo ? `oltre ${group.totale}` : String(group.totale)
+    return group.total_is_minimum ? `oltre ${group.total}` : String(group.total)
   }
 
   return (
@@ -189,15 +189,15 @@ export function CommandPalette({
                     <CommandGroup heading={`${ENTITY_LABELS[group.entity]} · ${count(group)}`}>
                       {group.hits.map((hit) => (
                         <CommandItem key={hit.id} value={hit.id} onSelect={() => openHit(hit)}>
-                          <span className="truncate">{hit.etichetta}</span>
-                          {hit.sottotitolo && (
+                          <span className="truncate">{hit.label}</span>
+                          {hit.subtitle && (
                             <span className="ml-2 truncate text-xs text-muted-foreground">
-                              {hit.sottotitolo}
+                              {hit.subtitle}
                             </span>
                           )}
                         </CommandItem>
                       ))}
-                      {group.hits.length < group.totale && goToList !== null && (
+                      {group.hits.length < group.total && goToList !== null && (
                         <CommandItem
                           value={`vedi-tutti-${group.entity}`}
                           onSelect={() => {

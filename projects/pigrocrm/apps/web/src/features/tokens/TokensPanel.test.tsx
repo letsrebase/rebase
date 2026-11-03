@@ -29,7 +29,7 @@ function failed(error: unknown, status: number) {
 
 const EXISTING_TOKEN = {
   id: 't1',
-  nome: 'Claude',
+  name: 'Claude',
   prefix: 'pgc_abc12345',
   full_access: false,
   last_used_at: null,
@@ -39,14 +39,14 @@ const EXISTING_TOKEN = {
 
 const TEAM_TOKEN = {
   id: 't9',
-  nome: 'Fatturazione',
+  name: 'Fatturazione',
   prefix: 'pgc_team0001',
   full_access: true,
   last_used_at: null,
   revoked_at: null,
   created_at: '2026-08-06T10:00:00Z',
   user_id: 'u2',
-  owner_nome: 'Giulia',
+  owner_name: 'Giulia',
 }
 
 /**
@@ -116,14 +116,14 @@ beforeEach(() => {
     user: {
       id: 'u1',
       email: 'admin@pigro.it',
-      nome: 'Admin',
-      ruolo: 'admin',
-      attivo: true,
-      tariffa_oraria_default: null,
-      costo_orario_default: null,
+      name: 'Admin',
+      role: 'admin',
+      active: true,
+      default_hourly_rate: null,
+      default_hourly_cost: null,
       created_at: '2026-08-06T10:00:00Z',
       last_login_at: null,
-      digest_settimanale: true,
+      weekly_digest: true,
     },
     isLoading: false,
     login: vi.fn(),
@@ -169,7 +169,7 @@ describe('TokensPanel', () => {
     mockGets(ok([]))
     renderPanel()
     expect(await screen.findByText(/senza scadenza/i)).toBeInTheDocument()
-    expect(screen.getByText(/creare altri amministratori/i)).toBeInTheDocument()
+    expect(screen.getByText(/tranne gestire utenti, token, impostazioni, posta e collegamenti/i)).toBeInTheDocument()
   })
 
   /**
@@ -239,7 +239,7 @@ describe('TokensPanel', () => {
         Promise.resolve(
           ok({
             id: 't2',
-            nome: 'Claude sul portatile',
+            name: 'Claude sul portatile',
             prefix: 'pgc_zzzz9999',
             full_access: false,
             last_used_at: null,
@@ -443,7 +443,7 @@ describe('TokensPanel', () => {
    */
   describe('full access, token by token', () => {
     it('shows each token as standard or complete', async () => {
-      mockGets(ok([EXISTING_TOKEN, { ...EXISTING_TOKEN, id: 't2', nome: 'Fatture', full_access: true }]))
+      mockGets(ok([EXISTING_TOKEN, { ...EXISTING_TOKEN, id: 't2', name: 'Fatture', full_access: true }]))
       renderPanel()
 
       expect(await screen.findByText('Standard')).toBeInTheDocument()
@@ -468,7 +468,7 @@ describe('TokensPanel', () => {
 
       await waitFor(() =>
         expect(api.POST).toHaveBeenCalledWith('/api/tokens', {
-          body: { nome: 'Fatture', full_access: true },
+          body: { name: 'Fatture', full_access: true },
         }),
       )
     })
@@ -485,7 +485,7 @@ describe('TokensPanel', () => {
 
       await waitFor(() =>
         expect(api.POST).toHaveBeenCalledWith('/api/tokens', {
-          body: { nome: 'Chiacchiere', full_access: false },
+          body: { name: 'Chiacchiere', full_access: false },
         }),
       )
     })
@@ -586,14 +586,14 @@ describe('TokensPanel', () => {
         user: {
           id: 'u3',
           email: 'collab@pigro.it',
-          nome: 'Collab',
-          ruolo: 'collaboratore',
-          attivo: true,
-          tariffa_oraria_default: null,
-          costo_orario_default: null,
+          name: 'Collab',
+          role: 'collaborator',
+          active: true,
+          default_hourly_rate: null,
+          default_hourly_cost: null,
           created_at: '2026-08-06T10:00:00Z',
           last_login_at: null,
-          digest_settimanale: true,
+          weekly_digest: true,
         },
         isLoading: false,
         login: vi.fn(),

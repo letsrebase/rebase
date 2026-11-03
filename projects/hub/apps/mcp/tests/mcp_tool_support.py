@@ -23,8 +23,8 @@ def _seed(factory: sessionmaker[Session], addresses: list[str]) -> None:
             SignupService(session).subscribe(
                 SignupCreate(
                     email=address,
-                    nome="Ada",
-                    cognome="Lovelace",
+                    first_name="Ada",
+                    last_name="Lovelace",
                     # One profile per address: the same profile is the same person (REB-800).
                     linkedin_url=f"https://www.linkedin.com/in/{address.split('@')[0]}",
                 )
@@ -37,8 +37,8 @@ def _seed(factory: sessionmaker[Session], addresses: list[str]) -> None:
 IVAN = AdminRead(
     id=UUID("01a00000-0000-7000-8000-000000000001"),
     email="ivan@rebase.it",
-    nome="Ivan",
-    attivo=True,
+    first_name="Ivan",
+    active=True,
     created_at=datetime(2026, 9, 10, tzinfo=UTC),
 )
 
@@ -72,7 +72,11 @@ def _seed_admin(factory: sessionmaker[Session]) -> None:
     not, on its own -- only the tools that never write one of those (a read, or
     `CardWriter`, which takes no admin at all) can skip this."""
     session = factory()
-    session.add(User(id=IVAN.id, email=IVAN.email, nome=IVAN.nome, cognome="Sala", role="admin"))
+    session.add(
+        User(
+            id=IVAN.id, email=IVAN.email, first_name=IVAN.first_name, last_name="Sala", role="admin"
+        )
+    )
     session.commit()
     session.close()
 
@@ -87,12 +91,12 @@ def _seed_freelancer(factory: sessionmaker[Session]) -> str:
     try:
         row, _ = FreelancerService(session).apply(
             FreelancerCreate(
-                nome="Ada",
-                cognome="Lovelace",
+                first_name="Ada",
+                last_name="Lovelace",
                 email="ada@studio.it",
-                tariffa_giornaliera=Decimal("450"),
-                posizione="Backend developer",
-                remoto="remoto",
+                daily_rate=Decimal("450"),
+                job_title="Backend developer",
+                remote="remote",
             ),
             PDF,
             "cv.pdf",
@@ -114,18 +118,18 @@ def _seed_company(factory: sessionmaker[Session]) -> str:
     try:
         row, _ = CompanyService(session).request(
             CompanyCreate(
-                nome_azienda="ACME Srl",
-                referente_nome="Wile",
-                referente_cognome="E.",
+                company_name="ACME Srl",
+                contact_first_name="Wile",
+                contact_last_name="E.",
                 email="wile@acme.it",
-                telefono="+39 345 1234567",
-                figura_richiesta="Backend developer",
-                progetto="Un backend developer per tre mesi.",
-                periodo_da=date(2026, 10, 1),
-                durata="3 mesi",
-                budget_giornaliero=Decimal("500"),
-                remoto="remoto",
-                numero_risorse=1,
+                phone="+39 345 1234567",
+                requested_role="Backend developer",
+                project="Un backend developer per tre mesi.",
+                period_from=date(2026, 10, 1),
+                duration="3 mesi",
+                daily_budget=Decimal("500"),
+                remote="remote",
+                headcount=1,
             )
         )
         return str(row.id)
@@ -144,12 +148,12 @@ def _seed_freelancer_with_text_cv(factory: sessionmaker[Session], text: str) -> 
     try:
         row, _ = FreelancerService(session).apply(
             FreelancerCreate(
-                nome="Ada",
-                cognome="Lovelace",
+                first_name="Ada",
+                last_name="Lovelace",
                 email="ada@studio.it",
-                tariffa_giornaliera=Decimal("450"),
-                posizione="Backend developer",
-                remoto="remoto",
+                daily_rate=Decimal("450"),
+                job_title="Backend developer",
+                remote="remote",
             ),
             text_pdf(text),
             "cv.pdf",

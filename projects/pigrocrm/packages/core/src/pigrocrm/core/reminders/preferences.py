@@ -376,7 +376,7 @@ class ReminderPreferenceService:
         alone and is not recorded (`test_activity_coverage.py`)."""
         if scope != "space":
             return
-        payload: dict[str, Any] = {"tipo": type_key}
+        payload: dict[str, Any] = {"type": type_key}
         if changed is not None:
             payload["changed"] = changed
         self.activities.record(SPACE_DEFAULTS_ENTITY, SPACE_DEFAULTS_ID, kind, actor, payload)

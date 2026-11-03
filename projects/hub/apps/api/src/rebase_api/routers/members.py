@@ -10,7 +10,7 @@ no `/me/{id}`. The one id the URL does carry is a company request's: `PATCH
 /me/company/{id}` (REB-602) edits one of the caller's own requests, and somebody
 else's, a soft-deleted one and an id that does not exist are the same 404.
 `PATCH /me/company` (REB-314) is the id-less form of it, for the caller's newest
-request. Neither reaches `stato`, `note` or the company's own identity. `POST
+request. Neither reaches `status`, `note` or the company's own identity. `POST
 /me/company` (REB-381) is a different door onto the same table: not an edit, a
 brand-new `Company` request, the company's name carried forward and everything else
 asked fresh -- a 404 for a referente with nothing to add to yet, the same as the
@@ -165,7 +165,7 @@ def create_my_company_request(
     payload: CompanyFields,
 ) -> MeRead:
     read, company_id = MemberService(session).create_additional_request(me.id, payload)
-    # Written `da_collegare` with the row; the first attempt at the CRM runs after the answer.
+    # Written `to_link` with the row; the first attempt at the CRM runs after the answer.
     background.add_task(crm_filing, company_id)
     return read
 
@@ -239,7 +239,7 @@ def my_referral(me: MeDep, session: SessionDep) -> MemberReferral:
     (P-REB-44): the code, who has signed up under it so far, and the two rates in
     force now (REB-610), read live on every call. Never a euro figure of a real
     engagement -- rebase's own margin is an admin-only number the member area never
-    shows, the same isolation `budget_giornaliero` already keeps."""
+    shows, the same isolation `daily_budget` already keeps."""
     referral = ReferralService(session).for_user(me.id)
     session.commit()  # `code_for` only flushes the code it issues
     return referral

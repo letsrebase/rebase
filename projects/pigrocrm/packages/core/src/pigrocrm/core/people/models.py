@@ -31,17 +31,17 @@ class Person(Base, PrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
         # `Customer.__table_args__` for why all three are needed and why the index is
         # partial on `deleted_at IS NULL` with no `lower()` in the expression.
         Index(
-            "ix_people_nome_trgm",
-            "nome",
+            "ix_people_name_trgm",
+            "first_name",
             postgresql_using="gin",
-            postgresql_ops={"nome": "gin_trgm_ops"},
+            postgresql_ops={"first_name": "gin_trgm_ops"},
             postgresql_where=text("deleted_at IS NULL"),
         ),
         Index(
-            "ix_people_cognome_trgm",
-            "cognome",
+            "ix_people_last_name_trgm",
+            "last_name",
             postgresql_using="gin",
-            postgresql_ops={"cognome": "gin_trgm_ops"},
+            postgresql_ops={"last_name": "gin_trgm_ops"},
             postgresql_where=text("deleted_at IS NULL"),
         ),
         # The Gmail roster resolves an address with `lower(email) = :needle`, which neither
@@ -62,22 +62,22 @@ class Person(Base, PrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
         # `(column, id)` B-tree and why none of them is partial.
         Index("ix_people_created_at_id", "created_at", "id"),
         Index("ix_people_updated_at_id", "updated_at", "id"),
-        Index("ix_people_cognome_id", "cognome", "id"),
+        Index("ix_people_last_name_id", "last_name", "id"),
         # The second index the one nullable sort column in the whole whitelist costs.
         # `order_by` declares NULLS LAST in *both* directions for a nullable column -- and
         # only for a nullable one, because on a NOT NULL column that same spelling matches
         # no index at all. A backward scan of the ascending index above yields NULLS FIRST,
-        # so it cannot serve `cognome` `dir=desc`, and without this index Postgres falls
+        # so it cannot serve `last_name` `dir=desc`, and without this index Postgres falls
         # back to sorting the table.
         #
-        # `column("cognome")` rather than the mapped attribute because `id` comes from
+        # `column("last_name")` rather than the mapped attribute because `id` comes from
         # `PrimaryKeyMixin` and is not bound in this class body at all. Unlike
-        # `func.lower("nome")` -- which would bind a *constant* (see
+        # `func.lower("first_name")` -- which would bind a *constant* (see
         # `templates/models.py`) -- `column()` is an explicit column reference, so the
         # string is safe here.
         Index(
-            "ix_people_cognome_desc_id",
-            nullslast(desc(column("cognome"))),
+            "ix_people_last_name_desc_id",
+            nullslast(desc(column("last_name"))),
             desc(column("id")),
         ),
     )
@@ -86,10 +86,10 @@ class Person(Base, PrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
     customer_id: Mapped[UUID | None] = mapped_column(
         ForeignKey("customers.id"), default=None, index=True
     )
-    nome: Mapped[str] = mapped_column(String(120), nullable=False)
-    cognome: Mapped[str | None] = mapped_column(String(120), default=None)
+    first_name: Mapped[str] = mapped_column(String(120), nullable=False)
+    last_name: Mapped[str | None] = mapped_column(String(120), default=None)
     email: Mapped[str | None] = mapped_column(String(320), default=None, index=True)
-    telefono: Mapped[str | None] = mapped_column(String(40), default=None)
-    ruolo: Mapped[str | None] = mapped_column(String(120), default=None)
+    phone: Mapped[str | None] = mapped_column(String(40), default=None)
+    role: Mapped[str | None] = mapped_column(String(120), default=None)
     linkedin: Mapped[str | None] = mapped_column(String(255), default=None)
     custom_fields: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)

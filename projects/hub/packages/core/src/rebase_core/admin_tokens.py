@@ -39,19 +39,19 @@ DEFAULT_NAME = "Claude Code"
 LAST_USED_RESOLUTION = timedelta(minutes=1)
 TOKEN_LIST_LIMIT_DEFAULT = 100
 TOKEN_LIST_LIMIT_MAX = 500
-_TOKEN_SEARCH_COLUMNS = (AdminToken.nome,)
+_TOKEN_SEARCH_COLUMNS = (AdminToken.name,)
 
 
 class AdminRead(ResponseModel):
     """An admin as the API and the MCP server both read them: never the card, never a
-    join. `attivo` and `created_at` are here for the list of admins (ORB-123)."""
+    join. `active` and `created_at` are here for the list of admins (ORB-123)."""
 
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
     email: str
-    nome: str
-    attivo: bool
+    first_name: str
+    active: bool
     created_at: datetime
 
 
@@ -61,7 +61,7 @@ class AdminTokenRead(ResponseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
-    nome: str
+    name: str
     prefix: str
     created_at: datetime
     last_used_at: datetime | None
@@ -102,28 +102,28 @@ class AdminTokenService:
         self.session = session
 
     def create(
-        self, user_id: UUID, nome: str, expires_at: datetime | None = None
+        self, user_id: UUID, name: str, expires_at: datetime | None = None
     ) -> tuple[AdminTokenRead, str]:
         """A fresh token for the admin, with the name they gave it and, optionally, the
         moment it stops working (REB-803; a timezone-aware instant in the future, or no
         expiry at all). The raw value is the second element, returned exactly once."""
-        nome = nome.strip()
-        if not nome:
-            raise ValidationFailed(ENTITY, "nome", "serve un nome")
-        if len(nome) > NAME_MAX_LENGTH:
-            raise ValidationFailed(ENTITY, "nome", f"al massimo {NAME_MAX_LENGTH} caratteri")
+        name = name.strip()
+        if not name:
+            raise ValidationFailed(ENTITY, "name", "serve un nome")
+        if len(name) > NAME_MAX_LENGTH:
+            raise ValidationFailed(ENTITY, "name", f"al massimo {NAME_MAX_LENGTH} caratteri")
         if expires_at is not None:
             if expires_at.tzinfo is None:
                 raise ValidationFailed(ENTITY, "expires_at", "serve un fuso orario")
             if expires_at <= datetime.now(UTC):
                 raise ValidationFailed(ENTITY, "expires_at", "deve essere nel futuro")
         owner = self.session.get(User, user_id)
-        if owner is None or owner.role != "admin" or not owner.attivo:
+        if owner is None or owner.role != "admin" or not owner.active:
             raise NotFound("admin", user_id)
         raw = TOKEN_PREFIX + secrets.token_urlsafe(32)
         row = AdminToken(
             user_id=user_id,
-            nome=nome,
+            name=name,
             token_hash=_digest(raw),
             prefix=raw[: len(TOKEN_PREFIX) + PREFIX_VISIBLE_CHARS],
             expires_at=expires_at,
@@ -151,7 +151,7 @@ class AdminTokenService:
         same. Stamps `last_used_at` (the list's «ultimo uso») at most once a minute, with
         a conditional `UPDATE` that commits only when it changed a row, so a busy agent
         costs no write per request. `populate_existing` forces a fresh read of the owner:
-        `role`/`attivo` can change between two calls against the same long-lived session
+        `role`/`active` can change between two calls against the same long-lived session
         (an MCP server's, in production; a test's raw `UPDATE` in this package's own
         suite), and a cached, stale copy would let a just-demoted or just-deactivated
         admin's token keep resolving."""
@@ -166,7 +166,7 @@ class AdminTokenService:
         ):
             raise ValidationFailed(ENTITY, "token", INVALID_TOKEN)
         owner = self.session.get(User, row.user_id, populate_existing=True)
-        if owner is None or owner.role != "admin" or not owner.attivo:
+        if owner is None or owner.role != "admin" or not owner.active:
             raise ValidationFailed(ENTITY, "token", INVALID_TOKEN)
         admin = AdminRead.model_validate(owner)
         stamped = self.session.execute(

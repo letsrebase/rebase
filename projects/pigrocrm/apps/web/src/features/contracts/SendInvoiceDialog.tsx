@@ -29,7 +29,7 @@ interface Props {
  * newest issued one and the template the first, so the usual send is just «Invia».
  */
 export function SendInvoiceDialog({ contractId, customerId, templates, open, onOpenChange }: Props) {
-  const invoices = useInvoices({ customer_id: customerId, tipo: 'fattura', stato: 'emessa', limit: 50 })
+  const invoices = useInvoices({ customer_id: customerId, type: 'invoice', status: 'issued', limit: 50 })
   const [invoiceChoice, setInvoiceChoice] = useState<string>()
   const [templateChoice, setTemplateChoice] = useState<string>()
   const [recipients, setRecipients] = useState<string>()
@@ -40,7 +40,7 @@ export function SendInvoiceDialog({ contractId, customerId, templates, open, onO
   const preview = useEmailPreview(contractId, templateId, invoiceId)
   const send = useSendContractEmail(contractId)
   // The first suggested address, until the person types their own.
-  const to = recipients ?? preview.data?.to_suggeriti[0] ?? ''
+  const to = recipients ?? preview.data?.to_suggested[0] ?? ''
 
   function submit() {
     if (invoiceId === undefined || templateId === undefined || preview.data === undefined) return
@@ -90,7 +90,7 @@ export function SendInvoiceDialog({ contractId, customerId, templates, open, onO
                   <SelectContent>
                     {issued.map((invoice) => (
                       <SelectItem key={invoice.id} value={invoice.id}>
-                        {formatInvoiceNumber(invoice)} · {formatAmount(invoice.totale, invoice.divisa)}
+                        {formatInvoiceNumber(invoice)} · {formatAmount(invoice.total, invoice.currency)}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -105,7 +105,7 @@ export function SendInvoiceDialog({ contractId, customerId, templates, open, onO
                   <SelectContent>
                     {templates.map((template) => (
                       <SelectItem key={template.id} value={template.id}>
-                        {template.nome}
+                        {template.name}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -132,12 +132,12 @@ export function SendInvoiceDialog({ contractId, customerId, templates, open, onO
                   <p className="font-medium">{preview.data.subject}</p>
                   <p className="mt-2 whitespace-pre-wrap text-sm">{preview.data.body}</p>
                 </div>
-                {preview.data.allegati.length > 0 && (
+                {preview.data.attachments.length > 0 && (
                   <ul className="space-y-1 text-sm text-muted-foreground">
-                    {preview.data.allegati.map((attachment) => (
-                      <li key={attachment.tipo} className="flex items-center gap-2">
+                    {preview.data.attachments.map((attachment) => (
+                      <li key={attachment.type} className="flex items-center gap-2">
                         <Paperclip className="size-4" aria-hidden="true" />
-                        {attachment.nome}
+                        {attachment.name}
                       </li>
                     ))}
                   </ul>

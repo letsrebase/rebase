@@ -8,7 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useCanWrite } from '@/lib/auth'
 import { DayRows } from './DayRows'
 import { useDayContractOptions, useWorkUnits } from './queries'
-import { defaultMese, monthWindow, type DaysSearch } from './search'
+import { defaultMonth, monthWindow, type DaysSearch } from './search'
 
 const EVERY_CONTRACT = '__all__'
 
@@ -29,9 +29,9 @@ export function DaysPage({
 }) {
   const canWrite = useCanWrite()
   const contracts = useDayContractOptions(search.contract)
-  const mese = search.mese ?? (search.contract === undefined ? defaultMese() : undefined)
-  const window = mese === undefined ? undefined : monthWindow(mese)
-  const days = useWorkUnits({ contractId: search.contract, da: window?.da, a: window?.a })
+  const month = search.month ?? (search.contract === undefined ? defaultMonth() : undefined)
+  const window = month === undefined ? undefined : monthWindow(month)
+  const days = useWorkUnits({ contractId: search.contract, from: window?.from, to: window?.to })
 
   return (
     <>
@@ -56,7 +56,7 @@ export function DaysPage({
             <Select
               value={search.contract ?? EVERY_CONTRACT}
               onValueChange={(value) =>
-                onSearchChange({ contract: value === EVERY_CONTRACT ? undefined : value, mese: search.mese })
+                onSearchChange({ contract: value === EVERY_CONTRACT ? undefined : value, month: search.month })
               }
             >
               <SelectTrigger id="days-contract" className="w-64">
@@ -66,7 +66,7 @@ export function DaysPage({
                 <SelectItem value={EVERY_CONTRACT}>Tutti i contratti</SelectItem>
                 {(contracts.data ?? []).map((contract) => (
                   <SelectItem key={contract.id} value={contract.id}>
-                    {contract.titolo}
+                    {contract.title}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -77,9 +77,9 @@ export function DaysPage({
             <Input
               id="days-month"
               type="month"
-              value={mese ?? ''}
+              value={month ?? ''}
               onChange={(event) =>
-                onSearchChange({ contract: search.contract, mese: event.target.value || undefined })
+                onSearchChange({ contract: search.contract, month: event.target.value || undefined })
               }
               className="w-44"
             />

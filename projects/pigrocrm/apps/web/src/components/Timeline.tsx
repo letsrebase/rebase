@@ -1,6 +1,12 @@
 import { useQuery } from '@tanstack/react-query'
 import { Bot, CircleHelp, Cog, DoorOpen, User, type LucideIcon } from 'lucide-react'
-import { formatOccurredAtExact, humanize, labelForKind } from '@/components/activityLabels'
+import {
+  formatOccurredAtExact,
+  humanize,
+  labelForKind,
+  labelForPayloadKey,
+  labelForPayloadValue,
+} from '@/components/activityLabels'
 import { Badge } from '@rebase/ui/badge'
 import { Skeleton } from '@rebase/ui/skeleton'
 import { api, toProblem, unwrap } from '@/lib/api'
@@ -104,11 +110,11 @@ function ActorLine({ entry }: { entry: ActivityEntry }) {
 
 /**
  * An automation's entry is the system's, and names the member whose action set it off in
- * `payload.attivata_da`, with the channel that member used in `attivata_via` (§9.5). Both
+ * `payload.triggered_by`, with the channel that member used in `triggered_via` (§9.5). Both
  * are read here and kept out of the generic dump, which would print an id.
  */
 function TriggeredBy({ entry }: { entry: ActivityEntry }) {
-  const { attivata_da: member, attivata_via: via } = entry.payload
+  const { triggered_by: member, triggered_via: via } = entry.payload
   if (member === undefined || member === null) return null
   const channel = typeof via === 'string' ? CHANNEL_LABEL[via] : undefined
   return (
@@ -120,6 +126,17 @@ function TriggeredBy({ entry }: { entry: ActivityEntry }) {
       {channel !== undefined ? ` (${channel})` : null}
     </p>
   )
+}
+
+/**
+ * Kinds whose `from`/`to` were `da`/`a` before the English rename (migration 0068). The
+ * shape check below only ever matched the English keys, so these rendered through the
+ * generic «Da: … · A: …» line, the rule included; they keep doing so.
+ */
+const GENERIC_FROM_TO_KINDS: Record<string, true> = {
+  state_changed: true,
+  day_state_changed: true,
+  'automation.stage_moved': true,
 }
 
 /**
@@ -136,32 +153,32 @@ function TriggeredBy({ entry }: { entry: ActivityEntry }) {
  *    for a payload the backend constructs as `{"from": ..., "to": ...}`), so
  *    anything that assumed the first key was always "from" would be reading the
  *    wrong side of the transition at random.
- *  - `created`'s payload is per-entity (`ragione_sociale` for a customer, `nome`
- *    for a person, `nome`+`stage` for a deal) and `deleted`/`restored` carry `{}`
+ *  - `created`'s payload is per-entity (`legal_name` for a customer, `name`
+ *    for a person, `name`+`stage` for a deal) and `deleted`/`restored` carry `{}`
  *    -- both land in the generic fallback, which is `null` for the empty case
  *    (the label above already says everything there is to say) and an
  *    ugly-but-true `snake_case: value` dump otherwise, which beats saying
  *    nothing about a real event.
  */
-function ActivityDetail({ payload }: { payload: ActivityEntry['payload'] }) {
+function ActivityDetail({ kind, payload }: { kind: string; payload: ActivityEntry['payload'] }) {
   if (Array.isArray(payload.changed) && payload.changed.length > 0) {
     return (
       <p className="mt-1 text-sm text-muted-foreground">
-        Campi modificati: {payload.changed.map((field) => humanize(String(field))).join(', ')}
+        Campi modificati: {payload.changed.map((field) => labelForPayloadKey(String(field))).join(', ')}
       </p>
     )
   }
 
-  if ('from' in payload && 'to' in payload) {
+  if ('from' in payload && 'to' in payload && GENERIC_FROM_TO_KINDS[kind] !== true) {
     return (
       <p className="mt-1 text-sm text-muted-foreground">
-        Da <strong className="font-medium text-foreground">{String(payload.from)}</strong> a{' '}
-        <strong className="font-medium text-foreground">{String(payload.to)}</strong>
+        Da <strong className="font-medium text-foreground">{labelForPayloadValue(kind, 'from', payload.from)}</strong> a{' '}
+        <strong className="font-medium text-foreground">{labelForPayloadValue(kind, 'to', payload.to)}</strong>
       </p>
     )
   }
 
-  // `importata_da` is dropped rather than dumped: the `imported` label already says the
+  // `imported_from` is dropped rather than dumped: the `imported` label already says the
   // invoice was issued elsewhere, and the column's value names the system it came from
   // -- provenance the CRM keeps for itself, never product copy (`invoices/models.py`).
   // The rest of that payload (anno, numero, totale) are facts about the document and
@@ -170,21 +187,21 @@ function ActivityDetail({ payload }: { payload: ActivityEntry['payload'] }) {
   // The ids a payload carries to say which draft or which member it concerns are for the
   // machine: dumping a UUID tells a reader nothing the label does not.
   const hidden: Record<string, true> = {
-    importata_da: true,
-    attivata_da: true,
-    attivata_via: true,
+    imported_from: true,
+    triggered_by: true,
+    triggered_via: true,
     draft_id: true,
     user_id: true,
     // A note event's id and door: the label says what happened, the actor line says who and
     // how, and the text of a note is on the page, never repeated here.
-    nota_id: true,
-    fonte: true,
+    note_id: true,
+    source: true,
   }
   const rest = Object.entries(payload).filter(([key]) => hidden[key] !== true)
   if (rest.length === 0) return null
   return (
     <p className="mt-1 text-sm text-muted-foreground">
-      {rest.map(([key, value]) => `${humanize(key)}: ${String(value)}`).join(' · ')}
+      {rest.map(([key, value]) => `${labelForPayloadKey(key)}: ${labelForPayloadValue(kind, key, value)}`).join(' · ')}
     </p>
   )
 }
@@ -304,7 +321,7 @@ export function Timeline({ entityType, entityId, limit = 50 }: TimelineProps) {
           </div>
           <ActorLine entry={entry} />
           <TriggeredBy entry={entry} />
-          <ActivityDetail payload={entry.payload} />
+          <ActivityDetail kind={entry.kind} payload={entry.payload} />
         </li>
       ))}
     </ol>

@@ -49,10 +49,10 @@ export function formatRateValue(value: string | null): string {
 }
 
 const ORIGIN_LABELS: Record<string, string> = {
-  manuale: 'manuale',
+  manual: 'manuale',
   deal: 'dal deal',
-  utente: "dall'utente",
-  assente: 'assente',
+  user: "dall'utente",
+  absent: 'assente',
 }
 
 /**
@@ -64,44 +64,44 @@ const ORIGIN_LABELS: Record<string, string> = {
  * from one place instead of repeating the expression.
  */
 function rateWithOrigin(entry: TimeEntry): string {
-  if (entry.tariffa_applicata === null) return EMPTY
-  const origin = ORIGIN_LABELS[entry.tariffa_origine] ?? entry.tariffa_origine
-  return `${formatRateValue(entry.tariffa_applicata)} (${origin})`
+  if (entry.applied_rate === null) return EMPTY
+  const origin = ORIGIN_LABELS[entry.rate_source] ?? entry.rate_source
+  return `${formatRateValue(entry.applied_rate)} (${origin})`
 }
 
 /**
  * What an hour's «Stato» column can say. Unlike every other status in the product this
- * one is *derived*, not stored: the API sends `invoice_line_id` and `fatturabile`, and
+ * one is *derived*, not stored: the API sends `invoice_line_id` and `billable`, and
  * the three readings below are what those two fields mean together. Naming the three
  * gives the label and the tone one key to agree on, the way the stored enums have.
  */
-export type TimeEntryStato = 'fatturata' | 'da_fatturare' | 'non_fatturabile'
+export type TimeEntryStatus = 'invoiced' | 'to_invoice' | 'non_billable'
 
-export const TIME_ENTRY_STATE_LABELS: Record<TimeEntryStato, string> = {
-  fatturata: 'Fatturata',
-  da_fatturare: 'Da fatturare',
-  non_fatturabile: 'Non fatturabile',
+export const TIME_ENTRY_STATE_LABELS: Record<TimeEntryStatus, string> = {
+  invoiced: 'Fatturata',
+  to_invoice: 'Da fatturare',
+  non_billable: 'Non fatturabile',
 }
 
 /**
- * `da_fatturare` is gold for the same reason «Da incassare» is on the invoices table:
+ * `to_invoice` is gold for the same reason «Da incassare» is on the invoices table:
  * it is not an error and not a finished state, it is money waiting on somebody. An hour
  * already invoiced is settled (`ink`); one nobody will ever bill claims nothing about
  * money at all, so it stays quiet rather than reading as a problem -- most of these are
  * deliberate (internal work), not mistakes.
  */
-export const TIME_ENTRY_STATE_TONE: Record<TimeEntryStato, StatusTone> = {
-  fatturata: 'ink',
-  da_fatturare: 'gold',
-  non_fatturabile: 'muted',
+export const TIME_ENTRY_STATE_TONE: Record<TimeEntryStatus, StatusTone> = {
+  invoiced: 'ink',
+  to_invoice: 'gold',
+  non_billable: 'muted',
 }
 
-/** The two wire fields read as one of the three states. `fatturabile` is optional on
+/** The two wire fields read as one of the three states. `billable` is optional on
  *  the wire, and an absent value is not a billable hour -- the same reading the
  *  previous inline ternary had. */
-export function statoOf(entry: TimeEntry): TimeEntryStato {
-  if (entry.invoice_line_id !== null) return 'fatturata'
-  return entry.fatturabile ? 'da_fatturare' : 'non_fatturabile'
+export function statusOf(entry: TimeEntry): TimeEntryStatus {
+  if (entry.invoice_line_id !== null) return 'invoiced'
+  return entry.billable ? 'to_invoice' : 'non_billable'
 }
 
 export function buildTimeEntryColumns(
@@ -110,46 +110,46 @@ export function buildTimeEntryColumns(
   const native: ColumnDef<DataTableFeatures, TimeEntry>[] = [
     {
       header: 'Data',
-      id: 'data',
-      accessorFn: (row) => formatIsoDateItalian(row.data),
-      cell: ({ row }) => <DateCell value={row.original.data} />,
+      id: 'date',
+      accessorFn: (row) => formatIsoDateItalian(row.date),
+      cell: ({ row }) => <DateCell value={row.original.date} />,
     },
     {
       header: 'Ore',
-      id: 'ore',
-      accessorFn: (row) => formatHoursValue(row.ore),
+      id: 'hours',
+      accessorFn: (row) => formatHoursValue(row.hours),
       // Hours are a figure, not money: right-aligned on tabular digits so a week of
       // them can be read down the units column, but through `NumberCell`.
       meta: { align: 'right' },
-      cell: ({ row }) => <NumberCell>{formatHoursValue(row.original.ore)}</NumberCell>,
+      cell: ({ row }) => <NumberCell>{formatHoursValue(row.original.hours)}</NumberCell>,
     },
-    { header: 'Descrizione', accessorKey: 'descrizione' },
+    { header: 'Descrizione', accessorKey: 'description' },
     {
       header: 'Tariffa',
-      id: 'tariffa_applicata',
+      id: 'applied_rate',
       accessorFn: (row) => rateWithOrigin(row),
       meta: { align: 'right' },
       cell: ({ row }) => <MoneyCell>{rateWithOrigin(row.original)}</MoneyCell>,
     },
     {
       header: 'Valore',
-      id: 'valore_riga',
+      id: 'line_value',
       // Straight from the API. This is the number the timesheet prints next to the
       // entry, so it must be the server's own figure and not a product computed here.
       // `?? null` because the field is optional on the wire, and an absent value means
       // the same thing an explicit `null` does: nobody has priced this hour.
-      accessorFn: (row) => formatMoneyValue(row.valore_riga ?? null),
+      accessorFn: (row) => formatMoneyValue(row.line_value ?? null),
       meta: { align: 'right' },
-      cell: ({ row }) => <MoneyCell>{formatMoneyValue(row.original.valore_riga ?? null)}</MoneyCell>,
+      cell: ({ row }) => <MoneyCell>{formatMoneyValue(row.original.line_value ?? null)}</MoneyCell>,
     },
     {
       header: 'Stato',
-      id: 'stato',
-      // Both maps are total over `TimeEntryStato`, so neither read takes a fallback.
-      accessorFn: (row) => TIME_ENTRY_STATE_LABELS[statoOf(row)],
+      id: 'status',
+      // Both maps are total over `TimeEntryStatus`, so neither read takes a fallback.
+      accessorFn: (row) => TIME_ENTRY_STATE_LABELS[statusOf(row)],
       cell: ({ row }) => {
-        const stato = statoOf(row.original)
-        return <StatusPill tone={TIME_ENTRY_STATE_TONE[stato]}>{TIME_ENTRY_STATE_LABELS[stato]}</StatusPill>
+        const status = statusOf(row.original)
+        return <StatusPill tone={TIME_ENTRY_STATE_TONE[status]}>{TIME_ENTRY_STATE_LABELS[status]}</StatusPill>
       },
     },
   ]

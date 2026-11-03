@@ -10,7 +10,7 @@ import { render, screen } from '@testing-library/react'
 import type { ComponentType } from 'react'
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
-let search: { esito?: string } = {}
+let search: { outcome?: string } = {}
 vi.mock('@tanstack/react-router', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@tanstack/react-router')>()
   return {
@@ -21,14 +21,14 @@ vi.mock('@tanstack/react-router', async (importOriginal) => {
   }
 })
 
-const mockAuth = vi.hoisted(() => ({ ruolo: 'collaboratore' as 'admin' | 'collaboratore' }))
+const mockAuth = vi.hoisted(() => ({ role: 'collaborator' as 'admin' | 'collaborator' }))
 vi.mock('@/lib/auth', () => ({
-  useIsAdmin: () => mockAuth.ruolo === 'admin',
+  useIsAdmin: () => mockAuth.role === 'admin',
   useCanWrite: () => true,
-  // `useDriveHealth` (`features/drive/queries.ts`) reads `user.ruolo` itself, to key
+  // `useDriveHealth` (`features/drive/queries.ts`) reads `user.role` itself, to key
   // its query by role (REB-562 fix round 2), so the mocked panel underneath this page
   // needs the same `useAuth` every other Drive test file mocks.
-  useAuth: () => ({ user: { ruolo: mockAuth.ruolo } }),
+  useAuth: () => ({ user: { role: mockAuth.role } }),
 }))
 
 vi.mock('@/lib/api', async (importOriginal) => {
@@ -42,10 +42,10 @@ import { Route } from './drive'
 const GET = api.GET as unknown as ReturnType<typeof vi.fn>
 
 const OUTCOMES = [
-  ['collegato', 'Google Drive collegato.'],
-  ['negato', 'Autorizzazione negata: Drive non è stato collegato.'],
-  ['errore', 'Il collegamento non è andato a buon fine.'],
-  ['sessione', 'La sessione è scaduta mentre eri su Google, quindi Drive non è stato collegato.'],
+  ['connected', 'Google Drive collegato.'],
+  ['denied', 'Autorizzazione negata: Drive non è stato collegato.'],
+  ['error', 'Il collegamento non è andato a buon fine.'],
+  ['session_expired', 'La sessione è scaduta mentre eri su Google, quindi Drive non è stato collegato.'],
 ] as const
 
 // The router plugin splits a route's component into its own chunk (`autoCodeSplitting`
@@ -71,7 +71,7 @@ function renderPage() {
 
 beforeEach(() => {
   search = {}
-  mockAuth.ruolo = 'collaboratore'
+  mockAuth.role = 'collaborator'
   GET.mockReset()
   // Configured, nothing connected: the state a first consent comes back to.
   GET.mockResolvedValue({
@@ -83,8 +83,8 @@ beforeEach(() => {
 describe('the Drive settings page', () => {
   it.each(OUTCOMES)(
     'reads a collaboratore the %s outcome above their own Drive panel',
-    async (esito, sentence) => {
-      search = { esito }
+    async (outcome, sentence) => {
+      search = { outcome }
       renderPage()
       expect(screen.getByRole('status')).toHaveTextContent(sentence)
       const connect = await screen.findByRole('link', { name: 'Collega Google Drive' })
@@ -92,7 +92,7 @@ describe('the Drive settings page', () => {
         screen.getByRole('status').compareDocumentPosition(connect) &
           Node.DOCUMENT_POSITION_FOLLOWING,
       ).toBeTruthy()
-      if (esito === 'sessione') {
+      if (outcome === 'session_expired') {
         expect(screen.getByRole('link', { name: 'Riprova' })).toHaveAttribute(
           'href',
           '/api/drive/oauth/start',
@@ -108,15 +108,15 @@ describe('the Drive settings page', () => {
     expect(await screen.findByRole('link', { name: 'Collega Google Drive' })).toBeInTheDocument()
     expect(screen.queryByRole('status')).toBeNull()
     unmount()
-    search = { esito: 'Scrivi quello che vuoi' }
+    search = { outcome: 'Scrivi quello che vuoi' }
     renderPage()
     expect(await screen.findByRole('link', { name: 'Collega Google Drive' })).toBeInTheDocument()
     expect(screen.queryByRole('status')).toBeNull()
   })
 
   it('reads an admin the outcome as before', async () => {
-    mockAuth.ruolo = 'admin'
-    search = { esito: 'collegato' }
+    mockAuth.role = 'admin'
+    search = { outcome: 'connected' }
     renderPage()
     expect(screen.getByRole('status')).toHaveTextContent('Google Drive collegato.')
     expect(await screen.findByRole('link', { name: 'Collega Google Drive' })).toBeInTheDocument()

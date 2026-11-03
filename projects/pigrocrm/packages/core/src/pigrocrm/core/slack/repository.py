@@ -98,6 +98,6 @@ class SlackRepository:
         """The users who can be told: active, with an address, in a stable order."""
         return list(
             self.session.scalars(
-                select(User).where(User.attivo.is_(True)).order_by(User.nome, User.id)
+                select(User).where(User.active.is_(True)).order_by(User.name, User.id)
             )
         )

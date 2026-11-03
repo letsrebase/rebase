@@ -40,7 +40,7 @@ router = APIRouter(
 def search(
     session: SessionDep,
     actor: ActorDep,
-    # `q` in the query string, `termine` in the schema: spec §11.2's endpoint block fixes
+    # `q` in the query string, `term` in the schema: spec §11.2's endpoint block fixes
     # the parameter name and §8 fixes the field name, and they differ. Renaming either to
     # match the other would put one of the two specs out of date silently.
     #
@@ -56,10 +56,10 @@ def search(
     # raw `DataError` with the session poisoned.
     q: Annotated[SafeStr, Query(min_length=MIN_TERM_LENGTH, max_length=MAX_TERM_LENGTH)],
     limit: Annotated[int, Query(ge=1, le=20)] = PER_CLASS_LIMIT,
-    azienda_id: Annotated[
+    legal_entity_id: Annotated[
         UUID | None, Query(description="Solo i risultati di questa azienda; omesso, tutti")
     ] = None,
 ) -> SearchResults:
     return SearchService(session).search_everything(
-        SearchQuery(termine=q, limite=limit, azienda_id=azienda_id), actor
+        SearchQuery(term=q, limit=limit, legal_entity_id=legal_entity_id), actor
     )

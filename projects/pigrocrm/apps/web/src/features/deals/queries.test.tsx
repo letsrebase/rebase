@@ -27,7 +27,7 @@ function page(items: Partial<Deal>[], nextCursor: string | null) {
 }
 
 function deal(id: string): Partial<Deal> {
-  return { id, nome: `Deal ${id}`, pipeline_stage_id: 's1' }
+  return { id, name: `Deal ${id}`, pipeline_stage_id: 's1' }
 }
 
 describe('fetchAllDeals', () => {

@@ -8,17 +8,17 @@ each type is recomputed on every pass, so a reminder goes when the invoice is pa
 file is sent, the proforma is invoiced or the hours land on an issued invoice.
 
 **`invoice_overdue`** is the receivables page's «scaduto» (`invoices/repository.py`
-`_overdue_predicate`): an issued fattura, not paid, `data_scadenza` strictly before today.
+`_overdue_predicate`): an issued fattura, not paid, `due_date` strictly before today.
 Due today is not late. The measure is the days past the due date.
 
 **`invoice_not_transmitted`** applies where the space exports FatturaPA: at least one
-azienda whose fiscal profile is not the `non-it` pack. It leaves out what this CRM never
-produced an XML for, the invoices of an azienda that was abroad when they were issued (the
-frozen snapshot's `fiscale.pack_id`, as `InvoiceArtifacts.frozen_abroad` reads it) and the
-imported ones (`importata_da`). The measure is the days since `data_emissione`, and what
-clears it is `trasmessa_esternamente_il`.
+legal entity whose fiscal profile is not the `non-it` pack. It leaves out what this CRM never
+produced an XML for, the invoices of a legal entity that was abroad when they were issued (the
+frozen snapshot's `tax.pack_id`, as `InvoiceArtifacts.frozen_abroad` reads it) and the
+imported ones (`imported_from`). The measure is the days since `issue_date`, and what
+clears it is `transmitted_externally_at`.
 
-**`proforma_not_invoiced`**: a confirmed proforma (a converted one is `consumata`, a
+**`proforma_not_invoiced`**: a confirmed proforma (a converted one is `consumed`, a
 discarded one is soft-deleted). The model keeps no «confirmed on» column, so the day is
 the one the activity log recorded `confirmed` for it (latest, in the installation's zone),
 and the day it was created when the log has none.
@@ -46,12 +46,17 @@ from pigrocrm.core.deals.models import Deal
 from pigrocrm.core.fiscal.models import FiscalProfile
 from pigrocrm.core.fiscal.pack import PACK_NON_IT
 from pigrocrm.core.invoices.models import Invoice, InvoiceLine
-from pigrocrm.core.invoices.naming import numero_completo
-from pigrocrm.core.mail import euro, giorno_breve
+from pigrocrm.core.invoices.naming import number_complete
+from pigrocrm.core.mail import day_short, euro
 from pigrocrm.core.reminders.catalogue import REMINDER_TYPES
 from pigrocrm.core.reminders.detect import Detection, Detector, DetectorContext
 from pigrocrm.core.reminders.detectors.links import LinkResolver, Links
-from pigrocrm.core.reminders.detectors.text import giorni, giorni_fa, ore, voci
+from pigrocrm.core.reminders.detectors.text import (
+    format_days,
+    format_days_ago,
+    format_entries,
+    format_hours,
+)
 from pigrocrm.core.timetracking.models import TimeEntry
 
 OVERDUE = REMINDER_TYPES["invoice_overdue"]
@@ -62,7 +67,7 @@ HOURS = REMINDER_TYPES["hours_unbilled"]
 
 def _issued() -> tuple[ColumnElement[bool], ...]:
     """An issued, live fattura: the register's own rows."""
-    return (Invoice.deleted_at.is_(None), Invoice.tipo == "fattura", Invoice.stato == "emessa")
+    return (Invoice.deleted_at.is_(None), Invoice.type == "invoice", Invoice.status == "issued")
 
 
 def _local_day(column: Any, zone: str) -> ColumnElement[date]:
@@ -70,10 +75,10 @@ def _local_day(column: Any, zone: str) -> ColumnElement[date]:
     return cast(func.timezone(zone, column), Date)
 
 
-def _label(anno: int | None, numero: int | None) -> str:
-    if anno is not None and numero is not None:
-        return f"fattura {numero_completo(anno, numero)}"
-    return "fattura"
+def _label(year: int | None, number: int | None) -> str:
+    if year is not None and number is not None:
+        return f"fattura {number_complete(year, number)}"
+    return "invoice"
 
 
 def _links(ctx: DetectorContext, invoice_ids: Iterable[UUID]) -> dict[UUID, Links]:
@@ -94,13 +99,13 @@ NOT_TRANSMITTED_LOOKBACK_DAYS = 180
 
 _LIST = (
     Invoice.id,
-    Invoice.anno,
-    Invoice.numero,
-    Invoice.totale,
-    Invoice.azienda_id,
+    Invoice.year,
+    Invoice.number,
+    Invoice.total,
+    Invoice.legal_entity_id,
     Invoice.customer_id,
-    Invoice.data_emissione,
-    Invoice.data_scadenza,
+    Invoice.issue_date,
+    Invoice.due_date,
 )
 
 
@@ -112,32 +117,32 @@ def detect_overdue(ctx: DetectorContext) -> list[Detection]:
         select(*_LIST)
         .where(
             *_issued(),
-            Invoice.stato_pagamento == "da_incassare",
-            Invoice.data_scadenza.is_not(None),
-            Invoice.data_scadenza <= cutoff,
+            Invoice.payment_status == "unpaid",
+            Invoice.due_date.is_not(None),
+            Invoice.due_date <= cutoff,
         )
-        .order_by(Invoice.data_scadenza, Invoice.id)
+        .order_by(Invoice.due_date, Invoice.id)
     ).all()
     links = _links(ctx, (row.id for row in rows))
     found: list[Detection] = []
     for row in rows:
-        assert row.data_scadenza is not None
-        late = (ctx.today - row.data_scadenza).days
+        assert row.due_date is not None
+        late = (ctx.today - row.due_date).days
         link = links[row.id]
         found.append(
             Detection(
                 type="invoice_overdue",
                 subject_id=row.id,
                 measure=float(late),
-                recipients=ctx.directory.recipients(link.owners, row.azienda_id),
-                title=f"Incasso in ritardo: {_label(row.anno, row.numero)}",
+                recipients=ctx.directory.recipients(link.owners, row.legal_entity_id),
+                title=f"Incasso in ritardo: {_label(row.year, row.number)}",
                 detail=(
-                    f"{euro(row.totale)} da incassare, scaduta il "
-                    f"{giorno_breve(row.data_scadenza)} ({giorni_fa(late)}){_who(link)}"
+                    f"{euro(row.total)} da incassare, scaduta il "
+                    f"{day_short(row.due_date)} ({format_days_ago(late)}){_who(link)}"
                 ),
                 entity="invoice",
                 entity_id=row.id,
-                azienda_id=row.azienda_id,
+                legal_entity_id=row.legal_entity_id,
                 customer_id=row.customer_id,
             )
         )
@@ -155,40 +160,40 @@ def detect_not_transmitted(ctx: DetectorContext) -> list[Detection]:
     `NOT_TRANSMITTED_LOOKBACK_DAYS` ago. The snapshot is tested in SQL, never loaded."""
     cutoff = ctx.today - timedelta(days=max(ctx.bound(NOT_TRANSMITTED), 1))
     oldest = ctx.today - timedelta(days=NOT_TRANSMITTED_LOOKBACK_DAYS)
-    abroad = func.coalesce(Invoice.snapshot["fiscale"]["pack_id"].as_string(), "") == PACK_NON_IT
+    abroad = func.coalesce(Invoice.snapshot["tax"]["pack_id"].as_string(), "") == PACK_NON_IT
     rows = ctx.session.execute(
         select(*_LIST)
         .where(
             *_issued(),
-            Invoice.trasmessa_esternamente_il.is_(None),
-            Invoice.importata_da.is_(None),
+            Invoice.transmitted_externally_at.is_(None),
+            Invoice.imported_from.is_(None),
             ~abroad,
-            Invoice.data_emissione.is_not(None),
-            Invoice.data_emissione <= cutoff,
-            Invoice.data_emissione >= oldest,
+            Invoice.issue_date.is_not(None),
+            Invoice.issue_date <= cutoff,
+            Invoice.issue_date >= oldest,
         )
-        .order_by(Invoice.data_emissione, Invoice.id)
+        .order_by(Invoice.issue_date, Invoice.id)
     ).all()
     links = _links(ctx, (row.id for row in rows))
     found: list[Detection] = []
     for row in rows:
-        assert row.data_emissione is not None
-        age = (ctx.today - row.data_emissione).days
+        assert row.issue_date is not None
+        age = (ctx.today - row.issue_date).days
         link = links[row.id]
         found.append(
             Detection(
                 type="invoice_not_transmitted",
                 subject_id=row.id,
                 measure=float(age),
-                recipients=ctx.directory.recipients(link.owners, row.azienda_id),
-                title=f"Fattura non trasmessa: {_label(row.anno, row.numero)}",
+                recipients=ctx.directory.recipients(link.owners, row.legal_entity_id),
+                title=f"Fattura non trasmessa: {_label(row.year, row.number)}",
                 detail=(
-                    f"Emessa {giorno_breve(row.data_emissione)}, da {giorni(age)} "
+                    f"Emessa {day_short(row.issue_date)}, da {format_days(age)} "
                     f"il file non risulta consegnato all'intermediario{_who(link)}"
                 ),
                 entity="invoice",
                 entity_id=row.id,
-                azienda_id=row.azienda_id,
+                legal_entity_id=row.legal_entity_id,
                 customer_id=row.customer_id,
             )
         )
@@ -212,7 +217,7 @@ def detect_proforma(ctx: DetectorContext) -> list[Detection]:
     rows = ctx.session.execute(
         select(Invoice, since.label("since"))
         .where(
-            Invoice.deleted_at.is_(None), Invoice.tipo == "proforma", Invoice.stato == "confermata"
+            Invoice.deleted_at.is_(None), Invoice.type == "proforma", Invoice.status == "confirmed"
         )
         .where(since <= cutoff)
         .order_by(since, Invoice.id)
@@ -222,21 +227,21 @@ def detect_proforma(ctx: DetectorContext) -> list[Detection]:
     for invoice, day in rows:
         age = (ctx.today - day).days
         link = links[invoice.id]
-        what = f"proforma {invoice.riferimento}" if invoice.riferimento else "proforma"
+        what = f"proforma {invoice.reference}" if invoice.reference else "proforma"
         found.append(
             Detection(
                 type="proforma_not_invoiced",
                 subject_id=invoice.id,
                 measure=float(age),
-                recipients=ctx.directory.recipients(link.owners, invoice.azienda_id),
+                recipients=ctx.directory.recipients(link.owners, invoice.legal_entity_id),
                 title=f"Proforma da fatturare: {what}",
                 detail=(
-                    f"{euro(invoice.totale)}, confermata {giorno_breve(day)}: "
-                    f"{giorni(age)} e non è ancora diventata una fattura{_who(link)}"
+                    f"{euro(invoice.total)}, confermata {day_short(day)}: "
+                    f"{format_days(age)} e non è ancora diventata una fattura{_who(link)}"
                 ),
                 entity="proforma",
                 entity_id=invoice.id,
-                azienda_id=invoice.azienda_id,
+                legal_entity_id=invoice.legal_entity_id,
                 customer_id=invoice.customer_id,
             )
         )
@@ -254,17 +259,17 @@ def detect_hours_unbilled(ctx: DetectorContext) -> list[Detection]:
         .exists()
     )
     # An entry whose line this session cannot see at all is not unbilled either: an import
-    # may bind a deal's hours to an invoice of another azienda, and «no issued invoice
+    # may bind a deal's hours to an invoice of another legal entity, and «no issued invoice
     # found» under the row policies must not read as «not yet invoiced» (the same guard as
     # `AnalyticsRepository.unbilled_backlog`).
     visible_line = select(InvoiceLine.id).where(InvoiceLine.id == TimeEntry.invoice_line_id)
-    oldest = func.min(TimeEntry.data)
+    oldest = func.min(TimeEntry.date)
     rows = ctx.session.execute(
-        select(Deal, oldest, func.sum(TimeEntry.ore), func.count(TimeEntry.id))
+        select(Deal, oldest, func.sum(TimeEntry.hours), func.count(TimeEntry.id))
         .join(Deal, Deal.id == TimeEntry.deal_id)
         .where(
             TimeEntry.deleted_at.is_(None),
-            TimeEntry.fatturabile.is_(True),
+            TimeEntry.billable.is_(True),
             Deal.deleted_at.is_(None),
             or_(TimeEntry.invoice_line_id.is_(None), and_(visible_line.exists(), ~on_issued)),
         )
@@ -284,15 +289,16 @@ def detect_hours_unbilled(ctx: DetectorContext) -> list[Detection]:
                 type="hours_unbilled",
                 subject_id=deal.id,
                 measure=float(age),
-                recipients=ctx.directory.recipients(link.owners, deal.azienda_id),
-                title=f"Ore da fatturare: {deal.nome}",
+                recipients=ctx.directory.recipients(link.owners, deal.legal_entity_id),
+                title=f"Ore da fatturare: {deal.name}",
                 detail=(
-                    f"{ore(total)} in {voci(entries)} non sono su una fattura emessa, "
-                    f"la più vecchia è del {giorno_breve(first)} ({giorni(age)}){_who(link)}"
+                    f"{format_hours(total)} in {format_entries(entries)} "
+                    "non sono su una fattura emessa, "
+                    f"la più vecchia è del {day_short(first)} ({format_days(age)}){_who(link)}"
                 ),
                 entity="deal",
                 entity_id=deal.id,
-                azienda_id=deal.azienda_id,
+                legal_entity_id=deal.legal_entity_id,
                 customer_id=deal.customer_id,
             )
         )

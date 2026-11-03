@@ -39,7 +39,7 @@ from pigrocrm_api.deps import ActorDep, SessionDep, StorageDep, get_actor
 from pigrocrm_api.downloads import attachment_response
 from pigrocrm_api.errors import PROBLEM_RESPONSES
 from pigrocrm_api.query_params import (
-    AZIENDA_QUERY_DESCRIPTION,
+    LEGAL_ENTITY_QUERY_DESCRIPTION,
     CustomParams,
     KeysetParams,
     SearchParams,
@@ -63,10 +63,10 @@ class MoveStageRequest(BaseModel):
 
 
 class RecalculateResponse(BaseModel):
-    """`voci_aggiornate` rather than a bare integer: the UI says "12 voci aggiornate",
+    """`updated_entries` rather than a bare integer: the UI says "12 voci aggiornate",
     and a naked number in a JSON body is a value nobody can label."""
 
-    voci_aggiornate: int
+    updated_entries: int
 
 
 @router.post("", response_model=DealRead, status_code=status.HTTP_201_CREATED)
@@ -77,13 +77,13 @@ def create(data: DealCreate, session: SessionDep, actor: ActorDep) -> DealRead:
 class DealListParams(SortedParams, SearchParams, CustomParams):
     customer_id: UUID | None = None
     stage_id: UUID | None = None
-    azienda_id: UUID | None = Field(default=None, description=AZIENDA_QUERY_DESCRIPTION)
+    legal_entity_id: UUID | None = Field(default=None, description=LEGAL_ENTITY_QUERY_DESCRIPTION)
     # The two drill-throughs of the operational dashboard's signal cards (§6.2). Each card
     # links here and nowhere else, and the rows returned are counted by the same predicate
     # function the card's `COUNT` uses -- so the count and the list cannot drift apart.
-    fatturato_non_vinto: bool = False
-    da_fatturare: bool = False
-    sort: SafeStr | None = sort_field("created_at", "updated_at", "nome")
+    invoiced_unwon: bool = False
+    to_invoice: bool = False
+    sort: SafeStr | None = sort_field("created_at", "updated_at", "name")
 
 
 @router.get("", response_model=DealPage)
@@ -125,8 +125,8 @@ router.include_router(timeline_router("deal", id_param="deal_id"))
 
 
 class DealTimeEntriesParams(KeysetParams):
-    da: date | None = None
-    a: date | None = None
+    date_from: date | None = Field(default=None, alias="from")
+    date_to: date | None = Field(default=None, alias="to")
 
 
 @router.get("/{deal_id}/time-entries", response_model=TimeEntryPage)
@@ -167,7 +167,7 @@ def recalculate_rates(
     deal_id: UUID, data: RecalculateRatesRequest, session: SessionDep, actor: ActorDep
 ) -> RecalculateResponse:
     return RecalculateResponse(
-        voci_aggiornate=TimeEntryService(session).recalculate_rates(deal_id, data, actor)
+        updated_entries=TimeEntryService(session).recalculate_rates(deal_id, data, actor)
     )
 
 
@@ -177,12 +177,12 @@ def time_report_xlsx(
     session: SessionDep,
     actor: ActorDep,
     storage: StorageDep,
-    mese: Annotated[str, Query(description="Periodo nella forma AAAA-MM")],
+    month: Annotated[str, Query(description="Periodo nella forma AAAA-MM")],
 ) -> Response:
     """The XLSX of the month's hours, streamed: it is a working copy that whoever checks
     it filters, not an artefact, so nothing is archived and a GET is safe. The PDF is
     `POST /time-report/pdf`, which archives a document (§2.1)."""
-    filename, content = TimeReportService(session, storage).build_xlsx(deal_id, mese, actor)
+    filename, content = TimeReportService(session, storage).build_xlsx(deal_id, month, actor)
     return attachment_response(content, XLSX_CONTENT_TYPE, filename)
 
 
@@ -196,7 +196,7 @@ def render_time_report_pdf(
     session: SessionDep,
     actor: ActorDep,
     storage: StorageDep,
-    mese: Annotated[str, Query(description="Periodo nella forma AAAA-MM")],
+    month: Annotated[str, Query(description="Periodo nella forma AAAA-MM")],
 ) -> DocumentRead:
     """The month's hours as a PDF, archived as a `document` of the deal, which this
     returns: the bytes are fetched from the document download endpoint, like every other
@@ -204,7 +204,7 @@ def render_time_report_pdf(
     document -- every call archives a new version, never overwriting an earlier one."""
     # Before the lookups: a `readonly` caller learns nothing, not even that the deal exists.
     actor.require_write("create_document")
-    return TimeReportService(session, storage).render_pdf(deal_id, mese, actor)
+    return TimeReportService(session, storage).render_pdf(deal_id, month, actor)
 
 
 @router.get("/{deal_id}/pnl", response_model=DealPnl)
@@ -220,20 +220,22 @@ def deal_budget(
     deal_id: UUID,
     session: SessionDep,
     actor: ActorDep,
-    da: Annotated[date, Query(alias="from", description="Inizio del periodo, YYYY-MM-DD")],
-    a: Annotated[date, Query(alias="to", description="Fine del periodo, YYYY-MM-DD")],
+    date_from: Annotated[date, Query(alias="from", description="Inizio del periodo, YYYY-MM-DD")],
+    date_to: Annotated[date, Query(alias="to", description="Fine del periodo, YYYY-MM-DD")],
 ) -> BudgetVsActualRow:
     """One deal's row of the estimate-versus-actual report. Served from the same method as
     the list so the two can never disagree: a per-deal reimplementation is how the detail
     page and the report start showing different variances.
 
     `limit=200` -- the schema's own ceiling -- rather than a paged scan: `deals_in_range`
-    orders by `(nome, id)`, so the row wanted here can sit anywhere in that order, and one
+    orders by `(name, id)`, so the row wanted here can sit anywhere in that order, and one
     page at the maximum is the widest single window this query is allowed to open. Above
     that the answer is a 404 the caller can act on (narrow the window) instead of a page
     walk hidden behind a detail endpoint.
     """
-    page = AnalyticsService(session).budget_vs_actual(BudgetQuery(da=da, a=a, limit=200), actor)
+    page = AnalyticsService(session).budget_vs_actual(
+        BudgetQuery(date_from=date_from, date_to=date_to, limit=200), actor
+    )
     for row in page.items:
         if row.deal_id == deal_id:
             return row

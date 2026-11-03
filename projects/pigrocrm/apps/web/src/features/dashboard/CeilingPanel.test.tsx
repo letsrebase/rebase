@@ -11,71 +11,71 @@ vi.mock('@/lib/api', async (importOriginal) => {
   return { ...actual, api: { GET: vi.fn() } }
 })
 
-const RICAVI = {
-  id: 'soglia_ricavi',
-  etichetta: 'Soglia di ricavi e compensi del regime forfettario',
-  soglia: '85000.00',
-  conseguenza: 'esce_dall_anno_successivo',
-  ricavi: '60000.00',
-  residuo: '25000.00',
-  superata: false,
-  livello_allerta: null,
-  utilizzo: 0.7059,
+const REVENUE = {
+  id: 'revenue_ceiling',
+  label: 'Soglia di ricavi e compensi del regime forfettario',
+  threshold: '85000.00',
+  consequence: 'leaves_next_year',
+  revenue: '60000.00',
+  remaining: '25000.00',
+  exceeded: false,
+  alert_level: null,
+  usage: 0.7059,
 }
 const FUORIUSCITA = {
-  id: 'soglia_fuoriuscita_immediata',
-  etichetta: 'Soglia di fuoriuscita immediata dal regime forfettario',
-  soglia: '100000.00',
-  conseguenza: 'esce_immediatamente',
-  ricavi: '60000.00',
-  residuo: '40000.00',
-  superata: false,
-  livello_allerta: null,
-  utilizzo: 0.6,
+  id: 'immediate_exit_ceiling',
+  label: 'Soglia di fuoriuscita immediata dal regime forfettario',
+  threshold: '100000.00',
+  consequence: 'leaves_immediately',
+  revenue: '60000.00',
+  remaining: '40000.00',
+  exceeded: false,
+  alert_level: null,
+  usage: 0.6,
 }
 
-const headroom = (soglie: unknown[] = [RICAVI, FUORIUSCITA]) => ({
-  anno: 2026,
-  azienda_id: 'a1',
+const headroom = (thresholds: unknown[] = [REVENUE, FUORIUSCITA]) => ({
+  year: 2026,
+  legal_entity_id: 'a1',
   pack_id: 'it-flat-rate',
   pack_version: '1',
-  soglie,
+  thresholds,
 })
 
 const simulation = (overrides: Record<string, unknown> = {}) => ({
-  anno: 2026,
-  azienda_id: 'a1',
+  year: 2026,
+  legal_entity_id: 'a1',
   pack_id: 'it-flat-rate',
   pack_version: '1',
-  aggiunta_sintetica: '20000.00',
-  soglie: [
+  brief_addition: '20000.00',
+  thresholds: [
     {
-      id: 'soglia_ricavi',
-      etichetta: RICAVI.etichetta,
-      soglia: '85000.00',
-      conseguenza: 'esce_dall_anno_successivo',
-      ricavi_attuali: '60000.00',
-      residuo_attuale: '25000.00',
-      utilizzo_attuale: 0.7059,
-      utilizzo_simulato: 0.9412,
-      ricavi_simulati: '80000.00',
-      residuo_simulato: '5000.00',
-      rientra: true,
-      livello_allerta_simulato: 'In avvicinamento alla soglia di ricavi',
+      id: 'revenue_ceiling',
+      label: REVENUE.label,
+      threshold: '85000.00',
+      consequence: 'leaves_next_year',
+      current_revenue: '60000.00',
+      current_remaining: '25000.00',
+      current_usage: 0.7059,
+      simulated_usage: 0.9412,
+      simulated_revenue: '80000.00',
+      simulated_remaining: '5000.00',
+      falls_within: true,
+      alert_level_simulated: 'In avvicinamento alla soglia di ricavi',
     },
     {
-      id: 'soglia_fuoriuscita_immediata',
-      etichetta: FUORIUSCITA.etichetta,
-      soglia: '100000.00',
-      conseguenza: 'esce_immediatamente',
-      ricavi_attuali: '60000.00',
-      residuo_attuale: '40000.00',
-      utilizzo_attuale: 0.6,
-      utilizzo_simulato: 0.8,
-      ricavi_simulati: '80000.00',
-      residuo_simulato: '20000.00',
-      rientra: true,
-      livello_allerta_simulato: null,
+      id: 'immediate_exit_ceiling',
+      label: FUORIUSCITA.label,
+      threshold: '100000.00',
+      consequence: 'leaves_immediately',
+      current_revenue: '60000.00',
+      current_remaining: '40000.00',
+      current_usage: 0.6,
+      simulated_usage: 0.8,
+      simulated_revenue: '80000.00',
+      simulated_remaining: '20000.00',
+      falls_within: true,
+      alert_level_simulated: null,
     },
   ],
   ...overrides,
@@ -107,7 +107,7 @@ function renderPanel(props: Partial<React.ComponentProps<typeof CeilingPanel>> =
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(
     <QueryClientProvider client={client}>
-      <CeilingPanel anno={2026} {...props} />
+      <CeilingPanel year={2026} {...props} />
     </QueryClientProvider>,
   )
 }
@@ -121,19 +121,19 @@ describe('CeilingPanel, the room left', () => {
     route({ '/api/analytics/ceilings': () => ok(headroom()) })
     renderPanel()
 
-    const first = await screen.findByRole('group', { name: RICAVI.etichetta })
+    const first = await screen.findByRole('group', { name: REVENUE.label })
     expect(within(first).getByText(/Incassati 60\.000,00 € su 85\.000,00 €/)).toBeInTheDocument()
     expect(within(first).getByText('restano 25.000,00 €')).toBeInTheDocument()
     expect(
       within(first).getByText('Se la superi, si esce dal regime forfettario dall’anno successivo.'),
     ).toBeInTheDocument()
-    const second = screen.getByRole('group', { name: FUORIUSCITA.etichetta })
+    const second = screen.getByRole('group', { name: FUORIUSCITA.label })
     expect(within(second).getByText('restano 40.000,00 €')).toBeInTheDocument()
     expect(
       within(second).getByText('Se la superi, si esce dal regime forfettario subito, nell’anno stesso.'),
     ).toBeInTheDocument()
     expect(api.GET).toHaveBeenCalledWith('/api/analytics/ceilings', {
-      params: { query: { anno: 2026 } },
+      params: { query: { year: 2026 } },
     })
   })
 
@@ -141,7 +141,7 @@ describe('CeilingPanel, the room left', () => {
     route({ '/api/analytics/ceilings': () => ok(headroom()) })
     renderPanel()
 
-    const first = await screen.findByRole('group', { name: RICAVI.etichetta })
+    const first = await screen.findByRole('group', { name: REVENUE.label })
     expect(within(first).getByTestId('bar-fill')).toHaveStyle({ width: '70.59%' })
   })
 
@@ -151,19 +151,19 @@ describe('CeilingPanel, the room left', () => {
         ok(
           headroom([
             {
-              ...RICAVI,
-              ricavi: '120000.00',
-              residuo: '-35000.00',
-              superata: true,
-              livello_allerta: 'Soglia di ricavi raggiunta',
-              utilizzo: 1.4118,
+              ...REVENUE,
+              revenue: '120000.00',
+              remaining: '-35000.00',
+              exceeded: true,
+              alert_level: 'Soglia di ricavi raggiunta',
+              usage: 1.4118,
             },
           ]),
         ),
     })
     renderPanel()
 
-    const group = await screen.findByRole('group', { name: RICAVI.etichetta })
+    const group = await screen.findByRole('group', { name: REVENUE.label })
     expect(within(group).getByText('superata di 35.000,00 €')).toBeInTheDocument()
     expect(
       within(group).getByText('Superata: si esce dal regime forfettario dall’anno successivo.'),
@@ -178,7 +178,7 @@ describe('CeilingPanel, the room left', () => {
   it('names the alert level the server reached', async () => {
     route({
       '/api/analytics/ceilings': () =>
-        ok(headroom([{ ...RICAVI, livello_allerta: 'In avvicinamento alla soglia di ricavi' }])),
+        ok(headroom([{ ...REVENUE, alert_level: 'In avvicinamento alla soglia di ricavi' }])),
     })
     renderPanel()
 
@@ -214,11 +214,11 @@ describe('CeilingPanel, the room left', () => {
 
   it('asks for the azienda it was given, and names it in the heading', async () => {
     route({ '/api/analytics/ceilings': () => ok(headroom()) })
-    renderPanel({ aziendaId: 'a2', titolo: 'Studio Rossi' })
+    renderPanel({ legalEntityId: 'a2', title: 'Studio Rossi' })
 
     expect(await screen.findByText('Soglie del forfettario 2026 · Studio Rossi')).toBeInTheDocument()
     expect(api.GET).toHaveBeenCalledWith('/api/analytics/ceilings', {
-      params: { query: { anno: 2026, azienda_id: 'a2' } },
+      params: { query: { year: 2026, legal_entity_id: 'a2' } },
     })
   })
 })
@@ -230,7 +230,7 @@ describe('CeilingPanel, «ci sta?»', () => {
       '/api/analytics/ceilings/simulate': () => ok(simulation()),
     })
     renderPanel()
-    await screen.findByRole('group', { name: RICAVI.etichetta })
+    await screen.findByRole('group', { name: REVENUE.label })
     return userEvent.setup()
   }
 
@@ -244,7 +244,7 @@ describe('CeilingPanel, «ci sta?»', () => {
 
     await waitFor(() =>
       expect(api.GET).toHaveBeenCalledWith('/api/analytics/ceilings/simulate', {
-        params: { query: { valore_preventivato: '20000.00', data_prevista: '2027-03-15', anno: 2027 } },
+        params: { query: { budgeted_value: '20000.00', expected_date: '2027-03-15', year: 2027 } },
       }),
     )
   })
@@ -267,21 +267,21 @@ describe('CeilingPanel, «ci sta?»', () => {
       '/api/analytics/ceilings/simulate': () =>
         ok(
           simulation({
-            soglie: [
+            thresholds: [
               {
-                ...simulation().soglie[0],
-                ricavi_simulati: '90000.00',
-                residuo_simulato: '-5000.00',
-                utilizzo_simulato: 1.0588,
-                rientra: false,
-                livello_allerta_simulato: 'Soglia di ricavi raggiunta',
+                ...simulation().thresholds[0],
+                simulated_revenue: '90000.00',
+                simulated_remaining: '-5000.00',
+                simulated_usage: 1.0588,
+                falls_within: false,
+                alert_level_simulated: 'Soglia di ricavi raggiunta',
               },
             ],
           }),
         ),
     })
     renderPanel()
-    await screen.findByRole('group', { name: RICAVI.etichetta })
+    await screen.findByRole('group', { name: REVENUE.label })
     const user = userEvent.setup()
 
     await user.type(screen.getByLabelText('Importo'), '30000')
@@ -345,10 +345,10 @@ describe('CeilingPanel, «ci sta?»', () => {
       expect(api.GET).toHaveBeenCalledWith('/api/analytics/ceilings/simulate', {
         params: {
           query: {
-            ore_preventivate: '100',
-            tariffa_oraria: '80.5',
-            data_prevista: '2026-12-31',
-            anno: 2026,
+            budgeted_hours: '100',
+            hourly_rate: '80.5',
+            expected_date: '2026-12-31',
+            year: 2026,
           },
         },
       }),
@@ -385,7 +385,7 @@ describe('CeilingPanel, «ci sta?»', () => {
       '/api/analytics/ceilings/simulate': () => failed({ detail: 'Stima non valida' }, 422),
     })
     renderPanel()
-    await screen.findByRole('group', { name: RICAVI.etichetta })
+    await screen.findByRole('group', { name: REVENUE.label })
     const user = userEvent.setup()
 
     await user.type(screen.getByLabelText('Importo'), '10')
@@ -398,25 +398,25 @@ describe('CeilingPanel, «ci sta?»', () => {
 describe('CeilingPanel, simulating a deal', () => {
   const DEAL = {
     id: 'd1',
-    nome: 'Sito vetrina',
-    customer_ragione_sociale: 'Acme Srl',
+    name: 'Sito vetrina',
+    customer_legal_name: 'Acme Srl',
     pipeline_stage_id: 's-open',
-    valore_preventivato: '12000.00',
-    ore_preventivate: null,
-    tariffa_oraria: null,
+    budgeted_value: '12000.00',
+    budgeted_hours: null,
+    hourly_rate: null,
   }
-  const NO_ESTIMATE = { ...DEAL, id: 'd2', nome: 'Idea', valore_preventivato: null }
-  const WON = { ...DEAL, id: 'd3', nome: 'Già vinto', pipeline_stage_id: 's-won' }
+  const NO_ESTIMATE = { ...DEAL, id: 'd2', name: 'Idea', budgeted_value: null }
+  const WON = { ...DEAL, id: 'd3', name: 'Già vinto', pipeline_stage_id: 's-won' }
 
   function routeWithDeals() {
     route({
       '/api/analytics/ceilings': () => ok(headroom()),
-      '/api/analytics/ceilings/simulate': () => ok(simulation({ aggiunta_sintetica: '12000.00' })),
+      '/api/analytics/ceilings/simulate': () => ok(simulation({ brief_addition: '12000.00' })),
       '/api/deals': () => ok({ items: [DEAL, NO_ESTIMATE, WON], next_cursor: null }),
       '/api/pipeline-stages': () =>
         ok([
-          { id: 's-open', nome: 'Trattativa', tipo: 'open' },
-          { id: 's-won', nome: 'Vinto', tipo: 'won' },
+          { id: 's-open', name: 'Trattativa', type: 'open' },
+          { id: 's-won', name: 'Vinto', type: 'won' },
         ]),
     })
   }
@@ -424,7 +424,7 @@ describe('CeilingPanel, simulating a deal', () => {
   it('offers the open deals only, and sends the estimate the chosen deal carries', async () => {
     routeWithDeals()
     renderPanel()
-    await screen.findByRole('group', { name: RICAVI.etichetta })
+    await screen.findByRole('group', { name: REVENUE.label })
     const user = userEvent.setup()
 
     await user.click(screen.getByRole('radio', { name: 'Un deal' }))
@@ -440,7 +440,7 @@ describe('CeilingPanel, simulating a deal', () => {
 
     await waitFor(() =>
       expect(api.GET).toHaveBeenCalledWith('/api/analytics/ceilings/simulate', {
-        params: { query: { valore_preventivato: '12000.00', data_prevista: '2026-12-31', anno: 2026 } },
+        params: { query: { budgeted_value: '12000.00', expected_date: '2026-12-31', year: 2026 } },
       }),
     )
     expect(await screen.findByText('Ci sta.')).toBeInTheDocument()
@@ -453,7 +453,7 @@ describe('CeilingPanel, simulating a deal', () => {
       '/api/pipeline-stages': () => failed({ detail: 'Stadi non disponibili' }, 500),
     })
     renderPanel()
-    await screen.findByRole('group', { name: RICAVI.etichetta })
+    await screen.findByRole('group', { name: REVENUE.label })
     const user = userEvent.setup()
 
     await user.click(screen.getByRole('radio', { name: 'Un deal' }))
@@ -464,7 +464,7 @@ describe('CeilingPanel, simulating a deal', () => {
   it('asks for a deal before it asks the server anything', async () => {
     routeWithDeals()
     renderPanel()
-    await screen.findByRole('group', { name: RICAVI.etichetta })
+    await screen.findByRole('group', { name: REVENUE.label })
     const user = userEvent.setup()
 
     await user.click(screen.getByRole('radio', { name: 'Un deal' }))
@@ -482,48 +482,48 @@ describe('CeilingPanel, one per azienda in «Tutte»', () => {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     render(
       <QueryClientProvider client={client}>
-        <CeilingPanel anno={2026} aziendaId="a1" titolo="Studio Rossi" />
-        <CeilingPanel anno={2026} aziendaId="a2" titolo="Rossi Ltd" />
+        <CeilingPanel year={2026} legalEntityId="a1" title="Studio Rossi" />
+        <CeilingPanel year={2026} legalEntityId="a2" title="Rossi Ltd" />
       </QueryClientProvider>,
     )
     await screen.findByText('Soglie del forfettario 2026 · Rossi Ltd')
     const user = userEvent.setup()
 
-    const importi = screen.getAllByLabelText('Importo')
-    expect(importi).toHaveLength(2)
-    expect(importi[0]!.id).not.toBe(importi[1]!.id)
+    const amounts = screen.getAllByLabelText('Importo')
+    expect(amounts).toHaveLength(2)
+    expect(amounts[0]!.id).not.toBe(amounts[1]!.id)
     await user.click(screen.getAllByText('Importo')[1]!)
-    expect(importi[1]).toHaveFocus()
+    expect(amounts[1]).toHaveFocus()
   })
 })
 
 describe('CeilingPanel, the cap on a customer’s share', () => {
   const CAPPED = {
     id: 'k1',
-    titolo: 'Piattaforma ACME',
-    stato: 'attivo',
-    azienda_id: 'a1',
-    divisa: 'EUR',
-    tetto_quota_cliente: '50.00',
+    title: 'Piattaforma ACME',
+    status: 'active',
+    legal_entity_id: 'a1',
+    currency: 'EUR',
+    customer_share_cap: '50.00',
   }
-  const UNCAPPED = { ...CAPPED, id: 'k2', titolo: 'Manutenzione Beta', tetto_quota_cliente: null }
+  const UNCAPPED = { ...CAPPED, id: 'k2', title: 'Manutenzione Beta', customer_share_cap: null }
   const contracts = (...items: unknown[]) => () => ok({ items, next_cursor: null })
 
   const CAP = {
     contract_id: 'k1',
-    titolo: 'Piattaforma ACME',
+    title: 'Piattaforma ACME',
     customer_id: 'cu1',
-    divisa: 'EUR',
-    periodo_da: '2026-03-01',
-    periodo_a: '2027-02-28',
-    tetto: 0.5,
-    ricavi_cliente_attuali: '30000.00',
-    ricavi_totali_attuali: '100000.00',
-    quota_attuale: 0.3,
-    ricavi_cliente_simulati: '50000.00',
-    ricavi_totali_simulati: '120000.00',
-    quota_simulata: 0.5333,
-    rientra: false,
+    currency: 'EUR',
+    period_from: '2026-03-01',
+    period_to: '2027-02-28',
+    cap: 0.5,
+    current_customer_revenue: '30000.00',
+    current_total_revenue: '100000.00',
+    current_share: 0.3,
+    simulated_customer_revenue: '50000.00',
+    simulated_total_revenue: '120000.00',
+    simulated_share: 0.5333,
+    falls_within: false,
   }
 
   async function chooseContract(user: UserEvent) {
@@ -540,10 +540,10 @@ describe('CeilingPanel, the cap on a customer’s share', () => {
 
     expect(await screen.findByText('Tetti dei contratti')).toBeInTheDocument()
     expect(screen.queryByText(/soglie del forfettario/i)).not.toBeInTheDocument()
-    expect(screen.queryByRole('group', { name: RICAVI.etichetta })).not.toBeInTheDocument()
+    expect(screen.queryByRole('group', { name: REVENUE.label })).not.toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Ci sta?' })).toBeInTheDocument()
     expect(api.GET).toHaveBeenCalledWith('/api/contracts', {
-      params: { query: expect.objectContaining({ stato: 'attivo' }) },
+      params: { query: expect.objectContaining({ status: 'active' }) },
     })
 
     const user = userEvent.setup()
@@ -572,7 +572,7 @@ describe('CeilingPanel, the cap on a customer’s share', () => {
     route({
       '/api/analytics/ceilings': () => ok(headroom([])),
       '/api/analytics/ceilings/simulate': () =>
-        ok({ ...simulation({ soglie: [] }), tetto_contratto: CAP }),
+        ok({ ...simulation({ thresholds: [] }), contract_cap: CAP }),
       '/api/contracts': contracts(CAPPED),
     })
     renderPanel()
@@ -586,10 +586,10 @@ describe('CeilingPanel, the cap on a customer’s share', () => {
       expect(api.GET).toHaveBeenCalledWith('/api/analytics/ceilings/simulate', {
         params: {
           query: {
-            valore_preventivato: '20000',
-            data_prevista: '2026-12-31',
+            budgeted_value: '20000',
+            expected_date: '2026-12-31',
             contract_id: 'k1',
-            anno: 2026,
+            year: 2026,
           },
         },
       }),
@@ -611,8 +611,8 @@ describe('CeilingPanel, the cap on a customer’s share', () => {
       '/api/analytics/ceilings': () => ok(headroom([])),
       '/api/analytics/ceilings/simulate': () =>
         ok({
-          ...simulation({ soglie: [] }),
-          tetto_contratto: { ...CAP, quota_simulata: 0.42, rientra: true },
+          ...simulation({ thresholds: [] }),
+          contract_cap: { ...CAP, simulated_share: 0.42, falls_within: true },
         }),
       '/api/contracts': contracts(CAPPED),
     })
@@ -630,11 +630,11 @@ describe('CeilingPanel, the cap on a customer’s share', () => {
   it('does not say «Ci sta.» from the ceilings alone when the contract’s cap would be reached', async () => {
     route({
       '/api/analytics/ceilings': () => ok(headroom()),
-      '/api/analytics/ceilings/simulate': () => ok({ ...simulation(), tetto_contratto: CAP }),
+      '/api/analytics/ceilings/simulate': () => ok({ ...simulation(), contract_cap: CAP }),
       '/api/contracts': contracts(CAPPED),
     })
     renderPanel()
-    await screen.findByRole('group', { name: RICAVI.etichetta })
+    await screen.findByRole('group', { name: REVENUE.label })
     const user = userEvent.setup()
 
     // With ceilings the heading is the forfettario's and the contract is optional.
@@ -658,7 +658,7 @@ describe('CeilingPanel, the cap on a customer’s share', () => {
       '/api/contracts': contracts(CAPPED),
     })
     renderPanel()
-    await screen.findByRole('group', { name: RICAVI.etichetta })
+    await screen.findByRole('group', { name: REVENUE.label })
     const user = userEvent.setup()
 
     await user.type(screen.getByLabelText('Importo'), '20000')
@@ -667,7 +667,7 @@ describe('CeilingPanel, the cap on a customer’s share', () => {
     expect(await screen.findByText('Ci sta.')).toBeInTheDocument()
     expect(api.GET).toHaveBeenCalledWith('/api/analytics/ceilings/simulate', {
       params: {
-        query: { valore_preventivato: '20000', data_prevista: '2026-12-31', anno: 2026 },
+        query: { budgeted_value: '20000', expected_date: '2026-12-31', year: 2026 },
       },
     })
     expect(screen.queryByRole('group', { name: /^Tetto di/ })).not.toBeInTheDocument()
@@ -679,7 +679,7 @@ describe('CeilingPanel, the cap on a customer’s share', () => {
       '/api/contracts': contracts(UNCAPPED),
     })
     renderPanel()
-    await screen.findByRole('group', { name: RICAVI.etichetta })
+    await screen.findByRole('group', { name: REVENUE.label })
 
     expect(screen.queryByRole('combobox', { name: 'Contratto con un tetto' })).not.toBeInTheDocument()
   })

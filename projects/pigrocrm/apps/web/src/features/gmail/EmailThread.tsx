@@ -89,7 +89,7 @@ export function EmailThread({
               L&apos;originale è in Gmail.
             </p>
           ) : null}
-          {message.body_html_scartato ? (
+          {message.body_html_discarded ? (
             <p className="text-xs text-muted-foreground">
               Il messaggio era solo HTML: qui è conservata la conversione in testo. L&apos;HTML
               non viene mostrato perché porta con sé pixel di tracciamento e CSS remoto.

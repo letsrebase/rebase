@@ -59,7 +59,7 @@ class Settings(BaseSettings):
     # lives in the server's `.env` only (`.env.example`).
     resend_api_key: str = ""
     mail_from: str = "Rebase <ciao@letsrebase.com>"
-    # Where the SPA answers, for the link in the mail: `{hub_url}/entra?t=...`. Local
+    # Where the SPA answers, for the link in the mail: `{hub_url}/verify?t=...`. Local
     # development points it at the Vite dev server.
     hub_url: str = "https://letsrebase.com/hub"
     magic_link_minutes: int = 15
@@ -80,7 +80,7 @@ class Settings(BaseSettings):
     # The CRM's door for rebase's engagements (REB-498): an active match is linked to a
     # deal in its freelancer's space, and the hub reads that deal's hours, with the
     # value PigroCRM reads as `PIGROCRM_ENGAGEMENTS_TOKEN`, never the registry's. Empty
-    # means the link is skipped (the match waits as `da_collegare`) and the report and
+    # means the link is skipped (the match waits as `to_link`) and the report and
     # «Riprova» answer 503 with a sentence, as signing does without Documenso.
     pigro_engagements_token: str = ""
 

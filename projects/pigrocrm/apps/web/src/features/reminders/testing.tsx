@@ -14,14 +14,14 @@ export const PROPOSAL_ID = '3f0c2a10-0000-4000-8000-000000000004'
 
 export function reminder(overrides: Partial<Reminder> = {}): Reminder {
   return {
-    key: `attivita_overdue:${ACME_ACTIVITY_ID}`,
-    type: 'attivita_overdue',
+    key: `task_overdue:${ACME_ACTIVITY_ID}`,
+    type: 'task_overdue',
     label: 'Attività scaduta',
     severity: 'critical',
     measure: 16,
     title: 'Attività scaduta: Mandare il preventivo ad Acme',
     detail: 'Scaduta da 16 giorni (il 10/10/2026).',
-    entity: 'attivita',
+    entity: 'task',
     entity_id: ACME_ACTIVITY_ID,
     customer_id: null,
     status: 'open',

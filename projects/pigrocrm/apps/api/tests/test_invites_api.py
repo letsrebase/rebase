@@ -51,8 +51,8 @@ def sender(client: TestClient) -> RecordingSender:
     return recording
 
 
-def _invite(client: TestClient, email: str = INVITED, nome: str | None = "Luca") -> dict:
-    response = client.post("/api/users/invites", json={"email": email, "nome": nome})
+def _invite(client: TestClient, email: str = INVITED, name: str | None = "Luca") -> dict:
+    response = client.post("/api/users/invites", json={"email": email, "name": name})
     assert response.status_code == 201, response.text
     return response.json()
 
@@ -69,7 +69,7 @@ def test_an_invitation_is_created_mailed_and_listed(
 ) -> None:
     invite = _invite(logged_in)
     assert invite["email"] == INVITED
-    assert invite["ruolo"] == "collaboratore" and invite["nome"] == "Luca"
+    assert invite["role"] == "collaborator" and invite["name"] == "Luca"
     # The raw token is never in the response: the only copy of it leaves by mail.
     assert "token" not in str(invite).lower()
     assert len(sender.sent) == 1
@@ -89,20 +89,20 @@ def test_an_invitation_is_created_mailed_and_listed(
 def test_without_a_sender_the_endpoint_refuses_without_writing(logged_in: TestClient) -> None:
     """An installation that cannot mail does not half-create an invitation: no row,
     so nothing to find in the list and no token with no mail carrying it."""
-    response = logged_in.post("/api/users/invites", json={"email": INVITED, "nome": None})
+    response = logged_in.post("/api/users/invites", json={"email": INVITED, "name": None})
     assert response.status_code == 503
     assert "RESEND_API_KEY" in response.json()["detail"]
     assert logged_in.get("/api/users/invites").json() == []
 
 
-def test_a_collaboratore_cannot_invite(
+def test_to_collaborator_cannot_invite(
     collaborator_client: TestClient, sender: RecordingSender
 ) -> None:
     """403 through the problem document, on every one of the four admin routes. The
     `sender` fixture is what lets the role be the *first* refusal: with no sender
     the POST would answer 503, which is the installation's answer, not the caller's."""
     client = collaborator_client
-    refused = client.post("/api/users/invites", json={"email": INVITED, "nome": None})
+    refused = client.post("/api/users/invites", json={"email": INVITED, "name": None})
     assert refused.status_code == 403, refused.text
     problem = refused.json()
     assert problem["type"] == "https://pigrocrm.dev/errors/permission_denied"
@@ -122,17 +122,17 @@ def test_a_pending_duplicate_and_an_active_user_are_both_409(
     logged_in: TestClient, sender: RecordingSender, api_session: Session
 ) -> None:
     _invite(logged_in)
-    twice = logged_in.post("/api/users/invites", json={"email": INVITED, "nome": "Luca"})
+    twice = logged_in.post("/api/users/invites", json={"email": INVITED, "name": "Luca"})
     assert twice.status_code == 409
     assert twice.json()["code"] == "conflict"
     assert "invito in attesa" in twice.json()["detail"]
     assert len(sender.sent) == 1  # the refusal sent nothing
 
     UserService(api_session).create(
-        UserCreate(email="gia@pigro.it", password="lunghissima1", nome="Già", ruolo="readonly"),
+        UserCreate(email="gia@pigro.it", password="lunghissima1", name="Già", role="readonly"),
         Actor.system(),
     )
-    member = logged_in.post("/api/users/invites", json={"email": "gia@pigro.it", "nome": None})
+    member = logged_in.post("/api/users/invites", json={"email": "gia@pigro.it", "name": None})
     assert member.status_code == 409
     assert "persona attiva" in member.json()["detail"]
 
@@ -189,7 +189,7 @@ def test_the_peek_shows_the_invitation_and_does_not_spend_it(
     raw = _token_from(sender.sent[0].text)
     peek = logged_in.get("/api/auth/invite", params={"t": raw})
     assert peek.status_code == 200, peek.text
-    assert peek.json() == {"spazio": "PigroCRM", "invitato_da": "Admin", "nome": "Luca"}
+    assert peek.json() == {"space": "PigroCRM", "inviter_name": "Admin", "name": "Luca"}
     # Reading is not spending: two peeks and the accept still work.
     assert logged_in.get("/api/auth/invite", params={"t": raw}).status_code == 200
     assert logged_in.post("/api/auth/invite", json={"t": raw}).status_code == 200
@@ -210,8 +210,8 @@ def test_accept_creates_the_user_and_opens_the_session(
     accepted = logged_in.post("/api/auth/invite", json={"t": raw})
     assert accepted.status_code == 200, accepted.text
     body = accepted.json()
-    assert body["email"] == INVITED and body["ruolo"] == "collaboratore"
-    assert body["attivo"] is True
+    assert body["email"] == INVITED and body["role"] == "collaborator"
+    assert body["active"] is True
     # Same cookie pair `login` sets.
     cookies = accepted.headers.get_list("set-cookie")
     assert any("pigrocrm_access=" in c for c in cookies)
@@ -227,14 +227,14 @@ def test_accept_creates_the_user_and_opens_the_session(
 def test_accept_without_a_name_when_the_invitation_carried_none(
     logged_in: TestClient, sender: RecordingSender
 ) -> None:
-    _invite(logged_in, nome=None)
+    _invite(logged_in, name=None)
     raw = _token_from(sender.sent[0].text)
     refused = logged_in.post("/api/auth/invite", json={"t": raw})
     assert refused.status_code == 422
-    assert "nome" in refused.json()["detail"]
-    accepted = logged_in.post("/api/auth/invite", json={"t": raw, "nome": "Nominato"})
+    assert "name" in refused.json()["detail"]
+    accepted = logged_in.post("/api/auth/invite", json={"t": raw, "name": "Nominato"})
     assert accepted.status_code == 200
-    assert accepted.json()["nome"] == "Nominato"
+    assert accepted.json()["name"] == "Nominato"
 
 
 def test_an_expired_invitation_answers_410(
@@ -443,7 +443,7 @@ def test_a_provider_that_cannot_be_asked_costs_one_question_and_leaves_the_rows_
     assert first["id"] in {row["id"] for row in rows}
 
 
-def test_a_collaboratore_listing_asks_the_provider_nothing(
+def test_to_collaborator_listing_asks_the_provider_nothing(
     collaborator_client: TestClient, client: TestClient
 ) -> None:
     counting = CountingSender()

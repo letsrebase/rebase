@@ -101,23 +101,23 @@ def _settings_for(engine: Engine, *, public_url: str = "https://pigro.test") -> 
 def _upsert(**parts: dict[str, Any]) -> EngagementUpsert:
     """The body of spec § 2.3, with any part's fields overridden by name."""
     body: dict[str, dict[str, Any]] = {
-        "freelancer": {"email": ADA, "nome": "Ada", "cognome": "Lovelace"},
-        "lettera": {
-            "numero": "3/2026",
-            "ruolo": "Backend developer",
-            "azienda": "Acme S.r.l.",
-            "data_inizio": "2026-10-01",
-            "data_fine": "2026-12-31",
-            "compenso": "400.00",
-            "giorni_previsti": 40,
+        "freelancer": {"email": ADA, "first_name": "Ada", "last_name": "Lovelace"},
+        "letter": {
+            "number": "3/2026",
+            "role": "Backend developer",
+            "company_name": "Acme S.r.l.",
+            "start_date": "2026-10-01",
+            "end_date": "2026-12-31",
+            "fee": "400.00",
+            "expected_days": 40,
         },
         "rebase": {
-            "ragione_sociale": "rebase S.r.l.",
-            "partita_iva": "01234567890",
-            "codice_fiscale": "01234567890",
-            "indirizzo": "Via Roma 1, 20121 Milano",
-            "pec": "rebase@pec.it",
-            "codice_sdi": "M5UXCR1",
+            "legal_name": "rebase S.r.l.",
+            "vat_number": "01234567890",
+            "tax_code": "01234567890",
+            "address": "Via Roma 1, 20121 Milano",
+            "certified_email": "rebase@pec.it",
+            "sdi_code": "M5UXCR1",
         },
     }
     for part, overrides in parts.items():
@@ -155,7 +155,7 @@ def _provision(door: Door, slug: str, email: str = ADA) -> UUID:
     """A space opened at the signup, before the door ever saw the address."""
     with session_factory(door.registry)() as registry:
         tenant = TenantService(registry, door.settings).provision(
-            TenantSignup(slug=slug, nome="Ada Lovelace", email=email)
+            TenantSignup(slug=slug, name="Ada Lovelace", email=email)
         )
     return tenant.id
 
@@ -176,7 +176,7 @@ def _half_provisioned(door: Door, slug: str, *, database: bool) -> UUID:
         with _space(door, slug) as space:
             # With the space's name, as provisioning passes it: that is what writes the
             # azienda a customer needs since REB-623.
-            ensure_defaults(space, nome=slug)
+            ensure_defaults(space, name=slug)
     return tenant_id
 
 
@@ -261,7 +261,7 @@ def test_engagements_package_imports_and_exports_nothing() -> None:
     assert [n for n in tree.body if isinstance(n, ast.Assign | ast.AnnAssign)] == []
 
 
-@pytest.mark.parametrize("part", ["freelancer", "lettera", "rebase"])
+@pytest.mark.parametrize("part", ["freelancer", "letter", "rebase"])
 def test_a_field_the_door_does_not_know_is_refused_inside_every_part(part: str) -> None:
     """The hub's payload has exactly these fields: a misspelt or new one is a 422 naming
     it, never silently dropped."""
@@ -285,7 +285,7 @@ def test_first_call_creates_space_customer_and_deal(door: Door) -> None:
     match_id = uuid4()
     answer = door.service().ensure(match_id, _upsert())
 
-    assert answer.creato is True and answer.spazio_creato is True
+    assert answer.created is True and answer.space_created is True
     assert answer.slug == "ada-lovelace"
     assert answer.url == "https://pigro.test/ada-lovelace/app/"
     assert answer.deal_url == f"https://pigro.test/ada-lovelace/app/deal/{answer.deal_id}"
@@ -294,27 +294,27 @@ def test_first_call_creates_space_customer_and_deal(door: Door) -> None:
     with _space(door, "ada-lovelace") as space:
         customer = space.get(Customer, answer.customer_id)
         assert customer is not None
-        assert customer.ragione_sociale == "rebase S.r.l."
-        assert customer.partita_iva == "01234567890"
-        assert customer.codice_fiscale == "01234567890"
-        assert customer.indirizzo == "Via Roma 1, 20121 Milano"
-        assert customer.pec == "rebase@pec.it"
-        assert customer.codice_sdi == "M5UXCR1"
+        assert customer.legal_name == "rebase S.r.l."
+        assert customer.vat_number == "01234567890"
+        assert customer.tax_code == "01234567890"
+        assert customer.address == "Via Roma 1, 20121 Milano"
+        assert customer.certified_email == "rebase@pec.it"
+        assert customer.sdi_code == "M5UXCR1"
         first = notes_of(space, "customer", customer.id)
-        assert [(n.testo, n.fonte, n.autore_id) for n in first] == [(CUSTOMER_NOTE, "rebase", None)]
+        assert [(n.text, n.source, n.author_id) for n in first] == [(CUSTOMER_NOTE, "rebase", None)]
 
         deal = space.get(Deal, answer.deal_id)
         assert deal is not None
-        assert deal.nome == DEAL_NAME
+        assert deal.name == DEAL_NAME
         assert deal.customer_id == customer.id
         # 400.00 a day over eight hours, at the column's six places.
-        assert str(deal.tariffa_oraria) == "50.000000"
-        assert str(deal.ore_preventivate) == "320.00"
-        assert deal.data_chiusura_prevista == date(2026, 12, 31)
+        assert str(deal.hourly_rate) == "50.000000"
+        assert str(deal.budgeted_hours) == "320.00"
+        assert deal.expected_close_date == date(2026, 12, 31)
         # The sentence is the deal's first note, written by rebase; the marker a retry
         # finds the deal by is a reference of its own, in no note.
         assert deal_marker(match_id) == f"rebase:match={match_id}"
-        assert [(n.testo, n.fonte) for n in notes_of(space, "deal", deal.id)] == [
+        assert [(n.text, n.source) for n in notes_of(space, "deal", deal.id)] == [
             (DEAL_NOTE, "rebase")
         ]
         assert deal.rebase_refs == [deal_marker(match_id)]
@@ -338,7 +338,7 @@ def test_second_call_answers_the_same_ids_and_creates_nothing(door: Door) -> Non
     first = door.service().ensure(match_id, _upsert())
     second = door.service().ensure(match_id, _upsert())
 
-    assert second.creato is False and second.spazio_creato is False
+    assert second.created is False and second.space_created is False
     assert (second.slug, second.customer_id, second.deal_id) == (
         first.slug,
         first.customer_id,
@@ -355,11 +355,11 @@ def test_second_call_answers_the_same_ids_and_creates_nothing(door: Door) -> Non
     changed = door.service().ensure(
         match_id,
         _upsert(
-            lettera={"numero": "9/2026", "compenso": "800.00"},
-            rebase={"ragione_sociale": "rebase S.p.A.", "partita_iva": "09876543210"},
+            letter={"number": "9/2026", "fee": "800.00"},
+            rebase={"legal_name": "rebase S.p.A.", "vat_number": "09876543210"},
         ),
     )
-    assert (changed.creato, changed.customer_id, changed.deal_id) == (
+    assert (changed.created, changed.customer_id, changed.deal_id) == (
         False,
         first.customer_id,
         first.deal_id,
@@ -368,13 +368,11 @@ def test_second_call_answers_the_same_ids_and_creates_nothing(door: Door) -> Non
         assert _count(space, Customer) == 1 and _count(space, Deal) == 1
         recorded = space.get(Deal, first.deal_id)
         assert recorded is not None
-        assert (recorded.nome, str(recorded.tariffa_oraria)) == (DEAL_NAME, "50.000000")
+        assert (recorded.name, str(recorded.hourly_rate)) == (DEAL_NAME, "50.000000")
 
     # The row's ids are answered (spec § 2.3 step 2), not what the deal points at now.
     with _space(door, "ada-lovelace") as space:
-        other = CustomerService(space).create(
-            CustomerCreate(ragione_sociale="Altro"), Actor.system()
-        )
+        other = CustomerService(space).create(CustomerCreate(legal_name="Altro"), Actor.system())
         space.execute(
             text("UPDATE deals SET customer_id = :c WHERE id = :d"),
             {"c": other.id, "d": first.deal_id},
@@ -391,10 +389,10 @@ def test_owned_space_is_reused_oldest_first(door: Door) -> None:
     answer = door.service().ensure(uuid4(), _upsert())
 
     assert answer.slug == "studio-ada"
-    assert answer.spazio_creato is False and answer.creato is True
+    assert answer.space_created is False and answer.created is True
     assert _owned(door) == ["studio-ada", "ada-seconda"]
     with _space(door, "studio-ada") as space:
-        assert _count(space, Deal, Deal.nome == DEAL_NAME) == 1
+        assert _count(space, Deal, Deal.name == DEAL_NAME) == 1
     with _space(door, "ada-seconda") as space:
         assert _count(space, Deal) == 0
     # A space the door did not open is not welcomed again.
@@ -406,7 +404,7 @@ def test_owner_lookup_is_case_insensitive(door: Door) -> None:
 
     answer = door.service().ensure(uuid4(), _upsert(freelancer={"email": "Ada@Studio.it "}))
 
-    assert answer.slug == "studio-ada" and answer.spazio_creato is False
+    assert answer.slug == "studio-ada" and answer.space_created is False
     with _space(door, "studio-ada") as space:
         deal = space.get(Deal, answer.deal_id)
         admin = UserRepository(space).get_by_email(ADA)
@@ -415,8 +413,8 @@ def test_owner_lookup_is_case_insensitive(door: Door) -> None:
     # And the other side: a registry row that kept an address's capitals.
     with door.registry.begin() as connection:
         connection.execute(text("UPDATE tenants SET owner_email = 'Ada@Studio.IT'"))
-    again = door.service().ensure(uuid4(), _upsert(lettera={"numero": "4/2026"}))
-    assert again.slug == "studio-ada" and again.spazio_creato is False
+    again = door.service().ensure(uuid4(), _upsert(letter={"number": "4/2026"}))
+    assert again.slug == "studio-ada" and again.space_created is False
     assert _owned(door) == ["studio-ada"]
 
 
@@ -425,7 +423,7 @@ def test_slug_collision_takes_a_suffix(door: Door) -> None:
 
     answer = door.service().ensure(uuid4(), _upsert())
 
-    assert answer.slug == "ada-lovelace-2" and answer.spazio_creato is True
+    assert answer.slug == "ada-lovelace-2" and answer.space_created is True
     assert answer.url == "https://pigro.test/ada-lovelace-2/app/"
     assert _owned(door) == ["ada-lovelace-2"]
     assert _owned(door, "altra@studio.it") == ["ada-lovelace"]
@@ -476,7 +474,7 @@ def test_the_suffix_gives_up_after_fifty(door: Door, monkeypatch: pytest.MonkeyP
         asked.append(slug)
         if len(asked) > 60:  # the RED run's guard against an unbounded loop
             raise RuntimeError("the suffix has no bound")
-        return TenantAvailability(slug=slug, disponibile=False, motivo="questo nome è già in uso")
+        return TenantAvailability(slug=slug, available=False, reason="questo nome è già in uso")
 
     monkeypatch.setattr(TenantService, "availability", taken)
     with pytest.raises(Conflict):
@@ -491,11 +489,11 @@ def test_two_matches_one_email_share_one_space(door: Door) -> None:
     """Two letters of the same freelancer activating together (spec § 3.10): the lock
     by address serialises the whole call, so the second finds the space the first
     opened instead of opening another under `ada-lovelace-2`."""
-    answers = _at_once(door, {n: _upsert(lettera={"numero": n}) for n in ("1/2026", "2/2026")})
+    answers = _at_once(door, {n: _upsert(letter={"number": n}) for n in ("1/2026", "2/2026")})
 
     assert _owned(door) == ["ada-lovelace"]
     assert {a.slug for a in answers.values()} == {"ada-lovelace"}
-    assert sorted(a.spazio_creato for a in answers.values()) == [False, True]
+    assert sorted(a.space_created for a in answers.values()) == [False, True]
     assert answers["1/2026"].customer_id == answers["2/2026"].customer_id
     assert answers["1/2026"].deal_id != answers["2/2026"].deal_id
     with _space(door, "ada-lovelace") as space:
@@ -509,17 +507,17 @@ def test_two_addresses_at_once_open_two_spaces(door: Door) -> None:
     lets both through, so two spaces are provisioned at once in one process. Alembic's
     script directory is not thread-safe (`DuplicateTable`, `KeyError('script')` before
     `migrate_to_head` took its own lock), so the migrations take turns."""
-    grace = {"email": "grace@studio.it", "nome": "Grace", "cognome": "Hopper"}
+    grace = {"email": "grace@studio.it", "first_name": "Grace", "last_name": "Hopper"}
     answers = _at_once(
         door,
         {
-            "ada": _upsert(lettera={"numero": "1/2026"}),
-            "grace": _upsert(freelancer=grace, lettera={"numero": "2/2026"}),
+            "ada": _upsert(letter={"number": "1/2026"}),
+            "grace": _upsert(freelancer=grace, letter={"number": "2/2026"}),
         },
     )
 
     assert (answers["ada"].slug, answers["grace"].slug) == ("ada-lovelace", "grace-hopper")
-    assert answers["ada"].spazio_creato is True and answers["grace"].spazio_creato is True
+    assert answers["ada"].space_created is True and answers["grace"].space_created is True
     assert _owned(door) == ["ada-lovelace"]
     assert _owned(door, "grace@studio.it") == ["grace-hopper"]
     for slug in ("ada-lovelace", "grace-hopper"):
@@ -602,7 +600,7 @@ def test_half_written_row_is_completed(door: Door) -> None:
     answer = door.service().ensure(match_id, _upsert())
 
     assert answer.slug == "ada-seconda"
-    assert answer.spazio_creato is False and answer.creato is True
+    assert answer.space_created is False and answer.created is True
     with _space(door, "ada-seconda") as space:
         assert _count(space, Customer) == 1 and _count(space, Deal) == 1
         deal = space.get(Deal, answer.deal_id)
@@ -628,21 +626,21 @@ def test_a_space_left_without_its_admin_gets_one_and_the_welcome_once(door: Door
 
     answer = door.service().ensure(uuid4(), _upsert())
 
-    assert answer.slug == "ada-lovelace" and answer.creato is True
+    assert answer.slug == "ada-lovelace" and answer.created is True
     # Opened now, as far as the freelancer can tell: the hub's mail says so.
-    assert answer.spazio_creato is True
+    assert answer.space_created is True
     assert _owned(door) == ["ada-lovelace"]
     with _space(door, "ada-lovelace") as space:
         admin = UserRepository(space).get_by_email(ADA)
         assert admin is not None
-        assert (admin.ruolo, admin.nome, admin.password_hash) == ("admin", "Ada Lovelace", None)
+        assert (admin.role, admin.name, admin.password_hash) == ("admin", "Ada Lovelace", None)
         deal = space.get(Deal, answer.deal_id)
         assert deal is not None and deal.owner_id == admin.id
     assert [mail.to for mail in door.sender.sent] == [ADA]
     assert "https://pigro.test/ada-lovelace/app/verify?t=" in door.sender.sent[0].text
 
-    again = door.service().ensure(uuid4(), _upsert(lettera={"numero": "4/2026"}))
-    assert again.slug == "ada-lovelace" and again.spazio_creato is False
+    again = door.service().ensure(uuid4(), _upsert(letter={"number": "4/2026"}))
+    assert again.slug == "ada-lovelace" and again.space_created is False
     assert len(door.sender.sent) == 1
 
 
@@ -669,11 +667,11 @@ def test_retry_after_deal_created_but_unrecorded_reuses_it(door: Door) -> None:
     match_id = uuid4()
     with _space(door, "ada-lovelace") as space:
         customer = CustomerService(space).create(
-            CustomerCreate(ragione_sociale="rebase S.r.l."), Actor.rebase()
+            CustomerCreate(legal_name="rebase S.r.l."), Actor.rebase()
         )
         deal = DealService(space).create(
             DealCreate(
-                nome="Acme, il backend",
+                name="Acme, il backend",
                 customer_id=customer.id,
                 note=DEAL_NOTE,
             ),
@@ -684,10 +682,10 @@ def test_retry_after_deal_created_but_unrecorded_reuses_it(door: Door) -> None:
         registry.add(RebaseEngagement(match_id=match_id, tenant_id=tenant_id))
         registry.commit()
 
-    answer = door.service().ensure(match_id, _upsert(rebase={"partita_iva": None}))
+    answer = door.service().ensure(match_id, _upsert(rebase={"vat_number": None}))
 
     assert (answer.customer_id, answer.deal_id) == (customer.id, deal.id)
-    assert answer.creato is True and answer.spazio_creato is False
+    assert answer.created is True and answer.space_created is False
     with _space(door, "ada-lovelace") as space:
         assert _count(space, Customer) == 1
         assert _count(space, Deal) == 1
@@ -716,14 +714,14 @@ def test_retry_finds_its_deal_under_a_customer_the_freelancer_edited(door: Door)
         space.execute(
             update(Customer)
             .where(Customer.id == first.customer_id)
-            .values(ragione_sociale="rebase (fornitore)", partita_iva="09876543210")
+            .values(legal_name="rebase (fornitore)", vat_number="09876543210")
         )
         space.commit()
 
     answer = door.service().ensure(match_id, _upsert())
 
     assert (answer.customer_id, answer.deal_id) == (first.customer_id, first.deal_id)
-    assert answer.creato is True
+    assert answer.created is True
     with _space(door, "ada-lovelace") as space:
         assert _count(space, Customer) == 1
         assert _count(space, Deal) == 1
@@ -736,11 +734,11 @@ def test_same_named_deal_without_marker_is_not_reused(door: Door) -> None:
     _provision(door, "ada-lovelace")
     with _space(door, "ada-lovelace") as space:
         customer = CustomerService(space).create(
-            CustomerCreate(ragione_sociale="rebase S.r.l.", partita_iva="01234567890"),
+            CustomerCreate(legal_name="rebase S.r.l.", vat_number="01234567890"),
             Actor.system(),
         )
         theirs = DealService(space).create(
-            DealCreate(nome=DEAL_NAME, customer_id=customer.id, note="La mia lettera."),
+            DealCreate(name=DEAL_NAME, customer_id=customer.id, note="La mia lettera."),
             Actor.system(),
         )
 
@@ -749,7 +747,7 @@ def test_same_named_deal_without_marker_is_not_reused(door: Door) -> None:
     assert answer.customer_id == customer.id
     assert answer.deal_id != theirs.id
     with _space(door, "ada-lovelace") as space:
-        assert _count(space, Deal, Deal.nome == DEAL_NAME) == 2
+        assert _count(space, Deal, Deal.name == DEAL_NAME) == 2
         untouched = space.get(Deal, theirs.id)
         assert untouched is not None and untouched.rebase_refs == []
         assert texts(space, "deal", theirs.id) == ["La mia lettera."]
@@ -759,38 +757,38 @@ def test_a_vat_number_that_finds_nothing_falls_back_to_the_name(door: Door) -> N
     """The customer «rebase» a body without a VAT number created, found by its name the
     day the signer data gains one: the same customer, not a second one, and left as it
     is (no VAT number written onto it)."""
-    no_vat = door.service().ensure(uuid4(), _upsert(rebase={"partita_iva": None}))
+    no_vat = door.service().ensure(uuid4(), _upsert(rebase={"vat_number": None}))
 
-    with_vat = door.service().ensure(uuid4(), _upsert(lettera={"numero": "4/2026"}))
+    with_vat = door.service().ensure(uuid4(), _upsert(letter={"number": "4/2026"}))
 
     assert with_vat.customer_id == no_vat.customer_id
     with _space(door, "ada-lovelace") as space:
         assert _count(space, Customer) == 1
         customer = space.get(Customer, no_vat.customer_id)
-        assert customer is not None and customer.partita_iva is None
+        assert customer is not None and customer.vat_number is None
 
 
 # --- ensure: the edges ---------------------------------------------------------------
 
 
 def test_longest_role_and_company_still_make_a_valid_name(door: Door) -> None:
-    numero, ruolo, azienda = "9" * 20, "R" * 200, "A" * 255
-    name = deal_name(numero, ruolo, azienda)
-    assert name == f"Lettera n. {numero} · {'R' * 80} per {'A' * 100}"
+    number, role, legal_entity = "9" * 20, "R" * 200, "A" * 255
+    name = deal_name(number, role, legal_entity)
+    assert name == f"Lettera n. {number} · {'R' * 80} per {'A' * 100}"
     assert len(name) <= 255
 
     match_id = uuid4()
     answer = door.service().ensure(
-        match_id, _upsert(lettera={"numero": numero, "ruolo": ruolo, "azienda": azienda})
+        match_id, _upsert(letter={"number": number, "role": role, "company_name": legal_entity})
     )
 
     with _space(door, answer.slug) as space:
         deal = space.get(Deal, answer.deal_id)
-        assert deal is not None and deal.nome == name
+        assert deal is not None and deal.name == name
         # The note is a `Text`: it keeps the whole company, and a name with no full stop
         # of its own gets one.
         assert texts(space, "deal", deal.id) == [
-            f"Creato da rebase per la lettera n. {numero} con {azienda}. rebase legge le "
+            f"Creato da rebase per la lettera n. {number} con {legal_entity}. rebase legge le "
             "ore di questo deal per la rendicontazione al cliente."
         ]
         assert deal.rebase_refs == [deal_marker(match_id)]
@@ -835,10 +833,10 @@ def test_welcome_mail_is_sent_once_for_a_new_space(door: Door) -> None:
     mail = door.sender.sent[0]
     assert mail.to == ADA
     assert "https://pigro.test/ada-lovelace/app/verify?t=" in mail.text
-    # A member of the community: the mail does not invite her into it (`membro=True`).
+    # A member of the community: the mail does not invite her into it (`member=True`).
     assert "Se vuoi entrarci" not in mail.text
 
-    door.service().ensure(uuid4(), _upsert(lettera={"numero": "4/2026"}))
+    door.service().ensure(uuid4(), _upsert(letter={"number": "4/2026"}))
     assert len(door.sender.sent) == 1
 
 
@@ -847,7 +845,7 @@ def test_a_call_that_stops_after_opening_the_space_leaves_the_welcome_to_its_ret
 ) -> None:
     """Greptile on #427: the welcome went out with the provisioning, so a call that
     opened the space and then failed left a retry that found the space and its admin,
-    sent nothing, and answered `spazio_creato: false`. The row now records that this
+    sent nothing, and answered `space_created: false`. The row now records that this
     match opened the space, and the call that completes the engagement sends the
     welcome and says so: once."""
     match_id = uuid4()
@@ -867,11 +865,11 @@ def test_a_call_that_stops_after_opening_the_space_leaves_the_welcome_to_its_ret
     answer = door.service().ensure(match_id, _upsert())
 
     assert answer.slug == "ada-lovelace"
-    assert answer.creato is True and answer.spazio_creato is True
+    assert answer.created is True and answer.space_created is True
     assert [mail.to for mail in door.sender.sent] == [ADA]
     assert "https://pigro.test/ada-lovelace/app/verify?t=" in door.sender.sent[0].text
     again = door.service().ensure(match_id, _upsert())
-    assert again.creato is False and len(door.sender.sent) == 1
+    assert again.created is False and len(door.sender.sent) == 1
 
 
 def test_a_space_whose_admin_was_created_before_a_failure_still_gets_its_welcome(
@@ -898,7 +896,7 @@ def test_a_space_whose_admin_was_created_before_a_failure_still_gets_its_welcome
     monkeypatch.setattr(EngagementService, "_customer", customer_step)
     answer = door.service().ensure(match_id, _upsert())
 
-    assert answer.creato is True and answer.spazio_creato is True
+    assert answer.created is True and answer.space_created is True
     assert [mail.to for mail in door.sender.sent] == [ADA]
 
 
@@ -906,7 +904,7 @@ def test_a_space_whose_admin_was_created_before_a_failure_still_gets_its_welcome
 
 
 def _log(
-    space: Session, deal_id: UUID, day: date, descrizione: str, *, fatturabile: bool = True
+    space: Session, deal_id: UUID, day: date, description: str, *, billable: bool = True
 ) -> UUID:
     """Eight hours on the deal, logged for the space's admin through the service: the
     admin has no password, so the service is the way in."""
@@ -916,10 +914,10 @@ def _log(
         TimeEntryCreate(
             deal_id=deal_id,
             user_id=admin.id,
-            data=day,
-            ore=Decimal("8.00"),
-            descrizione=descrizione,
-            fatturabile=fatturabile,
+            date=day,
+            hours=Decimal("8.00"),
+            description=description,
+            billable=billable,
         ),
         Actor.system(),
     )
@@ -934,12 +932,12 @@ def _invoice(space: Session, linked: EngagementRead, entries: list[UUID], **fiel
     space.flush()
     line = InvoiceLine(
         invoice_id=invoice.id,
-        numero_linea=1,
-        descrizione="Ore di lavoro",
-        quantita=Decimal("8"),
-        prezzo_unitario=Decimal("50"),
-        prezzo_totale=Decimal("400.00"),
-        aliquota_iva=Decimal("22.00"),
+        line_number=1,
+        description="Ore di lavoro",
+        quantity=Decimal("8"),
+        unit_price=Decimal("50"),
+        total_price=Decimal("400.00"),
+        vat_rate=Decimal("22.00"),
     )
     space.add(line)
     space.flush()
@@ -969,62 +967,62 @@ def test_report_lists_entries_with_their_invoice(
     with _space(door, linked.slug) as space:
         setup = _log(space, linked.deal_id, first, "Setup")
         api = _log(space, linked.deal_id, second, "API")
-        _log(space, linked.deal_id, second, "Riunione interna", fatturabile=False)
+        _log(space, linked.deal_id, second, "Riunione interna", billable=False)
         invoice_id = _invoice(
             space,
             linked,
             [setup, api],
-            tipo="fattura",
-            stato="emessa",
-            anno=2026,
-            numero=12,
-            data_emissione=second,
+            type="invoice",
+            status="issued",
+            year=2026,
+            number=12,
+            issue_date=second,
         )
 
-    report = door.service().report(match_id, da=first)
+    report = door.service().report(match_id, date_from=first)
 
     assert report.slug == "ada-lovelace"
     assert report.deal_url == linked.deal_url
     assert report.deal == ReportDeal(
         id=linked.deal_id,
-        nome=DEAL_NAME,
-        tariffa_oraria=Decimal("50.000000"),
-        ore_preventivate=Decimal("320.00"),
-        stato="in corso",
+        name=DEAL_NAME,
+        hourly_rate=Decimal("50.000000"),
+        budgeted_hours=Decimal("320.00"),
+        status="in_progress",
     )
     issued = ReportInvoice(
         id=invoice_id,
-        tipo="fattura",
-        anno=2026,
-        numero=12,
-        stato="emessa",
-        stato_pagamento="da_incassare",
-        data=second,
+        type="invoice",
+        year=2026,
+        number=12,
+        status="issued",
+        payment_status="unpaid",
+        date=second,
     )
-    assert [(g.data, g.ore, g.descrizione, g.fatturabile, g.fattura) for g in report.giorni] == [
+    assert [(g.date, g.hours, g.description, g.billable, g.invoice) for g in report.days] == [
         (first, Decimal("8.00"), "Setup", True, issued),
         (second, Decimal("8.00"), "API", True, issued),
         (second, Decimal("8.00"), "Riunione interna", False, None),
     ]
-    assert report.fatture == [issued.model_copy(update={"ore": Decimal("16.00")})]
+    assert report.invoices == [issued.model_copy(update={"hours": Decimal("16.00")})]
     # The wire shape the hub reads (spec § 2.4): hours at two places, the rate at six,
     # and no hours on an entry's own invoice.
     wire = report.model_dump(mode="json")
-    assert (wire["totale_ore"], wire["ore_fatturate"], wire["ore_non_fatturate"]) == (
+    assert (wire["total_hours"], wire["billed_hours"], wire["unbilled_hours"]) == (
         "24.00",
         "16.00",
         "8.00",
     )
-    assert wire["deal"]["tariffa_oraria"] == "50.000000"
-    assert wire["deal"]["ore_preventivate"] == "320.00"
-    assert wire["giorni"][0]["fattura"]["ore"] is None
-    assert wire["fatture"][0]["ore"] == "16.00"
-    assert wire["fatture"][0]["data"] == second.isoformat()
+    assert wire["deal"]["hourly_rate"] == "50.000000"
+    assert wire["deal"]["budgeted_hours"] == "320.00"
+    assert wire["days"][0]["invoice"]["hours"] is None
+    assert wire["invoices"][0]["hours"] == "16.00"
+    assert wire["invoices"][0]["date"] == second.isoformat()
 
 
 def test_report_counts_only_issued_invoices_as_billed(door: Door) -> None:
-    """Billed is the CRM's own word for it (`billed_entry_ids`): a line of a `fattura`
-    that is `emessa`. An entry on a proforma or on a draft still shows that invoice, and
+    """Billed is the CRM's own word for it (`billed_entry_ids`): a line of a `invoice`
+    that is `issued`. An entry on a proforma or on a draft still shows that invoice, and
     counts as not billed; an entry on an invoice deleted since shows none, as the CRM
     itself no longer shows that invoice. The invoices come newest first, the undated
     ones last."""
@@ -1037,51 +1035,51 @@ def test_report_counts_only_issued_invoices_as_billed(door: Door) -> None:
             _log(space, linked.deal_id, day, name)
             for day, name in zip(days, ("Analisi", "Sviluppo", "Rilascio", "Scartata"), strict=True)
         ]
-        proforma = _invoice(space, linked, [on_proforma], tipo="proforma", stato="confermata")
-        draft = _invoice(space, linked, [on_draft], tipo="fattura", stato="bozza")
+        proforma = _invoice(space, linked, [on_proforma], type="proforma", status="confirmed")
+        draft = _invoice(space, linked, [on_draft], type="invoice", status="draft")
         issued = _invoice(
             space,
             linked,
             [on_issued],
-            tipo="fattura",
-            stato="emessa",
-            anno=2026,
-            numero=7,
-            data_emissione=days[2],
+            type="invoice",
+            status="issued",
+            year=2026,
+            number=7,
+            issue_date=days[2],
         )
         _invoice(
             space,
             linked,
             [on_deleted],
-            tipo="fattura",
-            stato="bozza",
+            type="invoice",
+            status="draft",
             deleted_at=datetime.now(UTC),
         )
 
-    report = door.service().report(match_id, da=days[0])
+    report = door.service().report(match_id, date_from=days[0])
 
-    assert [(g.descrizione, g.fattura.id if g.fattura else None) for g in report.giorni] == [
+    assert [(g.description, g.invoice.id if g.invoice else None) for g in report.days] == [
         ("Analisi", proforma),
         ("Sviluppo", draft),
         ("Rilascio", issued),
         ("Scartata", None),
     ]
-    shown = report.giorni[0].fattura
+    shown = report.days[0].invoice
     assert shown is not None
-    assert (shown.tipo, shown.stato, shown.anno, shown.numero, shown.data, shown.ore) == (
+    assert (shown.type, shown.status, shown.year, shown.number, shown.date, shown.hours) == (
         "proforma",
-        "confermata",
+        "confirmed",
         None,
         None,
         None,
         None,
     )
-    assert (report.totale_ore, report.ore_fatturate, report.ore_non_fatturate) == (
+    assert (report.total_hours, report.billed_hours, report.unbilled_hours) == (
         Decimal("32.00"),
         Decimal("8.00"),
         Decimal("24.00"),
     )
-    assert [(f.id, f.ore) for f in report.fatture] == [
+    assert [(f.id, f.hours) for f in report.invoices] == [
         (issued, Decimal("8.00")),
         (draft, Decimal("8.00")),
         (proforma, Decimal("8.00")),
@@ -1089,8 +1087,8 @@ def test_report_counts_only_issued_invoices_as_billed(door: Door) -> None:
 
 
 def test_report_defaults_and_caps_the_period(door: Door, monkeypatch: pytest.MonkeyPatch) -> None:
-    """`da` is the day the deal was created, in the CRM's zone (22:30 UTC on 1 October is
-    already the 2nd in Rome), `a` is today by the CRM's clock; a period over 800 days,
+    """`date_from` is the day the deal was created, in the CRM's zone (22:30 UTC on 1 October is
+    already the 2nd in Rome), `date_to` is today by the CRM's clock; a period over 800 days,
     or one that ends before it starts, is refused."""
     match_id = uuid4()
     linked = door.service().ensure(match_id, _upsert())
@@ -1108,41 +1106,41 @@ def test_report_defaults_and_caps_the_period(door: Door, monkeypatch: pytest.Mon
     _frozen(monkeypatch, datetime(2026, 10, 31, 12, 0, tzinfo=UTC))
     report = door.service().report(match_id)
 
-    assert [g.data for g in report.giorni] == [date(2026, 10, 2), date(2026, 10, 31)]
+    assert [g.date for g in report.days] == [date(2026, 10, 2), date(2026, 10, 31)]
 
-    for da, a, reason in (
+    for date_from, date_to, reason in (
         (date(2024, 1, 1), date(2024, 1, 1) + timedelta(days=801), "al massimo 800 giorni"),
         (date(2026, 10, 2), date(2026, 10, 1), REVERSED),
     ):
         with pytest.raises(ValidationFailed) as refused:
-            door.service().report(match_id, da=da, a=a)
+            door.service().report(match_id, date_from=date_from, date_to=date_to)
         assert refused.value.details == {
             "entity": "engagement",
-            "field": "periodo",
+            "field": "period",
             "reason": reason,
         }
-    # `a` alone before the deal's first day is the same reversed period.
+    # `date_to` alone before the deal's first day is the same reversed period.
     with pytest.raises(ValidationFailed) as refused:
-        door.service().report(match_id, a=date(2026, 10, 1))
+        door.service().report(match_id, date_to=date(2026, 10, 1))
     assert refused.value.details["reason"] == REVERSED
 
 
 def test_report_accepts_exactly_800_days(door: Door) -> None:
-    """The hub walks 800-day windows whose bounds touch (`da + 800`, then `da + 801`):
+    """The hub walks 800-day windows whose bounds touch (`date_from + 800`, then `date_from + 801`):
     a span of exactly 800 days is accepted, and both of its ends are in it."""
     match_id = uuid4()
     linked = door.service().ensure(match_id, _upsert())
-    a = today_local(door.settings)
-    da = a - timedelta(days=800)
+    date_to = today_local(door.settings)
+    date_from = date_to - timedelta(days=800)
     with _space(door, linked.slug) as space:
-        _log(space, linked.deal_id, da - timedelta(days=1), "Prima")
-        _log(space, linked.deal_id, da, "Il primo giorno")
-        _log(space, linked.deal_id, a, "L'ultimo giorno")
+        _log(space, linked.deal_id, date_from - timedelta(days=1), "Prima")
+        _log(space, linked.deal_id, date_from, "Il primo giorno")
+        _log(space, linked.deal_id, date_to, "L'ultimo giorno")
 
-    report = door.service().report(match_id, da=da, a=a)
+    report = door.service().report(match_id, date_from=date_from, date_to=date_to)
 
-    assert [g.descrizione for g in report.giorni] == ["Il primo giorno", "L'ultimo giorno"]
-    assert report.totale_ore == Decimal("16.00")
+    assert [g.description for g in report.days] == ["Il primo giorno", "L'ultimo giorno"]
+    assert report.total_hours == Decimal("16.00")
 
 
 def test_report_of_unknown_match_is_not_found(door: Door) -> None:

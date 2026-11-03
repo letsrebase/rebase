@@ -15,7 +15,7 @@ from rebase_core.mail import Mail
 MAIL = RenderedMail(
     Mail(to="ada@studio.it", subject="S", text="T", html="<p>H</p>"),
     {"List-Unsubscribe": "<https://x/u>", "List-Unsubscribe-Post": "List-Unsubscribe=One-Click"},
-    {"campaign": "c-1", "azione": "cv", "kind": "real", "r": "r-1"},
+    {"campaign": "c-1", "action": "cv", "kind": "real", "r": "r-1"},
 )
 
 
@@ -35,7 +35,7 @@ def test_a_mail_goes_with_its_key_headers_and_tags() -> None:
     outcome = ResendCampaignSender("key", "Ivan di rebase <ciao@letsrebase.com>", http).send(
         MAIL, "row-1"
     )
-    assert outcome == SendOutcome("accettata", "re_1")
+    assert outcome == SendOutcome("accepted", "re_1")
     method, url, headers, body = http.calls[0]
     assert (method, url) == ("POST", "https://api.resend.com/emails")
     assert headers["Idempotency-Key"] == "row-1"
@@ -54,11 +54,11 @@ def test_a_concurrent_key_a_rate_limit_and_a_network_error_are_retried_later() -
         (599, b""),
     ):
         assert (
-            ResendCampaignSender("k", "s", FakeHttp(status, raw)).send(MAIL, "x").esito == "riprova"
+            ResendCampaignSender("k", "s", FakeHttp(status, raw)).send(MAIL, "x").outcome == "retry"
         )
 
 
-def test_a_429_naming_the_quota_is_not_a_retry() -> None:
+def test_to_429_naming_the_share_is_not_to_retry() -> None:
     """REB-779: the daily or monthly quota is the same answer for every mail, so it is
     its own outcome, with which quota kept for the page; a bare 429 is still a retry."""
     for name in ("daily_quota_exceeded", "monthly_quota_exceeded"):
@@ -67,17 +67,17 @@ def test_a_429_naming_the_quota_is_not_a_retry() -> None:
             "quota", None, name
         )
     rate = FakeHttp(429, b'{"name": "rate_limit_exceeded"}')
-    assert ResendCampaignSender("k", "s", rate).send(MAIL, "x").esito == "riprova"
+    assert ResendCampaignSender("k", "s", rate).send(MAIL, "x").outcome == "retry"
 
 
 def test_a_changed_payload_under_the_same_key_and_a_bad_request_are_refused() -> None:
     changed = FakeHttp(409, b'{"name": "invalid_idempotent_request"}')
-    assert ResendCampaignSender("k", "s", changed).send(MAIL, "x").esito == "rifiutata"
+    assert ResendCampaignSender("k", "s", changed).send(MAIL, "x").outcome == "rejected"
     assert (
         ResendCampaignSender("k", "s", FakeHttp(422, b'{"name": "validation_error"}'))
         .send(MAIL, "x")
-        .esito
-        == "rifiutata"
+        .outcome
+        == "rejected"
     )
 
 
@@ -89,20 +89,20 @@ def test_a_revoked_key_or_an_unverified_domain_stops_the_send() -> None:
         (403, b'{"name": "restricted_api_key"}'),
     ):
         outcome = ResendCampaignSender("k", "s", FakeHttp(status, raw)).send(MAIL, "x")
-        assert outcome == SendOutcome("fermati", dettaglio=f"Resend {status}")
+        assert outcome == SendOutcome("stop", detail=f"Resend {status}")
 
 
 def test_the_seam_never_raises() -> None:
     def boom(*_: object) -> tuple[int, bytes]:
         raise OSError("down")
 
-    assert ResendCampaignSender("k", "s", boom).send(MAIL, "x").esito == "riprova"
+    assert ResendCampaignSender("k", "s", boom).send(MAIL, "x").outcome == "retry"
 
 
 def test_recording_sender_answers_in_order_then_accepts() -> None:
-    recording = RecordingCampaignSender([SendOutcome("riprova")])
-    assert recording.send(MAIL, "a").esito == "riprova"
-    assert recording.send(MAIL, "a").esito == "accettata"
+    recording = RecordingCampaignSender([SendOutcome("retry")])
+    assert recording.send(MAIL, "a").outcome == "retry"
+    assert recording.send(MAIL, "a").outcome == "accepted"
     assert recording.keys == ["a", "a"]
 
 

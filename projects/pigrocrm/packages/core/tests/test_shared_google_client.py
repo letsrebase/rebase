@@ -75,7 +75,7 @@ def test_without_the_setting_a_space_still_has_no_google() -> None:
 
 
 def test_a_space_with_its_own_client_borrows_nothing_from_the_root() -> None:
-    """Impostazioni → Spazio still lets a space bring its own client. Then the root's
+    """Settings → Space still lets a space bring its own client. Then the root's
     secret must not authenticate somebody else's client id, and the root's callback is
     not an address their client registered."""
     base = space_base_settings(_root(), "studio")

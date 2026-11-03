@@ -34,7 +34,7 @@ INITIALIZE = {
     "params": {
         "protocolVersion": "2025-06-18",
         "capabilities": {},
-        "clientInfo": {"name": "prova", "version": "0"},
+        "clientInfo": {"name": "test", "version": "0"},
     },
 }
 ACCEPT = {"Accept": "application/json, text/event-stream", "Content-Type": "application/json"}
@@ -44,7 +44,7 @@ ACCEPT = {"Accept": "application/json, text/event-stream", "Content-Type": "appl
 def ivan_token(mcp_engine: Engine) -> Iterator[str]:
     """An admin and a token of theirs; both removed after."""
     with session_factory(mcp_engine)() as session:
-        user = User(email="ivan@rebase.it", nome="Ivan", cognome="Fiore", role="admin")
+        user = User(email="ivan@rebase.it", first_name="Ivan", last_name="Fiore", role="admin")
         session.add(user)
         session.commit()
         _, raw = AdminTokenService(session).create(user.id, "Claude Code")
@@ -166,11 +166,11 @@ async def test_a_token_lists_the_tools_and_signs_what_it_writes(
         names = {tool.name for tool in (await session.list_tools()).tools}
     assert {"read_freelancer_cv", "list_pigro_spaces", "add_freelancer_note"} <= names
 
-    talenti = await _call(app, ivan_token, "list_talenti", {})
-    assert talenti["totale"] == 0
+    talents = await _call(app, ivan_token, "list_talents", {})
+    assert talents["total"] == 0
 
     spaces = await _call(app, ivan_token, "list_pigro_spaces", {})
-    assert spaces["totale"] == 1 and spaces["items"][0]["slug"] == "studio"
+    assert spaces["total"] == 1 and spaces["items"][0]["slug"] == "studio"
     assert spaces["items"][0]["url"] == "https://pigro.test/studio/app/"
 
 

@@ -16,13 +16,13 @@ from decimal import Decimal
 from typing import Any
 
 import pytest
-from fakes.azienda_fixtures import committed_default_azienda, remove_azienda
+from fakes.legal_entity_fixtures import committed_default_legal_entity, remove_legal_entity
 from sqlalchemy import Engine, delete, event, select
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.customers.models import Customer
-from pigrocrm.core.dashboard.schemas import PeriodoQuery
+from pigrocrm.core.dashboard.schemas import PeriodQuery
 from pigrocrm.core.dashboard.service import DashboardService
 from pigrocrm.core.db import session_factory
 from pigrocrm.core.db.base import uuid7
@@ -38,25 +38,23 @@ _A = date(2026, 3, 31)
 
 def _seed(session: Session, deals: int) -> None:
     open_stage = PipelineStage(
-        nome=f"{_PREFIX} aperto", posizione=0, probabilita_default=20, tipo="open"
+        name=f"{_PREFIX} aperto", position=0, default_probability=20, type="open"
     )
     won_stage = PipelineStage(
-        nome=f"{_PREFIX} vinto", posizione=1, probabilita_default=100, tipo="won"
+        name=f"{_PREFIX} vinto", position=1, default_probability=100, type="won"
     )
     session.add_all([open_stage, won_stage])
     session.flush()
     for index in range(deals):
-        customer = Customer(
-            ragione_sociale=f"{_PREFIX} Cliente {index}", nazione="IT", custom_fields={}
-        )
+        customer = Customer(legal_name=f"{_PREFIX} Cliente {index}", country="IT", custom_fields={})
         session.add(customer)
         session.flush()
         stage = open_stage if index % 2 else won_stage
         deal = Deal(
-            nome=f"{_PREFIX} deal {index}",
+            name=f"{_PREFIX} deal {index}",
             customer_id=customer.id,
             pipeline_stage_id=stage.id,
-            probabilita=stage.probabilita_default,
+            probability=stage.default_probability,
             custom_fields={},
         )
         session.add(deal)
@@ -65,17 +63,17 @@ def _seed(session: Session, deals: int) -> None:
             Invoice(
                 customer_id=customer.id,
                 deal_id=deal.id,
-                tipo="fattura",
-                stato="emessa",
-                stato_pagamento="da_incassare",
-                imponibile=Decimal("100.00"),
-                imposta=Decimal("0.00"),
-                bollo=Decimal("0.00"),
-                totale=Decimal("100.00"),
-                data_emissione=date(2026, 3, 10),
-                data_scadenza=date(2026, 3, 20),
-                tipo_documento="TD01",
-                divisa="EUR",
+                type="invoice",
+                status="issued",
+                payment_status="unpaid",
+                taxable_amount=Decimal("100.00"),
+                vat_amount=Decimal("0.00"),
+                stamp_duty=Decimal("0.00"),
+                total=Decimal("100.00"),
+                issue_date=date(2026, 3, 10),
+                due_date=date(2026, 3, 20),
+                sdi_document_type="TD01",
+                currency="EUR",
                 custom_fields={},
             )
         )
@@ -85,26 +83,26 @@ def _seed(session: Session, deals: int) -> None:
 def _clean(session: Session) -> None:
     session.execute(
         delete(Invoice).where(
-            Invoice.deal_id.in_(select(Deal.id).where(Deal.nome.like(f"{_PREFIX} %")))
+            Invoice.deal_id.in_(select(Deal.id).where(Deal.name.like(f"{_PREFIX} %")))
         )
     )
-    session.execute(delete(Deal).where(Deal.nome.like(f"{_PREFIX} %")))
-    session.execute(delete(Customer).where(Customer.ragione_sociale.like(f"{_PREFIX} %")))
-    session.execute(delete(PipelineStage).where(PipelineStage.nome.like(f"{_PREFIX} %")))
+    session.execute(delete(Deal).where(Deal.name.like(f"{_PREFIX} %")))
+    session.execute(delete(Customer).where(Customer.legal_name.like(f"{_PREFIX} %")))
+    session.execute(delete(PipelineStage).where(PipelineStage.name.like(f"{_PREFIX} %")))
     session.commit()
 
 
 @pytest.fixture
-def azienda(db_engine: Engine) -> Iterator[None]:
+def legal_entity(db_engine: Engine) -> Iterator[None]:
     factory = session_factory(db_engine)
     with factory() as session:
-        azienda_id = committed_default_azienda(session)
+        legal_entity_id = committed_default_legal_entity(session)
     try:
         yield
     finally:
         with factory() as session:
             _clean(session)
-            remove_azienda(session, azienda_id)
+            remove_legal_entity(session, legal_entity_id)
             session.commit()
 
 
@@ -121,17 +119,17 @@ def _statements_for(engine: Engine, deals: int) -> int:
     try:
         with factory() as session:
             result = DashboardService(session).get_economic_dashboard(
-                PeriodoQuery(da=_DA, a=_A), READONLY
+                PeriodQuery(date_from=_DA, date_to=_A), READONLY
             )
     finally:
         event.remove(engine, "before_cursor_execute", count)
         with factory() as session:
             _clean(session)
-    assert result.pnl.chiusi.deal + result.pnl.in_corso.deal == deals
+    assert result.pnl.closed.deal + result.pnl.in_progress.deal == deals
     return len(statements)
 
 
-@pytest.mark.usefixtures("azienda")
+@pytest.mark.usefixtures("legal_entity")
 def test_the_economic_dashboard_reads_the_same_number_of_statements_for_any_number_of_deals(
     db_engine: Engine,
 ) -> None:

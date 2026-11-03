@@ -21,47 +21,47 @@ function Row({ label, value, hint }: { label: string; value: string; hint?: stri
  * `AnalyticsService` and arrives as a decimal string.
  */
 export function PnlRows({ pnl }: { pnl: DealPnl }) {
-  // Only `chiuso` is definitive. `da fatturare` is finished work that has not been
+  // Only `closed` is definitive. `to_invoice` is finished work that has not been
   // billed yet, so its margin is still missing the revenue that is about to arrive --
   // reading "not in corso" as "done" would report a loss on every deal waiting for its
   // invoice.
-  const definitive = pnl.stato === 'chiuso'
+  const definitive = pnl.status === 'closed'
   return (
     <div>
       <Row
         label="Ricavi fatturati"
-        value={formatMoneyValue(pnl.ricavi)}
-        hint={`${pnl.fatture_emesse} fatture emesse`}
+        value={formatMoneyValue(pnl.revenue)}
+        hint={`${pnl.issued_invoices} fatture emesse`}
       />
-      <Row label="Costi diretti" value={formatMoneyValue(pnl.costi_diretti)} />
-      <Row label="Costo del lavoro" value={formatMoneyValue(pnl.costo_lavoro)} />
+      <Row label="Costi diretti" value={formatMoneyValue(pnl.direct_costs)} />
+      <Row label="Costo del lavoro" value={formatMoneyValue(pnl.work_cost)} />
       <Row
         label="Margine lordo"
-        value={formatMoneyValue(pnl.margine_lordo)}
+        value={formatMoneyValue(pnl.gross_margin)}
         // The qualifier is never optional on an unfinished deal: a deal with twenty
         // hours and no invoice has a negative margin, and that is not a loss -- it is
         // unfinished work. The report shows a *state* beside the bare number.
         hint={definitive ? '(definitivo)' : '(provvisorio)'}
       />
-      <Row label="Margine %" value={formatPercent(pnl.margine_percentuale)} />
+      <Row label="Margine %" value={formatPercent(pnl.percentage_margin)} />
       {!definitive && (
         <Row
           label="Valore maturato"
-          value={formatMoneyValue(pnl.valore_maturato)}
+          value={formatMoneyValue(pnl.accrued_value)}
           // Dropped once the deal is closed: from then on the revenue is the invoices
           // themselves, and repeating an estimate beside them invites the reader to
           // treat the estimate as a second, disagreeing figure for the same thing.
           hint="stima — non è un ricavo"
         />
       )}
-      <Row label="Ore consuntivate" value={formatHoursValue(pnl.ore_totali)} />
-      <Row label="Ore da fatturare" value={formatHoursValue(pnl.ore_fatturabili_non_fatturate)} />
-      {pnl.ore_senza_tariffa > 0 && (
+      <Row label="Ore consuntivate" value={formatHoursValue(pnl.total_hours)} />
+      <Row label="Ore da fatturare" value={formatHoursValue(pnl.billable_uninvoiced_hours)} />
+      {pnl.hours_without_rate > 0 && (
         // A note rather than a row: it is not a figure of the conto economico, it is the
         // reason two of those figures are lower than the work done. An unpriced hour is
         // not a free hour, and it enters neither the accrued value nor the margin.
         <p className="mt-3 text-xs text-muted-foreground">
-          {pnl.ore_senza_tariffa} voci senza tariffa: escluse dal valore maturato e dal margine.
+          {pnl.hours_without_rate} voci senza tariffa: escluse dal valore maturato e dal margine.
         </p>
       )}
     </div>
@@ -72,8 +72,8 @@ export function PnlRows({ pnl }: { pnl: DealPnl }) {
  *  says which reading it is: the same figure can differ by a month's invoicing between
  *  the two, and a number that does not name its base is a number with no unit. */
 const BASE_HINT: Record<PnlBase, string> = {
-  emissione: 'per emissione',
-  competenza: 'per competenza',
+  issue: 'per emissione',
+  accrual: 'per competenza',
 }
 
 /**
@@ -103,11 +103,11 @@ function TotalsColumn({
           <span className="text-xs text-muted-foreground">dato riportabile</span>
         )}
       </div>
-      <Row label="Ricavi" value={formatMoneyValue(totals.ricavi)} hint={BASE_HINT[base]} />
-      <Row label="Costi diretti" value={formatMoneyValue(totals.costi_diretti)} />
-      <Row label="Costo del lavoro" value={formatMoneyValue(totals.costo_lavoro)} />
-      <Row label="Margine lordo" value={formatMoneyValue(totals.margine_lordo)} />
-      <Row label="Margine %" value={formatPercent(totals.margine_percentuale)} />
+      <Row label="Ricavi" value={formatMoneyValue(totals.revenue)} hint={BASE_HINT[base]} />
+      <Row label="Costi diretti" value={formatMoneyValue(totals.direct_costs)} />
+      <Row label="Costo del lavoro" value={formatMoneyValue(totals.work_cost)} />
+      <Row label="Margine lordo" value={formatMoneyValue(totals.gross_margin)} />
+      <Row label="Margine %" value={formatPercent(totals.percentage_margin)} />
     </div>
   )
 }
@@ -120,15 +120,15 @@ function TotalsColumn({
  * business performance. The backend refuses to return such a field; this component
  * refuses to compute one, which is the only way the refusal survives the trip.
  */
-export function PeriodTotals({ pnl, base = 'emissione' }: { pnl: PeriodPnl; base?: PnlBase }) {
+export function PeriodTotals({ pnl, base = 'issue' }: { pnl: PeriodPnl; base?: PnlBase }) {
   return (
     <div className="space-y-4">
       <div className="grid gap-4 md:grid-cols-2">
-        <TotalsColumn label="Deal chiusi" totals={pnl.chiusi} base={base} reportable />
-        <TotalsColumn label="Deal in corso" totals={pnl.in_corso} base={base} />
+        <TotalsColumn label="Deal chiusi" totals={pnl.closed} base={base} reportable />
+        <TotalsColumn label="Deal in corso" totals={pnl.in_progress} base={base} />
       </div>
       <div>
-        <Row label="Spese generali" value={formatMoneyValue(pnl.spese_generali)} />
+        <Row label="Spese generali" value={formatMoneyValue(pnl.general_expenses)} />
         <p className="mt-2 text-xs text-muted-foreground">
           Le spese generali non sono ripartite su nessun cliente e su nessun deal: restano
           fuori da entrambe le colonne, invece di essere spalmate con un criterio che

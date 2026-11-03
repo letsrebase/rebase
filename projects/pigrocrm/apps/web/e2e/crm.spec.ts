@@ -73,7 +73,7 @@ test('creating a customer, a person and a deal, then moving it across the board'
   // The row, not the page. What this step has to prove is that the person is in
   // the people list, and `getByText('Rossi')` proves only that the string is
   // somewhere on it -- satisfied just as well by the «Azienda» column, which
-  // renders `customer_ragione_sociale` (`features/people/columns.tsx`) and would
+  // renders `customer_legal_name` (`features/people/columns.tsx`) and would
   // read "Rossi Ingegneria ... Srl" for anyone linked to the customer
   // `e2e/search.spec.ts` creates. The surname alone is also not unique to a
   // person: `DataTable` draws real `<tr>` rows, so the row's own accessible name
@@ -98,16 +98,16 @@ test('creating a customer, a person and a deal, then moving it across the board'
   // move actually took, since the card never disappears) -- specifically inside
   // Offerta's own column, and still there after a reload discards any optimistic
   // client state and re-reads the server's own record.
-  const offerta = page
+  const offer = page
     .locator('div.flex.w-72.shrink-0.flex-col')
     .filter({ has: page.getByRole('heading', { name: 'Offerta', exact: true }) })
-  await expect(offerta.getByText('Progetto E2E', { exact: true })).toBeVisible()
+  await expect(offer.getByText('Progetto E2E', { exact: true })).toBeVisible()
 
   await page.reload()
-  const offertaAfterReload = page
+  const offerAfterReload = page
     .locator('div.flex.w-72.shrink-0.flex-col')
     .filter({ has: page.getByRole('heading', { name: 'Offerta', exact: true }) })
-  await expect(offertaAfterReload.getByText('Progetto E2E', { exact: true })).toBeVisible()
+  await expect(offerAfterReload.getByText('Progetto E2E', { exact: true })).toBeVisible()
 })
 
 test('an invalid VAT number surfaces the API message on the field', async ({ page }) => {

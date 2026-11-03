@@ -44,8 +44,8 @@ from pigrocrm.core.pipeline.models import PipelineStage
 # The one customer every search test looks for. Both values are deliberately ordinary:
 # a VAT number whose middle five digits ("34567") are a realistic fragment to type, and
 # a company name whose first four characters ("Ross") are a realistic prefix.
-KNOWN_PARTITA_IVA = "01234567890"
-KNOWN_RAGIONE_SOCIALE = "Rossi Ingegneria Srl"
+KNOWN_VAT_NUMBER = "01234567890"
+KNOWN_LEGAL_NAME = "Rossi Ingegneria Srl"
 
 _SURNAMES = (
     "Rossi",
@@ -114,10 +114,10 @@ _DEAL_WORDS = (
 )
 _DOC_WORDS = ("Offerta", "Contratto", "Verbale", "Relazione", "Preventivo", "Capitolato")
 
-# `customers.partita_iva` is String(11) and the known customer already owns
+# `customers.vat_number` is String(11) and the known customer already owns
 # "01234567890", so the generated ones start above it and can never collide with it
 # however large `scale.customers` grows -- 10_000_000_000 + 50_000 is still 11 digits.
-_GENERATED_PIVA_BASE = 10_000_000_000
+_GENERATED_VAT_NUMBER_BASE = 10_000_000_000
 
 
 @dataclass(frozen=True)
@@ -141,7 +141,7 @@ REFERENCE = CorpusScale(customers=500, people=800, deals=2000, documents=1000, i
 SMALL = CorpusScale(customers=120, people=80, deals=200, documents=100, invoices=500)
 
 # Ten years of a register, whatever the scale. `(anno, numero)` is unique
-# (`uq_invoices_anno_numero`), so the two cannot be derived from the same modulus: the
+# (`uq_invoices_year_number`), so the two cannot be derived from the same modulus: the
 # brief's `anno = 2017 + index % 10` with `numero = index % 500 + 1` produces exactly 500
 # distinct pairs for any scale -- 10 divides 500, so the year is a function of the number --
 # and every row past the five-hundredth violates the constraint. Dividing for the year and
@@ -169,20 +169,20 @@ def _stages(session: Session) -> tuple[UUID, UUID, UUID]:
     run reuses those rows instead of tripping `uq_pipeline_stage_code`.
     """
     wanted = (
-        ("offerta", "Offerta", 2, 50, "open"),
-        ("vinto", "Vinto", 4, 100, "won"),
-        ("perso", "Perso", 5, 0, "lost"),
+        ("offer", "Offerta", 2, 50, "open"),
+        ("won", "Vinto", 4, 100, "won"),
+        ("lost", "Perso", 5, 0, "lost"),
     )
     ids: list[UUID] = []
-    for code, nome, posizione, probabilita, tipo in wanted:
+    for code, stage_name, position, probability, type in wanted:
         existing = session.scalar(select(PipelineStage).where(PipelineStage.code == code))
         if existing is None:
             existing = PipelineStage(
                 code=code,
-                nome=nome,
-                posizione=posizione,
-                probabilita_default=probabilita,
-                tipo=tipo,
+                name=stage_name,
+                position=position,
+                default_probability=probability,
+                type=type,
             )
             session.add(existing)
             session.flush()
@@ -200,22 +200,22 @@ def build_corpus(session: Session, scale: CorpusScale, *, seed: int = 20260821) 
         cid = uuid7()
         customer_ids.append(cid)
         if index == 0:
-            ragione, piva = KNOWN_RAGIONE_SOCIALE, KNOWN_PARTITA_IVA
+            legal, vat_number = KNOWN_LEGAL_NAME, KNOWN_VAT_NUMBER
         else:
-            ragione = (
+            legal = (
                 f"{rng.choice(_SURNAMES)} {rng.choice(_SECTORS)} {rng.choice(_LEGAL_FORMS)} {index}"
             )
-            piva = str(_GENERATED_PIVA_BASE + index)
+            vat_number = str(_GENERATED_VAT_NUMBER_BASE + index)
         customer_rows.append(
             {
                 "id": cid,
-                "ragione_sociale": ragione[:255],
-                "partita_iva": piva,
-                # Exactly 16 characters, which is what `codice_fiscale` is sized for.
-                "codice_fiscale": f"CF{index:014d}",
+                "legal_name": legal[:255],
+                "vat_number": vat_number,
+                # Exactly 16 characters, which is what `tax_code` is sized for.
+                "tax_code": f"CF{index:014d}",
                 "email": f"info{index}@{rng.choice(_SECTORS).lower()}.example",
-                "nazione": "IT",
-                "stato": rng.choice(("attivo", "prospect", None)),
+                "country": "IT",
+                "status": rng.choice(("active", "prospect", None)),
                 "custom_fields": {},
             }
         )
@@ -223,15 +223,15 @@ def build_corpus(session: Session, scale: CorpusScale, *, seed: int = 20260821) 
 
     person_rows: list[dict[str, object]] = []
     for index in range(scale.people):
-        # Every fifth person has no surname: `people.cognome` is nullable, and Task A3's
+        # Every fifth person has no surname: `people.last_name` is nullable, and Task A3's
         # NULLS LAST cursor has no exerciser without rows in the null tail.
-        cognome = None if index % 5 == 0 else rng.choice(_SURNAMES)
+        last_name = None if index % 5 == 0 else rng.choice(_SURNAMES)
         person_rows.append(
             {
                 "id": uuid7(),
                 "customer_id": customer_ids[index % len(customer_ids)],
-                "nome": rng.choice(_FIRST_NAMES),
-                "cognome": cognome,
+                "first_name": rng.choice(_FIRST_NAMES),
+                "last_name": last_name,
                 "email": f"persona{index}@example.it",
                 "custom_fields": {},
             }
@@ -247,17 +247,17 @@ def build_corpus(session: Session, scale: CorpusScale, *, seed: int = 20260821) 
         # Every seventh deal has no expected value. Task B9 counts these under
         # "senza valore" and never sums them as zero.
         #
-        # `Decimal`, not the string the brief proposed: `deals.valore_previsto` is
+        # `Decimal`, not the string the brief proposed: `deals.expected_value` is
         # Numeric(12, 2), and money is never a float anywhere in this codebase.
-        valore = None if index % 7 == 0 else Decimal(f"{1000 + index % 90000}.00")
+        value = None if index % 7 == 0 else Decimal(f"{1000 + index % 90000}.00")
         deal_rows.append(
             {
                 "id": did,
-                "nome": f"{rng.choice(_DEAL_WORDS)} {rng.choice(_SECTORS)} {index}",
+                "name": f"{rng.choice(_DEAL_WORDS)} {rng.choice(_SECTORS)} {index}",
                 "customer_id": customer_ids[index % len(customer_ids)],
                 "pipeline_stage_id": stage,
-                "valore_previsto": valore,
-                "probabilita": (index % 11) * 10,
+                "expected_value": value,
+                "probability": (index % 11) * 10,
                 "custom_fields": {},
             }
         )
@@ -272,31 +272,31 @@ def build_corpus(session: Session, scale: CorpusScale, *, seed: int = 20260821) 
                 "id": uuid7(),
                 "customer_id": None if owner_is_deal else customer_ids[index % len(customer_ids)],
                 "deal_id": deal_ids[index % len(deal_ids)] if owner_is_deal else None,
-                "tipo": "offerta" if index % 3 == 0 else "documento",
-                "titolo": f"{rng.choice(_DOC_WORDS)} {rng.choice(_SECTORS)} {index}",
-                # `documents.stato` is meaningful only for `tipo = 'offerta'` and NULL
+                "type": "offer" if index % 3 == 0 else "document",
+                "title": f"{rng.choice(_DOC_WORDS)} {rng.choice(_SECTORS)} {index}",
+                # `documents.status` is meaningful only for `tipo = 'offerta'` and NULL
                 # for every other type -- the model's own docstring says so.
-                "stato": "inviata" if index % 3 == 0 else None,
-                "versione_corrente": 1,
+                "status": "sent" if index % 3 == 0 else None,
+                "current_version": 1,
                 "custom_fields": {},
             }
         )
     session.execute(insert(Document), document_rows)
 
     # Invoices, the fifth searched table (§8.1's fifth branch, Task C12). Every row is
-    # `fattura`/`emessa` and therefore numbered: the search branch's equality path only
+    # `invoice`/`issued` and therefore numbered: the search branch's equality path only
     # reaches numbered rows, and a corpus of drafts would leave it with nothing to find.
     #
     # The `CHECK` constraints on this table are unusually dense and each of these values is
-    # chosen against one of them: `anno` and `numero` are set together
-    # (`ck_invoices_anno_numero_together`), `numero` requires an issued `fattura`
-    # (`ck_invoices_numero_requires_issued_fattura`), `riferimento` is proforma-only, and
-    # `snapshot`/`annullata_il`/`data_incasso` are all left NULL because each pairs with
+    # chosen against one of them: `year` and `number` are set together
+    # (`ck_invoices_year_number_together`), `number` requires an issued `invoice`
+    # (`ck_invoices_number_requires_issued_invoice`), `reference` is proforma-only, and
+    # `snapshot`/`cancelled_at`/`payment_date` are all left NULL because each pairs with
     # another column this corpus does not set.
     invoice_rows: list[dict[str, object]] = []
     per_year = -(-scale.invoices // _REGISTER_YEARS) or 1
     for index in range(scale.invoices):
-        anno = _FIRST_REGISTER_YEAR + index // per_year
+        year = _FIRST_REGISTER_YEAR + index // per_year
         invoice_rows.append(
             {
                 "id": uuid7(),
@@ -304,21 +304,21 @@ def build_corpus(session: Session, scale: CorpusScale, *, seed: int = 20260821) 
                 # Every other invoice hangs off a deal. `deals.id` is a real FK, so the
                 # value has to come from `deal_ids` and not from a fresh UUID.
                 "deal_id": deal_ids[index % len(deal_ids)] if index % 2 == 0 else None,
-                "tipo": "fattura",
-                "stato": "emessa",
-                "stato_pagamento": "da_incassare" if index % 3 else "incassato",
-                "anno": anno,
-                "numero": index % per_year + 1,
-                "causale": f"{rng.choice(_DEAL_WORDS)} {rng.choice(_SECTORS)} {index}"[:200],
+                "type": "invoice",
+                "status": "issued",
+                "payment_status": "unpaid" if index % 3 else "paid",
+                "year": year,
+                "number": index % per_year + 1,
+                "memo": f"{rng.choice(_DEAL_WORDS)} {rng.choice(_SECTORS)} {index}"[:200],
                 # `Decimal`, not a string: `Numeric(12, 2)`, and money is never a float
                 # anywhere in this codebase.
-                "imponibile": Decimal("1000.00"),
-                "imposta": Decimal("0.00"),
-                "bollo": Decimal("0.00"),
-                "totale": Decimal("1000.00"),
-                "data_emissione": date(anno, index % 12 + 1, 15),
-                "tipo_documento": "TD01",
-                "divisa": "EUR",
+                "taxable_amount": Decimal("1000.00"),
+                "vat_amount": Decimal("0.00"),
+                "stamp_duty": Decimal("0.00"),
+                "total": Decimal("1000.00"),
+                "issue_date": date(year, index % 12 + 1, 15),
+                "sdi_document_type": "TD01",
+                "currency": "EUR",
                 "custom_fields": {},
             }
         )

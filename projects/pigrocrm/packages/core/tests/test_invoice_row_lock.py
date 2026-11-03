@@ -23,8 +23,6 @@ from pigrocrm.core.actor import Actor
 from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.db import session_factory
 from pigrocrm.core.db.clock import today_local
-from pigrocrm.core.emitter.schemas import LegalEntityUpsert
-from pigrocrm.core.emitter.service import LegalEntityService
 from pigrocrm.core.errors import ImmutableField
 from pigrocrm.core.fiscal.schemas import FiscalProfileUpsert
 from pigrocrm.core.fiscal.service import FiscalProfileService
@@ -39,6 +37,8 @@ from pigrocrm.core.invoices.schemas import (
     InvoiceUpdate,
 )
 from pigrocrm.core.invoices.service import InvoiceService
+from pigrocrm.core.legal_entities.schemas import LegalEntityUpsert
+from pigrocrm.core.legal_entities.service import LegalEntityService
 from pigrocrm.core.storage.local import LocalFileStorage
 
 ADMIN = Actor(id=None, type="user", role="admin")
@@ -53,20 +53,20 @@ def committed_draft(db_engine: Engine) -> Iterator[tuple[sessionmaker[Session], 
     # The default azienda is committed state shared with the other files: its identity is
     # put back, or a later test about "no identity configured" finds this one's.
     identity_columns = (
-        "ragione_sociale",
-        "partita_iva",
-        "codice_fiscale",
-        "indirizzo",
+        "legal_name",
+        "vat_number",
+        "tax_code",
+        "address",
         "cap",
-        "comune",
-        "provincia",
-        "nazione",
-        "pec",
+        "city",
+        "province",
+        "country",
+        "certified_email",
     )
     with factory() as probe:
         original = (
             probe.execute(
-                text(f"SELECT {', '.join(identity_columns)} FROM emitter_profile WHERE predefinita")
+                text(f"SELECT {', '.join(identity_columns)} FROM legal_entities WHERE is_default")
             )
             .mappings()
             .one()
@@ -75,28 +75,28 @@ def committed_draft(db_engine: Engine) -> Iterator[tuple[sessionmaker[Session], 
         with factory() as setup:
             LegalEntityService(setup).upsert_default(
                 LegalEntityUpsert(
-                    ragione_sociale="Studio Rossi",
-                    partita_iva="12345678901",
-                    codice_fiscale="RSSMRA80A01H501U",
-                    indirizzo="Via Roma 1",
+                    legal_name="Studio Rossi",
+                    vat_number="12345678901",
+                    tax_code="RSSMRA80A01H501U",
+                    address="Via Roma 1",
                     cap="20100",
-                    comune="Milano",
-                    provincia="MI",
-                    nazione="IT",
-                    pec="studio@pec.it",
+                    city="Milano",
+                    province="MI",
+                    country="IT",
+                    certified_email="studio@pec.it",
                 ),
                 ADMIN,
             )
-            FiscalProfileService(setup).upsert(FiscalProfileUpsert(codice_regime="RF19"), ADMIN)
+            FiscalProfileService(setup).upsert(FiscalProfileUpsert(regime_code="RF19"), ADMIN)
             customer = Customer(
-                ragione_sociale="Acme S.r.l.",
-                partita_iva="98765432109",
-                codice_sdi="ABCDEFG",
-                indirizzo="Corso Italia 5",
+                legal_name="Acme S.r.l.",
+                vat_number="98765432109",
+                sdi_code="ABCDEFG",
+                address="Corso Italia 5",
                 cap="00100",
-                comune="Roma",
-                provincia="RM",
-                nazione="IT",
+                city="Roma",
+                province="RM",
+                country="IT",
             )
             setup.add(customer)
             setup.flush()
@@ -104,10 +104,8 @@ def committed_draft(db_engine: Engine) -> Iterator[tuple[sessionmaker[Session], 
             draft = InvoiceService(setup, LocalFileStorage("/nonexistent")).create(
                 InvoiceCreate(
                     customer_id=customer.id,
-                    causale="Prima",
-                    righe=[
-                        InvoiceLineIn(descrizione="Advisory", prezzo_unitario=Decimal("100.00"))
-                    ],
+                    memo="Prima",
+                    lines=[InvoiceLineIn(description="Advisory", unit_price=Decimal("100.00"))],
                 ),
                 ADMIN,
             )
@@ -129,12 +127,12 @@ def committed_draft(db_engine: Engine) -> Iterator[tuple[sessionmaker[Session], 
                 cleaner.execute(text("DELETE FROM invoices WHERE id = :id"), {"id": invoice_id})
             cleaner.execute(text("DELETE FROM invoice_counters"))
             cleaner.execute(text("DELETE FROM fiscal_profile"))
-            cleaner.execute(text("DELETE FROM emitter_profile WHERE NOT predefinita"))
+            cleaner.execute(text("DELETE FROM legal_entities WHERE NOT is_default"))
             cleaner.execute(
                 text(
-                    "UPDATE emitter_profile SET "
+                    "UPDATE legal_entities SET "
                     + ", ".join(f"{name} = :{name}" for name in identity_columns)
-                    + " WHERE predefinita"
+                    + " WHERE is_default"
                 ),
                 dict(original),
             )
@@ -150,7 +148,7 @@ def _service(session: Session, tmp_path) -> InvoiceService:  # type: ignore[no-u
 def test_an_update_sees_the_emission_another_session_committed_after_it_loaded_the_row(
     committed_draft: tuple[sessionmaker[Session], UUID], tmp_path
 ) -> None:  # type: ignore[no-untyped-def]
-    """The identity map still holds the draft as `bozza` when the other session has already
+    """The identity map still holds the draft as `draft` when the other session has already
     issued it. `update` has to re-read under the lock, not trust that copy, or it writes
     the causale of a fiscal document."""
     factory, invoice_id = committed_draft
@@ -159,17 +157,17 @@ def test_an_update_sees_the_emission_another_session_committed_after_it_loaded_t
         # Held in a variable: the identity map keeps its objects weakly, and the point is a
         # session that still has this one.
         held = stale.get(Invoice, invoice_id)
-        assert held is not None and held.stato == "bozza"
+        assert held is not None and held.status == "draft"
 
         _service(other, tmp_path).issue(invoice_id, InvoiceIssue(), ADMIN)
 
         with pytest.raises(ImmutableField):
-            stale_service.update(invoice_id, InvoiceUpdate(causale="Dopo l'emissione"), ADMIN)
+            stale_service.update(invoice_id, InvoiceUpdate(memo="Dopo l'emissione"), ADMIN)
 
     with factory() as reader:
         stored = reader.get(Invoice, invoice_id)
         assert stored is not None
-        assert stored.causale == "Prima"
+        assert stored.memo == "Prima"
     assert held is not None
 
 
@@ -186,7 +184,7 @@ def _waiting_on_row_locks(engine: Engine) -> int:
 def test_annul_and_mark_transmitted_racing_on_one_invoice_leave_exactly_one_winner(
     db_engine: Engine, committed_draft: tuple[sessionmaker[Session], UUID], tmp_path
 ) -> None:  # type: ignore[no-untyped-def]
-    """An invoice that is both `annullata` and "delivered to the intermediary" is the state
+    """An invoice that is both `cancelled` and "delivered to the intermediary" is the state
     the code says must be impossible. A third session holds the row so both writers are
     provably queued on it before either decides; whichever goes first wins and the other
     is refused on what it then reads."""
@@ -200,7 +198,7 @@ def test_annul_and_mark_transmitted_racing_on_one_invoice_leave_exactly_one_winn
     def annul() -> bool:
         with factory() as session:
             try:
-                _service(session, tmp_path).annul(invoice_id, InvoiceAnnul(motivo="errore"), ADMIN)
+                _service(session, tmp_path).annul(invoice_id, InvoiceAnnul(reason="error"), ADMIN)
             except Exception:
                 return False
             return True
@@ -210,7 +208,7 @@ def test_annul_and_mark_transmitted_racing_on_one_invoice_leave_exactly_one_winn
             try:
                 _service(session, tmp_path).mark_transmitted_externally(
                     invoice_id,
-                    InvoiceTransmitted(data=today_local()),
+                    InvoiceTransmitted(date=today_local()),
                     ADMIN,
                 )
             except Exception:
@@ -233,7 +231,7 @@ def test_annul_and_mark_transmitted_racing_on_one_invoice_leave_exactly_one_winn
     with factory() as reader:
         stored = reader.get(Invoice, invoice_id)
         assert stored is not None
-        assert (stored.stato == "annullata") != (stored.trasmessa_esternamente_il is not None)
+        assert (stored.status == "cancelled") != (stored.transmitted_externally_at is not None)
 
 
 def test_two_xml_exports_racing_on_one_invoice_file_one_document(
@@ -275,7 +273,7 @@ def test_two_xml_exports_racing_on_one_invoice_file_one_document(
             stored = reader.get(Invoice, invoice_id)
             assert stored is not None
             documents = (
-                reader.execute(text("SELECT id FROM documents WHERE tipo = 'fattura_xml'"))
+                reader.execute(text("SELECT id FROM documents WHERE type = 'invoice_xml'"))
                 .scalars()
                 .all()
             )
@@ -291,14 +289,14 @@ def test_two_xml_exports_racing_on_one_invoice_file_one_document(
             cleaner.execute(
                 text(
                     "DELETE FROM activities WHERE entity_type = 'document' AND entity_id IN "
-                    "(SELECT id FROM documents WHERE tipo = 'fattura_xml')"
+                    "(SELECT id FROM documents WHERE type = 'invoice_xml')"
                 )
             )
             cleaner.execute(
                 text(
                     "DELETE FROM document_versions WHERE document_id IN "
-                    "(SELECT id FROM documents WHERE tipo = 'fattura_xml')"
+                    "(SELECT id FROM documents WHERE type = 'invoice_xml')"
                 )
             )
-            cleaner.execute(text("DELETE FROM documents WHERE tipo = 'fattura_xml'"))
+            cleaner.execute(text("DELETE FROM documents WHERE type = 'invoice_xml'"))
             cleaner.commit()

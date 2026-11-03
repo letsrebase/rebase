@@ -41,11 +41,11 @@ export function CustomerCorrespondents({
   // A readonly person would get a refusal for a read that spends the owner's quota.
   if (!mayDiscover) return null
 
-  function add(indirizzo: string, nome: string) {
+  function add(address: string, name: string) {
     adding.mutate(
-      { indirizzo, nome },
+      { address, name },
       {
-        onSuccess: () => toast.success(`${nome || indirizzo} aggiunto alle persone`),
+        onSuccess: () => toast.success(`${name || address} aggiunto alle persone`),
         onError: (error) => toast.error(toProblem(error).detail),
       },
     )
@@ -77,40 +77,40 @@ export function CustomerCorrespondents({
             Riprova
           </Button>
         </div>
-      ) : found.data.corrispondenti.length === 0 ? (
+      ) : found.data.matching.length === 0 ? (
         <p className="text-muted-foreground text-sm">
-          Nessuno ha scritto o ricevuto posta da {found.data.dominio} nella casella collegata.
+          Nessuno ha scritto o ricevuto posta da {found.data.domain} nella casella collegata.
         </p>
       ) : (
         <ul
-          aria-label={`Indirizzi di ${found.data.dominio} nella casella`}
+          aria-label={`Indirizzi di ${found.data.domain} nella casella`}
           className="divide-y border"
         >
-          {found.data.corrispondenti.map((person) => (
-            <li key={person.indirizzo} className="flex flex-wrap items-center gap-3 p-3">
+          {found.data.matching.map((person) => (
+            <li key={person.address} className="flex flex-wrap items-center gap-3 p-3">
               <div className="min-w-0 flex-1">
                 <p className="text-sm">
-                  {person.nome ? <span className="font-medium">{person.nome} </span> : null}
-                  <span className={person.nome ? 'text-muted-foreground' : 'font-medium'}>
-                    {person.indirizzo}
+                  {person.name ? <span className="font-medium">{person.name} </span> : null}
+                  <span className={person.name ? 'text-muted-foreground' : 'font-medium'}>
+                    {person.address}
                   </span>
                 </p>
                 <p className="text-muted-foreground text-xs">
-                  {conversations(person.conversazioni)}
-                  {person.ultimo_messaggio
-                    ? `, l’ultimo messaggio il ${formatInstant(person.ultimo_messaggio)}`
+                  {conversations(person.conversations)}
+                  {person.last_message
+                    ? `, l’ultimo messaggio il ${formatInstant(person.last_message)}`
                     : ''}
                 </p>
               </div>
-              {person.gia_in_anagrafica ? (
+              {person.already_in_directory ? (
                 <span className="text-muted-foreground text-sm">già in anagrafica</span>
               ) : mayAdd ? (
                 <Button
                   variant="outline"
                   size="sm"
                   disabled={adding.isPending}
-                  aria-label={`Aggiungi come persona: ${person.nome || person.indirizzo}`}
-                  onClick={() => add(person.indirizzo, person.nome)}
+                  aria-label={`Aggiungi come persona: ${person.name || person.address}`}
+                  onClick={() => add(person.address, person.name)}
                 >
                   Aggiungi come persona
                 </Button>

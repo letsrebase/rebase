@@ -22,8 +22,8 @@ interface AuthValue {
   /** Spends a link-by-mail token (`/app/verify?t=...`) and publishes the session. */
   enterWithLink: (t: string) => Promise<void>
   /** Spends an invitation (`/app/invite?t=...`, REB-291), creating the account and
-   *  publishing the session; `nome` is sent only when the peek asked for one. */
-  enterWithInvite: (t: string, nome?: string) => Promise<void>
+   *  publishing the session; `name` is sent only when the peek asked for one. */
+  enterWithInvite: (t: string, name?: string) => Promise<void>
   logout: () => Promise<void>
 }
 
@@ -98,7 +98,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // stored name when the field is absent or null, so sending it is the only thing the
   // accept needs beyond the token when the peek carried none.
   const inviteMutation = useMutation({
-    mutationFn: (body: { t: string; nome: string | null }) =>
+    mutationFn: (body: { t: string; name: string | null }) =>
       unwrap(api.POST('/api/auth/invite', { body })),
     onSuccess: publishSession,
   })
@@ -127,16 +127,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [])
   const userId = user?.id
   const email = user?.email
-  const nome = user?.nome
-  const ruolo = user?.ruolo
+  const name = user?.name
+  const role = user?.role
   useEffect(() => {
-    if (userId === undefined || email === undefined || nome === undefined || ruolo === undefined) {
+    if (userId === undefined || email === undefined || name === undefined || role === undefined) {
       if (identified.current !== undefined) forget()
       return
     }
     identified.current = userId
-    identifySession({ id: userId, email, nome, ruolo })
-  }, [userId, email, nome, ruolo, forget])
+    identifySession({ id: userId, email, name, role })
+  }, [userId, email, name, role, forget])
 
   const value = useMemo<AuthValue>(
     () => ({
@@ -150,8 +150,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       enterWithLink: async (t) => {
         await enterAsync({ t })
       },
-      enterWithInvite: async (t, nome) => {
-        await inviteAsync({ t, nome: nome ?? null })
+      enterWithInvite: async (t, name) => {
+        await inviteAsync({ t, name: name ?? null })
       },
       /**
        * Ends the session and then leaves the page, whatever the server answered.
@@ -228,17 +228,17 @@ export function useAuth(): AuthValue {
  */
 export function useCan(action: Action): boolean {
   const { user } = useAuth()
-  return user !== null && can(user.ruolo, action)
+  return user !== null && can(user.role, action)
 }
 
 /** The page-level "chi può scrivere nello spazio": everything the coarse write gates
  *  asked for, now read from the same table as the named checks. */
 export function useCanWrite(): boolean {
   const { user } = useAuth()
-  return user !== null && canWrite(user.ruolo)
+  return user !== null && canWrite(user.role)
 }
 
 export function useIsAdmin(): boolean {
   const { user } = useAuth()
-  return user !== null && isAdmin(user.ruolo)
+  return user !== null && isAdmin(user.role)
 }

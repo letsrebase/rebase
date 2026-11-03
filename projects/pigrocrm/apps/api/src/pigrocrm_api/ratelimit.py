@@ -32,10 +32,10 @@ REQUESTS_PER_MINUTE = 5
 # `GET /api/tenants/{slug}/disponibile` is a typeahead (one call per 350 ms pause while a
 # person names a business), not a submit: its own, larger budget, so ordinary typing
 # never starves the tokens the signup itself needs (REB-228).
-DISPONIBILE_REQUESTS_PER_MINUTE = 30
+AVAILABLE_REQUESTS_BY_MINUTE = 30
 # `GET /api/auth/invite` is read on mount of the acceptance page: a reload or a double
 # click must not lock the invitee out of seeing who invited them (REB-290).
-INVITE_PEEK_REQUESTS_PER_MINUTE = DISPONIBILE_REQUESTS_PER_MINUTE
+INVITE_PEEK_REQUESTS_PER_MINUTE = AVAILABLE_REQUESTS_BY_MINUTE
 # The routes that spend a credential rather than prove one. Generous, since a legitimate
 # client calls them a few times per session (the SPA renews on every 401, from every open
 # tab), yet bounded so that guessing a link or a refresh token is not free.

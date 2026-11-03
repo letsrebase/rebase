@@ -5,7 +5,7 @@ import { useState } from 'react'
 import { Button } from '@rebase/ui/button'
 import { admin, type Company, type CompanyOverride, type Note, type TalentCloudGrant } from '@/lib/api'
 import { failureMessage } from '@/lib/adminList'
-import { COMPANY_STATES, REMOTO_LABELS, TEAM_BUILDER_ORIGIN, formatDate } from '@/lib/format'
+import { COMPANY_STATES, REMOTE_LABELS, TEAM_BUILDER_ORIGIN, formatDate } from '@/lib/format'
 import { formatMoney } from '@rebase/ui/format'
 import { keys } from '@/lib/query-keys'
 import { AuditTrail } from '../AuditTrail'
@@ -21,7 +21,7 @@ export function AdminCompanyDetail() {
   const auditKey = keys.audit('companies', id)
   const row = useQuery({ queryKey: keys.company(id), queryFn: () => admin.company(id) })
   const move = useMutation({
-    mutationFn: (stato: string) => admin.moveCompany(id, stato),
+    mutationFn: (status: string) => admin.moveCompany(id, status),
     // The PATCH's own `note` is always `[]` (REB-356, same cause as REB-355's own
     // mutations below): merged onto the cached detail with `note` kept from the
     // current cache, or a save would wipe the thread from view. The same for
@@ -104,10 +104,10 @@ export function AdminCompanyDetail() {
   const lifecycleFailure = failureMessage(del.error ?? restore.error, 'Non riesco a completare l’operazione.')
   return (
     <>
-      <Header title={c.nome_azienda}>
+      <Header title={c.company_name}>
         <div className="flex flex-wrap items-center gap-2">
-          <StatePill stato={c.stato} />
-          {c.origine === TEAM_BUILDER_ORIGIN && <TeamBuilderPill />}
+          <StatePill status={c.status} />
+          {c.origin === TEAM_BUILDER_ORIGIN && <TeamBuilderPill />}
           {c.deleted_at === null && (
             <Button type="button" variant="outline" size="sm" onClick={() => setOverrideOpen(true)}>
               Modifica richiesta
@@ -126,27 +126,27 @@ export function AdminCompanyDetail() {
       <div className="grid gap-6 p-6 lg:grid-cols-3">
         <dl className="space-y-3 text-sm lg:col-span-2">
           <Row label="Referente">
-            {c.referente} · <a className="underline underline-offset-2" href={`mailto:${c.email}`}>{c.email}</a>
-            {c.telefono ? ` · ${c.telefono}` : ''}
+            {c.contact_person} · <a className="underline underline-offset-2" href={`mailto:${c.email}`}>{c.email}</a>
+            {c.phone ? ` · ${c.phone}` : ''}
           </Row>
-          <Row label="Figura richiesta">{c.figura_richiesta}</Row>
-          <Row label="Progetto"><p className="whitespace-pre-wrap">{c.progetto}</p></Row>
-          <Row label="Periodo">dal {formatDate(c.periodo_da)}, {c.durata}</Row>
-          <Row label="Budget a giornata">{formatMoney(c.budget_giornaliero)}</Row>
+          <Row label="Figura richiesta">{c.requested_role}</Row>
+          <Row label="Progetto"><p className="whitespace-pre-wrap">{c.project}</p></Row>
+          <Row label="Periodo">dal {formatDate(c.period_from)}, {c.duration}</Row>
+          <Row label="Budget a giornata">{formatMoney(c.daily_budget)}</Row>
           <Row label="Modalità">
-            {REMOTO_LABELS[c.remoto]}
-            {c.giorni_presenza ? ` · ${c.giorni_presenza} giorni a settimana in sede` : ''}
+            {REMOTE_LABELS[c.remote]}
+            {c.onsite_days ? ` · ${c.onsite_days} giorni a settimana in sede` : ''}
           </Row>
-          <Row label="Persone richieste">{c.numero_risorse}</Row>
-          <Row label="Arrivata">{formatDate(c.created_at)}{c.utm_source ? ` · da ${c.utm_source}` : ''}{c.origine ? ` · pagina ${c.origine}` : ''}</Row>
+          <Row label="Persone richieste">{c.headcount}</Row>
+          <Row label="Arrivata">{formatDate(c.created_at)}{c.utm_source ? ` · da ${c.utm_source}` : ''}{c.origin ? ` · pagina ${c.origin}` : ''}</Row>
         </dl>
         <div className="min-w-0 space-y-6">
           {c.deleted_at === null && (
             <StatusEditor
               states={COMPANY_STATES}
-              stato={c.stato}
+              status={c.status}
               saving={move.isPending}
-              onSave={(stato) => move.mutate(stato)}
+              onSave={(status) => move.mutate(status)}
               error={failureMessage(move.error, 'Non riesco a salvare lo stato.')}
             />
           )}

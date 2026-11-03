@@ -22,8 +22,8 @@ and when nobody such fits the skills it proposes the best fits anyway and says i
 summary that they work remotely, from elsewhere or have not said, so the company decides;
 the member's work mode is on every read for the same reason. That sentence names no place
 of a person: the public read withholds a summary that names a member's card place the
-description itself does not (`team_public.public_riassunto`), the way it withholds such a
-motivazione. When the checks drop everyone the model chose, its summary describes a team
+description itself does not (`team_public.public_summary`), the way it withholds such a
+reasoning. When the checks drop everyone the model chose, its summary describes a team
 that is not there, and the hub's own sentence (`NO_FIT_SENTENCE`) takes its place; an
 empty catalogue asks nobody and answers that sentence at once, for free.
 
@@ -31,11 +31,11 @@ empty catalogue asks nobody and answers that sentence at once, for free.
 (`bands.py`), read when the proposal is read, and the team's bands are their sum; the
 model sees a band in the catalogue and never a rate.
 
-**Every ask is a row, answered or not** (0028, DECISIONS.md 2026-09-29). Ivan: «è
-importante salvare tutte le richieste dopo il click proponi team anche se non ancora
-finalizzate/inviate così raccogliamo metriche di uso». A proposal Claude answered was
+**Every ask is a row, answered or not** (0028, DECISIONS.md 2026-09-29). Ivan: every ask
+after the click on «propose a team» is worth saving, even when it is not yet
+finalised or sent, so that we collect usage metrics. A proposal Claude answered was
 always a row; an ask that ended in `LlmUnavailable`, or that the caps refused
-(`record_refusal`), is one too, with `errore` set, an empty summary and nobody in it,
+(`record_refusal`), is one too, with `error` set, an empty summary and nobody in it,
 so «Proposte» in the admin area counts what people asked for and never filed. Such a
 row is an attempt, not a proposal: its id never leaves the hub, `get` answers
 `NotFound` for it, «Rigenera» and «Assumi team» refuse it, and the daily cap does not
@@ -97,7 +97,7 @@ from rebase_core.team_public import (
     public_card,
     public_place,
     public_reason,
-    public_riassunto,
+    public_summary,
 )
 from rebase_core.team_schemas import (
     Card,
@@ -127,8 +127,8 @@ _PREVIOUS_REFUSED = "la proposta da rigenerare non esiste o è scaduta"
 # The admin's «Proposte» (0028): a page at a time, newest first, like «Richieste team».
 LIST_LIMIT_DEFAULT = 50
 LIST_LIMIT_MAX = 200
-# What `esito` filters the list by: the proposals that answered, or the attempts.
-LIST_OUTCOMES = ("ok", "errore")
+# What `outcome` filters the list by: the proposals that answered, or the attempts.
+LIST_OUTCOMES = ("ok", "error")
 _SORT = SortSpec("created_at", "datetime")
 # A catalogue id as the model writes it; the number is checked against the catalogue.
 _POSITION = re.compile(r"t([0-9]{1,6})")
@@ -160,13 +160,13 @@ class TeamBuilder:
         self,
         data: TeamProposalCreate,
         *,
-        origine: str,
+        origin: str,
         user_id: UUID | None,
         company_id: UUID | None = None,
         now: datetime | None = None,
     ) -> TeamProposalRead:
         """A new proposal for `data`, written and read back: public (no ids, no card
-        `luogo`) when `origine` is `pubblico`, whole for the cloud and the admin. The
+        `location`) when `origin` is `public`, whole for the cloud and the admin. The
         concurrency cap and the daily cap are the route's (C5). `now` is the instant the
         proposal is asked and stamped at, one read of the clock for the whole of it: the
         route passes the one its daily cap counted from, so a call to Claude that ends
@@ -176,10 +176,10 @@ class TeamBuilder:
         «Assumi team» files under it; `None` for the public page and the admin."""
         if not self.settings.team_builder_enabled or self.llm is None:
             raise TeamBuilderOff(OFF_SENTENCE)
-        if origine not in TEAM_PROPOSAL_ORIGINS:
-            raise ValueError(f"unknown origin {origine!r}")
+        if origin not in TEAM_PROPOSAL_ORIGINS:
+            raise ValueError(f"unknown origin {origin!r}")
         at = now if now is not None else self.now()
-        previous = self._previous(data.previous_id, origine=origine, user_id=user_id, at=at)
+        previous = self._previous(data.previous_id, origin=origin, user_id=user_id, at=at)
         catalogue, positions = catalogue_lines(self.session)
         if not positions:
             # Nobody has a card: nothing for Claude to choose from, and nothing to pay
@@ -188,11 +188,11 @@ class TeamBuilder:
             return self._write(
                 data,
                 previous,
-                origine=origine,
+                origin=origin,
                 user_id=user_id,
                 company_id=company_id,
-                riassunto=NO_FIT_SENTENCE,
-                luogo={"locale": False, "dove": None},
+                summary=NO_FIT_SENTENCE,
+                location={"on_site": False, "place": None},
                 team=[],
                 bands=[],
                 response=None,
@@ -215,7 +215,7 @@ class TeamBuilder:
                 self._write_attempt(
                     data,
                     previous,
-                    origine=origine,
+                    origin=origin,
                     user_id=user_id,
                     company_id=company_id,
                     error=exc,
@@ -232,19 +232,19 @@ class TeamBuilder:
                 raise TeamBuilderBusy(BUSY_SENTENCE) from None
             raise
         team, bands = self._team(answer, positions)
-        riassunto = answer.riassunto
+        summary = answer.summary
         if answer.team and not team:
             # The model's summary describes the team it chose; nobody of it is left.
             logger.warning("team proposal: every member dropped, the summary is the hub's")
-            riassunto = NO_FIT_SENTENCE
+            summary = NO_FIT_SENTENCE
         return self._write(
             data,
             previous,
-            origine=origine,
+            origin=origin,
             user_id=user_id,
             company_id=company_id,
-            riassunto=riassunto,
-            luogo=answer.luogo.model_dump(),
+            summary=summary,
+            location=answer.location.model_dump(),
             team=team,
             bands=bands,
             response=response,
@@ -254,13 +254,13 @@ class TeamBuilder:
     def get(self, proposal_id: UUID, *, public: bool) -> TeamProposalRead:
         row = self.session.get(TeamProposal, proposal_id)
         # An attempt that failed is not a proposal anybody was handed (0028).
-        if row is None or row.errore is not None:
+        if row is None or row.error is not None:
             raise NotFound(ENTITY, proposal_id)
         return self._read(row, public=public)
 
     def get_public(self, proposal_id: UUID, *, now: datetime | None = None) -> TeamProposalRead:
-        """The public page opened on a proposal by its id (REB-675, `/hub/team?proposta=`):
-        the public read of a `pubblico` proposal younger than `PREVIOUS_MAX_AGE`, the
+        """The public page opened on a proposal by its id (REB-675, `/hub/team?proposal=`):
+        the public read of a `public` proposal younger than `PREVIOUS_MAX_AGE`, the
         window «Rigenera» and «Assumi team» give it, and `NotFound` for anything else,
         an attempt, a cloud's or an admin's proposal, one older than a day and an unknown
         id alike, so the answer never says which proposals exist. The id is the
@@ -270,8 +270,8 @@ class TeamBuilder:
         row = self.session.get(TeamProposal, proposal_id)
         if (
             row is None
-            or row.errore is not None
-            or row.origine != "pubblico"
+            or row.error is not None
+            or row.origin != "public"
             or row.created_at <= at - PREVIOUS_MAX_AGE
         ):
             raise NotFound(ENTITY, proposal_id)
@@ -281,7 +281,7 @@ class TeamBuilder:
         self,
         data: TeamProposalCreate,
         *,
-        origine: str,
+        origin: str,
         user_id: UUID | None,
         error: DomainError,
         company_id: UUID | None = None,
@@ -293,17 +293,17 @@ class TeamBuilder:
         caller could regenerate and left `NULL` otherwise: a refusal is not the place to
         say which proposals exist. Never raises past the write: the caller re-raises the
         refusal it was given."""
-        if origine not in TEAM_PROPOSAL_ORIGINS:
-            raise ValueError(f"unknown origin {origine!r}")
+        if origin not in TEAM_PROPOSAL_ORIGINS:
+            raise ValueError(f"unknown origin {origin!r}")
         at = now if now is not None else self.now()
         try:
-            previous = self._previous(data.previous_id, origine=origine, user_id=user_id, at=at)
+            previous = self._previous(data.previous_id, origin=origin, user_id=user_id, at=at)
         except ValidationFailed:
             previous = None
         self._write_attempt(
             data,
             previous,
-            origine=origine,
+            origin=origin,
             user_id=user_id,
             company_id=company_id,
             error=error,
@@ -313,34 +313,34 @@ class TeamBuilder:
     def list_recent(
         self,
         *,
-        origine: str | None = None,
-        esito: str | None = None,
+        origin: str | None = None,
+        outcome: str | None = None,
         limit: int = LIST_LIMIT_DEFAULT,
         cursor: str | None = None,
     ) -> TeamProposalList:
         """«Proposte» in the admin area (0028): every ask, newest first, by cursor, with
-        the «Assumi team» filed on it when there is one. `origine` filters by who asked
-        and `esito` by whether it answered (`ok`) or not (`errore`); a word that is not
+        the «Assumi team» filed on it when there is one. `origin` filters by who asked
+        and `outcome` by whether it answered (`ok`) or not (`error`); a word that is not
         one of theirs is a 422 naming the field. The rows are read as written, never
         through `_read`: the list is about what was asked, not about who is still in
         the catalogue. Each member is named all the same (REB-607), with one query for
         the page's talents: a name is what the admin follows to the profile, and a
         talent removed with «Elimina» since, whose page no longer opens, stays in the
         row by id, unnamed."""
-        if origine is not None and origine not in TEAM_PROPOSAL_ORIGINS:
-            raise ValidationFailed(ENTITY, "origine", f"uno fra {', '.join(TEAM_PROPOSAL_ORIGINS)}")
-        if esito is not None and esito not in LIST_OUTCOMES:
-            raise ValidationFailed(ENTITY, "esito", f"uno fra {', '.join(LIST_OUTCOMES)}")
+        if origin is not None and origin not in TEAM_PROPOSAL_ORIGINS:
+            raise ValidationFailed(ENTITY, "origin", f"uno fra {', '.join(TEAM_PROPOSAL_ORIGINS)}")
+        if outcome is not None and outcome not in LIST_OUTCOMES:
+            raise ValidationFailed(ENTITY, "outcome", f"uno fra {', '.join(LIST_OUTCOMES)}")
         limit = max(1, min(limit, LIST_LIMIT_MAX))
         stmt = select(TeamProposal, TeamRequest.id).outerjoin(
             TeamRequest, TeamRequest.proposal_id == TeamProposal.id
         )
-        if origine is not None:
-            stmt = stmt.where(TeamProposal.origine == origine)
-        if esito == "ok":
-            stmt = stmt.where(TeamProposal.errore.is_(None))
-        elif esito == "errore":
-            stmt = stmt.where(TeamProposal.errore.is_not(None))
+        if origin is not None:
+            stmt = stmt.where(TeamProposal.origin == origin)
+        if outcome == "ok":
+            stmt = stmt.where(TeamProposal.error.is_(None))
+        elif outcome == "error":
+            stmt = stmt.where(TeamProposal.error.is_not(None))
         if cursor:
             value, row_id = decode_cursor(_SORT, cursor)
             stmt = stmt.where(
@@ -361,15 +361,15 @@ class TeamBuilder:
             items=[
                 TeamProposalListItem(
                     id=row.id,
-                    descrizione=row.descrizione,
-                    persone=row.persone,
-                    nota=row.nota,
+                    description=row.description,
+                    people=row.people,
+                    note=row.note,
                     previous_id=row.previous_id,
-                    origine=row.origine,
+                    origin=row.origin,
                     user_id=row.user_id,
-                    errore=row.errore,
-                    riassunto=row.riassunto if row.errore is None else None,
-                    membri=len(row.team),
+                    error=row.error,
+                    summary=row.summary if row.error is None else None,
+                    members=len(row.team),
                     team=[_list_member(member, names) for member in row.team],
                     request_id=request_id,
                     created_at=row.created_at,
@@ -387,11 +387,13 @@ class TeamBuilder:
         if not ids:
             return {}
         rows = self.session.execute(
-            select(Freelancer.id, User.nome, User.cognome)
+            select(Freelancer.id, User.first_name, User.last_name)
             .join(User, User.id == Freelancer.user_id)
             .where(Freelancer.id.in_(list(set(ids))), Freelancer.deleted_at.is_(None))
         ).all()
-        return {freelancer_id: (nome, cognome) for freelancer_id, nome, cognome in rows}
+        return {
+            freelancer_id: (first_name, last_name) for freelancer_id, first_name, last_name in rows
+        }
 
     # ---- helpers -----------------------------------------------------------------------
 
@@ -400,11 +402,11 @@ class TeamBuilder:
         data: TeamProposalCreate,
         previous: TeamProposal | None,
         *,
-        origine: str,
+        origin: str,
         user_id: UUID | None,
         company_id: UUID | None,
-        riassunto: str,
-        luogo: dict[str, Any],
+        summary: str,
+        location: dict[str, Any],
         team: list[dict[str, Any]],
         bands: list[Band | None],
         response: LlmResponse | None,
@@ -419,21 +421,21 @@ class TeamBuilder:
             response.output_tokens + response.thinking_tokens if response is not None else 0
         )
         row = TeamProposal(
-            descrizione=data.descrizione,
-            nota=data.nota,
+            description=data.description,
+            note=data.note,
             previous_id=previous.id if previous is not None else None,
-            riassunto=riassunto,
-            luogo=luogo,
+            summary=summary,
+            location=location,
             team=team,
-            economia=_economia(day, month, dump=True),
+            economics=_economics(day, month, dump=True),
             model=response.model if response is not None else NO_CALL_MODEL,
             input_tokens=input_tokens,
             output_tokens=output_tokens,
             cache_read_tokens=response.cache_read_tokens if response is not None else 0,
-            origine=origine,
+            origin=origin,
             user_id=user_id,
             company_id=company_id,
-            persone=data.persone,
+            people=data.people,
             created_at=at,
         )
         self.session.add(row)
@@ -442,49 +444,49 @@ class TeamBuilder:
             self.tracker.team_event(
                 TEAM_PROPOSAL_GENERATED,
                 {
-                    "origine": origine,
-                    "persone": len(team),
-                    "persone_richieste": data.persone,
+                    "origin": origin,
+                    "people": len(team),
+                    "people_requested": data.people,
                     "input_tokens": input_tokens,
                     "output_tokens": output_tokens,
                 },
             )
-        return self._read(row, public=origine == "pubblico")
+        return self._read(row, public=origin == "public")
 
     def _write_attempt(
         self,
         data: TeamProposalCreate,
         previous: TeamProposal | None,
         *,
-        origine: str,
+        origin: str,
         user_id: UUID | None,
         company_id: UUID | None,
         error: DomainError,
         at: datetime,
     ) -> None:
-        """The row of an ask that got no proposal (0028): the ask as it came, `errore`
+        """The row of an ask that got no proposal (0028): the ask as it came, `error`
         the refusal's code, an empty summary, nobody in the team, no call counted. No
-        event: `team_proposta_generata` counts proposals, and this is not one. A
+        event: `team_proposal_generated` counts proposals, and this is not one. A
         refusal whose code is not one the table takes is a bug in the caller."""
         if error.code not in TEAM_PROPOSAL_ERRORS:
             raise ValueError(f"not an attempt's error: {error.code!r}")
         row = TeamProposal(
-            descrizione=data.descrizione,
-            nota=data.nota,
+            description=data.description,
+            note=data.note,
             previous_id=previous.id if previous is not None else None,
-            riassunto="",
-            luogo={"locale": False, "dove": None},
+            summary="",
+            location={"on_site": False, "place": None},
             team=[],
-            economia=_economia(None, None, dump=True),
+            economics=_economics(None, None, dump=True),
             model=NO_CALL_MODEL,
             input_tokens=0,
             output_tokens=0,
             cache_read_tokens=0,
-            origine=origine,
+            origin=origin,
             user_id=user_id,
             company_id=company_id,
-            persone=data.persone,
-            errore=error.code,
+            people=data.people,
+            error=error.code,
             created_at=at,
         )
         self.session.add(row)
@@ -492,7 +494,7 @@ class TeamBuilder:
         logger.info("team proposal attempt kept: %s", error.code)
 
     def _previous(
-        self, previous_id: UUID | None, *, origine: str, user_id: UUID | None, at: datetime
+        self, previous_id: UUID | None, *, origin: str, user_id: UUID | None, at: datetime
     ) -> TeamProposal | None:
         """The proposal «Rigenera» replaces: of the caller's own origin, and on the
         cloud the caller's own, younger than a day. One sentence for every refusal, so
@@ -502,9 +504,9 @@ class TeamBuilder:
         row = self.session.get(TeamProposal, previous_id)
         if (
             row is None
-            or row.errore is not None
-            or row.origine != origine
-            or (origine == "cloud" and row.user_id != user_id)
+            or row.error is not None
+            or row.origin != origin
+            or (origin == "cloud" and row.user_id != user_id)
             or row.created_at <= at - PREVIOUS_MAX_AGE
         ):
             raise ValidationFailed(ENTITY, "previous_id", _PREVIOUS_REFUSED)
@@ -540,11 +542,11 @@ class TeamBuilder:
                 continue
             team.append(
                 {
-                    "posizione": len(team) + 1,
+                    "position": len(team) + 1,
                     "freelancer_id": str(freelancer_id),
-                    "ruolo": member.ruolo,
-                    "motivazione": member.motivazione,
-                    "giorni_settimana": member.giorni_settimana,
+                    "role": member.role,
+                    "reasoning": member.reasoning,
+                    "week_days": member.week_days,
                 }
             )
             bands.append(band_for(live[freelancer_id]))
@@ -556,11 +558,11 @@ class TeamBuilder:
         if not ids:
             return {}
         rows = self.session.execute(
-            cloud_visible(select(Freelancer.id, Freelancer.tariffa_giornaliera)).where(
+            cloud_visible(select(Freelancer.id, Freelancer.daily_rate)).where(
                 Freelancer.id.in_(ids)
             )
         ).all()
-        return {freelancer_id: tariffa for freelancer_id, tariffa in rows}
+        return {freelancer_id: rate for freelancer_id, rate in rows}
 
     def _read(self, row: TeamProposal, *, public: bool) -> TeamProposalRead:
         """The row as a page reads it, with each member's card, work mode and band as
@@ -569,9 +571,9 @@ class TeamBuilder:
         since the proposal is left out, and so is one whose stored card no longer
         validates, logged by position; the row keeps them all. The cloud's and the
         admin's read name each member (§ 4.2); the public read names nobody, and it
-        withholds the card's `luogo`, and with it any field of the card, a motivazione
+        withholds the card's `location`, and with it any field of the card, a reasoning
         and the summary that name that place (`public_card`, `public_reason`,
-        `public_riassunto`), and a `luogo.dove` the visitor did not write
+        `public_summary`), and a `location.place` the visitor did not write
         (`public_place`)."""
         ids = [UUID(member["freelancer_id"]) for member in row.team]
         found: dict[
@@ -582,25 +584,25 @@ class TeamBuilder:
                 cloud_visible(
                     select(
                         Freelancer.id,
-                        Freelancer.remoto,
-                        Freelancer.tariffa_giornaliera,
+                        Freelancer.remote,
+                        Freelancer.daily_rate,
                         FreelancerCard.card,
-                        User.nome,
-                        User.cognome,
+                        User.first_name,
+                        User.last_name,
                         Freelancer.seniority_admin,
-                        Freelancer.anni_admin,
+                        Freelancer.experience_years_admin,
                     ).join(User, User.id == Freelancer.user_id)
                 ).where(Freelancer.id.in_(ids))
             ).all()
             found = {
                 row.id: (
-                    row.remoto,
-                    row.tariffa_giornaliera,
+                    row.remote,
+                    row.daily_rate,
                     row.card,
-                    row.nome,
-                    row.cognome,
+                    row.first_name,
+                    row.last_name,
                     row.seniority_admin,
-                    row.anni_admin,
+                    row.experience_years_admin,
                 )
                 for row in rows
             }
@@ -612,71 +614,73 @@ class TeamBuilder:
                 logger.info(
                     "team proposal %s: member %s left out of the read: not in the catalogue",
                     row.id,
-                    stored["posizione"],
+                    stored["position"],
                 )
                 continue
-            remoto, tariffa, card, nome, cognome, seniority_admin, anni_admin = found[freelancer_id]
+            remote, rate, card, first_name, last_name, seniority_admin, experience_years_admin = (
+                found[freelancer_id]
+            )
             try:
-                scheda = card_read(card, seniority_admin, anni_admin)
+                member_card = card_read(card, seniority_admin, experience_years_admin)
             except ValidationError:
                 logger.warning(
                     "team proposal %s: member %s left out of the read: the card is not a card",
                     row.id,
-                    stored["posizione"],
+                    stored["position"],
                 )
                 continue
-            cards.append(scheda)
+            cards.append(member_card)
             members.append(
                 TeamMemberRead(
-                    posizione=stored["posizione"],
+                    position=stored["position"],
                     freelancer_id=None if public else freelancer_id,
-                    nome=None if public else nome,
-                    cognome=None if public else cognome,
-                    ruolo=stored["ruolo"],
-                    motivazione=(
-                        public_reason(stored["motivazione"], scheda)
+                    first_name=None if public else first_name,
+                    last_name=None if public else last_name,
+                    role=stored["role"],
+                    reasoning=(
+                        public_reason(stored["reasoning"], member_card)
                         if public
-                        else stored["motivazione"]
+                        else stored["reasoning"]
                     ),
-                    giorni_settimana=stored["giorni_settimana"],
-                    scheda=public_card(scheda, stored["ruolo"]) if public else scheda,
-                    modalita=remoto,
-                    fascia=band_for(tariffa),
+                    week_days=stored["week_days"],
+                    card=public_card(member_card, stored["role"]) if public else member_card,
+                    mode=remote,
+                    band=band_for(rate),
                 )
             )
-        day, month = team_bands([member.fascia for member in members])
+        day, month = team_bands([member.band for member in members])
         return TeamProposalRead(
             id=row.id,
-            descrizione=row.descrizione,
-            persone=row.persone,
-            riassunto=(
-                public_riassunto(
-                    row.id, row.riassunto, row.luogo.get("dove"), row.descrizione, cards
+            description=row.description,
+            people=row.people,
+            summary=(
+                public_summary(
+                    row.id, row.summary, row.location.get("place"), row.description, cards
                 )
                 if public
-                else row.riassunto
+                else row.summary
             ),
-            luogo=TeamPlace.model_validate(
-                public_place(row.luogo, row.descrizione) if public else row.luogo
+            location=TeamPlace.model_validate(
+                public_place(row.location, row.description) if public else row.location
             ),
             team=members,
-            economia=TeamEconomics.model_validate(_economia(day, month)),
+            economics=TeamEconomics.model_validate(_economics(day, month)),
             previous_id=row.previous_id,
-            origine=row.origine,
+            origin=row.origin,
             created_at=row.created_at,
         )
 
 
-def _economia(day: Band | None, month: Band | None, *, dump: bool = False) -> dict[str, Any]:
-    """§ 3.3's `economia`: the team's bands per day and per month at 22 days, as models
+def _economics(day: Band | None, month: Band | None, *, dump: bool = False) -> dict[str, Any]:
+    """§ 3.3's `economics`: the team's bands per day and per month at 22 days, as models
     for a read or as plain JSON for the row."""
     if dump:
         return {
-            "giorno": day.model_dump() if day is not None else None,
-            "mese": month.model_dump() if month is not None else None,
-            "giorni_mese": DAYS_PER_MONTH,
+            "day": day.model_dump() if day is not None else None,
+            "month": month.model_dump() if month is not None else None,
+            "days_month": DAYS_PER_MONTH,
         }
-    return {"giorno": day, "mese": month, "giorni_mese": DAYS_PER_MONTH}
+    return {"day": day, "month": month, "days_month": DAYS_PER_MONTH}
 
 
 def _list_member(
@@ -685,11 +689,11 @@ def _list_member(
     """A stored member as «Proposte» lists it: named when still on file, by id alone
     once removed."""
     freelancer_id = UUID(stored["freelancer_id"])
-    nome, cognome = names.get(freelancer_id, (None, None))
+    first_name, last_name = names.get(freelancer_id, (None, None))
     return TeamProposalListMember(
-        posizione=stored["posizione"],
+        position=stored["position"],
         freelancer_id=freelancer_id,
-        ruolo=stored["ruolo"],
-        nome=nome,
-        cognome=cognome,
+        role=stored["role"],
+        first_name=first_name,
+        last_name=last_name,
     )

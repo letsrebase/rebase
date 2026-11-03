@@ -2,19 +2,19 @@ import { Link } from '@tanstack/react-router'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { TableCell, TableRow } from '@rebase/ui/table'
 import { WebLink } from '@/components/WebLink'
-import { admin, type Talento } from '@/lib/api'
+import { admin, type Talent } from '@/lib/api'
 import { failureMessage } from '@/lib/adminList'
-import { REMOTO_LABELS, formatDate } from '@/lib/format'
+import { REMOTE_LABELS, formatDate } from '@/lib/format'
 import { formatMoney } from '@rebase/ui/format'
 import { keys } from '@/lib/query-keys'
 import { isHttpUrl } from '@/lib/url'
 import { DuplicatePill } from '../DuplicateMarks'
 import { StatePill, VettedPill } from '../list-kit'
-import { TalentoMenu } from './TalentMenu'
+import { TalentMenu } from './TalentMenu'
 
-export function TalentoRow({ item }: { item: Talento }) {
-  const name = [item.nome, item.cognome].filter(Boolean).join(' ')
-  const to = item.stato === 'lead' ? '/admin/talent/$id' : '/admin/freelance/$id'
+export function TalentRow({ item }: { item: Talent }) {
+  const name = [item.first_name, item.last_name].filter(Boolean).join(' ')
+  const to = item.status === 'lead' ? '/admin/talent/$id' : '/admin/freelance/$id'
   const client = useQueryClient()
   // «Segna come verificato» / «Togli la verifica» (REB-518): the list is read again, so
   // the pill follows the server's word, and so does the talent's own page.
@@ -41,15 +41,15 @@ export function TalentoRow({ item }: { item: Talento }) {
       </TableCell>
       <TableCell>
         <div className="flex flex-wrap items-center gap-1.5">
-          <StatePill stato={item.stato} />
+          <StatePill status={item.status} />
           {item.vetted_at && <VettedPill />}
-          <DuplicatePill others={item.possibile_duplicato_di} />
+          <DuplicatePill others={item.duplicate_possible_of} />
         </div>
       </TableCell>
       <TableCell className="text-right text-muted-foreground">
-        {item.tariffa_giornaliera === null ? '—' : formatMoney(item.tariffa_giornaliera)}
+        {item.daily_rate === null ? '—' : formatMoney(item.daily_rate)}
       </TableCell>
-      <TableCell className="text-muted-foreground">{remotoLabel(item.remoto)}</TableCell>
+      <TableCell className="text-muted-foreground">{remoteLabel(item.remote)}</TableCell>
       <TableCell>
         {item.linkedin_url && isHttpUrl(item.linkedin_url) ? (
           <WebLink
@@ -63,11 +63,11 @@ export function TalentoRow({ item }: { item: Talento }) {
           '—'
         )}
       </TableCell>
-      <TableCell className="text-muted-foreground">{item.origine}</TableCell>
+      <TableCell className="text-muted-foreground">{item.origin}</TableCell>
       <TableCell className="text-right text-muted-foreground">{formatDate(item.created_at)}</TableCell>
       <TableCell className="w-12 text-right">
-        {item.stato !== 'lead' && (
-          <TalentoMenu
+        {item.status !== 'lead' && (
+          <TalentMenu
             id={item.id}
             label={name || item.email}
             vetted={!!item.vetted_at}
@@ -80,10 +80,10 @@ export function TalentoRow({ item }: { item: Talento }) {
   )
 }
 
-/** `TalentoRead.remoto` is `str | None`, not narrowed to `Remoto` (REB-558 review): the
- *  database column allows any string, so a value outside `REMOTO_LABELS`' three keys
+/** `TalentRead.remote` is `str | None`, not narrowed to `Remote` (REB-558 review): the
+ *  database column allows any string, so a value outside `REMOTE_LABELS`' three keys
  *  reads «—» rather than rendering blank. */
-function remotoLabel(value: string | null): string {
+function remoteLabel(value: string | null): string {
   if (value === null) return '—'
-  return (REMOTO_LABELS as Record<string, string>)[value] ?? '—'
+  return (REMOTE_LABELS as Record<string, string>)[value] ?? '—'
 }

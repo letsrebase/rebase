@@ -11,7 +11,6 @@ from typing import Any
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from pigrocrm.core.attivita.schemas import AttivitaCreate
 from pigrocrm.core.contracts.schemas import ContractCreate
 from pigrocrm.core.customers.schemas import CustomerCreate
 from pigrocrm.core.deals.schemas import DealCreate
@@ -21,6 +20,7 @@ from pigrocrm.core.fields.schemas import EntityType
 from pigrocrm.core.fields.service import FieldDefinitionService
 from pigrocrm.core.invoices.schemas import InvoiceCreate
 from pigrocrm.core.people.schemas import PersonCreate
+from pigrocrm.core.tasks.schemas import TaskCreate
 from pigrocrm.core.timetracking.schemas import CostCreate, TimeEntryCreate
 
 ENTITY_TYPES: tuple[EntityType, ...] = (
@@ -31,7 +31,7 @@ ENTITY_TYPES: tuple[EntityType, ...] = (
     "invoice",
     "time_entry",
     "cost",
-    "attivita",
+    "task",
     "contract",
 )
 
@@ -43,7 +43,7 @@ CREATE_MODELS: dict[str, type[BaseModel]] = {
     "invoice": InvoiceCreate,
     "time_entry": TimeEntryCreate,
     "cost": CostCreate,
-    "attivita": AttivitaCreate,
+    "task": TaskCreate,
     "contract": ContractCreate,
 }
 
@@ -51,9 +51,9 @@ CREATE_MODELS: dict[str, type[BaseModel]] = {
 # are derived or set only by a dedicated method. Empty for the entities whose
 # writable surface is their whole surface; non-empty for `invoice`, whose fiscal
 # columns are computed at emission and are exactly the names an administrator would
-# slugify into by accident ("Totale" -> `totale`), and for `time_entry`/`cost`,
-# whose billing-state columns (Task 4A-5's plan: `tariffa_applicata`,
-# `costo_applicato`, `tariffa_origine`, `costo_origine`, `invoice_line_id`,
+# slugify into by accident ("Totale" -> `total`), and for `time_entry`/`cost`,
+# whose billing-state columns (Task 4A-5's plan: `applied_rate`,
+# `applied_cost`, `rate_source`, `cost_source`, `invoice_line_id`,
 # `document_id`) are set only when a line is applied or a receipt attached, never on
 # create -- A13's own residual note for this slice: check whether the guard needs
 # the same explicit supplement `invoice` already required, and it does.
@@ -67,47 +67,47 @@ EXTRA_NATIVE_FIELDS: dict[str, tuple[str, ...]] = {
     "deal": (),
     "document": (),
     "invoice": (
-        "anno",
-        "numero",
-        "riferimento",
-        "stato",
-        "data_emissione",
-        "data_scadenza",
-        "competenza_da",
-        "competenza_a",
-        "tipo_documento",
-        "divisa",
-        "imponibile",
-        "imposta",
-        "bollo",
-        "totale",
-        "stato_pagamento",
-        "data_incasso",
-        "trasmessa_esternamente_il",
-        "annullata_il",
-        "motivo_annullamento",
-        "origine_proforma_id",
+        "year",
+        "number",
+        "reference",
+        "status",
+        "issue_date",
+        "due_date",
+        "accrual_from",
+        "accrual_to",
+        "sdi_document_type",
+        "currency",
+        "taxable_amount",
+        "vat_amount",
+        "stamp_duty",
+        "total",
+        "payment_status",
+        "payment_date",
+        "transmitted_externally_at",
+        "cancelled_at",
+        "cancellation_reason",
+        "origin_proforma_id",
     ),
     "time_entry": (
-        "tariffa_applicata",
-        "costo_applicato",
-        "tariffa_origine",
-        "costo_origine",
+        "applied_rate",
+        "applied_cost",
+        "rate_source",
+        "cost_source",
         "invoice_line_id",
     ),
     "cost": ("document_id",),
-    # `stato`, `completata_il`, `origine` and `regola` are columns `AttivitaCreate`
+    # `status`, `completed_at`, `origin` and `rule` are columns `TaskCreate`
     # deliberately does not declare: the state moves only through `complete`, `cancel`
-    # and `reopen`, and `origine`/`regola` say who created the row -- a caller that
+    # and `reopen`, and `origin`/`rule` say who created the row -- a caller that
     # could set them could claim to be an automation. They are listed here so a
     # custom-field definition cannot be slugified onto one of them.
-    "attivita": ("stato", "completata_il", "origine", "regola"),
-    # `stato` moves only through a dedicated method (none exists yet in this
-    # spike) and `contratto_precedente_id` is the renewal chain, deliberately
+    "task": ("status", "completed_at", "origin", "rule"),
+    # `status` moves only through a dedicated method (none exists yet in this
+    # spike) and `previous_contract_id` is the renewal chain, deliberately
     # left unset here (REB-358) -- neither is on `ContractCreate`, so both must
     # be reserved here or an administrator could slugify a custom field onto
     # either native column.
-    "contract": ("stato", "contratto_precedente_id"),
+    "contract": ("status", "previous_contract_id"),
 }
 
 

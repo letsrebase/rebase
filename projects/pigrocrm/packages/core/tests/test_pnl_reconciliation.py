@@ -23,14 +23,14 @@ from pigrocrm.core.timetracking.schemas import CostCreate, TimeEntryCreate
 from pigrocrm.core.timetracking.service import TimeEntryService
 
 READER = Actor(id=None, type="user", role="readonly")
-WRITER = Actor(id=None, type="user", role="collaboratore")
+WRITER = Actor(id=None, type="user", role="collaborator")
 
 
 def test_revenue_equals_the_invoices_behind_it_to_the_cent(
     db_session: Session, deal_with_mixed_invoices: UUID
 ) -> None:
     """Three issued invoices, one annulled, one proforma. Only the three issued
-    `fattura` rows count: a proforma is not revenue by definition (it never touches the
+    `invoice` rows count: a proforma is not revenue by definition (it never touches the
     register), and an annulled invoice keeps its number but not its revenue -- the
     struck-through page of a paper register."""
     deal_id = deal_with_mixed_invoices
@@ -38,8 +38,8 @@ def test_revenue_equals_the_invoices_behind_it_to_the_cent(
 
     expected = db_session.execute(
         text(
-            "SELECT COALESCE(SUM(imponibile), 0) FROM invoices "
-            "WHERE deal_id = :id AND tipo = 'fattura' AND stato = 'emessa' "
+            "SELECT COALESCE(SUM(taxable_amount), 0) FROM invoices "
+            "WHERE deal_id = :id AND type = 'invoice' AND status = 'issued' "
             "  AND deleted_at IS NULL"
         ),
         {"id": deal_id},
@@ -48,12 +48,12 @@ def test_revenue_equals_the_invoices_behind_it_to_the_cent(
     # Decimal, never float, and `==` rather than any tolerance: "exactly, not
     # approximately" is the criterion, and a `pytest.approx` here would pass for the
     # very drift this whole design exists to prevent.
-    assert isinstance(pnl.ricavi, Decimal)
-    assert pnl.ricavi == Decimal(expected)
+    assert isinstance(pnl.revenue, Decimal)
+    assert pnl.revenue == Decimal(expected)
     # Spelled out as well as compared, so the query above cannot pass by being wrong in
     # the same direction as the service: 1000.00 + 250.50 + 333.33.
-    assert pnl.ricavi == Decimal("1583.83")
-    assert pnl.fatture_emesse == 3
+    assert pnl.revenue == Decimal("1583.83")
+    assert pnl.issued_invoices == 3
 
 
 def test_the_whole_pl_reconciles_with_independent_sql(
@@ -72,7 +72,7 @@ def test_the_whole_pl_reconciles_with_independent_sql(
     """
     deal_id = deal_with_mixed_invoices
     entries = TimeEntryService(db_session)
-    for ore, tariffa, costo, fatturabile in (
+    for hours, rate, cost, billable in (
         (Decimal("7.33"), Decimal("85.500000"), Decimal("31.750000"), True),
         (Decimal("2.50"), Decimal("85.500000"), Decimal("31.750000"), True),
         # Non-billable: it costs, and it is never potential revenue.
@@ -84,95 +84,95 @@ def test_the_whole_pl_reconciles_with_independent_sql(
             TimeEntryCreate(
                 deal_id=deal_id,
                 user_id=seeded_user_id,
-                data=date(2026, 3, 4),
-                ore=ore,
-                descrizione="Lavoro",
-                fatturabile=fatturabile,
-                tariffa_applicata=tariffa,
-                costo_applicato=costo,
+                date=date(2026, 3, 4),
+                hours=hours,
+                description="Lavoro",
+                billable=billable,
+                applied_rate=rate,
+                applied_cost=cost,
             ),
             WRITER,
         )
     costs = CostService(db_session)
-    for importo in (Decimal("412.90"), Decimal("77.05")):
+    for amount in (Decimal("412.90"), Decimal("77.05")):
         costs.create(
             CostCreate(
                 deal_id=deal_id,
                 category_id=seeded_category_id,
-                data=date(2026, 3, 1),
-                importo=importo,
-                descrizione="Spesa",
+                date=date(2026, 3, 1),
+                amount=amount,
+                description="Spesa",
             ),
             WRITER,
         )
 
     pnl = AnalyticsService(db_session).deal_pnl(deal_id, READER)
 
-    ricavi = db_session.execute(
+    revenue = db_session.execute(
         text(
-            "SELECT COALESCE(SUM(imponibile), 0) FROM invoices "
-            "WHERE deal_id = :id AND tipo = 'fattura' AND stato = 'emessa' "
+            "SELECT COALESCE(SUM(taxable_amount), 0) FROM invoices "
+            "WHERE deal_id = :id AND type = 'invoice' AND status = 'issued' "
             "  AND deleted_at IS NULL"
         ),
         {"id": deal_id},
     ).scalar_one()
-    costi = db_session.execute(
+    costs = db_session.execute(
         text(
-            "SELECT COALESCE(SUM(importo), 0) FROM costs WHERE deal_id = :id AND deleted_at IS NULL"
+            "SELECT COALESCE(SUM(amount), 0) FROM costs WHERE deal_id = :id AND deleted_at IS NULL"
         ),
         {"id": deal_id},
     ).scalar_one()
-    righe_costo = db_session.execute(
+    lines_cost = db_session.execute(
         text(
-            "SELECT ore, costo_applicato FROM time_entries "
-            "WHERE deal_id = :id AND deleted_at IS NULL AND costo_applicato IS NOT NULL"
+            "SELECT hours, applied_cost FROM time_entries "
+            "WHERE deal_id = :id AND deleted_at IS NULL AND applied_cost IS NOT NULL"
         ),
         {"id": deal_id},
     ).all()
-    lavoro = sum(
+    work = sum(
         (
-            (ore * costo).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-            for ore, costo in righe_costo
+            (hours * cost).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+            for hours, cost in lines_cost
         ),
         start=Decimal("0.00"),
     )
 
-    assert pnl.ricavi == Decimal(ricavi) == Decimal("1583.83")
-    assert pnl.costi_diretti == Decimal(costi) == Decimal("489.95")
-    assert pnl.costo_lavoro == lavoro
-    assert pnl.margine_lordo == Decimal(ricavi) - Decimal(costi) - lavoro
+    assert pnl.revenue == Decimal(revenue) == Decimal("1583.83")
+    assert pnl.direct_costs == Decimal(costs) == Decimal("489.95")
+    assert pnl.work_cost == work
+    assert pnl.gross_margin == Decimal(revenue) - Decimal(costs) - work
     # Not the rounding of the exact sum: 7.33 x 31.75 = 232.7275 -> 232.73 per row.
-    assert pnl.costo_lavoro == Decimal("232.73") + Decimal("79.38") + Decimal("39.69")
-    assert pnl.ore_totali == Decimal("14.08")
-    assert pnl.ore_senza_tariffa == 1
+    assert pnl.work_cost == Decimal("232.73") + Decimal("79.38") + Decimal("39.69")
+    assert pnl.total_hours == Decimal("14.08")
+    assert pnl.hours_without_rate == 1
     # The unpriced three hours are billable and unbilled, so they are in the hours
     # figure and contribute nothing to the value -- never a silent zero.
-    assert pnl.ore_fatturabili_non_fatturate == Decimal("12.83")
-    assert pnl.valore_maturato == pnl.ricavi + Decimal("626.72") + Decimal("213.75")
+    assert pnl.billable_uninvoiced_hours == Decimal("12.83")
+    assert pnl.accrued_value == pnl.revenue + Decimal("626.72") + Decimal("213.75")
 
 
-def test_it_follows_imponibile_and_not_totale(
+def test_it_follows_taxable_amount_and_not_total(
     db_session: Session, rf01_fiscal_profile: None, deal_with_vat_invoice: UUID
 ) -> None:
-    """The `totale` includes VAT, which is not revenue: it is money collected on the
+    """The `total` includes VAT, which is not revenue: it is money collected on the
     State's behalf. Under the flat-rate regime the two coincide because the tax is zero,
     so the difference is not observable today -- which is exactly why it is written and
     tested today, with the synthetic `RF01` profile slice 3 §14.8 introduces. The test
-    fails if the P&L follows `totale`."""
+    fails if the P&L follows `total`."""
     deal_id = deal_with_vat_invoice
-    imponibile, totale = db_session.execute(
+    taxable_amount, total = db_session.execute(
         text(
-            "SELECT SUM(imponibile), SUM(totale) FROM invoices "
-            "WHERE deal_id = :id AND tipo = 'fattura' AND stato = 'emessa' "
+            "SELECT SUM(taxable_amount), SUM(total) FROM invoices "
+            "WHERE deal_id = :id AND type = 'invoice' AND status = 'issued' "
             "  AND deleted_at IS NULL"
         ),
         {"id": deal_id},
     ).one()
-    assert imponibile != totale, "the fixture must produce a VAT-bearing invoice"
+    assert taxable_amount != total, "the fixture must produce a VAT-bearing invoice"
 
     pnl = AnalyticsService(db_session).deal_pnl(deal_id, READER)
-    assert pnl.ricavi == Decimal(imponibile)
-    assert pnl.ricavi != Decimal(totale)
+    assert pnl.revenue == Decimal(taxable_amount)
+    assert pnl.revenue != Decimal(total)
 
 
 def test_a_soft_deleted_invoice_leaves_the_figure(
@@ -182,14 +182,14 @@ def test_a_soft_deleted_invoice_leaves_the_figure(
     normally be soft-deleted once issued (slice 3 §4's CHECK), so this is checked on a
     draft, which never contributed anyway -- the point is that the filter is present."""
     deal_id = deal_with_mixed_invoices
-    before = AnalyticsService(db_session).deal_pnl(deal_id, READER).ricavi
+    before = AnalyticsService(db_session).deal_pnl(deal_id, READER).revenue
     deleted = db_session.execute(
-        text("UPDATE invoices SET deleted_at = now() WHERE deal_id = :id AND stato = 'bozza'"),
+        text("UPDATE invoices SET deleted_at = now() WHERE deal_id = :id AND status = 'draft'"),
         {"id": deal_id},
     ).rowcount
     db_session.flush()
     assert deleted == 1, "the fixture must carry a draft for this to be a real deletion"
-    assert AnalyticsService(db_session).deal_pnl(deal_id, READER).ricavi == before
+    assert AnalyticsService(db_session).deal_pnl(deal_id, READER).revenue == before
 
 
 def test_the_stated_figure_does_not_move_when_a_rate_moves(
@@ -200,7 +200,7 @@ def test_the_stated_figure_does_not_move_when_a_rate_moves(
 
     The deal carries an hour first, and the hour is written *after* the rate columns are
     set, so it freezes real values rather than nulls: a P&L that re-read either column
-    would move in both `costo_lavoro` and `valore_maturato`, and with no hour at all
+    would move in both `work_cost` and `accrued_value`, and with no hour at all
     there would be nothing for it to move.
     """
     from pigrocrm.core.auth.models import User
@@ -211,27 +211,27 @@ def test_the_stated_figure_does_not_move_when_a_rate_moves(
     assert deal is not None
     user = db_session.get(User, seeded_user_id)
     assert user is not None
-    deal.tariffa_oraria = Decimal("100.000000")
-    user.costo_orario_default = Decimal("40.000000")
+    deal.hourly_rate = Decimal("100.000000")
+    user.default_hourly_cost = Decimal("40.000000")
     db_session.flush()
     TimeEntryService(db_session).create(
         TimeEntryCreate(
             deal_id=deal_id,
             user_id=seeded_user_id,
-            data=date(2026, 3, 4),
-            ore=Decimal("4.00"),
-            descrizione="Sviluppo",
+            date=date(2026, 3, 4),
+            hours=Decimal("4.00"),
+            description="Sviluppo",
         ),
         WRITER,
     )
 
     service = AnalyticsService(db_session)
     before = service.deal_pnl(deal_id, READER).model_dump(mode="json")
-    assert before["costo_lavoro"] == "160.00"
+    assert before["work_cost"] == "160.00"
 
-    deal.tariffa_oraria = Decimal("150.000000")
-    user.tariffa_oraria_default = Decimal("120.000000")
-    user.costo_orario_default = Decimal("90.000000")
+    deal.hourly_rate = Decimal("150.000000")
+    user.default_hourly_rate = Decimal("120.000000")
+    user.default_hourly_cost = Decimal("90.000000")
     db_session.flush()
 
     assert service.deal_pnl(deal_id, READER).model_dump(mode="json") == before
@@ -246,14 +246,14 @@ def test_an_hour_on_a_draft_invoice_is_neither_revenue_nor_lost(
 ) -> None:
     """Which of the two readings of "fatturato" the P&L uses, and why it matters.
 
-    Task 4B-3 left the two deliberately divergent: the `fatturato` list filter is
+    Task 4B-3 left the two deliberately divergent: the `invoiced` list filter is
     **link-based** (one indexed column, no join), while the freeze is
     **invoice-state-based**. An hour bound to a *draft* invoice line therefore reads as
-    `fatturato` in the list and is still editable.
+    `invoiced` in the list and is still editable.
 
     The P&L uses the **invoice-state** reading, through `billed_entry_ids`, and it has
-    to: revenue is an *issued* invoice, so an hour on a draft contributes to no `ricavi`
-    yet. Under the link-based reading it would leave `ore_fatturabili_non_fatturate` at
+    to: revenue is an *issued* invoice, so an hour on a draft contributes to no `revenue`
+    yet. Under the link-based reading it would leave `billable_uninvoiced_hours` at
     the same moment, and its value would exist in neither figure -- work done, priced,
     and invisible until somebody pressed "issue". Here it stays in the accrued value
     until the invoice is actually issued, which is the only reading under which nothing
@@ -266,10 +266,10 @@ def test_an_hour_on_a_draft_invoice_is_neither_revenue_nor_lost(
         TimeEntryCreate(
             deal_id=seeded_deal_id,
             user_id=seeded_user_id,
-            data=date(2026, 3, 4),
-            ore=Decimal("2.00"),
-            descrizione="Sviluppo",
-            tariffa_applicata=Decimal("100.000000"),
+            date=date(2026, 3, 4),
+            hours=Decimal("2.00"),
+            description="Sviluppo",
+            applied_rate=Decimal("100.000000"),
         ),
         WRITER,
     )
@@ -281,9 +281,9 @@ def test_an_hour_on_a_draft_invoice_is_neither_revenue_nor_lost(
 
     service = AnalyticsService(db_session)
     on_draft = service.deal_pnl(seeded_deal_id, READER)
-    assert on_draft.ricavi == Decimal("0.00")
-    assert on_draft.ore_fatturabili_non_fatturate == Decimal("2.00")
-    assert on_draft.valore_maturato == Decimal("200.00")
+    assert on_draft.revenue == Decimal("0.00")
+    assert on_draft.billable_uninvoiced_hours == Decimal("2.00")
+    assert on_draft.accrued_value == Decimal("200.00")
 
     invoice_id = db_session.execute(
         text("SELECT invoice_id FROM invoice_lines WHERE id = :line"),
@@ -294,9 +294,9 @@ def test_an_hour_on_a_draft_invoice_is_neither_revenue_nor_lost(
     )
 
     issued = service.deal_pnl(seeded_deal_id, READER)
-    assert issued.ore_fatturabili_non_fatturate == Decimal("0.00")
+    assert issued.billable_uninvoiced_hours == Decimal("0.00")
     # That invoice carries no `deal_id`, so this deal's revenue is still zero and the
     # accrued value drops with the hour: the figures move together, and the assertion
     # that matters is that the hour left the "to invoice" bucket exactly when the
     # invoice became one.
-    assert issued.valore_maturato == Decimal("0.00")
+    assert issued.accrued_value == Decimal("0.00")

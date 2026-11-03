@@ -7,13 +7,13 @@ and that, and this file is the third: `drive/query.py` refuses to *build* a wide
 listing, `test_drive_query.py` refuses to let a Drive URL be written anywhere else,
 and the tests here inspect what the fake transport was actually *asked*. The first two
 would both accept `children_query("<a folder in somebody's Drive>")`; only this one
-can tell that the folder named in the request belongs to the hierarchy the titolare
+can tell that the folder named in the request belongs to the hierarchy the owner
 configured -- which is why `test_every_files_list_of_this_module_stayed_inside_the_roots`
 at the bottom re-reads every request every scenario above made.
 
 The other property under test is the one that has no message: a folder or a file
 outside the roots is `NotFound`, and it is `NotFound` in the same words whether it does
-not exist, exists in a part of the Drive the titolare did not configure, or exists in
+not exist, exists in a part of the Drive the owner did not configure, or exists in
 somebody else's Drive entirely. Telling those apart would answer the question "is
 there a file with this id?" for anyone who can call the tool.
 """
@@ -47,7 +47,7 @@ from pigrocrm.core.drive.reader import (
 from pigrocrm.core.drive.schemas import DRIVE_SCOPE_FILE, DRIVE_SCOPE_READONLY
 from pigrocrm.core.drive.transport import DriveTransport, UserTokens
 from pigrocrm.core.errors import Conflict, NotFound, ValidationFailed
-from pigrocrm.core.text import DOCX_MIME, PDF_MIME, PROVENIENZA, TEXT_TRUNCATION_MARKER
+from pigrocrm.core.text import DOCX_MIME, PDF_MIME, PROVENANCE, TEXT_TRUNCATION_MARKER
 
 FOLDER_MIME = "application/vnd.google-apps.folder"
 
@@ -174,17 +174,17 @@ def test_lists_the_children_of_a_configured_root() -> None:
 
     listing = _reader(drive).list_children(ROOT_FOLDER)
 
-    by_name = {entry.nome: entry for entry in listing.items}
+    by_name = {entry.name: entry for entry in listing.items}
     assert set(by_name) == {"ACME", "Note"}
-    assert by_name["ACME"].cartella is True
+    assert by_name["ACME"].folder is True
     assert by_name["ACME"].mime == FOLDER_MIME
     # A folder and a Google Doc have no bytes on Drive, so they have no size -- and
     # `None` is not the same answer as `0`, which would say "an empty file".
-    assert by_name["ACME"].dimensione is None
-    assert by_name["Note"].dimensione is None
-    assert by_name["Note"].cartella is False
+    assert by_name["ACME"].size is None
+    assert by_name["Note"].size is None
+    assert by_name["Note"].folder is False
     assert by_name["Note"].id == DOC_FILE
-    assert by_name["Note"].modificato_il == datetime(2026, 1, 1, tzinfo=UTC)
+    assert by_name["Note"].modified_at == datetime(2026, 1, 1, tzinfo=UTC)
     assert listing.next_page_token is None
 
 
@@ -195,17 +195,17 @@ def test_lists_the_children_of_a_folder_inside_a_root() -> None:
 
     listing = _reader(drive).list_children(SUB_FOLDER)
 
-    by_name = {entry.nome: entry for entry in listing.items}
+    by_name = {entry.name: entry for entry in listing.items}
     assert set(by_name) == {"Preventivo.pdf", "Appunti.txt", "Scansione.pdf"}
-    assert by_name["Preventivo.pdf"].dimensione == len(PDF_WITH_TEXT)
+    assert by_name["Preventivo.pdf"].size == len(PDF_WITH_TEXT)
     assert by_name["Preventivo.pdf"].mime == PDF_MIME
-    assert by_name["Preventivo.pdf"].cartella is False
+    assert by_name["Preventivo.pdf"].folder is False
 
 
 def test_a_folder_outside_the_roots_is_not_found_and_no_listing_is_ever_issued() -> None:
     """The heart of the slice. `files.list` is not attempted and then filtered: it is
     never sent at all, so there is no window in which Google was asked about a folder
-    the titolare did not configure."""
+    the owner did not configure."""
     drive = _tree()
 
     with pytest.raises(NotFound) as excinfo:
@@ -263,7 +263,7 @@ def test_a_page_token_is_forwarded_and_the_next_one_comes_back() -> None:
     second = reader.list_children(ROOT_FOLDER, page_token=first.next_page_token)
     assert len(second.items) == 1
     assert second.next_page_token is None
-    assert {first.items[0].nome, second.items[0].nome} == {"ACME", "Note"}
+    assert {first.items[0].name, second.items[0].name} == {"ACME", "Note"}
     assert [request.params.get("pageToken") for request in _listings(drive)] == [
         None,
         [first.next_page_token],
@@ -280,7 +280,7 @@ def test_a_file_in_a_subfolder_of_a_root_is_within_the_roots() -> None:
 
 
 def test_a_configured_root_is_itself_within_the_roots_without_asking_drive() -> None:
-    """No request at all: the answer is in the configuration, and a folder the titolare
+    """No request at all: the answer is in the configuration, and a folder the owner
     named does not need Google's opinion."""
     drive = _tree()
 
@@ -397,11 +397,11 @@ def test_a_403_on_an_ancestor_is_reported_and_not_read_as_outside_the_roots() ->
     indistinguishable from one that was never there. A 403 is not that. It also means no
     root can be *proven* above the file, so swallowing it would be easy and would look
     right -- and it would report an ancestor somebody un-shared, or a permission change
-    mid-walk, as «non trovato»: the titolare would be told their own file is outside the
+    mid-walk, as «non trovato»: the owner would be told their own file is outside the
     folders they configured, and would go looking for it in the wrong place.
 
     So it propagates as itself, with the status intact for whoever has to diagnose it.
-    The cost of the trade, equally deliberate: a 403 on a parent of a file the titolare
+    The cost of the trade, equally deliberate: a 403 on a parent of a file the owner
     *can* read surfaces as a Drive error rather than as `NotFound`. That has not been
     seen, and inventing a translation for it would be inventing which of the two it was.
     """
@@ -553,10 +553,10 @@ def test_read_text_of_a_pdf_with_a_text_layer() -> None:
 
     result = _reader(drive).read_text(PDF_FILE)
 
-    assert "Preventivo per ACME" in result.testo
+    assert "Preventivo per ACME" in result.text
     assert result.mime == PDF_MIME
-    assert result.troncato is False
-    assert result.provenienza == PROVENIENZA
+    assert result.truncated is False
+    assert result.provenance == PROVENANCE
 
 
 def test_read_text_of_a_scan_is_empty_and_not_truncated() -> None:
@@ -564,8 +564,8 @@ def test_read_text_of_a_scan_is_empty_and_not_truncated() -> None:
 
     result = _reader(drive).read_text(SCAN_FILE)
 
-    assert result.testo == ""
-    assert result.troncato is False
+    assert result.text == ""
+    assert result.truncated is False
 
 
 def test_read_text_of_a_google_doc_reports_the_exported_type() -> None:
@@ -573,7 +573,7 @@ def test_read_text_of_a_google_doc_reports_the_exported_type() -> None:
 
     result = _reader(drive).read_text(DOC_FILE)
 
-    assert result.testo == DOC_TEXT
+    assert result.text == DOC_TEXT
     assert result.mime == "text/plain"
 
 
@@ -587,7 +587,7 @@ def test_read_text_of_a_docx() -> None:
         file_id="1ContrattoDocx000",
     )
 
-    assert _reader(drive).read_text(docx).testo == "Contratto quadro\nDurata annuale"
+    assert _reader(drive).read_text(docx).text == "Contratto quadro\nDurata annuale"
 
 
 def test_read_text_truncates_at_the_configured_ceiling_with_a_marker() -> None:
@@ -595,21 +595,21 @@ def test_read_text_truncates_at_the_configured_ceiling_with_a_marker() -> None:
 
     result = _reader(drive, text_max_bytes=10).read_text(TXT_FILE)
 
-    assert result.troncato is True
-    assert result.testo == TXT_TEXT[:10] + TEXT_TRUNCATION_MARKER
+    assert result.truncated is True
+    assert result.text == TXT_TEXT[:10] + TEXT_TRUNCATION_MARKER
 
 
 def test_read_text_max_bytes_overrides_the_configured_ceiling() -> None:
     drive = _tree()
     reader = _reader(drive, text_max_bytes=10)
 
-    assert reader.read_text(TXT_FILE, max_bytes=1_000).troncato is False
+    assert reader.read_text(TXT_FILE, max_bytes=1_000).truncated is False
 
 
 def test_the_default_ceiling_is_the_settings_default() -> None:
     drive = _tree()
 
-    assert _reader(drive).read_text(TXT_FILE).testo == TXT_TEXT
+    assert _reader(drive).read_text(TXT_FILE).text == TXT_TEXT
     assert TEXT_MAX_BYTES_DEFAULT == 262_144
     assert Settings(_env_file=None).drive_text_max_bytes == TEXT_MAX_BYTES_DEFAULT  # type: ignore[call-arg]
 
@@ -643,9 +643,9 @@ def test_an_id_that_is_not_a_drive_id_is_refused_before_any_request(bad: str) ->
 
 
 def test_a_bad_file_id_is_refused_as_a_file_id_and_a_folder_id_as_a_folder_id() -> None:
-    """Which parameter was wrong is the whole content of the message. «non è un id di
-    cartella Drive» in answer to a *file* id sends the reader to check the configured
-    roots, which are fine, instead of the id they typed."""
+    """Which parameter was wrong is the whole content of the message.
+    "Not a Drive folder id" in answer to a *file* id sends the reader to check the
+    configured roots, which are fine, instead of the id they typed."""
     reader = _reader(_tree())
 
     for call in (reader.read_bytes, reader.read_text):
@@ -667,7 +667,7 @@ def test_a_google_failure_mid_read_is_about_the_drive_file_and_not_a_crm_documen
     truth for the caller it was written for -- `GDriveStorage` reaches Drive for the
     bytes of a CRM document -- and false for every caller of this class.
 
-    A Google 500 while listing a folder the titolare named used to arrive as
+    A Google 500 while listing a folder the owner named used to arrive as
     «document_blob: elenco fallito (500)». There is no CRM document anywhere in that
     operation: `OriginalPdfResolver.resolve`'s docstring documents the
     opposite ("each already arrive as a `Conflict` under the entity `drive_file`"), and
@@ -769,10 +769,10 @@ def _account(
 ) -> GoogleDriveAccount:
     user = User(
         email=f"drive-{uuid4().hex[:8]}@example.it",
-        nome="Owner",
+        name="Owner",
         password_hash="x",
-        ruolo="admin",
-        attivo=True,
+        role="admin",
+        active=True,
     )
     session.add(user)
     session.flush()
@@ -835,7 +835,7 @@ def test_drive_reader_for_composes_the_reader_from_the_stored_account(
     )
     listing = reader.list_children(ROOT_FOLDER)
 
-    assert {entry.nome for entry in listing.items} == {"ACME", "Note"}
+    assert {entry.name for entry in listing.items} == {"ACME", "Note"}
     # The roots come from the row, so a reader cannot be pointed anywhere else.
     with pytest.raises(NotFound):
         reader.list_children(OUTSIDE_FOLDER)
@@ -874,7 +874,7 @@ def test_a_named_action_applies_the_agent_ban_before_the_row_is_read(
     the installation before it refuses. An agent credential on an installation that has
     not opted in is told the operation is closed to agents, full stop -- not "there is no
     Drive connected", not "the grant is missing a scope", both of which are facts about
-    the titolare's account that a refused caller has no business finding out.
+    the owner's account that a refused caller has no business finding out.
 
     The account here is perfectly healthy, so any refusal other than `AgentForbidden`
     would mean the gate ran in the wrong order.
@@ -884,11 +884,11 @@ def test_a_named_action_applies_the_agent_ban_before_the_row_is_read(
     account = _account(db_session)
     drive = _tree()
     _inject(monkeypatch, drive, [])
-    agente = Actor(id=account.user_id, type="mcp", role="admin")
+    agent = Actor(id=account.user_id, type="mcp", role="admin")
 
     with pytest.raises(AgentForbidden) as excinfo:
         drive_reader_for(
-            db_session, agente, gmail_settings(), feature="la lettura", action="read_drive_file"
+            db_session, agent, gmail_settings(), feature="la lettura", action="read_drive_file"
         )
 
     assert excinfo.value.details["action"] == "read_drive_file"
@@ -911,10 +911,10 @@ def test_already_authorized_is_the_only_way_past_that_gate(
     account = _account(db_session)
     drive = _tree()
     _inject(monkeypatch, drive, [])
-    agente = Actor(id=account.user_id, type="mcp", role="admin")
+    agent = Actor(id=account.user_id, type="mcp", role="admin")
 
     reader = drive_reader_for(
-        db_session, agente, gmail_settings(), feature="la lettura", action=ALREADY_AUTHORIZED
+        db_session, agent, gmail_settings(), feature="la lettura", action=ALREADY_AUTHORIZED
     )
 
     assert reader.list_children(ROOT_FOLDER).items
@@ -924,15 +924,15 @@ def test_an_opted_in_installation_lets_a_named_action_through(
     db_session: Session, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The other half of the switch, here as much as anywhere: the ban is a setting the
-    titolare can open, not a wall, and a test that only proved the refusal would be
+    owner can open, not a wall, and a test that only proved the refusal would be
     satisfied by a gate that refuses every agent for ever."""
     account = _account(db_session)
     drive = _tree()
     _inject(monkeypatch, drive, [])
-    aperto = Actor(id=account.user_id, type="mcp", role="admin", full_access=True)
+    open = Actor(id=account.user_id, type="mcp", role="admin", full_access=True)
 
     reader = drive_reader_for(
-        db_session, aperto, gmail_settings(), feature="la lettura", action="read_drive_file"
+        db_session, open, gmail_settings(), feature="la lettura", action="read_drive_file"
     )
 
     assert reader.list_children(ROOT_FOLDER).items
@@ -993,7 +993,7 @@ def test_a_revocation_discovered_mid_read_marks_the_account_and_re_raises(
     kinds = db_session.execute(
         select(Activity.kind).where(Activity.entity_id == account.id)
     ).scalars()
-    assert "drive.credenziale_revocata" in list(kinds)
+    assert "drive.credential_revoked" in list(kinds)
 
 
 def test_drive_reader_for_uses_the_configured_text_ceiling(
@@ -1011,7 +1011,7 @@ def test_drive_reader_for_uses_the_configured_text_ceiling(
         action=ALREADY_AUTHORIZED,
     )
 
-    assert reader.read_text(TXT_FILE).troncato is True
+    assert reader.read_text(TXT_FILE).truncated is True
 
 
 # --- the guard over the whole module ---------------------------------------------------

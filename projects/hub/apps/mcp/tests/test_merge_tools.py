@@ -39,18 +39,22 @@ def _wipe(factory: sessionmaker[Session]) -> None:
 def _seed(factory: sessionmaker[Session], *emails: str) -> list[UUID]:
     session = factory()
     try:
-        session.add(User(id=IVAN.id, email=IVAN.email, nome=IVAN.nome, cognome="", role="admin"))
+        session.add(
+            User(
+                id=IVAN.id, email=IVAN.email, first_name=IVAN.first_name, last_name="", role="admin"
+            )
+        )
         session.commit()
         ids = []
         for email in emails:
             read, _ = FreelancerService(session).apply(
                 FreelancerCreate(
-                    nome="Ada",
-                    cognome="Lovelace",
+                    first_name="Ada",
+                    last_name="Lovelace",
                     email=email,
-                    tariffa_giornaliera=Decimal("450"),
-                    posizione="Backend developer",
-                    remoto="remoto",
+                    daily_rate=Decimal("450"),
+                    job_title="Backend developer",
+                    remote="remote",
                 ),
                 PDF,
                 "cv.pdf",
@@ -74,7 +78,7 @@ async def test_merge_freelancers_moves_the_card_and_answers_counts_and_the_actio
         )
     assert done["survivor_freelancer_id"] == str(keep)
     assert done["absorbed_freelancer_id"] == str(other)
-    assert done["cv"] in ("invariato", "assorbita") and "action_id" in done
+    assert done["cv"] in ("kept", "absorbed") and "action_id" in done
     session = factory()
     absorbed = session.scalar(select(Freelancer).where(Freelancer.id == other))
     assert absorbed is not None and absorbed.deleted_at is not None
@@ -88,11 +92,11 @@ async def test_a_refused_merge_says_why(factory: sessionmaker[Session]) -> None:
     for card_id in (keep, other):
         session.add(
             ContractDocument(
-                kind="quadro",
+                kind="framework",
                 freelancer_id=card_id,
                 text_version="1",
                 pdf=PDF,
-                stato="firmato",
+                status="signed",
                 created_by=IVAN.id,
             )
         )
@@ -106,7 +110,7 @@ async def test_a_refused_merge_says_why(factory: sessionmaker[Session]) -> None:
     _wipe(factory)
 
 
-async def test_list_duplicati_answers_the_pairs_without_an_address(
+async def test_list_duplicates_answers_the_pairs_without_an_address(
     factory: sessionmaker[Session],
 ) -> None:
     older, newer = _seed(factory, "vecchia@studio.it", "nuova@studio.it")
@@ -117,14 +121,14 @@ async def test_list_duplicati_answers_the_pairs_without_an_address(
     session.commit()
     try:
         async with Client(build_server(factory, lambda: IVAN)) as client:
-            listed: dict[str, Any] = _payload(await client.call_tool("list_duplicati", {}))
-        assert len(listed["unibili"]) == 1 and listed["da_rivedere"] == []
-        pair = listed["unibili"][0]
-        assert {pair["survivor"]["freelancer_id"], pair["assorbito"]["freelancer_id"]} == {
+            listed: dict[str, Any] = _payload(await client.call_tool("list_duplicates", {}))
+        assert len(listed["mergeable"]) == 1 and listed["to_review"] == []
+        pair = listed["mergeable"][0]
+        assert {pair["survivor"]["freelancer_id"], pair["absorbed"]["freelancer_id"]} == {
             str(older),
             str(newer),
         }
-        assert "email" not in pair["survivor"] and "user_id" not in pair["assorbito"]
+        assert "email" not in pair["survivor"] and "user_id" not in pair["absorbed"]
         assert "studio.it" not in str(listed)
     finally:
         session.close()

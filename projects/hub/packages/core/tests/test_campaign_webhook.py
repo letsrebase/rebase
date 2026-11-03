@@ -48,10 +48,10 @@ def row(session: Session, **fields: object) -> CampaignRecipient:
     recipient = CampaignRecipient(
         campaign_id=campaign.id,
         email="ada@studio.it",
-        tipo="freelancer",
-        codice="1",
-        prima={},
-        disiscrizione_token="tok",
+        kind="freelancer",
+        code="1",
+        before={},
+        unsubscribe_token="tok",
         **fields,
     )
     session.add(recipient)
@@ -74,31 +74,31 @@ def test_delivery_is_found_by_the_tag_before_the_id_is_committed_and_written_onc
     clean: Session,  # noqa: F811  (fixture)
 ) -> None:
     target = row(clean)
-    assert apply_event(clean, event("email.delivered", target)) == "applicato"
-    first = clean.get(CampaignRecipient, target.id).consegnata_at  # type: ignore[union-attr]
+    assert apply_event(clean, event("email.delivered", target)) == "applied"
+    first = clean.get(CampaignRecipient, target.id).delivered_at  # type: ignore[union-attr]
     later = event("email.delivered", target)
     later["created_at"] = "2026-09-25T09:00:00.000Z"
     apply_event(clean, later)
-    assert clean.get(CampaignRecipient, target.id).consegnata_at == first  # type: ignore[union-attr]
+    assert clean.get(CampaignRecipient, target.id).delivered_at == first  # type: ignore[union-attr]
 
 
 def test_only_a_permanent_bounce_marks_the_address(clean: Session) -> None:  # noqa: F811  (fixture)
     target = row(clean)
     assert (
         apply_event(clean, event("email.bounced", target, bounce={"type": "Transient"}))
-        == "ignorato"
+        == "ignored"
     )
     assert (
         apply_event(clean, event("email.bounced", target, bounce={"type": "Permanent"}))
-        == "applicato"
+        == "applied"
     )
-    assert clean.get(CampaignRecipient, target.id).rimbalzata_at is not None  # type: ignore[union-attr]
+    assert clean.get(CampaignRecipient, target.id).bounced_at is not None  # type: ignore[union-attr]
 
 
 def test_a_complaint_opts_the_address_out(clean: Session) -> None:  # noqa: F811  (fixture)
     target = row(clean)
     apply_event(clean, event("email.complained", target))
-    assert clean.get(CampaignOptout, "ada@studio.it").fonte == "reclamo"  # type: ignore[union-attr]
+    assert clean.get(CampaignOptout, "ada@studio.it").source == "complaint"  # type: ignore[union-attr]
 
 
 def test_a_complaint_and_its_opt_out_are_one_commit(
@@ -116,11 +116,11 @@ def test_a_complaint_and_its_opt_out_are_one_commit(
     with pytest.raises(RuntimeError):
         apply_event(clean, event("email.complained", target))
     clean.rollback()
-    assert clean.get(CampaignRecipient, target.id).reclamo_at is None  # type: ignore[union-attr]
+    assert clean.get(CampaignRecipient, target.id).complaint_at is None  # type: ignore[union-attr]
     monkeypatch.undo()
-    assert apply_event(clean, event("email.complained", target)) == "applicato"
-    assert clean.get(CampaignRecipient, target.id).reclamo_at is not None  # type: ignore[union-attr]
-    assert clean.get(CampaignOptout, "ada@studio.it").fonte == "reclamo"  # type: ignore[union-attr]
+    assert apply_event(clean, event("email.complained", target)) == "applied"
+    assert clean.get(CampaignRecipient, target.id).complaint_at is not None  # type: ignore[union-attr]
+    assert clean.get(CampaignOptout, "ada@studio.it").source == "complaint"  # type: ignore[union-attr]
 
 
 def test_a_click_keeps_the_first_moment(clean: Session) -> None:  # noqa: F811  (fixture)
@@ -131,7 +131,7 @@ def test_a_click_keeps_the_first_moment(clean: Session) -> None:  # noqa: F811  
     apply_event(
         clean, event("email.clicked", target, click={"timestamp": "2026-09-25T07:40:00.000Z"})
     )
-    moment = clean.get(CampaignRecipient, target.id).primo_clic_at  # type: ignore[union-attr]
+    moment = clean.get(CampaignRecipient, target.id).first_click_at  # type: ignore[union-attr]
     assert moment is not None and moment.isoformat() == "2026-09-25T07:40:00+00:00"
 
 
@@ -139,22 +139,22 @@ def test_tests_strangers_and_early_events(clean: Session) -> None:  # noqa: F811
     """Review Focus 5."""
     test_event = event("email.delivered", None)
     test_event["data"]["tags"] = {"campaign": "c-1", "kind": "test"}  # type: ignore[index]
-    assert apply_event(clean, test_event) == "ignorato"
+    assert apply_event(clean, test_event) == "ignored"
     stranger = {
         "type": "email.delivered",
         "created_at": "2026-09-25T07:31:00Z",
         "data": {"email_id": "re_x", "tags": {}},
     }
-    assert apply_event(clean, stranger) == "ignorato"
+    assert apply_event(clean, stranger) == "ignored"
     early = event("email.delivered", None)
     early["data"]["tags"]["r"] = "00000000-0000-0000-0000-000000000000"  # type: ignore[index]
-    assert apply_event(clean, early) == "da_riprovare"
+    assert apply_event(clean, early) == "retry"
 
 
 def test_a_delivery_for_a_cancelled_campaign_still_counts(
     clean: Session,  # noqa: F811  (fixture)
 ) -> None:
-    target = row(clean, stato="inviata")
-    clean.get(Campaign, target.campaign_id).stato = "annullata"  # type: ignore[union-attr]
+    target = row(clean, status="sent")
+    clean.get(Campaign, target.campaign_id).status = "cancelled"  # type: ignore[union-attr]
     clean.commit()
-    assert apply_event(clean, event("email.delivered", target)) == "applicato"
+    assert apply_event(clean, event("email.delivered", target)) == "applied"

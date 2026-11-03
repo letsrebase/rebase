@@ -99,13 +99,13 @@ class AddressRoster:
                 clause
                 for domain in candidates
                 for clause in (
-                    Customer.sito_web.ilike(f"%{escape_like(domain)}%", escape="\\"),
+                    Customer.website.ilike(f"%{escape_like(domain)}%", escape="\\"),
                     Customer.email.ilike(f"%{escape_like(domain)}%", escape="\\"),
                 )
             )
         )
         customers = self.session.execute(
-            select(Customer.sito_web, Customer.email).where(
+            select(Customer.website, Customer.email).where(
                 Customer.deleted_at.is_(None), customer_hits
             )
         ).all()
@@ -215,12 +215,12 @@ def _needles(addresses: Iterable[str]) -> list[str]:
 def _domains_of(customers: Iterable[Any], people_emails: Iterable[str | None]) -> frozenset[str]:
     """The domains a set of customer rows and of their people's addresses stand for."""
     domains: set[str] = set()
-    for sito_web, email in customers:
+    for website, email in customers:
         # Both of them: a customer whose website is acme.com and whose email is at
         # acme.it is at both, and proposing the other one would make a second Acme.
         for domain in (
-            customer_domain(sito_web=sito_web, email=None),
-            customer_domain(sito_web=None, email=email),
+            customer_domain(website=website, email=None),
+            customer_domain(website=None, email=email),
         ):
             if domain is not None:
                 domains.add(domain)

@@ -28,7 +28,7 @@ from pigrocrm.core.templates.ast import EachNode, IfNode, Node, TextNode, Variab
 from pigrocrm.core.templates.escaping import RenderContext
 
 ENTITY = "template"
-FIELD = "corpo_markdown"
+FIELD = "body_markdown"
 
 # The five regions that are not ordinary Markdown body text, in one alternation so a
 # single left-to-right scan cannot produce overlapping or out-of-order segments:
@@ -494,15 +494,15 @@ class DeclaredPaths:
     `root` is what a caller must have at the top level of the values it passes in:
     every `{{path}}` referenced outside any `#each`, plus the path an `#if` or
     `#each` itself names -- a template that only ever does
-    `{{#if offerta.sconto}}...{{/if}}` still needs `offerta.sconto` supplied, even
+    `{{#if offerta.sconto}}...{{/if}}` still needs `offer.sconto` supplied, even
     though no bare `{{offerta.sconto}}` ever appears.
 
     `loop_relative` is everything referenced *inside* an `#each` body: `this` and
     the current element's own properties. These are never something a caller
     supplies at the root -- they describe the shape of each element of whichever
     root array the enclosing `#each` iterates -- so mixing them into `root` would
-    tell a caller it needs to supply a top-level `nome`, when what is actually true
-    is that each element of (say) `righe` needs one.
+    tell a caller it needs to supply a top-level `name`, when what is actually true
+    is that each element of (say) `lines` needs one.
     """
 
     root: tuple[tuple[str, ...], ...]

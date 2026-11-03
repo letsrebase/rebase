@@ -18,24 +18,24 @@ import { useCanWrite } from '@/lib/auth'
 import { formatIsoDateItalian } from '@/lib/dates'
 import { cn } from '@rebase/ui/cn'
 import {
-  CANALE_IDS,
-  CANALI,
+  ChannelIds,
+  Channels,
   canReceiveApproval,
   excerptIsInBody,
   toDateTimeLocal,
-  type ApprovalCanale,
+  type ApprovalChannel,
   type GmailMessage,
 } from './approvals'
 import { useCustomerMessages, useFileProof, useRecordApproval } from './approvalQueries'
-import { quantitaLabel, statoLabel } from './labels'
+import { quantityLabel, statusLabel } from './labels'
 import { useApprovalCandidates, useDayContractOptions } from './queries'
 
-type ProofKind = 'messaggio' | 'file' | 'testo'
+type ProofKind = 'message' | 'file' | 'text'
 
 const PROOFS: { id: ProofKind; label: string }[] = [
-  { id: 'messaggio', label: 'Un messaggio sincronizzato' },
+  { id: 'message', label: 'Un messaggio sincronizzato' },
   { id: 'file', label: 'Un file' },
-  { id: 'testo', label: 'Testo incollato' },
+  { id: 'text', label: 'Testo incollato' },
 ]
 
 /**
@@ -65,17 +65,17 @@ export function ApprovalForm({
 
   const [contractId, setContractId] = useState(initialContractId ?? '')
   const [picked, setPicked] = useState<ReadonlySet<string>>(new Set(initialDayIds))
-  const [canale, setCanale] = useState<ApprovalCanale>('email')
-  const [mittente, setMittente] = useState('')
-  const [ricevutoIl, setRicevutoIl] = useState(toDateTimeLocal(new Date()))
-  const [estratto, setEstratto] = useState('')
+  const [channel, setChannel] = useState<ApprovalChannel>('email')
+  const [sender, setSender] = useState('')
+  const [receivedAt, setReceivedAt] = useState(toDateTimeLocal(new Date()))
+  const [excerpt, setExcerpt] = useState('')
   // Until the person picks one, the proof is the first the installation can offer: the mailbox's
   // health is read after the first render, so the default is derived and never frozen at it.
   const [chosenProof, setProof] = useState<ProofKind | null>(null)
-  const proof: ProofKind = chosenProof ?? (gmail ? 'messaggio' : 'file')
+  const proof: ProofKind = chosenProof ?? (gmail ? 'message' : 'file')
   const [messageId, setMessageId] = useState('')
   const [file, setFile] = useState<File | null>(null)
-  const [testo, setTesto] = useState('')
+  const [text, setText] = useState('')
   // The document a failed recording already filed, and which proof it was: a retry reuses it
   // instead of filing a second copy of the same evidence behind an approval that never landed.
   const [filed, setFiled] = useState<{ key: string; id: string } | null>(null)
@@ -102,9 +102,9 @@ export function ApprovalForm({
   function chooseMessage(message: GmailMessage) {
     setMessageId(message.id)
     // The message knows who sent it and when: offered, and still the person's to change.
-    setMittente(message.from_address)
-    setRicevutoIl(toDateTimeLocal(new Date(message.internal_date)))
-    setCanale('email')
+    setSender(message.from_address)
+    setReceivedAt(toDateTimeLocal(new Date(message.internal_date)))
+    setChannel('email')
   }
 
   function toggle(id: string, on: boolean) {
@@ -118,19 +118,19 @@ export function ApprovalForm({
 
   const chosenDays = days.filter((day) => picked.has(day.id))
   const proofReady =
-    (proof === 'messaggio' && chosenMessage !== undefined && chosenMessage.body_text.trim() !== '') ||
+    (proof === 'message' && chosenMessage !== undefined && chosenMessage.body_text.trim() !== '') ||
     (proof === 'file' && file !== null) ||
-    (proof === 'testo' && testo.trim() !== '')
+    (proof === 'text' && text.trim() !== '')
   const ready =
     contractId !== '' &&
     chosenDays.length > 0 &&
-    mittente.trim() !== '' &&
-    ricevutoIl !== '' &&
-    estratto.trim() !== '' &&
+    sender.trim() !== '' &&
+    receivedAt !== '' &&
+    excerpt.trim() !== '' &&
     proofReady
   const busy = fileProof.isPending || record.isPending
   const mismatch =
-    proof === 'messaggio' && chosenMessage !== undefined && !excerptIsInBody(estratto, chosenMessage.body_text)
+    proof === 'message' && chosenMessage !== undefined && !excerptIsInBody(excerpt, chosenMessage.body_text)
   const failure = fileProof.error ?? record.error
 
   async function submit(event: FormEvent) {
@@ -140,30 +140,30 @@ export function ApprovalForm({
     record.reset()
     const base = {
       contract_id: contractId,
-      canale,
-      mittente: mittente.trim(),
-      ricevuto_il: new Date(ricevutoIl).toISOString(),
-      estratto: estratto.trim(),
+      channel,
+      sender: sender.trim(),
+      received_at: new Date(receivedAt).toISOString(),
+      excerpt: excerpt.trim(),
       work_unit_ids: chosenDays.map((day) => day.id),
     }
     try {
       let body
-      if (proof === 'messaggio') {
+      if (proof === 'message') {
         body = { ...base, gmail_message_id: messageId }
       } else {
         const key =
           proof === 'file' && file !== null
             ? `file|${contractId}|${file.name}|${file.size}|${file.lastModified}`
-            : `testo|${contractId}|${mittente.trim()}|${testo}`
+            : `testo|${contractId}|${sender.trim()}|${text}`
         let documentId = filed?.key === key ? filed.id : null
         if (documentId === null) {
           const upload =
             proof === 'file' && file !== null
               ? file
-              : new File([testo], 'approvazione.txt', { type: 'text/plain' })
+              : new File([text], 'approvazione.txt', { type: 'text/plain' })
           const document = await fileProof.mutateAsync({
             contractId,
-            titolo: proof === 'file' && file !== null ? file.name : `Approvazione di ${mittente.trim()}`,
+            title: proof === 'file' && file !== null ? file.name : `Approvazione di ${sender.trim()}`,
             file: upload,
           })
           documentId = document.id
@@ -215,7 +215,7 @@ export function ApprovalForm({
             <SelectContent>
               {options.map((candidate) => (
                 <SelectItem key={candidate.id} value={candidate.id}>
-                  {candidate.titolo}
+                  {candidate.title}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -246,12 +246,12 @@ export function ApprovalForm({
                     <Checkbox
                       checked={picked.has(day.id)}
                       onCheckedChange={(on) => toggle(day.id, on === true)}
-                      aria-label={`${formatIsoDateItalian(day.data)}, ${day.descrizione}`}
+                      aria-label={`${formatIsoDateItalian(day.date)}, ${day.description}`}
                     />
-                    <span className="w-24 shrink-0 font-medium tabular-nums">{formatIsoDateItalian(day.data)}</span>
-                    <span className="min-w-0 flex-1 truncate">{day.descrizione}</span>
+                    <span className="w-24 shrink-0 font-medium tabular-nums">{formatIsoDateItalian(day.date)}</span>
+                    <span className="min-w-0 flex-1 truncate">{day.description}</span>
                     <span className="shrink-0 text-muted-foreground">
-                      {quantitaLabel(day.quantita)} · {statoLabel(day.stato).toLowerCase()}
+                      {quantityLabel(day.quantity)} · {statusLabel(day.status).toLowerCase()}
                     </span>
                   </label>
                 </li>
@@ -263,14 +263,14 @@ export function ApprovalForm({
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="space-y-2">
             <Label htmlFor="approval-channel">Come è arrivata</Label>
-            <Select value={canale} onValueChange={(next) => setCanale(next as ApprovalCanale)}>
+            <Select value={channel} onValueChange={(next) => setChannel(next as ApprovalChannel)}>
               <SelectTrigger id="approval-channel" className="w-full">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {CANALE_IDS.map((id) => (
+                {ChannelIds.map((id) => (
                   <SelectItem key={id} value={id}>
-                    {CANALI[id]}
+                    {Channels[id]}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -281,8 +281,8 @@ export function ApprovalForm({
             <Input
               id="approval-received"
               type="datetime-local"
-              value={ricevutoIl}
-              onChange={(event) => setRicevutoIl(event.target.value)}
+              value={receivedAt}
+              onChange={(event) => setReceivedAt(event.target.value)}
               required
             />
           </div>
@@ -292,8 +292,8 @@ export function ApprovalForm({
           <Label htmlFor="approval-sender">Da chi</Label>
           <Input
             id="approval-sender"
-            value={mittente}
-            onChange={(event) => setMittente(event.target.value)}
+            value={sender}
+            onChange={(event) => setSender(event.target.value)}
             placeholder="giulia.bianchi@cliente.it"
             required
           />
@@ -324,7 +324,7 @@ export function ApprovalForm({
             ))}
           </div>
 
-          {proof === 'messaggio' ? (
+          {proof === 'message' ? (
             <MessagePicker
               configured={gmail}
               contractChosen={contractId !== ''}
@@ -349,10 +349,10 @@ export function ApprovalForm({
               </p>
             </div>
           ) : null}
-          {proof === 'testo' ? (
+          {proof === 'text' ? (
             <div className="space-y-2">
               <Label htmlFor="approval-text">Testo dell’approvazione</Label>
-              <Textarea id="approval-text" rows={6} value={testo} onChange={(event) => setTesto(event.target.value)} />
+              <Textarea id="approval-text" rows={6} value={text} onChange={(event) => setText(event.target.value)} />
               <p className="text-sm text-muted-foreground">Viene archiviato com’è, come documento del contratto.</p>
             </div>
           ) : null}
@@ -363,8 +363,8 @@ export function ApprovalForm({
           <Textarea
             id="approval-excerpt"
             rows={3}
-            value={estratto}
-            onChange={(event) => setEstratto(event.target.value)}
+            value={excerpt}
+            onChange={(event) => setExcerpt(event.target.value)}
             placeholder="Confermo le giornate del 2 e del 3 marzo."
             required
           />

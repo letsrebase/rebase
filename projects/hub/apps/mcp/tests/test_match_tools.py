@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from rebase_core.companies import CompanyService
 from rebase_core.company_schemas import CompanyCreate
 from rebase_core.config import Settings
-from rebase_core.contract_schemas import ClienteData, FiscalData, LetteraFields, MatchCreate
+from rebase_core.contract_schemas import CustomerDate, FiscalData, LetterFields, MatchCreate
 from rebase_core.fiscal import FiscalService
 from rebase_core.freelancer_schemas import FreelancerCreate
 from rebase_core.freelancers import FreelancerService
@@ -49,16 +49,20 @@ def _seed(factory: sessionmaker[Session]) -> tuple[str, str]:
     `users` row this file needs because the match names its author."""
     session = factory()
     try:
-        session.add(User(id=IVAN.id, email=IVAN.email, nome=IVAN.nome, cognome="", role="admin"))
+        session.add(
+            User(
+                id=IVAN.id, email=IVAN.email, first_name=IVAN.first_name, last_name="", role="admin"
+            )
+        )
         session.commit()
         card, _ = FreelancerService(session).apply(
             FreelancerCreate(
-                nome="Ada",
-                cognome="Lovelace",
+                first_name="Ada",
+                last_name="Lovelace",
                 email="ada@studio.it",
-                tariffa_giornaliera=Decimal("450"),
-                posizione="Backend developer",
-                remoto="remoto",
+                daily_rate=Decimal("450"),
+                job_title="Backend developer",
+                remote="remote",
             ),
             PDF,
             "cv.pdf",
@@ -66,44 +70,42 @@ def _seed(factory: sessionmaker[Session]) -> tuple[str, str]:
         )
         request, _ = CompanyService(session).request(
             CompanyCreate(
-                nome_azienda="ACME Srl",
-                referente_nome="Wile",
-                referente_cognome="E.",
+                company_name="ACME Srl",
+                contact_first_name="Wile",
+                contact_last_name="E.",
                 email="wile@acme.it",
-                telefono="+39 345 1234567",
-                figura_richiesta="Backend developer",
-                progetto="Un backend developer per tre mesi.",
-                periodo_da=date(2026, 10, 1),
-                durata="3 mesi",
-                budget_giornaliero=Decimal("500"),
-                remoto="remoto",
-                numero_risorse=1,
+                phone="+39 345 1234567",
+                requested_role="Backend developer",
+                project="Un backend developer per tre mesi.",
+                period_from=date(2026, 10, 1),
+                duration="3 mesi",
+                daily_budget=Decimal("500"),
+                remote="remote",
+                headcount=1,
             )
         )
         FiscalService(session).save(
             card.id,
-            FiscalData(
-                codice_fiscale="LVLDAA85T50H501Z", partita_iva="01234567890", domicilio="Milano"
-            ),
+            FiscalData(tax_code="LVLDAA85T50H501Z", vat_number="01234567890", domicile="Milano"),
             IVAN.id,
         )
         match = MatchService(session, FakeRenderer()).create(
             card.id,
             MatchCreate(
                 company_id=request.id,
-                cliente=ClienteData(
-                    cliente_ragione_sociale="ACME S.r.l.",
-                    cliente_piva="01234567890",
-                    cliente_sede="Milano",
+                customer=CustomerDate(
+                    customer_legal_name="ACME S.r.l.",
+                    customer_vat_number="01234567890",
+                    customer_registered_office="Milano",
                 ),
-                lettera=LetteraFields(
-                    ruolo="Backend developer",
-                    attivita="Le API.",
-                    data_inizio=date(2026, 10, 1),
-                    modalita="a giornata",
-                    compenso=Decimal("450"),
-                    giorni_pagamento=30,
-                    fine_mese=True,
+                letter=LetterFields(
+                    role="Backend developer",
+                    activities="Le API.",
+                    start_date=date(2026, 10, 1),
+                    mode="to_work_unit",
+                    fee=Decimal("450"),
+                    payment_days=30,
+                    month_end=True,
                 ),
             ),
             IVAN.id,
@@ -121,17 +123,15 @@ async def test_list_matches_reads_the_page_with_links_and_no_tax_data(
         server = build_server(factory, lambda: IVAN, settings=Settings(_env_file=None))  # type: ignore[call-arg]
         async with Client(server) as client:
             body = _payload(await client.call_tool("list_matches", {"freelancer_id": card}))
-        assert "fiscale" not in body
-        assert body["quadro"]["stato"] == "generato"
-        assert body["quadro"]["pdf_url"] == (
-            f"https://letsrebase.com/api/hub/contract-documents/{body['quadro']['id']}/pdf"
+        assert "tax" not in body
+        assert body["framework"]["status"] == "generated"
+        assert body["framework"]["pdf_url"] == (
+            f"https://letsrebase.com/api/hub/contract-documents/{body['framework']['id']}/pdf"
         )
         (item,) = body["matches"]
         assert item["id"] == match
-        assert item["lettera"]["pdf_url"].endswith(
-            f"/contract-documents/{item['lettera']['id']}/pdf"
-        )
-        assert "pdf" not in item["lettera"] and "data" not in item["lettera"]
+        assert item["letter"]["pdf_url"].endswith(f"/contract-documents/{item['letter']['id']}/pdf")
+        assert "pdf" not in item["letter"] and "data" not in item["letter"]
     finally:
         _wipe(factory)
 
@@ -144,14 +144,14 @@ async def test_get_match_answers_the_letter_and_the_framework_with_links(
         async with Client(build_server(factory, lambda: IVAN)) as client:
             body = _payload(await client.call_tool("get_match", {"match_id": match}))
             missing = await client.call_tool("get_match", {"match_id": str(UUID(int=7))})
-        assert body["stato"] == "bozza"
-        assert body["situazione"].startswith("La lettera n. ")
-        assert body["situazione"].endswith(" è pronta: il freelance non ha ancora ricevuto nulla.")
-        assert (body["prossima_azione"], body["altre_azioni"]) == ("invia", ["annulla"])
+        assert body["status"] == "draft"
+        assert body["situation"].startswith("La lettera n. ")
+        assert body["situation"].endswith(" è pronta: il freelance non ha ancora ricevuto nulla.")
+        assert (body["next_action"], body["other_actions"]) == ("send", ["cancel"])
         assert (
-            body["lettera"]["pdf_url"] == f"/api/hub/contract-documents/{body['lettera']['id']}/pdf"
+            body["letter"]["pdf_url"] == f"/api/hub/contract-documents/{body['letter']['id']}/pdf"
         )
-        assert body["quadro"]["pdf_url"].startswith("/api/hub/contract-documents/")
+        assert body["framework"]["pdf_url"].startswith("/api/hub/contract-documents/")
         assert missing.is_error
     finally:
         _wipe(factory)

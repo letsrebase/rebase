@@ -24,7 +24,7 @@ function answer(status: number, body: unknown) {
   })
 }
 
-const NO_CONTRACTS = { quadro: null, quadri_precedenti: [], lettere: [] }
+const NO_CONTRACTS = { framework: null, previous_frameworks: [], letters: [] }
 const NO_REFERRAL = { code: 'ABCDEFGH', rate_freelancer: '0.1000', rate_company: '0.3000', referred: [] }
 
 /** `/me` answers `profile`; a card's page also reads its contracts (REB-392), and
@@ -41,24 +41,24 @@ function meFetch(profile: unknown, contracts: unknown = NO_CONTRACTS, referral: 
 
 const PROFILE = {
   id: 'f1',
-  nome: 'Ada',
-  cognome: 'Lovelace',
+  first_name: 'Ada',
+  last_name: 'Lovelace',
   email: 'ada@studio.it',
   linkedin_url: 'https://www.linkedin.com/in/ada',
-  telefono: null,
+  phone: null,
   role: 'member',
   created_at: '2026-09-10T10:00:00Z',
   updated_at: '2026-09-10T10:00:00Z',
-  ha_scheda: true,
+  has_card: true,
   cv_filename: 'Ada CV.pdf',
   cv_size: 2048,
-  tariffa_giornaliera: '450.00',
-  posizione: 'Backend developer',
-  remoto: 'ibrido',
+  daily_rate: '450.00',
+  job_title: 'Backend developer',
+  remote: 'hybrid',
   links: ['https://github.com/ada'],
-  completa: true,
-  ha_azienda: false,
-  richieste: [],
+  complete: true,
+  has_company: false,
+  requests: [],
 }
 
 /** The card an admin wrote from Ada's signup (ORB-155): the person has yet to add the
@@ -67,30 +67,30 @@ const INCOMPLETE = {
   ...PROFILE,
   cv_filename: null,
   cv_size: null,
-  tariffa_giornaliera: null,
-  posizione: null,
-  remoto: null,
-  completa: false,
+  daily_rate: null,
+  job_title: null,
+  remote: null,
+  complete: false,
 }
 
-/** An admin with no freelancer card at all (REB-279): `ha_scheda` false, every card
- *  field blank, `completa` false -- the shape `MeRead` answers for a bare `users` row. */
+/** An admin with no freelancer card at all (REB-279): `has_card` false, every card
+ *  field blank, `complete` false -- the shape `MeRead` answers for a bare `users` row. */
 const CARDLESS_ADMIN = {
   ...PROFILE,
   id: 'a1',
-  nome: 'Ivan',
-  cognome: 'Fiore',
+  first_name: 'Ivan',
+  last_name: 'Fiore',
   email: 'ivan@rebase.it',
   linkedin_url: null,
   role: 'admin',
-  ha_scheda: false,
+  has_card: false,
   cv_filename: null,
   cv_size: null,
-  tariffa_giornaliera: null,
-  posizione: null,
-  remoto: null,
+  daily_rate: null,
+  job_title: null,
+  remote: null,
   links: [],
-  completa: false,
+  complete: false,
 }
 
 /** A plain member with neither a freelancer card nor a company request (REB-385): the
@@ -100,8 +100,8 @@ const CARDLESS_ADMIN = {
 const NOBODY = {
   ...CARDLESS_ADMIN,
   id: 'n1',
-  nome: 'Nessuno',
-  cognome: 'Speciale',
+  first_name: 'Nessuno',
+  last_name: 'Speciale',
   email: 'nessuno@example.it',
   role: 'member',
 }
@@ -109,59 +109,59 @@ const NOBODY = {
 /** The request a company filed first (REB-602), the older of two. */
 const OLDER_REQUEST = {
   id: 'r1',
-  figura_richiesta: 'Backend developer',
-  progetto: 'Serve un backend developer per tre mesi, da ottobre.',
-  periodo_da: '2026-10-01',
-  durata: '3 mesi',
-  budget_giornaliero: '500.00',
-  remoto: 'ibrido',
-  giorni_presenza: 3,
-  numero_risorse: 2,
+  requested_role: 'Backend developer',
+  project: 'Serve un backend developer per tre mesi, da ottobre.',
+  period_from: '2026-10-01',
+  duration: '3 mesi',
+  daily_budget: '500.00',
+  remote: 'hybrid',
+  onsite_days: 3,
+  headcount: 2,
   created_at: '2026-09-20T10:00:00Z',
 }
 
 /** The one it filed afterwards, through «Richiedi una nuova figura». */
 const NEWER_REQUEST = {
   id: 'r2',
-  figura_richiesta: 'Data engineer',
-  progetto: 'Serve un data engineer per costruire la pipeline dei dati.',
-  periodo_da: '2026-11-02',
-  durata: '2 mesi',
-  budget_giornaliero: '550.00',
-  remoto: 'remoto',
-  giorni_presenza: null,
-  numero_risorse: 1,
+  requested_role: 'Data engineer',
+  project: 'Serve un data engineer per costruire la pipeline dei dati.',
+  period_from: '2026-11-02',
+  duration: '2 mesi',
+  daily_budget: '550.00',
+  remote: 'remote',
+  onsite_days: null,
+  headcount: 1,
   created_at: '2026-09-29T09:00:00Z',
 }
 
 /** A company contact with no freelancer card and one request (REB-314; REB-602 makes
- *  it a list): `ha_scheda` false, `ha_azienda` true, `richieste` newest first. */
+ *  it a list): `has_card` false, `has_company` true, `requests` newest first. */
 const COMPANY_ONLY = {
   ...PROFILE,
   id: 'c1',
-  nome: 'Wile',
-  cognome: 'E.',
+  first_name: 'Wile',
+  last_name: 'E.',
   email: 'wile@acme.it',
   linkedin_url: null,
-  telefono: '+39 345 1234567',
-  ha_scheda: false,
+  phone: '+39 345 1234567',
+  has_card: false,
   cv_filename: null,
   cv_size: null,
-  tariffa_giornaliera: null,
-  posizione: null,
-  remoto: null,
+  daily_rate: null,
+  job_title: null,
+  remote: null,
   links: [],
-  completa: false,
-  ha_azienda: true,
-  richieste: [OLDER_REQUEST],
+  complete: false,
+  has_company: true,
+  requests: [OLDER_REQUEST],
 }
 
 /** The same company after a second request: both are listed, the newest first. */
-const COMPANY_TWO_REQUESTS = { ...COMPANY_ONLY, richieste: [NEWER_REQUEST, OLDER_REQUEST] }
+const COMPANY_TWO_REQUESTS = { ...COMPANY_ONLY, requests: [NEWER_REQUEST, OLDER_REQUEST] }
 
 /** The request, on a person who also has a freelancer card (REB-314): both sections
  *  render together. */
-const BOTH = { ...PROFILE, ha_azienda: true, richieste: [OLDER_REQUEST] }
+const BOTH = { ...PROFILE, has_company: true, requests: [OLDER_REQUEST] }
 
 function mount(path = '/me') {
   const root = createRootRoute({ component: () => <Outlet /> })
@@ -170,29 +170,29 @@ function mount(path = '/me') {
     getParentRoute: () => me,
     path: '/',
     component: Area,
-    validateSearch: (search: Record<string, unknown>): { negato?: true } => ({
-      negato: search.negato === true || search.negato === 'true' ? true : undefined,
+    validateSearch: (search: Record<string, unknown>): { denied?: true } => ({
+      denied: search.denied === true || search.denied === 'true' ? true : undefined,
     }),
   })
   const edit = createRoute({ getParentRoute: () => me, path: '/edit', component: () => <h1>Modifica</h1> })
-  const modificaAzienda = createRoute({
+  const editLegalEntity = createRoute({
     getParentRoute: () => me,
     path: '/edit-company',
     component: () => <h1>Modifica azienda</h1>,
   })
-  const modificaRichiesta = createRoute({
+  const editRequest = createRoute({
     getParentRoute: () => me,
     path: '/edit-company/$id',
     component: () => <h1>Modifica una richiesta</h1>,
   })
-  const nuovaRichiestaAzienda = createRoute({
+  const newRequestLegalEntity = createRoute({
     getParentRoute: () => me,
     path: '/new-company',
     component: () => <h1>Richiedi una nuova figura</h1>,
   })
   const router = createRouter({
     routeTree: root.addChildren([
-      me.addChildren([index, edit, modificaAzienda, modificaRichiesta, nuovaRichiestaAzienda]),
+      me.addChildren([index, edit, editLegalEntity, editRequest, newRequestLegalEntity]),
     ]),
     history: createMemoryHistory({ initialEntries: [path] }),
   })
@@ -270,7 +270,7 @@ describe('/me, a card (REB-279: reads the merged `useMe`, gated on `ha_scheda`)'
     // jsdom cannot navigate; stopping the default here does not stop React's own handler.
     link.addEventListener('click', (event) => event.preventDefault())
     await userEvent.setup().click(link)
-    expect(capture).toHaveBeenCalledWith('guida_scaricata')
+    expect(capture).toHaveBeenCalledWith('guide_downloaded')
     expect(link).toHaveAttribute('href', '/api/hub/me/guide')
   })
 })
@@ -370,7 +370,7 @@ describe('/me, a company request (REB-314: reads `ha_azienda` independently of `
   })
 
   it('names the edit links apart when two requests are identical down to the minute they were filed', async () => {
-    meFetch({ ...COMPANY_ONLY, richieste: [{ ...OLDER_REQUEST, id: 'r3' }, OLDER_REQUEST] })
+    meFetch({ ...COMPANY_ONLY, requests: [{ ...OLDER_REQUEST, id: 'r3' }, OLDER_REQUEST] })
     mount()
     await screen.findByRole('heading', { name: 'Le tue richieste' })
     const names = screen
@@ -464,10 +464,10 @@ describe('/me, «Apri PigroCRM» (REB-602)', () => {
   })
 })
 
-describe('/me?negato=true (REB-279: AdminGuard bounces a signed-in non-admin here)', () => {
+describe('/me?denied=true (REB-279: AdminGuard bounces a signed-in non-admin here)', () => {
   it('shows a sentence instead of a blank screen or a raw refusal', async () => {
     meFetch(PROFILE)
-    mount('/me?negato=true')
+    mount('/me?denied=true')
     const notice = await screen.findByRole('status')
     expect(notice).toHaveTextContent('riservata a chi amministra')
   })
@@ -483,24 +483,24 @@ describe('/me?negato=true (REB-279: AdminGuard bounces a signed-in non-admin her
 describe('/me, «Contratti» (REB-392: on a card, never on a company-only profile)', () => {
   it('shows the section on a card, with what there is to sign', async () => {
     meFetch(PROFILE, {
-      quadro: {
+      framework: {
         id: 'd1',
-        kind: 'quadro',
-        numero: null,
-        stato: 'inviato',
-        cliente: null,
-        inizio: null,
+        kind: 'framework',
+        number: null,
+        status: 'sent',
+        customer: null,
+        start: null,
         fine: null,
         sent_at: '2026-09-23T10:00:00Z',
         signed_at: null,
         signing_url: 'https://firma.letsrebase.com/sign/abc',
-        ha_pdf_firmato: false,
-        attivo: false,
-        rinnovo: null,
-        ultimo_giorno_disdetta: null,
+        has_pdf_signed: false,
+        active: false,
+        renewal: null,
+        last_notice_day: null,
       },
-      quadri_precedenti: [],
-      lettere: [],
+      previous_frameworks: [],
+      letters: [],
     })
     mount()
     expect(await screen.findByRole('heading', { name: 'Contratti' })).toBeInTheDocument()

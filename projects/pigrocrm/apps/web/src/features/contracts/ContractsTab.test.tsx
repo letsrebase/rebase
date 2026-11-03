@@ -26,12 +26,12 @@ function ok(data: unknown) {
 const CONTRACT = {
   id: 'c1',
   customer_id: 'cust-1',
-  titolo: 'Sviluppo piattaforma',
-  inizio: '2026-01-01',
-  fine: null,
-  tipo_rinnovo: 'tacito',
-  cadenza_fatturazione: 'mensile',
-  stato: 'attivo',
+  title: 'Sviluppo piattaforma',
+  start: '2026-01-01',
+  end: null,
+  renewal_type: 'tacit',
+  billing_cadence: 'monthly',
+  status: 'active',
   custom_fields: {},
 }
 
@@ -92,7 +92,7 @@ describe('ContractsTab', () => {
 
   it('creates a contract for this customer and lands on its page', async () => {
     mockGets([])
-    vi.mocked(api.POST).mockImplementation((() => ok({ ...CONTRACT, id: 'new-1', stato: 'bozza' })) as never)
+    vi.mocked(api.POST).mockImplementation((() => ok({ ...CONTRACT, id: 'new-1', status: 'draft' })) as never)
     renderTab()
     await userEvent.click(await screen.findByRole('button', { name: 'Nuovo contratto' }))
     await userEvent.type(screen.getByLabelText('Titolo'), 'Manutenzione')
@@ -104,10 +104,10 @@ describe('ContractsTab', () => {
       expect.objectContaining({
         body: expect.objectContaining({
           customer_id: 'cust-1',
-          titolo: 'Manutenzione',
-          inizio: '2026-11-01',
-          tipo_rinnovo: 'nessuno',
-          preavviso_disdetta_giorni: 30,
+          title: 'Manutenzione',
+          start: '2026-11-01',
+          renewal_type: 'none',
+          termination_notice_days: 30,
         }),
       }),
     )

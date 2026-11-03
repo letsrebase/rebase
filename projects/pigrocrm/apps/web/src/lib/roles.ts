@@ -12,14 +12,14 @@ import type { SessionUser } from './auth'
  * mocks `@/lib/auth` wholesale, and a constant living there would come back undefined in
  * all of them.
  */
-export const ROLE_LABELS: Record<SessionUser['ruolo'], string> = {
+export const ROLE_LABELS: Record<SessionUser['role'], string> = {
   admin: 'amministratore',
-  collaboratore: 'collaboratore',
+  collaborator: 'collaboratore',
   readonly: 'sola lettura',
 }
 
 /** The label for a stored role, or the stored value itself if one is ever added to the
  *  API before it is added here. */
-export function roleLabel(ruolo: string): string {
-  return ROLE_LABELS[ruolo as SessionUser['ruolo']] ?? ruolo
+export function roleLabel(role: string): string {
+  return ROLE_LABELS[role as SessionUser['role']] ?? role
 }

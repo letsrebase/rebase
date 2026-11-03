@@ -7,7 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 from pigrocrm.core.validation import SafeStr
 
 NoteEntityType = Literal["deal", "customer", "person"]
-NoteSource = Literal["web", "mcp", "sistema", "rebase"]
+NoteSource = Literal["web", "mcp", "system", "rebase"]
 
 NOTE_MAX_LENGTH = 10_000
 
@@ -27,9 +27,9 @@ class NoteCreate(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    testo: SafeStr = Field(min_length=1, max_length=NOTE_MAX_LENGTH)
+    text: SafeStr = Field(min_length=1, max_length=NOTE_MAX_LENGTH)
 
-    _trimmed = field_validator("testo")(_clean)
+    _trimmed = field_validator("text")(_clean)
 
 
 class NoteUpdate(NoteCreate):
@@ -42,20 +42,20 @@ class NoteRead(BaseModel):
     id: UUID
     entity_type: NoteEntityType
     entity_id: UUID
-    testo: str
+    text: str
     # The member's name as it read when they wrote it; absent for a note a job or rebase
     # wrote and for one moved over from the old `note` column.
-    autore: str | None
-    autore_id: UUID | None
+    author: str | None
+    author_id: UUID | None
     # Absent only for a note that existed before the thread did («Nota precedente»).
-    fonte: NoteSource | None
+    source: NoteSource | None
     created_at: datetime
-    modificata_at: datetime | None
+    edited_at: datetime | None
     # The member's name now, not a snapshot: who last changed the text.
-    modificata_da: str | None = None
+    edited_by: str | None = None
     # Whether the caller who asked may edit and delete it: their own, or any if they are
-    # an admin, and never one `sistema` or `rebase` wrote.
-    modificabile: bool = False
+    # an admin, and never one `system` or `rebase` wrote.
+    editable: bool = False
 
 
 class NoteRevisionRead(BaseModel):
@@ -65,7 +65,7 @@ class NoteRevisionRead(BaseModel):
 
     id: UUID
     note_id: UUID
-    testo: str
+    text: str
     edited_at: datetime
     edited_by: str | None
-    fonte: NoteSource | None
+    source: NoteSource | None

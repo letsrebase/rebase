@@ -42,14 +42,14 @@ INVALID_TOKEN = "token non valido o revocato"
 
 
 def _audit_payload(record: PersonalAccessToken) -> dict[str, object]:
-    return {"token_id": record.id, "nome": record.nome, "full_access": record.full_access}
+    return {"token_id": record.id, "name": record.name, "full_access": record.full_access}
 
 
 class PatRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
-    nome: str
+    name: str
     prefix: str
     # What the owner chose for this token (REB-810). The token reaches the privileged
     # surface only where the space's own switch is open too, which `resolve` decides.
@@ -64,7 +64,7 @@ class TeamPatRead(PatRead):
     that should not reach the invoice tools can be closed without asking its owner."""
 
     user_id: UUID
-    owner_nome: str
+    owner_name: str
 
 
 def _digest(raw: str) -> str:
@@ -83,7 +83,7 @@ class PatService:
         # inheriting whatever `.env` the process happened to load.
         self.settings = settings or get_settings()
 
-    def create(self, nome: str, actor: Actor, *, full_access: bool = False) -> tuple[PatRead, str]:
+    def create(self, name: str, actor: Actor, *, full_access: bool = False) -> tuple[PatRead, str]:
         if actor.id is None:
             raise ValidationFailed("token", "actor", "serve un utente autenticato")
         # A token outlives the revocation the first link by mail performs, so an
@@ -99,7 +99,7 @@ class PatService:
         raw = PAT_PREFIX + secrets.token_urlsafe(32)
         record = PersonalAccessToken(
             user_id=actor.id,
-            nome=nome,
+            name=name,
             token_hash=_digest(raw),
             prefix=raw[: len(PAT_PREFIX) + PREFIX_VISIBLE_CHARS],
             full_access=full_access,
@@ -189,7 +189,7 @@ class PatService:
             record.user_id,
             "pat_full_access_changed",
             actor,
-            {**_audit_payload(record), "full_access_prima": not full_access},
+            {**_audit_payload(record), "full_access_before": not full_access},
         )
         self.session.commit()
         return PatRead.model_validate(record)
@@ -198,21 +198,21 @@ class PatService:
         """The live tokens of the members other than the caller, for an administrator."""
         actor.require_unscoped_admin("list_team_tokens")
         stmt = (
-            select(PersonalAccessToken, User.nome)
+            select(PersonalAccessToken, User.name)
             .join(User, User.id == PersonalAccessToken.user_id)
             .where(
                 PersonalAccessToken.revoked_at.is_(None),
                 PersonalAccessToken.user_id != actor.id,
             )
-            .order_by(User.nome, PersonalAccessToken.created_at.desc())
+            .order_by(User.name, PersonalAccessToken.created_at.desc())
         )
         return [
             TeamPatRead(
                 **PatRead.model_validate(record).model_dump(),
                 user_id=record.user_id,
-                owner_nome=nome,
+                owner_name=name,
             )
-            for record, nome in self.session.execute(stmt)
+            for record, name in self.session.execute(stmt)
         ]
 
     def revoke_all_for(self, user_id: UUID, actor: Actor) -> None:
@@ -253,14 +253,14 @@ class PatService:
             raise ValidationFailed("token", "token", INVALID_TOKEN)
 
         # `populate_existing` forces a fresh read of the owner even when this session
-        # already holds it: the role and `attivo` that build the Actor below are the
+        # already holds it: the role and `active` that build the Actor below are the
         # CURRENT ones, never a copy a previous `resolve` cached. Over HTTP each
         # request opens its own session and reads fresh anyway; the flag makes that
         # true for every caller, which is the guarantee hub's `admin_tokens.resolve`
         # was given in REB-278 (#225) and the shape copied here. The behavior is
         # pinned by `test_a_second_resolve_on_the_same_session_sees_the_current_role`.
         user = self.session.get(User, record.user_id, populate_existing=True)
-        if user is None or not user.attivo:
+        if user is None or not user.active:
             # Same message and details as above, on purpose -- see INVALID_TOKEN.
             raise ValidationFailed("token", "token", INVALID_TOKEN)
 
@@ -276,7 +276,7 @@ class PatService:
         if last_used is None or now - last_used >= LAST_USED_RESOLUTION:
             record.last_used_at = now
 
-        role = as_role(user.ruolo)
+        role = as_role(user.role)
         # type="mcp": a PAT identifies an agent, which is what makes the timeline honest.
         #
         # `full_access` is stamped here, and this is the only place it is decided. It
@@ -294,8 +294,8 @@ class PatService:
             role=role,
             full_access=record.full_access and self.settings.mcp_full_access,
             # The owner's scope travels on the credential (REB-634): an agent sees the
-            # aziende its person sees, read fresh here like the role.
-            aziende=scope_of(user),
+            # legal entities its person sees, read fresh here like the role.
+            legal_entities=scope_of(user),
         )
         # Only the *first* use is recorded, not every one. `resolve()` runs on every
         # single request an agent makes, so an entry per call would double the write

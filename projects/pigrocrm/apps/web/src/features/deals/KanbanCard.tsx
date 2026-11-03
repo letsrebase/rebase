@@ -48,10 +48,10 @@ export function KanbanCard({ deal, onOpen, canDrag, ownerName }: Props) {
       )}
     >
       <CardContent className="space-y-1 p-3">
-        <p className="text-sm font-medium">{deal.nome}</p>
+        <p className="text-sm font-medium">{deal.name}</p>
         <div className="flex justify-between text-xs text-muted-foreground">
-          <span>{formatMoney(deal.valore_previsto)}</span>
-          <span>{deal.probabilita}%</span>
+          <span>{formatMoney(deal.expected_value)}</span>
+          <span>{deal.probability}%</span>
         </div>
         {ownerName ? <p className="text-xs text-muted-foreground">{ownerName}</p> : null}
       </CardContent>

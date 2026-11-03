@@ -7,14 +7,14 @@ gate, on the same routes, with the same roles."""
 from datetime import datetime
 from typing import Any
 
-from aziende_helpers import azienda_url
 from fastapi.testclient import TestClient
+from legal_entities_helpers import legal_entity_url
 
 from pigrocrm_api.deps import invalidate_space_settings
 
 # What `LegalEntityRead` carries beyond the upsert body: stripped so the read can be sent
 # back, the way the panel does, with `updated_at` kept as the version.
-READ_ONLY = {"id", "predefinita", "attiva", "logo_key", "firma_key", "created_at"}
+READ_ONLY = {"id", "is_default", "active", "logo_key", "signature_key", "created_at"}
 
 
 def _upsert_body(read: dict[str, Any], **changes: Any) -> dict[str, Any]:
@@ -36,26 +36,26 @@ def _assert_stale(response: Any, *, current: str) -> None:
     assert _instant(body["updated_at"]) == _instant(current)
 
 
-def test_the_azienda_put_refuses_a_stale_version_and_accepts_the_current_one(
+def test_the_legal_entity_put_refuses_to_stale_version_and_accepts_the_current_one(
     logged_in: TestClient,
 ) -> None:
-    url = azienda_url(logged_in)
+    url = legal_entity_url(logged_in)
     first = logged_in.get(url).json()
-    second = logged_in.put(url, json=_upsert_body(first, comune="Torino"))
+    second = logged_in.put(url, json=_upsert_body(first, city="Torino"))
     assert second.status_code == 200, second.text
     assert second.json()["updated_at"] != first["updated_at"]
 
-    stale = logged_in.put(url, json=_upsert_body(first, comune="Genova"))
+    stale = logged_in.put(url, json=_upsert_body(first, city="Genova"))
     _assert_stale(stale, current=second.json()["updated_at"])
-    assert logged_in.get(url).json()["comune"] == "Torino"
+    assert logged_in.get(url).json()["city"] == "Torino"
     # The row always exists, so `null` is never its version: sent, it is refused.
     _assert_stale(
-        logged_in.put(url, json=_upsert_body(first, comune="Genova", updated_at=None)),
+        logged_in.put(url, json=_upsert_body(first, city="Genova", updated_at=None)),
         current=second.json()["updated_at"],
     )
 
     # No version, no check: an older client's whole-row replace.
-    unversioned = _upsert_body(first, comune="Genova")
+    unversioned = _upsert_body(first, city="Genova")
     del unversioned["updated_at"]
     assert logged_in.put(url, json=unversioned).status_code == 200
 
@@ -63,31 +63,29 @@ def test_the_azienda_put_refuses_a_stale_version_and_accepts_the_current_one(
 def test_the_fiscal_profile_put_refuses_a_stale_version_and_accepts_the_current_one(
     logged_in: TestClient,
 ) -> None:
-    url = azienda_url(logged_in, "/fiscal-profile")
+    url = legal_entity_url(logged_in, "/fiscal-profile")
     # `null` is the version of a profile not saved yet: the panel's first save.
-    created = logged_in.put(url, json={"codice_regime": "RF19", "updated_at": None})
+    created = logged_in.put(url, json={"regime_code": "RF19", "updated_at": None})
     assert created.status_code == 200, created.text
     first = created.json()
     # The same `null` once the row exists is a draft built on a state that is gone.
     _assert_stale(
-        logged_in.put(url, json={"codice_regime": "RF19", "updated_at": None}),
+        logged_in.put(url, json={"regime_code": "RF19", "updated_at": None}),
         current=first["updated_at"],
     )
     second = logged_in.put(
         url,
-        json={"codice_regime": "RF19", "giorni_scadenza": 60, "updated_at": first["updated_at"]},
+        json={"regime_code": "RF19", "due_days": 60, "updated_at": first["updated_at"]},
     )
     assert second.status_code == 200, second.text
 
     stale = logged_in.put(
         url,
-        json={"codice_regime": "RF19", "giorni_scadenza": 90, "updated_at": first["updated_at"]},
+        json={"regime_code": "RF19", "due_days": 90, "updated_at": first["updated_at"]},
     )
     _assert_stale(stale, current=second.json()["updated_at"])
-    assert logged_in.get(url).json()["giorni_scadenza"] == 60
-    assert (
-        logged_in.put(url, json={"codice_regime": "RF19", "giorni_scadenza": 90}).status_code == 200
-    )
+    assert logged_in.get(url).json()["due_days"] == 60
+    assert logged_in.put(url, json={"regime_code": "RF19", "due_days": 90}).status_code == 200
 
 
 def test_the_space_settings_put_refuses_a_stale_version_and_accepts_the_current_one(
@@ -127,9 +125,9 @@ def test_a_collaborator_meets_the_role_gate_before_the_version_check(
 ) -> None:
     """The matrix is unchanged: a role the route refuses is refused with 403 whatever
     version it sends, stale or not."""
-    url = azienda_url(collaborator_client)
+    url = legal_entity_url(collaborator_client)
     read = collaborator_client.get(url).json()
     refused = collaborator_client.put(
-        url, json=_upsert_body(read, comune="Torino", updated_at="2020-01-01T00:00:00Z")
+        url, json=_upsert_body(read, city="Torino", updated_at="2020-01-01T00:00:00Z")
     )
     assert refused.status_code == 403, refused.text

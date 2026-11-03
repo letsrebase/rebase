@@ -62,7 +62,7 @@ from sqlalchemy.orm import Session
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.config import Settings
 from pigrocrm.core.customers.models import Customer
-from pigrocrm.core.dashboard.schemas import PeriodoQuery
+from pigrocrm.core.dashboard.schemas import PeriodQuery
 from pigrocrm.core.db import session_factory, today_local
 from pigrocrm.core.deals.models import Deal
 from pigrocrm.core.invoices.models import Invoice
@@ -73,7 +73,10 @@ from pigrocrm_mcp.server import build_server
 from pigrocrm_mcp.tools import dashboard as dashboard_tools
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "packages" / "core" / "tests"))
-from fakes.azienda_fixtures import committed_default_azienda, remove_azienda  # noqa: E402
+from fakes.legal_entity_fixtures import (  # noqa: E402
+    committed_default_legal_entity,
+    remove_legal_entity,
+)
 
 ADMIN = Actor(id=None, type="mcp", role="admin")
 
@@ -83,13 +86,13 @@ CONCURRENCY = 10
 BARRIER_TIMEOUT = 60.0
 
 _PREFIX = "MCPCONC"
-STAGE_VINTO = f"{_PREFIX} stato vinto"
+STAGE_WON = f"{_PREFIX} stato vinto"
 
 # The instant is the one field criterion 12 exempts: each call is its own transaction and
 # therefore its own `transaction_timestamp()`, so demanding byte-for-byte equality of the
 # whole payload would fail *without* a defect -- and passing only on the defect that makes
 # ten calls share one transaction.
-INSTANT = "calcolato_alle"
+INSTANT = "calculated_at"
 
 
 def _payload(result: Any) -> dict[str, Any]:
@@ -109,50 +112,50 @@ def committed_corpus(mcp_engine: Engine) -> Iterator[None]:
 
     The invoice exists so the economic dashboard is comparing something. Ten identical
     *empty* payloads is an equality between ten copies of nothing, and it would pass with
-    every figure hard-coded to zero. `anno=2099` with a random `numero` keeps it clear of
-    the fiscal register any other file may have committed into, while `data_emissione`
+    every figure hard-coded to zero. `year=2099` with a random `number` keeps it clear of
+    the fiscal register any other file may have committed into, while `issue_date`
     (which is what attributes it to a period) is today.
     """
     factory = session_factory(mcp_engine)
     with factory() as session:
-        azienda_id = committed_default_azienda(session)
+        legal_entity_id = committed_default_legal_entity(session)
         # `code=None`: a user-created stage as far as `seed_defaults` is concerned, so it
-        # never collides with the seeded `lead`/`vinto` on the unique index. `posizione`
+        # never collides with the seeded `lead`/`vinto` on the unique index. `position`
         # well past the defaults leaves any existing ordering alone.
-        vinto = PipelineStage(
-            nome=STAGE_VINTO, posizione=910, probabilita_default=100, tipo="won", code=None
+        won = PipelineStage(
+            name=STAGE_WON, position=910, default_probability=100, type="won", code=None
         )
-        customer = Customer(ragione_sociale=f"{_PREFIX} Cliente", nazione="IT", custom_fields={})
-        session.add_all([vinto, customer])
+        customer = Customer(legal_name=f"{_PREFIX} Cliente", country="IT", custom_fields={})
+        session.add_all([won, customer])
         session.flush()
         deal = Deal(
-            nome=f"{_PREFIX} deal vinto",
+            name=f"{_PREFIX} deal vinto",
             customer_id=customer.id,
-            pipeline_stage_id=vinto.id,
-            valore_previsto=Decimal("4000.00"),
-            probabilita=100,
-            chiuso_il=today_local(),
+            pipeline_stage_id=won.id,
+            expected_value=Decimal("4000.00"),
+            probability=100,
+            closed_at=today_local(),
             custom_fields={},
         )
         session.add(deal)
         session.flush()
-        oggi = today_local()
+        today = today_local()
         session.add(
             Invoice(
                 customer_id=customer.id,
                 deal_id=deal.id,
-                tipo="fattura",
-                stato="emessa",
-                anno=2099,
-                numero=uuid4().int % 1_000_000 + 1,
-                data_emissione=oggi,
-                # Deliberately in the past, so the invoice is both `da_incassare` and
-                # `scaduto` and neither figure is a zero that would compare equal to
+                type="invoice",
+                status="issued",
+                year=2099,
+                number=uuid4().int % 1_000_000 + 1,
+                issue_date=today,
+                # Deliberately in the past, so the invoice is both `unpaid` and
+                # `expired` and neither figure is a zero that would compare equal to
                 # itself ten times over for the wrong reason.
-                data_scadenza=oggi - timedelta(days=30),
-                imponibile=Decimal("1234.00"),
-                imposta=Decimal("271.48"),
-                totale=Decimal("1505.48"),
+                due_date=today - timedelta(days=30),
+                taxable_amount=Decimal("1234.00"),
+                vat_amount=Decimal("271.48"),
+                total=Decimal("1505.48"),
                 custom_fields={},
             )
         )
@@ -164,16 +167,14 @@ def committed_corpus(mcp_engine: Engine) -> Iterator[None]:
             session.execute(
                 delete(Invoice).where(
                     Invoice.customer_id.in_(
-                        session.query(Customer.id).filter(
-                            Customer.ragione_sociale.like(f"{_PREFIX} %")
-                        )
+                        session.query(Customer.id).filter(Customer.legal_name.like(f"{_PREFIX} %"))
                     )
                 )
             )
-            session.execute(delete(Deal).where(Deal.nome.like(f"{_PREFIX} %")))
-            session.execute(delete(Customer).where(Customer.ragione_sociale.like(f"{_PREFIX} %")))
-            session.execute(delete(PipelineStage).where(PipelineStage.nome.like(f"{_PREFIX} %")))
-            remove_azienda(session, azienda_id)
+            session.execute(delete(Deal).where(Deal.name.like(f"{_PREFIX} %")))
+            session.execute(delete(Customer).where(Customer.legal_name.like(f"{_PREFIX} %")))
+            session.execute(delete(PipelineStage).where(PipelineStage.name.like(f"{_PREFIX} %")))
+            remove_legal_entity(session, legal_entity_id)
             session.commit()
 
 
@@ -235,7 +236,7 @@ def test_ten_simultaneous_readers_each_get_their_own_snapshot(
             # has constructed the `Session` but no statement has run, so nothing here has
             # yet opened a transaction the dashboard would refuse.
             barrier.wait(timeout=BARRIER_TIMEOUT)
-            payload = dashboard_tools.get_economic_dashboard(context, PeriodoQuery())
+            payload = dashboard_tools.get_economic_dashboard(context, PeriodQuery())
             pid: int = session.execute(text("SELECT pg_backend_pid()")).scalar_one()
             level: str = session.execute(text("SHOW transaction_isolation")).scalar_one()
             return payload, pid, level
@@ -251,8 +252,8 @@ def test_ten_simultaneous_readers_each_get_their_own_snapshot(
     assert levels == {"repeatable read"}, levels
     # Keyed on rows this file committed, so the equality below is not an equality between
     # ten copies of an empty dashboard.
-    assert payloads[0]["fatture_emesse"] >= 1, payloads[0]
-    assert payloads[0]["da_incassare"] != "0.00", payloads[0]
+    assert payloads[0]["issued_invoices"] >= 1, payloads[0]
+    assert payloads[0]["unpaid"] != "0.00", payloads[0]
     instants = _agree_except_on_the_instant(payloads)
     # Ten transactions, so more than one instant. Asserting all ten *differ* would be
     # asserting that ten backends cannot share a microsecond; asserting they are all equal
@@ -282,7 +283,7 @@ def test_a_shared_session_cannot_serve_ten_readers(
     def read(_: int) -> str | None:
         barrier.wait(timeout=BARRIER_TIMEOUT)
         try:
-            dashboard_tools.get_economic_dashboard(context, PeriodoQuery())
+            dashboard_tools.get_economic_dashboard(context, PeriodQuery())
         except Exception as exc:  # noqa: BLE001 -- the shape is the measurement
             return f"{type(exc).__name__}: {exc}"
         return None
@@ -380,7 +381,7 @@ async def test_ten_concurrent_economic_dashboards_agree_except_on_the_instant(
         str(result.content) for result in results if result.is_error
     ]
     payloads = [_payload(result) for result in results]
-    assert payloads[0]["fatture_emesse"] >= 1, payloads[0]
+    assert payloads[0]["issued_invoices"] >= 1, payloads[0]
     instants = _agree_except_on_the_instant(payloads)
     assert len(set(instants)) > 1, instants
 
@@ -419,7 +420,7 @@ async def test_ten_concurrent_searches_also_succeed(concurrent_server: Any) -> N
     dashboards do not, the problem is the longer-held connection of an aggregation query
     rather than the session sharing itself.
     """
-    results = await _gather_calls(concurrent_server, "search_everything", {"termine": _PREFIX})
+    results = await _gather_calls(concurrent_server, "search_everything", {"term": _PREFIX})
     assert all(not result.is_error for result in results), [
         str(result.content) for result in results if result.is_error
     ]

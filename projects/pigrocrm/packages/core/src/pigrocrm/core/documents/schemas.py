@@ -8,27 +8,27 @@ from pigrocrm.core.db import CURSOR_MAX_LENGTH, SortDirection, SortSpec, SortWhi
 from pigrocrm.core.documents.models import Document
 from pigrocrm.core.validation import SafeStr
 
-# `fattura` is the PDF of an issued invoice, `fattura_xml` its FatturaPA file, and
+# `invoice` is the PDF of an issued invoice, `invoice_xml` its FatturaPA file, and
 # `proforma` the PDF of a provisional one (which has no XML). Two `documents` rows per
 # issued invoice, not one: a `document_versions` chain is a linear history of one
 # logical file with one `hash_sha256` used for deduplication and integrity, so putting
 # two formats in it would make "version 3" ambiguous and the two hashes incomparable.
-# `rapporto_ore` is the timesheet PDF archived on the deal (slice 4 §10.2). A
+# `hours_report` is the timesheet PDF archived on the deal (slice 4 §10.2). A
 # String(20) column plus a Literal, never a Postgres ENUM: a new value costs a
 # constant, not an ALTER TYPE.
-DocumentTipo = Literal[
-    "offerta",
-    "contratto",
-    "verbale",
-    "documento",
-    "fattura",
-    "fattura_xml",
+DocumentType = Literal[
+    "offer",
+    "contract",
+    "minutes",
+    "document",
+    "invoice",
+    "invoice_xml",
     "proforma",
-    "rapporto_ore",
+    "hours_report",
 ]
-OfferState = Literal["bozza", "inviata", "accettata", "rifiutata"]
+OfferState = Literal["draft", "sent", "accepted", "rejected"]
 
-TITOLO_MAX_LENGTH = 200
+TITLE_MAX_LENGTH = 200
 
 # The content type is chosen from this allowlist, never echoed from the request: the
 # value reaches a `Content-Disposition` header and a browser's own sniffing later, and
@@ -47,7 +47,7 @@ ALLOWED_CONTENT_TYPES: dict[str, str] = {
 STORAGE_KEY_MAX_LENGTH = 255
 # Postgres `Integer` tops out at 2**31-1; 100 MB is far below it and is a defensible
 # ceiling for a document nobody wants to email either.
-DIMENSIONE_MAX = 100 * 1024 * 1024
+SIZE_MAX = 100 * 1024 * 1024
 
 
 class DocumentCreate(BaseModel):
@@ -59,21 +59,21 @@ class DocumentCreate(BaseModel):
     customer_id: UUID | None = None
     deal_id: UUID | None = None
     contract_id: UUID | None = None
-    tipo: DocumentTipo = "documento"
-    titolo: SafeStr = Field(max_length=TITOLO_MAX_LENGTH)
-    stato: OfferState | None = None
+    type: DocumentType = "document"
+    title: SafeStr = Field(max_length=TITLE_MAX_LENGTH)
+    status: OfferState | None = None
     custom_fields: dict[str, Any] = {}
 
 
 class DocumentUpdate(BaseModel):
-    """`stato` is deliberately absent: an offer's state changes only through a
+    """`status` is deliberately absent: an offer's state changes only through a
     dedicated state-transition method, which takes a required non-nullable literal.
     Since task 4B-1 closed A14 a `null` here *would* clear the column, which is exactly
     why the field stays off this schema -- see `DocumentService.set_offer_state`."""
 
     model_config = ConfigDict(extra="forbid")
 
-    titolo: SafeStr | None = Field(default=None, max_length=TITOLO_MAX_LENGTH)
+    title: SafeStr | None = Field(default=None, max_length=TITLE_MAX_LENGTH)
     custom_fields: dict[str, Any] | None = None
 
 
@@ -81,18 +81,18 @@ class DocumentRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
-    # The owner's azienda when the document was created (REB-623); read-only.
-    azienda_id: UUID
+    # The owner's legal entity when the document was created (REB-623); read-only.
+    legal_entity_id: UUID
     customer_id: UUID | None
     deal_id: UUID | None
     contract_id: UUID | None
-    tipo: str
-    titolo: str
-    stato: str | None
+    type: str
+    title: str
+    status: str | None
     # Derived, never supplied: on no Create or Update schema, because a caller who could
     # set it could claim an offer has been waiting since January.
-    stato_dal: date | None
-    versione_corrente: int
+    status_since: date | None
+    current_version: int
     custom_fields: dict[str, Any]
     created_at: datetime
     updated_at: datetime
@@ -103,13 +103,13 @@ class DocumentVersionRead(BaseModel):
 
     id: UUID
     document_id: UUID
-    numero: int
+    number: int
     template_id: UUID | None
     storage_key: str
     content_type: str
-    dimensione: int
+    size: int
     hash_sha256: str
-    creato_da: UUID | None
+    created_by: UUID | None
     created_at: datetime
 
 
@@ -119,7 +119,7 @@ DOCUMENT_SORTS = SortWhitelist(
     specs=(
         SortSpec(key="created_at", column=Document.created_at, kind="datetime", nullable=False),
         SortSpec(key="updated_at", column=Document.updated_at, kind="datetime", nullable=False),
-        SortSpec(key="titolo", column=Document.titolo, kind="text", nullable=False),
+        SortSpec(key="title", column=Document.title, kind="text", nullable=False),
     ),
     default_key="created_at",
 )
@@ -129,10 +129,10 @@ class DocumentListQuery(BaseModel):
     customer_id: UUID | None = None
     deal_id: UUID | None = None
     contract_id: UUID | None = None
-    azienda_id: UUID | None = None
-    tipo: DocumentTipo | None = None
-    stato: OfferState | None = None
-    # New in slice 6: spec §8.1 makes `titolo` searchable, and task A13's "vedi tutti"
+    legal_entity_id: UUID | None = None
+    type: DocumentType | None = None
+    status: OfferState | None = None
+    # New in slice 6: spec §8.1 makes `title` searchable, and task A13's "vedi tutti"
     # link for the Documento class lands on this filter. `SafeStr` for the same reason
     # the other three carry it -- a NUL byte in a query parameter raises a raw
     # `ValueError` out of psycopg, which nothing here handles.
@@ -141,7 +141,7 @@ class DocumentListQuery(BaseModel):
     # boolean and not a free-text filter: it selects one fixed predicate, and the card that
     # links here counts rows with that same predicate function
     # (`_accepted_with_unwon_deal_predicate`), so the two cannot drift apart.
-    solo_deal_non_vinto: bool = False
+    only_unwon_deals: bool = False
     # Bounded here, not only on a future router: an MCP tool could build this object
     # directly, with no router-level Query(...) bound sitting between it and this
     # schema.
@@ -162,14 +162,14 @@ class DocumentFromTemplate(BaseModel):
     template_id: UUID
     customer_id: UUID | None = None
     deal_id: UUID | None = None
-    # The azienda the document speaks for when it is not its owner's: a contract's register
-    # signs as the contract's azienda, which a customer moved since no longer shares.
-    azienda_id: UUID | None = None
-    titolo: SafeStr = Field(max_length=TITOLO_MAX_LENGTH)
+    # The legal entity the document speaks for when it is not its owner's: a contract's register
+    # signs as the contract's legal entity, which a customer moved since no longer shares.
+    legal_entity_id: UUID | None = None
+    title: SafeStr = Field(max_length=TITLE_MAX_LENGTH)
     # The values for the template's declared variables. Free-form by nature -- the
     # template decides what it wants, and `render_template` rejects a missing required
     # one by name before anything is written.
-    variabili: dict[str, Any] = {}
+    variables: dict[str, Any] = {}
     custom_fields: dict[str, Any] = {}
 
 
@@ -181,16 +181,16 @@ class DocumentTextRead(BaseModel):
     client's contract or somebody else's invoice. Keeping them apart is what lets every
     listing of versions stay cheap and free of anybody's text.
 
-    `provenienza` is `core/text.py::PROVENIENZA`, carried through verbatim: whoever
-    reads `testo` is reading words written outside this system, and an agent that reads
+    `provenance` is `core/text.py::PROVENANCE`, carried through verbatim: whoever
+    reads `text` is reading words written outside this system, and an agent that reads
     its own instructions as text must be told so in the same payload rather than in a
-    tool description it saw once. `troncato` is not `testo == ""` -- see `FileText`.
+    tool description it saw once. `truncated` is not `testo == ""` -- see `FileText`.
     """
 
     document_id: UUID
-    numero: int
-    titolo: str
-    testo: str
+    number: int
+    title: str
+    text: str
     mime: str
-    troncato: bool
-    provenienza: str
+    truncated: bool
+    provenance: str

@@ -12,14 +12,14 @@ bare (`linkedin.com/in/...`, `github.com/...`) from a fixed list, whoever's it i
 model writes links without a scheme; the person's whole email; their phone by its last digits.
 There is no generic «domain with a path» rule on purpose: `Node.js/Express`, `ASP.NET` and
 `Vue.js` are skills. And a tax identifier, which names one person as surely as a name: a
-codice fiscale or an Italian IBAN by its shape, any IBAN after the word, eleven digits after
-a label (`P.IVA`, `VAT`, `C.F.`, ...) and the person's own partita IVA or codice fiscale
+tax code or an Italian IBAN by its shape, any IBAN after the word, eleven digits after
+a label (`P.IVA`, `VAT`, `C.F.`, ...) and the person's own VAT number or tax code
 however it is spaced. Eleven digits alone are not refused: an order number has them too.
 And a statement of birth: «nato il», «born on», «data di nascita» or «DOB» with a date a few
 words on, «nato a» or «born in» with a date or a place right after it. A postal address has
 no shape to check, so it is left to the prompt and to the admin who reads the PDF.
 
-In every string but a place (`luogo`) or a language (`lingue`): the identifiers that are
+In every string but a place (`location`) or a language (`languages`): the identifiers that are
 names, read as whole phrases of tokens: the handle of an email, the GitHub logins, the handle
 in the path of each of the person's links (`linkedin.com/in/<slug>`), the whole host of each
 and the labels of a personal one (not an employer's the CV names itself); and the surname,
@@ -65,14 +65,14 @@ from rebase_core.sources import github_login_of, link_hostnames
 
 # Where the first name is read: the prose of the CV, as paths from `strings`.
 _PROSE = re.compile(
-    r"^(titolo|sommario)$"
-    r"|^esperienze\[\d+\]\.ruolo$"
-    r"|^esperienze\[\d+\]\.punti\[\d+\]\.(titolo|testo)$"
-    r"|^altre_sezioni\[\d+\]\.voci\[\d+\]$"
+    r"^(title|summary)$"
+    r"|^experience\[\d+\]\.role$"
+    r"|^experience\[\d+\]\.points\[\d+\]\.(title|text)$"
+    r"|^other_sections\[\d+\]\.entries\[\d+\]$"
 )
 # Where a name is not read: a place or a language is the CV's own.
-_PLACE_OR_LANGUAGE = re.compile(r"\.luogo$|^lingue\[")
-_SKILL_PATH = re.compile(r"^competenze\[\d+\]\.voci\[\d+\]$")
+_PLACE_OR_LANGUAGE = re.compile(r"\.location$|^languages\[")
+_SKILL_PATH = re.compile(r"^skills\[\d+\]\.entries\[\d+\]$")
 # The small words of a compound surname (De Luca, van der Berg, D'Amico): not a name alone.
 _PARTICLES = frozenset(
     ["de", "di", "da", "del", "della", "delle", "dei", "degli", "van", "von", "der", "den"]
@@ -101,8 +101,8 @@ _PROFILE_HOST = re.compile(
 _LINK_LIKE = re.compile(r"[/_\-]|\w\.\w")
 _STRICT_LINK = re.compile(r"[/_]|\w\.\w")
 
-# A codice fiscale's shape: six letters, the year, the month's letter, the day, the place.
-_CODICE_FISCALE = re.compile(
+# A tax code's shape: six letters, the year, the month's letter, the day, the place.
+_TAX_CODE = re.compile(
     r"\b[A-Z]{6}[\dLMNPQRSTUV]{2}[A-EHLMPRST][\dLMNPQRSTUV]{2}[A-Z][\dLMNPQRSTUV]{3}[A-Z]\b",
     re.IGNORECASE,
 )
@@ -114,8 +114,8 @@ _IBAN_IT = re.compile(r"IT\d{2}[A-Z]\d{10}[0-9A-Z]{12}", re.IGNORECASE)
 _IBAN_AFTER_LABEL = re.compile(
     r"\bIBAN\b\W{0,4}[A-Z]{2}\d{2}(?:\s?[0-9A-Z]{4}){3,7}\b", re.IGNORECASE
 )
-# Eleven digits (spaced, dotted or dashed) a few characters after a tax label: a partita IVA,
-# or a company's codice fiscale. «Partita IVA attiva dal 2019» has no such number.
+# Eleven digits (spaced, dotted or dashed) a few characters after a tax label: a VAT number,
+# or a company's tax code. A phrase like «Partita IVA attiva dal 2019» has no such number.
 _TAX_LABEL = r"(?:p\.?\s?iva|p\.\s?i\.?|partita\s+iva|vat|iva|c\.\s?f\.?|cf|codice\s+fiscale)"
 _LABELLED_TAX_NUMBER = re.compile(
     rf"(?<!\w){_TAX_LABEL}(?!\w)[^\d\n]{{0,12}}?\d(?:[ .\-]?\d){{10}}(?![ .\-]?\d)",
@@ -220,8 +220,8 @@ class Who:
     of the links and the handles in their paths, and the tax identifiers the hub keeps for
     them (upper case, letters and digits only)."""
 
-    nomi: list[str]
-    cognomi: list[str]
+    first_names: list[str]
+    last_names: list[str]
     emails: list[str]
     phones: list[str]
     github_logins: list[str]
@@ -232,8 +232,8 @@ class Who:
     def merged(self, other: "Who") -> "Who":
         """Both, each identifier once: the account's `Who` and the one the CV gave."""
         return Who(
-            nomi=_unique(self.nomi, other.nomi),
-            cognomi=_unique(self.cognomi, other.cognomi),
+            first_names=_unique(self.first_names, other.first_names),
+            last_names=_unique(self.last_names, other.last_names),
             emails=_unique(self.emails, other.emails),
             phones=_unique(self.phones, other.phones),
             github_logins=_unique(self.github_logins, other.github_logins),
@@ -292,8 +292,8 @@ def _path_handles(link: str) -> list[str]:
 
 def who_of(
     *,
-    nome: str | None,
-    cognome: str | None,
+    first_name: str | None,
+    last_name: str | None,
     emails: Iterable[str | None],
     phones: Iterable[str | None],
     links: Iterable[str | None],
@@ -303,8 +303,8 @@ def who_of(
     identifiers upper case with their spaces and dots dropped."""
     urls = [link.strip() for link in links if link and link.strip()]
     return Who(
-        nomi=[nome.strip()] if nome and nome.strip() else [],
-        cognomi=[cognome.strip()] if cognome and cognome.strip() else [],
+        first_names=[first_name.strip()] if first_name and first_name.strip() else [],
+        last_names=[last_name.strip()] if last_name and last_name.strip() else [],
         emails=_unique(email.strip().lower() for email in emails if email and email.strip()),
         phones=_unique(digits for phone in phones if (digits := phone_digits(phone))),
         github_logins=_unique(
@@ -323,10 +323,10 @@ def _tax_compact(value: str) -> str:
 def _has_tax_id(value: str, known: list[str]) -> bool:
     """Whether `value` holds a tax identifier: one by its shape or its label, or one of the
     person's own (`known`, compact), however it is spaced, dotted or dashed. A known number
-    is read between non-digits («IT01234567890» is the partita IVA), a known code between
+    is read between non-digits («IT01234567890» is the VAT number), a known code between
     non-alphanumerics."""
     if (
-        _CODICE_FISCALE.search(value)
+        _TAX_CODE.search(value)
         or _IBAN_AFTER_LABEL.search(value)
         or _LABELLED_TAX_NUMBER.search(value)
         or any(
@@ -390,14 +390,14 @@ def identifying_fields(cv: AnonymousCv, who: Who) -> list[str]:
     """The paths of the strings of `cv` that identify the person, in document order, each
     once; empty when the CV is anonymous."""
     every = strings(cv)
-    surnames = _unique(name.strip() for name in who.cognomi if name.strip())
+    surnames = _unique(name.strip() for name in who.last_names if name.strip())
     # The whole surname and, for a compound one, each of its words (a particle aside).
     surname_terms = _unique(surnames, *(_words(name) for name in surnames))
-    firsts = _unique(name.strip() for name in who.nomi if name.strip())
+    firsts = _unique(name.strip() for name in who.first_names if name.strip())
     given = _unique(firsts, *(_words(name) for name in firsts))
     emails = [email for email in who.emails if email]
     phones = [digits[-PHONE_KEY_DIGITS:] for digits in who.phones if len(digits) >= 7]
-    # A partita IVA has 11 digits and a codice fiscale 16 characters (11 for a company).
+    # A VAT number has 11 digits and a tax code 16 characters (11 for a company).
     tax_ids = [tax_id for tax_id in who.tax_ids if len(tax_id) >= 11]
 
     # An employer the CV names itself is not the person's site, even when the person's
@@ -405,7 +405,7 @@ def identifying_fields(cv: AnonymousCv, who: Who) -> list[str]:
     employers = {
         phrase
         for path, value in every
-        if path.endswith(".azienda") and (phrase := _phrase(value, legal=True)) is not None
+        if path.endswith(".company") and (phrase := _phrase(value, legal=True)) is not None
     }
     host_phrases = [
         phrase

@@ -114,10 +114,10 @@ export function useSyncGmail() {
 export function useDisconnectGmail() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: async ({ eliminaMessaggi }: { eliminaMessaggi: boolean }) => {
+    mutationFn: async ({ deleteMessages }: { deleteMessages: boolean }) => {
       await unwrap(
         api.DELETE('/api/gmail/account', {
-          params: { query: { elimina_messaggi: eliminaMessaggi } },
+          params: { query: { delete_messages: deleteMessages } },
         }),
       )
     },

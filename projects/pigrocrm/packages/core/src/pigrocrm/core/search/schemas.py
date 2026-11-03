@@ -2,7 +2,7 @@
 
 Spec §8.1 fixes the searched fields, §8.5 the ordering and the counting, §8.6 the three
 interface states. The shape here is what makes those three states expressible without the
-client inferring anything: `totale` is the real count and `totale_e_un_minimo` says
+client inferring anything: `total` is the real count and `total_is_minimum` says
 whether it was truncated, so "5 of 500" and "5 of 5" are different responses rather than
 the same list of five.
 """
@@ -31,17 +31,17 @@ PER_CLASS_LIMIT = 5
 # with `LIMIT 201`: exact when exactness matters, cheap when it does not, never a lie.
 COUNT_CEILING = 200
 
-SearchEntity = Literal["customer", "person", "deal", "document", "invoice", "attivita"]
+SearchEntity = Literal["customer", "person", "deal", "document", "invoice", "task"]
 
 
 class SearchQuery(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    termine: SafeStr = Field(min_length=MIN_TERM_LENGTH, max_length=MAX_TERM_LENGTH)
-    limite: int = Field(default=PER_CLASS_LIMIT, ge=1, le=20)
-    # One azienda's records (REB-623): customers, deals, documents and invoices by their
-    # own column, people through their customer. `None` is every azienda.
-    azienda_id: UUID | None = None
+    term: SafeStr = Field(min_length=MIN_TERM_LENGTH, max_length=MAX_TERM_LENGTH)
+    limit: int = Field(default=PER_CLASS_LIMIT, ge=1, le=20)
+    # One legal entity's records (REB-623): customers, deals, documents and invoices by their
+    # own column, people through their customer. `None` is every legal entity.
+    legal_entity_id: UUID | None = None
 
 
 class SearchHit(BaseModel):
@@ -50,31 +50,31 @@ class SearchHit(BaseModel):
     # What the palette renders on the row. Built by the repository from the entity's own
     # identifying columns, never by the frontend concatenating fields -- that would be
     # business logic in the browser.
-    etichetta: str
-    sottotitolo: str | None
+    label: str
+    subtitle: str | None
     # `Decimal`, never float: a float score renders as 0.6000000238418579 and would break
     # criterion 4's byte-identical requirement. The bounds match the `Numeric(6, 4)` the
     # SQL expression produces, so a value the expression could not have produced is
     # refused here rather than rounded silently.
-    punteggio: Decimal = Field(max_digits=6, decimal_places=4)
+    score: Decimal = Field(max_digits=6, decimal_places=4)
     # Which field produced the score. Shown as a hint ("P.IVA", "email") so a match on a
     # column the row does not display is not a mystery.
-    campo: str
+    field: str
 
 
 class SearchGroup(BaseModel):
     entity: SearchEntity
     hits: list[SearchHit]
     # The real count of matching rows, exact up to COUNT_CEILING.
-    totale: int
-    # True when `totale` is COUNT_CEILING and the real count may be higher. The palette
+    total: int
+    # True when `total` is COUNT_CEILING and the real count may be higher. The palette
     # renders "oltre 200" for this case; it never renders "200".
-    totale_e_un_minimo: bool
+    total_is_minimum: bool
 
 
 class SearchResults(BaseModel):
-    termine: str
-    gruppi: list[SearchGroup]
+    term: str
+    groups: list[SearchGroup]
 
 
 # The three shapes people actually write a fiscal number in, and the order they are tried
@@ -104,9 +104,9 @@ _MIN_YEAR = 2000
 _MAX_YEAR = 2999
 
 
-def _bounded(anno: int, numero: int) -> tuple[int, int] | None:
-    if _MIN_YEAR <= anno <= _MAX_YEAR and _MIN_INVOICE_NUMBER <= numero <= _MAX_INVOICE_NUMBER:
-        return anno, numero
+def _bounded(year: int, number: int) -> tuple[int, int] | None:
+    if _MIN_YEAR <= year <= _MAX_YEAR and _MIN_INVOICE_NUMBER <= number <= _MAX_INVOICE_NUMBER:
+        return year, number
     return None
 
 
@@ -119,7 +119,7 @@ def parse_fiscal_number(term: str) -> tuple[int | None, int] | None:
     result presented as a complete one.
 
     When this returns a value the invoice branch matches by equality on `(anno, numero)` and
-    does **not** also trigram the `causale`. The two paths are exclusive because `123`
+    does **not** also trigram the `memo`. The two paths are exclusive because `123`
     searched as a trigram means "every description containing 123", which is not an answer
     to "show me invoice 123". The cost of that exclusivity, stated rather than hidden: a
     causale containing a bare four-digit number is not reachable by typing that number
@@ -143,7 +143,7 @@ def parse_fiscal_number(term: str) -> tuple[int | None, int] | None:
 
     match = _BARE_NUMBER.fullmatch(candidate)
     if match:
-        numero = int(match.group(1))
-        if _MIN_INVOICE_NUMBER <= numero <= _MAX_INVOICE_NUMBER:
-            return None, numero
+        number = int(match.group(1))
+        if _MIN_INVOICE_NUMBER <= number <= _MAX_INVOICE_NUMBER:
+            return None, number
     return None

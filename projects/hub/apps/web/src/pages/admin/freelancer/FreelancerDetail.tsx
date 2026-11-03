@@ -9,7 +9,7 @@ import { admin, type Freelancer, type FreelancerOverride, type Note } from '@/li
 import { failureMessage } from '@/lib/adminList'
 import {
   FREELANCER_STATES,
-  REMOTO_LABELS,
+  REMOTE_LABELS,
   VETTED_LABEL,
   formatBytes,
   formatDate,
@@ -22,7 +22,7 @@ import { DuplicateOf } from '../DuplicateMarks'
 import { Empty, Header, IncompletePill, Row, StatePill, StatusEditor, VettedPill } from '../list-kit'
 import { Notes } from '../Notes'
 import { FreelancerOverrideDialog, RecordLifecycle } from '../Override'
-import { SchedaAnonima } from '../SchedaAnonima'
+import { AnonymousCard } from '../AnonymousCard'
 import {
   CvCityRow,
   CvCompaniesRow,
@@ -32,7 +32,7 @@ import {
   CvMark,
   CvPhoneRows,
 } from './CvRows'
-import { FreelancerIscrizione, RecentEvents } from './Subscription'
+import { FreelancerSignup, RecentEvents } from './Subscription'
 
 /** What REB-284 adds to the freelancer detail beyond `Freelancer`: everywhere else in
  *  the hub that already knows this address, fetched server-side in the same call so
@@ -40,8 +40,8 @@ import { FreelancerIscrizione, RecentEvents } from './Subscription'
 
 /** Who the answers on a card come from, as the detail's «Scheda» row says it. */
 function ownership(f: Freelancer): string {
-  if (f.compilata_da === 'persona') return 'compilata dalla persona'
-  return f.completa ? 'scritta dall’admin' : 'scritta dall’admin, da completare'
+  if (f.filled_by === 'person') return 'compilata dalla persona'
+  return f.complete ? 'scritta dall’admin' : 'scritta dall’admin, da completare'
 }
 
 export function AdminFreelancerDetail() {
@@ -53,7 +53,7 @@ export function AdminFreelancerDetail() {
     queryFn: () => admin.freelancer(id),
   })
   const move = useMutation({
-    mutationFn: (stato: string) => admin.moveFreelancer(id, stato),
+    mutationFn: (status: string) => admin.moveFreelancer(id, status),
     // The PATCH answers the plain card, not the REB-284 sections, and its own `note` is
     // always `[]` (REB-356, same cause as REB-355's own mutations below): merged onto the
     // cached detail with `note` kept from the current cache, or a save would drop both
@@ -107,18 +107,18 @@ export function AdminFreelancerDetail() {
   if (row.isError) return <Empty>Scheda non trovata.</Empty>
   if (row.isPending) return <Empty>Caricamento…</Empty>
   const f = row.data
-  const persona = cvCard?.persona ?? null
+  const person = cvCard?.person ?? null
   const overrideFailure = failureMessage(override.error, 'Non riesco a salvare la scheda.')
   const clearCvFailure = failureMessage(clearCv.error, 'Non riesco a rimuovere il CV.')
   const lifecycleFailure = failureMessage(del.error ?? restore.error, 'Non riesco a completare l’operazione.')
   return (
     <>
-      <Header title={`${f.nome} ${f.cognome}`}>
+      <Header title={`${f.first_name} ${f.last_name}`}>
         <div className="flex flex-wrap items-center gap-2">
-          <StatePill stato={f.stato} />
+          <StatePill status={f.status} />
           {f.vetted_at && <VettedPill />}
           {f.deleted_at === null && <DuplicateOf freelancerId={f.id} />}
-          {!f.completa && <IncompletePill />}
+          {!f.complete && <IncompletePill />}
           {f.cv_filename !== null && f.cv_size !== null && f.deleted_at === null && (
             <>
               <Button asChild variant="outline" size="sm">
@@ -167,44 +167,44 @@ export function AdminFreelancerDetail() {
       )}
       <div className="grid gap-6 p-6 lg:grid-cols-3">
         <div className="space-y-3 lg:col-span-2">
-          {persona && <CvDifferences differenze={cvCard?.differenze ?? []} />}
+          {person && <CvDifferences differences={cvCard?.differences ?? []} />}
           <dl className="space-y-3 text-sm">
             <Row label="Email"><a className="underline underline-offset-2" href={`mailto:${f.email}`}>{f.email}</a></Row>
-            <CvPhoneRows telefono={f.telefono ?? null} persona={persona} />
-            <CvEmailRow email={f.email} persona={persona} />
-            <CvCityRow persona={persona} />
-            <Row label="Posizione">{f.posizione ?? '—'}</Row>
+            <CvPhoneRows phone={f.phone ?? null} person={person} />
+            <CvEmailRow email={f.email} person={person} />
+            <CvCityRow person={person} />
+            <Row label="Posizione">{f.job_title ?? '—'}</Row>
             <Row label="Tariffa a giornata">
-              {f.tariffa_giornaliera === null ? '—' : formatMoney(f.tariffa_giornaliera)}
+              {f.daily_rate === null ? '—' : formatMoney(f.daily_rate)}
             </Row>
-            <Row label="Modalità">{f.remoto ? REMOTO_LABELS[f.remoto] : '—'}</Row>
+            <Row label="Modalità">{f.remote ? REMOTE_LABELS[f.remote] : '—'}</Row>
             <Row label="LinkedIn">
               {f.linkedin_url ? (
                 <WebLink href={f.linkedin_url} />
-              ) : persona?.linkedin_url ? (
+              ) : person?.linkedin_url ? (
                 <>
-                  <WebLink href={persona.linkedin_url} />
+                  <WebLink href={person.linkedin_url} />
                   <CvMark />
                 </>
               ) : (
                 '—'
               )}
             </Row>
-            <CvLinksRow links={f.links} persona={persona} />
-            <CvCompaniesRow persona={persona} />
-            <Row label="Arrivato">{formatDate(f.created_at)}{f.utm_source ? ` · da ${f.utm_source}` : ''}{f.origine ? ` · pagina ${f.origine}` : ''}</Row>
-            <Row label="Provenienza">{f.provenienza}</Row>
+            <CvLinksRow links={f.links} person={person} />
+            <CvCompaniesRow person={person} />
+            <Row label="Arrivato">{formatDate(f.created_at)}{f.utm_source ? ` · da ${f.utm_source}` : ''}{f.origin ? ` · pagina ${f.origin}` : ''}</Row>
+            <Row label="Provenienza">{f.provenance}</Row>
             <Row label="Accessi">
-              {f.accessi === 0 || f.ultimo_accesso === null
+              {f.logins === 0 || f.last_access === null
                 ? 'Mai entrato'
-                : `${f.accessi} · ultimo ${formatDateTime(f.ultimo_accesso)}`}
+                : `${f.logins} · ultimo ${formatDateTime(f.last_access)}`}
             </Row>
             <Row label="Scheda">{ownership(f)}</Row>
             <Row label="Verifica">
               {f.vetted_at ? `${VETTED_LABEL} il ${formatDate(f.vetted_at)}` : 'Non verificato'}
             </Row>
           </dl>
-          {!persona && f.cv_filename !== null && f.deleted_at === null && cvCard && (
+          {!person && f.cv_filename !== null && f.deleted_at === null && cvCard && (
             <p className="text-sm text-muted-foreground">
               Dati dal CV non ancora letti: «Rigenera scheda» li legge.
             </p>
@@ -214,9 +214,9 @@ export function AdminFreelancerDetail() {
           {f.deleted_at === null && (
             <StatusEditor
               states={FREELANCER_STATES}
-              stato={f.stato}
+              status={f.status}
               saving={move.isPending}
-              onSave={(stato) => move.mutate(stato)}
+              onSave={(status) => move.mutate(status)}
               error={failureMessage(move.error, 'Non riesco a salvare lo stato.')}
             />
           )}
@@ -224,18 +224,18 @@ export function AdminFreelancerDetail() {
         </div>
       </div>
       {f.deleted_at === null && (
-        <SchedaAnonima freelancerId={f.id} hasCv={f.cv_filename !== null} />
+        <AnonymousCard freelancerId={f.id} hasCv={f.cv_filename !== null} />
       )}
-      <FreelancerIscrizione utm={f.iscrizione_utm} />
+      <FreelancerSignup utm={f.signup_utm} />
       <RecentEvents
         title="Ultimi accessi"
         empty="Non è mai entrata."
-        items={f.ultimi_accessi.map((login) => ({ id: login.id, when: login.logged_at }))}
+        items={f.last_logins.map((login) => ({ id: login.id, when: login.logged_at }))}
       />
       <RecentEvents
         title="Download della guida"
         empty="Non ha scaricato la guida."
-        items={f.ultimi_download_guida.map((download) => ({
+        items={f.last_download_guide.map((download) => ({
           id: download.id,
           when: download.downloaded_at,
         }))}

@@ -26,24 +26,24 @@ from rebase_core.campaigns.service import CampaignService
 from rebase_core.config import Settings
 from rebase_core.schema_common import Ack
 
-public = APIRouter(prefix="/api/hub/campagne", tags=["hub-campaigns-public"])
+public = APIRouter(prefix="/api/hub/campaigns", tags=["hub-campaigns-public"])
 
 Token = Annotated[str, Query(min_length=1, max_length=TOKEN_MAX_LENGTH)]
 
 
-@public.get("/disiscrizione")
+@public.get("/unsubscribe")
 def unsubscribe_page(t: Token, settings: SettingsDep) -> RedirectResponse:
     """A GET changes nothing: mail scanners fetch links. It sends the person to the page,
     where a button posts."""
     # FastAPI hands `t` over decoded: encode it again, so a mangled link cannot add a
     # parameter or a line break to the `Location` header.
     return RedirectResponse(
-        f"{settings.hub_url.rstrip('/')}/disiscrizione?t={quote(t, safe='')}",
+        f"{settings.hub_url.rstrip('/')}/unsubscribe?t={quote(t, safe='')}",
         status_code=status.HTTP_303_SEE_OTHER,
     )
 
 
-@public.post("/disiscrizione", response_model=Ack)
+@public.post("/unsubscribe", response_model=Ack)
 def unsubscribe(t: Token, session: SessionDep) -> Ack:
     """The page's button and RFC 8058's one-click POST. The same answer for a token that
     matched and one that did not, so a guess learns nothing.
@@ -55,6 +55,13 @@ def unsubscribe(t: Token, session: SessionDep) -> Ack:
     OptoutService(session).unsubscribe(t)
     return Ack()
 
+
+# Mails sent before the English rename (REB-902) carry the Italian path in their footer link
+# and in the `List-Unsubscribe` header, and a mail already in an inbox cannot be corrected:
+# the old path stays, answered by the same two handlers and out of the OpenAPI document.
+legacy_public = APIRouter(prefix="/api/hub/campagne", include_in_schema=False)
+legacy_public.add_api_route("/disiscrizione", unsubscribe_page, methods=["GET"])
+legacy_public.add_api_route("/disiscrizione", unsubscribe, methods=["POST"], response_model=Ack)
 
 router = APIRouter(prefix="/api/hub/campaigns", tags=["hub-admin"])
 NO_SENDER = "L'invio di mail non è configurato su questo ambiente."

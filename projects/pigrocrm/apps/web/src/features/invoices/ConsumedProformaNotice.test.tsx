@@ -31,15 +31,15 @@ function ok(data: unknown) {
   return { data, response: new Response(null, { status: 200 }) } as never
 }
 
-const CONSUMED = { id: 'pf-1', tipo: 'proforma', stato: 'consumata' } as unknown as Invoice
-const FATTURA = {
+const CONSUMED = { id: 'pf-1', type: 'proforma', status: 'consumed' } as unknown as Invoice
+const INVOICE = {
   id: 'inv-18',
-  tipo: 'fattura',
-  stato: 'emessa',
-  anno: 2026,
-  numero: 18,
-  riferimento: null,
-  origine_proforma_id: 'pf-1',
+  type: 'invoice',
+  status: 'issued',
+  year: 2026,
+  number: 18,
+  reference: null,
+  origin_proforma_id: 'pf-1',
 } as unknown as Invoice
 
 function wrap(children: ReactNode) {
@@ -55,7 +55,7 @@ describe('ConsumedProformaNotice', () => {
   /** The page Ivan was stuck on: a consumed proforma with no actions and no XML, and no
    *  word about where they went (ORB-134). */
   it('names the fattura the proforma became and links to its page', async () => {
-    mockGet.mockResolvedValue(ok({ items: [FATTURA], next_cursor: null }))
+    mockGet.mockResolvedValue(ok({ items: [INVOICE], next_cursor: null }))
     wrap(<ConsumedProformaNotice proforma={CONSUMED} />)
 
     const link = await screen.findByRole('link', { name: '2026/18' })
@@ -66,7 +66,7 @@ describe('ConsumedProformaNotice', () => {
     const [path, options] = mockGet.mock.calls[0] as unknown as [string, { params: unknown }]
     expect(path).toBe('/api/invoices')
     expect(options.params).toEqual({
-      query: { origine_proforma_id: 'pf-1', tipo: 'fattura', limit: 1 },
+      query: { origin_proforma_id: 'pf-1', type: 'invoice', limit: 1 },
     })
   })
 

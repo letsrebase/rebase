@@ -1,4 +1,4 @@
-"""The digest's own event, sent by the server: `digest_inviato` (REB-221).
+"""The digest's own event, sent by the server: `digest_sent` (REB-221).
 
 A space's browser reports very little of the CRM back to PostHog -- most of a working
 day happens in Gmail, in a video call, in a PDF someone reads offline -- so the weekly
@@ -10,7 +10,7 @@ who never opens the mail leaves no client behind that could have sent it anyway.
 **One person, one id.** This event is captured under `str(user_id)`, the same id the
 browser uses once that person signs in (`shared/analytics`), so a digest sent and the
 session it eventually leads to line up on one person rather than two. Unlike the hub's
-`iscrizione_completata` (`projects/hub/packages/core/src/rebase_core/analytics.py`),
+`signup_completed` (`projects/hub/packages/core/src/rebase_core/analytics.py`),
 which anonymizes an applicant who may never become a person PostHog has profiled, a
 digest recipient is always an existing, already-identified CRM user -- so this event
 carries no `$process_person_profile: false`. Setting it here would suppress the very
@@ -20,7 +20,7 @@ profile the browser half is building.
 already been handed to the sender, a capture that raises answers `False`, and an empty
 `PIGROCRM_POSTHOG_KEY` builds no client at all -- the same three guarantees
 `pigrocrm_mcp.analytics` gives its own callers, and the same shape the hub's
-`analytics.py` gives `iscrizione_completata`.
+`analytics.py` gives `signup_completed`.
 """
 
 from __future__ import annotations
@@ -36,7 +36,7 @@ from pigrocrm.core.config import Settings
 if TYPE_CHECKING:
     from posthog import Posthog
 
-DIGEST_SENT = "digest_inviato"
+DIGEST_SENT = "digest_sent"
 
 # What the SDK's `capture` looks like, so a test can hand one that records.
 Capture = Callable[..., Any]
@@ -50,11 +50,11 @@ _lock = threading.Lock()
 class Tracker:
     capture: Capture
 
-    def digest_sent(self, user_id: UUID, *, settimana: str, sezioni: int) -> bool:
-        """One `digest_inviato`; answers whether the SDK took it."""
+    def digest_sent(self, user_id: UUID, *, week: str, sections: int) -> bool:
+        """One `digest_sent`; answers whether the SDK took it."""
         properties: dict[str, Any] = {
-            "settimana": settimana,
-            "sezioni": sezioni,
+            "week": week,
+            "sections": sections,
             "via": "server",
         }
         try:

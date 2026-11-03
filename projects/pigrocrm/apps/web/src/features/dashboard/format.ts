@@ -12,7 +12,7 @@
  * printed a dash for the same null.
  *
  * A plain module, not a `.tsx`: it exports no component, so there is no
- * `react-refresh/only-export-components` override to buy it -- the same reason `periodo.ts`
+ * `react-refresh/only-export-components` override to buy it -- the same reason `period.ts`
  * sits beside `PeriodPicker.tsx` rather than inside it.
  *
  * **Nothing here parses a number.** `no-browser-arithmetic.test.ts` scans this folder for

@@ -6,20 +6,26 @@ from pigrocrm.core.customers.schemas import CustomerRead
 from pigrocrm.core.customers.service import CustomerService
 from pigrocrm.core.deals.schemas import DealListQuery
 from pigrocrm.core.deals.service import DealService
+from pigrocrm.core.labels import ACTIVITY_KIND, NOTE_SOURCE, label
 from pigrocrm.core.notes.service import NoteService
 from pigrocrm.core.people.schemas import PersonListQuery
 from pigrocrm.core.people.service import PersonService
 from pigrocrm.core.pipeline.service import PipelineService
 from pigrocrm.core.timetracking.service import TimeEntryService
 from pigrocrm_mcp.context import McpContext
-from pigrocrm_mcp.provenance import PROVENIENZA_TESTO_LIBERO
+from pigrocrm_mcp.provenance import PROVENANCE_TEXT_FREE
+
+_DEAL_HOURS_STATUS = {"in_progress": "in corso", "to_invoice": "da fatturare", "closed": "chiuso"}
 
 
 def _timeline_lines(context: McpContext, entity: str, entity_id: UUID) -> list[str]:
     entries = ActivityService(context.session).timeline(entity, entity_id, limit=10)
     if not entries:
         return ["_Nessuna attività registrata._"]
-    return [f"- {e.occurred_at:%Y-%m-%d %H:%M} · **{e.kind}** · da {e.actor_type}" for e in entries]
+    return [
+        f"- {e.occurred_at:%Y-%m-%d %H:%M} · **{label(ACTIVITY_KIND, e.kind)}** · da {e.actor_type}"
+        for e in entries
+    ]
 
 
 def _custom_lines(custom_fields: dict[str, object]) -> list[str]:
@@ -39,15 +45,17 @@ def _note_lines(context: McpContext, entity_type: str, entity_id: UUID) -> list[
     lines = ["", "## Note"]
     for note in notes:
         # A note from before the thread existed has no source and no author.
-        who = note.autore or ("Nota precedente" if note.fonte is None else note.fonte)
+        who = note.author or (
+            "Nota precedente" if note.source is None else label(NOTE_SOURCE, note.source)
+        )
         header = f"**{note.created_at:%Y-%m-%d %H:%M}** · {who}"
-        if note.fonte is not None:
-            header += f" · fonte: {note.fonte}"
-        if note.modificata_at is not None:
-            header += f" · modificata il {note.modificata_at:%Y-%m-%d %H:%M}"
-            if note.modificata_da:
-                header += f" da {note.modificata_da}"
-        lines += ["", header, "", note.testo]
+        if note.source is not None:
+            header += f" · fonte: {label(NOTE_SOURCE, note.source)}"
+        if note.edited_at is not None:
+            header += f" · modificata il {note.edited_at:%Y-%m-%d %H:%M}"
+            if note.edited_by:
+                header += f" da {note.edited_by}"
+        lines += ["", header, "", note.text]
     return lines
 
 
@@ -74,19 +82,19 @@ def _address_line(customer: CustomerRead) -> str:
     comune would go, and empty parentheses -- noise a model has to read past
     before it can act. With nothing but a country, this renders as `IT` alone.
     """
-    locality = " ".join(part for part in (customer.cap, customer.comune) if part)
-    if customer.provincia:
-        locality = f"{locality} ({customer.provincia})".strip()
-    if customer.nazione:
-        locality = f"{locality} {customer.nazione}".strip()
-    segments = [part for part in (customer.indirizzo, locality) if part]
+    locality = " ".join(part for part in (customer.cap, customer.city) if part)
+    if customer.province:
+        locality = f"{locality} ({customer.province})".strip()
+    if customer.country:
+        locality = f"{locality} {customer.country}".strip()
+    segments = [part for part in (customer.address, locality) if part]
     return ", ".join(segments) if segments else "—"
 
 
 def _provenance_line() -> str:
     """First line of every card: the names, notes and custom fields below were written by
     somebody else (a person, or an agent that was reading a mail)."""
-    return f"_Provenienza: {PROVENIENZA_TESTO_LIBERO}_"
+    return f"_Provenienza: {PROVENANCE_TEXT_FREE}_"
 
 
 def render_customer(context: McpContext, customer_id: UUID) -> str:
@@ -102,26 +110,27 @@ def render_customer(context: McpContext, customer_id: UUID) -> str:
     lines = [
         _provenance_line(),
         "",
-        f"# {customer.ragione_sociale}",
+        f"# {customer.legal_name}",
         "",
         "## Dati fiscali",
         "",
-        f"- P.IVA: {customer.partita_iva or '—'}",
-        f"- Codice fiscale: {customer.codice_fiscale or '—'}",
-        f"- Codice SDI: {customer.codice_sdi or '—'}",
-        f"- PEC: {customer.pec or '—'}",
+        f"- P.IVA: {customer.vat_number or '—'}",
+        f"- Codice fiscale: {customer.tax_code or '—'}",
+        f"- Codice SDI: {customer.sdi_code or '—'}",
+        f"- PEC: {customer.certified_email or '—'}",
         f"- Indirizzo: {_address_line(customer)}",
         "",
         "## Contatti",
         "",
     ]
     lines += [
-        f"- {p.nome} {p.cognome or ''} — {p.ruolo or 'ruolo non indicato'} — {p.email or '—'}"
+        f"- {p.first_name} {p.last_name or ''} — {p.role or 'ruolo non indicato'} — "
+        f"{p.email or '—'}"
         for p in people.items
     ] or ["_Nessun contatto._"]
     lines += ["", "## Deal", ""]
     lines += [
-        f"- {d.nome} — valore previsto {_or_dash(d.valore_previsto)} — probabilità {d.probabilita}%"
+        f"- {d.name} — valore previsto {_or_dash(d.expected_value)} — probabilità {d.probability}%"
         for d in deals.items
     ] or ["_Nessun deal._"]
     lines += _custom_lines(customer.custom_fields)
@@ -135,16 +144,16 @@ def render_person(context: McpContext, person_id: UUID) -> str:
     lines = [
         _provenance_line(),
         "",
-        f"# {person.nome} {person.cognome or ''}".strip(),
+        f"# {person.first_name} {person.last_name or ''}".strip(),
         "",
-        f"- Ruolo: {person.ruolo or '—'}",
+        f"- Ruolo: {person.role or '—'}",
         f"- Email: {person.email or '—'}",
-        f"- Telefono: {person.telefono or '—'}",
+        f"- Telefono: {person.phone or '—'}",
         f"- LinkedIn: {person.linkedin or '—'}",
     ]
     if person.customer_id:
         customer = CustomerService(context.session).get(person.customer_id, context.actor)
-        lines.append(f"- Cliente: {customer.ragione_sociale} (`customer://{customer.id}`)")
+        lines.append(f"- Cliente: {customer.legal_name} (`customer://{customer.id}`)")
     else:
         lines.append("- Cliente: non associato")
     lines += _custom_lines(person.custom_fields)
@@ -162,15 +171,15 @@ def render_deal(context: McpContext, deal_id: UUID) -> str:
     lines = [
         _provenance_line(),
         "",
-        f"# {deal.nome}",
+        f"# {deal.name}",
         "",
-        f"- Cliente: {customer.ragione_sociale} (`customer://{customer.id}`)",
-        f"- Stato: {stage.nome} ({stage.tipo})",
-        f"- Valore previsto: {_or_dash(deal.valore_previsto)}",
-        f"- Probabilità: {deal.probabilita}%",
-        f"- Chiusura prevista: {deal.data_chiusura_prevista or '—'}",
-        f"- Ore preventivate: {_or_dash(deal.ore_preventivate)}",
-        f"- Valore preventivato: {_or_dash(deal.valore_preventivato)}",
+        f"- Cliente: {customer.legal_name} (`customer://{customer.id}`)",
+        f"- Stato: {stage.name} ({stage.type})",
+        f"- Valore previsto: {_or_dash(deal.expected_value)}",
+        f"- Probabilità: {deal.probability}%",
+        f"- Chiusura prevista: {deal.expected_close_date or '—'}",
+        f"- Ore preventivate: {_or_dash(deal.budgeted_hours)}",
+        f"- Valore preventivato: {_or_dash(deal.budgeted_value)}",
     ]
     lines += _custom_lines(deal.custom_fields)
 
@@ -182,14 +191,14 @@ def render_deal(context: McpContext, deal_id: UUID) -> str:
     lines += [
         "",
         "## Ore",
-        f"- Stato: **{summary.stato}**",
-        f"- Ore consuntivate: {summary.ore_totali}",
-        f"- Ore fatturabili non ancora fatturate: {summary.ore_fatturabili_non_fatturate}",
-        f"- Valore delle ore non fatturate (stima): {summary.valore_ore_non_fatturate} EUR",
+        f"- Stato: **{_DEAL_HOURS_STATUS.get(summary.status, summary.status)}**",
+        f"- Ore consuntivate: {summary.total_hours}",
+        f"- Ore fatturabili non ancora fatturate: {summary.billable_uninvoiced_hours}",
+        f"- Valore delle ore non fatturate (stima): {summary.unbilled_hours_value} EUR",
     ]
-    if summary.ore_senza_tariffa:
+    if summary.hours_without_rate:
         lines.append(
-            f"- Voci senza tariffa: {summary.ore_senza_tariffa} "
+            f"- Voci senza tariffa: {summary.hours_without_rate} "
             "(escluse dal valore maturato e dal margine)"
         )
 
@@ -201,23 +210,23 @@ def render_deal(context: McpContext, deal_id: UUID) -> str:
     lines += [
         "",
         "## Economia",
-        f"- Ricavi fatturati: {pnl.ricavi} EUR ({pnl.fatture_emesse} fatture emesse)",
-        f"- Costi diretti: {pnl.costi_diretti} EUR",
-        f"- Costo del lavoro: {pnl.costo_lavoro} EUR",
+        f"- Ricavi fatturati: {pnl.revenue} EUR ({pnl.issued_invoices} fatture emesse)",
+        f"- Costi diretti: {pnl.direct_costs} EUR",
+        f"- Costo del lavoro: {pnl.work_cost} EUR",
     ]
-    if pnl.stato == "chiuso":
-        lines.append(f"- Margine lordo: {pnl.margine_lordo} EUR (definitivo)")
+    if pnl.status == "closed":
+        lines.append(f"- Margine lordo: {pnl.gross_margin} EUR (definitivo)")
     else:
         # Never a margin without the qualifier on an unfinished deal: the figure is
         # provisional, and an agent handed a bare number will quote it as final.
-        lines.append(f"- Margine lordo: {pnl.margine_lordo} EUR — **provvisorio**")
-        lines.append(f"- Valore maturato (stima, non un ricavo): {pnl.valore_maturato} EUR")
-    if pnl.margine_percentuale is None:
+        lines.append(f"- Margine lordo: {pnl.gross_margin} EUR — **provvisorio**")
+        lines.append(f"- Valore maturato (stima, non un ricavo): {pnl.accrued_value} EUR")
+    if pnl.percentage_margin is None:
         # `null` is not zero per cent: nothing has been invoiced yet, which is a
         # different sentence from "every euro earned went out in costs".
         lines.append("- Margine %: non calcolabile, nessun ricavo fatturato")
     else:
-        lines.append(f"- Margine %: {pnl.margine_percentuale}")
+        lines.append(f"- Margine %: {pnl.percentage_margin}")
 
     lines += ["", "## Timeline", ""] + _timeline_lines(context, "deal", deal_id)
     lines += _note_lines(context, "deal", deal_id)

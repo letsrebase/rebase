@@ -1,3 +1,5 @@
+import { param, readWithFallback } from './legacy'
+
 /** The attribution the page's own URL carries, if any: the five standard UTM keys and
  *  `utm_id`, which LinkedIn fills with the ad set. Read once, sent as they arrived --
  *  an unexpanded macro is stored as the literal it was, because that is what happened. */
@@ -10,12 +12,16 @@ export const UTM_KEYS = [
   'utm_id',
 ] as const
 
-/** The six UTM keys, plus `origine`: the page of the site the person started from,
- *  `home` or `pigrocrm`, which the landing puts on its doors as `da=` (ORB-167). */
-export type Utm = Partial<Record<(typeof UTM_KEYS)[number] | 'origine', string>>
+/** The six UTM keys, plus `origin`: the page of the site the person started from,
+ *  `home` or `pigrocrm`, which the landing puts on its doors as `from=` (ORB-167; `da=`
+ *  until the 2026-11 rename, still read: links already in the world carry it). */
+export type Utm = Partial<Record<(typeof UTM_KEYS)[number] | 'origin', string>>
 
 /** Where the landing leaves the page it was, beside the campaign. */
-export const ORIGIN_STORAGE_KEY = 'rebase.da'
+export const ORIGIN_STORAGE_KEY = 'rebase.from'
+/** `rebase.from` was `rebase.da` until the 2026-11 rename: read for 30 days (see
+ *  `legacy.ts`), moved across on the way, then dropped. */
+export const PREVIOUS_ORIGIN_STORAGE_KEY = 'rebase.da'
 const ORIGIN_SHAPE = /^[a-z0-9-]{1,40}$/
 
 /** The keys below carried the platform's old name until REB-668. The landing may still
@@ -52,11 +58,13 @@ function storage(): Storage | null {
   }
 }
 
-/** A stored value under `key`, else the one under the name it had before REB-668, which
- *  is moved to `key` on the way out so the next read finds it where it now belongs. */
-function recall(key: string, legacyKey: string): string | null {
+/** A stored value under `key`, else the one under the name it had in the 2026-11 rename
+ *  (`previousKey`, for 30 days), else the one it had before REB-668 (`legacyKey`); the
+ *  one found is moved to `key` on the way out so the next read finds it where it now
+ *  belongs. */
+function recall(key: string, previousKey: string | null, legacyKey: string): string | null {
   const store = storage()
-  const current = store?.getItem(key)
+  const current = previousKey ? readWithFallback(store, key, previousKey) : (store?.getItem(key) ?? null)
   if (current) return current
   const legacy = store?.getItem(legacyKey)
   if (!legacy) return null
@@ -69,16 +77,17 @@ function recall(key: string, legacyKey: string): string | null {
   return legacy
 }
 
-/** Write `value` under `key` and drop the old name, so a tab holds one copy. */
-function remember(key: string, legacyKey: string, value: string): void {
+/** Write `value` under `key` and drop the old names, so a tab holds one copy. */
+function remember(key: string, previousKey: string | null, legacyKey: string, value: string): void {
   const store = storage()
   store?.setItem(key, value)
+  if (previousKey) store?.removeItem(previousKey)
   store?.removeItem(legacyKey)
 }
 
 /** What the tab remembers, if anything readable. */
 export function recallUtm(): Utm {
-  const raw = recall(UTM_STORAGE_KEY, LEGACY_UTM_STORAGE_KEY)
+  const raw = recall(UTM_STORAGE_KEY, null, LEGACY_UTM_STORAGE_KEY)
   return raw ? readUtm(`?${raw}`) : {}
 }
 
@@ -86,7 +95,7 @@ export function recallUtm(): Utm {
 export function rememberUtm(utm: Utm): void {
   if (Object.keys(utm).length === 0) return
   try {
-    remember(UTM_STORAGE_KEY, LEGACY_UTM_STORAGE_KEY, new URLSearchParams(utm).toString())
+    remember(UTM_STORAGE_KEY, null, LEGACY_UTM_STORAGE_KEY, new URLSearchParams(utm).toString())
   } catch {
     /* refused: the URL still has it, or nothing does */
   }
@@ -104,40 +113,46 @@ export function resolveUtm(search: string): Utm {
   return recallUtm()
 }
 
-/** `da=` off a search string, when it is a slug; anything else reads as unknown. */
+/** `from=` off a search string (`da=` in a link made before the rename), when it is a
+ *  slug; anything else reads as unknown. */
 export function readOrigin(search: string): string | null {
-  const value = new URLSearchParams(search).get('da')?.trim() ?? ''
+  const value = param(new URLSearchParams(search), 'from', 'da')?.trim() ?? ''
   return ORIGIN_SHAPE.test(value) ? value : null
 }
 
-/** The page the person started from: the URL's own `da=` when it has one, remembered
+/** The page the person started from: the URL's own `from=` when it has one, remembered
  *  for the tab; otherwise what the tab remembers from the landing. */
 export function resolveOrigin(search: string): string | null {
   const own = readOrigin(search)
   if (own) {
     try {
-      remember(ORIGIN_STORAGE_KEY, LEGACY_ORIGIN_STORAGE_KEY, own)
+      remember(ORIGIN_STORAGE_KEY, PREVIOUS_ORIGIN_STORAGE_KEY, LEGACY_ORIGIN_STORAGE_KEY, own)
     } catch {
       /* refused: the URL still has it */
     }
     return own
   }
-  const remembered = recall(ORIGIN_STORAGE_KEY, LEGACY_ORIGIN_STORAGE_KEY) ?? ''
+  const remembered = recall(ORIGIN_STORAGE_KEY, PREVIOUS_ORIGIN_STORAGE_KEY, LEGACY_ORIGIN_STORAGE_KEY) ?? ''
   return ORIGIN_SHAPE.test(remembered) ? remembered : null
 }
 
 /** Where a member's own link leaves the code it carried, the same tab-lasting
- *  attribution `ORIGIN_STORAGE_KEY` already keeps for `da=` (P-REB-44). */
-export const REFERRAL_STORAGE_KEY = 'rebase.rif'
+ *  attribution `ORIGIN_STORAGE_KEY` already keeps for `from=` (P-REB-44). */
+export const REFERRAL_STORAGE_KEY = 'rebase.ref'
+/** `rebase.ref` was `rebase.rif` until the 2026-11 rename: read for 30 days, moved
+ *  across on the way, then dropped. */
+export const PREVIOUS_REFERRAL_STORAGE_KEY = 'rebase.rif'
 const REFERRAL_SHAPE = /^[A-Za-z0-9]{1,10}$/
 
-/** `rif=` off a search string, when it looks like a code; anything else is unknown. */
+/** `ref=` off a search string, when it looks like a code; anything else is unknown.
+ *  `rif=` is read as well, for good: members share `/hub/?rif=CODE` links and those
+ *  cannot be recalled. */
 export function readReferral(search: string): string | null {
-  const value = new URLSearchParams(search).get('rif')?.trim() ?? ''
+  const value = param(new URLSearchParams(search), 'ref', 'rif')?.trim() ?? ''
   return REFERRAL_SHAPE.test(value) ? value : null
 }
 
-/** The referral code to send with an application: the URL's own `rif=` when it has
+/** The referral code to send with an application: the URL's own `ref=` when it has
  *  one, remembered for the tab; otherwise what the tab remembers from an earlier page
  *  of this app (a detour through the chooser, say). Kept apart from `Utm`/
  *  `resolveAttribution`: a code is not ad attribution, and `Freelancer(**utm_dict)`
@@ -146,20 +161,20 @@ export function resolveReferral(search: string): string | null {
   const own = readReferral(search)
   if (own) {
     try {
-      remember(REFERRAL_STORAGE_KEY, LEGACY_REFERRAL_STORAGE_KEY, own)
+      remember(REFERRAL_STORAGE_KEY, PREVIOUS_REFERRAL_STORAGE_KEY, LEGACY_REFERRAL_STORAGE_KEY, own)
     } catch {
       /* refused: the URL still has it */
     }
     return own
   }
-  const remembered = recall(REFERRAL_STORAGE_KEY, LEGACY_REFERRAL_STORAGE_KEY) ?? ''
+  const remembered = recall(REFERRAL_STORAGE_KEY, PREVIOUS_REFERRAL_STORAGE_KEY, LEGACY_REFERRAL_STORAGE_KEY) ?? ''
   return REFERRAL_SHAPE.test(remembered) ? remembered : null
 }
 
 /** Everything an application says about where it came from: the campaign and the page. */
 export function resolveAttribution(search: string): Utm {
   const origin = resolveOrigin(search)
-  return { ...resolveUtm(search), ...(origin ? { origine: origin } : {}) }
+  return { ...resolveUtm(search), ...(origin ? { origin } : {}) }
 }
 
 /** What this URL says and nothing else: no campaign the tab remembers from an earlier
@@ -168,7 +183,7 @@ export function resolveAttribution(search: string): Utm {
  *  a detour, which is `resolveAttribution`. */
 export function ownAttribution(search: string): Utm {
   const origin = readOrigin(search)
-  return { ...readUtm(search), ...(origin ? { origine: origin } : {}) }
+  return { ...readUtm(search), ...(origin ? { origin } : {}) }
 }
 
 /** Where the login page leaves the campaign its own URL carried (REB-455), so a detour
@@ -191,19 +206,19 @@ function recallLoginAttribution(): Utm {
 
 /** What a login sends, remembered for the tab. A URL with a campaign replaces what the
  *  tab remembered, its page included, since the page belonged to the older visit; a URL
- *  with only `da=` keeps the remembered campaign and takes the new page; a bare URL
+ *  with only `from=` keeps the remembered campaign and takes the new page; a bare URL
  *  sends what the tab remembers. A storage that refuses is not an error. */
 export function loginAttribution(search: string): Utm {
   const utm = readUtm(search)
   const origin = readOrigin(search)
   const base = Object.keys(utm).length > 0 ? utm : recallLoginAttribution()
-  const attribution: Utm = origin ? { ...base, origine: origin } : base
-  const { origine, ...keys } = attribution
-  const params = new URLSearchParams(keys)
-  if (origine) params.set('da', origine)
-  if ([...params.keys()].length > 0) {
+  const attribution: Utm = origin ? { ...base, origin } : base
+  const { origin: originValue, ...keys } = attribution
+  const stored = new URLSearchParams(keys)
+  if (originValue) stored.set('from', originValue)
+  if ([...stored.keys()].length > 0) {
     try {
-      storage()?.setItem(LOGIN_ATTRIBUTION_KEY, params.toString())
+      storage()?.setItem(LOGIN_ATTRIBUTION_KEY, stored.toString())
     } catch {
       /* refused: this page's own URL still has it */
     }

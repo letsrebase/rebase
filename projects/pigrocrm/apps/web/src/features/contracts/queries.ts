@@ -10,7 +10,7 @@ import { queryKeys } from '@/lib/query'
 export type Contract = components['schemas']['ContractRead']
 export type ContractCreateBody = components['schemas']['ContractCreate']
 export type ContractUpdateBody = components['schemas']['ContractUpdate']
-export type ContractState = components['schemas']['ContractStateChange']['stato']
+export type ContractState = components['schemas']['ContractStateChange']['status']
 export type RateCard = components['schemas']['RateCardRead']
 export type RateCardCreateBody = components['schemas']['RateCardCreate']
 export type RateCardUpdateBody = components['schemas']['RateCardUpdate']
@@ -92,11 +92,11 @@ export function useUpdateContract(contractId: string) {
 export function useSetContractState(contractId: string) {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: (stato: ContractState) =>
+    mutationFn: (status: ContractState) =>
       unwrap(
         api.POST('/api/contracts/{contract_id}/state', {
           params: { path: { contract_id: contractId } },
-          body: { stato },
+          body: { status },
         }),
       ),
     onSuccess: () => invalidateContract(queryClient, contractId),
@@ -126,23 +126,23 @@ function invalidateRates(client: QueryClient, contractId: string) {
   void client.invalidateQueries({ queryKey: queryKeys.timeline('contract', contractId) })
 }
 
-/** `chiudiPrecedente` asks the server to end the card in force on `body.valido_da` the
+/** `closePrevious` asks the server to end the card in force on `body.valid_from` the
  *  day before it, in the same transaction; without it an overlap is refused. */
 export function useCreateRateCard(contractId: string) {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: ({
       body,
-      chiudiPrecedente,
+      closePrevious,
     }: {
       body: RateCardCreateBody
-      chiudiPrecedente: boolean
+      closePrevious: boolean
     }) =>
       unwrap(
         api.POST('/api/contracts/{contract_id}/rate-cards', {
           params: {
             path: { contract_id: contractId },
-            query: { chiudi_precedente: chiudiPrecedente },
+            query: { close_previous: closePrevious },
           },
           body,
         }),
@@ -212,7 +212,7 @@ export function useUpdateContractExpense(contractId: string, expenseId: string) 
   })
 }
 
-// -- Rinnovo e ricavi programmati -------------------------------------------------------
+// -- Renewal e revenue programmati -------------------------------------------------------
 
 /** `null` when nobody has recorded an assumption yet: the API answers 404 for «none
  *  recorded», which is a state of this contract and not a failure of the request. */
@@ -254,8 +254,8 @@ export function useSetRenewalAssumption(contractId: string) {
 }
 
 export interface ProjectionWindow {
-  da: string
-  a: string
+  from: string
+  to: string
 }
 
 export function useContractProjection(
@@ -288,7 +288,7 @@ export function useContractConcentration(contractId: string, enabled: boolean) {
   })
 }
 
-// -- Note sulle clausole ----------------------------------------------------------------
+// -- Clause notes ----------------------------------------------------------------
 
 export type ClauseNote = components['schemas']['ClauseNoteRead']
 export type ClauseNoteCreateBody = components['schemas']['ClauseNoteCreate']
@@ -306,7 +306,7 @@ export function useClauseNotes(contractId: string) {
   })
 }
 
-/** The contract's own read carries the notes too (`note_clausole`), so the list, the row
+/** The contract's own read carries the notes too (`note_clauses`), so the list, the row
  *  and the timeline go stale together. */
 function invalidateClauseNotes(client: QueryClient, contractId: string) {
   void client.invalidateQueries({ queryKey: queryKeys.contractClauseNotes(contractId) })
@@ -346,7 +346,7 @@ export function useUpdateClauseNote(contractId: string, noteId: string) {
 export type RenewContractBody = components['schemas']['ContractRenew']
 export type RenewalDuration = components['schemas']['RenewalDuration']
 
-/** Renews `contractId` into a successor. The old row now answers `contratto_successivo_id`,
+/** Renews `contractId` into a successor. The old row now answers `next_contract_id`,
  *  the customer's list (every `contracts` key) gains the new one and both timelines move,
  *  so the three are refreshed together. The successor's own page loads on arrival. */
 export function useRenewContract(contractId: string) {
@@ -363,26 +363,26 @@ export function useRenewContract(contractId: string) {
   })
 }
 
-// -- Tetto sulla quota del cliente -------------------------------------------------------
+// -- Cap sulla quota del customer -------------------------------------------------------
 
-/** The azienda's active contracts that carry a cap on the customer's share (REB-761), for
+/** The legal entity's active contracts that carry a cap on the customer's share (REB-761), for
  *  the dashboard's «ci sta?» simulator to pick from. The list endpoint has no filter on the
  *  cap, so every page of the active contracts is read and the capped ones kept here: an
- *  azienda has a handful of active contracts, and a first page alone could hide one. Under
+ *  legal entity has a handful of active contracts, and a first page alone could hide one. Under
  *  the `contracts` key, so any contract written anywhere refreshes it. */
-export function useCappedContracts(aziendaId: string | null | undefined) {
+export function useCappedContracts(legalEntityId: string | null | undefined) {
   return useQuery({
-    queryKey: queryKeys.contracts({ azienda_id: aziendaId ?? null, stato: 'attivo', capped: true }),
+    queryKey: queryKeys.contracts({ legal_entity_id: legalEntityId ?? null, status: 'active', capped: true }),
     queryFn: async () => {
       const { items } = await fetchAllPages((cursor) =>
         unwrap(
           api.GET('/api/contracts', {
             params: {
               query: {
-                stato: 'attivo',
-                ...(aziendaId ? { azienda_id: aziendaId } : {}),
+                status: 'active',
+                ...(legalEntityId ? { legal_entity_id: legalEntityId } : {}),
                 limit: 200,
-                sort: 'titolo',
+                sort: 'title',
                 dir: 'asc',
                 cursor,
               },
@@ -392,7 +392,7 @@ export function useCappedContracts(aziendaId: string | null | undefined) {
       )
       // In euros only: the simulated amount is a deal estimate, which carries no currency.
       return items.filter(
-        (contract) => contract.tetto_quota_cliente !== null && contract.divisa === 'EUR',
+        (contract) => contract.customer_share_cap !== null && contract.currency === 'EUR',
       )
     },
   })

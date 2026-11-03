@@ -7,7 +7,7 @@ import json
 from datetime import UTC, datetime
 
 import pytest
-from fakes_cards import CARD, FONTI, MODEL, NO_PERSONA, Scripted, card_response, text_pdf
+from fakes_cards import CARD, MODEL, NO_PERSON, SOURCES, Scripted, card_response, text_pdf
 from freelancer_fixtures import (
     CV,
     IDENTIFYING,
@@ -20,7 +20,7 @@ from freelancer_fixtures import (
 )
 from sqlalchemy.orm import Session
 
-from rebase_core.card_persona import gendered_words
+from rebase_core.card_person import gendered_words
 from rebase_core.card_prompt import NEUTRAL_AGAIN, card_prompt
 from rebase_core.card_writer import CardWriter
 from rebase_core.cv_text import CvText
@@ -47,18 +47,20 @@ def test_a_surname_that_is_a_word_is_the_person_only_with_a_capital(
     """Conti, Grande, Porta: a surname that is also a word parks nobody for the word
     written in lower case, «la dashboard dei conti»; with a capital, or in capitals, it
     is the person."""
-    freelancer_id = apply_freelancer(clean_hub, cognome="Conti")
-    sintesi = "Backend developer senior: ha rifatto la dashboard dei conti di una banca."
+    freelancer_id = apply_freelancer(clean_hub, last_name="Conti")
+    profile_summary = "Backend developer senior: ha rifatto la dashboard dei conti di una banca."
     llm = RecordingCall(
         [
-            card_response({**CARD, "sintesi": sintesi}),
-            card_response({**CARD, "sintesi": f"Il profilo di {named}, backend developer."}),
+            card_response({**CARD, "profile_summary": profile_summary}),
+            card_response(
+                {**CARD, "profile_summary": f"Il profilo di {named}, backend developer."}
+            ),
         ]
     )
 
     written = CardWriter(clean_hub, llm).write(freelancer_id)
     assert written.error is None and written.card is not None
-    assert written.card.sintesi == sintesi
+    assert written.card.profile_summary == profile_summary
 
     named_card = CardWriter(clean_hub, llm).write(freelancer_id, force=True)
     assert named_card.error == IDENTIFYING
@@ -67,9 +69,9 @@ def test_a_surname_that_is_a_word_is_the_person_only_with_a_capital(
 @pytest.mark.parametrize(
     ("field", "value"),
     [
-        ("sintesi", "Ada, backend developer senior con nove anni di fintech."),
-        ("sintesi", "Il profilo di ADA: API in Python e AWS."),
-        ("ruolo", "Backend developer (Ada)"),
+        ("profile_summary", "Ada, backend developer senior con nove anni di fintech."),
+        ("profile_summary", "Il profilo di ADA: API in Python e AWS."),
+        ("role", "Backend developer (Ada)"),
     ],
 )
 def test_the_first_name_in_the_role_or_the_summary_is_the_person(
@@ -93,15 +95,15 @@ def test_a_first_name_that_is_a_skill_or_inside_a_word_is_not_the_person(
     freelancer_id = apply_freelancer(clean_hub)
     card = {
         **CARD,
-        "competenze": ["Ada", "SPARK", "Python"],
-        "sintesi": "Sistemi embedded, un Adapter per ogni sensore e i test in SPARK.",
+        "skills": ["Ada", "SPARK", "Python"],
+        "profile_summary": "Sistemi embedded, un Adapter per ogni sensore e i test in SPARK.",
     }
     llm = RecordingCall([card_response(card)])
 
     read = CardWriter(clean_hub, llm).write(freelancer_id)
 
     assert read.error is None and read.card is not None
-    assert read.card.competenze == ["Ada", "SPARK", "Python"]
+    assert read.card.skills == ["Ada", "SPARK", "Python"]
 
 
 RUBY_SKILLS = ["Ruby on Rails", "PostgreSQL"]
@@ -110,34 +112,34 @@ RUBY_SKILLS = ["Ruby on Rails", "PostgreSQL"]
 def test_a_first_name_inside_the_persons_own_skill_is_the_skill(clean_hub: Session) -> None:
     """Ruby who writes Ruby on Rails: where the role or the summary writes one of the
     card's own skills whole, the first name inside it is the technology."""
-    freelancer_id = apply_freelancer(clean_hub, nome="Ruby")
+    freelancer_id = apply_freelancer(clean_hub, first_name="Ruby")
     card = {
         **CARD,
-        "ruolo": "Ruby on Rails developer",
-        "competenze": RUBY_SKILLS,
-        "sintesi": "Nove anni di Ruby on Rails: API e back office per l'e-commerce.",
+        "role": "Ruby on Rails developer",
+        "skills": RUBY_SKILLS,
+        "profile_summary": "Nove anni di Ruby on Rails: API e back office per l'e-commerce.",
     }
     llm = RecordingCall([card_response(card)])
 
     read = CardWriter(clean_hub, llm).write(freelancer_id)
 
     assert read.error is None and read.card is not None
-    assert read.card.ruolo == "Ruby on Rails developer"
+    assert read.card.role == "Ruby on Rails developer"
 
 
 @pytest.mark.parametrize(
     ("field", "value"),
     [
-        ("ruolo", "Ruby, backend developer"),
-        ("sintesi", "Ruby ha nove anni di Ruby on Rails e PostgreSQL."),
+        ("role", "Ruby, backend developer"),
+        ("profile_summary", "Ruby ha nove anni di Ruby on Rails e PostgreSQL."),
     ],
 )
 def test_a_first_name_that_is_also_a_skill_still_names_the_person(
     clean_hub: Session, field: str, value: str
 ) -> None:
     """The same Ruby, written as herself rather than inside «Ruby on Rails», is named."""
-    freelancer_id = apply_freelancer(clean_hub, nome="Ruby")
-    llm = RecordingCall([card_response({**CARD, "competenze": RUBY_SKILLS, field: value})])
+    freelancer_id = apply_freelancer(clean_hub, first_name="Ruby")
+    llm = RecordingCall([card_response({**CARD, "skills": RUBY_SKILLS, field: value})])
 
     read = CardWriter(clean_hub, llm).write(freelancer_id)
 
@@ -146,13 +148,17 @@ def test_a_first_name_that_is_also_a_skill_still_names_the_person(
 
 def test_a_surname_inside_a_longer_word_is_not_the_person(clean_hub: Session) -> None:
     """The guard reads whole words: «Neri» is the person, «ingegneria» is not."""
-    freelancer_id = apply_freelancer(clean_hub, cognome="Neri")
-    sintesi = "Backend developer senior, esperienza in ingegneria del software e fintech."
-    llm = RecordingCall([card_response({**CARD, "sintesi": sintesi})])
+    freelancer_id = apply_freelancer(clean_hub, last_name="Neri")
+    profile_summary = "Backend developer senior, esperienza in ingegneria del software e fintech."
+    llm = RecordingCall([card_response({**CARD, "profile_summary": profile_summary})])
 
     read = CardWriter(clean_hub, llm).write(freelancer_id)
 
-    assert read.error is None and read.card is not None and read.card.sintesi == sintesi
+    assert (
+        read.error is None
+        and read.card is not None
+        and read.card.profile_summary == profile_summary
+    )
 
 
 # What the preview's cards wrote (REB-574): a feminine role and a feminine participle.
@@ -161,7 +167,7 @@ def test_a_surname_inside_a_longer_word_is_not_the_person(clean_hub: Session) ->
 def test_the_prompt_keeps_the_gender_out() -> None:
     """REB-574: the card never tells the person's gender, and the rule saying so is the
     prompt's, in Italian, beside the ones it already had."""
-    cv = CvText(filename="cv.pdf", pagine=1, testo="Backend developer, Python.", troncato=False)
+    cv = CvText(filename="cv.pdf", pages=1, text="Backend developer, Python.", truncated=False)
     system = card_prompt(cv, "Backend developer").system
 
     assert "La scheda non rivela mai il genere della persona." in system
@@ -176,7 +182,7 @@ def test_the_prompt_keeps_the_gender_out() -> None:
     for kept in (
         "Write every text in Italian",
         "Never write the person's name",
-        "Name a place only in luogo",
+        "Name a place only in location",
         "Use only what the CV says",
     ):
         assert kept in system
@@ -187,26 +193,34 @@ def test_the_prompt_keeps_the_gender_out() -> None:
 @pytest.mark.parametrize(
     ("field", "value", "words"),
     [
-        ("ruolo", "Sviluppatrice backend", ["sviluppatrice"]),
-        ("ruolo", "Co-fondatrice e CTO", ["co-fondatrice"]),
-        ("ruolo", "Avvocata e legal engineer", ["avvocata"]),
-        ("sintesi", "Dottoressa in informatica, nove anni di backend.", ["dottoressa"]),
-        ("sintesi", "Lei ha guidato la migrazione a Kubernetes.", ["lei"]),
-        ("sintesi", "Nove anni di Python: la candidata ha guidato un team.", ["la candidata"]),
-        ("sintesi", "Backend: una senior con nove anni di AWS.", ["una senior"]),
-        ("sintesi", "Un’analista dei dati con nove anni di SQL.", ["un’analista"]),
+        ("role", "Sviluppatrice backend", ["sviluppatrice"]),
+        ("role", "Co-fondatrice e CTO", ["co-fondatrice"]),
+        ("role", "Avvocata e legal engineer", ["avvocata"]),
+        ("profile_summary", "Dottoressa in informatica, nove anni di backend.", ["dottoressa"]),
+        ("profile_summary", "Lei ha guidato la migrazione a Kubernetes.", ["lei"]),
+        (
+            "profile_summary",
+            "Nove anni di Python: la candidata ha guidato un team.",
+            ["la candidata"],
+        ),
+        ("profile_summary", "Backend: una senior con nove anni di AWS.", ["una senior"]),
+        ("profile_summary", "Un’analista dei dati con nove anni di SQL.", ["un’analista"]),
         # A participle only where nothing but the person can be its noun.
-        ("sintesi", "Esperta in Kubernetes e AWS.", ["esperta"]),
-        ("sintesi", "Nove anni di backend. Laureata in informatica.", ["laureata"]),
-        ("sintesi", "È specializzata in API Python.", ["specializzata"]),
-        ("sintesi", "Nove anni di backend ed è certificata AWS.", ["certificata"]),
-        ("sintesi", "Il profilo appassionata di UX, nove anni.", ["appassionata"]),
-        ("sintesi", "Un'esperta di dati, e una diplomata in ragioneria.", ["esperta", "diplomata"]),
-        ("competenze", ["Python", "Certificata AWS Solutions Architect"], ["certificata"]),
+        ("profile_summary", "Esperta in Kubernetes e AWS.", ["esperta"]),
+        ("profile_summary", "Nove anni di backend. Laureata in informatica.", ["laureata"]),
+        ("profile_summary", "È specializzata in API Python.", ["specializzata"]),
+        ("profile_summary", "Nove anni di backend ed è certificata AWS.", ["certificata"]),
+        ("profile_summary", "Il profilo appassionata di UX, nove anni.", ["appassionata"]),
+        (
+            "profile_summary",
+            "Un'esperta di dati, e una diplomata in ragioneria.",
+            ["esperta", "diplomata"],
+        ),
+        ("skills", ["Python", "Certificata AWS Solutions Architect"], ["certificata"]),
         # After a comma, a semicolon or a colon it follows the role: the preview's form.
-        ("sintesi", "Backend developer, specializzata in API Python.", ["specializzata"]),
-        ("sintesi", "Nove anni di backend; esperta di AWS.", ["esperta"]),
-        ("ruolo", "Sviluppatrice, esperta di cloud", ["sviluppatrice", "esperta"]),
+        ("profile_summary", "Backend developer, specializzata in API Python.", ["specializzata"]),
+        ("profile_summary", "Nove anni di backend; esperta di AWS.", ["esperta"]),
+        ("role", "Sviluppatrice, esperta di cloud", ["sviluppatrice", "esperta"]),
     ],
 )
 def test_the_guard_reads_what_refers_to_the_person(
@@ -223,16 +237,19 @@ def test_the_guard_reads_what_refers_to_the_person(
     ("field", "value"),
     [
         # A participle after another noun is that noun's.
-        ("sintesi", "Nove anni per un'agenzia specializzata in SEO e API Python."),
-        ("sintesi", "Ha migrato una piattaforma certificata PCI DSS su AWS."),
-        ("sintesi", "Backend per una startup fintech laureata in un acceleratore."),
-        ("competenze", ["Posta elettronica certificata", "Python"]),
+        ("profile_summary", "Nove anni per un'agenzia specializzata in SEO e API Python."),
+        ("profile_summary", "Ha migrato una piattaforma certificata PCI DSS su AWS."),
+        ("profile_summary", "Backend per una startup fintech laureata in un acceleratore."),
+        ("skills", ["Posta elettronica certificata", "Python"]),
         # The endings of a role are not a role.
-        ("competenze", ["Matrice RACI", "Rigging per attrice virtuale", "Calcolatrice"]),
-        ("sintesi", "Il profilo ha seguito la stessa commessa per nove anni."),
+        ("skills", ["Matrice RACI", "Rigging per attrice virtuale", "Calcolatrice"]),
+        ("profile_summary", "Il profilo ha seguito la stessa commessa per nove anni."),
         # A word that starts like a listed one, and the masculine the prompt asks for.
-        ("sintesi", "Il profilo, specializzato in API: esperienza in ingegneria del software."),
-        ("settori", ["editoria", "consulenza"]),
+        (
+            "profile_summary",
+            "Il profilo, specializzato in API: esperienza in ingegneria del software.",
+        ),
+        ("industries", ["editoria", "consulenza"]),
     ],
 )
 def test_the_guard_leaves_what_is_not_the_person(field: str, value: str | list[str]) -> None:
@@ -246,8 +263,8 @@ def test_a_card_that_is_not_the_person_is_written_at_once(clean_hub: Session) ->
     freelancer_id = apply_freelancer(clean_hub)
     card = {
         **CARD,
-        "competenze": ["Python", "Matrice RACI", "Rigging per attrice virtuale", "Calcolatrice"],
-        "sintesi": (
+        "skills": ["Python", "Matrice RACI", "Rigging per attrice virtuale", "Calcolatrice"],
+        "profile_summary": (
             "Il profilo, specializzato in API, ha seguito la stessa commessa per "
             "un'agenzia specializzata in SEO e migrato una piattaforma certificata PCI DSS."
         ),
@@ -291,7 +308,7 @@ def test_a_gendered_card_is_asked_again_once_and_the_neutral_one_is_written(
     assert answered == LlmMessage(
         role="assistant",
         text=json.dumps(
-            {"card": SVILUPPATRICE, "fonti": FONTI, "employers": [], "persona": NO_PERSONA}
+            {"card": SVILUPPATRICE, "sources": SOURCES, "employers": [], "person": NO_PERSON}
         ),
     )
     assert corrected == LlmMessage(
@@ -318,7 +335,7 @@ def test_a_card_still_gendered_after_the_rewrite_is_failed_and_not_written(
     error and no card, the failed CV's hash is kept so the same file is not paid for
     again, and the log names the kind, never the words."""
     freelancer_id = apply_freelancer(clean_hub)
-    still = {**CARD, "sintesi": "Lei scrive API in Python e cura l'infrastruttura AWS."}
+    still = {**CARD, "profile_summary": "Lei scrive API in Python e cura l'infrastruttura AWS."}
     llm = RecordingCall([card_response(SVILUPPATRICE), card_response(still), card_response()])
     writer = CardWriter(clean_hub, llm, now=lambda: NOW)
 
@@ -345,7 +362,7 @@ def test_a_card_still_gendered_after_the_rewrite_is_failed_and_not_written(
 @pytest.mark.parametrize(
     "retry",
     [
-        card_response({**CARD, "sintesi": "Il profilo di Lovelace."}),
+        card_response({**CARD, "profile_summary": "Il profilo di Lovelace."}),
         card_response(stop_reason="refusal"),
         card_response(text="non una scheda"),
     ],
@@ -430,18 +447,20 @@ def test_refresh_stale_counts_a_gendered_card_as_failed(clean_hub: Session) -> N
 
 def test_a_surname_that_is_a_place_or_a_language_is_the_cvs_own(clean_hub: Session) -> None:
     """Messina, Ferrara, Russo, Greco: a surname can be the city the CV names or a
-    language the person speaks, so `luogo` and `lingue` are not read for the surname;
+    language the person speaks, so `location` and `languages` are not read for the surname;
     the same word in the summary is still the person."""
-    freelancer_id = apply_freelancer(clean_hub, cognome="Messina")
+    freelancer_id = apply_freelancer(clean_hub, last_name="Messina")
     llm = RecordingCall(
         [
-            card_response({**CARD, "luogo": "Messina"}),
-            card_response({**CARD, "luogo": "Messina", "sintesi": "Il profilo di Messina."}),
+            card_response({**CARD, "location": "Messina"}),
+            card_response(
+                {**CARD, "location": "Messina", "profile_summary": "Il profilo di Messina."}
+            ),
         ]
     )
 
     placed = CardWriter(clean_hub, llm).write(freelancer_id)
-    assert placed.error is None and placed.card is not None and placed.card.luogo == "Messina"
+    assert placed.error is None and placed.card is not None and placed.card.location == "Messina"
 
     named = CardWriter(clean_hub, llm).write(freelancer_id, force=True)
     assert named.error == IDENTIFYING
@@ -451,9 +470,9 @@ def test_http_as_a_skill_is_not_a_link(clean_hub: Session) -> None:
     """A link has a scheme: «HTTP/2» and «REST/HTTP» are a backend developer's skills,
     and a card listing them is not one to park until the CV changes."""
     freelancer_id = apply_freelancer(clean_hub)
-    competenze = ["Python", "HTTP/2", "REST/HTTP"]
-    llm = RecordingCall([card_response({**CARD, "competenze": competenze})])
+    skills = ["Python", "HTTP/2", "REST/HTTP"]
+    llm = RecordingCall([card_response({**CARD, "skills": skills})])
 
     read = CardWriter(clean_hub, llm).write(freelancer_id)
 
-    assert read.error is None and read.card is not None and read.card.competenze == competenze
+    assert read.error is None and read.card is not None and read.card.skills == skills

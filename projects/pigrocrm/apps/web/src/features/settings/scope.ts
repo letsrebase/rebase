@@ -6,11 +6,11 @@ import type { LegalEntityRecord } from '@/lib/legalEntity'
  *  for the whole space, the names of their aziende, or that none of them is active any
  *  more, which the server never widens back to «tutte» (§1.11). */
 export function scopeLabel(
-  aziende: string[] | null | undefined,
+  legal_entities: string[] | null | undefined,
   byId: (id: string) => LegalEntityRecord | undefined,
 ): string {
-  if (!Array.isArray(aziende)) return 'Tutte'
-  const names = aziende.map((id) => byId(id)?.nome).filter((nome): nome is string => !!nome)
+  if (!Array.isArray(legal_entities)) return 'Tutte'
+  const names = legal_entities.map((id) => byId(id)?.name).filter((name): name is string => !!name)
   return names.length > 0 ? names.join(', ') : 'nessuna azienda attiva'
 }
 

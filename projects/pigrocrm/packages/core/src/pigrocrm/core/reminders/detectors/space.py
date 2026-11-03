@@ -5,11 +5,11 @@ section are `space_fiscal.py`.
 **Recipients are admins and nobody else** (§3.5, §4): `Directory.admins()`, and never the
 space's owner as a fallback, so a space with no admin who may read the subject raises
 nothing. A scoped admin is the one question the card leaves open, and it is decided the way
-the rest of the product decides it: a subject of one azienda goes to the admins whose scope
+the rest of the product decides it: a subject of one legal entity goes to the admins whose scope
 covers it (`Person.sees`, the rule of §4), and a subject of the space as a whole, which
-has no azienda, goes to the unscoped admins, which is exactly who may close a period
+has no legal entity, goes to the unscoped admins, which is exactly who may close a period
 (`PeriodLockService.close_period` requires an unscoped admin) and who may read a connection
-that belongs to nobody's azienda. `admins_seeing` is that decision, written once.
+that belongs to nobody's legal entity. `admins_seeing` is that decision, written once.
 
 **Nothing here is stored and nothing is invented.** A job can be late only if something
 records when it last ran: the reminder pass, the automations' daily pass and the weekly
@@ -40,7 +40,7 @@ from pigrocrm.core.gmail.schemas import SCOPE_READONLY
 from pigrocrm.core.proposals.models import Proposal
 from pigrocrm.core.reminders.catalogue import LADDER_MAX, REMINDER_TYPES
 from pigrocrm.core.reminders.detect import Detection, Detector, DetectorContext
-from pigrocrm.core.reminders.detectors.text import counted, giorni, ore
+from pigrocrm.core.reminders.detectors.text import counted, format_days, format_hours
 from pigrocrm.core.reminders.jobs import JOBS_BY_KEY, REMINDER_PASS_JOB, SCHEDULED_JOBS
 from pigrocrm.core.reminders.models import ReminderJobRun
 from pigrocrm.core.timetracking.locks import period_label
@@ -52,43 +52,43 @@ FAILING = REMINDER_TYPES["connection_failing"]
 LATE = REMINDER_TYPES["job_late"]
 
 
-def admins_seeing(ctx: DetectorContext, azienda_id: UUID | None) -> frozenset[UUID]:
-    """The admins who may be told about a subject of this azienda, or of the space as a
-    whole when `azienda_id` is `None` (only an unscoped admin reads that). No fallback to
+def admins_seeing(ctx: DetectorContext, legal_entity_id: UUID | None) -> frozenset[UUID]:
+    """The admins who may be told about a subject of this legal entity, or of the space as a
+    whole when `legal_entity_id` is `None` (only an unscoped admin reads that). No fallback to
     the space's owner: an empty set raises nothing."""
     directory = ctx.directory
     return frozenset(
-        user_id for user_id in directory.admins() if directory.people[user_id].sees(azienda_id)
+        user_id for user_id in directory.admins() if directory.people[user_id].sees(legal_entity_id)
     )
 
 
 # -- month_not_closed ---------------------------------------------------------------------
 
 
-def period_subject(anno: int, mese: int) -> UUID:
+def period_subject(year: int, month: int) -> UUID:
     """The subject id of a month. `period_locks` has no UUID key (`(anno, mese)` is its
     identity), a reminder's key needs one, and the web opens a month by its number: so the
     id carries the month, `anno * 100 + mese` as the integer of the UUID, and
     `subject_period` reads it back."""
-    return UUID(int=anno * 100 + mese)
+    return UUID(int=year * 100 + month)
 
 
 def subject_period(subject_id: UUID) -> tuple[int, int]:
-    anno, mese = divmod(subject_id.int, 100)
-    return anno, mese
+    year, month = divmod(subject_id.int, 100)
+    return year, month
 
 
 def _closes_periods(ctx: DetectorContext) -> bool:
     """«The space closes periods»: somebody has closed one. Closing is never mandatory
     (`timetracking/locks.py`), so a space that never did gets nothing."""
-    return ctx.session.scalar(select(PeriodLock.anno).limit(1)) is not None
+    return ctx.session.scalar(select(PeriodLock.year).limit(1)) is not None
 
 
 def _months_from(first: tuple[int, int]) -> Iterable[tuple[int, int]]:
-    anno, mese = first
+    year, month = first
     while True:
-        yield anno, mese
-        anno, mese = (anno + 1, 1) if mese == 12 else (anno, mese + 1)
+        yield year, month
+        year, month = (year + 1, 1) if month == 12 else (year, month + 1)
 
 
 def detect_not_closed(ctx: DetectorContext) -> list[Detection]:
@@ -96,32 +96,32 @@ def detect_not_closed(ctx: DetectorContext) -> list[Detection]:
     days ago, which has no lock. A month before the first lock is not counted: the space
     began closing later, and the months it never closed are not a ritual it skipped."""
     closed = {
-        (row.anno, row.mese)
-        for row in ctx.session.execute(select(PeriodLock.anno, PeriodLock.mese))
+        (row.year, row.month)
+        for row in ctx.session.execute(select(PeriodLock.year, PeriodLock.month))
     }
     if not closed:
         return []
     recipients = admins_seeing(ctx, None)
     cutoff = ctx.today - timedelta(days=max(ctx.bound(NOT_CLOSED), 1))
     found: list[Detection] = []
-    for anno, mese in _months_from(min(closed)):
-        last_day = month_bounds(anno, mese)[1]
+    for year, month in _months_from(min(closed)):
+        last_day = month_bounds(year, month)[1]
         if last_day > cutoff:
             break
-        if (anno, mese) in closed or not recipients:
+        if (year, month) in closed or not recipients:
             continue
         days = (ctx.today - last_day).days
-        subject = period_subject(anno, mese)
+        subject = period_subject(year, month)
         found.append(
             Detection(
                 type="month_not_closed",
                 subject_id=subject,
                 measure=float(days),
                 recipients=recipients,
-                title=f"Mese non chiuso: {period_label(anno, mese)}",
+                title=f"Mese non chiuso: {period_label(year, month)}",
                 detail=(
-                    f"{period_label(anno, mese).capitalize()} è finito da "
-                    f"{giorni(days)} e non è "
+                    f"{period_label(year, month).capitalize()} è finito da "
+                    f"{format_days(days)} e non è "
                     "stato chiuso: finché è aperto, ore e costi del mese possono ancora cambiare"
                 ),
                 entity="period",
@@ -138,25 +138,25 @@ def detect_not_closed(ctx: DetectorContext) -> list[Detection]:
 # listed a thousand would bury the list it exists to keep short.
 MAX_PROPOSALS: Final = 100
 
-_WHAT = {"contratto": "La bozza di contratto", "giornata": "La giornata proposta"}
+_WHAT = {"contract": "La bozza di contratto", "work_unit": "La giornata proposta"}
 
 
 def detect_pending(ctx: DetectorContext) -> list[Detection]:
-    """Agent proposals still `in_attesa` that were created `bound` days ago or earlier,
+    """Agent proposals still `pending` that were created `bound` days ago or earlier,
     counted in the installation's days, oldest first."""
     zone = ZoneInfo(ctx.timezone)
     cutoff_day = ctx.today - timedelta(days=max(ctx.bound(PENDING), 1))
     cutoff = datetime.combine(cutoff_day + timedelta(days=1), time.min, tzinfo=zone)
     rows = ctx.session.execute(
-        select(Proposal, Contract.titolo, Contract.azienda_id, Contract.customer_id)
+        select(Proposal, Contract.title, Contract.legal_entity_id, Contract.customer_id)
         .outerjoin(Contract, Contract.id == Proposal.contract_id)
-        .where(Proposal.stato == "in_attesa", Proposal.created_at < cutoff)
+        .where(Proposal.status == "pending", Proposal.created_at < cutoff)
         .order_by(Proposal.created_at, Proposal.id)
         .limit(MAX_PROPOSALS)
     )
     found: list[Detection] = []
-    for proposal, contract_title, azienda_id, customer_id in rows:
-        recipients = admins_seeing(ctx, azienda_id)
+    for proposal, contract_title, legal_entity_id, customer_id in rows:
+        recipients = admins_seeing(ctx, legal_entity_id)
         if not recipients:
             continue
         days = (ctx.today - proposal.created_at.astimezone(zone).date()).days
@@ -169,10 +169,10 @@ def detect_pending(ctx: DetectorContext) -> list[Detection]:
                 measure=float(days),
                 recipients=recipients,
                 title="Proposta in attesa di una decisione",
-                detail=(f"{what} aspetta da {giorni(days)}: accettala o rifiutala{about}"),
+                detail=(f"{what} aspetta da {format_days(days)}: accettala o rifiutala{about}"),
                 entity="proposal",
                 entity_id=proposal.id,
-                azienda_id=azienda_id,
+                legal_entity_id=legal_entity_id,
                 customer_id=customer_id,
             )
         )
@@ -239,7 +239,7 @@ def detect_failing(ctx: DetectorContext) -> list[Detection]:
             title = "Gmail scollegato: il consenso Google non vale più"
             detail = (
                 f"Il consenso Google per {email} è "
-                + ("stato revocato" if account.status == "revoked" else "scaduto")
+                + ("stato revocato" if account.status == "revoked" else "expired")
                 + ": la sincronizzazione e l'invio sono fermi finché non ricolleghi la casella"
             )
         elif SCOPE_READONLY in account.scopes_granted:
@@ -247,8 +247,10 @@ def detect_failing(ctx: DetectorContext) -> list[Detection]:
             if hours < floor:
                 continue
             measure = float(hours)
-            title = f"Gmail non si sincronizza da {ore(hours)}"
-            detail = f"L'ultima sincronizzazione della casella {email} è di {ore(hours)} fa"
+            title = f"Gmail non si sincronizza da {format_hours(hours)}"
+            detail = (
+                f"L'ultima sincronizzazione della casella {email} è di {format_hours(hours)} fa"
+            )
         else:
             # Without `gmail.readonly` the sync is switched off and says so in its own
             # banner; there is nothing here that failed.
@@ -279,7 +281,7 @@ def detect_failing(ctx: DetectorContext) -> list[Detection]:
                 title="Drive scollegato: il consenso Google non vale più",
                 detail=(
                     f"Il consenso Google per {drive.email_address} è "
-                    + ("stato revocato" if drive.status == "revoked" else "scaduto")
+                    + ("stato revocato" if drive.status == "revoked" else "expired")
                     + ": i file di Drive non sono raggiungibili finché non ricolleghi Drive"
                 ),
                 entity="google_connection",
@@ -367,8 +369,8 @@ def _duration(minutes: int) -> str:
     if minutes < 120:
         return counted(minutes, "minuto", "minuti")
     if minutes < 48 * 60:
-        return ore(minutes // 60)
-    return giorni(minutes // (24 * 60))
+        return format_hours(minutes // 60)
+    return format_days(minutes // (24 * 60))
 
 
 DETECTORS = (

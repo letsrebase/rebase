@@ -52,13 +52,13 @@ from pigrocrm.core.customers.service import CustomerService
 from pigrocrm.core.db.clock import today_local
 from pigrocrm.core.deals.schemas import DealCreate
 from pigrocrm.core.deals.service import DealService
-from pigrocrm.core.emitter.schemas import LegalEntityUpsert
-from pigrocrm.core.emitter.service import LegalEntityService
 from pigrocrm.core.errors import ImmutableField
 from pigrocrm.core.fiscal.schemas import FiscalProfileUpsert
 from pigrocrm.core.fiscal.service import FiscalProfileService
 from pigrocrm.core.invoices.schemas import InvoiceIssue
 from pigrocrm.core.invoices.service import InvoiceService
+from pigrocrm.core.legal_entities.schemas import LegalEntityUpsert
+from pigrocrm.core.legal_entities.service import LegalEntityService
 from pigrocrm.core.pipeline.service import PipelineService
 from pigrocrm.core.storage import LocalFileStorage
 from pigrocrm.core.timetracking.billing import TimeBilling
@@ -67,17 +67,17 @@ from pigrocrm.core.timetracking.service import TimeEntryService
 
 # The agent, identical to `conftest.py`'s own `ADMIN`, which is what the `server` fixture
 # hands every tool call.
-AGENTE = Actor(id=None, type="mcp", role="admin")
+AGENT_ACTOR = Actor(id=None, type="mcp", role="admin")
 
-# Never a literal year: `invoices.checks.check_issue_date` refuses a `data_emissione`
+# Never a literal year: `invoices.checks.check_issue_date` refuses a `issue_date`
 # outside the current one, so a hard-coded date would be a test that starts failing on the
 # first of January -- the same reason `apps/api/tests/test_analytics_api.py` derives its
 # own window at runtime.
-OGGI = today_local()
+TODAY = today_local()
 
-TARIFFA = Decimal("100.000000")
-COSTO = Decimal("30.000000")
-ORE = Decimal("8.00")
+RATE = Decimal("100.000000")
+COST = Decimal("30.000000")
+HOURS = Decimal("8.00")
 
 
 @pytest.fixture
@@ -86,7 +86,7 @@ def cycle(mcp_session: Session, tmp_path: Path) -> dict[str, Any]:
     letterhead, a customer complete enough to be *invoiced*, a priced deal, the person
     whose hours these are, and the human who decides.
 
-    The customer carries the four address parts, the P.IVA and the `codice_sdi` because
+    The customer carries the four address parts, the P.IVA and the `sdi_code` because
     `check_party_exportable` and `check_recipient_routing` both run inside `issue`, before
     a register number is consumed, and refuse a recipient missing any of them. Without
     them the emission fails on the customer record rather than on anything this test is
@@ -99,70 +99,70 @@ def cycle(mcp_session: Session, tmp_path: Path) -> dict[str, Any]:
     # longer holds: an admin's agent may set the profile, see
     # `test_fiscal_identity_tools.py`.)
     FiscalProfileService(mcp_session).upsert(
-        FiscalProfileUpsert(codice_regime="RF19"), Actor.system()
+        FiscalProfileUpsert(regime_code="RF19"), Actor.system()
     )
     LegalEntityService(mcp_session).upsert_default(
         LegalEntityUpsert(
-            ragione_sociale="Studio Rossi",
-            partita_iva="01234567890",
-            indirizzo="Via Vittorio Veneto 12",
+            legal_name="Studio Rossi",
+            vat_number="01234567890",
+            address="Via Vittorio Veneto 12",
             cap="20124",
-            comune="Milano",
-            provincia="MI",
+            city="Milano",
+            province="MI",
             email="mario@example.com",
         ),
-        AGENTE,
+        AGENT_ACTOR,
     )
     stages = PipelineService(mcp_session).seed_defaults(Actor(id=None, type="system", role="admin"))
     customer = CustomerService(mcp_session).create(
         CustomerCreate(
-            ragione_sociale="Acme S.r.l.",
-            partita_iva="12345678901",
-            codice_sdi="ABCDEFG",
-            indirizzo="Corso Italia 5",
+            legal_name="Acme S.r.l.",
+            vat_number="12345678901",
+            sdi_code="ABCDEFG",
+            address="Corso Italia 5",
             cap="00100",
-            comune="Roma",
-            provincia="RM",
-            nazione="IT",
+            city="Roma",
+            province="RM",
+            country="IT",
         ),
-        AGENTE,
+        AGENT_ACTOR,
     )
     deal = DealService(mcp_session).create(
-        DealCreate(nome="Progetto Ciclo", customer_id=customer.id, tariffa_oraria=TARIFFA),
-        AGENTE,
+        DealCreate(name="Progetto Ciclo", customer_id=customer.id, hourly_rate=RATE),
+        AGENT_ACTOR,
     )
     worker = UserService(mcp_session).create(
         UserCreate(
             email="worker-full-cycle@pigro.it",
             password="supersegreta1",
-            nome="Worker",
-            ruolo="collaboratore",
-            costo_orario_default=COSTO,
+            name="Worker",
+            role="collaborator",
+            default_hourly_cost=COST,
         ),
         Actor.system(),
     )
-    umano = UserService(mcp_session).create(
+    human_user = UserService(mcp_session).create(
         UserCreate(
             email="umano-full-cycle@pigro.it",
             password="supersegreta1",
-            nome="Umano",
-            ruolo="admin",
+            name="Umano",
+            role="admin",
         ),
         Actor.system(),
     )
     return {
         "deal_id": deal.id,
         "user_id": worker.id,
-        "vinto_id": next(stage.id for stage in stages if stage.code == "vinto"),
+        "won_id": next(stage.id for stage in stages if stage.code == "won"),
         # `type="user"` with a real id: exactly the Actor `get_actor` builds from a cookie
         # login, and the only reason the timeline assertion at the end can tell the two
         # halves of this test apart at all.
-        "umano": Actor(id=umano.id, type="user", role="admin"),
+        "umano": Actor(id=human_user.id, type="user", role="admin"),
         # `bind_to_invoice` reaches `InvoiceService`, whose constructor takes a
         # backend because a *later* emission renders artefacts through it. A tmp-dir
         # backend for the same reason the `server` fixture builds one: the default root is
         # this repository's own working tree.
-        "storage": LocalFileStorage(tmp_path / "fatture"),
+        "storage": LocalFileStorage(tmp_path / "invoices"),
     }
 
 
@@ -171,7 +171,7 @@ def _revenue_from_sql(session: Session, deal_id: UUID) -> Decimal:
     conditions written out by hand.
 
     Deliberately not `AnalyticsRepository.deal_revenue`: a reconciliation that calls the
-    method under test reconciles nothing. `imponibile`, never `totale` -- the total carries
+    method under test reconciles nothing. `taxable_amount`, never `total` -- the total carries
     VAT, which is money collected on the State's behalf and is not revenue (criterion 1).
     Under the forfettario the two coincide, which is exactly why the distinction has to be
     written down somewhere it can be read.
@@ -179,8 +179,8 @@ def _revenue_from_sql(session: Session, deal_id: UUID) -> Decimal:
     return Decimal(
         session.execute(
             text(
-                "SELECT COALESCE(SUM(imponibile), 0) FROM invoices "
-                "WHERE deal_id = :id AND tipo = 'fattura' AND stato = 'emessa' "
+                "SELECT COALESCE(SUM(taxable_amount), 0) FROM invoices "
+                "WHERE deal_id = :id AND type = 'invoice' AND status = 'issued' "
                 "  AND deleted_at IS NULL"
             ),
             {"id": deal_id},
@@ -192,7 +192,7 @@ async def test_the_full_cycle_ends_on_the_tool_an_agent_cannot_find(
     server: Any, mcp_session: Session, cycle: dict[str, Any]
 ) -> None:
     deal_id: UUID = cycle["deal_id"]
-    umano: Actor = cycle["umano"]
+    human_user: Actor = cycle["umano"]
     storage: LocalFileStorage = cycle["storage"]
 
     # 1. Claude records the hours and reads the deal back.
@@ -202,21 +202,21 @@ async def test_the_full_cycle_ends_on_the_tool_an_agent_cannot_find(
             {
                 "deal_id": str(deal_id),
                 "user_id": str(cycle["user_id"]),
-                "data": OGGI.isoformat(),
+                "date": TODAY.isoformat(),
                 # A string with two decimal places, not a bare `8`: a JSON integer arrives
                 # as a Python float whose `Decimal` conversion carries only as many places
                 # as the float itself. `test_timetracking_tools.py` states the same reason
                 # at its own call site.
-                "ore": str(ORE),
-                "descrizione": "Analisi e sviluppo",
+                "hours": str(HOURS),
+                "description": "Analisi e sviluppo",
             },
         )
         entry_id = UUID(logged.structured_content["id"])
         # The rate was resolved from the deal at write time and frozen onto the row --
-        # from here on nothing reads `deals.tariffa_oraria` again, which is why raising it
+        # from here on nothing reads `deals.hourly_rate` again, which is why raising it
         # tomorrow cannot move this hour.
-        assert logged.structured_content["tariffa_applicata"] == "100.000000"
-        assert logged.structured_content["tariffa_origine"] == "deal"
+        assert logged.structured_content["applied_rate"] == "100.000000"
+        assert logged.structured_content["rate_source"] == "deal"
 
         rendered = (await client.read_resource(f"deal://{deal_id}")).contents[0].text
         assert "- Ore consuntivate: 8.00" in rendered
@@ -244,55 +244,57 @@ async def test_the_full_cycle_ends_on_the_tool_an_agent_cannot_find(
     #    inherits. The link-based reading would leave the work in neither figure: priced,
     #    done, and invisible until somebody pressed "issue".
     draft = TimeBilling(mcp_session, storage).bind_to_invoice(
-        deal_id, BindTimeRequest(entry_ids=[entry_id], raggruppa_per_mese=True), umano
+        deal_id, BindTimeRequest(entry_ids=[entry_id], group_by_month=True), human_user
     )
-    assert draft.stato == "bozza"
-    assert draft.imponibile == Decimal("800.00")
+    assert draft.status == "draft"
+    assert draft.taxable_amount == Decimal("800.00")
 
-    pending = AnalyticsService(mcp_session).deal_pnl(deal_id, umano)
-    assert pending.ricavi == Decimal("0.00") == _revenue_from_sql(mcp_session, deal_id)
-    assert pending.ore_fatturabili_non_fatturate == Decimal("8.00")
+    pending = AnalyticsService(mcp_session).deal_pnl(deal_id, human_user)
+    assert pending.revenue == Decimal("0.00") == _revenue_from_sql(mcp_session, deal_id)
+    assert pending.billable_uninvoiced_hours == Decimal("8.00")
 
     # 4. ...and then issues it, which is the step that makes it revenue -- and the step
     #    with no MCP tool behind it (slice 3 §11).
-    issued = InvoiceService(mcp_session, storage).issue(draft.id, InvoiceIssue(), umano)
-    assert issued.numero is not None
-    assert issued.anno == OGGI.year
+    issued = InvoiceService(mcp_session, storage).issue(draft.id, InvoiceIssue(), human_user)
+    assert issued.number is not None
+    assert issued.year == TODAY.year
 
-    # 5. The deal is won, so its margin earns the right to stop being provisional: `stato`
-    #    is `chiuso` only when the stage is not `open` *and* nothing billable is left
+    # 5. The deal is won, so its margin earns the right to stop being provisional: `status`
+    #    is `closed` only when the stage is not `open` *and* nothing billable is left
     #    unbilled. Both halves are now true, and neither alone would have been enough.
-    DealService(mcp_session).move_stage(deal_id, cycle["vinto_id"], umano)
+    DealService(mcp_session).move_stage(deal_id, cycle["won_id"], human_user)
 
     # 6. Criterion 1, against direct SQL rather than a second call to the method checked.
-    pnl = AnalyticsService(mcp_session).deal_pnl(deal_id, umano)
-    assert pnl.ricavi == _revenue_from_sql(mcp_session, deal_id) == Decimal("800.00")
-    assert pnl.stato == "chiuso"
-    assert pnl.fatture_emesse == 1
-    assert pnl.ore_fatturabili_non_fatturate == Decimal("0.00")
-    assert pnl.costo_lavoro == Decimal("240.00")
-    assert pnl.margine_lordo == Decimal("560.00")
+    pnl = AnalyticsService(mcp_session).deal_pnl(deal_id, human_user)
+    assert pnl.revenue == _revenue_from_sql(mcp_session, deal_id) == Decimal("800.00")
+    assert pnl.status == "closed"
+    assert pnl.issued_invoices == 1
+    assert pnl.billable_uninvoiced_hours == Decimal("0.00")
+    assert pnl.work_cost == Decimal("240.00")
+    assert pnl.gross_margin == Decimal("560.00")
     # The hours are invoiced, so the accrued estimate carries nothing the revenue does not
     # already carry -- and from here on the figure is the invoice.
-    assert pnl.valore_maturato == pnl.ricavi
+    assert pnl.accrued_value == pnl.revenue
 
     # 7. The hour is frozen. Not because `issue()` went looking for it: the link was
     #    written when the draft line was born, and `billed_entry_ids` reads the *invoice's*
     #    state through it -- which is why the same hour was still editable one step ago.
     with pytest.raises(ImmutableField) as refusal:
-        TimeEntryService(mcp_session).update(entry_id, TimeEntryUpdate(ore=Decimal("9.00")), umano)
-    assert refusal.value.details["field"] == "ore"
+        TimeEntryService(mcp_session).update(
+            entry_id, TimeEntryUpdate(hours=Decimal("9.00")), human_user
+        )
+    assert refusal.value.details["field"] == "hours"
     assert refusal.value.code == "immutable_field"
 
     # 8. The timeline tells the two actors apart -- which is the whole reason an agent is
     #    allowed to write at all: everything it did is attributable to it, by name.
     timeline = ActivityService(mcp_session).timeline("deal", deal_id, 200)
-    tipi_attore = {entry.actor_type for entry in timeline}
-    assert {"mcp", "user"} <= tipi_attore
-    umani = {entry.kind for entry in timeline if entry.actor_type == "user"}
-    agente = {entry.kind for entry in timeline if entry.actor_type == "mcp"}
-    assert "time_bound_to_invoice" in umani
-    assert "time_bound_to_invoice" not in agente
+    actor_types = {entry.actor_type for entry in timeline}
+    assert {"mcp", "user"} <= actor_types
+    human_kinds = {entry.kind for entry in timeline if entry.actor_type == "user"}
+    agent_kinds = {entry.kind for entry in timeline if entry.actor_type == "mcp"}
+    assert "time_bound_to_invoice" in human_kinds
+    assert "time_bound_to_invoice" not in agent_kinds
 
     # 9. And Claude, reading the same resource again, sees the decision it could not take.
     async with Client(server) as client:

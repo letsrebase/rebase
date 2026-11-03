@@ -16,41 +16,41 @@ const CUSTOMER_ID = '5b0d7190-0000-4000-8000-000000000002'
 
 const DAY = {
   contract_id: CONTRACT_ID,
-  data: '2026-11-05',
-  quantita: 1,
-  descrizione: 'Sopralluogo al magazzino di Verona',
-  approvazione: {
-    canale: 'email',
-    mittente: 'giulia.bianchi@nordwind.example',
-    ricevuto_il: '2026-10-21T09:12:00Z',
+  date: '2026-11-05',
+  quantity: 1,
+  description: 'Sopralluogo al magazzino di Verona',
+  approval: {
+    channel: 'email',
+    sender: 'giulia.bianchi@nordwind.example',
+    received_at: '2026-10-21T09:12:00Z',
   },
 }
 
 const CONTRACT = {
   contract: {
     customer_id: CUSTOMER_ID,
-    titolo: 'Consulenza fiscale 2027',
-    inizio: '2027-01-01',
-    fine: '2027-12-31',
-    tipo_rinnovo: 'tacito',
-    preavviso_rinnovo_giorni: 90,
-    preavviso_disdetta_giorni: 60,
-    giorni_pagamento: 30,
-    pagamento_fine_mese: true,
-    cadenza_fatturazione: 'mensile',
-    divisa: 'EUR',
+    title: 'Consulenza fiscale 2027',
+    start: '2027-01-01',
+    end: '2027-12-31',
+    renewal_type: 'tacit',
+    renewal_notice_days: 90,
+    termination_notice_days: 60,
+    payment_days: 30,
+    payment_end_of_month: true,
+    billing_cadence: 'monthly',
+    currency: 'EUR',
     requires_prior_approval: false,
     applies_social_charge: true,
     note: null,
   },
   rate_card: {
-    tipo: 'ricorrente_fisso',
-    unita: 'mese',
-    importo: '1800.00',
-    valido_da: '2027-01-01',
-    valido_a: null,
-    ore_minime: null,
-    periodo_erogazione: 'mensile',
+    type: 'fixed_recurring',
+    unit: 'month',
+    amount: '1800.00',
+    valid_from: '2027-01-01',
+    valid_to: null,
+    minimum_hours: null,
+    delivery_period: 'monthly',
   },
 }
 
@@ -64,12 +64,12 @@ function rowsOf(description: ProposalDescription, group: string) {
 }
 
 /** A proposal as the queue holds it: nothing decided, nothing accepted yet. */
-function waiting(target_type: 'contratto' | 'giornata', campi_proposti: Record<string, unknown>) {
-  return { target_type, campi_proposti, campi_accettati: null, stato: 'in_attesa' }
+function waiting(target_type: 'contract' | 'work_unit', proposed_fields: Record<string, unknown>) {
+  return { target_type, proposed_fields, accepted_fields: null, status: 'pending' }
 }
 
 describe('describeProposal, a day', () => {
-  const description = describeProposal(waiting('giornata', DAY))
+  const description = describeProposal(waiting('work_unit', DAY))
 
   it('titles the proposal with its date and quantity and names the contract it is for', () => {
     expect(description.title).toBe('Giornata del 05/11/2026 · 1 gg')
@@ -80,34 +80,34 @@ describe('describeProposal, a day', () => {
   it('words the day and the approval it rests on', () => {
     expect(rowsOf(description, 'Giornata')).toEqual({
       Data: '05/11/2026',
-      Quantità: '1 giorno',
-      Descrizione: 'Sopralluogo al magazzino di Verona',
+      'Quantità': '1 giorno',
+      'Descrizione': 'Sopralluogo al magazzino di Verona',
     })
     expect(rowsOf(description, 'Approvazione del cliente')).toEqual({
-      Canale: 'Email',
-      Mittente: 'giulia.bianchi@nordwind.example',
+      'Canale': 'Email',
+      'Mittente': 'giulia.bianchi@nordwind.example',
       'Ricevuta il': '21/10/2026',
     })
   })
 
   it('shows the message the approval came with when there is one', () => {
     const withMessage = describeProposal(
-      waiting('giornata', { ...DAY, approvazione: { ...DAY.approvazione, message_id: '<abc@mail>' } }),
+      waiting('work_unit', { ...DAY, approval: { ...DAY.approval, message_id: '<abc@mail>' } }),
     )
-    expect(rowsOf(withMessage, 'Approvazione del cliente').Messaggio).toBe('<abc@mail>')
+    expect(rowsOf(withMessage, 'Approvazione del cliente')['Messaggio']).toBe('<abc@mail>')
   })
 
   it('reads a quantity sent as a decimal string and one sent as a JSON number the same way', () => {
-    const fromString = describeProposal(waiting('giornata', { ...DAY, quantita: '0.50' }))
-    const fromNumber = describeProposal(waiting('giornata', { ...DAY, quantita: 0.5 }))
+    const fromString = describeProposal(waiting('work_unit', { ...DAY, quantity: '0.50' }))
+    const fromNumber = describeProposal(waiting('work_unit', { ...DAY, quantity: 0.5 }))
     expect(fromString.title).toBe('Giornata del 05/11/2026 · 0,5 gg')
     expect(fromNumber.title).toBe(fromString.title)
-    expect(rowsOf(fromNumber, 'Giornata').Quantità).toBe('0,5 giorni')
+    expect(rowsOf(fromNumber, 'Giornata')['Quantità']).toBe('0,5 giorni')
   })
 })
 
 describe('describeProposal, a contract', () => {
-  const description = describeProposal(waiting('contratto', CONTRACT))
+  const description = describeProposal(waiting('contract', CONTRACT))
 
   it('titles the proposal with the contract and points at its customer', () => {
     expect(description.title).toBe('Consulenza fiscale 2027')
@@ -117,11 +117,11 @@ describe('describeProposal, a contract', () => {
 
   it('words the terms in the vocabulary of the contract page', () => {
     expect(rowsOf(description, 'Contratto')).toMatchObject({
-      Periodo: '01/01/2027 – 31/12/2027',
-      Rinnovo: 'Tacito rinnovo',
+      'Periodo': '01/01/2027 – 31/12/2027',
+      'Rinnovo': 'Tacito rinnovo',
       'Preavviso di rinnovo': '90 giorni',
       'Preavviso di disdetta': '60 giorni',
-      Pagamento: '30 giorni data fattura fine mese',
+      'Pagamento': '30 giorni data fattura fine mese',
       'Approvazione preventiva': 'No',
       'Rivalsa INPS': 'Sì',
     })
@@ -129,19 +129,19 @@ describe('describeProposal, a contract', () => {
 
   it('reads the whole numbers and flags a REST caller sent as strings', () => {
     const asStrings = describeProposal(
-      waiting('contratto', {
+      waiting('contract', {
         ...CONTRACT,
         contract: {
           ...CONTRACT.contract,
-          giorni_pagamento: '30',
-          pagamento_fine_mese: 'true',
-          preavviso_disdetta_giorni: '60',
+          payment_days: '30',
+          payment_end_of_month: 'true',
+          termination_notice_days: '60',
           requires_prior_approval: 'true',
         },
       }),
     )
     expect(rowsOf(asStrings, 'Contratto')).toMatchObject({
-      Pagamento: '30 giorni data fattura fine mese',
+      'Pagamento': '30 giorni data fattura fine mese',
       'Preavviso di disdetta': '60 giorni',
       'Approvazione preventiva': 'Sì',
     })
@@ -149,82 +149,82 @@ describe('describeProposal, a contract', () => {
 
   it('speaks of one day of notice in the singular', () => {
     const one = describeProposal(
-      waiting('contratto', { ...CONTRACT, contract: { ...CONTRACT.contract, preavviso_disdetta_giorni: 1 } }),
+      waiting('contract', { ...CONTRACT, contract: { ...CONTRACT.contract, termination_notice_days: 1 } }),
     )
     expect(rowsOf(one, 'Contratto')['Preavviso di disdetta']).toBe('1 giorno')
   })
 
   it('words the first rate card with its amount in the contract currency', () => {
     const rate = rowsOf(description, 'Prima scheda tariffaria')
-    expect(rate.Tipo).toBe('Canone ricorrente')
-    expect(rate.Importo?.replace(/\s/g, ' ')).toBe('1.800,00 € / mese')
-    expect(rate.Validità).toBe('dal 01/01/2027')
+    expect(rate['Tipo']).toBe('Canone ricorrente')
+    expect(rate['Importo']?.replace(/\s/g, ' ')).toBe('1.800,00 € / mese')
+    expect(rate['Validità']).toBe('dal 01/01/2027')
   })
 
   it('does not call a flat fee «per forfait»', () => {
     const flat = describeProposal(
-      waiting('contratto', { ...CONTRACT, rate_card: { ...CONTRACT.rate_card, tipo: 'una_tantum', unita: 'forfait' } }),
+      waiting('contract', { ...CONTRACT, rate_card: { ...CONTRACT.rate_card, type: 'one_off', unit: 'flat' } }),
     )
-    expect(rowsOf(flat, 'Prima scheda tariffaria').Importo?.replace(/\s/g, ' ')).toBe('1.800,00 € (forfait)')
+    expect(rowsOf(flat, 'Prima scheda tariffaria')['Importo']?.replace(/\s/g, ' ')).toBe('1.800,00 € (forfait)')
   })
 
   it('shows what the accept would write even when no label exists for it', () => {
     const full = describeProposal(
-      waiting('contratto', {
+      waiting('contract', {
         ...CONTRACT,
         contract: {
           ...CONTRACT.contract,
-          politica_spese: { kind: 'rimborsabile_con_tetto', tetto: '500.00' },
-          custom_fields: { cig: 'Z123' },
+          expense_policy: { kind: 'reimbursable_with_cap', amount_cap: '500.00' },
+          custom_fields: { 'cig': 'Z123' },
         },
-        rate_card: { ...CONTRACT.rate_card, frazioni_ammesse: [1, 0.5] },
+        rate_card: { ...CONTRACT.rate_card, allowed_fractions: [1, 0.5] },
       }),
     )
-    expect(rowsOf(full, 'Contratto')['Politica spese']).toBe('rimborsabile con tetto · tetto: 500.00')
+    expect(rowsOf(full, 'Contratto')['Politica spese']).toBe('rimborsabile con tetto · importo tetto: 500.00')
     expect(rowsOf(full, 'Contratto')['Campi personalizzati']).toBe('cig: Z123')
     expect(rowsOf(full, 'Prima scheda tariffaria')['Frazioni ammesse']).toBe('1, 0,5')
   })
 
   it('says a payment term left to the customer instead of leaving the row out', () => {
     const inherited = describeProposal(
-      waiting('contratto', {
+      waiting('contract', {
         ...CONTRACT,
-        contract: { ...CONTRACT.contract, giorni_pagamento: null, pagamento_fine_mese: null },
+        contract: { ...CONTRACT.contract, payment_days: null, payment_end_of_month: null },
       }),
     )
-    expect(rowsOf(inherited, 'Contratto').Pagamento).toBe('Come da condizioni del cliente')
+    expect(rowsOf(inherited, 'Contratto')['Pagamento']).toBe('Come da condizioni del cliente')
   })
 
   it('says an open-ended contract is open-ended instead of dropping the end', () => {
     const open = describeProposal(
-      waiting('contratto', { ...CONTRACT, contract: { ...CONTRACT.contract, fine: null } }),
+      waiting('contract', { ...CONTRACT, contract: { ...CONTRACT.contract, end: null } }),
     )
-    expect(rowsOf(open, 'Contratto').Periodo).toBe('01/01/2027 – a tempo indeterminato')
+    expect(rowsOf(open, 'Contratto')['Periodo']).toBe('01/01/2027 – a tempo indeterminato')
   })
 })
 
 describe('describeProposal once a proposal is decided', () => {
   const corrected = {
     ...CONTRACT,
-    contract: { ...CONTRACT.contract, titolo: 'Consulenza fiscale 2027 (corretto)' },
+    contract: { ...CONTRACT.contract, title: 'Consulenza fiscale 2027 (corretto)' },
   }
 
   it('describes what was accepted, which is what the contract was built from', () => {
     const accepted = describeProposal({
-      target_type: 'contratto',
-      campi_proposti: CONTRACT,
-      campi_accettati: corrected,
-      stato: 'accettata',
+      target_type: 'contract',
+      proposed_fields: CONTRACT,
+      accepted_fields: corrected,
+      status: 'accepted',
     })
     expect(accepted.title).toBe('Consulenza fiscale 2027 (corretto)')
   })
 
   it('keeps describing what was proposed for a rejected one, which built nothing', () => {
     const rejected = describeProposal({
-      target_type: 'contratto',
-      campi_proposti: CONTRACT,
-      campi_accettati: corrected,
-      stato: 'rifiutata',
+      target_type: 'contract',
+      proposed_fields: CONTRACT,
+      accepted_fields: corrected,
+      status: 'rejected',
     })
     expect(rejected.title).toBe('Consulenza fiscale 2027')
   })
@@ -232,7 +232,7 @@ describe('describeProposal once a proposal is decided', () => {
 
 describe('describeProposal on a shape it does not know', () => {
   it('draws no group instead of throwing, and keeps a fallback title', () => {
-    expect(describeProposal(waiting('contratto', { altro: 1 }))).toEqual({
+    expect(describeProposal(waiting('contract', { other: 1 }))).toEqual({
       title: 'Nuovo contratto',
       customerId: null,
       contractId: null,
@@ -240,20 +240,20 @@ describe('describeProposal on a shape it does not know', () => {
       // contract reads one; every other row needs a value to exist.
       groups: [{ title: 'Contratto', rows: [{ label: 'Pagamento', value: 'Come da condizioni del cliente' }] }],
     })
-    expect(describeProposal(waiting('giornata', {})).title).toBe('Giornata')
+    expect(describeProposal(waiting('work_unit', {})).title).toBe('Giornata')
   })
 })
 
 describe('decisionLine', () => {
   it('says who decided and when', () => {
     expect(
-      decisionLine({ stato: 'accettata', deciso_da: 'Lorenzo Fiore', deciso_il: '2026-10-25T10:00:00Z' }),
+      decisionLine({ status: 'accepted', decided_by: 'Lorenzo Fiore', decided_at: '2026-10-25T10:00:00Z' }),
     ).toMatch(/^Accettata da Lorenzo Fiore · 25 ott 2026/)
   })
 
   it('does not print a placeholder for what it does not know', () => {
-    expect(decisionLine({ stato: 'rifiutata', deciso_da: null, deciso_il: null })).toBe('Rifiutata')
-    expect(decisionLine({ stato: 'rifiutata', deciso_da: 'Ada', deciso_il: null })).toBe('Rifiutata da Ada')
+    expect(decisionLine({ status: 'rejected', decided_by: null, decided_at: null })).toBe('Rifiutata')
+    expect(decisionLine({ status: 'rejected', decided_by: 'Ada', decided_at: null })).toBe('Rifiutata da Ada')
   })
 })
 
@@ -268,8 +268,8 @@ describe('formatters', () => {
     expect(confidenceBand('0.80')).toBe('alta')
     expect(confidenceBand('0.79')).toBe('media')
     expect(confidenceBand('0.50')).toBe('media')
-    expect(confidenceBand('0.49')).toBe('bassa')
-    expect(confidenceBand('0.00')).toBe('bassa')
+    expect(confidenceBand('0.49')).toBe('low')
+    expect(confidenceBand('0.00')).toBe('low')
   })
 
   it('formats no quantity from a value that is not one', () => {
@@ -288,10 +288,10 @@ describe('formatters', () => {
 
 describe('validateProposalsSearch', () => {
   it('defaults to the queue and keeps the two decided tabs', () => {
-    expect(validateProposalsSearch({})).toEqual({ stato: 'in_attesa' })
-    expect(validateProposalsSearch({ stato: 'accettata' })).toEqual({ stato: 'accettata' })
-    expect(validateProposalsSearch({ stato: 'rifiutata' })).toEqual({ stato: 'rifiutata' })
-    expect(validateProposalsSearch({ stato: 'boh' })).toEqual({ stato: 'in_attesa' })
-    expect(validateProposalsSearch({ stato: 3 })).toEqual({ stato: 'in_attesa' })
+    expect(validateProposalsSearch({})).toEqual({ status: 'pending' })
+    expect(validateProposalsSearch({ status: 'accepted' })).toEqual({ status: 'accepted' })
+    expect(validateProposalsSearch({ status: 'rejected' })).toEqual({ status: 'rejected' })
+    expect(validateProposalsSearch({ status: 'boh' })).toEqual({ status: 'pending' })
+    expect(validateProposalsSearch({ status: 3 })).toEqual({ status: 'pending' })
   })
 })

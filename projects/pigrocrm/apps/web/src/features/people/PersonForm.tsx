@@ -17,11 +17,11 @@ import type { FieldDefinition } from '@/lib/schema'
 import type { Person } from './queries'
 
 const NATIVE_FIELDS: FieldDefinition[] = [
-  { key: 'nome', label: 'Nome', type: 'text', required: true, options: [] },
-  { key: 'cognome', label: 'Cognome', type: 'text', required: false, options: [] },
-  { key: 'ruolo', label: 'Ruolo', type: 'text', required: false, options: [] },
+  { key: 'first_name', label: 'Nome', type: 'text', required: true, options: [] },
+  { key: 'last_name', label: 'Cognome', type: 'text', required: false, options: [] },
+  { key: 'role', label: 'Ruolo', type: 'text', required: false, options: [] },
   { key: 'email', label: 'Email', type: 'text', required: false, options: [] },
-  { key: 'telefono', label: 'Telefono', type: 'text', required: false, options: [] },
+  { key: 'phone', label: 'Telefono', type: 'text', required: false, options: [] },
   { key: 'linkedin', label: 'LinkedIn', type: 'url', required: false, options: [] },
 ]
 

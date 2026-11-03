@@ -40,7 +40,7 @@ def test_resetpassword_reads_the_new_password_from_stdin_when_there_is_no_tty(
     with session_factory(cli_engine)() as session:
         UserService(session).create(
             UserCreate(
-                email="cli-reset@studio.it", password="vecchia-password-1", nome="C", ruolo="admin"
+                email="cli-reset@studio.it", password="vecchia-password-1", name="C", role="admin"
             ),
             Actor.system(),
         )
@@ -57,89 +57,89 @@ def test_resetpassword_reads_the_new_password_from_stdin_when_there_is_no_tty(
 
 
 @pytest.fixture
-def root_without_azienda(cli_engine: Engine) -> Iterator[set[object]]:
-    """The root as `createadmin` finds a freshly migrated one: no azienda. The worker's
+def root_without_legal_entity(cli_engine: Engine) -> Iterator[set[object]]:
+    """The root as `createadmin` finds a freshly migrated one: no legal entity. The worker's
     database carries the one committed default every other world shares (REB-623): it is
     set aside for the duration and put back at the end, with the identity it had. Yields
     the ids that exist while it is away, so the test's own rows can be told apart."""
     with cli_engine.begin() as connection:
         kept = connection.execute(
-            text("select id, nome, ragione_sociale, nazione from emitter_profile where predefinita")
+            text("select id, name, legal_name, country from legal_entities where is_default")
         ).all()
         connection.execute(text("delete from fiscal_profile"))
-        connection.execute(text("delete from emitter_profile where predefinita"))
+        connection.execute(text("delete from legal_entities where is_default"))
     with cli_engine.connect() as connection:
-        before = set(connection.execute(text("select id from emitter_profile")).scalars())
+        before = set(connection.execute(text("select id from legal_entities")).scalars())
     try:
         yield before
     finally:
         with cli_engine.begin() as connection:
             added = [
                 row_id
-                for row_id in connection.execute(text("select id from emitter_profile")).scalars()
+                for row_id in connection.execute(text("select id from legal_entities")).scalars()
                 if row_id not in before
             ]
             for row_id in added:
                 connection.execute(
-                    text("delete from emitter_profile where id = :id"), {"id": row_id}
+                    text("delete from legal_entities where id = :id"), {"id": row_id}
                 )
             for row in kept:
                 connection.execute(
                     text(
-                        "insert into emitter_profile (id, nome, ragione_sociale, nazione, "
-                        "predefinita, attiva, created_at, updated_at) "
-                        "values (:id, :nome, :rs, :nazione, true, true, now(), now())"
+                        "insert into legal_entities (id, name, legal_name, country, "
+                        "is_default, active, created_at, updated_at) "
+                        "values (:id, :name, :rs, :country, true, true, now(), now())"
                     ),
                     {
                         "id": row.id,
-                        "nome": row.nome,
-                        "rs": row.ragione_sociale,
-                        "nazione": row.nazione,
+                        "name": row.name,
+                        "rs": row.legal_name,
+                        "country": row.country,
                     },
                 )
 
 
-def _createadmin(monkeypatch: pytest.MonkeyPatch, email: str, nome: str) -> int:
+def _createadmin(monkeypatch: pytest.MonkeyPatch, email: str, name: str) -> int:
     monkeypatch.setattr("sys.stdin", io.StringIO("una-password-lunga-1\n"))
-    monkeypatch.setattr("sys.argv", ["pigrocrm", "createadmin", "--email", email, "--nome", nome])
+    monkeypatch.setattr("sys.argv", ["pigrocrm", "createadmin", "--email", email, "--name", name])
     return cli.main()
 
 
-def test_createadmin_gives_a_root_with_no_azienda_one_named_after_the_admin(
+def test_createadmin_gives_to_root_with_no_legal_entity_one_named_after_the_admin(
     cli_engine: Engine,
-    root_without_azienda: set[object],
+    root_without_legal_entity: set[object],
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """REB-615: the root installation is not in the registry, so `ensure_defaults`
-    never reaches it, and no route creates an azienda; the first admin brings the one
-    row Impostazioni → Aziende needs, and a later admin leaves it alone."""
+    never reaches it, and no route creates a legal entity; the first admin brings the one
+    row Settings → Legal entities needs, and a later admin leaves it alone."""
     assert _createadmin(monkeypatch, "cli-root@studio.it", "Ada Lovelace") == 0
     out = capsys.readouterr().out
     assert "Creato amministratore cli-root@studio.it" in out
     assert "Creata l'azienda predefinita «Ada Lovelace»" in out
     with cli_engine.connect() as connection:
         rows = connection.execute(
-            text("select nome, ragione_sociale, predefinita, attiva from emitter_profile")
+            text("select name, legal_name, is_default, active from legal_entities")
         ).all()
     assert rows == [("Ada Lovelace", "Ada Lovelace", True, True)]
 
     assert _createadmin(monkeypatch, "cli-root-2@studio.it", "Grace Hopper") == 0
-    assert "azienda" not in capsys.readouterr().out
+    assert "legal_entity" not in capsys.readouterr().out
     with cli_engine.connect() as connection:
-        names = connection.execute(text("select nome from emitter_profile")).scalars().all()
+        names = connection.execute(text("select name from legal_entities")).scalars().all()
     assert names == ["Ada Lovelace"]
 
 
 def test_createadmin_works_as_the_application_role_the_api_container_connects_as(
     cli_engine: Engine,
-    root_without_azienda: set[object],
+    root_without_legal_entity: set[object],
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """B-01. The documented production path runs the command in the `api` container,
-    which connects as `pigrocrm_app` (`NOBYPASSRLS`). The policy on `emitter_profile` reads
-    the scope the session binds, and an unbound session saw no azienda and was refused the
+    which connects as `pigrocrm_app` (`NOBYPASSRLS`). The policy on `legal_entities` reads
+    the scope the session binds, and an unbound session saw no legal entity and was refused the
     insert after the admin row had already been committed. The other tests run as the
     superuser, to whom policies do not apply."""
     app_url = cli_engine.url.set(username="pigrocrm_app_cli_test", password="cli-test-secret")
@@ -153,7 +153,7 @@ def test_createadmin_works_as_the_application_role_the_api_container_connects_as
 
     assert "Creata l'azienda predefinita «Ada Lovelace»" in capsys.readouterr().out
     with cli_engine.connect() as connection:
-        assert connection.execute(text("select nome from emitter_profile")).scalars().all() == [
+        assert connection.execute(text("select name from legal_entities")).scalars().all() == [
             "Ada Lovelace"
         ]
         assert (

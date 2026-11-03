@@ -38,7 +38,7 @@ def _service(session: Session, now: datetime = NOON) -> AiConfigService:
 @pytest.fixture
 def capped(hub_engine: Engine, hub_session: Session) -> Iterator[User]:
     """The card task with a cap of 1 euro and a price for its model, wiped after."""
-    admin = User(email="ivan@rebase.it", nome="Ivan", cognome="Sala", role="admin")
+    admin = User(email="ivan@rebase.it", first_name="Ivan", last_name="Sala", role="admin")
     hub_session.add(admin)
     hub_session.commit()
     service = _service(hub_session)

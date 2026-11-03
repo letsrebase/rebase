@@ -23,27 +23,27 @@ def counted(value: int | Decimal, one: str, many: str) -> str:
     return f"{number(value)} {one if value == 1 else many}"
 
 
-def giorni(value: int) -> str:
+def format_days(value: int) -> str:
     return counted(value, "giorno", "giorni")
 
 
-def giornate(value: int | Decimal) -> str:
+def work_units(value: int | Decimal) -> str:
     return counted(value, "giornata", "giornate")
 
 
-def voci(value: int) -> str:
+def format_entries(value: int) -> str:
     return counted(value, "voce", "voci")
 
 
-def ore(value: int | Decimal) -> str:
+def format_hours(value: int | Decimal) -> str:
     return counted(value, "ora", "ore")
 
 
-def giorni_fa(value: int) -> str:
+def format_days_ago(value: int) -> str:
     """`ieri` for one day, `5 giorni fa` otherwise."""
-    return "ieri" if value == 1 else f"{giorni(value)} fa"
+    return "ieri" if value == 1 else f"{format_days(value)} fa"
 
 
 def ago(days: int) -> str:
-    """`oggi` for none, then as `giorni_fa`."""
-    return "oggi" if days == 0 else giorni_fa(days)
+    """`oggi` for none, then as `format_days_ago`."""
+    return "oggi" if days == 0 else format_days_ago(days)

@@ -10,7 +10,7 @@ import pytest
 from fakes_contracts import FakeRenderer
 from fakes_documenso import FakeDocumenso
 from match_fixtures import (
-    QUADRO_VERSION,
+    FRAMEWORK_VERSION,
     SIGNER,
     TODAY,
     _body,
@@ -59,17 +59,17 @@ def test_the_first_send_hands_documenso_the_framework_and_the_letter_waits(
 
     report = _signing(clean, renderer, fake, sender).send_match(match.id, admin_id)
 
-    assert (report.inviato, report.mail_inviata) == ("quadro", True)
-    assert (report.match.stato, report.match.lettera.stato) == ("in_firma", "in_attesa")
-    quadro = _framework_of(clean, freelancer_id)
+    assert (report.sent, report.mail_sent) == ("framework", True)
+    assert (report.match.status, report.match.letter.status) == ("awaiting_signature", "pending")
+    framework = _framework_of(clean, freelancer_id)
     [envelope] = fake.envelopes.values()
-    assert quadro.stato == "inviato"
-    assert (quadro.documenso_id, quadro.documenso_item_id) == (envelope.id, envelope.item_id)
-    assert quadro.signing_url == f"https://firma.letsrebase.test/sign/{envelope.token}"
-    assert (quadro.sent_at, quadro.sent_by) == (NOW, admin_id)
+    assert framework.status == "sent"
+    assert (framework.documenso_id, framework.documenso_item_id) == (envelope.id, envelope.item_id)
+    assert framework.signing_url == f"https://firma.letsrebase.test/sign/{envelope.token}"
+    assert (framework.sent_at, framework.sent_by) == (NOW, admin_id)
     assert envelope.payload["title"] == "Contratto quadro rebase"
-    assert envelope.payload["externalId"] == str(quadro.id)
-    assert envelope.filename == f"contratto-quadro-v{QUADRO_VERSION}.pdf"
+    assert envelope.payload["externalId"] == str(framework.id)
+    assert envelope.filename == f"contratto-quadro-v{FRAMEWORK_VERSION}.pdf"
     assert envelope.payload["meta"]["distributionMethod"] == "NONE"
     assert not any(envelope.payload["meta"]["emailSettings"].values())
     fields = envelope.payload["recipients"][0]["fields"]
@@ -81,7 +81,7 @@ def test_the_first_send_hands_documenso_the_framework_and_the_letter_waits(
     assert renderer.blanks_signing[-1] is True
     [mail] = sender.sent
     assert (mail.to, mail.subject) == ("ada@studio.it", "Da firmare: contratto quadro rebase")
-    assert quadro.signing_url in mail.text
+    assert framework.signing_url in mail.text
     assert AdminActionService(clean).timeline("match", match.id)[0].kind == "documents_sent"
 
 
@@ -93,19 +93,19 @@ def test_the_sent_copy_says_the_day_it_left_and_prints_the_tax_data_saved_since_
     admin_id, freelancer_id, company_id = _setup(clean)
     renderer, fake = FakeRenderer(draft=False), FakeDocumenso()
     match = _draft(clean, renderer, freelancer_id, company_id, admin_id)
-    _fiscal(clean, freelancer_id, admin_id, domicilio="Corso Como 1, Milano")
+    _fiscal(clean, freelancer_id, admin_id, domicile="Corso Como 1, Milano")
 
     _signing(clean, renderer, fake, RecordingSender(), today=date(2026, 9, 25)).send_match(
         match.id, admin_id
     )
 
-    quadro = _framework_of(clean, freelancer_id)
-    assert quadro.data["firma-rebase"] == "Documento emesso da rebase il 25 settembre 2026"
-    assert quadro.data["professionista-domicilio"] == "Corso Como 1, Milano"
+    framework = _framework_of(clean, freelancer_id)
+    assert framework.data["firma-rebase"] == "Documento emesso da rebase il 25 settembre 2026"
+    assert framework.data["professionista-domicilio"] == "Corso Como 1, Milano"
     document, data = renderer.calls[-1]
-    assert document == "contratto-quadro" and data == quadro.data
-    assert quadro.pdf == b"%PDF-1.7 fake contratto-quadro"
-    assert quadro.testo_bozza is False
+    assert document == "framework-agreement" and data == framework.data
+    assert framework.pdf == b"%PDF-1.7 fake framework-agreement"
+    assert framework.draft_text is False
 
 
 def test_with_an_active_framework_the_letter_leaves_and_cites_its_signature(
@@ -115,24 +115,24 @@ def test_with_an_active_framework_the_letter_leaves_and_cites_its_signature(
     _framework(clean, freelancer_id, admin_id, signed_at=SIGNED_AT)
     renderer, fake, sender = FakeRenderer(draft=False), FakeDocumenso(), RecordingSender()
     match = _draft(clean, renderer, freelancer_id, company_id, admin_id)
-    assert match.lettera.stato == "generato"
+    assert match.letter.status == "generated"
 
     report = _signing(clean, renderer, fake, sender).send_match(match.id, admin_id)
 
-    assert (report.inviato, report.match.lettera.stato) == ("lettera", "inviato")
+    assert (report.sent, report.match.letter.status) == ("letter", "sent")
     letter = _letter_of(clean, match.id)
     assert letter.data["data-contratto-quadro"] == "1° ottobre 2026"
     [envelope] = fake.envelopes.values()
-    assert envelope.payload["title"] == f"Lettera di incarico n. {letter.numero}"
-    assert envelope.filename == f"lettera-di-incarico-{letter.numero}.pdf"
+    assert envelope.payload["title"] == f"Lettera di incarico n. {letter.number}"
+    assert envelope.filename == f"lettera-di-incarico-{letter.number}.pdf"
     assert [mail.subject for mail in sender.sent] == [
-        f"Da firmare: lettera di incarico n. {letter.numero}"
+        f"Da firmare: lettera di incarico n. {letter.number}"
     ]
     # Spec § 1h, proven on the sent copy itself (REB-406): what rebase
     # agreed with the client (the request's 777.77 a day) reaches neither the data
     # handed to the renderer nor the mail that tells the freelancer to sign.
     document, data = renderer.calls[-1]
-    assert document == "lettera-di-incarico"
+    assert document == "engagement-letter"
     assert not any("budget" in key for key in data)
     assert "777.77" not in str(list(data.values()))
     [mail] = sender.sent
@@ -151,8 +151,8 @@ def test_a_letter_waiting_on_a_framework_already_out_for_signature_sends_nothing
 
     report = signing.send_match(second.id, admin_id)
 
-    assert (report.inviato, report.mail_inviata) == (None, None)
-    assert (report.match.stato, report.match.lettera.stato) == ("in_firma", "in_attesa")
+    assert (report.sent, report.mail_sent) == (None, None)
+    assert (report.match.status, report.match.letter.status) == ("awaiting_signature", "pending")
     assert len(fake.envelopes) == 1 and len(sender.sent) == 1
     # A send that sends nothing leaves no `documents_sent` trail of its own: the second
     # match's timeline still holds only what `create` wrote for it.
@@ -189,7 +189,7 @@ def test_two_matches_sent_at_once_send_the_framework_once(
         worker.start()
         worker.join(timeout=0.5)
         assert worker.is_alive(), "the second send did not wait for the framework's row"
-        held.stato = "inviato"
+        held.status = "sent"
         held.documenso_id, held.documenso_item_id = "envelope_primo", "envelope_item_primo"
         held.signing_url = "https://firma.letsrebase.test/sign/primo"
         first_admin.commit()
@@ -198,7 +198,7 @@ def test_two_matches_sent_at_once_send_the_framework_once(
     finally:
         first_admin.close()
         second_admin.close()
-    assert [(r.inviato, r.match.lettera.stato) for r in reports] == [(None, "in_attesa")]
+    assert [(r.sent, r.match.letter.status) for r in reports] == [(None, "pending")]
     assert fake.envelopes == {}
 
 
@@ -213,8 +213,8 @@ def test_a_draft_text_never_leaves(clean: Session) -> None:
     # The way out is named too (REB-406).
     assert "REBASE_CONTRACTS_ALLOW_DRAFT" in caught.value.message
     assert fake.calls == [] and sender.sent == []
-    assert _matches(clean, renderer).reads.get(match.id).stato == "bozza"
-    assert _framework_of(clean, freelancer_id).stato == "generato"
+    assert _matches(clean, renderer).reads.get(match.id).status == "draft"
+    assert _framework_of(clean, freelancer_id).status == "generated"
 
 
 def test_a_draft_text_leaves_on_the_preview_when_the_setting_allows_it(clean: Session) -> None:
@@ -229,12 +229,12 @@ def test_a_draft_text_leaves_on_the_preview_when_the_setting_allows_it(clean: Se
         match.id, admin_id
     )
 
-    assert report.inviato == "quadro"
-    quadro = _framework_of(clean, freelancer_id)
-    assert quadro.testo_bozza is True
-    assert quadro.stato == "inviato"
+    assert report.sent == "framework"
+    framework = _framework_of(clean, freelancer_id)
+    assert framework.draft_text is True
+    assert framework.status == "sent"
     [envelope] = fake.envelopes.values()
-    assert envelope.pdf == quadro.pdf == b"%PDF-1.7 fake contratto-quadro"
+    assert envelope.pdf == framework.pdf == b"%PDF-1.7 fake framework-agreement"
 
 
 def test_without_rebases_signer_nothing_leaves(clean: Session) -> None:
@@ -265,18 +265,18 @@ def test_documenso_refusing_the_distribution_marks_nothing_sent(clean: Session) 
     assert caught.value.message == (
         "Documenso ha rifiutato la richiesta: Recipient is missing a signature field"
     )
-    quadro = _framework_of(clean, freelancer_id)
-    assert (quadro.stato, quadro.documenso_id, quadro.signing_url, quadro.sent_at) == (
-        "generato",
+    framework = _framework_of(clean, freelancer_id)
+    assert (framework.status, framework.documenso_id, framework.signing_url, framework.sent_at) == (
+        "generated",
         None,
         None,
         None,
     )
-    assert _matches(clean, renderer).reads.get(match.id).stato == "bozza"
+    assert _matches(clean, renderer).reads.get(match.id).status == "draft"
     assert sender.sent == []
     again = signing.send_match(match.id, admin_id)
-    assert again.inviato == "quadro"
-    assert again.match.lettera.numero == match.lettera.numero
+    assert again.sent == "framework"
+    assert again.match.letter.number == match.letter.number
 
 
 def test_a_refused_mail_leaves_the_document_sent_and_says_so(clean: Session) -> None:
@@ -289,8 +289,8 @@ def test_a_refused_mail_leaves_the_document_sent_and_says_so(clean: Session) -> 
         match.id, admin_id
     )
 
-    assert (report.inviato, report.mail_inviata) == ("quadro", False)
-    assert _framework_of(clean, freelancer_id).stato == "inviato"
+    assert (report.sent, report.mail_sent) == ("framework", False)
+    assert _framework_of(clean, freelancer_id).status == "sent"
 
 
 def test_without_documenso_or_without_mail_the_send_says_why(clean: Session) -> None:
@@ -301,7 +301,7 @@ def test_without_documenso_or_without_mail_the_send_says_why(clean: Session) -> 
         _signing(clean, renderer, None, RecordingSender()).send_match(match.id, admin_id)
     with pytest.raises(SigningUnavailable, match="email"):
         _signing(clean, renderer, FakeDocumenso(), None).send_match(match.id, admin_id)
-    assert _matches(clean, renderer).reads.get(match.id).stato == "bozza"
+    assert _matches(clean, renderer).reads.get(match.id).status == "draft"
 
 
 def test_a_cancelled_match_has_nothing_to_send(clean: Session) -> None:
@@ -316,25 +316,31 @@ def test_a_cancelled_match_has_nothing_to_send(clean: Session) -> None:
 def test_a_letter_whose_framework_was_refused_gets_a_new_one_when_its_match_is_sent(
     clean: Session,
 ) -> None:
-    """A framework agreement refused or cancelled while its letter waited: «Invia per la
-    firma» on the match writes a new one from today's tax data and sends it."""
+    """A framework agreement refused or cancelled while its letter waited:
+    «Invia per la firma» on the match writes a new one from today's tax data and sends it."""
     admin_id, freelancer_id, company_id = _setup(clean)
     renderer, fake = FakeRenderer(draft=False), FakeDocumenso()
     match = _draft(clean, renderer, freelancer_id, company_id, admin_id)
     signing = _signing(clean, renderer, fake, RecordingSender())
     signing.send_match(match.id, admin_id)
     refused = _framework_of(clean, freelancer_id)
-    refused.stato, refused.cancel_reason = "annullato", "Rifiutato dal freelance sul sito di firma."
+    refused.status, refused.cancel_reason = (
+        "cancelled",
+        "Rifiutato dal freelance sul sito di firma.",
+    )
     clean.commit()
 
     report = signing.send_match(match.id, admin_id)
 
-    assert report.inviato == "quadro"
-    assert [d.stato for d in _documents(clean, freelancer_id, "quadro")] == ["annullato", "inviato"]
+    assert report.sent == "framework"
+    assert [d.status for d in _documents(clean, freelancer_id, "framework")] == [
+        "cancelled",
+        "sent",
+    ]
     assert len(fake.envelopes) == 2
 
 
-def test_a_crea_match_racing_a_send_waits_for_it_and_does_not_annul_the_framework_it_dispatched(
+def test_to_create_match_racing_to_send_waits_for_it_and_does_not_annul_the_framework_it_dispatched(
     monkeypatch: pytest.MonkeyPatch, hub_engine: Engine, clean: Session
 ) -> None:
     """Global Constraints' lock order: a send in progress must block a concurrent
@@ -343,8 +349,8 @@ def test_a_crea_match_racing_a_send_waits_for_it_and_does_not_annul_the_framewor
     but with a send on one side. `active_framework` is the next call `send_match` makes
     after taking the freelancer's row lock, so pausing it there proves the lock is taken
     before, not merely before the commit. Once the send commits its framework as
-    `inviato`, `create()` must find it already out for signature and leave it alone
-    rather than annul it as a stale `generato` one (`pending_framework`, `MatchService.
+    `sent`, `create()` must find it already out for signature and leave it alone
+    rather than annul it as a stale `generated` one (`pending_framework`, `MatchService.
     create`)."""
     admin_id, freelancer_id, company_id = _setup(clean)
     renderer, fake = FakeRenderer(draft=False), FakeDocumenso()
@@ -412,8 +418,8 @@ def test_a_crea_match_racing_a_send_waits_for_it_and_does_not_annul_the_framewor
     assert len(outcome) == 1 and isinstance(outcome[0], MatchRead), outcome
     second = outcome[0]
     assert isinstance(second, MatchRead)
-    assert second.lettera.stato == "in_attesa"
-    assert [d.stato for d in _documents(clean, freelancer_id, "quadro")] == ["inviato"]
+    assert second.letter.status == "pending"
+    assert [d.status for d in _documents(clean, freelancer_id, "framework")] == ["sent"]
 
 
 def test_a_malformed_signer_setting_does_not_break_construction_or_a_read(clean: Session) -> None:
@@ -435,7 +441,7 @@ def test_a_malformed_signer_setting_does_not_break_construction_or_a_read(clean:
         now=lambda: NOW,
     )
 
-    assert signing.matches.reads.get(match.id).stato == "bozza"
+    assert signing.matches.reads.get(match.id).status == "draft"
 
 
 def test_a_malformed_signer_setting_503s_only_the_send_it_breaks(clean: Session) -> None:

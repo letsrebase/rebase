@@ -48,8 +48,11 @@ NOT_ADMIN: dict[Route, tuple[str, str]] = {
     ("POST", "/api/hub/documenso/webhook"): (PUBLIC, "Documenso's webhook: the shared secret"),
     ("POST", "/api/hub/webhooks/resend"): (PUBLIC, "Resend's webhook: the Svix signature"),
     ("GET", "/api/hub/referral-rates"): (PUBLIC, "the rates the landing and the guide show"),
-    ("GET", "/api/hub/campagne/disiscrizione"): (PUBLIC, "the unsubscribe page's token read"),
-    ("POST", "/api/hub/campagne/disiscrizione"): (PUBLIC, "the unsubscribe's one click"),
+    ("GET", "/api/hub/campaigns/unsubscribe"): (PUBLIC, "the unsubscribe page's token read"),
+    ("POST", "/api/hub/campaigns/unsubscribe"): (PUBLIC, "the unsubscribe's one click"),
+    # The one-click link in every mail sent before the rename keeps working.
+    ("GET", "/api/hub/campagne/disiscrizione"): (PUBLIC, "the legacy unsubscribe page"),
+    ("POST", "/api/hub/campagne/disiscrizione"): (PUBLIC, "the legacy unsubscribe click"),
     # --- signing in
     ("POST", "/api/hub/auth/link"): (PUBLIC, "asks a magic link, behind spend_one"),
     ("POST", "/api/hub/auth/enter"): (PUBLIC, "spends a magic link, behind spend_one"),
@@ -124,7 +127,11 @@ def test_the_walk_finds_every_route_the_app_serves() -> None:
         for method in item
         if method in {"get", "post", "put", "patch", "delete"}
     }
-    assert set(ADMIN_ROUTES) | set(OTHER_ROUTES) == published
+    # The pre-rename unsubscribe path stays served for the mails already sent, and out of
+    # the schema.
+    old = "/api/hub/campagne/disiscrizione"
+    legacy = {("GET", old), ("POST", old)}
+    assert (set(ADMIN_ROUTES) | set(OTHER_ROUTES)) - legacy == published
     assert ADMIN_ROUTES, "no admin route found: the dependency walk is broken"
 
 
@@ -150,7 +157,7 @@ def guarded(api_session: Session) -> Iterator[Session]:
 
 def _login(client: TestClient, sender: RecordingSender, email: str) -> None:
     assert client.post("/api/hub/auth/link", json={"email": email}).status_code == 202
-    match = re.search(r"/entra\?t=([A-Za-z0-9_-]+)", sender.sent[-1].text)
+    match = re.search(r"/verify\?t=([A-Za-z0-9_-]+)", sender.sent[-1].text)
     assert match
     assert client.post("/api/hub/auth/enter", json={"token": match.group(1)}).status_code == 200
     # Signing in spent two of the five a minute the public writes share.
@@ -167,7 +174,7 @@ def test_admin_routes_are_401_for_nobody_and_403_for_a_member(
     assert {route: code for route, code in anonymous.items() if code != 401} == {}
 
     # ... then a signed-in member, who is a real identity at the wrong door.
-    guarded.add(User(email="membro@studio.it", nome="Ada", cognome="Membro"))
+    guarded.add(User(email="membro@studio.it", first_name="Ada", last_name="Membro"))
     guarded.commit()
     _login(client, sender, "membro@studio.it")
     member = {route: client.request(route[0], _url(route[1])).status_code for route in ADMIN_ROUTES}

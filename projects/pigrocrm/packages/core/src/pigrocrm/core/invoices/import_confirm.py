@@ -23,16 +23,16 @@ guarantee against divergence between the hand-declared and the newly-parsed
 path, since both run the same register rules at the same call, and against a
 customer committed with no invoice, since both writes share one commit.
 
-**`importata_da` is `"fatturapa"`, never `"esterno"`, and never through
+**`imported_from` is `"fatturapa"`, never `"external"`, and never through
 `InvoiceImport` itself.** This issue's own follow-up to REB-366 (design §5
 item 4/§7 item 6) needed a way to write `"fatturapa"` without also letting a
 *caller* of the hand-declare door (`POST /api/invoices/import`,
-`import_issued_invoice`) claim it: `InvoiceImport.importata_da` stays fixed to
-`Literal["esterno"]`, and `InvoiceService.import_issued` instead takes
-`importata_da` as its own keyword-only parameter -- exactly the shape
+`import_issued_invoice`) claim it: `InvoiceImport.imported_from` stays fixed to
+`Literal["external"]`, and `InvoiceService.import_issued` instead takes
+`imported_from` as its own keyword-only parameter -- exactly the shape
 `xml_document_id`/`xml_hash_sha256` already use, and for the identical reason.
 `InvoiceService.confirm_import` is the one caller that ever passes
-`importata_da="fatturapa"`, because it is the one caller that has actually
+`imported_from="fatturapa"`, because it is the one caller that has actually
 parsed a document: a document this CRM parsed itself is a materially
 different kind of provenance from one a human re-typed by hand, and the
 invoice list's own badge (`InvoiceStateBadge.tsx`) needs the distinction to
@@ -75,9 +75,9 @@ class ConfirmedInvoice:
     an upload's decisions and `note` says why an `"unclaimed"` file did not parse."""
 
     outcome: InvoiceConfirmOutcome
-    azienda_id: UUID | None = None
-    fattura: InvoiceRead | None = None
-    buchi_non_dichiarati: list[int] | None = None
+    legal_entity_id: UUID | None = None
+    invoice: InvoiceRead | None = None
+    undeclared_gaps: list[int] | None = None
     party_key: str | None = None
     note: str | None = None
 
@@ -86,12 +86,12 @@ class ConfirmedInvoiceRead(BaseModel):
     """One row of `confirm_invoice_import`'s own output: one per invoice the
     reviewed document parses into, mirroring `ReviewedInvoiceRead`'s own shape.
 
-    `fattura` is set only for `"imported"` (freshly written) and
+    `invoice` is set only for `"imported"` (freshly written) and
     `"already_present"` (the row already on record at that natural key) --
     never for a refusal, since nothing was written or matched. `buchi_non_
     dichiarati` is set only for `"imported"`, mirroring `POST /api/invoices/
     import`'s own response: the numbers still missing under this invoice's own
-    `anno`, so a caller sees in one round trip what `declare_invoice_register_
+    `year`, so a caller sees in one round trip what `declare_invoice_register_
     gaps` still has to cover.
     """
 
@@ -99,11 +99,11 @@ class ConfirmedInvoiceRead(BaseModel):
 
     document_id: UUID
     outcome: InvoiceConfirmOutcome
-    # The azienda the file landed on, or was checked against (REB-619, spec §1.5);
+    # The legal entity the file landed on, or was checked against (REB-619, spec §1.5);
     # `None` for `incoming_skipped` and `unclaimed`, which land nowhere.
-    azienda_id: UUID | None = None
-    fattura: InvoiceRead | None = None
-    buchi_non_dichiarati: list[int] | None = None
+    legal_entity_id: UUID | None = None
+    invoice: InvoiceRead | None = None
+    undeclared_gaps: list[int] | None = None
 
 
 class InvoiceConfirmRequest(BaseModel):
@@ -136,79 +136,77 @@ class InvoiceConfirmRequest(BaseModel):
 class InvoiceConfirmResult(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    righe: list[ConfirmedInvoiceRead]
+    lines: list[ConfirmedInvoiceRead]
 
 
 def map_parsed_invoice_to_import(
-    invoice: ParsedInvoice, *, anno: int, numero: int, customer_id: UUID
+    invoice: ParsedInvoice, *, year: int, number: int, customer_id: UUID
 ) -> InvoiceImport:
     """The confirmed `ParsedInvoice` onto `InvoiceImport`'s own fields (design §5
     item 2), mirroring mastro's own `mapInvoiceToInput` (`persist.ts:91-112`):
-    `imponibile`/`imposta` are already the document-level sums `ParsedInvoice`
-    itself carries (its own docstring), never re-summed here, and `righe` is a
+    `taxable_amount`/`vat_amount` are already the document-level sums `ParsedInvoice`
+    itself carries (its own docstring), never re-summed here, and `lines` is a
     field-for-field copy -- `ParsedInvoiceLine` and `InvoiceLineImport` name the
     same five facts about a billed line the same way, on purpose (`import_
     schemas`'s own module docstring).
 
-    `natura` is copied straight from `ParsedInvoiceLine.natura` -- the line's
+    `vat_nature` is copied straight from `ParsedInvoiceLine.vat_nature` -- the line's
     own declared exemption code, read directly off `DettaglioLinee/Natura` by
-    the parser. `riferimento_normativo`, which FatturaPA never repeats at the
-    line level, is looked up from `invoice.riepiloghi` by the pair `(aliquota_
+    the parser. `legal_reference`, which FatturaPA never repeats at the
+    line level, is looked up from `invoice.recaps` by the pair `(aliquota_
     iva, natura)` -- never by rate alone, which this codebase's own export-side
-    `totals.RiepilogoGroup` already treats as the real grouping key, and which
+    `totals.RecapGroup` already treats as the real grouping key, and which
     a rate-only lookup would get wrong on any invoice mixing two exemption
     codes at the same rate (`ParsedInvoiceLine`'s own docstring). This is not
-    optional: `invoice_lines`'s own `ck_invoice_lines_natura_agrees_with_rate`
+    optional: `invoice_lines`'s own `ck_invoice_lines_vat_nature_agrees_with_rate`
     requires `natura IS NOT NULL` on every zero-rate line and `NULL` on every
-    other one, so a missing `natura` fails that constraint on exactly the
+    other one, so a missing `vat_nature` fails that constraint on exactly the
     exempt-rate invoices this parser exists to import.
 
-    `anno`/`numero` are the caller's own `import_review.natural_key(invoice)`,
+    `year`/`number` are the caller's own `import_review.natural_key(invoice)`,
     never re-derived here: by the time this is called the caller has already
     confirmed that key is new (`classify_parsed_invoice` returned `"ready"`),
     and `import_issued`'s own `data.anno != data.data_emissione.year` check is
     what actually enforces the register's invariant, not a second copy of it
     here.
 
-    `importata_da` is left at `InvoiceImport`'s own fixed `"esterno"` -- this
+    `imported_from` is left at `InvoiceImport`'s own fixed `"external"` -- this
     return value is never written as-is (module docstring above): the caller,
-    `InvoiceService.confirm_import`, passes `importata_da="fatturapa"` to
+    `InvoiceService.confirm_import`, passes `imported_from="fatturapa"` to
     `import_issued` itself as a separate keyword argument, the same way it
     already passes `xml_document_id`/`xml_hash_sha256`, so a value only this
     module's own caller can ever set never round-trips through a schema a
-    hand-declare caller could also populate. `data_scadenza`, `causale`,
-    `competenza_da`/`competenza_a`, `pdf_sorgente`, `note_interne` and
-    `trasmessa_esternamente_il` all stay unset too: none of them has a source
+    hand-declare caller could also populate. `due_date`, `memo`,
+    `accrual_from`/`accrual_to`, `pdf_source`, `internal_notes` and
+    `transmitted_externally_at` all stay unset too: none of them has a source
     on `ParsedInvoice` today, so `import_issued`'s own defaults (the regime's
-    `giorni_scadenza` for the due date, chief among them) apply exactly as
+    `due_days` for the due date, chief among them) apply exactly as
     they would for a hand-typed import that left the same fields out.
     """
-    riferimento_by_pair: dict[tuple[Decimal, str | None], str | None] = {}
-    for riepilogo in invoice.riepiloghi:
-        riferimento_by_pair.setdefault(
-            (riepilogo.aliquota_iva, riepilogo.natura), riepilogo.riferimento_normativo
-        )
+    reference_by_pair: dict[tuple[Decimal, str | None], str | None] = {}
+    for recap in invoice.recaps:
+        reference_by_pair.setdefault((recap.vat_rate, recap.vat_nature), recap.legal_reference)
     return InvoiceImport(
-        anno=anno,
-        numero=numero,
-        data_emissione=invoice.data_emissione,
+        year=year,
+        number=number,
+        issue_date=invoice.issue_date,
         customer_id=customer_id,
-        righe=[
+        lines=[
             InvoiceLineImport(
-                descrizione=riga.descrizione,
-                quantita=riga.quantita,
-                prezzo_unitario=riga.prezzo_unitario,
-                prezzo_totale=riga.prezzo_totale,
-                aliquota_iva=riga.aliquota_iva,
-                natura=riga.natura,
-                riferimento_normativo=riferimento_by_pair.get((riga.aliquota_iva, riga.natura)),
+                description=line.description,
+                quantity=line.quantity,
+                unit_price=line.unit_price,
+                total_price=line.total_price,
+                vat_rate=line.vat_rate,
+                vat_nature=line.vat_nature,
+                legal_reference=reference_by_pair.get((line.vat_rate, line.vat_nature)),
             )
-            for riga in invoice.righe
+            for line in invoice.lines
         ],
-        imponibile=invoice.imponibile,
-        imposta=invoice.imposta,
-        bollo=invoice.bollo if invoice.bollo is not None else Decimal("0.00"),
-        totale=invoice.totale,
+        taxable_amount=invoice.taxable_amount,
+        vat_amount=invoice.vat_amount,
+        stamp_duty=invoice.stamp_duty if invoice.stamp_duty is not None else Decimal("0.00"),
+        total=invoice.total,
     )
 
 
@@ -220,21 +218,21 @@ def map_parsed_party_to_customer(party: ParsedInvoiceParty) -> CustomerCreate:
     same facts `import_review.match_customer` already reads off the same
     `ParsedInvoiceParty` to look them up.
 
-    `partita_iva`/`codice_fiscale` are normalised through the same `normalise_
+    `vat_number`/`tax_code` are normalised through the same `normalise_
     fiscal_id` `match_customer` itself calls first. `ParsedInvoiceParty.partita_
     iva` carries the country prefix FPR12 requires (`"IT01234567890"`, its own
-    docstring), while `Customer.partita_iva` stores the bare eleven digits
+    docstring), while `Customer.vat_number` stores the bare eleven digits
     `CustomerService`'s own `_check_fiscal` enforces -- skipping this step
     would create a row `match_customer` could never find again on the next
     invoice from the same counterparty.
     """
     return CustomerCreate(
-        ragione_sociale=party.ragione_sociale,
-        partita_iva=normalise_fiscal_id(party.partita_iva),
-        codice_fiscale=normalise_fiscal_id(party.codice_fiscale),
-        indirizzo=party.indirizzo,
+        legal_name=party.legal_name,
+        vat_number=normalise_fiscal_id(party.vat_number),
+        tax_code=normalise_fiscal_id(party.tax_code),
+        address=party.address,
         cap=party.cap,
-        comune=party.comune,
-        provincia=party.provincia,
-        nazione=party.nazione,
+        city=party.city,
+        province=party.province,
+        country=party.country,
     )

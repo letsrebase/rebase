@@ -10,7 +10,7 @@ import { useCustomer, useCustomers, type Customer } from './queries'
  *  enough that the list is read rather than scrolled. More is a longer term away. */
 const MATCHES = 8
 
-export type PickedCustomer = Pick<Customer, 'id' | 'ragione_sociale'>
+export type PickedCustomer = Pick<Customer, 'id' | 'legal_name'>
 
 /**
  * Picks one customer by asking the server for the ones that match what was typed.
@@ -18,22 +18,22 @@ export type PickedCustomer = Pick<Customer, 'id' | 'ragione_sociale'>
  * The one customer picker of the app. It replaces four dropdowns that each loaded
  * `limit: 200` customers whole, and silently stopped at the 200th: a space has as many
  * customers as it has, so «scegli dall'elenco» has to be a search, the same gesture as
- * `attivita/RecordPicker`'s. A chosen customer is shown by name, with a button to take it
+ * `tasks/RecordPicker`'s. A chosen customer is shown by name, with a button to take it
  * off and search again.
  *
  * `value` is the customer's id and the name is read from it (`useCustomer`), so a form
  * that only stores the id -- a person's stored customer, say -- shows the name on open.
  * A customer picked here is named from the pick; a caller that already has the name
  * passes it as `selectedName`. Either way no read is made.
- * `aziendaId` limits the matches to one azienda's customers; without it the sidebar's
- * azienda applies, as on every list of customers.
+ * `legalEntityId` limits the matches to one legal entity's customers; without it the sidebar's
+ * legal entity applies, as on every list of customers.
  */
 export function CustomerPicker({
   id,
   value,
   onChange,
   selectedName,
-  aziendaId,
+  legalEntityId,
   placeholder = 'Cerca un cliente per ragione sociale, P.IVA o email…',
   ariaLabel = 'Cerca un cliente',
   disabled = false,
@@ -42,7 +42,7 @@ export function CustomerPicker({
   value: string | null
   onChange: (customer: PickedCustomer | null) => void
   selectedName?: string
-  aziendaId?: string | null
+  legalEntityId?: string | null
   placeholder?: string
   ariaLabel?: string
   disabled?: boolean
@@ -54,18 +54,18 @@ export function CustomerPicker({
   const settled = useDebounced(typed, SEARCH_DEBOUNCE_MS)
   const chosen = value !== null && value !== ''
   const matches = useCustomers(
-    { search: settled || undefined, limit: MATCHES, azienda_id: aziendaId ?? undefined },
+    { search: settled || undefined, limit: MATCHES, legal_entity_id: legalEntityId ?? undefined },
     // A chosen customer needs no list of matches.
     { enabled: !chosen },
   )
-  const knownName = selectedName ?? (picked?.id === value ? picked.ragione_sociale : undefined)
+  const knownName = selectedName ?? (picked?.id === value ? picked.legal_name : undefined)
   const named = useCustomer(value ?? '', { enabled: chosen && knownName === undefined })
 
   if (chosen) {
     return (
       <div id={id} className="flex items-center justify-between gap-2 border px-3 py-2 text-sm">
         <span className="min-w-0 truncate">
-          {knownName ?? named.data?.ragione_sociale ?? 'Caricamento…'}
+          {knownName ?? named.data?.legal_name ?? 'Caricamento…'}
         </span>
         <Button
           type="button"
@@ -117,7 +117,7 @@ export function CustomerPicker({
                   onChange(customer)
                 }}
               >
-                <span className="truncate">{customer.ragione_sociale}</span>
+                <span className="truncate">{customer.legal_name}</span>
               </button>
             </li>
           ))

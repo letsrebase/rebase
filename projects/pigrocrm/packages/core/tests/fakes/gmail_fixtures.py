@@ -62,10 +62,10 @@ def connected_account(
     """
     user = User(
         email=f"user-{uuid4().hex[:8]}@example.it",
-        nome="Owner",
+        name="Owner",
         password_hash="x",
-        ruolo="admin",
-        attivo=True,
+        role="admin",
+        active=True,
     )
     session.add(user)
     session.flush()

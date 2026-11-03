@@ -15,9 +15,9 @@ export type InvoiceArtifact = components['schemas']['InvoiceArtifact']
 export type FiscalProfile = components['schemas']['FiscalProfileRead']
 export type Activity = components['schemas']['ActivityRead']
 
-export type InvoiceTipo = 'fattura' | 'proforma'
-export type InvoiceStato = 'bozza' | 'emessa' | 'annullata' | 'confermata' | 'consumata'
-export type StatoPagamento = 'da_incassare' | 'incassato'
+export type InvoiceType = 'invoice' | 'proforma'
+export type InvoiceStatus = 'draft' | 'issued' | 'cancelled' | 'confirmed' | 'consumed'
+export type PaymentStatus = 'unpaid' | 'paid'
 
 /**
  * A customer or a deal, following the same discriminated shape
@@ -29,11 +29,11 @@ export type InvoiceOwner = { customerId: string } | { dealId: string }
 export interface InvoiceFilters {
   customer_id?: string
   deal_id?: string
-  azienda_id?: string
-  tipo?: InvoiceTipo
-  stato?: InvoiceStato
-  anno?: number
-  stato_pagamento?: StatoPagamento
+  legal_entity_id?: string
+  type?: InvoiceType
+  status?: InvoiceStatus
+  year?: number
+  payment_status?: PaymentStatus
   /**
    * The "scaduto e non incassato" drill-through of the operational dashboard (slice 6
    * §6.2). Server-side, and not a filter applied to the fetched page here, because the
@@ -42,76 +42,76 @@ export interface InvoiceFilters {
    * disagree with the count beside it on exactly the boundary cases -- an invoice due
    * today, one already collected -- that the predicate exists to settle.
    */
-  scadute?: boolean
+  overdue?: boolean
   /**
-   * The fattura a consumed proforma was issued as. The fattura carries
-   * `origine_proforma_id` and the proforma carries nothing, so the proforma's page asks
+   * The invoice a consumed proforma was issued as. The invoice carries
+   * `origin_proforma_id` and the proforma carries nothing, so the proforma's page asks
    * the list for the one row that points at it (ORB-134).
    */
-  origine_proforma_id?: string
+  origin_proforma_id?: string
   /**
    * Leave out the proformas that became a fattura. Under «Tutte» the list otherwise
    * shows each issued proforma twice, once as itself pilled «Consumata» and once as its
-   * number (ORB-169). Sent whenever no `stato` is chosen; the «Consumata» chip asks by
-   * state and gets them. Server-side, like `scadute`, so the page and its cursor are
+   * number (ORB-169). Sent whenever no `status` is chosen; the «Consumata» chip asks by
+   * state and gets them. Server-side, like `overdue`, so the page and its cursor are
    * the API's and not a filtered copy.
    */
-  escludi_consumate?: boolean
+  exclude_consumed?: boolean
   limit?: number
   cursor?: string
 }
 
-export const INVOICE_TYPE_LABELS: Record<InvoiceTipo, string> = {
-  fattura: 'Fattura',
+export const INVOICE_TYPE_LABELS: Record<InvoiceType, string> = {
+  invoice: 'Fattura',
   proforma: 'Proforma',
 }
 
-export const INVOICE_STATE_LABELS: Record<InvoiceStato, string> = {
-  bozza: 'Bozza',
-  emessa: 'Emessa',
-  annullata: 'Annullata',
-  confermata: 'Confermata',
-  consumata: 'Consumata',
+export const INVOICE_STATE_LABELS: Record<InvoiceStatus, string> = {
+  draft: 'Bozza',
+  issued: 'Emessa',
+  cancelled: 'Annullata',
+  confirmed: 'Confermata',
+  consumed: 'Consumata',
 }
 
-export const PAYMENT_STATE_LABELS: Record<StatoPagamento, string> = {
-  da_incassare: 'Da incassare',
-  incassato: 'Incassato',
+export const PAYMENT_STATE_LABELS: Record<PaymentStatus, string> = {
+  unpaid: 'Da incassare',
+  paid: 'Incassato',
 }
 
 /**
  * The tone each fiscal state reads as in a `StatusPill` (design spec §4). Next to the
- * labels, and a total `Record`, so a state added to `InvoiceStato` fails to compile here
+ * labels, and a total `Record`, so a state added to `InvoiceStatus` fails to compile here
  * rather than rendering as a default nobody chose. Note what that does and does not buy:
- * `InvoiceStato` is a union written by hand a few lines above, not a generated type, so
+ * `InvoiceStatus` is a union written by hand a few lines above, not a generated type, so
  * the compile breaks when somebody widens *it* -- adding a state on the server does not
  * by itself reach this file.
  *
- * `emessa` and `confermata` are settled: a number is assigned, or a proforma is ready to
- * become one, and neither is a problem to be looked at. `bozza` and `consumata` are
+ * `issued` and `confirmed` are settled: a number is assigned, or a proforma is ready to
+ * become one, and neither is a problem to be looked at. `draft` and `consumed` are
  * quiet because neither claims anything about money -- a draft is not a document and a
- * consumed proforma has already become the invoice beside it. `annullata` is the one
+ * consumed proforma has already become the invoice beside it. `cancelled` is the one
  * state that has to read as a warning: an annulled invoice keeps its number and stays in
  * the register, so a row that looked ordinary would be read as a live document.
  */
-export const INVOICE_STATE_TONE: Record<InvoiceStato, StatusTone> = {
-  bozza: 'muted',
-  confermata: 'ink',
-  emessa: 'ink',
-  consumata: 'muted',
-  annullata: 'danger',
+export const INVOICE_STATE_TONE: Record<InvoiceStatus, StatusTone> = {
+  draft: 'muted',
+  confirmed: 'ink',
+  issued: 'ink',
+  consumed: 'muted',
+  cancelled: 'danger',
 }
 
 /**
  * Collection is the one place gold is right: «Da incassare» is not an error and not a
  * finished state -- it is money waiting on somebody, which is exactly what Royal Gold
  * says everywhere else in this product. Overdue is not a state of its own on the server
- * (it is `da_incassare` plus a date in the past, the `scadute` filter); the day the list
+ * (it is `unpaid` plus a date in the past, the `overdue` filter); the day the list
  * renders it as its own pill it reads `danger`, per the design spec.
  */
-export const PAYMENT_STATE_TONE: Record<StatoPagamento, StatusTone> = {
-  da_incassare: 'gold',
-  incassato: 'ink',
+export const PAYMENT_STATE_TONE: Record<PaymentStatus, StatusTone> = {
+  unpaid: 'gold',
+  paid: 'ink',
 }
 
 function ownerQuery(owner: InvoiceOwner): { customer_id?: string; deal_id?: string } {
@@ -184,14 +184,14 @@ function useInvoicesPaged(filters: InvoicesListFilters): InvoicesListResult {
 }
 
 /**
- * The invoice list page's own data. Every filter it takes is server-side (`tipo`,
- * `stato`, `escludi_consumate`, `scadute`), so a chip or the type select changing
+ * The invoice list page's own data. Every filter it takes is server-side (`type`,
+ * `status`, `exclude_consumed`, `overdue`), so a chip or the type select changing
  * mid-walk asks the server for a fresh first page rather than filtering the rows
  * already on screen -- the state chips and the type select keep working across
  * however many pages are loaded (REB-231).
  */
 export function useInvoicesList(filters: InvoicesListFilters = {}): InvoicesListResult {
-  // The sidebar's azienda (REB-625) on this page only: the owner tab below passes a
+  // The sidebar's legal entity (REB-625) on this page only: the owner tab below passes a
   // customer or a deal, whose invoices are theirs whatever the sidebar says.
   return useInvoicesPaged(useLegalEntityScope(filters))
 }
@@ -205,7 +205,7 @@ export function useInvoicesList(filters: InvoicesListFilters = {}): InvoicesList
 export function useInvoicesForOwner(owner: InvoiceOwner): InvoicesListResult {
   // The tab has no state chips, so it never asks for the consumed ones by state: the
   // fattura stands for its proforma here as it does on the list page (ORB-169).
-  return useInvoicesPaged({ ...ownerQuery(owner), escludi_consumate: true })
+  return useInvoicesPaged({ ...ownerQuery(owner), exclude_consumed: true })
 }
 
 export function useInvoice(invoiceId: string) {
@@ -234,15 +234,15 @@ export function useInvoiceLines(invoiceId: string) {
   })
 }
 
-export function useFiscalProfile(aziendaId: string) {
+export function useFiscalProfile(legalEntityId: string) {
   return useQuery({
-    queryKey: queryKeys.fiscalProfile(aziendaId),
+    queryKey: queryKeys.fiscalProfile(legalEntityId),
     queryFn: async (): Promise<FiscalProfile | null> => {
       // A 404 here means "not configured yet", which is a legitimate state and not an
-      // error: the azienda exists, its fiscal profile is saved from this screen once
-      // (REB-615: the profile belongs to the azienda, `GET /api/aziende/{id}/fiscal-profile`).
-      const { data, error, response } = await api.GET('/api/aziende/{azienda_id}/fiscal-profile', {
-        params: { path: { azienda_id: aziendaId } },
+      // error: the legal entity exists, its fiscal profile is saved from this screen once
+      // (REB-615: the profile belongs to the legal entity, `GET /api/aziende/{id}/fiscal-profile`).
+      const { data, error, response } = await api.GET('/api/legal-entities/{legal_entity_id}/fiscal-profile', {
+        params: { path: { legal_entity_id: legalEntityId } },
       })
       if (response.status === 404) return null
       if (error !== undefined) throw toProblem(error, response.status)
@@ -325,11 +325,11 @@ export function useUpdateInvoice(invoiceId: string) {
 export function useReplaceLines(invoiceId: string) {
   const invalidate = useInvoiceInvalidation()
   return useMutation({
-    mutationFn: (righe: InvoiceLineInput[]) =>
+    mutationFn: (lines: InvoiceLineInput[]) =>
       unwrap(
         api.PUT('/api/invoices/{invoice_id}/lines', {
           params: { path: { invoice_id: invoiceId } },
-          body: { righe },
+          body: { lines },
         }),
       ),
     onSuccess: () => invalidate(invoiceId),
@@ -352,7 +352,7 @@ export function useConfirmProforma(invoiceId: string) {
 export function useIssueInvoice(invoiceId: string) {
   const invalidate = useInvoiceInvalidation()
   return useMutation({
-    mutationFn: (body: { data_emissione?: string | null }) =>
+    mutationFn: (body: { issue_date?: string | null }) =>
       unwrap(
         api.POST('/api/invoices/{invoice_id}/issue', {
           params: { path: { invoice_id: invoiceId } },
@@ -361,7 +361,7 @@ export function useIssueInvoice(invoiceId: string) {
       ),
     onSuccess: (issued) => {
       // The issued row may be a *different* row when the source was a proforma (which
-      // becomes `consumata` and the new fattura is a separate row), so both ids are
+      // becomes `consumed` and the new fattura is a separate row), so both ids are
       // invalidated.
       invalidate(invoiceId)
       invalidate(issued.id)
@@ -372,11 +372,11 @@ export function useIssueInvoice(invoiceId: string) {
 export function useAnnulInvoice(invoiceId: string) {
   const invalidate = useInvoiceInvalidation()
   return useMutation({
-    mutationFn: (motivo: string) =>
+    mutationFn: (reason: string) =>
       unwrap(
         api.POST('/api/invoices/{invoice_id}/annul', {
           params: { path: { invoice_id: invoiceId } },
-          body: { motivo },
+          body: { reason },
         }),
       ),
     onSuccess: () => invalidate(invoiceId),
@@ -390,7 +390,7 @@ export function useMarkTransmitted(invoiceId: string) {
       unwrap(
         api.POST('/api/invoices/{invoice_id}/transmitted', {
           params: { path: { invoice_id: invoiceId } },
-          body: { data },
+          body: { date: data },
         }),
       ),
     onSuccess: () => invalidate(invoiceId),
@@ -400,7 +400,7 @@ export function useMarkTransmitted(invoiceId: string) {
 export function useSetPaymentState(invoiceId: string) {
   const invalidate = useInvoiceInvalidation()
   return useMutation({
-    mutationFn: (body: { stato_pagamento: StatoPagamento; data_incasso?: string | null }) =>
+    mutationFn: (body: { payment_status: PaymentStatus; payment_date?: string | null }) =>
       unwrap(
         api.PATCH('/api/invoices/{invoice_id}/payment', {
           params: { path: { invoice_id: invoiceId } },
@@ -426,7 +426,7 @@ export function useProduceArtifacts(invoiceId: string) {
           params: { path: { invoice_id: targetId ?? invoiceId } },
         }),
       ),
-    onSuccess: (_data, targetId) => {
+    onSuccess: (_date, targetId) => {
       invalidate(invoiceId)
       if (targetId) invalidate(targetId)
     },
@@ -460,13 +460,13 @@ export function useDeleteInvoice() {
   })
 }
 
-export function useSaveFiscalProfile(aziendaId: string) {
+export function useSaveFiscalProfile(legalEntityId: string) {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: (body: Record<string, unknown>) =>
       unwrap(
-        api.PUT('/api/aziende/{azienda_id}/fiscal-profile', {
-          params: { path: { azienda_id: aziendaId } },
+        api.PUT('/api/legal-entities/{legal_entity_id}/fiscal-profile', {
+          params: { path: { legal_entity_id: legalEntityId } },
           body: body as never,
         }),
       ),
@@ -474,8 +474,8 @@ export function useSaveFiscalProfile(aziendaId: string) {
       // The row as saved goes into the cache first (REB-622: the panel's form compares
       // its version with the row's, and a prop that lagged the save by one round trip
       // read as another admin's older row), then the refetch confirms it.
-      queryClient.setQueryData(queryKeys.fiscalProfile(aziendaId), saved)
-      void queryClient.invalidateQueries({ queryKey: queryKeys.fiscalProfile(aziendaId) })
+      queryClient.setQueryData(queryKeys.fiscalProfile(legalEntityId), saved)
+      void queryClient.invalidateQueries({ queryKey: queryKeys.fiscalProfile(legalEntityId) })
     },
   })
 }

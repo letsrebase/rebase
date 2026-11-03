@@ -38,22 +38,21 @@ USER_ID = UUID("11111111-2222-3333-4444-555555555555")
 def test_a_digest_sent_is_one_event_on_the_recipients_own_id() -> None:
     capture = FakeCapture()
     tracker = Tracker(capture)
-    assert tracker.digest_sent(USER_ID, settimana="2026-W38", sezioni=4) is True
+    assert tracker.digest_sent(USER_ID, week="2026-W38", sections=4) is True
     assert capture.calls == [
         (
             DIGEST_SENT,
             str(USER_ID),
             # No `$process_person_profile` flag: CRM users are already identified by
             # the browser under this same id, so the profile is wanted here.
-            {"settimana": "2026-W38", "sezioni": 4, "via": "server"},
+            {"week": "2026-W38", "sections": 4, "via": "server"},
         )
     ]
 
 
 def test_an_sdk_that_raises_cannot_fail_the_digest_run() -> None:
     assert (
-        Tracker(FakeCapture(raises=True)).digest_sent(USER_ID, settimana="2026-W38", sezioni=4)
-        is False
+        Tracker(FakeCapture(raises=True)).digest_sent(USER_ID, week="2026-W38", sections=4) is False
     )
 
 

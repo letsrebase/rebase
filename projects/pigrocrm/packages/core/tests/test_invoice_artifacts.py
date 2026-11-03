@@ -25,14 +25,15 @@ from pigrocrm.core.documents.models import Document
 from pigrocrm.core.documents.schemas import DocumentCreate, DocumentListQuery
 from pigrocrm.core.documents.service import DocumentService
 from pigrocrm.core.documents.uploads import DocumentUploads
-from pigrocrm.core.emitter.schemas import LegalEntityUpsert
-from pigrocrm.core.emitter.service import LegalEntityService
 from pigrocrm.core.errors import Conflict, NotFound, ValidationFailed
 from pigrocrm.core.fiscal.schemas import FiscalProfileUpsert
 from pigrocrm.core.fiscal.service import FiscalProfileService
 from pigrocrm.core.invoices.models import Invoice
 from pigrocrm.core.invoices.schemas import InvoiceCreate, InvoiceIssue, InvoiceLineIn
 from pigrocrm.core.invoices.service import InvoiceService
+from pigrocrm.core.labels import INVOICE_TYPE, label
+from pigrocrm.core.legal_entities.schemas import LegalEntityUpsert
+from pigrocrm.core.legal_entities.service import LegalEntityService
 from pigrocrm.core.storage.local import LocalFileStorage
 
 ADMIN = Actor(id=None, type="system", role="admin")
@@ -45,17 +46,17 @@ def storage(tmp_path) -> LocalFileStorage:  # type: ignore[no-untyped-def]
 
 @pytest.fixture
 def service(db_session: Session, storage: LocalFileStorage) -> InvoiceService:
-    FiscalProfileService(db_session).upsert(FiscalProfileUpsert(codice_regime="RF19"), ADMIN)
+    FiscalProfileService(db_session).upsert(FiscalProfileUpsert(regime_code="RF19"), ADMIN)
     LegalEntityService(db_session).upsert_default(
         LegalEntityUpsert(
-            ragione_sociale="Studio Rossi",
-            partita_iva="01234567890",
-            codice_fiscale="HMCRFT00A01H501K",
-            indirizzo="Via Vittorio Veneto 12",
+            legal_name="Studio Rossi",
+            vat_number="01234567890",
+            tax_code="HMCRFT00A01H501K",
+            address="Via Vittorio Veneto 12",
             cap="20124",
-            comune="Milano",
-            provincia="MI",
-            nazione="IT",
+            city="Milano",
+            province="MI",
+            country="IT",
             email="mario@example.com",
         ),
         ADMIN,
@@ -66,14 +67,14 @@ def service(db_session: Session, storage: LocalFileStorage) -> InvoiceService:
 @pytest.fixture
 def customer_id(db_session: Session) -> UUID:
     customer = Customer(
-        ragione_sociale="Acme S.r.l.",
-        partita_iva="12345678901",
-        codice_sdi="ABCDEFG",
-        indirizzo="Corso Italia 5",
+        legal_name="Acme S.r.l.",
+        vat_number="12345678901",
+        sdi_code="ABCDEFG",
+        address="Corso Italia 5",
         cap="00100",
-        comune="Roma",
-        provincia="RM",
-        nazione="IT",
+        city="Roma",
+        province="RM",
+        country="IT",
     )
     db_session.add(customer)
     db_session.flush()
@@ -84,8 +85,8 @@ def _issue(service: InvoiceService, customer_id: UUID) -> UUID:
     draft = service.create(
         InvoiceCreate(
             customer_id=customer_id,
-            causale="Consulenza",
-            righe=[InvoiceLineIn(descrizione="Consulenza", prezzo_unitario=Decimal("1000.00"))],
+            memo="Consulenza",
+            lines=[InvoiceLineIn(description="Consulenza", unit_price=Decimal("1000.00"))],
         ),
         ADMIN,
     )
@@ -96,8 +97,8 @@ def _confirmed_proforma(service: InvoiceService, customer_id: UUID) -> UUID:
     proforma = service.create(
         InvoiceCreate(
             customer_id=customer_id,
-            tipo="proforma",
-            righe=[InvoiceLineIn(descrizione="Consulenza", prezzo_unitario=Decimal("500.00"))],
+            type="proforma",
+            lines=[InvoiceLineIn(description="Consulenza", unit_price=Decimal("500.00"))],
         ),
         ADMIN,
     )
@@ -111,14 +112,14 @@ def test_a_confirmed_proforma_produces_only_a_pdf(
     """A proforma is not a fiscal document (`export_xml` refuses one on the row's own
     state), but the PDF is a live view built from the current customer/emitter/fiscal
     data -- there is nothing frozen to read back, since only `issue` writes
-    `snapshot`/`anno`/`numero`."""
+    `snapshot`/`year`/`number`."""
     proforma_id = _confirmed_proforma(service, customer_id)
     artifacts = service.produce_artifacts(proforma_id, ADMIN)
     assert [a.kind for a in artifacts] == ["pdf"]
     assert artifacts[0].content_type == "application/pdf"
 
 
-def test_an_issued_fattura_produces_both_the_pdf_and_the_xml(
+def test_an_issued_invoice_produces_both_the_pdf_and_the_xml(
     service: InvoiceService, customer_id: UUID
 ) -> None:
     invoice_id = _issue(service, customer_id)
@@ -142,7 +143,7 @@ def test_producing_artifacts_twice_is_idempotent_for_a_proforma(
     assert versions == 1
 
 
-def test_producing_artifacts_twice_is_idempotent_for_an_issued_fattura(
+def test_producing_artifacts_twice_is_idempotent_for_an_issued_invoice(
     service: InvoiceService, db_session: Session, customer_id: UUID
 ) -> None:
     invoice_id = _issue(service, customer_id)
@@ -159,13 +160,13 @@ def test_producing_artifacts_twice_is_idempotent_for_an_issued_fattura(
 
 def _non_resident_customer(db_session: Session) -> UUID:
     customer = Customer(
-        ragione_sociale="Example Ltd",
-        partita_iva="GB123456789",
-        indirizzo="1 Old Street",
+        legal_name="Example Ltd",
+        vat_number="GB123456789",
+        address="1 Old Street",
         cap="EC1V 9HL",
-        comune="London",
-        provincia="",
-        nazione="GB",
+        city="London",
+        province="",
+        country="GB",
     )
     db_session.add(customer)
     db_session.flush()
@@ -183,10 +184,10 @@ def test_the_pdf_for_a_non_resident_customer_carries_the_7_ter_reference(
     declaration the lines actually carry, so the PDF and the XML agree."""
     invoice_id = _issue(service, _non_resident_customer(db_session))
     pdf, _xml = service.produce_artifacts(invoice_id, ADMIN)
-    testo = extract_pdf_text(storage, db_session, pdf.document_id)
-    assert "7-ter" in testo
-    assert "DPR 633/1972" in testo
-    assert "L. 190/2014" not in testo
+    text = extract_pdf_text(storage, db_session, pdf.document_id)
+    assert "7-ter" in text
+    assert "DPR 633/1972" in text
+    assert "L. 190/2014" not in text
 
 
 def test_the_pdf_for_an_italian_customer_keeps_the_domestic_declaration(
@@ -198,9 +199,9 @@ def test_the_pdf_for_an_italian_customer_keeps_the_domestic_declaration(
 ) -> None:
     invoice_id = _issue(service, customer_id)
     pdf, _xml = service.produce_artifacts(invoice_id, ADMIN)
-    testo = extract_pdf_text(storage, db_session, pdf.document_id)
-    assert "L. 190/2014" in testo
-    assert "7-ter" not in testo
+    text = extract_pdf_text(storage, db_session, pdf.document_id)
+    assert "L. 190/2014" in text
+    assert "7-ter" not in text
 
 
 # --- discarding a proforma takes its PDF with it (ORB-41) ---------------------------
@@ -234,7 +235,7 @@ def test_discarding_a_proforma_archives_its_pdf_and_keeps_the_bytes(
     # version says they are.
     row = db_session.get(Document, pdf.document_id)
     assert row is not None and row.deleted_at is not None
-    version = documents.repo.version(row.id, row.versione_corrente)
+    version = documents.repo.version(row.id, row.current_version)
     assert version is not None
     assert storage.get(version.storage_key)[:5] == b"%PDF-"
     # And the document's own timeline says why it went, the way a delete from the
@@ -251,7 +252,7 @@ def test_a_proforma_consumed_between_the_read_and_the_write_is_a_conflict(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """The race `soft_delete`'s `IntegrityError` handler was written for (ORB-57): the
-    pre-check reads `confermata`, an emission consumes the proforma while the delete is
+    pre-check reads `confirmed`, an emission consumes the proforma while the delete is
     in flight, and `ck_invoices_no_delete_once_consumed` refuses the `UPDATE`. The
     handler could never run: `ActivityService.record` flushes, so the constraint fired
     inside `record`, before the `try`, and the caller got a raw `IntegrityError` on a
@@ -264,7 +265,7 @@ def test_a_proforma_consumed_between_the_read_and_the_write_is_a_conflict(
     `db_session` fixture holds every row inside one outer transaction that no other
     connection can see. The raw `UPDATE` slipped in after the repository's read leaves
     the row in exactly the state a committed emission would, with the service still
-    holding the stale `confermata` it read. Only the delete's own SAVEPOINT is undone: the
+    holding the stale `confirmed` it read. Only the delete's own SAVEPOINT is undone: the
     raw `UPDATE` stays, like the emission it stands for, and so does everything else the
     session held.
     """
@@ -277,7 +278,7 @@ def test_a_proforma_consumed_between_the_read_and_the_write_is_a_conflict(
         invoice = read(invoice_id)
         # What `issue` does to a proforma, reduced to the one column the CHECK reads.
         db_session.execute(
-            text("UPDATE invoices SET stato = 'consumata' WHERE id = :id"), {"id": invoice_id}
+            text("UPDATE invoices SET status = 'consumed' WHERE id = :id"), {"id": invoice_id}
         )
         return invoice
 
@@ -310,17 +311,17 @@ def test_the_pdf_prints_the_accrual_period_when_the_document_has_one(
     draft = service.create(
         InvoiceCreate(
             customer_id=customer_id,
-            causale="Consulenza",
-            competenza_da=date(2026, 8, 1),
-            competenza_a=date(2026, 8, 31),
-            righe=[InvoiceLineIn(descrizione="Consulenza", prezzo_unitario=Decimal("1000.00"))],
+            memo="Consulenza",
+            accrual_from=date(2026, 8, 1),
+            accrual_to=date(2026, 8, 31),
+            lines=[InvoiceLineIn(description="Consulenza", unit_price=Decimal("1000.00"))],
         ),
         ADMIN,
     )
     invoice_id = service.issue(draft.id, InvoiceIssue(), ADMIN).id
     pdf, _xml = service.produce_artifacts(invoice_id, ADMIN)
-    testo = extract_pdf_text(storage, db_session, pdf.document_id)
-    assert "Periodo di competenza: dal 01-08-2026 al 31-08-2026" in testo
+    text = extract_pdf_text(storage, db_session, pdf.document_id)
+    assert "Periodo di competenza: dal 01-08-2026 al 31-08-2026" in text
 
 
 def test_a_document_without_a_period_prints_no_period_line(
@@ -349,21 +350,20 @@ def test_the_pdf_prints_the_order_reference_with_its_markup_characters_literally
     draft = service.create(
         InvoiceCreate(
             customer_id=customer_id,
-            causale="Consulenza",
-            ordine_numero="ODA#14*",
-            ordine_data=date(2026, 10, 9),
-            ordine_cig="Z0A1B2C3D4",
-            ordine_cup="J41E22000110005",
-            righe=[InvoiceLineIn(descrizione="Consulenza", prezzo_unitario=Decimal("250.00"))],
+            memo="Consulenza",
+            purchase_order_number="ODA#14*",
+            purchase_order_date=date(2026, 10, 9),
+            purchase_order_tender_code="Z0A1B2C3D4",
+            purchase_order_project_code="J41E22000110005",
+            lines=[InvoiceLineIn(description="Consulenza", unit_price=Decimal("250.00"))],
         ),
         ADMIN,
     )
     invoice_id = service.issue(draft.id, InvoiceIssue(), ADMIN).id
     pdf, _xml = service.produce_artifacts(invoice_id, ADMIN)
-    testo = extract_pdf_text(storage, db_session, pdf.document_id)
+    text = extract_pdf_text(storage, db_session, pdf.document_id)
     assert (
-        "Riferimento ordine: n. ODA#14* del 09-10-2026, CIG Z0A1B2C3D4, CUP J41E22000110005"
-        in testo
+        "Riferimento ordine: n. ODA#14* del 09-10-2026, CIG Z0A1B2C3D4, CUP J41E22000110005" in text
     )
 
 
@@ -377,9 +377,9 @@ def test_a_proforma_prints_its_order_and_a_document_without_one_prints_no_order_
     proforma = service.create(
         InvoiceCreate(
             customer_id=customer_id,
-            tipo="proforma",
-            ordine_numero="ODA-14",
-            righe=[InvoiceLineIn(descrizione="Consulenza", prezzo_unitario=Decimal("250.00"))],
+            type="proforma",
+            purchase_order_number="ODA-14",
+            lines=[InvoiceLineIn(description="Consulenza", unit_price=Decimal("250.00"))],
         ),
         ADMIN,
     )
@@ -408,41 +408,41 @@ def test_the_proforma_pdf_prints_its_own_date_and_its_period_not_the_render_day(
     proforma = service.create(
         InvoiceCreate(
             customer_id=customer_id,
-            tipo="proforma",
-            data_emissione=date(2025, 12, 31),
-            competenza_da=date(2025, 12, 1),
-            competenza_a=date(2025, 12, 31),
-            righe=[InvoiceLineIn(descrizione="Consulenza", prezzo_unitario=Decimal("500.00"))],
+            type="proforma",
+            issue_date=date(2025, 12, 31),
+            accrual_from=date(2025, 12, 1),
+            accrual_to=date(2025, 12, 31),
+            lines=[InvoiceLineIn(description="Consulenza", unit_price=Decimal("500.00"))],
         ),
         ADMIN,
     )
     (pdf,) = service.produce_artifacts(proforma.id, ADMIN)
-    testo = extract_pdf_text(storage, db_session, pdf.document_id)
-    assert "Data: 31-12-2025" in testo
-    assert "Periodo di competenza: dal 01-12-2025 al 31-12-2025" in testo
+    text = extract_pdf_text(storage, db_session, pdf.document_id)
+    assert "Data: 31-12-2025" in text
+    assert "Periodo di competenza: dal 01-12-2025 al 31-12-2025" in text
 
     # A proforma's PDF has no expected hash (it is not a fiscal identity), so the
     # re-render lands as version 2 of the same document; `download` serves the current
     # version, which is what the customer receives, so that is what is read back here.
-    service.update(proforma.id, InvoiceUpdate(data_emissione=date(2026, 1, 2)), ADMIN)
+    service.update(proforma.id, InvoiceUpdate(issue_date=date(2026, 1, 2)), ADMIN)
     (again,) = service.produce_artifacts(proforma.id, ADMIN)
     assert again.document_id == pdf.document_id
-    assert again.version_numero == 2
+    assert again.version_number == 2
     data, _, _ = service.download(proforma.id, "pdf", ADMIN)
-    testo = subprocess.run(
+    text = subprocess.run(
         ["pdftotext", "-layout", "-", "-"], input=data, capture_output=True, check=True
     ).stdout.decode("utf-8", errors="replace")
-    assert "Data: 02-01-2026" in testo
-    assert "Data: 31-12-2025" not in testo
+    assert "Data: 02-01-2026" in text
+    assert "Data: 31-12-2025" not in text
 
 
 # --- ORB-55: the address line follows the customer's country --------------------------
 
 
-def _one_line(testo: str) -> str:
+def _one_line(text: str) -> str:
     """`pdftotext -layout` pads columns with runs of spaces; the assertions below are
     about words and their order, not about the padding."""
-    return " ".join(testo.split())
+    return " ".join(text.split())
 
 
 def test_the_pdf_for_a_non_resident_customer_prints_the_address_without_empty_parentheses(
@@ -456,12 +456,12 @@ def test_the_pdf_for_a_non_resident_customer_prints_the_address_without_empty_pa
     province to print: the postcode as stored, the city, the country, and no parentheses."""
     invoice_id = _issue(service, _non_resident_customer(db_session))
     pdf, _xml = service.produce_artifacts(invoice_id, ADMIN)
-    testo = _one_line(extract_pdf_text(storage, db_session, pdf.document_id))
-    assert "1 Old Street, EC1V 9HL London GB" in testo
-    assert "()" not in testo
+    text = _one_line(extract_pdf_text(storage, db_session, pdf.document_id))
+    assert "1 Old Street, EC1V 9HL London GB" in text
+    assert "()" not in text
 
 
-def test_the_pdf_for_an_italian_customer_keeps_cap_comune_and_province(
+def test_the_pdf_for_an_italian_customer_keeps_postal_code_city_and_province(
     service: InvoiceService,
     customer_id: UUID,
     db_session: Session,
@@ -472,8 +472,8 @@ def test_the_pdf_for_an_italian_customer_keeps_cap_comune_and_province(
     in parentheses, so the fix for London did not move Rome."""
     invoice_id = _issue(service, customer_id)
     pdf, _xml = service.produce_artifacts(invoice_id, ADMIN)
-    testo = _one_line(extract_pdf_text(storage, db_session, pdf.document_id))
-    assert "Corso Italia 5, 00100 Roma (RM) IT" in testo
+    text = _one_line(extract_pdf_text(storage, db_session, pdf.document_id))
+    assert "Corso Italia 5, 00100 Roma (RM) IT" in text
 
 
 def test_the_proforma_pdf_for_a_non_resident_customer_prints_the_same_address_line(
@@ -487,9 +487,9 @@ def test_the_proforma_pdf_for_a_non_resident_customer_prints_the_same_address_li
     for an incomplete record."""
     proforma_id = _confirmed_proforma(service, _non_resident_customer(db_session))
     (pdf,) = service.produce_artifacts(proforma_id, ADMIN)
-    testo = _one_line(extract_pdf_text(storage, db_session, pdf.document_id))
-    assert "1 Old Street, EC1V 9HL London GB" in testo
-    assert "()" not in testo
+    text = _one_line(extract_pdf_text(storage, db_session, pdf.document_id))
+    assert "1 Old Street, EC1V 9HL London GB" in text
+    assert "()" not in text
 
 
 # --- an invoice's PDF document takes only a PDF (REB-480) --------------------------
@@ -503,16 +503,16 @@ XHTML = (
 UPLOADED_PDF = b"%PDF-1.7\nfinto\n"
 
 
-@pytest.mark.parametrize("tipo", ["fattura", "proforma"])
+@pytest.mark.parametrize("type", ["invoice", "proforma"])
 def test_an_invoices_pdf_document_refuses_a_version_that_is_not_a_pdf(
-    service: InvoiceService, customer_id: UUID, tipo: str
+    service: InvoiceService, customer_id: UUID, type: str
 ) -> None:
     """The guard sits in the version core, so the REST upload and every other caller of
     `add_version` meet it. The refusal writes nothing: the document keeps its version
     and the invoice keeps serving the PDF it had. A PDF still goes in."""
     invoice_id = (
         _issue(service, customer_id)
-        if tipo == "fattura"
+        if type == "invoice"
         else _confirmed_proforma(service, customer_id)
     )
     pdf = service.produce_artifacts(invoice_id, ADMIN)[0]
@@ -521,14 +521,14 @@ def test_an_invoices_pdf_document_refuses_a_version_that_is_not_a_pdf(
         service.documents.add_version(pdf.document_id, XHTML, "application/xml", ADMIN)
     assert excinfo.value.details["field"] == "content_type"
     assert excinfo.value.details["expected"] == "application/pdf"
-    assert f"il PDF di una {tipo}:" in excinfo.value.details["reason"]
-    assert service.documents.get(pdf.document_id, ADMIN).versione_corrente == pdf.version_numero
+    assert f"il PDF di una {label(INVOICE_TYPE, type)}:" in excinfo.value.details["reason"]
+    assert service.documents.get(pdf.document_id, ADMIN).current_version == pdf.version_number
     content, content_type, _ = service.download(invoice_id, "pdf", ADMIN)
     assert content_type == "application/pdf"
     assert hashlib.sha256(content).hexdigest() == pdf.hash_sha256
 
     added = service.documents.add_version(pdf.document_id, UPLOADED_PDF, "application/pdf", ADMIN)
-    assert added.numero == pdf.version_numero + 1
+    assert added.number == pdf.version_number + 1
     assert service.download(invoice_id, "pdf", ADMIN)[0] == UPLOADED_PDF
 
 
@@ -546,15 +546,15 @@ def test_a_discarded_proformas_pdf_document_still_takes_only_a_pdf_once_restored
         service.documents.add_version(pdf.document_id, XHTML, "application/xml", ADMIN)
 
 
-def test_a_fattura_document_no_invoice_names_keeps_the_common_allowlist(
+def test_to_invoice_document_no_invoice_names_keeps_the_common_allowlist(
     service: InvoiceService, customer_id: UUID
 ) -> None:
-    """The rule is the invoice's pointer, not `documents.tipo`: a `fattura` document
+    """The rule is the invoice's pointer, not `documents.type`: a `invoice` document
     nobody linked yet (an original waiting for `import_issued`) takes what any document
     takes. `_validate_original_pdf` refuses to link one whose current version is not a
     PDF, so it cannot become an invoice's PDF that way."""
     document = service.documents.create(
-        DocumentCreate(customer_id=customer_id, tipo="fattura", titolo="Fattura fornitore"),
+        DocumentCreate(customer_id=customer_id, type="invoice", title="Fattura fornitore"),
         ADMIN,
     )
     version = service.documents.add_version(document.id, XHTML, "application/xml", ADMIN)
@@ -565,8 +565,8 @@ def test_a_version_that_is_not_a_pdf_is_never_served_as_the_invoices_pdf(
     service: InvoiceService, customer_id: UUID, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A version written before REB-480, when `add_version` took any allowed type here.
-    The download answers it as a missing PDF, the 404 the web already words as «non è
-    disponibile», and «Rigenera documenti» (`produce_artifacts`) stores a PDF over it."""
+    The download answers it as a missing PDF, the 404 the web already words as «not
+    available», and «Regenerate documents» (`produce_artifacts`) stores a PDF over it."""
     invoice_id = _issue(service, customer_id)
     pdf = service.produce_artifacts(invoice_id, ADMIN)[0]
     with monkeypatch.context() as patched:
@@ -578,7 +578,7 @@ def test_a_version_that_is_not_a_pdf_is_never_served_as_the_invoices_pdf(
         service.download(invoice_id, "pdf", ADMIN)
 
     repaired = service.produce_artifacts(invoice_id, ADMIN)[0]
-    assert repaired.version_numero == pdf.version_numero + 2
+    assert repaired.version_number == pdf.version_number + 2
     content, content_type, _ = service.download(invoice_id, "pdf", ADMIN)
     assert content_type == "application/pdf"
     assert hashlib.sha256(content).hexdigest() == pdf.hash_sha256
@@ -600,5 +600,5 @@ def test_the_pdfs_own_bytes_stored_under_another_type_are_repaired_not_reused(
         service.download(invoice_id, "pdf", ADMIN)
 
     repaired = service.produce_artifacts(invoice_id, ADMIN)[0]
-    assert repaired.version_numero == pdf.version_numero + 2
+    assert repaired.version_number == pdf.version_number + 2
     assert service.download(invoice_id, "pdf", ADMIN)[:2] == (rendered, "application/pdf")

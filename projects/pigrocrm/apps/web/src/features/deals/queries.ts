@@ -17,7 +17,7 @@ import { queryKeys } from '@/lib/query'
  * packages/core/src/pigrocrm/core/{deals,pipeline}/schemas.py, and these track it
  * through `pnpm generate:api` automatically.
  *
- * Note `valore_previsto`/`ore_preventivate`/`valore_preventivato` come through as
+ * Note `expected_value`/`budgeted_hours`/`budgeted_value` come through as
  * `string | null`, never `number`: `Decimal` fields serialise to JSON strings
  * (confirmed against the generated type), which is exactly what lets `columns.tsx`
  * parse them digit-by-digit instead of through a binary float -- see that file's
@@ -29,15 +29,15 @@ export type Stage = components['schemas']['PipelineStageRead']
 
 /**
  * The tone a pipeline stage reads as in a `StatusPill` (design spec §4), keyed on the
- * stage's `tipo` rather than on its name: a tenant renames «Vinto» to whatever it likes
- * and adds as many open stages as it wants, but `tipo` is the closed enum
+ * stage's `type` rather than on its name: a tenant renames «Vinto» to whatever it likes
+ * and adds as many open stages as it wants, but `type` is the closed enum
  * (`open`/`won`/`lost`) the backend guarantees -- so this map stays total and no
  * tenant-defined stage can fall through to a tone nobody chose.
  *
  * Every open stage is `muted`: a deal in the middle of a pipeline is not news, and a
  * board of eight coloured pills would say nothing. Only the two ends are stated.
  */
-export const DEAL_STAGE_TONE: Record<Stage['tipo'], StatusTone> = {
+export const DEAL_STAGE_TONE: Record<Stage['type'], StatusTone> = {
   open: 'muted',
   won: 'ink',
   lost: 'danger',
@@ -47,7 +47,7 @@ type DealCreateBody = components['schemas']['DealCreate']
 type DealUpdateBody = components['schemas']['DealUpdate']
 
 /**
- * `fatturato_non_vinto` and `da_fatturare` are the two operational-dashboard
+ * `invoiced_unwon` and `to_invoice` are the two operational-dashboard
  * drill-throughs (slice 6 §6.2). They are here rather than expressed as a client-side
  * filter over the fetched list because criterion 2 requires the card and the list behind
  * it to be the *same predicate*: `DealRepository.list` and the two counts on the
@@ -59,9 +59,9 @@ export interface DealsListParams {
   search?: string
   customer_id?: string
   stage_id?: string
-  azienda_id?: string
-  fatturato_non_vinto?: boolean
-  da_fatturare?: boolean
+  legal_entity_id?: string
+  invoiced_unwon?: boolean
+  to_invoice?: boolean
 }
 
 /**
@@ -89,7 +89,7 @@ const MAX_PAGE_SIZE = 200
  * pagination on `Deal.id` ascending). A `useDeals` that only ever fetched the
  * first page would silently render a subset of a stage's deals the moment a
  * tenant passes 50 open deals: the Kanban's own per-column count and total
- * (`columns.tsx`'s `sumValorePrevisto`) would then be wrong with nothing on
+ * (`columns.tsx`'s `sumExpectedValue`) would then be wrong with nothing on
  * screen saying so, which is worse than a visible cap.
  *
  * This walks the cursor at the maximum page size until the server reports no
@@ -248,7 +248,7 @@ export function useMoveDeal() {
       }
       toast.error(toProblem(error).detail)
     },
-    onSettled: (_data, _error, variables) => {
+    onSettled: (_date, _error, variables) => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.deals() })
       void queryClient.invalidateQueries({ queryKey: queryKeys.deal(variables.dealId) })
       // A stage can be deleted server-side (admin-only, `PipelineService.delete`)

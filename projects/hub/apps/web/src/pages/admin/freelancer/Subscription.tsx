@@ -4,10 +4,10 @@ import { Row } from '../list-kit'
 
 /** The sign-up's own attribution, if this address left one on the landing -- separate
  *  from the card's own `utm_source`, since the two can differ. */
-type SignupAttribution = NonNullable<Freelancer['iscrizione_utm']>
+type SignupAttribution = NonNullable<Freelancer['signup_utm']>
 
-const ISCRIZIONE_UTM_LABELS: [key: keyof SignupAttribution, label: string][] = [
-  ['origine', 'Origine'],
+const SIGNUP_UTM_LABELS: [key: keyof SignupAttribution, label: string][] = [
+  ['origin', 'Origine'],
   ['utm_source', 'Sorgente'],
   ['utm_medium', 'Medium'],
   ['utm_campaign', 'Campagna'],
@@ -20,8 +20,8 @@ const ISCRIZIONE_UTM_LABELS: [key: keyof SignupAttribution, label: string][] = [
  *  (REB-284): a section of its own since an admin-drafted card copies the signup's
  *  UTM onto the card at creation but a wizard card keeps its own, and the two can
  *  genuinely differ from what «Arrivato» shows above. */
-export function FreelancerIscrizione({ utm }: { utm: SignupAttribution | null | undefined }) {
-  const known = utm ? ISCRIZIONE_UTM_LABELS.filter(([key]) => utm[key] != null) : []
+export function FreelancerSignup({ utm }: { utm: SignupAttribution | null | undefined }) {
+  const known = utm ? SIGNUP_UTM_LABELS.filter(([key]) => utm[key] != null) : []
   return (
     <section className="space-y-3 px-6 pb-6">
       <h2 className="text-sm font-medium">Iscrizione alla newsletter</h2>

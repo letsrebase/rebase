@@ -29,7 +29,7 @@ from rebase_core.signup_schemas import SignupUtm
 
 def test_the_evidence_names_the_code_the_signup_used(clean_referrals: Session) -> None:
     code = ReferralService(clean_referrals).code_for(_member(clean_referrals))
-    card_id = _card(clean_referrals, rif=code)
+    card_id = _card(clean_referrals, ref=code)
 
     assert _evidence(clean_referrals, card_id).code == code
 
@@ -38,8 +38,8 @@ def test_the_evidence_dates_the_signup_from_the_referred_card_not_the_ledger_row
     clean_referrals: Session,
 ) -> None:
     code = ReferralService(clean_referrals).code_for(_member(clean_referrals))
-    card_id = _card(clean_referrals, rif=code)
-    company_id = _request(clean_referrals, rif=code)
+    card_id = _card(clean_referrals, ref=code)
+    company_id = _request(clean_referrals, ref=code)
     earlier = datetime(2026, 1, 2, 3, 4, tzinfo=UTC)
     clean_referrals.execute(text("UPDATE freelancers SET created_at = :at"), {"at": earlier})
     clean_referrals.execute(text("UPDATE companies SET created_at = :at"), {"at": earlier})
@@ -55,7 +55,7 @@ def test_the_evidence_falls_back_on_the_referral_when_the_referred_row_is_gone(
     """`Referral.entity_id` has no foreign key (one column points at two tables), so a
     hard-deleted card leaves the referral behind: its own moment, nothing to compare."""
     card_id = _card(
-        clean_referrals, rif=ReferralService(clean_referrals).code_for(_member(clean_referrals))
+        clean_referrals, ref=ReferralService(clean_referrals).code_for(_member(clean_referrals))
     )
     clean_referrals.execute(text("DELETE FROM freelancers WHERE id = :id"), {"id": card_id})
     clean_referrals.commit()
@@ -76,10 +76,10 @@ def test_the_evidence_carries_the_utm_source_when_one_was_recorded(
     clean_referrals: Session,
 ) -> None:
     code = ReferralService(clean_referrals).code_for(_member(clean_referrals))
-    tracked = _card(clean_referrals, email="ada@studio.it", rif=code, utm_source="linkedin")
-    untracked = _card(clean_referrals, email="grace@studio.it", rif=code)
+    tracked = _card(clean_referrals, email="ada@studio.it", ref=code, utm_source="linkedin")
+    untracked = _card(clean_referrals, email="grace@studio.it", ref=code)
     company = _request(
-        clean_referrals, email="wile@acme.it", rif=code, utm=SignupUtm(utm_source="google")
+        clean_referrals, email="wile@acme.it", ref=code, utm=SignupUtm(utm_source="google")
     )
 
     assert _evidence(clean_referrals, company).utm_source == "google"
@@ -91,9 +91,9 @@ def test_the_evidence_flags_a_shared_company_domain_on_a_freelancer_and_on_a_com
     clean_referrals: Session,
 ) -> None:
     code = ReferralService(clean_referrals).code_for(_member(clean_referrals, "mario@studio.it"))
-    colleague = _card(clean_referrals, email="ada@studio.it", rif=code)
-    stranger = _card(clean_referrals, email="grace@other.it", rif=code)
-    company = _request(clean_referrals, email="wile@STUDIO.it", rif=code)
+    colleague = _card(clean_referrals, email="ada@studio.it", ref=code)
+    stranger = _card(clean_referrals, email="grace@other.it", ref=code)
+    company = _request(clean_referrals, email="wile@STUDIO.it", ref=code)
 
     assert _evidence(clean_referrals, colleague).same_email_domain is True
     assert _evidence(clean_referrals, company).same_email_domain is True
@@ -102,7 +102,7 @@ def test_the_evidence_flags_a_shared_company_domain_on_a_freelancer_and_on_a_com
 
 def test_a_shared_public_mail_domain_is_not_a_match(clean_referrals: Session) -> None:
     code = ReferralService(clean_referrals).code_for(_member(clean_referrals, "mario@gmail.com"))
-    card_id = _card(clean_referrals, email="ada@gmail.com", rif=code)
+    card_id = _card(clean_referrals, email="ada@gmail.com", ref=code)
 
     assert _evidence(clean_referrals, card_id).same_email_domain is False
 
@@ -135,8 +135,8 @@ def test_the_evidence_says_a_referred_person_who_never_logged_in_never_did(
     clean_referrals: Session,
 ) -> None:
     code = ReferralService(clean_referrals).code_for(_member(clean_referrals))
-    card_id = _card(clean_referrals, rif=code)
-    company_id = _request(clean_referrals, rif=code)
+    card_id = _card(clean_referrals, ref=code)
+    company_id = _request(clean_referrals, ref=code)
 
     assert _evidence(clean_referrals, card_id).ever_logged_in is False
     assert _evidence(clean_referrals, company_id).ever_logged_in is False
@@ -146,9 +146,9 @@ def test_the_evidence_says_a_referred_person_has_logged_in_once_a_login_exists(
     clean_referrals: Session,
 ) -> None:
     code = ReferralService(clean_referrals).code_for(_member(clean_referrals))
-    card_id = _card(clean_referrals, rif=code)
-    company_id = _request(clean_referrals, rif=code)
-    other_id = _card(clean_referrals, email="grace@studio.it", rif=code)
+    card_id = _card(clean_referrals, ref=code)
+    company_id = _request(clean_referrals, ref=code)
+    other_id = _card(clean_referrals, email="grace@studio.it", ref=code)
     card = clean_referrals.get(Freelancer, card_id)
     company = clean_referrals.get(Company, company_id)
     assert card is not None and company is not None

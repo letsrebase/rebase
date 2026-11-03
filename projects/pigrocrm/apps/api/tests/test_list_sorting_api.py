@@ -26,7 +26,7 @@ LIST_PATHS = ["/api/customers", "/api/people", "/api/deals", "/api/documents"]
 
 def _create_customers(client: TestClient, *names: str) -> None:
     for name in names:
-        created = client.post("/api/customers", json={"ragione_sociale": name})
+        created = client.post("/api/customers", json={"legal_name": name})
         assert created.status_code == 201, created.text
 
 
@@ -34,19 +34,19 @@ def test_sorting_by_the_identifying_column(logged_in: TestClient) -> None:
     _create_customers(logged_in, "Gamma Srl", "Alfa Srl", "Beta Srl")
 
     response = logged_in.get(
-        "/api/customers", params={"sort": "ragione_sociale", "dir": "asc", "limit": 10}
+        "/api/customers", params={"sort": "legal_name", "dir": "asc", "limit": 10}
     )
     assert response.status_code == 200, response.text
-    assert [c["ragione_sociale"] for c in response.json()["items"]] == [
+    assert [c["legal_name"] for c in response.json()["items"]] == [
         "Alfa Srl",
         "Beta Srl",
         "Gamma Srl",
     ]
 
     descending = logged_in.get(
-        "/api/customers", params={"sort": "ragione_sociale", "dir": "desc", "limit": 10}
+        "/api/customers", params={"sort": "legal_name", "dir": "desc", "limit": 10}
     )
-    assert [c["ragione_sociale"] for c in descending.json()["items"]] == [
+    assert [c["legal_name"] for c in descending.json()["items"]] == [
         "Gamma Srl",
         "Beta Srl",
         "Alfa Srl",
@@ -59,16 +59,16 @@ def test_next_cursor_is_a_string_the_client_can_echo_back(logged_in: TestClient)
     is the test that would fail if it ever grew a `+` or a `=`."""
     _create_customers(logged_in, "Alfa Srl", "Beta Srl", "Gamma Srl")
 
-    first = logged_in.get("/api/customers", params={"sort": "ragione_sociale", "limit": 2})
+    first = logged_in.get("/api/customers", params={"sort": "legal_name", "limit": 2})
     body = first.json()
     assert isinstance(body["next_cursor"], str)
 
     second = logged_in.get(
         "/api/customers",
-        params={"sort": "ragione_sociale", "limit": 2, "cursor": body["next_cursor"]},
+        params={"sort": "legal_name", "limit": 2, "cursor": body["next_cursor"]},
     )
     assert second.status_code == 200, second.text
-    assert [c["ragione_sociale"] for c in second.json()["items"]] == ["Gamma Srl"]
+    assert [c["legal_name"] for c in second.json()["items"]] == ["Gamma Srl"]
     assert second.json()["next_cursor"] is None
 
 
@@ -117,7 +117,7 @@ def test_a_cursor_produced_for_one_sort_is_refused_by_another(logged_in: TestCli
     """Changing `sort` while replaying `next_cursor` would otherwise compare a company
     name against a timestamp and return an arbitrary page."""
     _create_customers(logged_in, "Alfa Srl", "Beta Srl", "Gamma Srl")
-    first = logged_in.get("/api/customers", params={"sort": "ragione_sociale", "limit": 2})
+    first = logged_in.get("/api/customers", params={"sort": "legal_name", "limit": 2})
     cursor = first.json()["next_cursor"]
 
     response = logged_in.get(
@@ -128,17 +128,17 @@ def test_a_cursor_produced_for_one_sort_is_refused_by_another(logged_in: TestCli
 
 
 def test_documents_accept_a_search_term_and_it_actually_filters(logged_in: TestClient) -> None:
-    customer_id = logged_in.post("/api/customers", json={"ragione_sociale": "ACME"}).json()["id"]
-    for titolo in ("Offerta impianti", "Verbale riunione"):
+    customer_id = logged_in.post("/api/customers", json={"legal_name": "ACME"}).json()["id"]
+    for title in ("Offerta impianti", "Verbale riunione"):
         created = logged_in.post(
             "/api/documents",
-            json={"customer_id": customer_id, "tipo": "documento", "titolo": titolo},
+            json={"customer_id": customer_id, "type": "document", "title": title},
         )
         assert created.status_code == 201, created.text
 
-    response = logged_in.get("/api/documents", params={"search": "offerta"})
+    response = logged_in.get("/api/documents", params={"search": "offer"})
     assert response.status_code == 200, response.text
-    assert [d["titolo"] for d in response.json()["items"]] == ["Offerta impianti"]
+    assert [d["title"] for d in response.json()["items"]] == ["Offerta impianti"]
 
 
 @pytest.mark.parametrize("path", LIST_PATHS)

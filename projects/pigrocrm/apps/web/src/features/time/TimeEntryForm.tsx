@@ -167,10 +167,10 @@ export function TimeEntryForm({
         {isCreate && rates.data && (
           <p className="text-sm text-muted-foreground">
             Tariffa che verrà congelata su questa voce:{' '}
-            <strong>{formatRateValue(rates.data.tariffa)}</strong>{' '}
-            {rates.data.tariffa === null
+            <strong>{formatRateValue(rates.data.rate)}</strong>{' '}
+            {rates.data.rate === null
               ? '— la voce sarà registrata senza tariffa'
-              : `(${rates.data.tariffa_origine})`}
+              : `(${rates.data.rate_source})`}
           </p>
         )}
 

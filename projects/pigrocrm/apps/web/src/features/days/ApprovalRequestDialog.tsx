@@ -32,9 +32,9 @@ import {
 
 interface Row {
   key: number
-  data: string
-  quantita: string
-  descrizione: string
+  date: string
+  quantity: string
+  description: string
 }
 
 let nextKey = 1
@@ -42,11 +42,11 @@ let nextKey = 1
 function emptyRow(): Row {
   const tomorrow = new Date()
   tomorrow.setDate(tomorrow.getDate() + 1)
-  return { key: nextKey++, data: toIsoDate(tomorrow), quantita: FULL_DAY, descrizione: '' }
+  return { key: nextKey++, date: toIsoDate(tomorrow), quantity: FULL_DAY, description: '' }
 }
 
 function toDays(rows: readonly Row[]): ApprovalRequestDay[] {
-  return rows.map((row) => ({ data: row.data, quantita: row.quantita, descrizione: row.descrizione.trim() }))
+  return rows.map((row) => ({ date: row.date, quantity: row.quantity, description: row.description.trim() }))
 }
 
 /** Addresses typed in one field, separated by a comma, a semicolon or a space. */
@@ -64,10 +64,10 @@ function splitAddresses(text: string): string[] {
  *
  * Three steps and one rule: nothing leaves until the person has read the text they can
  * edit. Sending is two calls on purpose. «Invia» first prepares the request (the days as
- * `proposto` and the message as a draft of the client, one transaction) and then sends that
+ * `proposed` and the message as a draft of the client, one transaction) and then sends that
  * draft through the ordinary send route, so a send that fails leaves the draft, the days and
  * a sentence about why, and pressing «Riprova l’invio» sends the same draft and never a
- * second one. An outcome nobody can know (`incerto`) is not retried here: it is resolved from
+ * second one. An outcome nobody can know (`uncertain`) is not retried here: it is resolved from
  * the client's Email tab by asking Gmail.
  */
 export function ApprovalRequestDialog({
@@ -90,8 +90,8 @@ export function ApprovalRequestDialog({
   const [step, setStep] = useState<'dates' | 'text' | 'done'>('dates')
   const [rows, setRows] = useState<Row[]>(() => [emptyRow()])
   const [to, setTo] = useState<string | null>(null)
-  const [oggetto, setOggetto] = useState('')
-  const [corpo, setCorpo] = useState('')
+  const [subject, setSubject] = useState('')
+  const [body, setBody] = useState('')
   const [prepared, setPrepared] = useState<ApprovalRequestPrepared | null>(null)
   // The draft as the server last said it was: its revision moves with every send attempt, so a
   // retry names the one it read after the failure and never the one it prepared.
@@ -103,8 +103,8 @@ export function ApprovalRequestDialog({
   const [sendFailure, setSendFailure] = useState<string | null>(null)
 
   const recipients = to ?? customer.data?.email ?? ''
-  const datesReady = rows.every((row) => row.data !== '' && row.descrizione.trim() !== '')
-  const duplicated = new Set(rows.map((row) => row.data)).size !== rows.length
+  const datesReady = rows.every((row) => row.date !== '' && row.description.trim() !== '')
+  const duplicated = new Set(rows.map((row) => row.date)).size !== rows.length
 
   function reset() {
     setStep('dates')
@@ -133,8 +133,8 @@ export function ApprovalRequestDialog({
   function read() {
     preview.mutate(toDays(rows), {
       onSuccess: (message) => {
-        setOggetto(message.oggetto)
-        setCorpo(message.corpo)
+        setSubject(message.subject)
+        setBody(message.body)
         setStep('text')
       },
     })
@@ -143,8 +143,8 @@ export function ApprovalRequestDialog({
   /**
    * Sends the draft, then reads it back: the draft is the truth about what happened, not the
    * send's answer. A refused send is a 409 whose words say why and whose draft says which
-   * state it is now in: `fallito` and `bozza` can be sent again (with the revision just
-   * read), `incerto` and `in_invio` cannot, because asking Gmail is the only way to know and
+   * state it is now in: `failed` and `draft` can be sent again (with the revision just
+   * read), `uncertain` and `sending` cannot, because asking Gmail is the only way to know and
    * a second send is the only way to mail the client twice.
    */
   async function deliver(
@@ -167,7 +167,7 @@ export function ApprovalRequestDialog({
         api.GET('/api/email-drafts/{draft_id}', { params: { path: { draft_id: target.id } } }),
       )
       setDraft({ id: read.id, updated_at: read.updated_at })
-      if (read.send_state === 'inviato') {
+      if (read.send_state === 'sent') {
         toast.success('Richiesta inviata')
         setOutcome('sent')
       } else if (
@@ -181,7 +181,7 @@ export function ApprovalRequestDialog({
         setSendFailure(
           'La bozza è stata modificata altrove e non è partita. Aprila dall’Email del cliente, rileggila e inviala da lì.',
         )
-      } else if (read.send_state === 'incerto' || read.send_state === 'in_invio') {
+      } else if (read.send_state === 'uncertain' || read.send_state === 'sending') {
         setOutcome('unknown')
         setSendFailure(
           'Non sappiamo se la richiesta è partita. Controlla dall’Email del cliente prima di rimandarla.',
@@ -204,15 +204,15 @@ export function ApprovalRequestDialog({
         days: toDays(rows),
         to_addresses: splitAddresses(recipients),
         cc_addresses: [],
-        oggetto: oggetto.trim(),
-        corpo,
+        subject: subject.trim(),
+        body,
       })
       setPrepared(result)
       setDraft({ id: result.draft.id, updated_at: result.draft.updated_at })
       const shown = {
         to: splitAddresses(recipients).join(','),
-        subject: oggetto.trim(),
-        body: corpo,
+        subject: subject.trim(),
+        body: body,
       }
       setReviewed(shown)
       if (gmail) await deliver(result.draft, shown)
@@ -250,13 +250,13 @@ export function ApprovalRequestDialog({
                     <Input
                       id={`req-date-${row.key}`}
                       type="date"
-                      value={row.data}
-                      onChange={(event) => update(row.key, { data: event.target.value })}
+                      value={row.date}
+                      onChange={(event) => update(row.key, { date: event.target.value })}
                     />
                   </div>
                   <div className="space-y-1">
                     <Label htmlFor={`req-part-${row.key}`}>Quanto</Label>
-                    <Select value={row.quantita} onValueChange={(value) => update(row.key, { quantita: value })}>
+                    <Select value={row.quantity} onValueChange={(value) => update(row.key, { quantity: value })}>
                       <SelectTrigger id={`req-part-${row.key}`} className="w-full">
                         <SelectValue />
                       </SelectTrigger>
@@ -270,8 +270,8 @@ export function ApprovalRequestDialog({
                     <Label htmlFor={`req-task-${row.key}`}>Cosa farai</Label>
                     <Input
                       id={`req-task-${row.key}`}
-                      value={row.descrizione}
-                      onChange={(event) => update(row.key, { descrizione: event.target.value })}
+                      value={row.description}
+                      onChange={(event) => update(row.key, { description: event.target.value })}
                       placeholder="Workshop con il cliente"
                     />
                   </div>
@@ -313,11 +313,11 @@ export function ApprovalRequestDialog({
             </div>
             <div className="space-y-1">
               <Label htmlFor="req-subject">Oggetto</Label>
-              <Input id="req-subject" value={oggetto} onChange={(event) => setOggetto(event.target.value)} />
+              <Input id="req-subject" value={subject} onChange={(event) => setSubject(event.target.value)} />
             </div>
             <div className="space-y-1">
               <Label htmlFor="req-body">Messaggio</Label>
-              <Textarea id="req-body" rows={12} value={corpo} onChange={(event) => setCorpo(event.target.value)} />
+              <Textarea id="req-body" rows={12} value={body} onChange={(event) => setBody(event.target.value)} />
             </div>
             {gmail ? (
               <p className="text-sm text-muted-foreground">
@@ -385,7 +385,7 @@ export function ApprovalRequestDialog({
               <Button
                 onClick={() => void submit()}
                 disabled={
-                  prepare.isPending || send.isPending || splitAddresses(recipients).length === 0 || oggetto.trim() === '' || corpo.trim() === ''
+                  prepare.isPending || send.isPending || splitAddresses(recipients).length === 0 || subject.trim() === '' || body.trim() === ''
                 }
               >
                 {prepare.isPending || send.isPending ? <Loader className="mr-2 size-4" /> : null}

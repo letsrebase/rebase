@@ -53,7 +53,7 @@ NO_SENDER = (
 # How long a talent can answer the availability mail (spec § 3.6), from when it left.
 ANSWER_MAX_AGE = timedelta(days=30)
 CONTACTED = "talents_contacted"
-Answer = Literal["si", "no", "invalid"]
+Answer = Literal["yes", "no", "invalid"]
 
 
 def _token_hash(raw: str) -> str:
@@ -81,7 +81,7 @@ class AvailabilityBatch:
 
     request_id: UUID
     mails: tuple[AvailabilityMail, ...]
-    stato_before: str
+    status_before: str
     contacted_at: datetime | None
 
 
@@ -123,13 +123,13 @@ class TeamAvailabilityService:
         """The tokens and the mails, committed and not sent. Every talent the first
         time, and a first time only: once anyone has the mail, writing again is
         `only_silent`, to each talent with no answer. A talent whose card was deleted or
-        `scartato` since the request is skipped (`_contactable`), and logged by id.
+        `discarded` since the request is skipped (`_contactable`), and logged by id.
         Refused, before anything is written: a closed request, a summary that names the
         company (`names_the_company`), a second first time, and nobody left to write to.
-        The request becomes `contattata`, with `contacted_at` from its first send, until
+        The request becomes `contacted`, with `contacted_at` from its first send, until
         `deliver` finds that no mail of the batch left."""
         row = self.requests.lock(request_id)
-        if row.stato == "chiusa":
+        if row.status == "closed":
             self.session.rollback()
             raise InvalidState(REQUEST_CLOSED)
         # Read fresh, as `_lock` reads the request: the summary may have been edited in
@@ -139,8 +139,8 @@ class TeamAvailabilityService:
             if row.proposal_id is not None
             else None
         )
-        riassunto = proposal.riassunto if proposal is not None else None
-        if riassunto is not None and names_the_company(riassunto, row.azienda):
+        summary = proposal.summary if proposal is not None else None
+        if summary is not None and names_the_company(summary, row.company):
             self.session.rollback()
             raise InvalidState(NAMES_THE_COMPANY)
         talents = self.requests.talent_rows(row, proposal, lock=True)
@@ -148,10 +148,10 @@ class TeamAvailabilityService:
             self.session.rollback()
             raise InvalidState(ALREADY_CONTACTED)
         now = self.now()
-        page = f"{self.settings.hub_url.rstrip('/')}/team/risposta"
+        page = f"{self.settings.hub_url.rstrip('/')}/team/answer"
         mails: list[AvailabilityMail] = []
         for talent, freelancer, user in talents:
-            if talent.risposta is not None:
+            if talent.answer is not None:
                 continue
             if not contactable(freelancer):
                 logger.info("team request %s: talent %s is gone, not mailed", row.id, talent.id)
@@ -165,11 +165,11 @@ class TeamAvailabilityService:
                     token_hash=talent.token_hash,
                     mail=team_availability_mail(
                         user.email,
-                        nome=user.nome,
-                        ruolo=talent.ruolo,
-                        riassunto=riassunto,
-                        tariffa=freelancer.tariffa_giornaliera,
-                        yes_url=f"{page}?t={raw}&r=si",
+                        first_name=user.first_name,
+                        role=talent.role,
+                        summary=summary,
+                        rate=freelancer.daily_rate,
+                        yes_url=f"{page}?t={raw}&r=yes",
                         no_url=f"{page}?t={raw}&r=no",
                     ),
                 )
@@ -180,16 +180,16 @@ class TeamAvailabilityService:
         batch = AvailabilityBatch(
             request_id=row.id,
             mails=tuple(mails),
-            stato_before=row.stato,
+            status_before=row.status,
             contacted_at=now if row.contacted_at is None else None,
         )
-        if row.stato == "nuova":
-            row.stato = "contattata"
+        if row.status == "new":
+            row.status = "contacted"
         if row.contacted_at is None:
             row.contacted_at = now
         self.session.commit()
         AdminActionService(self.session).record(
-            ENTITY, row.id, CONTACTED, admin_id, {"talenti": len(mails), "only_silent": only_silent}
+            ENTITY, row.id, CONTACTED, admin_id, {"talents": len(mails), "only_silent": only_silent}
         )
         return self.requests.get(request_id), batch
 
@@ -210,7 +210,7 @@ class TeamAvailabilityService:
             same = (
                 TeamRequestTalent.id == item.talent_id,
                 TeamRequestTalent.token_hash == item.token_hash,
-                TeamRequestTalent.risposta.is_(None),
+                TeamRequestTalent.answer.is_(None),
             )
             if sent:
                 accepted += 1
@@ -228,12 +228,12 @@ class TeamAvailabilityService:
             self._undo_contact(batch)
         return accepted
 
-    def answer(self, raw_token: str, risposta: str) -> Answer:
-        """A talent's «Conferma» on the answer page: `risposta` recorded with its time
-        and counted (`team_talento_risposta`, the answer alone), or `invalid` for a token
+    def answer(self, raw_token: str, answer: str) -> Answer:
+        """A talent's «Conferma» on the answer page: `answer` recorded with its time
+        and counted (`team_talent_answer`, the answer alone), or `invalid` for a token
         that is unknown, already answered, or older than `ANSWER_MAX_AGE`, all alike."""
-        if risposta not in TALENT_ANSWERS:
-            raise ValidationFailed(ENTITY, "risposta", f"uno fra {', '.join(TALENT_ANSWERS)}")
+        if answer not in TALENT_ANSWERS:
+            raise ValidationFailed(ENTITY, "answer", f"uno fra {', '.join(TALENT_ANSWERS)}")
         if not raw_token:
             return "invalid"
         talent = self.session.scalar(
@@ -245,18 +245,18 @@ class TeamAvailabilityService:
         now = self.now()
         if (
             talent is None
-            or talent.risposta is not None
+            or talent.answer is not None
             or talent.mail_sent_at is None
             or talent.mail_sent_at <= now - ANSWER_MAX_AGE
         ):
             self.session.rollback()
             return "invalid"
-        talent.risposta = risposta
-        talent.risposta_at = now
+        talent.answer = answer
+        talent.answered_at = now
         self.session.commit()
         if self.tracker is not None:
-            self.tracker.team_event(TEAM_TALENT_ANSWER, {"risposta": risposta})
-        return "si" if risposta == "si" else "no"
+            self.tracker.team_event(TEAM_TALENT_ANSWER, {"answer": answer})
+        return "yes" if answer == "yes" else "no"
 
     def _undo_contact(self, batch: AvailabilityBatch) -> None:
         """What a batch refused whole wrote on the request, taken back where it still
@@ -283,11 +283,11 @@ class TeamAvailabilityService:
                 batch.request_id,
             )
             return
-        if batch.stato_before != "contattata":
+        if batch.status_before != "contacted":
             self.session.execute(
                 update(TeamRequest)
-                .where(TeamRequest.id == batch.request_id, TeamRequest.stato == "contattata")
-                .values(stato=batch.stato_before)
+                .where(TeamRequest.id == batch.request_id, TeamRequest.status == "contacted")
+                .values(status=batch.status_before)
             )
         if batch.contacted_at is not None:
             self.session.execute(
@@ -302,5 +302,5 @@ class TeamAvailabilityService:
         logger.warning(
             "team request %s: no availability mail left, the request is %s again",
             batch.request_id,
-            batch.stato_before,
+            batch.status_before,
         )

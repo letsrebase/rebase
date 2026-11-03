@@ -1,6 +1,6 @@
 """`update_contract`, `set_contract_state` and `update_rate_card`, the agent's side of
 what the contract page does (REB-741, REB-742), plus `create_rate_card`'s
-`chiudi_precedente`: real MCP round trips, so a refusal reaches the client as the
+`close_previous`: real MCP round trips, so a refusal reaches the client as the
 domain sentence and not as a raw dump."""
 
 from datetime import date
@@ -13,17 +13,17 @@ from pigrocrm.core.customers.models import Customer
 
 
 def _contract_id(mcp_session: Session) -> str:
-    customer = Customer(ragione_sociale="ACME Srl")
+    customer = Customer(legal_name="ACME Srl")
     mcp_session.add(customer)
     mcp_session.flush()
     contract = Contract(
         customer_id=customer.id,
-        titolo="Consulenza",
-        inizio=date(2026, 1, 1),
-        tipo_rinnovo="nessuno",
-        preavviso_disdetta_giorni=30,
-        cadenza_fatturazione="mensile",
-        politica_spese={"kind": "non_rimborsabile"},
+        title="Consulenza",
+        start=date(2026, 1, 1),
+        renewal_type="none",
+        termination_notice_days=30,
+        billing_cadence="monthly",
+        expense_policy={"kind": "not_reimbursable"},
     )
     mcp_session.add(contract)
     mcp_session.flush()
@@ -37,18 +37,18 @@ async def test_a_contract_is_edited_and_activated(server, mcp_session) -> None:
     async with Client(server) as client:
         edited = await client.call_tool(
             "update_contract",
-            {"contract_id": contract_id, "changes": {"preavviso_disdetta_giorni": 60}},
+            {"contract_id": contract_id, "changes": {"termination_notice_days": 60}},
         )
-        assert edited.structured_content["preavviso_disdetta_giorni"] == 60
+        assert edited.structured_content["termination_notice_days"] == 60
 
         active = await client.call_tool(
-            "set_contract_state", {"contract_id": contract_id, "stato": "attivo"}
+            "set_contract_state", {"contract_id": contract_id, "status": "active"}
         )
-        assert active.structured_content["stato"] == "attivo"
+        assert active.structured_content["status"] == "active"
 
         repeat = await client.call_tool(
             "set_contract_state",
-            {"contract_id": contract_id, "stato": "attivo"},
+            {"contract_id": contract_id, "status": "active"},
         )
         assert repeat.is_error
         assert "già" in repeat.content[0].text
@@ -62,25 +62,25 @@ async def test_a_rate_card_is_replaced_and_edited(server, mcp_session) -> None:
             "create_rate_card",
             {
                 "contract_id": contract_id,
-                "valido_da": "2026-01-01",
-                "tipo": "giornaliero",
-                "importo": "400.00",
-                "unita": "giorno",
+                "valid_from": "2026-01-01",
+                "type": "daily",
+                "amount": "400.00",
+                "unit": "day",
             },
         )
         second = await client.call_tool(
             "create_rate_card",
             {
                 "contract_id": contract_id,
-                "valido_da": "2027-01-01",
-                "tipo": "giornaliero",
-                "importo": "450.00",
-                "unita": "giorno",
-                "chiudi_precedente": True,
+                "valid_from": "2027-01-01",
+                "type": "daily",
+                "amount": "450.00",
+                "unit": "day",
+                "close_previous": True,
             },
         )
         listed = await client.call_tool("list_rate_cards", {"contract_id": contract_id})
-        assert [(c["id"], c["valido_a"]) for c in listed.structured_content["items"]] == [
+        assert [(c["id"], c["valid_to"]) for c in listed.structured_content["items"]] == [
             (first.structured_content["id"], "2026-12-31"),
             (second.structured_content["id"], None),
         ]
@@ -90,16 +90,16 @@ async def test_a_rate_card_is_replaced_and_edited(server, mcp_session) -> None:
             {
                 "contract_id": contract_id,
                 "rate_card_id": second.structured_content["id"],
-                "changes": {"importo": "475.00"},
+                "changes": {"amount": "475.00"},
             },
         )
-        assert edited.structured_content["importo"] == "475.00"
+        assert edited.structured_content["amount"] == "475.00"
 
 
 async def test_a_cap_on_the_customers_share_is_set_read_and_simulated(
     server, mcp_session: Session
 ) -> None:
-    """REB-761: an agent sets `tetto_quota_cliente`, reads it back with `get_contract`,
+    """REB-761: an agent sets `customer_share_cap`, reads it back with `get_contract`,
     sees the concentration compared with it and hears from `simulate_ceiling` that an
     addition takes the customer past it."""
     from pigrocrm.core.actor import Actor
@@ -115,29 +115,29 @@ async def test_a_cap_on_the_customers_share_is_set_read_and_simulated(
     async with Client(server) as client:
         edited = await client.call_tool(
             "update_contract",
-            {"contract_id": contract_id, "changes": {"tetto_quota_cliente": "50.00"}},
+            {"contract_id": contract_id, "changes": {"customer_share_cap": "50.00"}},
         )
-        assert edited.structured_content["tetto_quota_cliente"] == "50.00"
+        assert edited.structured_content["customer_share_cap"] == "50.00"
         read = await client.call_tool("get_contract", {"contract_id": contract_id})
-        assert read.structured_content["tetto_quota_cliente"] == "50.00"
+        assert read.structured_content["customer_share_cap"] == "50.00"
 
         concentration = await client.call_tool(
             "get_contract_concentration", {"contract_id": contract_id, "as_of": "2026-06-01"}
         )
-        assert concentration.structured_content["soglia"] == 0.5
-        assert concentration.structured_content["soglia_da_contratto"] is True
+        assert concentration.structured_content["threshold"] == 0.5
+        assert concentration.structured_content["threshold_from_contract"] is True
 
         simulated = await client.call_tool(
             "simulate_ceiling",
             {
-                "anno": 2026,
-                "valore_preventivato": "1000.00",
+                "year": 2026,
+                "budgeted_value": "1000.00",
                 "contract_id": contract_id,
-                "data_prevista": "2026-06-01",
+                "expected_date": "2026-06-01",
             },
         )
-        assert simulated.structured_content["soglie"] == []
-        assert simulated.structured_content["tetto_contratto"]["rientra"] is False
+        assert simulated.structured_content["thresholds"] == []
+        assert simulated.structured_content["contract_cap"]["falls_within"] is False
 
 
 async def test_a_note_on_the_renewal_clause_is_read_back_with_get_contract(
@@ -152,16 +152,16 @@ async def test_a_note_on_the_renewal_clause_is_read_back_with_get_contract(
             "create_clause_note",
             {
                 "contract_id": contract_id,
-                "riferimento_clausola": "Art. 8.3 Rinnovo",
-                "testo_letterale": "Il contratto si rinnova salvo disdetta.",
-                "interpretazione_adottata": "Rinnovo tacito, disdetta a 60 giorni.",
+                "clause_reference": "Art. 8.3 Rinnovo",
+                "literal_text": "Il contratto si rinnova salvo disdetta.",
+                "adopted_interpretation": "Rinnovo tacito, disdetta a 60 giorni.",
             },
         )
         note_id = created.structured_content["id"]
         read = await client.call_tool("get_contract", {"contract_id": contract_id})
-        [note] = read.structured_content["note_clausole"]
-        assert note["interpretazione_adottata"] == "Rinnovo tacito, disdetta a 60 giorni."
-        assert read.structured_content["contratto_successivo_id"] is None
+        [note] = read.structured_content["note_clauses"]
+        assert note["adopted_interpretation"] == "Rinnovo tacito, disdetta a 60 giorni."
+        assert read.structured_content["next_contract_id"] is None
 
         corrected = await client.call_tool(
             "update_clause_note",
@@ -184,17 +184,17 @@ async def test_a_contract_is_renewed_with_renew_contract(server, mcp_session: Se
 
     async with Client(server) as client:
         await client.call_tool(
-            "update_contract", {"contract_id": contract_id, "changes": {"fine": "2026-12-31"}}
+            "update_contract", {"contract_id": contract_id, "changes": {"end": "2026-12-31"}}
         )
         renewed = await client.call_tool(
             "renew_contract",
-            {"contract_id": contract_id, "durata_conteggio": 6, "durata_unita": "mesi"},
+            {"contract_id": contract_id, "duration_count": 6, "duration_unit": "months"},
         )
         body = renewed.structured_content
-        assert (body["inizio"], body["fine"]) == ("2027-01-01", "2027-06-30")
-        assert body["contratto_precedente_id"] == contract_id
+        assert (body["start"], body["end"]) == ("2027-01-01", "2027-06-30")
+        assert body["previous_contract_id"] == contract_id
         read = await client.call_tool("get_contract", {"contract_id": contract_id})
-        assert read.structured_content["contratto_successivo_id"] == body["id"]
+        assert read.structured_content["next_contract_id"] == body["id"]
         again = await client.call_tool("renew_contract", {"contract_id": contract_id})
         assert again.is_error
         assert "già stato rinnovato" in again.content[0].text

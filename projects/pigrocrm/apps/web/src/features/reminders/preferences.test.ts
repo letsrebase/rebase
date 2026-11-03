@@ -124,9 +124,9 @@ describe('thresholdWording', () => {
 
 describe('groupTypes', () => {
   it('files each type under its section, in the table order, and drops the empty ones', () => {
-    const types = ['job_late', 'invoice_overdue', 'attivita_due'].map((key) => ({ ...KIND, key }))
+    const types = ['job_late', 'invoice_overdue', 'task_due'].map((key) => ({ ...KIND, key }))
     expect(groupTypes(types).map((group) => [group.label, group.types.map((kind) => kind.key)])).toEqual([
-      ['Attività e deal', ['attivita_due']],
+      ['Attività e deal', ['task_due']],
       ['Fatture e fatturazione', ['invoice_overdue']],
       ['Spazio', ['job_late']],
     ])

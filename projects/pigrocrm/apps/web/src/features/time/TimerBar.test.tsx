@@ -14,7 +14,7 @@ vi.mock('@rebase/ui/sonner', () => ({ toast: { info: vi.fn(), success: vi.fn(), 
 
 const USER = '33333333-3333-7333-8333-333333333333'
 const DEAL = 'aaaaaaaa-aaaa-7aaa-8aaa-aaaaaaaaaaaa'
-const deal = { id: DEAL, nome: 'Progetto Alfa' } as never
+const deal = { id: DEAL, name: 'Progetto Alfa' } as never
 
 function ok(data: unknown) {
   return Promise.resolve({ data, response: new Response(null, { status: 200 }) }) as never
@@ -24,8 +24,8 @@ const running = {
   id: 't1',
   user_id: USER,
   deal_id: DEAL,
-  descrizione: 'Call con il cliente',
-  fatturabile: true,
+  description: 'Call con il cliente',
+  billable: true,
   started_at: '2026-03-12T09:00:00Z',
 }
 
@@ -74,13 +74,13 @@ describe('TimerBar', () => {
     await waitFor(() => expect(vi.mocked(api.POST)).toHaveBeenCalledTimes(1))
     const [path, init] = vi.mocked(api.POST).mock.calls[0] as unknown as [string, { body: unknown }]
     expect(path).toBe('/api/time-entries/timer/start')
-    expect(init.body).toEqual({ deal_id: null, descrizione: 'Call con il cliente', fatturabile: true })
+    expect(init.body).toEqual({ deal_id: null, description: 'Call con il cliente', billable: true })
   })
 
   it('shows a running clock with its elapsed time, and stops it into an entry', async () => {
     vi.mocked(api.GET).mockImplementation((() => ok(running)) as never)
     vi.mocked(api.POST).mockImplementation(
-      (() => ok({ id: 'e9', deal_id: DEAL, ore: '1.50' })) as never,
+      (() => ok({ id: 'e9', deal_id: DEAL, hours: '1.50' })) as never,
     )
     renderBar()
     // 09:00:00 to 10:30:15, from the server's `started_at`, not from a local count.
@@ -93,14 +93,14 @@ describe('TimerBar', () => {
     await waitFor(() => expect(vi.mocked(api.POST)).toHaveBeenCalledTimes(1))
     const [path, init] = vi.mocked(api.POST).mock.calls[0] as unknown as [string, { body: unknown }]
     expect(path).toBe('/api/time-entries/timer/stop')
-    expect(init.body).toMatchObject({ deal_id: DEAL, descrizione: 'Call con il cliente' })
+    expect(init.body).toMatchObject({ deal_id: DEAL, description: 'Call con il cliente' })
     // The day is the browser's own calendar day.
-    expect((init.body as { data: string }).data).toMatch(/^2026-03-12$/)
+    expect((init.body as { date: string }).date).toMatch(/^2026-03-12$/)
   })
 
   it('opens on the manual line and refuses to log without a deal', async () => {
     vi.mocked(api.GET).mockImplementation((() => ok(null)) as never)
-    vi.mocked(api.POST).mockImplementation((() => ok({ id: 'e9', deal_id: DEAL, ore: '2.50' })) as never)
+    vi.mocked(api.POST).mockImplementation((() => ok({ id: 'e9', deal_id: DEAL, hours: '2.50' })) as never)
     renderBar()
     const user = typist()
     await user.type(await screen.findByLabelText('Ore'), '2,5')

@@ -27,12 +27,12 @@ def _fail(entity: str, key: str, reason: str, expected: str | None = None) -> No
 
 
 def _brief(value: Any) -> str:
-    """Rappresentazione limitata del valore, per i messaggi d'errore.
+    """A bounded representation of the value, for error messages.
 
-    Interpolare il valore grezzo ha due difetti: un input molto annidato esaurisce
-    lo stack durante la formattazione, prima ancora che l'eccezione esista, e un
-    valore molto grande produce un messaggio enorme che finisce in un problem
-    document HTTP e nel contesto di un agente.
+    Interpolating the raw value has two defects: a deeply nested input exhausts the
+    stack during formatting, before the exception even exists, and a very large value
+    produces a huge message that ends up in an HTTP problem document and in an agent's
+    context.
     """
     if isinstance(value, CONTAINER_TYPES):
         # Never attempt str() on a container at all: checking the type is O(1) and
@@ -249,7 +249,7 @@ def validate_custom_fields(
 
     for key in values:
         if key not in by_key:
-            known = ", ".join(sorted(by_key)) or "nessuno"
+            known = ", ".join(sorted(by_key)) or "none"
             # key comes straight from the caller's payload and becomes this
             # exception's `field`; ValidationFailed.__init__ formats it into
             # `message` in errors.py, a different file a local grep cannot see.

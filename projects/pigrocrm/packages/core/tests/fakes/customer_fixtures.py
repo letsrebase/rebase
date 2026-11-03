@@ -17,7 +17,7 @@ from pigrocrm.core.customers.models import Customer
 
 def make_customer(session: Session, **overrides: object) -> Customer:
     """A flushed `Customer`; `overrides` are the columns a test cares about."""
-    values: dict[str, object] = {"ragione_sociale": f"ACME {uuid4()}"}
+    values: dict[str, object] = {"legal_name": f"ACME {uuid4()}"}
     values.update(overrides)
     customer = Customer(**values)
     session.add(customer)
@@ -28,12 +28,12 @@ def make_customer(session: Session, **overrides: object) -> Customer:
 def make_customer_with_address(session: Session, **overrides: object) -> Customer:
     """A flushed Italian `Customer` with the address an exported invoice requires."""
     values: dict[str, object] = {
-        "ragione_sociale": f"Cliente {uuid4()}",
-        "indirizzo": "Piazza dei Modelli 4",
+        "legal_name": f"Cliente {uuid4()}",
+        "address": "Piazza dei Modelli 4",
         "cap": "00187",
-        "comune": "Roma",
-        "provincia": "RM",
-        "nazione": "IT",
+        "city": "Roma",
+        "province": "RM",
+        "country": "IT",
     }
     values.update(overrides)
     return make_customer(session, **values)

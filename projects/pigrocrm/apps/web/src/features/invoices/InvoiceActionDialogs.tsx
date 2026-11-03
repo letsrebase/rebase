@@ -40,12 +40,12 @@ export function CollectDialog({
   onOpenChange,
   onProblem,
 }: DialogProps & { payment: ReturnType<typeof useSetPaymentState> }) {
-  const [dataIncasso, setDataIncasso] = useState(() => toIsoDate(new Date()))
+  const [paymentDate, setPaymentDate] = useState(() => toIsoDate(new Date()))
 
   function onCollect() {
     onProblem(null)
     payment.mutate(
-      { stato_pagamento: 'incassato', data_incasso: dataIncasso },
+      { payment_status: 'paid', payment_date: paymentDate },
       {
         onSuccess: () => {
           toast.success('Incasso registrato')
@@ -70,20 +70,20 @@ export function CollectDialog({
           in cui cade. Si può tornare indietro.
         </p>
         <div className="space-y-2">
-          <Label htmlFor="data-incasso">Data incasso</Label>
+          <Label htmlFor="date-payment">Data incasso</Label>
           <Input
-            id="data-incasso"
+            id="date-payment"
             type="date"
             required
-            value={dataIncasso}
-            onChange={(event) => setDataIncasso(event.target.value)}
+            value={paymentDate}
+            onChange={(event) => setPaymentDate(event.target.value)}
           />
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             Chiudi
           </Button>
-          <Button onClick={onCollect} disabled={payment.isPending || dataIncasso === ''}>
+          <Button onClick={onCollect} disabled={payment.isPending || paymentDate === ''}>
             Registra incasso
           </Button>
         </DialogFooter>
@@ -98,11 +98,11 @@ export function TransmitDialog({
   onOpenChange,
   onProblem,
 }: DialogProps & { transmitted: ReturnType<typeof useMarkTransmitted> }) {
-  const [dataTrasmissione, setDataTrasmissione] = useState(() => toIsoDate(new Date()))
+  const [dateTransmission, setDateTransmission] = useState(() => toIsoDate(new Date()))
 
   function onTransmit() {
     onProblem(null)
-    transmitted.mutate(dataTrasmissione, {
+    transmitted.mutate(dateTransmission, {
       onSuccess: () => {
         toast.success('Trasmissione registrata')
         onOpenChange(false)
@@ -125,13 +125,13 @@ export function TransmitDialog({
           PigroCRM. Non si può annullare.
         </p>
         <div className="space-y-2">
-          <Label htmlFor="data-trasmissione">Data di trasmissione</Label>
+          <Label htmlFor="date-transmission">Data di trasmissione</Label>
           <Input
-            id="data-trasmissione"
+            id="date-transmission"
             type="date"
             required
-            value={dataTrasmissione}
-            onChange={(event) => setDataTrasmissione(event.target.value)}
+            value={dateTransmission}
+            onChange={(event) => setDateTransmission(event.target.value)}
           />
         </div>
         <DialogFooter>
@@ -140,7 +140,7 @@ export function TransmitDialog({
           </Button>
           <Button
             onClick={onTransmit}
-            disabled={transmitted.isPending || dataTrasmissione === ''}
+            disabled={transmitted.isPending || dateTransmission === ''}
           >
             Segna trasmessa
           </Button>
@@ -156,12 +156,12 @@ export function AnnulDialog({
   onOpenChange,
   onProblem,
 }: DialogProps & { invoiceId: string }) {
-  const [motivo, setMotivo] = useState('')
+  const [reason, setReason] = useState('')
   const annul = useAnnulInvoice(invoiceId)
 
   function onAnnul() {
     onProblem(null)
-    annul.mutate(motivo, {
+    annul.mutate(reason, {
       onSuccess: () => {
         toast.success('Documento annullato. Il numero resta nel registro.')
         onOpenChange(false)
@@ -185,12 +185,12 @@ export function AnnulDialog({
           un errore si emette un nuovo documento, non si modifica questo.
         </p>
         <div className="space-y-2">
-          <Label htmlFor="motivo-annullamento">Motivo</Label>
+          <Label htmlFor="reason-cancellation">Motivo</Label>
           <Textarea
-            id="motivo-annullamento"
-            value={motivo}
+            id="reason-cancellation"
+            value={reason}
             rows={3}
-            onChange={(event) => setMotivo(event.target.value)}
+            onChange={(event) => setReason(event.target.value)}
           />
         </div>
         <DialogFooter>

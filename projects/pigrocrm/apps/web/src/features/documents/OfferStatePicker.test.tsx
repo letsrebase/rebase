@@ -9,18 +9,18 @@ import type { Document } from './queries'
 
 const OFFER: Document = {
   id: 'doc-1',
-  azienda_id: 'a-1',
+  legal_entity_id: 'a-1',
   customer_id: 'c-1',
   deal_id: null,
   contract_id: null,
-  tipo: 'offerta',
-  titolo: 'Offerta 2026-01',
-  stato: 'bozza',
-  // Slice 6 §4.1 added the day the current `stato` was set to `DocumentRead`. `null` on
-  // an offer still in `bozza`: a draft has no state change to date, and "ferma da N
+  type: 'offer',
+  title: 'Offerta 2026-01',
+  status: 'draft',
+  // Slice 6 §4.1 added the day the current `status` was set to `DocumentRead`. `null` on
+  // an offer still in `draft`: a draft has no state change to date, and "ferma da N
   // giorni" is not a question anyone asks about one.
-  stato_dal: null,
-  versione_corrente: 1,
+  status_since: null,
+  current_version: 1,
   custom_fields: {},
   created_at: '2026-08-10T09:00:00Z',
   updated_at: '2026-08-10T09:00:00Z',
@@ -56,21 +56,21 @@ describe('OfferStatePicker', () => {
   })
 
   it('offers nothing at all from a terminal state', () => {
-    render(<OfferStatePicker document={{ ...OFFER, stato: 'accettata' }} />, { wrapper })
+    render(<OfferStatePicker document={{ ...OFFER, status: 'accepted' }} />, { wrapper })
     expect(screen.getByText('Accettata')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /Segna come/ })).not.toBeInTheDocument()
   })
 
   it('renders nothing for a document that is not an offer', () => {
     const { container } = render(
-      <OfferStatePicker document={{ ...OFFER, tipo: 'verbale', stato: null }} />,
+      <OfferStatePicker document={{ ...OFFER, type: 'minutes', status: null }} />,
       { wrapper },
     )
     expect(container).toBeEmptyDOMElement()
   })
 
   it('posts the chosen state', async () => {
-    mockPost.mockReturnValue(ok({ ...OFFER, stato: 'inviata' }))
+    mockPost.mockReturnValue(ok({ ...OFFER, status: 'sent' }))
     render(<OfferStatePicker document={OFFER} />, { wrapper })
     await userEvent.click(screen.getByRole('button', { name: 'Segna come Inviata' }))
     await waitFor(() => {
@@ -78,7 +78,7 @@ describe('OfferStatePicker', () => {
         '/api/documents/{document_id}/status',
         expect.objectContaining({
           params: { path: { document_id: 'doc-1' } },
-          body: { stato: 'inviata' },
+          body: { status: 'sent' },
         }),
       )
     })

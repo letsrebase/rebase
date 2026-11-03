@@ -24,25 +24,25 @@ import { ME_KEY } from '@/lib/me'
 
 const IVAN = {
   id: 'a1',
-  nome: 'Ivan',
-  cognome: 'Fiore',
+  first_name: 'Ivan',
+  last_name: 'Fiore',
   email: 'ivan@rebase.it',
   linkedin_url: null,
   role: 'admin',
   created_at: '2026-09-10T10:00:00Z',
   updated_at: '2026-09-10T10:00:00Z',
-  ha_scheda: false,
+  has_card: false,
   cv_filename: null,
   cv_size: null,
-  tariffa_giornaliera: null,
-  posizione: null,
-  remoto: null,
+  daily_rate: null,
+  job_title: null,
+  remote: null,
   links: [],
-  completa: false,
-  ha_azienda: false,
-  richieste: [],
+  complete: false,
+  has_company: false,
+  requests: [],
 }
-const ADA = { ...IVAN, id: 'f1', nome: 'Ada', cognome: 'Lovelace', email: 'ada@studio.it', role: 'member' }
+const ADA = { ...IVAN, id: 'f1', first_name: 'Ada', last_name: 'Lovelace', email: 'ada@studio.it', role: 'member' }
 
 function answer(status: number, body: unknown) {
   return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
@@ -62,8 +62,8 @@ function mount(path = '/admin/talent') {
     getParentRoute: () => me,
     path: '/',
     component: Area,
-    validateSearch: (search: Record<string, unknown>): { negato?: true } => ({
-      negato: search.negato === true || search.negato === 'true' ? true : undefined,
+    validateSearch: (search: Record<string, unknown>): { denied?: true } => ({
+      denied: search.denied === true || search.denied === 'true' ? true : undefined,
     }),
   })
   // REB-518: a stub, so a mount at /me/cloud has somewhere real to land -- the sidebar
@@ -121,7 +121,7 @@ describe('the signed-in frame and PostHog (ORB-185, REB-279)', () => {
     mount()
     await screen.findByRole('heading', { name: 'Dentro' })
     expect(identifyUser).toHaveBeenCalledTimes(1)
-    expect(identifyUser).toHaveBeenCalledWith('a1', { email: 'ivan@rebase.it', nome: 'Ivan', ruolo: 'admin' })
+    expect(identifyUser).toHaveBeenCalledWith('a1', { email: 'ivan@rebase.it', first_name: 'Ivan', role: 'admin' })
   })
 
   it('identifies a member once, with role member (REB-280 widening, done here already)', async () => {
@@ -129,7 +129,7 @@ describe('the signed-in frame and PostHog (ORB-185, REB-279)', () => {
     mount('/me')
     await screen.findAllByText('Ada Lovelace')
     expect(identifyUser).toHaveBeenCalledTimes(1)
-    expect(identifyUser).toHaveBeenCalledWith('f1', { email: 'ada@studio.it', nome: 'Ada', ruolo: 'member' })
+    expect(identifyUser).toHaveBeenCalledWith('f1', { email: 'ada@studio.it', first_name: 'Ada', role: 'member' })
   })
 
   it('identifies the same admin once, however many times the session is fetched again', async () => {

@@ -61,7 +61,7 @@ def registry_session(registry: Engine) -> Iterator[Session]:
 
 
 @pytest.mark.parametrize(
-    ("nome", "slug"),
+    ("name", "slug"),
     [
         ("Studio Rossi", "studio-rossi"),
         ("  Caffè & Co.  ", "caffe-co"),
@@ -70,8 +70,8 @@ def registry_session(registry: Engine) -> Iterator[Session]:
         ("x" * 40, "x" * 32),
     ],
 )
-def test_slugify_makes_a_url_segment_out_of_a_name(nome: str, slug: str) -> None:
-    assert slugify(nome) == slug
+def test_slugify_makes_a_url_segment_out_of_a_name(name: str, slug: str) -> None:
+    assert slugify(name) == slug
 
 
 @pytest.mark.parametrize("slug", ["studio-rossi", "abc", "a1-b2", "x" * 32])
@@ -100,7 +100,7 @@ def test_malformed_and_reserved_slugs_are_refused_with_a_reason(slug: str) -> No
 
 def test_the_signup_schema_refuses_a_reserved_name_before_anything_else() -> None:
     with pytest.raises(ValueError, match="riservato"):
-        TenantSignup(slug="app", nome="Ada", email="ada@studio.it")
+        TenantSignup(slug="app", name="Ada", email="ada@studio.it")
 
 
 def test_the_database_name_is_an_unquoted_identifier() -> None:
@@ -129,7 +129,7 @@ def test_the_prefix_splitter_serves_the_mcp_segment_when_asked() -> None:
 def test_the_root_slug_is_stripped_but_stays_the_root_for_every_segment_set() -> None:
     assert split_tenant_prefix("/studiorossi/api/auth/me", "studiorossi") == (None, "/api/auth/me")
     assert split_tenant_prefix("/studiorossi/mcp", "studiorossi", MCP_SEGMENTS) == (None, "/mcp")
-    assert split_tenant_prefix("/altro/mcp", "studiorossi", MCP_SEGMENTS) == ("altro", "/mcp")
+    assert split_tenant_prefix("/other/mcp", "studiorossi", MCP_SEGMENTS) == ("other", "/mcp")
 
 
 def test_mcp_is_a_reserved_name() -> None:
@@ -153,11 +153,11 @@ def test_provisioning_creates_a_migrated_database_with_one_admin(
     slug = "prova-spazio"
     try:
         created = service.provision(
-            TenantSignup(slug=slug, nome="Ada Lovelace", email="Ada@Studio.it")
+            TenantSignup(slug=slug, name="Ada Lovelace", email="Ada@Studio.it")
         )
         assert created.slug == slug
         assert created.owner_email == "ada@studio.it"
-        assert service.availability(slug).disponibile is False
+        assert service.availability(slug).available is False
 
         space = create_engine(
             tenant_database_url(settings, tenant_database_name(slug)), future=True
@@ -167,7 +167,7 @@ def test_provisioning_creates_a_migrated_database_with_one_admin(
                 # The same head the CRM itself is at: `env.py` ran, not `create_all`.
                 head = connection.execute(text("select version_num from alembic_version")).scalar()
                 assert head is not None and head >= "0027"
-                users = connection.execute(text("select email, ruolo, attivo from users")).all()
+                users = connection.execute(text("select email, role, active from users")).all()
                 assert users == [("ada@studio.it", "admin", True)]
                 assert connection.execute(text("select count(*) from customers")).scalar() == 0
                 # Born ready (spec 2026-09-12 §6.5): the first deal, the first offer and
@@ -176,7 +176,7 @@ def test_provisioning_creates_a_migrated_database_with_one_admin(
                     connection.execute(text("select count(*) from pipeline_stages")).scalar() == 6
                 )
                 names = (
-                    connection.execute(text("select nome from templates order by nome"))
+                    connection.execute(text("select name from templates order by name"))
                     .scalars()
                     .all()
                 )
@@ -185,10 +185,10 @@ def test_provisioning_creates_a_migrated_database_with_one_admin(
                     connection.execute(text("select count(*) from cost_categories")).scalar() == 5
                 )
                 # The emitter carries the name and nothing fiscal: that is the person's.
-                emitter = connection.execute(
-                    text("select ragione_sociale, partita_iva, codice_fiscale from emitter_profile")
+                legal_entity = connection.execute(
+                    text("select legal_name, vat_number, tax_code from legal_entities")
                 ).all()
-                assert emitter == [("Ada Lovelace", None, None)]
+                assert legal_entity == [("Ada Lovelace", None, None)]
         finally:
             space.dispose()
     finally:
@@ -203,9 +203,9 @@ def test_the_same_name_twice_is_a_conflict_and_leaves_the_first_space_alone(
     service = TenantService(registry_session, settings)
     slug = "prova-doppio"
     try:
-        service.provision(TenantSignup(slug=slug, nome="Ada", email="ada@studio.it"))
+        service.provision(TenantSignup(slug=slug, name="Ada", email="ada@studio.it"))
         with pytest.raises(Conflict):
-            service.provision(TenantSignup(slug=slug, nome="Bob", email="bob@studio.it"))
+            service.provision(TenantSignup(slug=slug, name="Bob", email="bob@studio.it"))
         space = create_engine(
             tenant_database_url(settings, tenant_database_name(slug)), future=True
         )
@@ -230,14 +230,14 @@ def test_a_refused_admin_provisions_nothing_and_frees_the_name(
     import pigrocrm.core.tenants.service as tenants_service
 
     def refuse(self: object, data: object, actor: object) -> None:
-        raise ValidationFailed("user", "email", "rifiutato")
+        raise ValidationFailed("user", "email", "rejected")
 
     monkeypatch.setattr(tenants_service.UserService, "create", refuse)
     service = TenantService(registry_session, settings)
     slug = "prova-rifiuto"
     with pytest.raises(ValidationFailed):
-        service.provision(TenantSignup(slug=slug, nome="Ada", email="ada@studio.it"))
-    assert service.availability(slug).disponibile is True
+        service.provision(TenantSignup(slug=slug, name="Ada", email="ada@studio.it"))
+    assert service.availability(slug).available is True
     assert (
         registry_session.execute(
             text("select count(*) from tenants where slug = :s"), {"s": slug}
@@ -255,7 +255,7 @@ def test_the_signup_refuses_a_password_it_no_longer_asks_for() -> None:
     from pydantic import ValidationError
 
     with pytest.raises(ValidationError):
-        TenantSignup(slug="prova", nome="Ada", email="ada@studio.it", password="lunghissima1")  # type: ignore[call-arg]
+        TenantSignup(slug="prova", name="Ada", email="ada@studio.it", password="lunghissima1")  # type: ignore[call-arg]
 
 
 def test_the_cli_furnishes_an_existing_space_that_has_nothing(
@@ -269,7 +269,7 @@ def test_the_cli_furnishes_an_existing_space_that_has_nothing(
     service = TenantService(registry_session, settings)
     slug = "prova-arredo"
     try:
-        service.provision(TenantSignup(slug=slug, nome="Ada", email="ada@studio.it"))
+        service.provision(TenantSignup(slug=slug, name="Ada", email="ada@studio.it"))
         space = create_engine(
             tenant_database_url(settings, tenant_database_name(slug)), future=True
         )
@@ -315,7 +315,7 @@ def test_the_cli_skips_a_space_it_cannot_reach_and_still_furnishes_the_others(
     slug = "prova-vicino"
     ghost = "prova-fantasma"
     try:
-        service.provision(TenantSignup(slug=slug, nome="Ada", email="ada@studio.it"))
+        service.provision(TenantSignup(slug=slug, name="Ada", email="ada@studio.it"))
         # A registry row whose database does not exist: the eight-spaces boot must not
         # stop here, and the failure must not name the URL.
         registry_session.add(
@@ -367,7 +367,7 @@ def test_the_cli_migrates_a_space_left_behind_before_furnishing_it(
     service = TenantService(registry_session, settings)
     slug = "prova-indietro"
     try:
-        service.provision(TenantSignup(slug=slug, nome="Ada", email="ada@studio.it"))
+        service.provision(TenantSignup(slug=slug, name="Ada", email="ada@studio.it"))
         url = tenant_database_url(settings, tenant_database_name(slug))
         space = create_engine(url, future=True)
         try:
@@ -380,7 +380,7 @@ def test_the_cli_migrates_a_space_left_behind_before_furnishing_it(
             config = Config(str(default_alembic_ini()))
             config.set_main_option("sqlalchemy.url", url.render_as_string(hide_password=False))
             # To 0033 by name, not `-1`: the incident's revision, and the one where
-            # `email_verificata_il` is absent whatever the head becomes later.
+            # `email_verified_at` is absent whatever the head becomes later.
             command.downgrade(config, "0033")
             with space.connect() as connection:
                 behind = connection.execute(
@@ -397,7 +397,7 @@ def test_the_cli_migrates_a_space_left_behind_before_furnishing_it(
                     .scalars()
                     .all()
                 )
-                assert "email_verificata_il" not in columns
+                assert "email_verified_at" not in columns
 
             monkeypatch.setattr(cli, "get_settings", lambda: settings)
             assert cli.main(["ensure-space-defaults"]) == 0
@@ -419,7 +419,7 @@ def test_the_cli_migrates_a_space_left_behind_before_furnishing_it(
                     .scalars()
                     .all()
                 )
-                assert "email_verificata_il" in columns
+                assert "email_verified_at" in columns
                 assert (
                     connection.execute(text("select count(*) from pipeline_stages")).scalar() == 6
                 )
@@ -461,8 +461,8 @@ def test_a_failing_seed_undoes_the_space_and_frees_the_name(
     service = TenantService(registry_session, settings)
     slug = "prova-seme"
     with pytest.raises(RuntimeError):
-        service.provision(TenantSignup(slug=slug, nome="Ada", email="ada@studio.it"))
-    assert service.availability(slug).disponibile is True
+        service.provision(TenantSignup(slug=slug, name="Ada", email="ada@studio.it"))
+    assert service.availability(slug).available is True
     with create_engine(settings.database_url, future=True).connect() as connection:
         exists = connection.execute(
             text("select 1 from pg_database where datname = :n"), {"n": tenant_database_name(slug)}
@@ -521,7 +521,7 @@ def test_welcome_answers_the_entering_link_and_none_without_a_public_origin(
     service = TenantService(registry_session, settings)
     slug = "prova-welcome"
     try:
-        tenant = service.provision(TenantSignup(slug=slug, nome="Ada", email="ada@studio.it"))
+        tenant = service.provision(TenantSignup(slug=slug, name="Ada", email="ada@studio.it"))
         space_engine = create_engine(
             tenant_database_url(settings, tenant_database_name(slug)), future=True
         )
@@ -529,7 +529,7 @@ def test_welcome_answers_the_entering_link_and_none_without_a_public_origin(
             with session_factory(space_engine)() as space:
                 with_origin = settings.model_copy(update={"public_url": "https://pigro.test"})
                 mail = welcome(
-                    space, with_origin, RecordingSender(), tenant.owner_email, slug, membro=False
+                    space, with_origin, RecordingSender(), tenant.owner_email, slug, member=False
                 )
                 assert mail is not None
                 assert mail.html is not None
@@ -543,7 +543,7 @@ def test_welcome_answers_the_entering_link_and_none_without_a_public_origin(
                         RecordingSender(),
                         tenant.owner_email,
                         slug,
-                        membro=False,
+                        member=False,
                     )
                     is None
                 )

@@ -70,7 +70,7 @@ def test_starting_the_install_prunes_the_expired_states(db_session: Session) -> 
     admin = make_user(db_session)
     db_session.add(
         GoogleOAuthState(
-            jti="scaduto",
+            jti="expired",
             code_verifier="",
             user_id=admin.id,
             expires_at=datetime.now(UTC) - timedelta(minutes=10),
@@ -84,10 +84,10 @@ def test_starting_the_install_prunes_the_expired_states(db_session: Session) -> 
     assert db_session.execute(select(GoogleOAuthState.jti)).scalars().all() == [_state_of(url)]
 
 
-def test_a_collaboratore_cannot_start_and_an_unconfigured_install_refuses(
+def test_to_collaborator_cannot_start_and_an_unconfigured_install_refuses(
     db_session: Session,
 ) -> None:
-    member = make_user(db_session, ruolo="collaboratore")
+    member = make_user(db_session, role="collaborator")
     with pytest.raises(PermissionDenied):
         _service(db_session, FakeSlack()).start(actor_of(member))
     admin = make_user(db_session)
@@ -97,7 +97,7 @@ def test_a_collaboratore_cannot_start_and_an_unconfigured_install_refuses(
 
 def test_a_scoped_admin_cannot_connect_the_space(db_session: Session) -> None:
     admin = make_user(db_session)
-    scoped = Actor(id=admin.id, type="user", role="admin", aziende=())
+    scoped = Actor(id=admin.id, type="user", role="admin", legal_entities=())
     with pytest.raises(ScopedAdmin):
         _service(db_session, FakeSlack()).start(scoped)
 
@@ -106,8 +106,8 @@ def test_complete_stores_the_bot_token_sealed_and_matches_users_by_email(
     db_session: Session,
 ) -> None:
     admin = make_user(db_session, email="mario@example.it")
-    ada = make_user(db_session, email="ada@example.it", nome="Ada", ruolo="collaboratore")
-    nobody = make_user(db_session, email="nessuno@example.it", nome="Nessuno", ruolo="readonly")
+    ada = make_user(db_session, email="ada@example.it", name="Ada", role="collaborator")
+    nobody = make_user(db_session, email="nessuno@example.it", name="Nessuno", role="readonly")
     fake = FakeSlack()
     fake.add_member("mario@example.it", "UMARIO")
     fake.add_member("ADA@example.it", "UADA")
@@ -287,19 +287,19 @@ def test_the_settings_writes_are_recorded_with_the_member(db_session: Session) -
     kinds = {
         e.kind: e
         for e in ActivityService(db_session).timeline("slack_workspace", workspace.id)
-        if e.kind.startswith("slack.") and "collegato" not in e.kind
+        if e.kind.startswith("slack.") and "connected" not in e.kind
     }
 
     assert set(kinds) == {
-        "slack.abbinamento_manuale",
-        "slack.abbinamento_rimosso",
-        "slack.abbinamenti_rifatti",
-        "slack.canale_impostato",
-        "slack.canale_rimosso",
+        "slack.manual_match",
+        "slack.match_removed",
+        "slack.matches_rebuilt",
+        "slack.channel_set",
+        "slack.channel_removed",
     }
     assert {(e.actor_id, e.actor_type) for e in kinds.values()} == {(admin.id, actor.type)}
-    assert kinds["slack.abbinamento_manuale"].payload == {"user_id": str(admin.id)}
-    assert kinds["slack.canale_impostato"].payload == {"canale": "promemoria"}
+    assert kinds["slack.manual_match"].payload == {"user_id": str(admin.id)}
+    assert kinds["slack.channel_set"].payload == {"channel": "promemoria"}
 
 
 def test_disconnect_wipes_the_token_the_channel_and_the_matches(db_session: Session) -> None:
@@ -353,10 +353,10 @@ def _page(session: Session, fake: FakeSlack, admin_actor: Actor) -> SlackHealth:
 def test_the_page_lists_every_active_user_with_how_they_were_matched(
     db_session: Session,
 ) -> None:
-    admin = make_user(db_session, email="mario@example.it", nome="Mario")
-    ada = make_user(db_session, email="ada@example.it", nome="Ada", ruolo="collaboratore")
-    gone = make_user(db_session, email="gone@example.it", nome="Gone", ruolo="collaboratore")
-    gone.attivo = False
+    admin = make_user(db_session, email="mario@example.it", name="Mario")
+    ada = make_user(db_session, email="ada@example.it", name="Ada", role="collaborator")
+    gone = make_user(db_session, email="gone@example.it", name="Gone", role="collaborator")
+    gone.active = False
     db_session.flush()
     fake = FakeSlack()
     fake.add_member("mario@example.it", "UMARIO")
@@ -366,7 +366,7 @@ def test_the_page_lists_every_active_user_with_how_they_were_matched(
 
     assert health.configured is True
     assert health.workspace is not None and health.workspace.team_name == "Acme Test"
-    by_name = {member.nome: member for member in health.members}
+    by_name = {member.name: member for member in health.members}
     assert set(by_name) == {"Mario", "Ada"}
     assert by_name["Mario"].state == "matched"
     assert by_name["Ada"].state == "unmatched"
@@ -383,8 +383,8 @@ def test_the_page_reads_unconfigured_as_a_state_not_an_error(db_session: Session
 
 
 def test_an_admin_fixes_a_mismatch_by_giving_the_slack_address(db_session: Session) -> None:
-    admin = make_user(db_session, email="mario@example.it", nome="Mario")
-    ada = make_user(db_session, email="ada@studio.example", nome="Ada", ruolo="collaboratore")
+    admin = make_user(db_session, email="mario@example.it", name="Mario")
+    ada = make_user(db_session, email="ada@studio.example", name="Ada", role="collaborator")
     fake = FakeSlack()
     fake.add_member("mario@example.it", "UMARIO")
     fake.add_member("ada.bianchi@acme.example", "UADA")
@@ -406,8 +406,8 @@ def test_an_admin_fixes_a_mismatch_by_giving_the_slack_address(db_session: Sessi
 def test_a_fix_names_what_is_wrong_when_nobody_or_somebody_else_has_the_address(
     db_session: Session,
 ) -> None:
-    admin = make_user(db_session, email="mario@example.it", nome="Mario")
-    ada = make_user(db_session, email="ada@studio.example", nome="Ada", ruolo="collaboratore")
+    admin = make_user(db_session, email="mario@example.it", name="Mario")
+    ada = make_user(db_session, email="ada@studio.example", name="Ada", role="collaborator")
     fake = FakeSlack()
     fake.add_member("mario@example.it", "UMARIO")
     connect(db_session, fake, admin)
@@ -420,7 +420,7 @@ def test_a_fix_names_what_is_wrong_when_nobody_or_somebody_else_has_the_address(
 
 
 def test_unlinking_goes_back_to_the_automatic_match(db_session: Session) -> None:
-    admin = make_user(db_session, email="mario@example.it", nome="Mario")
+    admin = make_user(db_session, email="mario@example.it", name="Mario")
     fake = FakeSlack()
     fake.add_member("mario@example.it", "UMARIO")
     fake.add_member("m.rossi@acme.example", "UOTHER")
@@ -439,8 +439,8 @@ def test_unlinking_goes_back_to_the_automatic_match(db_session: Session) -> None
 def test_look_again_finds_a_person_who_joined_slack_after_the_connection(
     db_session: Session,
 ) -> None:
-    admin = make_user(db_session, email="mario@example.it", nome="Mario")
-    ada = make_user(db_session, email="ada@example.it", nome="Ada", ruolo="collaboratore")
+    admin = make_user(db_session, email="mario@example.it", name="Mario")
+    ada = make_user(db_session, email="ada@example.it", name="Ada", role="collaborator")
     fake = FakeSlack()
     fake.add_member("mario@example.it", "UMARIO")
     connect(db_session, fake, admin)
@@ -453,8 +453,8 @@ def test_look_again_finds_a_person_who_joined_slack_after_the_connection(
 
 
 def test_two_users_never_share_one_slack_member(db_session: Session) -> None:
-    admin = make_user(db_session, email="mario@example.it", nome="Mario")
-    twin = make_user(db_session, email="mario.old@example.it", nome="Gemello")
+    admin = make_user(db_session, email="mario@example.it", name="Mario")
+    twin = make_user(db_session, email="mario.old@example.it", name="Gemello")
     fake = FakeSlack()
     fake.add_member("mario@example.it", "UMARIO")
     fake.add_member(twin.email, "UMARIO")
@@ -467,8 +467,8 @@ def test_two_users_never_share_one_slack_member(db_session: Session) -> None:
 
 
 def test_deactivated_slack_accounts_and_bots_are_not_a_match(db_session: Session) -> None:
-    admin = make_user(db_session, email="mario@example.it", nome="Mario")
-    bot_owner = make_user(db_session, email="bot@example.it", nome="Bot", ruolo="collaboratore")
+    admin = make_user(db_session, email="mario@example.it", name="Mario")
+    bot_owner = make_user(db_session, email="bot@example.it", name="Bot", role="collaborator")
     fake = FakeSlack()
     fake.add_member("mario@example.it", "UMARIO", deleted=True)
     fake.add_member("bot@example.it", "UBOT2", is_bot=True)
@@ -483,7 +483,7 @@ def test_an_unmatched_user_is_asked_again_only_after_a_day(db_session: Session) 
     from pigrocrm.core.slack.matching import SlackMatcher
     from pigrocrm.core.slack.repository import SlackRepository
 
-    admin = make_user(db_session, email="mario@example.it", nome="Mario")
+    admin = make_user(db_session, email="mario@example.it", name="Mario")
     fake = FakeSlack()
     connect(db_session, fake, admin)  # nobody in Slack: a `none` link
     lookups = len(fake.calls("users.lookupByEmail"))
@@ -654,10 +654,10 @@ def test_a_token_sealed_for_one_space_does_not_open_in_another(db_session: Sessi
 
     admin = make_user(db_session)
     fake = FakeSlack()
-    uno = space_base_settings(slack_settings(), "studio-uno")
-    workspace = connect(db_session, fake, admin, uno)
+    first_space = space_base_settings(slack_settings(), "studio-uno")
+    workspace = connect(db_session, fake, admin, first_space)
 
-    assert bot_token(workspace, uno) == BOT_TOKEN
+    assert bot_token(workspace, first_space) == BOT_TOKEN
     with pytest.raises(Conflict, match="PIGROCRM_SLACK_TOKEN_KEY"):
         bot_token(workspace, space_base_settings(slack_settings(), "studio-due"))
 
@@ -712,7 +712,7 @@ def test_an_automatic_match_never_overwrites_a_correction_made_while_slack_answe
     from pigrocrm.core.slack.matching import SlackMatcher
     from pigrocrm.core.slack.repository import SlackRepository
 
-    admin = make_user(db_session, email="mario@example.it", nome="Mario")
+    admin = make_user(db_session, email="mario@example.it", name="Mario")
     fake = FakeSlack()
     fake.add_member("mario@example.it", "UMARIO")
     fake.add_member("m.rossi@acme.example", "UOTHER")

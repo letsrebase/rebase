@@ -41,37 +41,37 @@ export function useCustomerCorrespondents(customerId: string, enabled: boolean) 
 /** Files one found address as a person of the customer. The answer already in hand is
  *  marked rather than read again, which would ask Gmail about the whole domain a second
  *  time; the customer's people are stale afterwards, so the Persone card above shows
- *  the new one. The refusal that names the address (`indirizzo` in the problem
+ *  the new one. The refusal that names the address (`address` in the problem
  *  document) means it was filed since the read (a second tab, an import): the row is
  *  marked all the same, so it stops offering what the book already holds. Any other
  *  refusal, a customer whose domain was cleared since, leaves the row as it was. */
 export function useAddCorrespondent(customerId: string) {
   const queryClient = useQueryClient()
-  function markFiled(indirizzo: string) {
+  function markFiled(address: string) {
     queryClient.setQueryData<DiscoveryReport>(
       correspondentKeys.customer(customerId),
       (report) =>
         report && {
           ...report,
-          corrispondenti: report.corrispondenti.map((found) =>
-            found.indirizzo === indirizzo ? { ...found, gia_in_anagrafica: true } : found,
+          matching: report.matching.map((found) =>
+            found.address === address ? { ...found, already_in_directory: true } : found,
           ),
         },
     )
     void queryClient.invalidateQueries({ queryKey: queryKeys.people() })
   }
   return useMutation({
-    mutationFn: (body: { indirizzo: string; nome: string }) =>
+    mutationFn: (body: { address: string; name: string }) =>
       unwrap(
         api.POST('/api/customers/{customer_id}/people-from-mail', {
           params: { path: { customer_id: customerId } },
           body,
         }),
       ),
-    onSuccess: (_person, body) => markFiled(body.indirizzo),
+    onSuccess: (_person, body) => markFiled(body.address),
     onError: (error, body) => {
       const problem = toProblem(error)
-      if (problem.status === 409 && problem.indirizzo === body.indirizzo) markFiled(body.indirizzo)
+      if (problem.status === 409 && problem.address === body.address) markFiled(body.address)
     },
   })
 }

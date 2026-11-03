@@ -19,11 +19,11 @@ from pigrocrm.core.errors import NotFound, PermissionDenied
 ADMIN = Actor(id=None, type="system", role="admin")
 READONLY = Actor(id=None, type="user", role="readonly")
 
-RINNOVO = ClauseNoteCreate(
-    riferimento_clausola="Art. 8.3 Rinnovo",
-    testo_letterale="Il contratto cessa alla scadenza salvo che il cliente non opti per il "
+RENEWAL = ClauseNoteCreate(
+    clause_reference="Art. 8.3 Rinnovo",
+    literal_text="Il contratto cessa alla scadenza salvo che il cliente non opti per il "
     "rinnovo; ciascuna parte può rifiutare il rinnovo con preavviso.",
-    interpretazione_adottata="Rinnovo a scelta del cliente; il rifiuto del fornitore vale "
+    adopted_interpretation="Rinnovo a scelta del cliente; il rifiuto del fornitore vale "
     "solo con 60 giorni di preavviso.",
 )
 
@@ -39,34 +39,34 @@ def test_a_note_on_the_renewal_clause_is_read_with_the_contract(db_session: Sess
     `get_contract`, which is `ContractService.detail` over MCP."""
     contract_id = _contract_id(db_session)
 
-    created = ClauseNoteService(db_session).create(contract_id, RINNOVO, ADMIN)
+    created = ClauseNoteService(db_session).create(contract_id, RENEWAL, ADMIN)
 
     detail = ContractService(db_session).detail(contract_id, ADMIN)
-    assert [note.id for note in detail.note_clausole] == [created.id]
-    [note] = detail.note_clausole
-    assert note.riferimento_clausola == "Art. 8.3 Rinnovo"
-    assert note.testo_letterale.startswith("Il contratto cessa")
-    assert note.interpretazione_adottata.startswith("Rinnovo a scelta")
+    assert [note.id for note in detail.note_clauses] == [created.id]
+    [note] = detail.note_clauses
+    assert note.clause_reference == "Art. 8.3 Rinnovo"
+    assert note.literal_text.startswith("Il contratto cessa")
+    assert note.adopted_interpretation.startswith("Rinnovo a scelta")
     assert note.note is None
-    assert detail.titolo == "Consulenza CTO"
+    assert detail.title == "Consulenza CTO"
 
 
 def test_a_contract_without_notes_has_an_empty_list_and_no_successor(db_session: Session) -> None:
     detail = ContractService(db_session).detail(_contract_id(db_session), ADMIN)
-    assert detail.note_clausole == []
-    assert detail.contratto_successivo_id is None
+    assert detail.note_clauses == []
+    assert detail.next_contract_id is None
 
 
 def test_notes_are_listed_oldest_first_and_only_the_contracts_own(db_session: Session) -> None:
     first, other = _contract_id(db_session), _contract_id(db_session)
     service = ClauseNoteService(db_session)
-    a = service.create(first, RINNOVO, ADMIN)
+    a = service.create(first, RENEWAL, ADMIN)
     b = service.create(
         first,
-        RINNOVO.model_copy(update={"riferimento_clausola": "Art. 12 Foro"}),
+        RENEWAL.model_copy(update={"clause_reference": "Art. 12 Foro"}),
         ADMIN,
     )
-    service.create(other, RINNOVO, ADMIN)
+    service.create(other, RENEWAL, ADMIN)
 
     assert [n.id for n in service.list_for_contract(first, ADMIN)] == [a.id, b.id]
     assert len(service.list_for_contract(other, ADMIN)) == 1
@@ -76,52 +76,50 @@ def test_a_note_is_corrected_and_its_optional_part_cleared(db_session: Session) 
     contract_id = _contract_id(db_session)
     service = ClauseNoteService(db_session)
     created = service.create(
-        contract_id, RINNOVO.model_copy(update={"note": "Da chiedere al legale"}), ADMIN
+        contract_id, RENEWAL.model_copy(update={"note": "Da chiedere al legale"}), ADMIN
     )
 
     corrected = service.update(
         contract_id,
         created.id,
-        ClauseNoteUpdate(interpretazione_adottata="Rinnovo tacito di anno in anno."),
+        ClauseNoteUpdate(adopted_interpretation="Rinnovo tacito di anno in anno."),
         ADMIN,
     )
-    assert corrected.interpretazione_adottata == "Rinnovo tacito di anno in anno."
+    assert corrected.adopted_interpretation == "Rinnovo tacito di anno in anno."
     assert corrected.note == "Da chiedere al legale"
 
     cleared = service.update(contract_id, created.id, ClauseNoteUpdate(note=None), ADMIN)
     assert cleared.note is None
-    assert cleared.riferimento_clausola == "Art. 8.3 Rinnovo"
+    assert cleared.clause_reference == "Art. 8.3 Rinnovo"
 
 
 def test_a_note_cannot_be_emptied_and_a_blank_one_is_not_written(db_session: Session) -> None:
     contract_id = _contract_id(db_session)
-    created = ClauseNoteService(db_session).create(contract_id, RINNOVO, ADMIN)
+    created = ClauseNoteService(db_session).create(contract_id, RENEWAL, ADMIN)
     with pytest.raises(pydantic.ValidationError):
-        ClauseNoteUpdate(testo_letterale="")
+        ClauseNoteUpdate(literal_text="")
     with pytest.raises(pydantic.ValidationError):
-        ClauseNoteCreate(
-            riferimento_clausola="Art. 1", testo_letterale="  ", interpretazione_adottata="x"
-        )
+        ClauseNoteCreate(clause_reference="Art. 1", literal_text="  ", adopted_interpretation="x")
     from pigrocrm.core.errors import ValidationFailed
 
     with pytest.raises(ValidationFailed) as caught:
         ClauseNoteService(db_session).update(
-            contract_id, created.id, ClauseNoteUpdate(interpretazione_adottata=None), ADMIN
+            contract_id, created.id, ClauseNoteUpdate(adopted_interpretation=None), ADMIN
         )
-    assert caught.value.details["field"] == "interpretazione_adottata"
+    assert caught.value.details["field"] == "adopted_interpretation"
 
 
 def test_a_note_of_another_contract_or_an_unknown_one_is_not_found(db_session: Session) -> None:
     mine, other = _contract_id(db_session), _contract_id(db_session)
     service = ClauseNoteService(db_session)
-    note = service.create(mine, RINNOVO, ADMIN)
+    note = service.create(mine, RENEWAL, ADMIN)
 
     with pytest.raises(NotFound):
         service.update(other, note.id, ClauseNoteUpdate(note="x"), ADMIN)
     with pytest.raises(NotFound):
         service.update(mine, uuid4(), ClauseNoteUpdate(note="x"), ADMIN)
     with pytest.raises(NotFound):
-        service.create(uuid4(), RINNOVO, ADMIN)
+        service.create(uuid4(), RENEWAL, ADMIN)
     with pytest.raises(NotFound):
         service.list_for_contract(uuid4(), ADMIN)
     with pytest.raises(NotFound):
@@ -131,11 +129,11 @@ def test_a_note_of_another_contract_or_an_unknown_one_is_not_found(db_session: S
 def test_reading_is_open_and_writing_is_not(db_session: Session) -> None:
     contract_id = _contract_id(db_session)
     service = ClauseNoteService(db_session)
-    note = service.create(contract_id, RINNOVO, ADMIN)
+    note = service.create(contract_id, RENEWAL, ADMIN)
 
     assert len(service.list_for_contract(contract_id, READONLY)) == 1
     with pytest.raises(PermissionDenied):
-        service.create(contract_id, RINNOVO, READONLY)
+        service.create(contract_id, RENEWAL, READONLY)
     with pytest.raises(PermissionDenied):
         service.update(contract_id, note.id, ClauseNoteUpdate(note="x"), READONLY)
 
@@ -143,14 +141,14 @@ def test_reading_is_open_and_writing_is_not(db_session: Session) -> None:
 def test_a_note_written_or_corrected_is_on_the_contracts_timeline(db_session: Session) -> None:
     contract_id = _contract_id(db_session)
     service = ClauseNoteService(db_session)
-    note = service.create(contract_id, RINNOVO, ADMIN)
+    note = service.create(contract_id, RENEWAL, ADMIN)
     service.update(contract_id, note.id, ClauseNoteUpdate(note="riletto"), ADMIN)
 
     entries = ActivityService(db_session).timeline("contract", contract_id)
 
     assert [e.kind for e in entries][:2] == ["clause_note_updated", "clause_note_added"]
-    assert entries[1].payload == {"riferimento_clausola": "Art. 8.3 Rinnovo"}
-    assert "testo_letterale" not in str(entries[1].payload)
+    assert entries[1].payload == {"clause_reference": "Art. 8.3 Rinnovo"}
+    assert "literal_text" not in str(entries[1].payload)
 
 
 def test_the_contract_carries_only_the_latest_notes_and_the_list_has_them_all(
@@ -164,12 +162,12 @@ def test_the_contract_carries_only_the_latest_notes_and_the_list_has_them_all(
     for number in (1, 2, 3):
         service.create(
             contract_id,
-            RINNOVO.model_copy(update={"riferimento_clausola": f"Art. {number}"}),
+            RENEWAL.model_copy(update={"clause_reference": f"Art. {number}"}),
             ADMIN,
         )
 
     detail = ContractService(db_session).detail(contract_id, ADMIN)
 
-    assert [n.riferimento_clausola for n in detail.note_clausole] == ["Art. 2", "Art. 3"]
-    assert detail.note_clausole_totale == 3
+    assert [n.clause_reference for n in detail.note_clauses] == ["Art. 2", "Art. 3"]
+    assert detail.note_total_clauses == 3
     assert len(service.list_for_contract(contract_id, ADMIN)) == 3

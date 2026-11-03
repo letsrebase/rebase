@@ -20,13 +20,13 @@ vi.mock('@/lib/api', async (importOriginal) => {
   return { ...actual, api: { GET: vi.fn(), POST: vi.fn(), PUT: vi.fn(), DELETE: vi.fn() } }
 })
 
-const auth: { user: { id: string; email: string; nome: string; ruolo: string; attivo: boolean } } = {
-  user: { id: 'u1', email: 'ada@studio.it', nome: 'Ada', ruolo: 'admin', attivo: true },
+const auth: { user: { id: string; email: string; name: string; role: string; active: boolean } } = {
+  user: { id: 'u1', email: 'ada@studio.it', name: 'Ada', role: 'admin', active: true },
 }
 vi.mock('@/lib/auth', () => ({
   useAuth: () => ({ user: auth.user, isLoading: false, login: vi.fn(), logout: vi.fn(), enterWithLink: vi.fn() }),
-  useCanWrite: () => auth.user.ruolo !== 'readonly',
-  useCan: () => auth.user.ruolo === 'admin',
+  useCanWrite: () => auth.user.role !== 'readonly',
+  useCan: () => auth.user.role === 'admin',
 }))
 
 vi.mock('@rebase/ui/sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
@@ -55,7 +55,7 @@ const EMPTY: Record<string, unknown> = {
   '/api/tokens': [],
   '/api/gmail/account': { configured: false, account: null, banner: null, banner_text: null, missing_scopes: [] },
 }
-const EMITTER = { ragione_sociale: 'Ada', partita_iva: '01234567890', codice_fiscale: null }
+const LEGAL_ENTITY = { legal_name: 'Ada', vat_number: '01234567890', tax_code: null }
 
 function answers(overrides: Record<string, unknown> = {}, failing: Record<string, number> = {}) {
   vi.mocked(api.GET).mockImplementation(
@@ -65,14 +65,14 @@ function answers(overrides: Record<string, unknown> = {}, failing: Record<string
           ? { error: { detail: 'boom' }, response: new Response(null, { status: failing[path] }) }
           : path in overrides
             ? { data: overrides[path], response: new Response(null, { status: 200 }) }
-            : path === '/api/aziende'
+            : path === '/api/legal-entities'
               ? { data: [], response: new Response(null, { status: 200 }) }
               : { data: EMPTY[path], response: new Response(null, { status: 200 }) },
       )) as never,
   )
 }
 
-const SEARCH: HomeSearch = { tab: 'economica', da: '2026-09-01', a: '2026-09-30', base: 'competenza' }
+const SEARCH: HomeSearch = { tab: 'economic', from: '2026-09-01', to: '2026-09-30', base: 'accrual' }
 
 function renderHome(search: HomeSearch = SEARCH, prepare?: (client: QueryClient) => void): QueryClient {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
@@ -92,7 +92,7 @@ beforeEach(() => {
 })
 
 afterEach(() => {
-  auth.user = { id: 'u1', email: 'ada@studio.it', nome: 'Ada', ruolo: 'admin', attivo: true }
+  auth.user = { id: 'u1', email: 'ada@studio.it', name: 'Ada', role: 'admin', active: true }
 })
 
 describe('the Home', () => {
@@ -105,14 +105,14 @@ describe('the Home', () => {
   })
 
   it('stays the start page with the fiscal data saved and a token: those are steps, not work', async () => {
-    answers({ '/api/aziende': [EMITTER], '/api/tokens': [{ id: 'k1' }] })
+    answers({ '/api/legal-entities': [LEGAL_ENTITY], '/api/tokens': [{ id: 'k1' }] })
     renderHome()
     expect(await screen.findByRole('heading', { name: 'Porta dentro il tuo lavoro' })).toBeInTheDocument()
     expect(screen.queryByTestId('dashboard')).toBeNull()
   })
 
   it('shows the Gmail outcome the consent flow came back with, next to the door', async () => {
-    renderHome({ ...SEARCH, esito: 'negato' })
+    renderHome({ ...SEARCH, outcome: 'denied' })
     expect(await screen.findByText('Autorizzazione negata: la casella non è stata collegata.')).toBeInTheDocument()
   })
 
@@ -138,7 +138,7 @@ describe('the Home', () => {
 
   it('is the dashboard alone once every step is done', async () => {
     answers({
-      '/api/aziende': [EMITTER],
+      '/api/legal-entities': [LEGAL_ENTITY],
       '/api/customers': ONE('c1'),
       '/api/deals': ONE('d1'),
       '/api/documents': ONE('o1'),
@@ -159,7 +159,7 @@ describe('the Home', () => {
   })
 
   it('says nothing of proposals to a readonly user, and does not even read them', async () => {
-    auth.user.ruolo = 'readonly'
+    auth.user.role = 'readonly'
     answers({ '/api/customers': ONE('c1'), '/api/proposals': { items: [{ id: 'p1' }] } })
     renderHome()
     expect(await screen.findByTestId('dashboard')).toBeInTheDocument()
@@ -170,7 +170,7 @@ describe('the Home', () => {
   })
 
   it('does not ask a collaboratore to complete the one step only an admin can do', async () => {
-    auth.user.ruolo = 'collaboratore'
+    auth.user.role = 'collaborator'
     answers({ '/api/customers': ONE('c1'), '/api/deals': ONE('d1'), '/api/documents': ONE('o1') })
     renderHome()
     expect(await screen.findByTestId('dashboard')).toBeInTheDocument()
@@ -178,7 +178,7 @@ describe('the Home', () => {
   })
 
   it('does not ask a readonly user to complete anything', async () => {
-    auth.user.ruolo = 'readonly'
+    auth.user.role = 'readonly'
     answers({ '/api/customers': ONE('c1') })
     renderHome()
     expect(await screen.findByTestId('dashboard')).toBeInTheDocument()
@@ -187,7 +187,7 @@ describe('the Home', () => {
 
   it('holds its choice for the visit: a customer the assistant creates meanwhile does not take the start page, or a token on it, away', async () => {
     vi.mocked(api.POST).mockResolvedValue({
-      data: { id: 't2', nome: 'Claude Code', prefix: 'pgc_zzzz9999', last_used_at: null, revoked_at: null, created_at: '2026-09-23T10:00:00Z', token: 'pgc_x' },
+      data: { id: 't2', name: 'Claude Code', prefix: 'pgc_zzzz9999', last_used_at: null, revoked_at: null, created_at: '2026-09-23T10:00:00Z', token: 'pgc_x' },
       response: new Response(null, { status: 201 }),
     } as never)
     const client = renderHome()
@@ -225,7 +225,7 @@ describe('the Home', () => {
 
   it('shows the Gmail outcome on the dashboard too, if the two sides read the space differently', async () => {
     answers({ '/api/customers': ONE('c1') })
-    renderHome({ ...SEARCH, esito: 'collegato' })
+    renderHome({ ...SEARCH, outcome: 'connected' })
     expect(await screen.findByTestId('dashboard')).toBeInTheDocument()
     expect(screen.getByText('Casella Google collegata.')).toBeInTheDocument()
   })

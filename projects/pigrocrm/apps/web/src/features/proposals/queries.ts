@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, toProblem, unwrap } from '@/lib/api'
 import type { components } from '@/lib/api-types'
 import { queryKeys } from '@/lib/query'
-import type { Proposal, ProposalStato } from './fields'
+import type { Proposal, ProposalStatus } from './fields'
 
 /** The API's own page size ceiling (`ProposalListQuery.limit`): a review queue is bounded
  *  by what agents leave pending, and this is how far one request can see. */
@@ -13,20 +13,20 @@ type ProposalRejectBody = components['schemas']['ProposalReject']
 
 /**
  * One list per tab. The queue is oldest first, the order proposals arrived in; the decided
- * tabs ask for the most recent decision first (`ordine`), so a space with more than
+ * tabs ask for the most recent decision first (`order`), so a space with more than
  * `QUEUE_LIMIT` decided proposals still shows the latest ones and not the first ones.
  */
-export function useProposals(stato: ProposalStato, options: { enabled?: boolean } = {}) {
+export function useProposals(status: ProposalStatus, options: { enabled?: boolean } = {}) {
   return useQuery({
     enabled: options.enabled ?? true,
-    queryKey: queryKeys.proposals(stato),
+    queryKey: queryKeys.proposals(status),
     queryFn: () =>
       unwrap(
         api.GET('/api/proposals', {
           params: {
             query: {
-              stato,
-              ordine: stato === 'in_attesa' ? 'arrivo' : 'decisione',
+              status,
+              order: status === 'pending' ? 'arrival' : 'decision',
               limit: QUEUE_LIMIT,
             },
           },
@@ -38,7 +38,7 @@ export function useProposals(stato: ProposalStato, options: { enabled?: boolean 
 /** How many proposals wait: the Home's notice reads it, and a page that has the queue
  *  already open shares the same cache entry. */
 export function usePendingProposals(options: { enabled?: boolean } = {}) {
-  return useProposals('in_attesa', options)
+  return useProposals('pending', options)
 }
 
 export function useProposal(proposalId: string) {
@@ -102,7 +102,7 @@ function useDecisionCache(proposalId: string) {
     onSuccess: (decided: Proposal) => {
       queryClient.setQueryData(queryKeys.proposal(decided.id), decided)
       void queryClient.invalidateQueries({ queryKey: ['proposals'] })
-      if (decided.stato === 'accettata') {
+      if (decided.status === 'accepted') {
         void queryClient.invalidateQueries({ queryKey: queryKeys.documents() })
         void queryClient.invalidateQueries({ queryKey: ['document'] })
         void queryClient.invalidateQueries({ queryKey: ['timeline'] })

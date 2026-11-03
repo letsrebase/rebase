@@ -34,7 +34,7 @@ const NO_DEAL = '__nessuno__'
 
 /** What an entry made without a description says: honest about where it came from, and
  *  replaceable from the entry itself. The timer's own default lives on the server. */
-const MANUAL_DESCRIZIONE = 'Ore registrate a mano'
+const ManualDescription = 'Ore registrate a mano'
 
 
 /** The live clock. Its own component so the one-second tick re-renders these digits and
@@ -87,11 +87,11 @@ export function TimerBar({
   // Manual first (Ivan, 2026-09-09): the common case is «ho fatto due ore», typed after
   // the fact; the stopwatch is the second mode, one click away, and a running clock
   // always shows regardless of the mode the bar was left in.
-  const [mode, setMode] = useState<'timer' | 'manuale'>('manuale')
-  const [descrizione, setDescrizione] = useState('')
+  const [mode, setMode] = useState<'timer' | 'manual'>('manual')
+  const [description, setDescription] = useState('')
   const [dealId, setDealId] = useState<string>(NO_DEAL)
-  const [fatturabile, setFatturabile] = useState(true)
-  const [ore, setOre] = useState('')
+  const [billable, setBillable] = useState(true)
+  const [hours, setHours] = useState('')
   const [data, setData] = useState(() => toIsoDate(new Date()))
 
   const timer = running.data ?? null
@@ -100,9 +100,9 @@ export function TimerBar({
   const [adopted, setAdopted] = useState<string | null>(null)
   if (timer && adopted !== timer.id) {
     setAdopted(timer.id)
-    setDescrizione(timer.descrizione)
+    setDescription(timer.description)
     setDealId(timer.deal_id ?? NO_DEAL)
-    setFatturabile(timer.fatturabile)
+    setBillable(timer.billable)
   }
   if (!timer && adopted !== null) setAdopted(null)
 
@@ -112,7 +112,7 @@ export function TimerBar({
 
   function onStart() {
     start.mutate(
-      { deal_id: chosenDeal, descrizione: descrizione.trim(), fatturabile },
+      { deal_id: chosenDeal, description: description.trim(), billable },
       { onError: failWith },
     )
   }
@@ -125,11 +125,11 @@ export function TimerBar({
     stop.mutate(
       // Today from the browser's own calendar, not the server's UTC day: the person
       // stopping at 00:30 is still on the day they see on their clock.
-      { deal_id: chosenDeal, descrizione: descrizione.trim() || null, data: toIsoDate(new Date()) },
+      { deal_id: chosenDeal, description: description.trim() || null, date: toIsoDate(new Date()) },
       {
         onSuccess: (entry) => {
-          toast.success(`Registrate ${formatHoursValue(entry.ore)} ore`)
-          setDescrizione('')
+          toast.success(`Registrate ${formatHoursValue(entry.hours)} ore`)
+          setDescription('')
         },
         onError: failWith,
       },
@@ -146,7 +146,7 @@ export function TimerBar({
       toast.error('Scegli il deal su cui registrare le ore.')
       return
     }
-    const value = normaliseHours(ore)
+    const value = normaliseHours(hours)
     if (value === '') {
       toast.error('Indica quante ore registrare.')
       return
@@ -156,15 +156,15 @@ export function TimerBar({
         deal_id: chosenDeal,
         user_id: userId,
         data,
-        ore: value,
-        descrizione: descrizione.trim() || MANUAL_DESCRIZIONE,
-        fatturabile,
+        hours: value,
+        description: description.trim() || ManualDescription,
+        billable,
       },
       {
         onSuccess: (entry) => {
-          toast.success(`Registrate ${formatHoursValue(entry.ore)} ore`)
-          setDescrizione('')
-          setOre('')
+          toast.success(`Registrate ${formatHoursValue(entry.hours)} ore`)
+          setDescription('')
+          setHours('')
         },
         onError: failWith,
       },
@@ -173,7 +173,7 @@ export function TimerBar({
 
   /** Field edits reach the running timer as they are made; on a stopped bar they are
    *  just form state until Start or Aggiungi. */
-  function patch(changes: { deal_id?: string | null; descrizione?: string; fatturabile?: boolean }) {
+  function patch(changes: { deal_id?: string | null; description?: string; billable?: boolean }) {
     if (!timer) return
     update.mutate(changes, { onError: failWith })
   }
@@ -194,10 +194,10 @@ export function TimerBar({
       <Input
         aria-label="Descrizione"
         placeholder="Su cosa stai lavorando?"
-        value={descrizione}
+        value={description}
         className="min-w-[12rem] flex-1"
-        onChange={(event) => setDescrizione(event.target.value)}
-        onBlur={() => timer && descrizione !== timer.descrizione && patch({ descrizione })}
+        onChange={(event) => setDescription(event.target.value)}
+        onBlur={() => timer && description !== timer.description && patch({ description })}
         onKeyDown={(event) => {
           if (event.key !== 'Enter') return
           if (timer) event.currentTarget.blur()
@@ -220,7 +220,7 @@ export function TimerBar({
           <SelectItem value={NO_DEAL}>Nessun deal (scegli dopo)</SelectItem>
           {deals.map((deal) => (
             <SelectItem key={deal.id} value={deal.id}>
-              {deal.nome}
+              {deal.name}
             </SelectItem>
           ))}
         </SelectContent>
@@ -228,15 +228,15 @@ export function TimerBar({
 
       <div className="flex items-center gap-2">
         <Checkbox
-          id="timer-fatturabile"
-          checked={fatturabile}
+          id="timer-billable"
+          checked={billable}
           onCheckedChange={(checked) => {
             const next = checked === true
-            setFatturabile(next)
-            if (timer) patch({ fatturabile: next })
+            setBillable(next)
+            if (timer) patch({ billable: next })
           }}
         />
-        <Label htmlFor="timer-fatturabile" className="flex items-center gap-1 font-normal">
+        <Label htmlFor="timer-billable" className="flex items-center gap-1 font-normal">
           <BadgeEuro className="size-4" aria-hidden="true" />
           Fatturabile
         </Label>
@@ -270,7 +270,7 @@ export function TimerBar({
             size="icon"
             aria-label="Inserisci a mano"
             title="Inserisci a mano"
-            onClick={() => setMode('manuale')}
+            onClick={() => setMode('manual')}
           >
             <Pencil className="size-4" />
           </Button>
@@ -281,9 +281,9 @@ export function TimerBar({
             aria-label="Ore"
             inputMode="decimal"
             placeholder="Ore"
-            value={ore}
+            value={hours}
             className="w-20 text-center tabular-nums"
-            onChange={(event) => setOre(event.target.value)}
+            onChange={(event) => setHours(event.target.value)}
             onKeyDown={(event) => event.key === 'Enter' && onAdd()}
           />
           <Input

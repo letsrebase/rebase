@@ -30,7 +30,7 @@ describe('booleanSearchParam', () => {
     // `false` would be serialised -- into the URL TanStack rebuilds, and into the query
     // object `openapi-fetch` sends -- and an API that reads the presence of the key would
     // then filter on a request that asked for no filter.
-    expect(Object.hasOwn({ scadute: booleanSearchParam('nope') }, 'scadute')).toBe(true)
-    expect(JSON.stringify({ scadute: booleanSearchParam('nope') })).toBe('{}')
+    expect(Object.hasOwn({ overdue: booleanSearchParam('nope') }, 'overdue')).toBe(true)
+    expect(JSON.stringify({ overdue: booleanSearchParam('nope') })).toBe('{}')
   })
 })

@@ -12,7 +12,7 @@ def _me(client: TestClient) -> str:
 def test_a_customer_created_over_http_is_owned_by_its_creator(
     collaborator_client: TestClient,
 ) -> None:
-    created = collaborator_client.post("/api/customers", json={"ragione_sociale": "ACME Srl"})
+    created = collaborator_client.post("/api/customers", json={"legal_name": "ACME Srl"})
 
     assert created.status_code == 201
     assert created.json()["owner_id"] == _me(collaborator_client)
@@ -23,7 +23,7 @@ def test_a_member_is_refused_the_change_and_an_admin_makes_it(
 ) -> None:
     member_id = _me(collaborator_client)
     customer_id = collaborator_client.post(
-        "/api/customers", json={"ragione_sociale": "ACME Srl"}
+        "/api/customers", json={"legal_name": "ACME Srl"}
     ).json()["id"]
 
     refused = collaborator_client.patch(

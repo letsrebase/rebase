@@ -49,37 +49,37 @@ class CustomerRepository:
     def match_by_fiscal_id(
         self,
         *,
-        partita_iva: str | None,
-        codice_fiscale: str | None,
-        azienda_id: UUID | None = None,
+        vat_number: str | None,
+        tax_code: str | None,
+        legal_entity_id: UUID | None = None,
     ) -> Customer | None:
-        """Exact match against a normalised `partita_iva`/`codice_fiscale` -- the same
+        """Exact match against a normalised `vat_number`/`tax_code` -- the same
         two columns `list`'s own fuzzy `ilike` search already reads (`:42-45` below),
         read here for an identity check instead of a text search (REB-365's review
-        step: matching a parsed invoice's `cliente` against an existing `Customer`).
+        step: matching a parsed invoice's `customer` against an existing `Customer`).
 
         A match on *either* column counts, mirroring `import_direction.
         classify_direction`'s own two-channel comparison: neither identifier alone is
         reliable, since either side is free to have populated only one of the two.
         `None` when neither identifier is given (nothing to match on) or neither
-        matches an active customer. `azienda_id` narrows the match to the customers of one
-        azienda, which is what an invoice written on that azienda's register can attach to
+        matches an active customer. `legal_entity_id` narrows the match to the customers of one
+        legal entity, which is what an invoice written on that legal entity's register can attach to
         (REB-783); `None` looks across all of them.
         """
-        if partita_iva is None and codice_fiscale is None:
+        if vat_number is None and tax_code is None:
             return None
         conditions = []
-        if partita_iva is not None:
-            conditions.append(Customer.partita_iva == partita_iva)
-        if codice_fiscale is not None:
-            conditions.append(Customer.codice_fiscale == codice_fiscale)
+        if vat_number is not None:
+            conditions.append(Customer.vat_number == vat_number)
+        if tax_code is not None:
+            conditions.append(Customer.tax_code == tax_code)
         stmt = select(Customer).where(Customer.deleted_at.is_(None), or_(*conditions))
-        if azienda_id is not None:
-            stmt = stmt.where(Customer.azienda_id == azienda_id)
+        if legal_entity_id is not None:
+            stmt = stmt.where(Customer.legal_entity_id == legal_entity_id)
         return self.session.execute(stmt).scalars().first()
 
-    def find_by_name(self, ragione_sociale: str) -> Customer | None:
-        """The live customer whose `ragione_sociale` is exactly this one, oldest first:
+    def find_by_name(self, legal_name: str) -> Customer | None:
+        """The live customer whose `legal_name` is exactly this one, oldest first:
         an identity check, as `match_by_fiscal_id` is for the VAT number (the
         engagements door finds the customer «rebase» this way when the body carries no
         VAT number, or one no customer has, spec 2026-09-25 § 2.3 step 4). Not `list`'s
@@ -88,7 +88,7 @@ class CustomerRepository:
         """
         stmt = (
             select(Customer)
-            .where(Customer.deleted_at.is_(None), Customer.ragione_sociale == ragione_sociale)
+            .where(Customer.deleted_at.is_(None), Customer.legal_name == legal_name)
             .order_by(Customer.created_at, Customer.id)
             .limit(1)
         )
@@ -108,16 +108,16 @@ class CustomerRepository:
             like = f"%{escape_like(query.search.lower())}%"
             stmt = stmt.where(
                 or_(
-                    Customer.ragione_sociale.ilike(like, escape="\\"),
-                    Customer.partita_iva.ilike(like, escape="\\"),
+                    Customer.legal_name.ilike(like, escape="\\"),
+                    Customer.vat_number.ilike(like, escape="\\"),
                     Customer.email.ilike(like, escape="\\"),
-                    Customer.codice_fiscale.ilike(like, escape="\\"),
+                    Customer.tax_code.ilike(like, escape="\\"),
                 )
             )
-        if query.stato:
-            stmt = stmt.where(Customer.stato == query.stato)
-        if query.azienda_id:
-            stmt = stmt.where(Customer.azienda_id == query.azienda_id)
+        if query.status:
+            stmt = stmt.where(Customer.status == query.status)
+        if query.legal_entity_id:
+            stmt = stmt.where(Customer.legal_entity_id == query.legal_entity_id)
         if query.custom:
             # JSONB containment, served by the GIN index.
             stmt = stmt.where(Customer.custom_fields.contains(query.custom))
@@ -142,23 +142,23 @@ class CustomerRepository:
         )
 
     def count_active_deals(self, customer_id: UUID) -> int:
-        """The customer's live deals, whoever's azienda they sit in: what `soft_delete`
+        """The customer's live deals, whoever's legal entity they sit in: what `soft_delete`
         decides on. `deals` is named as a bare table and not imported as the model:
         `deals` imports this package's neighbours, which import this one."""
         # Past the row-level policies, through the definer function of migration 0048
-        # (REB-634): a deal of an azienda this session cannot see still keeps its
+        # (REB-634): a deal of a legal entity this session cannot see still keeps its
         # customer from being archived, or the invariant `soft_delete` guards would
         # hold only for the deals the archiver happens to see.
         return int(
             self.session.execute(
-                text("SELECT deal_attivi_del_cliente(:customer_id)"), {"customer_id": customer_id}
+                text("SELECT active_deals_of_customer(:customer_id)"), {"customer_id": customer_id}
             ).scalar_one()
         )
 
     def count_visible_active_deals(self, customer_id: UUID) -> int:
         """The active deals of the customer this session may see: what a refusal may
         say out loud, where `count_active_deals` is what it decides on (a count of
-        rows out of the caller's sight is a fact about another azienda)."""
+        rows out of the caller's sight is a fact about another legal entity)."""
         stmt = (
             select(func.count())
             .select_from(_DEALS)

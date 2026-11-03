@@ -49,11 +49,11 @@ beforeEach(() => {
   mockGet.mockImplementation((() => ok({ items: [], next_cursor: null })) as never)
 })
 
-function renderList(scadute?: boolean): ReactElement {
+function renderList(overdue?: boolean): ReactElement {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   render(
     <QueryClientProvider client={client}>
-      <InvoicesList scadute={scadute} />
+      <InvoicesList overdue={overdue} />
     </QueryClientProvider>,
   )
   return <></>
@@ -63,17 +63,17 @@ function renderList(scadute?: boolean): ReactElement {
 function invoice(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   return {
     id: 'f1',
-    anno: 2026,
-    numero: 7,
-    riferimento: null,
-    tipo: 'fattura',
-    stato: 'emessa',
-    stato_pagamento: 'da_incassare',
-    data_emissione: '2026-08-20',
-    competenza_da: null,
-    competenza_a: null,
-    totale: '1500.00',
-    customer_ragione_sociale: 'ACME S.r.l.',
+    year: 2026,
+    number: 7,
+    reference: null,
+    type: 'invoice',
+    status: 'issued',
+    payment_status: 'unpaid',
+    issue_date: '2026-08-20',
+    accrual_from: null,
+    accrual_to: null,
+    total: '1500.00',
+    customer_legal_name: 'ACME S.r.l.',
     ...overrides,
   }
 }
@@ -113,9 +113,9 @@ function lastRequestedQuery(): Record<string, unknown> {
   return last?.params?.query ?? {}
 }
 
-/** The `stato` the page last asked the API for, or `undefined` when it asked for none. */
-function lastRequestedStato(): unknown {
-  return lastRequestedQuery().stato
+/** The `status` the page last asked the API for, or `undefined` when it asked for none. */
+function lastRequestedStatus(): unknown {
+  return lastRequestedQuery().status
 }
 
 describe('the invoice list', () => {
@@ -132,15 +132,15 @@ describe('the invoice list', () => {
   it('shows one state chip per invoice state, «Tutte» pressed to begin with', async () => {
     renderList()
     // Scoped to the state row: the payment row (REB-325) has a «Tutte» of its own.
-    const stato = within(await screen.findByRole('search')).getByRole('group', {
+    const status = within(await screen.findByRole('search')).getByRole('group', {
       name: 'Filtra per stato',
     })
-    expect(within(stato).getByRole('button', { name: 'Tutte' })).toHaveAttribute(
+    expect(within(status).getByRole('button', { name: 'Tutte' })).toHaveAttribute(
       'aria-pressed',
       'true',
     )
     for (const label of ['Bozza', 'Emessa', 'Annullata', 'Confermata', 'Consumata']) {
-      expect(within(stato).getByRole('button', { name: label })).toHaveAttribute(
+      expect(within(status).getByRole('button', { name: label })).toHaveAttribute(
         'aria-pressed',
         'false',
       )
@@ -150,26 +150,26 @@ describe('the invoice list', () => {
   it('asks the API for the state whose chip is pressed', async () => {
     renderList()
     const filters = await screen.findByRole('search')
-    expect(lastRequestedStato()).toBeUndefined()
+    expect(lastRequestedStatus()).toBeUndefined()
 
     await userEvent.click(within(filters).getByRole('button', { name: 'Emessa' }))
     expect(within(filters).getByRole('button', { name: 'Emessa' })).toHaveAttribute(
       'aria-pressed',
       'true',
     )
-    expect(lastRequestedStato()).toBe('emessa')
+    expect(lastRequestedStatus()).toBe('issued')
   })
 
   it('clears the state filter when the pressed chip is pressed again', async () => {
     renderList()
-    const stato = within(await screen.findByRole('search')).getByRole('group', {
+    const status = within(await screen.findByRole('search')).getByRole('group', {
       name: 'Filtra per stato',
     })
-    await userEvent.click(within(stato).getByRole('button', { name: 'Emessa' }))
-    await userEvent.click(within(stato).getByRole('button', { name: 'Emessa' }))
+    await userEvent.click(within(status).getByRole('button', { name: 'Emessa' }))
+    await userEvent.click(within(status).getByRole('button', { name: 'Emessa' }))
 
-    expect(lastRequestedStato()).toBeUndefined()
-    expect(within(stato).getByRole('button', { name: 'Tutte' })).toHaveAttribute(
+    expect(lastRequestedStatus()).toBeUndefined()
+    expect(within(status).getByRole('button', { name: 'Tutte' })).toHaveAttribute(
       'aria-pressed',
       'true',
     )
@@ -184,23 +184,23 @@ describe('the invoice list', () => {
   it('leaves consumed proformas out under «Tutte» and lists them under «Consumata»', async () => {
     renderList()
     const filters = await screen.findByRole('search')
-    expect(lastRequestedQuery()).toMatchObject({ escludi_consumate: true })
-    expect(lastRequestedStato()).toBeUndefined()
+    expect(lastRequestedQuery()).toMatchObject({ exclude_consumed: true })
+    expect(lastRequestedStatus()).toBeUndefined()
 
     await userEvent.click(within(filters).getByRole('button', { name: 'Consumata' }))
-    expect(lastRequestedStato()).toBe('consumata')
-    expect(lastRequestedQuery().escludi_consumate).toBeUndefined()
+    expect(lastRequestedStatus()).toBe('consumed')
+    expect(lastRequestedQuery().exclude_consumed).toBeUndefined()
 
     await userEvent.click(within(filters).getByRole('button', { name: 'Emessa' }))
-    expect(lastRequestedQuery().escludi_consumate).toBeUndefined()
+    expect(lastRequestedQuery().exclude_consumed).toBeUndefined()
 
     await userEvent.click(within(filters).getByRole('button', { name: 'Emessa' }))
-    expect(lastRequestedQuery()).toMatchObject({ escludi_consumate: true })
+    expect(lastRequestedQuery()).toMatchObject({ exclude_consumed: true })
   })
 
   /**
    * REB-325: «aggiungi un filtro per le fatture da incassare». The API has taken
-   * `stato_pagamento` since slice 3 and nothing on the page ever sent it. A second chip
+   * `payment_status` since slice 3 and nothing on the page ever sent it. A second chip
    * row, «Incasso», does now, server-side like the state chips, so it holds across
    * loaded pages. What «da incassare» selects (an issued fattura nobody has paid, never
    * a draft) is the server's call, in `InvoiceRepository`, not this page's.
@@ -208,33 +208,33 @@ describe('the invoice list', () => {
   it('offers a payment chip row, «Tutte» pressed to begin with', async () => {
     renderList()
     const filters = await screen.findByRole('search')
-    const incasso = within(filters).getByRole('group', { name: 'Filtra per incasso' })
-    expect(within(incasso).getByRole('button', { name: 'Tutte' })).toHaveAttribute(
+    const collection = within(filters).getByRole('group', { name: 'Filtra per incasso' })
+    expect(within(collection).getByRole('button', { name: 'Tutte' })).toHaveAttribute(
       'aria-pressed',
       'true',
     )
     for (const label of ['Da incassare', 'Incassato']) {
-      expect(within(incasso).getByRole('button', { name: label })).toHaveAttribute(
+      expect(within(collection).getByRole('button', { name: label })).toHaveAttribute(
         'aria-pressed',
         'false',
       )
     }
-    expect(lastRequestedQuery().stato_pagamento).toBeUndefined()
+    expect(lastRequestedQuery().payment_status).toBeUndefined()
   })
 
   it('asks the API for the payment state whose chip is pressed, and clears it on a second press', async () => {
     renderList()
     const filters = await screen.findByRole('search')
-    const incasso = within(filters).getByRole('group', { name: 'Filtra per incasso' })
+    const collection = within(filters).getByRole('group', { name: 'Filtra per incasso' })
 
-    await userEvent.click(within(incasso).getByRole('button', { name: 'Da incassare' }))
-    expect(lastRequestedQuery().stato_pagamento).toBe('da_incassare')
+    await userEvent.click(within(collection).getByRole('button', { name: 'Da incassare' }))
+    expect(lastRequestedQuery().payment_status).toBe('unpaid')
     // The state row is its own filter: pressing a payment chip leaves it at «Tutte».
-    expect(lastRequestedStato()).toBeUndefined()
+    expect(lastRequestedStatus()).toBeUndefined()
 
-    await userEvent.click(within(incasso).getByRole('button', { name: 'Da incassare' }))
-    expect(lastRequestedQuery().stato_pagamento).toBeUndefined()
-    expect(within(incasso).getByRole('button', { name: 'Tutte' })).toHaveAttribute(
+    await userEvent.click(within(collection).getByRole('button', { name: 'Da incassare' }))
+    expect(lastRequestedQuery().payment_status).toBeUndefined()
+    expect(within(collection).getByRole('button', { name: 'Tutte' })).toHaveAttribute(
       'aria-pressed',
       'true',
     )
@@ -243,12 +243,12 @@ describe('the invoice list', () => {
   it('combines the payment chip with the state chip instead of replacing it', async () => {
     renderList()
     const filters = await screen.findByRole('search')
-    const stato = within(filters).getByRole('group', { name: 'Filtra per stato' })
-    const incasso = within(filters).getByRole('group', { name: 'Filtra per incasso' })
+    const status = within(filters).getByRole('group', { name: 'Filtra per stato' })
+    const collection = within(filters).getByRole('group', { name: 'Filtra per incasso' })
 
-    await userEvent.click(within(stato).getByRole('button', { name: 'Emessa' }))
-    await userEvent.click(within(incasso).getByRole('button', { name: 'Incassato' }))
-    expect(lastRequestedQuery()).toMatchObject({ stato: 'emessa', stato_pagamento: 'incassato' })
+    await userEvent.click(within(status).getByRole('button', { name: 'Emessa' }))
+    await userEvent.click(within(collection).getByRole('button', { name: 'Incassato' }))
+    expect(lastRequestedQuery()).toMatchObject({ status: 'issued', payment_status: 'paid' })
   })
 
   it('keeps the type filter as a select in the same row', async () => {
@@ -268,7 +268,7 @@ describe('the invoice list', () => {
   })
 
   it('says what each invoice is for, right after the customer (ORB-130)', async () => {
-    mockInvoices([invoice({ causale: 'Consulenza agosto', importata_da: 'esterno' })])
+    mockInvoices([invoice({ memo: 'Consulenza agosto', imported_from: 'external' })])
     renderList()
     const headers = (await screen.findAllByRole('columnheader')).map((h) => h.textContent)
     expect(headers.indexOf('Descrizione')).toBe(headers.indexOf('Cliente') + 1)
@@ -276,15 +276,15 @@ describe('the invoice list', () => {
     expect(screen.queryByText(/^importata$/i)).toBeNull()
   })
 
-  /** REB-368: unlike the "esterno" pill the list still suppresses (assertion above,
+  /** REB-368: unlike the "external" pill the list still suppresses (assertion above,
    *  ORB-130), a "fatturapa" row's own badge names a fact the list can act on -- the
    *  original file is on record and downloadable -- so it shows here too. A space
    *  with both import kinds therefore reads two distinct badges across its rows: the
    *  generic one on the detail page only, the honest "FatturaPA" one right here. */
   it('shows the fatturapa row its own distinct badge, mixed with an esterno row', async () => {
     mockInvoices([
-      invoice({ id: 'f-esterno', numero: 5, importata_da: 'esterno' }),
-      invoice({ id: 'f-fatturapa', numero: 8, importata_da: 'fatturapa' }),
+      invoice({ id: 'f-esterno', number: 5, imported_from: 'external' }),
+      invoice({ id: 'f-fatturapa', number: 8, imported_from: 'fatturapa' }),
     ])
     renderList()
     expect(await screen.findByText('FatturaPA')).toBeInTheDocument()
@@ -294,9 +294,9 @@ describe('the invoice list', () => {
   it('says which period each invoice is about, beside its date (ORB-126)', async () => {
     mockInvoices([
       invoice({
-        data_emissione: '2026-09-02',
-        competenza_da: '2026-08-01',
-        competenza_a: '2026-08-31',
+        issue_date: '2026-09-02',
+        accrual_from: '2026-08-01',
+        accrual_to: '2026-08-31',
       }),
     ])
     renderList()
@@ -319,10 +319,10 @@ describe('the invoice list', () => {
   it('offers "Carica altre" when the page is truncated, and loads the next page on click', async () => {
     mockInvoicesPages(
       [
-        invoice({ id: 'f1', customer_ragione_sociale: 'ACME S.r.l.' }),
-        invoice({ id: 'f1b', customer_ragione_sociale: 'ACME S.r.l.' }),
+        invoice({ id: 'f1', customer_legal_name: 'ACME S.r.l.' }),
+        invoice({ id: 'f1b', customer_legal_name: 'ACME S.r.l.' }),
       ],
-      [invoice({ id: 'f2', customer_ragione_sociale: 'Beta S.r.l.' })],
+      [invoice({ id: 'f2', customer_legal_name: 'Beta S.r.l.' })],
     )
     renderList()
 

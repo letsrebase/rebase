@@ -157,20 +157,20 @@ test.describe('ricerca globale', () => {
     // Unique per run, name and number both: this database is not truncated between
     // invocations, and a fixed P.IVA would make the second run of this spec match two
     // customers and fail on a duplicate that is the fixture's fault, not the search's.
-    const partitaIva = String(Date.now()).slice(-11)
+    const vatNumber = String(Date.now()).slice(-11)
     // The name deliberately carries no digits: the only place the searched fragment can
     // be found is the P.IVA, which is a column this row does not display.
-    const ragioneSociale = `Rossi Ingegneria ${Date.now().toString(36).replace(/[0-9]/g, 'x')} Srl`
+    const legalName = `Rossi Ingegneria ${Date.now().toString(36).replace(/[0-9]/g, 'x')} Srl`
     const created = await page.request.post('/api/customers', {
-      data: { ragione_sociale: ragioneSociale, partita_iva: partitaIva },
+      data: { legal_name: legalName, vat_number: vatNumber },
     })
     expect(created.status(), await created.text()).toBe(201)
 
     const input = await openPalette(page)
     // A fragment from the middle of the number: a prefix would also be served by a
     // plain `LIKE 'x%'`, and §8.1's promise is that an infix finds it.
-    await input.fill(partitaIva.slice(3, 9))
+    await input.fill(vatNumber.slice(3, 9))
 
-    await expect(page.getByRole('option', { name: ragioneSociale })).toBeVisible()
+    await expect(page.getByRole('option', { name: legalName })).toBeVisible()
   })
 })

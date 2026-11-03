@@ -22,6 +22,7 @@ from typing import TypedDict
 
 from lxml import etree
 
+from pigrocrm.core.invoices.due_date import due_date_from_terms
 from pigrocrm.core.invoices.import_adapter import InvoiceFormatAdapter
 from pigrocrm.core.invoices.import_schemas import (
     ParsedInvoice,
@@ -34,7 +35,6 @@ from pigrocrm.core.invoices.import_schemas import (
     ParsedInvoiceTaxSummary,
     ParsedInvoiceTransmission,
 )
-from pigrocrm.core.invoices.scadenza import scadenza_da_termini
 
 FORMAT_ID = "FPR12"
 
@@ -43,16 +43,16 @@ _ROOT_LOCAL_NAME = "FatturaElettronica"
 # Named after what the FatturaPA `TipoDocumento` code means, mirroring mastro's own
 # `DOCUMENT_TYPE_BY_CODE` (`map.ts:32-39`) translated into PigroCRM's vocabulary.
 _DOCUMENT_TYPE_BY_CODE: dict[str, ParsedInvoiceDocumentType] = {
-    "TD01": "fattura",
-    "TD02": "acconto_fattura",
-    "TD03": "acconto_parcella",
-    "TD04": "nota_credito",
-    "TD05": "nota_debito",
-    "TD06": "parcella",
+    "TD01": "invoice",
+    "TD02": "invoice_advance",
+    "TD03": "fee_advance",
+    "TD04": "note_credit",
+    "TD05": "note_debit",
+    "TD06": "fee_note",
 }
 
 
-class FatturaPaFormatError(ValueError):
+class InvoicePaFormatError(ValueError):
     """A document that passed `detect` (well-formed XML, a `FatturaElettronica`
     root claiming `versione="FPR12"`) but is missing or misusing a field this
     adapter needs to produce a complete `ParsedInvoice`. There is no human in this
@@ -89,7 +89,7 @@ def _child(parent: etree._Element, tag: str) -> etree._Element | None:
 def _required_child(parent: etree._Element, tag: str, *, context: str) -> etree._Element:
     el = _child(parent, tag)
     if el is None:
-        raise FatturaPaFormatError(f"{context} is missing required element {tag!r}")
+        raise InvoicePaFormatError(f"{context} is missing required element {tag!r}")
     return el
 
 
@@ -104,7 +104,7 @@ def _text(parent: etree._Element, tag: str) -> str | None:
 def _required_text(parent: etree._Element, tag: str, *, context: str) -> str:
     value = _text(parent, tag)
     if value is None:
-        raise FatturaPaFormatError(f"{context} is missing required element {tag!r}")
+        raise InvoicePaFormatError(f"{context} is missing required element {tag!r}")
     return value
 
 
@@ -120,7 +120,7 @@ _INTEGER_RE = re.compile(r"[+-]?[0-9]{1,9}", re.ASCII)
 
 def _decimal(value: str, *, context: str) -> Decimal:
     if not _DECIMAL_RE.fullmatch(value):
-        raise FatturaPaFormatError(f"{context}: {value!r} is not a valid decimal")
+        raise InvoicePaFormatError(f"{context}: {value!r} is not a valid decimal")
     return Decimal(value)
 
 
@@ -128,12 +128,12 @@ def _date(value: str, *, context: str) -> date:
     try:
         return date.fromisoformat(value)
     except ValueError as exc:
-        raise FatturaPaFormatError(f"{context}: {value!r} is not an ISO date") from exc
+        raise InvoicePaFormatError(f"{context}: {value!r} is not an ISO date") from exc
 
 
 def _int(value: str, *, context: str) -> int:
     if not _INTEGER_RE.fullmatch(value):
-        raise FatturaPaFormatError(f"{context}: {value!r} is not an integer")
+        raise InvoicePaFormatError(f"{context}: {value!r} is not an integer")
     return int(value)
 
 
@@ -183,10 +183,10 @@ def detect(content: bytes) -> bool:
         header = _child(root, "FatturaElettronicaHeader")
         if header is None:
             return False
-        trasmissione = _child(header, "DatiTrasmissione")
-        if trasmissione is None:
+        transmission = _child(header, "DatiTrasmissione")
+        if transmission is None:
             return False
-        return _text(trasmissione, "FormatoTrasmissione") == FORMAT_ID
+        return _text(transmission, "FormatoTrasmissione") == FORMAT_ID
     except Exception:
         return False
 
@@ -196,126 +196,120 @@ def _fiscal_id(el: etree._Element, *, context: str) -> str:
     FatturaPA document names is guaranteed to carry when it carries this element
     at all, mirroring mastro's `fiscalIdString` (`map.ts:41-43`).
     """
-    id_paese = _required_text(el, "IdPaese", context=context)
-    id_codice = _required_text(el, "IdCodice", context=context)
-    return f"{id_paese}{id_codice}"
+    id_country = _required_text(el, "IdPaese", context=context)
+    id_code = _required_text(el, "IdCodice", context=context)
+    return f"{id_country}{id_code}"
 
 
-def _party_name(anagrafica: etree._Element, *, context: str) -> str:
-    denominazione = _text(anagrafica, "Denominazione")
-    if denominazione is not None:
-        return denominazione
-    nome = _text(anagrafica, "Nome")
-    cognome = _text(anagrafica, "Cognome")
-    if nome is not None and cognome is not None:
-        return f"{nome} {cognome}"
-    raise FatturaPaFormatError(f"{context}: Anagrafica has neither Denominazione nor Nome/Cognome")
+def _party_name(directory: etree._Element, *, context: str) -> str:
+    denomination = _text(directory, "Denominazione")
+    if denomination is not None:
+        return denomination
+    first_name = _text(directory, "Nome")
+    last_name = _text(directory, "Cognome")
+    if first_name is not None and last_name is not None:
+        return f"{first_name} {last_name}"
+    raise InvoicePaFormatError(f"{context}: Anagrafica has neither Denominazione nor Nome/Cognome")
 
 
 class _PartyAddress(TypedDict):
-    indirizzo: str
-    comune: str
+    address: str
+    city: str
     cap: str
-    provincia: str | None
-    nazione: str
+    province: str | None
+    country: str
 
 
-def _party_address(sede: etree._Element) -> _PartyAddress:
-    indirizzo = _required_text(sede, "Indirizzo", context="Sede")
-    numero_civico = _text(sede, "NumeroCivico")
+def _party_address(headquarters: etree._Element) -> _PartyAddress:
+    address = _required_text(headquarters, "Indirizzo", context="Sede")
+    street_number = _text(headquarters, "NumeroCivico")
     return {
-        "indirizzo": f"{indirizzo} {numero_civico}" if numero_civico else indirizzo,
-        "comune": _required_text(sede, "Comune", context="Sede"),
-        "cap": _required_text(sede, "CAP", context="Sede"),
-        "provincia": _text(sede, "Provincia"),
+        "address": f"{address} {street_number}" if street_number else address,
+        "city": _required_text(headquarters, "Comune", context="Sede"),
+        "cap": _required_text(headquarters, "CAP", context="Sede"),
+        "province": _text(headquarters, "Provincia"),
         # The schema declares `Nazione` defaulting to "IT" for a document that
         # omits it; lxml has no notion of XSD defaults, so the fallback is
         # applied here, mirroring mastro's `partyAddress` (`map.ts:57-68`).
-        "nazione": _text(sede, "Nazione") or "IT",
+        "country": _text(headquarters, "Nazione") or "IT",
     }
 
 
-def _map_fornitore(cedente: etree._Element) -> ParsedInvoiceParty:
-    anagrafici = _required_child(cedente, "DatiAnagrafici", context="CedentePrestatore")
-    id_fiscale_iva = _required_child(
-        anagrafici, "IdFiscaleIVA", context="CedentePrestatore.DatiAnagrafici"
+def _map_supplier(supplier: etree._Element) -> ParsedInvoiceParty:
+    master_data = _required_child(supplier, "DatiAnagrafici", context="CedentePrestatore")
+    id_tax_vat = _required_child(
+        master_data, "IdFiscaleIVA", context="CedentePrestatore.DatiAnagrafici"
     )
-    anagrafica = _required_child(
-        anagrafici, "Anagrafica", context="CedentePrestatore.DatiAnagrafici"
+    directory = _required_child(
+        master_data, "Anagrafica", context="CedentePrestatore.DatiAnagrafici"
     )
-    sede = _required_child(cedente, "Sede", context="CedentePrestatore")
+    headquarters = _required_child(supplier, "Sede", context="CedentePrestatore")
     return ParsedInvoiceParty(
-        ragione_sociale=_party_name(
-            anagrafica, context="CedentePrestatore.DatiAnagrafici.Anagrafica"
-        ),
+        legal_name=_party_name(directory, context="CedentePrestatore.DatiAnagrafici.Anagrafica"),
         # `IdFiscaleIVA` is mandatory for `CedentePrestatore`, `CodiceFiscale` is
         # not -- a later direction-detection issue needs a field every supplier
         # carries, so this reads the one the schema guarantees, mirroring
         # mastro's `mapSupplier` (`map.ts:70-81`).
-        partita_iva=_fiscal_id(
-            id_fiscale_iva, context="CedentePrestatore.DatiAnagrafici.IdFiscaleIVA"
-        ),
-        codice_fiscale=_text(anagrafici, "CodiceFiscale"),
-        **_party_address(sede),
+        vat_number=_fiscal_id(id_tax_vat, context="CedentePrestatore.DatiAnagrafici.IdFiscaleIVA"),
+        tax_code=_text(master_data, "CodiceFiscale"),
+        **_party_address(headquarters),
     )
 
 
-def _map_cliente(cessionario: etree._Element) -> ParsedInvoiceParty:
+def _map_customer(buyer: etree._Element) -> ParsedInvoiceParty:
     """Unlike the supplier, `IdFiscaleIVA` is optional for the customer (an
     individual buyer may carry only a `CodiceFiscale`); mirrors mastro's
     `mapCustomer` (`map.ts:83-106`), including its refusal when the document
     carries neither identifier.
     """
-    anagrafici = _required_child(cessionario, "DatiAnagrafici", context="CessionarioCommittente")
-    anagrafica = _required_child(
-        anagrafici, "Anagrafica", context="CessionarioCommittente.DatiAnagrafici"
+    master_data = _required_child(buyer, "DatiAnagrafici", context="CessionarioCommittente")
+    directory = _required_child(
+        master_data, "Anagrafica", context="CessionarioCommittente.DatiAnagrafici"
     )
-    sede = _required_child(cessionario, "Sede", context="CessionarioCommittente")
-    ragione_sociale = _party_name(
-        anagrafica, context="CessionarioCommittente.DatiAnagrafici.Anagrafica"
-    )
-    id_fiscale_iva = _child(anagrafici, "IdFiscaleIVA")
-    codice_fiscale = _text(anagrafici, "CodiceFiscale")
-    if id_fiscale_iva is not None:
+    headquarters = _required_child(buyer, "Sede", context="CessionarioCommittente")
+    legal_name = _party_name(directory, context="CessionarioCommittente.DatiAnagrafici.Anagrafica")
+    id_tax_vat = _child(master_data, "IdFiscaleIVA")
+    tax_code = _text(master_data, "CodiceFiscale")
+    if id_tax_vat is not None:
         return ParsedInvoiceParty(
-            ragione_sociale=ragione_sociale,
-            partita_iva=_fiscal_id(
-                id_fiscale_iva, context="CessionarioCommittente.DatiAnagrafici.IdFiscaleIVA"
+            legal_name=legal_name,
+            vat_number=_fiscal_id(
+                id_tax_vat, context="CessionarioCommittente.DatiAnagrafici.IdFiscaleIVA"
             ),
-            codice_fiscale=codice_fiscale,
-            **_party_address(sede),
+            tax_code=tax_code,
+            **_party_address(headquarters),
         )
-    if codice_fiscale is None:
-        raise FatturaPaFormatError(
+    if tax_code is None:
+        raise InvoicePaFormatError(
             "CessionarioCommittente has neither IdFiscaleIVA nor CodiceFiscale"
         )
     return ParsedInvoiceParty(
-        ragione_sociale=ragione_sociale,
-        partita_iva=None,
-        codice_fiscale=codice_fiscale,
-        **_party_address(sede),
+        legal_name=legal_name,
+        vat_number=None,
+        tax_code=tax_code,
+        **_party_address(headquarters),
     )
 
 
-def _map_linea(linea: etree._Element) -> ParsedInvoiceLine:
-    quantita = _text(linea, "Quantita")
+def _map_line(line: etree._Element) -> ParsedInvoiceLine:
+    quantity = _text(line, "Quantita")
     return ParsedInvoiceLine(
-        descrizione=_required_text(linea, "Descrizione", context="DettaglioLinee"),
+        description=_required_text(line, "Descrizione", context="DettaglioLinee"),
         # `Quantita` is optional in the schema; a document that omits it means
         # exactly one unit, mirroring mastro's `mapLine` (`map.ts:108-116`).
-        quantita=_decimal(quantita, context="DettaglioLinee.Quantita")
-        if quantita is not None
+        quantity=_decimal(quantity, context="DettaglioLinee.Quantita")
+        if quantity is not None
         else Decimal("1"),
-        prezzo_unitario=_decimal(
-            _required_text(linea, "PrezzoUnitario", context="DettaglioLinee"),
+        unit_price=_decimal(
+            _required_text(line, "PrezzoUnitario", context="DettaglioLinee"),
             context="DettaglioLinee.PrezzoUnitario",
         ),
-        prezzo_totale=_decimal(
-            _required_text(linea, "PrezzoTotale", context="DettaglioLinee"),
+        total_price=_decimal(
+            _required_text(line, "PrezzoTotale", context="DettaglioLinee"),
             context="DettaglioLinee.PrezzoTotale",
         ),
-        aliquota_iva=_decimal(
-            _required_text(linea, "AliquotaIVA", context="DettaglioLinee"),
+        vat_rate=_decimal(
+            _required_text(line, "AliquotaIVA", context="DettaglioLinee"),
             context="DettaglioLinee.AliquotaIVA",
         ),
         # Optional in the schema (`Natura?` in `DettaglioLinee`'s own sequence,
@@ -323,108 +317,110 @@ def _map_linea(linea: etree._Element) -> ParsedInvoiceLine:
         # the same way): the line's own declared exemption code, read directly
         # rather than reconstructed from `DatiRiepilogo` -- see `ParsedInvoiceLine`'s
         # own docstring for why a rate-only reconstruction is unsound.
-        natura=_text(linea, "Natura"),
+        vat_nature=_text(line, "Natura"),
     )
 
 
-def _map_riepilogo(riepilogo: etree._Element) -> ParsedInvoiceTaxSummary:
+def _map_recap(recap: etree._Element) -> ParsedInvoiceTaxSummary:
     return ParsedInvoiceTaxSummary(
-        aliquota_iva=_decimal(
-            _required_text(riepilogo, "AliquotaIVA", context="DatiRiepilogo"),
+        vat_rate=_decimal(
+            _required_text(recap, "AliquotaIVA", context="DatiRiepilogo"),
             context="DatiRiepilogo.AliquotaIVA",
         ),
-        natura=_text(riepilogo, "Natura"),
-        riferimento_normativo=_text(riepilogo, "RiferimentoNormativo"),
-        imponibile=_decimal(
-            _required_text(riepilogo, "ImponibileImporto", context="DatiRiepilogo"),
+        vat_nature=_text(recap, "Natura"),
+        legal_reference=_text(recap, "RiferimentoNormativo"),
+        taxable_amount=_decimal(
+            _required_text(recap, "ImponibileImporto", context="DatiRiepilogo"),
             context="DatiRiepilogo.ImponibileImporto",
         ),
-        imposta=_decimal(
-            _required_text(riepilogo, "Imposta", context="DatiRiepilogo"),
+        vat_amount=_decimal(
+            _required_text(recap, "Imposta", context="DatiRiepilogo"),
             context="DatiRiepilogo.Imposta",
         ),
     )
 
 
-def _map_cassa(cassa: etree._Element) -> ParsedInvoiceSocialCharge:
-    imponibile_cassa = _text(cassa, "ImponibileCassa")
+def _map_pension_fund(pension_fund: etree._Element) -> ParsedInvoiceSocialCharge:
+    pension_fund_taxable_amount = _text(pension_fund, "ImponibileCassa")
     return ParsedInvoiceSocialCharge(
-        tipo_cassa=_required_text(cassa, "TipoCassa", context="DatiCassaPrevidenziale"),
-        aliquota_cassa=_decimal(
-            _required_text(cassa, "AlCassa", context="DatiCassaPrevidenziale"),
+        pension_fund_type=_required_text(
+            pension_fund, "TipoCassa", context="DatiCassaPrevidenziale"
+        ),
+        pension_fund_rate=_decimal(
+            _required_text(pension_fund, "AlCassa", context="DatiCassaPrevidenziale"),
             context="DatiCassaPrevidenziale.AlCassa",
         ),
-        importo_contributo_cassa=_decimal(
-            _required_text(cassa, "ImportoContributoCassa", context="DatiCassaPrevidenziale"),
+        pension_fund_contribution_amount=_decimal(
+            _required_text(
+                pension_fund, "ImportoContributoCassa", context="DatiCassaPrevidenziale"
+            ),
             context="DatiCassaPrevidenziale.ImportoContributoCassa",
         ),
-        imponibile_cassa=(
-            _decimal(imponibile_cassa, context="DatiCassaPrevidenziale.ImponibileCassa")
-            if imponibile_cassa is not None
+        pension_fund_taxable_amount=(
+            _decimal(pension_fund_taxable_amount, context="DatiCassaPrevidenziale.ImponibileCassa")
+            if pension_fund_taxable_amount is not None
             else None
         ),
-        aliquota_iva=_decimal(
-            _required_text(cassa, "AliquotaIVA", context="DatiCassaPrevidenziale"),
+        vat_rate=_decimal(
+            _required_text(pension_fund, "AliquotaIVA", context="DatiCassaPrevidenziale"),
             context="DatiCassaPrevidenziale.AliquotaIVA",
         ),
     )
 
 
-def _map_rata(dettaglio: etree._Element) -> ParsedInvoicePaymentInstallment:
-    importo = _decimal(
-        _required_text(dettaglio, "ImportoPagamento", context="DettaglioPagamento"),
+def _map_instalment(detail: etree._Element) -> ParsedInvoicePaymentInstallment:
+    amount = _decimal(
+        _required_text(detail, "ImportoPagamento", context="DettaglioPagamento"),
         context="DettaglioPagamento.ImportoPagamento",
     )
-    modalita = _required_text(dettaglio, "ModalitaPagamento", context="DettaglioPagamento")
-    iban = _text(dettaglio, "IBAN")
+    mode = _required_text(detail, "ModalitaPagamento", context="DettaglioPagamento")
+    iban = _text(detail, "IBAN")
 
-    scadenza = _text(dettaglio, "DataScadenzaPagamento")
-    if scadenza is not None:
+    due_date = _text(detail, "DataScadenzaPagamento")
+    if due_date is not None:
         return ParsedInvoicePaymentInstallment(
-            data_scadenza=_date(scadenza, context="DettaglioPagamento.DataScadenzaPagamento"),
-            origine_scadenza="documento",
-            importo=importo,
-            modalita_pagamento=modalita,
+            due_date=_date(due_date, context="DettaglioPagamento.DataScadenzaPagamento"),
+            due_date_origin="document",
+            amount=amount,
+            payment_method=mode,
             iban=iban,
         )
 
-    riferimento = _text(dettaglio, "DataRiferimentoTerminiPagamento")
-    giorni = _text(dettaglio, "GiorniTerminiPagamento")
-    if riferimento is not None and giorni is not None:
+    reference = _text(detail, "DataRiferimentoTerminiPagamento")
+    days = _text(detail, "GiorniTerminiPagamento")
+    if reference is not None and days is not None:
         # The schema also allows expressing a due date as a relative term
         # (`GiorniTerminiPagamento` days after `DataRiferimentoTerminiPagamento`)
         # instead of an explicit `DataScadenzaPagamento`. The due date still
         # comes from the document, never invented -- it is computed here from
         # the document's own reference date and day count, reusing
-        # `scadenza_da_termini`, the same "net N days" arithmetic every other due
+        # `due_date_from_terms`, the same "net N days" arithmetic every other due
         # date in this product already goes through, applied to the document's
         # own terms instead of a contract's (mirrors mastro's `mapPaymentTerms`,
         # `map.ts:147-194`).
-        due = scadenza_da_termini(
-            _date(riferimento, context="DettaglioPagamento.DataRiferimentoTerminiPagamento"),
-            _int(giorni, context="DettaglioPagamento.GiorniTerminiPagamento"),
-            fine_mese=False,
+        due = due_date_from_terms(
+            _date(reference, context="DettaglioPagamento.DataRiferimentoTerminiPagamento"),
+            _int(days, context="DettaglioPagamento.GiorniTerminiPagamento"),
+            month_end=False,
         )
         return ParsedInvoicePaymentInstallment(
-            data_scadenza=due,
-            origine_scadenza="calcolata",
-            importo=importo,
-            modalita_pagamento=modalita,
+            due_date=due,
+            due_date_origin="calculated",
+            amount=amount,
+            payment_method=mode,
             iban=iban,
         )
 
-    raise FatturaPaFormatError(
+    raise InvoicePaFormatError(
         "DettaglioPagamento has neither DataScadenzaPagamento nor "
         "DataRiferimentoTerminiPagamento/GiorniTerminiPagamento to compute a due date from"
     )
 
 
-def _map_pagamento(pagamento: etree._Element) -> ParsedInvoicePaymentTerms:
+def _map_payment(payment: etree._Element) -> ParsedInvoicePaymentTerms:
     return ParsedInvoicePaymentTerms(
-        condizioni_pagamento=_required_text(
-            pagamento, "CondizioniPagamento", context="DatiPagamento"
-        ),
-        rate=[_map_rata(dettaglio) for dettaglio in _children(pagamento, "DettaglioPagamento")],
+        payment_terms=_required_text(payment, "CondizioniPagamento", context="DatiPagamento"),
+        rate=[_map_instalment(detail) for detail in _children(payment, "DettaglioPagamento")],
     )
 
 
@@ -435,23 +431,23 @@ def _map_body(header: etree._Element, body: etree._Element) -> ParsedInvoice:
     omitting `ImportoTotaleDocumento`, most concretely -- rather than silently
     parsing part of it, mirroring mastro's `mapBody` (`map.ts:201-247`).
     """
-    dati_generali = _required_child(body, "DatiGenerali", context="FatturaElettronicaBody")
-    documento = _required_child(dati_generali, "DatiGeneraliDocumento", context="DatiGenerali")
+    data_general = _required_child(body, "DatiGenerali", context="FatturaElettronicaBody")
+    document = _required_child(data_general, "DatiGeneraliDocumento", context="DatiGenerali")
 
-    tipo_documento_code = _required_text(
-        documento, "TipoDocumento", context="DatiGeneraliDocumento"
+    sdi_document_type_code = _required_text(
+        document, "TipoDocumento", context="DatiGeneraliDocumento"
     )
-    tipo_documento = _DOCUMENT_TYPE_BY_CODE.get(tipo_documento_code)
-    if tipo_documento is None:
-        raise FatturaPaFormatError(f"unrecognised TipoDocumento: {tipo_documento_code!r}")
+    sdi_document_type = _DOCUMENT_TYPE_BY_CODE.get(sdi_document_type_code)
+    if sdi_document_type is None:
+        raise InvoicePaFormatError(f"unrecognised TipoDocumento: {sdi_document_type_code!r}")
 
-    totale_raw = _text(documento, "ImportoTotaleDocumento")
-    if totale_raw is None:
-        raise FatturaPaFormatError("DatiGeneraliDocumento is missing ImportoTotaleDocumento")
+    total_raw = _text(document, "ImportoTotaleDocumento")
+    if total_raw is None:
+        raise InvoicePaFormatError("DatiGeneraliDocumento is missing ImportoTotaleDocumento")
 
-    dati_beni_servizi = _required_child(body, "DatiBeniServizi", context="FatturaElettronicaBody")
-    righe = [_map_linea(linea) for linea in _children(dati_beni_servizi, "DettaglioLinee")]
-    if not righe:
+    data_goods_services = _required_child(body, "DatiBeniServizi", context="FatturaElettronicaBody")
+    lines = [_map_line(line) for line in _children(data_goods_services, "DettaglioLinee")]
+    if not lines:
         # Both elements have no `minOccurs` of their own in the schema's
         # `DatiBeniServiziType` sequence, so the XSD default of 1 applies: a
         # real document always carries at least one of each. `detect` stays
@@ -459,59 +455,56 @@ def _map_body(header: etree._Element, body: etree._Element) -> ParsedInvoice:
         # checks the same handful of fields); this is the completeness check
         # that belongs here instead, for the same reason every other required
         # field in this function is checked here rather than in `detect`.
-        raise FatturaPaFormatError("DatiBeniServizi has no DettaglioLinee")
-    riepiloghi = [_map_riepilogo(r) for r in _children(dati_beni_servizi, "DatiRiepilogo")]
-    if not riepiloghi:
-        raise FatturaPaFormatError("DatiBeniServizi has no DatiRiepilogo")
+        raise InvoicePaFormatError("DatiBeniServizi has no DettaglioLinee")
+    recaps = [_map_recap(r) for r in _children(data_goods_services, "DatiRiepilogo")]
+    if not recaps:
+        raise InvoicePaFormatError("DatiBeniServizi has no DatiRiepilogo")
 
-    dati_bollo = _child(documento, "DatiBollo")
-    cedente = _required_child(header, "CedentePrestatore", context="FatturaElettronicaHeader")
-    cessionario = _required_child(
-        header, "CessionarioCommittente", context="FatturaElettronicaHeader"
-    )
-    dati_trasmissione = _required_child(
+    data_stamp_duty = _child(document, "DatiBollo")
+    supplier = _required_child(header, "CedentePrestatore", context="FatturaElettronicaHeader")
+    buyer = _required_child(header, "CessionarioCommittente", context="FatturaElettronicaHeader")
+    data_transmission = _required_child(
         header, "DatiTrasmissione", context="FatturaElettronicaHeader"
     )
-    id_trasmittente = _required_child(
-        dati_trasmissione, "IdTrasmittente", context="DatiTrasmissione"
+    id_transmitter = _required_child(
+        data_transmission, "IdTrasmittente", context="DatiTrasmissione"
     )
 
     return ParsedInvoice(
-        numero=_required_text(documento, "Numero", context="DatiGeneraliDocumento"),
-        data_emissione=_date(
-            _required_text(documento, "Data", context="DatiGeneraliDocumento"),
+        number=_required_text(document, "Numero", context="DatiGeneraliDocumento"),
+        issue_date=_date(
+            _required_text(document, "Data", context="DatiGeneraliDocumento"),
             context="DatiGeneraliDocumento.Data",
         ),
-        tipo_documento=tipo_documento,
-        divisa=_required_text(documento, "Divisa", context="DatiGeneraliDocumento"),
-        fornitore=_map_fornitore(cedente),
-        cliente=_map_cliente(cessionario),
-        righe=righe,
-        riepiloghi=riepiloghi,
+        sdi_document_type=sdi_document_type,
+        currency=_required_text(document, "Divisa", context="DatiGeneraliDocumento"),
+        supplier=_map_supplier(supplier),
+        customer=_map_customer(buyer),
+        lines=lines,
+        recaps=recaps,
         # Sums of the tax-summary blocks, not a separately declared document
         # field -- FatturaPA has none at this level -- mirroring mastro's own
         # `taxableAmount`/`taxAmount` (`map.ts:229-230`).
-        imponibile=sum((r.imponibile for r in riepiloghi), start=Decimal("0")),
-        imposta=sum((r.imposta for r in riepiloghi), start=Decimal("0")),
-        totale=_decimal(totale_raw, context="DatiGeneraliDocumento.ImportoTotaleDocumento"),
-        bollo=(
+        taxable_amount=sum((r.taxable_amount for r in recaps), start=Decimal("0")),
+        vat_amount=sum((r.vat_amount for r in recaps), start=Decimal("0")),
+        total=_decimal(total_raw, context="DatiGeneraliDocumento.ImportoTotaleDocumento"),
+        stamp_duty=(
             _decimal(
-                _required_text(dati_bollo, "ImportoBollo", context="DatiBollo"),
+                _required_text(data_stamp_duty, "ImportoBollo", context="DatiBollo"),
                 context="DatiBollo.ImportoBollo",
             )
-            if dati_bollo is not None
+            if data_stamp_duty is not None
             else None
         ),
-        cassa_previdenziale=[
-            _map_cassa(cassa) for cassa in _children(documento, "DatiCassaPrevidenziale")
+        social_security_pension_fund=[
+            _map_pension_fund(pension_fund)
+            for pension_fund in _children(document, "DatiCassaPrevidenziale")
         ],
-        termini_pagamento=[
-            _map_pagamento(pagamento) for pagamento in _children(body, "DatiPagamento")
-        ],
-        trasmissione=ParsedInvoiceTransmission(
-            id_trasmittente=_fiscal_id(id_trasmittente, context="DatiTrasmissione.IdTrasmittente"),
-            progressivo_invio=_required_text(
-                dati_trasmissione, "ProgressivoInvio", context="DatiTrasmissione"
+        payment_terms=[_map_payment(payment) for payment in _children(body, "DatiPagamento")],
+        transmission=ParsedInvoiceTransmission(
+            id_transmitter=_fiscal_id(id_transmitter, context="DatiTrasmissione.IdTrasmittente"),
+            send_sequential=_required_text(
+                data_transmission, "ProgressivoInvio", context="DatiTrasmissione"
             ),
         ),
     )
@@ -530,18 +523,18 @@ def parse(content: bytes) -> list[ParsedInvoice]:
     """
     root = _root_element(content)
     if root is None:
-        raise FatturaPaFormatError("content is not a well-formed FatturaElettronica document")
+        raise InvoicePaFormatError("content is not a well-formed FatturaElettronica document")
     header = _required_child(root, "FatturaElettronicaHeader", context="FatturaElettronica")
     bodies = _children(root, "FatturaElettronicaBody")
     if not bodies:
         # The XSD requires at least one; a document with none is exactly the
         # "well-formed but semantically incomplete" case this adapter refuses to
         # guess through, matching the reasoning behind every other raise above.
-        raise FatturaPaFormatError("FatturaElettronica has no FatturaElettronicaBody")
+        raise InvoicePaFormatError("FatturaElettronica has no FatturaElettronicaBody")
     return [_map_body(header, body) for body in bodies]
 
 
-class FatturaPaFpr12Adapter:
+class InvoicePaFpr12Adapter:
     """The concrete `InvoiceFormatAdapter` for FatturaPA FPR12."""
 
     id = FORMAT_ID
@@ -553,4 +546,4 @@ class FatturaPaFpr12Adapter:
         return parse(content)
 
 
-fattura_pa_fpr12_adapter: InvoiceFormatAdapter = FatturaPaFpr12Adapter()
+invoice_pa_fpr_12_adapter: InvoiceFormatAdapter = InvoicePaFpr12Adapter()

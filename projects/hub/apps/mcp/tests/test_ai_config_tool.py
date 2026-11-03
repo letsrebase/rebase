@@ -40,7 +40,7 @@ def _settings(**overrides: str) -> Settings:
 def admin_with_key(factory: sessionmaker[Session]) -> Iterator[User]:
     """An admin row, and the Anthropic key saved through the service the page uses."""
     with factory() as session:
-        user = User(email="ivan@rebase.it", nome="Ivan", cognome="Sala", role="admin")
+        user = User(email="ivan@rebase.it", first_name="Ivan", last_name="Sala", role="admin")
         session.add(user)
         session.commit()
         AiConfigService(session, _settings()).save_key(user.id, "anthropic", SECRET)
@@ -72,10 +72,15 @@ async def test_list_ai_config_has_no_key_and_no_ciphertext(
     assert body["secrets_key_present"] is True
     anthropic = next(p for p in body["providers"] if p["provider"] == "anthropic")
     assert anthropic["key_hint"] == "configurata, finisce con …abcd"
-    assert {t["task"] for t in body["tasks"]} == {"card", "team_proposal", "cv_anonimo", "crm_lead"}
+    assert {t["task"] for t in body["tasks"]} == {
+        "card",
+        "team_proposal",
+        "anonymous_cv",
+        "crm_lead",
+    }
     # REB-861: the configuration's trail, with who did it and never the key.
-    assert [(e["kind"], e["admin_nome"]) for e in body["registro"]] == [("ai_key", "Ivan Sala")]
-    assert body["registro"][0]["payload"]["key_hint"] == "configurata, finisce con …abcd"
+    assert [(e["kind"], e["admin_name"]) for e in body["trail"]] == [("ai_key", "Ivan Sala")]
+    assert body["trail"][0]["payload"]["key_hint"] == "configurata, finisce con …abcd"
 
 
 async def test_the_trail_is_the_last_fifty_entries_newest_first(
@@ -89,7 +94,7 @@ async def test_the_trail_is_the_last_fifty_entries_newest_first(
             AI_CONFIG_ENTITY_ID,
             "cards_regenerate",
             admin_with_key.id,
-            {"limit": 5, "queued": 3, "fonte": "cli", "batch": False},
+            {"limit": 5, "queued": 3, "source": "cli", "batch": False},
         )
         for n in range(55):
             recorder.record(
@@ -104,16 +109,16 @@ async def test_the_trail_is_the_last_fifty_entries_newest_first(
             AI_CONFIG_ENTITY_ID,
             "cards_regenerated",
             admin_with_key.id,
-            {"written": 3, "failed": 0, "failures": [], "cost_eur": "0.03", "fonte": "cli"},
+            {"written": 3, "failed": 0, "failures": [], "cost_eur": "0.03", "source": "cli"},
         )
     async with Client(build_server(factory, lambda: IVAN, settings=_settings())) as client:
         body = _payload(await client.call_tool("list_ai_config", {}))
 
-    registro = body["registro"]
-    assert len(registro) == 50
-    assert registro[0]["kind"] == "cards_regenerated"
-    assert registro[0]["payload"]["fonte"] == "cli" and registro[0]["admin_nome"] == "Ivan Sala"
-    assert [e["payload"]["n"] for e in registro[1:4]] == [54, 53, 52]
+    register = body["trail"]
+    assert len(register) == 50
+    assert register[0]["kind"] == "cards_regenerated"
+    assert register[0]["payload"]["source"] == "cli" and register[0]["admin_name"] == "Ivan Sala"
+    assert [e["payload"]["n"] for e in register[1:4]] == [54, 53, 52]
 
 
 async def test_no_tool_writes_a_key(factory: sessionmaker[Session]) -> None:

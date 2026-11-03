@@ -9,9 +9,9 @@ the offer is accepted and the deal is moved, or neither is true.
 could elevate, accepting an offer would become a way to write to a deal the actor could not
 otherwise touch.
 
-**Never guesses a stage.** By `code`, then by `tipo` where a `tipo` can identify one
+**Never guesses a stage.** By `code`, then by `type` where a `type` can identify one
 (A1 only), then it declines and records why. Never by name -- a name is renamable, and
-matching on one is precisely what `pipeline_stages.code` and `tipo` exist to prevent
+matching on one is precisely what `pipeline_stages.code` and `type` exist to prevent
 (slice 1 §5.4, residuo R11).
 
 **Absorbs a declared list and nothing else.** The four `AutomationSkipReason` values are
@@ -61,13 +61,13 @@ _DEAL_ENTITY = "deal"
 # A1 fires on this transition and no other; A2 on this one. Declared as data rather than
 # as `if` chains so that "which transitions are triggers" is answerable by reading two
 # lines, the same shape `OFFER_TRANSITIONS` already uses.
-_A1_TRANSITION = ("inviata", "accettata")
-_A2_TRANSITION = ("bozza", "inviata")
+_A1_TRANSITION = ("sent", "accepted")
+_A2_TRANSITION = ("draft", "sent")
 
 # The two stage codes the rules resolve. Not names: a name is renamable and `code` exists
 # precisely so an automation survives somebody relabelling a column on the board.
-_WON_CODE = "vinto"
-_OFFER_CODE = "offerta"
+_WON_CODE = "won"
+_OFFER_CODE = "offer"
 
 
 @dataclass(frozen=True)
@@ -91,7 +91,7 @@ class AutomationOutcome:
         if self.moved == (self.reason is not None):
             raise ValueError(
                 "un'automazione o sposta il deal o dichiara il motivo per cui non lo fa: "
-                f"moved={self.moved!r}, motivo={self.reason!r}"
+                f"moved={self.moved!r}, reason={self.reason!r}"
             )
 
 
@@ -113,7 +113,7 @@ class AutomationRunner:
         then commit. That order is not cosmetic -- `ActivityService.record`'s docstring
         requires it to be the last thing touching the session before the caller's commit.
         """
-        current = document.stato
+        current = document.status
         if current is None or document.deal_id is None:
             # Not an offer, or an offer attached to a customer rather than a deal. Nothing
             # was supposed to happen, so nothing is recorded: a `non_eseguita` entry here
@@ -125,7 +125,7 @@ class AutomationRunner:
             # The deal was soft-deleted while the offer lived on. Same class of non-event
             # as the branch above, and deliberately *not* one of the four reasons: those
             # describe a rule declining, and here no rule was ever selected. Recording
-            # `stage_bersaglio_assente` would name the wrong missing thing -- the target
+            # `target_stage_missing` would name the wrong missing thing -- the target
             # stage is present; the deal is not.
             return
 
@@ -144,8 +144,8 @@ class AutomationRunner:
 
     def _apply_a1(self, document: Document, deal: Deal, actor: Actor) -> AutomationOutcome:
         row = self.config.get_or_create()
-        if not row.a1_offerta_accettata_vince_deal:
-            return AutomationOutcome("A1", False, "regola_disattivata")
+        if not row.a1_wins_accepted_offer_deal:
+            return AutomationOutcome("A1", False, "rule_disabled")
 
         target, reason = self._resolve_won_stage()
         if target is None:
@@ -156,46 +156,46 @@ class AutomationRunner:
 
     def _apply_a2(self, document: Document, deal: Deal, actor: Actor) -> AutomationOutcome:
         row = self.config.get_or_create()
-        if not row.a2_offerta_inviata_avanza_deal:
-            return AutomationOutcome("A2", False, "regola_disattivata")
+        if not row.a2_advances_sent_offer_deal:
+            return AutomationOutcome("A2", False, "rule_disabled")
 
-        # By `code` only. There is deliberately no `tipo` fallback: "Offerta" is `open`
-        # like every other open stage, so a `tipo` lookup would select an arbitrary one --
+        # By `code` only. There is deliberately no `type` fallback: "Offerta" is `open`
+        # like every other open stage, so a `type` lookup would select an arbitrary one --
         # the asymmetry with A1, where `won` identifies exactly one intended stage.
         stage = self.pipeline.get_by_code(_OFFER_CODE)
         if stage is None:
-            return AutomationOutcome("A2", False, "stage_bersaglio_assente")
+            return AutomationOutcome("A2", False, "target_stage_missing")
 
         current = self._stage_of(deal)
 
         # Never backwards, and never sideways. A deal already at or past "Offerta" stays
         # put: an automation that retreats a deal because a second offer went out gets
-        # switched off on its first day (§9.2). `posizione` and not `probabilita_default`,
+        # switched off on its first day (§9.2). `position` and not `default_probability`,
         # which two stages may share.
-        if current.posizione >= stage.posizione:
-            return AutomationOutcome("A2", False, "gia_nello_stato")
+        if current.position >= stage.position:
+            return AutomationOutcome("A2", False, "already_in_state")
 
         return self._move(document, deal, PipelineStageRead.model_validate(stage), "A2", actor)
 
     def _resolve_won_stage(
         self,
     ) -> tuple[PipelineStageRead | None, AutomationSkipReason | None]:
-        """`code='vinto'`, then the single `tipo='won'`, then decline.
+        """`code='won'`, then the single `type='won'`, then decline.
 
-        The `tipo` fallback exists for A1 and not for A2 because `won` identifies exactly
+        The `type` fallback exists for A1 and not for A2 because `won` identifies exactly
         one intended stage while `open` identifies four. Residuo **R14**: two `won` stages
         are legal, so "there are two" has to be a visible answer -- hence
-        `get_by_tipo` returning a list.
+        `get_by_type` returning a list.
         """
         by_code = self.pipeline.get_by_code(_WON_CODE)
         if by_code is not None:
             return PipelineStageRead.model_validate(by_code), None
 
-        candidates = self.pipeline.get_by_tipo("won")
+        candidates = self.pipeline.get_by_type("won")
         if not candidates:
-            return None, "stage_bersaglio_assente"
+            return None, "target_stage_missing"
         if len(candidates) > 1:
-            return None, "stage_bersaglio_ambiguo"
+            return None, "target_stage_ambiguous"
         return PipelineStageRead.model_validate(candidates[0]), None
 
     def _stage_of(self, deal: Deal) -> PipelineStageRead:
@@ -224,7 +224,7 @@ class AutomationRunner:
         actor: Actor,
     ) -> AutomationOutcome:
         if deal.pipeline_stage_id == target.id:
-            return AutomationOutcome(rule, False, "gia_nello_stato")
+            return AutomationOutcome(rule, False, "already_in_state")
 
         previous = self._stage_of(deal)
 
@@ -235,7 +235,7 @@ class AutomationRunner:
         self.deal_service.set_stage_in_transaction(deal, target)
 
         # `Actor.system()` carries `id=None`, so `actor_id` is NULL and the triggering
-        # human lives in `attivata_da`: the timeline has to say both "the system did it"
+        # human lives in `triggered_by`: the timeline has to say both "the system did it"
         # and "because you accepted that offer" (§9.5).
         self.activities.record(
             _DEAL_ENTITY,
@@ -243,12 +243,12 @@ class AutomationRunner:
             KIND_STAGE_MOVED,
             Actor.system(),
             {
-                "regola": rule,
-                "documento_id": str(document.id),
-                "da": previous.nome,
-                "a": target.nome,
-                "attivata_da": str(actor.id) if actor.id is not None else None,
-                "attivata_via": actor.type,
+                "rule": rule,
+                "document_id": str(document.id),
+                "from": previous.name,
+                "to": target.name,
+                "triggered_by": str(actor.id) if actor.id is not None else None,
+                "triggered_via": actor.type,
             },
         )
         return AutomationOutcome(rule, True, None)
@@ -269,10 +269,10 @@ class AutomationRunner:
             KIND_NOT_EXECUTED,
             Actor.system(),
             {
-                "regola": outcome.rule,
-                "motivo": outcome.reason,
-                "documento_id": str(document.id),
-                "attivata_da": str(actor.id) if actor.id is not None else None,
-                "attivata_via": actor.type,
+                "rule": outcome.rule,
+                "reason": outcome.reason,
+                "document_id": str(document.id),
+                "triggered_by": str(actor.id) if actor.id is not None else None,
+                "triggered_via": actor.type,
             },
         )

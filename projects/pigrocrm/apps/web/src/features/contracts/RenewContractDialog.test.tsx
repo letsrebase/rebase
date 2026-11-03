@@ -31,9 +31,9 @@ function failed(error: unknown, status: number) {
 
 const CONTRACT = {
   id: 'c1',
-  titolo: 'Sviluppo piattaforma',
-  fine: '2026-12-31',
-  contratto_successivo_id: null,
+  title: 'Sviluppo piattaforma',
+  end: '2026-12-31',
+  next_contract_id: null,
 }
 
 function renderButton(contract: Parameters<typeof RenewContractButton>[0]['contract'] = CONTRACT) {
@@ -79,12 +79,12 @@ describe('RenewContractButton', () => {
   })
 
   it('offers nothing on a contract without an end', () => {
-    renderButton({ ...CONTRACT, fine: null })
+    renderButton({ ...CONTRACT, end: null })
     expect(screen.queryByRole('button', { name: 'Rinnova' })).not.toBeInTheDocument()
   })
 
   it('offers nothing on a contract that was already renewed', () => {
-    renderButton({ ...CONTRACT, contratto_successivo_id: 'c2' })
+    renderButton({ ...CONTRACT, next_contract_id: 'c2' })
     expect(screen.queryByRole('button', { name: 'Rinnova' })).not.toBeInTheDocument()
   })
 
@@ -136,8 +136,8 @@ describe('RenewContractDialog', () => {
     await submit()
 
     expect(posted().body).toEqual({
-      titolo: 'Sviluppo piattaforma 2027',
-      inizio: '2027-02-01',
+      title: 'Sviluppo piattaforma 2027',
+      start: '2027-02-01',
     })
   })
 
@@ -153,7 +153,7 @@ describe('RenewContractDialog', () => {
     await userEvent.click(await screen.findByRole('option', { name: 'Settimane' }))
     await submit()
 
-    expect(posted().body).toEqual({ durata: { conteggio: 18, unita: 'settimane' } })
+    expect(posted().body).toEqual({ duration: { count: 18, unit: 'weeks' } })
   })
 
   it('sends an end date as `fine`, never together with a duration', async () => {
@@ -165,7 +165,7 @@ describe('RenewContractDialog', () => {
     fireEvent.change(screen.getByLabelText('Data di fine'), { target: { value: '2027-12-31' } })
     await submit()
 
-    expect(posted().body).toEqual({ fine: '2027-12-31' })
+    expect(posted().body).toEqual({ end: '2027-12-31' })
   })
 
   it('reads a 409 inside the dialog and stays open without navigating', async () => {

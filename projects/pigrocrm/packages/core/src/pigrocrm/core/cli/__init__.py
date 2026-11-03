@@ -23,7 +23,7 @@ def _build_parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(dest="command", required=True)
     admin = sub.add_parser("createadmin", help="Crea il primo utente amministratore")
     admin.add_argument("--email")
-    admin.add_argument("--nome")
+    admin.add_argument("--name")
     reset = sub.add_parser("resetpassword", help="Imposta una nuova password a un utente esistente")
     reset.add_argument("--email")
     sub.add_parser("seed-templates", help="Crea i template predefiniti, se mancano")
@@ -40,12 +40,12 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Sincronizza ogni casella Google collegata, della radice e di ogni spazio (per cron)",
     )
     sync.add_argument("--email", help="Solo la casella con questo indirizzo, ovunque sia collegata")
-    settimanale = sub.add_parser(
+    weekly = sub.add_parser(
         "digest", help="Manda a ogni spazio il resoconto della settimana (per cron)"
     )
-    settimanale.add_argument("--slug", help="Un solo spazio, invece di tutto il registro")
-    settimanale.add_argument(
-        "--data",
+    weekly.add_argument("--slug", help="Un solo spazio, invece di tutto il registro")
+    weekly.add_argument(
+        "--date",
         # `type=` rather than a parse in the dispatch below: a mistyped date then comes
         # back as argparse's own usage message and an exit 2, not as a traceback at the
         # bottom of a cron log.
@@ -53,26 +53,26 @@ def _build_parser() -> argparse.ArgumentParser:
         metavar="YYYY-MM-DD",
         help="Un giorno della settimana da mandare; senza, la settimana appena chiusa",
     )
-    settimanale.add_argument(
-        "--forza", action="store_true", help="Manda di nuovo una settimana già inviata"
+    weekly.add_argument(
+        "--force", action="store_true", help="Manda di nuovo una settimana già inviata"
     )
-    settimanale.add_argument(
+    weekly.add_argument(
         "--dry-run",
         action="store_true",
         help="Prova: prepara il resoconto, dice a quanti andrebbe e non manda niente",
     )
 
-    promemoria = sub.add_parser(
+    reminder = sub.add_parser(
         "reminders", help="Alza i promemoria di ogni spazio e li mette nelle liste (per cron)"
     )
-    promemoria.add_argument("--slug", help="Un solo spazio, invece di tutto il registro")
-    promemoria.add_argument(
-        "--data",
+    reminder.add_argument("--slug", help="Un solo spazio, invece di tutto il registro")
+    reminder.add_argument(
+        "--date",
         type=date.fromisoformat,
         metavar="YYYY-MM-DD",
         help="Valuta un altro giorno, invece di oggi",
     )
-    promemoria.add_argument(
+    reminder.add_argument(
         "--dry-run",
         action="store_true",
         help="Prova: dice cosa metterebbe nelle liste e non scrive niente",
@@ -83,18 +83,18 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Genera la coppia di chiavi VAPID del push: scrive le righe per il .env (a mano)",
     )
 
-    automazioni = sub.add_parser(
+    automations = sub.add_parser(
         "automations",
         help="Apre le attività delle regole che scattano col tempo, in ogni spazio (per cron)",
     )
-    automazioni.add_argument("--slug", help="Un solo spazio, invece di tutto il registro")
-    automazioni.add_argument(
-        "--data",
+    automations.add_argument("--slug", help="Un solo spazio, invece di tutto il registro")
+    automations.add_argument(
+        "--date",
         type=date.fromisoformat,
         metavar="YYYY-MM-DD",
         help="Valuta un altro giorno, invece di oggi (solo con --dry-run)",
     )
-    automazioni.add_argument(
+    automations.add_argument(
         "--dry-run",
         action="store_true",
         help="Prova: dice cosa aprirebbe e non scrive niente",
@@ -125,7 +125,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     settings = get_settings()
     match args.command:
         case "createadmin":
-            return createadmin(settings, args.email, args.nome)
+            return createadmin(settings, args.email, args.name)
         case "resetpassword":
             return resetpassword(settings, args.email)
         case "seed-templates":
@@ -138,12 +138,12 @@ def main(argv: Sequence[str] | None = None) -> int:
             return gmail_sync(settings, args.email)
         case "digest":
             return digest(
-                settings, slug=args.slug, data=args.data, forza=args.forza, dry_run=args.dry_run
+                settings, slug=args.slug, day=args.date, force=args.force, dry_run=args.dry_run
             )
         case "reminders":
-            return reminders(settings, slug=args.slug, data=args.data, dry_run=args.dry_run)
+            return reminders(settings, slug=args.slug, day=args.date, dry_run=args.dry_run)
         case "automations":
-            return automations(settings, slug=args.slug, data=args.data, dry_run=args.dry_run)
+            return automations(settings, slug=args.slug, day=args.date, dry_run=args.dry_run)
         case "owner-backfill":
             return owner_backfill(
                 settings,

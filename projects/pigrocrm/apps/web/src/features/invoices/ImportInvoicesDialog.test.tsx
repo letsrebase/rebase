@@ -21,13 +21,13 @@ vi.mock('@/lib/auth', () => ({ useCan: () => mockAuth.may }))
 // read.
 const mockCustomers = vi.hoisted(() => ({ data: undefined as unknown }))
 vi.mock('@/features/customers/queries', () => ({
-  useCustomers: (params: { azienda_id?: string }) => {
-    const page = mockCustomers.data as { items: { azienda_id: string }[] } | undefined
+  useCustomers: (params: { legal_entity_id?: string }) => {
+    const page = mockCustomers.data as { items: { legal_entity_id: string }[] } | undefined
     return {
       data: page && {
         ...page,
         items: page.items.filter(
-          (item) => params.azienda_id === undefined || item.azienda_id === params.azienda_id,
+          (item) => params.legal_entity_id === undefined || item.legal_entity_id === params.legal_entity_id,
         ),
       },
       isError: page === undefined,
@@ -61,29 +61,29 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
-function invoice(numero: string, overrides: Record<string, unknown> = {}) {
+function invoice(number: string, overrides: Record<string, unknown> = {}) {
   return {
-    numero,
-    data_emissione: '2026-03-15',
-    tipo_documento: 'fattura',
-    divisa: 'EUR',
-    fornitore: { ragione_sociale: 'Chiara Bianchi', partita_iva: 'IT01234567890' },
-    cliente: {
-      ragione_sociale: 'Esempio Servizi S.r.l.',
-      partita_iva: 'IT09876543210',
-      indirizzo: 'Piazza dei Modelli 4',
+    number,
+    issue_date: '2026-03-15',
+    sdi_document_type: 'invoice',
+    currency: 'EUR',
+    supplier: { legal_name: 'Chiara Bianchi', vat_number: 'IT01234567890' },
+    customer: {
+      legal_name: 'Esempio Servizi S.r.l.',
+      vat_number: 'IT09876543210',
+      address: 'Piazza dei Modelli 4',
       cap: '00187',
-      comune: 'Roma',
-      nazione: 'IT',
+      city: 'Roma',
+      country: 'IT',
     },
-    righe: [],
-    riepiloghi: [],
-    imponibile: '1000.00',
-    imposta: '0.00',
-    totale: '1000.00',
-    cassa_previdenziale: [],
-    termini_pagamento: [],
-    trasmissione: {},
+    lines: [],
+    recaps: [],
+    taxable_amount: '1000.00',
+    vat_amount: '0.00',
+    total: '1000.00',
+    social_security_pension_fund: [],
+    termini_payment: [],
+    transmission: {},
     ...overrides,
   }
 }
@@ -91,21 +91,21 @@ function invoice(numero: string, overrides: Record<string, unknown> = {}) {
 // The shape of `CustomerPage`. `az-1` is the azienda `reviewRow` writes its invoices on.
 const CUSTOMERS = {
   items: [
-    { id: 'cust-acme', ragione_sociale: 'Acme Ltd', azienda_id: 'az-1' },
-    { id: 'cust-rossi', ragione_sociale: 'Rossi Consulting S.r.l.', azienda_id: 'az-1' },
-    { id: 'cust-altrove', ragione_sociale: 'Altrove S.p.A.', azienda_id: 'az-2' },
+    { id: 'cust-acme', legal_name: 'Acme Ltd', legal_entity_id: 'az-1' },
+    { id: 'cust-rossi', legal_name: 'Rossi Consulting S.r.l.', legal_entity_id: 'az-1' },
+    { id: 'cust-altrove', legal_name: 'Altrove S.p.A.', legal_entity_id: 'az-2' },
   ],
   next_cursor: null,
 }
 
-function reviewRow(file: string, outcome: ReviewRow['outcome'], numero = '2026/6'): ReviewRow {
+function reviewRow(file: string, outcome: ReviewRow['outcome'], number = '2026/6'): ReviewRow {
   return {
     file,
     sha256: `sha-${file}`,
     outcome,
-    invoice: outcome === 'unclaimed' ? null : (invoice(numero) as never),
+    invoice: outcome === 'unclaimed' ? null : (invoice(number) as never),
     party_key: outcome === 'unclaimed' ? null : '09876543210',
-    azienda_id: outcome === 'unclaimed' ? null : 'az-1',
+    legal_entity_id: outcome === 'unclaimed' ? null : 'az-1',
   } as ReviewRow
 }
 
@@ -135,7 +135,7 @@ describe('the import dialog', () => {
     mockFetch.mockImplementation((url) =>
       url === REVIEW
         ? json({
-            righe: [
+            lines: [
               reviewRow('uno.xml', 'ready', '2026/1'),
               reviewRow('due.xml', 'already_present', '2026/2'),
               reviewRow('note.txt', 'unclaimed'),
@@ -167,7 +167,7 @@ describe('the import dialog', () => {
     mockFetch.mockImplementation((url) =>
       url === REVIEW
         ? json({
-            righe: [
+            lines: [
               reviewRow('a.xml', 'needs_customer_confirmation', '2026/1'),
               reviewRow('b.xml', 'needs_customer_confirmation', '2026/2'),
             ],
@@ -195,17 +195,17 @@ describe('the import dialog', () => {
     // on every import (REB-777). The person says it is the one they already have.
     mockFetch.mockImplementation((url) => {
       if (url === REVIEW) {
-        return json({ righe: [reviewRow('a.xml', 'needs_customer_confirmation', '2026/1')] })
+        return json({ lines: [reviewRow('a.xml', 'needs_customer_confirmation', '2026/1')] })
       }
       const row: ConfirmRow = {
         file: 'a.xml',
         sha256: 'sha-a.xml',
         outcome: 'imported',
-        azienda_id: 'az-1',
-        fattura: { anno: 2026, numero: 1, customer_id: 'cust-acme' } as ConfirmRow['fattura'],
-        buchi_non_dichiarati: [],
+        legal_entity_id: 'az-1',
+        invoice: { year: 2026, number: 1, customer_id: 'cust-acme' } as ConfirmRow['invoice'],
+        undeclared_gaps: [],
       }
-      return json({ righe: [row] })
+      return json({ lines: [row] })
     })
 
     mockCustomers.data = CUSTOMERS
@@ -220,17 +220,17 @@ describe('the import dialog', () => {
 
     await screen.findByText('Importate')
     const confirm = mockFetch.mock.calls.find(([url]) => url === CONFIRM)
-    expect(JSON.parse(formOf(confirm).get('decisioni') as string)).toEqual({
-      clienti: { '09876543210': { customer_id: 'cust-acme' } },
+    expect(JSON.parse(formOf(confirm).get('decisions') as string)).toEqual({
+      customers: { '09876543210': { customer_id: 'cust-acme' } },
     })
   })
 
   it('goes back to creating the customer when the chosen one is removed again', async () => {
     mockFetch.mockImplementation((url) => {
       if (url === REVIEW) {
-        return json({ righe: [reviewRow('a.xml', 'needs_customer_confirmation', '2026/1')] })
+        return json({ lines: [reviewRow('a.xml', 'needs_customer_confirmation', '2026/1')] })
       }
-      return json({ righe: [] })
+      return json({ lines: [] })
     })
 
     mockCustomers.data = CUSTOMERS
@@ -242,8 +242,8 @@ describe('the import dialog', () => {
 
     await waitFor(() => expect(mockFetch.mock.calls.some(([url]) => url === CONFIRM)).toBe(true))
     const confirm = mockFetch.mock.calls.find(([url]) => url === CONFIRM)
-    expect(JSON.parse(formOf(confirm).get('decisioni') as string)).toEqual({
-      clienti: { '09876543210': { create_customer: true } },
+    expect(JSON.parse(formOf(confirm).get('decisions') as string)).toEqual({
+      customers: { '09876543210': { create_customer: true } },
     })
   })
 
@@ -251,7 +251,7 @@ describe('the import dialog', () => {
     mockCustomers.data = CUSTOMERS
     mockFetch.mockImplementation((url) =>
       url === REVIEW
-        ? json({ righe: [reviewRow('a.xml', 'needs_customer_confirmation', '2026/1')] })
+        ? json({ lines: [reviewRow('a.xml', 'needs_customer_confirmation', '2026/1')] })
         : json({}, 500),
     )
 
@@ -267,9 +267,9 @@ describe('the import dialog', () => {
     mockFetch.mockImplementation((url) =>
       url === REVIEW
         ? json({
-            righe: [
+            lines: [
               reviewRow('a.xml', 'needs_customer_confirmation', '2026/1'),
-              { ...reviewRow('b.xml', 'needs_customer_confirmation', '2026/2'), azienda_id: 'az-2' },
+              { ...reviewRow('b.xml', 'needs_customer_confirmation', '2026/2'), legal_entity_id: 'az-2' },
             ],
           })
         : json({}, 500),
@@ -286,7 +286,7 @@ describe('the import dialog', () => {
     mockCustomers.data = { ...CUSTOMERS, next_cursor: 'abc' }
     mockFetch.mockImplementation((url) =>
       url === REVIEW
-        ? json({ righe: [reviewRow('a.xml', 'needs_customer_confirmation', '2026/1')] })
+        ? json({ lines: [reviewRow('a.xml', 'needs_customer_confirmation', '2026/1')] })
         : json({}, 500),
     )
 
@@ -301,13 +301,13 @@ describe('the import dialog', () => {
       ...reviewRow(file, 'needs_customer_confirmation', file),
       party_key: key,
       invoice: invoice(file, {
-        cliente: { ...invoice(file).cliente, partita_iva: null, codice_fiscale: null },
+        customer: { ...invoice(file).customer, vat_number: null, tax_code: null },
       }),
     })
     mockFetch.mockImplementation((url) =>
       url === REVIEW
-        ? json({ righe: [twin('a.xml', 'estero:1'), twin('b.xml', 'estero:2')] })
-        : json({ righe: [] }),
+        ? json({ lines: [twin('a.xml', 'estero:1'), twin('b.xml', 'estero:2')] })
+        : json({ lines: [] }),
     )
 
     const user = await openAndPick([xml('a.xml'), xml('b.xml')])
@@ -321,8 +321,8 @@ describe('the import dialog', () => {
 
     await waitFor(() => expect(mockFetch.mock.calls.some(([url]) => url === CONFIRM)).toBe(true))
     const confirm = mockFetch.mock.calls.find(([url]) => url === CONFIRM)
-    expect(JSON.parse(formOf(confirm).get('decisioni') as string)).toEqual({
-      clienti: { 'estero:1': { create_customer: true }, 'estero:2': { customer_id: 'cust-acme' } },
+    expect(JSON.parse(formOf(confirm).get('decisions') as string)).toEqual({
+      customers: { 'estero:1': { create_customer: true }, 'estero:2': { customer_id: 'cust-acme' } },
     })
   })
 
@@ -330,7 +330,7 @@ describe('the import dialog', () => {
     mockCustomers.data = CUSTOMERS
     mockFetch.mockImplementation((url) =>
       url === REVIEW
-        ? json({ righe: [reviewRow('a.xml', 'needs_customer_confirmation', '2026/1')] })
+        ? json({ lines: [reviewRow('a.xml', 'needs_customer_confirmation', '2026/1')] })
         : json({}, 500),
     )
 
@@ -344,8 +344,8 @@ describe('the import dialog', () => {
   it('keeps the old choice, create or skip, when the customer search cannot be read', async () => {
     mockFetch.mockImplementation((url) =>
       url === REVIEW
-        ? json({ righe: [reviewRow('a.xml', 'needs_customer_confirmation', '2026/1')] })
-        : json({ righe: [] }),
+        ? json({ lines: [reviewRow('a.xml', 'needs_customer_confirmation', '2026/1')] })
+        : json({ lines: [] }),
     )
 
     const user = await openAndPick([xml('a.xml')])
@@ -357,25 +357,25 @@ describe('the import dialog', () => {
 
     await waitFor(() => expect(mockFetch.mock.calls.some(([url]) => url === CONFIRM)).toBe(true))
     const confirm = mockFetch.mock.calls.find(([url]) => url === CONFIRM)
-    expect(JSON.parse(formOf(confirm).get('decisioni') as string)).toEqual({
-      clienti: { '09876543210': { create_customer: true } },
+    expect(JSON.parse(formOf(confirm).get('decisions') as string)).toEqual({
+      customers: { '09876543210': { create_customer: true } },
     })
   })
 
   it('confirms with the same files and the decision keyed by their hash, then reads the register', async () => {
     mockFetch.mockImplementation((url) => {
       if (url === REVIEW) {
-        return json({ righe: [reviewRow('a.xml', 'needs_customer_confirmation', '2026/1')] })
+        return json({ lines: [reviewRow('a.xml', 'needs_customer_confirmation', '2026/1')] })
       }
       const row: ConfirmRow = {
         file: 'a.xml',
         sha256: 'sha-a.xml',
         outcome: 'imported',
-        azienda_id: 'az-1',
-        fattura: { anno: 2026, numero: 1 } as ConfirmRow['fattura'],
-        buchi_non_dichiarati: [],
+        legal_entity_id: 'az-1',
+        invoice: { year: 2026, number: 1 } as ConfirmRow['invoice'],
+        undeclared_gaps: [],
       }
-      return json({ righe: [row] })
+      return json({ lines: [row] })
     })
 
     const user = await openAndPick([xml('a.xml')])
@@ -384,8 +384,8 @@ describe('the import dialog', () => {
     await screen.findByText(/non manca nessun numero/)
     const confirm = mockFetch.mock.calls.find(([url]) => url === CONFIRM)
     expect(formOf(confirm).getAll('file')).toHaveLength(1)
-    expect(JSON.parse(formOf(confirm).get('decisioni') as string)).toEqual({
-      clienti: { '09876543210': { create_customer: true } },
+    expect(JSON.parse(formOf(confirm).get('decisions') as string)).toEqual({
+      customers: { '09876543210': { create_customer: true } },
     })
     expect(screen.getByText('Registro 2026:')).toBeInTheDocument()
     expect(screen.getByText('Importate')).toBeInTheDocument()
@@ -396,16 +396,16 @@ describe('the import dialog', () => {
   it('lists the numbers the register still lacks', async () => {
     mockFetch.mockImplementation((url) =>
       url === REVIEW
-        ? json({ righe: [reviewRow('a.xml', 'ready', '2026/1')] })
+        ? json({ lines: [reviewRow('a.xml', 'ready', '2026/1')] })
         : json({
-            righe: [
+            lines: [
               {
                 file: 'a.xml',
                 sha256: 'sha-a.xml',
                 outcome: 'imported',
-                azienda_id: 'az-1',
-                fattura: { anno: 2026, numero: 5 },
-                buchi_non_dichiarati: [1, 2, 3, 4],
+                legal_entity_id: 'az-1',
+                invoice: { year: 2026, number: 5 },
+                undeclared_gaps: [1, 2, 3, 4],
               },
             ],
           }),
@@ -424,17 +424,17 @@ describe('the import dialog', () => {
       if (url === REVIEW) {
         // The first 25 files are already on the register, the last 5 are new.
         return json({
-          righe: names.map((n) => reviewRow(n, n < 'f25' ? 'already_present' : 'ready', n)),
+          lines: names.map((n) => reviewRow(n, n < 'f25' ? 'already_present' : 'ready', n)),
         })
       }
       return json({
-        righe: names.map((n) => ({
+        lines: names.map((n) => ({
           file: n,
           sha256: `sha-${n}`,
           outcome: 'imported',
-          azienda_id: 'az-1',
-          fattura: { anno: 2026, numero: 1 },
-          buchi_non_dichiarati: [],
+          legal_entity_id: 'az-1',
+          invoice: { year: 2026, number: 1 },
+          undeclared_gaps: [],
         })),
       })
     })
@@ -475,19 +475,19 @@ describe('the import dialog', () => {
     let confirms = 0
     mockFetch.mockImplementation((url, init) => {
       const names = (init?.body as FormData).getAll('file').map((f) => (f as File).name)
-      if (url === REVIEW) return json({ righe: names.map((n) => reviewRow(n, 'ready', n)) })
+      if (url === REVIEW) return json({ lines: names.map((n) => reviewRow(n, 'ready', n)) })
       confirms += 1
       if (confirms === 2) {
         return json({ type: 'about:blank', title: 'Errore', status: 500, code: 'x', detail: 'Il server non risponde.' }, 500)
       }
       return json({
-        righe: names.map((n) => ({
+        lines: names.map((n) => ({
           file: n,
           sha256: `sha-${n}`,
           outcome: 'imported',
-          azienda_id: 'az-1',
-          fattura: { anno: 2026, numero: 1 },
-          buchi_non_dichiarati: [9],
+          legal_entity_id: 'az-1',
+          invoice: { year: 2026, number: 1 },
+          undeclared_gaps: [9],
         })),
       })
     })
@@ -507,17 +507,17 @@ describe('the import dialog', () => {
     mockFetch.mockImplementation((url, init) => {
       const names = (init?.body as FormData).getAll('file').map((f) => (f as File).name)
       if (url === REVIEW) {
-        return json({ righe: names.map((n) => reviewRow(n, 'needs_customer_confirmation', n)) })
+        return json({ lines: names.map((n) => reviewRow(n, 'needs_customer_confirmation', n)) })
       }
       return json({
-        righe: names.map((n) => ({
+        lines: names.map((n) => ({
           file: n,
           sha256: `sha-${n}`,
           outcome: 'imported',
           party_key: '09876543210',
-          azienda_id: 'az-1',
-          fattura: { anno: 2026, numero: 1, customer_id: 'customer-1' },
-          buchi_non_dichiarati: [],
+          legal_entity_id: 'az-1',
+          invoice: { year: 2026, number: 1, customer_id: 'customer-1' },
+          undeclared_gaps: [],
         })),
       })
     })
@@ -528,10 +528,10 @@ describe('the import dialog', () => {
     await screen.findByText(/non manca nessun numero/)
     const decisions = mockFetch.mock.calls
       .filter(([url]) => url === CONFIRM)
-      .map((call) => JSON.parse(formOf(call).get('decisioni') as string))
+      .map((call) => JSON.parse(formOf(call).get('decisions') as string))
     expect(decisions).toEqual([
-      { clienti: { '09876543210': { create_customer: true } } },
-      { clienti: { '09876543210': { customer_id: 'customer-1' } } },
+      { customers: { '09876543210': { create_customer: true } } },
+      { customers: { '09876543210': { customer_id: 'customer-1' } } },
     ])
   })
 
@@ -541,17 +541,17 @@ describe('the import dialog', () => {
     mockFetch.mockImplementation((url, init) => {
       const names = (init?.body as FormData).getAll('file').map((f) => (f as File).name)
       if (url === REVIEW) {
-        return json({ righe: names.map((n) => reviewRow(n, 'needs_customer_confirmation', n)) })
+        return json({ lines: names.map((n) => reviewRow(n, 'needs_customer_confirmation', n)) })
       }
       return json({
-        righe: names.map((n) => ({
+        lines: names.map((n) => ({
           file: n,
           sha256: `sha-${n}`,
           outcome: 'imported',
           party_key: '09876543210',
-          azienda_id: 'az-1',
-          fattura: { anno: 2026, numero: 1, customer_id: 'cust-acme' },
-          buchi_non_dichiarati: [],
+          legal_entity_id: 'az-1',
+          invoice: { year: 2026, number: 1, customer_id: 'cust-acme' },
+          undeclared_gaps: [],
         })),
       })
     })
@@ -564,10 +564,10 @@ describe('the import dialog', () => {
     await screen.findByText(/non manca nessun numero/)
     const decisions = mockFetch.mock.calls
       .filter(([url]) => url === CONFIRM)
-      .map((call) => JSON.parse(formOf(call).get('decisioni') as string))
+      .map((call) => JSON.parse(formOf(call).get('decisions') as string))
     expect(decisions).toEqual([
-      { clienti: { '09876543210': { customer_id: 'cust-acme' } } },
-      { clienti: { '09876543210': { customer_id: 'cust-acme' } } },
+      { customers: { '09876543210': { customer_id: 'cust-acme' } } },
+      { customers: { '09876543210': { customer_id: 'cust-acme' } } },
     ])
   })
 
@@ -575,8 +575,8 @@ describe('the import dialog', () => {
     mockCustomers.data = CUSTOMERS
     mockFetch.mockImplementation((url) =>
       url === REVIEW
-        ? json({ righe: [reviewRow('a.xml', 'needs_customer_confirmation', '2026/1')] })
-        : json({ righe: [] }),
+        ? json({ lines: [reviewRow('a.xml', 'needs_customer_confirmation', '2026/1')] })
+        : json({ lines: [] }),
     )
 
     const user = await openAndPick([xml('a.xml')])
@@ -594,15 +594,15 @@ describe('the import dialog', () => {
     mockFetch.mockImplementation((url) =>
       url === REVIEW
         ? json({
-            righe: [
+            lines: [
               reviewRow('uno.xml', 'ready', '2026/1'),
-              { ...reviewRow('rotta.xml', 'unclaimed'), motivo: "unrecognised TipoDocumento: 'TD99'" },
+              { ...reviewRow('rotta.xml', 'unclaimed'), reason: "unrecognised TipoDocumento: 'TD99'" },
             ],
           })
         : json({
-            righe: [
-              { file: 'uno.xml', sha256: 'sha-uno.xml', outcome: 'conflict', azienda_id: 'az-1' },
-              { file: 'rotta.xml', sha256: 'sha-rotta.xml', outcome: 'unclaimed', motivo: 'TD99' },
+            lines: [
+              { file: 'uno.xml', sha256: 'sha-uno.xml', outcome: 'conflict', legal_entity_id: 'az-1' },
+              { file: 'rotta.xml', sha256: 'sha-rotta.xml', outcome: 'unclaimed', reason: 'TD99' },
             ],
           }),
     )
@@ -620,7 +620,7 @@ describe('the import dialog', () => {
   it('does not claim nothing was imported when the first batch fails', async () => {
     mockFetch.mockImplementation((url) =>
       url === REVIEW
-        ? json({ righe: [reviewRow('uno.xml', 'ready', '2026/1')] })
+        ? json({ lines: [reviewRow('uno.xml', 'ready', '2026/1')] })
         : json({ type: 'about:blank', title: 'Errore', status: 500, code: 'x', detail: 'Il server non risponde.' }, 500),
     )
 
@@ -636,16 +636,16 @@ describe('the import dialog', () => {
     mockFetch.mockImplementation((url, init) => {
       const names = (init?.body as FormData).getAll('file').map((f) => (f as File).name)
       if (url === REVIEW) {
-        return json({ righe: names.map((n) => reviewRow(n, n < 'f25' ? 'conflict' : 'ready', n)) })
+        return json({ lines: names.map((n) => reviewRow(n, n < 'f25' ? 'conflict' : 'ready', n)) })
       }
       return json({
-        righe: names.map((n) => ({
+        lines: names.map((n) => ({
           file: n,
           sha256: `sha-${n}`,
           outcome: 'imported',
-          azienda_id: 'az-1',
-          fattura: { anno: 2026, numero: 1, customer_id: 'customer-1' },
-          buchi_non_dichiarati: [],
+          legal_entity_id: 'az-1',
+          invoice: { year: 2026, number: 1, customer_id: 'customer-1' },
+          undeclared_gaps: [],
         })),
       })
     })

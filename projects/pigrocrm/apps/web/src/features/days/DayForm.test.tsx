@@ -18,8 +18,8 @@ vi.mock('@tanstack/react-router', () => ({
   useNavigate: () => navigate,
 }))
 
-const auth = { ruolo: 'collaboratore' as 'readonly' | 'collaboratore' | 'admin' }
-vi.mock('@/lib/auth', () => ({ useCanWrite: () => auth.ruolo !== 'readonly' }))
+const auth = { role: 'collaborator' as 'readonly' | 'collaborator' | 'admin' }
+vi.mock('@/lib/auth', () => ({ useCanWrite: () => auth.role !== 'readonly' }))
 vi.mock('@rebase/ui/sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
 
 function serving(options: {
@@ -30,7 +30,7 @@ function serving(options: {
   vi.mocked(api.GET).mockImplementation(((path: string) => {
     if (path === '/api/contracts') return Promise.resolve(ok({ items: options.contracts ?? [contract()], next_cursor: null }))
     if (path === '/api/contracts/{contract_id}/rate-cards') return Promise.resolve(ok(options.cards ?? [rateCard()]))
-    if (path === '/api/work-units') return Promise.resolve(ok({ items: options.sameDate ?? [], troncato: false }))
+    if (path === '/api/work-units') return Promise.resolve(ok({ items: options.sameDate ?? [], truncated: false }))
     return Promise.resolve(ok(undefined))
   }) as never)
 }
@@ -39,7 +39,7 @@ beforeEach(() => {
   vi.mocked(api.GET).mockReset()
   vi.mocked(api.POST).mockReset()
   navigate.mockReset()
-  auth.ruolo = 'collaboratore'
+  auth.role = 'collaborator'
 })
 
 describe('recording a day', () => {
@@ -61,10 +61,10 @@ describe('recording a day', () => {
     expect(vi.mocked(api.POST).mock.calls[0]?.[1]).toEqual({
       body: {
         contract_id: CONTRACT_ID,
-        data: '2026-03-02',
-        quantita: '0.50',
-        descrizione: 'Revisione architettura servizi',
-        stato: 'lavorato',
+        date: '2026-03-02',
+        quantity: '0.50',
+        description: 'Revisione architettura servizi',
+        status: 'worked',
       },
     })
     await waitFor(() =>
@@ -87,13 +87,13 @@ describe('recording a day', () => {
   })
 
   it('says when the date is outside the contract', async () => {
-    serving({ contracts: [contract({ inizio: '2026-04-01', fine: '2026-12-31' })] })
+    serving({ contracts: [contract({ start: '2026-04-01', end: '2026-12-31' })] })
     renderWithQuery(<DayForm initialDate="2026-03-02" />)
     expect(await screen.findByText(/La data è fuori dal contratto, che va dal 01\/04\/2026 al 31\/12\/2026/)).toBeInTheDocument()
   })
 
   it('offers no half day where the rate in force prices whole days only', async () => {
-    serving({ cards: [rateCard({ frazioni_ammesse: ['1.00'] })] })
+    serving({ cards: [rateCard({ allowed_fractions: ['1.00'] })] })
     renderWithQuery(<DayForm initialDate="2026-03-02" />)
     expect(await screen.findByText(/accetta solo giornate intere/)).toBeInTheDocument()
     expect(screen.getByRole('radio', { name: 'Mezza giornata' })).toBeDisabled()
@@ -101,13 +101,13 @@ describe('recording a day', () => {
   })
 
   it('says when no rate is in force on the date', async () => {
-    serving({ cards: [rateCard({ valido_da: '2026-06-01' })] })
+    serving({ cards: [rateCard({ valid_from: '2026-06-01' })] })
     renderWithQuery(<DayForm initialDate="2026-03-02" />)
     expect(await screen.findByText(/Nessuna tariffa in vigore il 02\/03\/2026/)).toBeInTheDocument()
   })
 
   it('blocks a second day on a date the contract already holds one for, and links the first', async () => {
-    serving({ sameDate: [row({ id: 'taken', stato: 'lavorato' })] })
+    serving({ sameDate: [row({ id: 'taken', status: 'worked' })] })
     const user = userEvent.setup()
     renderWithQuery(<DayForm initialDate="2026-03-02" />)
     expect(await screen.findByText(/ha già una giornata il 02\/03\/2026/)).toBeInTheDocument()
@@ -117,7 +117,7 @@ describe('recording a day', () => {
   })
 
   it('does not count a revoked day as taking the date', async () => {
-    serving({ sameDate: [row({ id: 'gone', stato: 'revocato' })] })
+    serving({ sameDate: [row({ id: 'gone', status: 'revoked' })] })
     const user = userEvent.setup()
     renderWithQuery(<DayForm initialDate="2026-03-02" />)
     await screen.findByText('450,00 €')
@@ -140,7 +140,7 @@ describe('recording a day', () => {
   })
 
   it('opens on the contract it was reached from', async () => {
-    serving({ contracts: [contract(), contract({ id: 'other', titolo: 'Sviluppo piattaforma' })] })
+    serving({ contracts: [contract(), contract({ id: 'other', title: 'Sviluppo piattaforma' })] })
     renderWithQuery(<DayForm initialContractId="other" initialDate="2026-03-02" />)
     await waitFor(() =>
       expect(screen.getByRole('combobox', { name: 'Contratto' })).toHaveTextContent('Sviluppo piattaforma'),
@@ -148,7 +148,7 @@ describe('recording a day', () => {
   })
 
   it('offers a reader nothing to record', () => {
-    auth.ruolo = 'readonly'
+    auth.role = 'readonly'
     serving()
     renderWithQuery(<DayForm />)
     expect(screen.getByText(/puoi leggere le giornate ma non registrarne/)).toBeInTheDocument()

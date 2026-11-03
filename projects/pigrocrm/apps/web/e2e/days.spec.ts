@@ -8,36 +8,36 @@ import { loginAsAdmin } from './helpers'
  * spec: what is proven here is that the day screens connect to the ledger.
  */
 
-const OGGI = new Date()
+const TODAY = new Date()
 const ISO = (value: Date) =>
   `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, '0')}-${String(value.getDate()).padStart(2, '0')}`
-const OGGI_ISO = ISO(OGGI)
-const MESE = OGGI_ISO.slice(0, 7)
-const PRIMO_ISO = `${MESE}-01`
-const ITALIANA = (iso: string) => iso.split('-').reverse().join('/')
+const TODAY_ISO = ISO(TODAY)
+const Month = TODAY_ISO.slice(0, 7)
+const FIRST_ISO = `${Month}-01`
+const ITALIAN = (iso: string) => iso.split('-').reverse().join('/')
 
 async function seedContract(
   request: APIRequestContext,
-  options: { titolo: string; requiresPriorApproval: boolean },
+  options: { title: string; requiresPriorApproval: boolean },
 ): Promise<string> {
-  const customer = await request.post('/api/customers', { data: { ragione_sociale: `Cliente ${options.titolo}` } })
+  const customer = await request.post('/api/customers', { data: { legal_name: `Cliente ${options.title}` } })
   expect(customer.status(), await customer.text()).toBe(201)
   const contract = await request.post('/api/contracts', {
     data: {
       customer_id: ((await customer.json()) as { id: string }).id,
-      titolo: options.titolo,
-      inizio: '2020-01-01',
-      tipo_rinnovo: 'nessuno',
-      preavviso_disdetta_giorni: 30,
-      cadenza_fatturazione: 'mensile',
-      politica_spese: { kind: 'non_rimborsabile' },
+      title: options.title,
+      start: '2020-01-01',
+      renewal_type: 'none',
+      termination_notice_days: 30,
+      billing_cadence: 'monthly',
+      expense_policy: { kind: 'not_reimbursable' },
       requires_prior_approval: options.requiresPriorApproval,
     },
   })
   expect(contract.status(), await contract.text()).toBe(201)
   const id = ((await contract.json()) as { id: string }).id
   const card = await request.post(`/api/contracts/${id}/rate-cards`, {
-    data: { valido_da: '2020-01-01', tipo: 'giornaliero', importo: '450.00', unita: 'giorno', frazioni_ammesse: ['1.00', '0.50'] },
+    data: { valid_from: '2020-01-01', type: 'daily', amount: '450.00', unit: 'day', allowed_fractions: ['1.00', '0.50'] },
   })
   expect(card.status(), await card.text()).toBe(201)
   return id
@@ -46,8 +46,8 @@ async function seedContract(
 test.describe('contract days', () => {
   test('a half day recorded from the form shows in the contract\'s days and on the calendar', async ({ page }) => {
     await loginAsAdmin(page)
-    const titolo = `Giornate E2E ${Date.now()}`
-    const contractId = await seedContract(page.request, { titolo, requiresPriorApproval: true })
+    const title = `Giornate E2E ${Date.now()}`
+    const contractId = await seedContract(page.request, { title, requiresPriorApproval: true })
 
     await page.goto(`/app/days/new?contract=${contractId}`)
     await expect(page.getByText('450,00 €')).toBeVisible()
@@ -59,7 +59,7 @@ test.describe('contract days', () => {
 
     // The day's own page: recorded as worked, flagged because the contract's approval is missing.
     await expect(page).toHaveURL(/\/app\/days\/[0-9a-f-]{36}$/)
-    await expect(page.getByRole('heading', { level: 1, name: `Giornata del ${ITALIANA(OGGI_ISO)}` })).toBeVisible()
+    await expect(page.getByRole('heading', { level: 1, name: `Giornata del ${ITALIAN(TODAY_ISO)}` })).toBeVisible()
     await expect(page.getByText('Lavorata senza approvazione').first()).toBeVisible()
     await expect(page.getByText('Mezza giornata')).toBeVisible()
 
@@ -68,24 +68,24 @@ test.describe('contract days', () => {
     await expect(page.getByRole('link', { name: /Revisione architettura servizi/ })).toBeVisible()
 
     // And its date on the calendar says it was worked without approval.
-    await page.goto(`/app/calendar?mese=${MESE}`)
-    const cell = page.getByRole('button', { name: new RegExp(`^${ITALIANA(OGGI_ISO).replace(/\//g, '\\/')}: .*senza approvazione`) })
+    await page.goto(`/app/calendar?month=${Month}`)
+    const cell = page.getByRole('button', { name: new RegExp(`^${ITALIAN(TODAY_ISO).replace(/\//g, '\\/')}: .*senza approvazione`) })
     await expect(cell).toBeVisible()
     await expect(cell.getByText('senza approvazione')).toBeVisible()
   })
 
   test('an approved day is marked worked then contested, and its page shows the moves', async ({ page }) => {
     await loginAsAdmin(page)
-    const titolo = `Ciclo E2E ${Date.now()}`
-    const contractId = await seedContract(page.request, { titolo, requiresPriorApproval: false })
+    const title = `Ciclo E2E ${Date.now()}`
+    const contractId = await seedContract(page.request, { title, requiresPriorApproval: false })
     // An approved day exists only through an approval, so the fixture records one.
     const created = await page.request.post('/api/work-units', {
-      data: { contract_id: contractId, data: PRIMO_ISO, quantita: '1.00', descrizione: 'Workshop con il cliente', stato: 'proposto' },
+      data: { contract_id: contractId, date: FIRST_ISO, quantity: '1.00', description: 'Workshop con il cliente', status: 'proposed' },
     })
     expect(created.status(), await created.text()).toBe(201)
     const dayId = ((await created.json()) as { id: string }).id
     const proof = await page.request.post('/api/documents', {
-      data: { contract_id: contractId, tipo: 'documento', titolo: 'Mail di conferma' },
+      data: { contract_id: contractId, type: 'document', title: 'Mail di conferma' },
     })
     expect(proof.status(), await proof.text()).toBe(201)
     const proofId = ((await proof.json()) as { id: string }).id
@@ -96,10 +96,10 @@ test.describe('contract days', () => {
     const approval = await page.request.post('/api/approvals', {
       data: {
         contract_id: contractId,
-        canale: 'email',
-        mittente: 'giulia@cliente.example',
-        ricevuto_il: new Date().toISOString(),
-        estratto: 'Confermo.',
+        channel: 'email',
+        sender: 'giulia@cliente.example',
+        received_at: new Date().toISOString(),
+        excerpt: 'Confermo.',
         document_id: proofId,
         work_unit_ids: [dayId],
       },
@@ -129,7 +129,7 @@ test.describe('contract days', () => {
 
   test('N on the Home opens the form to record a day', async ({ page }) => {
     await loginAsAdmin(page)
-    await seedContract(page.request, { titolo: `Home E2E ${Date.now()}`, requiresPriorApproval: false })
+    await seedContract(page.request, { title: `Home E2E ${Date.now()}`, requiresPriorApproval: false })
     await page.goto('/app')
     await expect(page.getByRole('link', { name: /Registra una giornata/ })).toBeVisible()
     await page.keyboard.press('n')
@@ -139,15 +139,15 @@ test.describe('contract days', () => {
 
   test('a client\'s approval with pasted text as its proof moves the days it covers', async ({ page }) => {
     await loginAsAdmin(page)
-    const titolo = `Approvazione E2E ${Date.now()}`
-    const contractId = await seedContract(page.request, { titolo, requiresPriorApproval: true })
+    const title = `Approvazione E2E ${Date.now()}`
+    const contractId = await seedContract(page.request, { title, requiresPriorApproval: true })
     const days: string[] = []
-    for (const [data, stato] of [
-      [PRIMO_ISO, 'proposto'],
-      [`${MESE}-02`, 'lavorato'],
+    for (const [date, status] of [
+      [FIRST_ISO, 'proposed'],
+      [`${Month}-02`, 'worked'],
     ] as const) {
       const created = await page.request.post('/api/work-units', {
-        data: { contract_id: contractId, data, quantita: '1.00', descrizione: `Giornata ${data}`, stato },
+        data: { contract_id: contractId, date, quantity: '1.00', description: `Giornata ${date}`, status },
       })
       expect(created.status(), await created.text()).toBe(201)
       days.push(((await created.json()) as { id: string }).id)
@@ -159,8 +159,8 @@ test.describe('contract days', () => {
     await page.getByRole('link', { name: 'Registra approvazione' }).click()
     await expect(page).toHaveURL(/\/app\/approvals\/new\?contract=/)
 
-    await page.getByRole('checkbox', { name: new RegExp(`Giornata ${PRIMO_ISO}`) }).check()
-    await page.getByRole('checkbox', { name: new RegExp(`Giornata ${MESE}-02`) }).check()
+    await page.getByRole('checkbox', { name: new RegExp(`Giornata ${FIRST_ISO}`) }).check()
+    await page.getByRole('checkbox', { name: new RegExp(`Giornata ${Month}-02`) }).check()
     await page.getByRole('radio', { name: 'Testo incollato' }).check({ force: true })
     await page.getByLabel('Testo dell’approvazione').fill('Confermo le giornate del mese, il cliente.')
     await page.getByLabel('Da chi').fill('giulia@cliente.example')
@@ -178,8 +178,8 @@ test.describe('contract days', () => {
 
   test('asking for approval of three dates records them as proposed and prepares the request', async ({ page }) => {
     await loginAsAdmin(page)
-    const titolo = `Richiesta E2E ${Date.now()}`
-    const contractId = await seedContract(page.request, { titolo, requiresPriorApproval: true })
+    const title = `Richiesta E2E ${Date.now()}`
+    const contractId = await seedContract(page.request, { title, requiresPriorApproval: true })
     // A customer with an address, so the request has somewhere to go.
     await page.goto(`/app/contracts/${contractId}`)
     await page.getByRole('button', { name: 'Chiedi approvazione' }).click()

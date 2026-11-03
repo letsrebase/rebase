@@ -26,7 +26,7 @@ from pigrocrm_mcp.resources import entities
 UNPAID_INVOICES_SHOWN = 15
 
 
-def stato_cliente(context: McpContext, customer_id: str) -> list[dict[str, Any]]:
+def status_customer(context: McpContext, customer_id: str) -> list[dict[str, Any]]:
     """The briefing before a phone call.
 
     The card is rendered before anything else so an unknown id is a `NotFound` the guard
@@ -44,23 +44,23 @@ def stato_cliente(context: McpContext, customer_id: str) -> list[dict[str, Any]]
         identifier, context.actor, limit=UNPAID_INVOICES_SHOWN + 1
     )
     unpaid = fetched[:UNPAID_INVOICES_SHOWN]
-    troncato = len(fetched) > UNPAID_INVOICES_SHOWN
+    truncated = len(fetched) > UNPAID_INVOICES_SHOWN
 
     lines = ["## Fatture non incassate", ""]
     if not unpaid:
         lines.append("Nessuna fattura da incassare.")
     else:
         for invoice in unpaid:
-            # A draft that was issued always has both `anno` and `numero`
-            # (`ck_invoices_anno_numero_together`), but the pair is nullable on the column,
+            # A draft that was issued always has both `year` and `number`
+            # (`ck_invoices_year_number_together`), but the pair is nullable on the column,
             # so it is rendered defensively rather than assumed.
-            numero = (
-                f"{invoice.anno}/{invoice.numero}" if invoice.numero is not None else "senza numero"
+            number = (
+                f"{invoice.year}/{invoice.number}" if invoice.number is not None else "senza numero"
             )
-            scadenza = invoice.data_scadenza or "senza scadenza"
-            totale = str(invoice.totale).replace(".", ",")
-            lines.append(f"- {numero} — {totale} € (totale con IVA), scadenza {scadenza}")
-        if troncato:
+            due_date = invoice.due_date or "senza scadenza"
+            total = str(invoice.total).replace(".", ",")
+            lines.append(f"- {number} — {total} € (totale con IVA), scadenza {due_date}")
+        if truncated:
             lines += [
                 "",
                 f"_Mostrate le {UNPAID_INVOICES_SHOWN} con scadenza più vicina; ce ne sono "

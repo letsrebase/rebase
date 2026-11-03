@@ -74,7 +74,7 @@ class ProposalSlots:
         builder: TeamBuilder,
         data: TeamProposalCreate,
         *,
-        origine: str,
+        origin: str,
         user_id: UUID | None,
         company_id: UUID | None = None,
         client: str | None = None,
@@ -95,10 +95,10 @@ class ProposalSlots:
         now = builder.now()
         if client is not None and not self._clients.spend(client):
             logger.info("team builder: a client has used its share of the day")
-            self._refuse(builder, data, origine, user_id, company_id, now)
+            self._refuse(builder, data, origin, user_id, company_id, now)
         if not self._slots.acquire(blocking=False):
             logger.info("team builder: every proposal slot is taken")
-            self._refuse(builder, data, origine, user_id, company_id, now)
+            self._refuse(builder, data, origin, user_id, company_id, now)
         # One release site for the slot, whatever the count or the call raises: a query
         # that fails here with the slot still held would, four times over, close the
         # builder until the process restarts.
@@ -109,17 +109,17 @@ class ProposalSlots:
                 pass
             else:
                 return builder.propose(
-                    data, origine=origine, user_id=user_id, company_id=company_id, now=now
+                    data, origin=origin, user_id=user_id, company_id=company_id, now=now
                 )
         finally:
             self._slots.release()
-        self._refuse(builder, data, origine, user_id, company_id, now)
+        self._refuse(builder, data, origin, user_id, company_id, now)
 
     def _refuse(
         self,
         builder: TeamBuilder,
         data: TeamProposalCreate,
-        origine: str,
+        origin: str,
         user_id: UUID | None,
         company_id: UUID | None,
         now: datetime,
@@ -143,7 +143,7 @@ class ProposalSlots:
             raise busy
         try:
             builder.record_refusal(
-                data, origine=origine, user_id=user_id, error=busy, company_id=company_id, now=now
+                data, origin=origin, user_id=user_id, error=busy, company_id=company_id, now=now
             )
         except Exception:
             logger.exception("team builder: the refused ask was not kept")

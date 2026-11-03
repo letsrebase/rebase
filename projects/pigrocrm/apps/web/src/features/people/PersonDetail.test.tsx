@@ -40,14 +40,14 @@ const NOTE = {
   id: 'n1',
   entity_type: 'person',
   entity_id: 'p1',
-  testo: 'Richiamare a settembre.',
-  autore: 'Giulia Rossi',
-  autore_id: 'u1',
-  fonte: 'web',
+  text: 'Richiamare a settembre.',
+  author: 'Giulia Rossi',
+  author_id: 'u1',
+  source: 'web',
   created_at: '2026-10-01T09:00:00Z',
-  modificata_at: null,
-  modificata_da: null,
-  modificabile: true,
+  edited_at: null,
+  edited_by: null,
+  editable: true,
 } as never
 
 function renderWithClient(ui: ReactElement) {
@@ -94,7 +94,7 @@ describe('PersonDetail', () => {
     mockGet.mockImplementation(
       ((path: string) =>
         path === '/api/people/{person_id}'
-          ? ok({ id: 'p1', nome: 'Giulia', cognome: 'Rossi', custom_fields: {} })
+          ? ok({ id: 'p1', first_name: 'Giulia', last_name: 'Rossi', custom_fields: {} })
           : path === '/api/{collection}/{entity_id}/notes'
             ? ok([NOTE])
             : ok({ items: [] })) as never,

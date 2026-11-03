@@ -10,8 +10,9 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+from rebase_core.card_provenance import sha
 from rebase_core.errors import NotFound
-from rebase_core.hub_facts import HubFacts, hub_facts
+from rebase_core.hub_facts import HubFacts, MatchFact, hub_facts
 from rebase_core.models import AdminAction, Company, Freelancer, Match, Note, User
 
 TODAY = date(2026, 10, 27)
@@ -28,7 +29,7 @@ def clean(hub_session: Session) -> Iterator[Session]:
 
 
 def _user(session: Session, email: str, **extra: Any) -> User:
-    user = User(email=email, nome="Ada", cognome="Lovelace", **extra)
+    user = User(email=email, first_name="Ada", last_name="Lovelace", **extra)
     session.add(user)
     session.flush()
     return user
@@ -45,41 +46,41 @@ def _match(
     session: Session,
     person: Freelancer,
     *,
-    stato: str = "concluso",
-    inizio: date | None = date(2025, 1, 1),
+    status: str = "concluded",
+    start: date | None = date(2025, 1, 1),
     fine: date | None = date(2025, 6, 30),
     closed: datetime | None = None,
-    figura: str = "Backend developer",
+    profile: str = "Backend developer",
     budget: str = "777",
-    nome_azienda: str = CLIENT,
+    company_name: str = CLIENT,
 ) -> Match:
     admin = session.query(User).filter(User.email == "admin@rebase.it").first() or _user(
         session, "admin@rebase.it", role="admin"
     )
     company = Company(
         user_id=admin.id,
-        nome_azienda=nome_azienda,
-        figura_richiesta=figura,
-        progetto="Il progetto segreto del cliente",
-        periodo_da=date(2025, 1, 1),
-        durata="6 mesi",
-        budget_giornaliero=Decimal(budget),
-        remoto="remoto",
-        numero_risorse=1,
+        company_name=company_name,
+        requested_role=profile,
+        project="Il progetto segreto del cliente",
+        period_from=date(2025, 1, 1),
+        duration="6 mesi",
+        daily_budget=Decimal(budget),
+        remote="remote",
+        headcount=1,
     )
     session.add(company)
     session.flush()
     match = Match(
         freelancer_id=person.id,
         company_id=company.id,
-        cliente_ragione_sociale=CLIENT,
-        cliente_piva="01234567890",
-        cliente_sede="Via Segreta 1, Milano",
-        stato=stato,
+        customer_legal_name=CLIENT,
+        customer_vat_number="01234567890",
+        customer_registered_office="Via Segreta 1, Milano",
+        status=status,
         created_by=admin.id,
-        lettera_data_inizio=inizio,
-        lettera_data_fine=fine,
-        lettera_compenso=Decimal("777"),
+        letter_start_date=start,
+        letter_end_date=fine,
+        letter_fee=Decimal("777"),
         updated_at=closed or datetime(2025, 7, 1, tzinfo=UTC),
     )
     session.add(match)
@@ -93,8 +94,8 @@ def _facts(session: Session, person: Freelancer) -> HubFacts:
 
 def test_client_name_never_in_text(clean: Session) -> None:
     person = _person(clean)
-    _match(clean, person, figura="Backend developer per Initech Italia srl")
-    _match(clean, person, figura="Data engineer presso INITECH", inizio=date(2024, 1, 1))
+    _match(clean, person, profile="Backend developer per Initech Italia srl")
+    _match(clean, person, profile="Data engineer presso INITECH", start=date(2024, 1, 1))
 
     facts = _facts(clean, person)
     for material in (facts.text(), facts.hash_material()):
@@ -105,11 +106,11 @@ def test_client_name_never_in_text(clean: Session) -> None:
 
 
 def test_admin_override_present_as_hard_fact(clean: Session) -> None:
-    person = _person(clean, seniority_admin="lead", anni_admin=12)
+    person = _person(clean, seniority_admin="lead", experience_years_admin=12)
 
     facts = _facts(clean, person)
 
-    assert (facts.seniority_admin, facts.anni_admin) == ("lead", 12)
+    assert (facts.seniority_admin, facts.experience_years_admin) == ("lead", 12)
     assert "lead (dato certo)" in facts.text()
     assert "12 (dato certo)" in facts.text()
     assert "FONTE: dati della hub" in facts.text()
@@ -117,29 +118,29 @@ def test_admin_override_present_as_hard_fact(clean: Session) -> None:
 
 def test_only_dated_matches_counted_in_completed_months(clean: Session) -> None:
     person = _person(clean)
-    _match(clean, person, inizio=date(2025, 1, 1), fine=date(2025, 3, 31))  # 3 months
-    _match(clean, person, inizio=date(2025, 6, 1), fine=date(2025, 6, 30))  # 1 month
-    _match(clean, person, inizio=None, fine=None)  # undated: left out
-    _match(clean, person, stato="bozza")  # never started
-    _match(clean, person, stato="annullato")
-    _match(clean, person, stato="in_firma")
+    _match(clean, person, start=date(2025, 1, 1), fine=date(2025, 3, 31))  # 3 months
+    _match(clean, person, start=date(2025, 6, 1), fine=date(2025, 6, 30))  # 1 month
+    _match(clean, person, start=None, fine=None)  # undated: left out
+    _match(clean, person, status="draft")  # never started
+    _match(clean, person, status="cancelled")
+    _match(clean, person, status="awaiting_signature")
 
     facts = _facts(clean, person)
 
-    assert [(m.dal, m.mesi, m.esito) for m in facts.matches] == [
-        ("2025-01", 3, "completato"),
-        ("2025-06", 1, "completato"),
+    assert [(m.since, m.months, m.outcome) for m in facts.matches] == [
+        ("2025-01", 3, "completed"),
+        ("2025-06", 1, "completed"),
     ]
     assert facts.completed_months == 4
 
 
 def test_overlapping_completed_matches_count_their_months_once(clean: Session) -> None:
     person = _person(clean)
-    _match(clean, person, inizio=date(2025, 1, 1), fine=date(2025, 6, 30))
+    _match(clean, person, start=date(2025, 1, 1), fine=date(2025, 6, 30))
     _match(
         clean,
         person,
-        inizio=date(2025, 4, 1),
+        start=date(2025, 4, 1),
         fine=date(2025, 9, 30),
         closed=datetime(2025, 10, 1, tzinfo=UTC),
     )
@@ -152,26 +153,29 @@ def test_outcomes(clean: Session) -> None:
     _match(
         clean,
         person,
-        inizio=date(2025, 1, 1),
+        start=date(2025, 1, 1),
         fine=date(2025, 12, 31),
         closed=datetime(2025, 4, 1, tzinfo=UTC),
     )  # closed early: 3 months, not completed
-    _match(clean, person, stato="attivo", inizio=date(2026, 8, 1), fine=date(2027, 1, 31))
+    _match(clean, person, status="active", start=date(2026, 8, 1), fine=date(2027, 1, 31))
 
     facts = _facts(clean, person)
 
-    assert [(m.mesi, m.esito) for m in facts.matches] == [(3, "chiuso prima"), (3, "in corso")]
+    assert [(m.months, m.outcome) for m in facts.matches] == [
+        (3, "closed_before"),
+        (3, "in_progress"),
+    ]
     assert facts.completed_months == 0
 
 
 def test_in_progress_months_do_not_move_the_hash(clean: Session) -> None:
     person = _person(clean)
-    _match(clean, person, stato="attivo", inizio=date(2026, 8, 1), fine=None)
+    _match(clean, person, status="active", start=date(2026, 8, 1), fine=None)
 
     before = hub_facts(clean, person.id, date(2026, 10, 27))
     later = hub_facts(clean, person.id, date(2026, 11, 27))
 
-    assert before.matches[0].mesi != later.matches[0].mesi
+    assert before.matches[0].months != later.matches[0].months
     assert before.hash_material() == later.hash_material()
     assert before.text() != later.text()
 
@@ -180,7 +184,7 @@ def test_admin_notes_never_included(clean: Session) -> None:
     person = _person(clean)
     _match(clean, person)
     for text_ in ("Commento privato", "nota riservata sulla persona"):
-        clean.add(Note(entity_type="freelancer", entity_id=person.id, testo=text_, autore="Ivan"))
+        clean.add(Note(entity_type="freelancer", entity_id=person.id, text=text_, author="Ivan"))
     clean.flush()
 
     facts = _facts(clean, person)
@@ -216,7 +220,7 @@ def test_unknown_freelancer_is_not_found(clean: Session) -> None:
 
 def test_client_names_are_kept_for_the_guard_and_in_no_text(clean: Session) -> None:
     person = _person(clean)
-    _match(clean, person, figura="Backend developer")
+    _match(clean, person, profile="Backend developer")
 
     facts = _facts(clean, person)
 
@@ -229,7 +233,7 @@ def test_the_close_date_is_the_trails_not_the_last_edit(clean: Session) -> None:
     completed months would move with it, and the cards with them."""
     person = _person(clean)
     match = _match(
-        clean, person, inizio=date(2025, 1, 1), fine=None, closed=datetime(2026, 3, 10, tzinfo=UTC)
+        clean, person, start=date(2025, 1, 1), fine=None, closed=datetime(2026, 3, 10, tzinfo=UTC)
     )
     clean.add(
         AdminAction(
@@ -245,5 +249,52 @@ def test_the_close_date_is_the_trails_not_the_last_edit(clean: Session) -> None:
 
     facts = _facts(clean, person)
 
-    assert [(m.mesi, m.esito) for m in facts.matches] == [(6, "completato")]
+    assert [(m.months, m.outcome) for m in facts.matches] == [(6, "completed")]
     assert facts.completed_months == 6
+
+
+def _fixed_facts() -> HubFacts:
+    return HubFacts(
+        seniority_admin="senior",
+        experience_years_admin=7,
+        matches=[
+            MatchFact(
+                role="Backend per il cliente", months=14, outcome="completed", since="2024-01"
+            ),
+            MatchFact(role="Data engineer", months=3, outcome="in_progress", since="2026-08"),
+            MatchFact(role="Frontend", months=2, outcome="closed_before", since="2025-05"),
+        ],
+        completed_months=14,
+        clients=["Acme"],
+    )
+
+
+def test_the_hash_and_the_text_are_what_the_italian_code_made_of_them() -> None:
+    """Every stored card keeps `source_hashes["hub"]`, so a byte of `hash_material()` that
+    moves marks them all stale, and the block the model reads is the one it always read.
+    Both are the values the code before the English rename produced for this fixture
+    (`origin/main`: `Esito`, `ruolo`, `mesi`, `anni=`, `completati=`)."""
+    facts = _fixed_facts()
+
+    assert facts.hash_material() == (
+        "seniority=senior\n"
+        "anni=7\n"
+        "2024-01|Backend per il cliente|completato|14\n"
+        "2026-08|Data engineer|in corso|\n"
+        "2025-05|Frontend|chiuso prima|2\n"
+        "completati=14"
+    )
+    assert (
+        sha(facts.hash_material())
+        == "cbc7335923d4154c19b26bd3cf902cb7590c655c740a430dca9f9318468b0503"
+    )
+    assert facts.text() == (
+        "FONTE: dati della hub\n"
+        "Seniority stabilita da un admin: senior (dato certo)\n"
+        "Anni di esperienza stabiliti da un admin: 7 (dato certo)\n"
+        "Incarichi svolti tramite la hub (ruolo, inizio, durata, esito):\n"
+        "- Backend per il cliente, dal 2024-01, 14 mesi, completato\n"
+        "- Data engineer, dal 2026-08, 3 mesi, in corso\n"
+        "- Frontend, dal 2025-05, 2 mesi, chiuso prima\n"
+        "Mesi di incarichi completati: 14"
+    )

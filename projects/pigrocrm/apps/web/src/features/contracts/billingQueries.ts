@@ -13,14 +13,14 @@ export type RegisterEntry = components['schemas']['RegisterEntry']
 /** The first and last day of an `AAAA-MM` month, as the inclusive `da` and `a` the API
  *  takes. Built from the parts, never through `toISOString()`: a month's last day moved
  *  to UTC lands on the wrong date east of Greenwich (`@/lib/dates`). */
-export function monthBounds(month: string): { da: string; a: string } {
+export function monthBounds(month: string): { from: string; to: string } {
   const [year, number] = month.split('-').map(Number)
   const last = new Date(year ?? 0, number ?? 1, 0).getDate()
-  return { da: `${month}-01`, a: `${month}-${String(last).padStart(2, '0')}` }
+  return { from: `${month}-01`, to: `${month}-${String(last).padStart(2, '0')}` }
 }
 
 /** The ready days, all of them or those of one period (`da`/`a`, inclusive). */
-export function useBillableDays(contractId: string, period: { da?: string; a?: string } = {}) {
+export function useBillableDays(contractId: string, period: { from?: string; to?: string } = {}) {
   return useQuery({
     queryKey: queryKeys.contractBillableDays(contractId, period),
     // Always asked again on mount: the days are billed and the invoice numbered on other
@@ -41,7 +41,7 @@ export function useBillableDays(contractId: string, period: { da?: string; a?: s
 export function useInvoiceDays(contractId: string) {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: (period: { da?: string; a?: string }) =>
+    mutationFn: (period: { from?: string; to?: string }) =>
       unwrap(
         api.POST('/api/contracts/{contract_id}/invoice-days', {
           params: { path: { contract_id: contractId } },
@@ -51,7 +51,7 @@ export function useInvoiceDays(contractId: string) {
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.contract(contractId) })
       void queryClient.invalidateQueries({ queryKey: queryKeys.invoices() })
-      // The days list and the calendar read the same days, now `fatturato`.
+      // The days list and the calendar read the same days, now `invoiced`.
       void queryClient.invalidateQueries({ queryKey: queryKeys.workUnitsAll })
       void queryClient.invalidateQueries({ queryKey: queryKeys.calendarAll })
     },
@@ -60,7 +60,7 @@ export function useInvoiceDays(contractId: string) {
 
 export function useContractRegister(
   contractId: string,
-  period: { da: string; a: string },
+  period: { from: string; to: string },
   enabled = true,
 ) {
   return useQuery({
@@ -77,7 +77,7 @@ export function useContractRegister(
 }
 
 /** The API path of the register's CSV, to download through `DownloadButton`. */
-export function registerCsvPath(contractId: string, period: { da: string; a: string }): string {
+export function registerCsvPath(contractId: string, period: { from: string; to: string }): string {
   const query = new URLSearchParams(period)
   return `/api/contracts/${contractId}/register/csv?${query.toString()}`
 }
@@ -88,7 +88,7 @@ export function registerCsvPath(contractId: string, period: { da: string; a: str
 export function useRenderRegisterPdf(contractId: string) {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: async (period: { da: string; a: string }) => {
+    mutationFn: async (period: { from: string; to: string }) => {
       const document = await unwrap(
         api.POST('/api/contracts/{contract_id}/register/pdf', {
           params: { path: { contract_id: contractId }, query: period },

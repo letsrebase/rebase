@@ -54,7 +54,7 @@ describe('ConnectAgentPanel, full access', () => {
 
     await waitFor(() =>
       expect(api.POST).toHaveBeenCalledWith('/api/tokens', {
-        body: { nome: 'Claude Code', full_access: false },
+        body: { name: 'Claude Code', full_access: false },
       }),
     )
   })
@@ -69,7 +69,7 @@ describe('ConnectAgentPanel, full access', () => {
 
     await waitFor(() =>
       expect(api.POST).toHaveBeenCalledWith('/api/tokens', {
-        body: { nome: 'Claude Code', full_access: true },
+        body: { name: 'Claude Code', full_access: true },
       }),
     )
   })
@@ -97,7 +97,7 @@ describe('ConnectAgentPanel, full access', () => {
 
     await waitFor(() =>
       expect(api.POST).toHaveBeenCalledWith('/api/tokens', {
-        body: { nome: 'Claude Code', full_access: false },
+        body: { name: 'Claude Code', full_access: false },
       }),
     )
   })

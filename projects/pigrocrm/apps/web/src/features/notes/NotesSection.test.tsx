@@ -28,42 +28,42 @@ const OWN: Note = {
   id: 'n1',
   entity_type: 'deal',
   entity_id: 'd1',
-  testo: 'Richiamare a settembre.\nPortare il preventivo.',
-  autore: 'Giulia Rossi',
-  autore_id: 'u1',
-  fonte: 'web',
+  text: 'Richiamare a settembre.\nPortare il preventivo.',
+  author: 'Giulia Rossi',
+  author_id: 'u1',
+  source: 'web',
   created_at: '2026-10-01T09:00:00Z',
-  modificata_at: null,
-  modificata_da: null,
-  modificabile: true,
+  edited_at: null,
+  edited_by: null,
+  editable: true,
 }
 const EDITED: Note = {
   ...OWN,
   id: 'n2',
-  testo: 'Cliente interessato al piano annuale.',
-  autore: 'Marco Bianchi',
-  autore_id: 'u2',
-  fonte: 'mcp',
-  modificata_at: '2026-10-02T10:30:00Z',
-  modificata_da: 'Giulia Rossi',
-  modificabile: false,
+  text: 'Cliente interessato al piano annuale.',
+  author: 'Marco Bianchi',
+  author_id: 'u2',
+  source: 'mcp',
+  edited_at: '2026-10-02T10:30:00Z',
+  edited_by: 'Giulia Rossi',
+  editable: false,
 }
 const LEGACY: Note = {
   ...OWN,
   id: 'n3',
-  testo: 'Vecchia nota sul cliente.',
-  autore: null,
-  autore_id: null,
-  fonte: null,
-  modificabile: false,
+  text: 'Vecchia nota sul cliente.',
+  author: null,
+  author_id: null,
+  source: null,
+  editable: false,
 }
 const SYSTEM: Note = {
   ...LEGACY,
   id: 'n4',
-  testo: 'Richiesta ricevuta dall’hub.',
-  fonte: 'sistema',
+  text: 'Richiesta ricevuta dall’hub.',
+  source: 'system',
 }
-const REBASE: Note = { ...LEGACY, id: 'n5', testo: 'Firmato il contratto quadro.', fonte: 'rebase' }
+const REBASE: Note = { ...LEGACY, id: 'n5', text: 'Firmato il contratto quadro.', source: 'rebase' }
 
 function renderSection() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
@@ -137,7 +137,7 @@ describe('NotesSection', () => {
   })
 
   it('names the door of a system note that does carry an author', async () => {
-    vi.mocked(api.GET).mockImplementation((() => ok([{ ...SYSTEM, autore: 'Giulia Rossi' }])) as never)
+    vi.mocked(api.GET).mockImplementation((() => ok([{ ...SYSTEM, author: 'Giulia Rossi' }])) as never)
     renderSection()
     const system = await item(/Richiesta ricevuta/)
     expect(within(system).getByText('Giulia Rossi')).toBeInTheDocument()
@@ -177,7 +177,7 @@ describe('NotesSection', () => {
 
     expect(api.POST).toHaveBeenCalledWith('/api/{collection}/{entity_id}/notes', {
       params: { path: { collection: 'deals', entity_id: 'd1' } },
-      body: { testo: 'Telefonata fatta' },
+      body: { text: 'Telefonata fatta' },
     })
     await vi.waitFor(() => expect(box).toHaveValue(''))
     const keys = invalidate.mock.calls.map((call) => call[0]?.queryKey)
@@ -201,7 +201,7 @@ describe('NotesSection', () => {
   })
 
   it('edits a note in place, patches its new text and refreshes the thread and the timeline', async () => {
-    vi.mocked(api.PATCH).mockImplementation((() => ok({ ...OWN, testo: 'Richiamare a ottobre.' })) as never)
+    vi.mocked(api.PATCH).mockImplementation((() => ok({ ...OWN, text: 'Richiamare a ottobre.' })) as never)
     const { invalidate } = renderSection()
     const own = await item(/Richiamare a settembre/)
     await userEvent.click(within(own).getByRole('button', { name: /^Modifica la nota di/ }))
@@ -213,7 +213,7 @@ describe('NotesSection', () => {
 
     expect(api.PATCH).toHaveBeenCalledWith('/api/notes/{note_id}', {
       params: { path: { note_id: 'n1' } },
-      body: { testo: 'Richiamare a ottobre.' },
+      body: { text: 'Richiamare a ottobre.' },
     })
     await vi.waitFor(() =>
       expect(within(own).queryByLabelText('Testo della nota')).not.toBeInTheDocument(),
@@ -275,7 +275,7 @@ describe('NotesSection', () => {
   it('offers edit and delete only on the notes the API says may be changed', async () => {
     renderSection()
     await screen.findByText(/Richiamare a settembre/)
-    // Five notes, one `modificabile`: one pair of buttons, not five.
+    // Five notes, one `editable`: one pair of buttons, not five.
     expect(screen.getAllByRole('button', { name: /^Modifica la nota di/ })).toHaveLength(1)
     expect(screen.getAllByRole('button', { name: /^Elimina la nota di/ })).toHaveLength(1)
   })

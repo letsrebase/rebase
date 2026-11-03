@@ -71,11 +71,11 @@ export function DigestPreference() {
         </p>
       </div>
       <ReportSwitch
-        checked={user.digest_settimanale}
+        checked={user.weekly_digest}
         disabled={update.isPending}
         onToggle={(next) =>
           update.mutate(
-            { digest_settimanale: next },
+            { weekly_digest: next },
             {
               onSuccess: () => toast.success('Resoconto settimanale aggiornato'),
               onError: (error) => toast.error(toProblem(error).detail),

@@ -115,17 +115,17 @@ def open_session(
     proven. A password proves the row's password, not the mailbox, and an admin may set a
     row up with any address and a password of their own: if that login minted the
     identity, one space's admin could enter every other space the address belongs to, the
-    root included (REB-583's review). `email_verificata_il` is set only once the mailbox
+    root included (REB-583's review). `email_verified_at` is set only once the mailbox
     has proven itself: by the link, by an accepted invitation, or by a signup whose
     browser already held a live identity for the address (REB-677)."""
     clear_other_jars(response, request, settings)
     space = tenant_slug(request)
     if rotation is None:
-        access = issue_access_token(user.id, user.ruolo, settings, space=space)
+        access = issue_access_token(user.id, user.role, settings, space=space)
         refresh = RefreshTokenService(session).issue(user.id, settings)
     else:
         access = issue_access_token(
-            user.id, user.ruolo, settings, space=space, issued_at=rotation.issued_at
+            user.id, user.role, settings, space=space, issued_at=rotation.issued_at
         )
         refresh = rotation.refresh_token
     set_session_cookies(
@@ -133,7 +133,7 @@ def open_session(
     )
     if identity:
         row = UserRepository(session).get_by_email(user.email)
-        if row is not None and row.email_verificata_il is not None:
+        if row is not None and row.email_verified_at is not None:
             issue_identity_cookie(response, settings, user.email)
 
 

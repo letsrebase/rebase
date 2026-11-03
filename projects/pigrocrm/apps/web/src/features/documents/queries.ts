@@ -14,7 +14,7 @@ export type TemplateDescription = components['schemas']['TemplateDescription']
 export type TemplateVariable = components['schemas']['TemplateVariable']
 export type LegalEntity = components['schemas']['LegalEntityRead']
 
-export type OfferState = 'bozza' | 'inviata' | 'accettata' | 'rifiutata'
+export type OfferState = 'draft' | 'sent' | 'accepted' | 'rejected'
 
 /**
  * A document belongs to a customer **or** to a deal, never both -- so the hooks take
@@ -31,17 +31,17 @@ export type DocumentOwner = { customerId: string } | { dealId: string }
  * own 409 message, which is what the user sees.
  */
 export const OFFER_TRANSITIONS: Record<OfferState, OfferState[]> = {
-  bozza: ['inviata'],
-  inviata: ['accettata', 'rifiutata', 'bozza'],
-  accettata: [],
-  rifiutata: [],
+  draft: ['sent'],
+  sent: ['accepted', 'rejected', 'draft'],
+  accepted: [],
+  rejected: [],
 }
 
 export const OFFER_STATE_LABELS: Record<OfferState, string> = {
-  bozza: 'Bozza',
-  inviata: 'Inviata',
-  accettata: 'Accettata',
-  rifiutata: 'Rifiutata',
+  draft: 'Bozza',
+  sent: 'Inviata',
+  accepted: 'Accettata',
+  rejected: 'Rifiutata',
 }
 
 /**
@@ -50,25 +50,27 @@ export const OFFER_STATE_LABELS: Record<OfferState, string> = {
  * means the compile breaks when that hand-written union is widened, not when the server
  * grows a state.
  *
- * `accettata` is `ink`, not gold: an accepted offer is the settled, ordinary outcome --
+ * `accepted` is `ink`, not gold: an accepted offer is the settled, ordinary outcome --
  * the thing every offer is trying to become -- and gold in this product means "waiting
- * on somebody", which an accepted offer no longer is. `inviata` is also `ink` because
+ * on somebody", which an accepted offer no longer is. `sent` is also `ink` because
  * it is a real, correct state and a table of sent offers must not read as a table of
- * warnings; `bozza` claims nothing yet, and `rifiutata` is the one that has gone the
+ * warnings; `draft` claims nothing yet, and `rejected` is the one that has gone the
  * wrong way.
  */
 export const OFFER_STATE_TONE: Record<OfferState, StatusTone> = {
-  bozza: 'muted',
-  inviata: 'ink',
-  accettata: 'ink',
-  rifiutata: 'danger',
+  draft: 'muted',
+  sent: 'ink',
+  accepted: 'ink',
+  rejected: 'danger',
 }
 
 export const DOCUMENT_TYPE_LABELS: Record<string, string> = {
-  offerta: 'Offerta',
-  contratto: 'Contratto',
-  verbale: 'Verbale',
-  documento: 'Documento',
+  offer: 'Offerta',
+  contract: 'Contratto',
+  minutes: 'Verbale',
+  document: 'Documento',
+  hours_report: 'Rapporto ore',
+  payment_reminder: 'Sollecito',
 }
 
 function ownerQuery(owner: DocumentOwner): { customer_id?: string; deal_id?: string } {
@@ -131,8 +133,8 @@ export function useCreateFromTemplate(owner: DocumentOwner) {
   return useMutation({
     mutationFn: (body: {
       template_id: string
-      titolo: string
-      variabili: Record<string, unknown>
+      title: string
+      variables: Record<string, unknown>
     }) =>
       unwrap(
         api.POST('/api/documents/from-template', {
@@ -187,7 +189,7 @@ export function useUploadVersion() {
   return useMutation({
     mutationFn: (args: { documentId: string; file: File }) =>
       putVersion(args.documentId, args.file),
-    onSuccess: (_data, variables) => {
+    onSuccess: (_date, variables) => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.documents() })
       void queryClient.invalidateQueries({ queryKey: queryKeys.document(variables.documentId) })
       void queryClient.invalidateQueries({
@@ -200,11 +202,11 @@ export function useUploadVersion() {
 export function useSetOfferState(documentId: string) {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: (stato: OfferState) =>
+    mutationFn: (status: OfferState) =>
       unwrap(
         api.POST('/api/documents/{document_id}/status', {
           params: { path: { document_id: documentId } },
-          body: { stato },
+          body: { status },
         }),
       ),
     onSuccess: () => {
@@ -223,10 +225,10 @@ export function useSetOfferState(documentId: string) {
 export function useRegenerateVersion(documentId: string) {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: (numero: number) =>
+    mutationFn: (number: number) =>
       unwrap(
-        api.POST('/api/documents/{document_id}/versions/{numero}/regenerate', {
-          params: { path: { document_id: documentId, numero } },
+        api.POST('/api/documents/{document_id}/versions/{number}/regenerate', {
+          params: { path: { document_id: documentId, number } },
         }),
       ),
     onSuccess: () => {
@@ -284,11 +286,11 @@ export function useTemplateDescription(templateId: string | null) {
 
 export function useTemplatePreview() {
   return useMutation({
-    mutationFn: (args: { templateId: string; variabili: Record<string, unknown> }) =>
+    mutationFn: (args: { templateId: string; variables: Record<string, unknown> }) =>
       unwrap(
         api.POST('/api/templates/{template_id}/preview', {
           params: { path: { template_id: args.templateId } },
-          body: { variabili: args.variabili },
+          body: { variables: args.variables },
         }),
       ),
   })
@@ -298,8 +300,8 @@ export function useTemplatePreview() {
  * Downloads through the API, which is the only place authorisation exists on either
  * storage backend. The `Content-Disposition` the server sets is what names the file.
  */
-export function downloadDocument(documentId: string, numero?: number): Promise<void> {
-  const search = numero === undefined ? '' : `?numero=${numero}`
+export function downloadDocument(documentId: string, number?: number): Promise<void> {
+  const search = number === undefined ? '' : `?number=${number}`
   return downloadFromApi(`/api/documents/${documentId}/download${search}`)
 }
 
@@ -323,7 +325,7 @@ export function downloadDocument(documentId: string, numero?: number): Promise<v
  * through unchanged from the server's problem document (`domain_error_handler` spreads
  * `NotFound`'s `entity`/`identifier` at the top level), so this reads it rather than
  * guessing from `fileName`. `fileName` is the name shown in the row the person clicked
- * -- the document's `titolo`, or that title with its version number -- so either
+ * -- the document's `title`, or that title with its version number -- so either
  * sentence names what they were after instead of the identifier the server logged. Any
  * other failure keeps the server's own `detail`, as every other action on these two
  * tabs does.

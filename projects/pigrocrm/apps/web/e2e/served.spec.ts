@@ -98,7 +98,7 @@ test.describe('the served stack', () => {
       // Asked for by URL: after the first render the router has moved the page to
       // `/studio/app?tab=...`, which is what the scope must contain.
       const scope = await page.evaluate(
-        async () => (await navigator.serviceWorker.getRegistration('/studio/app?tab=economica'))?.scope,
+        async () => (await navigator.serviceWorker.getRegistration('/studio/app?tab=economic'))?.scope,
       )
       expect(scope).toMatch(/\/studio\/app$/)
       const other = await page.evaluate(
@@ -109,7 +109,7 @@ test.describe('the served stack', () => {
       await page.reload()
       await context.setOffline(true)
       // The router's home, with no slash after `app`: the page every session returns to.
-      await page.goto('/studio/app?tab=economica', { waitUntil: 'load' }).catch(() => {})
+      await page.goto('/studio/app?tab=economic', { waitUntil: 'load' }).catch(() => {})
       await expect(page.getByRole('heading', { level: 1, name: 'Sei offline' })).toBeVisible()
     })
   })

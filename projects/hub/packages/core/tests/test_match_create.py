@@ -12,7 +12,7 @@ from uuid import uuid4
 import pytest
 from fakes_contracts import FailingRenderer, FakeRenderer
 from match_fixtures import (
-    QUADRO_VERSION,
+    FRAMEWORK_VERSION,
     SIGNER,
     TODAY,
     _body,
@@ -34,8 +34,8 @@ from sqlalchemy.orm import Session
 from rebase_core import matches as matches_module
 from rebase_core.audit import AdminActionService
 from rebase_core.contract_schemas import (
-    ClienteData,
-    LetteraFields,
+    CustomerDate,
+    LetterFields,
     MatchCreate,
 )
 from rebase_core.contracts.fields import FIELD, TERM, ContractFailed
@@ -53,21 +53,21 @@ def test_the_first_match_writes_the_framework_agreement_and_a_letter_that_waits_
     renderer = FakeRenderer()
     match = _service(clean, renderer).create(freelancer_id, _body(company_id), admin_id)
 
-    assert match.stato == "bozza"
-    assert (match.lettera.numero, match.lettera.stato) == ("2026-001", "in_attesa")
-    quadro, lettera = _documents(clean, freelancer_id)
-    assert (quadro.kind, quadro.stato, quadro.match_id, quadro.numero) == (
-        "quadro",
-        "generato",
+    assert match.status == "draft"
+    assert (match.letter.number, match.letter.status) == ("2026-001", "pending")
+    framework, letter = _documents(clean, freelancer_id)
+    assert (framework.kind, framework.status, framework.match_id, framework.number) == (
+        "framework",
+        "generated",
         None,
         None,
     )
-    assert (quadro.text_version, quadro.testo_bozza) == (QUADRO_VERSION, True)
-    assert (lettera.kind, lettera.match_id) == ("lettera", match.id)
-    assert lettera.data["data-contratto-quadro"] is None
+    assert (framework.text_version, framework.draft_text) == (FRAMEWORK_VERSION, True)
+    assert (letter.kind, letter.match_id) == ("letter", match.id)
+    assert letter.data["data-contratto-quadro"] is None
     assert [document for document, _ in renderer.calls] == [
-        "contratto-quadro",
-        "lettera-di-incarico",
+        "framework-agreement",
+        "engagement-letter",
     ]
     assert [a.kind for a in AdminActionService(clean).timeline("match", match.id)] == [
         "match_created"
@@ -80,16 +80,16 @@ def test_the_framework_prints_the_freelancer_and_rebases_signer_and_leaves_the_s
     admin_id, freelancer_id, company_id = _setup(clean)
     renderer = FakeRenderer()
     _service(clean, renderer).create(freelancer_id, _body(company_id), admin_id)
-    (quadro_doc, quadro), (letter_doc, letter) = renderer.calls
-    assert quadro["professionista-nome"] == "Ada Lovelace"
-    assert quadro["professionista-cf"] == "LVLDAA85T50H501Z"
-    assert quadro["professionista-email"] == "ada@studio.it"
-    assert quadro["professionista-pec"] == "non indicata"
-    assert quadro["rebase-rappresentante"] == "Nome Cognome"
-    assert quadro["luogo-firma"] == "firmato elettronicamente"
-    assert quadro["firma-rebase"] == "Documento emesso da rebase il 23 settembre 2026"
-    assert quadro["data-firma"] is None and quadro["firma-professionista"] is None
-    for document, data in ((quadro_doc, quadro), (letter_doc, letter)):
+    (framework_doc, framework), (letter_doc, letter) = renderer.calls
+    assert framework["professionista-nome"] == "Ada Lovelace"
+    assert framework["professionista-cf"] == "LVLDAA85T50H501Z"
+    assert framework["professionista-email"] == "ada@studio.it"
+    assert framework["professionista-pec"] == "non indicata"
+    assert framework["rebase-rappresentante"] == "Nome Cognome"
+    assert framework["luogo-firma"] == "firmato elettronicamente"
+    assert framework["firma-rebase"] == "Documento emesso da rebase il 23 settembre 2026"
+    assert framework["data-firma"] is None and framework["firma-professionista"] is None
+    for document, data in ((framework_doc, framework), (letter_doc, letter)):
         asked = set(FIELD.findall(text_path(document).read_text(encoding="utf-8")))
         assert asked - {TERM} <= set(data), document
     assert letter["professionista-piva"] == "01234567890"
@@ -105,21 +105,26 @@ def test_with_an_active_framework_only_the_letter_is_written_and_it_cites_the_si
     _framework(clean, freelancer_id, admin_id, signed_at=datetime(2026, 9, 30, 23, 30, tzinfo=UTC))
     renderer = FakeRenderer()
     match = _service(clean, renderer).create(freelancer_id, _body(company_id), admin_id)
-    assert match.lettera.stato == "generato"
-    assert [document for document, _ in renderer.calls] == ["lettera-di-incarico"]
+    assert match.letter.status == "generated"
+    assert [document for document, _ in renderer.calls] == ["engagement-letter"]
     assert renderer.calls[0][1]["data-contratto-quadro"] == "1° ottobre 2026"
-    assert len(_documents(clean, freelancer_id, "quadro")) == 1
+    assert len(_documents(clean, freelancer_id, "framework")) == 1
 
 
-@pytest.mark.parametrize("stato", ["firmato", "disdetto"])
-def test_a_framework_with_a_notice_recorded_is_no_longer_active(clean: Session, stato: str) -> None:
+@pytest.mark.parametrize("status", ["signed", "notice_served"])
+def test_a_framework_with_a_notice_recorded_is_no_longer_active(
+    clean: Session, status: str
+) -> None:
     admin_id, freelancer_id, company_id = _setup(clean)
     _framework(
-        clean, freelancer_id, admin_id, stato=stato, notice_at=datetime(2026, 11, 1, tzinfo=UTC)
+        clean, freelancer_id, admin_id, status=status, notice_at=datetime(2026, 11, 1, tzinfo=UTC)
     )
     match = _service(clean).create(freelancer_id, _body(company_id), admin_id)
-    assert match.lettera.stato == "in_attesa"
-    assert [d.stato for d in _documents(clean, freelancer_id, "quadro")] == [stato, "generato"]
+    assert match.letter.status == "pending"
+    assert [d.status for d in _documents(clean, freelancer_id, "framework")] == [
+        status,
+        "generated",
+    ]
 
 
 def test_an_unsent_framework_from_an_earlier_draft_is_replaced_not_duplicated(
@@ -129,14 +134,14 @@ def test_an_unsent_framework_from_an_earlier_draft_is_replaced_not_duplicated(
     service = _service(clean)
     service.create(freelancer_id, _body(company_id), admin_id)
     second = service.create(freelancer_id, _body(company_id), admin_id)
-    stale, current = _documents(clean, freelancer_id, "quadro")
-    assert [stale.stato, current.stato] == [
-        "annullato",
-        "generato",
+    stale, current = _documents(clean, freelancer_id, "framework")
+    assert [stale.status, current.status] == [
+        "cancelled",
+        "generated",
     ]
     entries = AdminActionService(clean).timeline("match", second.id)
     created = next(a for a in entries if a.kind == "match_created")
-    assert created.payload["quadri_annullati"] == [str(stale.id)]
+    assert created.payload["frameworks_cancelled"] == [str(stale.id)]
 
 
 # ---- the idempotent id (REB-406) --------------------------------------------------------
@@ -155,8 +160,8 @@ def test_a_repeated_create_with_the_same_id_returns_the_match_already_written(
     second = service.create(freelancer_id, body, admin_id)
 
     assert first.id == second.id == given_id
-    assert first.lettera.numero == second.lettera.numero
-    assert len(_documents(clean, freelancer_id, "lettera")) == 1
+    assert first.letter.number == second.letter.number
+    assert len(_documents(clean, freelancer_id, "letter")) == 1
     assert [a.kind for a in AdminActionService(clean).timeline("match", first.id)] == [
         "match_created"
     ]
@@ -170,12 +175,12 @@ def test_a_repeated_id_already_used_by_another_freelancer_is_refused(clean: Sess
 
     other_freelancer_id = _second_card(clean)
     _fiscal(clean, other_freelancer_id, admin_id)
-    other_company_id = _request(clean, nome_azienda="Bianchi Srl", figura_richiesta="Designer")
+    other_company_id = _request(clean, company_name="Bianchi Srl", requested_role="Designer")
     other_body = _body(other_company_id).model_copy(update={"id": given_id})
 
     with pytest.raises(InvalidState, match="un altro freelance"):
         service.create(other_freelancer_id, other_body, admin_id)
-    assert len(_documents(clean, other_freelancer_id, "lettera")) == 0
+    assert len(_documents(clean, other_freelancer_id, "letter")) == 0
 
 
 def test_two_freelancers_racing_the_same_match_id_get_a_409_not_a_500(
@@ -196,7 +201,7 @@ def test_two_freelancers_racing_the_same_match_id_get_a_409_not_a_500(
     admin_id, freelancer_id, company_id = _setup(clean)
     other_freelancer_id = _second_card(clean)
     _fiscal(clean, other_freelancer_id, admin_id)
-    other_company_id = _request(clean, nome_azienda="Bianchi Srl", figura_richiesta="Designer")
+    other_company_id = _request(clean, company_name="Bianchi Srl", requested_role="Designer")
     given_id = uuid4()
     factory = session_factory(hub_engine)
     first, second = factory(), factory()
@@ -265,7 +270,7 @@ def test_two_freelancers_racing_the_same_match_id_get_a_409_not_a_500(
     clean.expire_all()
     written = clean.get(Match, given_id)
     assert written is not None and written.freelancer_id == freelancer_id
-    assert len(_documents(clean, other_freelancer_id, "lettera")) == 0
+    assert len(_documents(clean, other_freelancer_id, "letter")) == 0
 
 
 def test_a_different_integrity_error_at_the_same_flush_still_propagates(
@@ -311,13 +316,13 @@ def test_a_repeated_id_with_changed_data_is_refused_not_returned(clean: Session)
     first = service.create(freelancer_id, body, admin_id)
 
     changed = body.model_copy(
-        update={"lettera": body.lettera.model_copy(update={"ruolo": "Un altro ruolo"})}
+        update={"letter": body.letter.model_copy(update={"role": "Un altro ruolo"})}
     )
     with pytest.raises(InvalidState, match="dati diversi"):
         service.create(freelancer_id, changed, admin_id)
 
-    assert len(_documents(clean, freelancer_id, "lettera")) == 1
-    assert service.reads.get(first.id).lettera.numero == first.lettera.numero
+    assert len(_documents(clean, freelancer_id, "letter")) == 1
+    assert service.reads.get(first.id).letter.number == first.letter.number
 
 
 def test_a_repeated_id_with_no_fingerprint_stored_is_refused(clean: Session) -> None:
@@ -356,7 +361,7 @@ def test_an_ordinary_retry_across_the_release_still_finds_its_match(clean: Sessi
     clean.commit()
 
     assert service.create(freelancer_id, body, admin_id).id == first.id
-    occasional = body.model_copy(update={"regime": "occasionale"})
+    occasional = body.model_copy(update={"regime": "occasional"})
     assert matches_module._request_fingerprint(occasional) != written.request_fingerprint
 
 
@@ -369,21 +374,21 @@ def test_create_with_no_id_still_writes_a_fresh_match_each_time(clean: Session) 
 
 
 def test_create_stores_the_expected_days(clean: Session) -> None:
-    """`giorni_previsti` is an admin's estimate, optional (REB-497): given, it reads
+    """`expected_days` is an admin's estimate, optional (REB-497): given, it reads
     back on the match `create` returns; left out, it stays `None`. Outside 1-366 is a
     `MatchCreate` the wizard never manages to send at all."""
     admin_id, freelancer_id, company_id = _setup(clean)
     service = _service(clean)
 
-    with_days = service.create(freelancer_id, _body(company_id, giorni_previsti=40), admin_id)
-    assert with_days.giorni_previsti == 40
+    with_days = service.create(freelancer_id, _body(company_id, expected_days=40), admin_id)
+    assert with_days.expected_days == 40
 
     without_days = service.create(freelancer_id, _body(company_id), admin_id)
-    assert without_days.giorni_previsti is None
+    assert without_days.expected_days is None
 
     for invalid in (0, 367):
         with pytest.raises(PydanticValidationError):
-            _body(company_id, giorni_previsti=invalid)
+            _body(company_id, expected_days=invalid)
 
 
 def test_create_stores_the_letters_dates_and_fee(clean: Session) -> None:
@@ -395,59 +400,61 @@ def test_create_stores_the_letters_dates_and_fee(clean: Session) -> None:
     service = _service(clean)
     body = MatchCreate(
         company_id=company_id,
-        cliente=ClienteData(
-            cliente_ragione_sociale="ACME S.r.l.", cliente_piva="01234567890", cliente_sede="Milano"
+        customer=CustomerDate(
+            customer_legal_name="ACME S.r.l.",
+            customer_vat_number="01234567890",
+            customer_registered_office="Milano",
         ),
-        lettera=LetteraFields(
-            ruolo="Backend developer",
-            attivita="Le API del prodotto.",
-            data_inizio=date(2026, 10, 1),
-            data_fine=date(2027, 3, 31),
-            modalita="a giornata",
-            compenso=Decimal("450"),
-            giorni_pagamento=30,
-            fine_mese=True,
+        letter=LetterFields(
+            role="Backend developer",
+            activities="Le API del prodotto.",
+            start_date=date(2026, 10, 1),
+            end_date=date(2027, 3, 31),
+            mode="to_work_unit",
+            fee=Decimal("450"),
+            payment_days=30,
+            month_end=True,
         ),
     )
 
     match = service.create(freelancer_id, body, admin_id)
 
-    assert match.lettera_data_inizio == body.lettera.data_inizio
-    assert match.lettera_data_fine == body.lettera.data_fine
-    assert match.lettera_compenso == body.lettera.compenso
+    assert match.letter_start_date == body.letter.start_date
+    assert match.letter_end_date == body.letter.end_date
+    assert match.letter_fee == body.letter.fee
 
 
 def test_a_stale_draft_framework_that_never_left_stays_hidden_from_the_page(
     clean: Session,
 ) -> None:
-    """The phase 2 case (spec § 6): the `generato` framework a second «Crea match»
+    """The phase 2 case (spec § 6): the `generated` framework a second «Crea match»
     replaces never left for signature (`sent_at` stays `None`), so it stays hidden once
-    `annullato`; the page shows the current one instead."""
+    `cancelled`; the page shows the current one instead."""
     admin_id, freelancer_id, company_id = _setup(clean)
     service = _service(clean)
     service.create(freelancer_id, _body(company_id), admin_id)
     service.create(freelancer_id, _body(company_id), admin_id)
-    stale, current = _documents(clean, freelancer_id, "quadro")
-    assert (stale.stato, stale.sent_at) == ("annullato", None)
+    stale, current = _documents(clean, freelancer_id, "framework")
+    assert (stale.status, stale.sent_at) == ("cancelled", None)
 
-    quadro = service.reads.for_freelancer(freelancer_id).quadro
+    framework = service.reads.for_freelancer(freelancer_id).framework
 
-    assert quadro is not None and quadro.id == current.id
+    assert framework is not None and framework.id == current.id
 
 
 def test_a_framework_already_out_for_signature_is_waited_for_not_replaced(clean: Session) -> None:
     admin_id, freelancer_id, company_id = _setup(clean)
-    _framework(clean, freelancer_id, admin_id, stato="inviato", signed_at=None)
+    _framework(clean, freelancer_id, admin_id, status="sent", signed_at=None)
     renderer = FakeRenderer()
     match = _service(clean, renderer).create(freelancer_id, _body(company_id), admin_id)
-    assert match.lettera.stato == "in_attesa"
-    assert [document for document, _ in renderer.calls] == ["lettera-di-incarico"]
+    assert match.letter.status == "pending"
+    assert [document for document, _ in renderer.calls] == ["engagement-letter"]
 
 
 def test_letters_are_numbered_per_year_in_the_order_they_are_written(clean: Session) -> None:
     admin_id, freelancer_id, company_id = _setup(clean)
     numbers = [
-        _service(clean, today=day).create(freelancer_id, _body(company_id), admin_id).lettera.numero
+        _service(clean, today=day).create(freelancer_id, _body(company_id), admin_id).letter.number
         for day in (date(2026, 12, 31), date(2026, 12, 31), date(2027, 1, 1))
     ]
     assert numbers == ["2026-001", "2026-002", "2027-001"]
@@ -457,13 +464,13 @@ def test_a_render_that_fails_takes_no_number_and_leaves_nothing_behind(clean: Se
     admin_id, freelancer_id, company_id = _setup(clean)
     _service(clean).create(freelancer_id, _body(company_id), admin_id)
     with pytest.raises(ContractFailed):
-        _service(clean, FailingRenderer(document="lettera-di-incarico")).create(
+        _service(clean, FailingRenderer(document="engagement-letter")).create(
             freelancer_id, _body(company_id), admin_id
         )
     assert clean.scalar(select(func.count()).select_from(Match)) == 1
     # The earlier framework was not replaced by a generation that failed.
-    assert [d.stato for d in _documents(clean, freelancer_id, "quadro")] == ["generato"]
+    assert [d.status for d in _documents(clean, freelancer_id, "framework")] == ["generated"]
     assert (
-        _service(clean).create(freelancer_id, _body(company_id), admin_id).lettera.numero
+        _service(clean).create(freelancer_id, _body(company_id), admin_id).letter.number
         == "2026-002"
     )

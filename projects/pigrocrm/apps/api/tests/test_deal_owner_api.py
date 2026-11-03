@@ -21,9 +21,9 @@ def _me(client: TestClient) -> str:
 
 
 def _deal(client: TestClient) -> dict:
-    customer = client.post("/api/customers", json={"ragione_sociale": "ACME Srl"})
+    customer = client.post("/api/customers", json={"legal_name": "ACME Srl"})
     assert customer.status_code == 201, customer.text
-    created = client.post("/api/deals", json={"nome": "Sito", "customer_id": customer.json()["id"]})
+    created = client.post("/api/deals", json={"name": "Sito", "customer_id": customer.json()["id"]})
     assert created.status_code == 201, created.text
     return created.json()
 
@@ -43,7 +43,7 @@ def test_a_member_hands_a_deal_to_a_colleague_found_in_the_directory(
     assert directory.status_code == 200, directory.text
     rows = directory.json()
     assert str(admin_user.id) in {row["id"] for row in rows}
-    assert all(set(row) == {"id", "nome"} for row in rows)
+    assert all(set(row) == {"id", "name"} for row in rows)
 
     moved = collaborator_client.patch(
         f"/api/deals/{deal['id']}", json={"owner_id": str(admin_user.id)}

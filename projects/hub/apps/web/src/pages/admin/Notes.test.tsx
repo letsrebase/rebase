@@ -9,36 +9,36 @@ import { Notes } from './Notes'
 const THREAD: Note[] = [
   {
     id: 'n3',
-    testo: 'CV caricato dalla persona',
-    autore: 'Ada Lovelace',
-    autore_id: 'u9',
-    fonte: 'persona',
+    text: 'CV caricato dalla persona',
+    author: 'Ada Lovelace',
+    author_id: 'u9',
+    source: 'person',
     created_at: '2026-09-10T08:00:00Z',
-    modificata_at: null,
-    modificata_da: null,
-    modificabile: false,
+    edited_at: null,
+    edited_by: null,
+    editable: false,
   },
   {
     id: 'n2',
-    testo: 'Ha mandato il portfolio.',
-    autore: 'Ivan',
-    autore_id: 'u1',
-    fonte: 'mcp',
+    text: 'Ha mandato il portfolio.',
+    author: 'Ivan',
+    author_id: 'u1',
+    source: 'mcp',
     created_at: '2026-09-09T15:30:00Z',
-    modificata_at: '2026-09-10T07:00:00Z',
-    modificata_da: 'Lorenzo',
-    modificabile: true,
+    edited_at: '2026-09-10T07:00:00Z',
+    edited_by: 'Lorenzo',
+    editable: true,
   },
   {
     id: 'n1',
-    testo: 'Sentito al telefono.\nRichiamare lunedì.',
-    autore: 'Ivan',
-    autore_id: 'u1',
-    fonte: null,
+    text: 'Sentito al telefono.\nRichiamare lunedì.',
+    author: 'Ivan',
+    author_id: 'u1',
+    source: null,
     created_at: '2026-09-08T09:05:00Z',
-    modificata_at: null,
-    modificata_da: null,
-    modificabile: true,
+    edited_at: null,
+    edited_by: null,
+    editable: true,
   },
 ]
 
@@ -99,14 +99,14 @@ describe('Notes', () => {
     const user = userEvent.setup()
     const created: Note = {
       id: 'n4',
-      testo: 'Richiamato: parte a ottobre.',
-      autore: 'Ivan',
-      autore_id: 'u1',
-      fonte: 'web',
+      text: 'Richiamato: parte a ottobre.',
+      author: 'Ivan',
+      author_id: 'u1',
+      source: 'web',
       created_at: '2026-09-10T10:00:00Z',
-      modificata_at: null,
-      modificata_da: null,
-      modificabile: true,
+      edited_at: null,
+      edited_by: null,
+      editable: true,
     }
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(201, created))
     mount(THREAD)
@@ -126,16 +126,16 @@ describe('Notes', () => {
     const [url, init] = fetchSpy.mock.calls[0]!
     expect(url).toBe('/api/hub/freelancers/f1/notes')
     expect(init?.method).toBe('POST')
-    expect(JSON.parse(String(init?.body))).toEqual({ testo: 'Richiamato: parte a ottobre.' })
+    expect(JSON.parse(String(init?.body))).toEqual({ text: 'Richiamato: parte a ottobre.' })
   })
 
   it('edits a note in place through PATCH and shows who edited it', async () => {
     const user = userEvent.setup()
     const edited: Note = {
       ...THREAD[2]!,
-      testo: 'Sentito lunedì.',
-      modificata_at: '2026-09-11T10:00:00Z',
-      modificata_da: 'Ivan',
+      text: 'Sentito lunedì.',
+      edited_at: '2026-09-11T10:00:00Z',
+      edited_by: 'Ivan',
     }
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(200, edited))
     mount(THREAD)
@@ -154,7 +154,7 @@ describe('Notes', () => {
     const [url, init] = fetchSpy.mock.calls[0]!
     expect(url).toBe('/api/hub/notes/n1')
     expect(init?.method).toBe('PATCH')
-    expect(JSON.parse(String(init?.body))).toEqual({ testo: 'Sentito lunedì.' })
+    expect(JSON.parse(String(init?.body))).toEqual({ text: 'Sentito lunedì.' })
   })
 
   it('leaves the text alone when the edit is cancelled', async () => {
@@ -190,7 +190,7 @@ describe('Notes', () => {
 
   it('keeps a deleted note gone when an add resolves while its delete is still pending', async () => {
     const user = userEvent.setup()
-    const created: Note = { ...THREAD[2]!, id: 'n4', testo: 'Nuova.', fonte: 'web' }
+    const created: Note = { ...THREAD[2]!, id: 'n4', text: 'Nuova.', source: 'web' }
     let finishDelete: () => void = () => {}
     const deletion = new Promise<Response>((resolve) => {
       finishDelete = () => resolve(answer(204))
@@ -223,7 +223,7 @@ describe('Notes', () => {
     const user = userEvent.setup()
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       answer(422, {
-        detail: [{ loc: ['body', 'testo'], msg: 'una nota può avere al massimo 4000 caratteri' }],
+        detail: [{ loc: ['body', 'text'], msg: 'una nota può avere al massimo 4000 caratteri' }],
       }),
     )
     mount([])

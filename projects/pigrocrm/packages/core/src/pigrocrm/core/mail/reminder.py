@@ -54,7 +54,7 @@ def reminder_mail(
     lines: Sequence[ReminderLine],
     *,
     kind: Literal["immediate", "summary"],
-    avvisi_url: str,
+    reminders_url: str,
     settings_url: str,
 ) -> Mail:
     """The reminders a person has not seen, severest first (the caller sorts): one mail at
@@ -90,9 +90,9 @@ def reminder_mail(
         if line.detail:
             html_parts.append(f"<p {detail_style}>{e(line.detail)}</p>")
     html_parts.append(
-        f"<p {paragraph}>{button(e(avvisi_url, quote=True), 'Apri i promemoria')}</p>"
+        f"<p {paragraph}>{button(e(reminders_url, quote=True), 'Apri i promemoria')}</p>"
     )
-    text_parts.append(f"Apri i promemoria: {avvisi_url}")
+    text_parts.append(f"Apri i promemoria: {reminders_url}")
     footer = "Cambia cosa ricevi, su quali canali e a che ora"
     text_parts.append("")
     text_parts.append(f"{footer}: {settings_url}")

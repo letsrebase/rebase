@@ -22,9 +22,9 @@ from pigrocrm.core.config import Settings
 from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.documents.schemas import DocumentCreate
 from pigrocrm.core.documents.service import DocumentService
-from pigrocrm.core.emitter.schemas import LegalEntityUpsert
-from pigrocrm.core.emitter.service import LegalEntityService
 from pigrocrm.core.invoices.models import Invoice
+from pigrocrm.core.legal_entities.schemas import LegalEntityUpsert
+from pigrocrm.core.legal_entities.service import LegalEntityService
 from pigrocrm.core.storage import LocalFileStorage
 from pigrocrm_mcp.server import build_server
 
@@ -33,12 +33,12 @@ TOOLS = {"review_invoice_import"}
 FIXTURES = (
     Path(__file__).resolve().parents[3] / "packages" / "core" / "tests" / "fixtures" / "fatturapa"
 )
-CONSULENZA = "fpr12-consulenza-marzo.xml"
+CONSULTING = "fpr-12-march-consulting.xml"
 # Mirrors the fixture's own CedentePrestatore/CessionarioCommittente (see
 # packages/core/tests/test_invoice_import_review.py for where these come from).
-FORNITORE_PIVA = "01234567890"
-FORNITORE_CF = "BNCCHR85M41H501Z"
-CLIENTE_PIVA = "09876543210"
+SUPPLIER_VAT_NUMBER = "01234567890"
+SUPPLIER_CF = "BNCCHR85M41H501Z"
+CUSTOMER_VAT_NUMBER = "09876543210"
 
 ADMIN = Actor(id=None, type="system", role="admin")
 
@@ -52,19 +52,19 @@ def _payload(result: Any) -> Any:
     return result.structured_content or json.loads(result.content[0].text)
 
 
-def _seed_emitter(session: Session) -> None:
+def _seed_legal_entity(session: Session) -> None:
     # Always written: the session seeds a bare default azienda (REB-615) and this fills
     # in the identity the review compares the file against.
     LegalEntityService(session).upsert_default(
         LegalEntityUpsert(
-            ragione_sociale="Chiara Bianchi",
-            partita_iva=FORNITORE_PIVA,
-            codice_fiscale=FORNITORE_CF,
-            indirizzo="Via delle Officine 10",
+            legal_name="Chiara Bianchi",
+            vat_number=SUPPLIER_VAT_NUMBER,
+            tax_code=SUPPLIER_CF,
+            address="Via delle Officine 10",
             cap="20121",
-            comune="Milano",
-            provincia="MI",
-            nazione="IT",
+            city="Milano",
+            province="MI",
+            country="IT",
         ),
         ADMIN,
     )
@@ -75,7 +75,7 @@ def _seed_document(
 ) -> str:
     service = DocumentService(session, storage)
     document = service.create(
-        DocumentCreate(customer_id=customer_id, titolo="Fattura ricevuta"), ADMIN
+        DocumentCreate(customer_id=customer_id, title="Fattura ricevuta"), ADMIN
     )
     service.add_version(document.id, content, "application/xml", ADMIN)
     return str(document.id)
@@ -108,14 +108,14 @@ async def test_the_tool_exists_only_when_the_installation_opted_in(
 async def test_review_matches_the_customer_and_never_writes_and_is_idempotent(
     mcp_session: Session, tmp_path: Path, seeded_customer_id: str
 ) -> None:
-    _seed_emitter(mcp_session)
+    _seed_legal_entity(mcp_session)
     customer = mcp_session.get(Customer, UUID(seeded_customer_id))
     assert customer is not None
-    customer.partita_iva = CLIENTE_PIVA
+    customer.vat_number = CUSTOMER_VAT_NUMBER
     mcp_session.flush()
     storage = LocalFileStorage(tmp_path / "documents")
     document_id = _seed_document(
-        mcp_session, storage, _fixture(CONSULENZA), customer_id=seeded_customer_id
+        mcp_session, storage, _fixture(CONSULTING), customer_id=seeded_customer_id
     )
 
     server = build_server(
@@ -135,7 +135,7 @@ async def test_review_matches_the_customer_and_never_writes_and_is_idempotent(
         )
 
     assert first == second
-    [row] = first["righe"]
+    [row] = first["lines"]
     assert row["outcome"] == "ready"
     assert row["matched_customer_id"] == seeded_customer_id
     assert _invoice_count(mcp_session) == before
@@ -144,7 +144,7 @@ async def test_review_matches_the_customer_and_never_writes_and_is_idempotent(
 async def test_a_document_unrecognised_by_any_adapter_is_unclaimed(
     mcp_session: Session, tmp_path: Path, seeded_customer_id: str
 ) -> None:
-    _seed_emitter(mcp_session)
+    _seed_legal_entity(mcp_session)
     storage = LocalFileStorage(tmp_path / "documents")
     document_id = _seed_document(
         mcp_session, storage, b"garbage bytes", customer_id=seeded_customer_id
@@ -160,5 +160,5 @@ async def test_a_document_unrecognised_by_any_adapter_is_unclaimed(
         result = _payload(
             await client.call_tool("review_invoice_import", {"document_ids": [document_id]})
         )
-    [row] = result["righe"]
+    [row] = result["lines"]
     assert row["outcome"] == "unclaimed"

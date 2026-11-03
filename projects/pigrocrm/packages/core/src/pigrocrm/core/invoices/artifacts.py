@@ -9,7 +9,6 @@ from pigrocrm.core.actor import Actor
 from pigrocrm.core.db.clock import local_date
 from pigrocrm.core.documents.models import Document, DocumentVersion
 from pigrocrm.core.documents.schemas import DocumentCreate
-from pigrocrm.core.emitter.assets import LegalEntityAssets
 from pigrocrm.core.errors import Conflict, NotFound, ValidationFailed
 from pigrocrm.core.fiscal.pack import PACK_NON_IT
 from pigrocrm.core.invoices import pdf as invoice_pdf
@@ -20,12 +19,12 @@ from pigrocrm.core.invoices.fatturapa.checks import (
     check_recipient_identity,
     check_recipient_routing,
 )
-from pigrocrm.core.invoices.fatturapa.exporter import FatturaPAExporter
+from pigrocrm.core.invoices.fatturapa.exporter import InvoicePaExporter
 from pigrocrm.core.invoices.fatturapa.normalise import normalise_fiscal_id
 from pigrocrm.core.invoices.models import Invoice
 from pigrocrm.core.invoices.naming import (
     invoice_storage_prefix,
-    numero_completo,
+    number_complete,
     proforma_storage_prefix,
     sdi_filename,
 )
@@ -37,13 +36,14 @@ from pigrocrm.core.invoices.schemas import (
     InvoiceSnapshot,
 )
 from pigrocrm.core.invoices.snapshot import build_snapshot
+from pigrocrm.core.legal_entities.assets import LegalEntityAssets
 from pigrocrm.core.text import PDF_MIME
 
 XML_MIME = "application/xml"
-# The `documents.tipo` of each artefact stream: `fattura`/`proforma` are the names
-# `DocumentTipo` declares for *the* document of its kind, and `fattura_xml` is the one that
+# The `documents.type` of each artefact stream: `invoice`/`proforma` are the names
+# `DocumentType` declares for *the* document of its kind, and `invoice_xml` is the one that
 # needs qualifying because it is the second stream for the same invoice.
-ArtifactTipo = Literal["fattura", "fattura_xml", "proforma"]
+ArtifactType = Literal["invoice", "invoice_xml", "proforma"]
 
 
 class InvoiceArtifacts:
@@ -61,102 +61,104 @@ class InvoiceArtifacts:
         with a field dropped. This is a fiscal document; guessing is the failure mode the
         version column exists to prevent.
         """
-        if invoice.snapshot is None or invoice.anno is None or invoice.numero is None:
+        if invoice.snapshot is None or invoice.year is None or invoice.number is None:
             raise Conflict(
                 ENTITY,
                 "un documento senza numero e senza congelamento non si esporta",
-                stato=invoice.stato,
+                status=invoice.status,
             )
-        return InvoiceSnapshot.model_validate(invoice.snapshot), invoice.anno, invoice.numero
+        return InvoiceSnapshot.model_validate(invoice.snapshot), invoice.year, invoice.number
 
     def for_export(self, invoice: Invoice) -> InvoiceForExport:
         """The frozen view the exporter and the PDF read. Never the live profiles."""
-        snapshot, anno, numero = self._frozen(invoice)
-        if invoice.data_emissione is None:  # pragma: no cover - the CHECKs make this unreachable
-            raise Conflict(ENTITY, "manca la data di emissione", stato=invoice.stato)
+        snapshot, year, number = self._frozen(invoice)
+        if invoice.issue_date is None:  # pragma: no cover - the CHECKs make this unreachable
+            raise Conflict(ENTITY, "manca la data di emissione", status=invoice.status)
         return self._export_view(
             invoice,
             snapshot,
-            anno,
-            numero,
-            data_emissione=invoice.data_emissione,
-            data_scadenza=invoice.data_scadenza,
+            year,
+            number,
+            issue_date=invoice.issue_date,
+            due_date=invoice.due_date,
         )
 
     def for_export_proforma(self, invoice: Invoice, actor: Actor) -> InvoiceForExport:
         """A live view for a proforma's PDF: a proforma never freezes (only `issue`
-        writes `snapshot`/`anno`/`numero`), so there is nothing to read back. Built
+        writes `snapshot`/`year`/`number`), so there is nothing to read back. Built
         from the *current* customer/emitter/fiscal profile instead, and dated with the
-        proforma's own `data_emissione` (ORB-63), which `create` sets and which the
+        proforma's own `issue_date` (ORB-63), which `create` sets and which the
         sender may move while the document is a draft. The `created_at` fallback is
         for a row written before migration 0033 by a path that skipped its backfill:
         it is the civil date in Europe/Rome the PDF printed before the column was
         filled, never `today_local()`, so a re-render does not drift with the
         clock.
 
-        `anno`/`numero` are placeholders that satisfy the schema's non-nullable bounds
-        and never reach the document: the PDF prints `riferimento` instead of
-        `numero_completo` whenever it is given, and `produce_artifacts` always gives it
+        `year`/`number` are placeholders that satisfy the schema's non-nullable bounds
+        and never reach the document: the PDF prints `reference` instead of
+        `number_complete` whenever it is given, and `produce_artifacts` always gives it
         for a proforma.
         """
-        _, profile = self.ctx.regime(invoice.azienda_id)
-        snapshot = build_snapshot(self.ctx, invoice.customer_id, profile, actor, invoice.azienda_id)
+        _, profile = self.ctx.regime(invoice.legal_entity_id)
+        snapshot = build_snapshot(
+            self.ctx, invoice.customer_id, profile, actor, invoice.legal_entity_id
+        )
         return self._export_view(
             invoice,
             snapshot,
             invoice.created_at.year,
             1,
-            data_emissione=invoice.data_emissione or local_date(invoice.created_at),
-            data_scadenza=None,
+            issue_date=invoice.issue_date or local_date(invoice.created_at),
+            due_date=None,
         )
 
     def _export_view(
         self,
         invoice: Invoice,
         snapshot: InvoiceSnapshot,
-        anno: int,
-        numero: int,
+        year: int,
+        number: int,
         *,
-        data_emissione: date,
-        data_scadenza: date | None,
+        issue_date: date,
+        due_date: date | None,
     ) -> InvoiceForExport:
         return InvoiceForExport(
-            anno=anno,
-            numero=numero,
-            data_emissione=data_emissione,
-            data_scadenza=data_scadenza,
-            tipo_documento=invoice.tipo_documento,
-            divisa=invoice.divisa,
-            imponibile=invoice.imponibile,
-            imposta=invoice.imposta,
-            bollo=invoice.bollo,
-            totale=invoice.totale,
-            causale=invoice.causale,
-            competenza_da=invoice.competenza_da,
-            competenza_a=invoice.competenza_a,
-            ordine_numero=invoice.ordine_numero,
-            ordine_data=invoice.ordine_data,
-            ordine_cig=invoice.ordine_cig,
-            ordine_cup=invoice.ordine_cup,
+            year=year,
+            number=number,
+            issue_date=issue_date,
+            due_date=due_date,
+            sdi_document_type=invoice.sdi_document_type,
+            currency=invoice.currency,
+            taxable_amount=invoice.taxable_amount,
+            vat_amount=invoice.vat_amount,
+            stamp_duty=invoice.stamp_duty,
+            total=invoice.total,
+            memo=invoice.memo,
+            accrual_from=invoice.accrual_from,
+            accrual_to=invoice.accrual_to,
+            purchase_order_number=invoice.purchase_order_number,
+            purchase_order_date=invoice.purchase_order_date,
+            purchase_order_tender_code=invoice.purchase_order_tender_code,
+            purchase_order_project_code=invoice.purchase_order_project_code,
             snapshot=snapshot,
-            righe=tuple(InvoiceLineRead.model_validate(r) for r in self.ctx.repo.lines(invoice.id)),
+            lines=tuple(InvoiceLineRead.model_validate(r) for r in self.ctx.repo.lines(invoice.id)),
         )
 
     @staticmethod
     def frozen_abroad(invoice: Invoice) -> bool:
-        """Whether the issued row's frozen profile is a foreign azienda's (REB-619):
-        read off the stored JSON rather than the live profile, since the azienda's pack
+        """Whether the issued row's frozen profile is a foreign legal entity's (REB-619):
+        read off the stored JSON rather than the live profile, since the legal entity's pack
         at issue time is the fact the document was built on, and off the row before
         `for_export` validates the whole snapshot, so the refusal is the specific one.
         A row with no snapshot yet is not frozen anywhere, abroad included."""
         snapshot = invoice.snapshot or {}
-        fiscale = snapshot.get("fiscale") or {}
-        return bool(fiscale.get("pack_id") == PACK_NON_IT)
+        tax = snapshot.get("tax") or {}
+        return bool(tax.get("pack_id") == PACK_NON_IT)
 
     # ---- names ----------------------------------------------------------------
 
     @staticmethod
-    def _xml_filename(snapshot: InvoiceSnapshot, anno: int, numero: int) -> str:
+    def _xml_filename(snapshot: InvoiceSnapshot, year: int, number: int) -> str:
         """`IT{cf_o_piva}_{progressivo}.xml`, from the **frozen** emitter identity.
 
         Fiscal code first, then VAT number: the same order `IdTrasmittente` uses, and
@@ -164,48 +166,48 @@ class InvoiceArtifacts:
         generator sent. Reading the snapshot rather than the live profile is what keeps
         the name stable after the issuer edits their own data.
         """
-        emittente = snapshot.emittente
-        id_fiscale = normalise_fiscal_id(emittente.codice_fiscale) or normalise_fiscal_id(
-            emittente.partita_iva
+        legal_entity = snapshot.legal_entity
+        id_tax = normalise_fiscal_id(legal_entity.tax_code) or normalise_fiscal_id(
+            legal_entity.vat_number
         )
-        if id_fiscale is None:
+        if id_tax is None:
             raise ValidationFailed(
-                "emitter_profile",
-                "codice_fiscale",
+                "legal_entity",
+                "tax_code",
                 "il nome del file XML richiede un codice fiscale o una partita IVA "
                 "validi dell'emittente",
                 expected="11 cifre oppure 16 caratteri",
             )
-        return sdi_filename(id_fiscale, anno, numero)
+        return sdi_filename(id_tax, year, number)
 
     @staticmethod
-    def _pdf_identity(invoice: Invoice) -> tuple[ArtifactTipo, str, str]:
+    def _pdf_identity(invoice: Invoice) -> tuple[ArtifactType, str, str]:
         """`(documents.tipo, title, download filename)` of the invoice's PDF. A proforma
         is named by its reference, a fattura by its number; the filename is a plain,
         slug-safe name, because nothing downstream validates it."""
-        if invoice.tipo == "proforma":
-            reference = invoice.riferimento or str(invoice.id)
+        if invoice.type == "proforma":
+            reference = invoice.reference or str(invoice.id)
             return "proforma", f"Proforma {reference} (PDF)", f"proforma-{reference.lower()}.pdf"
-        if invoice.anno is None or invoice.numero is None:
+        if invoice.year is None or invoice.number is None:
             raise Conflict(ENTITY, "un documento senza numero non ha un PDF fiscale")
         return (
-            "fattura",
-            f"Fattura {numero_completo(invoice.anno, invoice.numero)} (PDF)",
-            f"fattura-{invoice.anno}-{invoice.numero}.pdf",
+            "invoice",
+            f"Fattura {number_complete(invoice.year, invoice.number)} (PDF)",
+            f"fattura-{invoice.year}-{invoice.number}.pdf",
         )
 
     @staticmethod
     def _storage_prefix(invoice: Invoice) -> str:
-        if invoice.tipo == "proforma":
+        if invoice.type == "proforma":
             return proforma_storage_prefix(invoice.id)
-        if invoice.anno is None or invoice.numero is None:  # pragma: no cover
+        if invoice.year is None or invoice.number is None:  # pragma: no cover
             raise Conflict(ENTITY, "un documento senza numero non ha un prefisso fiscale")
-        return invoice_storage_prefix(invoice.azienda_id, invoice.anno, invoice.numero)
+        return invoice_storage_prefix(invoice.legal_entity_id, invoice.year, invoice.number)
 
     # ---- the documents rows ---------------------------------------------------
 
     def artifact_document(
-        self, invoice: Invoice, tipo: ArtifactTipo, titolo: str, actor: Actor
+        self, invoice: Invoice, type: ArtifactType, title: str, actor: Actor
     ) -> Document:
         """The `documents` row for one artefact stream, created on first use.
 
@@ -215,8 +217,8 @@ class InvoiceArtifacts:
         "version 3" ambiguous and the two hashes incomparable. Two streams, two hashes,
         two integrity checks -- and re-rendering the PDF never touches the XML.
 
-        `documents.stato` is left `NULL` for all three invoice artefact types: the
-        authoritative state is `invoices.stato`, and duplicating a state machine across
+        `documents.status` is left `NULL` for all three invoice artefact types: the
+        authoritative state is `invoices.status`, and duplicating a state machine across
         two tables produces two truths.
 
         Creating it is only safe under the invoice's row lock (see
@@ -226,24 +228,24 @@ class InvoiceArtifacts:
         version, and the XML hash) and commits them together.
         """
         documents = self.ctx.documents
-        existing_id = invoice.xml_document_id if tipo == "fattura_xml" else invoice.pdf_document_id
+        existing_id = invoice.xml_document_id if type == "invoice_xml" else invoice.pdf_document_id
         if existing_id is not None:
             document = documents.repo.get(existing_id)
             if document is not None:
                 return document
-        # The invoice's own azienda, never the customer's current one: a customer moved
+        # The invoice's own legal entity, never the customer's current one: a customer moved
         # since the invoice was issued keeps the invoice where it was (spec §1.7), and so
         # must the artefacts rendered for it afterwards.
         created = documents.create(
-            DocumentCreate(customer_id=invoice.customer_id, tipo=tipo, titolo=titolo),
+            DocumentCreate(customer_id=invoice.customer_id, type=type, title=title),
             actor,
-            azienda_id=invoice.azienda_id,
+            legal_entity_id=invoice.legal_entity_id,
             commit=False,
         )
         document = documents.repo.get(created.id)
         if document is None:  # pragma: no cover - just created in this transaction
             raise NotFound("document", created.id)
-        if tipo == "fattura_xml":
+        if type == "invoice_xml":
             invoice.xml_document_id = document.id
         else:
             invoice.pdf_document_id = document.id
@@ -254,8 +256,8 @@ class InvoiceArtifacts:
         invoice: Invoice,
         *,
         kind: ArtifactKind,
-        tipo: ArtifactTipo,
-        titolo: str,
+        type: ArtifactType,
+        title: str,
         content_type: str,
         filename: str,
         data: bytes,
@@ -283,15 +285,15 @@ class InvoiceArtifacts:
                 ENTITY,
                 f"il {kind} rigenerato non coincide con quello originale: e' una "
                 "divergenza da segnalare, non una nuova versione da salvare",
-                atteso=expected_hash,
-                ottenuto=digest,
-                campo="xml_hash_sha256" if kind == "xml" else "hash_sha256",
+                expected=expected_hash,
+                obtained=digest,
+                field="xml_hash_sha256" if kind == "xml" else "hash_sha256",
             )
 
-        document = self.artifact_document(invoice, tipo, titolo, actor)
+        document = self.artifact_document(invoice, type, title, actor)
         current = (
-            ctx.documents.repo.version(document.id, document.versione_corrente)
-            if document.versione_corrente
+            ctx.documents.repo.version(document.id, document.current_version)
+            if document.current_version
             else None
         )
         # The type too, not only the bytes (REB-480): the same bytes stored under another
@@ -312,7 +314,7 @@ class InvoiceArtifacts:
                 return InvoiceArtifact(
                     kind=kind,
                     document_id=document.id,
-                    version_numero=current.numero,
+                    version_number=current.number,
                     filename=filename,
                     content_type=content_type,
                     hash_sha256=digest,
@@ -329,7 +331,7 @@ class InvoiceArtifacts:
         return InvoiceArtifact(
             kind=kind,
             document_id=document.id,
-            version_numero=version.numero,
+            version_number=version.number,
             filename=filename,
             content_type=content_type,
             hash_sha256=digest,
@@ -351,7 +353,7 @@ class InvoiceArtifacts:
         export is freely repeatable, which is exactly what makes the out-of-transaction
         render of spec 3 harmless.
 
-        An `annullata` invoice still exports: it consumed a number and stays a document
+        An `cancelled` invoice still exports: it consumed a number and stays a document
         of record, and the file is the same frozen snapshot, compared against the stored
         hash, so nothing new is ever said about it. Refusing it would leave the register
         unauditable (`test_an_annulled_invoice_still_exports_its_xml`).
@@ -370,53 +372,53 @@ class InvoiceArtifacts:
         actor.require_write("export_invoice_xml")
         ctx = self.ctx
         invoice = ctx.require_locked(invoice_id)
-        if invoice.tipo != "fattura":
+        if invoice.type != "invoice":
             raise Conflict(
                 ENTITY,
                 "una proforma non produce un file FatturaPA: non e' un documento fiscale",
-                tipo=invoice.tipo,
-                stato=invoice.stato,
+                type=invoice.type,
+                status=invoice.status,
             )
-        if invoice.stato == "bozza":
+        if invoice.status == "draft":
             raise Conflict(
                 ENTITY,
                 "una bozza non ha ancora un numero e non produce un file FatturaPA",
-                stato=invoice.stato,
+                status=invoice.status,
             )
         if self.frozen_abroad(invoice):
             raise Conflict(
                 ENTITY,
                 "questa azienda non emette fatture elettroniche: il documento e' il PDF",
-                anno=invoice.anno,
-                numero=invoice.numero,
+                year=invoice.year,
+                number=invoice.number,
             )
-        if invoice.importata_da is not None:
-            if invoice.importata_da == "fatturapa" and invoice.xml_document_id is not None:
+        if invoice.imported_from is not None:
+            if invoice.imported_from == "fatturapa" and invoice.xml_document_id is not None:
                 return self._serve_stored_xml(invoice)
             raise Conflict(
                 ENTITY,
                 "fattura importata: l'XML e' quello gia' trasmesso allo SdI dal sistema "
                 "che l'ha emessa, questo CRM non ne produce un secondo",
-                anno=invoice.anno,
-                numero=invoice.numero,
+                year=invoice.year,
+                number=invoice.number,
             )
 
         export = self.for_export(invoice)
         # Re-checked here even though `issue` already checked: the snapshot could have
         # been edited out of band.
-        check_party_exportable(export.snapshot.emittente, "emitter_profile")
-        check_party_exportable(export.snapshot.cliente, "customer")
-        check_recipient_routing(export.snapshot.cliente)
-        check_recipient_identity(export.snapshot.cliente)
+        check_party_exportable(export.snapshot.legal_entity, "legal_entity")
+        check_party_exportable(export.snapshot.customer, "customer")
+        check_recipient_routing(export.snapshot.customer)
+        check_recipient_identity(export.snapshot.customer)
 
-        data = FatturaPAExporter().to_bytes(export)
+        data = InvoicePaExporter().to_bytes(export)
         artifact = self._store_artifact(
             invoice,
             kind="xml",
-            tipo="fattura_xml",
-            titolo=f"Fattura {numero_completo(export.anno, export.numero)} (XML)",
+            type="invoice_xml",
+            title=f"Fattura {number_complete(export.year, export.number)} (XML)",
             content_type=XML_MIME,
-            filename=self._xml_filename(export.snapshot, export.anno, export.numero),
+            filename=self._xml_filename(export.snapshot, export.year, export.number),
             data=data,
             expected_hash=invoice.xml_hash_sha256,
             actor=actor,
@@ -441,8 +443,8 @@ class InvoiceArtifacts:
                 ENTITY,
                 "manca l'hash registrato del file XML: non si serve un file che "
                 "non si puo' verificare",
-                anno=invoice.anno,
-                numero=invoice.numero,
+                year=invoice.year,
+                number=invoice.number,
             )
         data = self.ctx.storage.get(version.storage_key)
         digest = hashlib.sha256(data).hexdigest()
@@ -451,24 +453,24 @@ class InvoiceArtifacts:
                 ENTITY,
                 "il file XML archiviato non coincide piu' con l'hash registrato: "
                 "una divergenza da segnalare, non un file da servire",
-                atteso=invoice.xml_hash_sha256,
-                ottenuto=digest,
-                campo="xml_hash_sha256",
+                expected=invoice.xml_hash_sha256,
+                obtained=digest,
+                field="xml_hash_sha256",
             )
         return data
 
     def _current_version(self, document_id: UUID) -> tuple[Document, DocumentVersion] | None:
         repo = self.ctx.documents.repo
         document = repo.get(document_id)
-        if document is None or not document.versione_corrente:
+        if document is None or not document.current_version:
             return None
-        version = repo.version(document.id, document.versione_corrente)
+        version = repo.version(document.id, document.current_version)
         return None if version is None else (document, version)
 
     def _serve_stored_xml(self, invoice: Invoice) -> InvoiceArtifact:
         """The original FatturaPA file a `"fatturapa"` single-invoice import already
         stored, served back rather than regenerated (design 2026-09-23 §5 item 4/§7
-        item 6): the CRM never produced this XML, so there is no `FatturaPAExporter`
+        item 6): the CRM never produced this XML, so there is no `InvoicePaExporter`
         call and no divergence-means-repair branch to offer, unlike `_store_artifact` --
         either the stored bytes still hash to what the register recorded when the row was
         confirmed, or this refuses rather than handing back a file it cannot vouch for.
@@ -480,12 +482,12 @@ class InvoiceArtifacts:
             raise NotFound("invoice_artifact", f"{invoice.id}#xml")
         document, version = current
         self._verified_xml(invoice, version)
-        snapshot, anno, numero = self._frozen(invoice)
+        snapshot, year, number = self._frozen(invoice)
         return InvoiceArtifact(
             kind="xml",
             document_id=document.id,
-            version_numero=version.numero,
-            filename=self._xml_filename(snapshot, anno, numero),
+            version_number=version.number,
+            filename=self._xml_filename(snapshot, year, number),
             content_type=version.content_type,
             hash_sha256=invoice.xml_hash_sha256 or "",
         )
@@ -519,27 +521,27 @@ class InvoiceArtifacts:
         actor.require_write("produce_invoice_artifacts")
         ctx = self.ctx
         invoice = ctx.require(invoice_id)
-        if invoice.importata_da is not None:
+        if invoice.imported_from is not None:
             raise Conflict(
                 ENTITY,
                 "fattura importata: il PDF e' l'originale caricato, non si rigenera",
-                anno=invoice.anno,
-                numero=invoice.numero,
+                year=invoice.year,
+                number=invoice.number,
             )
         export = (
             self.for_export_proforma(invoice, actor)
-            if invoice.tipo == "proforma"
+            if invoice.type == "proforma"
             else self.for_export(invoice)
         )
-        riferimento = invoice.riferimento if invoice.tipo == "proforma" else None
-        tipo, titolo, filename = self._pdf_identity(invoice)
-        # The issuing azienda's logo (REB-627, spec §1.8), live like the document's.
-        media = LegalEntityAssets(ctx.session, ctx.storage).media_for(invoice.azienda_id)
+        reference = invoice.reference if invoice.type == "proforma" else None
+        type, title, filename = self._pdf_identity(invoice)
+        # The issuing legal entity's logo (REB-627, spec §1.8), live like the document's.
+        media = LegalEntityAssets(ctx.session, ctx.storage).media_for(invoice.legal_entity_id)
         # Everything the render needs is read: end the read transaction first, so the
         # compile (which may wait for a render slot) does not pin a pooled connection.
         ctx.session.commit()
         _, data = invoice_pdf.render_invoice_pdf(
-            export, riferimento=riferimento, settings=ctx.settings, media=media
+            export, reference=reference, settings=ctx.settings, media=media
         )
         # The row is locked for the write: a second call waits for the first and then
         # finds its document, instead of creating a second one and overwriting the
@@ -552,8 +554,8 @@ class InvoiceArtifacts:
         pdf_artifact = self._store_artifact(
             invoice,
             kind="pdf",
-            tipo=tipo,
-            titolo=titolo,
+            type=type,
+            title=title,
             content_type=PDF_MIME,
             filename=filename,
             data=data,
@@ -562,11 +564,11 @@ class InvoiceArtifacts:
         )
         ctx.session.commit()
         artifacts = [pdf_artifact]
-        # A foreign azienda's document is the PDF alone (REB-619): `export_xml` would
+        # A foreign legal entity's document is the PDF alone (REB-619): `export_xml` would
         # refuse it, and a refusal is not an artefact.
         if (
-            invoice.tipo == "fattura"
-            and invoice.stato != "bozza"
+            invoice.type == "invoice"
+            and invoice.status != "draft"
             and not self.frozen_abroad(invoice)
         ):
             artifacts.append(self.export_xml(invoice_id, actor))
@@ -591,9 +593,9 @@ class InvoiceArtifacts:
             raise NotFound("invoice_artifact", f"{invoice_id}#{kind}")
         _, version = current
         if kind == "xml":
-            snapshot, anno, numero = self._frozen(invoice)
+            snapshot, year, number = self._frozen(invoice)
             data = self._verified_xml(invoice, version)
-            return data, version.content_type, self._xml_filename(snapshot, anno, numero)
+            return data, version.content_type, self._xml_filename(snapshot, year, number)
         if version.content_type != PDF_MIME:
             # The PDF is served as a PDF or not at all (REB-480). `add_version` refuses any
             # other type on this document now, so this is a version written before that:

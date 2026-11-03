@@ -15,13 +15,13 @@ import { useUpdateInvoice, type Invoice } from './queries'
 
 /**
  * The customer's purchase order on a document that is still editable (REB-693): the
- * number, its date, the CIG and the CUP, which the XML writes as `DatiOrdineAcquisto`
+ * number, its date, the tender code and the CUP, which the XML writes as `DatiOrdineAcquisto`
  * and the PDF prints under the accrual period. Its own section and button, beside
  * `InvoiceHeaderEditor`, whose section is the document's dates.
  *
  * Saved through `PATCH /api/invoices/{id}` with only the fields the person edited,
- * `null` for an empty one; the rest follows the stored order, so a CIG added elsewhere
- * (MCP, another tab) is shown and never erased by saving another field. The freeze is the server's: an issued fattura or a consumed proforma answers 409,
+ * `null` for an empty one; the rest follows the stored order, so a tender code added elsewhere
+ * (MCP, another tab) is shown and never erased by saving another field. The freeze is the server's: an issued invoice or a consumed proforma answers 409,
  * and the banner shows it as it comes.
  */
 export function PurchaseOrderEditor({ invoice }: { invoice: Invoice }) {
@@ -37,9 +37,9 @@ export function PurchaseOrderEditor({ invoice }: { invoice: Invoice }) {
 
   // The stored order moved (a refetch after a change made elsewhere): every field the
   // person has not edited follows it, the ones they typed in keep their text.
-  const { ordine_numero, ordine_data, ordine_cig, ordine_cup } = invoice
+  const { purchase_order_number, purchase_order_date, purchase_order_tender_code, purchase_order_project_code } = invoice
   useEffect(() => {
-    const stored = purchaseOrderDraft({ ordine_numero, ordine_data, ordine_cig, ordine_cup })
+    const stored = purchaseOrderDraft({ purchase_order_number, purchase_order_date, purchase_order_tender_code, purchase_order_project_code })
     setDraft((current) => {
       const next = { ...current }
       for (const field of Object.keys(stored) as (keyof PurchaseOrderDraft)[]) {
@@ -47,7 +47,7 @@ export function PurchaseOrderEditor({ invoice }: { invoice: Invoice }) {
       }
       return next
     })
-  }, [ordine_numero, ordine_data, ordine_cig, ordine_cup])
+  }, [purchase_order_number, purchase_order_date, purchase_order_tender_code, purchase_order_project_code])
 
   function set(field: keyof PurchaseOrderDraft, value: string) {
     setDraft((current) => ({ ...current, [field]: value }))
@@ -83,40 +83,40 @@ export function PurchaseOrderEditor({ invoice }: { invoice: Invoice }) {
 
       <div className="grid max-w-2xl gap-4 sm:grid-cols-4">
         <div className="space-y-2">
-          <Label htmlFor="ordine-numero">Numero ordine</Label>
+          <Label htmlFor="purchase-order-number">Numero ordine</Label>
           <Input
-            id="ordine-numero"
-            value={draft.ordine_numero}
+            id="purchase-order-number"
+            value={draft.purchase_order_number}
             disabled={update.isPending}
-            onChange={(event) => set('ordine_numero', event.target.value)}
+            onChange={(event) => set('purchase_order_number', event.target.value)}
           />
         </div>
         <div className="space-y-2">
-          <Label htmlFor="ordine-data">Data ordine</Label>
+          <Label htmlFor="purchase-order-date">Data ordine</Label>
           <Input
-            id="ordine-data"
+            id="purchase-order-date"
             type="date"
-            value={draft.ordine_data}
+            value={draft.purchase_order_date}
             disabled={update.isPending}
-            onChange={(event) => set('ordine_data', event.target.value)}
+            onChange={(event) => set('purchase_order_date', event.target.value)}
           />
         </div>
         <div className="space-y-2">
-          <Label htmlFor="ordine-cig">CIG</Label>
+          <Label htmlFor="purchase-order-tender-code">CIG</Label>
           <Input
-            id="ordine-cig"
-            value={draft.ordine_cig}
+            id="purchase-order-tender-code"
+            value={draft.purchase_order_tender_code}
             disabled={update.isPending}
-            onChange={(event) => set('ordine_cig', event.target.value)}
+            onChange={(event) => set('purchase_order_tender_code', event.target.value)}
           />
         </div>
         <div className="space-y-2">
-          <Label htmlFor="ordine-cup">CUP</Label>
+          <Label htmlFor="purchase-order-project-code">CUP</Label>
           <Input
-            id="ordine-cup"
-            value={draft.ordine_cup}
+            id="purchase-order-project-code"
+            value={draft.purchase_order_project_code}
             disabled={update.isPending}
-            onChange={(event) => set('ordine_cup', event.target.value)}
+            onChange={(event) => set('purchase_order_project_code', event.target.value)}
           />
         </div>
       </div>

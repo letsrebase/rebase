@@ -13,9 +13,9 @@ from pigrocrm.core.cli.spaces_walk import disposed
 from pigrocrm.core.config import Settings
 from pigrocrm.core.db import create_engine_from_settings, session_factory
 from pigrocrm.core.db.scope import bind_scope
-from pigrocrm.core.emitter.models import LegalEntity
-from pigrocrm.core.emitter.repository import LegalEntityRepository
 from pigrocrm.core.errors import DomainError
+from pigrocrm.core.legal_entities.models import LegalEntity
+from pigrocrm.core.legal_entities.repository import LegalEntityRepository
 
 
 def _read_password(prompt: str) -> str:
@@ -40,15 +40,15 @@ def _read_new_password(prompt: str) -> str | None:
     return password
 
 
-def createadmin(settings: Settings, email: str | None, nome: str | None) -> int:
+def createadmin(settings: Settings, email: str | None, name: str | None) -> int:
     """Bootstrap the first administrator. There is no default account and no known
     default password — the direct lesson from the previous system's hardcoded credentials.
 
     On the application role (`PIGROCRM_DATABASE_URL`, `NOBYPASSRLS`), so the session binds
-    the system actor's scope first: the first azienda's row policy reads the scope and an
-    unbound session sees no azienda and may write none."""
+    the system actor's scope first: the first legal entity's row policy reads the scope and an
+    unbound session sees no legal entity and may write none."""
     email = email or input("Email: ").strip()
-    nome = nome or input("Nome: ").strip()
+    name = name or input("Nome: ").strip()
     password = _read_new_password("Password: ")
     if password is None:
         return 1
@@ -60,7 +60,7 @@ def createadmin(settings: Settings, email: str | None, nome: str | None) -> int:
         bind_scope(session, Actor.system())
         try:
             user = UserService(session).create(
-                UserCreate(email=email, password=password, nome=nome, ruolo="admin"),
+                UserCreate(email=email, password=password, name=name, role="admin"),
                 Actor.system(),
             )
         except DomainError as exc:
@@ -68,21 +68,21 @@ def createadmin(settings: Settings, email: str | None, nome: str | None) -> int:
             # will make with this tool; a raw traceback here is a bad first impression.
             print(exc.message, file=sys.stderr)
             return 1
-        azienda_created = _bootstrap_root_azienda(session, nome)
+        legal_entity_created = _bootstrap_root_legal_entity(session, name)
     print(f"Creato amministratore {user.email}")
-    if azienda_created:
-        print(f"Creata l'azienda predefinita «{nome}»: si rinomina da Impostazioni → Aziende")
+    if legal_entity_created:
+        print(f"Creata l'azienda predefinita «{name}»: si rinomina da Impostazioni → Aziende")
     return 0
 
 
-def _bootstrap_root_azienda(session: Session, nome: str) -> bool:
-    """The root installation's first azienda, written with its first admin.
+def _bootstrap_root_legal_entity(session: Session, name: str) -> bool:
+    """The root installation's first legal entity, written with its first admin.
 
     The root is not in the registry, so `ensure_defaults` never reaches it, and the API
-    updates an azienda by id and creates none (REB-615): a root migrated from an empty
+    updates a legal entity by id and creates none (REB-615): a root migrated from an empty
     database would have no issuer to configure from Impostazioni. The first admin's own
     name is the row's, as a space's name is at provisioning; a root that already has its
-    azienda keeps it, whoever is created after.
+    legal entity keeps it, whoever is created after.
 
     Insert-only, never through `upsert_default`: two `createadmin` runs racing on an
     empty root would both pass the count, and the second's upsert would rename the
@@ -95,7 +95,7 @@ def _bootstrap_root_azienda(session: Session, nome: str) -> bool:
         return False
     try:
         with session.begin_nested():
-            repo.add(LegalEntity(ragione_sociale=nome, predefinita=True, attiva=True))
+            repo.add(LegalEntity(legal_name=name, is_default=True, active=True))
     except IntegrityError:
         session.rollback()
         return False

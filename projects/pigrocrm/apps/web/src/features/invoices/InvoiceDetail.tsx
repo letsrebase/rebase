@@ -1,7 +1,7 @@
 import { useNavigate, useParams } from '@tanstack/react-router'
 import { Receipt } from 'lucide-react'
 import { EntityDetailLayout } from '@/components/EntityDetailLayout'
-import { EntityAttivita } from '@/features/attivita/EntityAttivita'
+import { EntityTask } from '@/features/tasks/EntityTask'
 import { QueryErrorBanner } from '@/components/QueryErrorBanner'
 import { StatusPill } from '@/components/StatusPill'
 import { Loader } from '@rebase/ui/loader'
@@ -24,7 +24,7 @@ import {
   PAYMENT_STATE_TONE,
   useInvoice,
   useInvoiceLines,
-  type StatoPagamento,
+  type PaymentStatus,
 } from '@/features/invoices/queries'
 import { useLegalEntity } from '@/lib/legalEntity'
 import { useCan } from '@/lib/auth'
@@ -33,14 +33,14 @@ export function InvoiceDetail() {
   const { invoiceId } = useParams({ from: '/app/invoices/$invoiceId' })
   const navigate = useNavigate()
   // REB-294: the editors below save through `update_invoice`/`replace_invoice_lines`,
-  // both `collaboratore` in the service; a readonly person gets the stated rows rather
+  // both `collaborator` in the service; a readonly person gets the stated rows rather
   // than inputs that could only answer 403. Called before the early returns below --
   // hooks cannot live after one.
   const canEditInvoice = useCan('update_invoice')
   const invoice = useInvoice(invoiceId)
   const lines = useInvoiceLines(invoiceId)
-  const azienda = useLegalEntity()
-  const emessaDa = azienda.several ? azienda.byId(invoice.data?.azienda_id)?.nome : undefined
+  const legal_entity = useLegalEntity()
+  const issuedFrom = legal_entity.several ? legal_entity.byId(invoice.data?.legal_entity_id)?.name : undefined
   if (invoice.isLoading) {
     return (
       <p className="flex items-center gap-2 p-8">
@@ -66,18 +66,18 @@ export function InvoiceDetail() {
   // already renders.
   const readOnly =
     !canEditInvoice ||
-    !(row.stato === 'bozza' || (row.tipo === 'proforma' && row.stato !== 'consumata'))
+    !(row.status === 'draft' || (row.type === 'proforma' && row.status !== 'consumed'))
   // Only a fattura has money to collect: a proforma reads as a dash in the list for the
   // same reason (`columns.tsx`), and a second pill here would claim a state it has not.
-  const pagamento = row.tipo === 'fattura' ? (row.stato_pagamento as StatoPagamento) : null
+  const payment = row.type === 'invoice' ? (row.payment_status as PaymentStatus) : null
 
   return (
     <EntityDetailLayout
       icon={Receipt}
       title={formatInvoiceHeading(row)}
-      // The causale, and from the second azienda on who issued it (REB-626).
+      // The reason line, and from the second legal entity on who issued it (REB-626).
       subtitle={
-        [row.causale, emessaDa ? `Emessa da ${emessaDa}` : undefined]
+        [row.memo, issuedFrom ? `Emessa da ${issuedFrom}` : undefined]
           .filter((part): part is string => typeof part === 'string' && part !== '')
           .join(' · ') || undefined
       }
@@ -86,9 +86,9 @@ export function InvoiceDetail() {
       actions={
         <>
           <InvoiceStateBadge invoice={row} />
-          {pagamento !== null ? (
-            <StatusPill tone={PAYMENT_STATE_TONE[pagamento]}>
-              {PAYMENT_STATE_LABELS[pagamento]}
+          {payment !== null ? (
+            <StatusPill tone={PAYMENT_STATE_TONE[payment]}>
+              {PAYMENT_STATE_LABELS[payment]}
             </StatusPill>
           ) : null}
         </>
@@ -112,7 +112,7 @@ export function InvoiceDetail() {
                   void navigate({ to: '/app/invoices/$invoiceId', params: { invoiceId: issued.id } })
               }}
             />
-            {row.tipo === 'proforma' && row.stato === 'consumata' ? (
+            {row.type === 'proforma' && row.status === 'consumed' ? (
               <ConsumedProformaNotice proforma={row} />
             ) : null}
 
@@ -129,56 +129,56 @@ export function InvoiceDetail() {
                   {/* «Data» on a proforma: it is the customer's document date and not
                       an emission, which is the fiscal act a fattura's date names. */}
                   <dt className="text-muted-foreground">
-                    {row.tipo === 'proforma' ? 'Data' : 'Data emissione'}
+                    {row.type === 'proforma' ? 'Data' : 'Data emissione'}
                   </dt>
-                  <dd>{formatDate(row.data_emissione)}</dd>
+                  <dd>{formatDate(row.issue_date)}</dd>
                 </>
               ) : null}
               <dt className="text-muted-foreground">Scadenza</dt>
-              <dd>{formatDate(row.data_scadenza)}</dd>
+              <dd>{formatDate(row.due_date)}</dd>
               {readOnly ? (
                 <>
                   <dt className="text-muted-foreground">Periodo di competenza</dt>
-                  <dd>{formatPeriod(row.competenza_da, row.competenza_a)}</dd>
+                  <dd>{formatPeriod(row.accrual_from, row.accrual_to)}</dd>
                 </>
               ) : null}
-              {readOnly && row.ordine_numero ? (
+              {readOnly && row.purchase_order_number ? (
                 <>
                   <dt className="text-muted-foreground">Riferimento ordine</dt>
                   <dd>{formatPurchaseOrder(row)}</dd>
                 </>
               ) : null}
               <dt className="text-muted-foreground">Imponibile</dt>
-              <dd>{formatMoney(row.imponibile)}</dd>
+              <dd>{formatMoney(row.taxable_amount)}</dd>
               <dt className="text-muted-foreground">Imposta</dt>
-              <dd>{formatMoney(row.imposta)}</dd>
+              <dd>{formatMoney(row.vat_amount)}</dd>
               {/* Stored but outside the total: DatiBollo declares that the issuer settled
                   it virtually, so adding it here would overstate what the customer owes. */}
               <dt className="text-muted-foreground">Bollo</dt>
-              <dd>{formatMoney(row.bollo)}</dd>
+              <dd>{formatMoney(row.stamp_duty)}</dd>
               <dt className="text-muted-foreground font-medium">Totale</dt>
-              <dd className="font-medium">{formatMoney(row.totale)}</dd>
-              {pagamento !== null ? (
+              <dd className="font-medium">{formatMoney(row.total)}</dd>
+              {payment !== null ? (
                 <>
                   <dt className="text-muted-foreground">Pagamento</dt>
                   <dd>
-                    {PAYMENT_STATE_LABELS[pagamento]}
-                    {row.data_incasso !== null ? ` il ${formatDate(row.data_incasso)}` : ''}
+                    {PAYMENT_STATE_LABELS[payment]}
+                    {row.payment_date !== null ? ` il ${formatDate(row.payment_date)}` : ''}
                   </dd>
                 </>
               ) : null}
-              {row.trasmessa_esternamente_il !== null ? (
+              {row.transmitted_externally_at !== null ? (
                 <>
                   <dt className="text-muted-foreground">Trasmessa il</dt>
-                  <dd>{formatDate(row.trasmessa_esternamente_il)}</dd>
+                  <dd>{formatDate(row.transmitted_externally_at)}</dd>
                 </>
               ) : null}
-              {row.annullata_il !== null ? (
+              {row.cancelled_at !== null ? (
                 <>
                   <dt className="text-muted-foreground">Annullata il</dt>
-                  <dd>{formatDate(row.annullata_il)}</dd>
+                  <dd>{formatDate(row.cancelled_at)}</dd>
                   <dt className="text-muted-foreground">Motivo</dt>
-                  <dd>{row.motivo_annullamento ?? '—'}</dd>
+                  <dd>{row.cancellation_reason ?? '—'}</dd>
                 </>
               ) : null}
             </dl>
@@ -192,7 +192,7 @@ export function InvoiceDetail() {
               )}
             </section>
 
-            <EntityAttivita link={{ kind: 'invoice', id: invoiceId }} />
+            <EntityTask link={{ kind: 'invoice', id: invoiceId }} />
           </div>
           <InvoicePdfPreview invoice={row} />
         </div>

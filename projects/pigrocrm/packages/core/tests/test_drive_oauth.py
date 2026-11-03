@@ -48,10 +48,10 @@ def admin_user(db_session: Session) -> User:
     # persisted user row for the foreign keys below.
     user = User(
         email=f"drive-{uuid4().hex[:8]}@example.it",
-        nome="Owner",
+        name="Owner",
         password_hash="x",
-        ruolo="admin",
-        attivo=True,
+        role="admin",
+        active=True,
     )
     db_session.add(user)
     db_session.flush()
@@ -222,7 +222,7 @@ def test_complete_stores_a_sealed_token_and_refuses_a_foreign_sub(
         fake.refresh_token
     )
     kinds = db_session.execute(select(Activity.kind)).scalars().all()
-    assert "drive.account_collegato" in kinds
+    assert "drive.account_connected" in kinds
 
 
 def test_a_space_on_the_root_client_consents_to_drive_through_the_root_callback(
@@ -276,7 +276,7 @@ def test_a_failed_code_exchange_is_reported_as_a_drive_failure_not_a_gmail_one(
     two failure exits name Gmail: `CredentialRevoked` reads "ricollega la casella da
     Impostazioni → Gmail" under the entity `google_account`, and `GmailUnavailable`
     reads "Gmail non ha risposto correttamente". The router turns either into
-    `?esito=errore` and the settings page shows the true state, so the browser flow is
+    `?outcome=error` and the settings page shows the true state, so the browser flow is
     unharmed -- but the same `Conflict` reaches the problem document and the MCP
     message verbatim for anybody who calls `complete` directly, and there it would send
     a person to reconnect a mailbox, or to wait for Gmail, over a *Drive* consent.
@@ -402,7 +402,7 @@ def test_disconnect_forgets_the_cached_token_and_erases_the_credential(
     assert row.refresh_token_ciphertext == b""
     assert row.refresh_token_nonce == b""
     kinds = db_session.execute(select(Activity.kind)).scalars().all()
-    assert "drive.account_scollegato" in kinds
+    assert "drive.account_disconnected" in kinds
 
 
 def test_starting_a_drive_consent_prunes_the_expired_states(
@@ -412,7 +412,7 @@ def test_starting_a_drive_consent_prunes_the_expired_states(
     never runs the Gmail sync, which is what used to prune it."""
     db_session.add(
         GoogleOAuthState(
-            jti="scaduto",
+            jti="expired",
             code_verifier="v" * 43,
             user_id=admin_user.id,
             expires_at=datetime.now(UTC) - timedelta(minutes=10),
@@ -670,10 +670,10 @@ def test_health_names_the_admin_whose_account_holds_the_spaces_storage(
     `drive.file`."""
     other_admin = User(
         email=f"other-admin-{uuid4().hex[:8]}@example.it",
-        nome="Bruno",
+        name="Bruno",
         password_hash="x",
-        ruolo="admin",
-        attivo=True,
+        role="admin",
+        active=True,
     )
     db_session.add(other_admin)
     db_session.flush()
@@ -702,10 +702,10 @@ def test_health_names_the_holder_as_unreachable_when_the_write_scope_is_missing(
     land there."""
     other_admin = User(
         email=f"other-admin-{uuid4().hex[:8]}@example.it",
-        nome="Bruno",
+        name="Bruno",
         password_hash="x",
-        ruolo="admin",
-        attivo=True,
+        role="admin",
+        active=True,
     )
     db_session.add(other_admin)
     db_session.flush()
@@ -726,14 +726,14 @@ def test_health_names_the_holder_as_unreachable_when_the_write_scope_is_missing(
     assert health.space_storage.holder.reachable is False
 
 
-def test_health_says_no_space_storage_when_only_a_collaboratores_row_names_one(
+def test_health_says_no_space_storage_when_only_a_collaborators_row_names_one(
     db_session: Session, admin_user: User
 ) -> None:
     """The behaviour `DriveRepository.storage_account` already settled on (REB-457):
     a folder left on a non-admin's row is not a candidate, so the admin's page must
     say there is none in effect (`in_effect=False`, no `holder`) rather than name the
     collaboratore."""
-    collab = _collaboratore(db_session)
+    collab = _collaborator(db_session)
     stray = _connected_drive_account(db_session, collab, email_address="collab@example.it")
     stray.storage_folder_id = "8CartellaDelCollab01"
     db_session.flush()
@@ -759,10 +759,10 @@ def test_health_reports_no_space_storage_to_a_non_admin_actor(
     account = _connected_drive_account(db_session, admin_user)
     account.storage_folder_id = "9CartellaAdmin000001"
     db_session.flush()
-    collab = _collaboratore(db_session)
+    collab = _collaborator(db_session)
 
     health = _drive_service_account(db_session).health(
-        Actor(id=collab.id, type="user", role="collaboratore")
+        Actor(id=collab.id, type="user", role="collaborator")
     )
 
     assert "space_storage" not in health.model_fields_set
@@ -816,7 +816,7 @@ def test_usable_on_an_expired_account_raises_consent_expired(
     assert details["email_address"] == account.email_address
 
 
-def test_usable_without_a_drive_account_refuses_naming_impostazioni_drive(
+def test_usable_without_to_drive_account_refuses_naming_settings_drive(
     db_session: Session, admin_user: User
 ) -> None:
     with pytest.raises(Conflict, match="Impostazioni → Drive") as caught:
@@ -878,7 +878,7 @@ def test_mark_revoked_sets_the_status_and_records_the_activity(
     assert account.last_error is not None
     assert account.last_error_at is not None
     rows = (
-        db_session.execute(select(Activity).where(Activity.kind == "drive.credenziale_revocata"))
+        db_session.execute(select(Activity).where(Activity.kind == "drive.credential_revoked"))
         .scalars()
         .all()
     )
@@ -910,7 +910,7 @@ def test_set_roots_persists_both_fields_and_records_the_activity(
     assert account.root_folder_ids == ["1AbCdEfGhIjKlMnOpQ", "2AbCdEfGhIjKlMnOpQ"]
     assert account.storage_folder_id == "3AbCdEfGhIjKlMnOpQ"
     rows = (
-        db_session.execute(select(Activity).where(Activity.kind == "drive.radici_impostate"))
+        db_session.execute(select(Activity).where(Activity.kind == "drive.roots_set"))
         .scalars()
         .all()
     )
@@ -949,9 +949,7 @@ def test_a_patch_that_omits_the_storage_folder_keeps_it_and_leaves_it_out_of_the
     assert account.storage_folder_id == "3AbCdEfGhIjKlMnOpQ"
     payloads = [
         row.payload
-        for row in db_session.execute(
-            select(Activity).where(Activity.kind == "drive.radici_impostate")
-        )
+        for row in db_session.execute(select(Activity).where(Activity.kind == "drive.roots_set"))
         .scalars()
         .all()
     ]
@@ -990,9 +988,7 @@ def test_an_explicit_null_storage_folder_clears_it(db_session: Session, admin_us
     assert account.storage_folder_id is None
     cleared = [
         row.payload
-        for row in db_session.execute(
-            select(Activity).where(Activity.kind == "drive.radici_impostate")
-        )
+        for row in db_session.execute(select(Activity).where(Activity.kind == "drive.roots_set"))
         .scalars()
         .all()
         if row.payload["root_folder_ids"] == ["2AbCdEfGhIjKlMnOpQ"]
@@ -1060,13 +1056,13 @@ def test_set_roots_is_refused_for_a_readonly_actor(db_session: Session, admin_us
 # --- the write folder is an admin's, a collaboratore's roots are their own (REB-457) --
 
 
-def _collaboratore(session: Session) -> User:
+def _collaborator(session: Session) -> User:
     user = User(
         email=f"collab-{uuid4().hex[:8]}@example.it",
-        nome="Collaboratore",
+        name="Collaboratore",
         password_hash="x",
-        ruolo="collaboratore",
-        attivo=True,
+        role="collaborator",
+        active=True,
     )
     session.add(user)
     session.flush()
@@ -1074,7 +1070,7 @@ def _collaboratore(session: Session) -> User:
 
 
 def _as(user: User) -> Actor:
-    return Actor(id=user.id, type="user", role=user.ruolo)  # type: ignore[arg-type]
+    return Actor(id=user.id, type="user", role=user.role)  # type: ignore[arg-type]
 
 
 def _refuse_any_drive_call(_account: GoogleDriveAccount) -> DriveTransport:
@@ -1082,7 +1078,7 @@ def _refuse_any_drive_call(_account: GoogleDriveAccount) -> DriveTransport:
 
 
 @pytest.mark.parametrize("storage_folder_id", ["9CartellaDelCollab01", None])
-def test_set_roots_refuses_a_write_folder_from_a_collaboratore_and_writes_nothing(
+def test_set_roots_refuses_to_write_folder_from_to_collaborator_and_writes_nothing(
     db_session: Session, storage_folder_id: str | None
 ) -> None:
     """The write folder is the space's: `DriveRepository.storage_account` sends every
@@ -1091,7 +1087,7 @@ def test_set_roots_refuses_a_write_folder_from_a_collaboratore_and_writes_nothin
     the roots in the same request included."""
     from pigrocrm.core.errors import PermissionDenied  # noqa: PLC0415
 
-    collab = _collaboratore(db_session)
+    collab = _collaborator(db_session)
     account = _connected_drive_account(db_session, collab)
     account.root_folder_ids = ["1RadiceOriginale0001"]
     account.storage_folder_id = "8CartellaPrecedente01"
@@ -1116,14 +1112,14 @@ def test_set_roots_refuses_a_write_folder_from_a_collaboratore_and_writes_nothin
         .scalars()
         .all()
     )
-    assert "drive.radici_impostate" not in kinds
+    assert "drive.roots_set" not in kinds
 
 
-def test_a_collaboratore_still_sets_their_own_read_roots(db_session: Session) -> None:
+def test_to_collaborator_still_sets_their_own_read_roots(db_session: Session) -> None:
     """Only the write folder is an admin's. The read roots are the collaboratore's
     own credential's configuration, and a save that does not name the write folder
     goes through under `require_write`, as before."""
-    collab = _collaboratore(db_session)
+    collab = _collaborator(db_session)
     account = _connected_drive_account(db_session, collab)
     service = _drive_service_account(db_session, transport_factory=_refuse_any_drive_call)
 
@@ -1135,7 +1131,7 @@ def test_a_collaboratore_still_sets_their_own_read_roots(db_session: Session) ->
     assert account.root_folder_ids == ["1AbCdEfGhIjKlMnOpQ"]
 
 
-def test_a_collaboratore_s_save_and_disconnect_leave_the_admin_s_storage_in_place(
+def test_to_collaborator_s_save_and_disconnect_leave_the_admin_s_storage_in_place(
     db_session: Session, admin_user: User
 ) -> None:
     """The two moves Greptile and CodeRabbit named on PR #449. A collaboratore whose
@@ -1148,7 +1144,7 @@ def test_a_collaboratore_s_save_and_disconnect_leave_the_admin_s_storage_in_plac
     admin_account = _connected_drive_account(db_session, admin_user)
     admin_account.storage_folder_id = "9CartellaAdmin000001"
     admin_account.updated_at = datetime.now(UTC) - timedelta(days=30)
-    collab = _collaboratore(db_session)
+    collab = _collaborator(db_session)
     collab_account = _connected_drive_account(db_session, collab, email_address="c@example.it")
     collab_account.storage_folder_id = "8CartellaDelCollab01"
     db_session.flush()
@@ -1199,7 +1195,7 @@ def test_set_roots_refuses_a_storage_folder_the_fake_does_not_know_and_writes_no
     assert account.root_folder_ids == original_roots
     assert account.storage_folder_id == original_storage
     kinds = db_session.execute(select(Activity.kind)).scalars().all()
-    assert "drive.radici_impostate" not in kinds
+    assert "drive.roots_set" not in kinds
 
 
 def test_set_roots_saves_a_storage_folder_the_fake_confirms_exists(
@@ -1326,8 +1322,8 @@ def test_set_roots_records_a_revocation_discovered_while_verifying_the_storage_f
     assert stored is not None
     assert stored.status == "revoked"
     kinds = db_session.execute(select(Activity.kind)).scalars().all()
-    assert "drive.credenziale_revocata" in kinds
-    assert "drive.radici_impostate" not in kinds
+    assert "drive.credential_revoked" in kinds
+    assert "drive.roots_set" not in kinds
 
 
 def test_set_roots_saves_a_new_storage_folder_unverified_on_a_revoked_or_expired_account(

@@ -7,14 +7,14 @@ from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
 from pigrocrm.core.documents.schemas import (
-    DIMENSIONE_MAX,
+    SIZE_MAX,
     DocumentCreate,
     DocumentFromTemplate,
     DocumentListQuery,
     DocumentPage,
     DocumentRead,
     DocumentTextRead,
-    DocumentTipo,
+    DocumentType,
     DocumentUpdate,
     DocumentVersionRead,
     OfferState,
@@ -26,7 +26,7 @@ from pigrocrm_api.deps import ActorDep, SessionDep, SettingsDep, StorageDep, get
 from pigrocrm_api.downloads import attachment_response
 from pigrocrm_api.errors import PROBLEM_RESPONSES
 from pigrocrm_api.query_params import (
-    AZIENDA_QUERY_DESCRIPTION,
+    LEGAL_ENTITY_QUERY_DESCRIPTION,
     SearchParams,
     SortedParams,
     sort_field,
@@ -43,7 +43,7 @@ router = APIRouter(
 
 
 class OfferStateBody(BaseModel):
-    stato: OfferState
+    status: OfferState
 
 
 @router.post("", response_model=DocumentRead, status_code=status.HTTP_201_CREATED)
@@ -74,14 +74,14 @@ class DocumentListParams(SortedParams, SearchParams):
     customer_id: UUID | None = None
     deal_id: UUID | None = None
     contract_id: UUID | None = None
-    azienda_id: UUID | None = Field(default=None, description=AZIENDA_QUERY_DESCRIPTION)
-    tipo: DocumentTipo | None = None
-    stato: OfferState | None = None
+    legal_entity_id: UUID | None = Field(default=None, description=LEGAL_ENTITY_QUERY_DESCRIPTION)
+    type: DocumentType | None = None
+    status: OfferState | None = None
     # The drill-through of the commercial dashboard's "offerta accettata, deal non vinto"
     # card (§6.2). The card links here and nowhere else, and the rows returned are counted
     # by the same predicate function the card's `COUNT` uses.
-    solo_deal_non_vinto: bool = False
-    sort: SafeStr | None = sort_field("created_at", "updated_at", "titolo")
+    only_unwon_deals: bool = False
+    sort: SafeStr | None = sort_field("created_at", "updated_at", "title")
 
 
 @router.get("", response_model=DocumentPage)
@@ -154,7 +154,7 @@ def set_offer_state(
     actor: ActorDep,
 ) -> DocumentRead:
     return DocumentService(session, storage, settings).set_offer_state(
-        document_id, body.stato, actor
+        document_id, body.status, actor
     )
 
 
@@ -187,7 +187,7 @@ async def upload_version(
     `ALLOWED_CONTENT_TYPES` inside the service, never trusted here. The role is checked
     before the body is read (`uploads.py`); the service checks it again."""
     actor.require_write(ADD_VERSION_ACTION)
-    data, content_type = await read_upload(request, DIMENSIONE_MAX)
+    data, content_type = await read_upload(request, SIZE_MAX)
     return await run_in_threadpool(
         DocumentService(session, storage, settings).add_version,
         document_id,
@@ -198,19 +198,19 @@ async def upload_version(
 
 
 @router.post(
-    "/{document_id}/versions/{numero}/regenerate",
+    "/{document_id}/versions/{number}/regenerate",
     response_model=DocumentVersionRead,
     status_code=status.HTTP_201_CREATED,
 )
 def regenerate(
     document_id: UUID,
-    numero: int,
+    number: int,
     session: SessionDep,
     storage: StorageDep,
     settings: SettingsDep,
     actor: ActorDep,
 ) -> DocumentVersionRead:
-    return DocumentService(session, storage, settings).regenerate(document_id, numero, actor)
+    return DocumentService(session, storage, settings).regenerate(document_id, number, actor)
 
 
 @router.get("/{document_id}/download")
@@ -220,36 +220,36 @@ def download(
     storage: StorageDep,
     settings: SettingsDep,
     actor: ActorDep,
-    numero: Annotated[int | None, Query(ge=1, le=100_000)] = None,
+    number: Annotated[int | None, Query(ge=1, le=100_000)] = None,
 ) -> Response:
     """The download always goes through the API: it is the only place authorisation
     exists, on both storage backends (spec 5).
     """
     data, content_type, filename = DocumentService(session, storage, settings).download(
-        document_id, numero, actor
+        document_id, number, actor
     )
     return attachment_response(data, content_type, filename)
 
 
 @router.get("/{document_id}/text", response_model=DocumentTextRead)
-def testo(
+def text(
     document_id: UUID,
     session: SessionDep,
     storage: StorageDep,
     settings: SettingsDep,
     actor: ActorDep,
-    numero: Annotated[int | None, Query(ge=1, le=100_000)] = None,
+    number: Annotated[int | None, Query(ge=1, le=100_000)] = None,
 ) -> DocumentTextRead:
     """The text of the file, for a reader that cannot open a PDF -- an agent, or a
     preview panel that would otherwise have to embed one.
 
-    A separate route from `/download` rather than a `?formato=testo` on it: the two
+    A separate route from `/download` rather than a `?format=text` on it: the two
     return different things (a JSON body against an attachment with its own
     `Content-Disposition`), and a single handler that branched on a query parameter
-    would be a route whose response type nobody can state. `numero` carries the same
+    would be a route whose response type nobody can state. `number` carries the same
     bounds as the download's, from the same reasoning.
     """
-    return DocumentService(session, storage, settings).extract_text(document_id, numero, actor)
+    return DocumentService(session, storage, settings).extract_text(document_id, number, actor)
 
 
 router.include_router(timeline_router("document", id_param="document_id"))

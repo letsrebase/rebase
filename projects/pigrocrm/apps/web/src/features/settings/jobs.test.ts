@@ -38,7 +38,7 @@ describe('elapsed', () => {
 
 describe('failureText', () => {
   it('words the machine words of a skipped digest and the class of a refused mailbox', () => {
-    expect(failureText('invio_rifiutato')).toBe('il servizio di posta ha rifiutato l’invio')
+    expect(failureText('send_rejected')).toBe('il servizio di posta ha rifiutato l’invio')
     expect(failureText('CredentialRevoked')).toBe(
       'il consenso Google è stato revocato: la casella va ricollegata da Impostazioni → Gmail',
     )
@@ -67,7 +67,7 @@ describe('jobLine', () => {
     const failed = job({
       state: 'failed',
       last_failure_at: '2026-10-27T08:00:00Z',
-      failure: 'invio_rifiutato',
+      failure: 'send_rejected',
     })
 
     expect(jobLine(failed, NOW)).toMatch(

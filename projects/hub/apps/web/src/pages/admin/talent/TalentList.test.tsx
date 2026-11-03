@@ -1,14 +1,14 @@
 import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { CARD_TALENTO, LEAD_TALENTO, LINKED_PAIR, NAME_PAIR, answer, cellUnder, mount, resetMocks, settle } from '../list-test-kit'
+import { CARD_TALENT, LEAD_TALENT, LINKED_PAIR, NAME_PAIR, answer, cellUnder, mount, resetMocks, settle } from '../list-test-kit'
 
 afterEach(resetMocks)
 
 describe('the Talenti list (REB-282/283)', () => {
   it('lists a card and a lead together, each with its own state and origin, and links to the right page', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-      answer(200, { totale: 2, items: [CARD_TALENTO, LEAD_TALENTO], per_stato: { nuovo: 1, lead: 1 } }),
+      answer(200, { total: 2, items: [CARD_TALENT, LEAD_TALENT], by_status: { new: 1, lead: 1 } }),
     )
     mount('/admin/talent')
 
@@ -41,9 +41,9 @@ describe('the Talenti list (REB-282/283)', () => {
   it('reads the LinkedIn cell as «—» for anything other than an http(s) address (REB-558)', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       answer(200, {
-        totale: 1,
-        items: [{ ...CARD_TALENTO, linkedin_url: 'javascript:alert(1)' }],
-        per_stato: { nuovo: 1 },
+        total: 1,
+        items: [{ ...CARD_TALENT, linkedin_url: 'javascript:alert(1)' }],
+        by_status: { new: 1 },
       }),
     )
     mount('/admin/talent')
@@ -54,13 +54,13 @@ describe('the Talenti list (REB-282/283)', () => {
   })
 
   it('reads the Modalità cell as «—» for a stored value outside the three known ones (REB-558)', async () => {
-    // `TalentoRead.remoto` is `str | None` on the API, not narrowed to `Remoto`: a
+    // `TalentRead.remote` is `str | None` on the API, not narrowed to `Remote`: a
     // stray value must not render blank.
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       answer(200, {
-        totale: 1,
-        items: [{ ...CARD_TALENTO, remoto: 'boh' }],
-        per_stato: { nuovo: 1 },
+        total: 1,
+        items: [{ ...CARD_TALENT, remote: 'boh' }],
+        by_status: { new: 1 },
       }),
     )
     mount('/admin/talent')
@@ -70,7 +70,7 @@ describe('the Talenti list (REB-282/283)', () => {
   })
 
   it('filters by state through the same pills as before, «Lead» included', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(200, { totale: 0, items: [], per_stato: {} }))
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(200, { total: 0, items: [], by_status: {} }))
     mount('/admin/talent')
     await screen.findByRole('heading', { name: 'Talenti' })
     expect(screen.getByRole('button', { name: 'Nuovo' })).toBeInTheDocument()
@@ -81,7 +81,7 @@ describe('the Talenti list (REB-282/283)', () => {
 describe('the search box debounces before it reaches the API and the URL (REB-286)', () => {
   it('waits for a pause in typing before searching Talenti', async () => {
     const spy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-      answer(200, { totale: 0, items: [], per_stato: {} }),
+      answer(200, { total: 0, items: [], by_status: {} }),
     )
     mount('/admin/talent')
     await screen.findByRole('heading', { name: 'Talenti' })
@@ -98,7 +98,7 @@ describe('the search box debounces before it reaches the API and the URL (REB-28
 
 describe('every filter and the search box live in the URL, both ways (REB-286)', () => {
   it('reflects a state pill and a filter field into the address for Talenti', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(200, { totale: 0, items: [], per_stato: {} }))
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(200, { total: 0, items: [], by_status: {} }))
     const router = mount('/admin/talent')
     await screen.findByRole('heading', { name: 'Talenti' })
 
@@ -106,33 +106,33 @@ describe('every filter and the search box live in the URL, both ways (REB-286)',
     await userEvent.type(screen.getByLabelText('Posizione'), 'CTO')
 
     await waitFor(() =>
-      expect(router.state.location.search).toMatchObject({ stato: 'nuovo', posizione: 'CTO' }),
+      expect(router.state.location.search).toMatchObject({ status: 'new', job_title: 'CTO' }),
     )
   })
 
   it('reads a filter and a state back out of a URL a link already carries, for Talenti', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(200, { totale: 0, items: [], per_stato: {} }))
-    mount('/admin/talent?posizione=CTO&stato=nuovo')
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(200, { total: 0, items: [], by_status: {} }))
+    mount('/admin/talent?job_title=CTO&status=new')
     await screen.findByRole('heading', { name: 'Talenti' })
     expect(screen.getByLabelText('Posizione')).toHaveValue('CTO')
   })
 
-  it('sends the page filter of Talenti as pagina_origine, never as origine, which is the row channel (REB-798)', async () => {
+  it('sends the page filter of Talenti as origin_page, never as origin, which is the row channel (REB-798)', async () => {
     const fetch = vi
       .spyOn(globalThis, 'fetch')
-      .mockResolvedValue(answer(200, { totale: 0, items: [], per_stato: {} }))
+      .mockResolvedValue(answer(200, { total: 0, items: [], by_status: {} }))
     const router = mount('/admin/talent')
     await screen.findByRole('heading', { name: 'Talenti' })
 
     await userEvent.type(screen.getByLabelText('Pagina di provenienza'), 'home')
 
     await waitFor(() =>
-      expect(router.state.location.search).toMatchObject({ pagina_origine: 'home' }),
+      expect(router.state.location.search).toMatchObject({ origin_page: 'home' }),
     )
     await waitFor(() => {
       const urls = fetch.mock.calls.map(([url]) => String(url))
-      expect(urls.some((url) => url.includes('pagina_origine=home'))).toBe(true)
-      expect(urls.some((url) => /[?&]origine=/.test(url))).toBe(false)
+      expect(urls.some((url) => url.includes('origin_page=home'))).toBe(true)
+      expect(urls.some((url) => /[?&]origin=/.test(url))).toBe(false)
     })
   })
 
@@ -140,8 +140,8 @@ describe('every filter and the search box live in the URL, both ways (REB-286)',
     // A digit-only value in the URL must read back as the same text on a shared link or
     // a reload, never only on an in-app navigate(): the router's parseSearch keeps an
     // amount filter's raw text, and strParam coerces any other parameter's number back.
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(200, { totale: 0, items: [], per_stato: {} }))
-    mount('/admin/talent?tariffa_min=50')
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(200, { total: 0, items: [], by_status: {} }))
+    mount('/admin/talent?min_rate=50')
     await screen.findByRole('heading', { name: 'Talenti' })
     expect(screen.getByLabelText('Tariffa min (€/giorno)')).toHaveValue('50')
   })
@@ -149,8 +149,8 @@ describe('every filter and the search box live in the URL, both ways (REB-286)',
 
 describe('infinite scroll walks the cursor, a page at a time (REB-286)', () => {
   it('shows a second page of Talenti after «Mostra altri», cursor included in the request', async () => {
-    const page1 = { totale: 2, items: [CARD_TALENTO], per_stato: { nuovo: 1 }, next_cursor: 'CURSOR1' }
-    const page2 = { totale: 2, items: [LEAD_TALENTO], per_stato: { nuovo: 1, lead: 1 }, next_cursor: null }
+    const page1 = { total: 2, items: [CARD_TALENT], by_status: { new: 1 }, next_cursor: 'CURSOR1' }
+    const page2 = { total: 2, items: [LEAD_TALENT], by_status: { new: 1, lead: 1 }, next_cursor: null }
     const spy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
       const url = new URL(String(input), 'http://test')
       return answer(200, url.searchParams.get('cursor') === 'CURSOR1' ? page2 : page1)
@@ -171,14 +171,14 @@ describe('infinite scroll walks the cursor, a page at a time (REB-286)', () => {
 
 describe('two empty states, in Italian (REB-286)', () => {
   it('says the Talenti table itself is empty with no filter active', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(200, { totale: 0, items: [], per_stato: {} }))
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(200, { total: 0, items: [], by_status: {} }))
     mount('/admin/talent')
     expect(await screen.findByText('Nessun profilo qui.')).toBeInTheDocument()
   })
 
   it('names the filters when one narrows Talenti to nothing', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(200, { totale: 0, items: [], per_stato: {} }))
-    mount('/admin/talent?posizione=Astrofisico')
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(200, { total: 0, items: [], by_status: {} }))
+    mount('/admin/talent?job_title=Astrofisico')
     expect(await screen.findByText('Nessun risultato per questi filtri.')).toBeInTheDocument()
   })
 })
@@ -187,9 +187,9 @@ describe('«Possibile duplicato» and the way into «Duplicati» (REB-800)', () 
   it('flags a row whose card may be someone else, linking to that card', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       answer(200, {
-        totale: 2,
-        items: [{ ...CARD_TALENTO, possibile_duplicato_di: ['f2'] }, { ...LEAD_TALENTO, possibile_duplicato_di: [] }],
-        per_stato: {},
+        total: 2,
+        items: [{ ...CARD_TALENT, duplicate_possible_of: ['f2'] }, { ...LEAD_TALENT, duplicate_possible_of: [] }],
+        by_status: {},
       }),
     )
     mount('/admin/talent')
@@ -204,7 +204,7 @@ describe('«Possibile duplicato» and the way into «Duplicati» (REB-800)', () 
 
   it('sends a row with several look-alikes to the page that lists the pairs', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-      answer(200, { totale: 1, items: [{ ...CARD_TALENTO, possibile_duplicato_di: ['f2', 'f3'] }], per_stato: {} }),
+      answer(200, { total: 1, items: [{ ...CARD_TALENT, duplicate_possible_of: ['f2', 'f3'] }], by_status: {} }),
     )
     mount('/admin/talent')
     expect(await screen.findByRole('link', { name: 'Possibile duplicato' })).toHaveAttribute(
@@ -215,9 +215,9 @@ describe('«Possibile duplicato» and the way into «Duplicati» (REB-800)', () 
 
   it('links to «Duplicati» with the number of pairs, and only when there is one', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-      answer(200, { totale: 1, items: [{ ...CARD_TALENTO, possibile_duplicato_di: [] }], per_stato: {} }),
+      answer(200, { total: 1, items: [{ ...CARD_TALENT, duplicate_possible_of: [] }], by_status: {} }),
     )
-    mount('/admin/talent', { unibili: [LINKED_PAIR], da_rivedere: [NAME_PAIR], iscrizioni: 0 })
+    mount('/admin/talent', { mergeable: [LINKED_PAIR], to_review: [NAME_PAIR], signups: 0 })
     expect(await screen.findByRole('link', { name: 'Duplicati · 2' })).toHaveAttribute(
       'href',
       '/admin/talent/duplicates',
@@ -226,7 +226,7 @@ describe('«Possibile duplicato» and the way into «Duplicati» (REB-800)', () 
 
   it('shows no link when nobody is on the list twice', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-      answer(200, { totale: 1, items: [{ ...CARD_TALENTO, possibile_duplicato_di: [] }], per_stato: {} }),
+      answer(200, { total: 1, items: [{ ...CARD_TALENT, duplicate_possible_of: [] }], by_status: {} }),
     )
     mount('/admin/talent')
     await screen.findByText('ada@studio.it')
@@ -236,7 +236,7 @@ describe('«Possibile duplicato» and the way into «Duplicati» (REB-800)', () 
 
   it('leaves the list alone when the pairs cannot be read', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-      answer(200, { totale: 1, items: [{ ...CARD_TALENTO, possibile_duplicato_di: [] }], per_stato: {} }),
+      answer(200, { total: 1, items: [{ ...CARD_TALENT, duplicate_possible_of: [] }], by_status: {} }),
     )
     mount('/admin/talent', () => answer(500, { detail: 'boom' }))
     expect(await screen.findByText('ada@studio.it')).toBeInTheDocument()

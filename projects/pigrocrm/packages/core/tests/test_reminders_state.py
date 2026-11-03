@@ -36,18 +36,18 @@ from pigrocrm.core.reminders.state import (
 TODAY = date(2026, 10, 26)  # a Monday
 
 
-def _user(session: Session, ruolo: str = "collaboratore") -> User:
-    user = User(email=f"u-{uuid4()}@example.test", password_hash="x", nome="Persona", ruolo=ruolo)
+def _user(session: Session, role: str = "collaborator") -> User:
+    user = User(email=f"u-{uuid4()}@example.test", password_hash="x", name="Persona", role=role)
     session.add(user)
     session.flush()
     return user
 
 
 def _actor(user: User) -> Actor:
-    return Actor(id=user.id, type="user", role=user.ruolo)  # type: ignore[arg-type]
+    return Actor(id=user.id, type="user", role=user.role)  # type: ignore[arg-type]
 
 
-KEY = reminder_key("attivita_overdue", uuid4())
+KEY = reminder_key("task_overdue", uuid4())
 
 
 # -- the card's two proofs -----------------------------------------------------------------
@@ -172,7 +172,7 @@ def test_a_key_must_name_a_known_type_and_a_subject(db_session: Session) -> None
     user = _user(db_session)
     service = ReminderStateService(db_session)
 
-    for bad in ("nonsense", "nope:1", "attivita_overdue:", "attivita_overdue:a b"):
+    for bad in ("nonsense", "nope:1", "task_overdue:", "task_overdue:a b"):
         with pytest.raises(ValidationFailed):
             service.acknowledge(_actor(user), bad, "warning")
 
@@ -244,8 +244,8 @@ def test_the_end_of_a_pass_forgets_the_keys_a_type_no_longer_raises(db_session: 
     user = _user(db_session)
     service = ReminderStateService(db_session)
     ledger = ReminderLedger(db_session)
-    still = reminder_key("attivita_overdue", uuid4())
-    cleared = reminder_key("attivita_overdue", uuid4())
+    still = reminder_key("task_overdue", uuid4())
+    cleared = reminder_key("task_overdue", uuid4())
     other_type = reminder_key("deal_stale", uuid4())
     for key in (still, cleared, other_type):
         service.acknowledge(_actor(user), key, "warning")
@@ -253,7 +253,7 @@ def test_the_end_of_a_pass_forgets_the_keys_a_type_no_longer_raises(db_session: 
         ledger.record((key, user.id, "push", "immediate", None), "warning")
     db_session.flush()
 
-    ledger.forget_unraised(ran={"attivita_overdue"}, raised={still})
+    ledger.forget_unraised(ran={"task_overdue"}, raised={still})
     db_session.flush()
 
     for model in (ReminderAck, ReminderSnooze, ReminderDelivery):
@@ -267,10 +267,10 @@ def test_a_pass_that_raised_nothing_of_a_type_that_ran_forgets_all_of_it(
     db_session: Session,
 ) -> None:
     user = _user(db_session)
-    key = reminder_key("attivita_overdue", uuid4())
+    key = reminder_key("task_overdue", uuid4())
     ReminderStateService(db_session).acknowledge(_actor(user), key, "warning")
 
-    ReminderLedger(db_session).forget_unraised(ran={"attivita_overdue"}, raised=set())
+    ReminderLedger(db_session).forget_unraised(ran={"task_overdue"}, raised=set())
     db_session.flush()
 
     assert db_session.scalar(select(func.count()).select_from(ReminderAck)) == 0
@@ -292,7 +292,7 @@ def test_the_summary_marker(db_session: Session) -> None:
 
 
 def test_a_since_ladder_reaches_its_highest_rung() -> None:
-    overdue = REMINDER_TYPES["attivita_overdue"]  # serious from 1 day, critical from 14
+    overdue = REMINDER_TYPES["task_overdue"]  # serious from 1 day, critical from 14
 
     assert severity_for(overdue, 0, overdue.ladder) is None
     assert severity_for(overdue, 1, overdue.ladder) == "serious"
@@ -301,7 +301,7 @@ def test_a_since_ladder_reaches_its_highest_rung() -> None:
 
 
 def test_an_until_ladder_reaches_its_rungs_as_the_measure_shrinks() -> None:
-    due = REMINDER_TYPES["attivita_due"]
+    due = REMINDER_TYPES["task_due"]
 
     assert severity_for(due, 0, {"warning": 0}) == "warning"
     assert severity_for(due, 1, {"warning": 0}) is None
@@ -310,8 +310,8 @@ def test_an_until_ladder_reaches_its_rungs_as_the_measure_shrinks() -> None:
 
 
 def test_a_ladder_that_breaks_the_order_is_refused_in_italian() -> None:
-    overdue = REMINDER_TYPES["attivita_overdue"]
-    due = REMINDER_TYPES["attivita_due"]
+    overdue = REMINDER_TYPES["task_overdue"]
+    due = REMINDER_TYPES["task_due"]
 
     assert validate_ladder(overdue, {"warning": 1, "serious": 7, "critical": 14}) == {
         "warning": 1,
@@ -356,7 +356,7 @@ def test_a_row_written_after_the_evaluation_is_not_its_to_end(db_session: Sessio
     ledger = ReminderLedger(db_session)
     long_ago = datetime(2020, 1, 1, tzinfo=UTC)
 
-    assert ledger.forget_unraised({"attivita_overdue"}, set(), before=long_ago) == 0
+    assert ledger.forget_unraised({"task_overdue"}, set(), before=long_ago) == 0
     assert db_session.scalars(select(ReminderAck).where(ReminderAck.key == KEY)).all()
 
-    assert ledger.forget_unraised({"attivita_overdue"}, set()) == 1, "no moment: as it was"
+    assert ledger.forget_unraised({"task_overdue"}, set()) == 1, "no moment: as it was"

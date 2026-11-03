@@ -166,7 +166,7 @@ def italian(number: Decimal, places: int) -> str:
 
 def italian_date(day: date) -> str:
     """`2026-10-01` as `1° ottobre 2026`: the ordinal on the first of the month, the way
-    a contract writes it (and `incarico.esempio.json` already does), the plain number on
+    a contract writes it (and `engagement.example.json` already does), the plain number on
     every other day."""
     number = "1°" if day.day == 1 else str(day.day)
     return f"{number} {MONTHS[day.month - 1]} {day.year}"

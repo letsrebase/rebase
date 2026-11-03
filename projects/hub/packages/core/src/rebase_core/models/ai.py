@@ -29,11 +29,11 @@ from rebase_core.models.team import CARD_MODEL_MAX_LENGTH
 # of these three; the database repeats both lists as `CHECK`s. The efforts are the one
 # reasoning knob every provider maps in its own words (`llm.build_model`).
 AI_PROVIDERS = ("anthropic", "openai", "google")
-AI_TASKS = ("card", "team_proposal", "cv_anonimo", "crm_lead")
+AI_TASKS = ("card", "team_proposal", "anonymous_cv", "crm_lead")
 AI_EFFORTS = ("low", "medium", "high")
 # Why a call ran (`ai_usage.purpose`): a real one, an admin's «Prova», an evaluation run.
 # All three consume the cap of the task they ran as.
-AI_USAGE_PURPOSES = ("run", "prova", "eval")
+AI_USAGE_PURPOSES = ("run", "test", "eval")
 
 
 class AiProvider(Base):
@@ -64,7 +64,7 @@ class AiProvider(Base):
 
 
 class AiTask(Base):
-    """What answers one task (`card`, `team_proposal`, `cv_anonimo`, `crm_lead`): provider,
+    """What answers one task (`card`, `team_proposal`, `anonymous_cv`, `crm_lead`): provider,
     free-text model name, reasoning effort where the provider has one, the output ceiling, and
     an optional daily cap in euros that stops the task's calls for the rest of the day. The
     rows are seeded by migrations 0036, 0044 and 0045; `rebase ai-seed` points them at the old
@@ -88,7 +88,7 @@ class AiTask(Base):
 
     __table_args__ = (
         CheckConstraint(
-            "task IN ('card', 'team_proposal', 'cv_anonimo', 'crm_lead')", name="ck_ai_tasks_task"
+            "task IN ('card', 'team_proposal', 'anonymous_cv', 'crm_lead')", name="ck_ai_tasks_task"
         ),
         CheckConstraint("max_output_tokens > 0", name="ck_ai_tasks_max_output_tokens"),
         CheckConstraint(
@@ -167,9 +167,9 @@ class AiUsage(Base, PrimaryKeyMixin):
     __table_args__ = (
         Index("ix_ai_usage_task_at", "task", "at"),
         CheckConstraint(
-            "task IN ('card', 'team_proposal', 'cv_anonimo', 'crm_lead')", name="ck_ai_usage_task"
+            "task IN ('card', 'team_proposal', 'anonymous_cv', 'crm_lead')", name="ck_ai_usage_task"
         ),
-        CheckConstraint("purpose IN ('run', 'prova', 'eval')", name="ck_ai_usage_purpose"),
+        CheckConstraint("purpose IN ('run', 'test', 'eval')", name="ck_ai_usage_purpose"),
         CheckConstraint("priced = (cost_eur IS NOT NULL)", name="ck_ai_usage_priced"),
     )
 

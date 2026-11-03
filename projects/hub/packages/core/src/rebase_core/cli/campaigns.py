@@ -62,9 +62,9 @@ def campaigns_tick() -> int:
     finally:
         session.close()
     print(
-        f"{result.campagne} campagne, {result.inviate} inviate, "
-        f"{result.saltate} saltate, {result.fallite} fallite, "
-        f"{result.stampate} esiti registrati"
+        f"{result.campaigns} campagne, {result.sent} inviate, "
+        f"{result.skipped} saltate, {result.failed} fallite, "
+        f"{result.stamped} esiti registrati"
     )
     return 0
 

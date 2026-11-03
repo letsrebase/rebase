@@ -85,10 +85,10 @@ describe('rewrite', () => {
 
   it('keeps a query string utm.js already added, and only changes the path', () => {
     document.body.innerHTML =
-      '<a class="quiet-link" href="/hub/login?da=home&utm_source=x">Accedi</a>'
+      '<a class="quiet-link" href="/hub/login?from=home&utm_source=x">Accedi</a>'
     const { rewrite } = load()
     expect(rewrite(document, '/hub/admin')).toBe(1)
-    expect(hrefsOf()).toEqual(['/hub/admin?da=home&utm_source=x'])
+    expect(hrefsOf()).toEqual(['/hub/admin?from=home&utm_source=x'])
   })
 })
 

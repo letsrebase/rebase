@@ -25,7 +25,7 @@ type Availability =
 
 /** What the hub and the registry said about the address typed at step 1. */
 interface Member {
-  membro: boolean
+  member: boolean
   has_spaces: boolean
 }
 
@@ -72,7 +72,7 @@ export function SignupPage({ go = (url) => window.location.assign(url) }: { go?:
   const [emailState, setEmail] = useState('')
   const [member, setMember] = useState<Member | null>(null)
   const [linkSent, setLinkSent] = useState(false)
-  const [nome, setNome] = useState('')
+  const [name, setName] = useState('')
   const [slug, setSlug] = useState('')
   const [slugTouched, setSlugTouched] = useState(false)
   const [editingSlug, setEditingSlug] = useState(false)
@@ -116,14 +116,14 @@ export function SignupPage({ go = (url) => window.location.assign(url) }: { go?:
     const handle = window.setTimeout(() => {
       setAvailability({ state: 'checking', slug: asked })
       void api
-        .GET('/api/tenants/{slug}/disponibile', { params: { path: { slug: asked } } })
+        .GET('/api/tenants/{slug}/available', { params: { path: { slug: asked } } })
         .then(({ data, error: apiError, response }) => {
           if (stale) return
           if (data) {
             setAvailability(
-              data.disponibile
+              data.available
                 ? { state: 'free', slug: asked }
-                : { state: 'taken', slug: asked, reason: data.motivo ?? 'questo nome è già in uso' },
+                : { state: 'taken', slug: asked, reason: data.reason ?? 'questo nome è già in uso' },
             )
             return
           }
@@ -159,13 +159,13 @@ export function SignupPage({ go = (url) => window.location.assign(url) }: { go?:
   }, [screen, slug, localProblem])
 
   // The name proposes the address until the person edits the address by hand.
-  function onNomeChange(value: string) {
-    setNome(value)
+  function onNameChange(value: string) {
+    setName(value)
     if (!slugTouched) setSlug(slugify(value))
   }
 
   // The fast path skips straight to the name step, but the hub's answer (the
-  // `membro` flag the create call sends) still matters: fetched
+  // `member` flag the create call sends) still matters: fetched
   // here in the background rather than blocking the form on it, and `memberSettled` keeps
   // the create button off until this settles one way or the other.
   useEffect(() => {
@@ -218,7 +218,7 @@ export function SignupPage({ go = (url) => window.location.assign(url) }: { go?:
     try {
       const tenant = await unwrap(
         api.POST('/api/tenants/', {
-          body: { slug, nome: nome.trim(), email, membro: member?.membro ?? false },
+          body: { slug, name: name.trim(), email, member: member?.member ?? false },
         }),
       )
       // The 201 set the space's cookies: a different basepath is a different application
@@ -242,7 +242,7 @@ export function SignupPage({ go = (url) => window.location.assign(url) }: { go?:
   // Outside the fast path `memberSettled` never matters (`!fastPathActive` alone
   // clears the gate): the ordinary flow already awaits the member lookup before the
   // name screen ever shows.
-  const canCreate = !busy && (isFree || failed) && nome.trim() !== '' && (memberSettled || !fastPathActive)
+  const canCreate = !busy && (isFree || failed) && name.trim() !== '' && (memberSettled || !fastPathActive)
 
   const hasSpaces = screen === 'owner'
 
@@ -253,7 +253,7 @@ export function SignupPage({ go = (url) => window.location.assign(url) }: { go?:
     setMember(null)
     setLinkSent(false)
     setError(null)
-    setNome('')
+    setName('')
     setSlug('')
     setSlugTouched(false)
     setEditingSlug(false)
@@ -275,10 +275,10 @@ export function SignupPage({ go = (url) => window.location.assign(url) }: { go?:
               : screen === 'email'
                 ? '1 di 2. Un PigroCRM tutto tuo, con i tuoi dati in un database separato.'
                 : fastPathActive
-                  ? member?.membro
+                  ? member?.member
                     ? 'Sei dei nostri.'
                     : 'Come si chiama il nuovo spazio?'
-                  : member?.membro
+                  : member?.member
                     ? '2 di 2. Sei dei nostri.'
                     : '2 di 2. Come si chiama il tuo spazio?'}
           </CardDescription>
@@ -349,13 +349,13 @@ export function SignupPage({ go = (url) => window.location.assign(url) }: { go?:
           ) : (
             <form onSubmit={onCreate} className="space-y-4" noValidate>
               <div className="space-y-2">
-                <Label htmlFor="nome">Come si chiama il tuo spazio?</Label>
+                <Label htmlFor="name">Come si chiama il tuo spazio?</Label>
                 <Input
-                  id="nome"
+                  id="name"
                   autoComplete="name"
                   required
-                  value={nome}
-                  onChange={(event) => onNomeChange(event.target.value)}
+                  value={name}
+                  onChange={(event) => onNameChange(event.target.value)}
                 />
                 {editingSlug ? (
                   <div className="space-y-2">
@@ -396,7 +396,7 @@ export function SignupPage({ go = (url) => window.location.assign(url) }: { go?:
                   )}
                 </p>
               </div>
-              {member && !member.membro && (
+              {member && !member.member && (
                 <p className="text-muted-foreground text-sm">
                   Non sei ancora nella community rebase? Puoi entrare comunque: nella mail ti
                   raccontiamo cos’è.

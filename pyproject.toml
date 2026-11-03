@@ -86,7 +86,7 @@ testpaths = [
 #
 # The cost of that mode is that pytest no longer inserts each test root into `sys.path`,
 # and these suites do import their own neighbours by bare name (`fakes.fake_gmail`,
-# `periodo_fiscale`, `test_mcp_invoice_ban`). `pythonpath` puts back exactly the six
+# `tax_period`, `test_mcp_invoice_ban`). `pythonpath` puts back exactly the six
 # directories that insertion used to add, one per test root, listed the same way and for
 # the same reason `testpaths` is: a glob here would also match a project with no tests.
 addopts = "--import-mode=importlib"

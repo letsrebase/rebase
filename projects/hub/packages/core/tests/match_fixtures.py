@@ -15,9 +15,9 @@ from sqlalchemy.orm import Session
 from rebase_core.companies import CompanyService
 from rebase_core.company_schemas import CompanyCreate
 from rebase_core.contract_schemas import (
-    ClienteData,
+    CustomerDate,
     FiscalData,
-    LetteraFields,
+    LetterFields,
     MatchCreate,
 )
 from rebase_core.contracts.fields import Value
@@ -38,7 +38,7 @@ TODAY = date(2026, 9, 23)
 
 # The framework agreement's version today, read once from the real text so a future
 # version bump does not silently make `_framework`'s default a stale literal.
-QUADRO_VERSION = current_text_version("contratto-quadro")
+FRAMEWORK_VERSION = current_text_version("framework-agreement")
 
 
 # Fiction, like the public example: rebase's own fields as the setting would carry them.
@@ -84,12 +84,12 @@ def _admin(session: Session) -> UUID:
 def _card(session: Session) -> UUID:
     row, _ = FreelancerService(session).apply(
         FreelancerCreate(
-            nome="Ada",
-            cognome="Lovelace",
+            first_name="Ada",
+            last_name="Lovelace",
             email="ada@studio.it",
-            tariffa_giornaliera=Decimal("450"),
-            posizione="Backend developer",
-            remoto="remoto",
+            daily_rate=Decimal("450"),
+            job_title="Backend developer",
+            remote="remote",
         ),
         PDF,
         "cv.pdf",
@@ -101,19 +101,19 @@ def _card(session: Session) -> UUID:
 def _request(session: Session, **change: object) -> UUID:
     """A request whose budget is a number that must appear nowhere in the flow."""
     payload: dict[str, object] = {
-        "nome_azienda": "ACME Srl",
-        "referente_nome": "Wile",
-        "referente_cognome": "E.",
+        "company_name": "ACME Srl",
+        "contact_first_name": "Wile",
+        "contact_last_name": "E.",
         "email": "wile@acme.it",
-        "telefono": "+39 345 1234567",
-        "figura_richiesta": "Backend developer",
-        "progetto": "Le API del prodotto, per tre mesi.",
-        "periodo_da": date(2026, 10, 1),
-        "durata": "3 mesi",
-        "budget_giornaliero": Decimal("777.77"),
-        "remoto": "ibrido",
-        "giorni_presenza": 2,
-        "numero_risorse": 1,
+        "phone": "+39 345 1234567",
+        "requested_role": "Backend developer",
+        "project": "Le API del prodotto, per tre mesi.",
+        "period_from": date(2026, 10, 1),
+        "duration": "3 mesi",
+        "daily_budget": Decimal("777.77"),
+        "remote": "hybrid",
+        "onsite_days": 2,
+        "headcount": 1,
     }
     payload.update(change)
     row, _ = CompanyService(session).request(CompanyCreate(**payload))  # type: ignore[arg-type]
@@ -124,14 +124,14 @@ def _fiscal(
     session: Session,
     freelancer_id: UUID,
     admin_id: UUID,
-    partita_iva: str | None = "01234567890",
+    vat_number: str | None = "01234567890",
 ) -> None:
     FiscalService(session).save(
         freelancer_id,
         FiscalData(
-            codice_fiscale="LVLDAA85T50H501Z",
-            partita_iva=partita_iva,
-            domicilio="Via Roma 1, Milano",
+            tax_code="LVLDAA85T50H501Z",
+            vat_number=vat_number,
+            domicile="Via Roma 1, Milano",
         ),
         admin_id,
     )
@@ -146,29 +146,31 @@ def _setup(session: Session) -> tuple[UUID, UUID, UUID]:
 def _setup_occasional(session: Session) -> tuple[UUID, UUID, UUID]:
     """A freelancer whose tax data were saved without a partita IVA (REB-687)."""
     admin_id, freelancer_id, company_id = _admin(session), _card(session), _request(session)
-    _fiscal(session, freelancer_id, admin_id, partita_iva=None)
+    _fiscal(session, freelancer_id, admin_id, vat_number=None)
     return admin_id, freelancer_id, company_id
 
 
 def _body(
-    company_id: UUID, *, giorni_previsti: int | None = None, regime: Regime = "partita_iva"
+    company_id: UUID, *, expected_days: int | None = None, regime: Regime = "vat_registered"
 ) -> MatchCreate:
     return MatchCreate(
         company_id=company_id,
         regime=regime,
-        cliente=ClienteData(
-            cliente_ragione_sociale="ACME S.r.l.", cliente_piva="01234567890", cliente_sede="Milano"
+        customer=CustomerDate(
+            customer_legal_name="ACME S.r.l.",
+            customer_vat_number="01234567890",
+            customer_registered_office="Milano",
         ),
-        lettera=LetteraFields(
-            ruolo="Backend developer",
-            attivita="Le API del prodotto.",
-            data_inizio=date(2026, 10, 1),
-            modalita="a giornata",
-            compenso=Decimal("450"),
-            giorni_pagamento=30,
-            fine_mese=True,
+        letter=LetterFields(
+            role="Backend developer",
+            activities="Le API del prodotto.",
+            start_date=date(2026, 10, 1),
+            mode="to_work_unit",
+            fee=Decimal("450"),
+            payment_days=30,
+            month_end=True,
         ),
-        giorni_previsti=giorni_previsti,
+        expected_days=expected_days,
     )
 
 
@@ -183,22 +185,22 @@ def _framework(
     freelancer_id: UUID,
     admin_id: UUID,
     *,
-    stato: str = "firmato",
+    status: str = "signed",
     signed_at: datetime | None = datetime(2026, 10, 1, 9, 0, tzinfo=UTC),
     notice_at: datetime | None = None,
-    text_version: str = QUADRO_VERSION,
-    regime: str = "partita_iva",
+    text_version: str = FRAMEWORK_VERSION,
+    regime: str = "vat_registered",
 ) -> ContractDocument:
     """A framework agreement as phase 3 will leave one: only a signature makes these."""
     document = ContractDocument(
-        kind="quadro",
+        kind="framework",
         regime=regime,
         freelancer_id=freelancer_id,
         text_version=text_version,
-        testo_bozza=False,
+        draft_text=False,
         data={},
         pdf=b"%PDF-quadro",
-        stato=stato,
+        status=status,
         signed_at=signed_at,
         notice_at=notice_at,
         created_by=admin_id,
@@ -234,12 +236,12 @@ class _FakeOrig(Exception):
 # ---- the admin's «Match» list (REB-413) -------------------------------------------------
 def _second_card(session: Session, **change: object) -> UUID:
     payload: dict[str, object] = {
-        "nome": "Grace",
-        "cognome": "Hopper",
+        "first_name": "Grace",
+        "last_name": "Hopper",
         "email": "grace@studio.it",
-        "tariffa_giornaliera": Decimal("500"),
-        "posizione": "Frontend developer",
-        "remoto": "remoto",
+        "daily_rate": Decimal("500"),
+        "job_title": "Frontend developer",
+        "remote": "remote",
     }
     payload.update(change)
     row, _ = FreelancerService(session).apply(
@@ -257,18 +259,18 @@ def _waiting(session: Session, match_id: UUID) -> None:
     its letter waiting (what `SigningService.send_match` leaves)."""
     match = session.get(Match, match_id)
     assert match is not None
-    match.stato = "in_firma"
+    match.status = "awaiting_signature"
     session.commit()
 
 
-def _framework_now(session: Session, freelancer_id: UUID, stato: str) -> None:
-    (framework,) = _documents(session, freelancer_id, "quadro")
-    framework.stato = stato
-    if stato in ("inviato", "firmato", "disdetto"):
+def _framework_now(session: Session, freelancer_id: UUID, status: str) -> None:
+    (framework,) = _documents(session, freelancer_id, "framework")
+    framework.status = status
+    if status in ("sent", "signed", "notice_served"):
         framework.sent_at = datetime(2026, 9, 25, 9, 0, tzinfo=UTC)
-    if stato in ("firmato", "disdetto"):
+    if status in ("signed", "notice_served"):
         framework.signed_at = datetime(2026, 9, 28, 9, 0, tzinfo=UTC)
-    if stato == "disdetto":
+    if status == "notice_served":
         framework.notice_at = datetime(2026, 11, 2, 9, 0, tzinfo=UTC)
     session.commit()
 
@@ -284,11 +286,11 @@ def _rows(session: Session) -> dict[str, list[tuple[object, ...]]]:
     }
 
 
-CLIENTE_REST = {"cliente_piva": "01234567890", "cliente_sede": "Milano"}
+CUSTOMER_REST = {"customer_vat_number": "01234567890", "customer_registered_office": "Milano"}
 
 
 # ---- the letter type (REB-687) -----------------------------------------------------------
-REFUSED_WITHOUT_PARTITA_IVA = (
+REFUSED_WITHOUT_VAT_NUMBER = (
     'Senza partita IVA si fa solo la lettera occasionale: scegli "Prestazione occasionale" '
     "o salva la partita IVA."
 )

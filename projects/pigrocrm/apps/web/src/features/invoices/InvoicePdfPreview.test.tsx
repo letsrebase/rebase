@@ -16,12 +16,12 @@ vi.mock('@/lib/auth', () => ({ useCan: () => mockAuth.may }))
 
 const ISSUED = {
   id: 'inv-1',
-  tipo: 'fattura',
-  stato: 'emessa',
+  type: 'invoice',
+  status: 'issued',
   pdf_document_id: 'doc-9',
 } as unknown as Invoice
-const DRAFT = { id: 'inv-2', tipo: 'fattura', stato: 'bozza', pdf_document_id: null } as unknown as Invoice
-const PROFORMA = { id: 'pf-1', tipo: 'proforma', stato: 'confermata', pdf_document_id: null } as unknown as Invoice
+const DRAFT = { id: 'inv-2', type: 'invoice', status: 'draft', pdf_document_id: null } as unknown as Invoice
+const PROFORMA = { id: 'pf-1', type: 'proforma', status: 'confirmed', pdf_document_id: null } as unknown as Invoice
 
 function wrap(children: ReactNode, client = new QueryClient({ defaultOptions: { queries: { retry: false } } })) {
   return render(<QueryClientProvider client={client}>{children}</QueryClientProvider>)
@@ -164,7 +164,7 @@ describe('InvoicePdfPreview', () => {
   })
 
   it('does not send an imported invoice to a button it does not have', () => {
-    const imported = { ...ISSUED, pdf_document_id: null, importata_da: 'esterno' } as Invoice
+    const imported = { ...ISSUED, pdf_document_id: null, imported_from: 'external' } as Invoice
     wrap(<InvoicePdfPreview invoice={imported} />)
     expect(screen.getByText(/PDF originale non è archiviato/)).toBeInTheDocument()
     expect(fetchWithRefresh).not.toHaveBeenCalled()

@@ -44,8 +44,8 @@ from pigrocrm.core.reminders.dispatch import (
 )
 from pigrocrm.core.reminders.ledger import DeliveryIdentity, ReminderLedger
 from pigrocrm.core.reminders.links import (
-    AVVISI_PATH,
     NOTIFICATIONS_PATH,
+    REMINDERS_PATH,
     absolute,
     record_path,
 )
@@ -112,7 +112,7 @@ class EmailChannel(Channel):
                     mail.to,
                     lines,
                     kind=mail.kind,
-                    avvisi_url=absolute(context.public_url, AVVISI_PATH),
+                    reminders_url=absolute(context.public_url, REMINDERS_PATH),
                     settings_url=absolute(context.public_url, NOTIFICATIONS_PATH),
                 )
                 if not sender.send(message):

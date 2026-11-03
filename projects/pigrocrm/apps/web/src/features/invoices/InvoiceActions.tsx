@@ -38,10 +38,10 @@ export function InvoiceActions({
   /** Called once the server has accepted the delete: the page this bar sits on no
    *  longer exists, so the caller decides where to go (the list, in practice). */
   onDeleted?: () => void
-  /** Called with the row that now carries the number. For a draft fattura it is this
+  /** Called with the row that now carries the number. For a draft invoice it is this
    *  same row; for a proforma it is a *new* row (spec 5), and the page this bar sits on
    *  has become a consumed proforma with nothing left to do on it, so the caller goes
-   *  to the fattura, where «XML FatturaPA» is (ORB-134). */
+   *  to the invoice, where «XML FatturaPA» is (ORB-134). */
   onIssued?: (issued: Invoice) => void
 }) {
   const [problem, setProblem] = useState<ProblemDetail | null>(null)
@@ -70,34 +70,34 @@ export function InvoiceActions({
   const transmitted = useMarkTransmitted(invoice.id)
   const remove = useDeleteInvoice()
 
-  const isDraftFattura = invoice.tipo === 'fattura' && invoice.stato === 'bozza'
-  const isProformaReady = invoice.tipo === 'proforma' && invoice.stato === 'confermata'
+  const isDraftInvoice = invoice.type === 'invoice' && invoice.status === 'draft'
+  const isProformaReady = invoice.type === 'proforma' && invoice.status === 'confirmed'
   // The step before «Emetti» on a proforma (ORB-132): until it existed a proforma
   // created from the web could never be issued from the web, since `issue` wants a
   // confirmed one and nothing here confirmed it.
-  const isDraftProforma = invoice.tipo === 'proforma' && invoice.stato === 'bozza'
-  const canIssue = isDraftFattura || isProformaReady
-  const isIssued = invoice.tipo === 'fattura' && invoice.stato === 'emessa'
+  const isDraftProforma = invoice.type === 'proforma' && invoice.status === 'draft'
+  const canIssue = isDraftInvoice || isProformaReady
+  const isIssued = invoice.type === 'invoice' && invoice.status === 'issued'
   // What never consumed a number can go (slice 3 §4: a draft is «cancellabile»): a
   // draft fattura, and a proforma until it is consumed by the emission it precedes.
   // The server (`soft_delete`, and the CHECK behind it) refuses everything else with a
   // 409, so this mirrors the rule rather than owning it. An issued invoice is annulled.
-  const canDelete = isDraftFattura || (invoice.tipo === 'proforma' && invoice.stato !== 'consumata')
+  const canDelete = isDraftInvoice || (invoice.type === 'proforma' && invoice.status !== 'consumed')
   // An invoice pigroCRM imported never had its own XML rendered here: the one on file is
   // whatever the system that issued it transmitted at the time, so offering to
   // regenerate it would silently replace a legally-filed document with a
   // reconstruction. The flag is the column's presence, never its value.
-  const isImported = invoice.importata_da != null
+  const isImported = invoice.imported_from != null
   // Collection is a fact about an issued invoice and nothing else (`set_payment_state`
   // answers 409 for every other state), so the two payment buttons only exist there.
   // A proforma is never collected and a draft is not yet a document.
-  const collected = invoice.stato_pagamento === 'incassato'
+  const collected = invoice.payment_status === 'paid'
   // Settable once, admin-only on the server (`mark_transmitted_externally`, and the
   // `mayMarkTransmitted` check above is the UI half of that gate), and meaningless for
   // an imported invoice: the system that issued it is the one that transmitted it, and
   // the column already says so. The button follows all four.
   const showMarkTransmitted =
-    isIssued && mayMarkTransmitted && !isImported && invoice.trasmessa_esternamente_il === null
+    isIssued && mayMarkTransmitted && !isImported && invoice.transmitted_externally_at === null
   // REB-168: a download button exists only when its file does, read from the row the way
   // the proforma branch below already reads `pdf_document_id`. «XML FatturaPA» used to
   // show on every issued invoice, and on one whose render had failed the press answered
@@ -187,13 +187,13 @@ export function InvoiceActions({
    * no motivo to ask for: nothing fiscal happened yet, and the list is where you land.
    */
   function onDelete() {
-    const what = invoice.tipo === 'proforma' ? 'questa proforma' : 'questa bozza'
+    const what = invoice.type === 'proforma' ? 'questa proforma' : 'questa bozza'
     if (!window.confirm(`Eliminare ${what}? Non ha un numero, quindi non resta traccia nel registro.`))
       return
     setProblem(null)
     remove.mutate(invoice.id, {
       onSuccess: () => {
-        toast.success(invoice.tipo === 'proforma' ? 'Proforma eliminata' : 'Bozza eliminata')
+        toast.success(invoice.type === 'proforma' ? 'Proforma eliminata' : 'Bozza eliminata')
         onDeleted?.()
       },
       onError: (error) => setProblem(toProblem(error)),
@@ -210,7 +210,7 @@ export function InvoiceActions({
       return
     setProblem(null)
     payment.mutate(
-      { stato_pagamento: 'da_incassare', data_incasso: null },
+      { payment_status: 'unpaid', payment_date: null },
       {
         onSuccess: () => toast.success('Fattura segnata da incassare'),
         onError: (error) => setProblem(toProblem(error)),
@@ -226,7 +226,7 @@ export function InvoiceActions({
         downloadErrorSentence(
           toProblem(error),
           kind,
-          invoice.tipo === 'proforma' ? 'proforma' : 'fattura',
+          invoice.type === 'proforma' ? 'proforma' : 'invoice',
           isIssued && !isImported && mayProduce,
         ),
       )
@@ -315,7 +315,7 @@ export function InvoiceActions({
           </>
         ) : null}
 
-        {invoice.tipo === 'proforma' && invoice.stato !== 'consumata' ? (
+        {invoice.type === 'proforma' && invoice.status !== 'consumed' ? (
           invoice.pdf_document_id === null ? (
             /* Until now the web never produced a proforma's PDF: the download button
                asked for a file that did not exist and got a 404 (ORB-30). The same
@@ -348,7 +348,7 @@ export function InvoiceActions({
         {canDelete && mayDelete ? (
           <Button variant="destructive" onClick={onDelete} disabled={remove.isPending}>
             <Trash2 className="mr-2 size-4" />
-            {invoice.tipo === 'proforma' ? 'Elimina proforma' : 'Elimina bozza'}
+            {invoice.type === 'proforma' ? 'Elimina proforma' : 'Elimina bozza'}
           </Button>
         ) : null}
       </div>

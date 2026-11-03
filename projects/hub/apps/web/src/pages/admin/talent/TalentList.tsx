@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react'
 import { Input } from '@rebase/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@rebase/ui/select'
 import { Table, TableBody, TableHead, TableHeader, TableRow } from '@rebase/ui/table'
-import { admin, type Remoto, type TalentiFilters } from '@/lib/api'
+import { admin, type Remote, type TalentsFilters } from '@/lib/api'
 import {
   ANY,
   SEARCH_DEBOUNCE_MS,
@@ -15,14 +15,14 @@ import {
   useDebounce,
 } from '@/lib/adminList'
 import { amountFilter } from '@/lib/amount'
-import { FREELANCER_LIST_STATES, REMOTO_LABELS } from '@/lib/format'
+import { FREELANCER_LIST_STATES, REMOTE_LABELS } from '@/lib/format'
 import { keys } from '@/lib/query-keys'
 import { DuplicatesLink } from '../DuplicateMarks'
 import { AmountFilter, Empty, FilterField, Header, LoadMore, StateFilter } from '../list-kit'
-import { TalentoRow } from './TalentRow'
+import { TalentRow } from './TalentRow'
 
 /** «Talenti»: every freelancer card and every bare sign-up as one list (REB-282/283),
- *  `stato` `lead` for the bare ones and the freelancer's own state otherwise -- the
+ *  `status` `lead` for the bare ones and the freelancer's own state otherwise -- the
  *  single list that replaced «Developer e CTO» and «Iscrizioni». A card row opens the
  *  existing freelancer detail; a lead row opens the page that offers to draft one.
  *  REB-286 adds the search box, the filter row and infinite scroll, all three carried
@@ -30,7 +30,7 @@ import { TalentoRow } from './TalentRow'
  *  or a shared link reproduces the exact view; only `q` is debounced client-side
  *  before it reaches the URL and the query, everything else applies immediately like
  *  the state pills always have. */
-export function AdminTalenti() {
+export function AdminTalents() {
   const search = useSearch({ from: '/signedIn/admin/talent' })
   const navigate = useNavigate()
   const [qInput, setQInput] = useState(search.q ?? '')
@@ -40,24 +40,24 @@ export function AdminTalenti() {
     if (debouncedQ === (search.q ?? '')) return
     void navigate({
       to: '/admin/talent',
-      search: (prev: TalentiFilters) => ({ ...prev, q: debouncedQ || undefined }),
+      search: (prev: TalentsFilters) => ({ ...prev, q: debouncedQ || undefined }),
       replace: true,
     })
   }, [debouncedQ, navigate, search.q])
 
-  function setFilter<K extends keyof TalentiFilters>(key: K, value: TalentiFilters[K]) {
+  function setFilter<K extends keyof TalentsFilters>(key: K, value: TalentsFilters[K]) {
     void navigate({
       to: '/admin/talent',
-      search: (prev: TalentiFilters) => ({ ...prev, [key]: value }),
+      search: (prev: TalentsFilters) => ({ ...prev, [key]: value }),
       replace: true,
     })
   }
 
-  const filters: TalentiFilters = {
+  const filters: TalentsFilters = {
     ...search,
     q: debouncedQ || undefined,
-    tariffa_min: amountFilter(search.tariffa_min),
-    tariffa_max: amountFilter(search.tariffa_max),
+    min_rate: amountFilter(search.min_rate),
+    max_rate: amountFilter(search.max_rate),
   }
   const { list, items } = useCursorList({
     queryKey: keys.talents(filters),
@@ -69,20 +69,20 @@ export function AdminTalenti() {
 
   return (
     <>
-      <Header title="Talenti" count={list.data?.pages[0]?.totale}>
+      <Header title="Talenti" count={list.data?.pages[0]?.total}>
         <div className="flex flex-wrap items-center gap-3">
           <DuplicatesLink />
           <StateFilter
             states={FREELANCER_LIST_STATES}
-            value={search.stato}
-            onChange={(value) => setFilter('stato', value)}
+            value={search.status}
+            onChange={(value) => setFilter('status', value)}
           />
         </div>
       </Header>
       <div className="grid gap-4 border-b px-6 py-4 sm:grid-cols-2 lg:grid-cols-4">
-        <FilterField label="Cerca" htmlFor="talenti-q">
+        <FilterField label="Cerca" htmlFor="talents-q">
           <Input
-            id="talenti-q"
+            id="talents-q"
             type="search"
             maxLength={200}
             placeholder="Nome, cognome, email, posizione…"
@@ -90,24 +90,24 @@ export function AdminTalenti() {
             onChange={(event) => setQInput(event.target.value)}
           />
         </FilterField>
-        <FilterField label="Posizione" htmlFor="talenti-posizione">
+        <FilterField label="Posizione" htmlFor="talents-job-title">
           <Input
-            id="talenti-posizione"
-            value={search.posizione ?? ''}
-            onChange={(event) => setFilter('posizione', event.target.value || undefined)}
+            id="talents-job-title"
+            value={search.job_title ?? ''}
+            onChange={(event) => setFilter('job_title', event.target.value || undefined)}
           />
         </FilterField>
-        <FilterField label="Da remoto" htmlFor="talenti-remoto">
+        <FilterField label="Da remoto" htmlFor="talents-remote">
           <Select
-            value={search.remoto ?? ANY}
-            onValueChange={(value) => setFilter('remoto', value === ANY ? undefined : (value as Remoto))}
+            value={search.remote ?? ANY}
+            onValueChange={(value) => setFilter('remote', value === ANY ? undefined : (value as Remote))}
           >
-            <SelectTrigger id="talenti-remoto">
+            <SelectTrigger id="talents-remote">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value={ANY}>Tutti</SelectItem>
-              {Object.entries(REMOTO_LABELS).map(([value, label]) => (
+              {Object.entries(REMOTE_LABELS).map(([value, label]) => (
                 <SelectItem key={value} value={value}>
                   {label}
                 </SelectItem>
@@ -116,73 +116,73 @@ export function AdminTalenti() {
           </Select>
         </FilterField>
         <AmountFilter
-          id="talenti-tariffa-min"
+          id="talents-min-rate"
           label="Tariffa min (€/giorno)"
-          value={search.tariffa_min}
-          onChange={(value) => setFilter('tariffa_min', value)}
+          value={search.min_rate}
+          onChange={(value) => setFilter('min_rate', value)}
         />
         <AmountFilter
-          id="talenti-tariffa-max"
+          id="talents-max-rate"
           label="Tariffa max (€/giorno)"
-          value={search.tariffa_max}
-          onChange={(value) => setFilter('tariffa_max', value)}
+          value={search.max_rate}
+          onChange={(value) => setFilter('max_rate', value)}
         />
-        <FilterField label="Pagina di provenienza" htmlFor="talenti-origine">
+        <FilterField label="Pagina di provenienza" htmlFor="talents-origin">
           <Input
-            id="talenti-origine"
+            id="talents-origin"
             placeholder="home, pigrocrm…"
-            value={search.pagina_origine ?? ''}
-            onChange={(event) => setFilter('pagina_origine', event.target.value || undefined)}
+            value={search.origin_page ?? ''}
+            onChange={(event) => setFilter('origin_page', event.target.value || undefined)}
           />
         </FilterField>
-        <FilterField label="UTM source" htmlFor="talenti-utm-source">
+        <FilterField label="UTM source" htmlFor="talents-utm-source">
           <Input
-            id="talenti-utm-source"
+            id="talents-utm-source"
             value={search.utm_source ?? ''}
             onChange={(event) => setFilter('utm_source', event.target.value || undefined)}
           />
         </FilterField>
-        <FilterField label="Ha un CV" htmlFor="talenti-has-cv">
+        <FilterField label="Ha un CV" htmlFor="talents-has-cv">
           <Select value={boolToSelect(search.has_cv)} onValueChange={(value) => setFilter('has_cv', selectToBool(value))}>
-            <SelectTrigger id="talenti-has-cv">
+            <SelectTrigger id="talents-has-cv">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value={ANY}>Tutti</SelectItem>
-              <SelectItem value="si">Sì</SelectItem>
+              <SelectItem value="yes">Sì</SelectItem>
               <SelectItem value="no">No</SelectItem>
             </SelectContent>
           </Select>
         </FilterField>
-        <FilterField label="Ha fatto accesso" htmlFor="talenti-con-accessi">
+        <FilterField label="Ha fatto accesso" htmlFor="talents-with-logins">
           <Select
-            value={boolToSelect(search.con_accessi)}
-            onValueChange={(value) => setFilter('con_accessi', selectToBool(value))}
+            value={boolToSelect(search.with_logins)}
+            onValueChange={(value) => setFilter('with_logins', selectToBool(value))}
           >
-            <SelectTrigger id="talenti-con-accessi">
+            <SelectTrigger id="talents-with-logins">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value={ANY}>Tutti</SelectItem>
-              <SelectItem value="si">Sì</SelectItem>
+              <SelectItem value="yes">Sì</SelectItem>
               <SelectItem value="no">No</SelectItem>
             </SelectContent>
           </Select>
         </FilterField>
-        <FilterField label="Creato dal" htmlFor="talenti-creato-da">
+        <FilterField label="Creato dal" htmlFor="talents-created-from">
           <Input
-            id="talenti-creato-da"
+            id="talents-created-from"
             type="date"
-            value={search.creato_da ?? ''}
-            onChange={(event) => setFilter('creato_da', event.target.value || undefined)}
+            value={search.created_from ?? ''}
+            onChange={(event) => setFilter('created_from', event.target.value || undefined)}
           />
         </FilterField>
-        <FilterField label="Creato al" htmlFor="talenti-creato-a">
+        <FilterField label="Creato al" htmlFor="talents-created-to">
           <Input
-            id="talenti-creato-a"
+            id="talents-created-to"
             type="date"
-            value={search.creato_a ?? ''}
-            onChange={(event) => setFilter('creato_a', event.target.value || undefined)}
+            value={search.created_to ?? ''}
+            onChange={(event) => setFilter('created_to', event.target.value || undefined)}
           />
         </FilterField>
       </div>
@@ -215,7 +215,7 @@ export function AdminTalenti() {
                 </TableHeader>
                 <TableBody>
                   {items.map((item) => (
-                    <TalentoRow key={item.id} item={item} />
+                    <TalentRow key={item.id} item={item} />
                   ))}
                 </TableBody>
               </Table>

@@ -25,16 +25,16 @@ function failed(error: unknown, status: number) {
 }
 
 const NEIGHBOURS: Record<string, unknown> = {
-  c0: { id: 'c0', titolo: 'Sviluppo 2025', inizio: '2025-01-01', fine: '2025-12-31' },
-  c2: { id: 'c2', titolo: 'Sviluppo 2027', inizio: '2027-01-01', fine: null },
+  c0: { id: 'c0', title: 'Sviluppo 2025', start: '2025-01-01', end: '2025-12-31' },
+  c2: { id: 'c2', title: 'Sviluppo 2027', start: '2027-01-01', end: null },
 }
 
-function renderChain(precedente: string | null, successivo: string | null) {
+function renderChain(previous: string | null, next: string | null) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(
     <QueryClientProvider client={client}>
       <RenewalChain
-        contract={{ contratto_precedente_id: precedente, contratto_successivo_id: successivo }}
+        contract={{ previous_contract_id: previous, next_contract_id: next }}
       />
     </QueryClientProvider>,
   )

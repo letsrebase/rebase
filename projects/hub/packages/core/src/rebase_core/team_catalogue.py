@@ -33,7 +33,7 @@ def cloud_visible[*Ts](stmt: Select[*Ts]) -> Select[*Ts]:
     `NULL`, and a JSON `null` left by any other writer is not an object either."""
     return stmt.join(FreelancerCard, FreelancerCard.freelancer_id == Freelancer.id).where(
         Freelancer.deleted_at.is_(None),
-        Freelancer.stato != "scartato",
+        Freelancer.status != "discarded",
         func.jsonb_typeof(FreelancerCard.card) == "object",
     )
 
@@ -41,43 +41,43 @@ def cloud_visible[*Ts](stmt: Select[*Ts]) -> Select[*Ts]:
 def catalogue_lines(session: Session) -> tuple[str, list[UUID]]:
     """One JSON line per `cloud_visible` freelancer, sorted by `Freelancer.id` so the
     text is the same across requests (the cache prefix): the card's structured fields,
-    its `luogo` for the engine alone, the work mode and the band, but no `sintesi`, no
+    its `location` for the engine alone, the work mode and the band, but no `profile_summary`, no
     name, no link, no rate and no id of ours. `"id"` is the line's position, `t1` first;
     the second value is the freelancer behind each position, in order."""
     rows = session.execute(
         cloud_visible(
             select(
                 Freelancer.id,
-                Freelancer.remoto,
-                Freelancer.tariffa_giornaliera,
+                Freelancer.remote,
+                Freelancer.daily_rate,
                 FreelancerCard.card,
                 Freelancer.seniority_admin,
-                Freelancer.anni_admin,
+                Freelancer.experience_years_admin,
             )
         ).order_by(Freelancer.id)
     ).all()
     lines: list[str] = []
     positions: list[UUID] = []
-    for freelancer_id, remoto, tariffa, stored, seniority_admin, anni_admin in rows:
+    for freelancer_id, remote, rate, stored, seniority_admin, experience_years_admin in rows:
         try:
-            card = card_read(stored, seniority_admin, anni_admin)
+            card = card_read(stored, seniority_admin, experience_years_admin)
         except ValidationError:
             logger.warning("catalogue: the card of freelancer %s is not a card", freelancer_id)
             continue
         positions.append(freelancer_id)
-        band = band_for(tariffa)
+        band = band_for(rate)
         line = {
             "id": f"t{len(positions)}",
-            "ruolo": card.ruolo,
+            "role": card.role,
             "seniority": card.seniority,
-            "anni": card.anni,
-            "seniority_incerta": card.seniority_incerta,
-            "competenze": card.competenze,
-            "settori": card.settori,
-            "lingue": card.lingue,
-            "luogo": card.luogo,
-            "modalita": remoto,
-            "fascia": band.bounds() if band is not None else None,
+            "experience_years": card.experience_years,
+            "seniority_uncertain": card.seniority_uncertain,
+            "skills": card.skills,
+            "industries": card.industries,
+            "languages": card.languages,
+            "location": card.location,
+            "mode": remote,
+            "band": band.bounds() if band is not None else None,
         }
         lines.append(json.dumps(line, ensure_ascii=False, separators=(",", ":")))
     return "\n".join(lines), positions

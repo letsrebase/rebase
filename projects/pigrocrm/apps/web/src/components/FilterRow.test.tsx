@@ -39,8 +39,8 @@ describe('FilterChip', () => {
 
 describe('FilterChips', () => {
   const STATES = [
-    { value: 'bozza', label: 'Bozza' },
-    { value: 'emessa', label: 'Emessa' },
+    { value: 'draft', label: 'Bozza' },
+    { value: 'issued', label: 'Emessa' },
   ]
 
   it('renders «Tutte» plus one chip per option, with «Tutte» on when nothing is selected', () => {
@@ -56,12 +56,12 @@ describe('FilterChips', () => {
       <FilterChips label="Filtra per stato" allLabel="Tutte" options={STATES} value={null} onChange={onChange} />,
     )
     await userEvent.click(screen.getByRole('button', { name: 'Emessa' }))
-    expect(onChange).toHaveBeenLastCalledWith('emessa')
+    expect(onChange).toHaveBeenLastCalledWith('issued')
 
     // A chip is a toggle and not a radio: pressing the one that is already on clears
     // the filter, which is the same thing «Tutte» does and the reason both work.
     rerender(
-      <FilterChips label="Filtra per stato" allLabel="Tutte" options={STATES} value="emessa" onChange={onChange} />,
+      <FilterChips label="Filtra per stato" allLabel="Tutte" options={STATES} value="issued" onChange={onChange} />,
     )
     expect(screen.getByRole('button', { name: 'Emessa' })).toHaveAttribute('aria-pressed', 'true')
     expect(screen.getByRole('button', { name: 'Tutte' })).toHaveAttribute('aria-pressed', 'false')
@@ -72,7 +72,7 @@ describe('FilterChips', () => {
   it('clears the filter from «Tutte»', async () => {
     const onChange = vi.fn()
     render(
-      <FilterChips label="Filtra per stato" allLabel="Tutte" options={STATES} value="bozza" onChange={onChange} />,
+      <FilterChips label="Filtra per stato" allLabel="Tutte" options={STATES} value="draft" onChange={onChange} />,
     )
     await userEvent.click(screen.getByRole('button', { name: 'Tutte' }))
     expect(onChange).toHaveBeenLastCalledWith(null)

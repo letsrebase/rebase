@@ -102,7 +102,7 @@ _MAX_RETRIES = 1
 # watching; its route has a host timeout of its own to match (AGENTS.md, «The anonymous CV
 # as a PDF»). A Message Batch sends neither (`build_batch_model`).
 _TASK_HTTP_LIMITS: dict[str, dict[str, Any]] = {
-    "cv_anonimo": {"timeout": 150.0, "max_retries": 0},
+    "anonymous_cv": {"timeout": 150.0, "max_retries": 0},
 }
 
 # The API accepts only "global" or "us" for `inference_geo`; "eu" answers a 400
@@ -327,7 +327,7 @@ class AiCall:
     answers (released if it does not) and, after an answer, settles the hold into the
     call's usage.
 
-    `purpose` is why the call runs (`run`, `prova`, `eval`: `AI_USAGE_PURPOSES`);
+    `purpose` is why the call runs (`run`, `test`, `eval`: `AI_USAGE_PURPOSES`);
     `freelancer_id` is the person a card call is about. `model_factory` is the test's
     way to hand a stub model; production leaves it at `build_model`, called per call so
     the key is the one saved now."""
@@ -575,7 +575,8 @@ def call_for_task(
     *,
     model_factory: ModelFactory = build_model,
 ) -> LlmCall | None:
-    """The seam for `task` (`card`, `team_proposal`, `cv_anonimo` or `crm_lead`), or `None` when it
+    """The seam for `task` (`card`, `team_proposal`, `anonymous_cv` or `crm_lead`), or `None` when
+    it
     cannot answer at all: the task off, its provider off or without a key. The callers
     then refuse with their own sentence. A cap reached or a missing price still gives a
     call, which refuses when it is made, with the reason «Modelli AI» shows."""

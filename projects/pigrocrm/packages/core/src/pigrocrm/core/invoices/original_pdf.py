@@ -16,10 +16,10 @@ from pigrocrm.core.errors import Conflict, NotFound, ValidationFailed
 from pigrocrm.core.invoices.constants import ENTITY
 from pigrocrm.core.invoices.context import InvoiceContext
 from pigrocrm.core.invoices.models import Invoice
-from pigrocrm.core.invoices.schemas import PdfSorgente
+from pigrocrm.core.invoices.schemas import PdfSource
 from pigrocrm.core.text import PDF_MIME
 
-# The original of a fattura has to be a `PDF_MIME` and nothing else is accepted from Drive:
+# The original of an invoice has to be a `PDF_MIME` and nothing else is accepted from Drive:
 # the point of §3.5 is the document the customer received, and a `.docx` or a scan-shaped
 # `image/jpeg` is not that document even when it looks like it.
 # The name a Drive refusal uses when the grant is missing a scope ("<feature> non è
@@ -39,7 +39,7 @@ class FetchedPdf:
     bytes, and the id they came from for the provenance record.
     """
 
-    contenuto: bytes
+    content: bytes
     drive_file_id: str
     mime: str
 
@@ -48,7 +48,7 @@ class OriginalPdfResolver:
     def __init__(self, ctx: InvoiceContext) -> None:
         self.ctx = ctx
 
-    def resolve(self, customer_id: UUID, sorgente: PdfSorgente, actor: Actor) -> UUID | FetchedPdf:
+    def resolve(self, customer_id: UUID, source: PdfSource, actor: Actor) -> UUID | FetchedPdf:
         """Where the original PDF is, resolved to something the write phase can use, and
         every refusal that belongs to the caller's input spent here. Writes nothing.
 
@@ -65,7 +65,7 @@ class OriginalPdfResolver:
 
         `NotFound("drive_file")` becomes `Conflict`, not `NotFound`: nothing about the
         *invoice* is missing, and `DriveReader` answers in those same words for a file
-        that does not exist, one in an unconfigured corner of the titolare's Drive and
+        that does not exist, one in an unconfigured corner of the owner's Drive and
         one in a stranger's Drive -- a distinction this method must not redraw.
 
         **The reader's other refusals pass through untouched, deliberately.** A file over
@@ -75,16 +75,16 @@ class OriginalPdfResolver:
         typed the id. Re-wrapping them under `invoice` would claim the problem is with the
         fattura when it is with the file.
         """
-        if sorgente.drive_file_id is not None:
-            return self._read_from_drive(sorgente.drive_file_id, actor)
-        if sorgente.document_id is None:  # pragma: no cover - the schema refuses this first
+        if source.drive_file_id is not None:
+            return self._read_from_drive(source.drive_file_id, actor)
+        if source.document_id is None:  # pragma: no cover - the schema refuses this first
             raise ValidationFailed(
                 ENTITY,
-                "pdf_sorgente",
+                "pdf_source",
                 "indica da dove prendere il PDF originale",
                 expected="esattamente uno fra document_id e drive_file_id",
             )
-        return self._validate_document(customer_id, sorgente.document_id)
+        return self._validate_document(customer_id, source.document_id)
 
     def _drive_reader(self, actor: Actor) -> DriveReader:
         """This actor's reader on their own connected Drive, or the injected one.
@@ -92,7 +92,7 @@ class OriginalPdfResolver:
         `drive_reader_for` is the gate as well as the constructor: it refuses before any
         HTTP call when Drive is not connected, when the grant was revoked or when
         `drive.readonly` was never granted, and it takes the roots from the account row
-        so a reader cannot be pointed at a folder the titolare did not configure.
+        so a reader cannot be pointed at a folder the owner did not configure.
         """
         ctx = self.ctx
         if ctx.drive_reader_factory is not None:
@@ -129,15 +129,15 @@ class OriginalPdfResolver:
         reader = self._drive_reader(actor)
         try:
             entry = reader.describe(drive_file_id)
-            if not entry.cartella and entry.mime != PDF_MIME:
+            if not entry.folder and entry.mime != PDF_MIME:
                 raise ValidationFailed(
                     ENTITY,
-                    "pdf_sorgente.drive_file_id",
+                    "pdf_source.drive_file_id",
                     f"il file su Drive non è un PDF ma un {entry.mime}: l'originale di "
                     "una fattura è il PDF che il cliente ha ricevuto",
                     expected=PDF_MIME,
                 )
-            contenuto, mime = reader.read_bytes(drive_file_id)
+            content, mime = reader.read_bytes(drive_file_id)
         except NotFound as exc:
             raise Conflict(
                 ENTITY,
@@ -145,14 +145,14 @@ class OriginalPdfResolver:
                 "l'id, oppure aggiungi la cartella che lo contiene in Impostazioni → Drive",
                 drive_file_id=drive_file_id,
             ) from exc
-        if not contenuto:
+        if not content:
             raise ValidationFailed(
                 ENTITY,
-                "pdf_sorgente.drive_file_id",
+                "pdf_source.drive_file_id",
                 "il file su Drive è vuoto",
                 expected="almeno un byte",
             )
-        return FetchedPdf(contenuto=contenuto, drive_file_id=drive_file_id, mime=mime)
+        return FetchedPdf(content=content, drive_file_id=drive_file_id, mime=mime)
 
     def _validate_document(self, customer_id: UUID, document_id: UUID) -> UUID:
         """Check that this `documents` row may become the invoice's PDF, and return its
@@ -177,32 +177,32 @@ class OriginalPdfResolver:
         document = documents.repo.lock(document_id)
         if document is None or document.deleted_at is not None:
             raise NotFound("document", document_id)
-        if document.tipo != "fattura":
+        if document.type != "invoice":
             raise ValidationFailed(
                 ENTITY,
-                "pdf_sorgente",
+                "pdf_source",
                 "il documento non e' di tipo fattura",
                 expected="un documento con tipo 'fattura'",
             )
         if document.customer_id != customer_id:
             raise ValidationFailed(
                 ENTITY,
-                "pdf_sorgente",
+                "pdf_source",
                 "il documento appartiene a un altro cliente",
                 expected=f"un documento del cliente {customer_id}",
             )
-        if not document.versione_corrente:
+        if not document.current_version:
             raise ValidationFailed(
                 ENTITY,
-                "pdf_sorgente",
+                "pdf_source",
                 "il documento non ha ancora un file caricato",
                 expected="un documento con almeno una versione PDF",
             )
-        current = documents.repo.version(document.id, document.versione_corrente)
+        current = documents.repo.version(document.id, document.current_version)
         if current is None or current.content_type != PDF_MIME:
             raise ValidationFailed(
                 ENTITY,
-                "pdf_sorgente",
+                "pdf_source",
                 "la versione corrente del documento non e' un PDF",
                 expected=PDF_MIME,
             )

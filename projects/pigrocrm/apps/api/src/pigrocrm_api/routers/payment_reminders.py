@@ -17,12 +17,12 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.config import Settings
+from pigrocrm.core.gmail.payment_reminders import PaymentRemindersService
 from pigrocrm.core.gmail.schemas import (
     PaymentReminderCreate,
     PaymentReminderRead,
-    SollecitiPage,
+    PaymentRemindersPage,
 )
-from pigrocrm.core.gmail.solleciti import SollecitiService
 from pigrocrm_api.deps import ActorDep, SessionDep, SettingsDep, get_actor
 from pigrocrm_api.errors import PROBLEM_RESPONSES
 
@@ -34,18 +34,20 @@ router = APIRouter(
 )
 
 
-def _solleciti(session: Session, settings: Settings) -> SollecitiService:
-    return SollecitiService(session, settings=settings)
+def _payment_reminders(session: Session, settings: Settings) -> PaymentRemindersService:
+    return PaymentRemindersService(session, settings=settings)
 
 
-@router.get("/candidates", response_model=SollecitiPage)
-def list_candidates(session: SessionDep, actor: ActorDep, settings: SettingsDep) -> SollecitiPage:
+@router.get("/candidates", response_model=PaymentRemindersPage)
+def list_candidates(
+    session: SessionDep, actor: ActorDep, settings: SettingsDep
+) -> PaymentRemindersPage:
     """Worst first, repliers last. Not paginated and deliberately so: the whole point of
     the list is that a person looks at all of it and decides, and a page boundary in the
     middle of "who owes me money" would hide the tail of it behind a control nobody
     presses. `total` is returned anyway, because the page renders a count."""
-    items = _solleciti(session, settings).candidates(actor)
-    return SollecitiPage(items=items, total=len(items))
+    items = _payment_reminders(session, settings).candidates(actor)
+    return PaymentRemindersPage(items=items, total=len(items))
 
 
 @router.post("", response_model=PaymentReminderRead, status_code=201)
@@ -59,4 +61,4 @@ def create_reminder(
     amount would produce a demand naming a figure the client's own copy of the invoice
     does not carry -- a demand they would be right to ignore.
     """
-    return _solleciti(session, settings).create_reminder(payload.invoice_id, actor)
+    return _payment_reminders(session, settings).create_reminder(payload.invoice_id, actor)

@@ -8,7 +8,7 @@ from uuid import UUID
 import pytest
 from fakes_contracts import FakeRenderer
 from fakes_documenso import FakeDocumenso
-from match_fixtures import QUADRO_VERSION, TABLES, _body, _second_card, _setup
+from match_fixtures import FRAMEWORK_VERSION, TABLES, _body, _second_card, _setup
 from signing_fixtures import (
     SIGNED_AT,
     _draft,
@@ -60,50 +60,50 @@ def test_the_freelancer_sees_what_reached_them_and_the_link_to_sign(clean: Sessi
 
     mine = _service(clean).for_user(_user_of(clean, freelancer_id))
 
-    quadro = _framework_of(clean, freelancer_id)
-    assert mine.quadro is not None
-    assert (mine.quadro.id, mine.quadro.stato) == (quadro.id, "inviato")
-    assert mine.quadro.signing_url == quadro.signing_url
-    [lettera] = mine.lettere
-    assert (lettera.numero, lettera.stato, lettera.cliente) == (
-        match.lettera.numero,
-        "in_attesa",
+    framework = _framework_of(clean, freelancer_id)
+    assert mine.framework is not None
+    assert (mine.framework.id, mine.framework.status) == (framework.id, "sent")
+    assert mine.framework.signing_url == framework.signing_url
+    [letter] = mine.letters
+    assert (letter.number, letter.status, letter.customer) == (
+        match.letter.number,
+        "pending",
         "ACME S.r.l.",
     )
-    assert lettera.inizio == "1° ottobre 2026"
-    assert lettera.signing_url is None
-    assert mine.quadri_precedenti == []
+    assert letter.start == "1° ottobre 2026"
+    assert letter.signing_url is None
+    assert mine.previous_frameworks == []
 
 
 def test_a_draft_match_shows_nothing(clean: Session) -> None:
     admin_id, freelancer_id, company_id = _setup(clean)
     _draft(clean, FakeRenderer(draft=False), freelancer_id, company_id, admin_id)
     assert _service(clean).for_user(_user_of(clean, freelancer_id)) == MemberContracts(
-        quadro=None, lettere=[]
+        framework=None, letters=[]
     )
 
 
 def test_member_letter_carries_the_pigro_url(clean: Session) -> None:
     """spec § 3.6: «Le tue ore su Pigro» has somewhere to point once, and only once, the
-    match is `collegato`."""
+    match is `linked`."""
     admin_id, freelancer_id, company_id = _setup(clean)
     match = _draft(clean, FakeRenderer(draft=False), freelancer_id, company_id, admin_id)
     letter = _letter_of(clean, match.id)
     letter.sent_at = SIGNED_AT
     row = clean.get(Match, match.id)
     assert row is not None
-    row.pigro_stato = "da_collegare"
+    row.pigro_status = "to_link"
     clean.commit()
     user_id = _user_of(clean, freelancer_id)
 
-    [not_yet] = _service(clean).for_user(user_id).lettere
+    [not_yet] = _service(clean).for_user(user_id).letters
     assert not_yet.pigro_url is None
 
-    row.pigro_stato = "collegato"
+    row.pigro_status = "linked"
     row.pigro_url = "https://pigro.letsrebase.com/ada-lovelace/app/deal/123"
     clean.commit()
 
-    [linked] = _service(clean).for_user(user_id).lettere
+    [linked] = _service(clean).for_user(user_id).letters
     assert linked.pigro_url == "https://pigro.letsrebase.com/ada-lovelace/app/deal/123"
 
 
@@ -122,22 +122,22 @@ def test_a_signed_framework_shows_its_dates_its_copy_and_no_link(clean: Session)
 
     mine = _service(clean).for_user(user_id)
 
-    assert mine.quadro is not None
-    assert (mine.quadro.stato, mine.quadro.attivo, mine.quadro.signing_url) == (
-        "firmato",
+    assert mine.framework is not None
+    assert (mine.framework.status, mine.framework.active, mine.framework.signing_url) == (
+        "signed",
         True,
         None,
     )
-    assert mine.quadro.ha_pdf_firmato is True
-    assert (mine.quadro.rinnovo, mine.quadro.ultimo_giorno_disdetta) == (
+    assert mine.framework.has_pdf_signed is True
+    assert (mine.framework.renewal, mine.framework.last_notice_day) == (
         date(2027, 10, 1),
         date(2027, 9, 1),
     )
     copy = _service(clean).signed_pdf(user_id, signed)
     assert copy.content == fake.signed_pdf(envelope)
-    assert copy.filename == f"contratto-quadro-v{QUADRO_VERSION}-firmato.pdf"
-    [lettera] = mine.lettere
-    assert lettera.stato == "inviato" and lettera.signing_url is not None
+    assert copy.filename == f"contratto-quadro-v{FRAMEWORK_VERSION}-firmato.pdf"
+    [letter] = mine.letters
+    assert letter.status == "sent" and letter.signing_url is not None
 
 
 def test_a_cancelled_document_says_so_and_offers_no_link(clean: Session) -> None:
@@ -154,8 +154,8 @@ def test_a_cancelled_document_says_so_and_offers_no_link(clean: Session) -> None
 
     mine = _service(clean).for_user(_user_of(clean, freelancer_id))
 
-    assert mine.quadro is not None
-    assert (mine.quadro.stato, mine.quadro.signing_url) == ("annullato", None)
+    assert mine.framework is not None
+    assert (mine.framework.status, mine.framework.signing_url) == ("cancelled", None)
 
 
 def test_a_notice_moves_the_signed_framework_under_the_new_one_instead_of_hiding_it(
@@ -174,8 +174,8 @@ def test_a_notice_moves_the_signed_framework_under_the_new_one_instead_of_hiding
     first_signed = signing.apply(_webhook(fake, first_envelope, "DOCUMENT_COMPLETED"))
     assert first_signed is not None
     signing.recovery.finish(first_signed)
-    first_quadro = _framework_of(clean, freelancer_id)
-    signing.admin.record_notice(first_quadro.id, admin_id)
+    first_framework = _framework_of(clean, freelancer_id)
+    signing.admin.record_notice(first_framework.id, admin_id)
 
     second_match = _draft(clean, renderer, freelancer_id, company_id, admin_id)
     signing.send_match(second_match.id, admin_id)
@@ -185,17 +185,17 @@ def test_a_notice_moves_the_signed_framework_under_the_new_one_instead_of_hiding
     second_signed = signing.apply(_webhook(fake, second_envelope, "DOCUMENT_COMPLETED"))
     assert second_signed is not None
     signing.recovery.finish(second_signed)
-    second_quadro = _framework_of(clean, freelancer_id)
-    assert second_quadro.id != first_quadro.id
+    second_framework = _framework_of(clean, freelancer_id)
+    assert second_framework.id != first_framework.id
 
     mine = _service(clean).for_user(_user_of(clean, freelancer_id))
 
-    assert mine.quadro is not None and mine.quadro.id == second_quadro.id
-    [previous] = mine.quadri_precedenti
-    assert previous.id == first_quadro.id
-    assert previous.stato == "disdetto"
-    assert previous.ha_pdf_firmato is True
-    copy = _service(clean).signed_pdf(_user_of(clean, freelancer_id), first_quadro.id)
+    assert mine.framework is not None and mine.framework.id == second_framework.id
+    [previous] = mine.previous_frameworks
+    assert previous.id == first_framework.id
+    assert previous.status == "notice_served"
+    assert previous.has_pdf_signed is True
+    copy = _service(clean).signed_pdf(_user_of(clean, freelancer_id), first_framework.id)
     assert copy.content == fake.signed_pdf(first_envelope)
 
 
@@ -205,19 +205,19 @@ def test_someone_elses_document_and_an_unsigned_copy_are_not_found(clean: Sessio
     renderer, fake = FakeRenderer(draft=False), FakeDocumenso()
     match = _draft(clean, renderer, freelancer_id, company_id, admin_id)
     _signing(clean, renderer, fake, RecordingSender()).send_match(match.id, admin_id)
-    quadro = _framework_of(clean, freelancer_id)
+    framework = _framework_of(clean, freelancer_id)
     grace, ada = _user_of(clean, grace_id), _user_of(clean, freelancer_id)
 
     with pytest.raises(NotFound):
-        _service(clean).signed_pdf(grace, quadro.id)
+        _service(clean).signed_pdf(grace, framework.id)
     with pytest.raises(NotFound):
-        _service(clean).signed_pdf(ada, quadro.id)
-    assert _service(clean).for_user(grace) == MemberContracts(quadro=None, lettere=[])
+        _service(clean).signed_pdf(ada, framework.id)
+    assert _service(clean).for_user(grace) == MemberContracts(framework=None, letters=[])
 
 
 def test_a_person_without_a_card_has_no_contracts(clean: Session) -> None:
     admin_id, _freelancer_id, _company_id = _setup(clean)
-    with pytest.raises(NotFound, match="scheda"):
+    with pytest.raises(NotFound, match="card"):
         _service(clean).for_user(admin_id)
 
 
@@ -234,33 +234,33 @@ def test_an_occasional_framework_shows_beside_the_ordinary_one_with_its_own_link
     signing.send_match(ordinary.id, admin_id)
     _sign(signing, fake, _framework_of(clean, freelancer_id))
     occasional = _matches(clean, renderer).create(
-        freelancer_id, _body(company_id, regime="occasionale"), admin_id
+        freelancer_id, _body(company_id, regime="occasional"), admin_id
     )
     signing.send_match(occasional.id, admin_id)
 
     mine = _service(clean).for_user(_user_of(clean, freelancer_id))
 
-    assert mine.quadro is not None and mine.quadro_occasionale is not None
-    assert (mine.quadro.regime, mine.quadro.tipo, mine.quadro.attivo) == (
-        "partita_iva",
+    assert mine.framework is not None and mine.occasional_framework is not None
+    assert (mine.framework.regime, mine.framework.label, mine.framework.active) == (
+        "vat_registered",
         "Contratto quadro",
         True,
     )
-    assert (mine.quadro_occasionale.regime, mine.quadro_occasionale.stato) == (
-        "occasionale",
-        "inviato",
+    assert (mine.occasional_framework.regime, mine.occasional_framework.status) == (
+        "occasional",
+        "sent",
     )
-    assert mine.quadro_occasionale.tipo == "Contratto quadro per prestazioni occasionali"
-    assert mine.quadro_occasionale.signing_url is not None
-    assert mine.quadri_precedenti == []
-    assert sorted((lettera.tipo, lettera.stato) for lettera in mine.lettere) == [
-        ("Lettera di incarico", "inviato"),
-        ("Lettera di incarico occasionale", "in_attesa"),
+    assert mine.occasional_framework.label == "Contratto quadro per prestazioni occasionali"
+    assert mine.occasional_framework.signing_url is not None
+    assert mine.previous_frameworks == []
+    assert sorted((letter.label, letter.status) for letter in mine.letters) == [
+        ("Lettera di incarico", "sent"),
+        ("Lettera di incarico occasionale", "pending"),
     ]
 
     _sign(signing, fake, _framework_of(clean, freelancer_id))
 
     mine = _service(clean).for_user(_user_of(clean, freelancer_id))
-    assert mine.quadro is not None and mine.quadro_occasionale is not None
-    assert (mine.quadro.attivo, mine.quadro_occasionale.attivo) == (True, True)
-    assert mine.quadri_precedenti == []
+    assert mine.framework is not None and mine.occasional_framework is not None
+    assert (mine.framework.active, mine.occasional_framework.active) == (True, True)
+    assert mine.previous_frameworks == []

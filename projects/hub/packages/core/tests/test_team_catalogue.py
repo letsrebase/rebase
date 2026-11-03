@@ -12,7 +12,7 @@ from fakes_cards import CARD
 from sqlalchemy import JSON, func, null, select
 from sqlalchemy.orm import Session
 from team_fixtures import (
-    DESCRIZIONE,
+    DESCRIPTION,
     FakeCapture,
     a_talent,
     catalogue_positions,
@@ -41,10 +41,10 @@ from rebase_core.team_schemas import TeamProposalCreate
 
 
 def test_catalogue_is_stable_and_anonymous(clean_hub: Session) -> None:
-    first = a_talent(clean_hub, 1, tariffa=Decimal("450.00"), remoto="ibrido")
-    second = a_talent(clean_hub, 2, tariffa=None, remoto=None)
+    first = a_talent(clean_hub, 1, rate=Decimal("450.00"), remote="hybrid")
+    second = a_talent(clean_hub, 2, rate=None, remote=None)
     third = a_talent(
-        clean_hub, 3, tariffa=Decimal("200.00"), card={**CARD, "ruolo": "Designer", "luogo": None}
+        clean_hub, 3, rate=Decimal("200.00"), card={**CARD, "role": "Designer", "location": None}
     )
 
     catalogue, positions = catalogue_lines(clean_hub)
@@ -54,36 +54,46 @@ def test_catalogue_is_stable_and_anonymous(clean_hub: Session) -> None:
     assert [line["id"] for line in lines] == ["t1", "t2", "t3"]
     assert list(lines[0]) == [
         "id",
-        "ruolo",
+        "role",
         "seniority",
-        "anni",
-        "seniority_incerta",
-        "competenze",
-        "settori",
-        "lingue",
-        "luogo",
-        "modalita",
-        "fascia",
+        "experience_years",
+        "seniority_uncertain",
+        "skills",
+        "industries",
+        "languages",
+        "location",
+        "mode",
+        "band",
     ]
     by_id = dict(zip(positions, lines, strict=True))
     assert by_id[first] == {
         "id": by_id[first]["id"],
-        "ruolo": "Backend developer",
+        "role": "Backend developer",
         "seniority": "senior",
-        "anni": 9,
-        "seniority_incerta": False,
-        "competenze": ["Python", "FastAPI", "PostgreSQL", "AWS"],
-        "settori": ["fintech", "e-commerce"],
-        "lingue": ["italiano", "inglese"],
-        "luogo": "Torino",
-        "modalita": "ibrido",
-        "fascia": "500–650",  # 450 x 1.4 = 630
+        "experience_years": 9,
+        "seniority_uncertain": False,
+        "skills": ["Python", "FastAPI", "PostgreSQL", "AWS"],
+        "industries": ["fintech", "e-commerce"],
+        "languages": ["italiano", "inglese"],
+        "location": "Torino",
+        "mode": "hybrid",
+        "band": "500–650",  # 450 x 1.4 = 630
     }
-    assert (by_id[second]["modalita"], by_id[second]["fascia"]) == (None, None)
-    assert (by_id[third]["ruolo"], by_id[third]["luogo"]) == ("Designer", None)
-    assert by_id[third]["fascia"] == "fino a 300"  # 200 x 1.4 = 280
+    assert (by_id[second]["mode"], by_id[second]["band"]) == (None, None)
+    assert (by_id[third]["role"], by_id[third]["location"]) == ("Designer", None)
+    assert by_id[third]["band"] == "fino a 300"  # 200 x 1.4 = 280
     # No name, no link, no summary, no rate, no vetted flag, no id of ours.
-    for secret in ("Lovelace", "Ada", "github", "http", "@", "sintesi", "450", "200", "vetted"):
+    for secret in (
+        "Lovelace",
+        "Ada",
+        "github",
+        "http",
+        "@",
+        "profile_summary",
+        "450",
+        "200",
+        "vetted",
+    ):
         assert secret not in catalogue
     for freelancer_id in positions:
         assert str(freelancer_id) not in catalogue
@@ -93,27 +103,27 @@ def test_catalogue_is_stable_and_anonymous(clean_hub: Session) -> None:
 
 def test_the_catalogue_reads_the_level_an_admin_set_and_marks_a_guess(clean_hub: Session) -> None:
     """REB-799: the engine picks people on seniority and years, so it reads the admin's
-    over Claude's, and a card with no dated role says `anni` null and the seniority
+    over Claude's, and a card with no dated role says `experience_years` null and the seniority
     uncertain, until an admin sets one."""
     corrected = a_talent(clean_hub, 1)
     clean_hub.get_one(Freelancer, corrected).seniority_admin = "lead"
-    clean_hub.get_one(Freelancer, corrected).anni_admin = 14
-    undated = a_talent(clean_hub, 2, card={**CARD, "anni": None, "seniority": "mid"})
+    clean_hub.get_one(Freelancer, corrected).experience_years_admin = 14
+    undated = a_talent(clean_hub, 2, card={**CARD, "experience_years": None, "seniority": "mid"})
     clean_hub.commit()
 
     catalogue, positions = catalogue_lines(clean_hub)
 
     by_id = dict(zip(positions, (json.loads(line) for line in catalogue.splitlines()), strict=True))
-    assert (by_id[corrected]["seniority"], by_id[corrected]["anni"]) == ("lead", 14)
-    assert by_id[corrected]["seniority_incerta"] is False
-    assert (by_id[undated]["seniority"], by_id[undated]["anni"]) == ("mid", None)
-    assert by_id[undated]["seniority_incerta"] is True
+    assert (by_id[corrected]["seniority"], by_id[corrected]["experience_years"]) == ("lead", 14)
+    assert by_id[corrected]["seniority_uncertain"] is False
+    assert (by_id[undated]["seniority"], by_id[undated]["experience_years"]) == ("mid", None)
+    assert by_id[undated]["seniority_uncertain"] is True
 
     clean_hub.get_one(Freelancer, undated).seniority_admin = "senior"
     clean_hub.commit()
     catalogue, positions = catalogue_lines(clean_hub)
     assert (
-        json.loads(catalogue.splitlines()[positions.index(undated)])["seniority_incerta"] is False
+        json.loads(catalogue.splitlines()[positions.index(undated)])["seniority_uncertain"] is False
     )
 
 
@@ -135,11 +145,11 @@ def test_catalogue_positions_are_unique(clean_hub: Session) -> None:
 def test_catalogue_is_every_live_freelancer_with_a_card(clean_hub: Session) -> None:
     visible = a_talent(clean_hub, 1)
     a_talent(clean_hub, 2, deleted=True)
-    a_talent(clean_hub, 3, stato="scartato")
+    a_talent(clean_hub, 3, status="discarded")
     a_talent(clean_hub, 4, card=None)  # no card row at all
     sql_null = a_talent(clean_hub, 5, card=null())  # a row with no card yet, only an error
     json_null = a_talent(clean_hub, 6, card=JSON.NULL)  # a card retired to JSON `null`
-    contacted = a_talent(clean_hub, 7, stato="contattato")
+    contacted = a_talent(clean_hub, 7, status="contacted")
     kinds: dict[UUID, str | None] = {
         freelancer_id: kind
         for freelancer_id, kind in clean_hub.execute(
@@ -159,49 +169,51 @@ def test_proposal_prompt_is_byte_identical_in_substance_to_before() -> None:
     """REB-831 moved the proposal onto the provider-neutral request: the model still reads
     the same words, in the same blocks. Taken from the version before it (`proposal_prompt`
     of 1ccb4167, run on these inputs): the rules by their hash, the catalogue block, the
-    user turn on «Rigenera» with a number and a note, the empty catalogue, and the schema."""
+    user turn on «Rigenera» with a number and a note, the empty catalogue, and the schema.
+    The hash of the rules was taken again when the answer's keys and the catalogue's became
+    English: the rules name them, and nothing else changed."""
     member = UUID("00000000-0000-0000-0000-000000000001")
     previous = SimpleNamespace(
-        riassunto="Un team di due", team=[{"freelancer_id": str(member), "ruolo": "Backend"}]
+        summary="Un team di due", team=[{"freelancer_id": str(member), "role": "Backend"}]
     )
     description = "Un portale clienti per un'assicurazione che vuole gestire i sinistri online"
 
     request = proposal_prompt(
         "t1: backend, senior",
-        TeamProposalCreate(descrizione=description, nota="togli il designer", persone=3),
+        TeamProposalCreate(description=description, note="togli il designer", people=3),
         previous,  # type: ignore[arg-type]
         positions=[member],
     )
 
     assert hashlib.sha256(request.system.encode()).hexdigest() == (
-        "0728091ef3a44d4e0491cb09dc830d018d6f140aa50d6fab2b87bfd790918924"
+        "3581d64f654f817515c01de0cc08ad81655f9e090ee023f7cd03fe8def7eacab"
     )
     assert request.system_cached == "The catalogue:\nt1: backend, senior"
     assert [(m.role, m.text) for m in request.messages] == [
         (
             "user",
-            "The project's description:\n<descrizione>\n" + description + "\n</descrizione>"
+            "The project's description:\n<description>\n" + description + "\n</description>"
             "\n\nThe visitor wants a team of exactly 3 people."
             "\n\nYou already proposed a team for this project, and the visitor asks for "
             "another one. Your previous proposal (people no longer in the catalogue are "
-            "left out):\n<proposta_precedente>\nriassunto: Un team di due\nteam:\n- t1: "
-            "Backend\n</proposta_precedente>"
-            "\n\nThe visitor's note:\n<nota>\ntogli il designer\n</nota>\nFollow the "
+            "left out):\n<previous_proposal>\nsummary: Un team di due\nteam:\n- t1: "
+            "Backend\n</previous_proposal>"
+            "\n\nThe visitor's note:\n<note>\ntogli il designer\n</note>\nFollow the "
             "note, and keep what it does not ask to change.",
         )
     ]
-    empty = proposal_prompt("", TeamProposalCreate(descrizione=description), None)
+    empty = proposal_prompt("", TeamProposalCreate(description=description), None)
     assert empty.system_cached == "The catalogue:\n(empty: no freelancer has a card yet)"
     assert empty.messages == [
         LlmMessage(
             role="user",
-            text="The project's description:\n<descrizione>\n" + description + "\n</descrizione>",
+            text="The project's description:\n<description>\n" + description + "\n</description>",
         )
     ]
     schema = _parameters(request).output_object
     assert schema is not None
     assert hashlib.sha256(json.dumps(schema.json_schema, sort_keys=True).encode()).hexdigest() == (
-        "25135283e23511e59d89e9b22b365c693f67206a7fc6581bd569ef1d8a765409"
+        "46ffe63c8003d23bdfb32c0b531cde0460f16ef7dc1f3d496b5ee1c55d9ef7c8"
     )
 
 
@@ -212,10 +224,10 @@ def test_the_catalogue_block_is_the_same_for_two_calls(clean_hub: Session) -> No
     llm = RecordingCall([proposal_response([team_member(ids[first])])] * 2)
     builder = make_builder(clean_hub, llm)
 
-    builder.propose(TeamProposalCreate(descrizione=DESCRIZIONE), origine="pubblico", user_id=None)
+    builder.propose(TeamProposalCreate(description=DESCRIPTION), origin="public", user_id=None)
     builder.propose(
-        TeamProposalCreate(descrizione=DESCRIZIONE + " Anche un designer."),
-        origine="pubblico",
+        TeamProposalCreate(description=DESCRIPTION + " Anche un designer."),
+        origin="public",
         user_id=None,
     )
 
@@ -230,20 +242,20 @@ def test_an_empty_catalogue_asks_nobody(clean_hub: Session) -> None:
     capture = FakeCapture()
 
     read = make_builder(clean_hub, llm, tracker=Tracker(capture)).propose(
-        TeamProposalCreate(descrizione=DESCRIZIONE), origine="pubblico", user_id=None
+        TeamProposalCreate(description=DESCRIPTION), origin="public", user_id=None
     )
 
     assert llm.requests == []
-    assert (read.riassunto, read.team) == (NO_FIT_SENTENCE, [])
-    assert read.luogo.model_dump() == {"locale": False, "dove": None}
-    assert read.economia.model_dump() == {"giorno": None, "mese": None, "giorni_mese": 22}
+    assert (read.summary, read.team) == (NO_FIT_SENTENCE, [])
+    assert read.location.model_dump() == {"on_site": False, "place": None}
+    assert read.economics.model_dump() == {"day": None, "month": None, "days_month": 22}
     # The row is written all the same, so «Rigenera» and a later read find it; it cost
     # nothing, and says so.
     [row] = proposal_rows(clean_hub)
     assert row.id == read.id
     assert (row.model, row.input_tokens, row.output_tokens, row.cache_read_tokens) == ("", 0, 0, 0)
     [(_, _, properties)] = capture.calls
-    assert (properties["persone"], properties["input_tokens"], properties["output_tokens"]) == (
+    assert (properties["people"], properties["input_tokens"], properties["output_tokens"]) == (
         0,
         0,
         0,

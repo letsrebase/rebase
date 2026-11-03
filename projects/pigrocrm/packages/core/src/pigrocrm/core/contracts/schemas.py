@@ -15,146 +15,144 @@ from pigrocrm.core.validation import SafeStr
 # (StringDataRightTruncation) -- not a subclass of IntegrityError, so no handler
 # catches it, and it poisons the session. The same gap CustomerCreate's/DealCreate's
 # own *_MAX_LENGTH constants close.
-TITOLO_MAX_LENGTH = 255
-CADENZA_FATTURAZIONE_MAX_LENGTH = 20
-DIVISA_MAX_LENGTH = 3
+TITLE_MAX_LENGTH = 255
+BILLING_CADENCE_MAX_LENGTH = 20
+CURRENCY_MAX_LENGTH = 3
 
-RenewalType = Literal["nessuno", "esplicito", "opzione_controparte", "tacito"]
-ContractState = Literal["bozza", "attivo", "terminato", "scaduto"]
-RateCardTipo = Literal["ricorrente_fisso", "giornaliero", "orario", "una_tantum"]
-RateCardUnita = Literal["ora", "giorno", "mese", "anno", "forfait"]
-RateCardPeriodo = Literal["mensile", "trimestrale", "annuale", "una_tantum"]
+RenewalType = Literal["none", "explicit", "counterparty_option", "tacit"]
+ContractState = Literal["draft", "active", "terminated", "expired"]
+RateCardType = Literal["fixed_recurring", "daily", "hourly", "one_off"]
+RateCardUnit = Literal["hour", "day", "month", "year", "flat"]
+RateCardPeriod = Literal["monthly", "quarterly", "annual", "one_off"]
 
 # Mirror RateCard's Numeric(p, s) column widths (models.py): importo is
 # Numeric(12, 2), the same precision as every other money column on this schema;
 # ore_minime is Numeric(6, 2); each element of frazioni_ammesse is Numeric(4, 2).
-IMPORTO_MAX_DIGITS = 12
-ORE_MINIME_MAX_DIGITS = 6
-FRAZIONE_MAX_DIGITS = 4
+AMOUNT_MAX_DIGITS = 12
+MINIMUM_HOURS_MAX_DIGITS = 6
+FRACTION_MAX_DIGITS = 4
 DECIMAL_PLACES = 2
 
-# `tetto_quota_cliente` mirrors `Contract.tetto_quota_cliente`'s Numeric(5, 2): a
+# `customer_share_cap` mirrors `Contract.customer_share_cap`'s Numeric(5, 2): a
 # percentage strictly between 0 and 100 (the CHECK says why), two decimals as the rates on
 # `FiscalProfile` have.
-TETTO_MAX_DIGITS = 5
+CAP_MAX_DIGITS = 5
 
 EXPENSE_POLICY_KINDS: tuple[str, ...] = (
-    "non_rimborsabile",
-    "rimborsabile",
-    "rimborsabile_con_tetto",
+    "not_reimbursable",
+    "reimbursable",
+    "reimbursable_with_cap",
 )
 
 
 def check_expense_policy(policy: dict[str, Any]) -> dict[str, Any]:
     """The tagged shape `contract_expenses/triggers.py` reads: `kind` is one of three,
-    `importo_tetto` rides on the capped one only and is a non-negative decimal there,
-    `richiede_preautorizzazione` is a boolean when present. A document the trigger
+    `amount_cap` rides on the capped one only and is a non-negative decimal there,
+    `requires_pre_authorization` is a boolean when present. A document the trigger
     cannot read would make every later expense write on the contract fail with a
     `check_violation`, so a write that would store one is refused here."""
     kind = policy.get("kind")
     if kind not in EXPENSE_POLICY_KINDS:
         raise ValueError(
-            f"politica_spese.kind deve essere uno fra {', '.join(EXPENSE_POLICY_KINDS)}"
+            f"expense_policy.kind deve essere uno fra {', '.join(EXPENSE_POLICY_KINDS)}"
         )
-    cap = policy.get("importo_tetto")
-    if kind == "rimborsabile_con_tetto":
+    cap = policy.get("amount_cap")
+    if kind == "reimbursable_with_cap":
         try:
             valid = cap is not None and Decimal(str(cap)) >= 0
         except InvalidOperation:
             valid = False
         if not valid:
             raise ValueError(
-                "politica_spese.importo_tetto è obbligatorio per rimborsabile_con_tetto "
+                "expense_policy.amount_cap è obbligatorio per reimbursable_with_cap "
                 "e va scritto come importo, per esempio 500.00"
             )
     elif cap is not None:
-        raise ValueError("politica_spese.importo_tetto vale solo per rimborsabile_con_tetto")
-    pre = policy.get("richiede_preautorizzazione")
+        raise ValueError("expense_policy.amount_cap vale solo per reimbursable_with_cap")
+    pre = policy.get("requires_pre_authorization")
     if pre is not None and not isinstance(pre, bool):
-        raise ValueError("politica_spese.richiede_preautorizzazione deve essere vero o falso")
+        raise ValueError("expense_policy.requires_pre_authorization deve essere vero o falso")
     return policy
 
 
-Frazione = Annotated[Decimal, Field(max_digits=FRAZIONE_MAX_DIGITS, decimal_places=DECIMAL_PLACES)]
+Fraction = Annotated[Decimal, Field(max_digits=FRACTION_MAX_DIGITS, decimal_places=DECIMAL_PLACES)]
 
 
 class ContractCreate(BaseModel):
-    """`contratto_precedente_id` and `stato` are deliberately absent: the renewal
+    """`previous_contract_id` and `status` are deliberately absent: the renewal
     chain is written only by `ContractService.renew`, and a new contract always starts
-    life as `bozza` -- `ContractService.set_state` is what moves it on."""
+    life as `draft` -- `ContractService.set_state` is what moves it on."""
 
     customer_id: UUID
-    titolo: SafeStr = Field(max_length=TITOLO_MAX_LENGTH)
-    inizio: date
-    fine: date | None = None
-    tipo_rinnovo: RenewalType
-    preavviso_rinnovo_giorni: int | None = Field(default=None, ge=0)
-    preavviso_disdetta_giorni: int = Field(ge=0)
+    title: SafeStr = Field(max_length=TITLE_MAX_LENGTH)
+    start: date
+    end: date | None = None
+    renewal_type: RenewalType
+    renewal_notice_days: int | None = Field(default=None, ge=0)
+    termination_notice_days: int = Field(ge=0)
     # Reuses Customer.giorni_pagamento's own shape (REB-326): null cascades to the
     # customer's own term. See models.py for why pagamento_fine_mese is nullable
     # here, unlike Customer's own copy.
-    giorni_pagamento: int | None = Field(default=None, ge=0)
-    pagamento_fine_mese: bool | None = None
-    cadenza_fatturazione: SafeStr = Field(max_length=CADENZA_FATTURAZIONE_MAX_LENGTH)
-    divisa: SafeStr = Field(default="EUR", max_length=DIVISA_MAX_LENGTH)
+    payment_days: int | None = Field(default=None, ge=0)
+    payment_end_of_month: bool | None = None
+    billing_cadence: SafeStr = Field(max_length=BILLING_CADENCE_MAX_LENGTH)
+    currency: SafeStr = Field(default="EUR", max_length=CURRENCY_MAX_LENGTH)
     requires_prior_approval: bool = False
     applies_social_charge: bool = False
-    # REB-761: the share of the azienda's invoiced revenue this customer must not reach
+    # REB-761: the share of the legal entity's invoiced revenue this customer must not reach
     # over the contract's own anniversary year, as a percentage (`50.00`). Absent, no cap.
-    tetto_quota_cliente: Decimal | None = Field(
-        default=None, max_digits=TETTO_MAX_DIGITS, decimal_places=DECIMAL_PLACES, gt=0, lt=100
+    customer_share_cap: Decimal | None = Field(
+        default=None, max_digits=CAP_MAX_DIGITS, decimal_places=DECIMAL_PLACES, gt=0, lt=100
     )
     # mastro's ExpensePolicy (contract.ts:90-99), kept as an open tagged JSONB union
-    # -- see models.py's Contract.politica_spese for why this is not deeply
+    # -- see models.py's Contract.expense_policy for why this is not deeply
     # validated here.
-    politica_spese: dict[str, Any]
+    expense_policy: dict[str, Any]
     note: SafeStr | None = None
     custom_fields: dict[str, Any] = {}
 
-    @field_validator("politica_spese")
+    @field_validator("expense_policy")
     @classmethod
     def _expense_policy_is_readable(cls, value: dict[str, Any]) -> dict[str, Any]:
         return check_expense_policy(value)
 
     @model_validator(mode="after")
-    def _fine_not_before_inizio(self) -> "ContractCreate":
-        if self.fine is not None and self.fine < self.inizio:
+    def _end_not_before_start(self) -> "ContractCreate":
+        if self.end is not None and self.end < self.start:
             raise ValueError("fine non può precedere inizio")
         return self
 
 
 class ContractUpdate(BaseModel):
     """A partial patch of everything `ContractCreate` writes except the customer, which
-    a contract never changes. `stato` is absent: it moves through `ContractStateChange`
+    a contract never changes. `status` is absent: it moves through `ContractStateChange`
     only, one named act (`set_state`) instead of a field any edit could flip. The checks
     that span fields (payment terms together, a renewal notice for every renewal type,
-    `fine` not before `inizio`) run against the *merged* row in
+    `end` not before `start`) run against the *merged* row in
     `ContractService.update`, since one call may touch either field of a pair alone."""
 
     model_config = ConfigDict(extra="forbid")
 
-    titolo: SafeStr | None = Field(default=None, max_length=TITOLO_MAX_LENGTH)
-    inizio: date | None = None
-    fine: date | None = None
-    tipo_rinnovo: RenewalType | None = None
-    preavviso_rinnovo_giorni: int | None = Field(default=None, ge=0)
-    preavviso_disdetta_giorni: int | None = Field(default=None, ge=0)
-    giorni_pagamento: int | None = Field(default=None, ge=0)
-    pagamento_fine_mese: bool | None = None
-    cadenza_fatturazione: SafeStr | None = Field(
-        default=None, max_length=CADENZA_FATTURAZIONE_MAX_LENGTH
-    )
-    divisa: SafeStr | None = Field(default=None, max_length=DIVISA_MAX_LENGTH)
+    title: SafeStr | None = Field(default=None, max_length=TITLE_MAX_LENGTH)
+    start: date | None = None
+    end: date | None = None
+    renewal_type: RenewalType | None = None
+    renewal_notice_days: int | None = Field(default=None, ge=0)
+    termination_notice_days: int | None = Field(default=None, ge=0)
+    payment_days: int | None = Field(default=None, ge=0)
+    payment_end_of_month: bool | None = None
+    billing_cadence: SafeStr | None = Field(default=None, max_length=BILLING_CADENCE_MAX_LENGTH)
+    currency: SafeStr | None = Field(default=None, max_length=CURRENCY_MAX_LENGTH)
     requires_prior_approval: bool | None = None
     applies_social_charge: bool | None = None
-    tetto_quota_cliente: Decimal | None = Field(
-        default=None, max_digits=TETTO_MAX_DIGITS, decimal_places=DECIMAL_PLACES, gt=0, lt=100
+    customer_share_cap: Decimal | None = Field(
+        default=None, max_digits=CAP_MAX_DIGITS, decimal_places=DECIMAL_PLACES, gt=0, lt=100
     )
-    politica_spese: dict[str, Any] | None = None
+    expense_policy: dict[str, Any] | None = None
     note: SafeStr | None = None
     custom_fields: dict[str, Any] | None = None
 
-    @field_validator("politica_spese")
+    @field_validator("expense_policy")
     @classmethod
     def _expense_policy_is_readable(cls, value: dict[str, Any] | None) -> dict[str, Any] | None:
         return None if value is None else check_expense_policy(value)
@@ -166,39 +164,39 @@ class RenewalDuration(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    conteggio: int = Field(ge=1, le=1200)
-    unita: RenewalUnit
+    count: int = Field(ge=1, le=1200)
+    unit: RenewalUnit
 
 
 class ContractRenew(BaseModel):
     """The renewal of a contract (REB-763): its terms stay and its dates move. All three
     fields are optional, and with none the successor starts the day after the contract
-    ends and lasts as long as it did. `fine` and `durata` are two ways to say the end,
+    ends and lasts as long as it did. `end` and `duration` are two ways to say the end,
     so naming both is refused instead of one silently winning."""
 
     model_config = ConfigDict(extra="forbid")
 
-    inizio: date | None = None
-    fine: date | None = None
-    durata: RenewalDuration | None = None
-    titolo: SafeStr | None = Field(default=None, min_length=1, max_length=TITOLO_MAX_LENGTH)
+    start: date | None = None
+    end: date | None = None
+    duration: RenewalDuration | None = None
+    title: SafeStr | None = Field(default=None, min_length=1, max_length=TITLE_MAX_LENGTH)
 
     @model_validator(mode="after")
     def _one_way_to_say_the_end(self) -> "ContractRenew":
-        if self.fine is not None and self.durata is not None:
+        if self.end is not None and self.duration is not None:
             raise ValueError("fine e durata sono due modi di dire la stessa cosa: indicane uno")
         return self
 
 
 class ContractStateChange(BaseModel):
-    """The one way a contract's `stato` changes. Any state to any other, never to the
+    """The one way a contract's `status` changes. Any state to any other, never to the
     state it already has: mastro's own editor offers the whole select, and a contract
-    whose term passed stays `attivo` until somebody says otherwise (nothing here runs
+    whose term passed stays `active` until somebody says otherwise (nothing here runs
     on a timer)."""
 
     model_config = ConfigDict(extra="forbid")
 
-    stato: ContractState
+    status: ContractState
 
 
 class ContractRead(BaseModel):
@@ -206,24 +204,24 @@ class ContractRead(BaseModel):
 
     id: UUID
     customer_id: UUID
-    # The customer's azienda when the contract was created (REB-623); read-only.
-    azienda_id: UUID
-    titolo: str
-    inizio: date
-    fine: date | None
-    tipo_rinnovo: str
-    preavviso_rinnovo_giorni: int | None
-    preavviso_disdetta_giorni: int
-    giorni_pagamento: int | None
-    pagamento_fine_mese: bool | None
-    cadenza_fatturazione: str
-    divisa: str
+    # The customer's legal entity when the contract was created (REB-623); read-only.
+    legal_entity_id: UUID
+    title: str
+    start: date
+    end: date | None
+    renewal_type: str
+    renewal_notice_days: int | None
+    termination_notice_days: int
+    payment_days: int | None
+    payment_end_of_month: bool | None
+    billing_cadence: str
+    currency: str
     requires_prior_approval: bool
     applies_social_charge: bool
-    tetto_quota_cliente: Decimal | None
-    politica_spese: dict[str, Any]
-    stato: str
-    contratto_precedente_id: UUID | None
+    customer_share_cap: Decimal | None
+    expense_policy: dict[str, Any]
+    status: str
+    previous_contract_id: UUID | None
     note: str | None
     custom_fields: dict[str, Any]
     created_at: datetime
@@ -236,7 +234,7 @@ CONTRACT_SORTS = SortWhitelist(
     specs=(
         SortSpec(key="created_at", column=Contract.created_at, kind="datetime", nullable=False),
         SortSpec(key="updated_at", column=Contract.updated_at, kind="datetime", nullable=False),
-        SortSpec(key="titolo", column=Contract.titolo, kind="text", nullable=False),
+        SortSpec(key="title", column=Contract.title, kind="text", nullable=False),
     ),
     default_key="created_at",
 )
@@ -244,8 +242,8 @@ CONTRACT_SORTS = SortWhitelist(
 
 class ContractListQuery(BaseModel):
     customer_id: UUID | None = None
-    azienda_id: UUID | None = None
-    stato: str | None = None
+    legal_entity_id: UUID | None = None
+    status: str | None = None
     limit: int = Field(default=50, ge=1, le=200)
     cursor: str | None = Field(default=None, max_length=CURSOR_MAX_LENGTH)
     sort: SafeStr | None = None
@@ -258,54 +256,54 @@ class ContractPage(BaseModel):
 
 
 class RateCardCreate(BaseModel):
-    valido_da: date
-    valido_a: date | None = None
-    tipo: RateCardTipo
-    importo: Decimal = Field(max_digits=IMPORTO_MAX_DIGITS, decimal_places=DECIMAL_PLACES)
-    unita: RateCardUnita
-    frazioni_ammesse: list[Frazione] = Field(default_factory=lambda: [Decimal("1")])
+    valid_from: date
+    valid_to: date | None = None
+    type: RateCardType
+    amount: Decimal = Field(max_digits=AMOUNT_MAX_DIGITS, decimal_places=DECIMAL_PLACES)
+    unit: RateCardUnit
+    allowed_fractions: list[Fraction] = Field(default_factory=lambda: [Decimal("1")])
     # Meaningful, and refused outside it, only for tipo == "orario" -- see
     # ck_rate_cards_ore_minime_only_orario.
-    ore_minime: Decimal | None = Field(
-        default=None, max_digits=ORE_MINIME_MAX_DIGITS, decimal_places=DECIMAL_PLACES
+    minimum_hours: Decimal | None = Field(
+        default=None, max_digits=MINIMUM_HOURS_MAX_DIGITS, decimal_places=DECIMAL_PLACES
     )
     # Meaningful, and refused outside it, only for tipo == "ricorrente_fisso" -- see
     # ck_rate_cards_periodo_only_ricorrente_fisso.
-    periodo_erogazione: RateCardPeriodo | None = None
+    delivery_period: RateCardPeriod | None = None
 
     @model_validator(mode="after")
-    def _valido_a_not_before_valido_da(self) -> "RateCardCreate":
+    def _valid_to_not_before_valid_from(self) -> "RateCardCreate":
         # Also DB-enforced (ck_rate_cards_validity_ordered), but that CHECK fires
         # inside the same flush the exclusion constraint does, and
         # RateCardService.create's own except IntegrityError cannot tell the two
         # apart -- an inverted range would otherwise be misreported as an overlap
         # conflict. Catching it here, before the row ever reaches the database,
         # is what keeps the two failures distinguishable.
-        if self.valido_a is not None and self.valido_a < self.valido_da:
-            raise ValueError("valido_a non può precedere valido_da")
+        if self.valid_to is not None and self.valid_to < self.valid_from:
+            raise ValueError("valid_to non può precedere valid_from")
         return self
 
 
 class RateCardUpdate(BaseModel):
-    """A partial patch of a rate card. The conditional shape (`ore_minime` only for
-    `orario`, `periodo_erogazione` only for `ricorrente_fisso`) and the validity order
+    """A partial patch of a rate card. The conditional shape (`minimum_hours` only for
+    `hourly`, `delivery_period` only for `fixed_recurring`) and the validity order
     are checked against the *merged* row by `RateCardService.update`; the overlap is
     the database's, as on create."""
 
     model_config = ConfigDict(extra="forbid")
 
-    valido_da: date | None = None
-    valido_a: date | None = None
-    tipo: RateCardTipo | None = None
-    importo: Decimal | None = Field(
-        default=None, max_digits=IMPORTO_MAX_DIGITS, decimal_places=DECIMAL_PLACES
+    valid_from: date | None = None
+    valid_to: date | None = None
+    type: RateCardType | None = None
+    amount: Decimal | None = Field(
+        default=None, max_digits=AMOUNT_MAX_DIGITS, decimal_places=DECIMAL_PLACES
     )
-    unita: RateCardUnita | None = None
-    frazioni_ammesse: list[Frazione] | None = None
-    ore_minime: Decimal | None = Field(
-        default=None, max_digits=ORE_MINIME_MAX_DIGITS, decimal_places=DECIMAL_PLACES
+    unit: RateCardUnit | None = None
+    allowed_fractions: list[Fraction] | None = None
+    minimum_hours: Decimal | None = Field(
+        default=None, max_digits=MINIMUM_HOURS_MAX_DIGITS, decimal_places=DECIMAL_PLACES
     )
-    periodo_erogazione: RateCardPeriodo | None = None
+    delivery_period: RateCardPeriod | None = None
 
 
 class RateCardRead(BaseModel):
@@ -313,33 +311,33 @@ class RateCardRead(BaseModel):
 
     id: UUID
     contract_id: UUID
-    valido_da: date
-    valido_a: date | None
-    tipo: str
-    importo: Decimal
-    unita: str
-    frazioni_ammesse: list[Decimal]
-    ore_minime: Decimal | None
-    periodo_erogazione: str | None
+    valid_from: date
+    valid_to: date | None
+    type: str
+    amount: Decimal
+    unit: str
+    allowed_fractions: list[Decimal]
+    minimum_hours: Decimal | None
+    delivery_period: str | None
     created_at: datetime
     updated_at: datetime
 
 
 class ConcentrationFigures(BaseModel):
     """One currency's side of a concentration cap: the customer's invoiced revenue and
-    the azienda's total, both in `divisa` and never converted, with the share one is of
+    the legal entity's total, both in `currency` and never converted, with the share one is of
     the other. A customer billed in euros on a USD contract is a `EUR` row, not a figure
     labelled with the contract's own currency (REB-776)."""
 
-    divisa: str
-    ricavi_cliente: Decimal = Field(max_digits=12, decimal_places=2)
-    ricavi_totali: Decimal = Field(max_digits=12, decimal_places=2)
-    # The client's share of `ricavi_totali`, in [0, 1] -- 0.0 when nothing has been
+    currency: str
+    customer_revenue: Decimal = Field(max_digits=12, decimal_places=2)
+    total_revenue: Decimal = Field(max_digits=12, decimal_places=2)
+    # The client's share of `total_revenue`, in [0, 1] -- 0.0 when nothing has been
     # invoiced yet in the period, the same "zero when there is nothing to scale
-    # against" reading every other `quota` field on this schema already carries
-    # (`dashboard/schemas.py`'s `EsposizioneCliente.quota`, `_quota`).
-    quota: float
-    superata: bool | None = None
+    # against" reading every other `share` field on this schema already carries
+    # (`dashboard/schemas.py`'s `ExposureCustomer.share`, `_share`).
+    share: float
+    exceeded: bool | None = None
 
 
 class ContractConcentrationCap(BaseModel):
@@ -347,36 +345,36 @@ class ContractConcentrationCap(BaseModel):
     share of total invoiced revenue over the anniversary year containing `as_of`,
     read the same way `annual_revenue`/`revenue_filter` already define revenue --
     mastro's `percentage_share` measure, on its `cash_received_contract_year` basis
-    (`ceiling.ts:55-75, 197-233`), anchored to `Contract.inizio` instead of a
+    (`ceiling.ts:55-75, 197-233`), anchored to `Contract.start` instead of a
     ledger row.
 
-    The figures are per currency (`valute`), since an invoice's `divisa` is its own and
+    The figures are per currency (`currencies`), since an invoice's `currency` is its own and
     nothing here converts: a share of euros of dollars is not a number. A window with no
     invoice at all answers one row in the contract's currency, all zero, so a reader
     never gets an empty list for a quiet year.
 
-    `soglia` is the share each row is compared with, in [0, 1]. A caller may name one,
+    `threshold` is the share each row is compared with, in [0, 1]. A caller may name one,
     per REB-352 §5 item 4's "would this fit" reading: a live comparison, never stored.
-    Without one it is the contract's own cap (`Contract.tetto_quota_cliente`, REB-761,
-    divided by 100), and `soglia_da_contratto` says so, so a reader can tell the clause
+    Without one it is the contract's own cap (`Contract.customer_share_cap`, REB-761,
+    divided by 100), and `threshold_from_contract` says so, so a reader can tell the clause
     from a figure somebody tried. Each row's `superata` mirrors mastro's own `crossed`
     (`ceiling.ts:257`: the share reaching the cap) and stays `None` when neither a
-    `soglia` nor a cap exists.
+    `threshold` nor a cap exists.
     """
 
     contract_id: UUID
     customer_id: UUID
-    periodo_da: date
-    periodo_a: date
-    soglia: float | None = None
-    soglia_da_contratto: bool = False
-    valute: list[ConcentrationFigures]
+    period_from: date
+    period_to: date
+    threshold: float | None = None
+    threshold_from_contract: bool = False
+    currencies: list[ConcentrationFigures]
 
 
 class ContractCapSimulation(BaseModel):
     """REB-761: the «ci sta?» simulator's answer for one contract's cap. The customer's
-    share of the azienda's invoiced revenue over the contract's own anniversary year
-    containing `data_prevista`, before and after a synthetic addition that goes entirely
+    share of the legal entity's invoiced revenue over the contract's own anniversary year
+    containing `expected_date`, before and after a synthetic addition that goes entirely
     to this customer: both the customer's revenue and the total grow by it, which is why
     the share moves less than the addition. In the contract's own currency, since a cap
     compares one currency with itself (REB-776). `rientra` is the share staying under the
@@ -384,25 +382,25 @@ class ContractCapSimulation(BaseModel):
     """
 
     contract_id: UUID
-    titolo: str
+    title: str
     customer_id: UUID
-    divisa: str
-    periodo_da: date
-    periodo_a: date
-    # The contract's cap as a share in [0, 1] (`tetto_quota_cliente` / 100).
-    tetto: float
-    ricavi_cliente_attuali: Decimal = Field(max_digits=12, decimal_places=2)
-    ricavi_totali_attuali: Decimal = Field(max_digits=12, decimal_places=2)
-    quota_attuale: float
-    ricavi_cliente_simulati: Decimal = Field(max_digits=12, decimal_places=2)
-    ricavi_totali_simulati: Decimal = Field(max_digits=12, decimal_places=2)
-    quota_simulata: float
-    rientra: bool
+    currency: str
+    period_from: date
+    period_to: date
+    # The contract's cap as a share in [0, 1] (`customer_share_cap` / 100).
+    cap: float
+    current_customer_revenue: Decimal = Field(max_digits=12, decimal_places=2)
+    current_total_revenue: Decimal = Field(max_digits=12, decimal_places=2)
+    current_share: float
+    simulated_customer_revenue: Decimal = Field(max_digits=12, decimal_places=2)
+    simulated_total_revenue: Decimal = Field(max_digits=12, decimal_places=2)
+    simulated_share: float
+    falls_within: bool
 
 
 # ---- clause notes (REB-762) ---------------------------------------------------------
 
-RIFERIMENTO_CLAUSOLA_MAX_LENGTH = 200
+CLAUSE_REFERENCE_MAX_LENGTH = 200
 CLAUSE_TEXT_MAX_LENGTH = 20_000
 
 
@@ -414,19 +412,19 @@ def _not_blank(value: str | None) -> str | None:
 
 
 class ClauseNoteCreate(BaseModel):
-    """A reading of one clause: where it is (`riferimento_clausola`, «Art. 8.3 Rinnovo»),
-    what it says word for word (`testo_letterale`) and what the person decided it means
-    (`interpretazione_adottata`). `note` is anything else worth keeping beside them."""
+    """A reading of one clause: where it is (`clause_reference`, «Art. 8.3 Rinnovo»),
+    what it says word for word (`literal_text`) and what the person decided it means
+    (`adopted_interpretation`). `note` is anything else worth keeping beside them."""
 
     model_config = ConfigDict(extra="forbid")
 
-    riferimento_clausola: SafeStr = Field(min_length=1, max_length=RIFERIMENTO_CLAUSOLA_MAX_LENGTH)
-    testo_letterale: SafeStr = Field(min_length=1, max_length=CLAUSE_TEXT_MAX_LENGTH)
-    interpretazione_adottata: SafeStr = Field(min_length=1, max_length=CLAUSE_TEXT_MAX_LENGTH)
+    clause_reference: SafeStr = Field(min_length=1, max_length=CLAUSE_REFERENCE_MAX_LENGTH)
+    literal_text: SafeStr = Field(min_length=1, max_length=CLAUSE_TEXT_MAX_LENGTH)
+    adopted_interpretation: SafeStr = Field(min_length=1, max_length=CLAUSE_TEXT_MAX_LENGTH)
     note: SafeStr | None = Field(default=None, max_length=CLAUSE_TEXT_MAX_LENGTH)
 
     _required_text_is_not_blank = field_validator(
-        "riferimento_clausola", "testo_letterale", "interpretazione_adottata"
+        "clause_reference", "literal_text", "adopted_interpretation"
     )(_not_blank)
 
 
@@ -436,19 +434,19 @@ class ClauseNoteUpdate(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    riferimento_clausola: SafeStr | None = Field(
-        default=None, min_length=1, max_length=RIFERIMENTO_CLAUSOLA_MAX_LENGTH
+    clause_reference: SafeStr | None = Field(
+        default=None, min_length=1, max_length=CLAUSE_REFERENCE_MAX_LENGTH
     )
-    testo_letterale: SafeStr | None = Field(
+    literal_text: SafeStr | None = Field(
         default=None, min_length=1, max_length=CLAUSE_TEXT_MAX_LENGTH
     )
-    interpretazione_adottata: SafeStr | None = Field(
+    adopted_interpretation: SafeStr | None = Field(
         default=None, min_length=1, max_length=CLAUSE_TEXT_MAX_LENGTH
     )
     note: SafeStr | None = Field(default=None, max_length=CLAUSE_TEXT_MAX_LENGTH)
 
     _required_text_is_not_blank = field_validator(
-        "riferimento_clausola", "testo_letterale", "interpretazione_adottata"
+        "clause_reference", "literal_text", "adopted_interpretation"
     )(_not_blank)
 
 
@@ -457,9 +455,9 @@ class ClauseNoteRead(BaseModel):
 
     id: UUID
     contract_id: UUID
-    riferimento_clausola: str
-    testo_letterale: str
-    interpretazione_adottata: str
+    clause_reference: str
+    literal_text: str
+    adopted_interpretation: str
     note: str | None
     created_at: datetime
     updated_at: datetime
@@ -471,11 +469,11 @@ class ContractDetail(ContractRead):
     `ContractService.detail` builds one, so a list of contracts stays one query: the
     notes and the successor are asked for the one contract being opened."""
 
-    contratto_successivo_id: UUID | None
-    # The latest 50, oldest first. `note_clausole_totale` is how many the contract has: when
+    next_contract_id: UUID | None
+    # The latest 50, oldest first. `note_total_clauses` is how many the contract has: when
     # it is more than the list, the rest is in the notes' own list (`list_clause_notes`).
-    note_clausole: list[ClauseNoteRead]
-    note_clausole_totale: int
+    note_clauses: list[ClauseNoteRead]
+    note_total_clauses: int
 
 
 # ---- renewal assumptions and the projected figure (REB-375) -----------------------
@@ -483,15 +481,15 @@ class ContractDetail(ContractRead):
 
 class RenewalAssumptionUpsert(BaseModel):
     """A contract's own recorded belief about revenue beyond its known term -- mastro's
-    `RenewalAssumption` (`certainty.ts:133-147`). `probabilita` mirrors
-    `Deal.probabilita`'s own 0-100 integer shape (deals/models.py), not a 0-1 fraction:
+    `RenewalAssumption` (`certainty.ts:133-147`). `probability` mirrors
+    `Deal.probability`'s own 0-100 integer shape (deals/models.py), not a 0-1 fraction:
     the same percentage concept already has one representation on this schema."""
 
-    probabilita: int = Field(ge=0, le=100)
-    volume_atteso: Decimal = Field(
-        ge=0, max_digits=IMPORTO_MAX_DIGITS, decimal_places=DECIMAL_PLACES
+    probability: int = Field(ge=0, le=100)
+    expected_volume: Decimal = Field(
+        ge=0, max_digits=AMOUNT_MAX_DIGITS, decimal_places=DECIMAL_PLACES
     )
-    orizzonte_al: date
+    horizon_until: date
 
 
 class RenewalAssumptionRead(BaseModel):
@@ -499,9 +497,9 @@ class RenewalAssumptionRead(BaseModel):
 
     id: UUID
     contract_id: UUID
-    probabilita: int
-    volume_atteso: Decimal
-    orizzonte_al: date
+    probability: int
+    expected_volume: Decimal
+    horizon_until: date
     created_at: datetime
     updated_at: datetime
 
@@ -509,34 +507,34 @@ class RenewalAssumptionRead(BaseModel):
 class ContractProjectionQuery(BaseModel):
     """The window `ContractProjectionService.project` reads: `[da, a)`, half-open --
     an occurrence dated exactly `a` belongs to the next window, matching
-    `PeriodPnlQuery`'s own convention (analytics/schemas.py). `come_di` is the date
+    `PeriodPnlQuery`'s own convention (analytics/schemas.py). `as_of` is the date
     a termination notice is assumed served on; `None` reads as "today", resolved by
     the service and never by this schema (packages/core's own single clock,
     db/clock.py)."""
 
-    da: date
-    a: date
-    come_di: date | None = None
+    date_from: date
+    date_to: date
+    as_of: date | None = None
 
     @model_validator(mode="after")
     def _a_after_da(self) -> "ContractProjectionQuery":
-        if self.a <= self.da:
+        if self.date_to <= self.date_from:
             raise ValueError("a deve essere successiva a da")
         return self
 
 
 class ContractProjectionRead(BaseModel):
-    """Distinct from, and never combined with, `CashOverview.proiettato`
+    """Distinct from, and never combined with, `CashOverview.projected`
     (analytics/schemas.py): that figure is drafts and proformas already in the
     system, this one is a contract's own recurring-fee schedule plus its own
     recorded renewal assumption -- the Done-when criterion's "genuine 'projected'
     figure"."""
 
     contract_id: UUID
-    come_di: date
-    da: date
-    a: date
-    finestra_irrevocabilita_fino_al: date | None
-    programmato: Decimal
-    da_rinnovo: Decimal
-    totale: Decimal
+    as_of: date
+    date_from: date
+    date_to: date
+    irrevocability_window_until_to: date | None
+    scheduled: Decimal
+    from_renewal: Decimal
+    total: Decimal

@@ -68,14 +68,16 @@ NOT_FORWARDED: dict[str, str] = {
     # they decide whether chasing somebody is legitimate and finite, they already carry
     # `ge`/`le` in `config.py` for that reason, and an operator who wants a different
     # grace period is asking for a product decision rather than an environment variable.
-    "solleciti_grace_days": "quando un sollecito e' legittimo: non una scelta di deploy",
-    "solleciti_min_interval_days": "come sopra",
-    "solleciti_max_reminders": "come sopra, e il tetto e' il numero di registri del template",
+    "payment_reminders_grace_days": "quando un sollecito e' legittimo: non una scelta di deploy",
+    "payment_reminders_min_interval_days": "come sopra",
+    "payment_reminders_max_reminders": (
+        "come sopra, e il tetto e' il numero di registri del template"
+    ),
     # The preferred-share concentration threshold (REB-371): a practitioner's own
     # preference about their client mix, not a deployment choice, exactly the same
-    # reasoning as the three `solleciti_*` thresholds just above -- and, like them,
+    # reasoning as the three `payment_reminders_*` thresholds just above -- and, like them,
     # reachable per space through `space_settings` instead.
-    "concentrazione_soglia_preferita": "quota preferita di un cliente: scelta del praticante",
+    "preferred_concentration_threshold": "quota preferita di un cliente: scelta del praticante",
     # Computed per space by `space_base_settings` while the root lends its Google client
     # (REB-394), empty for the root: never an installation's choice.
     "google_callback_base_url": "calcolato da space_base_settings, mai dall'ambiente",

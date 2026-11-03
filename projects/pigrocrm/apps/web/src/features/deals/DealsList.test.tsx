@@ -40,7 +40,7 @@ beforeEach(() => {
 })
 
 function renderList(
-  filters: { fatturato_non_vinto?: boolean; da_fatturare?: boolean } = {},
+  filters: { invoiced_unwon?: boolean; to_invoice?: boolean } = {},
   initialSearch = '',
 ) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
@@ -99,7 +99,7 @@ describe('the deal list', () => {
   })
 
   it('keeps the chip of the filter the URL arrived with pressed', async () => {
-    renderList({ da_fatturare: true })
+    renderList({ to_invoice: true })
     const filters = await screen.findByRole('search')
     expect(within(filters).getByRole('button', { name: 'Vinto ma da fatturare' })).toHaveAttribute(
       'aria-pressed',
@@ -115,14 +115,14 @@ describe('the deal list', () => {
     renderList()
     const filters = await screen.findByRole('search')
     await userEvent.click(within(filters).getByRole('button', { name: 'Fatturato ma non vinto' }))
-    expect(nextSearch({})).toEqual({ fatturato_non_vinto: true })
+    expect(nextSearch({})).toEqual({ invoiced_unwon: true })
   })
 
   it('clears the filter when the pressed chip is pressed again', async () => {
-    renderList({ fatturato_non_vinto: true })
+    renderList({ invoiced_unwon: true })
     const filters = await screen.findByRole('search')
     await userEvent.click(within(filters).getByRole('button', { name: 'Fatturato ma non vinto' }))
-    expect(nextSearch({ fatturato_non_vinto: true })).toEqual({})
+    expect(nextSearch({ invoiced_unwon: true })).toEqual({})
   })
 
   /**
@@ -136,28 +136,28 @@ describe('the deal list', () => {
     renderList({}, 'acme')
     const filters = await screen.findByRole('search')
     await userEvent.click(within(filters).getByRole('button', { name: 'Vinto ma da fatturare' }))
-    expect(nextSearch({ search: 'acme' })).toEqual({ search: 'acme', da_fatturare: true })
+    expect(nextSearch({ search: 'acme' })).toEqual({ search: 'acme', to_invoice: true })
   })
 
   it('keeps the search term when «Tutti» clears the drill-through', async () => {
-    renderList({ da_fatturare: true }, 'acme')
+    renderList({ to_invoice: true }, 'acme')
     const filters = await screen.findByRole('search')
     await userEvent.click(within(filters).getByRole('button', { name: 'Tutti' }))
-    expect(nextSearch({ search: 'acme', da_fatturare: true })).toEqual({ search: 'acme' })
+    expect(nextSearch({ search: 'acme', to_invoice: true })).toEqual({ search: 'acme' })
   })
 
   /** One at a time: the two predicates are disjoint by construction (a deal cannot be
    *  both not-won and won), so carrying the other one along would only ever produce an
    *  empty list. */
   it('replaces the other drill-through rather than adding to it', async () => {
-    renderList({ fatturato_non_vinto: true })
+    renderList({ invoiced_unwon: true })
     const filters = await screen.findByRole('search')
     await userEvent.click(within(filters).getByRole('button', { name: 'Vinto ma da fatturare' }))
-    expect(nextSearch({ fatturato_non_vinto: true })).toEqual({ da_fatturare: true })
+    expect(nextSearch({ invoiced_unwon: true })).toEqual({ to_invoice: true })
   })
 
   it('still states in words what an active filter is hiding', async () => {
-    renderList({ da_fatturare: true })
+    renderList({ to_invoice: true })
     expect(await screen.findByRole('status')).toHaveTextContent(/solo i deal vinti/i)
   })
 })

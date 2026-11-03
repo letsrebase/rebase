@@ -4,7 +4,6 @@ Each task that adds a model appends its import here.
 """
 
 from pigrocrm.core.activities.models import Activity  # noqa: F401
-from pigrocrm.core.attivita.models import Attivita  # noqa: F401
 from pigrocrm.core.auth.invitation_models import Invitation  # noqa: F401
 from pigrocrm.core.auth.magic_models import MagicLinkToken  # noqa: F401
 from pigrocrm.core.auth.models import User, UserLegalEntity  # noqa: F401
@@ -24,7 +23,6 @@ from pigrocrm.core.deals.models import Deal  # noqa: F401
 from pigrocrm.core.digest.models import Digest  # noqa: F401
 from pigrocrm.core.documents.models import Document, DocumentVersion  # noqa: F401
 from pigrocrm.core.drive.models import GoogleDriveAccount  # noqa: F401
-from pigrocrm.core.emitter.models import LegalEntity  # noqa: F401
 from pigrocrm.core.fields.models import FieldDefinition  # noqa: F401
 from pigrocrm.core.fiscal.models import FiscalProfile  # noqa: F401
 from pigrocrm.core.gmail.models import (  # noqa: F401
@@ -42,6 +40,7 @@ from pigrocrm.core.invoices.models import (  # noqa: F401
     InvoiceLine,
     InvoiceRegisterGap,
 )
+from pigrocrm.core.legal_entities.models import LegalEntity  # noqa: F401
 from pigrocrm.core.notes.models import Note, NoteRevision  # noqa: F401
 from pigrocrm.core.people.models import Person  # noqa: F401
 from pigrocrm.core.pipeline.models import PipelineStage  # noqa: F401
@@ -61,6 +60,7 @@ from pigrocrm.core.slack.models import (  # noqa: F401
     SlackWorkspace,
 )
 from pigrocrm.core.space_settings.models import SpaceSetting  # noqa: F401
+from pigrocrm.core.tasks.models import Task  # noqa: F401
 from pigrocrm.core.templates.models import Template  # noqa: F401
 from pigrocrm.core.timetracking.models import (  # noqa: F401
     Cost,

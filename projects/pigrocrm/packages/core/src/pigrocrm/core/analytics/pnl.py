@@ -25,7 +25,7 @@ from pigrocrm.core.timetracking.service import TimeEntryService, billed_entry_id
 
 ENTITY = "analytics"
 
-type DealState = Literal["in corso", "da fatturare", "chiuso"]
+type DealState = Literal["in_progress", "to_invoice", "closed"]
 
 
 def _totals(rows: list[tuple[Decimal, Decimal, Decimal]]) -> PnlTotals:
@@ -35,34 +35,34 @@ def _totals(rows: list[tuple[Decimal, Decimal, Decimal]]) -> PnlTotals:
     the column total has to be the sum of the printed figures rather than the rounding of
     an exact sum -- the same rule the timesheet obeys, for the same reason (§6.2).
     """
-    ricavi = sum_money([row[0] for row in rows])
-    costi = sum_money([row[1] for row in rows])
-    lavoro = sum_money([row[2] for row in rows])
-    margine = ricavi - costi - lavoro
+    revenue = sum_money([row[0] for row in rows])
+    costs = sum_money([row[1] for row in rows])
+    work = sum_money([row[2] for row in rows])
+    margin = revenue - costs - work
     return PnlTotals(
-        ricavi=ricavi,
-        costi_diretti=costi,
-        costo_lavoro=lavoro,
-        margine_lordo=margine,
-        margine_percentuale=percentage_of(margine, ricavi),
+        revenue=revenue,
+        direct_costs=costs,
+        work_cost=work,
+        gross_margin=margin,
+        percentage_margin=percentage_of(margin, revenue),
         deal=len(rows),
     )
 
 
 def deal_states(session: Session, deal_ids: Collection[UUID]) -> dict[UUID, DealState]:
-    """`TimeEntryService.deal_summary(...).stato` for many deals at once, in three
+    """`TimeEntryService.deal_summary(...).status` for many deals at once, in three
     statements instead of one summary (and its entries) per deal.
 
-    The same rule: a deal in an open stage is `in corso`; otherwise it is `da fatturare`
+    The same rule: a deal in an open stage is `in_progress`; otherwise it is `to_invoice`
     while any billable hour is not on an issued invoice (`billed_entry_ids`, the
-    invoice-state reading), `chiuso` when none is.
+    invoice-state reading), `closed` when none is.
     """
     if not deal_ids:
         return {}
     kinds = {
         deal_id: kind
         for deal_id, kind in session.execute(
-            select(Deal.id, PipelineStage.tipo)
+            select(Deal.id, PipelineStage.type)
             .join(PipelineStage, PipelineStage.id == Deal.pipeline_stage_id)
             .where(Deal.id.in_(deal_ids))
         )
@@ -74,7 +74,7 @@ def deal_states(session: Session, deal_ids: Collection[UUID]) -> dict[UUID, Deal
                 select(TimeEntry).where(
                     TimeEntry.deal_id.in_(settled),
                     TimeEntry.deleted_at.is_(None),
-                    TimeEntry.fatturabile.is_(True),
+                    TimeEntry.billable.is_(True),
                 )
             )
         )
@@ -86,9 +86,9 @@ def deal_states(session: Session, deal_ids: Collection[UUID]) -> dict[UUID, Deal
     states: dict[UUID, DealState] = {}
     for deal_id, kind in kinds.items():
         if kind == "open":
-            states[deal_id] = "in corso"
+            states[deal_id] = "in_progress"
         else:
-            states[deal_id] = "da fatturare" if deal_id in with_unbilled else "chiuso"
+            states[deal_id] = "to_invoice" if deal_id in with_unbilled else "closed"
     return states
 
 
@@ -97,13 +97,13 @@ def deal_pnl(session: Session, repo: AnalyticsRepository, deal_id: UUID, actor: 
 
     `valore_maturato = ricavi + valore delle ore fatturabili non fatturate`. It is
     **not** revenue, enters no P&L row, and is returned in a field of its own name
-    (§7.3): on an `in corso` deal it is the honest figure and the margin is
-    provisional; the margin is only reportable when the state is `chiuso`.
+    (§7.3): on an `in_progress` deal it is the honest figure and the margin is
+    provisional; the margin is only reportable when the state is `closed`.
 
     Which reading of "already invoiced" this uses, since task 4B-3 left two that
     deliberately differ: the **invoice-state** one, through `billed_entry_ids`, not
-    the link-based one the `fatturato` list filter applies. An hour bound to a line of
-    a *draft* invoice is `fatturato` in that list and still fully editable; here it
+    the link-based one the `invoiced` list filter applies. An hour bound to a line of
+    a *draft* invoice is `invoiced` in that list and still fully editable; here it
     still counts as billable-and-unbilled, because a draft is not revenue and the
     link-based reading would leave the work in neither figure -- priced, done and
     invisible until somebody pressed "issue".
@@ -112,30 +112,30 @@ def deal_pnl(session: Session, repo: AnalyticsRepository, deal_id: UUID, actor: 
     if deal is None:
         raise NotFound("deal", deal_id)
 
-    ricavi, fatture = repo.deal_revenue(deal_id)
-    costi_diretti = repo.deal_direct_costs(deal_id)
+    revenue, invoices = repo.deal_revenue(deal_id)
+    direct_costs = repo.deal_direct_costs(deal_id)
     # Reuses 4A's own summary rather than recomputing hours here: one definition of
     # "labour cost" and one of "state", so the Ore tab and the Economia tab can never
     # disagree about the same deal.
     summary = TimeEntryService(session).deal_summary(deal_id, actor)
-    margine = ricavi - costi_diretti - summary.costo_lavoro
+    margin = revenue - direct_costs - summary.work_cost
 
     return DealPnl(
         deal_id=deal_id,
-        stato=summary.stato,
-        ricavi=ricavi,
-        costi_diretti=costi_diretti,
-        costo_lavoro=summary.costo_lavoro,
-        margine_lordo=margine,
+        status=summary.status,
+        revenue=revenue,
+        direct_costs=direct_costs,
+        work_cost=summary.work_cost,
+        gross_margin=margin,
         # `percentage_of` returns `None` for a zero denominator and performs no
         # division at all in that case, so this is the only place the question is
         # asked and there is no second answer to keep aligned.
-        margine_percentuale=percentage_of(margine, ricavi),
-        ore_totali=summary.ore_totali,
-        ore_fatturabili_non_fatturate=summary.ore_fatturabili_non_fatturate,
-        valore_maturato=ricavi + summary.valore_ore_non_fatturate,
-        ore_senza_tariffa=summary.ore_senza_tariffa,
-        fatture_emesse=fatture,
+        percentage_margin=percentage_of(margin, revenue),
+        total_hours=summary.total_hours,
+        billable_uninvoiced_hours=summary.billable_uninvoiced_hours,
+        accrued_value=revenue + summary.unbilled_hours_value,
+        hours_without_rate=summary.hours_without_rate,
+        issued_invoices=invoices,
     )
 
 
@@ -143,8 +143,8 @@ def period_pnl(session: Session, repo: AnalyticsRepository, query: PeriodPnlQuer
     """Aggregated over a date window, optionally scoped to one customer.
 
     Each quantity is attributed to the period by **its own** date: revenue by
-    `invoices.data_emissione`, costs by `costs.data`, labour cost by
-    `time_entries.data`. Not by the deal's date, which does not exist, and not by one
+    `invoices.issue_date`, costs by `costs.date`, labour cost by
+    `time_entries.date`. Not by the deal's date, which does not exist, and not by one
     common date, which none of the three has. `query.base` offers a second reading
     of the revenue alone (ORB-61): by the accrual period the invoice declares,
     because invoicing runs late and August's work issued in September has to be
@@ -157,67 +157,75 @@ def period_pnl(session: Session, repo: AnalyticsRepository, query: PeriodPnlQuer
     performance. The reportable number is the first, and there is deliberately no
     combined field to read by mistake.
     """
-    if query.a < query.da:
+    if query.date_to < query.date_from:
         raise ValidationFailed(
-            ENTITY, "a", "intervallo invertito", expected="una data non anteriore a 'da'"
+            ENTITY, "to", "intervallo invertito", expected="una data non anteriore a 'from'"
         )
 
-    # `azienda_id` is one more predicate on every read (REB-630, spec 2026-10-03
+    # `legal_entity_id` is one more predicate on every read (REB-630, spec 2026-10-03
     # §1.9) and nothing else: the arithmetic below does not know it exists.
-    azienda = query.azienda_id
-    revenue = repo.revenue_in_range(query.da, query.a, query.customer_id, query.base, azienda)
-    per_deal_costs, general = repo.costs_in_range(query.da, query.a, query.customer_id, azienda)
-    labour = repo.labour_cost_in_range(query.da, query.a, query.customer_id, azienda)
+    legal_entity = query.legal_entity_id
+    revenue = repo.revenue_in_range(
+        query.date_from, query.date_to, query.customer_id, query.base, legal_entity
+    )
+    per_deal_costs, general = repo.costs_in_range(
+        query.date_from, query.date_to, query.customer_id, legal_entity
+    )
+    labour = repo.labour_cost_in_range(
+        query.date_from, query.date_to, query.customer_id, legal_entity
+    )
     # Slice 6 §5's three rows, from the same aggregate `unbilled_backlog` uses and
     # merely bounded to the period: one definition of "ore fatturabili non fatturate",
     # not one per screen. They are informative and enter no margin, which is why they
     # sit outside both `PnlTotals` columns rather than inside either.
-    ore_arretrate, valore_arretrato, senza_tariffa, _ = repo.unbilled_backlog(
-        query.da, query.a, query.customer_id, azienda
+    backlog_hours, value_backlog, without_rate, _ = repo.unbilled_backlog(
+        query.date_from, query.date_to, query.customer_id, legal_entity
     )
 
-    deals = repo.deals_in_range(query.da, query.a, query.customer_id, query.base, azienda)
+    deals = repo.deals_in_range(
+        query.date_from, query.date_to, query.customer_id, query.base, legal_entity
+    )
     # The state comes from the same rule the deal's own P&L gets it from, so the two
     # screens can never disagree about which column a deal belongs in -- and, in
     # particular, both read "already invoiced" as the *invoice state* through
-    # `billed_entry_ids`, never as the link-based `fatturato` list filter. An hour bound
+    # `billed_entry_ids`, never as the link-based `invoiced` list filter. An hour bound
     # to a line of a draft invoice is not revenue yet.
     states = deal_states(session, [deal.id for deal in deals])
-    chiusi: list[tuple[Decimal, Decimal, Decimal]] = []
-    in_corso: list[tuple[Decimal, Decimal, Decimal]] = []
+    closed: list[tuple[Decimal, Decimal, Decimal]] = []
+    in_progress: list[tuple[Decimal, Decimal, Decimal]] = []
     for deal in deals:
         row = (
             revenue.get(deal.id, ZERO_MONEY),
             per_deal_costs.get(deal.id, ZERO_MONEY),
             labour.get(deal.id, ZERO_MONEY),
         )
-        (chiusi if states[deal.id] == "chiuso" else in_corso).append(row)
+        (closed if states[deal.id] == "closed" else in_progress).append(row)
 
     locks = PeriodLockService(session)
     # A window is only as closed as its least-closed month: reporting a quarter as
     # closed because one of its months is would be the wrong reassurance in the one
     # place it matters.
-    periodo_chiuso = all(
-        locks.is_closed(date(anno, mese, 1)) is not None
-        for anno, mese in months_between(query.da, query.a)
+    closed_period = all(
+        locks.is_closed(date(year, month, 1)) is not None
+        for year, month in months_between(query.date_from, query.date_to)
     )
 
     return PeriodPnl(
-        da=query.da,
-        a=query.a,
+        date_from=query.date_from,
+        date_to=query.date_to,
         customer_id=query.customer_id,
         base=query.base,
-        azienda_id=azienda,
-        chiusi=_totals(chiusi),
-        in_corso=_totals(in_corso),
+        legal_entity_id=legal_entity,
+        closed=_totals(closed),
+        in_progress=_totals(in_progress),
         # Never apportioned onto any deal (§7.4), and absent entirely under a
         # customer filter, because a general expense belongs to no customer.
-        spese_generali=general,
-        valore_maturato=valore_arretrato,
-        ore_fatturabili_non_fatturate=ore_arretrate,
-        ore_senza_tariffa=senza_tariffa,
-        periodo_chiuso=periodo_chiuso,
+        general_expenses=general,
+        accrued_value=value_backlog,
+        billable_uninvoiced_hours=backlog_hours,
+        hours_without_rate=without_rate,
+        closed_period=closed_period,
         # Free: a COUNT over two columns that already exist, and the one thing a
         # reader most needs to know about an open period (§6.4).
-        voci_scritte_in_ritardo=repo.late_entry_count(query.da, query.a, azienda),
+        written_entries_overdue=repo.late_entry_count(query.date_from, query.date_to, legal_entity),
     )

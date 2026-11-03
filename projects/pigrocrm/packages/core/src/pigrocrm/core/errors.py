@@ -66,7 +66,7 @@ class PermissionDenied(DomainError):
 
 
 class OutOfScope(DomainError):
-    """A write the azienda scope refused outright (REB-634, spec 2026-10-03 §3): Postgres
+    """A write the legal entity scope refused outright (REB-634, spec 2026-10-03 §3): Postgres
     answers `insufficient_privilege` when a policy's `WITH CHECK` says no, and the
     person is told what a read would have told them, that the row is not there for
     them. The same code as `NotFound`, so the status is the same 404."""
@@ -78,9 +78,9 @@ class OutOfScope(DomainError):
 
 
 class ScopedAdmin(DomainError):
-    """An admin whose view is limited to some aziende asked for a space-level change
+    """An admin whose view is limited to some legal entities asked for a space-level change
     (spec 2026-10-03 §1.11). The same code as `PermissionDenied`, so the API answers 403
-    and the SPA hides nothing it would not hide for a collaboratore, but its own words:
+    and the SPA hides nothing it would not hide for a collaborator, but its own words:
     the role is right, the scope is what is missing, and only an unscoped admin can
     widen it from the Team panel."""
 

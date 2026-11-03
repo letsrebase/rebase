@@ -21,7 +21,7 @@ from rebase_core.models import CampaignRecipient
 
 TOLERANCE_SECONDS = 300
 HANDLED = ("email.delivered", "email.bounced", "email.clicked", "email.complained")
-Outcome = Literal["applicato", "ignorato", "da_riprovare"]
+Outcome = Literal["applied", "ignored", "retry"]
 
 
 def verify_signature(
@@ -79,30 +79,30 @@ def apply_event(session: Session, event: Mapping[str, Any]) -> Outcome:
     data = _as_mapping(event.get("data"))
     tags = _as_mapping(data.get("tags"))
     if tags.get("kind") == "test" or kind not in HANDLED:
-        return "ignorato"
+        return "ignored"
     row = _find(session, tags.get("r"), data.get("email_id"))
     if row is None:
-        return "da_riprovare" if tags.get("campaign") else "ignorato"
+        return "retry" if tags.get("campaign") else "ignored"
     at = _moment(event.get("created_at"))
     if kind == "email.delivered":
-        row.consegnata_at = row.consegnata_at or at
+        row.delivered_at = row.delivered_at or at
     elif kind == "email.bounced":
         bounce = _as_mapping(data.get("bounce"))
         if bounce.get("type") != "Permanent":
-            return "ignorato"
-        row.rimbalzata_at = row.rimbalzata_at or at
+            return "ignored"
+        row.bounced_at = row.bounced_at or at
     elif kind == "email.clicked":
         click = _as_mapping(data.get("click"))
         clicked = _moment(click.get("timestamp"))
-        row.primo_clic_at = min(row.primo_clic_at, clicked) if row.primo_clic_at else clicked
+        row.first_click_at = min(row.first_click_at, clicked) if row.first_click_at else clicked
     else:
-        row.reclamo_at = row.reclamo_at or at
+        row.complaint_at = row.complaint_at or at
     email_id = data.get("email_id")
     if row.resend_id is None and isinstance(email_id, str):
         row.resend_id = email_id
     if kind == "email.complained":
         # One commit for the complaint and its opt-out: a failure leaves neither, the
         # route answers 500, and Resend's retry writes both.
-        OptoutService(session).stage(row.email, "reclamo", row.campaign_id)
+        OptoutService(session).stage(row.email, "complaint", row.campaign_id)
     session.commit()
-    return "applicato"
+    return "applied"

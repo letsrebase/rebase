@@ -72,7 +72,7 @@ class DetectorContext:
 class Detection:
     """One subject a type has found, with who should be told.
 
-    `entity` and `entity_id` say what the web opens (an attività, a deal, a timer);
+    `entity` and `entity_id` say what the web opens (an task, a deal, a timer);
     `customer_id` is the customer it belongs to, when it has one, for the link and the
     grouping. `title` and `detail` are what the person reads, in Italian, built here
     because only the detector knows the facts.
@@ -86,7 +86,7 @@ class Detection:
     detail: str
     entity: str
     entity_id: UUID
-    azienda_id: UUID | None = None
+    legal_entity_id: UUID | None = None
     customer_id: UUID | None = None
 
 
@@ -99,7 +99,7 @@ class Detector:
     kind: ReminderType
     detect: Callable[[DetectorContext], list[Detection]]
     # «Applies when» (spec §3), a condition on the space: the ceiling only under the
-    # forfettario, period reminders only if the space closes periods. Always, by default.
+    # flat-rate regime, period reminders only if the space closes periods. Always, by default.
     applies: Callable[[DetectorContext], bool] = _always
 
 
@@ -117,6 +117,6 @@ class Reminder:
     detail: str
     entity: str
     entity_id: UUID
-    azienda_id: UUID | None
+    legal_entity_id: UUID | None
     customer_id: UUID | None
     period: date | None

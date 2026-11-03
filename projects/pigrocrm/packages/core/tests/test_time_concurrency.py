@@ -37,17 +37,17 @@ def world(db_engine: Engine) -> Iterator[tuple[Any, UUID, UUID]]:
         user = User(
             email=f"timer-{uuid4()}@example.test",
             password_hash="x",
-            nome="Timer",
-            ruolo="admin",
+            name="Timer",
+            role="admin",
         )
         stage = PipelineStage(
-            nome=f"Aperto {uuid4()}", posizione=0, probabilita_default=10, tipo="open"
+            name=f"Aperto {uuid4()}", position=0, default_probability=10, type="open"
         )
-        customer = Customer(ragione_sociale=f"Cliente {uuid4()}")
+        customer = Customer(legal_name=f"Cliente {uuid4()}")
         setup.add_all([user, stage, customer])
         setup.flush()
         deal = Deal(
-            nome="Progetto", customer_id=customer.id, pipeline_stage_id=stage.id, probabilita=10
+            name="Progetto", customer_id=customer.id, pipeline_stage_id=stage.id, probability=10
         )
         setup.add(deal)
         setup.flush()
@@ -61,7 +61,7 @@ def world(db_engine: Engine) -> Iterator[tuple[Any, UUID, UUID]]:
             cleanup.execute(text("DELETE FROM activities WHERE actor_id = :user"), params)
             cleanup.execute(text("DELETE FROM time_entries WHERE user_id = :user"), params)
             cleanup.execute(text("DELETE FROM time_timers WHERE user_id = :user"), params)
-            cleanup.execute(text("DELETE FROM period_locks WHERE anno = 2020 AND mese = 6"))
+            cleanup.execute(text("DELETE FROM period_locks WHERE year = 2020 AND month = 6"))
             cleanup.execute(text("DELETE FROM deals WHERE id = :deal"), params)
             cleanup.execute(text("DELETE FROM customers WHERE id = :customer"), params)
             cleanup.execute(text("DELETE FROM pipeline_stages WHERE id = :stage"), params)
@@ -73,7 +73,7 @@ def test_two_stops_of_the_same_timer_write_the_hours_once(
     world: tuple[Any, UUID, UUID],
 ) -> None:
     factory, user_id, deal_id = world
-    actor = Actor(id=user_id, type="user", role="collaboratore")
+    actor = Actor(id=user_id, type="user", role="collaborator")
     with factory() as session:
         TimerService(session).start(TimerStart(deal_id=deal_id), actor)
 
@@ -118,7 +118,7 @@ def test_a_second_start_that_lost_the_race_is_a_conflict_and_the_session_survive
     world: tuple[Any, UUID, UUID], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     factory, user_id, _ = world
-    actor = Actor(id=user_id, type="user", role="collaboratore")
+    actor = Actor(id=user_id, type="user", role="collaborator")
     with factory() as first:
         TimerService(first).start(TimerStart(), actor)
 
@@ -150,7 +150,7 @@ def test_closing_a_month_waits_for_a_write_that_already_checked_it(
             try:
                 with factory() as session:
                     PeriodLockService(session).close_period(
-                        PeriodLockCreate(anno=2020, mese=6), admin
+                        PeriodLockCreate(year=2020, month=6), admin
                     )
             except BaseException as exc:  # noqa: BLE001 - reported, not swallowed
                 errors.append(exc)

@@ -22,13 +22,13 @@ def contract(logged_in: TestClient) -> dict[str, Any]:
     return create_contract(logged_in)
 
 
-def _day(api_session: Session, contract: dict[str, Any], day: date, quantita: str = "1.00") -> UUID:
+def _day(api_session: Session, contract: dict[str, Any], day: date, quantity: str = "1.00") -> UUID:
     row = WorkUnit(
         contract_id=UUID(contract["id"]),
-        data=day,
-        quantita=Decimal(quantita),
-        descrizione="Giornata di consulenza",
-        stato="lavorato",
+        date=day,
+        quantity=Decimal(quantity),
+        description="Giornata di consulenza",
+        status="worked",
     )
     api_session.add(row)
     api_session.flush()
@@ -46,19 +46,19 @@ def test_billable_days_reads_as_the_lines_the_draft_would_carry(
 
     assert response.status_code == 200, response.text
     body = response.json()
-    assert body["fatturabile"] is True
-    assert body["mesi"] == ["2026-10", "2026-11"]
-    assert [(r["mese"], r["giornate"], r["importo"]) for r in body["righe"]] == [
+    assert body["billable"] is True
+    assert body["months"] == ["2026-10", "2026-11"]
+    assert [(r["month"], r["work_units"], r["amount"]) for r in body["lines"]] == [
         ("2026-10", 2, "750.00"),
         ("2026-11", 1, "500.00"),
     ]
-    assert body["imponibile"] == "1250.00"
+    assert body["taxable_amount"] == "1250.00"
 
     october = logged_in.get(
         f"/api/contracts/{contract['id']}/billable-days",
-        params={"da": "2026-10-01", "a": "2026-10-31"},
+        params={"from": "2026-10-01", "to": "2026-10-31"},
     ).json()
-    assert [r["mese"] for r in october["righe"]] == ["2026-10"]
+    assert [r["month"] for r in october["lines"]] == ["2026-10"]
 
 
 def test_invoicing_a_month_makes_a_draft_and_the_days_stop_being_ready(
@@ -69,18 +69,18 @@ def test_invoicing_a_month_makes_a_draft_and_the_days_stop_being_ready(
 
     response = logged_in.post(
         f"/api/contracts/{contract['id']}/invoice-days",
-        json={"da": "2026-10-01", "a": "2026-10-31"},
+        json={"date_from": "2026-10-01", "date_to": "2026-10-31"},
     )
 
     assert response.status_code == 201, response.text
     invoice = response.json()
-    assert invoice["stato"] == "bozza"
-    assert invoice["imponibile"] == "500.00"
+    assert invoice["status"] == "draft"
+    assert invoice["taxable_amount"] == "500.00"
     assert invoice["customer_id"] == contract["customer_id"]
     api_session.expire_all()
-    assert api_session.get(WorkUnit, october).stato == "fatturato"  # type: ignore[union-attr]
+    assert api_session.get(WorkUnit, october).status == "invoiced"  # type: ignore[union-attr]
     ready = logged_in.get(f"/api/contracts/{contract['id']}/billable-days").json()
-    assert [r["mese"] for r in ready["righe"]] == ["2026-11"]
+    assert [r["month"] for r in ready["lines"]] == ["2026-11"]
 
 
 def test_invoicing_with_nothing_ready_is_a_422_not_an_empty_invoice(
@@ -95,7 +95,7 @@ def test_a_period_that_ends_before_it_starts_is_refused(
 ) -> None:
     response = logged_in.post(
         f"/api/contracts/{contract['id']}/invoice-days",
-        json={"da": "2026-10-31", "a": "2026-10-01"},
+        json={"date_from": "2026-10-31", "date_to": "2026-10-01"},
     )
     assert response.status_code == 422, response.text
 
@@ -110,8 +110,8 @@ def test_a_collaborator_may_read_what_is_ready_but_not_bill_it(
         json={
             "email": "collaboratore-fatturazione@pigro.it",
             "password": "supersegreta1",
-            "nome": "Test",
-            "ruolo": "collaboratore",
+            "name": "Test",
+            "role": "collaborator",
         },
     )
     assert created.status_code == 201, created.text
@@ -134,16 +134,16 @@ def test_the_register_json_csv_and_pdf_agree_on_the_month(
     _day(api_session, contract, date(2026, 10, 8), "0.50")
     invoice = logged_in.post(
         f"/api/contracts/{contract['id']}/invoice-days",
-        json={"da": "2026-10-01", "a": "2026-10-31"},
+        json={"date_from": "2026-10-01", "date_to": "2026-10-31"},
     ).json()
-    period = {"da": "2026-10-01", "a": "2026-10-31"}
+    period = {"from": "2026-10-01", "to": "2026-10-31"}
 
     register = logged_in.get(f"/api/contracts/{contract['id']}/register", params=period)
     assert register.status_code == 200, register.text
     body = register.json()
-    assert body["totale_quantita"] == "1.50"
-    assert [v["data"] for v in body["voci"]] == ["2026-10-07", "2026-10-08"]
-    assert invoice["imponibile"] == "750.00"
+    assert body["quantity_total"] == "1.50"
+    assert [v["date"] for v in body["entries"]] == ["2026-10-07", "2026-10-08"]
+    assert invoice["taxable_amount"] == "750.00"
 
     csv = logged_in.get(f"/api/contracts/{contract['id']}/register/csv", params=period)
     assert csv.status_code == 200, csv.text
@@ -171,6 +171,6 @@ def test_the_register_needs_a_period(logged_in: TestClient, contract: dict[str, 
 def test_the_register_of_a_contract_that_does_not_exist_is_a_404(logged_in: TestClient) -> None:
     response = logged_in.get(
         "/api/contracts/00000000-0000-4000-8000-000000000000/register",
-        params={"da": "2026-10-01", "a": "2026-10-31"},
+        params={"from": "2026-10-01", "to": "2026-10-31"},
     )
     assert response.status_code == 404, response.text

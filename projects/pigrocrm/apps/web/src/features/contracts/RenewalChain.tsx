@@ -5,7 +5,7 @@ import { useContract } from './queries'
 
 type ChainContract = Pick<
   components['schemas']['ContractDetail'],
-  'contratto_precedente_id' | 'contratto_successivo_id'
+  'previous_contract_id' | 'next_contract_id'
 >
 
 interface LinkRowProps {
@@ -24,9 +24,9 @@ function ChainRow({ label, fallback, contractId }: LinkRowProps) {
   const dates =
     row === undefined
       ? null
-      : row.fine === null
-        ? `dal ${formatDate(row.inizio)}`
-        : formatPeriod(row.inizio, row.fine)
+      : row.end === null
+        ? `dal ${formatDate(row.start)}`
+        : formatPeriod(row.start, row.end)
 
   return (
     <div className="flex justify-between gap-4 border-b py-2 text-sm last:border-b-0">
@@ -37,7 +37,7 @@ function ChainRow({ label, fallback, contractId }: LinkRowProps) {
           to="/app/contracts/$contractId"
           params={{ contractId }}
         >
-          {row?.titolo ?? fallback}
+          {row?.title ?? fallback}
         </Link>
         {dates !== null && <span className="block text-xs text-muted-foreground">{dates}</span>}
       </span>
@@ -52,8 +52,8 @@ function ChainRow({ label, fallback, contractId }: LinkRowProps) {
  * Not the «Rinnovo» row, which is the renewal type the contract was written with.
  */
 export function RenewalChain({ contract }: { contract: ChainContract }) {
-  const previous = contract.contratto_precedente_id
-  const next = contract.contratto_successivo_id
+  const previous = contract.previous_contract_id
+  const next = contract.next_contract_id
   return (
     <>
       {previous && (

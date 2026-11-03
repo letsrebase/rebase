@@ -63,7 +63,7 @@ PDF_MAGIC = b"%PDF-"
 # The three fields a freelancer card shares with its `users` row (REB-281): an override
 # of one of these lands on the identity, never on the card, the same split
 # `rebase_core.members`' own `_IDENTITY_FIELDS` keeps for a self-edit.
-_ADMIN_IDENTITY_FIELDS = ("nome", "cognome", "linkedin_url")
+_ADMIN_IDENTITY_FIELDS = ("first_name", "last_name", "linkedin_url")
 # The sentence `apply` asks for in the magic-link mail sent instead of overwriting an
 # address already on file (REB-272): one more line in `magic_link_mail`'s voice, not a
 # mail of its own.
@@ -114,18 +114,18 @@ def cv_of(row: Freelancer) -> CvFile:
 
 
 def freelancer_read(row: Freelancer, user: User) -> FreelancerRead:
-    """`FreelancerRead`, identity read off the linked `users` row: `nome`/`cognome`/
+    """`FreelancerRead`, identity read off the linked `users` row: `nome`/`last_name`/
     `email`/`linkedin_url` left the card itself in migration B (REB-281), once
     `FreelancerService` no longer had two copies of the person to keep in step."""
     return FreelancerRead(
         **card_row_fields(row, user),
-        telefono=user.telefono,
+        phone=user.phone,
         cv_filename=row.cv_filename,
         cv_mime=row.cv_mime,
         cv_size=row.cv_size,
         links=list(row.links),
-        compilata_da=row.compilata_da,
-        origine=row.origine,
+        filled_by=row.filled_by,
+        origin=row.origin,
         utm_medium=row.utm_medium,
         utm_campaign=row.utm_campaign,
         utm_content=row.utm_content,
@@ -134,7 +134,7 @@ def freelancer_read(row: Freelancer, user: User) -> FreelancerRead:
         updated_at=row.updated_at,
         deleted_at=row.deleted_at,
         seniority_admin=row.seniority_admin,
-        anni_admin=row.anni_admin,
+        experience_years_admin=row.experience_years_admin,
     )
 
 
@@ -145,8 +145,8 @@ def _logins_per_card() -> Subquery:
     return (
         select(
             Login.user_id,
-            func.count().label("accessi"),
-            func.max(Login.logged_at).label("ultimo_accesso"),
+            func.count().label("logins"),
+            func.max(Login.logged_at).label("last_access"),
         )
         .group_by(Login.user_id)
         .subquery()
@@ -160,12 +160,12 @@ def _signed_up() -> Subquery:
 
 
 def _read_with_logins(
-    row: Freelancer, user: User, accessi: int | None, ultimo: datetime | None, signed_up: object
+    row: Freelancer, user: User, logins: int | None, last: datetime | None, signed_up: object
 ) -> FreelancerRead:
     read = freelancer_read(row, user)
-    read.accessi = accessi or 0
-    read.ultimo_accesso = ultimo
-    read.provenienza = "form" if signed_up is not None else "landing"
+    read.logins = logins or 0
+    read.last_access = last
+    read.provenance = "form" if signed_up is not None else "landing"
     return read
 
 
@@ -215,7 +215,7 @@ class FreelancerService:
         answers the same 422 whether or not the address already has a card: from the
         outside, telling the two cases apart is exactly what this route must not do.
         A card without one is otherwise a state the model already had -- `cv_of`
-        answers `NotFound` for it, `completa` is false, and the member area's
+        answers `NotFound` for it, `complete` is false, and the member area's
         `replace_cv` exists precisely to add it later.
 
         `cv is None` is "no file was attached"; `cv == b""` is an attached file with no
@@ -232,7 +232,7 @@ class FreelancerService:
             return freelancer_read(row, owner), False
         utm = data.utm.model_dump() if data.utm is not None and not data.utm.is_empty() else {}
         user = UserService(self.session).get_or_create(
-            email, data.nome, data.cognome, data.linkedin_url
+            email, data.first_name, data.last_name, data.linkedin_url
         )
         row = Freelancer(user_id=user.id, **utm)
         self.session.add(row)
@@ -245,18 +245,18 @@ class FreelancerService:
                 len(content),
             )
             row.cv_uploaded_at = utcnow()
-        row.tariffa_giornaliera = data.tariffa_giornaliera
-        row.posizione = data.posizione
-        row.remoto = data.remoto
+        row.daily_rate = data.daily_rate
+        row.job_title = data.job_title
+        row.remote = data.remote
         row.links = list(data.links)
-        row.compilata_da = "persona"
+        row.filled_by = "person"
         try:
             # The card and its referral are one commit (REB-566): `apply` never writes a
             # card a retry would then skip, leaving it without the referral it came with.
             # The flush gives the row its id, and is where a racing duplicate address fails.
             self.session.flush()
             ReferralService(self.session).link_signup(
-                "freelancer", row.id, data.rif, new_user_id=user.id
+                "freelancer", row.id, data.ref, new_user_id=user.id
             )
             self.session.commit()
         except IntegrityError:
@@ -267,22 +267,22 @@ class FreelancerService:
         return freelancer_read(row, user), True
 
     def draft_from_signup(
-        self, signup_id: UUID, data: FreelancerDraft, admin_id: UUID, fonte: str
+        self, signup_id: UUID, data: FreelancerDraft, admin_id: UUID, source: str
     ) -> FreelancerRead:
         """A card written by an admin from what the public web says about a signup
         (ORB-155): the address and the attribution come from the signup, the answers
         from the research, the CV from nobody -- the person adds it from the member
         area. One row per address still: a second research on a card the admin wrote
-        replaces the researched fields and leaves `stato`, the notes and the CV alone; a
+        replaces the researched fields and leaves `status`, the notes and the CV alone; a
         research on a card the person filled (`compilata_da == "persona"`) is refused,
         because their own words win. One note in the thread, written by `admin_id` through
-        `fonte`, names the sources, so whoever reads the card can check where it came from."""
+        `source`, names the sources, so whoever reads the card can check where it came from."""
         signup = self.session.get(Signup, signup_id)
         if signup is None:
             raise NotFound("signup", signup_id)
         email = signup.email.strip().lower()
         row = self._find(email)
-        if row is not None and row.compilata_da == "persona":
+        if row is not None and row.filled_by == "person":
             raise ValidationFailed(ENTITY, "email", "la persona ha già compilato la sua scheda")
         created = row is None
         if row is None:
@@ -292,7 +292,7 @@ class FreelancerService:
             if holder is not None and (owner is None or holder.id != owner.id):
                 raise ValidationFailed(ENTITY, "linkedin_url", LINKEDIN_HAS_CARD)
             user = UserService(self.session).get_or_create(
-                email, data.nome, data.cognome, data.linkedin_url
+                email, data.first_name, data.last_name, data.linkedin_url
             )
             row = Freelancer(user_id=user.id, **utm)
             self.session.add(row)
@@ -302,16 +302,16 @@ class FreelancerService:
             existing_user = self.session.get(User, row.user_id)
             if existing_user is not None:
                 UserService(self.session).require_free_linkedin(existing_user.id, data.linkedin_url)
-                existing_user.nome, existing_user.cognome, existing_user.linkedin_url = (
-                    data.nome,
-                    data.cognome,
+                existing_user.first_name, existing_user.last_name, existing_user.linkedin_url = (
+                    data.first_name,
+                    data.last_name,
                     data.linkedin_url,
                 )
-        row.posizione = data.posizione
-        row.tariffa_giornaliera = data.tariffa_giornaliera
-        row.remoto = data.remoto
+        row.job_title = data.job_title
+        row.daily_rate = data.daily_rate
+        row.remote = data.remote
         row.links = list(data.links)
-        row.compilata_da = "admin"
+        row.filled_by = "admin"
         try:
             # The referral the visitor arrived with (REB-554) is made with the card, in one
             # commit, the way `apply` does: pending until the person's first magic-link
@@ -319,54 +319,54 @@ class FreelancerService:
             # second research finds it already there (`ON CONFLICT DO NOTHING`).
             self.session.flush()
             ReferralService(self.session).link_signup(
-                "freelancer", row.id, signup.rif, new_user_id=row.user_id
+                "freelancer", row.id, signup.ref, new_user_id=row.user_id
             )
             self.session.commit()
         except IntegrityError:
             # Two first drafts racing on one address: the index decides, and the loser
             # drafts again on top of the winner's row.
             self.session.rollback()
-            return self.draft_from_signup(signup_id, data, admin_id, fonte)
-        sources = ", ".join(data.fonti)
+            return self.draft_from_signup(signup_id, data, admin_id, source)
+        sources = ", ".join(data.sources)
         text = (
             f"Scheda creata dall'iscrizione del {signup.created_at:%d/%m/%Y}. Fonti: {sources}"
             if created
             else f"Scheda aggiornata dalla ricerca. Fonti: {sources}"
         )
-        NoteService(self.session).add(ENTITY, row.id, text, autore_id=admin_id, fonte=fonte)
+        NoteService(self.session).add(ENTITY, row.id, text, author_id=admin_id, source=source)
         return self.get(row.id)
 
     def list_recent(
-        self, limit: int = LIST_LIMIT_DEFAULT, stato: str | None = None
+        self, limit: int = LIST_LIMIT_DEFAULT, status: str | None = None
     ) -> FreelancerList:
         limit = max(1, min(limit, LIST_LIMIT_MAX))
-        if stato == LEAD_STATE:
-            lead, totale_lead = self._leads(limit)
-            return FreelancerList(totale=0, items=[], totale_lead=totale_lead, lead=lead)
-        lead, totale_lead = self._leads(limit) if stato is None else ([], 0)
+        if status == LEAD_STATE:
+            lead, total_lead = self._leads(limit)
+            return FreelancerList(total=0, items=[], total_lead=total_lead, lead=lead)
+        lead, total_lead = self._leads(limit) if status is None else ([], 0)
         logins, signed = _logins_per_card(), _signed_up()
         stmt = (
-            select(Freelancer, User, logins.c.accessi, logins.c.ultimo_accesso, signed.c.email)
+            select(Freelancer, User, logins.c.logins, logins.c.last_access, signed.c.email)
             .join(User, User.id == Freelancer.user_id)
             .outerjoin(logins, logins.c.user_id == Freelancer.user_id)
             .outerjoin(signed, signed.c.email == func.lower(User.email))
             .where(Freelancer.deleted_at.is_(None))
         )
         count = select(func.count()).select_from(Freelancer).where(Freelancer.deleted_at.is_(None))
-        if stato is not None:
-            stmt = stmt.where(Freelancer.stato == stato)
-            count = count.where(Freelancer.stato == stato)
+        if status is not None:
+            stmt = stmt.where(Freelancer.status == status)
+            count = count.where(Freelancer.status == status)
         rows = self.session.execute(
             stmt.order_by(Freelancer.created_at.desc(), Freelancer.id.desc()).limit(limit)
         ).all()
-        totale = self.session.scalar(count) or 0
+        total = self.session.scalar(count) or 0
         return FreelancerList(
-            totale=totale,
+            total=total,
             items=[
-                _read_with_logins(row, user, accessi, ultimo, signed_up)
-                for row, user, accessi, ultimo, signed_up in rows
+                _read_with_logins(row, user, login_count, last, signed_up)
+                for row, user, login_count, last, signed_up in rows
             ],
-            totale_lead=totale_lead,
+            total_lead=total_lead,
             lead=lead,
         )
 
@@ -381,7 +381,7 @@ class FreelancerService:
             .order_by(Signup.created_at.desc(), Signup.id.desc())
             .limit(limit)
         ).all()
-        totale = (
+        total = (
             self.session.scalar(
                 select(func.count())
                 .select_from(Signup)
@@ -390,7 +390,7 @@ class FreelancerService:
             )
             or 0
         )
-        return [SignupListItem.model_validate(row) for row in rows], totale
+        return [SignupListItem.model_validate(row) for row in rows], total
 
     def get(self, freelancer_id: UUID) -> FreelancerDetail:
         """The row with its thread of notes, newest first, and since REB-284 every
@@ -402,18 +402,18 @@ class FreelancerService:
         user = self._owner(row)
         logins = _logins_per_card()
         counted = self.session.execute(
-            select(logins.c.accessi, logins.c.ultimo_accesso).where(logins.c.user_id == row.user_id)
+            select(logins.c.logins, logins.c.last_access).where(logins.c.user_id == row.user_id)
         ).first()
         signup_row = self.session.scalar(
             select(Signup).where(func.lower(Signup.email) == user.email.lower())
         )
-        accessi, ultimo = counted if counted is not None else (None, None)
-        read = _read_with_logins(row, user, accessi, ultimo, signup_row)
+        login_count, last = counted if counted is not None else (None, None)
+        read = _read_with_logins(row, user, login_count, last, signup_row)
         read.note = NoteService(self.session).list(ENTITY, freelancer_id)
         detail = FreelancerDetail.model_validate(read)
-        detail.iscrizione_utm = _signup_utm(signup_row)
-        detail.ultimi_accessi = LoginService(self.session).for_user(user.id)
-        detail.ultimi_download_guida = PerkService(self.session).recent_for_user(user.id)
+        detail.signup_utm = _signup_utm(signup_row)
+        detail.last_logins = LoginService(self.session).for_user(user.id)
+        detail.last_download_guide = PerkService(self.session).recent_for_user(user.id)
         detail.pigro_slug = self._pigro_slug(user.email)
         return detail
 
@@ -439,23 +439,23 @@ class FreelancerService:
         return extract_text(file.content, file.filename)
 
     def set_status(
-        self, freelancer_id: UUID, change: StatusChange, *, admin_id: UUID, fonte: str
+        self, freelancer_id: UUID, change: StatusChange, *, admin_id: UUID, source: str
     ) -> FreelancerRead:
-        """Moves the card to `change.stato` and, when it moved, records who and by which
-        door (`fonte`, `web` or `mcp`) as a `status_changed` entry of the trail."""
-        if change.stato not in FREELANCER_STATES:
-            raise ValidationFailed(ENTITY, "stato", f"uno fra {', '.join(FREELANCER_STATES)}")
+        """Moves the card to `change.status` and, when it moved, records who and by which
+        door (`source`, `web` or `mcp`) as a `status_changed` entry of the trail."""
+        if change.status not in FREELANCER_STATES:
+            raise ValidationFailed(ENTITY, "status", f"uno fra {', '.join(FREELANCER_STATES)}")
         row = self._require(freelancer_id)
-        before = row.stato
-        row.stato = change.stato
-        if before != change.stato:
+        before = row.status
+        row.status = change.status
+        if before != change.status:
             # Same transaction as the change (HCORE-09).
             AdminActionService(self.session).record(
                 ENTITY,
                 row.id,
                 "status_changed",
                 admin_id,
-                {"before": before, "after": change.stato, "fonte": fonte},
+                {"before": before, "after": change.status, "source": source},
                 commit=False,
             )
         self.session.commit()
@@ -666,7 +666,7 @@ class FreelancerService:
                 .select_from(Freelancer)
                 .where(
                     Freelancer.cv_uploaded_at >= since,
-                    Freelancer.compilata_da == "persona",
+                    Freelancer.filled_by == "person",
                 )
             )
             or 0

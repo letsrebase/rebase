@@ -47,13 +47,13 @@ it('stays small', () => {
 describe('carryUtm', () => {
   it('appends the UTM keys and the page to every link into the hub, and to nothing else', () => {
     const utm = load()
-    const root = fixture(['/hub/freelance', '/hub/aziende', '/hub/freelance?perk=guida', '/privacy', 'https://pigro.letsrebase.com/app/'])
+    const root = fixture(['/hub/freelance', '/hub/companies', '/hub/freelance?perk=guida', '/privacy', 'https://pigro.letsrebase.com/app/'])
     const rewritten = utm.carryUtm(root, '?utm_source=linkedin&utm_campaign=orbita&utm_id=42&gclid=nope&utm_term=%20', '/')
     expect(rewritten).toBe(3)
     expect(hrefsOf(root)).toEqual([
-      '/hub/freelance?utm_source=linkedin&utm_campaign=orbita&utm_id=42&da=home',
-      '/hub/aziende?utm_source=linkedin&utm_campaign=orbita&utm_id=42&da=home',
-      '/hub/freelance?perk=guida&utm_source=linkedin&utm_campaign=orbita&utm_id=42&da=home',
+      '/hub/freelance?utm_source=linkedin&utm_campaign=orbita&utm_id=42&from=home',
+      '/hub/companies?utm_source=linkedin&utm_campaign=orbita&utm_id=42&from=home',
+      '/hub/freelance?perk=guida&utm_source=linkedin&utm_campaign=orbita&utm_id=42&from=home',
       '/privacy',
       'https://pigro.letsrebase.com/app/',
     ])
@@ -63,9 +63,9 @@ describe('carryUtm', () => {
     const utm = load()
     utm.carryUtm(fixture(['/hub/freelance']), '?utm_source=linkedin&utm_medium=paid', '/pigrocrm')
     expect(utm.UTM_STORAGE_KEY).toBe('rebase.utm')
-    expect(utm.ORIGIN_STORAGE_KEY).toBe('rebase.da')
+    expect(utm.ORIGIN_STORAGE_KEY).toBe('rebase.from')
     expect(window.sessionStorage.getItem('rebase.utm')).toBe('utm_source=linkedin&utm_medium=paid')
-    expect(window.sessionStorage.getItem('rebase.da')).toBe('pigrocrm')
+    expect(window.sessionStorage.getItem('rebase.from')).toBe('pigrocrm')
   })
 
   it('drops the names the keys had before REB-668 when it writes the new ones', () => {
@@ -74,27 +74,29 @@ describe('carryUtm', () => {
     // surviving a release skew.
     window.sessionStorage.setItem('orbiters.utm', 'utm_source=old')
     window.sessionStorage.setItem('orbiters.da', 'home')
+    window.sessionStorage.setItem('rebase.da', 'home')
     load().carryUtm(fixture(['/hub/freelance']), '?utm_source=linkedin', '/pigrocrm')
     expect(window.sessionStorage.getItem('rebase.utm')).toBe('utm_source=linkedin')
-    expect(window.sessionStorage.getItem('rebase.da')).toBe('pigrocrm')
+    expect(window.sessionStorage.getItem('rebase.from')).toBe('pigrocrm')
     expect(window.sessionStorage.getItem('orbiters.utm')).toBeNull()
     expect(window.sessionStorage.getItem('orbiters.da')).toBeNull()
+    expect(window.sessionStorage.getItem('rebase.da')).toBeNull()
   })
 
   it('never overrides a key a link already carries', () => {
     const utm = load()
-    const root = fixture(['/hub/freelance?utm_source=newsletter&da=altro'])
+    const root = fixture(['/hub/freelance?utm_source=newsletter&from=altro'])
     utm.carryUtm(root, '?utm_source=linkedin&utm_campaign=orbita', '/')
-    expect(hrefsOf(root)).toEqual(['/hub/freelance?utm_source=newsletter&da=altro&utm_campaign=orbita'])
+    expect(hrefsOf(root)).toEqual(['/hub/freelance?utm_source=newsletter&from=altro&utm_campaign=orbita'])
   })
 
   it('says the page even when there is no campaign, and remembers no campaign', () => {
     const utm = load()
-    const root = fixture(['/hub/freelance', '/hub/aziende'])
+    const root = fixture(['/hub/freelance', '/hub/companies'])
     expect(utm.carryUtm(root, '?ref=friend', '/pigrocrm')).toBe(2)
-    expect(hrefsOf(root)).toEqual(['/hub/freelance?da=pigrocrm', '/hub/aziende?da=pigrocrm'])
+    expect(hrefsOf(root)).toEqual(['/hub/freelance?from=pigrocrm', '/hub/companies?from=pigrocrm'])
     expect(window.sessionStorage.getItem('rebase.utm')).toBeNull()
-    expect(window.sessionStorage.getItem('rebase.da')).toBe('pigrocrm')
+    expect(window.sessionStorage.getItem('rebase.from')).toBe('pigrocrm')
   })
 
   it('names the page by its path, home for the front door', () => {

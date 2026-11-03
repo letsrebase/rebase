@@ -14,13 +14,13 @@ from rebase_core.vocabulary import RemoteOption, UserRole
 
 class MemberProfile(BaseModel):
     """The row as its owner reads it: what they gave, and nothing the admin wrote.
-    No `stato`, no `note`, no attribution, and never the CV bytes."""
+    No `status`, no `note`, no attribution, and never the CV bytes."""
 
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
-    nome: str
-    cognome: str
+    first_name: str
+    last_name: str
     email: str
     linkedin_url: str | None
     # `None` on a card an admin wrote from a signup and the person has not completed
@@ -29,88 +29,88 @@ class MemberProfile(BaseModel):
     # CV is an optional step.
     cv_filename: str | None
     cv_size: int | None
-    tariffa_giornaliera: Decimal | None
-    posizione: str | None
-    remoto: RemoteOption | None
+    daily_rate: Decimal | None
+    job_title: str | None
+    remote: RemoteOption | None
     links: list[str]
     created_at: datetime
     updated_at: datetime
 
     @computed_field  # type: ignore[prop-decorator]
     @property
-    def completa(self) -> bool:
+    def complete(self) -> bool:
         return is_complete(self)
 
 
 class MemberRequest(ResponseModel):
     """One company request as the person who filed it reads it (REB-602): the eight
     answers they gave, plus its id, so the member area can open that very request for
-    editing, and when it was filed. Never `stato`, `note` or the company's own name:
+    editing, and when it was filed. Never `status`, `note` or the company's own name:
     what the admin wrote about a request stays the admin's, the same isolation
     `MemberProfile` keeps for the card."""
 
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
-    figura_richiesta: str
-    progetto: str
-    periodo_da: date
-    durata: str
-    budget_giornaliero: Decimal
-    remoto: RemoteOption
-    giorni_presenza: int | None
-    numero_risorse: int
+    requested_role: str
+    project: str
+    period_from: date
+    duration: str
+    daily_budget: Decimal
+    remote: RemoteOption
+    onsite_days: int | None
+    headcount: int
     created_at: datetime
 
 
 class MeRead(ResponseModel):
     """Whoever `rebase_user` resolves to, member or admin, replacing `MemberProfile`
     on `GET /me` (REB-278): a `users` row is not necessarily an applicant with a card
-    any more, so `ha_scheda` says whether one exists, and the seven card fields answer
+    any more, so `has_card` says whether one exists, and the seven card fields answer
     blank -- `None`, `False`, `[]` -- when it does not, the shape a signed-in admin
-    with no card now gets. `role` is `member` or `admin` (`USER_ROLES`). `telefono`
-    (REB-380) is a top-level identity field like `nome`/`cognome`/`linkedin_url`,
-    never blanked by `ha_scheda`/`ha_azienda`: it lives on `users` regardless of
+    with no card now gets. `role` is `member` or `admin` (`USER_ROLES`). `phone`
+    (REB-380) is a top-level identity field like `nome`/`last_name`/`linkedin_url`,
+    never blanked by `has_card`/`has_company`: it lives on `users` regardless of
     which of the two a person carries.
 
-    The company side is a list, `richieste` (REB-602): every request the person filed
+    The company side is a list, `requests` (REB-602): every request the person filed
     that an admin has not soft-deleted, newest first, each one editable by its own id.
-    `ha_azienda` is true exactly when the list is not empty, since the wizard and edit
+    `has_company` is true exactly when the list is not empty, since the wizard and edit
     guards read the flag and not the list. A person can carry a card, requests, both
     or neither."""
 
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
-    nome: str
-    cognome: str
+    first_name: str
+    last_name: str
     email: str
     linkedin_url: str | None
-    telefono: str | None
+    phone: str | None
     role: UserRole
     created_at: datetime
     updated_at: datetime
-    ha_scheda: bool
+    has_card: bool
     cv_filename: str | None = None
     cv_size: int | None = None
-    tariffa_giornaliera: Decimal | None = None
-    posizione: str | None = None
-    remoto: RemoteOption | None = None
+    daily_rate: Decimal | None = None
+    job_title: str | None = None
+    remote: RemoteOption | None = None
     links: list[str] = Field(default_factory=list)
-    richieste: list[MemberRequest] = Field(default_factory=list)
+    requests: list[MemberRequest] = Field(default_factory=list)
     # REB-518: whether any talent cloud grant of this person is live, which puts «Talent
     # cloud» in the member area's nav (`rebase_core.cloud.TalentCloudService.for_user`).
     talent_cloud: bool = False
 
     @computed_field  # type: ignore[prop-decorator]
     @property
-    def completa(self) -> bool:
+    def complete(self) -> bool:
         return is_complete(self)
 
     @computed_field  # type: ignore[prop-decorator]
     @property
-    def ha_azienda(self) -> bool:
-        return bool(self.richieste)
+    def has_company(self) -> bool:
+        return bool(self.requests)
 
 
 class MemberLookupRequest(BaseModel):
@@ -129,9 +129,9 @@ class MemberLookup(ResponseModel):
     Never the id, never the rest of the card: the CRM learns that the person is a
     member and how to greet them, nothing about who is at the keyboard."""
 
-    membro: bool
-    nome: str | None = None
-    cognome: str | None = None
+    member: bool
+    first_name: str | None = None
+    last_name: str | None = None
 
 
 class LinkRequest(BaseModel):

@@ -39,32 +39,32 @@ import {
 
 interface ExpenseFormValues {
   category_id: string
-  data: string
-  importo: string
-  descrizione: string
-  pre_autorizzata: boolean
-  riferimento_autorizzazione: string
+  date: string
+  amount: string
+  description: string
+  pre_authorized: boolean
+  authorization_reference: string
 }
 
 function emptyForm(): ExpenseFormValues {
   return {
     category_id: '',
-    data: toIsoDate(new Date()),
-    importo: '',
-    descrizione: '',
-    pre_autorizzata: false,
-    riferimento_autorizzazione: '',
+    date: toIsoDate(new Date()),
+    amount: '',
+    description: '',
+    pre_authorized: false,
+    authorization_reference: '',
   }
 }
 
 function toFormValues(expense: ContractExpense): ExpenseFormValues {
   return {
     category_id: expense.category_id,
-    data: expense.data,
-    importo: String(expense.importo),
-    descrizione: expense.descrizione,
-    pre_autorizzata: expense.pre_autorizzata,
-    riferimento_autorizzazione: expense.riferimento_autorizzazione ?? '',
+    date: expense.date,
+    amount: String(expense.amount),
+    description: expense.description,
+    pre_authorized: expense.pre_authorized,
+    authorization_reference: expense.authorization_reference ?? '',
   }
 }
 
@@ -72,11 +72,11 @@ interface DialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   contractId: string
-  divisa: string
+  currency: string
   expense?: ContractExpense
 }
 
-function ExpenseDialog({ open, onOpenChange, contractId, divisa, expense }: DialogProps) {
+function ExpenseDialog({ open, onOpenChange, contractId, currency, expense }: DialogProps) {
   const isCreate = expense === undefined
   const initial = expense === undefined ? emptyForm() : toFormValues(expense)
   const [values, setValues] = useState<ExpenseFormValues>(initial)
@@ -107,12 +107,12 @@ function ExpenseDialog({ open, onOpenChange, contractId, divisa, expense }: Dial
       ...(isCreate || values.category_id !== expense.category_id
         ? { category_id: values.category_id }
         : {}),
-      data: values.data,
-      importo: values.importo.trim().replace(',', '.'),
-      descrizione: values.descrizione.trim(),
-      pre_autorizzata: values.pre_autorizzata,
-      riferimento_autorizzazione: values.pre_autorizzata
-        ? values.riferimento_autorizzazione.trim()
+      date: values.date,
+      amount: values.amount.trim().replace(',', '.'),
+      description: values.description.trim(),
+      pre_authorized: values.pre_authorized,
+      authorization_reference: values.pre_authorized
+        ? values.authorization_reference.trim()
         : null,
     }
     setProblem(null)
@@ -140,16 +140,16 @@ function ExpenseDialog({ open, onOpenChange, contractId, divisa, expense }: Dial
     fieldError !== null &&
     [
       'category_id',
-      'data',
-      'importo',
-      'descrizione',
-      'riferimento_autorizzazione',
+      'date',
+      'amount',
+      'description',
+      'authorization_reference',
     ].includes(fieldError.field)
   const elsewhere =
     problem !== null && !drawn ? (fieldError === null ? problem.detail : fieldError.message) : null
   // Archived categories stay on the rows that already carry them but take nothing new.
   const choices = (categories.data ?? []).filter(
-    (category) => !category.archiviata || category.id === values.category_id,
+    (category) => !category.archived || category.id === values.category_id,
   )
 
   return (
@@ -168,7 +168,7 @@ function ExpenseDialog({ open, onOpenChange, contractId, divisa, expense }: Dial
             <SelectContent>
               {choices.map((category) => (
                 <SelectItem key={category.id} value={category.id}>
-                  {category.nome}
+                  {category.name}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -178,63 +178,63 @@ function ExpenseDialog({ open, onOpenChange, contractId, divisa, expense }: Dial
 
         <div className="grid grid-cols-2 gap-4">
           <div className="space-y-2">
-            <Label htmlFor="expense-data">Data</Label>
+            <Label htmlFor="expense-date">Data</Label>
             <Input
-              id="expense-data"
+              id="expense-date"
               type="date"
-              value={values.data}
-              onChange={(event) => set('data', event.target.value)}
-              aria-invalid={fieldError?.field === 'data'}
+              value={values.date}
+              onChange={(event) => set('date', event.target.value)}
+              aria-invalid={fieldError?.field === 'date'}
             />
-            {errorOn('data')}
+            {errorOn('date')}
           </div>
           <div className="space-y-2">
-            <Label htmlFor="expense-importo">Importo ({currencySign(divisa)})</Label>
+            <Label htmlFor="expense-amount">Importo ({currencySign(currency)})</Label>
             <Input
-              id="expense-importo"
+              id="expense-amount"
               inputMode="decimal"
               placeholder="42.00"
-              value={values.importo}
-              onChange={(event) => set('importo', event.target.value)}
-              aria-invalid={fieldError?.field === 'importo'}
+              value={values.amount}
+              onChange={(event) => set('amount', event.target.value)}
+              aria-invalid={fieldError?.field === 'amount'}
             />
-            {errorOn('importo')}
+            {errorOn('amount')}
           </div>
         </div>
 
         <div className="space-y-2">
-          <Label htmlFor="expense-descrizione">Descrizione</Label>
+          <Label htmlFor="expense-description">Descrizione</Label>
           <Input
-            id="expense-descrizione"
-            value={values.descrizione}
-            onChange={(event) => set('descrizione', event.target.value)}
-            aria-invalid={fieldError?.field === 'descrizione'}
+            id="expense-description"
+            value={values.description}
+            onChange={(event) => set('description', event.target.value)}
+            aria-invalid={fieldError?.field === 'description'}
           />
-          {errorOn('descrizione')}
+          {errorOn('description')}
         </div>
 
         <div className="space-y-3">
           <div className="flex items-center gap-2">
             <Checkbox
               id="expense-preautorizzata"
-              checked={values.pre_autorizzata}
-              onCheckedChange={(checked) => set('pre_autorizzata', checked === true)}
+              checked={values.pre_authorized}
+              onCheckedChange={(checked) => set('pre_authorized', checked === true)}
             />
             <Label htmlFor="expense-preautorizzata" className="font-normal">
               Autorizzata prima dal cliente
             </Label>
           </div>
-          {values.pre_autorizzata && (
+          {values.pre_authorized && (
             <div className="space-y-2">
-              <Label htmlFor="expense-riferimento">Riferimento dell’autorizzazione</Label>
+              <Label htmlFor="expense-reference">Riferimento dell’autorizzazione</Label>
               <Input
-                id="expense-riferimento"
+                id="expense-reference"
                 placeholder="email del 2 marzo"
-                value={values.riferimento_autorizzazione}
-                onChange={(event) => set('riferimento_autorizzazione', event.target.value)}
-                aria-invalid={fieldError?.field === 'riferimento_autorizzazione'}
+                value={values.authorization_reference}
+                onChange={(event) => set('authorization_reference', event.target.value)}
+                aria-invalid={fieldError?.field === 'authorization_reference'}
               />
-              {errorOn('riferimento_autorizzazione')}
+              {errorOn('authorization_reference')}
             </div>
           )}
         </div>
@@ -268,14 +268,14 @@ function ExpenseDialog({ open, onOpenChange, contractId, divisa, expense }: Dial
  * would leave the two disagreeing. That is this page's restraint and not a rule of the
  * API, which still accepts the PATCH.
  */
-export function ExpensesSection({ contractId, divisa }: { contractId: string; divisa: string }) {
+export function ExpensesSection({ contractId, currency }: { contractId: string; currency: string }) {
   const canWrite = useCan('create_contract_expense')
   const expenses = useContractExpenses(contractId)
   const categories = useCostCategories(true)
   const [dialog, setDialog] = useState<{ open: boolean; expense?: ContractExpense }>({
     open: false,
   })
-  const categoryName = new Map((categories.data ?? []).map((category) => [category.id, category.nome]))
+  const categoryName = new Map((categories.data ?? []).map((category) => [category.id, category.name]))
 
   return (
     <Card>
@@ -306,22 +306,22 @@ export function ExpensesSection({ contractId, divisa }: { contractId: string; di
                       drop to a line of their own instead of squeezing the words over each other. */}
                   <div className="min-w-44 flex-1">
                     <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-                      <span className="font-medium">{expense.descrizione}</span>
+                      <span className="font-medium">{expense.description}</span>
                       <StatusPill tone={standing.tone}>{standing.label}</StatusPill>
                     </div>
                     <p className="text-sm text-muted-foreground">
-                      {formatDate(expense.data)} · {categoryName.get(expense.category_id) ?? '—'}
-                      {expense.pre_autorizzata
-                        ? ` · autorizzata: ${expense.riferimento_autorizzazione ?? ''}`
+                      {formatDate(expense.date)} · {categoryName.get(expense.category_id) ?? '—'}
+                      {expense.pre_authorized
+                        ? ` · autorizzata: ${expense.authorization_reference ?? ''}`
                         : ''}
                     </p>
                   </div>
-                  <span className="shrink-0 tabular-nums">{formatAmount(String(expense.importo), divisa)}</span>
+                  <span className="shrink-0 tabular-nums">{formatAmount(String(expense.amount), currency)}</span>
                   {canWrite && expense.invoice_line_id === null && (
                     <Button
                       size="icon"
                       variant="ghost"
-                      aria-label={`Modifica la spesa ${expense.descrizione}`}
+                      aria-label={`Modifica la spesa ${expense.description}`}
                       onClick={() => setDialog({ open: true, expense })}
                     >
                       <Pencil className="size-4" />
@@ -338,7 +338,7 @@ export function ExpensesSection({ contractId, divisa }: { contractId: string; di
         open={dialog.open}
         onOpenChange={(open) => setDialog((previous) => ({ ...previous, open }))}
         contractId={contractId}
-        divisa={divisa}
+        currency={currency}
         expense={dialog.expense}
       />
     </Card>

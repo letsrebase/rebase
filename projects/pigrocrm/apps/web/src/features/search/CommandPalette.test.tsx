@@ -38,29 +38,29 @@ function failed(error: unknown, status: number) {
 const CUSTOMER_ID = '0192f3b2-8c1a-7c3d-9f4e-1a2b3c4d5e6f'
 
 function results(
-  overrides: Partial<{ totale: number; totale_e_un_minimo: boolean }> = {},
+  overrides: Partial<{ total: number; total_is_minimum: boolean }> = {},
 ): SearchResults {
   return {
-    termine: 'rossi',
-    gruppi: [
+    term: 'rossi',
+    groups: [
       {
         entity: 'customer',
-        totale: overrides.totale ?? 1,
-        totale_e_un_minimo: overrides.totale_e_un_minimo ?? false,
+        total: overrides.total ?? 1,
+        total_is_minimum: overrides.total_is_minimum ?? false,
         hits: [
           {
             entity: 'customer',
             id: CUSTOMER_ID,
-            etichetta: 'Rossi Ingegneria Srl',
-            sottotitolo: '01234567890',
-            punteggio: '0.8000',
-            campo: 'ragione_sociale',
+            label: 'Rossi Ingegneria Srl',
+            subtitle: '01234567890',
+            score: '0.8000',
+            field: 'legal_name',
           },
         ],
       },
-      { entity: 'person', totale: 0, totale_e_un_minimo: false, hits: [] },
-      { entity: 'deal', totale: 0, totale_e_un_minimo: false, hits: [] },
-      { entity: 'document', totale: 0, totale_e_un_minimo: false, hits: [] },
+      { entity: 'person', total: 0, total_is_minimum: false, hits: [] },
+      { entity: 'deal', total: 0, total_is_minimum: false, hits: [] },
+      { entity: 'document', total: 0, total_is_minimum: false, hits: [] },
     ],
   }
 }
@@ -144,23 +144,23 @@ describe('CommandPalette', () => {
   })
 
   it('finds an attività and opens it in its dialog over the Attività page', async () => {
-    const ATTIVITA_ID = '0192f3b2-8c1a-7c3d-9f4e-aaaaaaaaaaaa'
+    const TASK_ID = '0192f3b2-8c1a-7c3d-9f4e-aaaaaaaaaaaa'
     vi.mocked(api.GET).mockResolvedValue(
       ok({
-        termine: 'proposte',
-        gruppi: [
+        deadline: 'proposte',
+        groups: [
           {
-            entity: 'attivita',
-            totale: 1,
-            totale_e_un_minimo: false,
+            entity: 'task',
+            total: 1,
+            total_is_minimum: false,
             hits: [
               {
-                entity: 'attivita',
-                id: ATTIVITA_ID,
-                etichetta: 'Preparare le proposte',
-                sottotitolo: '30/10/2026',
-                punteggio: '0.6000',
-                campo: 'titolo',
+                entity: 'task',
+                id: TASK_ID,
+                label: 'Preparare le proposte',
+                subtitle: '30/10/2026',
+                score: '0.6000',
+                field: 'title',
               },
             ],
           },
@@ -173,12 +173,12 @@ describe('CommandPalette', () => {
     expect(await screen.findByText('Attività · 1')).toBeInTheDocument()
     await user.click(await screen.findByRole('option', { name: /Preparare le proposte/ }))
 
-    expect(navigate).toHaveBeenCalledWith({ to: '/app/activities', search: { apri: ATTIVITA_ID } })
+    expect(navigate).toHaveBeenCalledWith({ to: '/app/activities', search: { open: TASK_ID } })
     expect(onOpenChange).toHaveBeenCalledWith(false)
   })
 
   it('states the real count and offers "vedi tutti" when the group is truncated', async () => {
-    vi.mocked(api.GET).mockResolvedValue(ok(results({ totale: 42 })))
+    vi.mocked(api.GET).mockResolvedValue(ok(results({ total: 42 })))
     renderPalette()
     await type('rossi')
 
@@ -190,7 +190,7 @@ describe('CommandPalette', () => {
   })
 
   it('does not offer "vedi tutti" when the group is whole', async () => {
-    vi.mocked(api.GET).mockResolvedValue(ok(results({ totale: 1 })))
+    vi.mocked(api.GET).mockResolvedValue(ok(results({ total: 1 })))
     renderPalette()
     await type('rossi')
 
@@ -199,7 +199,7 @@ describe('CommandPalette', () => {
   })
 
   it('sends "vedi tutti" to the same list, filtered by the same term', async () => {
-    vi.mocked(api.GET).mockResolvedValue(ok(results({ totale: 42 })))
+    vi.mocked(api.GET).mockResolvedValue(ok(results({ total: 42 })))
     renderPalette()
     const user = await type('rossi')
     await user.click(await screen.findByRole('option', { name: /vedi tutti/i }))
@@ -214,7 +214,7 @@ describe('CommandPalette', () => {
 
   it('says "oltre 200" rather than "200" when the count is a minimum', async () => {
     vi.mocked(api.GET).mockResolvedValue(
-      ok(results({ totale: 200, totale_e_un_minimo: true })),
+      ok(results({ total: 200, total_is_minimum: true })),
     )
     renderPalette()
     await type('rossi')
@@ -226,8 +226,8 @@ describe('CommandPalette', () => {
 
   it('says there is nothing, naming the term, when every group is empty', async () => {
     const empty: SearchResults = {
-      termine: 'zzzqqq',
-      gruppi: results().gruppi.map((group) => ({ ...group, hits: [], totale: 0 })),
+      term: 'zzzqqq',
+      groups: results().groups.map((group) => ({ ...group, hits: [], total: 0 })),
     }
     vi.mocked(api.GET).mockResolvedValue(ok(empty))
     renderPalette()

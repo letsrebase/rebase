@@ -6,7 +6,7 @@ from uuid import UUID
 
 from mcp.server import MCPServer
 
-from pigrocrm.core.proposals.schemas import ProposalListQuery, ProposalStato, ProposalTargetType
+from pigrocrm.core.proposals.schemas import ProposalListQuery, ProposalStatus, ProposalTargetType
 from pigrocrm_mcp.annotations import ADDITIVE, READ_ONLY
 from pigrocrm_mcp.context import McpContext
 from pigrocrm_mcp.tools import (
@@ -14,11 +14,11 @@ from pigrocrm_mcp.tools import (
 )
 from pigrocrm_mcp.tools.params import (
     BoundedLimit,
-    Confidenza,
+    Confidence,
     IsoDateStr,
     MoneyArg,
     OptionalMoney,
-    QuantitaArg,
+    QuantityArg,
     literal_arg,
 )
 
@@ -39,78 +39,77 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
     @guard
     def propose_contract(
         document_id: str,
-        estratto: str,
-        confidenza: Confidenza,
+        excerpt: str,
+        confidence: Confidence,
         customer_id: str,
-        titolo: str,
-        inizio: str,
-        tipo_rinnovo: str,
-        preavviso_disdetta_giorni: int,
-        cadenza_fatturazione: str,
-        politica_spese: dict[str, Any],
-        rate_card_valido_da: str,
-        rate_card_tipo: str,
-        rate_card_importo: MoneyArg,
-        rate_card_unita: str,
-        fine: IsoDateStr = None,
-        preavviso_rinnovo_giorni: int | None = None,
-        giorni_pagamento: int | None = None,
-        pagamento_fine_mese: bool | None = None,
-        divisa: str = "EUR",
+        title: str,
+        start: str,
+        renewal_type: str,
+        termination_notice_days: int,
+        billing_cadence: str,
+        expense_policy: dict[str, Any],
+        rate_card_valid_from: str,
+        rate_card_type: str,
+        rate_card_amount: MoneyArg,
+        rate_card_unit: str,
+        end: IsoDateStr = None,
+        renewal_notice_days: int | None = None,
+        payment_days: int | None = None,
+        payment_end_of_month: bool | None = None,
+        currency: str = "EUR",
         requires_prior_approval: bool = False,
         applies_social_charge: bool = False,
         note: str | None = None,
         custom_fields: dict[str, Any] | None = None,
-        rate_card_valido_a: IsoDateStr = None,
-        rate_card_frazioni_ammesse: list[float] | None = None,
-        rate_card_ore_minime: OptionalMoney = None,
-        rate_card_periodo_erogazione: str | None = None,
-        tipo_estratto: str = "citato",
-        motivo_confidenza: str | None = None,
+        rate_card_valid_to: IsoDateStr = None,
+        rate_card_allowed_fractions: list[float] | None = None,
+        rate_card_minimum_hours: OptionalMoney = None,
+        rate_card_delivery_period: str | None = None,
+        excerpt_type: str = "quoted",
+        confidence_reason: str | None = None,
     ) -> dict[str, Any]:
         """Propone un contratto letto da un documento già archiviato: crea solo una proposta in
-        attesa, che una persona decide dall'app. `document_id` è il documento da cui `estratto`
-        è stato letto verbatim (`tipo_estratto='citato'`) o trascritto da una scansione
-        (`'trascritto'`). Gli altri campi sono quelli di `create_contract`, più la prima scheda
-        tariffaria (`rate_card_*`, come `create_rate_card`). Nulla viene creato finché la
-        proposta non è accettata.
+        attesa, che una persona decide dall'app. `document_id` è il documento da cui `excerpt`
+        è stato letto verbatim (`excerpt_type='quoted'`) o trascritto da una scansione
+        (`'transcribed'`). Gli altri campi sono quelli di `create_contract`, più la prima scheda
+        tariffaria (`rate_card_*`, come `create_rate_card`). Nulla nasce prima dell'accettazione.
         """
         rate_card: dict[str, Any] = {
-            "valido_da": rate_card_valido_da,
-            "valido_a": rate_card_valido_a,
-            "tipo": rate_card_tipo,
-            "importo": rate_card_importo,
-            "unita": rate_card_unita,
-            "ore_minime": rate_card_ore_minime,
-            "periodo_erogazione": rate_card_periodo_erogazione,
+            "valid_from": rate_card_valid_from,
+            "valid_to": rate_card_valid_to,
+            "type": rate_card_type,
+            "amount": rate_card_amount,
+            "unit": rate_card_unit,
+            "minimum_hours": rate_card_minimum_hours,
+            "delivery_period": rate_card_delivery_period,
         }
-        if rate_card_frazioni_ammesse is not None:
-            rate_card["frazioni_ammesse"] = rate_card_frazioni_ammesse
+        if rate_card_allowed_fractions is not None:
+            rate_card["allowed_fractions"] = rate_card_allowed_fractions
         return proposals.propose(
             context,
             {
                 "document_id": UUID(document_id),
-                "target_type": "contratto",
-                "estratto": estratto,
-                "tipo_estratto": tipo_estratto,
-                "confidenza": confidenza,
-                "motivo_confidenza": motivo_confidenza,
-                "campi_proposti": {
+                "target_type": "contract",
+                "excerpt": excerpt,
+                "excerpt_type": excerpt_type,
+                "confidence": confidence,
+                "confidence_reason": confidence_reason,
+                "proposed_fields": {
                     "contract": {
                         "customer_id": customer_id,
-                        "titolo": titolo,
-                        "inizio": inizio,
-                        "fine": fine,
-                        "tipo_rinnovo": tipo_rinnovo,
-                        "preavviso_rinnovo_giorni": preavviso_rinnovo_giorni,
-                        "preavviso_disdetta_giorni": preavviso_disdetta_giorni,
-                        "giorni_pagamento": giorni_pagamento,
-                        "pagamento_fine_mese": pagamento_fine_mese,
-                        "cadenza_fatturazione": cadenza_fatturazione,
-                        "divisa": divisa,
+                        "title": title,
+                        "start": start,
+                        "end": end,
+                        "renewal_type": renewal_type,
+                        "renewal_notice_days": renewal_notice_days,
+                        "termination_notice_days": termination_notice_days,
+                        "payment_days": payment_days,
+                        "payment_end_of_month": payment_end_of_month,
+                        "billing_cadence": billing_cadence,
+                        "currency": currency,
                         "requires_prior_approval": requires_prior_approval,
                         "applies_social_charge": applies_social_charge,
-                        "politica_spese": politica_spese,
+                        "expense_policy": expense_policy,
                         "note": note,
                         "custom_fields": custom_fields or {},
                     },
@@ -124,21 +123,21 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
     def propose_day(
         document_id: str,
         contract_id: str,
-        estratto: str,
-        confidenza: Confidenza,
-        data: str,
-        quantita: QuantitaArg,
-        descrizione: str,
-        canale: str,
-        mittente: str,
-        ricevuto_il: str,
+        excerpt: str,
+        confidence: Confidence,
+        date: str,
+        quantity: QuantityArg,
+        description: str,
+        channel: str,
+        sender: str,
+        received_at: str,
         message_id: str | None = None,
-        tipo_estratto: str = "citato",
-        motivo_confidenza: str | None = None,
+        excerpt_type: str = "quoted",
+        confidence_reason: str | None = None,
     ) -> dict[str, Any]:
         """Propone una giornata letta da un'email o da un documento di approvazione già archiviato:
         crea solo una proposta in attesa, che una persona decide dall'app. `contract_id` è il
-        contratto. `canale`, `mittente`, `ricevuto_il` e `message_id` sono l'evidenza
+        contratto. `channel`, `sender`, `received_at` e `message_id` sono l'evidenza
         dell'approvazione, registrata insieme alla giornata all'accettazione.
         """
         return proposals.propose(
@@ -146,20 +145,20 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
             {
                 "document_id": UUID(document_id),
                 "contract_id": UUID(contract_id),
-                "target_type": "giornata",
-                "estratto": estratto,
-                "tipo_estratto": tipo_estratto,
-                "confidenza": confidenza,
-                "motivo_confidenza": motivo_confidenza,
-                "campi_proposti": {
+                "target_type": "work_unit",
+                "excerpt": excerpt,
+                "excerpt_type": excerpt_type,
+                "confidence": confidence,
+                "confidence_reason": confidence_reason,
+                "proposed_fields": {
                     "contract_id": contract_id,
-                    "data": data,
-                    "quantita": quantita,
-                    "descrizione": descrizione,
-                    "approvazione": {
-                        "canale": canale,
-                        "mittente": mittente,
-                        "ricevuto_il": ricevuto_il,
+                    "date": date,
+                    "quantity": quantity,
+                    "description": description,
+                    "approval": {
+                        "channel": channel,
+                        "sender": sender,
+                        "received_at": received_at,
                         "message_id": message_id,
                     },
                 },
@@ -170,26 +169,26 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
     @guard
     def get_proposal(proposal_id: str) -> dict[str, Any]:
         """Legge una proposta: campi proposti, estratto, stato ed esito se decisa
-        (`campi_accettati`, `id_risultato`, `deciso_da`, `deciso_il`).
+        (`accepted_fields`, `result_id`, `decided_by`, `decided_at`).
         """
         return proposals.get(context, proposal_id)
 
     @mcp.tool(annotations=READ_ONLY)
     @guard
     def list_proposals(
-        stato: str | None = None,
+        status: str | None = None,
         target_type: str | None = None,
         document_id: str | None = None,
         contract_id: str | None = None,
         limit: BoundedLimit = 50,
     ) -> dict[str, Any]:
-        """Elenca le proposte, dalla più vecchia. `stato`: `in_attesa`, `accettata` o `rifiutata`;
-        senza filtro, tutte. Per la coda di revisione usa `in_attesa`.
+        """Elenca le proposte, dalla più vecchia. `status`: `pending`, `accepted` o `rejected`;
+        senza filtro, tutte. Per la coda di revisione usa `pending`.
         """
         return proposals.search(
             context,
             ProposalListQuery(
-                stato=literal_arg("stato", stato, ProposalStato),
+                status=literal_arg("status", status, ProposalStatus),
                 target_type=literal_arg("target_type", target_type, ProposalTargetType),
                 document_id=UUID(document_id) if document_id else None,
                 contract_id=UUID(contract_id) if contract_id else None,

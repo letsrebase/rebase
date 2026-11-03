@@ -22,16 +22,16 @@ LINKEDIN_INPUT_MAX_LENGTH = 2000
 DISTINCT_ID_MAX_LENGTH = 200
 
 
-Remoto = Literal["remoto", "ibrido", "in_sede"]
+Remote = Literal["remote", "hybrid", "on_site"]
 
 
 # A day's worth of work, in euro. Wide enough for anyone, narrow enough that a typo of
 # one extra zero is still a number the admin can read and correct.
-TARIFFA_MIN = Decimal("1")
-TARIFFA_MAX = Decimal("99999.99")
+MIN_RATE = Decimal("1")
+MAX_RATE = Decimal("99999.99")
 LINKS_MAX = 10
 LINK_MAX_LENGTH = 300
-PROGETTO_MAX_LENGTH = 4000
+PROJECT_MAX_LENGTH = 4000
 
 
 def clean_text(value: str, *, what: str) -> str:
@@ -70,11 +70,11 @@ def https_url(value: str) -> str:
     return trimmed
 
 
-_RIF_SHAPE = re.compile(r"^[A-Za-z0-9]+$")
+_REF_SHAPE = re.compile(r"^[A-Za-z0-9]+$")
 
 
-def clean_rif(value: object) -> str | None:
-    """`rif=` as the wizard's own funnel already treats it (`resolveReferral`,
+def clean_ref(value: object) -> str | None:
+    """`ref=` as the wizard's own funnel already treats it (`resolveReferral`,
     `lib/utm.ts`): shaped like a code or it is not one, never a reason to fail the
     whole signup. `ReferralService.resolve_referrer` mutes an unknown code the same
     way, so a public client sending punctuation or a stray length here gets a
@@ -82,7 +82,7 @@ def clean_rif(value: object) -> str | None:
     if not isinstance(value, str):
         return None
     trimmed = value.strip()
-    if not trimmed or len(trimmed) > REFERRAL_CODE_LENGTH or not _RIF_SHAPE.match(trimmed):
+    if not trimmed or len(trimmed) > REFERRAL_CODE_LENGTH or not _REF_SHAPE.match(trimmed):
         return None
     return trimmed
 
@@ -104,15 +104,15 @@ class Ack(ResponseModel):
 
 def card_is_complete(
     cv_size: int | None,
-    tariffa_giornaliera: Decimal | None,
-    posizione: str | None,
-    remoto: str | None,
+    daily_rate: Decimal | None,
+    job_title: str | None,
+    remote: str | None,
 ) -> bool:
     """The same four values `is_complete` reads, over the raw columns rather than a
     card object: CV, rate, position and remote option all there. Anything else that
     reads these four fields -- a campaign's journey state among them -- calls this
     instead of copying the check."""
-    return all(value is not None for value in (cv_size, tariffa_giornaliera, posizione, remoto))
+    return all(value is not None for value in (cv_size, daily_rate, job_title, remote))
 
 
 class CardFields(Protocol):
@@ -121,11 +121,11 @@ class CardFields(Protocol):
     @property
     def cv_size(self) -> int | None: ...
     @property
-    def tariffa_giornaliera(self) -> Decimal | None: ...
+    def daily_rate(self) -> Decimal | None: ...
     @property
-    def posizione(self) -> str | None: ...
+    def job_title(self) -> str | None: ...
     @property
-    def remoto(self) -> str | None: ...
+    def remote(self) -> str | None: ...
 
 
 def is_complete(card: CardFields) -> bool:
@@ -136,4 +136,4 @@ def is_complete(card: CardFields) -> bool:
 
     No longer "a card the wizard would have accepted": the wizard accepts one without a
     CV, and this stays the fuller bar, which is the point of having it."""
-    return card_is_complete(card.cv_size, card.tariffa_giornaliera, card.posizione, card.remoto)
+    return card_is_complete(card.cv_size, card.daily_rate, card.job_title, card.remote)

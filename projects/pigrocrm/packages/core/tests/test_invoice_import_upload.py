@@ -21,8 +21,8 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 from test_invoice_import_confirm import (
     ADMIN,
-    CLIENTE_PIVA,
-    CONSULENZA,
+    CONSULTING,
+    CUSTOMER_VAT_NUMBER,
     LOTTO,
     _fixture,
     _invoice_count,
@@ -43,7 +43,7 @@ from pigrocrm.core.invoices.models import Invoice, InvoiceRegisterGap
 from pigrocrm.core.invoices.repository import InvoiceRepository
 from pigrocrm.core.storage import LocalFileStorage
 
-COLLABORATORE = Actor(id=None, type="user", role="collaboratore")
+COLLABORATOR = Actor(id=None, type="user", role="collaborator")
 
 
 def _zip(entries: dict[str, bytes]) -> bytes:
@@ -58,14 +58,14 @@ def _year(count: int) -> dict[str, bytes]:
     """`count` synthetic invoices numbered 1..count, one per day from 2026-01-01, each
     the consulenza fixture with its number and date changed: the same counterparty, the
     same amounts, a register with no hole in it."""
-    base = _fixture(CONSULENZA).decode()
+    base = _fixture(CONSULTING).decode()
     files: dict[str, bytes] = {}
-    for numero in range(1, count + 1):
-        day = date(2026, 1, 1) + timedelta(days=numero - 1)
-        xml = base.replace("<Numero>2026/6</Numero>", f"<Numero>2026/{numero}</Numero>").replace(
+    for number in range(1, count + 1):
+        day = date(2026, 1, 1) + timedelta(days=number - 1)
+        xml = base.replace("<Numero>2026/6</Numero>", f"<Numero>2026/{number}</Numero>").replace(
             "<Data>2026-03-15</Data>", f"<Data>{day.isoformat()}</Data>"
         )
-        files[f"IT01234567890_{numero:05d}.xml"] = xml.encode()
+        files[f"IT01234567890_{number:05d}.xml"] = xml.encode()
     return files
 
 
@@ -85,7 +85,7 @@ def _items(files: dict[str, bytes]) -> Sequence[tuple[str, bytes]]:
 
 
 def test_a_plain_file_is_one_upload_named_and_hashed() -> None:
-    content = _fixture(CONSULENZA)
+    content = _fixture(CONSULTING)
 
     [file] = expand_uploads([("fattura.xml", content)])
 
@@ -187,14 +187,14 @@ def test_the_number_of_files_and_the_total_size_are_bounded(
 
 
 def test_decisions_are_json_keyed_by_party_and_anything_else_is_a_sentence() -> None:
-    parsed = parse_decisions(json.dumps({"clienti": {"09876543210": {"create_customer": True}}}))
+    parsed = parse_decisions(json.dumps({"customers": {"09876543210": {"create_customer": True}}}))
 
     assert parsed == {"09876543210": UploadedPartyDecision(create_customer=True)}
     assert parse_decisions("{}") == {}
     for bad in (
         "not json",
         json.dumps({"decisioni": {"abc": {}}}),
-        json.dumps({"clienti": {"09876543210": {"x": 1}}}),
+        json.dumps({"customers": {"09876543210": {"x": 1}}}),
     ):
         with pytest.raises(ValidationFailed):
             parse_decisions(bad)
@@ -207,21 +207,21 @@ def test_a_review_reads_every_verdict_and_writes_nothing(
     db_session: Session, local_storage: LocalFileStorage
 ) -> None:
     service = _svc(db_session, local_storage)
-    known = make_customer_with_address(db_session, partita_iva=CLIENTE_PIVA)
+    known = make_customer_with_address(db_session, vat_number=CUSTOMER_VAT_NUMBER)
     invoices, documents, customers = (
         _invoice_count(db_session),
         _document_count(db_session),
         _customer_count(db_session),
     )
 
-    [ready] = service.review_upload([("fattura.xml", _fixture(CONSULENZA))], ADMIN)
+    [ready] = service.review_upload([("fattura.xml", _fixture(CONSULTING))], ADMIN)
     [unclaimed] = service.review_upload([("note.txt", b"not a fattura")], ADMIN)
 
     assert ready.outcome == "ready"
     assert ready.file == "fattura.xml"
-    assert ready.sha256 == hashlib.sha256(_fixture(CONSULENZA)).hexdigest()
+    assert ready.sha256 == hashlib.sha256(_fixture(CONSULTING)).hexdigest()
     assert ready.matched_customer_id == known.id
-    assert ready.invoice is not None and ready.invoice.numero == "2026/6"
+    assert ready.invoice is not None and ready.invoice.number == "2026/6"
     assert unclaimed.outcome == "unclaimed" and unclaimed.invoice is None
     assert (_invoice_count(db_session), _document_count(db_session)) == (invoices, documents)
     assert _customer_count(db_session) == customers
@@ -231,7 +231,7 @@ def test_a_review_tells_a_new_counterparty_from_an_invoice_already_on_the_regist
     db_session: Session, local_storage: LocalFileStorage
 ) -> None:
     service = _svc(db_session, local_storage)
-    content = _fixture(CONSULENZA)
+    content = _fixture(CONSULTING)
 
     [new] = service.review_upload([("fattura.xml", content)], ADMIN)
     assert new.outcome == "needs_customer_confirmation"
@@ -263,9 +263,9 @@ def test_reviewing_and_confirming_are_admin_only(
     service = _svc(db_session, local_storage)
 
     with pytest.raises(PermissionDenied):
-        service.review_upload([("a.xml", b"<a/>")], COLLABORATORE)
+        service.review_upload([("a.xml", b"<a/>")], COLLABORATOR)
     with pytest.raises(PermissionDenied):
-        service.confirm_upload([("a.xml", b"<a/>")], {}, COLLABORATORE)
+        service.confirm_upload([("a.xml", b"<a/>")], {}, COLLABORATOR)
 
 
 # --- confirm_upload ---------------------------------------------------------------
@@ -275,26 +275,26 @@ def test_a_single_invoice_file_is_written_and_its_xml_filed_under_the_customer(
     db_session: Session, local_storage: LocalFileStorage
 ) -> None:
     service = _svc(db_session, local_storage)
-    customer = make_customer_with_address(db_session, partita_iva=CLIENTE_PIVA)
-    content = _fixture(CONSULENZA)
+    customer = make_customer_with_address(db_session, vat_number=CUSTOMER_VAT_NUMBER)
+    content = _fixture(CONSULTING)
     documents = _document_count(db_session)
 
     [row] = service.confirm_upload([("fattura.xml", content)], {}, ADMIN)
 
     assert row.outcome == "imported"
     assert row.file == "fattura.xml"
-    fattura = row.fattura
-    assert fattura is not None
-    assert (fattura.anno, fattura.numero, fattura.importata_da) == (2026, 6, "fatturapa")
-    assert fattura.customer_id == customer.id
-    assert fattura.xml_hash_sha256 == hashlib.sha256(content).hexdigest()
+    invoice = row.invoice
+    assert invoice is not None
+    assert (invoice.year, invoice.number, invoice.imported_from) == (2026, 6, "fatturapa")
+    assert invoice.customer_id == customer.id
+    assert invoice.xml_hash_sha256 == hashlib.sha256(content).hexdigest()
     # One document more: the XML, filed as the customer's, and served back byte for byte.
     assert _document_count(db_session) == documents + 1
-    assert fattura.xml_document_id is not None
-    document = db_session.get(Document, fattura.xml_document_id)
+    assert invoice.xml_document_id is not None
+    document = db_session.get(Document, invoice.xml_document_id)
     assert document is not None
-    assert (document.customer_id, document.tipo) == (customer.id, "fattura_xml")
-    artefact = service.download(fattura.id, "xml", ADMIN)
+    assert (document.customer_id, document.type) == (customer.id, "invoice_xml")
+    artefact = service.download(invoice.id, "xml", ADMIN)
     assert artefact[0] == content
 
 
@@ -302,16 +302,16 @@ def test_the_same_file_confirmed_twice_is_written_once_and_files_one_xml(
     db_session: Session, local_storage: LocalFileStorage
 ) -> None:
     service = _svc(db_session, local_storage)
-    make_customer_with_address(db_session, partita_iva=CLIENTE_PIVA)
-    content = _fixture(CONSULENZA)
+    make_customer_with_address(db_session, vat_number=CUSTOMER_VAT_NUMBER)
+    content = _fixture(CONSULTING)
 
     [first] = service.confirm_upload([("fattura.xml", content)], {}, ADMIN)
     invoices, documents = _invoice_count(db_session), _document_count(db_session)
     [second] = service.confirm_upload([("copia.xml", content)], {}, ADMIN)
 
     assert second.outcome == "already_present"
-    assert second.fattura is not None and first.fattura is not None
-    assert second.fattura.id == first.fattura.id
+    assert second.invoice is not None and first.invoice is not None
+    assert second.invoice.id == first.invoice.id
     assert (_invoice_count(db_session), _document_count(db_session)) == (invoices, documents)
 
 
@@ -319,12 +319,12 @@ def test_a_new_counterparty_is_created_only_when_the_decision_for_its_customer_s
     db_session: Session, local_storage: LocalFileStorage
 ) -> None:
     service = _svc(db_session, local_storage)
-    content = _fixture(CONSULENZA)
+    content = _fixture(CONSULTING)
     customers, documents = _customer_count(db_session), _document_count(db_session)
 
     [withheld] = service.confirm_upload([("fattura.xml", content)], {}, ADMIN)
     assert withheld.outcome == "needs_customer_confirmation"
-    assert withheld.fattura is None
+    assert withheld.invoice is None
     assert (_customer_count(db_session), _document_count(db_session)) == (customers, documents)
 
     [created] = service.confirm_upload(
@@ -334,7 +334,7 @@ def test_a_new_counterparty_is_created_only_when_the_decision_for_its_customer_s
     )
     assert created.outcome == "imported"
     assert _customer_count(db_session) == customers + 1
-    assert created.fattura is not None and created.fattura.xml_document_id is not None
+    assert created.invoice is not None and created.invoice.xml_document_id is not None
 
 
 def test_a_decision_names_the_customer_to_attach_by_the_partys_tax_id(
@@ -342,7 +342,7 @@ def test_a_decision_names_the_customer_to_attach_by_the_partys_tax_id(
 ) -> None:
     service = _svc(db_session, local_storage)
     chosen = make_customer_with_address(db_session)
-    content = _fixture(CONSULENZA)
+    content = _fixture(CONSULTING)
 
     [row] = service.confirm_upload(
         [("fattura.xml", content)],
@@ -350,7 +350,7 @@ def test_a_decision_names_the_customer_to_attach_by_the_partys_tax_id(
         ADMIN,
     )
 
-    assert row.fattura is not None and row.fattura.customer_id == chosen.id
+    assert row.invoice is not None and row.invoice.customer_id == chosen.id
 
 
 def test_a_skip_decision_leaves_the_invoice_out_even_when_its_customer_matches_now(
@@ -359,17 +359,17 @@ def test_a_skip_decision_leaves_the_invoice_out_even_when_its_customer_matches_n
     """The customer was created by somebody else after the review: matching would write the
     invoice, and the person had unticked it."""
     service = _svc(db_session, local_storage)
-    make_customer_with_address(db_session, partita_iva=CLIENTE_PIVA)
+    make_customer_with_address(db_session, vat_number=CUSTOMER_VAT_NUMBER)
     invoices = _invoice_count(db_session)
 
     [row] = service.confirm_upload(
-        [("fattura.xml", _fixture(CONSULENZA))],
+        [("fattura.xml", _fixture(CONSULTING))],
         {"09876543210": UploadedPartyDecision(skip=True)},
         ADMIN,
     )
 
     assert row.outcome == "needs_customer_confirmation"
-    assert row.fattura is None
+    assert row.invoice is None
     assert _invoice_count(db_session) == invoices
 
 
@@ -386,7 +386,7 @@ def test_a_lotto_is_written_per_invoice_and_archives_no_xml(
     )
 
     assert [row.outcome for row in rows] == ["imported", "imported"]
-    assert all(row.fattura is not None and row.fattura.xml_document_id is None for row in rows)
+    assert all(row.invoice is not None and row.invoice.xml_document_id is None for row in rows)
     assert _document_count(db_session) == documents
 
 
@@ -395,9 +395,9 @@ def test_a_refused_invoice_leaves_neither_its_customer_nor_its_xml(
 ) -> None:
     service = _svc(db_session, local_storage)
     InvoiceRepository(db_session).add_gap(
-        InvoiceRegisterGap(anno=2026, numero=6, motivo="annullata prima della trasmissione")
+        InvoiceRegisterGap(year=2026, number=6, reason="annullata prima della trasmissione")
     )
-    content = _fixture(CONSULENZA)
+    content = _fixture(CONSULTING)
     invoices, documents, customers = (
         _invoice_count(db_session),
         _document_count(db_session),
@@ -431,9 +431,9 @@ def test_a_year_of_xml_in_a_zip_fills_the_register_with_no_gap_declared_by_hand(
     confirmed = service.confirm_upload(archive, decisions, ADMIN)
 
     assert [row.outcome for row in confirmed] == ["imported"] * 24
-    assert sorted(row.fattura.numero for row in confirmed if row.fattura) == list(range(1, 25))
+    assert sorted(row.invoice.number for row in confirmed if row.invoice) == list(range(1, 25))
     # One counterparty, created once, for all of them.
-    assert len({row.fattura.customer_id for row in confirmed if row.fattura}) == 1
+    assert len({row.invoice.customer_id for row in confirmed if row.invoice}) == 1
     # What the register reports as missing: nothing, and no gap row was declared.
     assert service.undeclared_gaps(2026) == []
     assert db_session.execute(select(func.count()).select_from(InvoiceRegisterGap)).scalar() == 0
@@ -455,7 +455,7 @@ def test_a_year_with_a_missing_number_reports_the_gap_it_leaves(
     confirmed = service.confirm_upload(archive, decisions, ADMIN)
 
     assert [row.outcome for row in confirmed] == ["imported"] * 4
-    assert confirmed[-1].buchi_non_dichiarati == [3]
+    assert confirmed[-1].undeclared_gaps == [3]
 
 
 def test_a_foreign_counterparty_with_no_italian_tax_id_is_created_once_across_the_request(
@@ -481,7 +481,7 @@ def test_a_foreign_counterparty_with_no_italian_tax_id_is_created_once_across_th
     )
 
     assert [row.outcome for row in confirmed] == ["imported"] * 3
-    assert len({row.fattura.customer_id for row in confirmed if row.fattura}) == 1
+    assert len({row.invoice.customer_id for row in confirmed if row.invoice}) == 1
     assert _customer_count(db_session) == customers + 1
 
 
@@ -513,26 +513,26 @@ def test_two_foreign_customers_with_one_name_and_different_vat_numbers_stay_two(
     )
 
     assert [row.outcome for row in confirmed] == ["imported"] * 2
-    assert len({row.fattura.customer_id for row in confirmed if row.fattura}) == 2
+    assert len({row.invoice.customer_id for row in confirmed if row.invoice}) == 2
     assert _customer_count(db_session) == customers + 2
 
 
-def test_a_file_that_looks_like_a_fattura_and_does_not_parse_is_unclaimed_with_its_reason(
+def test_to_file_that_looks_like_to_invoice_and_does_not_parse_is_unclaimed_with_its_reason(
     db_session: Session, local_storage: LocalFileStorage
 ) -> None:
     service = _svc(db_session, local_storage)
-    broken = _fixture(CONSULENZA).replace(b"TD06", b"TD99")
-    files = [("rotta.xml", broken), ("buona.xml", _fixture(CONSULENZA))]
+    broken = _fixture(CONSULTING).replace(b"TD06", b"TD99")
+    files = [("rotta.xml", broken), ("buona.xml", _fixture(CONSULTING))]
 
     bad, good = service.review_upload(files, ADMIN)
     assert (bad.outcome, good.outcome) == ("unclaimed", "needs_customer_confirmation")
-    assert bad.motivo is not None and "TD99" in bad.motivo
+    assert bad.reason is not None and "TD99" in bad.reason
 
     bad_confirmed, good_confirmed = service.confirm_upload(
         files, {good.party_key or "": UploadedPartyDecision(create_customer=True)}, ADMIN
     )
     assert (bad_confirmed.outcome, good_confirmed.outcome) == ("unclaimed", "imported")
-    assert bad_confirmed.motivo is not None and "TD99" in bad_confirmed.motivo
+    assert bad_confirmed.reason is not None and "TD99" in bad_confirmed.reason
 
 
 def test_an_invoice_the_register_schema_refuses_is_a_conflict_and_does_not_stop_the_request(
@@ -541,13 +541,13 @@ def test_an_invoice_the_register_schema_refuses_is_a_conflict_and_does_not_stop_
     """201 lines pass the parser and review, and `InvoiceImport` allows 200: the invoice is
     refused as a `conflict` row instead of a 500, and nothing is left behind for it."""
     service = _svc(db_session, local_storage)
-    base = _fixture(CONSULENZA).decode()
+    base = _fixture(CONSULTING).decode()
     start = base.index("<DettaglioLinee>")
     end = base.index("</DettaglioLinee>") + len("</DettaglioLinee>")
     many = base[:start] + base[start:end] * 201 + base[end:]
-    # The long one last: `rollback()` in this fixture's savepoint also takes back the azienda
+    # The long one last: `rollback()` in this fixture's savepoint also takes back the legal entity
     # `_svc` created, so a file after it could not be classified, which production's
-    # committed azienda never suffers.
+    # committed legal entity never suffers.
     files = [("normale.xml", _year(2)["IT01234567890_00002.xml"]), ("lunga.xml", many.encode())]
     create = {"09876543210": UploadedPartyDecision(create_customer=True)}
     customers = _customer_count(db_session)
@@ -555,7 +555,7 @@ def test_an_invoice_the_register_schema_refuses_is_a_conflict_and_does_not_stop_
     normal, long = service.confirm_upload(files, create, ADMIN)
 
     assert (normal.outcome, long.outcome) == ("imported", "conflict")
-    assert long.fattura is None and normal.fattura is not None
+    assert long.invoice is None and normal.invoice is not None
     # The customer the long invoice would have shared is the one the first file created:
     # nothing extra was left behind by the refused one.
     assert _customer_count(db_session) == customers + 1

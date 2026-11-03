@@ -8,13 +8,13 @@ const ID = '3f0c2a10-0000-4000-8000-0000000000aa'
 
 describe('recordLink', () => {
   it.each([
-    ['attivita', { to: '/app/activities', search: { apri: ID } }],
+    ['task', { to: '/app/activities', search: { open: ID } }],
     ['deal', { to: '/app/deal/$dealId', params: { dealId: ID } }],
     ['customer', { to: '/app/customers/$customerId', params: { customerId: ID } }],
     ['invoice', { to: '/app/invoices/$invoiceId', params: { invoiceId: ID } }],
     ['proforma', { to: '/app/invoices/$invoiceId', params: { invoiceId: ID } }],
     ['contract', { to: '/app/contracts/$contractId', params: { contractId: ID } }],
-    ['fiscal', { to: '/app', search: { ...defaultDashboardSearch(), tab: 'anno' } }],
+    ['fiscal', { to: '/app', search: { ...defaultDashboardSearch(), tab: 'year' } }],
     ['proposal', { to: '/app/proposals/$proposalId', params: { proposalId: ID } }],
     ['timer', { to: '/app/hours' }],
     // A late job opens Esecuzioni: there is no record, and the section lists them all.

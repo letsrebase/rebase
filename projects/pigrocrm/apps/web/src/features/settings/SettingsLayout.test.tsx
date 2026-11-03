@@ -4,18 +4,18 @@ import { SettingsLayout } from './SettingsLayout'
 
 const mockAuth = vi.hoisted(() => ({ isAdmin: true, readonly: false }))
 // REB-294: the tab strip now filters through `canSeeSettingsTab`, which reads the
-// session's `ruolo` -- so the stub carries a user whose role agrees with `isAdmin`,
+// session's `role` -- so the stub carries a user whose role agrees with `isAdmin`,
 // and the suite's existing `isAdmin` switch keeps its whole meaning. A non-admin is a
 // collaboratore unless `readonly` says otherwise (REB-457 tells the two apart on the
 // Drive tab).
-function ruolo(): 'admin' | 'collaboratore' | 'readonly' {
+function role(): 'admin' | 'collaborator' | 'readonly' {
   if (mockAuth.isAdmin) return 'admin'
-  return mockAuth.readonly ? 'readonly' : 'collaboratore'
+  return mockAuth.readonly ? 'readonly' : 'collaborator'
 }
 vi.mock('@/lib/auth', () => ({
   useIsAdmin: () => mockAuth.isAdmin,
-  useAuth: () => ({ user: { ruolo: ruolo() } }),
-  useCanWrite: () => ruolo() !== 'readonly',
+  useAuth: () => ({ user: { role: role() } }),
+  useCanWrite: () => role() !== 'readonly',
 }))
 
 // Defaults to the admin suite's usual page; the two REB-221 tests below point this at
@@ -54,12 +54,12 @@ describe('SettingsLayout (the /app/settings route guard)', () => {
    * outcome lands. The outcome is the child route's to read (`routes/app/settings/
    * drive.tsx`), so the layout must let them through and not read it a second time.
    */
-  it.each(['collegato', 'negato', 'errore', 'sessione', undefined])(
+  it.each(['connected', 'denied', 'error', 'session_expired', undefined])(
     'lets a collaboratore into the Drive tab (esito %s), with no gate in front of it',
-    (esito) => {
+    (outcome) => {
       mockAuth.isAdmin = false
       mockLocation.pathname = '/app/settings/drive'
-      mockLocation.search = esito === undefined ? {} : { esito }
+      mockLocation.search = outcome === undefined ? {} : { outcome }
       render(<SettingsLayout />)
       expect(screen.queryByText('Accesso riservato')).not.toBeInTheDocument()
       expect(screen.getByTestId('outlet-content')).toBeInTheDocument()
@@ -91,7 +91,7 @@ describe('SettingsLayout (the /app/settings route guard)', () => {
     mockAuth.isAdmin = false
     mockAuth.readonly = true
     mockLocation.pathname = '/app/settings/drive'
-    mockLocation.search = { esito: 'sessione' }
+    mockLocation.search = { outcome: 'session_expired' }
     render(<SettingsLayout />)
     expect(screen.getByRole('status')).toHaveTextContent(
       'La sessione è scaduta mentre eri su Google, quindi Drive non è stato collegato.',
@@ -111,7 +111,7 @@ describe('SettingsLayout (the /app/settings route guard)', () => {
   })
 
   /**
-   * REB-735: Notifiche is a person's own, every role's, like Profilo; Promemoria, the space's
+   * REB-735: Notifiche is a person's own, every role's, like Profile; Promemoria, the space's
    * defaults, is an admin's, and a member who types its path meets the gate.
    */
   it.each([false, true])('opens Notifiche to a person whose readonly flag is %s, with no gate', (readonly) => {
@@ -151,7 +151,7 @@ describe('SettingsLayout (the /app/settings route guard)', () => {
   it('shows an admin on the Drive tab the Collegamenti group, and no other group', () => {
     mockAuth.isAdmin = true
     mockLocation.pathname = '/app/settings/drive'
-    mockLocation.search = { esito: 'collegato' }
+    mockLocation.search = { outcome: 'connected' }
     render(<SettingsLayout />)
     expect(screen.getByTestId('outlet-content')).toBeInTheDocument()
     expect(screen.queryByRole('status')).toBeNull()
@@ -166,7 +166,7 @@ describe('SettingsLayout (the /app/settings route guard)', () => {
     mockAuth.isAdmin = false
     mockAuth.readonly = true
     mockLocation.pathname = '/app/settings/fields'
-    mockLocation.search = { esito: 'sessione' }
+    mockLocation.search = { outcome: 'session_expired' }
     const { unmount } = render(<SettingsLayout />)
     expect(screen.queryByRole('status')).toBeNull()
     unmount()

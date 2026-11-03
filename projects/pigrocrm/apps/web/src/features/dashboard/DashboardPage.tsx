@@ -35,7 +35,7 @@ export function DashboardPage({
    *  card (REB-222), which belongs to the page and not to any one tab. */
   notice?: ReactNode
 }) {
-  const { tab, da, a, base } = search
+  const { tab, from, to, base } = search
 
   // The page owns its own intestazione since the 2026-09-08 revision: §4 draws the tabs
   // closed by their rule, and the period picker is the one control this screen puts top
@@ -49,11 +49,11 @@ export function DashboardPage({
         // No picker on the scadenziario: it has no period (what is owed is owed today), and a
         // control that changed nothing on screen would be a promise the page does not keep.
         actions={
-          tab === 'scadenziario' ? undefined : (
-            <PeriodPicker periodo={{ da, a }} onChange={(next) => onSearchChange(next)} />
+          tab === 'receivables' ? undefined : (
+            <PeriodPicker period={{ from, to }} onChange={(next) => onSearchChange(next)} />
           )
         }
-        // The late and due-today attività (REB-874): the first thing under the title, with
+        // The late and due-today tasks (REB-874): the first thing under the title, with
         // the analysis tabs starting under it.
         aboveTabs={<DaFareBand />}
         tabs={
@@ -74,13 +74,13 @@ export function DashboardPage({
             pooled connections on the API side -- to draw one screen. §17's placeholders that
             stood here until 6C landed are gone: both dashboards exist now, so a paragraph
             explaining their absence would be the untrue thing on the page. */}
-        {tab === 'commerciale' && <CommercialTab periodo={{ da, a }} />}
-        {tab === 'scadenziario' && <ReceivablesTab />}
-        {tab === 'anno' && <YearTab periodo={{ da, a }} />}
-        {tab === 'giornate' && <DaysTab periodo={{ da, a }} />}
-        {tab === 'economica' && (
+        {tab === 'commercial' && <CommercialTab period={{ from, to }} />}
+        {tab === 'receivables' && <ReceivablesTab />}
+        {tab === 'year' && <YearTab period={{ from, to }} />}
+        {tab === 'work_units' && <DaysTab period={{ from, to }} />}
+        {tab === 'economic' && (
           <EconomicTab
-            periodo={{ da, a }}
+            period={{ from, to }}
             base={base}
             onBaseChange={(next) => onSearchChange({ base: next })}
           />

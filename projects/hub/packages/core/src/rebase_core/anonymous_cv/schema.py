@@ -3,7 +3,7 @@
 The model's native structured output, so it follows the card's strict style (`card_draft`):
 every field required, nullable by a union, `extra="forbid"`. The limits are far above a long
 two-page CV; they only stop a runaway answer from being stored. `AnonymousCvDraft` adds the
-private `identita`, which is the guard's input and nothing else: it is never stored, logged,
+private `identity`, which is the guard's input and nothing else: it is never stored, logged,
 returned or printed.
 """
 
@@ -23,67 +23,67 @@ class _Strict(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
-class Punto(_Strict):
-    """A bullet; `titolo` is the bold lead of a CV that groups engagements under one role."""
+class Point(_Strict):
+    """A bullet; `title` is the bold lead of a CV that groups engagements under one role."""
 
-    titolo: Short | None
-    testo: Line
-
-
-class Esperienza(_Strict):
-    ruolo: Short
-    azienda: Short | None
-    luogo: Short | None
-    periodo: Short | None
-    punti: list[Punto] = Field(max_length=30)
+    title: Short | None
+    text: Line
 
 
-class Gruppo(_Strict):
+class Experience(_Strict):
+    role: Short
+    company: Short | None
+    location: Short | None
+    period: Short | None
+    points: list[Point] = Field(max_length=30)
+
+
+class Group(_Strict):
     area: Short
-    voci: list[Entry] = Field(max_length=80)
+    entries: list[Entry] = Field(max_length=80)
 
 
-class Titolo(_Strict):
-    titolo: Short
-    istituto: Short | None
-    luogo: Short | None
-    periodo: Short | None
+class Title(_Strict):
+    title: Short
+    institution: Short | None
+    location: Short | None
+    period: Short | None
 
 
-class Lingua(_Strict):
-    lingua: Short
-    livello: Short | None
+class Language(_Strict):
+    language: Short
+    level: Short | None
 
 
-class Sezione(_Strict):
-    titolo: Short
-    voci: list[Line] = Field(max_length=60)
+class Section(_Strict):
+    title: Short
+    entries: list[Line] = Field(max_length=60)
 
 
 class AnonymousCv(_Strict):
-    """The CV as it is printed. `lingua` only picks the printed headings; the text is the
+    """The CV as it is printed. `language` only picks the printed headings; the text is the
     CV's own."""
 
-    lingua: Literal["it", "en"]
-    titolo: Short
-    sommario: Annotated[SafeStr, Field(max_length=4000)]
-    esperienze: list[Esperienza] = Field(max_length=60)
-    competenze: list[Gruppo] = Field(max_length=80)
-    formazione: list[Titolo] = Field(max_length=40)
-    certificazioni: list[Entry] = Field(max_length=60)
-    lingue: list[Lingua] = Field(max_length=30)
-    altre_sezioni: list[Sezione] = Field(max_length=30)
+    language: Literal["it", "en"]
+    title: Short
+    summary: Annotated[SafeStr, Field(max_length=4000)]
+    experience: list[Experience] = Field(max_length=60)
+    skills: list[Group] = Field(max_length=80)
+    education: list[Title] = Field(max_length=40)
+    certifications: list[Entry] = Field(max_length=60)
+    languages: list[Language] = Field(max_length=30)
+    other_sections: list[Section] = Field(max_length=30)
 
 
-class Identita(_Strict):
+class Identity(_Strict):
     """What the CV says of the person, each only as the CV states it: what the guard looks
     for in `AnonymousCv`. Never kept. Every number the CV gives, since a CV often has a
     mobile and an office line."""
 
-    nome: Short | None
-    cognome: Short | None
+    first_name: Short | None
+    last_name: Short | None
     email: Short | None
-    telefoni: list[Short] = Field(max_length=10)
+    phones: list[Short] = Field(max_length=10)
     link: list[Contact] = Field(max_length=20)
 
 
@@ -91,43 +91,43 @@ class AnonymousCvDraft(_Strict):
     """The model's whole answer: the CV, then the private identity the guard reads."""
 
     cv: AnonymousCv
-    identita: Identita
+    identity: Identity
 
 
 def strings(cv: AnonymousCv) -> list[tuple[str, str]]:
     """Every string of `cv` as `(path, value)`, in document order, a missing optional left
     out. The path is what the guard answers and what a log may carry: never the value."""
-    out: list[tuple[str, str]] = [("titolo", cv.titolo), ("sommario", cv.sommario)]
+    out: list[tuple[str, str]] = [("title", cv.title), ("summary", cv.summary)]
 
     def add(path: str, value: str | None) -> None:
         if value is not None:
             out.append((path, value))
 
-    for i, role in enumerate(cv.esperienze):
-        base = f"esperienze[{i}]"
-        add(f"{base}.ruolo", role.ruolo)
-        add(f"{base}.azienda", role.azienda)
-        add(f"{base}.luogo", role.luogo)
-        add(f"{base}.periodo", role.periodo)
-        for j, punto in enumerate(role.punti):
-            add(f"{base}.punti[{j}].titolo", punto.titolo)
-            add(f"{base}.punti[{j}].testo", punto.testo)
-    for i, group in enumerate(cv.competenze):
-        add(f"competenze[{i}].area", group.area)
-        for j, voce in enumerate(group.voci):
-            add(f"competenze[{i}].voci[{j}]", voce)
-    for i, title in enumerate(cv.formazione):
-        add(f"formazione[{i}].titolo", title.titolo)
-        add(f"formazione[{i}].istituto", title.istituto)
-        add(f"formazione[{i}].luogo", title.luogo)
-        add(f"formazione[{i}].periodo", title.periodo)
-    for i, cert in enumerate(cv.certificazioni):
-        add(f"certificazioni[{i}]", cert)
-    for i, language in enumerate(cv.lingue):
-        add(f"lingue[{i}].lingua", language.lingua)
-        add(f"lingue[{i}].livello", language.livello)
-    for i, section in enumerate(cv.altre_sezioni):
-        add(f"altre_sezioni[{i}].titolo", section.titolo)
-        for j, voce in enumerate(section.voci):
-            add(f"altre_sezioni[{i}].voci[{j}]", voce)
+    for i, role in enumerate(cv.experience):
+        base = f"experience[{i}]"
+        add(f"{base}.role", role.role)
+        add(f"{base}.company", role.company)
+        add(f"{base}.location", role.location)
+        add(f"{base}.period", role.period)
+        for j, point in enumerate(role.points):
+            add(f"{base}.points[{j}].title", point.title)
+            add(f"{base}.points[{j}].text", point.text)
+    for i, group in enumerate(cv.skills):
+        add(f"skills[{i}].area", group.area)
+        for j, entry in enumerate(group.entries):
+            add(f"skills[{i}].entries[{j}]", entry)
+    for i, title in enumerate(cv.education):
+        add(f"education[{i}].title", title.title)
+        add(f"education[{i}].institution", title.institution)
+        add(f"education[{i}].location", title.location)
+        add(f"education[{i}].period", title.period)
+    for i, cert in enumerate(cv.certifications):
+        add(f"certifications[{i}]", cert)
+    for i, language in enumerate(cv.languages):
+        add(f"languages[{i}].language", language.language)
+        add(f"languages[{i}].level", language.level)
+    for i, section in enumerate(cv.other_sections):
+        add(f"other_sections[{i}].title", section.title)
+        for j, entry in enumerate(section.entries):
+            add(f"other_sections[{i}].entries[{j}]", entry)
     return out

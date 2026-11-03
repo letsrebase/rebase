@@ -6,7 +6,7 @@ amount is only ever a `Decimal` computed from other `Decimal`s, and text is prod
 at the very end by `format_amount_*` for the XML and the PDF, never parsed back.
 
 Kept free of the database, the regime and the exporter on purpose: rules 2 and 3 below
-disagree by cents, the disagreement is invisible under the forfettario the product
+disagree by cents, the disagreement is invisible under the flat-rate regime the product
 ships with, and the only way to pin them is a test with rates nobody uses -- which
 needs no session, no container and no XML.
 """
@@ -27,7 +27,7 @@ _HUNDRED = Decimal("100")
 # literal, so widening the column is one edit.
 #
 # Declared here because this is the module that produces the values those columns receive.
-# `quantita` and `prezzo_unitario` are `Numeric(12, 6)` and their Pydantic bounds mirror
+# `quantity` and `unit_price` are `Numeric(12, 6)` and their Pydantic bounds mirror
 # that faithfully -- but the column their *product* lands in is `Numeric(12, 2)`, and no
 # bound on two factors can express a bound on the product: 100000 x 100000 is two valid
 # six-digit factors and an eleven-digit result. Summation reaches the same place without
@@ -74,40 +74,40 @@ class ComputedLine:
     """One `DettaglioLinee`, with every derived value already decided.
 
     Built by `InvoiceService` from the caller's input plus the `RegimeStrategy`'s
-    answer; this module never decides `aliquota_iva`, `natura` or
-    `riferimento_normativo`, it only groups by them.
+    answer; this module never decides `vat_rate`, `vat_nature` or
+    `legal_reference`, it only groups by them.
     """
 
-    numero_linea: int
-    descrizione: str
-    quantita: Decimal
-    unita_misura: str | None
-    prezzo_unitario: Decimal
-    sconto_percentuale: Decimal | None
-    sconto_importo: Decimal | None
-    prezzo_totale: Decimal
-    aliquota_iva: Decimal
-    natura: str | None
-    riferimento_normativo: str | None
+    line_number: int
+    description: str
+    quantity: Decimal
+    unit_of_measure: str | None
+    unit_price: Decimal
+    discount_percentage: Decimal | None
+    discount_amount: Decimal | None
+    total_price: Decimal
+    vat_rate: Decimal
+    vat_nature: str | None
+    legal_reference: str | None
 
 
 @dataclass(frozen=True)
-class RiepilogoGroup:
+class RecapGroup:
     """One `DatiRiepilogo`. The key is `(aliquota_iva, natura)` -- spec 6.1 rule 5."""
 
-    aliquota_iva: Decimal
-    natura: str | None
-    riferimento_normativo: str | None
-    imponibile: Decimal
-    imposta: Decimal
+    vat_rate: Decimal
+    vat_nature: str | None
+    legal_reference: str | None
+    taxable_amount: Decimal
+    vat_amount: Decimal
 
 
 def line_total(
     *,
-    quantita: Decimal,
-    prezzo_unitario: Decimal,
-    sconto_percentuale: Decimal | None,
-    sconto_importo: Decimal | None,
+    quantity: Decimal,
+    unit_price: Decimal,
+    discount_percentage: Decimal | None,
+    discount_amount: Decimal | None,
 ) -> Decimal:
     """Spec 6.1 rule 1: `ROUND(quantita x prezzo_unitario - sconto, 2)`.
 
@@ -121,25 +121,25 @@ def line_total(
     refusing one here would make the ordinary case unrepresentable; the check that a
     whole *invoice* must total more than zero belongs to emission, not to a line.
     """
-    gross = quantita * prezzo_unitario
-    if sconto_percentuale is not None:
-        gross -= gross * sconto_percentuale / _HUNDRED
-    if sconto_importo is not None:
-        gross -= sconto_importo
+    gross = quantity * unit_price
+    if discount_percentage is not None:
+        gross -= gross * discount_percentage / _HUNDRED
+    if discount_amount is not None:
+        gross -= discount_amount
     return round_money(gross)
 
 
-def build_riepilogo(righe: Sequence[ComputedLine]) -> tuple[RiepilogoGroup, ...]:
+def build_recap(lines: Sequence[ComputedLine]) -> tuple[RecapGroup, ...]:
     """One group per `(aliquota_iva, natura)`, ordered by that key so the output is
     deterministic and a re-export is byte-identical.
 
     Two rules that disagree, both from spec 6.1:
 
-    * rule 2 -- `imponibile` is the sum of the group's **already-rounded**
-      `prezzo_totale` values, not the rounding of the exact sum. The SdI checks
+    * rule 2 -- `taxable_amount` is the sum of the group's **already-rounded**
+      `total_price` values, not the rounding of the exact sum. The SdI checks
       `ImponibileImporto` against the sum of the group's printed `PrezzoTotale`, and
       rounding the exact sum can differ from that by a cent;
-    * rule 3 -- `imposta` is `ROUND(imponibile x aliquota / 100, 2)` computed **from
+    * rule 3 -- `vat_amount` is `ROUND(imponibile x aliquota / 100, 2)` computed **from
       the group**, not the sum of per-line taxes. The SdI checks `Imposta` against
       that product, and the sum of rounded per-line taxes can differ from it by
       several cents.
@@ -148,30 +148,30 @@ def build_riepilogo(righe: Sequence[ComputedLine]) -> tuple[RiepilogoGroup, ...]
     they are stated here rather than discovered on the first rejected file.
     """
     grouped: dict[tuple[Decimal, str | None], list[ComputedLine]] = {}
-    for riga in righe:
-        grouped.setdefault((riga.aliquota_iva, riga.natura), []).append(riga)
+    for line in lines:
+        grouped.setdefault((line.vat_rate, line.vat_nature), []).append(line)
 
-    groups: list[RiepilogoGroup] = []
-    for (aliquota, natura), members in sorted(
+    groups: list[RecapGroup] = []
+    for (rate, vat_nature), members in sorted(
         grouped.items(), key=lambda item: (item[0][0], item[0][1] or "")
     ):
-        imponibile = sum((m.prezzo_totale for m in members), start=Decimal("0.00"))
+        taxable_amount = sum((m.total_price for m in members), start=Decimal("0.00"))
         groups.append(
-            RiepilogoGroup(
-                aliquota_iva=aliquota,
-                natura=natura,
-                # Every member of a group shares a natura, and the regime derives the
-                # normative reference from the natura, so the first member's value is
+            RecapGroup(
+                vat_rate=rate,
+                vat_nature=vat_nature,
+                # Every member of a group shares a VAT nature, and the regime derives the
+                # normative reference from the VAT nature, so the first member's value is
                 # the group's value by construction.
-                riferimento_normativo=members[0].riferimento_normativo,
-                imponibile=round_money(imponibile),
-                imposta=round_money(imponibile * aliquota / _HUNDRED),
+                legal_reference=members[0].legal_reference,
+                taxable_amount=round_money(taxable_amount),
+                vat_amount=round_money(taxable_amount * rate / _HUNDRED),
             )
         )
     return tuple(groups)
 
 
-def sum_totals(riepilogo: Sequence[RiepilogoGroup]) -> tuple[Decimal, Decimal, Decimal]:
+def sum_totals(recap: Sequence[RecapGroup]) -> tuple[Decimal, Decimal, Decimal]:
     """`(imponibile, imposta, totale)`, where `totale = imponibile + imposta`.
 
     The stamp duty is **not** part of the total (spec 6.1 rule 4 and 7.2):
@@ -179,6 +179,6 @@ def sum_totals(riepilogo: Sequence[RiepilogoGroup]) -> tuple[Decimal, Decimal, D
     charging it back to the customer would need a line with `Natura N1` -- a feature
     with its own semantics, explicitly out of scope.
     """
-    imponibile = round_money(sum((g.imponibile for g in riepilogo), start=Decimal("0.00")))
-    imposta = round_money(sum((g.imposta for g in riepilogo), start=Decimal("0.00")))
-    return imponibile, imposta, round_money(imponibile + imposta)
+    taxable_amount = round_money(sum((g.taxable_amount for g in recap), start=Decimal("0.00")))
+    vat_amount = round_money(sum((g.vat_amount for g in recap), start=Decimal("0.00")))
+    return taxable_amount, vat_amount, round_money(taxable_amount + vat_amount)

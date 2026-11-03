@@ -55,12 +55,12 @@ describe('useTimeEntries', () => {
   it('forwards its filters and asks for a full page', async () => {
     const { wrapper } = harness()
     mockGet.mockReturnValueOnce(ok({ items: [], next_cursor: null }))
-    renderHook(() => useTimeEntries({ deal_id: 'd-1', da: '2026-08-01' }), { wrapper })
+    renderHook(() => useTimeEntries({ deal_id: 'd-1', from: '2026-08-01' }), { wrapper })
     await waitFor(() => expect(mockGet).toHaveBeenCalled())
     expect(mockGet).toHaveBeenCalledWith(
       '/api/time-entries',
       expect.objectContaining({
-        params: { query: { deal_id: 'd-1', da: '2026-08-01', limit: 200 } },
+        params: { query: { deal_id: 'd-1', from: '2026-08-01', limit: 200 } },
       }),
     )
   })
@@ -101,7 +101,7 @@ describe('useDealRates', () => {
 
   it('asks for the deal and the user together', async () => {
     const { wrapper } = harness()
-    mockGet.mockReturnValueOnce(ok({ tariffa: '80.00', tariffa_origine: 'deal' }))
+    mockGet.mockReturnValueOnce(ok({ rate: '80.00', rate_source: 'deal' }))
     renderHook(() => useDealRates('d-1', 'u-1'), { wrapper })
     await waitFor(() => expect(mockGet).toHaveBeenCalled())
     expect(mockGet).toHaveBeenCalledWith(
@@ -118,11 +118,11 @@ describe('useLogTime', () => {
     const { wrapper, invalidate } = harness()
     mockPost.mockReturnValueOnce(ok({ id: 'e-1', deal_id: 'd-1' }))
     const { result } = renderHook(() => useLogTime(), { wrapper })
-    result.current.mutate({ deal_id: 'd-1', ore: '2.00' })
+    result.current.mutate({ deal_id: 'd-1', hours: '2.00' })
     await waitFor(() => expect(result.current.isSuccess).toBe(true))
     expect(mockPost).toHaveBeenCalledWith(
       '/api/time-entries',
-      expect.objectContaining({ body: { deal_id: 'd-1', ore: '2.00' } }),
+      expect.objectContaining({ body: { deal_id: 'd-1', hours: '2.00' } }),
     )
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ['time-entries', {}] })
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ['deal-time-summary', 'd-1'] })
@@ -135,11 +135,11 @@ describe('useUpdateTimeEntry', () => {
     const { wrapper, invalidate } = harness()
     mockPatch.mockReturnValueOnce(ok({ id: 'e-1', deal_id: 'd-2' }))
     const { result } = renderHook(() => useUpdateTimeEntry('e-1'), { wrapper })
-    result.current.mutate({ ore: '3.50' })
+    result.current.mutate({ hours: '3.50' })
     await waitFor(() => expect(result.current.isSuccess).toBe(true))
     expect(mockPatch).toHaveBeenCalledWith(
       '/api/time-entries/{entry_id}',
-      expect.objectContaining({ params: { path: { entry_id: 'e-1' } }, body: { ore: '3.50' } }),
+      expect.objectContaining({ params: { path: { entry_id: 'e-1' } }, body: { hours: '3.50' } }),
     )
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ['deal-time-summary', 'd-2'] })
   })
@@ -163,7 +163,7 @@ describe('useDeleteTimeEntry', () => {
 describe('timeReportXlsxPath', () => {
   it('builds the API path of the XLSX, to download through the refreshing fetch', () => {
     expect(timeReportXlsxPath('d-1', '2026-08')).toBe(
-      '/api/deals/d-1/time-report?mese=2026-08',
+      '/api/deals/d-1/time-report?month=2026-08',
     )
   })
 })

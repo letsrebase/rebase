@@ -44,7 +44,7 @@ def provisioned(settings: Settings) -> Iterator[str]:
     registry = ensure_tenants_database(settings)
     with session_factory(registry)() as session:
         TenantService(session, settings).provision(
-            TenantSignup(slug=SLUG, nome="Ada", email="ada@studio.it")
+            TenantSignup(slug=SLUG, name="Ada", email="ada@studio.it")
         )
     try:
         yield SLUG
@@ -112,7 +112,7 @@ def test_effective_settings_are_cached_for_the_ttl_and_dropped_on_invalidate(
             assert before.mcp_full_access is False
             admin = Actor(id=None, type="system", role="admin")
             SpaceSettingsService(session, registry.settings).update(
-                SpaceSettingsUpdate(mcp_full_access=True), admin, spazio=provisioned
+                SpaceSettingsUpdate(mcp_full_access=True), admin, space=provisioned
             )
             session.commit()
             # Still the cached answer, the very same object: the TTL has not run out.
@@ -135,7 +135,7 @@ def test_a_zero_ttl_reads_the_rows_every_time_and_keeps_the_object_while_they_ar
             assert registry.effective_settings(provisioned, session) is before
             admin = Actor(id=None, type="system", role="admin")
             SpaceSettingsService(session, registry.settings).update(
-                SpaceSettingsUpdate(mcp_full_access=True), admin, spazio=provisioned
+                SpaceSettingsUpdate(mcp_full_access=True), admin, space=provisioned
             )
             session.commit()
             after = registry.effective_settings(provisioned, session)
@@ -149,14 +149,14 @@ def test_the_cache_is_per_root_settings_so_a_caller_with_its_own_never_reads_ano
     settings: Settings, provisioned: str
 ) -> None:
     registry = SpaceRegistry(settings, overrides_ttl=1000.0)
-    other = settings.model_copy(update={"solleciti_grace_days": 99})
+    other = settings.model_copy(update={"payment_reminders_grace_days": 99})
     try:
         with registry.session_factory(provisioned)() as session:
             mine = registry.effective_settings(provisioned, session)
             theirs = registry.effective_settings(provisioned, session, other)
             assert theirs is not mine
-            assert theirs.solleciti_grace_days == 99
-            assert mine.solleciti_grace_days != 99
+            assert theirs.payment_reminders_grace_days == 99
+            assert mine.payment_reminders_grace_days != 99
     finally:
         registry.dispose()
 
@@ -168,7 +168,7 @@ def test_a_space_pool_is_small_and_the_least_recently_used_engine_is_disposed(
     registry_engine = ensure_tenants_database(settings)
     with session_factory(registry_engine)() as session:
         TenantService(session, settings).provision(
-            TenantSignup(slug=second, nome="Bea", email="bea@studio.it")
+            TenantSignup(slug=second, name="Bea", email="bea@studio.it")
         )
     registry = SpaceRegistry(settings, max_open_spaces=1)
     try:

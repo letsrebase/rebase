@@ -15,7 +15,7 @@ export const keys = {
   /** Every freelancer detail: what a merge changes at once. */
   freelancerAll: ['freelancer'] as const,
   freelancerCard: (id: string) => ['freelancer-card', id] as const,
-  talents: (filters?: object) => (filters ? (['talenti', filters] as const) : (['talenti'] as const)),
+  talents: (filters?: object) => (filters ? (['talents', filters] as const) : (['talents'] as const)),
   signup: (id: string) => ['signup', id] as const,
   contracts: (freelancerId: string) => ['contracts', freelancerId] as const,
 
@@ -37,7 +37,7 @@ export const keys = {
   campaignTemplates: ['campaignTemplates'] as const,
   campaignAudience: (id: string | undefined, source: unknown) => ['campaignAudience', id, source] as const,
 
-  referrals: (stato?: string) => (stato === undefined ? (['referrals'] as const) : (['referrals', stato] as const)),
+  referrals: (status?: string) => (status === undefined ? (['referrals'] as const) : (['referrals', status] as const)),
   referralSettings: ['referral-settings'] as const,
 
   teamRequest: (id: string) => ['team-request', id] as const,

@@ -38,11 +38,12 @@ export function missingFilesSentence(
 export function downloadErrorSentence(
   problem: ProblemDetail,
   kind: 'pdf' | 'xml',
-  noun: 'fattura' | 'proforma',
+  noun: 'invoice' | 'proforma',
   canRegenerate: boolean,
 ): string {
   if (!isMissingFile(problem)) return problem.detail
   const file = kind === 'xml' ? 'L’XML FatturaPA' : 'Il PDF'
   const retry = canRegenerate ? ' Premi «Rigenera documenti» per generarlo di nuovo.' : ''
-  return `${file} di questa ${noun} non è disponibile.${retry}`
+  const word = noun === 'invoice' ? 'fattura' : 'proforma'
+  return `${file} di questa ${word} non è disponibile.${retry}`
 }

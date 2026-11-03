@@ -1,7 +1,7 @@
 """The HTTP surface, thin by design: validate the body, resolve the Actor, call
 `ContractExpenseService` -- the role gate is `test_role_matrix.py`'s own concern,
 proved once for every write route in this application; this file proves the wire
-shape of a create/list/update round trip and that `rimborsabile` reaches the
+shape of a create/list/update round trip and that `reimbursable` reaches the
 response as the database computed it, not merely as the caller asked for it."""
 
 from typing import Any
@@ -10,22 +10,22 @@ from fastapi.testclient import TestClient
 
 
 def _customer_id(logged_in: TestClient) -> str:
-    response = logged_in.post("/api/customers", json={"ragione_sociale": "ACME Srl"})
+    response = logged_in.post("/api/customers", json={"legal_name": "ACME Srl"})
     assert response.status_code == 201, response.text
     return response.json()["id"]
 
 
-def _contract_id(logged_in: TestClient, *, politica_spese: dict[str, Any]) -> str:
+def _contract_id(logged_in: TestClient, *, expense_policy: dict[str, Any]) -> str:
     response = logged_in.post(
         "/api/contracts",
         json={
             "customer_id": _customer_id(logged_in),
-            "titolo": "Consulenza",
-            "inizio": "2026-01-01",
-            "tipo_rinnovo": "nessuno",
-            "preavviso_disdetta_giorni": 30,
-            "cadenza_fatturazione": "mensile",
-            "politica_spese": politica_spese,
+            "title": "Consulenza",
+            "start": "2026-01-01",
+            "renewal_type": "none",
+            "termination_notice_days": 30,
+            "billing_cadence": "monthly",
+            "expense_policy": expense_policy,
         },
     )
     assert response.status_code == 201, response.text
@@ -33,34 +33,34 @@ def _contract_id(logged_in: TestClient, *, politica_spese: dict[str, Any]) -> st
 
 
 def _category_id(logged_in: TestClient) -> str:
-    response = logged_in.post("/api/cost-categories", json={"nome": "Trasferte"})
+    response = logged_in.post("/api/cost-categories", json={"name": "Trasferte"})
     assert response.status_code == 201, response.text
     return response.json()["id"]
 
 
-def test_create_reports_the_trigger_computed_rimborsabile(logged_in: TestClient) -> None:
-    contract_id = _contract_id(logged_in, politica_spese={"kind": "rimborsabile"})
+def test_create_reports_the_trigger_computed_reimbursable(logged_in: TestClient) -> None:
+    contract_id = _contract_id(logged_in, expense_policy={"kind": "reimbursable"})
     category_id = _category_id(logged_in)
 
     response = logged_in.post(
         f"/api/contracts/{contract_id}/expenses",
         json={
             "category_id": category_id,
-            "data": "2026-03-05",
-            "importo": "42.00",
-            "descrizione": "Biglietto treno",
+            "date": "2026-03-05",
+            "amount": "42.00",
+            "description": "Biglietto treno",
         },
     )
     assert response.status_code == 201, response.text
     body = response.json()
-    assert body["rimborsabile"] is True
+    assert body["reimbursable"] is True
     assert body["contract_id"] == contract_id
 
 
 def test_create_flags_non_reimbursable_without_a_422(logged_in: TestClient) -> None:
     contract_id = _contract_id(
         logged_in,
-        politica_spese={"kind": "rimborsabile", "richiede_preautorizzazione": True},
+        expense_policy={"kind": "reimbursable", "requires_pre_authorization": True},
     )
     category_id = _category_id(logged_in)
 
@@ -68,30 +68,30 @@ def test_create_flags_non_reimbursable_without_a_422(logged_in: TestClient) -> N
         f"/api/contracts/{contract_id}/expenses",
         json={
             "category_id": category_id,
-            "data": "2026-03-05",
-            "importo": "42.00",
-            "descrizione": "Biglietto treno",
-            "pre_autorizzata": False,
+            "date": "2026-03-05",
+            "amount": "42.00",
+            "description": "Biglietto treno",
+            "pre_authorized": False,
         },
     )
     assert response.status_code == 201, response.text
-    assert response.json()["rimborsabile"] is False
+    assert response.json()["reimbursable"] is False
 
 
-def test_pre_autorizzata_without_a_reference_is_a_422_naming_the_field(
+def test_pre_authorized_without_to_reference_is_to_422_naming_the_field(
     logged_in: TestClient,
 ) -> None:
-    contract_id = _contract_id(logged_in, politica_spese={"kind": "rimborsabile"})
+    contract_id = _contract_id(logged_in, expense_policy={"kind": "reimbursable"})
     category_id = _category_id(logged_in)
 
     response = logged_in.post(
         f"/api/contracts/{contract_id}/expenses",
         json={
             "category_id": category_id,
-            "data": "2026-03-05",
-            "importo": "42.00",
-            "descrizione": "Biglietto treno",
-            "pre_autorizzata": True,
+            "date": "2026-03-05",
+            "amount": "42.00",
+            "description": "Biglietto treno",
+            "pre_authorized": True,
         },
     )
     assert response.status_code == 422, response.text
@@ -103,24 +103,24 @@ def test_create_on_an_unknown_contract_is_a_404(logged_in: TestClient) -> None:
         "/api/contracts/00000000-0000-0000-0000-000000000000/expenses",
         json={
             "category_id": category_id,
-            "data": "2026-03-05",
-            "importo": "42.00",
-            "descrizione": "Biglietto treno",
+            "date": "2026-03-05",
+            "amount": "42.00",
+            "description": "Biglietto treno",
         },
     )
     assert response.status_code == 404, response.text
 
 
 def test_list_and_update_round_trip(logged_in: TestClient) -> None:
-    contract_id = _contract_id(logged_in, politica_spese={"kind": "rimborsabile"})
+    contract_id = _contract_id(logged_in, expense_policy={"kind": "reimbursable"})
     category_id = _category_id(logged_in)
     created = logged_in.post(
         f"/api/contracts/{contract_id}/expenses",
         json={
             "category_id": category_id,
-            "data": "2026-03-05",
-            "importo": "42.00",
-            "descrizione": "Biglietto treno",
+            "date": "2026-03-05",
+            "amount": "42.00",
+            "description": "Biglietto treno",
         },
     ).json()
 
@@ -130,11 +130,11 @@ def test_list_and_update_round_trip(logged_in: TestClient) -> None:
 
     updated = logged_in.patch(
         f"/api/contracts/{contract_id}/expenses/{created['id']}",
-        json={"importo": "99.00"},
+        json={"amount": "99.00"},
     )
     assert updated.status_code == 200, updated.text
-    assert updated.json()["importo"] == "99.00"
-    assert updated.json()["descrizione"] == "Biglietto treno"
+    assert updated.json()["amount"] == "99.00"
+    assert updated.json()["description"] == "Biglietto treno"
 
 
 def test_the_openapi_document_describes_the_new_routes(logged_in: TestClient) -> None:
@@ -150,13 +150,13 @@ def test_create_refuses_a_malformed_expense_policy_with_422(logged_in: TestClien
         "/api/contracts",
         json={
             "customer_id": _customer_id(logged_in),
-            "titolo": "Consulenza",
-            "inizio": "2026-01-01",
-            "tipo_rinnovo": "nessuno",
-            "preavviso_disdetta_giorni": 30,
-            "cadenza_fatturazione": "mensile",
-            "politica_spese": {"mode": "rimborsabili"},
+            "title": "Consulenza",
+            "start": "2026-01-01",
+            "renewal_type": "none",
+            "termination_notice_days": 30,
+            "billing_cadence": "monthly",
+            "expense_policy": {"mode": "rimborsabili"},
         },
     )
     assert response.status_code == 422, response.text
-    assert "politica_spese.kind" in response.text
+    assert "expense_policy.kind" in response.text

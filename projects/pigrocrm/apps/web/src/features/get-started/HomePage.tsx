@@ -5,7 +5,7 @@
  * start page, the same one the profile menu's «Primi passi» opens: a new space has no numbers
  * to chart, and the first screen should bring the person's own work in rather than show
  * them zeros. From the first piece of work on it is the dashboard, with a «Completa lo
- * spazio» card above it while a step is still open that this person could do, then the
+ * space» card above it while a step is still open that this person could do, then the
  * dashboard alone. The one-time redirect to «Primi passi» of 2026-09-12 (ORB-180) is
  * gone: the Home already is that page when it matters.
  *
@@ -53,7 +53,7 @@ export function HomePage({
   if (startPage === null && state.spaceEmpty !== null && !state.workFailed) setStartPage(state.spaceEmpty)
   const chosen = startPage ?? state.spaceEmpty
   if (chosen === null) return null
-  if (chosen) return <GetStartedPage esito={search.esito} />
+  if (chosen) return <GetStartedPage outcome={search.outcome} />
   return (
     <DashboardPage
       search={search}
@@ -63,7 +63,7 @@ export function HomePage({
           {/* The consent flow comes back here only if the API read the space as empty
               and this page did not (a read that failed counts as work): the outcome is
               still the person's to read. */}
-          <ConsentOutcome {...consentOutcome('gmail', search.esito)} className="mb-6" />
+          <ConsentOutcome {...consentOutcome('gmail', search.outcome)} className="mb-6" />
           <RecordDayShortcut />
           <PendingProposalsNotice />
           {state.loading ? null : <CompleteSpaceCard state={state} canWrite={canWrite} />}

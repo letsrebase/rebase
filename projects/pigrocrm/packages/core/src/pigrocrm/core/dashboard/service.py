@@ -47,14 +47,14 @@ from pigrocrm.core.analytics.schemas import PeriodPnlQuery
 from pigrocrm.core.analytics.service import AnalyticsService
 from pigrocrm.core.config import Settings, get_settings
 from pigrocrm.core.dashboard.schemas import (
-    CassaAttesaMese,
+    BandDueDate,
     CommercialDashboard,
     EconomicDashboard,
-    EsposizioneCliente,
-    FasciaScadenza,
-    FatturaScaduta,
+    ExposureCustomer,
     OperationalDashboard,
-    PeriodoQuery,
+    OverdueInvoice,
+    PensionFundPendingMonth,
+    PeriodQuery,
     ReceivablesDashboard,
     Signal,
 )
@@ -90,7 +90,7 @@ _BUSINESS_ENTITIES: frozenset[str] = frozenset(
         "invoice",
         "contract",
         "contract_expense",
-        "attivita",
+        "task",
         "work_unit",
         "approval",
         "proposal",
@@ -100,25 +100,25 @@ _BUSINESS_ENTITIES: frozenset[str] = frozenset(
 )
 # Slice 8 §2.1's six buckets, labelled once here: the code is the contract, the label is
 # copy, and the page prints the label it is sent rather than keeping a second table.
-_FASCE_ETICHETTE: dict[str, str] = {
-    "scaduto": "Scaduto",
+_BAND_LABELS: dict[str, str] = {
+    "expired": "Scaduto",
     "entro_30": "Entro 30 giorni",
     "da_31_a_60": "Da 31 a 60 giorni",
     "da_61_a_90": "Da 61 a 90 giorni",
     "oltre_90": "Oltre 90 giorni",
-    "senza_scadenza": "Senza scadenza",
+    "without_due_date": "Senza scadenza",
 }
-# The overdue bucket's drill-through: `?scadute=true` on the invoice list is
+# The overdue bucket's drill-through: `?overdue=true` on the invoice list is
 # `_overdue_predicate`, the predicate the bucket is summed with (criterion 2).
-_SCADUTO_LINK = "/app/invoices?scadute=true"
+_EXPIRED_LINK = "/app/invoices?overdue=true"
 # The concentration signal's own drill-through (REB-371): the economic tab, where
 # every customer's share of the year's revenue is listed
-# (`EconomicOverview.concentrazione_clienti`). Unlike the other three signals there is
+# (`EconomicOverview.customer_concentration`). Unlike the other three signals there is
 # no separate filtered list of "customers over the threshold" to point at instead --
 # the concentration table itself is the rows behind this count.
-_CONCENTRAZIONE_LINK = "/app/?tab=economica"
-_CLIENTI_SHOWN = 10
-_SCADUTE_SHOWN = 50
+_CONCENTRATION_LINK = "/app?tab=economic"
+_CUSTOMERS_SHOWN = 10
+_OVERDUE_SHOWN = 50
 
 
 class DashboardService:
@@ -192,12 +192,12 @@ class DashboardService:
         # Annotated rather than returned directly: `scalar_one()` is typed `Any`, and an
         # `Any` flowing out of a function declared to return `datetime` is what `mypy`'s
         # `no-any-return` is for.
-        istante: datetime = self.session.execute(
+        instant: datetime = self.session.execute(
             text("SELECT transaction_timestamp()")
         ).scalar_one()
-        return istante
+        return instant
 
-    def get_commercial_dashboard(self, query: PeriodoQuery, actor: Actor) -> CommercialDashboard:
+    def get_commercial_dashboard(self, query: PeriodQuery, actor: Actor) -> CommercialDashboard:
         """Pipeline snapshot plus two period measures. Touches no invoice and no hour --
         it reads `deals`, `pipeline_stages` and `documents`, which is what lets it ship
         before the economic dashboard (§4, §17).
@@ -212,35 +212,35 @@ class DashboardService:
         Inventing a fourth visibility level on a read-only screen would put a security rule
         where nobody looks for one. `actor` is taken because every service method here does.
         """
-        periodo = query.resolve()
-        calcolato_alle = self._open_snapshot()
+        period = query.resolve()
+        calculated_at = self._open_snapshot()
         # The window the "prossime chiusure" card means starts where the period ends, not
         # where it begins: on a January dashboard the imminent closures are February's, not
         # January's own. `window_from` lives in `db/clock.py` because a date offset is still
         # a `BinOp` and this package may not contain one -- see the module docstring.
-        _, finestra_a = window_from(periodo.a, _EXPECTED_CLOSURE_WINDOW_DAYS)
-        # The azienda is one more argument of every read and nothing else (REB-630, spec
+        _, window_to = window_from(period.date_to, _EXPECTED_CLOSURE_WINDOW_DAYS)
+        # The legal entity is one more argument of every read and nothing else (REB-630, spec
         # 2026-10-03 §1.9): each repository adds it as a predicate, so «tutte», which
-        # sends none, is the sum of the per-azienda answers by construction.
-        azienda = query.azienda_id
+        # sends none, is the sum of the per-legal entity answers by construction.
+        legal_entity = query.legal_entity_id
         return CommercialDashboard(
-            periodo=periodo,
-            calcolato_alle=calcolato_alle,
-            azienda_id=azienda,
-            pipeline=self._deals.pipeline_summary(azienda),
-            chiusure=self._deals.closed_in_period(periodo.da, periodo.a, azienda),
-            offerte_in_attesa=self._documents.pending_offers(_PENDING_OFFERS_SHOWN, azienda),
-            offerte_in_attesa_totale=self._documents.count_pending_offers(azienda),
-            chiusure_previste_30_giorni=self._deals.expected_closures(
-                periodo.a, finestra_a, azienda
+            period=period,
+            calculated_at=calculated_at,
+            legal_entity_id=legal_entity,
+            pipeline=self._deals.pipeline_summary(legal_entity),
+            closings=self._deals.closed_in_period(period.date_from, period.date_to, legal_entity),
+            offers_pending=self._documents.pending_offers(_PENDING_OFFERS_SHOWN, legal_entity),
+            offers_pending_total=self._documents.count_pending_offers(legal_entity),
+            expected_closings_30_days=self._deals.expected_closures(
+                period.date_to, window_to, legal_entity
             ),
-            chiusure_non_attribuibili=self._deals.unattributable_closures(azienda),
-            offerte_accettate_deal_non_vinto=(
-                self._documents.count_accepted_with_unwon_deal(azienda)
+            closings_not_attributable=self._deals.unattributable_closures(legal_entity),
+            accepted_offers_deal_not_won=(
+                self._documents.count_accepted_with_unwon_deal(legal_entity)
             ),
         )
 
-    def get_economic_dashboard(self, query: PeriodoQuery, actor: Actor) -> EconomicDashboard:
+    def get_economic_dashboard(self, query: PeriodQuery, actor: Actor) -> EconomicDashboard:
         """§5. Composition only: not one figure on this page is computed here.
 
         `period_pnl` is called with the same `actor` the caller supplied, so its own
@@ -255,10 +255,10 @@ class DashboardService:
         `InvoiceService` would force either a new MCP tool or an edit to slice 3 §11's
         four-name exclusion list.
 
-        `da_incassare` and `scaduto` take no period, and that asymmetry is deliberate
-        rather than an omission: revenue is attributed to a period by `data_emissione`,
+        `unpaid` and `expired` take no period, and that asymmetry is deliberate
+        rather than an omission: revenue is attributed to a period by `issue_date`,
         while an invoice issued in February and still unpaid is money owed today whatever
-        window the reader is looking at. Passing `periodo` to either would turn the one
+        window the reader is looking at. Passing `period` to either would turn the one
         figure on this page that answers "what is outstanding" into a second, weaker
         rendering of "what was invoiced".
 
@@ -266,20 +266,27 @@ class DashboardService:
         dashboard: a malformed period is the caller's mistake and should not cost a
         transaction.
         """
-        periodo = query.resolve()
-        calcolato_alle = self._open_snapshot()
-        azienda = query.azienda_id
+        period = query.resolve()
+        calculated_at = self._open_snapshot()
+        legal_entity = query.legal_entity_id
         return EconomicDashboard(
-            periodo=periodo,
-            calcolato_alle=calcolato_alle,
-            azienda_id=azienda,
+            period=period,
+            calculated_at=calculated_at,
+            legal_entity_id=legal_entity,
             pnl=self._analytics.period_pnl(
-                PeriodPnlQuery(da=periodo.da, a=periodo.a, customer_id=None, azienda_id=azienda),
+                PeriodPnlQuery(
+                    date_from=period.date_from,
+                    date_to=period.date_to,
+                    customer_id=None,
+                    legal_entity_id=legal_entity,
+                ),
                 actor,
             ),
-            da_incassare=self._invoices.sum_da_incassare(azienda),
-            scaduto=self._invoices.sum_scaduto(azienda),
-            fatture_emesse=self._invoices.count_emesse_in_periodo(periodo.da, periodo.a, azienda),
+            unpaid=self._invoices.sum_unpaid(legal_entity),
+            expired=self._invoices.sum_expired(legal_entity),
+            issued_invoices=self._invoices.count_issued_in_period(
+                period.date_from, period.date_to, legal_entity
+            ),
         )
 
     def _recent_feed(self, actor: Actor) -> list[Activity]:
@@ -288,7 +295,7 @@ class DashboardService:
         return self._activities.recent(_RECENT_ACTIVITIES_FILTERED, _BUSINESS_ENTITIES)
 
     def get_operational_dashboard(
-        self, actor: Actor, azienda_id: UUID | None = None
+        self, actor: Actor, legal_entity_id: UUID | None = None
     ) -> OperationalDashboard:
         """§6. **No period parameter**, deliberately: the current week and a backlog are the
         two things that make no sense in the past, so there is nothing here to get wrong --
@@ -296,14 +303,14 @@ class DashboardService:
         than from `period_pnl`, which is by definition of one (§6.3).
 
         Four signals are built here as `Signal` rows, and that is composition and not
-        arithmetic: each `conteggio` is a `COUNT` its own repository produced, and every
+        arithmetic: each `count` is a `COUNT` its own repository produced, and every
         label and link is a literal. `core/dashboard/` still contains no `*`, `/` or `-`,
         and `test_dashboard_no_arithmetic.py` is what confirms it rather than this sentence.
-        The fourth, `concentrazione_sopra_soglia` (REB-371, §3 and §5 item 2 of
+        The fourth, `concentration_above_threshold` (REB-371, §3 and §5 item 2 of
         `docs/superpowers/specs/2026-09-23-forecasting-and-analytics-from-mastro-design.md`),
         keeps to the same rule: its COUNT, `AnalyticsRepository.count_over_concentration_
         threshold`, is the one place each customer's share is compared against
-        `self.settings.concentrazione_soglia_preferita` -- that comparison stays in the
+        `self.settings.preferred_concentration_threshold` -- that comparison stays in the
         repository, never here. Its link is the only one of the four that is not a
         matching filtered list: it points at the economic tab's own concentration table,
         because no separate "customers over the threshold" list exists to filter.
@@ -313,7 +320,7 @@ class DashboardService:
         and it would need somewhere to be recomputed from, which is the materialised summary
         §7 refuses.
 
-        Every other `collegamento` names a filter that exists and that shares its predicate
+        Every other `link` names a filter that exists and that shares its predicate
         function with the count beside it (criterion 2), so a card and the list behind it
         cannot describe different rows: `invoiced_not_won_predicate`,
         `won_with_unbilled_hours_predicate` and `_overdue_predicate` each have exactly two
@@ -329,96 +336,98 @@ class DashboardService:
         like the period on the other two dashboards: neither needs a transaction, and it
         keeps the first statement of the session the one that fixes the snapshot.
 
-        `azienda_id` (REB-630, spec 2026-10-03 §1.9) is one more argument of every
+        `legal_entity_id` (REB-630, spec 2026-10-03 §1.9) is one more argument of every
         count, and the links do not carry it: each drill-through list already follows
         the sidebar's selection on its own. The concentration signal is the one count
         whose «tutte» is not a plain sum: `count_over_concentration_threshold` reads
-        each share against its own azienda's revenue and counts the distinct customers
+        each share against its own legal entity's revenue and counts the distinct customers
         over the threshold in any of them, so a customer who is a third of the SRL and
         a tenth of the whole still counts. The recent feed stays the space's: an
-        activity row has no azienda.
+        activity row has no legal entity.
         """
-        da, a = current_week()
-        anno = today_local().year
-        calcolato_alle = self._open_snapshot()
+        date_from, date_to = current_week()
+        year = today_local().year
+        calculated_at = self._open_snapshot()
         return OperationalDashboard(
-            calcolato_alle=calcolato_alle,
-            azienda_id=azienda_id,
-            settimana=self._entries.week_hours(da, a, azienda_id),
-            arretrato=self._analytics.unbilled_backlog(actor, azienda_id),
-            segnali=[
+            calculated_at=calculated_at,
+            legal_entity_id=legal_entity_id,
+            week=self._entries.week_hours(date_from, date_to, legal_entity_id),
+            backlog=self._analytics.unbilled_backlog(actor, legal_entity_id),
+            signals=[
                 Signal(
-                    codice="fatturato_non_vinto",
-                    etichetta="Fatturato ma non vinto",
-                    conteggio=self._invoices.count_deals_invoiced_not_won(azienda_id),
-                    collegamento="/app/deal/list?fatturato_non_vinto=true",
+                    code="invoiced_unwon",
+                    label="Fatturato ma non vinto",
+                    count=self._invoices.count_deals_invoiced_not_won(legal_entity_id),
+                    link="/app/deal/list?invoiced_unwon=true",
                 ),
                 Signal(
-                    codice="vinto_da_fatturare",
-                    etichetta="Vinto ma da fatturare",
-                    conteggio=self._entries.count_won_deals_to_invoice(azienda_id),
-                    collegamento="/app/deal/list?da_fatturare=true",
+                    code="won_to_invoice",
+                    label="Vinto ma da fatturare",
+                    count=self._entries.count_won_deals_to_invoice(legal_entity_id),
+                    link="/app/deal/list?to_invoice=true",
                 ),
                 Signal(
-                    codice="scaduto_non_incassato",
-                    etichetta="Scaduto e non incassato",
-                    conteggio=self._invoices.count_scadute_non_incassate(azienda_id),
-                    collegamento="/app/invoices?scadute=true",
+                    code="overdue_unpaid",
+                    label="Scaduto e non incassato",
+                    count=self._invoices.count_overdue_not_paid(legal_entity_id),
+                    link="/app/invoices?overdue=true",
                 ),
                 Signal(
-                    codice="concentrazione_sopra_soglia",
-                    etichetta="Concentrazione cliente sopra soglia",
-                    conteggio=self._analytics_repo.count_over_concentration_threshold(
-                        anno, self.settings.concentrazione_soglia_preferita, azienda_id
+                    code="concentration_above_threshold",
+                    label="Concentrazione cliente sopra soglia",
+                    count=self._analytics_repo.count_over_concentration_threshold(
+                        year, self.settings.preferred_concentration_threshold, legal_entity_id
                     ),
-                    collegamento=_CONCENTRAZIONE_LINK,
+                    link=_CONCENTRATION_LINK,
                 ),
             ],
-            attivita_recenti=serve_activities(self.session, self._recent_feed(actor)),
+            recent_activity=serve_activities(self.session, self._recent_feed(actor)),
         )
 
     def get_receivables_dashboard(
-        self, actor: Actor, azienda_id: UUID | None = None
+        self, actor: Actor, legal_entity_id: UUID | None = None
     ) -> ReceivablesDashboard:
         """Slice 8 part A. **No period**, for the operational dashboard's reason: a
         receivable is owed today whatever window is on screen. Composition only: every sum,
         count and share below was produced by `InvoiceRepository`, and the labels and the
-        one link are literals. `oggi` is read once, after the snapshot, and handed to every
+        one link are literals. `today` is read once, after the snapshot, and handed to every
         reading, so the four of them measure from the same day even across midnight.
         """
-        calcolato_alle = self._open_snapshot()
-        oggi = today_local()
-        fasce = [
-            FasciaScadenza(
-                codice=row.codice,
-                etichetta=_FASCE_ETICHETTE[row.codice],
-                da=row.da,
-                a=row.a,
-                importo=row.importo,
-                numero=row.numero,
-                quota=row.quota,
-                collegamento=_SCADUTO_LINK if row.codice == "scaduto" else None,
+        calculated_at = self._open_snapshot()
+        today = today_local()
+        bands = [
+            BandDueDate(
+                code=row.code,
+                label=_BAND_LABELS[row.code],
+                date_from=row.date_from,
+                date_to=row.date_to,
+                amount=row.amount,
+                number=row.number,
+                share=row.share,
+                link=_EXPIRED_LINK if row.code == "expired" else None,
             )
-            for row in self._invoices.ageing_receivables(oggi, azienda_id)
+            for row in self._invoices.ageing_receivables(today, legal_entity_id)
         ]
-        scadute = [
-            FatturaScaduta(**row._asdict())
-            for row in self._invoices.overdue_with_reminders(oggi, _SCADUTE_SHOWN, azienda_id)
+        overdue = [
+            OverdueInvoice(**row._asdict())
+            for row in self._invoices.overdue_with_reminders(today, _OVERDUE_SHOWN, legal_entity_id)
         ]
         return ReceivablesDashboard(
-            calcolato_alle=calcolato_alle,
-            oggi=oggi,
-            azienda_id=azienda_id,
-            totale=self._invoices.sum_da_incassare(azienda_id),
-            fasce=fasce,
-            per_mese=[
-                CassaAttesaMese(**row._asdict())
-                for row in self._invoices.receivables_by_due_month(azienda_id)
+            calculated_at=calculated_at,
+            today=today,
+            legal_entity_id=legal_entity_id,
+            total=self._invoices.sum_unpaid(legal_entity_id),
+            bands=bands,
+            by_month=[
+                PensionFundPendingMonth(**row._asdict())
+                for row in self._invoices.receivables_by_due_month(legal_entity_id)
             ],
-            per_cliente=[
-                EsposizioneCliente(**row._asdict())
-                for row in self._invoices.receivables_by_customer(oggi, _CLIENTI_SHOWN, azienda_id)
+            by_customer=[
+                ExposureCustomer(**row._asdict())
+                for row in self._invoices.receivables_by_customer(
+                    today, _CUSTOMERS_SHOWN, legal_entity_id
+                )
             ],
-            scadute=scadute,
-            scadute_totale=self._invoices.count_scadute_non_incassate(azienda_id),
+            overdue=overdue,
+            total_overdue=self._invoices.count_overdue_not_paid(legal_entity_id),
         )

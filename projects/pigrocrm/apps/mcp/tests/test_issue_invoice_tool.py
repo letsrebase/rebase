@@ -14,7 +14,7 @@ import pytest
 from mcp import Client
 from sqlalchemy import text
 from sqlalchemy.orm import Session
-from test_invoice_import_tools import _payload, _seed_fiscal_and_emitter_profiles, _server
+from test_invoice_import_tools import _payload, _seed_fiscal_and_legal_entity_profiles, _server
 
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.customers.models import Customer
@@ -25,23 +25,23 @@ from pigrocrm.core.storage import LocalFileStorage
 
 
 def _draft(session: Session, tmp_path: Path) -> str:
-    _seed_fiscal_and_emitter_profiles(session)
+    _seed_fiscal_and_legal_entity_profiles(session)
     customer = Customer(
-        ragione_sociale="Acme S.r.l.",
-        partita_iva="12345678901",
-        codice_sdi="ABCDEFG",
-        indirizzo="Via Roma 1",
+        legal_name="Acme S.r.l.",
+        vat_number="12345678901",
+        sdi_code="ABCDEFG",
+        address="Via Roma 1",
         cap="20154",
-        comune="Milano",
-        provincia="MI",
-        nazione="IT",
+        city="Milano",
+        province="MI",
+        country="IT",
     )
     session.add(customer)
     session.flush()
     draft = InvoiceService(session, LocalFileStorage(tmp_path)).create(
         InvoiceCreate(
             customer_id=customer.id,
-            righe=[InvoiceLineIn(descrizione="Consulenza", prezzo_unitario="1000.00")],
+            lines=[InvoiceLineIn(description="Consulenza", unit_price="1000.00")],
         ),
         Actor(id=None, type="mcp", role="admin"),
     )
@@ -65,12 +65,12 @@ async def test_a_render_that_fails_after_the_commit_still_answers_the_issued_row
         assert not result.is_error, result.content[0].text
         issued: dict[str, Any] = _payload(result)
         assert issued["id"] == invoice_id
-        assert issued["stato"] == "emessa"
-        assert issued["numero"] == 1
+        assert issued["status"] == "issued"
+        assert issued["number"] == 1
         assert issued["pdf_document_id"] is not None
         assert issued["xml_document_id"] is None
 
         # The next call on the same session works, and the register agrees.
         again = await client.call_tool("get_invoice", {"invoice_id": invoice_id})
         assert not again.is_error, again.content[0].text
-        assert _payload(again)["stato"] == "emessa"
+        assert _payload(again)["status"] == "issued"

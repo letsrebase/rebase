@@ -29,9 +29,9 @@ ENTITY = "automation_config"
 RULE_CODES: tuple[AutomationRuleCode, ...] = (
     "A1",
     "A2",
-    "offerta_inviata_richiama",
-    "deal_fermo",
-    "fattura_scaduta",
+    "sent_offer_follow_up",
+    "stalled_deal",
+    "overdue_invoice",
 )
 _RUN_LIMIT = 20
 
@@ -58,30 +58,30 @@ class AutomationConfigService:
         config = AutomationConfigRead.model_validate(row)
         rules = [
             AutomationRuleDescription(
-                codice=code,
-                titolo=RULE_DESCRIPTIONS[code][0],
-                descrizione=RULE_DESCRIPTIONS[code][1],
-                attiva=self._is_active(config, code),
+                code=code,
+                title=RULE_DESCRIPTIONS[code][0],
+                description=RULE_DESCRIPTIONS[code][1],
+                active=self._is_active(config, code),
             )
             for code in RULE_CODES
         ]
         runs = recent_runs(self.session, _RUN_LIMIT)
         self.session.commit()
-        return AutomationsDescription(configurazione=config, regole=rules, esecuzioni=runs)
+        return AutomationsDescription(configuration=config, rules=rules, runs=runs)
 
     @staticmethod
     def _is_active(config: AutomationConfigRead, code: AutomationRuleCode) -> bool:
         match code:
             case "A1":
-                return config.a1_offerta_accettata_vince_deal
+                return config.a1_wins_accepted_offer_deal
             case "A2":
-                return config.a2_offerta_inviata_avanza_deal
-            case "offerta_inviata_richiama":
-                return config.a3_offerta_inviata_richiama
-            case "deal_fermo":
-                return config.a4_deal_fermo
-            case "fattura_scaduta":
-                return config.a5_fattura_scaduta
+                return config.a2_advances_sent_offer_deal
+            case "sent_offer_follow_up":
+                return config.a3_sent_offer_follow_up
+            case "stalled_deal":
+                return config.a4_stalled_deal
+            case "overdue_invoice":
+                return config.a5_overdue_invoice
 
     def update_automation_config(
         self, data: AutomationConfigUpdate, actor: Actor
@@ -111,7 +111,7 @@ class AutomationConfigService:
             # every save is an audit entry nobody reads. `!=` and not `is not`, because the
             # threshold is an int and two equal ints are not promised to be one object.
             if current != value:
-                changes[field] = {"da": current, "a": value}
+                changes[field] = {"from": current, "to": value}
                 setattr(row, field, value)
 
         if changes:

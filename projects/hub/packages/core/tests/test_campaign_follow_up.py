@@ -1,4 +1,4 @@
-"""«Riscrivi a chi non ha fatto niente» (spec § 4.3): a `lista` draft that follows a sent
+"""«Riscrivi a chi non ha fatto niente» (spec § 4.3): a `list` draft that follows a sent
 campaign, and its list."""
 
 from datetime import timedelta
@@ -35,13 +35,13 @@ NO_PAUSE = lambda _seconds: None  # noqa: E731
 GAP = timedelta(days=SETTINGS.campaign_gap_days, hours=1)
 
 
-def sent_to(session: Session, clock: Clock, *emails: str, azione: str = "entrato") -> Campaign:
-    """A `completo` campaign sent by one tick to complete cards at `emails`."""
+def sent_to(session: Session, clock: Clock, *emails: str, action: str = "signed_in") -> Campaign:
+    """A `complete` campaign sent by one tick to complete cards at `emails`."""
     service = CampaignService(session, SETTINGS, clock=clock)
     who = admin(session)
     for email in emails:
         person(session, email)
-    created = service.create(who.id, draft(stato_percorso="completo", azione=azione))
+    created = service.create(who.id, draft(journey_status="complete", action=action))
     clock.at += timedelta(minutes=1)
     service.send_test(created.id, as_admin(who), RecordingCampaignSender())
     service.schedule(created.id, ScheduleRequest())
@@ -49,18 +49,18 @@ def sent_to(session: Session, clock: Clock, *emails: str, azione: str = "entrato
     return session.get(Campaign, created.id)  # type: ignore[return-value]
 
 
-def test_a_follow_up_is_a_lista_draft_with_the_same_action_and_mail(clean: Session) -> None:  # noqa: F811  (fixture)
+def test_to_follow_up_is_to_list_draft_with_the_same_action_and_mail(clean: Session) -> None:  # noqa: F811  (fixture)
     clock = Clock(NOW)
     parent = sent_to(clean, clock, "ada@studio.it")
     service = CampaignService(clean, SETTINGS, clock=clock)
     follow = service.follow_up(parent.id, admin(clean).id)
-    assert (follow.fonte, follow.segue_id, follow.stato) == ("lista", parent.id, "bozza")
-    assert (follow.azione, follow.oggetto, follow.testo) == (
-        parent.azione,
-        parent.oggetto,
-        parent.testo,
+    assert (follow.source, follow.follows_id, follow.status) == ("list", parent.id, "draft")
+    assert (follow.action, follow.subject, follow.text) == (
+        parent.action,
+        parent.subject,
+        parent.text,
     )
-    assert follow.nome == f"{parent.nome} · riscrivi" and follow.slug != parent.slug
+    assert follow.name == f"{parent.name} · riscrivi" and follow.slug != parent.slug
 
 
 def test_only_a_sent_campaign_with_someone_waiting_is_followed_up(clean: Session) -> None:  # noqa: F811  (fixture)
@@ -73,7 +73,7 @@ def test_only_a_sent_campaign_with_someone_waiting_is_followed_up(clean: Session
     clean.execute(
         update(CampaignRecipient)
         .where(CampaignRecipient.campaign_id == parent.id)
-        .values(azione_at=clock.at)
+        .values(action_at=clock.at)
     )
     clean.commit()
     with pytest.raises(InvalidState, match=NOTHING_TO_FOLLOW):
@@ -88,11 +88,11 @@ def test_a_row_that_has_acted_live_but_is_not_yet_stamped_leaves_nothing_to_foll
     stamped yet. `follow_up` must read the live list (`waiting_rows`), the same as the
     list it hands over, and find nobody waiting."""
     clock = Clock(NOW)
-    parent = sent_to(clean, clock, "ada@studio.it", azione="entrato")
+    parent = sent_to(clean, clock, "ada@studio.it", action="signed_in")
     row = clean.query(CampaignRecipient).filter_by(campaign_id=parent.id).one()
-    assert row.azione_at is None and row.inviata_at is not None
+    assert row.action_at is None and row.sent_at is not None
     ada = clean.query(User).filter(User.email == "ada@studio.it").one()
-    clean.add(Login(user_id=ada.id, logged_at=row.inviata_at + timedelta(hours=1)))
+    clean.add(Login(user_id=ada.id, logged_at=row.sent_at + timedelta(hours=1)))
     clean.commit()
     service = CampaignService(clean, SETTINGS, clock=clock)
     with pytest.raises(InvalidState, match=NOTHING_TO_FOLLOW):
@@ -107,19 +107,19 @@ def test_the_list_is_who_did_nothing_read_live_and_the_gap_shows_as_a_reason(
     parent = sent_to(clean, clock, "ada@studio.it", "bob@studio.it", "cleo@studio.it")
     stamped = clock.at + timedelta(hours=1)
     rows = {r.email: r for r in clean.query(CampaignRecipient).filter_by(campaign_id=parent.id)}
-    rows["ada@studio.it"].azione_at = stamped  # stamped by the tick
+    rows["ada@studio.it"].action_at = stamped  # stamped by the tick
     bob = clean.query(User).filter(User.email == "bob@studio.it").one()
     clean.add(Login(user_id=bob.id, logged_at=stamped))  # did it, not stamped yet
     clean.commit()
     service = CampaignService(clean, SETTINGS, clock=clock)
     follow = service.follow_up(parent.id, admin(clean).id)
     preview = service.audience(follow.id)
-    assert [(r.email, r.escluso) for r in preview.righe] == [
+    assert [(r.email, r.excluded) for r in preview.lines] == [
         ("cleo@studio.it", f"ha ricevuto un'altra campagna il {clock.at:%d/%m}")
     ]
     clock.at += GAP
     preview = CampaignService(clean, SETTINGS, clock=clock).audience(follow.id)
-    assert [(r.email, r.escluso) for r in preview.righe] == [("cleo@studio.it", None)]
+    assert [(r.email, r.excluded) for r in preview.lines] == [("cleo@studio.it", None)]
 
 
 def test_a_follow_up_is_scheduled_and_sent_like_any_campaign(clean: Session) -> None:  # noqa: F811  (fixture)
@@ -134,7 +134,7 @@ def test_a_follow_up_is_scheduled_and_sent_like_any_campaign(clean: Session) -> 
     service.schedule(follow.id, ScheduleRequest())
     recording = RecordingCampaignSender()
     result = run_tick(clean, recording, SETTINGS, clock=clock, pause=NO_PAUSE)
-    assert result.inviate == 1 and recording.sent[0].mail.to == "ada@studio.it"
+    assert result.sent == 1 and recording.sent[0].mail.to == "ada@studio.it"
 
 
 def test_a_follow_up_keeps_its_list_and_action_but_its_mail_is_rewritten(
@@ -144,12 +144,12 @@ def test_a_follow_up_keeps_its_list_and_action_but_its_mail_is_rewritten(
     parent = sent_to(clean, clock, "ada@studio.it")
     service = CampaignService(clean, SETTINGS, clock=clock)
     follow = service.follow_up(parent.id, admin(clean).id)
-    edited = service.update(follow.id, CampaignPatch(oggetto="Ti scrivo di nuovo"))
-    assert edited.oggetto == "Ti scrivo di nuovo" and edited.fonte == "lista"
+    edited = service.update(follow.id, CampaignPatch(subject="Ti scrivo di nuovo"))
+    assert edited.subject == "Ti scrivo di nuovo" and edited.source == "list"
     with pytest.raises(ValidationFailed, match=LIST_IS_FIXED):
-        service.update(follow.id, CampaignPatch(azione="cv"))
+        service.update(follow.id, CampaignPatch(action="cv"))
     with pytest.raises(ValidationFailed, match=LIST_IS_FIXED):
-        service.update(follow.id, CampaignPatch(fonte="stato", stato_percorso="completo"))
+        service.update(follow.id, CampaignPatch(source="status", journey_status="complete"))
 
 
 def test_a_soft_deleted_card_drops_its_row_from_the_follow_up(clean: Session) -> None:  # noqa: F811  (fixture)
@@ -162,10 +162,10 @@ def test_a_soft_deleted_card_drops_its_row_from_the_follow_up(clean: Session) ->
     service = CampaignService(clean, SETTINGS, clock=clock)
     follow = service.follow_up(parent.id, admin(clean).id)
     preview = service.audience(follow.id)
-    assert [r.email for r in preview.righe] == ["bob@studio.it"]
+    assert [r.email for r in preview.lines] == ["bob@studio.it"]
 
 
-def test_a_referente_whose_company_is_soft_deleted_is_not_listed(clean: Session) -> None:  # noqa: F811  (fixture)
+def test_to_contact_person_whose_company_is_soft_deleted_is_not_listed(clean: Session) -> None:  # noqa: F811  (fixture)
     clock = Clock(NOW)
     parent = sent_to(clean, clock, "ada@studio.it")
     biz = company(clean, "cleo@studio.it")
@@ -173,12 +173,12 @@ def test_a_referente_whose_company_is_soft_deleted_is_not_listed(clean: Session)
         CampaignRecipient(
             campaign_id=parent.id,
             email="cleo@studio.it",
-            tipo="azienda",
-            codice="c",
-            prima={"richieste": {str(biz.id): biz.updated_at.isoformat()}},
-            disiscrizione_token="t-cleo",
-            stato="inviata",
-            inviata_at=clock.at,
+            kind="company",
+            code="c",
+            before={"requests": {str(biz.id): biz.updated_at.isoformat()}},
+            unsubscribe_token="t-cleo",
+            status="sent",
+            sent_at=clock.at,
         )
     )
     clean.execute(update(Company).where(Company.id == biz.id).values(deleted_at=clock.at))
@@ -186,7 +186,7 @@ def test_a_referente_whose_company_is_soft_deleted_is_not_listed(clean: Session)
     service = CampaignService(clean, SETTINGS, clock=clock)
     follow = service.follow_up(parent.id, admin(clean).id)
     preview = service.audience(follow.id)
-    assert [r.email for r in preview.righe] == ["ada@studio.it"]
+    assert [r.email for r in preview.lines] == ["ada@studio.it"]
 
 
 def _card_of(session: Session, email: str) -> Freelancer:
@@ -201,13 +201,13 @@ def test_a_card_turned_down_since_the_mail_shows_as_excluded_in_the_follow_up(
     included, and the preview says why rather than drop the row unexplained."""
     clock = Clock(NOW)
     parent = sent_to(clean, clock, "ada@studio.it", "bob@studio.it")
-    _card_of(clean, "bob@studio.it").stato = "scartato"
+    _card_of(clean, "bob@studio.it").status = "discarded"
     clean.commit()
     clock.at += GAP
     service = CampaignService(clean, SETTINGS, clock=clock)
     follow = service.follow_up(parent.id, admin(clean).id)
     preview = service.audience(follow.id)
-    assert [(r.email, r.escluso) for r in preview.righe] == [
+    assert [(r.email, r.excluded) for r in preview.lines] == [
         ("ada@studio.it", None),
         ("bob@studio.it", REASON_DISCARDED),
     ]
@@ -222,14 +222,14 @@ def test_a_bounced_or_complained_row_is_not_waiting_for_a_follow_up(
     clock = Clock(NOW)
     parent = sent_to(clean, clock, "ada@studio.it", "bob@studio.it", "cleo@studio.it")
     rows = {r.email: r for r in clean.query(CampaignRecipient).filter_by(campaign_id=parent.id)}
-    rows["ada@studio.it"].rimbalzata_at = clock.at
-    rows["bob@studio.it"].reclamo_at = clock.at
+    rows["ada@studio.it"].bounced_at = clock.at
+    rows["bob@studio.it"].complaint_at = clock.at
     clean.commit()
     assert [r.email for r in waiting_rows(clean, parent)] == ["cleo@studio.it"]
     clock.at += GAP
     service = CampaignService(clean, SETTINGS, clock=clock)
     follow = service.follow_up(parent.id, admin(clean).id)
-    assert [(r.email, r.escluso) for r in service.audience(follow.id).righe] == [
+    assert [(r.email, r.excluded) for r in service.audience(follow.id).lines] == [
         ("cleo@studio.it", None)
     ]
 
@@ -242,7 +242,7 @@ def test_a_list_of_only_bounced_rows_leaves_nothing_to_follow(clean: Session) ->
     clean.execute(
         update(CampaignRecipient)
         .where(CampaignRecipient.campaign_id == parent.id)
-        .values(rimbalzata_at=clock.at)
+        .values(bounced_at=clock.at)
     )
     clean.commit()
     with pytest.raises(InvalidState, match=NOTHING_TO_FOLLOW):

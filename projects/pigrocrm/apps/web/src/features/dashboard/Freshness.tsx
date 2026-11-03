@@ -22,24 +22,24 @@ function minutesSince(iso: string): number {
 }
 
 export function Freshness({
-  calcolatoAlle,
+  calculatedAt,
   onRefresh,
 }: {
-  calcolatoAlle: string
+  calculatedAt: string
   onRefresh: () => void
 }) {
   // The age is *derived* on every render, and the interval only forces one. Holding the
   // minute count in state instead would need a `setMinutes` in the effect to reset it when
-  // `calcolatoAlle` changes -- which is a cascading render (`react-hooks/set-state-in-effect`
+  // `calculatedAt` changes -- which is a cascading render (`react-hooks/set-state-in-effect`
   // says so) and which also restarts the timer on every refetch, so the clock would drift
-  // toward never ticking on a dashboard that refreshes. This way a new `calcolato_alle` is
+  // toward never ticking on a dashboard that refreshes. This way a new `calculated_at` is
   // correct in the same render that delivers it.
   const [, setTick] = useState(0)
   useEffect(() => {
     const timer = setInterval(() => setTick((previous) => previous + 1), 30_000)
     return () => clearInterval(timer)
   }, [])
-  const minutes = minutesSince(calcolatoAlle)
+  const minutes = minutesSince(calculatedAt)
 
   return (
     <div className="flex items-center gap-2 text-xs text-muted-foreground">

@@ -41,7 +41,7 @@ from sqlalchemy import Engine, delete
 
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.customers.models import Customer
-from pigrocrm.core.dashboard.schemas import PeriodoQuery
+from pigrocrm.core.dashboard.schemas import PeriodQuery
 from pigrocrm.core.dashboard.service import DashboardService
 from pigrocrm.core.db import month_bounds, session_factory, today_local
 from pigrocrm.core.deals.models import Deal
@@ -52,8 +52,8 @@ from pigrocrm_mcp.server import build_server
 
 ADMIN = Actor(id=None, type="mcp", role="admin")
 _PREFIX = "MCPDASH"
-STAGE_APERTO = f"{_PREFIX} stato aperto"
-STAGE_VINTO = f"{_PREFIX} stato vinto"
+STAGE_OPEN = f"{_PREFIX} stato aperto"
+STAGE_WON = f"{_PREFIX} stato vinto"
 
 
 def _payload(result: Any) -> dict[str, Any]:
@@ -66,36 +66,36 @@ def dashboard_server(mcp_engine: Engine, tmp_path: Path) -> Iterator[Any]:
     with factory() as session:
         # `code=None`, so these are user-created stages as far as `seed_defaults` is
         # concerned and never collide with the seeded `lead`/`vinto` on the unique index.
-        # `posizione` well past the defaults, so the ordering of anything already there is
+        # `position` well past the defaults, so the ordering of anything already there is
         # left alone.
-        aperto = PipelineStage(
-            nome=STAGE_APERTO, posizione=900, probabilita_default=50, tipo="open", code=None
+        open = PipelineStage(
+            name=STAGE_OPEN, position=900, default_probability=50, type="open", code=None
         )
-        vinto = PipelineStage(
-            nome=STAGE_VINTO, posizione=901, probabilita_default=100, tipo="won", code=None
+        won = PipelineStage(
+            name=STAGE_WON, position=901, default_probability=100, type="won", code=None
         )
-        session.add_all([aperto, vinto])
-        customer = Customer(ragione_sociale=f"{_PREFIX} Cliente", nazione="IT", custom_fields={})
+        session.add_all([open, won])
+        customer = Customer(legal_name=f"{_PREFIX} Cliente", country="IT", custom_fields={})
         session.add(customer)
         session.flush()
         session.add(
             Deal(
-                nome=f"{_PREFIX} aperto",
+                name=f"{_PREFIX} aperto",
                 customer_id=customer.id,
-                pipeline_stage_id=aperto.id,
-                valore_previsto=Decimal("1000.00"),
-                probabilita=50,
+                pipeline_stage_id=open.id,
+                expected_value=Decimal("1000.00"),
+                probability=50,
                 custom_fields={},
             )
         )
         session.add(
             Deal(
-                nome=f"{_PREFIX} vinto",
+                name=f"{_PREFIX} vinto",
                 customer_id=customer.id,
-                pipeline_stage_id=vinto.id,
-                valore_previsto=Decimal("5000.00"),
-                probabilita=100,
-                chiuso_il=today_local(),
+                pipeline_stage_id=won.id,
+                expected_value=Decimal("5000.00"),
+                probability=100,
+                closed_at=today_local(),
                 custom_fields={},
             )
         )
@@ -106,9 +106,9 @@ def dashboard_server(mcp_engine: Engine, tmp_path: Path) -> Iterator[Any]:
         )
     finally:
         with factory() as session:
-            session.execute(delete(Deal).where(Deal.nome.like(f"{_PREFIX} %")))
-            session.execute(delete(Customer).where(Customer.ragione_sociale.like(f"{_PREFIX} %")))
-            session.execute(delete(PipelineStage).where(PipelineStage.nome.like(f"{_PREFIX} %")))
+            session.execute(delete(Deal).where(Deal.name.like(f"{_PREFIX} %")))
+            session.execute(delete(Customer).where(Customer.legal_name.like(f"{_PREFIX} %")))
+            session.execute(delete(PipelineStage).where(PipelineStage.name.like(f"{_PREFIX} %")))
             session.commit()
     # `automation_config` is deliberately left alone. `describe_automations` creates the
     # single row on demand and this file never changes it, so what would be left behind is
@@ -130,22 +130,22 @@ async def test_the_dashboard_and_automation_tools_are_registered(dashboard_serve
 
 async def test_the_receivables_tool_adds_up_to_the_economic_total(dashboard_server: Any) -> None:
     """Slice 8 §2.2 on the wire (REB-329): the six buckets, every amount a string, their
-    codes in the page's order, and `totale` the very string the economic tool answers as
-    `da_incassare` -- two tools, one figure."""
+    codes in the page's order, and `total` the very string the economic tool answers as
+    `unpaid` -- two tools, one figure."""
     async with Client(dashboard_server) as client:
         page = _payload(await client.call_tool("get_receivables_dashboard", {}))
         economic = _payload(await client.call_tool("get_economic_dashboard", {}))
-    assert [f["codice"] for f in page["fasce"]] == [
-        "scaduto",
+    assert [f["code"] for f in page["bands"]] == [
+        "expired",
         "entro_30",
         "da_31_a_60",
         "da_61_a_90",
         "oltre_90",
-        "senza_scadenza",
+        "without_due_date",
     ]
-    assert all(isinstance(f["importo"], str) for f in page["fasce"])
-    assert isinstance(page["totale"], str)
-    assert page["totale"] == economic["da_incassare"]
+    assert all(isinstance(f["amount"], str) for f in page["bands"])
+    assert isinstance(page["total"], str)
+    assert page["total"] == economic["unpaid"]
 
 
 async def test_update_automation_config_has_no_tool(dashboard_server: Any) -> None:
@@ -174,7 +174,7 @@ async def test_the_tool_promises_the_agent_a_date_and_a_default(dashboard_server
     the same reason.
     """
     today = today_local()
-    primo, ultimo = month_bounds(today.year, today.month)
+    first, last = month_bounds(today.year, today.month)
     async with Client(dashboard_server) as client:
         tool = next(
             candidate
@@ -183,8 +183,8 @@ async def test_the_tool_promises_the_agent_a_date_and_a_default(dashboard_server
         )
         payload = _payload(await client.call_tool("get_commercial_dashboard", {}))
 
-    assert payload["periodo"] == {"da": primo.isoformat(), "a": ultimo.isoformat()}
-    for bound in ("da", "a"):
+    assert payload["period"] == {"date_from": first.isoformat(), "date_to": last.isoformat()}
+    for bound in ("date_from", "date_to"):
         advertised = tool.input_schema["properties"][bound]
         formats = {branch.get("format") for branch in advertised.get("anyOf", [advertised])}
         assert "date" in formats, advertised
@@ -204,16 +204,16 @@ async def test_the_tool_returns_the_same_figures_as_the_service(
     payload = _payload(result)
 
     with session_factory(mcp_engine)() as session:
-        direct = DashboardService(session).get_commercial_dashboard(PeriodoQuery(), ADMIN)
+        direct = DashboardService(session).get_commercial_dashboard(PeriodQuery(), ADMIN)
     expected = direct.model_dump(mode="json")
     assert payload["pipeline"] == expected["pipeline"]
-    assert payload["chiusure"] == expected["chiusure"]
+    assert payload["closings"] == expected["closings"]
     # Keyed on this file's own stage, so the assertion means something whatever else the
     # session-scoped database happens to be carrying: an equality between two empty lists
     # would be an equality all the same.
-    mine = next(row for row in payload["pipeline"] if row["stage_nome"] == STAGE_APERTO)
-    assert mine["numero"] == 1
-    assert mine["valore_totale"] == "1000.00"
+    mine = next(row for row in payload["pipeline"] if row["stage_name"] == STAGE_OPEN)
+    assert mine["number"] == 1
+    assert mine["total_value"] == "1000.00"
 
 
 async def test_money_crosses_the_wire_as_a_string(dashboard_server: Any) -> None:
@@ -231,9 +231,9 @@ async def test_money_crosses_the_wire_as_a_string(dashboard_server: Any) -> None
         payload = _payload(await client.call_tool("get_commercial_dashboard", {}))
     assert payload["pipeline"], "the corpus produced no stage rows, so this proved nothing"
     for row in payload["pipeline"]:
-        assert isinstance(row["valore_totale"], str), row
-        assert isinstance(row["valore_ponderato"], str), row
-    assert isinstance(payload["chiusure"]["valore_vinto"], str)
+        assert isinstance(row["total_value"], str), row
+        assert isinstance(row["weighted_value"], str), row
+    assert isinstance(payload["closings"]["won_value"], str)
 
 
 async def test_the_period_is_taken_from_the_arguments_and_echoed_back(
@@ -242,10 +242,10 @@ async def test_the_period_is_taken_from_the_arguments_and_echoed_back(
     async with Client(dashboard_server) as client:
         payload = _payload(
             await client.call_tool(
-                "get_commercial_dashboard", {"da": "2026-03-01", "a": "2026-03-31"}
+                "get_commercial_dashboard", {"date_from": "2026-03-01", "date_to": "2026-03-31"}
             )
         )
-    assert payload["periodo"] == {"da": "2026-03-01", "a": "2026-03-31"}
+    assert payload["period"] == {"date_from": "2026-03-01", "date_to": "2026-03-31"}
 
 
 async def test_two_calls_in_a_row_both_succeed(dashboard_server: Any) -> None:
@@ -257,31 +257,31 @@ async def test_two_calls_in_a_row_both_succeed(dashboard_server: Any) -> None:
         first = _payload(await client.call_tool("get_commercial_dashboard", {}))
         second = _payload(await client.call_tool("get_commercial_dashboard", {}))
     assert first["pipeline"] == second["pipeline"]
-    assert first["calcolato_alle"] != second["calcolato_alle"]
+    assert first["calculated_at"] != second["calculated_at"]
 
 
 @pytest.mark.parametrize(
-    ("arguments", "perche"),
+    ("arguments", "why"),
     [
-        ({"da": "2026-03-31", "a": "2026-03-01"}, "il periodo è invertito"),
-        ({"da": "2026-03-01"}, "metà periodo non è un periodo"),
-        ({"da": "non-una-data", "a": "2026-03-31"}, "la data non è ISO"),
+        ({"date_from": "2026-03-31", "date_to": "2026-03-01"}, "il periodo è invertito"),
+        ({"date_from": "2026-03-01"}, "metà periodo non è un periodo"),
+        ({"date_from": "non-una-data", "date_to": "2026-03-31"}, "la data non è ISO"),
     ],
 )
 async def test_a_bad_period_is_an_error_the_agent_can_read(
-    dashboard_server: Any, arguments: dict[str, str], perche: str
+    dashboard_server: Any, arguments: dict[str, str], why: str
 ) -> None:
     """Guidance, not a stack trace, and from two different sources.
 
-    The first two are `ValidationFailed` out of `PeriodoQuery.resolve`. The third never
+    The first two are `ValidationFailed` out of `PeriodQuery.resolve`. The third never
     reaches the service at all: `da` is typed `IsoDateStr`, whose runtime type is `str`, so
-    the malformed value is rejected by `PeriodoQuery.model_validate` *inside* the guarded
+    the malformed value is rejected by `PeriodQuery.model_validate` *inside* the guarded
     call as a `pydantic.ValidationError` -- a `ValueError` subclass, which is why `_guard`
     renders it the same way instead of letting the SDK answer in wording that is not ours.
     """
     async with Client(dashboard_server) as client:
         result = await client.call_tool("get_commercial_dashboard", arguments)
-    assert result.is_error, perche
+    assert result.is_error, why
 
 
 async def test_the_session_survives_a_rejected_period(dashboard_server: Any) -> None:
@@ -290,7 +290,7 @@ async def test_the_session_survives_a_rejected_period(dashboard_server: Any) -> 
     session, which is exactly the kind of state that outlives a naive error path."""
     async with Client(dashboard_server) as client:
         rejected = await client.call_tool(
-            "get_commercial_dashboard", {"da": "2026-03-31", "a": "2026-03-01"}
+            "get_commercial_dashboard", {"date_from": "2026-03-31", "date_to": "2026-03-01"}
         )
         assert rejected.is_error
         after = await client.call_tool("get_commercial_dashboard", {})
@@ -301,15 +301,15 @@ async def test_the_session_survives_a_rejected_period(dashboard_server: Any) -> 
 async def test_describe_automations_names_every_rule(dashboard_server: Any) -> None:
     async with Client(dashboard_server) as client:
         payload = _payload(await client.call_tool("describe_automations", {}))
-    assert [rule["codice"] for rule in payload["regole"]] == [
+    assert [rule["code"] for rule in payload["rules"]] == [
         "A1",
         "A2",
-        "offerta_inviata_richiama",
-        "deal_fermo",
-        "fattura_scaduta",
+        "sent_offer_follow_up",
+        "stalled_deal",
+        "overdue_invoice",
     ]
-    assert all(rule["descrizione"] for rule in payload["regole"])
-    assert set(payload) == {"configurazione", "regole", "esecuzioni"}
+    assert all(rule["description"] for rule in payload["rules"])
+    assert set(payload) == {"configuration", "rules", "runs"}
 
 
 # -- the plumbing this file depends on, asserted rather than assumed --------------
@@ -334,10 +334,10 @@ async def test_the_shared_session_fixture_is_refused_loudly(
 # -- the sidebar's azienda (REB-631, spec 2026-10-03 §7) ---------------------------------
 
 
-async def test_every_dashboard_tool_offers_the_azienda_and_echoes_it(
+async def test_every_dashboard_tool_offers_the_legal_entity_and_echoes_it(
     dashboard_server: Any,
 ) -> None:
-    """The four tools take `azienda_id` as a filter, say so in their descriptions, and
+    """The four tools take `legal_entity_id` as a filter, say so in their descriptions, and
     echo it back; under an azienda nobody owns the corpus's own figures read empty and
     the page keeps its shape, the same wire check `test_dashboard_api.py` makes."""
     nobody = str(uuid4())
@@ -349,19 +349,21 @@ async def test_every_dashboard_tool_offers_the_azienda_and_echoes_it(
             "get_operational_dashboard",
             "get_receivables_dashboard",
         ):
-            assert "azienda_id" in tools[name].input_schema["properties"], name
-            assert "azienda_id" in (tools[name].description or ""), name
-            tutte = _payload(await client.call_tool(name, {}))
-            assert tutte["azienda_id"] is None, name
-            scoped = _payload(await client.call_tool(name, {"azienda_id": nobody}))
-            assert scoped["azienda_id"] == nobody, name
-        commerciale = _payload(
-            await client.call_tool("get_commercial_dashboard", {"azienda_id": nobody})
+            assert "legal_entity_id" in tools[name].input_schema["properties"], name
+            assert "legal_entity_id" in (tools[name].description or ""), name
+            all_entities = _payload(await client.call_tool(name, {}))
+            assert all_entities["legal_entity_id"] is None, name
+            scoped = _payload(await client.call_tool(name, {"legal_entity_id": nobody}))
+            assert scoped["legal_entity_id"] == nobody, name
+        commercial = _payload(
+            await client.call_tool("get_commercial_dashboard", {"legal_entity_id": nobody})
         )
-        assert all(row["numero"] == 0 for row in commerciale["pipeline"])
-        malformed = await client.call_tool("get_commercial_dashboard", {"azienda_id": "non-id"})
+        assert all(row["number"] == 0 for row in commercial["pipeline"])
+        malformed = await client.call_tool(
+            "get_commercial_dashboard", {"legal_entity_id": "non-id"}
+        )
     assert malformed.is_error
-    assert "azienda_id" in malformed.content[0].text
+    assert "legal_entity_id" in malformed.content[0].text
 
 
 # -- REB-811: the feed an agent reads carries no account events -------------------
@@ -389,20 +391,20 @@ async def test_the_operational_feed_hides_account_events_from_an_agent_token(
     try:
         async with Client(dashboard_server) as client:
             feed = _payload(await client.call_tool("get_operational_dashboard", {}))
-        raw = json.dumps(feed["attivita_recenti"])
+        raw = json.dumps(feed["recent_activity"])
         assert marker not in raw
         assert f"{_PREFIX}-tok" not in raw
-        assert {row["entity_type"] for row in feed["attivita_recenti"]}.isdisjoint(
+        assert {row["entity_type"] for row in feed["recent_activity"]}.isdisjoint(
             {"invitation", "user", "digest"}
         )
         # The business row is still there: the filter narrows the feed, it does not empty it.
-        assert f"{_PREFIX}.updated" in [row["kind"] for row in feed["attivita_recenti"]]
+        assert f"{_PREFIX}.updated" in [row["kind"] for row in feed["recent_activity"]]
 
         # A person administering the space keeps the whole feed.
         person = Actor(id=None, type="user", role="admin")
         with factory() as session:
             full = DashboardService(session).get_operational_dashboard(person)
-        assert "invitation" in {row.entity_type for row in full.attivita_recenti}
+        assert "invitation" in {row.entity_type for row in full.recent_activity}
     finally:
         with factory() as session:
             session.execute(delete(Activity).where(Activity.id.in_(ids)))

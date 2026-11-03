@@ -9,7 +9,7 @@ import { reloadOncePerMinute } from './lib/chunkReload'
 import { api } from './lib/api'
 import { AuthProvider } from './lib/auth'
 import { LegalEntityProvider } from './lib/legalEntity'
-import { stripEntraToken } from '@rebase/analytics/entra-token'
+import { stripVerifyToken } from '@rebase/analytics/verify-token'
 import { queryClient } from './lib/query'
 import { tenantPrefix } from './lib/tenant'
 import { startPwa } from './pwa/register'
@@ -43,7 +43,7 @@ declare module '@tanstack/react-router' {
 // pageview with the URL as its first act, so a magic-link token sitting in `?t=`
 // would already be in that event by the time the entra route ever mounts to strip it
 // itself (REB-229). A no-op on every other route.
-stripEntraToken(/\/app\/(verify|invite)$/)
+stripVerifyToken(/\/app\/(verify|invite)$/)
 
 // Once, before anything renders: `initAnalytics` decides on the hostname whether this
 // page is measured at all (nothing on localhost), and every wrapper after it is a

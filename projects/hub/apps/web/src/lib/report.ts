@@ -8,16 +8,16 @@
 import type { MatchReport, ReportDay, ReportInvoice, ReportMonth, ReportWeek } from './api'
 import { formatDecimal } from './format'
 
-/** «Tutto l'incarico» in the URL, `?mese=tutto`; a month is `?mese=2026-10`. */
-export const TUTTO = 'tutto'
+/** «Tutto l'incarico» in the URL, `?month=all`; a month is `?month=2026-10`. */
+export const ALL = 'all'
 const MONTH = /^\d{4}-(0[1-9]|1[0-2])$/
 const DAY_MS = 86_400_000
 
-/** The period `validateSearch` keeps: a month as `YYYY-MM` or `tutto`, anything else
+/** The period `validateSearch` keeps: a month as `YYYY-MM` or `all`, anything else
  *  dropped for the page's default, the current month. */
 export function periodParam(value: unknown): string | undefined {
   if (typeof value !== 'string') return undefined
-  return value === TUTTO || MONTH.test(value) ? value : undefined
+  return value === ALL || MONTH.test(value) ? value : undefined
 }
 
 /** Today as `YYYY-MM-DD` in Rome, the day the hub (`rome_today`) and the CRM both ask
@@ -61,16 +61,16 @@ export function periodMonths(
   selected?: string,
 ): string[] {
   const current = today.slice(0, 7)
-  const from = start ?? days[0]?.data ?? today
+  const from = start ?? days[0]?.date ?? today
   const months = new Set(monthsBetween(from.slice(0, 7) < current ? from : today, today))
-  for (const day of days) months.add(day.data.slice(0, 7))
-  if (selected !== undefined && selected !== TUTTO) months.add(selected)
+  for (const day of days) months.add(day.date.slice(0, 7))
+  if (selected !== undefined && selected !== ALL) months.add(selected)
   return [...months].sort().reverse()
 }
 
 /** The days of the period, in the report's own order. */
 export function sliceDays(days: readonly ReportDay[], period: string): ReportDay[] {
-  return period === TUTTO ? [...days] : days.filter((day) => day.data.startsWith(`${period}-`))
+  return period === ALL ? [...days] : days.filter((day) => day.date.startsWith(`${period}-`))
 }
 
 function hundredths(value: string): number {
@@ -96,50 +96,50 @@ function isoDate(time: number): string {
 /** A day's ISO week, as the hub's report names it: Monday to Sunday, numbered in the
  *  year its Thursday falls in, so 31 December 2026 and 1 January 2027 are both
  *  «2026-W53». */
-export function isoWeek(value: string): Omit<ReportWeek, 'ore'> {
+export function isoWeek(value: string): Omit<ReportWeek, 'hours'> {
   const day = Date.parse(`${value}T00:00:00Z`)
   const monday = day - ((new Date(day).getUTCDay() + 6) % 7) * DAY_MS
   const thursday = monday + 3 * DAY_MS
   const year = new Date(thursday).getUTCFullYear()
   const week = Math.floor((thursday - Date.UTC(year, 0, 1)) / DAY_MS / 7) + 1
   return {
-    settimana: `${year}-W${String(week).padStart(2, '0')}`,
-    da: isoDate(monday),
-    a: isoDate(monday + 6 * DAY_MS),
+    week: `${year}-W${String(week).padStart(2, '0')}`,
+    from_date: isoDate(monday),
+    to_date: isoDate(monday + 6 * DAY_MS),
   }
 }
 
 /** The hours of the given days by ISO week, oldest first: a week the period cuts keeps
  *  its full Monday-to-Sunday span and only the period's hours. */
 export function perWeek(days: readonly ReportDay[]): ReportWeek[] {
-  const weeks = new Map<string, { week: Omit<ReportWeek, 'ore'>; hours: string[] }>()
+  const weeks = new Map<string, { week: Omit<ReportWeek, 'hours'>; hours: string[] }>()
   for (const day of days) {
-    const week = isoWeek(day.data)
-    const seen = weeks.get(week.settimana) ?? { week, hours: [] }
-    seen.hours.push(day.ore)
-    weeks.set(week.settimana, seen)
+    const week = isoWeek(day.date)
+    const seen = weeks.get(week.week) ?? { week, hours: [] }
+    seen.hours.push(day.hours)
+    weeks.set(week.week, seen)
   }
   return [...weeks.values()]
-    .sort((x, y) => (x.week.settimana < y.week.settimana ? -1 : 1))
-    .map(({ week, hours }) => ({ ...week, ore: sumHours(hours) }))
+    .sort((x, y) => (x.week.week < y.week.week ? -1 : 1))
+    .map(({ week, hours }) => ({ ...week, hours: sumHours(hours) }))
 }
 
 /** The hours of the given days by month, oldest first. */
 export function perMonth(days: readonly ReportDay[]): ReportMonth[] {
   const months = new Map<string, string[]>()
   for (const day of days) {
-    const mese = day.data.slice(0, 7)
-    months.set(mese, [...(months.get(mese) ?? []), day.ore])
+    const month = day.date.slice(0, 7)
+    months.set(month, [...(months.get(month) ?? []), day.hours])
   }
   return [...months.entries()]
     .sort(([x], [y]) => (x < y ? -1 : 1))
-    .map(([mese, hours]) => ({ mese, ore: sumHours(hours) }))
+    .map(([month, hours]) => ({ month, hours: sumHours(hours) }))
 }
 
-/** An invoice as a day's `fatture` names it (the hub's `_invoice_label`): the number
+/** An invoice as a day's `invoices` names it (the hub's `_invoice_label`): the number
  *  alone for a `fattura`, its type first for anything else, «proforma 4/2026». */
-export function invoiceLabel(invoice: Pick<ReportInvoice, 'numero' | 'tipo'>): string {
-  return invoice.tipo === 'fattura' ? invoice.numero : `${invoice.tipo} ${invoice.numero}`
+export function invoiceLabel(invoice: Pick<ReportInvoice, 'number' | 'kind'>): string {
+  return invoice.kind === 'invoice' ? invoice.number : `${invoice.kind} ${invoice.number}`
 }
 
 /** The invoices of the period, in the report's order (newest first), each with the
@@ -147,27 +147,27 @@ export function invoiceLabel(invoice: Pick<ReportInvoice, 'numero' | 'tipo'>): s
  *  CRM's own figure. A month shows only the invoices its days sit on: an invoice whose
  *  days all fall in the month keeps the CRM's figure too, and one that spans months
  *  (12/2026 over September and October) shows each month the hours that month's days
- *  hold on it, each day's own share from `ore_per_fattura`. A day whose entries sit
+ *  hold on it, each day's own share from `hours_by_invoice`. A day whose entries sit
  *  partly on an invoice and partly on another or on none used to give its whole total
  *  to each invoice there, since the report carried only the day's total; with each
  *  invoice's share of the day in the report (REB-505) that limit is gone: 8 hours with 3
  *  on 14/2026 give 14/2026 its 3. */
 export function periodInvoices(
-  report: Pick<MatchReport, 'per_giorno' | 'fatture'>,
+  report: Pick<MatchReport, 'by_day' | 'invoices'>,
   period: string,
 ): ReportInvoice[] {
-  if (period === TUTTO) return [...report.fatture]
-  const shown = sliceDays(report.per_giorno, period)
-  return report.fatture.flatMap((invoice) => {
+  if (period === ALL) return [...report.invoices]
+  const shown = sliceDays(report.by_day, period)
+  return report.invoices.flatMap((invoice) => {
     const label = invoiceLabel(invoice)
-    const sitsOn = (day: ReportDay) => day.fatture.includes(label)
+    const sitsOn = (day: ReportDay) => day.invoices.includes(label)
     const here = shown.filter(sitsOn)
     if (here.length === 0) return []
-    if (here.length === report.per_giorno.filter(sitsOn).length) return [invoice]
+    if (here.length === report.by_day.filter(sitsOn).length) return [invoice]
     const shares = here.flatMap((day) =>
-      day.ore_per_fattura.filter((share) => invoiceLabel(share) === label).map((share) => share.ore),
+      day.hours_by_invoice.filter((share) => invoiceLabel(share) === label).map((share) => share.hours),
     )
-    return [{ ...invoice, ore: sumHours(shares) }]
+    return [{ ...invoice, hours: sumHours(shares) }]
   })
 }
 
@@ -178,10 +178,10 @@ function counted(value: string, one: string, many: string): string {
 /** «96 ore, 12 giorni su 40 previsti (30%)», the engagement against the letter's
  *  estimate; «96 ore, 12 giorni» for a match without one. */
 export function progressLine(
-  report: Pick<MatchReport, 'totale_ore' | 'giorni_equivalenti' | 'giorni_previsti' | 'avanzamento'>,
+  report: Pick<MatchReport, 'hours_total' | 'equivalent_days' | 'expected_days' | 'progress'>,
 ): string {
-  const done = `${counted(report.totale_ore, 'ora', 'ore')}, ${counted(report.giorni_equivalenti, 'giorno', 'giorni')}`
-  if (!report.giorni_previsti || report.avanzamento === null) return done
-  const previsti = report.giorni_previsti === 1 ? 'previsto' : 'previsti'
-  return `${done} su ${report.giorni_previsti} ${previsti} (${formatDecimal(report.avanzamento)}%)`
+  const done = `${counted(report.hours_total, 'ora', 'ore')}, ${counted(report.equivalent_days, 'giorno', 'giorni')}`
+  if (!report.expected_days || report.progress === null) return done
+  const expected = report.expected_days === 1 ? 'previsto' : 'previsti'
+  return `${done} su ${report.expected_days} ${expected} (${formatDecimal(report.progress)}%)`
 }

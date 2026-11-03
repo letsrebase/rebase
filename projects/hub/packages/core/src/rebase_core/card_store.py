@@ -12,13 +12,13 @@ from uuid import UUID
 from sqlalchemy import func, null, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
-from rebase_core.card_persona import PERSONA_CV, persona_json, stored_gendered
+from rebase_core.card_person import PERSON_CV, person_json, stored_gendered
 from rebase_core.card_prompt import PROMPT_VERSION
 from rebase_core.card_regen import RegenerationTrail
 from rebase_core.card_types import FAILURES, Composed, Failure, Outcome
 from rebase_core.errors import LlmCapReached, LlmNotConfigured, LlmUnavailable
 from rebase_core.models import Freelancer, FreelancerCard
-from rebase_core.team_schemas import CardPersonaRead
+from rebase_core.team_schemas import CardPersonRead
 
 logger = logging.getLogger(__name__)
 
@@ -34,11 +34,11 @@ _RETIRED: dict[str, Any] = {
     "generated_at": None,
     "prompt_version": None,
     "provider": None,
-    "fonti": null(),
+    "sources": null(),
     "source_hashes": null(),
     "conflicts": null(),
     "thinking_tokens": None,
-    "persona": null(),
+    "person": null(),
 }
 
 
@@ -58,7 +58,7 @@ class CardStore(RegenerationTrail):
         if composed.card is None:
             if composed.failure is None:
                 raise ValueError("a Composed with no card says why")
-            return self._fail(freelancer_id, digest, composed.failure, composed.persona)
+            return self._fail(freelancer_id, digest, composed.failure, composed.person)
         saved = self._save(
             freelancer_id,
             digest,
@@ -77,14 +77,12 @@ class CardStore(RegenerationTrail):
                 # were when the prompt was built, so a change after it marks the card.
                 "prompt_version": PROMPT_VERSION,
                 "provider": composed.provider or None,
-                "fonti": composed.fonti,
+                "sources": composed.sources,
                 "source_hashes": composed.input_hashes,
                 "conflicts": [conflict._asdict() for conflict in composed.conflicts],
                 "thinking_tokens": composed.thinking_tokens,
-                "persona": (
-                    persona_json(composed.persona, digest)
-                    if composed.persona is not None
-                    else null()
+                "person": (
+                    person_json(composed.person, digest) if composed.person is not None else null()
                 ),
             },
         )
@@ -122,7 +120,7 @@ class CardStore(RegenerationTrail):
         freelancer_id: UUID,
         digest: str,
         kind: Failure,
-        persona: CardPersonaRead | None = None,
+        person: CardPersonRead | None = None,
     ) -> Outcome:
         """The sentence beside the card, and the failed CV's hash unless the failure was
         the provider's: an outage keeps nothing that would stop the next attempt. Every
@@ -140,8 +138,8 @@ class CardStore(RegenerationTrail):
             "error": FAILURES[kind],
             "error_cv_sha256": None if outage else digest,
         }
-        if persona is not None:
-            values["persona"] = persona_json(persona, digest)
+        if person is not None:
+            values["person"] = person_json(person, digest)
         if not self._save(
             freelancer_id,
             digest,
@@ -180,7 +178,7 @@ class CardStore(RegenerationTrail):
             logger.info("card for freelancer %s not written: the CV changed", freelancer_id)
             return False
         stored = self.session.execute(
-            select(FreelancerCard.cv_sha256, FreelancerCard.card, FreelancerCard.persona).where(
+            select(FreelancerCard.cv_sha256, FreelancerCard.card, FreelancerCard.person).where(
                 FreelancerCard.freelancer_id == freelancer_id
             )
         ).one_or_none()
@@ -189,11 +187,11 @@ class CardStore(RegenerationTrail):
             other = retire_other and written_from is not None and written_from != digest
             if other or (retire_gendered and stored_gendered(written)):
                 values = {**_RETIRED, **values}
-            # The named card belongs to the CV it was read from (`PERSONA_CV` in the stored
+            # The named card belongs to the CV it was read from (`PERSON_CV` in the stored
             # value): a write for another CV that read none of its own never leaves the old
             # one in place, whatever the card's own state.
-            if "persona" not in values and named is not None and named.get(PERSONA_CV) != digest:
-                values = {**values, "persona": null()}
+            if "person" not in values and named is not None and named.get(PERSON_CV) != digest:
+                values = {**values, "person": null()}
         insert = pg_insert(FreelancerCard).values(freelancer_id=freelancer_id, **values)
         self.session.execute(
             insert.on_conflict_do_update(

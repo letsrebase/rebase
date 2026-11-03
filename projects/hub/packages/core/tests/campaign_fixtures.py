@@ -35,17 +35,17 @@ def person(
     session: Session,
     email: str,
     *,
-    nome: str = "Ada",
+    first_name: str = "Ada",
     cv: bool = True,
-    tariffa: bool = True,
-    posizione: bool = True,
-    remoto: bool = True,
+    rate: bool = True,
+    job_title: bool = True,
+    remote: bool = True,
     deleted: bool = False,
     role: str = "member",
     logins: int = 0,
-    stato: str = "nuovo",
+    status: str = "new",
 ) -> Freelancer:
-    user = User(email=email, nome=nome, cognome="Lovelace", role=role)
+    user = User(email=email, first_name=first_name, last_name="Lovelace", role=role)
     session.add(user)
     session.flush()
     card = Freelancer(
@@ -54,11 +54,11 @@ def person(
         cv_filename="cv.pdf" if cv else None,
         cv_mime="application/pdf" if cv else None,
         cv_size=4 if cv else None,
-        tariffa_giornaliera=Decimal("450") if tariffa else None,
-        posizione="Backend developer" if posizione else None,
-        remoto="remoto" if remoto else None,
+        daily_rate=Decimal("450") if rate else None,
+        job_title="Backend developer" if job_title else None,
+        remote="remote" if remote else None,
         links=[],
-        stato=stato,
+        status=status,
     )
     if deleted:
         card.deleted_at = datetime.now(UTC)
@@ -70,32 +70,30 @@ def person(
     return card
 
 
-def lead(session: Session, email: str, nome: str | None = "giulia") -> Signup:
-    row = Signup(email=email, nome=nome, cognome="Branda")
+def lead(session: Session, email: str, first_name: str | None = "giulia") -> Signup:
+    row = Signup(email=email, first_name=first_name, last_name="Branda")
     session.add(row)
     session.commit()
     return row
 
 
-def company(
-    session: Session, email: str, *, stato: str = "nuovo", deleted: bool = False
-) -> Company:
+def company(session: Session, email: str, *, status: str = "new", deleted: bool = False) -> Company:
     user = session.query(User).filter(User.email == email).one_or_none()
     if user is None:
-        user = User(email=email, nome="Ciro", cognome="Aurelio")
+        user = User(email=email, first_name="Ciro", last_name="Aurelio")
         session.add(user)
         session.flush()
     row = Company(
         user_id=user.id,
-        nome_azienda="Block Buy SRL",
-        figura_richiesta="Developer",
-        progetto="ASP.NET Core e React",
-        periodo_da=date(2026, 10, 1),
-        durata="12 mesi",
-        budget_giornaliero=Decimal("320"),
-        remoto="remoto",
-        numero_risorse=1,
-        stato=stato,
+        company_name="Block Buy SRL",
+        requested_role="Developer",
+        project="ASP.NET Core e React",
+        period_from=date(2026, 10, 1),
+        duration="12 mesi",
+        daily_budget=Decimal("320"),
+        remote="remote",
+        headcount=1,
+        status=status,
     )
     if deleted:
         row.deleted_at = datetime.now(UTC)
@@ -110,7 +108,7 @@ def emails(candidates: list[Candidate]) -> list[str]:
 
 def admin(session: Session) -> User:
     """The admin every campaign test acts as: one row, whoever asks first makes it."""
-    user = session.get(User, an_admin(session, cognome="Sala"))
+    user = session.get(User, an_admin(session, last_name="Sala"))
     assert user is not None
     return user
 
@@ -119,16 +117,16 @@ def campaign_row(session: Session, **fields: object) -> Campaign:
     """A campaign row written straight to the table, for the tests below the service."""
     values: dict[str, object] = {
         "created_by": admin(session).id,
-        "nome": "Prova",
+        "name": "Prova",
         "slug": f"c-prova-{session.query(Campaign).count()}",
-        "fonte": "stato",
-        "stato_percorso": "manca_cv",
-        "oggetto": "o",
-        "testo": "Ciao {nome},",
-        "bottone_testo": "Vai",
-        "bottone_meta": "area",
-        "azione": "cv",
-        "contenuto_at": T0,
+        "source": "status",
+        "journey_status": "missing_cv",
+        "subject": "o",
+        "text": "Ciao {nome},",
+        "button_text": "Vai",
+        "button_meta": "area",
+        "action": "cv",
+        "content_at": T0,
     }
     values.update(fields)
     campaign = Campaign(**values)
@@ -157,14 +155,14 @@ def as_admin(user: User) -> AdminRead:
 
 def draft(**fields: object) -> CampaignDraft:
     values: dict[str, object] = {
-        "nome": "Manca il CV",
-        "fonte": "stato",
-        "stato_percorso": "manca_cv",
-        "oggetto": "Manca solo il CV",
-        "testo": "Ciao {nome},\n\ntesto.",
-        "bottone_testo": "Carica il CV",
-        "bottone_meta": "area",
-        "azione": "cv",
+        "name": "Manca il CV",
+        "source": "status",
+        "journey_status": "missing_cv",
+        "subject": "Manca solo il CV",
+        "text": "Ciao {nome},\n\ntesto.",
+        "button_text": "Carica il CV",
+        "button_meta": "area",
+        "action": "cv",
     }
     values.update(fields)
     return CampaignDraft(**values)  # type: ignore[arg-type]

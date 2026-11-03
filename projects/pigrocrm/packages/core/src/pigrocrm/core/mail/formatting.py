@@ -5,8 +5,8 @@ from decimal import Decimal
 
 from pigrocrm.core.money import round_money
 
-GIORNI_BREVI = ("lun", "mar", "mer", "gio", "ven", "sab", "dom")
-MESI_BREVI = (
+DAYS_SHORT = ("lun", "mar", "mer", "gio", "ven", "sab", "dom")
+MONTHS_SHORT = (
     "gen",
     "feb",
     "mar",
@@ -22,11 +22,11 @@ MESI_BREVI = (
 )
 
 
-def giorno_breve(day: date) -> str:
+def day_short(day: date) -> str:
     """`lun 8 set`. Hard-coded Italian abbreviations, never `strftime`'s `%a`/`%b` or the
     `locale` module: core runs wherever the process happens to run, and a date printed in
     the host's locale is a date that reads wrong the day somebody moves the container."""
-    return f"{GIORNI_BREVI[day.isoweekday() - 1]} {day.day} {MESI_BREVI[day.month - 1]}"
+    return f"{DAYS_SHORT[day.isoweekday() - 1]} {day.day} {MONTHS_SHORT[day.month - 1]}"
 
 
 def euro(value: Decimal) -> str:

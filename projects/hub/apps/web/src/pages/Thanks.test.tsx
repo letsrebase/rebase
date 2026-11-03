@@ -10,19 +10,19 @@ import { render, screen } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 import { Thanks } from './Thanks'
 
-function mount(chi: string) {
+function mount(who: string) {
   const root = createRootRoute({ component: () => <Outlet /> })
   const thanks = createRoute({
     getParentRoute: () => root,
     path: '/thanks',
-    validateSearch: (search: Record<string, unknown>): { chi: 'freelance' | 'azienda' } => ({
-      chi: search.chi === 'azienda' ? 'azienda' : 'freelance',
+    validateSearch: (search: Record<string, unknown>): { who: 'freelance' | 'company' } => ({
+      who: search.who === 'company' ? 'company' : 'freelance',
     }),
     component: Thanks,
   })
   const router = createRouter({
     routeTree: root.addChildren([thanks]),
-    history: createMemoryHistory({ initialEntries: [`/thanks?chi=${chi}`] }),
+    history: createMemoryHistory({ initialEntries: [`/thanks?who=${who}`] }),
   })
   render(<RouterProvider router={router} />)
 }
@@ -37,7 +37,7 @@ describe('the thank-you page', () => {
   })
 
   it('tells a company the area exists too (REB-380)', async () => {
-    mount('azienda')
+    mount('company')
     await screen.findByRole('heading', { name: 'Grazie, ci siamo.' })
     expect(await screen.findByRole('link', { name: /Entra nella tua area/ })).toHaveAttribute(
       'href',

@@ -35,7 +35,7 @@ from pigrocrm.core.work_units.models import WorkUnit
 from pigrocrm.core.work_units.schemas import ApprovalRecord
 from pigrocrm.core.work_units.service import ApprovalService, WorkUnitService
 
-WRITER = Actor(id=uuid4(), type="user", role="collaboratore")
+WRITER = Actor(id=uuid4(), type="user", role="collaborator")
 ADMIN = Actor(id=None, type="system", role="admin")
 READER = Actor(id=None, type="user", role="readonly")
 EMAIL = b"From: giulia@cliente.example\nSubject: Ok\n\nConfermo le giornate di marzo.\n"
@@ -43,25 +43,25 @@ EMAIL = b"From: giulia@cliente.example\nSubject: Ok\n\nConfermo le giornate di m
 
 def _contract(session: Session) -> Contract:
     customer = Customer(
-        ragione_sociale=f"Acme S.r.l. {uuid4().hex[:6]}",
-        partita_iva="01234567890",
-        codice_sdi="ABCDEFG",
-        indirizzo="Corso Italia 5",
+        legal_name=f"Acme S.r.l. {uuid4().hex[:6]}",
+        vat_number="01234567890",
+        sdi_code="ABCDEFG",
+        address="Corso Italia 5",
         cap="00100",
-        comune="Roma",
-        provincia="RM",
-        nazione="IT",
+        city="Roma",
+        province="RM",
+        country="IT",
     )
     session.add(customer)
     session.flush()
     contract = Contract(
         customer_id=customer.id,
-        titolo="Consulenza Acme",
-        inizio=date(2026, 1, 1),
-        tipo_rinnovo="nessuno",
-        preavviso_disdetta_giorni=30,
-        cadenza_fatturazione="mensile",
-        politica_spese={"kind": "non_rimborsabile"},
+        title="Consulenza Acme",
+        start=date(2026, 1, 1),
+        renewal_type="none",
+        termination_notice_days=30,
+        billing_cadence="monthly",
+        expense_policy={"kind": "not_reimbursable"},
         requires_prior_approval=False,
     )
     session.add(contract)
@@ -69,24 +69,24 @@ def _contract(session: Session) -> Contract:
     session.add(
         RateCard(
             contract_id=contract.id,
-            valido_da=date(2026, 1, 1),
-            valido_a=None,
-            tipo="giornaliero",
-            importo=Decimal("500.00"),
-            unita="giorno",
+            valid_from=date(2026, 1, 1),
+            valid_to=None,
+            type="daily",
+            amount=Decimal("500.00"),
+            unit="day",
         )
     )
     session.flush()
     return contract
 
 
-def _day(session: Session, contract: Contract, giorno: date, stato: str = "lavorato") -> WorkUnit:
+def _day(session: Session, contract: Contract, day: date, status: str = "worked") -> WorkUnit:
     unit = WorkUnit(
         contract_id=contract.id,
-        data=giorno,
-        quantita=Decimal("1.00"),
-        descrizione="Giornata di consulenza",
-        stato=stato,
+        date=day,
+        quantity=Decimal("1.00"),
+        description="Giornata di consulenza",
+        status=status,
     )
     session.add(unit)
     session.flush()
@@ -99,9 +99,9 @@ def _filed_document(
 ) -> Document:
     document = Document(
         contract_id=contract.id,
-        tipo="documento",
-        titolo="Mail di conferma di Giulia",
-        versione_corrente=1,
+        type="document",
+        title="Mail di conferma di Giulia",
+        current_version=1,
     )
     session.add(document)
     session.flush()
@@ -110,10 +110,10 @@ def _filed_document(
     session.add(
         DocumentVersion(
             document_id=document.id,
-            numero=1,
+            number=1,
             storage_key=key,
             content_type="text/plain",
-            dimensione=len(content),
+            size=len(content),
             hash_sha256="0" * 64,
         )
     )
@@ -128,10 +128,10 @@ def _approve(
     ApprovalService(session, storage).record(
         ApprovalRecord(
             contract_id=contract.id,
-            canale="email",
-            mittente="giulia@cliente.example",
-            ricevuto_il=datetime(2026, 3, 1, 9, 0, tzinfo=UTC),
-            estratto="Confermo le giornate di marzo.",
+            channel="email",
+            sender="giulia@cliente.example",
+            received_at=datetime(2026, 3, 1, 9, 0, tzinfo=UTC),
+            excerpt="Confermo le giornate di marzo.",
             document_id=document.id,
             work_unit_ids=[unit.id for unit in units],
         ),
@@ -148,7 +148,7 @@ def test_the_bundle_holds_the_summary_and_the_original_email_byte_for_byte(
     db_session: Session, local_storage: LocalFileStorage
 ) -> None:
     contract = _contract(db_session)
-    proposed = _day(db_session, contract, date(2026, 3, 2), "proposto")
+    proposed = _day(db_session, contract, date(2026, 3, 2), "proposed")
     _approve(db_session, local_storage, contract, [proposed])
 
     filename, content = build_dispute_bundle(db_session, local_storage, proposed.id, READER)
@@ -176,10 +176,10 @@ def test_the_summary_carries_the_log_the_months_register_and_marks_the_day(
     contested = _day(db_session, contract, date(2026, 3, 2))
     _day(db_session, contract, date(2026, 3, 3))
     _day(db_session, contract, date(2026, 4, 1))  # another month
-    gone = _day(db_session, contract, date(2026, 3, 4), "proposto")
-    gone.stato = "revocato"
+    gone = _day(db_session, contract, date(2026, 3, 4), "proposed")
+    gone.status = "revoked"
     db_session.flush()
-    contested.stato = "contestato"
+    contested.status = "disputed"
     db_session.flush()
 
     _, content = build_dispute_bundle(db_session, local_storage, contested.id, READER)
@@ -188,8 +188,8 @@ def test_the_summary_carries_the_log_the_months_register_and_marks_the_day(
     assert "Registro del contratto, da 2026-03-01 a 2026-03-31" in summary
     assert "2026-03-02  1.00  contestato  (senza approvazione) <- questa giornata" in summary
     assert "2026-03-03  1.00  lavorato" in summary
-    proposed = _day(db_session, contract, date(2026, 3, 9), "proposto")
-    assert proposed.stato == "proposto"
+    proposed = _day(db_session, contract, date(2026, 3, 9), "proposed")
+    assert proposed.status == "proposed"
     _, content = build_dispute_bundle(db_session, local_storage, contested.id, READER)
     summary = _open(content).read("summary.txt").decode()
     # Listed, but a proposal is not in the total.
@@ -219,10 +219,10 @@ def test_an_original_the_archive_cannot_read_is_said_so_not_left_out(
     db_session: Session, local_storage: LocalFileStorage
 ) -> None:
     contract = _contract(db_session)
-    proposed = _day(db_session, contract, date(2026, 3, 2), "proposto")
+    proposed = _day(db_session, contract, date(2026, 3, 2), "proposed")
     document = _approve(db_session, local_storage, contract, [proposed])
-    db_session.query(DocumentVersion).filter_by(document_id=document.id).update({"numero": 2})
-    document.versione_corrente = 1
+    db_session.query(DocumentVersion).filter_by(document_id=document.id).update({"number": 2})
+    document.current_version = 1
     db_session.flush()
 
     _, content = build_dispute_bundle(db_session, local_storage, proposed.id, READER)
@@ -236,7 +236,7 @@ def test_a_storage_that_refuses_the_file_is_said_so_in_the_summary(
     db_session: Session, local_storage: LocalFileStorage, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     contract = _contract(db_session)
-    proposed = _day(db_session, contract, date(2026, 3, 2), "proposto")
+    proposed = _day(db_session, contract, date(2026, 3, 2), "proposed")
     _approve(db_session, local_storage, contract, [proposed])
 
     def refuse(*_: object, **__: object) -> bytes:
@@ -255,7 +255,7 @@ def test_a_file_the_disk_cannot_read_is_said_so_too(
     db_session: Session, local_storage: LocalFileStorage, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     contract = _contract(db_session)
-    proposed = _day(db_session, contract, date(2026, 3, 2), "proposto")
+    proposed = _day(db_session, contract, date(2026, 3, 2), "proposed")
     _approve(db_session, local_storage, contract, [proposed])
 
     def deny(*_: object, **__: object) -> bytes:
@@ -272,10 +272,10 @@ def test_an_original_over_the_cap_is_refused_by_name_before_it_is_read(
     db_session: Session, local_storage: LocalFileStorage, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     contract = _contract(db_session)
-    proposed = _day(db_session, contract, date(2026, 3, 2), "proposto")
+    proposed = _day(db_session, contract, date(2026, 3, 2), "proposed")
     document = _approve(db_session, local_storage, contract, [proposed])
     db_session.query(DocumentVersion).filter_by(document_id=document.id).update(
-        {"dimensione": SOURCE_MAX_BYTES + 1}
+        {"size": SOURCE_MAX_BYTES + 1}
     )
     db_session.flush()
 
@@ -293,7 +293,7 @@ def test_the_register_names_the_approval_each_day_rests_on(
     db_session: Session, local_storage: LocalFileStorage
 ) -> None:
     contract = _contract(db_session)
-    approved = _day(db_session, contract, date(2026, 3, 2), "proposto")
+    approved = _day(db_session, contract, date(2026, 3, 2), "proposed")
     _day(db_session, contract, date(2026, 3, 3))
     _approve(db_session, local_storage, contract, [approved])
 
@@ -308,10 +308,10 @@ def test_the_register_names_the_approval_each_day_rests_on(
 
 def test_the_log_names_who_acted(db_session: Session, local_storage: LocalFileStorage) -> None:
     contract = _contract(db_session)
-    proposed = _day(db_session, contract, date(2026, 3, 2), "proposto")
-    approval_actor = Actor(id=uuid4(), type="user", role="collaboratore")
+    proposed = _day(db_session, contract, date(2026, 3, 2), "proposed")
+    approval_actor = Actor(id=uuid4(), type="user", role="collaborator")
     _approve(db_session, local_storage, contract, [proposed])
-    WorkUnitService(db_session).move(proposed.id, "lavorato", approval_actor, "Lavorata")
+    WorkUnitService(db_session).move(proposed.id, "worked", approval_actor, "Lavorata")
 
     _, content = build_dispute_bundle(db_session, local_storage, proposed.id, READER)
 
@@ -327,7 +327,7 @@ def test_the_invoice_line_the_day_landed_on_is_in_the_summary(
     invoice = assemble_unbilled_work_units_into_new_invoice(
         db_session, local_storage, contract.id, ADMIN
     )
-    service.issue(invoice.id, InvoiceIssue(data_emissione=date(2026, 3, 31)), ADMIN)
+    service.issue(invoice.id, InvoiceIssue(issue_date=date(2026, 3, 31)), ADMIN)
 
     _, content = build_dispute_bundle(db_session, local_storage, unit.id, READER)
     summary = _open(content).read("summary.txt").decode()
@@ -341,7 +341,7 @@ def test_the_same_day_gives_the_same_bytes_twice(
     db_session: Session, local_storage: LocalFileStorage
 ) -> None:
     contract = _contract(db_session)
-    proposed = _day(db_session, contract, date(2026, 3, 2), "proposto")
+    proposed = _day(db_session, contract, date(2026, 3, 2), "proposed")
     _approve(db_session, local_storage, contract, [proposed])
 
     first = build_dispute_bundle(db_session, local_storage, proposed.id, READER)

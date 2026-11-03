@@ -27,9 +27,9 @@ def test_a_read_past_its_ceiling_is_a_422(
 
 
 def test_the_notes_thread_honours_its_limit(logged_in: TestClient) -> None:
-    customer = logged_in.post("/api/customers", json={"ragione_sociale": "ACME"}).json()["id"]
+    customer = logged_in.post("/api/customers", json={"legal_name": "ACME"}).json()["id"]
     for text in ("uno", "due", "tre"):
-        added = logged_in.post(f"/api/customers/{customer}/notes", json={"testo": text})
+        added = logged_in.post(f"/api/customers/{customer}/notes", json={"text": text})
         assert added.status_code == 201, added.text
 
     everything = logged_in.get(f"/api/customers/{customer}/notes").json()

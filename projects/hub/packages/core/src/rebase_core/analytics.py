@@ -1,5 +1,5 @@
-"""The events the server sends itself: the completion, `iscrizione_completata` (REB-215),
-and the team builder's (REB-511, spec § 6), `team_proposta_generata` among them.
+"""The events the server sends itself: the completion, `signup_completed` (REB-215),
+and the team builder's (REB-511, spec § 6), `team_proposal_generated` among them.
 
 The browsers already report the wizards to PostHog, step by step (`shared/analytics`,
 ORB-185). This exists because the browser's completion event is the one that gets lost:
@@ -47,12 +47,12 @@ from rebase_core.signup_schemas import SignupUtm
 if TYPE_CHECKING:
     from posthog import Posthog
 
-APPLICATION_COMPLETED = "iscrizione_completata"
-TEAM_PROPOSAL_GENERATED = "team_proposta_generata"
-TEAM_REQUEST_SENT = "team_richiesta_inviata"
-TEAM_TALENT_ANSWER = "team_talento_risposta"
+APPLICATION_COMPLETED = "signup_completed"
+TEAM_PROPOSAL_GENERATED = "team_proposal_generated"
+TEAM_REQUEST_SENT = "team_request_sent"
+TEAM_TALENT_ANSWER = "team_talent_answer"
 
-Kind = Literal["freelance", "azienda"]
+Kind = Literal["freelance", "company"]
 
 # What the SDK's `capture` looks like, so a test can hand one that records.
 Capture = Callable[..., Any]
@@ -74,8 +74,8 @@ class Tracker:
         cv: bool | None = None,
         utm: SignupUtm | None = None,
     ) -> bool:
-        """One `iscrizione_completata`; answers whether the SDK took it."""
-        properties: dict[str, Any] = {"tipo": kind, "via": "server"}
+        """One `signup_completed`; answers whether the SDK took it."""
+        properties: dict[str, Any] = {"kind": kind, "via": "server"}
         if cv is not None:
             properties["cv"] = cv
         if utm is not None:
@@ -92,7 +92,7 @@ class Tracker:
         return True
 
     def team_event(self, name: str, properties: dict[str, Any]) -> bool:
-        """One team builder event (`team_proposta_generata` and the two that follow it,
+        """One team builder event (`team_proposal_generated` and the two that follow it,
         spec § 6) on an id of its own: no browser sends a half of it, so there is no
         person to pair it with. Answers whether the SDK took it."""
         try:

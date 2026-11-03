@@ -8,7 +8,7 @@ afterEach(resetMocks)
 describe('the search box debounces before it reaches the API and the URL (REB-286)', () => {
   it('waits for a pause in typing before searching Aziende', async () => {
     const spy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-      answer(200, { totale: 0, items: [], per_stato: {} }),
+      answer(200, { total: 0, items: [], by_status: {} }),
     )
     mount('/admin/companies')
     await screen.findByRole('heading', { name: 'Aziende' })
@@ -25,18 +25,18 @@ describe('the search box debounces before it reaches the API and the URL (REB-28
 
 describe('every filter and the search box live in the URL, both ways (REB-286)', () => {
   it('reflects a filter field into the address for Aziende', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(200, { totale: 0, items: [], per_stato: {} }))
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(200, { total: 0, items: [], by_status: {} }))
     const router = mount('/admin/companies')
     await screen.findByRole('heading', { name: 'Aziende' })
 
     await userEvent.type(screen.getByLabelText('Pagina di provenienza'), 'home')
 
-    await waitFor(() => expect(router.state.location.search).toMatchObject({ origine: 'home' }))
+    await waitFor(() => expect(router.state.location.search).toMatchObject({ origin: 'home' }))
   })
 
   it('reads a filter back out of a URL a link already carries, for Aziende', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(200, { totale: 0, items: [], per_stato: {} }))
-    mount('/admin/companies?origine=pigrocrm')
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(200, { total: 0, items: [], by_status: {} }))
+    mount('/admin/companies?origin=pigrocrm')
     await screen.findByRole('heading', { name: 'Aziende' })
     expect(screen.getByLabelText('Pagina di provenienza')).toHaveValue('pigrocrm')
   })
@@ -44,8 +44,8 @@ describe('every filter and the search box live in the URL, both ways (REB-286)',
 
 describe('infinite scroll walks the cursor, a page at a time (REB-286)', () => {
   it('shows a second page of Aziende after «Mostra altri»', async () => {
-    const page1 = { totale: 2, items: [COMPANY_A], per_stato: { nuovo: 1 }, next_cursor: 'CURSOR1' }
-    const page2 = { totale: 2, items: [COMPANY_B], per_stato: { nuovo: 1, contattato: 1 }, next_cursor: null }
+    const page1 = { total: 2, items: [COMPANY_A], by_status: { new: 1 }, next_cursor: 'CURSOR1' }
+    const page2 = { total: 2, items: [COMPANY_B], by_status: { new: 1, contacted: 1 }, next_cursor: null }
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
       const url = new URL(String(input), 'http://test')
       return answer(200, url.searchParams.get('cursor') === 'CURSOR1' ? page2 : page1)
@@ -64,14 +64,14 @@ describe('infinite scroll walks the cursor, a page at a time (REB-286)', () => {
 
 describe('two empty states, in Italian (REB-286)', () => {
   it('says the Aziende table itself is empty with no filter active', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(200, { totale: 0, items: [], per_stato: {} }))
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(200, { total: 0, items: [], by_status: {} }))
     mount('/admin/companies')
     expect(await screen.findByText('Nessuna richiesta qui.')).toBeInTheDocument()
   })
 
   it('names the filters when one narrows Aziende to nothing', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(200, { totale: 0, items: [], per_stato: {} }))
-    mount('/admin/companies?origine=home')
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(200, { total: 0, items: [], by_status: {} }))
+    mount('/admin/companies?origin=home')
     expect(await screen.findByText('Nessun risultato per questi filtri.')).toBeInTheDocument()
   })
 })
@@ -79,7 +79,7 @@ describe('two empty states, in Italian (REB-286)', () => {
 describe('the Aziende list renders a request (REB-286, previously untested)', () => {
   it('lists a request with its budget and period, and the total count', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-      answer(200, { totale: 1, items: [COMPANY_A], per_stato: { nuovo: 1 } }),
+      answer(200, { total: 1, items: [COMPANY_A], by_status: { new: 1 } }),
     )
     mount('/admin/companies')
     expect(await screen.findByText('Rossi Studio')).toBeInTheDocument()
@@ -90,12 +90,12 @@ describe('the Aziende list renders a request (REB-286, previously untested)', ()
 describe('«da team builder» and the talent cloud on Aziende (REB-518)', () => {
   it('names the team builder on the row of a request that came from it, and on no other', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-      answer(200, { totale: 2, items: [COMPANY_TEAM_BUILDER, COMPANY_B], per_stato: {} }),
+      answer(200, { total: 2, items: [COMPANY_TEAM_BUILDER, COMPANY_B], by_status: {} }),
     )
     mount('/admin/companies')
     const rossi = (await screen.findByText('Rossi Studio')).closest('tr')!
     expect(within(rossi).getByText('da team builder')).toBeInTheDocument()
-    const bianchi = screen.getByText('Bianchi Srl').closest('tr')!
-    expect(within(bianchi).queryByText('da team builder')).toBeNull()
+    const secondRow = screen.getByText('Bianchi Srl').closest('tr')!
+    expect(within(secondRow).queryByText('da team builder')).toBeNull()
   })
 })

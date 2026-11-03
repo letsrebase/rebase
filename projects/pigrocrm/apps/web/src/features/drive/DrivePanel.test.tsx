@@ -9,7 +9,7 @@ import { api } from '@/lib/api'
 // REB-457: the panel is open to a collaboratore too, who manages their own Drive but not
 // the space's write folder. Every test below runs as an admin unless it says otherwise.
 // `useAuth` is mocked too (REB-562 fix rounds 2 and 4): `useDriveHealth` (`queries.ts`)
-// now reads `user.id` and `user.ruolo` itself, to key the health query by viewer, so a
+// now reads `user.id` and `user.role` itself, to key the health query by viewer, so a
 // demotion or a session switch mid-session changes `mockAuth.isAdmin`/`mockAuth.userId`
 // and the mocked `user` together, the same way the real `AuthProvider`'s `user` would
 // after its own poll notices either change.
@@ -18,7 +18,7 @@ vi.mock('@/lib/auth', () => ({
   useIsAdmin: () => mockAuth.isAdmin,
   useCanWrite: () => true,
   useAuth: () => ({
-    user: { id: mockAuth.userId, ruolo: mockAuth.isAdmin ? 'admin' : 'collaboratore' },
+    user: { id: mockAuth.userId, role: mockAuth.isAdmin ? 'admin' : 'collaborator' },
   }),
 }))
 
@@ -97,7 +97,7 @@ function renderPanel() {
  * Like `renderPanel`, but with a `rerenderPanel` that re-renders onto the exact same
  * `QueryClient` (REB-562 fix rounds 2 and 4). A role change, or a session switch to a
  * different admin, mid-session is not a new mount -- the same query client is still
- * there, `useDriveHealth` just reads a different `user.id`/`user.ruolo` on the next
+ * there, `useDriveHealth` just reads a different `user.id`/`user.role` on the next
  * render, which is what the tests below need to actually exercise `driveKeys.
  * healthForViewer` picking a different cache entry rather than starting from an empty
  * client that would refetch either way.
@@ -468,7 +468,7 @@ describe('DrivePanel space storage line (REB-562)', () => {
 
   it('refetches on a session switch between two admins in one tab, and never shows the first admin\'s cached account', async () => {
     // CodeRabbit Major, fix round 4: a role alone does not identify the viewer -- two
-    // admins share `ruolo` -- so a switch from admin A to admin B without a
+    // admins share `role` -- so a switch from admin A to admin B without a
     // `logout()` in between (a shared browser profile, a token client that swaps a
     // cookie) must still be a different query. `driveKeys.healthForViewer` keys on
     // `user.id` too, and this test keeps `mockAuth.isAdmin` `true` throughout: the
@@ -517,9 +517,9 @@ describe('DrivePanel space storage line (REB-562)', () => {
 /**
  * REB-457. `DriveRepository.storage_account` picks the space's one write folder from
  * every user's row (the most recently updated `active` row that names one), so a folder
- * a collaboratore chose would receive every document the space generates. That field
+ * a collaborator chose would receive every document the space generates. That field
  * stays an admin's; the rest of the panel (connect, the read roots, disconnect) is the
- * collaboratore's own credential and works for them as it does for an admin.
+ * collaborator's own credential and works for them as it does for an admin.
  */
 describe('DrivePanel for a collaboratore', () => {
   beforeEach(() => {

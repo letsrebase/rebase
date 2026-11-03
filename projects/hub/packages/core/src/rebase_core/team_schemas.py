@@ -25,20 +25,20 @@ from rebase_core.bands import Band
 # repeating them: re-exported here so a caller of this module still finds them beside
 # `Card`.
 from rebase_core.models import (
-    AZIENDA_MAX_LENGTH,
     CARD_SENIORITIES,
+    COMPANY_MAX_LENGTH,
+    PHONE_MAX_LENGTH,
     TALENT_ANSWERS,
     TEAM_PROPOSAL_ERRORS,
     TEAM_PROPOSAL_ORIGINS,
     TEAM_REQUEST_ORIGINS,
     TEAM_REQUEST_STATES,
-    TELEFONO_MAX_LENGTH,
 )
 from rebase_core.schema_common import (
-    PROGETTO_MAX_LENGTH,
+    PROJECT_MAX_LENGTH,
     ResponseModel,
     clean_multiline,
-    clean_rif,
+    clean_ref,
     clean_text,
 )
 from rebase_core.validation import SafeStr
@@ -62,12 +62,12 @@ __all__ = [
     "CloudTalentList",
     "CloudTalentQuery",
     "CloudTalentRead",
-    "CardPersonaRead",
+    "CardPersonRead",
     "CardProvenance",
     "ConflictRead",
     "FreelancerCardAdminRead",
     "FreelancerCardRead",
-    "PersonaDifference",
+    "PersonDifference",
     "SourceProvenance",
     "TALENT_ANSWERS",
     "TEAM_PROPOSAL_ERRORS",
@@ -98,62 +98,62 @@ class Card(ResponseModel):
     summary that names no person, no company and no link. `extra="forbid"` the way
     every schema Claude's output is validated against must be: a property the model
     invents that the caller silently accepted would be data nobody asked for and nobody
-    can see written down. `luogo` has no default on purpose: the card writer always
+    can see written down. `location` has no default on purpose: the card writer always
     knows whether the CV names a place, and a key silently missing from Claude's JSON is
     a shape failure the writer records on the row, not a card with an unremarkable empty
     field."""
 
     model_config = ConfigDict(extra="forbid")
 
-    ruolo: SafeStr = Field(min_length=1, max_length=120)
-    # `anni` before `seniority`, which is read from it: the schema's order is the order
+    role: SafeStr = Field(min_length=1, max_length=120)
+    # `experience_years` before `seniority`, which is read from it: the schema's order is the order
     # the model writes in. `None` when the CV dates no role (REB-799): the model is told
     # to say so rather than guess, and `seniority` is then a reading of the
-    # responsibility alone, shown as uncertain (`CardRead.seniority_incerta`). No default,
-    # like `luogo`.
-    anni: int | None = Field(ge=0, le=60)
+    # responsibility alone, shown as uncertain (`CardRead.seniority_uncertain`). No default,
+    # like `location`.
+    experience_years: int | None = Field(ge=0, le=60)
     seniority: Literal["junior", "mid", "senior", "lead"]
-    competenze: list[SafeStr] = Field(max_length=20)
-    settori: list[SafeStr] = Field(max_length=10)
-    lingue: list[SafeStr] = Field(max_length=8)
-    luogo: SafeStr | None = Field(max_length=120)
-    sintesi: SafeStr = Field(min_length=1, max_length=400)
+    skills: list[SafeStr] = Field(max_length=20)
+    industries: list[SafeStr] = Field(max_length=10)
+    languages: list[SafeStr] = Field(max_length=8)
+    location: SafeStr | None = Field(max_length=120)
+    profile_summary: SafeStr = Field(min_length=1, max_length=400)
 
 
 class CardRead(Card):
     """A `Card` as everything but the card writer reads it (REB-799): `seniority` and
-    `anni` are the effective ones, the admin's when there is one (`freelancers.
+    `experience_years` are the effective ones, the admin's when there is one (`freelancers.
     seniority_admin`, `anni_admin`), the card's own otherwise. `seniority_incerta` says
-    the seniority is a guess the CV's dates could not back: `anni` is null on the card
+    the seniority is a guess the CV's dates could not back: `experience_years` is null on the card
     and nobody corrected the seniority. Computed by `card_level.card_read`, never stored
     and never asked of Claude: the schema Claude answers is `Card`'s."""
 
-    seniority_incerta: bool = False
+    seniority_uncertain: bool = False
 
 
 class FreelancerCardRead(ResponseModel):
     """A freelancer's anonymous card as the admin reads it (spec § 5.1): the last card
     written, the CV it came from, the model and when, and the last failure, which may
-    sit beside an older card. `modalita` and `fascia` are not on the card: they are
-    `Freelancer.remoto` and the client's band of `Freelancer.tariffa_giornaliera`
+    sit beside an older card. `mode` and `band` are not on the card: they are
+    `Freelancer.remote` and the client's band of `Freelancer.daily_rate`
     (`bands.band_for`), read when the card is shown, so a mode or a rate the person
     edits is right at once (§ 2.1), and the page never computes a band of its own.
-    `fascia` is `None` without a rate. `card`, `cv_sha256`, `model` and `generated_at`
+    `band` is `None` without a rate. `card`, `cv_sha256`, `model` and `generated_at`
     stay `None` until a CV produces a card; `error` is set or not on its own. `card` is
-    the effective one (`CardRead`); `seniority_admin` and `anni_admin` are the admin's
+    the effective one (`CardRead`); `seniority_admin` and `experience_years_admin` are the admin's
     own values, `None` while nobody corrected them (REB-799), so the page can tell a
     correction from Claude's reading."""
 
     freelancer_id: UUID
     card: CardRead | None
-    modalita: RemoteOption | None
-    fascia: Band | None
+    mode: RemoteOption | None
+    band: Band | None
     cv_sha256: str | None
     model: str | None
     generated_at: datetime | None
     error: str | None
     seniority_admin: Seniority | None = None
-    anni_admin: int | None = None
+    experience_years_admin: int | None = None
 
 
 class SourceProvenance(ResponseModel):
@@ -170,23 +170,25 @@ class SourceProvenance(ResponseModel):
 
 class ConflictRead(ResponseModel):
     """A disagreement the code found while writing a card (`card_draft.conflicts`):
-    `anni_diversi`, the hub's completed engagements add up to more years than the card's
-    `anni_scheda` (the CV's dates) by more than a year; `anni_scartata`, the model gave
-    `anni_scheda` years on the strength of sources that date no profession (GitHub, a
-    page) and the code dropped it. `anni_hub` is the hub's completed months in whole
+    `different_experience_years`, the hub's completed engagements add up to more years than the
+    card's
+    `experience_years_card` (the CV's dates) by more than a year; `discarded_experience_years`, the
+    model gave
+    `experience_years_card` years on the strength of sources that date no profession (GitHub, a
+    page) and the code dropped it. `experience_years_hub` is the hub's completed months in whole
     years, `None` when the hub had no say."""
 
-    kind: Literal["anni_diversi", "anni_scartata"]
-    anni_scheda: int | None
-    anni_hub: int | None
+    kind: Literal["different_experience_years", "discarded_experience_years"]
+    experience_years_card: int | None
+    experience_years_hub: int | None
 
 
 class CardProvenance(ResponseModel):
     """What a card was written from and by what, for the admin only (REB-839): never part
     of `Card`, of a public page, of the cloud or of the talent list.
 
-    `fonti` is what the model *said* supported each field, kept only for sources that
-    existed (`verify_fonti`): the page shows it as «secondo il modello». `{}` and
+    `field_sources` is what the model *said* supported each field, kept only for sources that
+    existed (`verify_sources`): the page shows it as «secondo il modello». `{}` and
     `prompt_version` 1 for a card written before provenance existed. `sources` is what is
     stored now, with its read times; `source_hashes` what the card was written from;
     `stale` why the card is no longer what the inputs would give: `cv` (the hourly loop
@@ -195,56 +197,56 @@ class CardProvenance(ResponseModel):
 
     prompt_version: int
     provider: str | None
-    fonti: dict[str, list[str]]
+    field_sources: dict[str, list[str]]
     conflicts: list[ConflictRead]
     sources: list[SourceProvenance]
     source_hashes: dict[str, str]
     stale: Literal["cv", "source", "prompt"] | None
 
 
-class CardPersonaRead(ResponseModel):
+class CardPersonRead(ResponseModel):
     """What the CV (and the sources beside it) says of who the person is, read out by the
     same call that writes the anonymous card (REB-855): for the admin only, stored on the
-    card's row (`freelancer_cards.persona`) and never written into `users`. Everything is
-    what the document states literally, normalised by `card_draft.clean_persona`
-    (`email` in lower case and valid, `linkedin_url` in its stored shape, `telefono` as
+    card's row (`freelancer_cards.person`) and never written into `users`. Everything is
+    what the document states literally, normalised by `card_draft.clean_person`
+    (`email` in lower case and valid, `linkedin_url` in its stored shape, `phone` as
     written and trimmed, only `http(s)` links): a value that did not pass is `None`, or
-    absent from the lists. `aziende` are the employers and clients the CV names. Never
+    absent from the lists. `companies` are the employers and clients the CV names. Never
     part of `Card`, of `FreelancerCardRead`, of the cloud, the talent list or the team
     builder."""
 
-    nome: str | None = None
-    cognome: str | None = None
+    first_name: str | None = None
+    last_name: str | None = None
     email: str | None = None
-    telefono: str | None = None
-    citta: str | None = None
+    phone: str | None = None
+    city: str | None = None
     linkedin_url: str | None = None
-    altri_link: list[str] = Field(default_factory=list)
-    aziende: list[str] = Field(default_factory=list)
+    other_links: list[str] = Field(default_factory=list)
+    companies: list[str] = Field(default_factory=list)
 
 
-class PersonaDifference(ResponseModel):
+class PersonDifference(ResponseModel):
     """A field where the CV and the profile both say something and disagree
-    (`card_draft.differenze`): `campo` is `nome`, `cognome`, `email`, `telefono` or
-    `linkedin_url`, `cv` what the CV says and `profilo` what the account holds. A field one
+    (`card_draft.differences`): `field` is `nome`, `last_name`, `email`, `phone` or
+    `linkedin_url`, `cv` what the CV says and `profile` what the account holds. A field one
     side leaves empty is no disagreement."""
 
-    campo: Literal["nome", "cognome", "email", "telefono", "linkedin_url"]
+    field: Literal["first_name", "last_name", "email", "phone", "linkedin_url"]
     cv: str
-    profilo: str
+    profile: str
 
 
 class FreelancerCardAdminRead(FreelancerCardRead):
     """`FreelancerCardRead`, the provenance of the card and the named card, as the admin's
     page reads them (`GET /freelancers/{id}/card`). `provenance` is `None` while the person
-    has no card row at all. `persona` is what the CV says of who the person is (REB-855),
+    has no card row at all. `person` is what the CV says of who the person is (REB-855),
     `None` for a card written before prompt version 3 and for a person whose CV the model
-    never read; it is kept even when the anonymous card was refused. `differenze` lists
+    never read; it is kept even when the anonymous card was refused. `differences` lists
     where it disagrees with the profile."""
 
     provenance: CardProvenance | None = None
-    persona: CardPersonaRead | None = None
-    differenze: list[PersonaDifference] = Field(default_factory=list)
+    person: CardPersonRead | None = None
+    differences: list[PersonDifference] = Field(default_factory=list)
 
 
 class CardsRefreshed(NamedTuple):
@@ -264,15 +266,15 @@ class CardsRefreshed(NamedTuple):
 
 # ---- the proposal (REB-511, spec § 3.3) ----------------------------------------------------
 
-DESCRIZIONE_MIN_LENGTH = 40
-DESCRIZIONE_MAX_LENGTH = 4000
-NOTA_MAX_LENGTH = 500
-PERSONE_MAX = 10
+DESCRIPTION_MIN_LENGTH = 40
+DESCRIPTION_MAX_LENGTH = 4000
+NOTE_MAX_LENGTH = 500
+PEOPLE_MAX = 10
 
 
 class TeamProposalCreate(BaseModel):
     """What a visitor, a cloud user or an admin asks the engine for: the project's
-    description, how many people they want (`persone`, REB-591: the page sends 1 unless
+    description, how many people they want (`people`, REB-591: the page sends 1 unless
     the visitor picks more; left out, the engine sizes the team from the description
     alone, which is what the MCP tool does), and on «Rigenera» the proposal it replaces
     and a note on it («togli il designer»). Stripped before it is measured, so forty
@@ -280,36 +282,36 @@ class TeamProposalCreate(BaseModel):
 
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
-    descrizione: SafeStr = Field(
-        min_length=DESCRIZIONE_MIN_LENGTH, max_length=DESCRIZIONE_MAX_LENGTH
+    description: SafeStr = Field(
+        min_length=DESCRIPTION_MIN_LENGTH, max_length=DESCRIPTION_MAX_LENGTH
     )
     # Strict: a JSON `true` or `"3"` is not a headcount, and would otherwise reach the
     # prompt and the event as one.
-    persone: int | None = Field(default=None, ge=1, le=PERSONE_MAX, strict=True)
-    nota: SafeStr | None = Field(default=None, max_length=NOTA_MAX_LENGTH)
+    people: int | None = Field(default=None, ge=1, le=PEOPLE_MAX, strict=True)
+    note: SafeStr | None = Field(default=None, max_length=NOTE_MAX_LENGTH)
     previous_id: UUID | None = None
 
 
 class TeamMemberRead(ResponseModel):
-    """One person of a proposed team (§ 3.3): `posizione` is their index in this
+    """One person of a proposed team (§ 3.3): `position` is their index in this
     proposal (1, 2, 3), the only handle the public read gives; `freelancer_id` is
     `None` there, so a visitor cannot follow a talent across proposals, and so is the
-    card's `luogo`, which only the engine and the admin read. `nome` and `cognome` are
+    card's `location`, which only the engine and the admin read. `first_name` and `last_name` are
     the person's, for the cloud and the admin, which show who each member is (§ 4.2);
-    `None` on the public read, like the id. `modalita` is `Freelancer.remoto` and
-    `fascia` the band of their current rate, both read when the proposal is, the way
+    `None` on the public read, like the id. `mode` is `Freelancer.remote` and
+    `band` the band of their current rate, both read when the proposal is, the way
     the card is shown everywhere (§ 2.1)."""
 
-    posizione: int
+    position: int
     freelancer_id: UUID | None
-    nome: str | None = None
-    cognome: str | None = None
-    ruolo: str
-    motivazione: str
-    giorni_settimana: int | None
-    scheda: CardRead
-    modalita: RemoteOption | None
-    fascia: Band | None
+    first_name: str | None = None
+    last_name: str | None = None
+    role: str
+    reasoning: str
+    week_days: int | None
+    card: CardRead
+    mode: RemoteOption | None
+    band: Band | None
 
 
 class TeamPlace(ResponseModel):
@@ -317,75 +319,75 @@ class TeamPlace(ResponseModel):
     wants someone local, and where (`None` when no place was named, or on the public read
     when the visitor did not write it)."""
 
-    locale: bool
-    dove: str | None
+    on_site: bool
+    place: str | None
 
 
 class TeamEconomics(ResponseModel):
-    """The team's bands from its members', per day and per month at `giorni_mese` days;
+    """The team's bands from its members', per day and per month at `days_month` days;
     `None` when any member has no rate."""
 
-    giorno: Band | None
-    mese: Band | None
-    giorni_mese: int
+    day: Band | None
+    month: Band | None
+    days_month: int
 
 
 class TeamProposalRead(ResponseModel):
-    """A proposal as the page shows it (§ 3.3). `luogo` is what the engine read about
+    """A proposal as the page shows it (§ 3.3). `location` is what the engine read about
     place in the description (`TeamPlace`), and stays on the public read: it is the
-    visitor's own words. `economia` is the team's bands from its members' (`TeamEconomics`).
-    `descrizione` and `persone` are what the proposal was asked with (REB-675): the public
+    visitor's own words. `economics` is the team's bands from its members' (`TeamEconomics`).
+    `description` and `people` are what the proposal was asked with (REB-675): the public
     page opened on a proposal by its id fills its box from them and sends them back on
     «Rigenera»."""
 
     id: UUID
-    descrizione: str
-    persone: int | None
-    riassunto: str
-    luogo: TeamPlace
+    description: str
+    people: int | None
+    summary: str
+    location: TeamPlace
     team: list[TeamMemberRead]
-    economia: TeamEconomics
+    economics: TeamEconomics
     previous_id: UUID | None
-    origine: TeamProposalOrigin
+    origin: TeamProposalOrigin
     created_at: datetime
 
 
 class TeamProposalListMember(ResponseModel):
     """One person a listed proposal held (REB-607): their index in the proposal, the
     role it proposed them for, and who they are, so the admin can open their profile
-    from the list. `nome` and `cognome` are read when the list is, and are `None` for
+    from the list. `first_name` and `last_name` are read when the list is, and are `None` for
     a talent removed with «Elimina» since, whose admin page no longer opens: the row
     keeps them all by id, since the list is about what was proposed and not about who
     is still in the catalogue."""
 
-    posizione: int
+    position: int
     freelancer_id: UUID
-    ruolo: str
-    nome: str | None
-    cognome: str | None
+    role: str
+    first_name: str | None
+    last_name: str | None
 
 
 class TeamProposalListItem(ResponseModel):
     """One «Proponi il team» as the admin's list reads it (0028, DECISIONS.md
-    2026-09-29): what was asked (`descrizione`, `persone`, `nota`, `previous_id` on a
-    «Rigenera»), who asked (`origine`, `user_id`), when, and what came of it. `errore`
+    2026-09-29): what was asked (`description`, `people`, `nota`, `previous_id` on a
+    «Rigenera»), who asked (`origin`, `user_id`), when, and what came of it. `error`
     is `None` on a proposal that answered and the refusal's code
-    (`TEAM_PROPOSAL_ERRORS`) on an attempt that did not; `riassunto` is what the
-    proposal said, `None` on an attempt; `membri` is how many people the proposal held,
+    (`TEAM_PROPOSAL_ERRORS`) on an attempt that did not; `summary` is what the
+    proposal said, `None` on an attempt; `members` is how many people the proposal held,
     0 on an attempt and on a team nobody fit, and `team` names each of them in the
     proposal's order (REB-607); `request_id` is the «Assumi team» filed on it, `None`
     while there is none, which is the case the list exists to count."""
 
     id: UUID
-    descrizione: str
-    persone: int | None
-    nota: str | None
+    description: str
+    people: int | None
+    note: str | None
     previous_id: UUID | None
-    origine: TeamProposalOrigin
+    origin: TeamProposalOrigin
     user_id: UUID | None
-    errore: TeamProposalError | None
-    riassunto: str | None
-    membri: int
+    error: TeamProposalError | None
+    summary: str | None
+    members: int
     team: list[TeamProposalListMember]
     request_id: UUID | None
     created_at: datetime
@@ -402,7 +404,7 @@ class TeamProposalList(ResponseModel):
 
 # The engine's own ceiling on a summary (`team_builder.ProposalAnswer`), kept by the admin's
 # edit so what the talents read is never longer than what Claude may write.
-RIASSUNTO_MAX_LENGTH = 1500
+SUMMARY_MAX_LENGTH = 1500
 
 
 class TeamRequestCreate(BaseModel):
@@ -413,23 +415,23 @@ class TeamRequestCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     proposal_id: UUID
-    azienda: SafeStr = Field(min_length=1, max_length=AZIENDA_MAX_LENGTH)
+    company: SafeStr = Field(min_length=1, max_length=COMPANY_MAX_LENGTH)
     email: EmailStr
-    telefono: SafeStr = Field(min_length=6, max_length=TELEFONO_MAX_LENGTH)
-    # `?rif=` from the visitor's link (REB-600), cleaned like the signup's (REB-554): a
+    phone: SafeStr = Field(min_length=6, max_length=PHONE_MAX_LENGTH)
+    # `?ref=` from the visitor's link (REB-600), cleaned like the signup's (REB-554): a
     # string that is not a code is no code, never a 422. Stored on the request and credited
     # only when a company exists for this contact.
-    rif: SafeStr | None = None
+    ref: SafeStr | None = None
 
-    @field_validator("azienda", "telefono", mode="after")
+    @field_validator("company", "phone", mode="after")
     @classmethod
     def _trimmed(cls, value: str) -> str:
         return clean_text(value, what="un valore")
 
-    @field_validator("rif", mode="before")
+    @field_validator("ref", mode="before")
     @classmethod
-    def _rif(cls, value: object) -> str | None:
-        return clean_rif(value)
+    def _ref(cls, value: object) -> str | None:
+        return clean_ref(value)
 
 
 class TeamRequestCreated(ResponseModel):
@@ -441,57 +443,57 @@ class TeamRequestCreated(ResponseModel):
 class TeamRequestTalentRead(ResponseModel):
     """One talent of a request, as the admin reads it: the name, the role proposed, the
     freelancer's own rate and the client's band from it, and the availability mail's
-    progress (D1), all `None` until the first send. `contattabile` is false for a talent
-    whose card was deleted or `scartato`: the availability mail skips them."""
+    progress (D1), all `None` until the first send. `contactable` is false for a talent
+    whose card was deleted or `discarded`: the availability mail skips them."""
 
     freelancer_id: UUID
-    nome: str
-    cognome: str
-    ruolo: str
-    tariffa_giornaliera: Decimal | None
-    fascia: Band | None
+    first_name: str
+    last_name: str
+    role: str
+    daily_rate: Decimal | None
+    band: Band | None
     mail_sent_at: datetime | None
-    risposta: TalentAnswer | None
-    risposta_at: datetime | None
-    contattabile: bool
+    answer: TalentAnswer | None
+    answered_at: datetime | None
+    contactable: bool
 
 
 class TeamRequestRead(ResponseModel):
     """A request's page in «Richieste team» (§ 3.5). `proposal` is the admin's read of
     the proposal (ids and the card's place kept), `None` for a single-talent request
-    from the cloud; `riassunto` and `descrizione` are the proposal's, the summary being
+    from the cloud; `summary` and `description` are the proposal's, the summary being
     the copy the admin edits before the talents read it."""
 
     id: UUID
     proposal: TeamProposalRead | None
-    riassunto: str | None
-    descrizione: str | None
-    origine: TeamRequestOrigin
-    azienda: str
+    summary: str | None
+    description: str | None
+    origin: TeamRequestOrigin
+    company: str
     email: str
-    telefono: str | None
+    phone: str | None
     user_id: UUID | None
     company_id: UUID | None
-    stato: TeamRequestState
+    status: TeamRequestState
     note: str | None
-    talenti: list[TeamRequestTalentRead]
+    talents: list[TeamRequestTalentRead]
     contacted_at: datetime | None
     closed_at: datetime | None
     created_at: datetime
 
 
 class TeamRequestListItem(ResponseModel):
-    """One row of «Richieste team»: who, from where, when, where it stands, and «N sì su
+    """One row of «Richieste team»: who, from where, when, where it stands, and «N yes out of
     M» from the talents' answers."""
 
     id: UUID
-    azienda: str
-    origine: TeamRequestOrigin
-    stato: TeamRequestState
+    company: str
+    origin: TeamRequestOrigin
+    status: TeamRequestState
     created_at: datetime
     contacted_at: datetime | None
-    talenti_totale: int
-    talenti_si: int
+    total_talents: int
+    yes_talents: int
 
 
 class TeamRequestList(ResponseModel):
@@ -507,7 +509,7 @@ class TeamRequestStatus(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    stato: str = Field(min_length=1, max_length=20)
+    status: str = Field(min_length=1, max_length=20)
 
 
 class TeamRequestNote(BaseModel):
@@ -515,7 +517,7 @@ class TeamRequestNote(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    note: SafeStr | None = Field(default=None, max_length=PROGETTO_MAX_LENGTH)
+    note: SafeStr | None = Field(default=None, max_length=PROJECT_MAX_LENGTH)
 
 
 class TeamRequestSummary(BaseModel):
@@ -525,9 +527,9 @@ class TeamRequestSummary(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    riassunto: SafeStr = Field(min_length=1, max_length=RIASSUNTO_MAX_LENGTH)
+    summary: SafeStr = Field(min_length=1, max_length=SUMMARY_MAX_LENGTH)
 
-    @field_validator("riassunto", mode="after")
+    @field_validator("summary", mode="after")
     @classmethod
     def _paragraphs(cls, value: str) -> str:
         return clean_multiline(value, what="un riassunto")
@@ -547,68 +549,74 @@ class TeamAvailabilityAnswer(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     t: str = Field(max_length=AVAILABILITY_TOKEN_MAX_LENGTH)
-    risposta: Literal["si", "no"]
+    answer: Literal["yes", "no"]
+
+    @field_validator("answer", mode="before")
+    @classmethod
+    def _old_links_say_si(cls, value: object) -> object:
+        """The links in mails already sent carry `r=si`; the page forwards it as it is."""
+        return "yes" if value == "si" else value
 
 
 class TeamAvailabilityOutcome(ResponseModel):
     """The answer recorded, or `invalid` for a token unknown, spent or expired alike."""
 
-    esito: Literal["si", "no", "invalid"]
+    outcome: Literal["yes", "no", "invalid"]
 
 
 # ---- the talent cloud (REB-519, spec § 4.2) -------------------------------------------------
 
 # A skill typed in the one search box: longer than any skill a card holds, and bounded,
 # as every free text that reaches `ILIKE` is (`search.SEARCH_MAX_LENGTH`).
-COMPETENZA_MAX_LENGTH = 100
+SKILL_MAX_LENGTH = 100
 
 
 class CloudTalentQuery(BaseModel):
     """The cloud's filters (spec § 4.2), each optional and all together: a role of the
-    cards' own (`CloudTalentList.ruoli`), a seniority, one skill searched inside the
+    cards' own (`CloudTalentList.roles`), a seniority, one skill searched inside the
     card's skills, a work mode, and a band of the client's price per day, its bottom at
-    or above `fascia_min` and its top at or below `fascia_max`, in whole euro. A blank
+    or above `min_band` and its top at or below `max_band`, in whole euro. A blank
     word narrows nothing. The words are checked by the service, so the API and the MCP
     server refuse the same ones the same way."""
 
     model_config = ConfigDict(str_strip_whitespace=True)
 
-    ruolo: str | None = Field(default=None, max_length=120)
+    role: str | None = Field(default=None, max_length=120)
     seniority: str | None = Field(default=None, max_length=20)
-    competenza: str | None = Field(default=None, max_length=COMPETENZA_MAX_LENGTH)
-    modalita: str | None = Field(default=None, max_length=20)
-    fascia_min: int | None = Field(default=None, ge=0)
-    fascia_max: int | None = Field(default=None, ge=0)
+    skill: str | None = Field(default=None, max_length=SKILL_MAX_LENGTH)
+    mode: str | None = Field(default=None, max_length=20)
+    min_band: int | None = Field(default=None, ge=0)
+    max_band: int | None = Field(default=None, ge=0)
 
 
 class CloudTalentRead(ResponseModel):
     """A talent as an admitted company reads them in the cloud (spec § 4.2): who they
     are, the links they gave, whether rebase vetted them, the anonymous card (its
-    `luogo` left out: the CV is one click away), the work mode, the client's band and
+    `location` left out: the CV is one click away), the work mode, the client's band and
     whether there is a CV to open. Never the freelancer's own rate, their state, the
     admin's notes, nor their address or phone: those are not fields here,
     so no read can carry them."""
 
     freelancer_id: UUID
-    nome: str
-    cognome: str
+    first_name: str
+    last_name: str
     linkedin_url: str | None
     links: list[str]
     vetted: bool
     card: CardRead
-    modalita: RemoteOption | None
-    fascia: Band | None
-    ha_cv: bool
+    mode: RemoteOption | None
+    band: Band | None
+    has_cv: bool
 
 
 class CloudTalentList(ResponseModel):
     """The cloud's page: the talents the filters leave, vetted first then by name, at
     most `cloud.CLOUD_LIST_CAP`, and `capped` when there were more (the page says so,
-    since the list has no second page); `ruoli` is every role of the cloud's cards once,
+    since the list has no second page); `roles` is every role of the cloud's cards once,
     sorted, the role filter's choices whatever the filters narrowed."""
 
     items: list[CloudTalentRead]
-    ruoli: list[str]
+    roles: list[str]
     capped: bool
 
 

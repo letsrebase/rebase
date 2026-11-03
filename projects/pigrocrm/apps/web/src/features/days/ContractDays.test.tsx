@@ -24,13 +24,13 @@ vi.mock('@/features/gmail/queries', async (importOriginal) => {
 beforeEach(() => {
   canWrite = true
   vi.mocked(api.GET).mockReset()
-  vi.mocked(api.GET).mockResolvedValue(ok({ items: [row({ id: 'd1', descrizione: 'Workshop' })], troncato: false }) as never)
+  vi.mocked(api.GET).mockResolvedValue(ok({ items: [row({ id: 'd1', description: 'Workshop' })], truncated: false }) as never)
 })
 
 describe('a contract’s days on its own page', () => {
   it('does not narrow a contract’s days by the sidebar’s azienda: the contract names its own', async () => {
     const other: LegalEntityValue = {
-      aziende: [],
+      legal_entities: [],
       selected: 'azienda-b',
       select: vi.fn(),
       several: true,
@@ -48,7 +48,7 @@ describe('a contract’s days on its own page', () => {
       ([path]) => path === '/api/work-units',
     )
     expect(call?.[1].params.query).toMatchObject({ contract_id: CONTRACT_ID })
-    expect(call?.[1].params.query.azienda_id).toBeUndefined()
+    expect(call?.[1].params.query.legal_entity_id).toBeUndefined()
   })
 
   it('lists them and offers the three things a person does with them', async () => {

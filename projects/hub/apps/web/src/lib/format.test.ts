@@ -10,10 +10,10 @@ describe('a card’s level in words (REB-799)', () => {
   })
 
   it('marks a seniority the CV’s dates could not back', () => {
-    expect(formatLevel({ seniority: 'senior', anni: 9 })).toBe('Senior, 9 anni di esperienza')
-    expect(formatLevel({ seniority: 'mid', anni: null, seniority_incerta: true })).toBe(
+    expect(formatLevel({ seniority: 'senior', experience_years: 9 })).toBe('Senior, 9 anni di esperienza')
+    expect(formatLevel({ seniority: 'mid', experience_years: null, seniority_uncertain: true })).toBe(
       'Mid (da verificare), Anni non indicati nel CV',
     )
-    expect(formatLevel({ seniority: 'lead', anni: 14, seniority_incerta: false })).toBe('Lead, 14 anni di esperienza')
+    expect(formatLevel({ seniority: 'lead', experience_years: 14, seniority_uncertain: false })).toBe('Lead, 14 anni di esperienza')
   })
 })

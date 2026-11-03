@@ -7,10 +7,10 @@ from uuid import UUID
 
 import pytest
 from fakes.customer_fixtures import make_customer
-from orologio import OGGI_IN_ITALIA, congela
-from periodo_fiscale import OGGI
+from frozen_clock import TODAY_IN_ITALY, freeze
 from sqlalchemy import text
 from sqlalchemy.orm import Session
+from tax_period import TODAY
 
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.analytics.service import AnalyticsService
@@ -23,7 +23,7 @@ from pigrocrm.core.timetracking.costs import CostService
 from pigrocrm.core.timetracking.schemas import CostCreate
 
 ADMIN = Actor(id=None, type="system", role="admin")
-COLLABORATORE = Actor(id=None, type="mcp", role="collaboratore")
+COLLABORATOR = Actor(id=None, type="mcp", role="collaborator")
 
 
 def _invoice_of(session: Session, line_id: UUID) -> UUID:
@@ -40,7 +40,7 @@ def cost_category_id(db_session: Session) -> UUID:
 
     return (
         CostCategoryService(db_session)
-        .create_cost_category(CostCategoryCreate(nome=f"Cassa test {OGGI.isoformat()}"), ADMIN)
+        .create_cost_category(CostCategoryCreate(name=f"Cassa test {TODAY.isoformat()}"), ADMIN)
         .id
     )
 
@@ -55,78 +55,78 @@ def test_the_year_adds_up_month_by_month_and_costs_are_not_revenue(
     service = InvoiceService(db_session, local_storage)
     invoice_id = _invoice_of(db_session, issued_invoice_line_id)
     paid = service.set_payment_state(
-        invoice_id, PaymentState(stato_pagamento="incassato", data_incasso=OGGI), ADMIN
+        invoice_id, PaymentState(payment_status="paid", payment_date=TODAY), ADMIN
     )
     CostService(db_session).create(
         CostCreate(
             category_id=cost_category_id,
-            data=OGGI,
-            importo=Decimal("120.00"),
-            descrizione="Hosting",
+            date=TODAY,
+            amount=Decimal("120.00"),
+            description="Hosting",
         ),
         ADMIN,
     )
 
-    overview = AnalyticsService(db_session).cash_overview(OGGI.year, COLLABORATORE)
-    assert overview.anno == OGGI.year
-    assert len(overview.mesi) == 12
-    month = next(m for m in overview.mesi if m.mese == OGGI.month)
-    assert month.incassato == Decimal(str(paid.totale))
-    assert month.costi == Decimal("120.00")
-    assert month.da_incassare == Decimal("0.00")
+    overview = AnalyticsService(db_session).cash_overview(TODAY.year, COLLABORATOR)
+    assert overview.year == TODAY.year
+    assert len(overview.months) == 12
+    month = next(m for m in overview.months if m.month == TODAY.month)
+    assert month.paid == Decimal(str(paid.total))
+    assert month.costs == Decimal("120.00")
+    assert month.unpaid == Decimal("0.00")
     # Shares of the tallest stack: both present, and the stack adds up to the whole.
-    assert month.quote_andamento["incassato"] > 0 and month.quote_andamento["costi"] > 0
-    assert abs(month.quote_andamento["incassato"] + month.quote_andamento["costi"] - 1.0) < 1e-9
+    assert month.trend_shares["paid"] > 0 and month.trend_shares["costs"] > 0
+    assert abs(month.trend_shares["paid"] + month.trend_shares["costs"] - 1.0) < 1e-9
     # The height of each stacked column as money (ORB-139), summed here, once, because
     # the browser never turns an amount into a number. Costs are inside it, which is why
     # it is a `pila` and not a total: the chart prints it above the bar a reader measures.
-    assert month.pila_andamento == month.incassato + Decimal("120.00")
-    assert month.pila_proiezione == month.incassato + Decimal("120.00")
-    empty = next(m for m in overview.mesi if m.mese != OGGI.month)
-    assert empty.pila_andamento == Decimal("0.00")
-    assert empty.pila_proiezione == Decimal("0.00")
-    assert sum(m.incassato for m in overview.mesi) == overview.incassato
-    assert overview.proiettato == overview.incassato  # nothing pending, nothing drafted
-    assert overview.lordo_effettivo == overview.incassato - Decimal("120.00")
-    assert overview.lordo_proiettato == overview.lordo_effettivo
+    assert month.trend_stack == month.paid + Decimal("120.00")
+    assert month.projection_stack == month.paid + Decimal("120.00")
+    empty = next(m for m in overview.months if m.month != TODAY.month)
+    assert empty.trend_stack == Decimal("0.00")
+    assert empty.projection_stack == Decimal("0.00")
+    assert sum(m.paid for m in overview.months) == overview.paid
+    assert overview.projected == overview.paid  # nothing pending, nothing drafted
+    assert overview.actual_gross == overview.paid - Decimal("120.00")
+    assert overview.projected_gross == overview.actual_gross
 
 
 def test_an_issued_unpaid_invoice_is_projected_not_collected(
     db_session: Session, issued_invoice_line_id: UUID
 ) -> None:
     invoice_id = _invoice_of(db_session, issued_invoice_line_id)
-    totale = db_session.execute(
-        text("select totale from invoices where id = :id"), {"id": str(invoice_id)}
+    total = db_session.execute(
+        text("select total from invoices where id = :id"), {"id": str(invoice_id)}
     ).scalar_one()
-    overview = AnalyticsService(db_session).cash_overview(OGGI.year, COLLABORATORE)
-    assert overview.incassato == Decimal("0.00")
-    assert overview.da_incassare == Decimal(str(totale))
-    assert overview.proiettato == Decimal(str(totale))
+    overview = AnalyticsService(db_session).cash_overview(TODAY.year, COLLABORATOR)
+    assert overview.paid == Decimal("0.00")
+    assert overview.unpaid == Decimal(str(total))
+    assert overview.projected == Decimal(str(total))
     # Owed money is projected, not collected: it is in the projection's column total
     # and not in the cash chart's.
-    month = next(m for m in overview.mesi if m.da_incassare > Decimal("0.00"))
-    assert month.pila_proiezione == Decimal(str(totale))
-    assert month.pila_andamento == Decimal("0.00")
+    month = next(m for m in overview.months if m.unpaid > Decimal("0.00"))
+    assert month.projection_stack == Decimal(str(total))
+    assert month.trend_stack == Decimal("0.00")
 
 
 def test_a_draft_counts_as_a_draft_and_a_paid_invoice_never_twice(
     db_session: Session, draft_invoice_line_id: UUID
 ) -> None:
-    overview = AnalyticsService(db_session).cash_overview(OGGI.year, COLLABORATORE)
-    assert overview.bozze > Decimal("0.00")
-    assert overview.incassato == Decimal("0.00")
-    assert overview.da_incassare == Decimal("0.00")
+    overview = AnalyticsService(db_session).cash_overview(TODAY.year, COLLABORATOR)
+    assert overview.drafts > Decimal("0.00")
+    assert overview.paid == Decimal("0.00")
+    assert overview.unpaid == Decimal("0.00")
     # A draft is in the projection's stack and not in the cash chart's: the two heights
     # differ by exactly the two projection-only series.
-    month = next(m for m in overview.mesi if m.bozze > Decimal("0.00"))
-    assert month.pila_proiezione == month.bozze
-    assert month.pila_andamento == Decimal("0.00")
+    month = next(m for m in overview.months if m.drafts > Decimal("0.00"))
+    assert month.projection_stack == month.drafts
+    assert month.trend_stack == Decimal("0.00")
 
 
 def test_a_proforma_is_projected_in_the_month_of_its_own_date(
     db_session: Session, local_storage: LocalFileStorage, draft_invoice_line_id: UUID
 ) -> None:
-    """ORB-63 gives a proforma a document date, and `monthly_bozze` buckets by it: a
+    """ORB-63 gives a proforma a document date, and `monthly_drafts` buckets by it: a
     proforma the sender dated in another month is that month's projected money, whatever
     day it was typed in. The fattura draft beside it has no date until `issue` and stays
     in the month it was created, which is this one."""
@@ -138,31 +138,31 @@ def test_a_proforma_is_projected_in_the_month_of_its_own_date(
     draft_id = _invoice_of(db_session, draft_invoice_line_id)
     service = InvoiceService(db_session, local_storage)
     customer_id = service.get(draft_id, ADMIN).customer_id
-    altro_mese = 1 if OGGI.month != 1 else 2
+    other_month = 1 if TODAY.month != 1 else 2
     service.create(
         InvoiceCreate(
             customer_id=customer_id,
-            tipo="proforma",
-            data_emissione=date(OGGI.year, altro_mese, 15),
-            righe=[InvoiceLineIn(descrizione="Consulenza", prezzo_unitario=D("333.00"))],
+            type="proforma",
+            issue_date=date(TODAY.year, other_month, 15),
+            lines=[InvoiceLineIn(description="Consulenza", unit_price=D("333.00"))],
         ),
         ADMIN,
     )
-    overview = AnalyticsService(db_session).cash_overview(OGGI.year, COLLABORATORE)
-    by_month = {m.mese: m.bozze for m in overview.mesi}
-    assert by_month[altro_mese] == D("333.00")
-    assert by_month[OGGI.month] == overview.bozze - D("333.00")
-    assert by_month[OGGI.month] > D("0.00")
+    overview = AnalyticsService(db_session).cash_overview(TODAY.year, COLLABORATOR)
+    by_month = {m.month: m.drafts for m in overview.months}
+    assert by_month[other_month] == D("333.00")
+    assert by_month[TODAY.month] == overview.drafts - D("333.00")
+    assert by_month[TODAY.month] > D("0.00")
 
 
 def test_the_overview_keeps_the_estimate_from_everyone_but_an_admin_with_a_profile(
     db_session: Session,
 ) -> None:
     service = AnalyticsService(db_session)
-    assert service.economic_overview(OGGI.year, COLLABORATORE).fiscale is None
+    assert service.economic_overview(TODAY.year, COLLABORATOR).tax is None
     # An admin without a fiscal profile: cash, and no estimate rather than an error.
-    without = service.economic_overview(OGGI.year, ADMIN)
-    assert without.fiscale is None and without.netto_effettivo is None
+    without = service.economic_overview(TODAY.year, ADMIN)
+    assert without.tax is None and without.actual_net is None
 
 
 def test_the_estimate_follows_collected_and_projected_revenue(
@@ -173,28 +173,26 @@ def test_the_estimate_follows_collected_and_projected_revenue(
 
     FiscalProfileService(db_session).upsert(
         FiscalProfileUpsert(
-            codice_regime="RF19",
-            coefficiente_redditivita=Decimal("67.00"),
-            aliquota_imposta_sostitutiva=Decimal("5.00"),
-            aliquota_inps=Decimal("26.07"),
+            regime_code="RF19",
+            profitability_coefficient=Decimal("67.00"),
+            substitute_tax_rate=Decimal("5.00"),
+            social_security_rate=Decimal("26.07"),
         ),
         ADMIN,
     )
-    overview = AnalyticsService(db_session).economic_overview(OGGI.year, ADMIN)
-    assert overview.fiscale is not None and overview.fiscale_proiettato is not None
+    overview = AnalyticsService(db_session).economic_overview(TODAY.year, ADMIN)
+    assert overview.tax is not None and overview.projected_tax is not None
     # Nothing collected yet: the actual estimate is on zero, the projected one on the
     # issued invoice, and the two nets follow.
-    assert overview.fiscale.ricavi == Decimal("0.00")
-    assert overview.fiscale_proiettato.ricavi == overview.cassa.proiettato > Decimal("0.00")
-    assert overview.fiscale_proiettato.totale_dovuto == (
-        overview.fiscale_proiettato.imposta_sostitutiva + overview.fiscale_proiettato.contributi
+    assert overview.tax.revenue == Decimal("0.00")
+    assert overview.projected_tax.revenue == overview.pension_fund.projected > Decimal("0.00")
+    assert overview.projected_tax.due_total == (
+        overview.projected_tax.substitute_tax + overview.projected_tax.contributions
     )
-    assert overview.netto_proiettato == (
-        overview.cassa.lordo_proiettato - overview.fiscale_proiettato.totale_dovuto
+    assert overview.projected_net == (
+        overview.pension_fund.projected_gross - overview.projected_tax.due_total
     )
-    assert (
-        overview.netto_effettivo == overview.cassa.lordo_effettivo - overview.fiscale.totale_dovuto
-    )
+    assert overview.actual_net == overview.pension_fund.actual_gross - overview.tax.due_total
 
 
 # --- the two readings of the cash view: by accrual period, or by the money (ORB-133) ---
@@ -205,9 +203,9 @@ def _issued_for_period(
     local_storage: LocalFileStorage,
     customer_id: UUID,
     *,
-    competenza_mese: int,
-    prezzo: str,
-    tipo: str = "fattura",
+    accrual_month: int,
+    price: str,
+    type: str = "invoice",
 ) -> UUID:
     """A document dated today whose declared accrual period is another month of the year:
     the one shape under which the two readings of the cash view visibly disagree."""
@@ -216,20 +214,20 @@ def _issued_for_period(
     from pigrocrm.core.invoices.schemas import InvoiceCreate, InvoiceIssue, InvoiceLineIn
 
     service = InvoiceService(db_session, local_storage)
-    primo = date(OGGI.year, competenza_mese, 1)
-    ultimo = date(OGGI.year, competenza_mese + 1, 1) - timedelta(days=1)
+    first = date(TODAY.year, accrual_month, 1)
+    last = date(TODAY.year, accrual_month + 1, 1) - timedelta(days=1)
     invoice = service.create(
         InvoiceCreate(
             customer_id=customer_id,
-            tipo=tipo,
-            data_emissione=OGGI if tipo == "proforma" else None,
-            competenza_da=primo,
-            competenza_a=ultimo,
-            righe=[InvoiceLineIn(descrizione="Consulenza", prezzo_unitario=Decimal(prezzo))],
+            type=type,
+            issue_date=TODAY if type == "proforma" else None,
+            accrual_from=first,
+            accrual_to=last,
+            lines=[InvoiceLineIn(description="Consulenza", unit_price=Decimal(price))],
         ),
         ADMIN,
     )
-    if tipo == "fattura":
+    if type == "invoice":
         service.issue(invoice.id, InvoiceIssue(), ADMIN)
     return invoice.id
 
@@ -237,66 +235,66 @@ def _issued_for_period(
 def test_the_cash_view_reads_by_accrual_period_by_default_and_by_the_money_on_request(
     db_session: Session, local_storage: LocalFileStorage, draft_invoice_line_id: UUID
 ) -> None:
-    """Ivan, 2026-09-10: «deve essere per mese di competenza non incassato o emissione
-    della fattura», then a switch with competenza as the default. Three documents, all
+    """Ivan, 2026-09-10: "it must be by accrual month, not by collection or invoice
+    issue", then a switch with accrual as the default. Three documents, all
     dated today, all declaring another month as their period: a paid invoice, an unpaid
     one and a proforma. By accrual all three sit in the declared month; by the money the
     paid one sits where it was collected, the unpaid one where it falls due (its issue
     date, here) and the proforma on its own document date, exactly as before this card."""
     service = InvoiceService(db_session, local_storage)
     customer_id = service.get(_invoice_of(db_session, draft_invoice_line_id), ADMIN).customer_id
-    altro_mese = 1 if OGGI.month != 1 else 2
+    other_month = 1 if TODAY.month != 1 else 2
 
     paid_id = _issued_for_period(
-        db_session, local_storage, customer_id, competenza_mese=altro_mese, prezzo="1000.00"
+        db_session, local_storage, customer_id, accrual_month=other_month, price="1000.00"
     )
     service.set_payment_state(
-        paid_id, PaymentState(stato_pagamento="incassato", data_incasso=OGGI), ADMIN
+        paid_id, PaymentState(payment_status="paid", payment_date=TODAY), ADMIN
     )
     unpaid_id = _issued_for_period(
-        db_session, local_storage, customer_id, competenza_mese=altro_mese, prezzo="200.00"
+        db_session, local_storage, customer_id, accrual_month=other_month, price="200.00"
     )
     # `issue` stamps a due date from the fiscal profile's payment terms, so by the money
     # the unpaid invoice sits in the month it falls due, wherever that is.
-    scadenza = service.get(unpaid_id, ADMIN).data_scadenza
-    assert scadenza is not None
+    due_date = service.get(unpaid_id, ADMIN).due_date
+    assert due_date is not None
     _issued_for_period(
         db_session,
         local_storage,
         customer_id,
-        competenza_mese=altro_mese,
-        prezzo="30.00",
-        tipo="proforma",
+        accrual_month=other_month,
+        price="30.00",
+        type="proforma",
     )
     # The fixture's own draft has no period and no date: it stays in the month it was
     # created under both readings, which is this one.
-    bozza_oggi = Decimal("100.00")
+    draft_today = Decimal("100.00")
 
     analytics = AnalyticsService(db_session)
 
-    competenza = analytics.cash_overview(OGGI.year, COLLABORATORE)
-    assert competenza.base == "competenza"
-    declared = next(m for m in competenza.mesi if m.mese == altro_mese)
-    today = next(m for m in competenza.mesi if m.mese == OGGI.month)
-    assert declared.incassato == Decimal("1000.00")
-    assert declared.da_incassare == Decimal("200.00")
-    assert declared.bozze == Decimal("30.00")
-    assert today.incassato == Decimal("0.00")
-    assert today.da_incassare == Decimal("0.00")
-    assert today.bozze == bozza_oggi
+    accrual = analytics.cash_overview(TODAY.year, COLLABORATOR)
+    assert accrual.base == "accrual"
+    declared = next(m for m in accrual.months if m.month == other_month)
+    today = next(m for m in accrual.months if m.month == TODAY.month)
+    assert declared.paid == Decimal("1000.00")
+    assert declared.unpaid == Decimal("200.00")
+    assert declared.drafts == Decimal("30.00")
+    assert today.paid == Decimal("0.00")
+    assert today.unpaid == Decimal("0.00")
+    assert today.drafts == draft_today
 
-    incasso = analytics.cash_overview(OGGI.year, COLLABORATORE, base="incasso")
-    assert incasso.base == "incasso"
-    declared = next(m for m in incasso.mesi if m.mese == altro_mese)
-    today = next(m for m in incasso.mesi if m.mese == OGGI.month)
-    assert declared.incassato == declared.bozze == Decimal("0.00")
-    assert today.incassato == Decimal("1000.00")
-    assert today.bozze == Decimal("30.00") + bozza_oggi
-    by_month = {m.mese: m.da_incassare for m in incasso.mesi}
-    if scadenza.year == OGGI.year:
-        assert by_month[scadenza.month] == Decimal("200.00")
-        assert declared.da_incassare == (
-            Decimal("200.00") if scadenza.month == altro_mese else Decimal("0.00")
+    collection = analytics.cash_overview(TODAY.year, COLLABORATOR, base="collection")
+    assert collection.base == "collection"
+    declared = next(m for m in collection.months if m.month == other_month)
+    today = next(m for m in collection.months if m.month == TODAY.month)
+    assert declared.paid == declared.drafts == Decimal("0.00")
+    assert today.paid == Decimal("1000.00")
+    assert today.drafts == Decimal("30.00") + draft_today
+    by_month = {m.month: m.unpaid for m in collection.months}
+    if due_date.year == TODAY.year:
+        assert by_month[due_date.month] == Decimal("200.00")
+        assert declared.unpaid == (
+            Decimal("200.00") if due_date.month == other_month else Decimal("0.00")
         )
     else:
         # Due next year: by the money it is not this year's projection at all.
@@ -305,8 +303,8 @@ def test_the_cash_view_reads_by_accrual_period_by_default_and_by_the_money_on_re
     # In this fixture the paid and the drafted money add up the same under both readings,
     # since every date involved is in this year: only the month moves. The unpaid invoice
     # is the one that can leave the year, when it falls due in the next one.
-    assert competenza.incassato == incasso.incassato
-    assert competenza.bozze == incasso.bozze
+    assert accrual.paid == collection.paid
+    assert accrual.drafts == collection.drafts
 
 
 def test_the_estimate_stays_on_the_money_whatever_the_charts_read_by(
@@ -324,10 +322,10 @@ def test_the_estimate_stays_on_the_money_whatever_the_charts_read_by(
 
     FiscalProfileService(db_session).upsert(
         FiscalProfileUpsert(
-            codice_regime="RF19",
-            coefficiente_redditivita=Decimal("67.00"),
-            aliquota_imposta_sostitutiva=Decimal("5.00"),
-            aliquota_inps=Decimal("26.07"),
+            regime_code="RF19",
+            profitability_coefficient=Decimal("67.00"),
+            substitute_tax_rate=Decimal("5.00"),
+            social_security_rate=Decimal("26.07"),
         ),
         ADMIN,
     )
@@ -336,67 +334,67 @@ def test_the_estimate_stays_on_the_money_whatever_the_charts_read_by(
     invoice = service.create(
         InvoiceCreate(
             customer_id=customer_id,
-            competenza_da=date(OGGI.year - 1, 12, 1),
-            competenza_a=date(OGGI.year - 1, 12, 31),
-            righe=[InvoiceLineIn(descrizione="Consulenza", prezzo_unitario=Decimal("1000.00"))],
+            accrual_from=date(TODAY.year - 1, 12, 1),
+            accrual_to=date(TODAY.year - 1, 12, 31),
+            lines=[InvoiceLineIn(description="Consulenza", unit_price=Decimal("1000.00"))],
         ),
         ADMIN,
     )
     service.issue(invoice.id, InvoiceIssue(), ADMIN)
     service.set_payment_state(
-        invoice.id, PaymentState(stato_pagamento="incassato", data_incasso=OGGI), ADMIN
+        invoice.id, PaymentState(payment_status="paid", payment_date=TODAY), ADMIN
     )
 
     # The same year boundary for the other two series: a proforma dated today for
-    # December's work, and an unpaid invoice for it. `monthly_bozze` is the one with the
+    # December's work, and an unpaid invoice for it. `monthly_drafts` is the one with the
     # three-way fallback (period, document date, creation day), so it is the one to pin.
     service.create(
         InvoiceCreate(
             customer_id=customer_id,
-            tipo="proforma",
-            data_emissione=OGGI,
-            competenza_da=date(OGGI.year - 1, 12, 1),
-            competenza_a=date(OGGI.year - 1, 12, 31),
-            righe=[InvoiceLineIn(descrizione="Saldo", prezzo_unitario=Decimal("40.00"))],
+            type="proforma",
+            issue_date=TODAY,
+            accrual_from=date(TODAY.year - 1, 12, 1),
+            accrual_to=date(TODAY.year - 1, 12, 31),
+            lines=[InvoiceLineIn(description="Saldo", unit_price=Decimal("40.00"))],
         ),
         ADMIN,
     )
     unpaid = service.create(
         InvoiceCreate(
             customer_id=customer_id,
-            competenza_da=date(OGGI.year - 1, 12, 1),
-            competenza_a=date(OGGI.year - 1, 12, 31),
-            righe=[InvoiceLineIn(descrizione="Saldo", prezzo_unitario=Decimal("500.00"))],
+            accrual_from=date(TODAY.year - 1, 12, 1),
+            accrual_to=date(TODAY.year - 1, 12, 31),
+            lines=[InvoiceLineIn(description="Saldo", unit_price=Decimal("500.00"))],
         ),
         ADMIN,
     )
     service.issue(unpaid.id, InvoiceIssue(), ADMIN)
-    scadenza = service.get(unpaid.id, ADMIN).data_scadenza
-    assert scadenza is not None
+    due_date = service.get(unpaid.id, ADMIN).due_date
+    assert due_date is not None
 
     analytics = AnalyticsService(db_session)
-    by_accrual = analytics.economic_overview(OGGI.year, ADMIN)
-    by_cash = analytics.economic_overview(OGGI.year, ADMIN, base="incasso")
+    by_accrual = analytics.economic_overview(TODAY.year, ADMIN)
+    by_cash = analytics.economic_overview(TODAY.year, ADMIN, base="collection")
 
     # The charts disagree: December's work is last year's by accrual, this year's by cash.
     # The fixture's own dateless draft (100.00) is this year's under both.
-    assert by_accrual.cassa.base == "competenza"
-    assert by_accrual.cassa.incassato == Decimal("0.00")
-    assert by_cash.cassa.incassato == Decimal("1000.00")
-    assert by_accrual.cassa.bozze == Decimal("100.00")
-    assert by_cash.cassa.bozze == Decimal("140.00")
-    assert by_accrual.cassa.da_incassare == Decimal("0.00")
-    assert by_cash.cassa.da_incassare == (
-        Decimal("500.00") if scadenza.year == OGGI.year else Decimal("0.00")
+    assert by_accrual.pension_fund.base == "accrual"
+    assert by_accrual.pension_fund.paid == Decimal("0.00")
+    assert by_cash.pension_fund.paid == Decimal("1000.00")
+    assert by_accrual.pension_fund.drafts == Decimal("100.00")
+    assert by_cash.pension_fund.drafts == Decimal("140.00")
+    assert by_accrual.pension_fund.unpaid == Decimal("0.00")
+    assert by_cash.pension_fund.unpaid == (
+        Decimal("500.00") if due_date.year == TODAY.year else Decimal("0.00")
     )
     # The tax block does not: it is the same estimate on the same collected revenue.
-    assert by_accrual.fiscale is not None and by_cash.fiscale is not None
-    assert by_accrual.fiscale.ricavi == by_cash.fiscale.ricavi == Decimal("1000.00")
-    assert by_accrual.fiscale.totale_dovuto == by_cash.fiscale.totale_dovuto
-    assert by_accrual.netto_effettivo == by_cash.netto_effettivo
-    assert by_accrual.fiscale_proiettato is not None and by_cash.fiscale_proiettato is not None
-    assert by_accrual.fiscale_proiettato.ricavi == by_cash.fiscale_proiettato.ricavi
-    assert by_accrual.netto_proiettato == by_cash.netto_proiettato
+    assert by_accrual.tax is not None and by_cash.tax is not None
+    assert by_accrual.tax.revenue == by_cash.tax.revenue == Decimal("1000.00")
+    assert by_accrual.tax.due_total == by_cash.tax.due_total
+    assert by_accrual.actual_net == by_cash.actual_net
+    assert by_accrual.projected_tax is not None and by_cash.projected_tax is not None
+    assert by_accrual.projected_tax.revenue == by_cash.projected_tax.revenue
+    assert by_accrual.projected_net == by_cash.projected_net
 
 
 # --- REB-352 §1.6: contract-date markers on the cash calendar -----------------------
@@ -405,12 +403,12 @@ def test_the_estimate_stays_on_the_money_whatever_the_charts_read_by(
 def _contract(db_session: Session, customer: Customer, **overrides: object) -> Contract:
     payload: dict[str, object] = {
         "customer_id": customer.id,
-        "titolo": "Consulenza CTO",
-        "inizio": date(2025, 6, 1),
-        "tipo_rinnovo": "nessuno",
-        "preavviso_disdetta_giorni": 30,
-        "cadenza_fatturazione": "mensile",
-        "politica_spese": {"kind": "non_rimborsabile"},
+        "title": "Consulenza CTO",
+        "start": date(2025, 6, 1),
+        "renewal_type": "none",
+        "termination_notice_days": 30,
+        "billing_cadence": "monthly",
+        "expense_policy": {"kind": "not_reimbursable"},
     }
     payload.update(overrides)
     contract = Contract(**payload)  # type: ignore[arg-type]
@@ -422,102 +420,102 @@ def _contract(db_session: Session, customer: Customer, **overrides: object) -> C
 def test_cash_overview_carries_an_irrevocability_marker_for_an_open_ended_contract(
     db_session: Session, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Serving notice "today" (frozen at `OGGI_IN_ITALIA`) still runs the contract's
+    """Serving notice "today" (frozen at `TODAY_IN_ITALY`) still runs the contract's
     own 30-day notice period, so the window closes 30 days out -- regardless of
-    which `anno` is on screen, since the notice period is measured from today."""
-    congela(monkeypatch)
+    which `year` is on screen, since the notice period is measured from today."""
+    freeze(monkeypatch)
     customer = make_customer(db_session)
-    contract = _contract(db_session, customer, preavviso_disdetta_giorni=30, fine=None)
+    contract = _contract(db_session, customer, termination_notice_days=30, end=None)
 
-    overview = AnalyticsService(db_session).cash_overview(OGGI_IN_ITALIA.year, COLLABORATORE)
+    overview = AnalyticsService(db_session).cash_overview(TODAY_IN_ITALY.year, COLLABORATOR)
 
-    markers = [m for m in overview.scadenze_contrattuali if m.contract_id == contract.id]
+    markers = [m for m in overview.contractual_due_dates if m.contract_id == contract.id]
     assert len(markers) == 1
-    assert markers[0].tipo == "fine_irrevocabilita"
-    assert markers[0].data == date(2026, 1, 31)
+    assert markers[0].type == "irrevocability_end"
+    assert markers[0].date == date(2026, 1, 31)
     assert markers[0].customer_id == customer.id
-    assert markers[0].titolo == "Consulenza CTO"
+    assert markers[0].title == "Consulenza CTO"
 
 
 def test_cash_overview_clips_the_irrevocability_marker_to_the_contracts_own_end(
     db_session: Session, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    congela(monkeypatch)
+    freeze(monkeypatch)
     customer = make_customer(db_session)
-    contract = _contract(db_session, customer, preavviso_disdetta_giorni=90, fine=date(2026, 1, 10))
+    contract = _contract(db_session, customer, termination_notice_days=90, end=date(2026, 1, 10))
 
-    overview = AnalyticsService(db_session).cash_overview(OGGI_IN_ITALIA.year, COLLABORATORE)
+    overview = AnalyticsService(db_session).cash_overview(TODAY_IN_ITALY.year, COLLABORATOR)
 
-    markers = [m for m in overview.scadenze_contrattuali if m.contract_id == contract.id]
-    assert [m.data for m in markers if m.tipo == "fine_irrevocabilita"] == [date(2026, 1, 10)]
+    markers = [m for m in overview.contractual_due_dates if m.contract_id == contract.id]
+    assert [m.date for m in markers if m.type == "irrevocability_end"] == [date(2026, 1, 10)]
 
 
 def test_cash_overview_carries_a_renewal_deadline_marker(
     db_session: Session, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    congela(monkeypatch)
+    freeze(monkeypatch)
     customer = make_customer(db_session)
     contract = _contract(
         db_session,
         customer,
-        tipo_rinnovo="tacito",
-        preavviso_rinnovo_giorni=60,
-        fine=date(2026, 6, 1),
+        renewal_type="tacit",
+        renewal_notice_days=60,
+        end=date(2026, 6, 1),
     )
 
-    overview = AnalyticsService(db_session).cash_overview(OGGI_IN_ITALIA.year, COLLABORATORE)
+    overview = AnalyticsService(db_session).cash_overview(TODAY_IN_ITALY.year, COLLABORATOR)
 
     markers = [
         m
-        for m in overview.scadenze_contrattuali
-        if m.contract_id == contract.id and m.tipo == "scadenza_rinnovo"
+        for m in overview.contractual_due_dates
+        if m.contract_id == contract.id and m.type == "renewal_due"
     ]
-    assert [m.data for m in markers] == [date(2026, 4, 2)]
+    assert [m.date for m in markers] == [date(2026, 4, 2)]
 
 
 def test_cash_overview_has_no_renewal_marker_for_a_contract_with_no_renewal_clause(
     db_session: Session, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    congela(monkeypatch)
+    freeze(monkeypatch)
     customer = make_customer(db_session)
-    contract = _contract(db_session, customer, tipo_rinnovo="nessuno", fine=date(2026, 6, 1))
+    contract = _contract(db_session, customer, renewal_type="none", end=date(2026, 6, 1))
 
-    overview = AnalyticsService(db_session).cash_overview(OGGI_IN_ITALIA.year, COLLABORATORE)
+    overview = AnalyticsService(db_session).cash_overview(TODAY_IN_ITALY.year, COLLABORATOR)
 
     assert not [
         m
-        for m in overview.scadenze_contrattuali
-        if m.contract_id == contract.id and m.tipo == "scadenza_rinnovo"
+        for m in overview.contractual_due_dates
+        if m.contract_id == contract.id and m.type == "renewal_due"
     ]
 
 
 def test_cash_overview_excludes_a_marker_falling_outside_the_queried_year(
     db_session: Session, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """`preavviso_disdetta_giorni=400` pushes the window past `OGGI_IN_ITALIA`'s own
+    """`termination_notice_days=400` pushes the window past `TODAY_IN_ITALY`'s own
     year: absent from that year's calendar, present the moment the calendar reaches
     the year the window actually falls in."""
-    congela(monkeypatch)
+    freeze(monkeypatch)
     customer = make_customer(db_session)
-    contract = _contract(db_session, customer, preavviso_disdetta_giorni=400, fine=None)
+    contract = _contract(db_session, customer, termination_notice_days=400, end=None)
 
-    this_year = AnalyticsService(db_session).cash_overview(OGGI_IN_ITALIA.year, COLLABORATORE)
-    next_year = AnalyticsService(db_session).cash_overview(OGGI_IN_ITALIA.year + 1, COLLABORATORE)
+    this_year = AnalyticsService(db_session).cash_overview(TODAY_IN_ITALY.year, COLLABORATOR)
+    next_year = AnalyticsService(db_session).cash_overview(TODAY_IN_ITALY.year + 1, COLLABORATOR)
 
-    assert not [m for m in this_year.scadenze_contrattuali if m.contract_id == contract.id]
-    markers = [m for m in next_year.scadenze_contrattuali if m.contract_id == contract.id]
-    assert [m.data for m in markers] == [date(2027, 2, 5)]
+    assert not [m for m in this_year.contractual_due_dates if m.contract_id == contract.id]
+    markers = [m for m in next_year.contractual_due_dates if m.contract_id == contract.id]
+    assert [m.date for m in markers] == [date(2027, 2, 5)]
 
 
 def test_cash_overview_excludes_a_marker_for_a_soft_deleted_contract(
     db_session: Session, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    congela(monkeypatch)
+    freeze(monkeypatch)
     customer = make_customer(db_session)
-    contract = _contract(db_session, customer, preavviso_disdetta_giorni=1, fine=None)
+    contract = _contract(db_session, customer, termination_notice_days=1, end=None)
     contract.deleted_at = datetime.now(UTC)
     db_session.flush()
 
-    overview = AnalyticsService(db_session).cash_overview(OGGI_IN_ITALIA.year, COLLABORATORE)
+    overview = AnalyticsService(db_session).cash_overview(TODAY_IN_ITALY.year, COLLABORATOR)
 
-    assert not [m for m in overview.scadenze_contrattuali if m.contract_id == contract.id]
+    assert not [m for m in overview.contractual_due_dates if m.contract_id == contract.id]

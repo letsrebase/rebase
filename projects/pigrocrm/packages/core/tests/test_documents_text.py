@@ -1,6 +1,6 @@
 """`DocumentService.extract_text`: the data inside an archived file, made readable.
 
-The case this exists for is concrete. A codice destinatario is printed on a signed
+The case this exists for is concrete. An SDI recipient code is printed on a signed
 order form and written nowhere else in the CRM; before this, recovering it meant
 downloading the PDF and reading it by eye, which an agent cannot do and a person should
 not have to. So what these tests hold to is not "the extractor works" -- `test_text.py`
@@ -24,7 +24,7 @@ from pigrocrm.core.documents.service import DocumentService
 from pigrocrm.core.documents.text import TEXT_SOURCE_MAX_BYTES
 from pigrocrm.core.errors import Conflict, NotFound
 from pigrocrm.core.storage import LocalFileStorage
-from pigrocrm.core.text import PROVENIENZA, TEXT_TRUNCATION_MARKER
+from pigrocrm.core.text import PROVENANCE, TEXT_TRUNCATION_MARKER
 
 ADMIN = Actor(id=None, type="system", role="admin")
 
@@ -40,7 +40,7 @@ def service(db_session: Session, tmp_path: Path) -> DocumentService:
 
 @pytest.fixture
 def customer(db_session: Session) -> Customer:
-    row = Customer(ragione_sociale="ACME S.r.l.")
+    row = Customer(legal_name="ACME S.r.l.")
     db_session.add(row)
     db_session.flush()
     return row
@@ -48,7 +48,7 @@ def customer(db_session: Session) -> Customer:
 
 def _document(service: DocumentService, customer: Customer) -> DocumentRead:
     return service.create(
-        DocumentCreate(customer_id=customer.id, tipo="documento", titolo="Modulo d'ordine"), ADMIN
+        DocumentCreate(customer_id=customer.id, type="document", title="Modulo d'ordine"), ADMIN
     )
 
 
@@ -60,40 +60,40 @@ def test_reads_the_text_of_the_current_version(
         document.id, minimal_pdf(["Codice destinatario: ABCDEFG"]), "application/pdf", ADMIN
     )
 
-    letto = service.extract_text(document.id, None, ADMIN)
+    read = service.extract_text(document.id, None, ADMIN)
 
-    assert "ABCDEFG" in letto.testo
-    assert letto.numero == 1
-    assert letto.mime == "application/pdf"
-    assert letto.troncato is False
+    assert "ABCDEFG" in read.text
+    assert read.number == 1
+    assert read.mime == "application/pdf"
+    assert read.truncated is False
 
 
-def test_without_a_numero_it_is_the_latest_version_and_not_the_first(
+def test_without_to_number_it_is_the_latest_version_and_not_the_first(
     service: DocumentService, customer: Customer
 ) -> None:
-    """The default is `versione_corrente`, which is what an agent holding only a
+    """The default is `current_version`, which is what an agent holding only a
     document id means by "the document"."""
     document = _document(service, customer)
     service.add_version(document.id, minimal_pdf(["prima stesura"]), "application/pdf", ADMIN)
     service.add_version(document.id, minimal_pdf(["seconda stesura"]), "application/pdf", ADMIN)
 
-    letto = service.extract_text(document.id, None, ADMIN)
+    read = service.extract_text(document.id, None, ADMIN)
 
-    assert letto.numero == 2
-    assert "seconda" in letto.testo
+    assert read.number == 2
+    assert "seconda" in read.text
 
 
-def test_an_explicit_numero_reads_that_version(
+def test_an_explicit_number_reads_that_version(
     service: DocumentService, customer: Customer
 ) -> None:
     document = _document(service, customer)
     service.add_version(document.id, minimal_pdf(["prima stesura"]), "application/pdf", ADMIN)
     service.add_version(document.id, minimal_pdf(["seconda stesura"]), "application/pdf", ADMIN)
 
-    letto = service.extract_text(document.id, 1, ADMIN)
+    read = service.extract_text(document.id, 1, ADMIN)
 
-    assert letto.numero == 1
-    assert "prima" in letto.testo
+    assert read.number == 1
+    assert "prima" in read.text
 
 
 def test_a_version_nobody_uploaded_is_not_found(
@@ -109,7 +109,7 @@ def test_a_version_nobody_uploaded_is_not_found(
 def test_a_document_without_versions_is_not_found(
     service: DocumentService, customer: Customer
 ) -> None:
-    """`versione_corrente` is 0 on a document nobody has uploaded to, and the honest
+    """`current_version` is 0 on a document nobody has uploaded to, and the honest
     answer is the same as for a version number that does not exist: there is no file."""
     document = _document(service, customer)
 
@@ -134,9 +134,9 @@ def test_the_xml_of_an_invoice_is_read_as_text(
     )
     service.add_version(document.id, xml, "application/xml", ADMIN)
 
-    letto = service.extract_text(document.id, None, ADMIN)
+    read = service.extract_text(document.id, None, ADMIN)
 
-    assert "<CodiceDestinatario>ABCDEFG</CodiceDestinatario>" in letto.testo
+    assert "<CodiceDestinatario>ABCDEFG</CodiceDestinatario>" in read.text
 
 
 def test_a_type_with_no_text_answers_empty_with_its_mime(
@@ -147,12 +147,12 @@ def test_a_type_with_no_text_answers_empty_with_its_mime(
     document = _document(service, customer)
     service.add_version(document.id, b"\x89PNG\r\n\x1a\nfinto", "image/png", ADMIN)
 
-    letto = service.extract_text(document.id, None, ADMIN)
+    read = service.extract_text(document.id, None, ADMIN)
 
-    assert letto.testo == ""
-    assert letto.mime == "image/png"
-    # Nothing was cut -- there was nothing to cut. See `FileText.troncato`.
-    assert letto.troncato is False
+    assert read.text == ""
+    assert read.mime == "image/png"
+    # Nothing was cut -- there was nothing to cut. See `FileText.truncated`.
+    assert read.truncated is False
 
 
 def test_a_scan_without_a_text_layer_is_not_reported_as_truncated(
@@ -161,10 +161,10 @@ def test_a_scan_without_a_text_layer_is_not_reported_as_truncated(
     document = _document(service, customer)
     service.add_version(document.id, minimal_pdf([]), "application/pdf", ADMIN)
 
-    letto = service.extract_text(document.id, None, ADMIN)
+    read = service.extract_text(document.id, None, ADMIN)
 
-    assert letto.testo == ""
-    assert letto.troncato is False
+    assert read.text == ""
+    assert read.truncated is False
 
 
 def test_text_longer_than_the_ceiling_is_cut_and_says_so(
@@ -173,10 +173,10 @@ def test_text_longer_than_the_ceiling_is_cut_and_says_so(
     document = _document(service, customer)
     service.add_version(document.id, b"a" * 500, "text/plain", ADMIN)
 
-    letto = service.extract_text(document.id, None, ADMIN, max_bytes=100)
+    read = service.extract_text(document.id, None, ADMIN, max_bytes=100)
 
-    assert letto.troncato is True
-    assert letto.testo.endswith(TEXT_TRUNCATION_MARKER)
+    assert read.truncated is True
+    assert read.text.endswith(TEXT_TRUNCATION_MARKER)
 
 
 def test_the_ceiling_comes_from_the_settings_when_the_caller_gives_none(
@@ -190,7 +190,7 @@ def test_the_ceiling_comes_from_the_settings_when_the_caller_gives_none(
     document = _document(service, customer)
     service.add_version(document.id, b"a" * 500, "text/plain", ADMIN)
 
-    assert service.extract_text(document.id, None, ADMIN).troncato is True
+    assert service.extract_text(document.id, None, ADMIN).truncated is True
 
 
 def test_a_file_too_large_to_parse_is_refused_rather_than_cut(
@@ -200,12 +200,12 @@ def test_a_file_too_large_to_parse_is_refused_rather_than_cut(
 
     The size is written onto the stored row rather than uploaded, because uploading
     twenty megabytes to assert a comparison would be twenty megabytes spent on
-    arithmetic. What is under test is the guard, and the guard reads `dimensione`.
+    arithmetic. What is under test is the guard, and the guard reads `size`.
     """
     document = _document(service, customer)
     service.add_version(document.id, minimal_pdf(["breve"]), "application/pdf", ADMIN)
     version = db_session.query(DocumentVersion).filter_by(document_id=document.id).one()
-    version.dimensione = TEXT_SOURCE_MAX_BYTES + 1
+    version.size = TEXT_SOURCE_MAX_BYTES + 1
     db_session.flush()
 
     with pytest.raises(Conflict) as excinfo:
@@ -217,7 +217,7 @@ def test_a_file_too_large_to_parse_is_refused_rather_than_cut(
 def test_a_pdf_beyond_the_page_ceiling_reports_that_it_stopped(
     service: DocumentService, customer: Customer
 ) -> None:
-    """`troncato` covers the page ceiling too, which leaves nothing in the text to
+    """`truncated` covers the page ceiling too, which leaves nothing in the text to
     notice -- see `_extracted`. Six hundred pages, one word each: far under any byte
     ceiling, and still short of the document."""
     document = _document(service, customer)
@@ -225,21 +225,21 @@ def test_a_pdf_beyond_the_page_ceiling_reports_that_it_stopped(
         document.id, minimal_pdf_pages([[f"p{n}"] for n in range(600)]), "application/pdf", ADMIN
     )
 
-    letto = service.extract_text(document.id, None, ADMIN)
+    read = service.extract_text(document.id, None, ADMIN)
 
-    assert letto.troncato is True
+    assert read.truncated is True
 
 
 def test_every_answer_carries_its_provenance(service: DocumentService, customer: Customer) -> None:
-    """The one field that is not about the file: whoever reads `testo` is reading words
+    """The one field that is not about the file: whoever reads `text` is reading words
     written outside this system, and has to be told so in the same payload."""
     document = _document(service, customer)
     service.add_version(document.id, minimal_pdf(["qualsiasi"]), "application/pdf", ADMIN)
 
-    letto = service.extract_text(document.id, None, ADMIN)
+    read = service.extract_text(document.id, None, ADMIN)
 
-    assert letto.provenienza == PROVENIENZA
-    assert letto.titolo == "Modulo d'ordine"
+    assert read.provenance == PROVENANCE
+    assert read.title == "Modulo d'ordine"
 
 
 def test_the_gmail_attachment_ceiling_defaults_to_the_text_source_ceiling() -> None:

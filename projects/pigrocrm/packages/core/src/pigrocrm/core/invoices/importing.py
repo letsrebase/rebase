@@ -13,7 +13,6 @@ from uuid import UUID
 from pydantic import ValidationError as PydanticValidationError
 
 from pigrocrm.core.actor import Actor
-from pigrocrm.core.emitter.models import LegalEntity
 from pigrocrm.core.errors import Conflict, NotFound, ValidationFailed
 from pigrocrm.core.invoices.context import InvoiceContext
 from pigrocrm.core.invoices.import_classification import classify_parsed_invoice
@@ -41,9 +40,10 @@ from pigrocrm.core.invoices.import_upload import (
     party_key,
 )
 from pigrocrm.core.invoices.issued_import import IssuedInvoiceImporter, check_import_customer
-from pigrocrm.core.invoices.naming import numero_completo
+from pigrocrm.core.invoices.naming import number_complete
 from pigrocrm.core.invoices.register import holes
 from pigrocrm.core.invoices.schemas import InvoiceRead
+from pigrocrm.core.legal_entities.models import LegalEntity
 
 REVIEW_ACTION = "review_invoice_import"
 CONFIRM_ACTION = "confirm_invoice_import"
@@ -64,7 +64,7 @@ class _GapTracker:
 
     Each imported invoice reports the holes its register still has after it. Reloading
     the whole year's number set for every invoice made a batch quadratic in the register;
-    here a (azienda, anno) register is loaded on first use and then follows the batch,
+    here a (legal entity, anno) register is loaded on first use and then follows the batch,
     adding each number as its invoice is written, which gives every row the same answer a
     fresh read would.
     """
@@ -73,25 +73,25 @@ class _GapTracker:
         self._ctx = ctx
         self._registers: dict[tuple[UUID, int], tuple[set[int], set[int]]] = {}
 
-    def holes_after(self, azienda_id: UUID, anno: int, numero: int) -> list[int]:
-        key = (azienda_id, anno)
+    def holes_after(self, legal_entity_id: UUID, year: int, number: int) -> list[int]:
+        key = (legal_entity_id, year)
         register = self._registers.get(key)
         if register is None:
             repo = self._ctx.repo
             register = (
-                repo.numbers_present(azienda_id, anno),
-                repo.declared_gaps(azienda_id, anno),
+                repo.numbers_present(legal_entity_id, year),
+                repo.declared_gaps(legal_entity_id, year),
             )
             self._registers[key] = register
         present, declared = register
-        present.add(numero)
+        present.add(number)
         return holes(present, declared)
 
 
 @dataclass
 class _Batch:
     """What outlives one file of a confirmation request: `created_customers`, keyed by
-    the azienda and the `party_key`, so a counterparty created for one invoice is the
+    the legal entity and the `party_key`, so a counterparty created for one invoice is the
     customer of every later invoice of it in the request, and the gap tracker."""
 
     gaps: _GapTracker
@@ -120,14 +120,14 @@ class InvoiceImporter:
         self.ctx = ctx
         self.issued = issued
 
-    def _importing_aziende(self) -> list[LegalEntity]:
-        """The aziende a FatturaPA file can have been issued by (REB-619, spec §1.5):
+    def _importing_legal_entities(self) -> list[LegalEntity]:
+        """The legal entities a FatturaPA file can have been issued by (REB-619, spec §1.5):
         the active Italian ones. A space with none has nothing to classify against,
         and the refusal names the screen to go to."""
-        aziende = self.ctx.emitter.repo.active_italian()
-        if not aziende:
-            raise NotFound("emitter_profile", "predefinita")
-        return aziende
+        legal_entities = self.ctx.legal_entity.repo.active_italian()
+        if not legal_entities:
+            raise NotFound("legal_entity", "default")
+        return legal_entities
 
     # ---- review ---------------------------------------------------------------
 
@@ -144,11 +144,11 @@ class InvoiceImporter:
         """
         actor.require_admin(REVIEW_ACTION)
         ctx = self.ctx
-        aziende = self._importing_aziende()
+        legal_entities = self._importing_legal_entities()
         rows: list[ReviewedInvoiceRead] = []
         for document_id in document_ids:
             content, _content_type, _filename = ctx.documents.download(document_id, None, actor)
-            rows.extend(review_content(ctx.session, content, aziende, document_id))
+            rows.extend(review_content(ctx.session, content, legal_entities, document_id))
         return rows
 
     def review_upload(
@@ -160,24 +160,24 @@ class InvoiceImporter:
         ones from the same `review_invoices`, named by file and SHA-256 instead of a
         `document_id`. Read-only, admin only, and nothing is stored: see `import_upload`
         for why the page sends the files twice rather than staging them. A file that looks
-        like a FatturaPA and does not parse is one `unclaimed` row with its `motivo`, not
+        like a FatturaPA and does not parse is one `unclaimed` row with its `reason`, not
         a refusal of the files sent with it."""
         actor.require_admin(REVIEW_ACTION)
-        aziende = self._importing_aziende()
+        legal_entities = self._importing_legal_entities()
         rows: list[UploadedInvoiceReviewRead] = []
         for file in expand_uploads(files):
-            for row in review_invoices(self.ctx.session, file.content, aziende):
+            for row in review_invoices(self.ctx.session, file.content, legal_entities):
                 rows.append(
                     UploadedInvoiceReviewRead(
                         file=file.name,
                         sha256=file.sha256,
                         outcome=row.outcome,
                         invoice=row.invoice,
-                        party_key=party_key(row.invoice.cliente) if row.invoice else None,
-                        motivo=row.note,
-                        azienda_id=row.azienda_id,
+                        party_key=party_key(row.invoice.customer) if row.invoice else None,
+                        reason=row.note,
+                        legal_entity_id=row.legal_entity_id,
                         matched_customer_id=row.matched_customer_id,
-                        mappature_giorni=row.mappature_giorni,
+                        days_mappings=row.days_mappings,
                     )
                 )
         return rows
@@ -213,7 +213,7 @@ class InvoiceImporter:
         attaches to. When omitted, the current exact tax-id match
         (`import_review.match_customer`, re-run against the database's current state,
         never review time's) is used. A `customer_id` that is archived, or that is not on
-        the azienda the invoice's issuer resolves to, is a `ValidationFailed` naming the
+        the legal entity the invoice's issuer resolves to, is a `ValidationFailed` naming the
         counterparty, raised before any invoice is written (REB-783).
 
         `create_customer` (REB-367, design §7 item 5): when still unresolved and true,
@@ -232,25 +232,25 @@ class InvoiceImporter:
         document-ownership rules, so none of a batch's invoices takes ownership of it.
         """
         actor.require_admin(CONFIRM_ACTION)
-        aziende = self._importing_aziende()
+        legal_entities = self._importing_legal_entities()
         content, _content_type, _filename = self.ctx.documents.download(document_id, None, actor)
 
         def decide(_party: ParsedInvoiceParty) -> tuple[UUID | None, bool, bool]:
             return customer_id, create_customer, False
 
-        self._refuse_chosen_customers([content], aziende, decide)
+        self._refuse_chosen_customers([content], legal_entities, decide)
         batch = _Batch(gaps=_GapTracker(self.ctx))
         return [
             ConfirmedInvoiceRead(
                 document_id=document_id,
                 outcome=row.outcome,
-                azienda_id=row.azienda_id,
-                fattura=row.fattura,
-                buchi_non_dichiarati=row.buchi_non_dichiarati,
+                legal_entity_id=row.legal_entity_id,
+                invoice=row.invoice,
+                undeclared_gaps=row.undeclared_gaps,
             )
             for row in self._confirm_content(
                 content,
-                aziende,
+                legal_entities,
                 actor,
                 stored_as=document_id,
                 origin=None,
@@ -273,18 +273,18 @@ class InvoiceImporter:
         `party_key`, and a customer created for one invoice is the customer of every
         later invoice of that counterparty in this request, whether or not the register
         could match it again by tax id. A `customer_id` that is archived, or that is not
-        on the azienda the invoice's issuer resolves to, is a `ValidationFailed` naming
+        on the legal entity the invoice's issuer resolves to, is a `ValidationFailed` naming
         the counterparty, raised before the first invoice of the request is written
         (REB-783).
 
         The one difference is where a single-invoice file's XML ends up. `confirm_import`
         points the invoice at the document it was handed; here there is none, so the
-        file is archived as a `fattura_xml` document of the customer the invoice was
+        file is archived as a `invoice_xml` document of the customer the invoice was
         written for, inside the invoice's own transaction. A `lotto` file archives
         nothing, for the reason `confirm_import` gives for leaving `xml_document_id`
         empty on a batch."""
         actor.require_admin(CONFIRM_ACTION)
-        aziende = self._importing_aziende()
+        legal_entities = self._importing_legal_entities()
 
         def decide(party: ParsedInvoiceParty) -> tuple[UUID | None, bool, bool]:
             decision = decisions.get(party_key(party))
@@ -293,13 +293,13 @@ class InvoiceImporter:
             return decision.customer_id, decision.create_customer, decision.skip
 
         uploaded = expand_uploads(files)
-        self._refuse_chosen_customers([file.content for file in uploaded], aziende, decide)
+        self._refuse_chosen_customers([file.content for file in uploaded], legal_entities, decide)
         batch = _Batch(gaps=_GapTracker(self.ctx))
         rows: list[UploadedInvoiceConfirmRead] = []
         for file in uploaded:
             for row in self._confirm_content(
                 file.content,
-                aziende,
+                legal_entities,
                 actor,
                 stored_as=None,
                 origin=file.name,
@@ -312,10 +312,10 @@ class InvoiceImporter:
                         sha256=file.sha256,
                         outcome=row.outcome,
                         party_key=row.party_key,
-                        motivo=row.note,
-                        azienda_id=row.azienda_id,
-                        fattura=row.fattura,
-                        buchi_non_dichiarati=row.buchi_non_dichiarati,
+                        reason=row.note,
+                        legal_entity_id=row.legal_entity_id,
+                        invoice=row.invoice,
+                        undeclared_gaps=row.undeclared_gaps,
                     )
                 )
         return rows
@@ -323,7 +323,7 @@ class InvoiceImporter:
     def _refuse_chosen_customers(
         self,
         contents: Sequence[bytes],
-        aziende: Sequence[LegalEntity],
+        legal_entities: Sequence[LegalEntity],
         decide: CustomerDecision,
     ) -> None:
         """`check_import_customer` for every invoice a confirmation is about to write,
@@ -340,24 +340,24 @@ class InvoiceImporter:
             except ValueError:
                 continue
             for invoice in invoices:
-                classification, azienda = classify_parsed_invoice(
+                classification, legal_entity = classify_parsed_invoice(
                     invoice,
-                    aziende,
+                    legal_entities,
                     existing_for=register_lookup(self.ctx.session, invoice),
                     content=content,
                 )
-                if classification != "ready" or azienda is None:
+                if classification != "ready" or legal_entity is None:
                     continue
-                customer_id, _create, skip = decide(invoice.cliente)
+                customer_id, _create, skip = decide(invoice.customer)
                 if customer_id is not None and not skip:
                     check_import_customer(
-                        self.ctx, customer_id, azienda, invoice.cliente.ragione_sociale
+                        self.ctx, customer_id, legal_entity, invoice.customer.legal_name
                     )
 
     def _confirm_content(
         self,
         content: bytes,
-        aziende: Sequence[LegalEntity],
+        legal_entities: Sequence[LegalEntity],
         actor: Actor,
         *,
         stored_as: UUID | None,
@@ -380,7 +380,7 @@ class InvoiceImporter:
             content=content, stored_as=stored_as, origin=origin, single_invoice=len(invoices) == 1
         )
         return [
-            self._confirm_invoice(invoice, file, aziende, actor, decide, batch)
+            self._confirm_invoice(invoice, file, legal_entities, actor, decide, batch)
             for invoice in invoices
         ]
 
@@ -388,49 +388,51 @@ class InvoiceImporter:
         self,
         invoice: ParsedInvoice,
         file: _File,
-        aziende: Sequence[LegalEntity],
+        legal_entities: Sequence[LegalEntity],
         actor: Actor,
         decide: CustomerDecision,
         batch: _Batch,
     ) -> ConfirmedInvoice:
         ctx = self.ctx
-        party = party_key(invoice.cliente)
-        classification, azienda = classify_parsed_invoice(
+        party = party_key(invoice.customer)
+        classification, legal_entity = classify_parsed_invoice(
             invoice,
-            aziende,
+            legal_entities,
             existing_for=register_lookup(ctx.session, invoice),
             content=file.content,
         )
-        if classification == "incoming_skipped" or azienda is None:
+        if classification == "incoming_skipped" or legal_entity is None:
             return ConfirmedInvoice(outcome="incoming_skipped", party_key=party)
         key = natural_key(invoice)
         # `classify_parsed_invoice` routes a keyless invoice to "conflict": it compares
         # against a synthetic hashless row, and a hashless comparison is never "new". So
         # "already_present" and "ready" both carry a key, and this is the same answer.
         if classification == "conflict" or key is None:
-            return ConfirmedInvoice(outcome="conflict", azienda_id=azienda.id, party_key=party)
-        anno, numero = key
+            return ConfirmedInvoice(
+                outcome="conflict", legal_entity_id=legal_entity.id, party_key=party
+            )
+        year, number = key
         if classification == "already_present":
-            existing = ctx.repo.existing_by_number(azienda.id, anno, numero)
+            existing = ctx.repo.existing_by_number(legal_entity.id, year, number)
             return ConfirmedInvoice(
                 outcome="already_present",
-                azienda_id=azienda.id,
-                fattura=ctx.get(existing.id) if existing is not None else None,
+                legal_entity_id=legal_entity.id,
+                invoice=ctx.get(existing.id) if existing is not None else None,
                 party_key=party,
             )
-        customer_id, create_customer, skip = decide(invoice.cliente)
+        customer_id, create_customer, skip = decide(invoice.customer)
         if skip:
             # The person left this customer out: whatever the register would match now (a
             # customer created by somebody else since the review, say), the invoice is not
             # written.
-            return self._needs_customer(azienda, party)
+            return self._needs_customer(legal_entity, party)
         if customer_id is not None:
-            check_import_customer(ctx, customer_id, azienda, invoice.cliente.ragione_sociale)
+            check_import_customer(ctx, customer_id, legal_entity, invoice.customer.legal_name)
         else:
-            customer_id = match_customer(ctx.session, invoice.cliente, azienda.id)
-        cached_id = batch.created_customers.get((azienda.id, party))
+            customer_id = match_customer(ctx.session, invoice.customer, legal_entity.id)
+        cached_id = batch.created_customers.get((legal_entity.id, party))
         if customer_id is None and not create_customer:
-            return self._needs_customer(azienda, party)
+            return self._needs_customer(legal_entity, party)
 
         new_customer_id: UUID | None = None
         try:
@@ -441,44 +443,46 @@ class InvoiceImporter:
                 if customer_id is None:
                     customer_id = cached_id
                 if customer_id is None:
-                    # On the azienda the file landed on (§1.5), not the one the nation
-                    # would propose: the customer was billed by this azienda already.
+                    # On the legal entity the file landed on (§1.5), not the one the nation
+                    # would propose: the customer was billed by this legal entity already.
                     new_customer = ctx.customers._insert(
-                        map_parsed_party_to_customer(invoice.cliente).model_copy(
-                            update={"azienda_id": azienda.id}
+                        map_parsed_party_to_customer(invoice.customer).model_copy(
+                            update={"legal_entity_id": legal_entity.id}
                         ),
                         actor,
                     )
                     customer_id = new_customer_id = new_customer.id
-                fattura = self._write(invoice, anno, numero, customer_id, azienda, file, actor)
+                written = self._write(invoice, year, number, customer_id, legal_entity, file, actor)
         except _Refused:
-            return ConfirmedInvoice(outcome="conflict", azienda_id=azienda.id, party_key=party)
+            return ConfirmedInvoice(
+                outcome="conflict", legal_entity_id=legal_entity.id, party_key=party
+            )
         ctx.session.commit()
         # Cached only now that the invoice it was created for is committed: a rolled-back
         # insert must not leave an id behind for the next invoice of the batch to reuse.
         if new_customer_id is not None:
-            batch.created_customers[(azienda.id, party)] = new_customer_id
+            batch.created_customers[(legal_entity.id, party)] = new_customer_id
         return ConfirmedInvoice(
             outcome="imported",
-            azienda_id=azienda.id,
-            fattura=fattura,
-            buchi_non_dichiarati=batch.gaps.holes_after(azienda.id, anno, numero),
+            legal_entity_id=legal_entity.id,
+            invoice=written,
+            undeclared_gaps=batch.gaps.holes_after(legal_entity.id, year, number),
             party_key=party,
         )
 
     @staticmethod
-    def _needs_customer(azienda: LegalEntity, party: str) -> ConfirmedInvoice:
+    def _needs_customer(legal_entity: LegalEntity, party: str) -> ConfirmedInvoice:
         return ConfirmedInvoice(
-            outcome="needs_customer_confirmation", azienda_id=azienda.id, party_key=party
+            outcome="needs_customer_confirmation", legal_entity_id=legal_entity.id, party_key=party
         )
 
     def _write(
         self,
         invoice: ParsedInvoice,
-        anno: int,
-        numero: int,
+        year: int,
+        number: int,
         customer_id: UUID,
-        azienda: LegalEntity,
+        legal_entity: LegalEntity,
         file: _File,
         actor: Actor,
     ) -> InvoiceRead:
@@ -489,7 +493,7 @@ class InvoiceImporter:
             # (200 lines, a width), and its refusal is this invoice's `conflict`, not a
             # failure of the request.
             data = map_parsed_invoice_to_import(
-                invoice, anno=anno, numero=numero, customer_id=customer_id
+                invoice, year=year, number=number, customer_id=customer_id
             )
             xml_document_id = file.stored_as
             if file.single_invoice and file.stored_as is None:
@@ -500,22 +504,22 @@ class InvoiceImporter:
                 # own docstring describes.
                 xml_document_id = self.ctx.documents.import_bytes(
                     customer_id=customer_id,
-                    tipo="fattura_xml",
-                    titolo=f"Fattura {numero_completo(anno, numero)} (XML)",
+                    type="invoice_xml",
+                    title=f"Fattura {number_complete(year, number)} (XML)",
                     data=file.content,
                     content_type="application/xml",
                     actor=actor,
-                    origine={"file": file.origin},
+                    origin={"file": file.origin},
                     commit=False,
-                    azienda_id=azienda.id,
+                    legal_entity_id=legal_entity.id,
                 ).id
             return self.issued.import_issued(
                 data,
                 actor,
-                azienda_id=azienda.id,
+                legal_entity_id=legal_entity.id,
                 xml_document_id=xml_document_id if file.single_invoice else None,
                 xml_hash_sha256=file.digest,
-                importata_da="fatturapa",
+                imported_from="fatturapa",
                 commit=False,
             )
         except (Conflict, ValidationFailed, PydanticValidationError) as exc:

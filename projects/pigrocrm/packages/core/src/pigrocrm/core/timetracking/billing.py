@@ -42,9 +42,9 @@ def _group_order(key: GroupKey) -> tuple[int, int, Decimal]:
     groups of `raggruppa_per_mese = False` first, which is where they belong when they
     are also the only ones.
     """
-    tariffa, mese = key
-    anno, numero_mese = mese if mese is not None else (0, 0)
-    return (anno, numero_mese, tariffa)
+    rate, month = key
+    year, number_month = month if month is not None else (0, 0)
+    return (year, number_month, rate)
 
 
 class TimeBilling:
@@ -79,12 +79,12 @@ class TimeBilling:
         orphans; the moment `issue()` commits, the bound hours are frozen without
         `issue()` having had to know they exist.
 
-        **The rounding disagreement, and which figure wins.** A line's `prezzo_totale`
+        **The rounding disagreement, and which figure wins.** A line's `total_price`
         is `ROUND(Σ ore × tariffa, 2)`, while the timesheet prints
         `Σ ROUND(ore × tariffa, 2)`. The two differ by cents and §6.2 states this as its
         one exception rather than reconciling it: hours × rate is an *estimate*
-        (`valore_maturato`), and it stops being consulted the moment an invoice exists.
-        From then on the revenue is the invoice's own `imponibile`.
+        (`accrued_value`), and it stops being consulted the moment an invoice exists.
+        From then on the revenue is the invoice's own `taxable_amount`.
         """
         actor.require_admin("bind_time_to_invoice")
         deal = self.deals.get(deal_id)
@@ -100,28 +100,28 @@ class TimeBilling:
         # timesheet attached to it (§10.2). `raggruppa_per_mese = False` collapses to one
         # line per rate, which is a presentation choice the caller makes and not a rule.
         groups: dict[GroupKey, list[TimeEntry]] = defaultdict(list)
-        for tariffa, entry in priced:
-            mese = (entry.data.year, entry.data.month) if data.raggruppa_per_mese else None
-            groups[(tariffa, mese)].append(entry)
+        for rate, entry in priced:
+            month = (entry.date.year, entry.date.month) if data.group_by_month else None
+            groups[(rate, month)].append(entry)
         ordered = sorted(groups.items(), key=lambda item: _group_order(item[0]))
 
-        righe: list[InvoiceLineIn] = []
-        for (tariffa, mese), members in ordered:
-            ore = sum_hours([m.ore for m in members])
-            etichetta = f" {period_label(*mese)}" if mese is not None else ""
-            righe.append(
+        lines: list[InvoiceLineIn] = []
+        for (rate, month), members in ordered:
+            hours = sum_hours([m.hours for m in members])
+            label = f" {period_label(*month)}" if month is not None else ""
+            lines.append(
                 InvoiceLineIn(
                     # Names the month and the hours, which is what makes a six-line
                     # invoice legible next to a timesheet the client can check it
                     # against. A plain hyphen, never an em dash: `Descrizione` goes into
                     # the FatturaPA XML, whose FPR12 profile admits only basic-latin and
                     # Latin-1 code points, and U+2014 is in neither.
-                    descrizione=f"Attività{etichetta} - {ore} ore",
-                    quantita=ore,
-                    unita_misura="ore",
-                    prezzo_unitario=tariffa,
-                    # `aliquota_iva` deliberately omitted: `None` means "the regime's
-                    # answer", and `natura`/`riferimento_normativo` are not on this
+                    description=f"Attività{label} - {hours} ore",
+                    quantity=hours,
+                    unit_of_measure="hours",
+                    unit_price=rate,
+                    # `vat_rate` deliberately omitted: `None` means "the regime's
+                    # answer", and `vat_nature`/`legal_reference` are not on this
                     # schema at all, so a caller cannot put the table constraint
                     # `(aliquota_iva = 0) = (natura IS NOT NULL)` within reach of a
                     # request body. The fiscal profile is `InvoiceService`'s to read.
@@ -129,8 +129,8 @@ class TimeBilling:
             )
 
         def bind(line_ids: list[UUID]) -> None:
-            # The line ids arrive in `numero_linea` order, which `compute_lines`
-            # assigns from the order `righe` was built in -- so the group-to-line mapping
+            # The line ids arrive in `line_number` order, which `compute_lines`
+            # assigns from the order `lines` was built in -- so the group-to-line mapping
             # is positional and deterministic, rather than matched on a description
             # string that two groups could share.
             for line_id, (_, members) in zip(line_ids, ordered, strict=True):
@@ -147,7 +147,7 @@ class TimeBilling:
                 deal_id,
                 "time_bound_to_invoice",
                 actor,
-                {"invoice_id": str(invoice_id), "voci": len(rows)},
+                {"invoice_id": str(invoice_id), "entries": len(rows)},
             )
 
         storage = (
@@ -158,8 +158,8 @@ class TimeBilling:
             InvoiceCreate(
                 customer_id=deal.customer_id,
                 deal_id=deal_id,
-                tipo="fattura",
-                righe=righe,
+                type="invoice",
+                lines=lines,
             ),
             actor,
             bind=bind,
@@ -191,7 +191,7 @@ class TimeBilling:
         # A property of the work itself, decided when it was logged -- an internal
         # meeting, a rewrite nobody agreed to pay for -- so it never belongs on a draft,
         # whatever rate it happens to carry.
-        internal = [str(e.id) for e in rows if not e.fatturabile]
+        internal = [str(e.id) for e in rows if not e.billable]
         if internal:
             raise ValidationFailed(
                 "time_entry",
@@ -207,11 +207,11 @@ class TimeBilling:
         priced: list[tuple[Decimal, TimeEntry]] = []
         unpriced: list[TimeEntry] = []
         for entry in rows:
-            tariffa = entry.tariffa_applicata
-            if tariffa is None:
+            rate = entry.applied_rate
+            if rate is None:
                 unpriced.append(entry)
             else:
-                priced.append((tariffa, entry))
+                priced.append((rate, entry))
         if unpriced:
             # Counted in the reason and listed in `expected`, so the refusal is an
             # instruction -- "give these two entries a rate" -- and not an obstacle. An
@@ -237,26 +237,26 @@ class TimeBilling:
             return
         frozen = [e.invoice_line_id for e in rows if e.id in already]
         named = self.session.execute(
-            select(Invoice.numero, Invoice.anno)
+            select(Invoice.number, Invoice.year)
             .join(InvoiceLine, InvoiceLine.invoice_id == Invoice.id)
             .where(InvoiceLine.id == frozen[0])
         ).one_or_none()
         if named is None:
-            # Frozen by a line this session cannot see (an invoice of another azienda,
+            # Frozen by a line this session cannot see (an invoice of another legal entity,
             # REB-634): the refusal stands, and it names no document, since the
             # document is not this member's to be pointed at.
             raise Conflict(
                 "time_entry",
                 f"{len(already)} voci sono già su una fattura emessa di un'azienda "
                 "che non vedi: non si fattura due volte lo stesso lavoro",
-                voci=len(already),
+                entries=len(already),
             )
-        numero, anno = named
+        number, year = named
         raise Conflict(
             "time_entry",
             f"{len(already)} voci sono già su una fattura emessa: non si fattura "
             "due volte lo stesso lavoro",
-            voci=len(already),
-            numero=numero,
-            anno=anno,
+            entries=len(already),
+            number=number,
+            year=year,
         )

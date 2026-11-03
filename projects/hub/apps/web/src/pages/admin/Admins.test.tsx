@@ -4,8 +4,8 @@ import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { AdminAdmins } from './Admins'
 
-const IVAN = { id: '1', email: 'ivan@rebase.it', nome: 'Ivan', attivo: true, created_at: '2026-09-10T10:00:00Z' }
-const ADA = { id: '2', email: 'ada@rebase.it', nome: 'Ada', attivo: true, created_at: '2026-09-10T11:00:00Z' }
+const IVAN = { id: '1', email: 'ivan@rebase.it', first_name: 'Ivan', active: true, created_at: '2026-09-10T10:00:00Z' }
+const ADA = { id: '2', email: 'ada@rebase.it', first_name: 'Ada', active: true, created_at: '2026-09-10T11:00:00Z' }
 
 function page(items: unknown[], next_cursor: string | null = null) {
   return { items, next_cursor }
@@ -74,7 +74,7 @@ describe('the Amministratori page (REB-279: promote/demote, no password anywhere
     await user.click(screen.getByRole('button', { name: 'Promuovi' }))
     await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('ada@rebase.it'))
     const [, init] = spy.mock.calls[1]!
-    expect(JSON.parse(init?.body as string)).toEqual({ email: 'ada@rebase.it', nome: 'Ada', cognome: 'Lovelace' })
+    expect(JSON.parse(init?.body as string)).toEqual({ email: 'ada@rebase.it', first_name: 'Ada', last_name: 'Lovelace' })
   })
 
   it('keeps a refused promotion on the field the server names', async () => {

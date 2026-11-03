@@ -13,24 +13,24 @@ import type { Customer } from './queries'
  */
 const BASE_CUSTOMER: Customer = {
   id: 'c1',
-  azienda_id: 'a-1',
+  legal_entity_id: 'a-1',
   owner_id: null,
-  ragione_sociale: 'ACME Srl',
-  partita_iva: null,
-  codice_fiscale: null,
-  codice_sdi: null,
-  pec: null,
-  indirizzo: null,
+  legal_name: 'ACME Srl',
+  vat_number: null,
+  tax_code: null,
+  sdi_code: null,
+  certified_email: null,
+  address: null,
   cap: null,
-  comune: null,
-  provincia: null,
-  nazione: 'IT',
+  city: null,
+  province: null,
+  country: 'IT',
   email: null,
-  telefono: null,
-  sito_web: null,
-  stato: null,
-  giorni_pagamento: null,
-  pagamento_fine_mese: false,
+  phone: null,
+  website: null,
+  status: null,
+  payment_days: null,
+  payment_end_of_month: false,
   custom_fields: {},
   created_at: '2026-08-06T00:00:00Z',
   updated_at: '2026-08-06T00:00:00Z',
@@ -39,7 +39,7 @@ const BASE_CUSTOMER: Customer = {
 /**
  * The first cell of a customer's row: the row *is* a company, so it carries its
  * identity as an initials chip beside the name (design spec §4). The accessor stays
- * the bare `ragione_sociale`, which is what the tests above read.
+ * the bare `legal_name`, which is what the tests above read.
  */
 describe('the customer as an entity in the first cell', () => {
   function renderName(customer: Customer) {
@@ -51,40 +51,40 @@ describe('the customer as an entity in the first cell', () => {
   }
 
   it('shows the ragione sociale beside a chip of its initials', () => {
-    renderName({ ...BASE_CUSTOMER, ragione_sociale: 'ACME Srl' })
+    renderName({ ...BASE_CUSTOMER, legal_name: 'ACME Srl' })
     expect(screen.getByText('ACME Srl')).toBeInTheDocument()
     expect(screen.getByText('AS')).toBeInTheDocument()
   })
 
   it('keeps the chip to two letters however long the company name is', () => {
-    renderName({ ...BASE_CUSTOMER, ragione_sociale: 'Prima Società Benefit Srl' })
+    renderName({ ...BASE_CUSTOMER, legal_name: 'Prima Società Benefit Srl' })
     expect(screen.getByText('PS')).toBeInTheDocument()
   })
 })
 
 describe('the «Azienda» column (REB-625)', () => {
-  const AZIENDE = [
-    { id: 'a-1', nome: 'humancraft' },
-    { id: 'a-2', nome: 'rebase' },
-  ] as NonNullable<Parameters<typeof buildCustomerColumns>[1]>['aziende']
+  const LEGAL_ENTITIES = [
+    { id: 'a-1', name: 'humancraft' },
+    { id: 'a-2', name: 'rebase' },
+  ] as NonNullable<Parameters<typeof buildCustomerColumns>[1]>['legal_entities']
 
-  it('is absent without the option, so a one-azienda space keeps its five columns', () => {
+  it('is absent without the option, so a one-legal-entity space keeps its five columns', () => {
     const headers = buildCustomerColumns([]).map((column) => column.header)
     expect(headers).not.toContain('Azienda')
   })
 
   it('follows the name under «tutte» and reads each row\'s azienda by id', () => {
-    const columns = buildCustomerColumns([], { aziende: AZIENDE })
+    const columns = buildCustomerColumns([], { legal_entities: LEGAL_ENTITIES })
     expect(columns.map((column) => column.header).slice(0, 3)).toEqual([
       'Ragione sociale',
       'Azienda',
       'P.IVA',
     ])
-    const azienda = columns[1]
-    if (azienda === undefined || !('accessorFn' in azienda) || azienda.accessorFn === undefined) {
+    const legal_entity = columns[1]
+    if (legal_entity === undefined || !('accessorFn' in legal_entity) || legal_entity.accessorFn === undefined) {
       throw new Error('the «Azienda» column has no accessorFn')
     }
-    expect(azienda.accessorFn({ ...BASE_CUSTOMER, azienda_id: 'a-2' }, 0)).toBe('rebase')
-    expect(azienda.accessorFn({ ...BASE_CUSTOMER, azienda_id: 'gone' }, 0)).toBe('—')
+    expect(legal_entity.accessorFn({ ...BASE_CUSTOMER, legal_entity_id: 'a-2' }, 0)).toBe('rebase')
+    expect(legal_entity.accessorFn({ ...BASE_CUSTOMER, legal_entity_id: 'gone' }, 0)).toBe('—')
   })
 })

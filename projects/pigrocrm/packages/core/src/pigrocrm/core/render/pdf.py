@@ -45,15 +45,15 @@ ASSETS_DIR = Path(__file__).resolve().parent / "assets"
 PANDOC_TEMPLATE = ASSETS_DIR / "pandoc-template.typst"
 HEADER_TEMPLATE = ASSETS_DIR / "header.typ.template"
 
-# The names a Typst job writes an azienda's images under, which are the names the
+# The names a Typst job writes a legal entity's images under, which are the names the
 # header templates and the seeded offer template reference (REB-627, spec 2026-10-03
 # §6). The bundle carries no logo and no signature any more: REB-48 called shipping
-# one person's assets a defect, and a per-azienda upload is what finally removed the
+# one person's assets a defect, and a per-legal entity upload is what finally removed the
 # need. A job that is handed no signature still gets `sign_is.png`, a transparent
 # pixel, so an offer template seeded before the upload existed keeps compiling.
 MEDIA_LOGO_PNG = "logo.png"
 MEDIA_LOGO_SVG = "logo.svg"
-MEDIA_FIRMA = "sign_is.png"
+MEDIA_SIGNATURE = "sign_is.png"
 
 
 def _png_chunk(kind: bytes, body: bytes) -> bytes:
@@ -111,17 +111,17 @@ def _defeat_typst_autotypography(typst_source: str) -> str:
 
 def logo_flags(logo: str | None) -> dict[str, bool]:
     """The three flags a header template branches on: which logo file the job carries,
-    or none, in which case the header sets the azienda's name in type instead."""
+    or none, in which case the header sets the legal entity's name in type instead."""
     return {
         "png": logo == MEDIA_LOGO_PNG,
         "svg": logo == MEDIA_LOGO_SVG,
-        "nessuno": logo is None,
+        "none": logo is None,
     }
 
 
 def build_header(profile: dict[str, Any], *, logo: str | None = None) -> str:
     """The Typst page header, filled from the emitter profile. `logo` is the media file
-    the job carries for this azienda (`MEDIA_LOGO_PNG`, `MEDIA_LOGO_SVG`) or `None`,
+    the job carries for this legal entity (`MEDIA_LOGO_PNG`, `MEDIA_LOGO_SVG`) or `None`,
     which draws the `ragione_sociale` in type where the image would be.
 
     Rendered through the same engine as the document body, so the issuer's own values
@@ -144,7 +144,7 @@ def build_header(profile: dict[str, Any], *, logo: str | None = None) -> str:
     )
 
 
-_MEDIA_NAMES = frozenset({MEDIA_LOGO_PNG, MEDIA_LOGO_SVG, MEDIA_FIRMA})
+_MEDIA_NAMES = frozenset({MEDIA_LOGO_PNG, MEDIA_LOGO_SVG, MEDIA_SIGNATURE})
 
 
 class _Outcome(NamedTuple):
@@ -210,7 +210,7 @@ def _run(argv: list[str], workdir: Path, stage: str) -> _Outcome:
     except subprocess.TimeoutExpired as exc:
         raise ValidationFailed(
             ENTITY,
-            "corpo_markdown",
+            "body_markdown",
             f"la composizione del PDF ha superato {RENDER_TIMEOUT_SECONDS} secondi",
             expected="un documento piu' semplice",
         ) from exc
@@ -231,7 +231,7 @@ def _read_bounded(path: Path, limit: int) -> bytes:
     if path.stat().st_size > limit:
         raise ValidationFailed(
             ENTITY,
-            "corpo_markdown",
+            "body_markdown",
             f"il documento composto supera {limit} byte",
             expected="un documento piu' semplice",
         )
@@ -249,8 +249,8 @@ def render_pdf(
     """Compiled Markdown in, PDF bytes out.
 
     `media` is what the job's `media/` directory holds beyond the signature placeholder:
-    the azienda's logo under `MEDIA_LOGO_PNG` or `MEDIA_LOGO_SVG` and its signature under
-    `MEDIA_FIRMA`, as `LegalEntityAssets.media_for` builds it. The names are a fixed set
+    the legal entity's logo under `MEDIA_LOGO_PNG` or `MEDIA_LOGO_SVG` and its signature under
+    `MEDIA_SIGNATURE`, as `LegalEntityAssets.media_for` builds it. The names are a fixed set
     (`_MEDIA_NAMES`): a caller cannot write an arbitrary file into the compile root.
 
     The whole render happens inside one throwaway directory that is removed on every
@@ -277,7 +277,7 @@ def render_pdf(
     try:
         media_dir = workdir / "media"
         media_dir.mkdir()
-        files = {MEDIA_FIRMA: BLANK_PNG, **(media or {})}
+        files = {MEDIA_SIGNATURE: BLANK_PNG, **(media or {})}
         for name, data in files.items():
             if name not in _MEDIA_NAMES:
                 raise ValueError(f"not a media file a render takes: {name!r}")
@@ -315,7 +315,7 @@ def render_pdf(
             if pandoc.returncode != 0:
                 raise ValidationFailed(
                     ENTITY,
-                    "corpo_markdown",
+                    "body_markdown",
                     "il Markdown del documento non e' convertibile",
                     expected="Markdown valido",
                 )
@@ -355,7 +355,7 @@ def render_pdf(
                 stderr = stderr.replace(spelling, "")
             raise ValidationFailed(
                 ENTITY,
-                "corpo_markdown",
+                "body_markdown",
                 translate_typst_failure(stderr, typst_source),
                 expected="un template Typst valido",
             )

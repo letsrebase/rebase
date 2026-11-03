@@ -56,11 +56,11 @@ describe('useInvoice', () => {
 describe('useInvoices', () => {
   it('passes the filters through as query parameters', async () => {
     mockGet.mockReturnValueOnce(ok({ items: [], next_cursor: null }))
-    const { result } = renderHook(() => useInvoices({ tipo: 'proforma', anno: 2026 }), { wrapper })
+    const { result } = renderHook(() => useInvoices({ type: 'proforma', year: 2026 }), { wrapper })
     await waitFor(() => expect(result.current.isSuccess).toBe(true))
     expect(mockGet).toHaveBeenCalledWith(
       '/api/invoices',
-      expect.objectContaining({ params: { query: { tipo: 'proforma', anno: 2026 } } }),
+      expect.objectContaining({ params: { query: { type: 'proforma', year: 2026 } } }),
     )
   })
 })

@@ -16,8 +16,8 @@ import { tenantPrefix } from '@/lib/tenant'
  *
  * The token itself never comes from this component's own search params (REB-229):
  * `main.tsx` already took it out of the URL, before analytics or this route ever ran,
- * with `stripEntraToken` from `@rebase/analytics/entra-token`. `EnterRoute`
- * (routes/app/verify.tsx) reads it back with `takeEntraToken` and falls back to the search param only for whatever reaches this
+ * with `stripVerifyToken` from `@rebase/analytics/verify-token`. `EnterRoute`
+ * (routes/app/verify.tsx) reads it back with `takeVerifyToken` and falls back to the search param only for whatever reaches this
  * component without that having happened first (a unit test rendering `EnterPage`
  * directly, as this file's own tests do).
  *

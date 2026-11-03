@@ -9,21 +9,21 @@ from rebase_core.campaigns.states import JOURNEY_STATES
 
 @dataclass(frozen=True)
 class Template:
-    stato_percorso: str
-    etichetta: str
-    oggetto: str
-    testo: str
-    bottone_testo: str
-    bottone_meta: str
-    azione: str
+    journey_status: str
+    label: str
+    subject: str
+    text: str
+    button_text: str
+    button_meta: str
+    action: str
 
 
-def _t(key: str, oggetto: str, testo: str, bottone: str, meta: str, azione: str) -> Template:
-    return Template(key, JOURNEY_STATES[key], oggetto, testo, bottone, meta, azione)
+def _t(key: str, subject: str, text: str, button: str, meta: str, action: str) -> Template:
+    return Template(key, JOURNEY_STATES[key], subject, text, button, meta, action)
 
 
 STATE_TEMPLATES: dict[str, Template] = {
-    t.stato_percorso: t
+    t.journey_status: t
     for t in (
         _t(
             "lead",
@@ -34,10 +34,10 @@ STATE_TEMPLATES: dict[str, Template] = {
             "Se no, rispondi «no» e non ti scrivo più.",
             "Compila il profilo",
             "wizard",
-            "profilo_creato",
+            "profile_created",
         ),
         _t(
-            "scheda_vuota_nuovi",
+            "card_empty_new",
             "La tua scheda su rebase, la compilo io?",
             "Ciao {nome},\n\nla scheda che ti abbiamo aperto su rebase è ancora senza tariffa, "
             "modalità di lavoro e CV, e così non posso proporti a nessuna azienda.\n\n"
@@ -47,10 +47,10 @@ STATE_TEMPLATES: dict[str, Template] = {
             "Se invece non vuoi comparire, rispondi «no» e cancello la scheda.",
             "Completa la scheda",
             "area",
-            "scheda_completa",
+            "card_complete",
         ),
         _t(
-            "scheda_vuota_entrati",
+            "card_empty_signed_in",
             "La tua scheda su rebase è rimasta vuota",
             "Ciao {nome},\n\nho visto che hai aperto la tua area su rebase, ma la scheda è "
             "rimasta com'era: senza tariffa, modalità di lavoro e CV. Qualcosa non ha "
@@ -59,10 +59,10 @@ STATE_TEMPLATES: dict[str, Template] = {
             "con il CV e quanto chiedi a giornata, e la compilo io.",
             "Completa la scheda",
             "area",
-            "scheda_completa",
+            "card_complete",
         ),
         _t(
-            "manca_cv",
+            "missing_cv",
             "Manca solo il CV",
             "Ciao {nome},\n\nil tuo profilo su rebase è quasi pronto: manca solo il CV. È la "
             "prima cosa che un'azienda ci chiede quando le proponiamo una persona, e senza non "
@@ -74,25 +74,25 @@ STATE_TEMPLATES: dict[str, Template] = {
             "cv",
         ),
         _t(
-            "completo",
+            "complete",
             "Il tuo profilo su rebase è completo",
             "Ciao {nome},\n\nil tuo profilo su rebase è completo, grazie. Quando arriva un "
             "progetto adatto a te, ti scrivo io.\n\nIntanto una domanda, rispondi anche in una "
             "riga: da quando hai spazio per un nuovo progetto, e per quanti giorni a settimana?",
             "Entra nella tua area",
             "area",
-            "entrato",
+            "signed_in",
         ),
         _t(
-            "azienda_aperta",
+            "company_open",
             "La tua richiesta su rebase è ancora aperta?",
             "Ciao {nome},\n\nti riscrivo per la tua richiesta su rebase. È ancora aperta?\n\n"
             "Se è cambiato qualcosa, quante persone, da quando, con che budget, la aggiorni "
             "dalla tua area con il bottone qui sotto. Se è ancora così, mi bastano dieci minuti "
             "al telefono: rispondi con un numero e un momento comodo e ti chiamo io.",
             "Aggiorna la richiesta",
-            "richiesta",
-            "richiesta_aggiornata",
+            "request",
+            "request_updated",
         ),
     )
 }

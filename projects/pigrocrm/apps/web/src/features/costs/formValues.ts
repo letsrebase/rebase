@@ -9,10 +9,10 @@ import type { Cost } from './queries'
  * `src/features/**`, so the dialog module exports its component and nothing else.
  */
 export const NATIVE_FIELDS: FieldDefinition[] = [
-  { key: 'data', label: 'Data', type: 'date', required: true, options: [] },
-  { key: 'importo', label: 'Importo (€)', type: 'currency', required: true, options: [] },
-  { key: 'descrizione', label: 'Descrizione', type: 'textarea', required: true, options: [] },
-  { key: 'fornitore', label: 'Fornitore', type: 'text', required: false, options: [] },
+  { key: 'date', label: 'Data', type: 'date', required: true, options: [] },
+  { key: 'amount', label: 'Importo (€)', type: 'currency', required: true, options: [] },
+  { key: 'description', label: 'Descrizione', type: 'textarea', required: true, options: [] },
+  { key: 'supplier', label: 'Fornitore', type: 'text', required: false, options: [] },
 ]
 
 /**
@@ -26,9 +26,9 @@ export const NATIVE_FIELDS: FieldDefinition[] = [
  * name would be indistinguishable on the way back. A real picker keyed on the id is the
  * only shape that survives a rename.
  */
-// `azienda_id` likewise (REB-626): a picker keyed on the id, drawn only for a cost with
+// `legal_entity_id` likewise (REB-626): a picker keyed on the id, drawn only for a cost with
 // no deal, where `null` is the «Condivisa» the server reads as a shared expense.
-const NATIVE_FIELD_KEYS = [...NATIVE_FIELDS.map((field) => field.key), 'category_id', 'azienda_id']
+const NATIVE_FIELD_KEYS = [...NATIVE_FIELDS.map((field) => field.key), 'category_id', 'legal_entity_id']
 
 /** The form's state in the API's two namespaces -- see `FormValues`. */
 export type CostFormValues = FormValues
@@ -36,7 +36,7 @@ export type CostFormValues = FormValues
 /** Today, from the local calendar parts: `toISOString().slice(0, 10)` converts to UTC
  *  first, so east of Greenwich late in the evening the dialog would open on tomorrow. */
 export function defaultCostFormValues(today: Date = new Date()): CostFormValues {
-  return { native: { data: toIsoDate(today) }, custom: {} }
+  return { native: { date: toIsoDate(today) }, custom: {} }
 }
 
 /**
@@ -57,11 +57,11 @@ export function costToFormValues(cost: Cost): CostFormValues {
  * No `locked` parameter, unlike the time entry's: a cost has no frozen-when-billed
  * state -- nothing on an invoice points at one -- so there is no set of keys to drop.
  *
- * A native column clears on the spelling its type calls for: `descrizione` and
- * `fornitore` on `""`, `data` and `importo` on `null`, and `category_id` (which has its
+ * A native column clears on the spelling its type calls for: `description` and
+ * `supplier` on `""`, `data` and `amount` on `null`, and `category_id` (which has its
  * own picker and is not in `NATIVE_FIELDS`) on `null` because an id is never text. All
  * three of those are `NOT NULL`, so emptying one comes back as the server's own refusal
- * naming the field -- for `importo`, "l'importo non può essere svuotato" -- shown on that
+ * naming the field -- for `amount`, "l'importo non può essere svuotato" -- shown on that
  * control instead of a bare 422.
  */
 export function toCostRequestBody(

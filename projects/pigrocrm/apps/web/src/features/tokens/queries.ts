@@ -47,7 +47,7 @@ export function useCreateToken() {
   const { user } = useAuth()
   const userId = user?.id ?? ''
   return useMutation({
-    mutationFn: (input: { nome: string; full_access: boolean }) =>
+    mutationFn: (input: { name: string; full_access: boolean }) =>
       unwrap(api.POST('/api/tokens', { body: input })),
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: queryKeys.tokens(userId) }),
   })
@@ -66,7 +66,7 @@ export function useTokenOptions() {
     queryFn: () => unwrap(api.GET('/api/tokens/options')),
     enabled: Boolean(userId),
     // Read again on every mount: an administrator who has just opened the switch in
-    // Impostazioni → Spazio must not meet «chiuso per questo spazio» for the next 30 s.
+    // Settings → Spazio must not meet «chiuso per questo spazio» for the next 30 s.
     staleTime: 0,
   })
 }

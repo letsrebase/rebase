@@ -75,15 +75,13 @@ class RefusingRecipientSender:
 
 
 def _fiscal(
-    session: Session, freelancer_id: UUID, admin_id: UUID, domicilio: str = "Via Roma 1, Milano"
+    session: Session, freelancer_id: UUID, admin_id: UUID, domicile: str = "Via Roma 1, Milano"
 ) -> None:
-    """Beyond `match_fixtures._fiscal`: a `domicilio` a test can change, to prove a send
+    """Beyond `match_fixtures._fiscal`: a `domicile` a test can change, to prove a send
     prints the tax data as they are today rather than as they were on the draft."""
     FiscalService(session).save(
         freelancer_id,
-        FiscalData(
-            codice_fiscale="LVLDAA85T50H501Z", partita_iva="01234567890", domicilio=domicilio
-        ),
+        FiscalData(tax_code="LVLDAA85T50H501Z", vat_number="01234567890", domicile=domicile),
         admin_id,
     )
 
@@ -127,7 +125,7 @@ def _signing(
 
 
 def _framework_of(session: Session, freelancer_id: UUID) -> ContractDocument:
-    return _documents(session, freelancer_id, "quadro")[-1]
+    return _documents(session, freelancer_id, "framework")[-1]
 
 
 def _letter_of(session: Session, match_id: UUID) -> ContractDocument:
@@ -147,18 +145,18 @@ def _active_framework(
     freelancer_id: UUID,
     admin_id: UUID,
     signed_at: datetime = SIGNED_AT,
-    regime: str = "partita_iva",
+    regime: str = "vat_registered",
 ) -> ContractDocument:
     """A framework agreement as a signature leaves one."""
     document = ContractDocument(
-        kind="quadro",
+        kind="framework",
         regime=regime,
         freelancer_id=freelancer_id,
-        text_version=current_text_version(text_name("quadro", regime)),
-        testo_bozza=False,
+        text_version=current_text_version(text_name("framework", regime)),
+        draft_text=False,
         data={},
         pdf=b"%PDF-quadro",
-        stato="firmato",
+        status="signed",
         signed_at=signed_at,
         created_by=admin_id,
     )
@@ -177,7 +175,7 @@ def _sent(
     company_id: UUID,
     admin_id: UUID,
 ) -> MatchRead:
-    """A draft match, sent: its framework agreement `inviato`, its letter waiting."""
+    """A draft match, sent: its framework agreement `sent`, its letter waiting."""
     match = _draft(session, renderer, freelancer_id, company_id, admin_id)
     _signing(session, renderer, fake, sender).send_match(match.id, admin_id)
     return match
@@ -246,7 +244,7 @@ class FailingEngagements(SpyEngagements):
 def _letter_out(
     session: Session, renderer: FakeRenderer, fake: FakeDocumenso, sender: RecordingSender
 ) -> tuple[UUID, ContractDocument, str]:
-    """A match whose framework agreement is already active, sent: its letter `inviato`
+    """A match whose framework agreement is already active, sent: its letter `sent`
     on Documenso, waiting for the freelancer. (match id, letter, envelope)."""
     admin_id, freelancer_id, company_id = _setup(session)
     _active_framework(session, freelancer_id, admin_id)
@@ -287,13 +285,13 @@ def _signed_framework(
 
 
 # ---- two families of documents (REB-687) -------------------------------------------------
-OCCASIONAL_QUADRO_VERSION = current_text_version("contratto-quadro-occasionale")
+OCCASIONAL_FRAMEWORK_VERSION = current_text_version("framework-agreement-occasional")
 
 
-def _without_partita_iva(session: Session, freelancer_id: UUID, admin_id: UUID) -> None:
+def _without_vat_number(session: Session, freelancer_id: UUID, admin_id: UUID) -> None:
     FiscalService(session).save(
         freelancer_id,
-        FiscalData(codice_fiscale="LVLDAA85T50H501Z", domicilio="Via Roma 1, Milano"),
+        FiscalData(tax_code="LVLDAA85T50H501Z", domicile="Via Roma 1, Milano"),
         admin_id,
     )
 
@@ -302,12 +300,12 @@ def _occasional_draft(
     session: Session, renderer: Renderer, freelancer_id: UUID, company_id: UUID, admin_id: UUID
 ) -> MatchRead:
     return _matches(session, renderer).create(
-        freelancer_id, _body(company_id, regime="occasionale"), admin_id
+        freelancer_id, _body(company_id, regime="occasional"), admin_id
     )
 
 
-def _quadro_of(session: Session, freelancer_id: UUID, regime: str) -> ContractDocument:
-    return [d for d in _documents(session, freelancer_id, "quadro") if d.regime == regime][-1]
+def _framework_of_regime(session: Session, freelancer_id: UUID, regime: str) -> ContractDocument:
+    return [d for d in _documents(session, freelancer_id, "framework") if d.regime == regime][-1]
 
 
 def _sign(signing: SigningService, fake: FakeDocumenso, document: ContractDocument) -> None:

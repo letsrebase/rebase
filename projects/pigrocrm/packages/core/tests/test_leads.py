@@ -61,21 +61,21 @@ MARIA = "maria.rossi@acme.it"
 
 
 def _body(**parts: Any) -> LeadUpsert:
-    """The body of spec § 3, with any top-level or `referente`/`deal` field overridden."""
+    """The body of spec § 3, with any top-level or `contact`/`deal` field overridden."""
     body: dict[str, Any] = {
-        "azienda": "Acme S.r.l.",
-        "referente": {
-            "nome": "Maria",
-            "cognome": "Rossi",
+        "company": "Acme S.r.l.",
+        "contact": {
+            "first_name": "Maria",
+            "last_name": "Rossi",
             "email": MARIA,
-            "telefono": "+39 02 1234567",
+            "phone": "+39 02 1234567",
             "linkedin_url": "https://www.linkedin.com/in/maria-rossi",
         },
         "deal": {
-            "nome": "Acme S.r.l.: Backend developer",
-            "valore_previsto": "24000.00",
-            "data_chiusura_prevista": "2099-01-15",
-            "note": "Richiesta dell'azienda: cerca uno sviluppatore backend.",
+            "name": "Acme S.r.l.: Backend developer",
+            "expected_value": "24000.00",
+            "expected_close_date": "2099-01-15",
+            "notes": "Richiesta dell'azienda: cerca uno sviluppatore backend.",
         },
     }
     for key, value in parts.items():
@@ -106,7 +106,7 @@ def door(db_engine: Engine) -> Iterator[Door]:
     registry = ensure_tenants_database(settings)
     with session_factory(registry)() as session:
         TenantService(session, settings).provision(
-            TenantSignup(slug=SLUG, nome="rebase", email="spazio@studio.it")
+            TenantSignup(slug=SLUG, name="rebase", email="spazio@studio.it")
         )
     try:
         yield Door(settings, registry)
@@ -137,14 +137,18 @@ def _count(space: Session, model: type[Customer] | type[Person] | type[Deal]) ->
 
 
 def _customer(space: Session, name: str = "Rossi Costruzioni S.r.l.") -> UUID:
-    return CustomerService(space).create(CustomerCreate(ragione_sociale=name), Actor.system()).id
+    return CustomerService(space).create(CustomerCreate(legal_name=name), Actor.system()).id
 
 
-def _person(space: Session, email: str, customer_id: UUID | None, nome: str = "Maria") -> UUID:
+def _person(
+    space: Session, email: str, customer_id: UUID | None, first_name: str = "Maria"
+) -> UUID:
     return (
         PersonService(space)
         .create(
-            PersonCreate(nome=nome, cognome="Rossi", email=email, customer_id=customer_id),
+            PersonCreate(
+                first_name=first_name, last_name="Rossi", email=email, customer_id=customer_id
+            ),
             Actor.system(),
         )
         .id
@@ -155,7 +159,7 @@ def _deal(space: Session, customer_id: UUID, note: str | None = None) -> UUID:
     return (
         DealService(space)
         .create(
-            DealCreate(nome="Trattativa in corso", customer_id=customer_id, note=note),
+            DealCreate(name="Trattativa in corso", customer_id=customer_id, note=note),
             Actor.system(),
         )
         .id
@@ -166,25 +170,25 @@ def test_first_call_files_customer_person_and_deal(door: Door) -> None:
     request_id = uuid4()
     answer = door.service().file(request_id, _body())
 
-    assert answer.creato is True
+    assert answer.created is True
     assert answer.deal_url == f"https://pigro.test/{SLUG}/app/deal/{answer.deal_id}"
     with _space(door) as space:
         customer = space.get(Customer, answer.customer_id)
         person = space.get(Person, answer.person_id)
         deal = space.get(Deal, answer.deal_id)
         assert customer is not None and person is not None and deal is not None
-        assert customer.ragione_sociale == "Acme S.r.l."
+        assert customer.legal_name == "Acme S.r.l."
         [customer_note] = texts(space, "customer", customer.id)
         assert "hub" in customer_note
-        assert (person.nome, person.cognome, person.email) == ("Maria", "Rossi", MARIA)
-        assert person.telefono == "+39 02 1234567"
+        assert (person.first_name, person.last_name, person.email) == ("Maria", "Rossi", MARIA)
+        assert person.phone == "+39 02 1234567"
         assert person.linkedin == "https://www.linkedin.com/in/maria-rossi"
         assert person.customer_id == customer.id
         assert deal.customer_id == customer.id
-        assert deal.nome == "Acme S.r.l.: Backend developer"
-        assert deal.valore_previsto == Decimal("24000.00")
-        assert deal.data_chiusura_prevista == date(2099, 1, 15)
-        assert deal.tariffa_oraria is None and deal.ore_preventivate is None
+        assert deal.name == "Acme S.r.l.: Backend developer"
+        assert deal.expected_value == Decimal("24000.00")
+        assert deal.expected_close_date == date(2099, 1, 15)
+        assert deal.hourly_rate is None and deal.budgeted_hours is None
         assert deal.owner_id is None
         # The hub's sentence is the first note, written by rebase; the reference a retry
         # finds the deal by is in `rebase_refs` and in no note.
@@ -218,7 +222,7 @@ def test_a_second_put_for_the_request_writes_nothing(door: Door) -> None:
         before = space.scalar(select(func.count()).select_from(Activity))
     second = door.service().file(request_id, _body())
 
-    assert second.creato is False
+    assert second.created is False
     assert (second.customer_id, second.person_id, second.deal_id) == (
         first.customer_id,
         first.person_id,
@@ -236,11 +240,11 @@ def test_an_existing_person_is_reused_whatever_the_case_of_the_address(door: Doo
         # The older, mixed-case address of the same person at another live customer:
         # the oldest one wins, so this one is created after and loses.
         other_customer = _customer(space, "Altra S.r.l.")
-        _person(space, MARIA, other_customer, nome="Mariella")
+        _person(space, MARIA, other_customer, first_name="Mariella")
 
-    answer = door.service().file(uuid4(), _body(referente={"email": MARIA.upper()}))
+    answer = door.service().file(uuid4(), _body(contact={"email": MARIA.upper()}))
 
-    assert answer.creato is True
+    assert answer.created is True
     assert (answer.customer_id, answer.person_id) == (customer_id, person_id)
     with _space(door) as space:
         assert _count(space, Customer) == 2 and _count(space, Person) == 2
@@ -252,7 +256,7 @@ def test_a_different_typed_name_is_said_in_the_deal_note(door: Door) -> None:
     with _space(door) as space:
         _person(space, MARIA, _customer(space, "Rossi Costruzioni S.r.l."))
 
-    answer = door.service().file(uuid4(), _body(azienda="Acme S.r.l."))
+    answer = door.service().file(uuid4(), _body(company="Acme S.r.l."))
 
     with _space(door) as space:
         deal = space.get(Deal, answer.deal_id)
@@ -266,7 +270,7 @@ def test_the_same_typed_name_adds_no_line(door: Door) -> None:
     with _space(door) as space:
         _person(space, MARIA, _customer(space, "acme  s.r.l."))
 
-    answer = door.service().file(uuid4(), _body(azienda="Acme S.r.l."))
+    answer = door.service().file(uuid4(), _body(company="Acme S.r.l."))
 
     with _space(door) as space:
         deal = space.get(Deal, answer.deal_id)
@@ -320,9 +324,9 @@ def test_the_same_email_and_another_request_is_a_second_deal_on_the_same_custome
     door: Door,
 ) -> None:
     first = door.service().file(uuid4(), _body())
-    second = door.service().file(uuid4(), _body(deal={"nome": "Acme S.r.l.: Frontend"}))
+    second = door.service().file(uuid4(), _body(deal={"name": "Acme S.r.l.: Frontend"}))
 
-    assert second.creato is True
+    assert second.created is True
     assert second.deal_id != first.deal_id
     assert (second.customer_id, second.person_id) == (first.customer_id, first.person_id)
     with _space(door) as space:
@@ -337,7 +341,7 @@ def test_a_new_deal_is_made_even_when_the_customer_has_an_open_one(door: Door) -
 
     answer = door.service().file(uuid4(), _body())
 
-    assert answer.creato is True and answer.deal_id != open_deal
+    assert answer.created is True and answer.deal_id != open_deal
     with _space(door) as space:
         untouched = space.get(Deal, open_deal)
         assert untouched is not None and untouched.rebase_refs == []
@@ -348,7 +352,7 @@ def test_a_customer_is_never_matched_by_name(door: Door) -> None:
     with _space(door) as space:
         _customer(space, "Acme S.r.l.")
 
-    answer = door.service().file(uuid4(), _body(azienda="Acme S.r.l."))
+    answer = door.service().file(uuid4(), _body(company="Acme S.r.l."))
 
     with _space(door) as space:
         assert _count(space, Customer) == 2
@@ -367,7 +371,7 @@ def test_an_explicit_deal_is_linked_with_an_activity_and_nothing_is_created(door
 
     answer = door.service().file(request_id, _body(deal_id=str(deal_id)))
 
-    assert answer.creato is False
+    assert answer.created is False
     assert (answer.customer_id, answer.person_id, answer.deal_id) == (
         customer_id,
         person_id,
@@ -388,21 +392,21 @@ def test_an_explicit_deal_is_linked_with_an_activity_and_nothing_is_created(door
         assert [(a.entity_type, a.entity_id, a.actor_type) for a in linked] == [
             ("deal", deal_id, "rebase")
         ]
-        assert linked[0].payload["richiesta"] == str(request_id)
+        assert linked[0].payload["request"] == str(request_id)
         # The prospect's free text lives in the thread only: editing or deleting the note
         # leaves no copy in the append-only timeline.
-        assert "nota" not in linked[0].payload
+        assert "note" not in linked[0].payload
         assert "cerca uno sviluppatore" not in str(linked[0].payload)
 
     # A retry of the link finds the marker and records nothing more.
     again = door.service().file(request_id, _body(deal_id=str(deal_id)))
-    assert again.creato is False and again.deal_id == deal_id
+    assert again.created is False and again.deal_id == deal_id
     with _space(door) as space:
         assert len(space.scalars(select(Activity).where(Activity.kind == KIND_LINKED)).all()) == 1
         assert len(texts(space, "deal", deal_id)) == 2, "the note is not added twice"
     # And the request without the deal id finds the same deal by its marker.
     plain = door.service().file(request_id, _body())
-    assert plain.creato is False and plain.deal_id == deal_id
+    assert plain.created is False and plain.deal_id == deal_id
 
 
 def test_an_explicit_deal_that_is_not_in_the_space_is_refused(door: Door) -> None:
@@ -473,7 +477,7 @@ def test_two_requests_of_one_person_at_once_make_one_customer_and_two_deals(door
     def file(name: str) -> None:
         try:
             barrier.wait(timeout=30)
-            answers.append(door.service().file(uuid4(), _body(deal={"nome": name})))
+            answers.append(door.service().file(uuid4(), _body(deal={"name": name})))
         except BaseException as exc:  # noqa: BLE001 -- carried to the main thread
             errors.append(exc)
 
@@ -496,7 +500,7 @@ def test_the_lock_is_released_after_a_refusal(door: Door) -> None:
     with pytest.raises(ValidationFailed):
         door.service().file(uuid4(), _body(deal_id=str(uuid4())))
     # Were the lock still held by a leaked connection, this would time out as busy.
-    assert door.service().file(uuid4(), _body()).creato is True
+    assert door.service().file(uuid4(), _body()).created is True
 
 
 def test_a_retry_after_the_contact_was_archived_names_nobody(door: Door) -> None:
@@ -508,7 +512,7 @@ def test_a_retry_after_the_contact_was_archived_names_nobody(door: Door) -> None
 
     again = door.service().file(request_id, _body())
 
-    assert again.creato is False and again.deal_id == first.deal_id
+    assert again.created is False and again.deal_id == first.deal_id
     assert again.person_id is None
 
 

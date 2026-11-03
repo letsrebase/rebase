@@ -43,21 +43,21 @@ def test_a_freelancer_application_is_one_event_on_the_browsers_person() -> None:
             # No person profile: the browser keeps anonymous visitors anonymous
             # (`person_profiles: 'identified_only'`), and a server event must not turn
             # one into a profile behind its back.
-            {"tipo": "freelance", "via": "server", "cv": True, "$process_person_profile": False},
+            {"kind": "freelance", "via": "server", "cv": True, "$process_person_profile": False},
         )
     ]
 
 
 def test_a_company_request_carries_no_cv_flag_and_the_attribution_it_came_with() -> None:
     capture = FakeCapture()
-    utm = SignupUtm(utm_source="linkedin", utm_campaign="orbita", origine="home")
-    Tracker(capture).application("azienda", "anon-2", utm=utm)
+    utm = SignupUtm(utm_source="linkedin", utm_campaign="orbita", origin="home")
+    Tracker(capture).application("company", "anon-2", utm=utm)
     ((_, _, properties),) = capture.calls
     assert "cv" not in properties
-    assert properties["tipo"] == "azienda"
+    assert properties["kind"] == "company"
     assert properties["utm_source"] == "linkedin"
     assert properties["utm_campaign"] == "orbita"
-    assert properties["origine"] == "home"
+    assert properties["origin"] == "home"
     # Empty attribution keys are left out rather than sent as nulls.
     assert "utm_medium" not in properties
 

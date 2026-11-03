@@ -70,12 +70,12 @@ type Stage =
   | { kind: 'done' }
 
 const DOCUMENT_TYPE_LABELS: Record<string, string> = {
-  fattura: 'Fattura',
-  acconto_fattura: 'Acconto su fattura',
-  acconto_parcella: 'Acconto su parcella',
-  nota_credito: 'Nota di credito',
-  nota_debito: 'Nota di debito',
-  parcella: 'Parcella',
+  invoice: 'Fattura',
+  invoice_advance: 'Acconto su fattura',
+  fee_advance: 'Acconto su parcella',
+  note_credit: 'Nota di credito',
+  note_debit: 'Nota di debito',
+  fee_note: 'Parcella',
 }
 
 function plural(count: number, one: string, many: string): string {
@@ -95,7 +95,7 @@ function plural(count: number, one: string, many: string): string {
  */
 function ImportInvoicesDialog({ onClose }: { onClose: () => void }) {
   const invalidate = useInvalidateAfterImport()
-  const azienda = useLegalEntity()
+  const legal_entity = useLegalEntity()
   const [stage, setStage] = useState<Stage>({ kind: 'choose' })
   const [batches, setBatches] = useState<ReviewedBatch[]>([])
   // The new customers the person unticked, by `partyKey`: unticked is the exception.
@@ -263,7 +263,7 @@ function ImportInvoicesDialog({ onClose }: { onClose: () => void }) {
           <ResultPanel
             rows={confirmed}
             interrupted={problem !== null}
-            aziendaName={(id) => (azienda.several ? azienda.byId(id)?.ragione_sociale : undefined)}
+            legalEntityName={(id) => (legal_entity.several ? legal_entity.byId(id)?.legal_name : undefined)}
           />
         ) : null}
 
@@ -366,10 +366,10 @@ function ReviewPanel({
               </label>
               <ExistingCustomerPicker
                 party={party.taxId !== '' ? `${party.name} (${party.taxId})` : party.name}
-                aziendaId={party.aziendaId}
-                mixedAziende={party.mixedAziende}
+                legalEntityId={party.legalEntityId}
+                mixedLegalEntities={party.mixedLegalEntities}
                 value={chosen.get(party.key)}
-                disabled={declined.has(party.key) || party.mixedAziende}
+                disabled={declined.has(party.key) || party.mixedLegalEntities}
                 onChange={(customer) => onChoose(party.key, customer)}
               />
             </div>
@@ -409,22 +409,22 @@ function ReviewPanel({
  * an Italian VAT number or tax code, so a customer without one (a foreign customer, a
  * private person with no tax code stated) is offered for creation on every import; this is
  * the way to say it is somebody already known. It is the app's customer search
- * (`CustomerPicker`), limited to the azienda the invoice is written on: the server takes
- * any `customer_id` it is sent, and an invoice on one azienda's register for another's
+ * (`CustomerPicker`), limited to the legal entity the invoice is written on: the server takes
+ * any `customer_id` it is sent, and an invoice on one legal entity's register for another's
  * customer is a state nothing else in the product can produce. Left empty, the party is
  * created as a new customer, which is the default and the old behaviour.
  */
 function ExistingCustomerPicker({
   party,
-  aziendaId,
-  mixedAziende,
+  legalEntityId,
+  mixedLegalEntities,
   value,
   disabled,
   onChange,
 }: {
   party: string
-  aziendaId: string | null
-  mixedAziende: boolean
+  legalEntityId: string | null
+  mixedLegalEntities: boolean
   value: ChosenCustomer | undefined
   disabled: boolean
   onChange: (customer: ChosenCustomer | undefined) => void
@@ -440,18 +440,18 @@ function ExistingCustomerPicker({
           id={id}
           value={value?.id ?? null}
           selectedName={value?.name}
-          aziendaId={aziendaId}
+          legalEntityId={legalEntityId}
           ariaLabel={`Cliente di ${party}`}
           placeholder="Crea un nuovo cliente, o cerca uno già in anagrafica…"
           disabled={disabled}
           onChange={(customer) =>
             onChange(
-              customer === null ? undefined : { id: customer.id, name: customer.ragione_sociale },
+              customer === null ? undefined : { id: customer.id, name: customer.legal_name },
             )
           }
         />
       </div>
-      {mixedAziende ? (
+      {mixedLegalEntities ? (
         <span className="pt-2 text-xs text-muted-foreground">
           Le sue fatture sono di più aziende: non si può collegare a un cliente che hai già.
         </span>
@@ -482,19 +482,19 @@ function ReviewTableRow({
     ? 'Il cliente non viene creato: questa fattura non viene importata.'
     : attached !== undefined
       ? `Va al cliente «${attached.name}», già in anagrafica: non ne viene creato un altro.`
-      : row.outcome === 'unclaimed' && row.motivo
-      ? `Sembra una fattura FatturaPA ma non si legge: ${row.motivo}`
+      : row.outcome === 'unclaimed' && row.reason
+      ? `Sembra una fattura FatturaPA ma non si legge: ${row.reason}`
       : REVIEW_OUTCOME_NOTES[row.outcome]
   return (
     <TableRow>
       <TableCell className="whitespace-nowrap">
         {invoice ? (
           <>
-            <span className="font-medium">{invoice.numero}</span>
+            <span className="font-medium">{invoice.number}</span>
             <span className="block text-xs text-muted-foreground">
-              {formatDate(invoice.data_emissione)}
-              {invoice.tipo_documento !== 'fattura'
-                ? ` · ${DOCUMENT_TYPE_LABELS[invoice.tipo_documento] ?? invoice.tipo_documento}`
+              {formatDate(invoice.issue_date)}
+              {invoice.sdi_document_type !== 'invoice'
+                ? ` · ${DOCUMENT_TYPE_LABELS[invoice.sdi_document_type] ?? invoice.sdi_document_type}`
                 : ''}
             </span>
           </>
@@ -502,9 +502,9 @@ function ReviewTableRow({
           EMPTY
         )}
       </TableCell>
-      <TableCell>{invoice ? invoice.cliente.ragione_sociale : EMPTY}</TableCell>
+      <TableCell>{invoice ? invoice.customer.legal_name : EMPTY}</TableCell>
       <TableCell className="text-right whitespace-nowrap">
-        {invoice ? formatMoney(invoice.totale) : EMPTY}
+        {invoice ? formatMoney(invoice.total) : EMPTY}
       </TableCell>
       <TableCell className="max-w-48 truncate text-muted-foreground" title={row.file}>
         {row.file}
@@ -531,11 +531,11 @@ const FOLLOW_UP: ConfirmRow['outcome'][] = [
 function ResultPanel({
   rows,
   interrupted,
-  aziendaName,
+  legalEntityName,
 }: {
   rows: ConfirmRow[]
   interrupted: boolean
-  aziendaName: (id: string | null) => string | undefined
+  legalEntityName: (id: string | null) => string | undefined
 }) {
   const counts = countConfirmed(rows)
   const years = registerYears(rows)
@@ -570,7 +570,7 @@ function ResultPanel({
                 <span className="font-medium">{row.file}</span>{' '}
                 <span className="text-muted-foreground">
                   {CONFIRM_OUTCOME_LABELS[row.outcome]}
-                  {row.motivo ? `: ${row.motivo}` : ''}
+                  {row.reason ? `: ${row.reason}` : ''}
                 </span>
               </li>
             ))}
@@ -578,10 +578,10 @@ function ResultPanel({
         </section>
       ) : null}
       {years.map((year) => {
-        const name = aziendaName(year.aziendaId)
-        const label = `Registro ${year.anno}${name ? ` di ${name}` : ''}`
+        const name = legalEntityName(year.legalEntityId)
+        const label = `Registro ${year.year}${name ? ` di ${name}` : ''}`
         return (
-          <p key={`${year.aziendaId}/${year.anno}`} className="border p-3 text-sm">
+          <p key={`${year.legalEntityId}/${year.year}`} className="border p-3 text-sm">
             <span className="font-medium">{label}: </span>
             {year.missing.length === 0
               ? 'non manca nessun numero.'
@@ -594,9 +594,9 @@ function ResultPanel({
 }
 
 /**
- * The entry point on the Fatture page, next to «Nuova fattura». Mounted only while open,
+ * The entry point on the Invoices page, next to «Nuova fattura». Mounted only while open,
  * like `NewProformaButton`'s dialog. Asks for the admin action the service asks for: the
- * review and the write are both admin-only, and a collaboratore who pressed it would get
+ * review and the write are both admin-only, and a collaborator who pressed it would get
  * a 403 for a screen they were offered.
  */
 export function ImportInvoicesButton() {

@@ -10,7 +10,7 @@ and the two properties at the bottom are predicates over fields rather than sums
 `DigestService` copies each number from the repository or the service that owns it, so
 there is no second place a total of this report can be worked out and disagree. The same
 rule `core/dashboard/` is held to by an AST scan, applied here by construction --
-`vinto_da_fatturare` is the dashboard's own count, `valore_maturato` is
+`won_to_invoice` is the dashboard's own count, `accrued_value` is
 `AnalyticsService`'s, and the two month totals are two calls to one register sum with two
 windows.
 
@@ -18,7 +18,7 @@ Italian field names, like every other schema in this package: the reader of the 
 the reader of this file are the same person.
 """
 
-from datetime import date
+import datetime as dt
 from decimal import Decimal
 from uuid import UUID
 
@@ -36,53 +36,53 @@ class DigestInvoice(BaseModel):
     the client's name. What differs is only *which* date `data` carries, and that is
     named on the field.
 
-    `numero` is `invoices.naming.numero_completo(anno, numero)`, the string printed on the
+    `number` is `invoices.naming.numero_completo(anno, numero)`, the string printed on the
     document the client is holding, never the bare progressive: two invoices from
     different years are indistinguishable by progressive alone, which is the defect that
     function exists to have fixed once.
     """
 
     invoice_id: UUID
-    numero: str
-    cliente: str
-    importo: Decimal = Field(max_digits=12, decimal_places=2)
+    number: str
+    customer: str
+    amount: Decimal = Field(max_digits=12, decimal_places=2)
     # Emission, collection or due date, depending on the list this row is in: the date the
     # section is *about*. An invoice issued in July and collected this week belongs to the
-    # week by its `data_incasso`, and printing its emission date beside it would read as
+    # week by its `payment_date`, and printing its emission date beside it would read as
     # the wrong week.
-    data: date
-    stato: str
-    stato_pagamento: str
+    date: dt.date
+    status: str
+    payment_status: str
     # `trasmessa_esternamente_il is not None`: the document has been deposited with the
     # user's own intermediary. Carried as a bool and not as the date, because the only
     # thing the report does with it is print the word «trasmessa» (§3.1 item 3) -- and
-    # `stato` cannot say it, holding as it does the register's own two state machines.
-    trasmessa: bool = False
+    # `status` cannot say it, holding as it does the register's own two state machines.
+    transmitted: bool = False
     # Only «scadute» fills this in. `None` and not `0` everywhere else: zero days late is
     # a thing an invoice can be (due today), and it is not what an issued invoice is.
-    giorni_di_ritardo: int | None = None
+    days_of_delay: int | None = None
 
 
 class DigestDealMove(BaseModel):
     """A deal that changed stage during the week (§3.1, section 6).
 
-    `stage_nome` is where it *arrived*. The stage it left is in the activity's payload too
+    `stage_name` is where it *arrived*. The stage it left is in the activity's payload too
     and is deliberately not carried: the mail's line is «X è passato a Y», and a reader
     who wants the whole path has the deal's own timeline.
     """
 
     deal_id: UUID
-    titolo: str
-    stage_nome: str
-    quando: date
+    title: str
+    stage_name: str
+    when: dt.date
 
 
 class DigestOffer(BaseModel):
     """An offer sent and still unanswered, with its age in days (§3.1, section 6)."""
 
     document_id: UUID
-    titolo: str
-    giorni: int
+    title: str
+    days: int
 
 
 class DigestStage(BaseModel):
@@ -94,9 +94,9 @@ class DigestStage(BaseModel):
     quoted as revenue.
     """
 
-    stage_nome: str
-    numero: int
-    valore_totale: Decimal = Field(max_digits=12, decimal_places=2)
+    stage_name: str
+    number: int
+    total_value: Decimal = Field(max_digits=12, decimal_places=2)
 
 
 class DigestSignal(BaseModel):
@@ -106,24 +106,24 @@ class DigestSignal(BaseModel):
     «scaduto e non incassato: 0» every Monday is a mail people stop opening.
     """
 
-    codice: str
-    etichetta: str
-    conteggio: int
-    collegamento: str
+    code: str
+    label: str
+    count: int
+    link: str
 
 
-class DigestAttivitaRiga(BaseModel):
+class DigestTaskLine(BaseModel):
     """One commitment line of «Da fare»: what it is, when it falls due, how late it is."""
 
-    attivita_id: UUID
-    titolo: str
-    scadenza: date
-    # Only the overdue fill this in, as `DigestInvoice.giorni_di_ritardo` does: `None` and
+    task_id: UUID
+    title: str
+    due_date: dt.date
+    # Only the overdue fill this in, as `DigestInvoice.days_of_delay` does: `None` and
     # not `0`, since a commitment due today is a fact about the day and not a delay.
-    giorni_di_ritardo: int | None = None
+    days_of_delay: int | None = None
 
 
-class DigestAttivita(BaseModel):
+class DigestTask(BaseModel):
     """The recipient's own commitments of the week (REB-726): overdue, then the next seven
     days, today included.
 
@@ -139,14 +139,14 @@ class DigestAttivita(BaseModel):
     to-do is on the Oggi page, not in a mail about the week.
     """
 
-    in_ritardo: list[DigestAttivitaRiga] = Field(default_factory=list)
-    in_ritardo_totale: int = 0
-    in_settimana: list[DigestAttivitaRiga] = Field(default_factory=list)
-    in_settimana_totale: int = 0
+    overdue: list[DigestTaskLine] = Field(default_factory=list)
+    overdue_total: int = 0
+    in_week: list[DigestTaskLine] = Field(default_factory=list)
+    in_week_total: int = 0
 
     @property
-    def vuota(self) -> bool:
-        return not self.in_ritardo_totale and not self.in_settimana_totale
+    def empty(self) -> bool:
+        return not self.overdue_total and not self.in_week_total
 
 
 class WeeklyDigest(BaseModel):
@@ -159,63 +159,63 @@ class WeeklyDigest(BaseModel):
     moved here first -- which is where it is visible to every test.
 
     Every list may be empty and every one is present: the renderer decides what to print,
-    not the builder. `None` appears exactly once, on `ore`, because a week with no hours is
+    not the builder. `None` appears exactly once, on `hours`, because a week with no hours is
     a different statement from a week of zeros -- §3.1 drops the section entirely rather
     than printing a flat line.
     """
 
-    settimana: str
-    da: date
-    a: date
+    week: str
+    date_from: dt.date
+    date_to: dt.date
 
     # 1. Da incassare.
-    scadute: list[DigestInvoice]
-    in_scadenza: list[DigestInvoice]
+    overdue: list[DigestInvoice]
+    in_due_date: list[DigestInvoice]
 
     # 2. Da emettere.
-    vinti_da_fatturare: int
-    ore_non_fatturate: Decimal = Field(max_digits=8, decimal_places=2)
+    won_to_invoice: int
+    unbilled_hours: Decimal = Field(max_digits=8, decimal_places=2)
     # `AnalyticsService`'s accrued value. Never revenue, never added to one: the revenue
     # is the invoice, and this is what has not been invoiced yet.
-    valore_maturato: Decimal = Field(max_digits=12, decimal_places=2)
+    accrued_value: Decimal = Field(max_digits=12, decimal_places=2)
 
-    # 3. Emesse questa settimana, with the running month beside the one before it.
-    emesse: list[DigestInvoice]
-    totale_mese_corrente: Decimal = Field(max_digits=12, decimal_places=2)
-    totale_mese_precedente: Decimal = Field(max_digits=12, decimal_places=2)
+    # 3. Issued this week, with the running month beside the one before it.
+    issued: list[DigestInvoice]
+    total_month_current: Decimal = Field(max_digits=12, decimal_places=2)
+    total_month_previous: Decimal = Field(max_digits=12, decimal_places=2)
 
-    # 4. Incassate questa settimana.
-    incassate: list[DigestInvoice]
+    # 4. Collected this week.
+    paid: list[DigestInvoice]
 
-    # 5. Le ore. `None` when the week has none at all.
-    ore: WeekHours | None
+    # 5. The hours. `None` when the week has none at all.
+    hours: WeekHours | None
 
     # 6. In pipeline.
     pipeline: list[DigestStage]
-    deal_mossi: list[DigestDealMove]
-    offerte_in_attesa: list[DigestOffer]
+    deal_moves: list[DigestDealMove]
+    offers_pending: list[DigestOffer]
 
     # 7. Da sistemare.
-    segnali: list[DigestSignal]
+    signals: list[DigestSignal]
 
     # 8. Da fare. The recipient's, so it is empty on a freshly built report and set per
-    # address by `DigestRun` (see `DigestAttivita`).
-    attivita: DigestAttivita = Field(default_factory=DigestAttivita)
+    # address by `DigestRun` (see `DigestTask`).
+    tasks: DigestTask = Field(default_factory=DigestTask)
 
     @property
-    def settimana_ferma(self) -> bool:
+    def week_stalled(self) -> bool:
         """Nothing was issued, collected, logged or moved.
 
         The four facts a person recognises as «I did something that week», and deliberately
-        not the same test as `vuoto`: a space can owe money, hold a pipeline and have an
+        not the same test as `empty`: a space can owe money, hold a pipeline and have an
         offer out, and still have had a week in which nothing moved. That is the week §3.1
         closes with the «settimana ferma» line and the ready-made prompt, and it is the
         week the report is most worth sending.
         """
-        return not self.emesse and not self.incassate and not self.deal_mossi and self.ore is None
+        return not self.issued and not self.paid and not self.deal_moves and self.hours is None
 
     @property
-    def vuoto(self) -> bool:
+    def empty(self) -> bool:
         """Every list empty, every number zero, no hours: a space with nothing in it.
 
         §2: «silenzio per gli spazi vuoti». The command asks this and sends nothing, which
@@ -229,19 +229,19 @@ class WeeklyDigest(BaseModel):
         to report.
         """
         return (
-            not self.scadute
-            and not self.in_scadenza
-            and not self.emesse
-            and not self.incassate
+            not self.overdue
+            and not self.in_due_date
+            and not self.issued
+            and not self.paid
             and not self.pipeline
-            and not self.deal_mossi
-            and not self.offerte_in_attesa
-            and not self.segnali
-            and self.attivita.vuota
-            and self.ore is None
-            and self.vinti_da_fatturare == 0
-            and self.ore_non_fatturate == 0
-            and self.valore_maturato == 0
-            and self.totale_mese_corrente == 0
-            and self.totale_mese_precedente == 0
+            and not self.deal_moves
+            and not self.offers_pending
+            and not self.signals
+            and self.tasks.empty
+            and self.hours is None
+            and self.won_to_invoice == 0
+            and self.unbilled_hours == 0
+            and self.accrued_value == 0
+            and self.total_month_current == 0
+            and self.total_month_previous == 0
         )

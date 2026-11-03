@@ -15,9 +15,9 @@ import { Badge, type BadgeDot } from '@rebase/ui/badge'
  * A feature never inlines a tone at the call site: each one keeps a `Record` from its
  * own state enum to a tone, next to the labels for those states, so adding a state
  * makes the map fail to compile rather than silently render as the default. Five of the
- * six enums it is keyed on (`InvoiceStato`, `StatoPagamento`, `OfferState`,
- * `TimeEntryStato`, `TokenStato`) are unions written by hand next to the labels, so the
- * compile only breaks once somebody has widened the union -- only `Stage['tipo']` comes
+ * six enums it is keyed on (`InvoiceStatus`, `PaymentStatus`, `OfferState`,
+ * `TimeEntryStatus`, `TokenStatus`) are unions written by hand next to the labels, so the
+ * compile only breaks once somebody has widened the union -- only `Stage['type']` comes
  * from the generated API types.
  */
 export type StatusTone = BadgeDot

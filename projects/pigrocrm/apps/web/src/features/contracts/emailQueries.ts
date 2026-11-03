@@ -8,7 +8,7 @@ export type EmailTemplate = components['schemas']['ContractEmailTemplateRead']
 export type EmailTemplateCreateBody = components['schemas']['ContractEmailTemplateCreate']
 export type EmailTemplateUpdateBody = components['schemas']['ContractEmailTemplateUpdate']
 export type EmailPreview = components['schemas']['ContractEmailPreview']
-export type AttachmentKind = EmailTemplate['allegati'][number]
+export type AttachmentKind = EmailTemplate['attachments'][number]
 
 export function useEmailTemplates(contractId: string) {
   return useQuery({

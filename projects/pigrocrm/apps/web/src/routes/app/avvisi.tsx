@@ -1,7 +1,9 @@
-import { createFileRoute } from '@tanstack/react-router'
-import { AvvisiPage } from '@/features/reminders/AvvisiPage'
+import { createFileRoute, redirect } from '@tanstack/react-router'
 
-// Only `Route` is exported, so the router plugin keeps code-splitting this route; the page
-// is `features/reminders/AvvisiPage.tsx`. No role guard: the list is the caller's own, and
-// every role has reminders (the API shows each person only what their scope allows).
-export const Route = createFileRoute('/app/avvisi')({ component: AvvisiPage })
+// Old path support: the page is `reminders.tsx` since the English rename of 2026-11-02.
+// Push notifications and bookmarks that carry `/app/avvisi` keep answering.
+export const Route = createFileRoute('/app/avvisi')({
+  beforeLoad: () => {
+    throw redirect({ to: '/app/reminders', replace: true })
+  },
+})

@@ -11,23 +11,24 @@ from decimal import Decimal
 from pigrocrm.core.errors import Conflict, ImmutableField, ValidationFailed
 from pigrocrm.core.invoices.constants import ENTITY, ZERO
 from pigrocrm.core.invoices.models import Invoice
-from pigrocrm.core.invoices.schemas import ANNO_MAX, ANNO_MIN, InvoiceImport
+from pigrocrm.core.invoices.schemas import YEAR_MAX, YEAR_MIN, InvoiceImport
+from pigrocrm.core.labels import INVOICE_STATUS, label
 from pigrocrm.core.money import round_money
 
-# What stays writable once a `fattura` has left the `bozza` state (spec 4). Everything
+# What stays writable once a `invoice` has left the `draft` state (spec 4). Everything
 # else on the row is frozen, and an attempt raises `ImmutableField` naming the field.
-# `stato_pagamento`/`data_incasso` are absent because they have their own method, which
-# is what makes their agreement checkable; `stato` is absent for the same reason.
-MUTABLE_AFTER_ISSUE: frozenset[str] = frozenset({"note_interne", "custom_fields"})
+# `payment_status`/`payment_date` are absent because they have their own method, which
+# is what makes their agreement checkable; `status` is absent for the same reason.
+MUTABLE_AFTER_ISSUE: frozenset[str] = frozenset({"internal_notes", "custom_fields"})
 
 
 def is_editable(invoice: Invoice) -> bool:
-    """A `fattura` is editable only as a `bozza`; a `proforma` is editable until it
-    is `consumata`. That asymmetry is the point of a proforma (spec 5): agree the
+    """A `invoice` is editable only as a `draft`; a `proforma` is editable until it
+    is `consumed`. That asymmetry is the point of a proforma (spec 5): agree the
     amount, correct it as many times as needed, without touching the register."""
-    if invoice.tipo == "proforma":
-        return invoice.stato in ("bozza", "confermata")
-    return invoice.stato == "bozza"
+    if invoice.type == "proforma":
+        return invoice.status in ("draft", "confirmed")
+    return invoice.status == "draft"
 
 
 def require_editable(invoice: Invoice, field: str) -> None:
@@ -35,58 +36,59 @@ def require_editable(invoice: Invoice, field: str) -> None:
         raise ImmutableField(
             ENTITY,
             field,
-            f"una fattura in stato '{invoice.stato}' e' un documento fiscale: "
+            f"una fattura in stato '{label(INVOICE_STATUS, invoice.status)}' e' un documento "
+            f"fiscale: "
             "si corregge con un annullamento e una nuova emissione, non con una modifica",
         )
 
 
-def check_competenza(da: date | None, a: date | None) -> None:
+def check_accrual(date_from: date | None, date_to: date | None) -> None:
     """The accrual period as it will be stored: both ends or neither, in order.
 
     Checked on the *merged* row by `update`, not on the request, because completing
     a period whose other end is already stored is a one-field change. The two table
-    CHECKs (`ck_invoices_competenza_together`, `ck_invoices_competenza_ordered`)
+    CHECKs (`ck_invoices_accrual_together`, `ck_invoices_accrual_ordered`)
     refuse the same shapes on every other write path; this is what turns a
     violation into a `ValidationFailed` naming the field instead of a poisoned
     session.
     """
-    if (da is None) != (a is None):
-        missing = "competenza_a" if a is None else "competenza_da"
+    if (date_from is None) != (date_to is None):
+        missing = "accrual_to" if date_to is None else "accrual_from"
         raise ValidationFailed(
             ENTITY,
             missing,
             "un periodo di competenza ha un inizio e una fine: indicali entrambi "
             "oppure nessuno dei due",
-            expected="competenza_da e competenza_a insieme",
+            expected="accrual_from e accrual_to insieme",
         )
-    if da is not None and a is not None and a < da:
+    if date_from is not None and date_to is not None and date_to < date_from:
         raise ValidationFailed(
             ENTITY,
-            "competenza_a",
+            "accrual_to",
             "il periodo di competenza finisce prima di cominciare",
-            expected=f"una data dal {da.isoformat()} in poi",
+            expected=f"una data dal {date_from.isoformat()} in poi",
         )
 
 
-def check_issue_date(data_emissione: date, today: date) -> None:
+def check_issue_date(issue_date: date, today: date) -> None:
     """Two limits, both from spec 6.2.
 
-    `data_emissione` is a `date` in the issuer's own calendar, never the UTC projection
+    `issue_date` is a `date` in the issuer's own calendar, never the UTC projection
     of an instant: `toISOString()` on 31 December at 23:30 CET yields 1 January, which
     puts an immutable document in the wrong fiscal year. `today` therefore comes from
     `today_local()` (see `db/clock.py`), never a bare `date.today()`.
     """
-    if data_emissione > today:
+    if issue_date > today:
         raise ValidationFailed(
             ENTITY,
-            "data_emissione",
+            "issue_date",
             "una fattura non si emette con data futura",
             expected=f"una data non successiva a {today.isoformat()}",
         )
-    if data_emissione < date(today.year, 1, 1):
+    if issue_date < date(today.year, 1, 1):
         raise ValidationFailed(
             ENTITY,
-            "data_emissione",
+            "issue_date",
             "un anno chiuso e' chiuso: non si inserisce nel registro di un anno "
             "precedente dopo che ne e' iniziato uno nuovo",
             expected=f"una data dal {today.year}-01-01 in poi",
@@ -100,35 +102,35 @@ def check_issuable(source: Invoice, *, from_proforma: bool) -> None:
     authoritatively after), and two copies of a refusal message drift.
     """
     if from_proforma:
-        if source.stato != "confermata":
+        if source.status != "confirmed":
             raise Conflict(
                 ENTITY,
                 "solo una proforma confermata si converte in fattura",
-                stato_attuale=source.stato,
-                stato_richiesto="confermata",
+                status_current=source.status,
+                requested_status="confirmed",
             )
-    elif source.stato != "bozza":
+    elif source.status != "draft":
         raise Conflict(
             ENTITY,
-            f"una fattura in stato '{source.stato}' e' gia' stata emessa: "
+            f"una fattura in stato '{label(INVOICE_STATUS, source.status)}' e' gia' stata emessa: "
             "una correzione e' un annullamento e una nuova fattura",
-            stato_attuale=source.stato,
+            status_current=source.status,
         )
 
 
-def check_import_date(data_emissione: date, today: date) -> None:
+def check_import_date(issue_date: date, today: date) -> None:
     """Only "not in the future" (§3.2 rule 5). `check_issue_date` also refuses a closed
     year, and a closed year is exactly what an import fills."""
-    if data_emissione > today:
+    if issue_date > today:
         raise ValidationFailed(
             ENTITY,
-            "data_emissione",
+            "issue_date",
             "una fattura non si importa con data futura",
             expected=f"una data non successiva a {today.isoformat()}",
         )
 
 
-def check_transmission_date(quando: date, data_emissione: date | None, today: date) -> None:
+def check_transmission_date(when: date, issue_date: date | None, today: date) -> None:
     """The two facts a delivery date has to satisfy: not in the future, not before the
     invoice it delivers.
 
@@ -137,48 +139,48 @@ def check_transmission_date(quando: date, data_emissione: date | None, today: da
     a correction is still possible, so a delivery dated tomorrow, or before the
     emission, could never be corrected.
     """
-    if quando > today:
+    if when > today:
         raise ValidationFailed(
             ENTITY,
-            "trasmessa_esternamente_il",
+            "transmitted_externally_at",
             "una consegna non si registra con data futura",
             expected=f"una data non successiva a {today.isoformat()}",
         )
-    if data_emissione is not None and quando < data_emissione:
+    if issue_date is not None and when < issue_date:
         raise ValidationFailed(
             ENTITY,
-            "trasmessa_esternamente_il",
-            f"la consegna non puo' precedere l'emissione ({data_emissione.isoformat()})",
-            expected=f"una data dal {data_emissione.isoformat()} in poi",
+            "transmitted_externally_at",
+            f"la consegna non puo' precedere l'emissione ({issue_date.isoformat()})",
+            expected=f"una data dal {issue_date.isoformat()} in poi",
         )
 
 
-def check_register_year(anno: int) -> None:
-    """Bound `anno` before it reaches a lock or a query.
+def check_register_year(year: int) -> None:
+    """Bound `year` before it reaches a lock or a query.
 
-    Every other `anno` in this domain is bounded the same way (`InvoiceImport.anno`,
-    `InvoiceListQuery.anno`), and the register methods are the one place a bare `int`
+    Every other `year` in this domain is bounded the same way (`InvoiceImport.year`,
+    `InvoiceListQuery.year`), and the register methods are the one place a bare `int`
     from a caller reaches `lock_counter`'s raw `INSERT INTO invoice_counters` or a
     register query directly. An out-of-range value would otherwise surface as a Postgres
     `integer out of range` `DataError`, or silently create junk counter and gap rows for
     a year nothing else will ever ask about.
     """
-    if not ANNO_MIN <= anno <= ANNO_MAX:
+    if not YEAR_MIN <= year <= YEAR_MAX:
         raise ValidationFailed(
             ENTITY,
-            "anno",
+            "year",
             "anno fuori dal registro",
-            expected=f"un anno fra {ANNO_MIN} e {ANNO_MAX}",
+            expected=f"un anno fra {YEAR_MIN} e {YEAR_MAX}",
         )
 
 
-def check_positive_total(totale: Decimal) -> None:
+def check_positive_total(total: Decimal) -> None:
     """A TD01 at zero or below is not an invoice (spec 6.2); the same refusal for what
     `issue` computes and for what an import declares."""
-    if totale <= ZERO:
+    if total <= ZERO:
         raise ValidationFailed(
             ENTITY,
-            "totale",
+            "total",
             "una TD01 a zero o negativa non e' una fattura",
             expected="un totale maggiore di zero",
         )
@@ -189,37 +191,37 @@ def check_declared_totals(data: InvoiceImport) -> None:
     cent (§3.3).
 
     **The stamp duty is not in the identity.** `sum_totals` stores
-    `totale = imponibile + imposta` and keeps `bollo` alongside, because
+    `totale = imponibile + imposta` and keeps `stamp_duty` alongside, because
     `DatiBollo/BolloVirtuale` declares that the *issuer* settled the stamp virtually:
     charging it to the customer would need a line of its own with `Natura N1`, which is
     out of scope. So an imported invoice is checked against the same identity a natively
     issued one satisfies, and the previous system's register is the confirming fact: its
-    «Totale» column always equals «Imp. Reddito». `bollo` is still checked
+    «Totale» column always equals «Imp. Reddito». `stamp_duty` is still checked
     (non-negative) and stored; it is never added.
     """
-    somma_righe = round_money(sum((r.prezzo_totale for r in data.righe), Decimal("0")))
-    if somma_righe != round_money(data.imponibile):
+    lines_sum = round_money(sum((r.total_price for r in data.lines), Decimal("0")))
+    if lines_sum != round_money(data.taxable_amount):
         raise ValidationFailed(
             ENTITY,
-            "imponibile",
-            f"l'imponibile dichiarato ({data.imponibile}) non e' la somma delle righe "
-            f"({somma_righe})",
+            "taxable_amount",
+            f"l'imponibile dichiarato ({data.taxable_amount}) non e' la somma delle righe "
+            f"({lines_sum})",
             expected="imponibile uguale alla somma dei prezzi totali di riga",
         )
-    if data.bollo < ZERO:
+    if data.stamp_duty < ZERO:
         raise ValidationFailed(
             ENTITY,
-            "bollo",
-            f"il bollo dichiarato ({data.bollo}) e' negativo",
+            "stamp_duty",
+            f"il bollo dichiarato ({data.stamp_duty}) e' negativo",
             expected="un bollo maggiore o uguale a zero",
         )
-    atteso = round_money(data.imponibile + data.imposta)
-    if atteso != round_money(data.totale):
+    expected = round_money(data.taxable_amount + data.vat_amount)
+    if expected != round_money(data.total):
         raise ValidationFailed(
             ENTITY,
-            "totale",
-            f"il totale dichiarato ({data.totale}) non e' imponibile + imposta "
-            f"({atteso}): il bollo si dichiara a parte e non entra nel totale",
+            "total",
+            f"il totale dichiarato ({data.total}) non e' imponibile + imposta "
+            f"({expected}): il bollo si dichiara a parte e non entra nel totale",
             expected="totale uguale a imponibile + imposta",
         )
-    check_positive_total(data.totale)
+    check_positive_total(data.total)

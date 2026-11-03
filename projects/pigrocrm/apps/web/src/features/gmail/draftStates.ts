@@ -8,42 +8,42 @@ export const GMAIL_SEND_SCOPE = 'https://www.googleapis.com/auth/gmail.send'
 /**
  * What the person is told, per state. A plain module rather than constants inside the
  * component: `react-refresh/only-export-components` refuses a component module that also
- * exports values, and `esito.ts` next door already established the split.
+ * exports values, and `outcome.ts` next door already established the split.
  *
- * The line that matters is `incerto`. It means **nobody knows** whether the message left,
+ * The line that matters is `uncertain`. It means **nobody knows** whether the message left,
  * and the word it must never use is «inviata»: writing "sent" for a state that means "we
  * do not know" is the exact lie this whole design exists to prevent (spec 6.3(b)). It is
  * not an error state either: nothing went wrong that anybody can point at, which is
  * precisely why it needs a name of its own.
  */
 export const STATE_HEADING: Record<SendState, string> = {
-  bozza: 'Bozza',
-  in_invio: 'Invio in corso',
-  inviato: 'Inviata',
-  incerto: 'Esito da verificare',
-  fallito: 'Invio non riuscito',
+  draft: 'Bozza',
+  sending: 'Invio in corso',
+  sent: 'Inviata',
+  uncertain: 'Esito da verificare',
+  failed: 'Invio non riuscito',
 }
 
 /**
  * The sentence under each draft. Each one says what the person can *do*, because a
  * state label alone leaves «esito da verificare» looking like a warning to be dismissed.
  *
- * `incerto` names «Verifica» and says, in as many words, not to send it again: the send
+ * `uncertain` names «Verifica» and says, in as many words, not to send it again: the send
  * has no idempotency key, so a second press is a second email in a client's inbox.
  *
- * `fallito` does not say «correggila»: the Email tab reads and sends, it does not edit
+ * `failed` does not say «correggila»: the Email tab reads and sends, it does not edit
  * (REB-415), so the way to a different text is a new draft from the assistant.
  */
 export const STATE_HELP: Record<SendState, string> = {
-  bozza: 'Non è ancora partita. Parte esattamente quello che leggi qui.',
-  in_invio:
+  draft: 'Non è ancora partita. Parte esattamente quello che leggi qui.',
+  sending:
     'L’invio è in corso: questa pagina si aggiorna da sola. Se resta così per più di ' +
     'qualche minuto, usa «Verifica»: non rinviarla.',
-  inviato: 'È partita. Trovi il messaggio nella corrispondenza qui sotto.',
-  incerto:
+  sent: 'È partita. Trovi il messaggio nella corrispondenza qui sotto.',
+  uncertain:
     'Gmail non ha risposto, quindi non sappiamo se il messaggio sia partito. ' +
     'Usa «Verifica» per scoprirlo: non rinviarlo, perché potrebbe essere già arrivato.',
-  fallito:
+  failed:
     'Non è partita e il testo è intatto. Puoi riprovare, oppure eliminarla e chiedere ' +
     'all’assistente una nuova bozza.',
 }
@@ -177,7 +177,7 @@ export const DRAFT_CHANGED_REREAD =
 
 /**
  * Whether a failed send already changed the draft on the server. A refused or unanswered
- * send answers a `Conflict` carrying the draft's new `send_state` (`fallito`, `incerto`),
+ * send answers a `Conflict` carrying the draft's new `send_state` (`failed`, `uncertain`),
  * and so does a press on a draft that already left: in all of those the row's own state
  * and `last_error`, read again after the press, are the outcome, and a second banner
  * would say the same thing twice.

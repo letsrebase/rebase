@@ -22,23 +22,23 @@ function failed(error: unknown, status: number) {
 const CONTRACT = {
   id: 'c1',
   customer_id: 'cust-1',
-  azienda_id: 'a1',
-  titolo: 'Sviluppo piattaforma',
-  inizio: '2026-01-01',
-  fine: '2026-12-31',
-  tipo_rinnovo: 'nessuno',
-  preavviso_rinnovo_giorni: null,
-  preavviso_disdetta_giorni: 30,
-  giorni_pagamento: null,
-  pagamento_fine_mese: null,
-  cadenza_fatturazione: 'mensile',
-  divisa: 'EUR',
+  legal_entity_id: 'a1',
+  title: 'Sviluppo piattaforma',
+  start: '2026-01-01',
+  end: '2026-12-31',
+  renewal_type: 'none',
+  renewal_notice_days: null,
+  termination_notice_days: 30,
+  payment_days: null,
+  payment_end_of_month: null,
+  billing_cadence: 'monthly',
+  currency: 'EUR',
   requires_prior_approval: false,
   applies_social_charge: false,
-  tetto_quota_cliente: '50.00',
-  politica_spese: { kind: 'non_rimborsabile' },
-  stato: 'attivo',
-  contratto_precedente_id: null,
+  customer_share_cap: '50.00',
+  expense_policy: { kind: 'not_reimbursable' },
+  status: 'active',
+  previous_contract_id: null,
   note: null,
   custom_fields: {},
   created_at: '2026-01-01T00:00:00Z',
@@ -87,15 +87,15 @@ describe('ContractForm, the cap on the customer’s share', () => {
       expect.objectContaining({
         body: expect.objectContaining({
           customer_id: 'cust-1',
-          titolo: 'Manutenzione',
-          tetto_quota_cliente: '50',
+          title: 'Manutenzione',
+          customer_share_cap: '50',
         }),
       }),
     )
   })
 
   it('clears the stored cap with null when the box is emptied on edit', async () => {
-    vi.mocked(api.PATCH).mockImplementation((() => ok({ ...CONTRACT, tetto_quota_cliente: null })) as never)
+    vi.mocked(api.PATCH).mockImplementation((() => ok({ ...CONTRACT, customer_share_cap: null })) as never)
     renderForm({ contract: CONTRACT })
 
     const box = await screen.findByLabelText('Tetto sulla quota del cliente (%)')
@@ -107,7 +107,7 @@ describe('ContractForm, the cap on the customer’s share', () => {
       '/api/contracts/{contract_id}',
       expect.objectContaining({
         params: { path: { contract_id: 'c1' } },
-        body: { tetto_quota_cliente: null },
+        body: { customer_share_cap: null },
       }),
     )
   })
@@ -120,7 +120,7 @@ describe('ContractForm, the cap on the customer’s share', () => {
           title: 'Unprocessable',
           status: 422,
           code: 'validation_failed',
-          field: 'tetto_quota_cliente',
+          field: 'customer_share_cap',
           detail: 'tetto_quota_cliente: deve essere maggiore di 0 e minore di 100',
         },
         422,

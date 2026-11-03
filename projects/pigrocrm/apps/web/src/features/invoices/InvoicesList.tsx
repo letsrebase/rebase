@@ -21,88 +21,88 @@ import {
   INVOICE_STATE_LABELS,
   PAYMENT_STATE_LABELS,
   useInvoicesList,
-  type InvoiceStato,
-  type InvoiceTipo,
-  type StatoPagamento,
+  type InvoiceStatus,
+  type InvoiceType,
+  type PaymentStatus,
 } from '@/features/invoices/queries'
 
-/** `tutti` is a UI-only value: the API filter is simply absent when nothing is
+/** `all` is a UI-only value: the API filter is simply absent when nothing is
  *  selected, and a `Select` needs a non-empty string to represent "no filter". The
  *  state filter has no such sentinel any more -- it is a row of chips, where "no
  *  filter" is `null` (see `FilterChips`). */
-const ANY = 'tutti'
+const ANY = 'all'
 
-const TIPI = [
+const TYPE_OPTIONS = [
   { value: ANY, label: 'Tutti i tipi' },
-  { value: 'fattura', label: 'Fatture' },
+  { value: 'invoice', label: 'Fatture' },
   { value: 'proforma', label: 'Proforma' },
 ]
 
 /** The five fiscal states, as chips, in the order `INVOICE_STATE_LABELS` declares them:
  *  that map is next to the tones and the transitions on the server, so a state added
  *  there appears here without this file changing. */
-const STATI = Object.entries(INVOICE_STATE_LABELS).map(([value, label]) => ({
-  value: value as InvoiceStato,
+const Statuses = Object.entries(INVOICE_STATE_LABELS).map(([value, label]) => ({
+  value: value as InvoiceStatus,
   label,
 }))
 
-/** The two payment states, as a second chip row (REB-325: «aggiungi un filtro per le
- *  fatture da incassare»). Built from the same map the `Pagamento` column's pill reads,
+/** The two payment states, as a second chip row (REB-325: a filter for the unpaid
+ *  invoices). Built from the same map the `Pagamento` column's pill reads,
  *  so the chip and the pill can never spell a state two ways. */
-const INCASSI = Object.entries(PAYMENT_STATE_LABELS).map(([value, label]) => ({
-  value: value as StatoPagamento,
+const Receipts = Object.entries(PAYMENT_STATE_LABELS).map(([value, label]) => ({
+  value: value as PaymentStatus,
   label,
 }))
 
 /**
  * Exported so `index.test.tsx` can render the list without a router: the route
- * component below is what reads `scadute` out of the URL, and this is what draws the
+ * component below is what reads `overdue` out of the URL, and this is what draws the
  * page. The split is the same one `CustomersPage`/`PeoplePage` already make for their
  * own `?search=` term.
  */
-export function InvoicesList({ scadute }: { scadute?: boolean }) {
+export function InvoicesList({ overdue }: { overdue?: boolean }) {
   const navigate = useNavigate()
-  const [tipo, setTipo] = useState(ANY)
-  const [stato, setStato] = useState<InvoiceStato | null>(null)
-  const [incasso, setIncasso] = useState<StatoPagamento | null>(null)
+  const [type, setType] = useState(ANY)
+  const [status, setStatus] = useState<InvoiceStatus | null>(null)
+  const [collection, setCollection] = useState<PaymentStatus | null>(null)
 
   // Cast at the boundary, not in the state: `Select` deals in strings, and the type
   // option list is built from the same constants the API's literals come from, so a
-  // value that is not a legal `InvoiceTipo` cannot be produced here. `stato` needs no
+  // value that is not a legal `InvoiceType` cannot be produced here. `status` needs no
   // cast at all since the chips carry the literal itself.
   //
-  // `scadute` comes from the URL rather than from a control, because it is a
+  // `overdue` comes from the URL rather than from a control, because it is a
   // drill-through and not a filter of this page's own: the operational dashboard counts
   // overdue invoices with `_overdue_predicate` in `InvoiceRepository`, and this list is
   // the same predicate evaluated on the same rows (criterion 2). Re-deciding "overdue"
-  // here -- comparing `data_scadenza` against today's date in the browser -- is how the
+  // here -- comparing `due_date` against today's date in the browser -- is how the
   // count and the list start disagreeing on an invoice due today.
   //
   // «Tutte» is every document that stands on its own. A consumed proforma does not: its
-  // number lives on the fattura it became, and listing both doubled every issued proforma
+  // number lives on the invoice it became, and listing both doubled every issued proforma
   // (ORB-169). So with no state chosen the server leaves them out; the «Consumata» chip
   // asks for exactly them and gets them.
   //
-  // `incasso` is the payment row, orthogonal to the state row: «Emessa» + «Incassato»
+  // `collection` is the payment row, orthogonal to the state row: «Emessa» + «Incassato»
   // is a legal pair and sends both. What «Da incassare» selects is decided on the server
   // (`InvoiceRepository.list`, REB-325): an issued fattura nobody has paid, the rows the
   // dashboard's «Da incassare» card counts, and never a draft or a proforma although
-  // every row carries `da_incassare` from birth. Deciding that here would be the second
+  // every row carries `unpaid` from birth. Deciding that here would be the second
   // definition of a receivable this product has, and the two would drift.
   const invoices = useInvoicesList({
-    tipo: tipo === ANY ? undefined : (tipo as InvoiceTipo),
-    stato: stato ?? undefined,
-    stato_pagamento: incasso ?? undefined,
-    escludi_consumate: stato === null ? true : undefined,
-    scadute,
+    type: type === ANY ? undefined : (type as InvoiceType),
+    status: status ?? undefined,
+    payment_status: collection ?? undefined,
+    exclude_consumed: status === null ? true : undefined,
+    overdue,
   })
 
   // With the customer: this is the one screen that mixes every customer's invoices, so
   // a row has to say whose it is (ORB-98). The Fatture tab on a customer's or a deal's
   // page draws the same columns without it -- see `InvoicesTab`.
-  // And the azienda's name beside the number, only under «Tutte le aziende» from the
-  // second azienda on (REB-625): with one selected the sidebar already says whose.
-  const columns = buildInvoiceColumns({ cliente: true, aziende: useLegalEntitiesToName() })
+  // And the legal entity's name beside the number, only under «Tutte le aziende» from the
+  // second legal entity on (REB-625): with one selected the sidebar already says whose.
+  const columns = buildInvoiceColumns({ customer: true, legal_entities: useLegalEntitiesToName() })
 
   return (
     <>
@@ -121,25 +121,25 @@ export function InvoicesList({ scadute }: { scadute?: boolean }) {
           <FilterChips
             label="Filtra per stato"
             allLabel="Tutte"
-            options={STATI}
-            value={stato}
-            onChange={setStato}
+            options={Statuses}
+            value={status}
+            onChange={setStatus}
           />
 
           <FilterChips
             label="Filtra per incasso"
             allLabel="Tutte"
-            options={INCASSI}
-            value={incasso}
-            onChange={setIncasso}
+            options={Receipts}
+            value={collection}
+            onChange={setCollection}
           />
 
-          <Select value={tipo} onValueChange={setTipo}>
+          <Select value={type} onValueChange={setType}>
             <SelectTrigger className="w-48" aria-label="Filtra per tipo">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              {TIPI.map((entry) => (
+              {TYPE_OPTIONS.map((entry) => (
                 <SelectItem key={entry.value} value={entry.value}>
                   {entry.label}
                 </SelectItem>
@@ -150,7 +150,7 @@ export function InvoicesList({ scadute }: { scadute?: boolean }) {
       </PageHeader>
 
       <div className="px-8 pb-8">
-        {scadute === true && (
+        {overdue === true && (
           <p
             role="status"
             className="mb-4 flex flex-wrap items-center gap-2 border bg-card px-3 py-2 text-sm"

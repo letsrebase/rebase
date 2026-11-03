@@ -28,9 +28,9 @@ ROWS = [
 
 def _sheet(**overrides):
     payload = {
-        "cliente": "Rossi & C. S.r.l.",
-        "offerta": "Progetto Alfa",
-        "periodo": "marzo 2026",
+        "customer": "Rossi & C. S.r.l.",
+        "offer": "Progetto Alfa",
+        "period": "marzo 2026",
         "rows": ROWS,
     }
     payload.update(overrides)
@@ -118,8 +118,8 @@ def test_free_text_that_starts_like_a_formula_is_written_as_a_string() -> None:
     `SUBTOTAL` the sheet writes itself is the only formula in the file."""
     formula = '=HYPERLINK("http://evil.example","clicca")'
     sheet = _sheet(
-        cliente=formula,
-        offerta="+cmd|' /C calc'!A0",
+        customer=formula,
+        offer="+cmd|' /C calc'!A0",
         rows=[(date(2026, 3, 4), Decimal("1.00"), formula)],
     )
 

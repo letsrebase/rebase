@@ -2,6 +2,7 @@ from typing import Any
 
 from fastapi import Request
 from fastapi.encoders import jsonable_encoder
+from fastapi.exceptions import RequestValidationError
 from fastapi.openapi.constants import REF_PREFIX
 from fastapi.openapi.utils import validation_error_definition, validation_error_response_definition
 from fastapi.responses import JSONResponse
@@ -10,6 +11,7 @@ from sqlalchemy.exc import DBAPIError
 
 from pigrocrm.core.db.scope import is_policy_refusal
 from pigrocrm.core.errors import DomainError, OutOfScope
+from pigrocrm.core.validation_messages import validation_failed_from_error
 
 STATUS_BY_CODE: dict[str, int] = {
     "not_found": 404,
@@ -92,6 +94,30 @@ async def insufficient_privilege_handler(request: Request, exc: Exception) -> JS
     if not is_policy_refusal(exc):
         raise exc
     return await domain_error_handler(request, OutOfScope())
+
+
+def _italian_message(error: dict[str, Any]) -> str:
+    """The sentence the UI shows for one request error: pydantic's own `msg` is English
+    (`Field required`), and `fieldErrorFrom` puts it under the input as it is."""
+    if error.get("type") == "extra_forbidden":
+        return "campo non riconosciuto"
+    loc = error.get("loc") or ()
+    failed = validation_failed_from_error(error, field=str(loc[-1]) if loc else "valore")
+    reason = str(failed.details["reason"])
+    expected = failed.details.get("expected")
+    if expected and error.get("type") != "missing":
+        return f"{reason} (atteso: {expected})"
+    return reason
+
+
+async def request_validation_handler(_request: Request, exc: Exception) -> JSONResponse:
+    """FastAPI's own 422 for a body, query or path that never reached the endpoint, with
+    the same `{"detail": [{loc, msg, type, ...}]}` shape it always had (the web client's
+    `toProblem` reads it) and `msg` in Italian, worded by the same translator the MCP
+    tools use. The first error is the one the UI shows, so every error is translated."""
+    assert isinstance(exc, RequestValidationError)
+    errors = [{**error, "msg": _italian_message(dict(error))} for error in exc.errors()]
+    return JSONResponse(status_code=422, content={"detail": jsonable_encoder(errors)})
 
 
 class ProblemDetail(BaseModel):

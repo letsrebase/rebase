@@ -10,7 +10,7 @@ import { downloadDocument } from '@/features/documents/queries'
  * Wire shapes taken from the generated OpenAPI schema, never hand-declared: the single
  * source of truth is `timetracking/schemas.py` and `pnpm generate:api` tracks it.
  *
- * Note that `ore`, `tariffa_applicata`, `valore_riga` and every other `Decimal` come
+ * Note that `hours`, `applied_rate`, `line_value` and every other `Decimal` come
  * through as `string`, never `number` -- which is what lets `lib/decimal.ts` read them
  * digit by digit instead of through a binary float.
  */
@@ -27,12 +27,12 @@ type TimeEntryUpdateBody = components['schemas']['TimeEntryUpdate']
 
 export interface TimeEntriesListParams {
   deal_id?: string
-  azienda_id?: string
+  legal_entity_id?: string
   user_id?: string
-  da?: string
-  a?: string
-  fatturabile?: boolean
-  fatturato?: boolean
+  from?: string
+  to?: string
+  billable?: boolean
+  invoiced?: boolean
 }
 
 /**
@@ -89,11 +89,14 @@ export function useDealRates(dealId: string, userId: string | undefined) {
   })
 }
 
-/** Invalidates the summary and the deal's own timeline alongside the list: an hour
+/** Invalidates the summary, the deal's own timeline and the calendar alongside the list: an hour
  *  changes all three, and a stale summary next to a fresh list is the shape of bug
  *  that makes people stop trusting the screen. */
 function invalidateAfterWrite(queryClient: ReturnType<typeof useQueryClient>, dealId?: string) {
   void queryClient.invalidateQueries({ queryKey: queryKeys.timeEntries() })
+  // The calendar's month carries the hours of each day (and the day panel reads them), so an
+  // hour written from the register, the week grid or the panel itself makes it stale too.
+  void queryClient.invalidateQueries({ queryKey: queryKeys.calendarAll })
   if (dealId) {
     void queryClient.invalidateQueries({ queryKey: queryKeys.dealTimeSummary(dealId) })
     void queryClient.invalidateQueries({ queryKey: queryKeys.timeline('deal', dealId) })
@@ -137,11 +140,11 @@ export function useUpdateTimeEntry(entryId: string) {
 export function useUpdateHours() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: ({ entryId, ore }: { entryId: string; ore: string }) =>
+    mutationFn: ({ entryId, hours }: { entryId: string; hours: string }) =>
       unwrap(
         api.PATCH('/api/time-entries/{entry_id}', {
           params: { path: { entry_id: entryId } },
-          body: asBody<TimeEntryUpdateBody>({ ore }),
+          body: asBody<TimeEntryUpdateBody>({ hours }),
         }),
       ),
     onSuccess: (entry) => invalidateAfterWrite(queryClient, entry.deal_id),
@@ -157,7 +160,7 @@ export function useDeleteTimeEntry() {
       ),
     // The 204 carries no body, so the deal to refresh has to come from the caller's own
     // variables rather than from a response that says nothing.
-    onSuccess: (_data, variables) => invalidateAfterWrite(queryClient, variables.dealId),
+    onSuccess: (_date, variables) => invalidateAfterWrite(queryClient, variables.dealId),
   })
 }
 
@@ -167,8 +170,8 @@ export function useDeleteTimeEntry() {
  *
  * The PDF deliberately has no path of its own here -- see `useRenderTimeReportPdf`.
  */
-export function timeReportXlsxPath(dealId: string, mese: string): string {
-  const query = new URLSearchParams({ mese })
+export function timeReportXlsxPath(dealId: string, month: string): string {
+  const query = new URLSearchParams({ month })
   return `/api/deals/${dealId}/time-report?${query.toString()}`
 }
 
@@ -188,10 +191,10 @@ export function timeReportXlsxPath(dealId: string, mese: string): string {
 export function useRenderTimeReportPdf() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: async (variables: { dealId: string; mese: string }) => {
+    mutationFn: async (variables: { dealId: string; month: string }) => {
       const document = await unwrap(
         api.POST('/api/deals/{deal_id}/time-report/pdf', {
-          params: { path: { deal_id: variables.dealId }, query: { mese: variables.mese } },
+          params: { path: { deal_id: variables.dealId }, query: { month: variables.month } },
         }),
       )
       await downloadDocument(document.id)
@@ -199,7 +202,7 @@ export function useRenderTimeReportPdf() {
     },
     // The render archived a new document version, so the deal's Documenti tab is stale
     // the moment this resolves.
-    onSuccess: (_data, variables) => {
+    onSuccess: (_date, variables) => {
       // The owner-scoped key first, then the empty-object wildcard that partially
       // matches every cached owner -- the same belt-and-braces `useDeleteDocument`
       // uses, and for the same reason: this render archived a new version, so the

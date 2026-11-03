@@ -56,23 +56,23 @@ def test_refresh_applies_a_signature_the_webhook_never_delivered(clean: Session)
         _framework_of(clean, freelancer_id).id
     )
 
-    assert (read.stato, read.attivo, read.ha_pdf_firmato, read.signed_at) == (
-        "firmato",
+    assert (read.status, read.active, read.has_pdf_signed, read.signed_at) == (
+        "signed",
         True,
         True,
         SIGNED_AT,
     )
     assert _framework_of(clean, freelancer_id).signed_pdf == fake.signed_pdf(envelope)
-    assert _letter_of(clean, match.id).stato == "inviato"
+    assert _letter_of(clean, match.id).status == "sent"
 
 
-def test_refresh_of_a_firmato_document_with_no_stored_copy_downloads_and_stores_it(
+def test_refresh_of_to_signed_document_with_no_stored_copy_downloads_and_stores_it(
     clean: Session,
 ) -> None:
-    """The recovery path when a document was already confirmed `firmato` but its
+    """The recovery path when a document was already confirmed `signed` but its
     download failed on the first `finish` (a crash, or Documenso refusing that one
     call): `refresh`'s own read of the envelope applies nothing new (`apply` is a
-    no-op on a document that is not `inviato` any more); `finish`, called
+    no-op on a document that is not `sent` any more); `finish`, called
     unconditionally, is what retries the download and stores the copy this time."""
     renderer, fake, sender = FakeRenderer(draft=False), FakeDocumenso(), RecordingSender()
     _admin_id, freelancer_id, _match, envelope = _signed_framework(clean, renderer, fake, sender)
@@ -81,12 +81,12 @@ def test_refresh_of_a_firmato_document_with_no_stored_copy_downloads_and_stores_
     assert signed is not None
     fake.fail("download", 500, "Internal server error")
     signing.recovery.finish(signed)
-    quadro = _framework_of(clean, freelancer_id)
-    assert (quadro.stato, quadro.signed_pdf) == ("firmato", None)
+    framework = _framework_of(clean, freelancer_id)
+    assert (framework.status, framework.signed_pdf) == ("signed", None)
 
-    read = signing.admin.refresh(quadro.id)
+    read = signing.admin.refresh(framework.id)
 
-    assert (read.stato, read.ha_pdf_firmato) == ("firmato", True)
+    assert (read.status, read.has_pdf_signed) == ("signed", True)
     assert _framework_of(clean, freelancer_id).signed_pdf == fake.signed_pdf(envelope)
 
 
@@ -100,7 +100,7 @@ def test_refresh_of_a_document_still_waiting_changes_nothing(clean: Session) -> 
         _framework_of(clean, freelancer_id).id
     )
 
-    assert read.stato == "inviato"
+    assert read.status == "sent"
     assert len(sender.sent) == mails
 
 
@@ -118,13 +118,13 @@ def test_resend_mails_the_same_link_again_and_leaves_a_trace(clean: Session) -> 
     admin_id, freelancer_id, company_id = _setup(clean)
     renderer, fake, sender = FakeRenderer(draft=False), FakeDocumenso(), RecordingSender()
     _sent(clean, renderer, fake, sender, freelancer_id, company_id, admin_id)
-    quadro = _framework_of(clean, freelancer_id)
+    framework = _framework_of(clean, freelancer_id)
 
-    _signing(clean, renderer, fake, sender).admin.resend_mail(quadro.id, admin_id)
+    _signing(clean, renderer, fake, sender).admin.resend_mail(framework.id, admin_id)
 
     first, again = sender.sent[-2:]
     assert first.subject == again.subject == "Da firmare: contratto quadro rebase"
-    assert quadro.signing_url is not None and quadro.signing_url in again.text
+    assert framework.signing_url is not None and framework.signing_url in again.text
     trail = AdminActionService(clean).timeline("freelancer", freelancer_id)
     assert trail[0].kind == "mail_resent"
 
@@ -133,10 +133,10 @@ def test_resend_with_a_refusing_sender_raises_and_records_no_trail(clean: Sessio
     admin_id, freelancer_id, company_id = _setup(clean)
     renderer, fake = FakeRenderer(draft=False), FakeDocumenso()
     _sent(clean, renderer, fake, RecordingSender(), freelancer_id, company_id, admin_id)
-    quadro = _framework_of(clean, freelancer_id)
+    framework = _framework_of(clean, freelancer_id)
 
     with pytest.raises(SigningUnavailable, match="non è partita"):
-        _signing(clean, renderer, fake, RefusingSender()).admin.resend_mail(quadro.id, admin_id)
+        _signing(clean, renderer, fake, RefusingSender()).admin.resend_mail(framework.id, admin_id)
 
     assert AdminActionService(clean).timeline("freelancer", freelancer_id) == []
 
@@ -163,9 +163,9 @@ def test_cancelling_a_framework_out_for_signature_cancels_its_envelope_first(
         _framework_of(clean, freelancer_id).id, admin_id
     )
 
-    assert (read.stato, read.cancel_reason) == ("annullato", "Annullato da rebase.")
+    assert (read.status, read.cancel_reason) == ("cancelled", "Annullato da rebase.")
     assert fake.envelopes[envelope].status == "CANCELLED"
-    assert _letter_of(clean, match.id).stato == "in_attesa"
+    assert _letter_of(clean, match.id).status == "pending"
     trail = AdminActionService(clean).timeline("freelancer", freelancer_id)
     assert trail[0].kind == "document_cancelled"
 
@@ -181,7 +181,7 @@ def test_a_cancel_documenso_refuses_leaves_the_document_as_it_was(clean: Session
             _framework_of(clean, freelancer_id).id, admin_id
         )
     assert "Only pending documents can be cancelled" in raised.value.detail
-    assert _framework_of(clean, freelancer_id).stato == "inviato"
+    assert _framework_of(clean, freelancer_id).status == "sent"
 
 
 def test_a_cancel_when_documenso_is_unreachable_keeps_its_own_sentence(clean: Session) -> None:
@@ -201,7 +201,7 @@ def test_a_cancel_when_documenso_is_unreachable_keeps_its_own_sentence(clean: Se
         )
 
     assert raised.value.message == UNREACHABLE
-    assert _framework_of(clean, freelancer_id).stato == "inviato"
+    assert _framework_of(clean, freelancer_id).status == "sent"
 
 
 def test_cancelling_a_matchs_letter_documenso_refuses_leaves_it_as_it_was(
@@ -220,7 +220,7 @@ def test_cancelling_a_matchs_letter_documenso_refuses_leaves_it_as_it_was(
         _signing(clean, renderer, fake, sender).admin.cancel_match(match.id, admin_id)
 
     assert "Only pending documents can be cancelled" in raised.value.detail
-    assert _letter_of(clean, match.id).stato == "inviato"
+    assert _letter_of(clean, match.id).status == "sent"
     assert [a.kind for a in AdminActionService(clean).timeline("match", match.id)] == [
         "documents_sent",
         "match_created",
@@ -246,7 +246,7 @@ def test_cancelling_a_match_in_signature_cancels_its_letters_envelope(clean: Ses
 
     read = _signing(clean, renderer, fake, sender).admin.cancel_match(match.id, admin_id)
 
-    assert (read.stato, read.lettera.stato) == ("annullato", "annullato")
+    assert (read.status, read.letter.status) == ("cancelled", "cancelled")
     assert _letter_of(clean, match.id).cancel_reason == "Annullato da rebase con il suo match."
     assert fake.envelopes[envelope].status == "CANCELLED"
     assert AdminActionService(clean).timeline("match", match.id)[0].kind == "match_cancelled"
@@ -257,7 +257,7 @@ def test_cancelling_a_draft_match_needs_no_documenso(clean: Session) -> None:
     renderer = FakeRenderer(draft=False)
     match = _draft(clean, renderer, freelancer_id, company_id, admin_id)
     read = _signing(clean, renderer, None, RecordingSender()).admin.cancel_match(match.id, admin_id)
-    assert read.stato == "annullato"
+    assert read.status == "cancelled"
 
 
 def test_a_notice_ends_the_active_framework_and_the_next_match_writes_a_new_one(
@@ -270,9 +270,9 @@ def test_a_notice_ends_the_active_framework_and_the_next_match_writes_a_new_one(
 
     read = signing.admin.record_notice(active.id, admin_id)
 
-    assert (read.stato, read.attivo, read.notice_at) == ("disdetto", False, NOW)
+    assert (read.status, read.active, read.notice_at) == ("notice_served", False, NOW)
     assert (
-        _matches(clean, renderer).drafts.prefill(freelancer_id, company_id).quadro_necessario
+        _matches(clean, renderer).drafts.prefill(freelancer_id, company_id).required_framework
         is True
     )
     with pytest.raises(InvalidState, match="attivo"):
@@ -286,10 +286,10 @@ def test_cancelling_a_sent_framework_tells_the_freelancer_by_mail(clean: Session
     admin_id, freelancer_id, company_id = _setup(clean)
     renderer, fake, sender = FakeRenderer(draft=False), FakeDocumenso(), RecordingSender()
     _sent(clean, renderer, fake, sender, freelancer_id, company_id, admin_id)
-    quadro = _framework_of(clean, freelancer_id)
+    framework = _framework_of(clean, freelancer_id)
     before = len(sender.sent)
 
-    _signing(clean, renderer, fake, sender).admin.cancel_document(quadro.id, admin_id)
+    _signing(clean, renderer, fake, sender).admin.cancel_document(framework.id, admin_id)
 
     cancellations = [mail for mail in sender.sent[before:] if "annullat" in mail.subject.lower()]
     assert len(cancellations) == 1
@@ -300,10 +300,10 @@ def test_cancelling_a_document_never_sent_mails_nobody(clean: Session) -> None:
     admin_id, freelancer_id, company_id = _setup(clean)
     renderer = FakeRenderer(draft=False)
     _draft(clean, renderer, freelancer_id, company_id, admin_id)
-    quadro = _framework_of(clean, freelancer_id)
+    framework = _framework_of(clean, freelancer_id)
     sender = RecordingSender()
 
-    _signing(clean, renderer, None, sender).admin.cancel_document(quadro.id, admin_id)
+    _signing(clean, renderer, None, sender).admin.cancel_document(framework.id, admin_id)
 
     assert sender.sent == []
 
@@ -312,12 +312,12 @@ def test_a_refused_cancellation_mail_does_not_undo_the_cancel(clean: Session) ->
     admin_id, freelancer_id, company_id = _setup(clean)
     renderer, fake = FakeRenderer(draft=False), FakeDocumenso()
     _sent(clean, renderer, fake, RecordingSender(), freelancer_id, company_id, admin_id)
-    quadro = _framework_of(clean, freelancer_id)
+    framework = _framework_of(clean, freelancer_id)
     sender = RefusingSender()
 
-    read = _signing(clean, renderer, fake, sender).admin.cancel_document(quadro.id, admin_id)
+    read = _signing(clean, renderer, fake, sender).admin.cancel_document(framework.id, admin_id)
 
-    assert read.stato == "annullato"
+    assert read.status == "cancelled"
     assert len(sender.sent) == 1
 
 
@@ -342,7 +342,7 @@ def test_cancelling_a_match_whose_letter_still_waits_mails_nobody(clean: Session
 
     read = _signing(clean, renderer, fake, sender).admin.cancel_match(match.id, admin_id)
 
-    assert read.lettera.stato == "annullato"
+    assert read.letter.status == "cancelled"
     assert len(sender.sent) == before
 
 
@@ -351,12 +351,12 @@ def test_cancelling_a_match_whose_letter_still_waits_mails_nobody(clean: Session
 def test_a_send_and_a_cancel_of_the_same_draft_never_leave_a_letter_annulled_with_a_live_envelope(
     send_first: bool, hub_engine: Engine, clean: Session
 ) -> None:
-    """A send and a cancel of the same `bozza` match, at once, behind one gate on the
+    """A send and a cancel of the same `draft` match, at once, behind one gate on the
     freelancer's row: whichever wins commits first, and the other then sees its result,
-    never a stale `bozza`. Either the cancel wins (and the send that follows finds
+    never a stale `draft`. Either the cancel wins (and the send that follows finds
     nothing left to send, an `InvalidState`), or the send wins (and the cancel that
-    follows finds the match `in_firma` and cancels its now-live envelope, `cancel_match`'s
-    other branch) -- never a letter `annullato` in the hub whose envelope is still live
+    follows finds the match `awaiting_signature` and cancels its now-live envelope, `cancel_match`'s
+    other branch) -- never a letter `cancelled` in the hub whose envelope is still live
     on Documenso. `send_first` forces both orderings deterministically, behind the same
     gate the other lock-order tests in this file use, rather than leaving it to thread
     scheduling: without it, only one order was ever exercised.
@@ -417,11 +417,11 @@ def test_a_send_and_a_cancel_of_the_same_draft_never_leave_a_letter_annulled_wit
     letter = _letter_of(clean, match.id)
     match_row = clean.get(Match, match.id)
     assert match_row is not None
-    # Whichever order won, the cancel always finds a match it can cancel (`bozza` if it
-    # went first, `in_firma` if the send got there first): never its own `InvalidState`.
+    # Whichever order won, the cancel always finds a match it can cancel (`draft` if it
+    # went first, `awaiting_signature` if the send got there first): never its own `InvalidState`.
     assert isinstance(results.get("cancel"), MatchRead)
-    assert results["cancel"].stato == "annullato"
-    assert (letter.stato, match_row.stato) == ("annullato", "annullato")
+    assert results["cancel"].status == "cancelled"
+    assert (letter.status, match_row.status) == ("cancelled", "cancelled")
     # `send_first` must be what decided the winner, not just whatever the gate
     # happened to produce: branching on the outcome alone would still pass if the gate
     # stopped fixing the order (a regression `send_first` exists to catch).

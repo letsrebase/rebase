@@ -99,7 +99,7 @@ def test_an_unmeasured_result_is_never_dressed_up_as_a_measured_one() -> None:
 def test_the_setting_default_follows_the_recorded_status() -> None:
     """The record and the code cannot drift apart: recording `NO` and leaving the exact
     path switched on would make the reconciliation of spec 6.3 look for a Message-ID
-    Gmail threw away, and report `fallito` on mail that was actually delivered."""
+    Gmail threw away, and report `failed` on mail that was actually delivered."""
     settings = gmail_settings()
     assert settings.gmail_reconcile_by_message_id is (recorded_status() != "NO")
 

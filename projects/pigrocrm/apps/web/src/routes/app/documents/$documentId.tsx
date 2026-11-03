@@ -13,7 +13,7 @@ import { useLegalEntity } from '@/lib/legalEntity'
 function DocumentDetail() {
   const { documentId } = useParams({ from: '/app/documents/$documentId' })
   const document = useDocument(documentId)
-  const azienda = useLegalEntity()
+  const legal_entity = useLegalEntity()
 
   if (document.isError) {
     // A real 404 keeps its own honest wording, the same way CustomerDetail's own
@@ -43,12 +43,12 @@ function DocumentDetail() {
   return (
     <EntityDetailLayout
       icon={FileText}
-      title={record.titolo}
-      // The type, and from the second azienda on the azienda the document belongs to
+      title={record.title}
+      // The type, and from the second legal entity on the legal entity the document belongs to
       // (REB-626), the one its owner had when it was created.
       subtitle={[
-        DOCUMENT_TYPE_LABELS[record.tipo] ?? record.tipo,
-        azienda.several ? azienda.byId(record.azienda_id)?.nome : undefined,
+        DOCUMENT_TYPE_LABELS[record.type] ?? record.type,
+        legal_entity.several ? legal_entity.byId(record.legal_entity_id)?.name : undefined,
       ]
         .filter((part): part is string => typeof part === 'string' && part !== '')
         .join(' · ')}
@@ -56,7 +56,7 @@ function DocumentDetail() {
       entityId={record.id}
       actions={
         <Button
-          disabled={record.versione_corrente === 0}
+          disabled={record.current_version === 0}
           onClick={() => void downloadDocument(record.id)}
         >
           Scarica
@@ -65,7 +65,7 @@ function DocumentDetail() {
       overview={
         <div className="space-y-6">
           <OfferStatePicker document={record} />
-          <VersionHistory documentId={record.id} documentTitle={record.titolo} />
+          <VersionHistory documentId={record.id} documentTitle={record.title} />
         </div>
       }
     />

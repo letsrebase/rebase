@@ -16,10 +16,10 @@ vi.mock('@/lib/auth', () => ({ useAuth: vi.fn() }))
 const USER = {
   id: 'u1',
   email: 'collab@pigro.it',
-  nome: 'Cora Collaboratrice',
-  ruolo: 'collaboratore' as const,
-  attivo: true,
-  digest_settimanale: true,
+  name: 'Cora Collaboratrice',
+  role: 'collaborator' as const,
+  active: true,
+  weekly_digest: true,
 }
 
 function renderPanel() {

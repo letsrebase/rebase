@@ -9,7 +9,7 @@ import { validateHomeSearch, type DashboardSearch } from '@/features/dashboard/s
  * The first route in this codebase with `validateSearch` -- list filters everywhere else
  * are component-local `useState`. The period is in the URL because a screenshot or a shared
  * link of a dashboard with no explicit period is a number with no unit (§4). The Home's
- * validator is the dashboard's plus `esito`, the outcome the Gmail consent flow brings
+ * validator is the dashboard's plus `outcome`, the outcome the Gmail consent flow brings
  * back to an empty space's start page.
  *
  * Only `Route` is exported: anything else opts this route out of the router plugin's

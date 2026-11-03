@@ -7,7 +7,7 @@ import {
   formatPeriod,
   formatPurchaseOrder,
   formatQuantity,
-  previewImponibile,
+  previewTaxableAmount,
   sumLineTotals,
 } from './format'
 
@@ -30,11 +30,11 @@ describe('formatMoney', () => {
 describe('sumLineTotals', () => {
   it('adds integer cents, never JS floats', () => {
     // Number('0.29') * 100 is 28.999999999999996. On an invoice that is a wrong total.
-    expect(sumLineTotals([{ prezzo_totale: '0.29' }, { prezzo_totale: '0.01' }])).toBe('0.30')
+    expect(sumLineTotals([{ total_price: '0.29' }, { total_price: '0.01' }])).toBe('0.30')
   })
 
   it('handles a negative discount line', () => {
-    expect(sumLineTotals([{ prezzo_totale: '1000.00' }, { prezzo_totale: '-200.00' }])).toBe(
+    expect(sumLineTotals([{ total_price: '1000.00' }, { total_price: '-200.00' }])).toBe(
       '800.00',
     )
   })
@@ -53,17 +53,17 @@ describe('formatQuantity', () => {
 
 describe('formatInvoiceHeading', () => {
   it('is the number or the reference when there is one', () => {
-    expect(formatInvoiceHeading({ anno: 2026, numero: 7, riferimento: null, tipo: 'fattura' })).toBe('2026/7')
+    expect(formatInvoiceHeading({ year: 2026, number: 7, reference: null, type: 'invoice' })).toBe('2026/7')
     expect(
-      formatInvoiceHeading({ anno: null, numero: null, riferimento: 'PROV-2026-0007', tipo: 'proforma' }),
+      formatInvoiceHeading({ year: null, number: null, reference: 'PROV-2026-0007', type: 'proforma' }),
     ).toBe('PROV-2026-0007')
   })
 
   it('names a draft that has no number instead of printing the dash', () => {
-    expect(formatInvoiceHeading({ anno: null, numero: null, riferimento: null, tipo: 'fattura' })).toBe(
+    expect(formatInvoiceHeading({ year: null, number: null, reference: null, type: 'invoice' })).toBe(
       'Bozza di fattura',
     )
-    expect(formatInvoiceHeading({ anno: null, numero: null, riferimento: null, tipo: 'proforma' })).toBe(
+    expect(formatInvoiceHeading({ year: null, number: null, reference: null, type: 'proforma' })).toBe(
       'Proforma',
     )
   })
@@ -71,17 +71,17 @@ describe('formatInvoiceHeading', () => {
 
 describe('formatInvoiceNumber', () => {
   it('is year slash number for an issued invoice', () => {
-    expect(formatInvoiceNumber({ anno: 2026, numero: 7, riferimento: null })).toBe('2026/7')
+    expect(formatInvoiceNumber({ year: 2026, number: 7, reference: null })).toBe('2026/7')
   })
 
   it('is the reference for a proforma', () => {
-    expect(formatInvoiceNumber({ anno: null, numero: null, riferimento: 'PROV-2026-0007' })).toBe(
+    expect(formatInvoiceNumber({ year: null, number: null, reference: 'PROV-2026-0007' })).toBe(
       'PROV-2026-0007',
     )
   })
 
   it('is an em dash for a draft with neither', () => {
-    expect(formatInvoiceNumber({ anno: null, numero: null, riferimento: null })).toBe('—')
+    expect(formatInvoiceNumber({ year: null, number: null, reference: null })).toBe('—')
   })
 })
 
@@ -101,12 +101,12 @@ describe('formatDate', () => {
   })
 })
 
-describe('previewImponibile', () => {
+describe('previewTaxableAmount', () => {
   it('sums quantity times price for every row', () => {
     expect(
-      previewImponibile([
-        { quantita: '2', prezzo_unitario: '150.00' },
-        { quantita: '1', prezzo_unitario: '99.90' },
+      previewTaxableAmount([
+        { quantity: '2', unit_price: '150.00' },
+        { quantity: '1', unit_price: '99.90' },
       ]),
     ).toBe('399.90')
   })
@@ -116,26 +116,26 @@ describe('previewImponibile', () => {
     // rows of it is how a preview total ends in ...86 instead of ...87. Every figure
     // here goes through `scaledFromDecimalString` (lib/decimal.ts).
     expect(
-      previewImponibile([
-        { quantita: '1', prezzo_unitario: '0.29' },
-        { quantita: '1', prezzo_unitario: '0.29' },
-        { quantita: '1', prezzo_unitario: '0.29' },
+      previewTaxableAmount([
+        { quantity: '1', unit_price: '0.29' },
+        { quantity: '1', unit_price: '0.29' },
+        { quantity: '1', unit_price: '0.29' },
       ]),
     ).toBe('0.87')
   })
 
   it('handles a fractional quantity, which is what hours are', () => {
-    expect(previewImponibile([{ quantita: '7.5', prezzo_unitario: '80.00' }])).toBe('600.00')
+    expect(previewTaxableAmount([{ quantity: '7.5', unit_price: '80.00' }])).toBe('600.00')
   })
 
   it('treats an empty or unpriced row as nothing, not as a failure', () => {
     // A row being typed is the normal state of this form: the total simply does not
     // count it yet, rather than reading NaN while the user is mid-keystroke.
-    expect(previewImponibile([{ quantita: '', prezzo_unitario: '' }])).toBe('0.00')
+    expect(previewTaxableAmount([{ quantity: '', unit_price: '' }])).toBe('0.00')
     expect(
-      previewImponibile([
-        { quantita: '2', prezzo_unitario: '10.00' },
-        { quantita: '1', prezzo_unitario: '' },
+      previewTaxableAmount([
+        { quantity: '2', unit_price: '10.00' },
+        { quantity: '1', unit_price: '' },
       ]),
     ).toBe('20.00')
   })
@@ -143,7 +143,7 @@ describe('previewImponibile', () => {
   it('rounds a fractional cent to the nearest one', () => {
     // 0.5 x 0.05 = 0.025. Half-up, and the only reason a preview may differ from the
     // stored figure by a cent -- the server computes the real one at full scale.
-    expect(previewImponibile([{ quantita: '0.5', prezzo_unitario: '0.05' }])).toBe('0.03')
+    expect(previewTaxableAmount([{ quantity: '0.5', unit_price: '0.05' }])).toBe('0.03')
   })
 })
 
@@ -182,20 +182,20 @@ describe('formatPurchaseOrder', () => {
   it('reads like the PDF line, with only the parts the order has', () => {
     expect(
       formatPurchaseOrder({
-        ordine_numero: 'ODA-14',
-        ordine_data: '2026-10-09',
-        ordine_cig: 'Z0A1B2C3D4',
-        ordine_cup: 'J41E22000110005',
+        purchase_order_number: 'ODA-14',
+        purchase_order_date: '2026-10-09',
+        purchase_order_tender_code: 'Z0A1B2C3D4',
+        purchase_order_project_code: 'J41E22000110005',
       }),
     ).toBe(`n. ODA-14 del ${formatDate('2026-10-09')}, CIG Z0A1B2C3D4, CUP J41E22000110005`)
     expect(
-      formatPurchaseOrder({ ordine_numero: '8', ordine_data: null, ordine_cig: null, ordine_cup: null }),
+      formatPurchaseOrder({ purchase_order_number: '8', purchase_order_date: null, purchase_order_tender_code: null, purchase_order_project_code: null }),
     ).toBe('n. 8')
   })
 
   it('is the dash without an order number', () => {
     expect(
-      formatPurchaseOrder({ ordine_numero: null, ordine_data: null, ordine_cig: null, ordine_cup: null }),
+      formatPurchaseOrder({ purchase_order_number: null, purchase_order_date: null, purchase_order_tender_code: null, purchase_order_project_code: null }),
     ).toBe('—')
   })
 })

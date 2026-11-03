@@ -139,7 +139,7 @@ def test_source_hash_change_marks_the_card_and_waits_for_an_admin(clean_hub: Ses
     admin = an_admin(clean_hub)
     llm = _answers(1)
     done = CardWriter(clean_hub, llm, now=lambda: NOW, sources=service).regenerate_stale(
-        admin, 5, fonte="web"
+        admin, 5, source="web"
     )
     assert done == CardsRefreshed(written=1, failed=0)
     assert "a ledger for the whole of Europe" in llm.requests[0].messages[0].text
@@ -179,7 +179,7 @@ def test_completed_match_with_unchanged_cv_marks_the_card(clean_hub: Session) ->
     row = clean_hub.get(Freelancer, person)
     assert row is not None
 
-    _match(clean_hub, row, inizio=date(2025, 1, 1), fine=date(2025, 6, 30))
+    _match(clean_hub, row, start=date(2025, 1, 1), fine=date(2025, 6, 30))
     clean_hub.commit()
 
     assert _reasons(clean_hub) == {person: "source"}
@@ -189,12 +189,12 @@ def test_months_of_a_running_engagement_do_not_mark_the_card(clean_hub: Session)
     [person] = _cards(clean_hub, 1)
     row = clean_hub.get(Freelancer, person)
     assert row is not None
-    match = _match(clean_hub, row, stato="attivo", inizio=date(2026, 1, 1), fine=None)
+    match = _match(clean_hub, row, status="active", start=date(2026, 1, 1), fine=None)
     clean_hub.commit()
     _write(clean_hub, person)  # written with the engagement in view
     assert _reasons(clean_hub) == {}
 
-    match.lettera_data_inizio = date(2025, 12, 1)  # the same engagement, one month longer
+    match.letter_start_date = date(2025, 12, 1)  # the same engagement, one month longer
     clean_hub.commit()
 
     # `hash_material` leaves out what grows on its own, but not a changed start.
@@ -206,12 +206,12 @@ def test_wizard_edit_with_unchanged_cv_marks_the_card(clean_hub: Session) -> Non
     row = clean_hub.get(Freelancer, person)
     assert row is not None
 
-    row.tariffa_giornaliera = Decimal("900.00")  # the rate and the mode are not read
-    row.remoto = "ibrido"
+    row.daily_rate = Decimal("900.00")  # the rate and the mode are not read
+    row.remote = "hybrid"
     clean_hub.commit()
     assert CardWriter(clean_hub, None).stale_of(person) is None
 
-    row.posizione = "Data engineer"
+    row.job_title = "Data engineer"
     clean_hub.commit()
     assert CardWriter(clean_hub, None).stale_of(person) == "source"
 
@@ -229,7 +229,7 @@ def test_stale_cards_lists_oldest_first_with_the_estimate(clean_hub: Session) ->
     waiting = writer.stale_cards()
 
     assert [item.freelancer_id for item in waiting] == people[::-1]
-    assert waiting[0].nome == "Persona3 Cognome3"
+    assert waiting[0].first_name == "Persona3 Cognome3"
     assert writer.estimate_cost(len(waiting)) is None  # nothing recorded: not «free»
 
     def usage(cost: str | None, purpose: str = "run") -> AiUsage:
@@ -258,14 +258,14 @@ def test_regenerate_requires_admin_action_and_respects_limit_and_cap(clean_hub: 
     admin = an_admin(clean_hub)
     llm = _answers(2)
 
-    done = CardWriter(clean_hub, llm, now=lambda: NOW).regenerate_stale(admin, 2, fonte="web")
+    done = CardWriter(clean_hub, llm, now=lambda: NOW).regenerate_stale(admin, 2, source="web")
 
     assert done == CardsRefreshed(written=2, failed=0)
     assert len(llm.requests) == 2
     [action] = clean_hub.scalars(select(AdminAction).where(AdminAction.kind == "cards_regenerate"))
     assert (action.admin_id, action.payload) == (
         admin,
-        {"limit": 2, "queued": 2, "fonte": "web", "batch": False},
+        {"limit": 2, "queued": 2, "source": "web", "batch": False},
     )
     assert len(_reasons(clean_hub)) == 1
     # The written ones are version 2 with their inputs; the third is still waiting.
@@ -275,11 +275,11 @@ def test_regenerate_requires_admin_action_and_respects_limit_and_cap(clean_hub: 
     # A start with nothing to write calls nothing, and a second click on the same cards
     # pays once: each is read again before its turn.
     again = CardWriter(clean_hub, _answers(1), now=lambda: NOW).regenerate_stale(
-        admin, 5, fonte="web"
+        admin, 5, source="web"
     )
     assert again == CardsRefreshed(written=1, failed=0)
     nothing = CardWriter(clean_hub, NO_ANSWERS, now=lambda: NOW).regenerate_stale(
-        admin, 5, fonte="web"
+        admin, 5, source="web"
     )
     assert nothing == CardsRefreshed(written=0, failed=0) and NO_ANSWERS.requests == []
 
@@ -293,7 +293,7 @@ def test_cap_reached_stops_batch_with_reason(clean_hub: Session) -> None:
     llm = _Scripted(answers)
     first_in_line = CardWriter(clean_hub, None).stale_cards()[0].freelancer_id
 
-    done = CardWriter(clean_hub, llm, now=lambda: NOW).regenerate_stale(admin, 3, fonte="web")
+    done = CardWriter(clean_hub, llm, now=lambda: NOW).regenerate_stale(admin, 3, source="web")
 
     assert done == CardsRefreshed(written=0, failed=1, stopped=True)
     assert len(llm.requests) == 1  # the next call would be refused the same
@@ -308,7 +308,7 @@ def test_without_a_model_regenerating_does_nothing_and_records_nothing(clean_hub
     _backdate(clean_hub, 1)
 
     assert CardWriter(clean_hub, None).regenerate_stale(
-        an_admin(clean_hub), 5, fonte="web"
+        an_admin(clean_hub), 5, source="web"
     ) == CardsRefreshed(0, 0)
     assert (
         clean_hub.scalars(select(AdminAction).where(AdminAction.kind == "cards_regenerate")).all()
@@ -320,7 +320,7 @@ def test_a_person_turned_down_or_deleted_is_not_listed(clean_hub: Session) -> No
     kept, turned_down, gone = _cards(clean_hub)
     _backdate(clean_hub, 1)
     clean_hub.execute(
-        text("UPDATE freelancers SET stato = 'scartato' WHERE id = :id"), {"id": turned_down}
+        text("UPDATE freelancers SET status = 'discarded' WHERE id = :id"), {"id": turned_down}
     )
     clean_hub.execute(
         text("UPDATE freelancers SET deleted_at = now() WHERE id = :id"), {"id": gone}
@@ -371,14 +371,14 @@ def test_a_second_start_while_one_runs_pays_for_nothing(
         try:
             writer = CardWriter(other, second_llm, now=lambda: NOW)
             seen["running"] = writer.regeneration_running()
-            seen["start"] = writer.regenerate_stale(admin, 5, fonte="web")
+            seen["start"] = writer.regenerate_stale(admin, 5, source="web")
             writer.write(in_flight, force=True)
         finally:
             other.close()
 
     llm = _Scripted([card_response(), card_response(), card_response()], during=meanwhile)
 
-    done = CardWriter(clean_hub, llm, now=lambda: NOW).regenerate_stale(admin, 3, fonte="web")
+    done = CardWriter(clean_hub, llm, now=lambda: NOW).regenerate_stale(admin, 3, source="web")
 
     assert seen["running"] is True
     assert seen["start"] == CardsRefreshed(written=0, failed=0)
@@ -411,7 +411,7 @@ def test_a_card_that_keeps_failing_does_not_take_every_start(clean_hub: Session)
 
     llm = _answers(2)
     done = CardWriter(clean_hub, llm, now=lambda: NOW).regenerate_stale(
-        an_admin(clean_hub), 2, fonte="web"
+        an_admin(clean_hub), 2, source="web"
     )
 
     assert done == CardsRefreshed(written=2, failed=0)
@@ -443,7 +443,7 @@ def test_batched_hashes_and_facts_equal_the_per_person_ones(clean_hub: Session) 
         service.refetch(person)
     row = clean_hub.get(Freelancer, people[0])
     assert row is not None
-    _match(clean_hub, row, inizio=date(2025, 1, 1), fine=date(2025, 6, 30))
+    _match(clean_hub, row, start=date(2025, 1, 1), fine=date(2025, 6, 30))
     clean_hub.commit()
     writer = CardWriter(clean_hub, None, sources=service)
 
@@ -506,7 +506,7 @@ def test_starts_of_a_few_cards_reach_every_stale_card_across_passes(
 
     for _ in range(3):
         done = CardWriter(clean_hub, _answers(2), now=lambda: NOW).regenerate_stale(
-            admin, 2, fonte="web"
+            admin, 2, source="web"
         )
         written += done.written
 

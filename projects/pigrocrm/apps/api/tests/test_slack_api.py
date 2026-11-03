@@ -100,7 +100,7 @@ def _connect(client: TestClient) -> None:
         params={"code": "good-code", "state": state},
         follow_redirects=False,
     )
-    assert done.headers["location"] == "/app/settings/slack?esito=collegato", done.text
+    assert done.headers["location"] == "/app/settings/slack?outcome=connected", done.text
 
 
 # --- absent, not broken -------------------------------------------------------------------
@@ -167,10 +167,10 @@ def test_a_replayed_callback_ends_on_the_page_with_an_error_code(
     state = _consent(logged_in)
     params = {"code": "good-code", "state": state}
     first = logged_in.get("/api/slack/oauth/callback", params=params, follow_redirects=False)
-    assert first.headers["location"] == "/app/settings/slack?esito=collegato"
+    assert first.headers["location"] == "/app/settings/slack?outcome=connected"
     again = logged_in.get("/api/slack/oauth/callback", params=params, follow_redirects=False)
     assert again.status_code == 307
-    assert again.headers["location"] == "/app/settings/slack?esito=errore"
+    assert again.headers["location"] == "/app/settings/slack?outcome=error"
 
 
 def test_a_refusal_on_slacks_side_is_a_code_never_slacks_own_error(
@@ -182,7 +182,7 @@ def test_a_refusal_on_slacks_side_is_a_code_never_slacks_own_error(
         params={"error": "access_denied", "state": state},
         follow_redirects=False,
     )
-    assert denied.headers["location"] == "/app/settings/slack?esito=negato"
+    assert denied.headers["location"] == "/app/settings/slack?outcome=denied"
 
 
 def test_a_callback_with_no_session_lands_on_the_page_with_a_code(
@@ -195,7 +195,7 @@ def test_a_callback_with_no_session_lands_on_the_page_with_a_code(
         params={"code": "good-code", "state": state},
         follow_redirects=False,
     )
-    assert response.headers["location"] == "/app/settings/slack?esito=sessione"
+    assert response.headers["location"] == "/app/settings/slack?outcome=session_expired"
 
 
 def _collaborator(admin: TestClient) -> TestClient:
@@ -206,8 +206,8 @@ def _collaborator(admin: TestClient) -> TestClient:
         json={
             "email": "collab@pigro.it",
             "password": "supersegreta1",
-            "nome": "Collab",
-            "ruolo": "collaboratore",
+            "name": "Collab",
+            "role": "collaborator",
         },
     )
     assert created.status_code == 201, created.text
@@ -254,8 +254,8 @@ def test_a_mismatch_is_fixed_by_hand_and_undone(
         json={
             "email": "ada@studio.example",
             "password": "supersegreta1",
-            "nome": "Ada",
-            "ruolo": "collaboratore",
+            "name": "Ada",
+            "role": "collaborator",
         },
     )
     ada_id = created.json()["id"]
@@ -375,7 +375,7 @@ def test_a_space_connects_slack_through_the_root_callback(api_engine: Engine) ->
     settings = _root_settings(api_engine)
     with _serving(settings, fake) as client:
         created = client.post(
-            "/api/tenants/", json={"slug": SLUG, "nome": "Ada", "email": "ada@studio.it"}
+            "/api/tenants/", json={"slug": SLUG, "name": "Ada", "email": "ada@studio.it"}
         )
         assert created.status_code == 201, created.text
         assert client.get(f"/{SLUG}/api/slack/account").json()["configured"] is True
@@ -398,7 +398,7 @@ def test_a_space_connects_slack_through_the_root_callback(api_engine: Engine) ->
         assert fake.calls("oauth.v2.access") == []
 
         done = client.get(back.headers["location"], follow_redirects=False)
-        assert done.headers["location"] == f"/{SLUG}/app/settings/slack?esito=collegato"
+        assert done.headers["location"] == f"/{SLUG}/app/settings/slack?outcome=connected"
         (exchange,) = fake.calls("oauth.v2.access")
         assert exchange.form["redirect_uri"] == ROOT_CALLBACK
 
@@ -427,7 +427,7 @@ def test_a_state_carried_to_a_space_that_never_issued_it_lands_no_token(
     fake = FakeSlack()
     settings = _root_settings(api_engine)
     with _serving(settings, fake) as client:
-        client.post("/api/tenants/", json={"slug": SLUG, "nome": "Ada", "email": "ada@studio.it"})
+        client.post("/api/tenants/", json={"slug": SLUG, "name": "Ada", "email": "ada@studio.it"})
         state = parse_qs(
             urlparse(
                 client.get(f"/{SLUG}/api/slack/oauth/start", follow_redirects=False).headers[
@@ -449,5 +449,5 @@ def test_a_state_carried_to_a_space_that_never_issued_it_lands_no_token(
             params={"code": "good-code", "state": swapped},
             follow_redirects=False,
         )
-        assert direct.headers["location"] == f"/{SLUG}/app/settings/slack?esito=errore"
+        assert direct.headers["location"] == f"/{SLUG}/app/settings/slack?outcome=error"
         assert fake.calls("oauth.v2.access") == []

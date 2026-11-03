@@ -14,14 +14,14 @@ from rebase_mcp.server import build_server
 def _activate_and_sign(
     factory: sessionmaker[Session],
     match_id: str,
-    pigro_stato: str | None = "da_collegare",
+    pigro_status: str | None = "to_link",
     **columns: Any,
 ) -> None:
     """A match as a signature leaves it: `test_match_tools._seed` writes a draft, so its
-    letter and its match are pushed to `firmato`/`attivo` by hand here, the way
-    `test_matches_api.py`'s own `_signed_match` does over HTTP. `pigro_stato` defaults to
-    `da_collegare`, the state `SigningService._confirm_completion` stamps beside
-    `attivo` (B3), which a raw SQL update like this one does not run on its own."""
+    letter and its match are pushed to `signed`/`active` by hand here, the way
+    `test_matches_api.py`'s own `_signed_match` does over HTTP. `pigro_status` defaults to
+    `to_link`, the state `SigningService._confirm_completion` stamps beside
+    `active` (B3), which a raw SQL update like this one does not run on its own."""
     from sqlalchemy import update
 
     from rebase_core.models import ContractDocument, Match
@@ -31,12 +31,12 @@ def _activate_and_sign(
         session.execute(
             update(ContractDocument)
             .where(ContractDocument.match_id == UUID(match_id))
-            .values(stato="firmato")
+            .values(status="signed")
         )
         session.execute(
             update(Match)
             .where(Match.id == UUID(match_id))
-            .values(stato="attivo", pigro_stato=pigro_stato, **columns)
+            .values(status="active", pigro_status=pigro_status, **columns)
         )
         session.commit()
     finally:
@@ -71,7 +71,7 @@ async def test_link_match_to_pigro_links_an_active_match_as_the_calling_admin(
     try:
         async with Client(server) as client:
             body = _payload(await client.call_tool("link_match_to_pigro", {"match_id": match_id}))
-        assert (body["stato"], body["pigro_stato"]) == ("attivo", "collegato")
+        assert (body["status"], body["pigro_status"]) == ("active", "linked")
         assert (body["pigro_slug"], body["pigro_deal_id"], body["pigro_url"]) == (
             "ada-lovelace",
             str(DEAL),
@@ -120,31 +120,31 @@ async def test_get_match_report_groups_the_crms_rows_by_day_week_and_month(
     from rebase_core.config import Settings
     from rebase_core.engagements import EngagementService
 
-    fattura = {
+    invoice = {
         "id": "0192e0a0-0000-7000-8000-0000000f0012",
-        "tipo": "fattura",
-        "anno": 2026,
-        "numero": 12,
-        "stato": "emessa",
-        "stato_pagamento": "da_incassare",
-        "data": "2026-10-31",
+        "type": "invoice",
+        "year": 2026,
+        "number": 12,
+        "status": "issued",
+        "payment_status": "unpaid",
+        "date": "2026-10-31",
     }
     crm_report = {
         "slug": "ada-lovelace",
         "deal_url": DEAL_URL,
-        "deal": {"id": str(DEAL), "nome": "Lettera n. 2026-001", "stato": "in corso"},
-        "giorni": [
-            {"data": "2026-10-01", "ore": "8.00", "descrizione": "Setup", "fattura": fattura},
-            {"data": "2026-10-02", "ore": "4.00", "descrizione": "API", "fattura": None},
+        "deal": {"id": str(DEAL), "name": "Lettera n. 2026-001", "status": "in_progress"},
+        "days": [
+            {"date": "2026-10-01", "hours": "8.00", "description": "Setup", "invoice": invoice},
+            {"date": "2026-10-02", "hours": "4.00", "description": "API", "invoice": None},
         ],
-        "totale_ore": "12.00",
-        "ore_fatturate": "8.00",
-        "ore_non_fatturate": "4.00",
-        "fatture": [{**fattura, "ore": "8.00"}],
+        "total_hours": "12.00",
+        "billed_hours": "8.00",
+        "unbilled_hours": "4.00",
+        "invoices": [{**invoice, "hours": "8.00"}],
     }
     _card, match_id = _seed(factory)
     _activate_and_sign(
-        factory, match_id, pigro_stato="collegato", pigro_url=DEAL_URL, giorni_previsti=40
+        factory, match_id, pigro_status="linked", pigro_url=DEAL_URL, expected_days=40
     )
     fake = RecordedPigro([(200, json.dumps(crm_report).encode())])
     settings = Settings(  # type: ignore[call-arg]
@@ -161,33 +161,33 @@ async def test_get_match_report_groups_the_crms_rows_by_day_week_and_month(
             body = _payload(
                 await client.call_tool(
                     "get_match_report",
-                    {"match_id": match_id, "da": "2026-10-01", "a": "2026-10-31"},
+                    {"match_id": match_id, "from_date": "2026-10-01", "to_date": "2026-10-31"},
                 )
             )
-        assert (body["match_id"], body["pigro_stato"]) == (match_id, "collegato")
-        assert (body["giorni_previsti"], body["ore_previste"]) == (40, "320.00")
-        assert (body["totale_ore"], body["avanzamento"]) == ("12.00", "3.75")
-        assert body["per_giorno"][0] == {
-            "data": "2026-10-01",
-            "ore": "8.00",
-            "descrizioni": ["Setup"],
-            "fatture": ["12/2026"],
-            "ore_per_fattura": [{"numero": "12/2026", "tipo": "fattura", "ore": "8.00"}],
+        assert (body["match_id"], body["pigro_status"]) == (match_id, "linked")
+        assert (body["expected_days"], body["expected_hours"]) == (40, "320.00")
+        assert (body["hours_total"], body["progress"]) == ("12.00", "3.75")
+        assert body["by_day"][0] == {
+            "date": "2026-10-01",
+            "hours": "8.00",
+            "descriptions": ["Setup"],
+            "invoices": ["12/2026"],
+            "hours_by_invoice": [{"number": "12/2026", "kind": "invoice", "hours": "8.00"}],
         }
-        assert body["fatture"] == [
+        assert body["invoices"] == [
             {
-                "numero": "12/2026",
-                "tipo": "fattura",
-                "data": "2026-10-31",
-                "stato": "emessa",
-                "stato_pagamento": "da_incassare",
-                "ore": "8.00",
+                "number": "12/2026",
+                "kind": "invoice",
+                "date": "2026-10-31",
+                "status": "issued",
+                "payment_status": "unpaid",
+                "hours": "8.00",
             }
         ]
         [(method, url, _headers, _sent)] = fake.calls
         assert (method, url) == (
             "GET",
-            f"{PIGRO}/api/rebase/engagements/{match_id}/report?da=2026-10-01&a=2026-10-31",
+            f"{PIGRO}/api/rebase/engagements/{match_id}/report?from=2026-10-01&to=2026-10-31",
         )
     finally:
         _wipe_matches(factory)

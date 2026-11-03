@@ -29,12 +29,12 @@ export const HOME = { to: '/app', label: 'Home', icon: LayoutDashboard, exact: t
  * where the caption becomes a separator.
  *
  * «Da fare» is what asks for a person's attention, in the order they reach for it: the
- * attività (late ones counted beside it), the calendar that draws the dated ones by day,
+ * tasks (late ones counted beside it), the calendar that draws the dated ones by day,
  * the reminders still unread (REB-734) and the proposals an agent left for a decision
  * (REB-750). «Amministrazione» reads in the order the money is supposed to move: the
  * register, the hours the next invoice is built from, the contract days (REB-745). None of
  * it is admin-gated: every write behind these pages is gated at the service, where the
- * refusal belongs. The Solleciti page left the menu on 2026-09-09 at Ivan's request; its
+ * refusal belongs. The Payment reminders page left the menu on 2026-09-09 at Ivan's request; its
  * API and MCP tools remain.
  */
 export const SECTIONS = [
@@ -44,7 +44,7 @@ export const SECTIONS = [
     items: [
       { to: '/app/activities', label: 'Attività', icon: ListChecks },
       { to: '/app/calendar', label: 'Calendario', icon: CalendarDays },
-      { to: '/app/avvisi', label: 'Avvisi', icon: Bell },
+      { to: '/app/reminders', label: 'Avvisi', icon: Bell },
       { to: '/app/proposals', label: 'Proposte', icon: Inbox },
     ],
   },
@@ -74,7 +74,7 @@ export const SECTIONS = [
  * belongs to whoever creates it, any role (`PatService` scopes by `actor.id`, not role), so
  * the page is every role's own and its route, `/app/token`, carries no admin guard.
  */
-export const AGENTI = { to: '/app/token', label: 'Agenti', icon: Bot } as const
+export const Agents = { to: '/app/token', label: 'Agenti', icon: Bot } as const
 
 /**
  * One literal path per settings tab. `satisfies Record<SettingsTabValue, ...>` is what
@@ -88,8 +88,8 @@ export const SETTINGS_PATHS = {
   space: '/app/settings/space',
   fields: '/app/settings/fields',
   pipeline: '/app/settings/pipeline',
-  template: '/app/settings/template',
-  aziende: '/app/settings/aziende',
+  templates: '/app/settings/templates',
+  'legal-entities': '/app/settings/legal-entities',
   users: '/app/settings/users',
   'cost-categories': '/app/settings/cost-categories',
   rates: '/app/settings/rates',
@@ -110,9 +110,9 @@ export const SETTINGS_PATHS = {
  * per section of one page would be a rail of settings and nothing else.
  *
  * Shown to every role (R2): each role sees only the groups holding a section it may open
- * (`canSeeSettingsTab`), so a member has «Personale» alone and a collaboratore adds
+ * (`canSeeSettingsTab`), so a member has «Personale» alone and a collaborator adds
  * «Collegamenti» (their own Drive, REB-457). The weekly digest's opt-out link lands on
- * Profilo for whoever got the mail (spec 2026-09-16 §3.6).
+ * Profile for whoever got the mail (spec 2026-09-16 §3.6).
  */
 export const SETTINGS = {
   label: 'Impostazioni',
@@ -149,7 +149,7 @@ export function settingsSubItems(role: Role, pathname: string) {
 export type LinkTo =
   | typeof HOME.to
   | (typeof SECTIONS)[number]['items'][number]['to']
-  | typeof AGENTI.to
+  | typeof Agents.to
   | (typeof SETTINGS_PATHS)[SettingsTabValue]
 
 /** Is `pathname` this entry, or a page below it (a detail route, a tab)? */

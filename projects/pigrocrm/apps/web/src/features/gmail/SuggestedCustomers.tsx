@@ -22,15 +22,15 @@ import { useCustomerSuggestions, useImportSuggestions, type SuggestedCustomer } 
 
 /** What the person decided about one ticked proposal. */
 interface Choice {
-  nome: string
-  persone: Record<string, boolean>
+  name: string
+  people: Record<string, boolean>
 }
 
 function firstChoice(proposal: SuggestedCustomer): Choice {
   return {
-    nome: proposal.nome,
-    persone: Object.fromEntries(
-      proposal.persone.filter((person) => !person.gia_in_anagrafica).map((person) => [person.indirizzo, true]),
+    name: proposal.name,
+    people: Object.fromEntries(
+      proposal.people.filter((person) => !person.already_in_directory).map((person) => [person.address, true]),
     ),
   }
 }
@@ -73,36 +73,36 @@ export function SuggestedCustomers({ onImported }: { onImported?: (count: number
     )
   }
 
-  const picked = proposals.filter((proposal) => chosen[proposal.dominio] !== undefined)
-  const unnamed = picked.some((proposal) => (chosen[proposal.dominio]?.nome ?? '').trim() === '')
+  const picked = proposals.filter((proposal) => chosen[proposal.domain] !== undefined)
+  const unnamed = picked.some((proposal) => (chosen[proposal.domain]?.name ?? '').trim() === '')
 
   function toggle(proposal: SuggestedCustomer) {
     setChosen((current) => {
       const next = { ...current }
-      if (next[proposal.dominio]) delete next[proposal.dominio]
-      else next[proposal.dominio] = firstChoice(proposal)
+      if (next[proposal.domain]) delete next[proposal.domain]
+      else next[proposal.domain] = firstChoice(proposal)
       return next
     })
   }
 
-  function update(dominio: string, change: (choice: Choice) => Choice) {
+  function update(domain: string, change: (choice: Choice) => Choice) {
     setChosen((current) => {
-      const choice = current[dominio]
-      return choice ? { ...current, [dominio]: change(choice) } : current
+      const choice = current[domain]
+      return choice ? { ...current, [domain]: change(choice) } : current
     })
   }
 
   function submit() {
     importing.mutate(
       {
-        clienti: picked.map((proposal) => {
-          const choice = chosen[proposal.dominio] ?? firstChoice(proposal)
+        customers: picked.map((proposal) => {
+          const choice = chosen[proposal.domain] ?? firstChoice(proposal)
           return {
-            dominio: proposal.dominio,
-            ragione_sociale: choice.nome.trim(),
-            persone: proposal.persone
-              .filter((person) => choice.persone[person.indirizzo])
-              .map((person) => ({ indirizzo: person.indirizzo, nome: person.nome })),
+            domain: proposal.domain,
+            legal_name: choice.name.trim(),
+            people: proposal.people
+              .filter((person) => choice.people[person.address])
+              .map((person) => ({ address: person.address, name: person.name })),
           }
         }),
       },
@@ -125,52 +125,52 @@ export function SuggestedCustomers({ onImported }: { onImported?: (count: number
       </p>
       <ul aria-label="Clienti proposti dalla casella" className="divide-y border">
         {proposals.map((proposal) => {
-          const choice = chosen[proposal.dominio]
-          const id = `proposta-${proposal.dominio}`
+          const choice = chosen[proposal.domain]
+          const id = `proposta-${proposal.domain}`
           return (
-            <li key={proposal.dominio} className="space-y-2 p-3">
+            <li key={proposal.domain} className="space-y-2 p-3">
               <div className="flex items-start gap-3">
                 <Checkbox id={id} checked={choice !== undefined} onCheckedChange={() => toggle(proposal)} />
                 <div className="min-w-0 flex-1 space-y-1">
                   <Label htmlFor={id} className="flex flex-wrap items-baseline gap-x-2">
-                    <span className="font-medium">{proposal.nome}</span>
-                    <span className="text-muted-foreground text-xs">{proposal.dominio}</span>
+                    <span className="font-medium">{proposal.name}</span>
+                    <span className="text-muted-foreground text-xs">{proposal.domain}</span>
                   </Label>
                   <p className="text-muted-foreground text-xs">
-                    {conversations(proposal.conversazioni)}
-                    {proposal.ultimo_messaggio ? `, l’ultima il ${formatInstant(proposal.ultimo_messaggio)}` : ''}
+                    {conversations(proposal.conversations)}
+                    {proposal.last_message ? `, l’ultima il ${formatInstant(proposal.last_message)}` : ''}
                   </p>
                   {choice ? (
                     <Input
-                      aria-label={`Nome del cliente per ${proposal.dominio}`}
-                      value={choice.nome}
+                      aria-label={`Nome del cliente per ${proposal.domain}`}
+                      value={choice.name}
                       onChange={(event) => {
-                        const nome = event.target.value
-                        update(proposal.dominio, (current) => ({ ...current, nome }))
+                        const name = event.target.value
+                        update(proposal.domain, (current) => ({ ...current, name }))
                       }}
                     />
                   ) : null}
-                  <ul aria-label={`Persone di ${proposal.dominio}`} className="space-y-1 text-sm">
-                    {proposal.persone.map((person) => {
-                      const personId = `${id}-${person.indirizzo}`
-                      const label = person.nome ? `${person.nome} <${person.indirizzo}>` : person.indirizzo
+                  <ul aria-label={`Persone di ${proposal.domain}`} className="space-y-1 text-sm">
+                    {proposal.people.map((person) => {
+                      const personId = `${id}-${person.address}`
+                      const label = person.name ? `${person.name} <${person.address}>` : person.address
                       return (
-                        <li key={person.indirizzo} className="flex items-center gap-2">
-                          {choice && !person.gia_in_anagrafica ? (
+                        <li key={person.address} className="flex items-center gap-2">
+                          {choice && !person.already_in_directory ? (
                             <Checkbox
                               id={personId}
-                              checked={choice.persone[person.indirizzo] === true}
+                              checked={choice.people[person.address] === true}
                               onCheckedChange={(checked) =>
-                                update(proposal.dominio, (current) => ({
+                                update(proposal.domain, (current) => ({
                                   ...current,
-                                  persone: { ...current.persone, [person.indirizzo]: checked === true },
+                                  people: { ...current.people, [person.address]: checked === true },
                                 }))
                               }
                             />
                           ) : null}
                           <Label htmlFor={personId} className="font-normal">
                             {label}
-                            {person.gia_in_anagrafica ? (
+                            {person.already_in_directory ? (
                               <span className="text-muted-foreground"> · già in anagrafica</span>
                             ) : null}
                           </Label>

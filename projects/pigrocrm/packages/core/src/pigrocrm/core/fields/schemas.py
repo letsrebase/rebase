@@ -25,7 +25,7 @@ EntityType = Literal[
     # Slice 10. A commitment carries custom fields for the same reason everything
     # else does: whoever runs the installation knows what they need to record about
     # one, and the alternative is a `note` field holding a form.
-    "attivita",
+    "task",
     # REB-358. A contract engagement carries custom fields for the identical
     # reason: whoever runs the installation knows what they need to record about
     # one engagement that the schema's own columns do not already carry.
@@ -44,8 +44,8 @@ KEY_MAX_LENGTH = 60
 LABEL_MAX_LENGTH = 120
 
 # `field_definitions.position` is `Integer`, unguarded by any service-level range
-# check (unlike `deals.probabilita`/`pipeline_stages.probabilita_default`, which stay
-# unbounded here on purpose -- see deals/schemas.py's comment on `probabilita`).
+# check (unlike `deals.probability`/`pipeline_stages.default_probability`, which stay
+# unbounded here on purpose -- see deals/schemas.py's comment on `probability`).
 # `2**40` reaches Postgres raw as `IntegerOutOfRange` with nothing to stop it. `position`
 # is a display-order index -- an entity realistically has, at most, a few dozen custom
 # fields -- so 100000 is generous headroom, comfortably inside the actual `Integer`

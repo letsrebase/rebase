@@ -45,7 +45,7 @@ function refusalText(problem: ProblemDetail): string {
  * itself, where numbering, fiscal validation and freezing live.
  */
 export function ToInvoiceDialog({ dealId, open, onOpenChange }: ToInvoiceDialogProps) {
-  const entries = useTimeEntries({ deal_id: dealId, fatturabile: true, fatturato: false })
+  const entries = useTimeEntries({ deal_id: dealId, billable: true, invoiced: false })
   const draft = useToInvoiceDraft(dealId)
   const [problem, setProblem] = useState<ProblemDetail | null>(null)
   const [grouped, setGrouped] = useState(true)
@@ -82,7 +82,7 @@ export function ToInvoiceDialog({ dealId, open, onOpenChange }: ToInvoiceDialogP
   function generate() {
     setProblem(null)
     draft.mutate(
-      { entry_ids: entryIds, raggruppa_per_mese: grouped },
+      { entry_ids: entryIds, group_by_month: grouped },
       {
         onSuccess: () => {
           onOpenChange(false)
@@ -129,20 +129,20 @@ export function ToInvoiceDialog({ dealId, open, onOpenChange }: ToInvoiceDialogP
                     onCheckedChange={() => toggle(item.id)}
                     // The date and the description, because that is what tells two
                     // entries of the same deal apart when they are read out one by one.
-                    aria-label={`${formatIsoDateItalian(item.data)} — ${item.descrizione}`}
+                    aria-label={`${formatIsoDateItalian(item.date)} — ${item.description}`}
                   />
                   <Label htmlFor={`voce-${item.id}`} className="flex-1 font-normal">
                     <span className="text-muted-foreground">
-                      {formatIsoDateItalian(item.data)}
+                      {formatIsoDateItalian(item.date)}
                     </span>{' '}
-                    {item.descrizione}
+                    {item.description}
                   </Label>
-                  <span className="tabular-nums">{formatHoursValue(item.ore)}</span>
+                  <span className="tabular-nums">{formatHoursValue(item.hours)}</span>
                   {/* Straight from the API, never hours × rate computed here. An entry
                       the backend could not price shows a dash, which is also the reason
                       the draft would be refused. */}
                   <span className="w-28 text-right tabular-nums">
-                    {formatMoneyValue(item.valore_riga ?? null)}
+                    {formatMoneyValue(item.line_value ?? null)}
                   </span>
                 </li>
               ))}
@@ -150,14 +150,14 @@ export function ToInvoiceDialog({ dealId, open, onOpenChange }: ToInvoiceDialogP
 
             <div className="flex items-center gap-2">
               <Checkbox
-                id="raggruppa-per-mese"
+                id="group-by-month"
                 checked={grouped}
                 onCheckedChange={(checked) => {
                   setProblem(null)
                   setGrouped(checked === true)
                 }}
               />
-              <Label htmlFor="raggruppa-per-mese" className="font-normal">
+              <Label htmlFor="group-by-month" className="font-normal">
                 Raggruppa per mese
               </Label>
             </div>

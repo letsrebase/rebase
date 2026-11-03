@@ -394,40 +394,40 @@ test('/ defines each window global before landing.js reads it, in the built bund
 // preview, so the one call the page makes is answered here, and what is checked is
 // the page's own side: the example fills the box, the call carries the description
 // alone, the minimal result is the summary, the roles with their bands and the team's,
-// and the door into /hub/team carries the proposal's id, the campaign and da=home like
+// and the door into /hub/team carries the proposal's id, the campaign and from=home like
 // every other hub link. A short description never leaves the page, a refusal is read
 // in the API's own words, and without JavaScript the form hands the description to
 // the hub's page itself.
 test.describe('the team builder on the first screen', () => {
   const PROPOSAL = {
     id: '5b1f2c3d-4e5f-4a6b-8c7d-00000000abcd',
-    descrizione: 'x',
-    persone: null,
-    riassunto: 'Una web app per i clienti di una fintech: chi fa il backend e chi il frontend.',
-    luogo: { locale: false, dove: null },
+    description: 'x',
+    people: null,
+    summary: 'Una web app per i clienti di una fintech: chi fa il backend e chi il frontend.',
+    location: { locale: false, dove: null },
     team: [
       {
-        posizione: 1,
-        ruolo: 'Backend developer',
-        motivazione: 'Ha costruito le API di pagamento di due banche.',
-        giorni_settimana: 5,
-        scheda: { ruolo: 'Sviluppatore backend', seniority: 'senior', anni: 9, competenze: [], settori: [], lingue: [], luogo: null, sintesi: '' },
-        modalita: 'remoto',
-        fascia: { min: 400, max: 500 },
+        position: 1,
+        role: 'Backend developer',
+        reasoning: 'Ha costruito le API di pagamento di due banche.',
+        week_days: 5,
+        card: { role: 'Sviluppatore backend', seniority: 'senior', experience_years: 9, skills: [], industries: [], languages: [], location: null, profile_summary: '' },
+        mode: 'remote',
+        band: { min: 400, max: 500 },
       },
       {
-        posizione: 2,
-        ruolo: 'Frontend developer',
-        motivazione: 'Porta React.',
-        giorni_settimana: 3,
-        scheda: { ruolo: 'Sviluppatrice frontend', seniority: 'mid', anni: 4, competenze: [], settori: [], lingue: [], luogo: null, sintesi: '' },
-        modalita: 'ibrido',
-        fascia: { min: 400, max: 500 },
+        position: 2,
+        role: 'Frontend developer',
+        reasoning: 'Porta React.',
+        week_days: 3,
+        card: { role: 'Sviluppatrice frontend', seniority: 'mid', experience_years: 4, skills: [], industries: [], languages: [], location: null, profile_summary: '' },
+        mode: 'hybrid',
+        band: { min: 400, max: 500 },
       },
     ],
-    economia: { giorno: { min: 800, max: 1000 }, mese: { min: 17600, max: 22000 }, giorni_mese: 22 },
+    economics: { day: { min: 800, max: 1000 }, month: { min: 17600, max: 22000 }, days_month: 22 },
     previous_id: null,
-    origine: 'pubblico',
+    origin: 'public',
     created_at: '2026-10-07T08:00:00Z',
   }
 
@@ -466,8 +466,8 @@ test.describe('the team builder on the first screen', () => {
     await expect(page.getByRole('heading', { name: 'La nostra proposta' })).toBeVisible()
     await expect(page.locator('.loader')).toHaveCount(0)
     // The example's own headcount travels with the description (three for the fintech).
-    expect(bodies).toEqual([{ descrizione: expect.stringContaining('fintech'), persone: 3 }])
-    await expect(page.locator('.team-summary')).toHaveText(PROPOSAL.riassunto)
+    expect(bodies).toEqual([{ description: expect.stringContaining('fintech'), people: 3 }])
+    await expect(page.locator('.team-summary')).toHaveText(PROPOSAL.summary)
     const members = page.locator('.team-member')
     await expect(members).toHaveCount(2)
     await expect(members.first()).toContainText('Backend developer')
@@ -478,10 +478,10 @@ test.describe('the team builder on the first screen', () => {
     const href = new URL((await door.getAttribute('href'))!, 'http://localhost:4173')
     expect(href.pathname).toBe('/hub/team')
     expect(Object.fromEntries(href.searchParams)).toEqual({
-      proposta: PROPOSAL.id,
+      proposal: PROPOSAL.id,
       utm_source: 'linkedin',
       utm_campaign: 'orbita',
-      da: 'home',
+      from: 'home',
     })
     // The button is back, for a second description.
     await expect(page.getByRole('button', { name: 'Proponi il team' })).toBeEnabled()
@@ -515,11 +515,11 @@ test.describe('the team builder on the first screen', () => {
       await page.getByLabel('Descrizione del progetto').fill(description)
       await page.getByRole('button', { name: 'Proponi il team' }).click()
       // The preview server answers a stand-in for `/hub/`, as it does for every hub path.
-      await page.waitForURL(/\/hub\/team\?descrizione=/)
+      await page.waitForURL(/\/hub\/team\?description=/)
       const url = new URL(page.url())
       expect(url.pathname).toBe('/hub/team')
-      expect(url.searchParams.get('descrizione')).toBe(description)
-      expect(url.searchParams.get('persone')).toBe('1')
+      expect(url.searchParams.get('description')).toBe(description)
+      expect(url.searchParams.get('people')).toBe('1')
     })
   })
 })
@@ -542,8 +542,8 @@ test.describe('a visitor from a campaign', () => {
       // The guide's door keeps its own key beside the campaign's, and every door says
       // which page it is on (ORB-167).
       expect(doors.some((href) => href!.startsWith('/hub/freelance?perk=guida&utm_source=linkedin'))).toBe(true)
-      for (const href of doors) expect(new URL(href!, 'https://letsrebase.com').searchParams.get('da'), href!).toBe(path === '/' ? 'home' : 'pigrocrm')
-      expect(await page.evaluate(() => sessionStorage.getItem('rebase.da'))).toBe(path === '/' ? 'home' : 'pigrocrm')
+      for (const href of doors) expect(new URL(href!, 'https://letsrebase.com').searchParams.get('from'), href!).toBe(path === '/' ? 'home' : 'pigrocrm')
+      expect(await page.evaluate(() => sessionStorage.getItem('rebase.from'))).toBe(path === '/' ? 'home' : 'pigrocrm')
       // The rest of the page's links are what the markup says.
       expect(await page.locator('a[href="/privacy"]').count()).toBeGreaterThan(0)
       expect(await page.evaluate(() => sessionStorage.getItem('rebase.utm'))).toBe('utm_source=linkedin&utm_campaign=orbita&utm_id=42')
@@ -554,9 +554,9 @@ test.describe('a visitor from a campaign', () => {
     await page.goto('/', { waitUntil: 'networkidle' })
     const doors = await page.locator('a[href^="/hub/"]').evaluateAll((links) => links.map((a) => a.getAttribute('href')))
     expect(doors.filter((href) => href!.includes('utm_'))).toEqual([])
-    for (const href of doors) expect(new URL(href!, 'https://letsrebase.com').searchParams.get('da'), href!).toBe('home')
+    for (const href of doors) expect(new URL(href!, 'https://letsrebase.com').searchParams.get('from'), href!).toBe('home')
     expect(await page.evaluate(() => sessionStorage.getItem('rebase.utm'))).toBeNull()
-    expect(await page.evaluate(() => sessionStorage.getItem('rebase.da'))).toBe('home')
+    expect(await page.evaluate(() => sessionStorage.getItem('rebase.from'))).toBe('home')
   })
 })
 
@@ -722,7 +722,7 @@ test.describe('Accedi finds a session already there', () => {
     )
     await page.goto('/', { waitUntil: 'networkidle' })
     expect(await page.locator('a[href^="/hub/login"]').count()).toBe(0)
-    // utm.js has already tagged the link with `?da=home` by the time session.js's
+    // utm.js has already tagged the link with `?from=home` by the time session.js's
     // answer lands, so the path is what is asserted, not the whole href.
     await expect(page.getByRole('link', { name: 'Accedi' })).toHaveAttribute('href', /^\/hub\/me(\?|$)/)
     await expect(page.getByRole('link', { name: 'Entra nella tua area' })).toHaveAttribute(
@@ -801,7 +801,7 @@ test.describe('the referral band on /', () => {
     const order = await page.evaluate(() =>
       [...document.querySelectorAll('main > section')].map((section) => section.getAttribute('aria-labelledby')),
     )
-    expect(order.indexOf('referral')).toBe(order.indexOf('aziende') + 1)
+    expect(order.indexOf('referral')).toBe(order.indexOf('companies') + 1)
     expect(order.indexOf('worked-with')).toBe(order.indexOf('referral') + 1)
   })
 

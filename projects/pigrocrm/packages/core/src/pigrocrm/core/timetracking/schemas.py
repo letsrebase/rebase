@@ -8,7 +8,8 @@ caller's session is poisoned. This project has closed that family of defects sev
 times; it is not reopened on four new tables.
 """
 
-from datetime import date, datetime
+import datetime as dt
+from datetime import datetime
 from decimal import Decimal
 from typing import Any, Literal
 from uuid import UUID
@@ -19,55 +20,55 @@ from pigrocrm.core.money import FACTOR_SCALE, HOURS_SCALE, MONEY_SCALE
 from pigrocrm.core.validation import SafeStr
 
 # Mirror the columns in models.py.
-DESCRIZIONE_MAX_LENGTH = 2000  # `Text`, so no column width to mirror; bounded anyway
-FORNITORE_MAX_LENGTH = 200
-CATEGORIA_NOME_MAX_LENGTH = 60
+DESCRIPTION_MAX_LENGTH = 2000  # `Text`, so no column width to mirror; bounded anyway
+SUPPLIER_MAX_LENGTH = 200
+CATEGORY_NAME_MAX_LENGTH = 60
 HOURS_MAX_DIGITS = 8
 MONEY_MAX_DIGITS = 12
 FACTOR_MAX_DIGITS = 12
 
-# `ore` is bounded here as well as by `ck_time_entries_ore_range`, not instead of it:
+# `hours` is bounded here as well as by `ck_time_entries_ore_range`, not instead of it:
 # the schema bound turns a 422 into a message naming the field before a statement is
 # ever issued, and the CHECK covers every other write path including raw SQL. `gt=0`
 # not `ge=0`: a zero-hour entry is not an entry, and the way to cancel a wrong one is
 # a reversible soft delete (§2.2, last row), not a zero.
-ORE_MIN = Decimal("0.01")
-ORE_MAX = Decimal("24.00")
+HOURS_MIN = Decimal("0.01")
+HOURS_MAX = Decimal("24.00")
 
-CATEGORIA_POSIZIONE_MIN = 0
-CATEGORIA_POSIZIONE_MAX = 100_000
-ANNO_MIN = 2000
-ANNO_MAX = 2200
+CATEGORY_POSITION_MIN = 0
+CATEGORY_POSITION_MAX = 100_000
+YEAR_MIN = 2000
+YEAR_MAX = 2200
 
-RateOrigin = Literal["manuale", "deal", "utente", "assente"]
-# `costo_origine` never takes `deal`: an hour's cost is a property of who works it,
+RateOrigin = Literal["manual", "deal", "user", "absent"]
+# `cost_source` never takes `deal`: an hour's cost is a property of who works it,
 # not of the client they work it for (§5.1). Declared as its own narrower Literal
 # rather than reusing RateOrigin, so the impossible value is unrepresentable instead
 # of merely unwritten.
-CostOrigin = Literal["manuale", "utente", "assente"]
+CostOrigin = Literal["manual", "user", "absent"]
 
 
 class TimeEntryCreate(BaseModel):
     deal_id: UUID
     user_id: UUID
-    data: date
-    ore: Decimal = Field(
-        max_digits=HOURS_MAX_DIGITS, decimal_places=HOURS_SCALE, ge=ORE_MIN, le=ORE_MAX
+    date: dt.date
+    hours: Decimal = Field(
+        max_digits=HOURS_MAX_DIGITS, decimal_places=HOURS_SCALE, ge=HOURS_MIN, le=HOURS_MAX
     )
-    descrizione: SafeStr = Field(max_length=DESCRIZIONE_MAX_LENGTH)
-    fatturabile: bool = True
+    description: SafeStr = Field(max_length=DESCRIPTION_MAX_LENGTH)
+    billable: bool = True
     # Level 1 of §5.1's resolution: an explicit value in the request wins, and the
     # frozen column is written with it and `origine = "manuale"`. Named identically to
     # the columns on purpose -- `native_fields("time_entry")` is derived from this
-    # model, so a differently-named input would leave `tariffa_applicata` outside the
+    # model, so a differently-named input would leave `applied_rate` outside the
     # A13 guard's reach and a custom field could still collide with it.
-    tariffa_applicata: Decimal | None = Field(
+    applied_rate: Decimal | None = Field(
         default=None, max_digits=FACTOR_MAX_DIGITS, decimal_places=FACTOR_SCALE, ge=0
     )
-    costo_applicato: Decimal | None = Field(
+    applied_cost: Decimal | None = Field(
         default=None, max_digits=FACTOR_MAX_DIGITS, decimal_places=FACTOR_SCALE, ge=0
     )
-    note_interne: SafeStr | None = None
+    internal_notes: SafeStr | None = None
     custom_fields: dict[str, Any] = {}
 
 
@@ -80,23 +81,23 @@ class TimeEntryUpdate(BaseModel):
     # when that user is deactivated -- an operation that needs the field to exist.
     deal_id: UUID | None = None
     user_id: UUID | None = None
-    data: date | None = None
-    ore: Decimal | None = Field(
+    date: dt.date | None = None
+    hours: Decimal | None = Field(
         default=None,
         max_digits=HOURS_MAX_DIGITS,
         decimal_places=HOURS_SCALE,
-        ge=ORE_MIN,
-        le=ORE_MAX,
+        ge=HOURS_MIN,
+        le=HOURS_MAX,
     )
-    descrizione: SafeStr | None = Field(default=None, max_length=DESCRIZIONE_MAX_LENGTH)
-    fatturabile: bool | None = None
-    tariffa_applicata: Decimal | None = Field(
+    description: SafeStr | None = Field(default=None, max_length=DESCRIPTION_MAX_LENGTH)
+    billable: bool | None = None
+    applied_rate: Decimal | None = Field(
         default=None, max_digits=FACTOR_MAX_DIGITS, decimal_places=FACTOR_SCALE, ge=0
     )
-    costo_applicato: Decimal | None = Field(
+    applied_cost: Decimal | None = Field(
         default=None, max_digits=FACTOR_MAX_DIGITS, decimal_places=FACTOR_SCALE, ge=0
     )
-    note_interne: SafeStr | None = None
+    internal_notes: SafeStr | None = None
     custom_fields: dict[str, Any] | None = None
 
 
@@ -106,21 +107,21 @@ class TimeEntryRead(BaseModel):
     id: UUID
     deal_id: UUID
     user_id: UUID
-    data: date
-    ore: Decimal
-    descrizione: str
-    fatturabile: bool
-    tariffa_applicata: Decimal | None
-    costo_applicato: Decimal | None
-    tariffa_origine: RateOrigin
-    costo_origine: CostOrigin
+    date: dt.date
+    hours: Decimal
+    description: str
+    billable: bool
+    applied_rate: Decimal | None
+    applied_cost: Decimal | None
+    rate_source: RateOrigin
+    cost_source: CostOrigin
     # Derived and returned already computed, because §6 forbids the browser from doing
     # any economic arithmetic. `None` when the corresponding factor is `None` -- never
     # `0.00`, which would say the work was free.
-    valore_riga: Decimal | None = None
-    costo_riga: Decimal | None = None
+    line_value: Decimal | None = None
+    line_cost: Decimal | None = None
     invoice_line_id: UUID | None
-    note_interne: str | None
+    internal_notes: str | None
     custom_fields: dict[str, Any]
     created_at: datetime
     updated_at: datetime
@@ -128,15 +129,15 @@ class TimeEntryRead(BaseModel):
 
 class TimeEntryListQuery(BaseModel):
     deal_id: UUID | None = None
-    # Through the deal: an entry's azienda is its deal's (REB-623).
-    azienda_id: UUID | None = None
+    # Through the deal: an entry's legal entity is its deal's (REB-623).
+    legal_entity_id: UUID | None = None
     user_id: UUID | None = None
-    da: date | None = None
-    a: date | None = None
-    fatturabile: bool | None = None
+    date_from: dt.date | None = None
+    date_to: dt.date | None = None
+    billable: bool | None = None
     # Three states, not two: `True` = already on an invoice line, `False` = not yet,
     # `None` = do not filter. It is the "how much do I have to invoice?" query.
-    fatturato: bool | None = None
+    invoiced: bool | None = None
     custom: dict[str, Any] | None = None
     limit: int = Field(default=50, ge=1, le=200)
     cursor: UUID | None = None
@@ -149,20 +150,20 @@ class TimeEntryPage(BaseModel):
 
 class TimerStart(BaseModel):
     """What a timer knows when it starts. Everything optional but the intent: a deal
-    can be chosen later, a description typed later, and `fatturabile` defaults the way a
+    can be chosen later, a description typed later, and `billable` defaults the way a
     freelancer's hour does."""
 
     deal_id: UUID | None = None
-    descrizione: SafeStr = Field(default="", max_length=DESCRIZIONE_MAX_LENGTH)
-    fatturabile: bool = True
+    description: SafeStr = Field(default="", max_length=DESCRIPTION_MAX_LENGTH)
+    billable: bool = True
 
 
 class TimerUpdate(BaseModel):
     """Changed while running: the person realises which deal this is, or what to call it."""
 
     deal_id: UUID | None = None
-    descrizione: SafeStr | None = Field(default=None, max_length=DESCRIZIONE_MAX_LENGTH)
-    fatturabile: bool | None = None
+    description: SafeStr | None = Field(default=None, max_length=DESCRIPTION_MAX_LENGTH)
+    billable: bool | None = None
 
 
 class TimerStop(BaseModel):
@@ -172,8 +173,8 @@ class TimerStop(BaseModel):
     day that has just begun there."""
 
     deal_id: UUID | None = None
-    descrizione: SafeStr | None = Field(default=None, max_length=DESCRIZIONE_MAX_LENGTH)
-    data: date | None = None
+    description: SafeStr | None = Field(default=None, max_length=DESCRIPTION_MAX_LENGTH)
+    date: dt.date | None = None
 
 
 class TimerRead(BaseModel):
@@ -182,22 +183,22 @@ class TimerRead(BaseModel):
     id: UUID
     user_id: UUID
     deal_id: UUID | None
-    descrizione: str
-    fatturabile: bool
+    description: str
+    billable: bool
     started_at: datetime
 
 
 class CostCreate(BaseModel):
     deal_id: UUID | None = None
     # Read only for a cost without a deal (REB-623, spec §1.7): a cost with a deal takes
-    # the deal's azienda and refuses a different one; without a deal, `None` is a shared
-    # cost («condivisa») and an id ties it to one azienda.
-    azienda_id: UUID | None = None
+    # the deal's legal entity and refuses a different one; without a deal, `None` is a shared
+    # cost («condivisa») and an id ties it to one legal entity.
+    legal_entity_id: UUID | None = None
     category_id: UUID
-    data: date
-    importo: Decimal = Field(max_digits=MONEY_MAX_DIGITS, decimal_places=MONEY_SCALE)
-    descrizione: SafeStr = Field(max_length=DESCRIZIONE_MAX_LENGTH)
-    fornitore: SafeStr | None = Field(default=None, max_length=FORNITORE_MAX_LENGTH)
+    date: dt.date
+    amount: Decimal = Field(max_digits=MONEY_MAX_DIGITS, decimal_places=MONEY_SCALE)
+    description: SafeStr = Field(max_length=DESCRIPTION_MAX_LENGTH)
+    supplier: SafeStr | None = Field(default=None, max_length=SUPPLIER_MAX_LENGTH)
     document_id: UUID | None = None
     custom_fields: dict[str, Any] = {}
 
@@ -206,14 +207,14 @@ class CostUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     deal_id: UUID | None = None
-    azienda_id: UUID | None = None
+    legal_entity_id: UUID | None = None
     category_id: UUID | None = None
-    data: date | None = None
-    importo: Decimal | None = Field(
+    date: dt.date | None = None
+    amount: Decimal | None = Field(
         default=None, max_digits=MONEY_MAX_DIGITS, decimal_places=MONEY_SCALE
     )
-    descrizione: SafeStr | None = Field(default=None, max_length=DESCRIZIONE_MAX_LENGTH)
-    fornitore: SafeStr | None = Field(default=None, max_length=FORNITORE_MAX_LENGTH)
+    description: SafeStr | None = Field(default=None, max_length=DESCRIPTION_MAX_LENGTH)
+    supplier: SafeStr | None = Field(default=None, max_length=SUPPLIER_MAX_LENGTH)
     document_id: UUID | None = None
     custom_fields: dict[str, Any] | None = None
 
@@ -223,12 +224,12 @@ class CostRead(BaseModel):
 
     id: UUID
     deal_id: UUID | None
-    azienda_id: UUID | None
+    legal_entity_id: UUID | None
     category_id: UUID
-    data: date
-    importo: Decimal
-    descrizione: str
-    fornitore: str | None
+    date: dt.date
+    amount: Decimal
+    description: str
+    supplier: str | None
     document_id: UUID | None
     custom_fields: dict[str, Any]
     created_at: datetime
@@ -237,16 +238,16 @@ class CostRead(BaseModel):
 
 class CostListQuery(BaseModel):
     deal_id: UUID | None = None
-    # One azienda's costs (REB-623): a shared cost, `NULL`, appears only when none is
-    # asked for, which is the view over every azienda.
-    azienda_id: UUID | None = None
+    # One legal entity's costs (REB-623): a shared cost, `NULL`, appears only when none is
+    # asked for, which is the view over every legal entity.
+    legal_entity_id: UUID | None = None
     # `True` selects only general expenses (`deal_id IS NULL`). Needed because
     # `deal_id=None` already means "do not filter", and §7.4 gives general expenses a
     # row of their own that has to be selectable.
-    solo_generali: bool = False
+    only_general: bool = False
     category_id: UUID | None = None
-    da: date | None = None
-    a: date | None = None
+    date_from: dt.date | None = None
+    date_to: dt.date | None = None
     custom: dict[str, Any] | None = None
     limit: int = Field(default=50, ge=1, le=200)
     cursor: UUID | None = None
@@ -258,8 +259,8 @@ class CostPage(BaseModel):
 
 
 class CostCategoryCreate(BaseModel):
-    nome: SafeStr = Field(max_length=CATEGORIA_NOME_MAX_LENGTH)
-    posizione: int = Field(default=0, ge=CATEGORIA_POSIZIONE_MIN, le=CATEGORIA_POSIZIONE_MAX)
+    name: SafeStr = Field(max_length=CATEGORY_NAME_MAX_LENGTH)
+    position: int = Field(default=0, ge=CATEGORY_POSITION_MIN, le=CATEGORY_POSITION_MAX)
     # `code` is never caller-supplied: it is the stable identity of a *seeded*
     # category, and letting a user claim one would let them collide with a future seed.
     # Absent from this schema on purpose, exactly as `code` is absent from
@@ -269,36 +270,34 @@ class CostCategoryCreate(BaseModel):
 class CostCategoryUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    nome: SafeStr | None = Field(default=None, max_length=CATEGORIA_NOME_MAX_LENGTH)
-    posizione: int | None = Field(
-        default=None, ge=CATEGORIA_POSIZIONE_MIN, le=CATEGORIA_POSIZIONE_MAX
-    )
+    name: SafeStr | None = Field(default=None, max_length=CATEGORY_NAME_MAX_LENGTH)
+    position: int | None = Field(default=None, ge=CATEGORY_POSITION_MIN, le=CATEGORY_POSITION_MAX)
 
 
 class CostCategoryRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
-    nome: str
-    posizione: int
+    name: str
+    position: int
     code: str | None
-    archiviata: bool
+    archived: bool
     created_at: datetime
     updated_at: datetime
 
 
 class PeriodLockCreate(BaseModel):
-    anno: int = Field(ge=ANNO_MIN, le=ANNO_MAX)
-    mese: int = Field(ge=1, le=12)
+    year: int = Field(ge=YEAR_MIN, le=YEAR_MAX)
+    month: int = Field(ge=1, le=12)
 
 
 class PeriodLockRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
-    anno: int
-    mese: int
-    chiuso_il: datetime
-    chiuso_da: UUID | None
+    year: int
+    month: int
+    closed_at: datetime
+    closed_by: UUID | None
 
 
 class RateDescription(BaseModel):
@@ -311,44 +310,44 @@ class RateDescription(BaseModel):
 
     deal_id: UUID
     user_id: UUID
-    tariffa: Decimal | None
-    tariffa_origine: RateOrigin
-    costo: Decimal | None
-    costo_origine: CostOrigin
+    rate: Decimal | None
+    rate_source: RateOrigin
+    cost: Decimal | None
+    cost_source: CostOrigin
 
 
 class DealTimeSummary(BaseModel):
     """The hours half of a deal's economics, computed in 4A and readable with no
     invoices in the database.
 
-    Deliberately **not** carrying `ricavi` or `valore_maturato`: revenue is the invoice
-    (§3, decision 2) and there is no second notion of it. 4B's `DealPnl` adds `ricavi`
+    Deliberately **not** carrying `revenue` or `accrued_value`: revenue is the invoice
+    (§3, decision 2) and there is no second notion of it. 4B's `DealPnl` adds `revenue`
     and defines `valore_maturato = ricavi + valore_ore_non_fatturate` on top of this,
     rather than 4A shipping a zero that would read as a real figure.
     """
 
     deal_id: UUID
-    stato: Literal["in corso", "da fatturare", "chiuso"]
-    ore_totali: Decimal
-    ore_fatturabili_non_fatturate: Decimal
-    valore_ore_non_fatturate: Decimal
-    costo_lavoro: Decimal
-    ore_senza_tariffa: int
-    voci: int
+    status: Literal["in_progress", "to_invoice", "closed"]
+    total_hours: Decimal
+    billable_uninvoiced_hours: Decimal
+    unbilled_hours_value: Decimal
+    work_cost: Decimal
+    hours_without_rate: int
+    entries: int
 
 
 class RecalculateRatesRequest(BaseModel):
-    da: date
-    a: date
+    date_from: dt.date
+    date_to: dt.date
 
 
 class UserRatesUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    tariffa_oraria_default: Decimal | None = Field(
+    default_hourly_rate: Decimal | None = Field(
         default=None, max_digits=FACTOR_MAX_DIGITS, decimal_places=FACTOR_SCALE, ge=0
     )
-    costo_orario_default: Decimal | None = Field(
+    default_hourly_cost: Decimal | None = Field(
         default=None, max_digits=FACTOR_MAX_DIGITS, decimal_places=FACTOR_SCALE, ge=0
     )
 
@@ -356,6 +355,6 @@ class UserRatesUpdate(BaseModel):
 class DealRateUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    tariffa_oraria: Decimal | None = Field(
+    hourly_rate: Decimal | None = Field(
         default=None, max_digits=FACTOR_MAX_DIGITS, decimal_places=FACTOR_SCALE, ge=0
     )

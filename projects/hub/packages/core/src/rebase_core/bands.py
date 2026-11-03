@@ -1,12 +1,12 @@
 """The client's price band (REB-511, spec § 3.3): what a company is told a talent costs,
 never the talent's own rate.
 
-The client pays the freelancer's `tariffa_giornaliera` plus 40% (Ivan: «tariffa del
-cliente che di base sarà quella del freelancer +40%»), shown as a band rather than a
-figure («meglio fascia»): one of six bands of euro per day, each closed at its bottom
+The client pays the freelancer's `daily_rate` plus 40% (Ivan: the client's price
+basically is the freelancer's rate +40%), shown as a band rather than a
+figure (a band is better): one of six bands of euro per day, each closed at its bottom
 and open at its top, the last with no top at all. A team's band per day is the sum of
-its people's bounds, and per month the same times 22 working days («mensile a 22
-giorni»). The arithmetic is the hub's, never the model's: Claude reads a band in the
+its people's bounds, and per month the same times 22 working days (monthly at 22
+days). The arithmetic is the hub's, never the model's: Claude reads a band in the
 catalogue and never the rate it came from.
 
 Money is `Decimal` until it is placed; a band is whole euro.
@@ -34,6 +34,7 @@ BANDS: tuple[tuple[int, int | None], ...] = (
 # Between a figure and «€», as the web's `formatEuro` (`Intl.NumberFormat('it-IT')`)
 # writes it: a line never breaks between the two.
 _NBSP = "\u00a0"
+_PER_WORD = {"day": "giorno", "month": "mese"}
 
 
 def _euro(amount: int) -> str:
@@ -58,10 +59,10 @@ class Band(ResponseModel):
             return f"fino a {_euro(self.max)}"
         return f"{_euro(self.min)}–{_euro(self.max)}"
 
-    def label(self, per: Literal["giorno", "mese"] = "giorno") -> str:
+    def label(self, per: Literal["day", "month"] = "day") -> str:
         """«400–500 € al giorno», «oltre 800 € al giorno», «fino a 6.600 € al mese»,
         with a non-breaking space before «€»."""
-        return f"{self.bounds()}{_NBSP}€ al {per}"
+        return f"{self.bounds()}{_NBSP}€ al {_PER_WORD[per]}"
 
 
 def band_containing(price: Decimal) -> Band:

@@ -6,13 +6,13 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from pigrocrm.core.db import Base, PrimaryKeyMixin, SoftDeleteMixin, TimestampMixin
-from pigrocrm.core.emitter.models import default_azienda_id
+from pigrocrm.core.legal_entities.models import default_legal_entity_id
 
 
 class Customer(Base, PrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
     """The first full business entity. `People` and `Deals` copy this file's shape.
 
-    Fiscal fields (`partita_iva`, `codice_fiscale`, `codice_sdi`, `pec`) are first-class
+    Fiscal fields (`vat_number`, `tax_code`, `sdi_code`, `certified_email`) are first-class
     columns rather than custom fields, so slice 3 can build FatturaPA invoicing directly
     on them. `custom_fields` carries everything else a tenant defines through
     `FieldDefinitionService`; the GIN index below is what keeps `list()`'s JSONB
@@ -22,7 +22,7 @@ class Customer(Base, PrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
     __tablename__ = "customers"
     __table_args__ = (
         Index("ix_customers_custom_fields", "custom_fields", postgresql_using="gin"),
-        Index("ix_customers_ragione_sociale", "ragione_sociale"),
+        Index("ix_customers_legal_name", "legal_name"),
         # Trigram indexes, one per column `CustomerRepository.list` ORs together. All
         # four are needed, not just the name: a four-way OR is planned as a BitmapOr
         # over four bitmap index scans, and a single unindexed branch collapses the
@@ -34,24 +34,24 @@ class Customer(Base, PrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
         # case internally, and wrapping the column would make ILIKE on the raw column
         # unable to use the index (spec §8.2).
         Index(
-            "ix_customers_ragione_sociale_trgm",
-            "ragione_sociale",
+            "ix_customers_legal_name_trgm",
+            "legal_name",
             postgresql_using="gin",
-            postgresql_ops={"ragione_sociale": "gin_trgm_ops"},
+            postgresql_ops={"legal_name": "gin_trgm_ops"},
             postgresql_where=text("deleted_at IS NULL"),
         ),
         Index(
-            "ix_customers_partita_iva_trgm",
-            "partita_iva",
+            "ix_customers_vat_number_trgm",
+            "vat_number",
             postgresql_using="gin",
-            postgresql_ops={"partita_iva": "gin_trgm_ops"},
+            postgresql_ops={"vat_number": "gin_trgm_ops"},
             postgresql_where=text("deleted_at IS NULL"),
         ),
         Index(
-            "ix_customers_codice_fiscale_trgm",
-            "codice_fiscale",
+            "ix_customers_tax_code_trgm",
+            "tax_code",
             postgresql_using="gin",
-            postgresql_ops={"codice_fiscale": "gin_trgm_ops"},
+            postgresql_ops={"tax_code": "gin_trgm_ops"},
             postgresql_where=text("deleted_at IS NULL"),
         ),
         # The Gmail roster resolves an address with `lower(email) = :needle`, which neither
@@ -82,22 +82,25 @@ class Customer(Base, PrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
         # serve a predicate that always carries that clause, while an ordering has to
         # remain usable for any listing, including one that asks for the deleted rows.
         #
-        # `ix_customers_ragione_sociale` (slice 1, single column) stays: it is still the
+        # `ix_customers_legal_name` (slice 1, single column) stays: it is still the
         # cheaper index for an equality lookup, and dropping an index is a separate
         # decision from adding one.
         Index("ix_customers_created_at_id", "created_at", "id"),
         Index("ix_customers_updated_at_id", "updated_at", "id"),
-        Index("ix_customers_ragione_sociale_id", "ragione_sociale", "id"),
+        Index("ix_customers_legal_name_id", "legal_name", "id"),
     )
 
-    ragione_sociale: Mapped[str] = mapped_column(String(255), nullable=False)
-    # The azienda this customer is billed by (REB-623, spec 2026-10-03 §1.6): proposed
-    # from `nazione` at creation, editable afterwards, and copied onto every deal,
+    legal_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    # The legal entity this customer is billed by (REB-623, spec 2026-10-03 §1.6): proposed
+    # from `country` at creation, editable afterwards, and copied onto every deal,
     # contract, document and invoice born under the customer from then on; changing it
     # moves nothing already created (§1.7). The column default is the space's default
-    # azienda, for a row built without one; the service always names it.
-    azienda_id: Mapped[UUID] = mapped_column(
-        ForeignKey("emitter_profile.id"), nullable=False, index=True, default=default_azienda_id
+    # legal entity, for a row built without one; the service always names it.
+    legal_entity_id: Mapped[UUID] = mapped_column(
+        ForeignKey("legal_entities.id"),
+        nullable=False,
+        index=True,
+        default=default_legal_entity_id,
     )
     # Who answers for this customer (REB-773): the person the reminders about its invoices
     # and contracts go to, with the deal's own owner for what hangs on a deal. Whoever
@@ -106,31 +109,31 @@ class Customer(Base, PrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
     # the reminders then give to the space's owner. Not `NOT NULL`: a user is archived,
     # never deleted, and a customer must not stop existing with them.
     owner_id: Mapped[UUID | None] = mapped_column(ForeignKey("users.id"), default=None, index=True)
-    partita_iva: Mapped[str | None] = mapped_column(String(11), default=None, index=True)
-    codice_fiscale: Mapped[str | None] = mapped_column(String(16), default=None)
-    codice_sdi: Mapped[str | None] = mapped_column(String(7), default=None)
-    pec: Mapped[str | None] = mapped_column(String(320), default=None)
-    indirizzo: Mapped[str | None] = mapped_column(String(255), default=None)
+    vat_number: Mapped[str | None] = mapped_column(String(11), default=None, index=True)
+    tax_code: Mapped[str | None] = mapped_column(String(16), default=None)
+    sdi_code: Mapped[str | None] = mapped_column(String(7), default=None)
+    certified_email: Mapped[str | None] = mapped_column(String(320), default=None)
+    address: Mapped[str | None] = mapped_column(String(255), default=None)
     cap: Mapped[str | None] = mapped_column(String(10), default=None)
-    comune: Mapped[str | None] = mapped_column(String(120), default=None)
-    provincia: Mapped[str | None] = mapped_column(String(2), default=None)
-    nazione: Mapped[str] = mapped_column(String(2), nullable=False, default="IT")
+    city: Mapped[str | None] = mapped_column(String(120), default=None)
+    province: Mapped[str | None] = mapped_column(String(2), default=None)
+    country: Mapped[str] = mapped_column(String(2), nullable=False, default="IT")
     # Indexed for the same reason people.email is: Gmail relevance resolution
     # (gmail/roster.py) looks an address up in both tables on every message it
     # considers, and an unindexed lookup there is a sequential scan per message.
     email: Mapped[str | None] = mapped_column(String(320), default=None, index=True)
-    telefono: Mapped[str | None] = mapped_column(String(40), default=None)
-    sito_web: Mapped[str | None] = mapped_column(String(255), default=None)
-    stato: Mapped[str | None] = mapped_column(String(40), default=None)
+    phone: Mapped[str | None] = mapped_column(String(40), default=None)
+    website: Mapped[str | None] = mapped_column(String(255), default=None)
+    status: Mapped[str | None] = mapped_column(String(40), default=None)
     # The payment terms agreed with this customer (REB-326): days after the invoice
     # date, and whether the due date then slides to the end of its month («30 giorni
-    # data fattura fine mese»). `giorni_pagamento` null means the fiscal profile's
-    # `giorni_scadenza` applies; the switch is never null, since "unknown" and "no" would
+    # data fattura fine mese»). `payment_days` null means the fiscal profile's
+    # `due_days` applies; the switch is never null, since "unknown" and "no" would
     # print the same date. Read by `InvoiceService.issue` and by nothing else: an issued
     # invoice carries the date it was born with, and a term changed later does not move
     # it.
-    giorni_pagamento: Mapped[int | None] = mapped_column(Integer, default=None)
-    pagamento_fine_mese: Mapped[bool] = mapped_column(
+    payment_days: Mapped[int | None] = mapped_column(Integer, default=None)
+    payment_end_of_month: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default=text("false")
     )
     custom_fields: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)

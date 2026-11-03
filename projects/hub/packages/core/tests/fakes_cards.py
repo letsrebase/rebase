@@ -12,21 +12,21 @@ import json
 from collections.abc import Callable
 from typing import Any
 
-from rebase_core.card_draft import FONTI_FIELDS, CardDraft
+from rebase_core.card_draft import SOURCES_FIELDS, CardDraft
 from rebase_core.card_judge import CardJudgement
 from rebase_core.llm import LlmRequest, LlmResponse
 
 MODEL = "claude-opus-5"
 
 CARD: dict[str, Any] = {
-    "ruolo": "Backend developer",
+    "role": "Backend developer",
     "seniority": "senior",
-    "anni": 9,
-    "competenze": ["Python", "FastAPI", "PostgreSQL", "AWS"],
-    "settori": ["fintech", "e-commerce"],
-    "lingue": ["italiano", "inglese"],
-    "luogo": "Torino",
-    "sintesi": (
+    "experience_years": 9,
+    "skills": ["Python", "FastAPI", "PostgreSQL", "AWS"],
+    "industries": ["fintech", "e-commerce"],
+    "languages": ["italiano", "inglese"],
+    "location": "Torino",
+    "profile_summary": (
         "Backend developer senior, nove anni fra fintech ed e-commerce, "
         "API in Python e infrastruttura AWS."
     ),
@@ -34,7 +34,7 @@ CARD: dict[str, Any] = {
 
 
 # What the model says supported each field when the CV is all it read.
-FONTI: dict[str, list[str]] = {name: ["cv"] for name in FONTI_FIELDS}
+SOURCES: dict[str, list[str]] = {name: ["cv"] for name in SOURCES_FIELDS}
 
 
 def text_pdf(line: str) -> bytes:
@@ -66,25 +66,25 @@ def text_pdf(line: str) -> bytes:
 
 # The persona a CV that states nothing about who the person is answers (REB-855): every
 # field empty, the shape every provider's strict output takes.
-NO_PERSONA: dict[str, Any] = {
-    "nome": None,
-    "cognome": None,
+NO_PERSON: dict[str, Any] = {
+    "first_name": None,
+    "last_name": None,
     "email": None,
-    "telefono": None,
-    "citta": None,
+    "phone": None,
+    "city": None,
     "linkedin_url": None,
-    "altri_link": [],
+    "other_links": [],
 }
 
 # A CV that states its contacts, for the tests that read the named card.
-PERSONA: dict[str, Any] = {
-    "nome": "Ada",
-    "cognome": "Lovelace",
+PERSON: dict[str, Any] = {
+    "first_name": "Ada",
+    "last_name": "Lovelace",
     "email": "Ada.Lovelace@Example.org",
-    "telefono": "+39 333 123 4567",
-    "citta": "Torino",
+    "phone": "+39 333 123 4567",
+    "city": "Torino",
     "linkedin_url": "linkedin.com/in/ada-lovelace",
-    "altri_link": ["https://ada.example.org", "github.com/ada"],
+    "other_links": ["https://ada.example.org", "github.com/ada"],
 }
 
 
@@ -95,12 +95,12 @@ def card_response(
     stop_reason: str = "end_turn",
     input_tokens: int = 1200,
     output_tokens: int = 180,
-    fonti: dict[str, list[str]] | None = None,
+    sources: dict[str, list[str]] | None = None,
     employers: list[str] | None = None,
-    persona: dict[str, Any] | None = None,
+    person: dict[str, Any] | None = None,
 ) -> LlmResponse:
     """The model's answer as `AiCall` hands it over under prompt version 3: `card` inside
-    the private draft (`fonti`, `employers` and `persona` beside it), or `text` verbatim
+    the private draft (`sources`, `employers` and `person` beside it), or `text` verbatim
     for a body that is not one. `parsed` is the body validated as `CardDraft`, as `AiCall`
     does it, and `None` when it is not one. The persona is empty unless one is handed."""
     body = (
@@ -109,9 +109,9 @@ def card_response(
         else json.dumps(
             {
                 "card": card if card is not None else CARD,
-                "fonti": fonti if fonti is not None else FONTI,
+                "sources": sources if sources is not None else SOURCES,
                 "employers": employers or [],
-                "persona": persona if persona is not None else NO_PERSONA,
+                "person": person if person is not None else NO_PERSON,
             }
         )
     )
@@ -134,7 +134,7 @@ def card_response(
 def draft_body(card: dict[str, Any] | None = None) -> str:
     """The body of a writing call's answer under prompt version 3, as a provider returns it."""
     return json.dumps(
-        {"card": card or CARD, "fonti": FONTI, "employers": [], "persona": NO_PERSONA}
+        {"card": card or CARD, "sources": SOURCES, "employers": [], "person": NO_PERSON}
     )
 
 
@@ -146,7 +146,7 @@ def judgement_body(
 ) -> str:
     """The body of a judging call's answer: every field `supported` unless `verdicts` says
     otherwise (`{"anni": ("contradicted", "the CV dates three years")}`)."""
-    fields = {name: {"verdict": "supported", "reason": "the CV says so"} for name in FONTI_FIELDS}
+    fields = {name: {"verdict": "supported", "reason": "the CV says so"} for name in SOURCES_FIELDS}
     for name, (verdict, reason) in (verdicts or {}).items():
         fields[name] = {"verdict": verdict, "reason": reason}
     return json.dumps({**fields, "invented": invented or [], "identifying": identifying or []})

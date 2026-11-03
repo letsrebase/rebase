@@ -30,8 +30,8 @@ from pigrocrm.core.errors import Conflict, DomainError, NotFound, ValidationFail
 from pigrocrm.core.money import round_hours
 from pigrocrm.core.timetracking.models import TimeTimer
 from pigrocrm.core.timetracking.schemas import (
-    ORE_MAX,
-    ORE_MIN,
+    HOURS_MAX,
+    HOURS_MIN,
     TimeEntryCreate,
     TimeEntryRead,
     TimerRead,
@@ -45,7 +45,7 @@ ENTITY = "timer"
 
 # What an entry made from a stopped timer says when nobody typed anything: honest about
 # where it came from, and replaceable from the entry itself, like the grid's default.
-DEFAULT_DESCRIZIONE = "Ore registrate dal timer"
+DEFAULT_DESCRIPTION = "Ore registrate dal timer"
 
 # The unique index that allows one running timer per user (`models.py`).
 TIMER_USER_INDEX = "ux_time_timers_user"
@@ -58,14 +58,14 @@ def _now() -> datetime:
 def elapsed_hours(started_at: datetime, stopped_at: datetime) -> Decimal:
     """Seconds between the two instants, as hours with two decimals.
 
-    Clamped into the same range `TimeEntryCreate.ore` accepts: a timer stopped after
+    Clamped into the same range `TimeEntryCreate.hours` accepts: a timer stopped after
     twenty seconds is still an entry of one hundredth of an hour rather than a 422 the
     person cannot act on, and one left running over a weekend is capped at the day the
     schema allows -- the entry is then visibly wrong in the right direction, and editable.
     """
     seconds = Decimal(max((stopped_at - started_at).total_seconds(), 0))
     hours = round_hours(seconds / Decimal(3600))
-    return min(max(hours, ORE_MIN), ORE_MAX)
+    return min(max(hours, HOURS_MIN), HOURS_MAX)
 
 
 class TimerService:
@@ -107,8 +107,8 @@ class TimerService:
         row = TimeTimer(
             user_id=actor.id,
             deal_id=data.deal_id,
-            descrizione=data.descrizione,
-            fatturabile=data.fatturabile,
+            description=data.description,
+            billable=data.billable,
             started_at=_now(),
         )
 
@@ -129,10 +129,10 @@ class TimerService:
         if data.deal_id is not None:
             self._require_deal(data.deal_id)
             row.deal_id = data.deal_id
-        if data.descrizione is not None:
-            row.descrizione = data.descrizione
-        if data.fatturabile is not None:
-            row.fatturabile = data.fatturabile
+        if data.description is not None:
+            row.description = data.description
+        if data.billable is not None:
+            row.billable = data.billable
         self.session.commit()
         return TimerRead.model_validate(row)
 
@@ -158,15 +158,15 @@ class TimerService:
                 "scegli il deal su cui registrare le ore prima di fermare il timer",
                 expected="l'id di un deal esistente",
             )
-        descrizione = data.descrizione if data.descrizione is not None else row.descrizione
+        description = data.description if data.description is not None else row.description
         entry = self.entries.create(
             TimeEntryCreate(
                 deal_id=deal_id,
                 user_id=row.user_id,
-                data=data.data if data.data is not None else today_local(),
-                ore=elapsed_hours(row.started_at, _now()),
-                descrizione=descrizione.strip() or DEFAULT_DESCRIZIONE,
-                fatturabile=row.fatturabile,
+                date=data.date if data.date is not None else today_local(),
+                hours=elapsed_hours(row.started_at, _now()),
+                description=description.strip() or DEFAULT_DESCRIPTION,
+                billable=row.billable,
             ),
             actor,
             commit=False,
@@ -184,5 +184,5 @@ class TimerService:
     def _require(self, actor: Actor, *, lock: bool = False) -> TimeTimer:
         row = self._row(actor, lock=lock)
         if row is None:
-            raise NotFound(ENTITY, "in corso")
+            raise NotFound(ENTITY, "in_progress")
         return row

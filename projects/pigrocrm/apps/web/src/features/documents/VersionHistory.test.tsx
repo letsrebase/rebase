@@ -7,7 +7,7 @@ import { api } from '@/lib/api'
 import { VersionHistory } from './VersionHistory'
 import type { DocumentVersion } from './queries'
 
-// REB-294: «Rigenera» is `regenerate_document` (`collaboratore`); the suite drives
+// REB-294: «Rigenera» is `regenerate_document` (`collaborator`); the suite drives
 // the writer's menu. The readonly shape (no item at all) is its own test below.
 vi.mock('@/lib/auth', () => ({ useCanWrite: () => true }))
 
@@ -15,25 +15,25 @@ const VERSIONS: DocumentVersion[] = [
   {
     id: 'v-2',
     document_id: 'doc-1',
-    numero: 2,
+    number: 2,
     template_id: 't-1',
     storage_key: 'acme-0123/doc-1/v2.pdf',
     content_type: 'application/pdf',
-    dimensione: 12345,
+    size: 12345,
     hash_sha256: 'a'.repeat(64),
-    creato_da: null,
+    created_by: null,
     created_at: '2026-08-10T10:00:00Z',
   },
   {
     id: 'v-1',
     document_id: 'doc-1',
-    numero: 1,
+    number: 1,
     template_id: null,
     storage_key: 'acme-0123/doc-1/v1.pdf',
     content_type: 'application/pdf',
-    dimensione: 999,
+    size: 999,
     hash_sha256: 'b'.repeat(64),
-    creato_da: null,
+    created_by: null,
     created_at: '2026-08-09T10:00:00Z',
   },
 ]
@@ -64,8 +64,8 @@ function failed(error: unknown, status: number) {
 
 /** The row's actions live behind the «⋯» menu since the 2026-09-08 revision (design
  *  spec §4); the trigger is labelled per version so a list of them stays unambiguous. */
-async function openRowMenu(numero: number) {
-  await userEvent.click(await screen.findByRole('button', { name: `Azioni per la versione ${numero}` }))
+async function openRowMenu(number: number) {
+  await userEvent.click(await screen.findByRole('button', { name: `Azioni per la versione ${number}` }))
 }
 
 describe('VersionHistory', () => {
@@ -182,14 +182,14 @@ describe('VersionHistory', () => {
 
   it('posts a regeneration for the version it was asked about', async () => {
     mockGet.mockReturnValue(ok(VERSIONS))
-    mockPost.mockReturnValue(ok({ ...VERSIONS[0], numero: 3 }))
+    mockPost.mockReturnValue(ok({ ...VERSIONS[0], number: 3 }))
     render(<VersionHistory documentId="doc-1" documentTitle="Contratto Rossi" />, { wrapper })
     await openRowMenu(2)
     await userEvent.click(screen.getByRole('menuitem', { name: 'Rigenera' }))
     await waitFor(() => {
       expect(mockPost).toHaveBeenCalledWith(
-        '/api/documents/{document_id}/versions/{numero}/regenerate',
-        expect.objectContaining({ params: { path: { document_id: 'doc-1', numero: 2 } } }),
+        '/api/documents/{document_id}/versions/{number}/regenerate',
+        expect.objectContaining({ params: { path: { document_id: 'doc-1', number: 2 } } }),
       )
     })
   })

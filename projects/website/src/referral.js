@@ -29,7 +29,7 @@
 
   /** The invented numbers of the example, in whole euro and days; the same as the
    *  member area's popover. They are no engagement's. */
-  var EXAMPLE = { budget: 500, compenso: 400, giorni: 20 }
+  var EXAMPLE = { budget: 500, fee: 400, days: 20 }
 
   var percent = new Intl.NumberFormat('it-IT', { maximumFractionDigits: 2 })
   // `useGrouping: 'always'`: it-IT writes 2000,00 by default (CLDR groups from five
@@ -76,7 +76,7 @@
   /** The example's margin and what each rate makes of it, in cents; `null` for a rate
    *  that does not read. */
   function referralExample(rates) {
-    var marginCents = (EXAMPLE.budget - EXAMPLE.compenso) * EXAMPLE.giorni * 100
+    var marginCents = (EXAMPLE.budget - EXAMPLE.fee) * EXAMPLE.days * 100
     function share(rate) {
       var units = rateUnits(rate)
       return units === null ? null : roundedShare(marginCents, units)
@@ -94,7 +94,7 @@
     if (!rewards.length) return null
     return (
       'Un incarico da ' + euroWhole.format(EXAMPLE.budget) + ' al giorno, ' +
-      euroWhole.format(EXAMPLE.compenso) + ' al freelance, ' + EXAMPLE.giorni + ' giorni: il margine di rebase è ' +
+      euroWhole.format(EXAMPLE.fee) + ' al freelance, ' + EXAMPLE.days + ' giorni: il margine di rebase è ' +
       euro.format(example.margin / 100) + ". Se l'hai portato tu, ricevi " + rewards.join(', ') + '.'
     )
   }

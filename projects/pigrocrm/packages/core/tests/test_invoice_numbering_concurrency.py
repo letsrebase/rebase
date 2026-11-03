@@ -19,12 +19,12 @@ from pigrocrm.core.actor import Actor
 from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.db import session_factory
 from pigrocrm.core.db.clock import today_local
-from pigrocrm.core.emitter.schemas import LegalEntityUpsert
-from pigrocrm.core.emitter.service import LegalEntityService
 from pigrocrm.core.fiscal.schemas import FiscalProfileUpsert
 from pigrocrm.core.fiscal.service import FiscalProfileService
 from pigrocrm.core.invoices.schemas import InvoiceCreate, InvoiceIssue, InvoiceLineIn
 from pigrocrm.core.invoices.service import InvoiceService
+from pigrocrm.core.legal_entities.schemas import LegalEntityUpsert
+from pigrocrm.core.legal_entities.service import LegalEntityService
 from pigrocrm.core.storage.local import LocalFileStorage
 
 ADMIN = Actor(id=None, type="system", role="admin")
@@ -33,7 +33,7 @@ FAILURES = 10
 # `today_local()`, not `date.today()`: this must be the same "today" `issue()`
 # itself computes (see `db/clock.py`), or this file's own assertions would drift from
 # the service's output on a host that is not running in Europe/Rome.
-ANNO = today_local().year
+YEAR = today_local().year
 
 
 @pytest.fixture
@@ -48,34 +48,34 @@ def world(db_engine: Engine, tmp_path):  # type: ignore[no-untyped-def]
     factory = session_factory(db_engine)
     with factory() as setup:
         customer = Customer(
-            ragione_sociale="Acme S.r.l.",
-            partita_iva="12345678901",
-            codice_sdi="ABCDEFG",
-            indirizzo="Corso Italia 5",
+            legal_name="Acme S.r.l.",
+            vat_number="12345678901",
+            sdi_code="ABCDEFG",
+            address="Corso Italia 5",
             cap="00100",
-            comune="Roma",
-            provincia="RM",
-            nazione="IT",
+            city="Roma",
+            province="RM",
+            country="IT",
         )
         setup.add(customer)
         setup.flush()
         customer_id = customer.id
         LegalEntityService(setup).upsert_default(
             LegalEntityUpsert(
-                ragione_sociale="Studio Rossi",
-                partita_iva="01234567890",
-                codice_fiscale="HMCRFT00A01H501K",
-                indirizzo="Via Vittorio Veneto 12",
+                legal_name="Studio Rossi",
+                vat_number="01234567890",
+                tax_code="HMCRFT00A01H501K",
+                address="Via Vittorio Veneto 12",
                 cap="20124",
-                comune="Milano",
-                provincia="MI",
-                nazione="IT",
+                city="Milano",
+                province="MI",
+                country="IT",
                 email="mario@example.com",
             ),
             ADMIN,
         )
         # After the azienda, which the profile belongs to since REB-615.
-        FiscalProfileService(setup).upsert(FiscalProfileUpsert(codice_regime="RF19"), ADMIN)
+        FiscalProfileService(setup).upsert(FiscalProfileUpsert(regime_code="RF19"), ADMIN)
         setup.commit()
     try:
         yield factory, customer_id, tmp_path
@@ -83,11 +83,11 @@ def world(db_engine: Engine, tmp_path):  # type: ignore[no-untyped-def]
         with factory() as cleanup:
             cleanup.execute(text("DELETE FROM invoice_lines"))
             cleanup.execute(text("DELETE FROM activities WHERE entity_type = 'invoice'"))
-            cleanup.execute(text("UPDATE invoices SET origine_proforma_id = NULL"))
+            cleanup.execute(text("UPDATE invoices SET origin_proforma_id = NULL"))
             cleanup.execute(text("DELETE FROM invoices"))
             cleanup.execute(text("DELETE FROM invoice_counters"))
             cleanup.execute(text("DELETE FROM fiscal_profile"))
-            cleanup.execute(text("DELETE FROM emitter_profile WHERE NOT predefinita"))
+            cleanup.execute(text("DELETE FROM legal_entities WHERE NOT is_default"))
             cleanup.execute(text("DELETE FROM customers WHERE id = :id"), {"id": customer_id})
             cleanup.commit()
 
@@ -99,9 +99,7 @@ def _make_draft(factory, storage_root, customer_id: UUID) -> UUID:  # type: igno
             .create(
                 InvoiceCreate(
                     customer_id=customer_id,
-                    righe=[
-                        InvoiceLineIn(descrizione="Consulenza", prezzo_unitario=Decimal("100.00"))
-                    ],
+                    lines=[InvoiceLineIn(description="Consulenza", unit_price=Decimal("100.00"))],
                 ),
                 ADMIN,
             )
@@ -129,7 +127,7 @@ def test_twenty_concurrent_emissions_produce_one_to_twenty_with_no_gap(world) ->
                     draft_id, InvoiceIssue(), ADMIN
                 )
             with lock:
-                results.append(issued.numero or 0)
+                results.append(issued.number or 0)
         except BaseException as exc:  # noqa: BLE001 - reported, not swallowed
             with lock:
                 errors.append(exc)
@@ -146,15 +144,15 @@ def test_twenty_concurrent_emissions_produce_one_to_twenty_with_no_gap(world) ->
     with factory() as check:
         rows = (
             check.execute(
-                text("SELECT numero FROM invoices WHERE anno = :anno ORDER BY numero"),
-                {"anno": ANNO},
+                text("SELECT number FROM invoices WHERE year = :year ORDER BY number"),
+                {"year": YEAR},
             )
             .scalars()
             .all()
         )
         counter = check.execute(
-            text("SELECT ultimo_numero FROM invoice_counters WHERE anno = :anno"),
-            {"anno": ANNO},
+            text("SELECT last_number FROM invoice_counters WHERE year = :year"),
+            {"year": YEAR},
         ).scalar_one()
     assert list(rows) == list(range(1, EMISSIONS + 1))
     assert counter == EMISSIONS
@@ -201,13 +199,13 @@ def test_a_failure_between_the_counter_update_and_the_commit_consumes_nothing(
 
     with factory() as check:
         counter = check.execute(
-            text("SELECT ultimo_numero FROM invoice_counters WHERE anno = :anno"),
-            {"anno": ANNO},
+            text("SELECT last_number FROM invoice_counters WHERE year = :year"),
+            {"year": YEAR},
         ).scalar_one()
         rows = (
             check.execute(
-                text("SELECT numero FROM invoices WHERE anno = :anno ORDER BY numero"),
-                {"anno": ANNO},
+                text("SELECT number FROM invoices WHERE year = :year ORDER BY number"),
+                {"year": YEAR},
             )
             .scalars()
             .all()
@@ -220,13 +218,13 @@ def test_a_failure_between_the_counter_update_and_the_commit_consumes_nothing(
         issued = InvoiceService(session, LocalFileStorage(storage_root)).issue(
             _make_draft(factory, storage_root, customer_id), InvoiceIssue(), ADMIN
         )
-    assert issued.numero == EMISSIONS + 1
+    assert issued.number == EMISSIONS + 1
 
 
 def test_two_first_invoices_of_a_year_do_not_collide_on_the_counter_insert(
     world,
 ) -> None:  # type: ignore[no-untyped-def]
-    """`INSERT ... ON CONFLICT (anno) DO NOTHING` before the `SELECT ... FOR UPDATE`:
+    """`INSERT ... ON CONFLICT (year) DO NOTHING` before the `SELECT ... FOR UPDATE`:
     two concurrent first-invoices-of-the-year both proceed, one having inserted the
     row and the other having done nothing. Without `ON CONFLICT` the loser would take
     a `UniqueViolation` the caller would have to retry."""
@@ -245,7 +243,7 @@ def test_two_first_invoices_of_a_year_do_not_collide_on_the_counter_insert(
                     draft_id, InvoiceIssue(), ADMIN
                 )
             with lock:
-                numbers.append(issued.numero or 0)
+                numbers.append(issued.number or 0)
         except BaseException as exc:  # noqa: BLE001
             with lock:
                 errors.append(exc)

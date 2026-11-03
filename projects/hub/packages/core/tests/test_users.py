@@ -21,12 +21,12 @@ from rebase_core.users import VIA_LOGIN, VIA_WIZARD, UserService
 PDF = b"%PDF-1.7\n1 0 obj<<>>endobj\n%%EOF\n"
 
 GOOD = {
-    "nome": "Ada",
-    "cognome": "Lovelace",
+    "first_name": "Ada",
+    "last_name": "Lovelace",
     "linkedin_url": "https://www.linkedin.com/in/ada",
-    "tariffa_giornaliera": "450",
-    "posizione": "Backend developer",
-    "remoto": "remoto",
+    "daily_rate": "450",
+    "job_title": "Backend developer",
+    "remote": "remote",
     "links": ["https://github.com/ada"],
 }
 
@@ -65,7 +65,7 @@ def _apply(session: Session, email: str = "ada@studio.it") -> UUID:
 
 
 def _token_from(mail_text: str) -> str:
-    match = re.search(r"/entra\?t=([A-Za-z0-9_-]+)", mail_text)
+    match = re.search(r"/verify\?t=([A-Za-z0-9_-]+)", mail_text)
     assert match, mail_text
     return match.group(1)
 
@@ -79,27 +79,27 @@ def test_get_or_create_makes_one_row_per_address_and_returns_it_after(
     row = users.get_or_create("Ada@Studio.it", "Ada", "Lovelace")
     assert row.email == "ada@studio.it" and row.role == "member"
     again = users.get_or_create("ada@studio.it", "Somebody", "Else")
-    assert again.id == row.id and again.nome == "Ada"  # unchanged, not overwritten
+    assert again.id == row.id and again.first_name == "Ada"  # unchanged, not overwritten
     matching = hub_session.scalars(select(User).where(User.email == "ada@studio.it")).all()
     assert len(matching) == 1
 
 
-def test_get_or_create_backfills_telefono_but_never_overwrites_it(
+def test_get_or_create_backfills_phone_but_never_overwrites_it(
     users: UserService, hub_session: Session
 ) -> None:
-    """`telefono` (REB-380) is the one field here that is not simply "left as found":
+    """`phone` (REB-380) is the one field here that is not simply "left as found":
     a `users` row can predate it entirely (a freelancer application never asks for
     one), so a still-blank phone number is filled in by whichever call first supplies
     one, on a fresh row or a pre-existing one alike -- but a real answer already on
     file is never replaced by a later, different one."""
     row = users.get_or_create("ada@studio.it", "Ada", "Lovelace")
-    assert row.telefono is None
+    assert row.phone is None
 
-    backfilled = users.get_or_create("ada@studio.it", "Ada", "Lovelace", telefono="+39 345 1234567")
-    assert backfilled.id == row.id and backfilled.telefono == "+39 345 1234567"
+    backfilled = users.get_or_create("ada@studio.it", "Ada", "Lovelace", phone="+39 345 1234567")
+    assert backfilled.id == row.id and backfilled.phone == "+39 345 1234567"
 
-    again = users.get_or_create("ada@studio.it", "Ada", "Lovelace", telefono="+39 345 9999999")
-    assert again.id == row.id and again.telefono == "+39 345 1234567"  # unchanged, not overwritten
+    again = users.get_or_create("ada@studio.it", "Ada", "Lovelace", phone="+39 345 9999999")
+    assert again.id == row.id and again.phone == "+39 345 1234567"  # unchanged, not overwritten
 
 
 def test_two_company_requests_from_the_same_address_share_one_user(
@@ -107,26 +107,26 @@ def test_two_company_requests_from_the_same_address_share_one_user(
 ) -> None:
     """The path `CompanyService.request` and `FreelancerService.apply` both take: no
     row invented twice for one address, even without `_find`'s own short-circuit.
-    `telefono` (REB-380) follows the same rule as `nome`/`cognome`: the first
+    `phone` (REB-380) follows the same rule as `nome`/`last_name`: the first
     request's, never overwritten by a later one's own answer."""
     from rebase_core.companies import CompanyService
     from rebase_core.company_schemas import CompanyCreate
 
-    def _company(nome: str, cognome: str, telefono: str) -> None:
+    def _company(first_name: str, last_name: str, phone: str) -> None:
         CompanyService(hub_session).request(
             CompanyCreate(
-                nome_azienda="ACME",
-                referente_nome=nome,
-                referente_cognome=cognome,
+                company_name="ACME",
+                contact_first_name=first_name,
+                contact_last_name=last_name,
                 email="acme@example.it",
-                telefono=telefono,
-                figura_richiesta="Backend developer",
-                progetto="Un progetto",
-                periodo_da="2026-10-01",
-                durata="3 mesi",
-                budget_giornaliero="500",
-                remoto="remoto",
-                numero_risorse=1,
+                phone=phone,
+                requested_role="Backend developer",
+                project="Un progetto",
+                period_from="2026-10-01",
+                duration="3 mesi",
+                daily_budget="500",
+                remote="remote",
+                headcount=1,
             )
         )
 
@@ -134,7 +134,7 @@ def test_two_company_requests_from_the_same_address_share_one_user(
     _company("Road", "Runner", "+39 345 2222222")
     rows = hub_session.scalars(select(User).where(User.email == "acme@example.it")).all()
     assert len(rows) == 1
-    assert (rows[0].nome, rows[0].cognome, rows[0].telefono) == (
+    assert (rows[0].first_name, rows[0].last_name, rows[0].phone) == (
         "Wile",
         "Coyote",
         "+39 345 1111111",
@@ -162,7 +162,7 @@ def test_a_link_is_written_only_for_an_address_that_exists(
     _apply(hub_session)
     mail = users.request_link("  ADA@studio.it ")
     assert mail is not None and mail.to == "ada@studio.it"
-    assert "http://localhost:5180/hub/entra?t=" in mail.text
+    assert "http://localhost:5180/hub/verify?t=" in mail.text
     row = hub_session.scalar(select(MagicLinkToken))
     assert row is not None and row.used_at is None
     assert row.token_hash != _token_from(mail.text) and len(row.token_hash) == 64
@@ -255,14 +255,14 @@ def test_a_link_asked_from_a_tracked_page_puts_the_campaign_on_the_login(
         "outreach",
         "outreach-2026-09-r2",
     )
-    assert (login.utm_content, login.utm_term, login.utm_id, login.origine) == (
+    assert (login.utm_content, login.utm_term, login.utm_id, login.origin) == (
         "cv",
         "11425b70",
         None,
         None,
     )
 
-    recent = LoginService(hub_session).stats().recenti[0]
+    recent = LoginService(hub_session).stats().recent[0]
     assert recent.utm_campaign == "outreach-2026-09-r2"
     assert recent.utm_term == "11425b70"
     assert LoginService(hub_session).for_user(outcome[0].id)[0].utm_content == "cv"
@@ -281,8 +281,8 @@ def test_a_link_asked_with_no_campaign_writes_a_login_with_none(
     assert len(logins) == 2
     for login in logins:
         assert login.utm_campaign is None and login.utm_source is None
-        assert login.origine is None
-    assert LoginService(hub_session).stats().recenti[0].utm_campaign is None
+        assert login.origin is None
+    assert LoginService(hub_session).stats().recent[0].utm_campaign is None
 
 
 def test_an_expired_link_opens_nothing_and_is_swept_by_the_next_request(
@@ -355,7 +355,7 @@ def test_promoting_a_new_address_needs_a_name_and_creates_a_bare_row(
     with pytest.raises(ValidationFailed):
         users.promote("ivan@rebase.it", admin_id=boss.id)
     user, created = users.promote("ivan@rebase.it", "Ivan", "Fiore", admin_id=boss.id)
-    assert created is True and user.role == "admin" and user.cognome == "Fiore"
+    assert created is True and user.role == "admin" and user.last_name == "Fiore"
     # No freelancer card is invented for a bare admin.
     from rebase_core.models import Freelancer
 

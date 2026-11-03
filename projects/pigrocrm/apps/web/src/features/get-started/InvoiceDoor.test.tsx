@@ -1,6 +1,6 @@
 /**
  * The invoice door (spec 2026-09-16 §6, REB-224, «prima il cliente»): the customer
- * first, then one PDF filed as a `fattura` document of that customer, then the handoff
+ * first, then one PDF filed as a `invoice` document of that customer, then the handoff
  * with the document's id, and «Registrata» once an invoice has it as its original. The
  * API client is stubbed by path, the multipart upload through `fetch`, `useAuth` by role;
  * every test gets a new `QueryClient`.
@@ -19,15 +19,15 @@ vi.mock('@/lib/api', async (importOriginal) => {
   return { ...actual, api: { GET: vi.fn(), POST: vi.fn(), PUT: vi.fn(), DELETE: vi.fn() } }
 })
 
-const auth: { user: { id: string; email: string; nome: string; ruolo: 'admin' | 'collaboratore' | 'readonly'; attivo: boolean } } = {
-  user: { id: 'u1', email: 'ada@studio.it', nome: 'Ada', ruolo: 'admin', attivo: true },
+const auth: { user: { id: string; email: string; name: string; role: 'admin' | 'collaborator' | 'readonly'; active: boolean } } = {
+  user: { id: 'u1', email: 'ada@studio.it', name: 'Ada', role: 'admin', active: true },
 }
 vi.mock('@/lib/auth', async () => {
   const { can } = await vi.importActual<typeof import('@/lib/permissions')>('@/lib/permissions')
   return {
     useAuth: () => ({ user: auth.user, isLoading: false, login: vi.fn(), logout: vi.fn(), enterWithLink: vi.fn() }),
-    useCan: (action: string) => can(auth.user.ruolo, action),
-    useCanWrite: () => auth.user.ruolo !== 'readonly',
+    useCan: (action: string) => can(auth.user.role, action),
+    useCanWrite: () => auth.user.role !== 'readonly',
   }
 })
 
@@ -48,9 +48,9 @@ vi.mock('@tanstack/react-router', () => ({
 }))
 
 const EMPTY_PAGE = { items: [], next_cursor: null }
-const CUSTOMER = { id: 'c-new', ragione_sociale: 'Officina Verdi S.r.l.' }
-const DOCUMENT = { id: 'doc-1', customer_id: 'c-new', tipo: 'fattura', titolo: 'fattura-12.pdf' }
-const INVOICE = { id: 'inv-1', customer_id: 'c-new', anno: 2026, numero: 12, pdf_document_id: 'doc-1' }
+const CUSTOMER = { id: 'c-new', legal_name: 'Officina Verdi S.r.l.' }
+const DOCUMENT = { id: 'doc-1', customer_id: 'c-new', type: 'invoice', title: 'fattura-12.pdf' }
+const INVOICE = { id: 'inv-1', customer_id: 'c-new', year: 2026, number: 12, pdf_document_id: 'doc-1' }
 const HANDOFF = { documentId: 'doc-1', customerId: 'c-new', customerName: 'Officina Verdi S.r.l.' }
 
 type Answer = { data: unknown } | { status: number; detail?: string }
@@ -110,7 +110,7 @@ beforeEach(() => {
   gets()
   posts()
   uploads.mockReset()
-  uploads.mockImplementation(() => new Response(JSON.stringify({ numero: 1 }), { status: 201 }))
+  uploads.mockImplementation(() => new Response(JSON.stringify({ number: 1 }), { status: 201 }))
   vi.spyOn(globalThis, 'fetch').mockImplementation(((url: string, init?: RequestInit) =>
     Promise.resolve(uploads(url, init))) as never)
   Object.assign(navigator, { clipboard: { writeText: vi.fn().mockResolvedValue(undefined) } })
@@ -118,7 +118,7 @@ beforeEach(() => {
 })
 
 afterEach(() => {
-  auth.user = { id: 'u1', email: 'ada@studio.it', nome: 'Ada', ruolo: 'admin', attivo: true }
+  auth.user = { id: 'u1', email: 'ada@studio.it', name: 'Ada', role: 'admin', active: true }
   vi.restoreAllMocks()
 })
 
@@ -146,7 +146,7 @@ describe('the invoice door, first the customer', () => {
     expect(door.getByRole('button', { name: 'Crea il cliente e vai avanti' })).toBeDisabled()
     await userEvent.type(door.getByLabelText('Ragione sociale del cliente'), '  Officina Verdi S.r.l. ')
     await create()
-    expect(api.POST).toHaveBeenCalledWith('/api/customers', { body: { ragione_sociale: 'Officina Verdi S.r.l.' } })
+    expect(api.POST).toHaveBeenCalledWith('/api/customers', { body: { legal_name: 'Officina Verdi S.r.l.' } })
     expect(await door.findByText('Officina Verdi S.r.l.')).toBeInTheDocument()
     expect(door.getByTestId('upload-dropzone')).toBeInTheDocument()
   })
@@ -154,7 +154,7 @@ describe('the invoice door, first the customer', () => {
   it('finds a customer already on file by searching, in a space of any size, and creates nothing', async () => {
     gets({
       '/api/customers': {
-        data: { items: [{ id: 'c-old', ragione_sociale: 'ACME Srl', partita_iva: '01234567890' }], next_cursor: null },
+        data: { items: [{ id: 'c-old', legal_name: 'ACME Srl', vat_number: '01234567890' }], next_cursor: null },
       },
     })
     renderDoor()
@@ -172,7 +172,7 @@ describe('the invoice door, first the customer', () => {
   })
 
   it('uses the customer on file when the typed name is exactly theirs, instead of a duplicate', async () => {
-    gets({ '/api/customers': { data: { items: [{ id: 'c-old', ragione_sociale: 'ACME Srl' }], next_cursor: null } } })
+    gets({ '/api/customers': { data: { items: [{ id: 'c-old', legal_name: 'ACME Srl' }], next_cursor: null } } })
     renderDoor()
     await userEvent.type(await screen.findByLabelText('Ragione sociale del cliente'), 'acme srl')
     const use = await screen.findByRole('button', { name: 'Usa ACME Srl' }, SETTLE_TIMEOUT)
@@ -183,7 +183,7 @@ describe('the invoice door, first the customer', () => {
   })
 
   it('uses a customer named exactly so even when the suggestions do not show it, instead of a duplicate', async () => {
-    const partial = Array.from({ length: 8 }, (_, i) => ({ id: `p${i}`, ragione_sociale: `ACME Srl filiale ${i}` }))
+    const partial = Array.from({ length: 8 }, (_, i) => ({ id: `p${i}`, legal_name: `ACME Srl filiale ${i}` }))
     vi.mocked(api.GET).mockImplementation(((path: string, init?: { params?: { query?: { limit?: number; cursor?: string } } }) => {
       if (path !== '/api/customers') return reply({ data: null })
       const query = init?.params?.query ?? {}
@@ -191,7 +191,7 @@ describe('the invoice door, first the customer', () => {
       // The whole search, page by page: the exact name is on the second page.
       return query.cursor === undefined
         ? reply({ data: { items: partial, next_cursor: 'page-2' } })
-        : reply({ data: { items: [{ id: 'c-old', ragione_sociale: 'ACME Srl' }], next_cursor: null } })
+        : reply({ data: { items: [{ id: 'c-old', legal_name: 'ACME Srl' }], next_cursor: null } })
     }) as never)
     renderDoor()
     await userEvent.type(await screen.findByLabelText('Ragione sociale del cliente'), 'ACME Srl')
@@ -219,7 +219,7 @@ describe('the invoice door, first the customer', () => {
     expect(field).toHaveValue('Officina')
     release({ data: EMPTY_PAGE, response: new Response(null, { status: 200 }) })
     expect(await screen.findByTestId('upload-dropzone')).toBeInTheDocument()
-    expect(api.POST).toHaveBeenCalledWith('/api/customers', { body: { ragione_sociale: 'Officina' } })
+    expect(api.POST).toHaveBeenCalledWith('/api/customers', { body: { legal_name: 'Officina' } })
   })
 
   it('still takes a new name when the customers on file cannot be searched', async () => {
@@ -230,7 +230,7 @@ describe('the invoice door, first the customer', () => {
       await screen.findByText(/Non riesco a cercare tra i clienti/, {}, SETTLE_TIMEOUT),
     ).toBeInTheDocument()
     await create()
-    expect(api.POST).toHaveBeenCalledWith('/api/customers', { body: { ragione_sociale: 'Officina' } })
+    expect(api.POST).toHaveBeenCalledWith('/api/customers', { body: { legal_name: 'Officina' } })
   })
 
   it('says why a new customer was refused, in the server’s words', async () => {
@@ -258,7 +258,7 @@ describe('the invoice door, then the PDF', () => {
     drop(pdf())
     expect(await screen.findByText(invoicePrompt(HANDOFF))).toBeInTheDocument()
     expect(api.POST).toHaveBeenCalledWith('/api/documents', {
-      body: { customer_id: 'c-new', tipo: 'fattura', titolo: 'fattura-12.pdf', custom_fields: {} },
+      body: { customer_id: 'c-new', type: 'invoice', title: 'fattura-12.pdf', custom_fields: {} },
     })
     expect(uploads).toHaveBeenCalledWith('/api/documents/doc-1/versions', expect.anything())
     // No token yet: the connection sits next to the prompt.
@@ -353,7 +353,7 @@ describe('the invoice door, the handoff', () => {
   })
 
   it('says «Registrata» with the link once an invoice of that customer has the document as its original', async () => {
-    gets({ '/api/invoices': { data: { items: [{ ...INVOICE, pdf_document_id: 'altro' }, INVOICE], next_cursor: null } } })
+    gets({ '/api/invoices': { data: { items: [{ ...INVOICE, pdf_document_id: 'other' }, INVOICE], next_cursor: null } } })
     renderDoor()
     expect(await screen.findByText('Registrata')).toBeInTheDocument()
     expect(screen.getByRole('status')).toHaveTextContent('Registrata')
@@ -453,10 +453,10 @@ describe('the invoice door, the handoff', () => {
 })
 
 describe('the invoice door, by role', () => {
-  it.each(['collaboratore', 'readonly'] as const)(
+  it.each(['collaborator', 'readonly'] as const)(
     'is the admin’s: a %s reads who registers an issued invoice, and gets no upload',
-    async (ruolo) => {
-      auth.user.ruolo = ruolo
+    async (role) => {
+      auth.user.role = role
       renderDoor()
       expect(screen.getByText(/passo dell’amministratore dello spazio/)).toBeInTheDocument()
       expect(screen.queryByText('A chi l’hai emessa?')).toBeNull()

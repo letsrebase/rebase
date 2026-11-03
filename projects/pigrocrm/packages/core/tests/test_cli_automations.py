@@ -16,26 +16,26 @@ from datetime import timedelta
 from decimal import Decimal
 
 import pytest
-from fakes.azienda_fixtures import committed_default_azienda
+from fakes.legal_entity_fixtures import committed_default_legal_entity
 from sqlalchemy import Engine, create_engine, text
 from sqlalchemy.engine import make_url
 from sqlalchemy.orm import Session
 
 import pigrocrm.core.cli as cli
-from pigrocrm.core.attivita.models import Attivita
 from pigrocrm.core.automations.daily import AutomationPass
 from pigrocrm.core.config import Settings
 from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.db import session_factory, today_local
 from pigrocrm.core.db.sidecar import create_database_if_missing, drop_database
 from pigrocrm.core.invoices.models import Invoice
+from pigrocrm.core.tasks.models import Task
 from pigrocrm.core.tenants import TenantService, TenantSignup, ensure_tenants_database
 from pigrocrm.core.tenants.database import tenant_database_name, tenant_database_url
 from pigrocrm.core.tenants.service import migrate_to_head
 
-UNO = "prova-automazioni-uno"
-DUE = "prova-automazioni-due"
-SPAZI = (UNO, DUE)
+FIRST_SPACE = "prova-automazioni-uno"
+SECOND_SPACE = "prova-automazioni-due"
+SPACES = (FIRST_SPACE, SECOND_SPACE)
 ROOT_DB = "prova_automazioni_radice"
 
 
@@ -64,7 +64,7 @@ def settings(db_engine: Engine) -> Iterator[Settings]:
     try:
         migrate_to_head(configured, configured.database_url)
         with _engine(configured.database_url) as engine, session_factory(engine)() as session:
-            committed_default_azienda(session, nome="Radice")
+            committed_default_legal_entity(session, name="Radice")
             session.commit()
         yield configured
     finally:
@@ -79,20 +79,20 @@ def registry(settings: Settings) -> Iterator[Engine]:
 
 
 @pytest.fixture(scope="module")
-def spazi(settings: Settings, registry: Engine) -> Iterator[None]:
+def spaces(settings: Settings, registry: Engine) -> Iterator[None]:
     session: Session = session_factory(registry)()
     service = TenantService(session, settings)
     try:
-        for slug in SPAZI:
+        for slug in SPACES:
             service.provision(
-                TenantSignup(slug=slug, nome=f"Studio {slug}", email=f"{slug}@studio.it")
+                TenantSignup(slug=slug, name=f"Studio {slug}", email=f"{slug}@studio.it")
             )
         yield
     finally:
-        for slug in SPAZI:
+        for slug in SPACES:
             drop_database(settings, tenant_database_url(settings, tenant_database_name(slug)))
         session.execute(
-            text("delete from tenants where slug = any(:slugs)"), {"slugs": list(SPAZI)}
+            text("delete from tenants where slug = any(:slugs)"), {"slugs": list(SPACES)}
         )
         session.commit()
         session.close()
@@ -107,37 +107,37 @@ def _url(settings: Settings, slug: str | None) -> object:
 
 
 @pytest.fixture(autouse=True)
-def _an_overdue_invoice_in_every_space(settings: Settings, spazi: None) -> Iterator[None]:
+def _an_overdue_invoice_in_every_space(settings: Settings, spaces: None) -> Iterator[None]:
     """One issued, unpaid invoice a few days late in the root and in each space, and what a
     pass wrote undone afterwards so every test starts from spaces nobody has run."""
     today = today_local(settings)
-    for slug in (None, *SPAZI):
+    for slug in (None, *SPACES):
         with _engine(_url(settings, slug)) as engine, session_factory(engine)() as session:
-            customer = Customer(ragione_sociale="Acme S.r.l.", nazione="IT", custom_fields={})
+            customer = Customer(legal_name="Acme S.r.l.", country="IT", custom_fields={})
             session.add(customer)
             session.flush()
             session.add(
                 Invoice(
                     customer_id=customer.id,
-                    tipo="fattura",
-                    stato="emessa",
-                    stato_pagamento="da_incassare",
-                    anno=2026,
-                    numero=1,
-                    imponibile=Decimal("100.00"),
-                    imposta=Decimal("22.00"),
-                    bollo=Decimal("0.00"),
-                    totale=Decimal("122.00"),
-                    data_emissione=today - timedelta(days=40),
-                    data_scadenza=today - timedelta(days=5),
+                    type="invoice",
+                    status="issued",
+                    payment_status="unpaid",
+                    year=2026,
+                    number=1,
+                    taxable_amount=Decimal("100.00"),
+                    vat_amount=Decimal("22.00"),
+                    stamp_duty=Decimal("0.00"),
+                    total=Decimal("122.00"),
+                    issue_date=today - timedelta(days=40),
+                    due_date=today - timedelta(days=5),
                 )
             )
             session.commit()
     yield
-    for slug in (None, *SPAZI):
+    for slug in (None, *SPACES):
         with _engine(_url(settings, slug)) as engine, engine.begin() as connection:
-            connection.execute(text("delete from activities where entity_type = 'attivita'"))
-            connection.execute(text("delete from attivita"))
+            connection.execute(text("delete from activities where entity_type = 'task'"))
+            connection.execute(text("delete from tasks"))
             connection.execute(text("delete from automation_config"))
             connection.execute(text("delete from reminder_job_run"))
             connection.execute(text("delete from invoices"))
@@ -151,7 +151,7 @@ def _the_environment(settings: Settings, monkeypatch: pytest.MonkeyPatch) -> Non
 
 def _count(settings: Settings, slug: str | None) -> int:
     with _engine(_url(settings, slug)) as engine, session_factory(engine)() as session:
-        return len(session.query(Attivita).filter(Attivita.regola == "fattura_scaduta").all())
+        return len(session.query(Task).filter(Task.rule == "overdue_invoice").all())
 
 
 def _clock(settings: Settings, slug: str | None) -> tuple[bool, str | None] | None:
@@ -168,13 +168,13 @@ def _clock(settings: Settings, slug: str | None) -> tuple[bool, str | None] | No
     return row.ran_at is not None, row.failure
 
 
-def test_the_command_opens_one_attivita_in_the_root_and_in_every_space(
+def test_the_command_opens_one_task_in_the_root_and_in_every_space(
     settings: Settings, capsys: pytest.CaptureFixture[str]
 ) -> None:
     assert cli.main(["automations"]) == 0
 
     out = capsys.readouterr().out
-    for label in ("root", *SPAZI):
+    for label in ("root", *SPACES):
         assert f"{label}: fattura_scaduta aperte 1, già aperte 0" in out
         assert f"{label}: deal_fermo aperte 0, già aperte 0" in out
         assert _count(settings, None if label == "root" else label) == 1
@@ -183,10 +183,10 @@ def test_the_command_opens_one_attivita_in_the_root_and_in_every_space(
 def test_a_run_moves_the_clock_of_every_space_it_walked(
     settings: Settings, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """REB-764: the row Impostazioni → Esecuzioni and `job_late` read."""
+    """REB-764: the row the Settings → Runs page and `job_late` read."""
     assert cli.main(["automations"]) == 0
 
-    for slug in (None, *SPAZI):
+    for slug in (None, *SPACES):
         assert _clock(settings, slug) == (True, None), slug
 
 
@@ -195,7 +195,7 @@ def test_a_rehearsal_leaves_the_clock_alone(
 ) -> None:
     assert cli.main(["automations", "--dry-run"]) == 0
 
-    for slug in (None, *SPAZI):
+    for slug in (None, *SPACES):
         assert _clock(settings, slug) is None, slug
 
 
@@ -205,20 +205,20 @@ def test_a_failing_space_records_its_failure_the_others_their_success_and_a_reru
     original = AutomationPass.run
 
     def run(self, **kwargs):  # type: ignore[no-untyped-def]
-        if self.session.get_bind().url.database == tenant_database_name(UNO):
+        if self.session.get_bind().url.database == tenant_database_name(FIRST_SPACE):
             raise RuntimeError("postgresql://user:secret@host/db")
         return original(self, **kwargs)
 
     monkeypatch.setattr(AutomationPass, "run", run)
     assert cli.main(["automations"]) == 1
 
-    assert _clock(settings, UNO) == (False, "RuntimeError"), "the type, never the message"
-    assert _clock(settings, DUE) == (True, None)
+    assert _clock(settings, FIRST_SPACE) == (False, "RuntimeError"), "the type, never the message"
+    assert _clock(settings, SECOND_SPACE) == (True, None)
     assert "secret" not in capsys.readouterr().err
 
     monkeypatch.setattr(AutomationPass, "run", original)
     assert cli.main(["automations"]) == 0
-    assert _clock(settings, UNO) == (True, None)
+    assert _clock(settings, FIRST_SPACE) == (True, None)
 
 
 def test_a_clock_that_cannot_be_written_is_a_line_and_an_exit_status(
@@ -231,13 +231,15 @@ def test_a_clock_that_cannot_be_written_is_a_line_and_an_exit_status(
 
     monkeypatch.setattr(JobClock, "succeeded", refuse)
 
-    assert cli.main(["automations", "--slug", UNO]) == 1, "the ping should not say it is fine"
+    assert cli.main(["automations", "--slug", FIRST_SPACE]) == 1, (
+        "the ping should not say it is fine"
+    )
 
     captured = capsys.readouterr()
-    assert captured.err.splitlines() == [f"{UNO}: orologio non scritto (RuntimeError)"]
+    assert captured.err.splitlines() == [f"{FIRST_SPACE}: orologio non scritto (RuntimeError)"]
     assert "secret" not in captured.err
-    assert f"{UNO}: fattura_scaduta aperte 1" in captured.out, "the pass itself worked"
-    assert _clock(settings, UNO) is None
+    assert f"{FIRST_SPACE}: fattura_scaduta aperte 1" in captured.out, "the pass itself worked"
+    assert _clock(settings, FIRST_SPACE) is None
 
 
 def test_the_second_run_opens_nothing_new(
@@ -248,7 +250,7 @@ def test_the_second_run_opens_nothing_new(
     assert cli.main(["automations"]) == 0
 
     out = capsys.readouterr().out
-    for label in ("root", *SPAZI):
+    for label in ("root", *SPACES):
         assert f"{label}: fattura_scaduta aperte 0, già aperte 1" in out
         assert _count(settings, None if label == "root" else label) == 1
 
@@ -256,36 +258,36 @@ def test_the_second_run_opens_nothing_new(
 def test_a_rehearsal_says_what_it_would_open_and_writes_nothing(
     settings: Settings, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    assert cli.main(["automations", "--dry-run", "--slug", UNO]) == 0
+    assert cli.main(["automations", "--dry-run", "--slug", FIRST_SPACE]) == 0
 
     out = capsys.readouterr().out
-    assert f"{UNO}: fattura_scaduta aperte 1, già aperte 0 (prova)" in out
-    assert "root:" not in out and DUE not in out
-    assert _count(settings, UNO) == 0
+    assert f"{FIRST_SPACE}: fattura_scaduta aperte 1, già aperte 0 (prova)" in out
+    assert "root:" not in out and SECOND_SPACE not in out
+    assert _count(settings, FIRST_SPACE) == 0
 
 
 def test_a_switched_off_rule_is_reported_and_opens_nothing(
     settings: Settings, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    with _engine(_url(settings, UNO)) as engine, engine.begin() as connection:
+    with _engine(_url(settings, FIRST_SPACE)) as engine, engine.begin() as connection:
         connection.execute(
             text(
-                "insert into automation_config (id, a5_fattura_scaduta) "
+                "insert into automation_config (id, a5_overdue_invoice) "
                 "values (gen_random_uuid(), false)"
             )
         )
 
-    assert cli.main(["automations", "--slug", UNO]) == 0
+    assert cli.main(["automations", "--slug", FIRST_SPACE]) == 0
 
-    assert f"{UNO}: fattura_scaduta disattivata" in capsys.readouterr().out
-    assert _count(settings, UNO) == 0
+    assert f"{FIRST_SPACE}: fattura_scaduta disattivata" in capsys.readouterr().out
+    assert _count(settings, FIRST_SPACE) == 0
 
 
 def test_another_day_is_only_a_rehearsal(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    assert cli.main(["automations", "--data", "2030-01-01"]) == 2
-    assert "--data cambia il giorno" in capsys.readouterr().err
+    assert cli.main(["automations", "--date", "2030-01-01"]) == 2
+    assert "--date cambia il giorno" in capsys.readouterr().err
 
 
 def test_an_unknown_slug_is_an_error(capsys: pytest.CaptureFixture[str]) -> None:

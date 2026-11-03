@@ -24,15 +24,15 @@ from rebase_core.models import (
 
 # What the `cv` of a merge answers: the survivor ends with no CV, its own, the absorbed
 # card's, or (an undo) the older one put back.
-CV_NONE, CV_KEPT, CV_ABSORBED, CV_RESTORED = "nessuno", "invariato", "assorbita", "ripristinato"
+CV_NONE, CV_KEPT, CV_ABSORBED, CV_RESTORED = "none", "kept", "absorbed", "restored"
 CV_OUTCOMES = (CV_NONE, CV_KEPT, CV_ABSORBED, CV_RESTORED)
 # Fields of the card the survivor takes from the absorbed one when it has none.
 _FILLED_FIELDS = (
-    "posizione",
-    "tariffa_giornaliera",
-    "remoto",
+    "job_title",
+    "daily_rate",
+    "remote",
     "seniority_admin",
-    "anni_admin",
+    "experience_years_admin",
     "vetted_at",
     "vetted_by",
 )
@@ -47,11 +47,11 @@ _CARD_COLUMNS = (
     "error_cv_sha256",
     "prompt_version",
     "provider",
-    "fonti",
+    "sources",
     "source_hashes",
     "conflicts",
     "thinking_tokens",
-    "persona",
+    "person",
     "created_at",
     "updated_at",
 )
@@ -96,9 +96,9 @@ class MergeSteps:
         if not survivor.links and absorbed.links:
             before["links"] = list(survivor.links)
             survivor.links = list(absorbed.links)
-        if survivor.stato == "nuovo" and absorbed.stato in ("contattato", "attivo"):
-            before["stato"] = survivor.stato
-            survivor.stato = absorbed.stato
+        if survivor.status == "new" and absorbed.status in ("contacted", "active"):
+            before["status"] = survivor.status
+            survivor.status = absorbed.status
         older = absorbed if absorbed.created_at < survivor.created_at else survivor
         has_own = any(getattr(survivor, c) for c in ATTRIBUTION_COLUMNS)
         if (older is absorbed or not has_own) and any(
@@ -179,7 +179,7 @@ class MergeSteps:
         undo: dict[str, Any] = {
             "survivor_linkedin_before": survivor.linkedin_url,
             "absorbed_linkedin_before": absorbed.linkedin_url,
-            "survivor_telefono_before": survivor.telefono,
+            "survivor_phone_before": survivor.phone,
             "aliases": [],
         }
         absorbed_profile = absorbed.linkedin_url
@@ -187,8 +187,8 @@ class MergeSteps:
         self.session.flush()
         if survivor.linkedin_url is None:
             survivor.linkedin_url = absorbed_profile
-        if survivor.telefono is None:
-            survivor.telefono = absorbed.telefono
+        if survivor.phone is None:
+            survivor.phone = absorbed.phone
         aliases = list(
             self.session.scalars(select(User.id).where(User.merged_into_id == absorbed.id))
         )
@@ -199,7 +199,7 @@ class MergeSteps:
         undo["aliases"] = [str(a) for a in aliases]
         absorbed.merged_into_id = survivor.id
         undo["survivor_linkedin_after"] = survivor.linkedin_url
-        undo["survivor_telefono_after"] = survivor.telefono
+        undo["survivor_phone_after"] = survivor.phone
         return undo
 
     def retarget_proposals(self, source: UUID, target: UUID) -> list[str]:
@@ -228,7 +228,7 @@ class MergeSteps:
             return False
         self.session.add(
             CampaignOptout(
-                email=survivor.email.lower(), fonte=theirs.fonte, campaign_id=theirs.campaign_id
+                email=survivor.email.lower(), source=theirs.source, campaign_id=theirs.campaign_id
             )
         )
         return True

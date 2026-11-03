@@ -14,7 +14,7 @@ from pigrocrm.core.work_units.schemas import (
     WorkUnitListQuery,
     WorkUnitRead,
     WorkUnitRecord,
-    WorkUnitStato,
+    WorkUnitStatus,
     WorkUnitTransitionIn,
 )
 from pigrocrm.core.work_units.service import WorkUnitService
@@ -25,7 +25,7 @@ from pigrocrm_api.query_params import PAGE_LIMIT_MAX
 
 router = APIRouter(
     prefix="/api/work-units",
-    tags=["giornate"],
+    tags=["work_units"],
     responses=PROBLEM_RESPONSES,
     dependencies=[Depends(get_actor)],
 )
@@ -33,11 +33,11 @@ router = APIRouter(
 
 @router.post("", response_model=WorkUnitRead, status_code=status.HTTP_201_CREATED)
 def create(data: WorkUnitRecord, session: SessionDep, actor: ActorDep) -> WorkUnitRead:
-    """Registra una giornata. Una giornata `lavorato` su un contratto che richiede
-    l'approvazione preventiva, senza approvazione, nasce `lavorato_senza_approvazione`: il
+    """Registra una giornata. Una giornata `worked` su un contratto che richiede
+    l'approvazione preventiva, senza approvazione, nasce `worked_without_approval`: il
     trigger la segna invece di rifiutarla. Chiusa a ogni credenziale di tipo agente: un
-    agente propone (`propose_day`), una persona conferma. Si registra una giornata `proposto` o
-    `lavorato`: `approvato` lo scrive `POST /api/approvals`, con la prova."""
+    agente propone (`propose_day`), una persona conferma. Si registra una giornata `proposed` o
+    `worked`: `approved` lo scrive `POST /api/approvals`, con la prova."""
     return WorkUnitService(session).create(WorkUnitCreate(**data.model_dump()), actor)
 
 
@@ -46,18 +46,27 @@ def list_work_units(
     session: SessionDep,
     actor: ActorDep,
     contract_id: Annotated[UUID | None, Query()] = None,
-    azienda_id: Annotated[
+    legal_entity_id: Annotated[
         UUID | None, Query(description="Solo i contratti di questa azienda; omesso, tutte")
     ] = None,
-    da: Annotated[date | None, Query(description="Dal giorno, YYYY-MM-DD, incluso")] = None,
-    a: Annotated[date | None, Query(description="Al giorno, YYYY-MM-DD, incluso")] = None,
-    stato: Annotated[WorkUnitStato | None, Query()] = None,
+    date_from: Annotated[
+        date | None, Query(alias="from", description="Dal giorno, YYYY-MM-DD, incluso")
+    ] = None,
+    date_to: Annotated[
+        date | None, Query(alias="to", description="Al giorno, YYYY-MM-DD, incluso")
+    ] = None,
+    status: Annotated[WorkUnitStatus | None, Query()] = None,
     limit: Annotated[int, Query(ge=1, le=PAGE_LIMIT_MAX)] = LIST_LIMIT_DEFAULT,
 ) -> WorkUnitList:
-    """Le giornate, dalla più recente. Serve almeno un contratto o una data (`da`, `a`):
+    """Le giornate, dalla più recente. Serve almeno un contratto o una data (`from`, `to`):
     il registro intero di uno spazio non è una domanda che una schermata faccia."""
     query = WorkUnitListQuery(
-        contract_id=contract_id, azienda_id=azienda_id, da=da, a=a, stato=stato, limit=limit
+        contract_id=contract_id,
+        legal_entity_id=legal_entity_id,
+        date_from=date_from,
+        date_to=date_to,
+        status=status,
+        limit=limit,
     )
     return WorkUnitService(session).list(query, actor)
 
@@ -90,9 +99,9 @@ def transition(
     work_unit_id: UUID, data: WorkUnitTransitionIn, session: SessionDep, actor: ActorDep
 ) -> WorkUnitDetail:
     """Sposta una giornata lungo il suo ciclo di vita, con una mossa che la sua pagina offrirebbe
-    (`azioni` di `GET /api/work-units/{id}`): `approvato` lo scrive la registrazione di
-    un'approvazione e `fatturato` la fattura, quindi qui rispondono 409 come ogni passaggio
+    (`actions` di `GET /api/work-units/{id}`): `approved` lo scrive la registrazione di
+    un'approvazione e `invoiced` la fattura, quindi qui rispondono 409 come ogni passaggio
     che il ciclo di vita non ammette."""
     service = WorkUnitService(session)
-    service.move(work_unit_id, data.stato, actor, data.motivo)
+    service.move(work_unit_id, data.status, actor, data.reason)
     return service.detail(work_unit_id, actor)

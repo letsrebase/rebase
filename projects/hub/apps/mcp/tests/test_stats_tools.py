@@ -36,11 +36,11 @@ async def test_the_guide_stats_are_zero_on_an_empty_hub_and_read_only(
         names = {tool.name for tool in (await client.list_tools()).tools}
     body = _payload(result)
     assert body == {
-        "totale": 0,
-        "membri": 0,
-        "membri_totali": 0,
-        "ultimi_7_giorni": 0,
-        "recenti": [],
+        "total": 0,
+        "members": 0,
+        "total_members": 0,
+        "last_7_days": 0,
+        "recent": [],
     }
     assert "record_guide_download" not in names
 
@@ -51,10 +51,10 @@ async def test_login_stats_reads_an_empty_hub_and_a_card_carries_its_count(
     freelancer_id = _seed_freelancer(factory)
     async with Client(build_server(factory, lambda: IVAN)) as client:
         stats = _payload(await client.call_tool("login_stats", {}))
-        assert (stats["totale"], stats["membri"], stats["membri_totali"]) == (0, 0, 1)
-        assert stats["recenti"] == []
+        assert (stats["total"], stats["members"], stats["total_members"]) == (0, 0, 1)
+        assert stats["recent"] == []
         card = _payload(await client.call_tool("get_freelancer", {"freelancer_id": freelancer_id}))
-        assert card["accessi"] == 0 and card["ultimo_accesso"] is None
+        assert card["logins"] == 0 and card["last_access"] is None
     _wipe(factory)
 
 
@@ -85,12 +85,12 @@ async def test_login_stats_says_which_campaign_each_login_came_from(
     finally:
         session.close()
     async with Client(build_server(factory, lambda: IVAN)) as client:
-        recenti = _payload(await client.call_tool("login_stats", {}))["recenti"]
-        assert [row["utm_campaign"] for row in recenti] == ["outreach-2026-09-r2", None]
-        assert (recenti[0]["utm_source"], recenti[0]["utm_content"], recenti[0]["utm_term"]) == (
+        recent = _payload(await client.call_tool("login_stats", {}))["recent"]
+        assert [row["utm_campaign"] for row in recent] == ["outreach-2026-09-r2", None]
+        assert (recent[0]["utm_source"], recent[0]["utm_content"], recent[0]["utm_term"]) == (
             "email",
             "cv",
             "11425b70",
         )
-        assert recenti[1]["utm_term"] is None and recenti[1]["origine"] is None
+        assert recent[1]["utm_term"] is None and recent[1]["origin"] is None
     _wipe(factory)

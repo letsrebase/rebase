@@ -21,9 +21,9 @@ async def test_archive_customer_is_reversible_and_blocks_on_active_deals(
 ) -> None:
     PipelineService(mcp_session).seed_defaults(SETUP)
     async with Client(server) as client:
-        customer = _payload(await client.call_tool("create_customer", {"ragione_sociale": "ACME"}))
+        customer = _payload(await client.call_tool("create_customer", {"legal_name": "ACME"}))
         deal = _payload(
-            await client.call_tool("create_deal", {"nome": "X", "customer_id": customer["id"]})
+            await client.call_tool("create_deal", {"name": "X", "customer_id": customer["id"]})
         )
 
         blocked = await client.call_tool("archive_customer", {"customer_id": customer["id"]})
@@ -53,7 +53,7 @@ async def test_a_person_archived_by_an_agent_can_be_restored_by_one(server) -> N
     it: archiving is exposed, so its inverse has to be, or the agent's own mistake is
     correctable only by a human with a browser."""
     async with Client(server) as client:
-        person = _payload(await client.call_tool("create_person", {"nome": "Giulia"}))
+        person = _payload(await client.call_tool("create_person", {"first_name": "Giulia"}))
         assert not (await client.call_tool("archive_person", {"person_id": person["id"]})).is_error
         assert (await client.call_tool("get_person", {"person_id": person["id"]})).is_error
 
@@ -67,7 +67,9 @@ async def test_create_person_without_a_customer_is_allowed(server) -> None:
     stay optional at the actual MCP boundary, not merely on the underlying schema."""
     async with Client(server) as client:
         person = _payload(
-            await client.call_tool("create_person", {"nome": "Giulia", "cognome": "Bianchi"})
+            await client.call_tool(
+                "create_person", {"first_name": "Giulia", "last_name": "Bianchi"}
+            )
         )
 
     assert person["customer_id"] is None
@@ -81,21 +83,21 @@ async def test_move_deal_to_a_won_stage_settles_probability_through_the_tool(
     unreachable. This proves that delegation survives the MCP boundary end to end."""
     PipelineService(mcp_session).seed_defaults(SETUP)
     async with Client(server) as client:
-        customer = _payload(await client.call_tool("create_customer", {"ragione_sociale": "ACME"}))
+        customer = _payload(await client.call_tool("create_customer", {"legal_name": "ACME"}))
         deal = _payload(
             await client.call_tool(
                 "create_deal",
-                {"nome": "Progetto Y", "customer_id": customer["id"], "probabilita": 20},
+                {"name": "Progetto Y", "customer_id": customer["id"], "probability": 20},
             )
         )
 
         stages = _payload(await client.call_tool("list_pipeline_stages", {}))["stages"]
-        vinto = next(s for s in stages if s["nome"] == "Vinto")
+        won = next(s for s in stages if s["name"] == "Vinto")
         moved = _payload(
-            await client.call_tool("move_deal", {"deal_id": deal["id"], "stage_id": vinto["id"]})
+            await client.call_tool("move_deal", {"deal_id": deal["id"], "stage_id": won["id"]})
         )
 
-    assert moved["probabilita"] == 100
+    assert moved["probability"] == 100
 
 
 # --- Fix round 1: update_* schemas must be discoverable, and every argument- ---
@@ -104,23 +106,23 @@ async def test_move_deal_to_a_won_stage_settles_probability_through_the_tool(
 
 async def test_update_customer_still_applies_a_valid_changes_payload(server) -> None:
     async with Client(server) as client:
-        customer = _payload(await client.call_tool("create_customer", {"ragione_sociale": "ACME"}))
+        customer = _payload(await client.call_tool("create_customer", {"legal_name": "ACME"}))
         updated = _payload(
             await client.call_tool(
                 "update_customer",
-                {"customer_id": customer["id"], "changes": {"ragione_sociale": "ACME Srl"}},
+                {"customer_id": customer["id"], "changes": {"legal_name": "ACME Srl"}},
             )
         )
 
-    assert updated["ragione_sociale"] == "ACME Srl"
+    assert updated["legal_name"] == "ACME Srl"
 
 
 async def test_update_person_can_still_detach_via_changes(server) -> None:
     async with Client(server) as client:
-        customer = _payload(await client.call_tool("create_customer", {"ragione_sociale": "ACME"}))
+        customer = _payload(await client.call_tool("create_customer", {"legal_name": "ACME"}))
         person = _payload(
             await client.call_tool(
-                "create_person", {"nome": "Mario", "customer_id": customer["id"]}
+                "create_person", {"first_name": "Mario", "customer_id": customer["id"]}
             )
         )
         updated = _payload(
@@ -137,17 +139,17 @@ async def test_update_deal_still_applies_a_valid_changes_payload(
 ) -> None:
     PipelineService(mcp_session).seed_defaults(SETUP)
     async with Client(server) as client:
-        customer = _payload(await client.call_tool("create_customer", {"ragione_sociale": "ACME"}))
+        customer = _payload(await client.call_tool("create_customer", {"legal_name": "ACME"}))
         deal = _payload(
-            await client.call_tool("create_deal", {"nome": "X", "customer_id": customer["id"]})
+            await client.call_tool("create_deal", {"name": "X", "customer_id": customer["id"]})
         )
         updated = _payload(
             await client.call_tool(
-                "update_deal", {"deal_id": deal["id"], "changes": {"probabilita": 42}}
+                "update_deal", {"deal_id": deal["id"], "changes": {"probability": 42}}
             )
         )
 
-    assert updated["probabilita"] == 42
+    assert updated["probability"] == 42
 
 
 # --- Final review item 6 (CRITICAL, blast radius): one escaping exception must ---
@@ -162,14 +164,14 @@ async def test_an_agent_sets_a_deals_owner_and_a_new_deal_defaults_to_its_creato
     from pigrocrm.core.auth.models import User
 
     colleague = User(
-        email=f"c-{uuid4()}@example.test", password_hash="x", nome="Collega", ruolo="admin"
+        email=f"c-{uuid4()}@example.test", password_hash="x", name="Collega", role="admin"
     )
     gone = User(
         email=f"g-{uuid4()}@example.test",
         password_hash="x",
-        nome="Andata",
-        ruolo="admin",
-        attivo=False,
+        name="Andata",
+        role="admin",
+        active=False,
     )
     mcp_session.add_all([colleague, gone])
     mcp_session.flush()
@@ -179,13 +181,13 @@ async def test_an_agent_sets_a_deals_owner_and_a_new_deal_defaults_to_its_creato
         members = _payload(await client.call_tool("list_members", {}))["result"]
         assert str(colleague.id) in {m["id"] for m in members}
         assert str(gone.id) not in {m["id"] for m in members}
-        assert set(members[0]) == {"id", "nome", "ruolo", "email"}
+        assert set(members[0]) == {"id", "name", "role", "email"}
 
-        customer = _payload(await client.call_tool("create_customer", {"ragione_sociale": "ACME"}))
+        customer = _payload(await client.call_tool("create_customer", {"legal_name": "ACME"}))
         named = _payload(
             await client.call_tool(
                 "create_deal",
-                {"nome": "A", "customer_id": customer["id"], "owner_id": str(colleague.id)},
+                {"name": "A", "customer_id": customer["id"], "owner_id": str(colleague.id)},
             )
         )
         assert named["owner_id"] == str(colleague.id)

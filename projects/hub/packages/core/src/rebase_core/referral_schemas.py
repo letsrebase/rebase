@@ -25,16 +25,18 @@ from rebase_core.vocabulary import ReferralKind, ReferralState, ReferredStatus, 
 RATE_MAX = Decimal("1")
 
 # What a match's referred side shows: the referral still unproved, what it would earn
-# (`previsto`), what an earlier match already earned (`gia_maturato`), or the reward's own
+# (`expected`), what an earlier match already earned (`already_accrued`), or the reward's own
 # state. Written only by `ReferralService.for_matches`.
-PREVISTO = "previsto"
-GIA_MATURATO = "gia_maturato"
-# `verified_via` of a referral: the proof that made it `verificato` (`models.referrals`).
-VERIFIED_VIA = ("accesso", "lettera", "storico")
+EXPECTED = "expected"
+ALREADY_ACCRUED = "already_accrued"
+# `verified_via` of a referral: the proof that made it `verified` (`models.referrals`).
+VERIFIED_VIA = ("login", "letter", "history")
 VerifiedVia = Annotated[str, Field(json_schema_extra=enum_of(VERIFIED_VIA))]
 MatchReferralState = Annotated[
     str,
-    Field(json_schema_extra=enum_of((REFERRAL_STATES[0], PREVISTO, GIA_MATURATO, *REWARD_STATES))),
+    Field(
+        json_schema_extra=enum_of((REFERRAL_STATES[0], EXPECTED, ALREADY_ACCRUED, *REWARD_STATES))
+    ),
 ]
 
 
@@ -46,9 +48,9 @@ class MemberReferralItem(ResponseModel):
     model_config = ConfigDict(from_attributes=True)
 
     kind: ReferralKind
-    nome: str
+    first_name: str
     created_at: datetime
-    stato: ReferredStatus | None
+    status: ReferredStatus | None
 
 
 class MemberReferral(ResponseModel):
@@ -79,30 +81,30 @@ class PublicReferralRates(ResponseModel):
 
 class MatchReferral(ResponseModel):
     """One referred side of a match, as the admin's «Match» list reads it (REB-609).
-    `stato` is a reward's own state once one exists for this referral and its letter
-    belongs to this match (`da_confermare`, `confermato`, `pagato`, with the real `rate`
-    and `amount`); `previsto` while no reward exists yet, with the projection the current
+    `status` is a reward's own state once one exists for this referral and its letter
+    belongs to this match (`to_confirm`, `confirmed`, `paid`, with the real `rate`
+    and `amount`); `expected` while no reward exists yet, with the projection the current
     rate and the match's own numbers give (`amount` is `None` when there is nothing to
     project: no base, a cancelled match, one whose letter is already out of the
-    running); `gia_maturato` when the referral already paid on another match, since a
-    referral pays once -- no figure then; `da_verificare` when the referral is a
+    running); `already_accrued` when the referral already paid on another match, since a
+    referral pays once -- no figure then; `to_verify` when the referral is a
     company's and its referente has not logged in yet (REB-658): nothing it could sign
-    earns anything until then, so no figure either. `referrer_nome` is the referrer's
+    earns anything until then, so no figure either. `referrer_name` is the referrer's
     whole name, and `referrer_freelancer_id` his own card, when he has one, so a page
     can link to it."""
 
     kind: ReferralKind
-    referrer_nome: str
+    referrer_name: str
     referrer_freelancer_id: UUID | None
     rate: Decimal | None
     amount: Decimal | None
-    stato: MatchReferralState
+    status: MatchReferralState
     reward_id: UUID | None
 
 
 class ReferralEvidence(ResponseModel):
     """What an admin needs to judge one attribution (REB-657), all read from rows that
-    already exist (`rebase_core.referral_evidence`): `code` is the `rif` the signup was
+    already exist (`rebase_core.referral_evidence`): `code` is the `ref` the signup was
     made with, `signed_up_at` when the referred card or request was made, `utm_source`
     where that signup came from when one was recorded, `same_email_domain` whether the
     referred and referring addresses share the domain of an organisation (a shared
@@ -134,16 +136,16 @@ class ReferralLedgerItem(ResponseModel):
     none yet, the referred side's newest match that is not cancelled -- `None` when
     there is neither. `projected_rate` and `projected_amount` are that match's
     projection for a referral without a reward: an estimate, never replacing a real
-    figure, and `None` when there is nothing to project. `referrer_nome` is the
+    figure, and `None` when there is nothing to project. `referrer_name` is the
     referrer's whole name, first and last. `referred_deleted` and
     `match_freelancer_deleted` say the referred card or request, or the match's
     freelancer, was deleted by an admin: its page answers not found, so a page must not
     link to it.
 
-    REB-658: `referral_stato` is whether the referred person is verified
-    (`da_verificare`, `verificato`), `verified_at` and `verified_via` (`accesso`,
-    `lettera`, `storico`) when and by what; they are `None` while it is pending. A
-    pending referral has no reward and nothing to confirm (`reward_id` and `stato` are
+    REB-658: `referral_status` is whether the referred person is verified
+    (`to_verify`, `verified`), `verified_at` and `verified_via` (`accesso`,
+    `letter`, `storico`) when and by what; they are `None` while it is pending. A
+    pending referral has no reward and nothing to confirm (`reward_id` and `status` are
     `None`), and a pending company has no `match_*` and no projection either, since
     nothing it could sign would earn anything until its referente logs in."""
 
@@ -153,24 +155,24 @@ class ReferralLedgerItem(ResponseModel):
     reward_id: UUID | None
     kind: ReferralKind
     referred_id: UUID
-    referrer_nome: str
+    referrer_name: str
     referrer_email: str
     referrer_freelancer_id: UUID | None
-    referred_nome: str
+    referred_name: str
     referred_deleted: bool
     match_id: UUID | None
     match_freelancer_id: UUID | None
-    match_freelancer_nome: str | None
+    match_freelancer_name: str | None
     match_freelancer_deleted: bool
-    match_nome_azienda: str | None
-    match_figura_richiesta: str | None
+    match_company_name: str | None
+    match_requested_role: str | None
     projected_rate: Decimal | None
     projected_amount: Decimal | None
     rate: Decimal | None
     base_amount: Decimal | None
     reward_amount: Decimal | None
-    stato: RewardState | None
-    referral_stato: ReferralState
+    status: RewardState | None
+    referral_status: ReferralState
     verified_at: datetime | None
     verified_via: VerifiedVia | None
     note: str | None
@@ -187,18 +189,18 @@ class ReferralLedgerList(ResponseModel):
 
 class ReferralRewardStateChange(BaseModel):
     """`POST /api/hub/admin/referrals/{id}/state`: the one-way ladder
-    `da_confermare` -> `confermato` -> `pagato`, never backwards -- see
+    `to_confirm` -> `confirmed` -> `paid`, never backwards -- see
     `ReferralService.set_state`."""
 
     model_config = ConfigDict(extra="forbid")
 
-    stato: str
+    status: str
 
 
 class ReferralRewardPrice(BaseModel):
     """`POST /api/hub/admin/referrals/{id}/price`: what an admin fills in by hand for a
-    reward `record_reward_if_signed` left with no figure (an `a corpo` letter with no
-    `giorni_previsti` estimate, design record 2026-09-26)."""
+    reward `record_reward_if_signed` left with no figure (a `lump_sum` letter with no
+    `expected_days` estimate, design record 2026-09-26)."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -212,7 +214,7 @@ class ReferralSettingsRead(ResponseModel):
     rate_freelancer: Decimal
     rate_company: Decimal
     updated_at: datetime
-    updated_by_nome: str | None
+    updated_by_name: str | None
 
 
 class ReferralSettingsUpdate(BaseModel):
@@ -230,7 +232,7 @@ class ReferralSettingsUpdate(BaseModel):
 
 
 # Re-exported so a caller of this module never also needs `rebase_core.models` just for
-# the one constant a `rif` field's own validation already bounds itself to.
+# the one constant a `ref` field's own validation already bounds itself to.
 __all__ = [
     "MatchReferral",
     "MemberReferral",

@@ -1,6 +1,6 @@
 """REB-737 and REB-738: a reminder leaves the app by email and by web push.
 
-The pass is run for real, against a database of this module's own: users, attività, the
+The pass is run for real, against a database of this module's own: users, tasks, the
 preferences and the push subscriptions are rows, the clock is the `now` the pass is handed,
 and the transports are the seams the production ones sit behind. Email goes through the
 real `ResendSender` over a fake HTTP call (`fake_resend`), so the body that would reach
@@ -25,7 +25,6 @@ from sqlalchemy import Engine, create_engine, text
 from sqlalchemy.engine import make_url
 from sqlalchemy.orm import Session
 
-from pigrocrm.core.attivita.models import Attivita
 from pigrocrm.core.auth.models import User
 from pigrocrm.core.config import Settings
 from pigrocrm.core.db import session_factory
@@ -35,6 +34,7 @@ from pigrocrm.core.reminders.models import ReminderPreference
 from pigrocrm.core.reminders.push import RecordingPushSender
 from pigrocrm.core.reminders.push_subscriptions import PushSubscription
 from pigrocrm.core.reminders.run import ReminderOutcome, ReminderRun
+from pigrocrm.core.tasks.models import Task
 from pigrocrm.core.tenants.service import migrate_to_head
 
 DB = "prova_promemoria_canali"
@@ -106,7 +106,7 @@ def clean(engine: Engine) -> Iterator[None]:
             "reminder_job_run",
             "reminder_preference",
             "push_subscription",
-            "attivita",
+            "tasks",
             "users",
         ):
             connection.execute(text(f"delete from {table}"))  # noqa: S608 - fixed names
@@ -121,10 +121,8 @@ def session(engine: Engine) -> Iterator[Session]:
 @pytest.fixture
 def owner(session: Session) -> User:
     """The person every reminder here is for. Not an admin: an admin is also told what is
-    wrong with the space itself (§3.5), and these tests are about one attività each."""
-    user = User(
-        email="titolare@studio.example", nome="Titolare", ruolo="collaboratore", attivo=True
-    )
+    wrong with the space itself (§3.5), and these tests are about one task each."""
+    user = User(email="titolare@studio.example", name="Titolare", role="collaborator", active=True)
     session.add(user)
     session.commit()
     return user
@@ -169,9 +167,9 @@ def _run(
 def _overdue(
     session: Session, user: User, days: int, today: date = TUESDAY, title: str = "Preventivo"
 ) -> UUID:
-    """An open attività `days` past its due date: `serious` from day 1 and `critical`
+    """An open task `days` past its due date: `serious` from day 1 and `critical`
     (urgent) from day 14."""
-    row = Attivita(titolo=title, scadenza=today - timedelta(days=days), assegnata_a=user.id)
+    row = Task(title=title, due_date=today - timedelta(days=days), assigned_to=user.id)
     session.add(row)
     session.commit()
     return row.id
@@ -180,8 +178,8 @@ def _overdue(
 def _due_today(
     session: Session, user: User, today: date = TUESDAY, title: str = "Chiamare Acme"
 ) -> UUID:
-    """An open attività due today: a `warning`, never urgent."""
-    row = Attivita(titolo=title, scadenza=today, assegnata_a=user.id)
+    """An open task due today: a `warning`, never urgent."""
+    row = Task(title=title, due_date=today, assigned_to=user.id)
     session.add(row)
     session.commit()
     return row.id
@@ -198,7 +196,7 @@ def _count(engine: Engine, table: str, where: str = "true") -> int:
 def test_an_urgent_reminder_is_mailed_at_once_and_not_again(
     settings: Settings, engine: Engine, session: Session, owner: User, resend: FakeResend
 ) -> None:
-    attivita = _overdue(session, owner, days=20, title="Mandare il contratto firmato")
+    task_id = _overdue(session, owner, days=20, title="Mandare il contratto firmato")
 
     first = _run(settings, engine, resend, None, at(TUESDAY, 10))
 
@@ -206,7 +204,7 @@ def test_an_urgent_reminder_is_mailed_at_once_and_not_again(
     assert resend.subjects == ["Urgente: Attività scaduta: Mandare il contratto firmato"]
     sent = resend.bodies[0]
     assert sent["to"] == ["titolare@studio.example"]
-    assert f"{PUBLIC}/app/activities?apri={attivita}" in str(sent["text"]), "it opens its record"
+    assert f"{PUBLIC}/app/activities?open={task_id}" in str(sent["text"]), "it opens its record"
     assert f"{PUBLIC}/app/settings/notifications" in str(sent["text"]), (
         "and says where to change it"
     )
@@ -272,12 +270,12 @@ def test_urgent_at_once_and_the_rest_in_the_summary_are_two_mails(
 def test_a_summary_reminder_that_climbs_to_urgent_is_mailed_again_at_once(
     settings: Settings, engine: Engine, session: Session, owner: User, resend: FakeResend
 ) -> None:
-    attivita = Attivita(
-        titolo="Fattura da rivedere",
-        scadenza=TUESDAY - timedelta(days=3),
-        assegnata_a=owner.id,
+    task = Task(
+        title="Fattura da rivedere",
+        due_date=TUESDAY - timedelta(days=3),
+        assigned_to=owner.id,
     )
-    session.add(attivita)
+    session.add(task)
     session.commit()
     _run(settings, engine, resend, None, at(TUESDAY, 8, 5))
     assert resend.subjects == ["Promemoria di oggi: 1 da vedere"]
@@ -382,7 +380,7 @@ def test_a_person_who_switched_email_off_is_not_mailed(
 ) -> None:
     _overdue(session, owner, days=20)
     session.add(
-        ReminderPreference(user_id=owner.id, type="attivita_overdue", channels=["push", "slack"])
+        ReminderPreference(user_id=owner.id, type="task_overdue", channels=["push", "slack"])
     )
     session.commit()
 
@@ -394,7 +392,7 @@ def test_a_person_who_wants_everything_in_the_summary_gets_the_urgent_one_there(
     settings: Settings, engine: Engine, session: Session, owner: User, resend: FakeResend
 ) -> None:
     _overdue(session, owner, days=20, title="Contratto firmato")
-    session.add(ReminderPreference(user_id=owner.id, type="attivita_overdue", email_mode="summary"))
+    session.add(ReminderPreference(user_id=owner.id, type="task_overdue", email_mode="summary"))
     session.commit()
 
     assert _run(settings, engine, resend, None, at(TUESDAY, 10)).emails == 1
@@ -415,14 +413,14 @@ def test_the_summary_hour_is_the_persons_own(
 def test_a_reminder_the_person_acknowledged_is_not_mailed(
     settings: Settings, engine: Engine, session: Session, owner: User, resend: FakeResend
 ) -> None:
-    attivita = _overdue(session, owner, days=20)
+    task_id = _overdue(session, owner, days=20)
     with engine.begin() as connection:
         connection.execute(
             text(
                 "insert into reminder_ack (id, key, type, user_id, severity_rank) "
-                "values (gen_random_uuid(), :key, 'attivita_overdue', :user, 3)"
+                "values (gen_random_uuid(), :key, 'task_overdue', :user, 3)"
             ),
-            {"key": f"attivita_overdue:{attivita}", "user": owner.id},
+            {"key": f"task_overdue:{task_id}", "user": owner.id},
         )
 
     assert _run(settings, engine, resend, None, at(TUESDAY, 10)).emails == 0
@@ -464,7 +462,7 @@ def test_a_reminder_is_pushed_once_to_the_browser_that_subscribed_before_it(
     settings: Settings, engine: Engine, session: Session, owner: User, pusher: RecordingPushSender
 ) -> None:
     _subscribe(session, owner, at_=at(TUESDAY, 9))
-    attivita = _overdue(session, owner, days=20, title="Contratto firmato")
+    task_id = _overdue(session, owner, days=20, title="Contratto firmato")
 
     first = _run(settings, engine, None, pusher, at(TUESDAY, 10))
 
@@ -472,8 +470,8 @@ def test_a_reminder_is_pushed_once_to_the_browser_that_subscribed_before_it(
     target, message = pusher.sent[0]
     assert target.endpoint == "https://push.example.test/a"
     assert message.title == "Attività scaduta: Contratto firmato"
-    assert message.url == f"/acme/app/activities?apri={attivita}", "on the space's own path"
-    assert message.tag == f"attivita_overdue:{attivita}"
+    assert message.url == f"/acme/app/activities?open={task_id}", "on the space's own path"
+    assert message.tag == f"task_overdue:{task_id}"
     assert message.urgent is True
 
     assert _run(settings, engine, None, pusher, at(TUESDAY, 10, 15)).pushes == 0
@@ -552,7 +550,7 @@ def test_a_person_who_switched_push_off_is_not_pushed(
 ) -> None:
     _subscribe(session, owner, at_=at(TUESDAY, 9))
     _overdue(session, owner, days=20)
-    session.add(ReminderPreference(user_id=owner.id, type="attivita_overdue", channels=["email"]))
+    session.add(ReminderPreference(user_id=owner.id, type="task_overdue", channels=["email"]))
     session.commit()
 
     assert _run(settings, engine, None, pusher, at(TUESDAY, 10)).pushes == 0
@@ -561,7 +559,7 @@ def test_a_person_who_switched_push_off_is_not_pushed(
 def test_a_reminder_is_pushed_only_to_the_person_it_is_for(
     settings: Settings, engine: Engine, session: Session, owner: User, pusher: RecordingPushSender
 ) -> None:
-    other = User(email="altro@studio.example", nome="Altro", ruolo="collaboratore", attivo=True)
+    other = User(email="altro@studio.example", name="Altro", role="collaborator", active=True)
     session.add(other)
     session.commit()
     _subscribe(session, other, "https://push.example.test/other", at_=at(TUESDAY, 9))
@@ -604,17 +602,17 @@ def test_a_reminder_that_has_been_listed_longer_than_a_push_service_holds_it_is_
 ) -> None:
     """Turning a channel back on, or a long outage, must not send the backlog."""
     _subscribe(session, owner, at_=at(TUESDAY, 9) - timedelta(days=3))
-    attivita = _overdue(session, owner, days=20)
+    task_id = _overdue(session, owner, days=20)
     with engine.begin() as connection:
         connection.execute(
             text(
                 "insert into reminder_delivery "
                 "(id, key, type, user_id, channel, mode, period, severity_rank, delivered_at) "
-                "values (gen_random_uuid(), :key, 'attivita_overdue', :user, 'in_app', "
+                "values (gen_random_uuid(), :key, 'task_overdue', :user, 'in_app', "
                 "'immediate', :period, 3, :at)"
             ),
             {
-                "key": f"attivita_overdue:{attivita}",
+                "key": f"task_overdue:{task_id}",
                 "user": owner.id,
                 "period": TUESDAY,
                 "at": at(TUESDAY, 10) - timedelta(hours=25),
@@ -628,7 +626,7 @@ def test_a_reminder_that_has_been_listed_longer_than_a_push_service_holds_it_is_
 def test_a_browser_a_second_person_took_over_gets_them_only_what_comes_after(
     settings: Settings, engine: Engine, session: Session, owner: User, pusher: RecordingPushSender
 ) -> None:
-    other = User(email="altro@studio.example", nome="Altro", ruolo="collaboratore", attivo=True)
+    other = User(email="altro@studio.example", name="Altro", role="collaborator", active=True)
     session.add(other)
     session.commit()
     _overdue(session, other, days=20, title="Cosa di Altro")
@@ -694,17 +692,17 @@ def test_a_reminder_held_overnight_expires_a_day_after_the_quiet_hours_ended(
     friday = date(2026, 10, 30)
     wednesday = date(2026, 11, 4)
     _subscribe(session, owner, at_=at(friday, 9))
-    attivita = _overdue(session, owner, days=20, today=wednesday)
+    task_id = _overdue(session, owner, days=20, today=wednesday)
     with engine.begin() as connection:
         connection.execute(
             text(
                 "insert into reminder_delivery "
                 "(id, key, type, user_id, channel, mode, period, severity_rank, delivered_at) "
-                "values (gen_random_uuid(), :key, 'attivita_overdue', :user, 'in_app', "
+                "values (gen_random_uuid(), :key, 'task_overdue', :user, 'in_app', "
                 "'immediate', :period, 3, :at)"
             ),
             {
-                "key": f"attivita_overdue:{attivita}",
+                "key": f"task_overdue:{task_id}",
                 "user": owner.id,
                 "period": wednesday,
                 "at": at(friday, 21),

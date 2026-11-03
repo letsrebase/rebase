@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { toast } from '@rebase/ui/sonner'
 import { renderFieldValue } from '@/components/DynamicFieldRenderer'
 import { EntityDetailLayout } from '@/components/EntityDetailLayout'
-import { EntityAttivita } from '@/features/attivita/EntityAttivita'
+import { EntityTask } from '@/features/tasks/EntityTask'
 import { QueryErrorBanner } from '@/components/QueryErrorBanner'
 import { Button } from '@rebase/ui/button'
 import { Card, CardContent } from '@rebase/ui/card'
@@ -40,7 +40,7 @@ function Row({ label, value }: { label: string; value: string }) {
  * the *list* endpoint -- which still resolves 200. Nothing would throw or log,
  * but every visit to a customer-less person would silently re-fetch the entire
  * customer list for a value that is then never even used (`CustomerPage` has no
- * `ragione_sociale` at its top level, so the card would just show '…' forever
+ * `legal_name` at its top level, so the card would just show '…' forever
  * regardless of the response). A conditionally *rendered* component, rather than
  * a conditionally *called* hook, keeps `useCustomer` itself untouched -- no
  * change needed in `features/customers/queries.ts` -- and only ever queries when
@@ -49,7 +49,7 @@ function Row({ label, value }: { label: string; value: string }) {
  */
 function LinkedCustomerRow({ customerId }: { customerId: string }) {
   const customer = useCustomer(customerId)
-  return <Row label="Ragione sociale" value={customer.data?.ragione_sociale ?? '…'} />
+  return <Row label="Ragione sociale" value={customer.data?.legal_name ?? '…'} />
 }
 
 export function PersonDetail() {
@@ -83,7 +83,7 @@ export function PersonDetail() {
   if (!person) return <p className="p-8">Persona non trovata.</p>
 
   const custom = schema.data?.custom_fields ?? []
-  const fullName = `${person.nome} ${person.cognome ?? ''}`.trim()
+  const fullName = `${person.first_name} ${person.last_name ?? ''}`.trim()
 
   function archive() {
     if (!person) return
@@ -113,10 +113,10 @@ export function PersonDetail() {
       <EntityDetailLayout
         icon={Users}
         title={fullName}
-        subtitle={person.ruolo ?? 'Persona'}
+        subtitle={person.role ?? 'Persona'}
         entityType="person"
         entityId={personId}
-        attivita={<EntityAttivita link={{ kind: 'person', id: personId }} />}
+        tasks={<EntityTask link={{ kind: 'person', id: personId }} />}
         emails={gmailConfigured ? <EmailTab entityType="person" entityId={personId} /> : undefined}
         actions={
           canWrite && (
@@ -144,7 +144,7 @@ export function PersonDetail() {
               <CardContent className="pt-6">
                 <h2 className="mb-3 font-semibold">Contatti</h2>
                 <Row label="Email" value={displayNative(person.email)} />
-                <Row label="Telefono" value={displayNative(person.telefono)} />
+                <Row label="Telefono" value={displayNative(person.phone)} />
                 <Row label="LinkedIn" value={displayNative(person.linkedin)} />
               </CardContent>
             </Card>

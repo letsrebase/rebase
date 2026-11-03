@@ -6,8 +6,8 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
 from rebase_core.linkedin import normalise_linkedin, reject_control_characters
-from rebase_core.models import NAME_MAX_LENGTH, ORIGINE_MAX_LENGTH, UTM_MAX_LENGTH
-from rebase_core.schema_common import LINKEDIN_INPUT_MAX_LENGTH, ResponseModel, clean_rif
+from rebase_core.models import NAME_MAX_LENGTH, ORIGIN_MAX_LENGTH, UTM_MAX_LENGTH
+from rebase_core.schema_common import LINKEDIN_INPUT_MAX_LENGTH, ResponseModel, clean_ref
 from rebase_core.validation import SafeStr
 
 # What the landing sends in `oppref`, bounded to the same 512 characters it bounds it to
@@ -29,9 +29,7 @@ class SignupUtm(ResponseModel):
     utm_id: str | None = Field(default=None, max_length=UTM_MAX_LENGTH)
     # The page of the site the person started from (`home`, `pigrocrm`), a slug and
     # nothing else: it is ours, not an ad platform's, so it is held to a shape.
-    origine: str | None = Field(
-        default=None, max_length=ORIGINE_MAX_LENGTH, pattern=r"^[a-z0-9-]+$"
-    )
+    origin: str | None = Field(default=None, max_length=ORIGIN_MAX_LENGTH, pattern=r"^[a-z0-9-]+$")
 
     def is_empty(self) -> bool:
         return not any(self.model_dump().values())
@@ -50,18 +48,18 @@ class SignupCreate(BaseModel):
     # Required here even though the columns are nullable: the nulls belong to the rows
     # collected before the form asked, and nothing new is allowed to add one. Bounded to
     # the column, and `SafeStr` closes the NUL-byte gap a plain `str` would leave open.
-    nome: SafeStr = Field(min_length=1, max_length=NAME_MAX_LENGTH)
-    cognome: SafeStr = Field(min_length=1, max_length=NAME_MAX_LENGTH)
+    first_name: SafeStr = Field(min_length=1, max_length=NAME_MAX_LENGTH)
+    last_name: SafeStr = Field(min_length=1, max_length=NAME_MAX_LENGTH)
     # A profile, not any URL: the host has to be LinkedIn's, so a typo or somebody
     # else's site is a 422 and never a stored link nobody can use. A personal profile is
     # stored in one shape, `https://www.linkedin.com/in/<name>`, whatever was pasted
     # (ORB-203): see `normalise_linkedin`.
     linkedin_url: SafeStr | None = Field(default=None, max_length=LINKEDIN_INPUT_MAX_LENGTH)
     utm: SignupUtm | None = None
-    # `?rif=` from the visitor's link (REB-554), shaped like the wizards' own: a string
+    # `?ref=` from the visitor's link (REB-554), shaped like the wizards' own: a string
     # that is not a code is no code, never a 422 and never a hint of which codes exist.
     # Stored on the signup and credited only when an admin drafts a card from it.
-    rif: SafeStr | None = None
+    ref: SafeStr | None = None
     # The two values below are for the conversion event and are **never stored**: no
     # column, no migration, nothing in `SignupListItem`. They travel in this body only
     # because the landing is where both are known, and because `extra="forbid"` above
@@ -87,10 +85,10 @@ class SignupCreate(BaseModel):
     # know about the notice is never measured, and neither is a refusal.
     pixel_consent: bool = False
 
-    @field_validator("rif", mode="before")
+    @field_validator("ref", mode="before")
     @classmethod
-    def _rif(cls, value: object) -> str | None:
-        return clean_rif(value)
+    def _ref(cls, value: object) -> str | None:
+        return clean_ref(value)
 
     @field_validator("oppref", mode="after")
     @classmethod
@@ -100,7 +98,7 @@ class SignupCreate(BaseModel):
         trimmed = reject_control_characters(value).strip()
         return trimmed or None
 
-    @field_validator("nome", "cognome", mode="after")
+    @field_validator("first_name", "last_name", mode="after")
     @classmethod
     def _trimmed(cls, value: str) -> str:
         """Trimmed here rather than in the landing's JavaScript alone: the API is the
@@ -123,8 +121,8 @@ class SignupListItem(ResponseModel):
     email: str
     created_at: datetime
     # `None` only for the rows written before the form asked for a name.
-    nome: str | None = None
-    cognome: str | None = None
+    first_name: str | None = None
+    last_name: str | None = None
     linkedin_url: str | None = None
     utm_source: str | None = None
     utm_medium: str | None = None
@@ -138,17 +136,17 @@ class SignupListItem(ResponseModel):
 
 
 class SignupList(ResponseModel):
-    """Newest first. `totale` counts the whole list, not just the page returned."""
+    """Newest first. `total` counts the whole list, not just the page returned."""
 
-    totale: int
-    iscrizioni: list[SignupListItem]
+    total: int
+    signups: list[SignupListItem]
 
 
 class SignupRead(BaseModel):
     """The outcome of `SignupService.subscribe`, for its caller inside the process.
 
     Deliberately carries nothing that was *already* in the row. It used to echo the
-    stored `nome`, `cognome`, `linkedin_url` and `utm_*`, and since a repeated signup
+    stored `nome`, `last_name`, `linkedin_url` and `utm_*`, and since a repeated signup
     returns the existing row rather than the submitted values, that made the one
     unauthenticated write in the API an oracle: post somebody else's address with any
     name and the answer handed back their real name and LinkedIn profile. The whole row
@@ -162,7 +160,7 @@ class SignupRead(BaseModel):
     created_at: datetime
     # `True` the first time an address is seen, `False` when it was already there. Never
     # leaves the process: the router answers `SignupAck`, which does not say which.
-    nuova: bool = False
+    new: bool = False
 
 
 class SignupAck(ResponseModel):

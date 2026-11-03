@@ -1,5 +1,5 @@
 """The only writer of `contract_expenses` (and, through the trigger,
-`rimborsabile` -- see `triggers.py`)."""
+`reimbursable` -- see `triggers.py`)."""
 
 from typing import Any
 from uuid import UUID
@@ -24,26 +24,26 @@ from pigrocrm.core.timetracking.categories import CostCategoryService
 ENTITY = "contract_expense"
 
 
-def _check_riferimento_matches_pre_autorizzata(
-    *, pre_autorizzata: bool, riferimento_autorizzazione: str | None
+def _check_reference_matches_pre_authorized(
+    *, pre_authorized: bool, authorization_reference: str | None
 ) -> None:
     """The friendlier pre-database validation ahead of
-    `ck_contract_expenses_riferimento_matches_pre_autorizzata`'s own
+    `ck_contract_expenses_reference_matches_pre_authorized`'s own
     `IntegrityError` -- `ContractExpenseCreate` checks the same pair on the
     caller's own input; this is what `update` runs against the *merged* row,
     since a patch may touch either field alone."""
-    if pre_autorizzata and not riferimento_autorizzazione:
+    if pre_authorized and not authorization_reference:
         raise ValidationFailed(
             ENTITY,
-            "riferimento_autorizzazione",
-            "obbligatorio quando pre_autorizzata è vero",
+            "authorization_reference",
+            "obbligatorio quando pre_authorized è vero",
             expected="un riferimento non vuoto",
         )
-    if not pre_autorizzata and riferimento_autorizzazione:
+    if not pre_authorized and authorization_reference:
         raise ValidationFailed(
             ENTITY,
-            "riferimento_autorizzazione",
-            "va lasciato vuoto quando pre_autorizzata è falso",
+            "authorization_reference",
+            "va lasciato vuoto quando pre_authorized è falso",
             expected="nessun valore",
         )
 
@@ -76,15 +76,15 @@ class ContractExpenseService:
             ContractExpense(
                 contract_id=contract_id,
                 category_id=data.category_id,
-                data=data.data,
-                importo=data.importo,
-                descrizione=data.descrizione,
-                pre_autorizzata=data.pre_autorizzata,
-                riferimento_autorizzazione=data.riferimento_autorizzazione,
+                date=data.date,
+                amount=data.amount,
+                description=data.description,
+                pre_authorized=data.pre_authorized,
+                authorization_reference=data.authorization_reference,
                 document_id=data.document_id,
             )
         )
-        # `contract_expense_set_rimborsabile` writes `rimborsabile` in flight
+        # `contract_expense_set_reimbursable` writes `reimbursable` in flight
         # (spec §7) -- `expire_on_commit=False` (`db/session.py`) means the ORM
         # object otherwise keeps showing the column's Python-side default rather
         # than what the trigger actually computed. A refresh is what makes that
@@ -96,7 +96,7 @@ class ContractExpenseService:
             contract_id,
             "expense_added",
             actor,
-            {"importo": str(expense.importo), "rimborsabile": expense.rimborsabile},
+            {"amount": str(expense.amount), "reimbursable": expense.reimbursable},
         )
         self.session.commit()
         return ContractExpenseRead.model_validate(expense)
@@ -117,13 +117,11 @@ class ContractExpenseService:
             self.categories.require_active(changes["category_id"])
         self._check_refs(changes.get("document_id"))
 
-        merged_pre_autorizzata = changes.get("pre_autorizzata", expense.pre_autorizzata)
-        merged_riferimento = changes.get(
-            "riferimento_autorizzazione", expense.riferimento_autorizzazione
-        )
-        _check_riferimento_matches_pre_autorizzata(
-            pre_autorizzata=merged_pre_autorizzata,
-            riferimento_autorizzazione=merged_riferimento,
+        merged_pre_authorized = changes.get("pre_authorized", expense.pre_authorized)
+        merged_reference = changes.get("authorization_reference", expense.authorization_reference)
+        _check_reference_matches_pre_authorized(
+            pre_authorized=merged_pre_authorized,
+            authorization_reference=merged_reference,
         )
 
         for key, value in changes.items():

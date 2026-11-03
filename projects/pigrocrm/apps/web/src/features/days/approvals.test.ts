@@ -5,11 +5,11 @@ const ID = '5b2c70c2-0000-4000-8000-000000000001'
 
 describe('which days can use an approval', () => {
   it('is a proposed day and a day worked without approval, and neither once it has one', () => {
-    expect(canReceiveApproval({ stato: 'proposto', approval_id: null })).toBe(true)
-    expect(canReceiveApproval({ stato: 'lavorato_senza_approvazione', approval_id: null })).toBe(true)
-    expect(canReceiveApproval({ stato: 'approvato', approval_id: null })).toBe(false)
-    expect(canReceiveApproval({ stato: 'lavorato', approval_id: null })).toBe(false)
-    expect(canReceiveApproval({ stato: 'proposto', approval_id: ID })).toBe(false)
+    expect(canReceiveApproval({ status: 'proposed', approval_id: null })).toBe(true)
+    expect(canReceiveApproval({ status: 'worked_without_approval', approval_id: null })).toBe(true)
+    expect(canReceiveApproval({ status: 'approved', approval_id: null })).toBe(false)
+    expect(canReceiveApproval({ status: 'worked', approval_id: null })).toBe(false)
+    expect(canReceiveApproval({ status: 'proposed', approval_id: ID })).toBe(false)
   })
 })
 

@@ -69,12 +69,12 @@ def _person(
     session: Session, links: list[str], email: str = "ada@studio.it", *, cv: bool = True
 ) -> UUID:
     data = FreelancerCreate(
-        nome="Ada",
-        cognome="Lovelace",
+        first_name="Ada",
+        last_name="Lovelace",
         email=email,
-        tariffa_giornaliera=Decimal("450.00"),
-        posizione="Backend developer",
-        remoto="remoto",
+        daily_rate=Decimal("450.00"),
+        job_title="Backend developer",
+        remote="remote",
         links=links,
     )
     service = FreelancerService(session)

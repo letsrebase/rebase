@@ -24,7 +24,7 @@ CREDENTIALS = {"email": "admin@pigro.it", "password": "supersegreta1"}
 
 
 def _create_deactivated_user(session: Session, email: str) -> None:
-    """A user who authenticated correctly right up until an admin flipped `attivo`
+    """A user who authenticated correctly right up until an admin flipped `active`
     off -- must fail login exactly like a wrong password or an unknown email, per
     UserService.authenticate's own anti-enumeration contract."""
     users = UserService(session)
@@ -32,14 +32,14 @@ def _create_deactivated_user(session: Session, email: str) -> None:
     # space's last one, even from the system actor, and this helper's test is about
     # the login answer, not about the guard.
     users.create(
-        UserCreate(email="superstite-auth@pigro.it", password=None, nome="S", ruolo="admin"),
+        UserCreate(email="superstite-auth@pigro.it", password=None, name="S", role="admin"),
         Actor.system(),
     )
     user = users.create(
-        UserCreate(email=email, password="supersegreta1", nome="Disattivato", ruolo="admin"),
+        UserCreate(email=email, password="supersegreta1", name="Disattivato", role="admin"),
         Actor.system(),
     )
-    users.update(user.id, UserUpdate(attivo=False), Actor.system())
+    users.update(user.id, UserUpdate(active=False), Actor.system())
 
 
 def _present_refresh_cookie(client: TestClient, token: str) -> None:
@@ -278,7 +278,7 @@ def test_a_valid_token_is_never_refused_by_the_lock_its_neighbours_earned(
     """The backoff is per client address, so a revoked token in a cron job behind the same
     egress must not lock out the working ones: a token that resolves passes whatever the
     address has failed with."""
-    raw = logged_in.post("/api/tokens", json={"nome": "Claude"}).json()["token"]
+    raw = logged_in.post("/api/tokens", json={"name": "Claude"}).json()["token"]
     bare = TestClient(logged_in.app)
     bad = {"Authorization": "Bearer pgc_inventato"}
     for _ in range(FREE_BEARER_FAILURES + 2):
@@ -365,11 +365,11 @@ def test_me_requires_authentication(client: TestClient) -> None:
 def test_me_returns_the_current_user(logged_in: TestClient) -> None:
     body = logged_in.get("/api/auth/me").json()
     assert body["email"] == "admin@pigro.it"
-    assert body["ruolo"] == "admin"
+    assert body["role"] == "admin"
 
 
 def test_update_me_requires_authentication(client: TestClient) -> None:
-    response = client.patch("/api/auth/me", json={"digest_settimanale": False})
+    response = client.patch("/api/auth/me", json={"weekly_digest": False})
     assert response.status_code == 401
 
 
@@ -378,13 +378,13 @@ def test_a_non_admin_can_switch_off_their_own_weekly_report(
 ) -> None:
     """Spec 2026-09-16 §3.6: the mail's own opt-out link must work for whoever
     received it -- `PATCH /api/auth/me` (`UserService.update_own_digest`) takes no
-    `actor.require_admin`, unlike `PATCH /api/users/{id}`, which a `collaboratore`
+    `actor.require_admin`, unlike `PATCH /api/users/{id}`, which a `collaborator`
     cannot call at all."""
-    response = collaborator_client.patch("/api/auth/me", json={"digest_settimanale": False})
+    response = collaborator_client.patch("/api/auth/me", json={"weekly_digest": False})
     assert response.status_code == 200
-    assert response.json()["digest_settimanale"] is False
+    assert response.json()["weekly_digest"] is False
 
-    assert collaborator_client.get("/api/auth/me").json()["digest_settimanale"] is False
+    assert collaborator_client.get("/api/auth/me").json()["weekly_digest"] is False
 
 
 def test_update_me_is_401_when_the_session_outlives_the_row(
@@ -398,12 +398,12 @@ def test_update_me_is_401_when_the_session_outlives_the_row(
     that translation is what this endpoint is left holding.
     """
 
-    def sparito(self: UserService, actor: Actor, value: bool) -> None:
+    def vanished(self: UserService, actor: Actor, value: bool) -> None:
         raise NotFound("user", "sparito")
 
-    monkeypatch.setattr(UserService, "update_own_digest", sparito)
+    monkeypatch.setattr(UserService, "update_own_digest", vanished)
 
-    response = logged_in.patch("/api/auth/me", json={"digest_settimanale": False})
+    response = logged_in.patch("/api/auth/me", json={"weekly_digest": False})
 
     assert response.status_code == 401
 
@@ -560,7 +560,7 @@ def test_logout_consumes_every_refresh_token_the_browser_sends(
 
 def test_a_personal_access_token_authenticates_too(logged_in: TestClient) -> None:
     """The same API serves the browser and the agent; only the credential differs."""
-    raw = logged_in.post("/api/tokens", json={"nome": "Claude"}).json()["token"]
+    raw = logged_in.post("/api/tokens", json={"name": "Claude"}).json()["token"]
 
     bare = TestClient(logged_in.app)
     response = bare.get("/api/auth/me", headers={"Authorization": f"Bearer {raw}"})
@@ -730,7 +730,7 @@ def test_the_link_request_is_throttled_per_client(client: TestClient, admin_user
     assert other.status_code == 503, other.text
 
 
-def test_entra_sets_the_cookies_and_me_answers(
+def test_verify_sets_the_cookies_and_me_answers(
     client: TestClient, admin_user, sender: RecordingSender
 ) -> None:
     client.post("/api/auth/link", json={"email": ADMIN_EMAIL})
@@ -746,7 +746,7 @@ def test_entra_sets_the_cookies_and_me_answers(
     assert again.status_code == 401 and "link" in again.json()["detail"]
 
 
-def test_entra_with_garbage_is_401(client: TestClient) -> None:
+def test_verify_with_garbage_is_401(client: TestClient) -> None:
     assert client.post("/api/auth/verify", json={"t": "x"}).status_code == 401
 
 

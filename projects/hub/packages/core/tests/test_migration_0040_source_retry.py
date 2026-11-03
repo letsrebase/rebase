@@ -43,7 +43,7 @@ def _has_attempts(connection: Connection) -> bool:
 
 def _person(engine: Engine) -> Any:
     with Session(engine) as session:
-        user = User(email="a@x.it", nome="A", cognome="B")
+        user = User(email="a@x.it", first_name="A", last_name="B")
         session.add(user)
         session.flush()
         row = Freelancer(user_id=user.id)
@@ -108,6 +108,7 @@ def test_upgrade_is_idempotent_and_keeps_the_counts(hub_postgres: Any) -> None:
         config.set_main_option("sqlalchemy.url", url)
         engine = create_engine(url, future=True)
         person = _person(engine)
+        command.downgrade(config, REVISION)  # 0040's own schema, 0049's English names undone
         with engine.begin() as connection:
             connection.execute(
                 text(

@@ -19,11 +19,11 @@ class PipelineRepository:
         stmt = select(PipelineStage).where(PipelineStage.code == code)
         return self.session.execute(stmt).scalar_one_or_none()
 
-    def get_by_tipo(self, tipo: str) -> list[PipelineStage]:
-        """Every stage of a kind, ordered by `posizione`.
+    def get_by_type(self, type: str) -> list[PipelineStage]:
+        """Every stage of a kind, ordered by `position`.
 
         Returns a **list** and not an `Optional`, deliberately: residuo **R14** records
-        that nothing forbids two `tipo='won'` stages, and "there are two" is an answer the
+        that nothing forbids two `type='won'` stages, and "there are two" is an answer the
         automation runner has to be able to see so it can decline instead of picking one.
         An `Optional` signature would force this method to choose, which is exactly the
         decision it must not make.
@@ -35,13 +35,13 @@ class PipelineRepository:
         return list(
             self.session.execute(
                 select(PipelineStage)
-                .where(PipelineStage.tipo == tipo)
-                .order_by(PipelineStage.posizione, PipelineStage.id)
+                .where(PipelineStage.type == type)
+                .order_by(PipelineStage.position, PipelineStage.id)
             ).scalars()
         )
 
     def list(self) -> list[PipelineStage]:
-        stmt = select(PipelineStage).order_by(PipelineStage.posizione, PipelineStage.nome)
+        stmt = select(PipelineStage).order_by(PipelineStage.position, PipelineStage.name)
         return list(self.session.execute(stmt).scalars())
 
     def add(self, stage: PipelineStage) -> PipelineStage:

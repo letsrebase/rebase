@@ -68,8 +68,8 @@ export function sentAmount(value: string): string {
   return Number.isFinite(number) ? number.toFixed(2) : value.trim()
 }
 
-/** Whether a day rate or a daily budget is one the API takes: the core's `TARIFFA_MIN` to
- *  `TARIFFA_MAX`, with at most two decimals. */
+/** Whether a day rate or a daily budget is one the API takes: the core's `MIN_RATE` to
+ *  `MAX_RATE`, with at most two decimals. */
 export function acceptedAmount(value: string): boolean {
   const number = euroAmount(value)
   return Number.isFinite(number) && number >= 1 && number <= 99999.99

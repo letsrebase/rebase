@@ -1,9 +1,9 @@
 """What the automations expose, and the four reasons one may decline to run.
 
-The `motivo` values are a closed `Literal` in Python and a JSONB value in the database --
-not a sized `String` column. A `String(24)` sized exactly to `stage_bersaglio_ambiguo`
+The `reason` values are a closed `Literal` in Python and a JSONB value in the database --
+not a sized `String` column. A `String(24)` sized exactly to `target_stage_ambiguous`
 would be a column sized precisely to its legal set, which is the defect slice 3 just fixed
-on `invoices.tipo`: the width rejects a wrong value before the CHECK beside it can, and
+on `invoices.type`: the width rejects a wrong value before the CHECK beside it can, and
 Postgres answers with a raw truncation error instead of the named violation.
 """
 
@@ -16,52 +16,52 @@ from pydantic import BaseModel, ConfigDict, Field
 # New `kind` values. No migration: `activities.kind` is an open value by project
 # (slice 1 §5.8) and `ActivityService.record` takes `kind: str` and truncates to the
 # column width without consulting any Literal.
-KIND_STAGE_MOVED = "automazione.stage_spostato"
-KIND_NOT_EXECUTED = "automazione.non_eseguita"
-KIND_CONFIG_CHANGED = "automazione.configurazione_modificata"
-# One timeline entry per attivita the daily pass opens, on the attivita itself (REB-727).
-KIND_ATTIVITA_OPENED = "automazione.attivita_aperta"
+KIND_STAGE_MOVED = "automation.stage_moved"
+KIND_NOT_EXECUTED = "automation.not_executed"
+KIND_CONFIG_CHANGED = "automation.config_changed"
+# One timeline entry per task the daily pass opens, on the task itself (REB-727).
+KIND_TASK_OPENED = "automation.task_opened"
 AUTOMATION_KINDS: tuple[str, ...] = (
     KIND_STAGE_MOVED,
     KIND_NOT_EXECUTED,
     KIND_CONFIG_CHANGED,
-    KIND_ATTIVITA_OPENED,
+    KIND_TASK_OPENED,
 )
 
-# A1 and A2 move a deal when an offer changes state; the other three open an attivita from
-# the daily pass and are named by the `attivita.regola` they write (slice 7 §6).
+# A1 and A2 move a deal when an offer changes state; the other three open an task from
+# the daily pass and are named by the `tasks.rule` they write (slice 7 §6).
 AutomationRule = Literal["A1", "A2"]
-AttivitaRule = Literal["offerta_inviata_richiama", "deal_fermo", "fattura_scaduta"]
-ATTIVITA_RULES: tuple[AttivitaRule, ...] = (
-    "offerta_inviata_richiama",
-    "deal_fermo",
-    "fattura_scaduta",
+TaskRule = Literal["sent_offer_follow_up", "stalled_deal", "overdue_invoice"]
+TASK_RULES: tuple[TaskRule, ...] = (
+    "sent_offer_follow_up",
+    "stalled_deal",
+    "overdue_invoice",
 )
-AutomationRuleCode = AutomationRule | AttivitaRule
-# The rule whose cause a reminder already raises (`invoice_overdue`): the attivita reminders
+AutomationRuleCode = AutomationRule | TaskRule
+# The rule whose cause a reminder already raises (`invoice_overdue`): the task reminders
 # skip what it opened, so one late invoice is not announced twice. See `daily.py`.
-REGOLA_COPERTA_DA_PROMEMORIA: AttivitaRule = "fattura_scaduta"
+RULE_COVERED_BY_REMINDER: TaskRule = "overdue_invoice"
 
 # The four declared conditions the runner absorbs. Anything not in this list propagates
 # and rolls the trigger back (§9.3): a database that cannot write is not an automation
 # that did not fire.
 AutomationSkipReason = Literal[
-    "stage_bersaglio_assente",
-    "stage_bersaglio_ambiguo",
-    "gia_nello_stato",
-    "regola_disattivata",
+    "target_stage_missing",
+    "target_stage_ambiguous",
+    "already_in_state",
+    "rule_disabled",
 ]
 
 
 class AutomationConfigRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
-    a1_offerta_accettata_vince_deal: bool
-    a2_offerta_inviata_avanza_deal: bool
-    a3_offerta_inviata_richiama: bool
-    a4_deal_fermo: bool
-    a4_deal_fermo_giorni: int
-    a5_fattura_scaduta: bool
+    a1_wins_accepted_offer_deal: bool
+    a2_advances_sent_offer_deal: bool
+    a3_sent_offer_follow_up: bool
+    a4_stalled_deal: bool
+    a4_stalled_deal_days: int
+    a5_overdue_invoice: bool
 
 
 class AutomationConfigUpdate(BaseModel):
@@ -78,36 +78,36 @@ class AutomationConfigUpdate(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    a1_offerta_accettata_vince_deal: bool | None = None
-    a2_offerta_inviata_avanza_deal: bool | None = None
-    a3_offerta_inviata_richiama: bool | None = None
-    a4_deal_fermo: bool | None = None
+    a1_wins_accepted_offer_deal: bool | None = None
+    a2_advances_sent_offer_deal: bool | None = None
+    a3_sent_offer_follow_up: bool | None = None
+    a4_stalled_deal: bool | None = None
     # The same bounds as the table's CHECK, so a value outside them is a 422 with the
     # field's name and not a database error.
-    a4_deal_fermo_giorni: int | None = Field(default=None, ge=1, le=365)
-    a5_fattura_scaduta: bool | None = None
+    a4_stalled_deal_days: int | None = Field(default=None, ge=1, le=365)
+    a5_overdue_invoice: bool | None = None
 
 
 class AutomationRuleDescription(BaseModel):
-    codice: AutomationRuleCode
-    titolo: str
-    descrizione: str
-    attiva: bool
+    code: AutomationRuleCode
+    title: str
+    description: str
+    active: bool
 
 
 class AutomationRun(BaseModel):
     kind: str
     occurred_at: datetime
     deal_id: UUID | None
-    regola: str | None
-    motivo: str | None
+    rule: str | None
+    reason: str | None
     payload: dict[str, Any]
 
 
 class AutomationsDescription(BaseModel):
-    configurazione: AutomationConfigRead
-    regole: list[AutomationRuleDescription]
-    esecuzioni: list[AutomationRun]
+    configuration: AutomationConfigRead
+    rules: list[AutomationRuleDescription]
+    runs: list[AutomationRun]
 
 
 # The prose an agent and a human both read. Here rather than in the service so the two
@@ -116,31 +116,31 @@ RULE_DESCRIPTIONS: dict[AutomationRuleCode, tuple[str, str]] = {
     "A1": (
         "Offerta accettata → deal vinto",
         "Quando un'offerta passa da «inviata» ad «accettata», il deal collegato viene "
-        "spostato nello stato con code «vinto», o nell'unico stato di tipo «won». Se lo "
+        "spostato nello stato con codice «vinto», o nell'unico stato di tipo «won». Se lo "
         "stato manca o ce ne sono due, l'automazione non indovina: non fa nulla e "
         "registra il motivo.",
     ),
     "A2": (
         "Offerta inviata → il deal avanza",
         "Quando un'offerta passa da «bozza» a «inviata», il deal collegato avanza allo "
-        "stato con code «offerta», ma solo se la sua posizione attuale è precedente. Non "
+        "stato con codice «offerta», ma solo se la sua posizione attuale è precedente. Non "
         "torna mai indietro: un deal già in negoziazione non retrocede perché è stata "
         "mandata una seconda offerta.",
     ),
-    "offerta_inviata_richiama": (
+    "sent_offer_follow_up": (
         "Offerta senza risposta → un'attività per richiamare",
         "Una volta al giorno: per ogni offerta inviata da almeno sette giorni e ancora in "
         "attesa (fino a trentasette: dopo, richiamare non è più il seguito dell'invio), apre "
         "«Richiamare {cliente} sull'offerta {titolo}», con scadenza sette giorni dopo "
         "l'invio, al titolare del deal. Una sola finché è aperta.",
     ),
-    "deal_fermo": (
+    "stalled_deal": (
         "Deal fermo → un'attività per riprenderlo",
         "Una volta al giorno: per ogni deal aperto che resta nello stesso stato da almeno i "
         "giorni della soglia sotto, apre «Il deal {nome} è fermo da {n} giorni», con "
         "scadenza oggi, al titolare del deal. Una sola finché è aperta.",
     ),
-    "fattura_scaduta": (
+    "overdue_invoice": (
         "Fattura scaduta → un'attività per sollecitare",
         "Una volta al giorno: per ogni fattura emessa, non incassata e oltre la scadenza, "
         "apre «Sollecitare {cliente} per {numero}», con scadenza oggi, al titolare del "

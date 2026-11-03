@@ -13,7 +13,7 @@ import { AmountFilter, Empty, FilterField, Header, LoadMore, StatePill, StateFil
 
 /** «Aziende»: every company request as a list. REB-286 adds the search box, the
  *  filter row and infinite scroll, all three carried in the URL through
- *  `validateSearch` on `/admin/companies` (`router.tsx`) the same way `AdminTalenti`
+ *  `validateSearch` on `/admin/companies` (`router.tsx`) the same way `AdminTalents`
  *  carries its own -- see that component's own note for why only `q` is debounced. */
 export function AdminCompanies() {
   const search = useSearch({ from: '/signedIn/admin/companies' })
@@ -54,18 +54,18 @@ export function AdminCompanies() {
 
   return (
     <>
-      <Header title="Aziende" count={list.data?.pages[0]?.totale}>
+      <Header title="Aziende" count={list.data?.pages[0]?.total}>
         <div className="flex flex-wrap items-center gap-3">
-          <StateFilter states={COMPANY_STATES} value={search.stato} onChange={(value) => setFilter('stato', value)} />
+          <StateFilter states={COMPANY_STATES} value={search.status} onChange={(value) => setFilter('status', value)} />
           <Button asChild size="sm">
-            <Link to="/admin/companies/nuova">Nuova richiesta</Link>
+            <Link to="/admin/companies/new">Nuova richiesta</Link>
           </Button>
         </div>
       </Header>
       <div className="grid gap-4 border-b px-6 py-4 sm:grid-cols-2 lg:grid-cols-4">
-        <FilterField label="Cerca" htmlFor="aziende-q">
+        <FilterField label="Cerca" htmlFor="companies-q">
           <Input
-            id="aziende-q"
+            id="companies-q"
             type="search"
             maxLength={200}
             placeholder="Azienda, referente, email, progetto…"
@@ -74,47 +74,47 @@ export function AdminCompanies() {
           />
         </FilterField>
         <AmountFilter
-          id="aziende-budget-min"
+          id="companies-budget-min"
           label="Budget min (€/giorno)"
           value={search.budget_min}
           onChange={(value) => setFilter('budget_min', value)}
         />
         <AmountFilter
-          id="aziende-budget-max"
+          id="companies-budget-max"
           label="Budget max (€/giorno)"
           value={search.budget_max}
           onChange={(value) => setFilter('budget_max', value)}
         />
-        <FilterField label="Periodo dal" htmlFor="aziende-periodo-da">
+        <FilterField label="Periodo dal" htmlFor="companies-period-from">
           <Input
-            id="aziende-periodo-da"
+            id="companies-period-from"
             type="date"
-            value={search.periodo_da ?? ''}
-            onChange={(event) => setFilter('periodo_da', event.target.value || undefined)}
+            value={search.period_from ?? ''}
+            onChange={(event) => setFilter('period_from', event.target.value || undefined)}
           />
         </FilterField>
-        <FilterField label="Pagina di provenienza" htmlFor="aziende-origine">
+        <FilterField label="Pagina di provenienza" htmlFor="companies-origin">
           <Input
-            id="aziende-origine"
+            id="companies-origin"
             placeholder="home, pigrocrm…"
-            value={search.origine ?? ''}
-            onChange={(event) => setFilter('origine', event.target.value || undefined)}
+            value={search.origin ?? ''}
+            onChange={(event) => setFilter('origin', event.target.value || undefined)}
           />
         </FilterField>
-        <FilterField label="Creata dal" htmlFor="aziende-creato-da">
+        <FilterField label="Creata dal" htmlFor="companies-created-from">
           <Input
-            id="aziende-creato-da"
+            id="companies-created-from"
             type="date"
-            value={search.creato_da ?? ''}
-            onChange={(event) => setFilter('creato_da', event.target.value || undefined)}
+            value={search.created_from ?? ''}
+            onChange={(event) => setFilter('created_from', event.target.value || undefined)}
           />
         </FilterField>
-        <FilterField label="Creata al" htmlFor="aziende-creato-a">
+        <FilterField label="Creata al" htmlFor="companies-created-to">
           <Input
-            id="aziende-creato-a"
+            id="companies-created-to"
             type="date"
-            value={search.creato_a ?? ''}
-            onChange={(event) => setFilter('creato_a', event.target.value || undefined)}
+            value={search.created_to ?? ''}
+            onChange={(event) => setFilter('created_to', event.target.value || undefined)}
           />
         </FilterField>
       </div>
@@ -144,19 +144,19 @@ export function AdminCompanies() {
                     <TableRow key={item.id}>
                       <TableCell>
                         <Link to="/admin/companies/$id" params={{ id: item.id }} className="font-medium hover:underline">
-                          {item.nome_azienda}
+                          {item.company_name}
                         </Link>
-                        {item.origine === TEAM_BUILDER_ORIGIN && (
+                        {item.origin === TEAM_BUILDER_ORIGIN && (
                           <span className="ml-2">
                             <TeamBuilderPill />
                           </span>
                         )}
-                        <p className="text-xs text-muted-foreground">{item.referente} · {item.email}</p>
+                        <p className="text-xs text-muted-foreground">{item.contact_person} · {item.email}</p>
                       </TableCell>
-                      <TableCell className="max-w-xs truncate">{item.progetto}</TableCell>
-                      <TableCell>dal {formatDate(item.periodo_da)}, {item.durata}</TableCell>
-                      <TableCell className="text-right tabular-nums">{formatMoney(item.budget_giornaliero)}</TableCell>
-                      <TableCell><StatePill stato={item.stato} /></TableCell>
+                      <TableCell className="max-w-xs truncate">{item.project}</TableCell>
+                      <TableCell>dal {formatDate(item.period_from)}, {item.duration}</TableCell>
+                      <TableCell className="text-right tabular-nums">{formatMoney(item.daily_budget)}</TableCell>
+                      <TableCell><StatePill status={item.status} /></TableCell>
                       <TableCell className="text-right text-muted-foreground">{formatDate(item.created_at)}</TableCell>
                     </TableRow>
                   ))}

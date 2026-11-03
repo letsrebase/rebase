@@ -4,7 +4,7 @@ Spec 2026-10-26 §9, REB-736. The command is the one piece of the reminders that
 is more than one space: it visits the root installation, walks the tenant registry, opens
 each space's own database and hands `ReminderRun` one engine per space. So this file
 provisions two spaces for real (`CREATE DATABASE`, the migrations to head, the first
-admin), as `test_cli_digest.py` does, gives each an attività due today, and then runs
+admin), as `test_cli_digest.py` does, gives each an task due today, and then runs
 `cli.main(["reminders", ...])`.
 
 The card's proof is in the first test: nobody calls the pass for a space, the command does,
@@ -19,7 +19,7 @@ from datetime import timedelta
 from uuid import UUID
 
 import pytest
-from fakes.azienda_fixtures import committed_default_azienda
+from fakes.legal_entity_fixtures import committed_default_legal_entity
 from sqlalchemy import Engine, create_engine, text
 from sqlalchemy.engine import make_url
 from sqlalchemy.orm import Session
@@ -27,7 +27,6 @@ from sqlalchemy.orm import Session
 import pigrocrm.core.cli as cli
 import pigrocrm.core.cli.cron as cli_cron
 from pigrocrm.core.actor import Actor
-from pigrocrm.core.attivita.models import Attivita
 from pigrocrm.core.auth.models import User
 from pigrocrm.core.config import Settings
 from pigrocrm.core.db import session_factory, today_local
@@ -39,14 +38,15 @@ from pigrocrm.core.reminders.run import (
     ReminderRun,
 )
 from pigrocrm.core.reminders.service import ReminderService
+from pigrocrm.core.tasks.models import Task
 from pigrocrm.core.tenants import TenantService, TenantSignup, ensure_tenants_database
 from pigrocrm.core.tenants.database import tenant_database_name, tenant_database_url
 from pigrocrm.core.tenants.service import migrate_to_head
 
-UNO = "prova-promemoria-uno"
-DUE = "prova-promemoria-due"
-TITOLARI = {UNO: "uno@studio.it", DUE: "due@studio.it"}
-SPAZI = (UNO, DUE)
+FIRST_SPACE = "prova-promemoria-uno"
+SECOND_SPACE = "prova-promemoria-due"
+OWNERS = {FIRST_SPACE: "uno@studio.it", SECOND_SPACE: "due@studio.it"}
+SPACES = (FIRST_SPACE, SECOND_SPACE)
 ROOT_DB = "prova_promemoria_radice"
 ROOT_OWNER = "titolare@radice.it"
 
@@ -68,8 +68,8 @@ def settings(db_engine: Engine) -> Iterator[Settings]:
     try:
         migrate_to_head(configured, configured.database_url)
         with _engine(configured.database_url) as engine, session_factory(engine)() as session:
-            session.add(User(email=ROOT_OWNER, nome="Titolare", ruolo="admin", attivo=True))
-            committed_default_azienda(session, nome="Radice")
+            session.add(User(email=ROOT_OWNER, name="Titolare", role="admin", active=True))
+            committed_default_legal_entity(session, name="Radice")
             session.commit()
         yield configured
     finally:
@@ -97,18 +97,18 @@ def registry(settings: Settings) -> Iterator[Engine]:
 
 
 @pytest.fixture(scope="module")
-def spazi(settings: Settings, registry: Engine) -> Iterator[None]:
+def spaces(settings: Settings, registry: Engine) -> Iterator[None]:
     session: Session = session_factory(registry)()
     service = TenantService(session, settings)
     try:
-        for slug in SPAZI:
-            service.provision(TenantSignup(slug=slug, nome=f"Studio {slug}", email=TITOLARI[slug]))
+        for slug in SPACES:
+            service.provision(TenantSignup(slug=slug, name=f"Studio {slug}", email=OWNERS[slug]))
         yield
     finally:
-        for slug in SPAZI:
+        for slug in SPACES:
             drop_database(settings, tenant_database_url(settings, tenant_database_name(slug)))
         session.execute(
-            text("delete from tenants where slug = any(:slugs)"), {"slugs": list(SPAZI)}
+            text("delete from tenants where slug = any(:slugs)"), {"slugs": list(SPACES)}
         )
         session.commit()
         session.close()
@@ -123,7 +123,7 @@ def _url(settings: Settings, slug: str | None) -> object:
 
 
 def _owner_id(settings: Settings, slug: str | None) -> UUID:
-    email = ROOT_OWNER if slug is None else TITOLARI[slug]
+    email = ROOT_OWNER if slug is None else OWNERS[slug]
     with _engine(_url(settings, slug)) as engine, engine.connect() as connection:
         return connection.execute(
             text("select id from users where email = :email"), {"email": email}
@@ -131,24 +131,24 @@ def _owner_id(settings: Settings, slug: str | None) -> UUID:
 
 
 @pytest.fixture(autouse=True)
-def _a_due_attivita_in_every_space(settings: Settings, spazi: None) -> Iterator[None]:
-    """One attività due today, assigned to each installation's owner, and everything a pass
+def _to_due_task_in_every_space(settings: Settings, spaces: None) -> Iterator[None]:
+    """One task due today, assigned to each installation's owner, and everything a pass
     writes undone afterwards so each test starts from a space nobody has reminded."""
     today = today_local(settings)
-    for slug in (None, *SPAZI):
+    for slug in (None, *SPACES):
         owner = _owner_id(settings, slug)
         with _engine(_url(settings, slug)) as engine, session_factory(engine)() as session:
-            session.add(Attivita(titolo="Mandare il preventivo", scadenza=today, assegnata_a=owner))
+            session.add(Task(title="Mandare il preventivo", due_date=today, assigned_to=owner))
             session.commit()
     yield
-    for slug in (None, *SPAZI):
+    for slug in (None, *SPACES):
         with _engine(_url(settings, slug)) as engine, engine.begin() as connection:
             for table in (
                 "reminder_delivery",
                 "reminder_ack",
                 "reminder_snooze",
                 "reminder_job_run",
-                "attivita",
+                "tasks",
             ):
                 connection.execute(text(f"delete from {table}"))  # noqa: S608 - fixed names
 
@@ -190,16 +190,16 @@ def test_the_cron_raises_a_reminder_in_every_space_on_its_own(
 
     lines = capsys.readouterr().out.splitlines()
     assert lines[0] == f"{ROOT_LABEL}: promemoria 1, nuovi 1, chiusi 0"
-    assert f"{UNO}: promemoria 1, nuovi 1, chiusi 0" in lines
-    assert f"{DUE}: promemoria 1, nuovi 1, chiusi 0" in lines
+    assert f"{FIRST_SPACE}: promemoria 1, nuovi 1, chiusi 0" in lines
+    assert f"{SECOND_SPACE}: promemoria 1, nuovi 1, chiusi 0" in lines
     # Each space's owner has the reminder, with the time the pass put it in their list.
-    for slug in SPAZI:
+    for slug in SPACES:
         owner = _owner_id(settings, slug)
         with _engine(_url(settings, slug)) as engine, session_factory(engine)() as session:
             listed = ReminderService(session, settings).list(
                 Actor(id=owner, type="user", role="admin")
             )
-        assert [(item.type, item.severity) for item in listed] == [("attivita_due", "warning")]
+        assert [(item.type, item.severity) for item in listed] == [("task_due", "warning")]
         assert listed[0].delivered_at is not None, "the pass wrote it down"
         assert _clock(settings, slug) == 1, "and the clock `job_late` reads"
 
@@ -213,9 +213,9 @@ def test_a_second_pass_delivers_nothing_again(
     assert cli.main(["reminders"]) == 0
 
     lines = capsys.readouterr().out.splitlines()
-    assert f"{UNO}: promemoria 1, nuovi 0, chiusi 0" in lines
-    assert _deliveries(settings, UNO) == 1, "one row, however many passes"
-    assert _clock(settings, UNO) == 1
+    assert f"{FIRST_SPACE}: promemoria 1, nuovi 0, chiusi 0" in lines
+    assert _deliveries(settings, FIRST_SPACE) == 1, "one row, however many passes"
+    assert _clock(settings, FIRST_SPACE) == 1
 
 
 def test_a_rehearsal_says_what_would_go_and_writes_nothing(
@@ -224,18 +224,18 @@ def test_a_rehearsal_says_what_would_go_and_writes_nothing(
     assert cli.main(["reminders", "--dry-run"]) == 0
 
     out = capsys.readouterr().out
-    assert f"{UNO}: promemoria 1, nuovi 1, chiusi 0 (prova)" in out
-    assert _deliveries(settings, UNO) == 0
-    assert _clock(settings, UNO) == 0, "not even the clock: a rehearsal is not a pass"
+    assert f"{FIRST_SPACE}: promemoria 1, nuovi 1, chiusi 0 (prova)" in out
+    assert _deliveries(settings, FIRST_SPACE) == 0
+    assert _clock(settings, FIRST_SPACE) == 0, "not even the clock: a rehearsal is not a pass"
 
 
 def test_one_space_by_name_and_the_root_by_its_label(
     settings: Settings, cron: None, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    assert cli.main(["reminders", "--slug", UNO]) == 0
+    assert cli.main(["reminders", "--slug", FIRST_SPACE]) == 0
     out = capsys.readouterr().out
-    assert out.splitlines() == [f"{UNO}: promemoria 1, nuovi 1, chiusi 0"]
-    assert _deliveries(settings, DUE) == 0
+    assert out.splitlines() == [f"{FIRST_SPACE}: promemoria 1, nuovi 1, chiusi 0"]
+    assert _deliveries(settings, SECOND_SPACE) == 0
 
     assert cli.main(["reminders", "--slug", "root"]) == 0
     assert capsys.readouterr().out.splitlines() == [
@@ -258,13 +258,13 @@ def test_another_day_is_rehearsed_as_that_day_and_writes_nothing(
 ) -> None:
     tomorrow = (today_local(settings) + timedelta(days=1)).isoformat()
 
-    assert cli.main(["reminders", "--slug", UNO, "--data", tomorrow, "--dry-run"]) == 0
+    assert cli.main(["reminders", "--slug", FIRST_SPACE, "--date", tomorrow, "--dry-run"]) == 0
 
     # Due today is overdue by tomorrow: a `serious` where today it was a `warning`.
     assert capsys.readouterr().out.splitlines() == [
-        f"{UNO}: promemoria 1, nuovi 1, chiusi 0 (prova)"
+        f"{FIRST_SPACE}: promemoria 1, nuovi 1, chiusi 0 (prova)"
     ]
-    with _engine(_url(settings, UNO)) as engine, engine.connect() as connection:
+    with _engine(_url(settings, FIRST_SPACE)) as engine, engine.connect() as connection:
         assert connection.execute(text("select count(*) from reminder_delivery")).scalar_one() == 0
 
 
@@ -273,12 +273,12 @@ def test_another_day_is_refused_without_a_dry_run(
 ) -> None:
     tomorrow = (today_local(settings) + timedelta(days=1)).isoformat()
 
-    assert cli.main(["reminders", "--slug", UNO, "--data", tomorrow]) == 2
+    assert cli.main(["reminders", "--slug", FIRST_SPACE, "--date", tomorrow]) == 2
 
     captured = capsys.readouterr()
     assert captured.out == ""
     assert "--dry-run" in captured.err
-    with _engine(_url(settings, UNO)) as engine, engine.connect() as connection:
+    with _engine(_url(settings, FIRST_SPACE)) as engine, engine.connect() as connection:
         assert connection.execute(text("select count(*) from reminder_delivery")).scalar_one() == 0
 
 
@@ -291,7 +291,7 @@ def test_a_failing_space_is_one_line_with_the_exception_name_and_the_next_goes_o
     original = ReminderRun.run_for_space
 
     def run(self, slug, engine, **kwargs):  # type: ignore[no-untyped-def]
-        if slug == UNO:
+        if slug == FIRST_SPACE:
             raise RuntimeError("postgresql://user:secret@host/db")
         return original(self, slug, engine, **kwargs)
 
@@ -300,47 +300,49 @@ def test_a_failing_space_is_one_line_with_the_exception_name_and_the_next_goes_o
     assert cli.main(["reminders"]) == 1, "a line on stderr is the exit status the ping reads"
 
     captured = capsys.readouterr()
-    assert captured.err.splitlines() == [f"{UNO}: saltato (RuntimeError)"]
+    assert captured.err.splitlines() == [f"{FIRST_SPACE}: saltato (RuntimeError)"]
     assert "secret" not in captured.err + captured.out, "the type, never the message"
-    assert f"{DUE}: promemoria 1, nuovi 1, chiusi 0" in captured.out
-    assert _deliveries(settings, DUE) == 1
+    assert f"{SECOND_SPACE}: promemoria 1, nuovi 1, chiusi 0" in captured.out
+    assert _deliveries(settings, SECOND_SPACE) == 1
     # REB-764: the failure is on the space's clock, as the type; the other space ran.
-    assert _clock_row(settings, UNO) == (False, "RuntimeError")
-    assert _clock_row(settings, DUE) == (True, None)
+    assert _clock_row(settings, FIRST_SPACE) == (False, "RuntimeError")
+    assert _clock_row(settings, SECOND_SPACE) == (True, None)
 
     # The next pass that works ends the failure.
     monkeypatch.setattr(ReminderRun, "run_for_space", original)
-    assert cli.main(["reminders", "--slug", UNO]) == 0
-    assert _clock_row(settings, UNO) == (True, None)
+    assert cli.main(["reminders", "--slug", FIRST_SPACE]) == 0
+    assert _clock_row(settings, FIRST_SPACE) == (True, None)
 
 
 def test_a_space_behind_the_image_is_skipped_by_name_and_not_migrated(
     settings: Settings, cron: None, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    with _engine(_url(settings, UNO)) as engine, engine.begin() as connection:
+    with _engine(_url(settings, FIRST_SPACE)) as engine, engine.begin() as connection:
         connection.execute(text("alter table reminder_job_run rename to reminder_job_run_away"))
     try:
-        assert cli.main(["reminders", "--slug", UNO]) == 1
+        assert cli.main(["reminders", "--slug", FIRST_SPACE]) == 1
     finally:
-        with _engine(_url(settings, UNO)) as engine, engine.begin() as connection:
+        with _engine(_url(settings, FIRST_SPACE)) as engine, engine.begin() as connection:
             connection.execute(text("alter table reminder_job_run_away rename to reminder_job_run"))
 
     # One line: the clock could not hold the failure either, and that is the same fault.
-    assert capsys.readouterr().err.splitlines() == [f"{UNO}: saltato (ProgrammingError)"]
-    assert _deliveries(settings, UNO) == 0, "the failed pass wrote nothing"
+    assert capsys.readouterr().err.splitlines() == [f"{FIRST_SPACE}: saltato (ProgrammingError)"]
+    assert _deliveries(settings, FIRST_SPACE) == 0, "the failed pass wrote nothing"
 
 
 def test_a_pass_that_finds_another_one_running_says_so_and_does_nothing(
     settings: Settings, cron: None, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    holder = create_engine(_url(settings, UNO), future=True)  # type: ignore[arg-type]
+    holder = create_engine(_url(settings, FIRST_SPACE), future=True)  # type: ignore[arg-type]
     with holder.connect() as connection:
         connection = connection.execution_options(isolation_level="AUTOCOMMIT")
         connection.execute(
             text("select pg_advisory_lock(:namespace, 1)"), {"namespace": REMINDERS_LOCK_NAMESPACE}
         )
         try:
-            assert cli.main(["reminders", "--slug", UNO]) == 0, "the lock working is not a failure"
+            assert cli.main(["reminders", "--slug", FIRST_SPACE]) == 0, (
+                "the lock working is not a failure"
+            )
         finally:
             connection.execute(
                 text("select pg_advisory_unlock(:namespace, 1)"),
@@ -349,14 +351,14 @@ def test_a_pass_that_finds_another_one_running_says_so_and_does_nothing(
     holder.dispose()
 
     captured = capsys.readouterr()
-    assert captured.out.splitlines() == [f"{UNO}: saltato (in_corso)"]
+    assert captured.out.splitlines() == [f"{FIRST_SPACE}: saltato (in_corso)"]
     assert captured.err == ""
-    assert _deliveries(settings, UNO) == 0
-    assert _clock(settings, UNO) == 0
+    assert _deliveries(settings, FIRST_SPACE) == 0
+    assert _clock(settings, FIRST_SPACE) == 0
 
     # The lock was released: the next pass gets it.
-    assert cli.main(["reminders", "--slug", UNO]) == 0
-    assert _deliveries(settings, UNO) == 1
+    assert cli.main(["reminders", "--slug", FIRST_SPACE]) == 0
+    assert _deliveries(settings, FIRST_SPACE) == 1
 
 
 def test_an_unreachable_registry_is_a_line_and_the_root_still_runs(
@@ -379,7 +381,7 @@ def test_an_unreachable_registry_is_a_line_and_the_root_still_runs(
 
 def test_the_reminder_arguments_reject_a_date_that_is_not_one() -> None:
     with pytest.raises(SystemExit) as raised:
-        cli.main(["reminders", "--data", "domani"])
+        cli.main(["reminders", "--date", "domani"])
 
     assert raised.value.code == 2
 
@@ -391,14 +393,14 @@ def test_the_line_tells_what_the_other_channels_sent_only_when_they_sent(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     cli_cron._print_reminder_outcome(
-        ReminderOutcome("acme", "eseguito", raised=3, delivered=2), dry_run=False
+        ReminderOutcome("acme", "run", raised=3, delivered=2), dry_run=False
     )
     cli_cron._print_reminder_outcome(
-        ReminderOutcome("acme", "eseguito", raised=3, delivered=2, pushes=2, emails=1),
+        ReminderOutcome("acme", "run", raised=3, delivered=2, pushes=2, emails=1),
         dry_run=False,
     )
     cli_cron._print_reminder_outcome(
-        ReminderOutcome("acme", "eseguito", raised=3, delivered=2, emails=1), dry_run=True
+        ReminderOutcome("acme", "run", raised=3, delivered=2, emails=1), dry_run=True
     )
 
     assert capsys.readouterr().out.splitlines() == [

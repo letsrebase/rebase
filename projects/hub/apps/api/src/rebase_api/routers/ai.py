@@ -4,7 +4,7 @@ tasks' provider/model/effort/caps, the price table, the month's spend and «Prov
 Admin only, every route. A key goes in through `PUT /providers/{provider}/key` and never
 comes out: every answer here is the core's `ProviderRead`, whose most is the «configurata,
 finisce con …abcd» hint. «Prova» runs the selected task's own provider, model and cap with
-one fixed, non-personal prompt; the seam records the call as `purpose="prova"`, so a
+one fixed, non-personal prompt; the seam records the call as `purpose="test"`, so a
 probe spends the task's daily cap like a real card does."""
 
 import time
@@ -20,10 +20,10 @@ from rebase_api.deps import (
     AdminDep,
     CardBatchesDep,
     CardLlmDep,
-    ProvaCallDep,
     SessionDep,
     SessionOpenerDep,
     SettingsDep,
+    TestCallDep,
 )
 from rebase_api.params import Limit
 from rebase_core.ai_config import MAX_AMOUNT_EUR, AiConfigService
@@ -42,10 +42,10 @@ from rebase_core.audit import AdminActionRead
 from rebase_core.card_batch import active_batch
 from rebase_core.card_writer import CardWriter, regenerate_after_response
 from rebase_core.crm_lead import (
-    SAMPLE_DURATA,
-    SAMPLE_FIGURA,
-    SAMPLE_PERIODO_DA,
-    SAMPLE_PROGETTO,
+    SAMPLE_DURATION,
+    SAMPLE_PERIOD_FROM,
+    SAMPLE_PROFILE,
+    SAMPLE_PROJECT,
     LeadDraft,
     LeadDraftOut,
     lead_request,
@@ -58,9 +58,9 @@ from rebase_core.sources import default_source_service
 
 router = APIRouter(prefix="/api/hub/admin/ai", tags=["hub-admin"])
 
-PROVA_SYSTEM = "Rispondi in modo brevissimo."
-PROVA_PROMPT = "Rispondi solo con la parola: ok."
-PROVA_MAX_TOKENS = 64
+TEST_SYSTEM = "Rispondi in modo brevissimo."
+TEST_PROMPT = "Rispondi solo con la parola: ok."
+TEST_MAX_TOKENS = 64
 # The most cards one start writes again, and the most the list shows: one start is a few
 # minutes of calls, which the page does not wait for (they are written after the response).
 REGENERATE_MAX = 50
@@ -107,7 +107,7 @@ class RegenerateBody(BaseModel):
     limit: int = Field(ge=1, le=REGENERATE_MAX)
 
 
-class ProvaRead(ResponseModel):
+class TestRead(ResponseModel):
     answer: str
     latency_ms: int
     cost_eur: str | None
@@ -178,7 +178,7 @@ def stale_cards(admin: AdminDep, session: SessionDep, settings: SettingsDep) -> 
         items=[
             StaleCardRead(
                 freelancer_id=item.freelancer_id,
-                nome=item.nome,
+                first_name=item.first_name,
                 reason=item.reason,
                 generated_at=item.generated_at,
             )
@@ -223,7 +223,7 @@ def regenerate_stale(
             llm,
             admin.id,
             body.limit,
-            fonte="web",
+            source="web",
             workers=settings.cards_workers,
             batches=batches,
         )
@@ -240,14 +240,14 @@ def upsert_price(admin: AdminDep, service: ServiceDep, body: PriceBody) -> Price
     return service.upsert_price(admin.id, **body.model_dump())
 
 
-@router.post("/tasks/{task}/prova", response_model=ProvaRead)
-def prova(
+@router.post("/tasks/{task}/test", response_model=TestRead)
+def test(
     admin: AdminDep,
     service: ServiceDep,
     session: SessionDep,
-    make_call: ProvaCallDep,
+    make_call: TestCallDep,
     task: str,
-) -> ProvaRead:
+) -> TestRead:
     """One call with the fixed prompt through the task's own provider, model and cap: it
     goes through the seam, so it reserves its worst case against the cap, spends it like any
     call (the cap sums every purpose) and shows the cost of its own row. A provider that
@@ -260,19 +260,19 @@ def prova(
     # The CRM draft's probe is the task itself on an invented request, so the page shows a
     # real draft; the others send the fixed one-word prompt.
     request = (
-        lead_request(SAMPLE_FIGURA, SAMPLE_PROGETTO, SAMPLE_DURATA, SAMPLE_PERIODO_DA)
+        lead_request(SAMPLE_PROFILE, SAMPLE_PROJECT, SAMPLE_DURATION, SAMPLE_PERIOD_FROM)
         if task == "crm_lead"
         else LlmRequest(
-            system=PROVA_SYSTEM,
-            messages=[LlmMessage(role="user", text=PROVA_PROMPT)],
+            system=TEST_SYSTEM,
+            messages=[LlmMessage(role="user", text=TEST_PROMPT)],
             output_model=_Probe,
-            max_tokens=PROVA_MAX_TOKENS,
+            max_tokens=TEST_MAX_TOKENS,
         )
     )
     try:
         response = make_call(task).complete(request)
     except LlmUnavailable as exc:
-        return ProvaRead(
+        return TestRead(
             answer="",
             latency_ms=round((time.monotonic() - started) * 1000),
             cost_eur=None,
@@ -286,7 +286,7 @@ def prova(
         select(AiUsage)
         .where(
             AiUsage.task == task,
-            AiUsage.purpose == "prova",
+            AiUsage.purpose == "test",
             AiUsage.at >= began,
             settled(),
         )
@@ -301,7 +301,7 @@ def prova(
         answer = LeadDraft.from_output(response.parsed).text()
     else:
         answer = response.text
-    return ProvaRead(
+    return TestRead(
         answer=answer or "",
         latency_ms=latency,
         cost_eur=None if cost is None else format(cost, "f"),

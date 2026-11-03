@@ -10,8 +10,6 @@ from sqlalchemy.orm import Session
 
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.customers.models import Customer
-from pigrocrm.core.emitter.schemas import LegalEntityUpsert
-from pigrocrm.core.emitter.service import LegalEntityService
 from pigrocrm.core.errors import NotFound
 from pigrocrm.core.fiscal.schemas import FiscalProfileUpsert
 from pigrocrm.core.fiscal.service import FiscalProfileService
@@ -19,6 +17,8 @@ from pigrocrm.core.invoices.assembly import assemble_draft
 from pigrocrm.core.invoices.models import Invoice, InvoiceLine
 from pigrocrm.core.invoices.schemas import InvoiceCreate, InvoiceIssue, InvoiceLineIn
 from pigrocrm.core.invoices.service import InvoiceService
+from pigrocrm.core.legal_entities.schemas import LegalEntityUpsert
+from pigrocrm.core.legal_entities.service import LegalEntityService
 from pigrocrm.core.storage.local import LocalFileStorage
 
 ADMIN = Actor(id=None, type="system", role="admin")
@@ -26,17 +26,17 @@ ADMIN = Actor(id=None, type="system", role="admin")
 
 @pytest.fixture
 def service(db_session: Session, tmp_path) -> InvoiceService:  # type: ignore[no-untyped-def]
-    FiscalProfileService(db_session).upsert(FiscalProfileUpsert(codice_regime="RF19"), ADMIN)
+    FiscalProfileService(db_session).upsert(FiscalProfileUpsert(regime_code="RF19"), ADMIN)
     LegalEntityService(db_session).upsert_default(
         LegalEntityUpsert(
-            ragione_sociale="Studio Rossi",
-            partita_iva="01234567890",
-            codice_fiscale="HMCRFT00A01H501K",
-            indirizzo="Via Vittorio Veneto 12",
+            legal_name="Studio Rossi",
+            vat_number="01234567890",
+            tax_code="HMCRFT00A01H501K",
+            address="Via Vittorio Veneto 12",
             cap="20124",
-            comune="Milano",
-            provincia="MI",
-            nazione="IT",
+            city="Milano",
+            province="MI",
+            country="IT",
             email="mario@example.com",
         ),
         ADMIN,
@@ -47,14 +47,14 @@ def service(db_session: Session, tmp_path) -> InvoiceService:  # type: ignore[no
 @pytest.fixture
 def customer_id(db_session: Session) -> UUID:
     customer = Customer(
-        ragione_sociale="Acme S.r.l.",
-        partita_iva="12345678901",
-        codice_sdi="ABCDEFG",
-        indirizzo="Corso Italia 5",
+        legal_name="Acme S.r.l.",
+        vat_number="12345678901",
+        sdi_code="ABCDEFG",
+        address="Corso Italia 5",
         cap="00100",
-        comune="Roma",
-        provincia="RM",
-        nazione="IT",
+        city="Roma",
+        province="RM",
+        country="IT",
     )
     db_session.add(customer)
     db_session.flush()
@@ -64,8 +64,8 @@ def customer_id(db_session: Session) -> UUID:
 def _draft(customer_id: UUID) -> InvoiceCreate:
     return InvoiceCreate(
         customer_id=customer_id,
-        righe=[
-            InvoiceLineIn(descrizione=name, prezzo_unitario=Decimal(price))
+        lines=[
+            InvoiceLineIn(description=name, unit_price=Decimal(price))
             for name, price in (("Prima", "100.00"), ("Seconda", "200.00"), ("Terza", "300.00"))
         ],
     )
@@ -98,22 +98,22 @@ def test_bind_receives_the_line_ids_in_line_order_and_everything_commits_once(
         db_session.execute(
             select(InvoiceLine)
             .where(InvoiceLine.invoice_id == draft.id)
-            .order_by(InvoiceLine.numero_linea)
+            .order_by(InvoiceLine.line_number)
         )
         .scalars()
         .all()
     )
-    assert [line.descrizione for line in stored] == ["Prima", "Seconda", "Terza"]
+    assert [line.description for line in stored] == ["Prima", "Seconda", "Terza"]
     assert received[0] == [line.id for line in stored]
-    assert draft.stato == "bozza"
-    assert draft.totale == Decimal("600.00")
+    assert draft.status == "draft"
+    assert draft.total == Decimal("600.00")
     assert len(commits) == 1
 
 
 def test_a_failing_bind_leaves_no_draft_and_keeps_the_callers_other_pending_work(
     service: InvoiceService, db_session: Session, customer_id: UUID
 ) -> None:
-    other = Customer(ragione_sociale="Pending Srl")
+    other = Customer(legal_name="Pending Srl")
     db_session.add(other)
     db_session.flush()
     invoices_before = _count(db_session, Invoice)
@@ -163,6 +163,6 @@ def test_issue_and_render_answers_the_issued_row_when_the_render_fails(
     issued = service.issue_and_render(draft.id, InvoiceIssue(), ADMIN)
 
     assert issued.id == draft.id
-    assert issued.stato == "emessa"
-    assert issued.numero == 1
+    assert issued.status == "issued"
+    assert issued.number == 1
     assert issued.pdf_document_id is None

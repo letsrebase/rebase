@@ -22,23 +22,23 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
     @mcp.tool(annotations=ADDITIVE)
     @guard
     def create_customer(
-        ragione_sociale: str,
-        partita_iva: str | None = None,
-        codice_fiscale: str | None = None,
-        codice_sdi: str | None = None,
-        pec: str | None = None,
-        indirizzo: str | None = None,
+        legal_name: str,
+        vat_number: str | None = None,
+        tax_code: str | None = None,
+        sdi_code: str | None = None,
+        certified_email: str | None = None,
+        address: str | None = None,
         cap: str | None = None,
-        comune: str | None = None,
-        provincia: str | None = None,
+        city: str | None = None,
+        province: str | None = None,
         email: str | None = None,
-        telefono: str | None = None,
+        phone: str | None = None,
         note: str | None = None,
-        giorni_pagamento: int | None = None,
-        pagamento_fine_mese: bool = False,
+        payment_days: int | None = None,
+        payment_end_of_month: bool = False,
         custom_fields: dict[str, Any] | None = None,
-        nazione: str | None = None,
-        azienda_id: str | None = None,
+        country: str | None = None,
+        legal_entity_id: str | None = None,
         owner_id: str | None = None,
     ) -> dict[str, Any]:
         """Crea un cliente.
@@ -47,47 +47,47 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
         `list_members`): omesso, è chi crea; un altro lo indica solo un amministratore, come per
         `update_customer`.
 
-        `giorni_pagamento` e `pagamento_fine_mese` sono i termini concordati («30 giorni data
+        `payment_days` e `payment_end_of_month` sono i termini concordati («30 giorni data
         fattura fine mese» = `30` con `True`); da qui `issue_invoice` calcola la scadenza,
         altrimenti usa il profilo fiscale.
 
-        `nazione`: ISO 3166-1 alpha-2 (`IT` se omessa). `azienda_id`: l'azienda che lo fattura
-        (`list_aziende`); omessa, quella di `propose_azienda`.
+        `country`: ISO 3166-1 alpha-2 (`IT` se omessa). `legal_entity_id`: l'azienda che lo fattura
+        (`list_legal_entities`); omessa, quella di `suggest_legal_entity`.
 
         `note` è la prima nota del cliente (senza data né autore: la firma il CRM).
         """
         return customers.create(
             context,
             {
-                "ragione_sociale": ragione_sociale,
-                "partita_iva": partita_iva,
-                "codice_fiscale": codice_fiscale,
-                "codice_sdi": codice_sdi,
-                "pec": pec,
-                "indirizzo": indirizzo,
+                "legal_name": legal_name,
+                "vat_number": vat_number,
+                "tax_code": tax_code,
+                "sdi_code": sdi_code,
+                "certified_email": certified_email,
+                "address": address,
                 "cap": cap,
-                "comune": comune,
-                "provincia": provincia,
+                "city": city,
+                "province": province,
                 "email": email,
-                "telefono": telefono,
+                "phone": phone,
                 "note": note,
-                "giorni_pagamento": giorni_pagamento,
-                "pagamento_fine_mese": pagamento_fine_mese,
+                "payment_days": payment_days,
+                "payment_end_of_month": payment_end_of_month,
                 "custom_fields": custom_fields or {},
-                **({"nazione": nazione} if nazione is not None else {}),
-                "azienda_id": parse_legal_entity_id(azienda_id),
+                **({"country": country} if country is not None else {}),
+                "legal_entity_id": parse_legal_entity_id(legal_entity_id),
                 "owner_id": owner_id,
             },
         )
 
     @mcp.tool(annotations=READ_ONLY)
     @guard
-    def propose_azienda(nazione: str | None = None) -> dict[str, Any]:
-        """L'azienda che fatturerebbe un nuovo cliente di `nazione` (ISO 3166-1 alpha-2, `IT` se
-        omessa): la stessa che `create_customer` sceglie senza `azienda_id`. Chiedila per
+    def suggest_legal_entity(country: str | None = None) -> dict[str, Any]:
+        """L'azienda che fatturerebbe un nuovo cliente di `country` (ISO 3166-1 alpha-2, `IT` se
+        omessa): la stessa che `create_customer` sceglie senza `legal_entity_id`. Chiedila per
         mostrarla alla persona prima di creare.
         """
-        return invoices.propose_azienda(context, nazione)
+        return invoices.suggest_legal_entity(context, country)
 
     @mcp.tool(annotations=DESTRUCTIVE)
     @guard
@@ -100,7 +100,7 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
     @mcp.tool(annotations=READ_ONLY)
     @guard
     def get_customer(customer_id: str) -> dict[str, Any]:
-        """Legge un cliente, con le ultime 50 note (`note`, dalla più recente; `note_totale`
+        """Legge un cliente, con le ultime 50 note (`note`, dalla più recente; `note_total`
         le conta, tutte in `customer://<id>`).
         """
         return customers.get(context, customer_id)
@@ -109,9 +109,9 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
     @guard
     def search_customers(
         search: str | None = None,
-        stato: str | None = None,
+        status: str | None = None,
         custom: dict[str, Any] | None = None,
-        azienda_id: str | None = None,
+        legal_entity_id: str | None = None,
         limit: BoundedLimit = 50,
         cursor: str | None = None,
         sort: str | None = None,
@@ -123,15 +123,15 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
         dir: str = "asc",
     ) -> dict[str, Any]:
         """Cerca clienti per ragione sociale, P.IVA, codice fiscale o email. `sort`: `created_at`,
-        `updated_at`, `ragione_sociale`. `azienda_id` filtra per azienda.
+        `updated_at`, `legal_name`. `legal_entity_id` filtra per azienda.
         """
         return customers.search(
             context,
             CustomerListQuery(
                 search=search,
-                stato=stato,
+                status=status,
                 custom=custom,
-                azienda_id=parse_legal_entity_id(azienda_id),
+                legal_entity_id=parse_legal_entity_id(legal_entity_id),
                 # cast: limit is `int | str` at runtime for the SDK-bypass reason
                 # documented on `BoundedLimit` in `tools/params.py`; the *ListQuery schema this
                 # feeds is what actually enforces (and coerces) "must be an int".

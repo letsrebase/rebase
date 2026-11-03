@@ -33,7 +33,7 @@ AGENT_ADMIN = Actor(id=None, type="mcp", role="admin")
 # The same credential on an installation that has opted in. Same type, same role --
 # the only difference is what `Settings.mcp_full_access` said when `PatService.resolve`
 # built it, which is the whole design: the capability rides on the credential.
-AGENT_APERTO = Actor(id=None, type="mcp", role="admin", full_access=True)
+AGENT_OPEN = Actor(id=None, type="mcp", role="admin", full_access=True)
 AGENT_READONLY = Actor(id=None, type="mcp", role="readonly")
 HUMAN_ADMIN = Actor(id=None, type="user", role="admin")
 SYSTEM = Actor.system()
@@ -98,7 +98,7 @@ def test_a_person_only_action_is_refused_to_every_agent_even_an_opted_in_one(
     """Creating an administrator, rewriting the space settings (the ceiling included),
     minting a token or sending mail in the owner's name is not something the
     `mcp_full_access` switch hands out (PAPI-01)."""
-    for agent in (AGENT_ADMIN, AGENT_APERTO, AGENT_READONLY):
+    for agent in (AGENT_ADMIN, AGENT_OPEN, AGENT_READONLY):
         with pytest.raises(AgentForbidden):
             agent.require_admin(action)
         with pytest.raises(AgentForbidden):
@@ -113,7 +113,7 @@ def test_an_action_nobody_classified_is_refused_to_an_agent() -> None:
     with pytest.raises(AgentForbidden):
         AGENT_ADMIN.require_write("an_operation_added_without_classifying_it")
     with pytest.raises(AgentForbidden):
-        AGENT_APERTO.require_admin("an_operation_added_without_classifying_it")
+        AGENT_OPEN.require_admin("an_operation_added_without_classifying_it")
     HUMAN_ADMIN.require_write("an_operation_added_without_classifying_it")
 
 
@@ -145,8 +145,8 @@ def test_an_opted_in_agent_is_refused_none_of_them(action: str) -> None:
     switch is on and one operation still refuses, in a product where the refusal arrives
     at the moment somebody is trying to issue an invoice.
     """
-    AGENT_APERTO.require_admin(action)
-    AGENT_APERTO.require_write(action)
+    AGENT_OPEN.require_admin(action)
+    AGENT_OPEN.require_write(action)
 
 
 def test_opting_in_does_not_hand_out_a_role() -> None:
@@ -154,12 +154,12 @@ def test_opting_in_does_not_hand_out_a_role() -> None:
     credential on an opted-in installation still cannot write, and the refusal is the
     ordinary `PermissionDenied` -- because at that point the question really is about the
     role, and answering "ask somebody senior" is now the correct advice."""
-    readonly_aperto = Actor(id=None, type="mcp", role="readonly", full_access=True)
+    readonly_open = Actor(id=None, type="mcp", role="readonly", full_access=True)
 
     with pytest.raises(PermissionDenied):
-        readonly_aperto.require_write("issue_invoice")
+        readonly_open.require_write("issue_invoice")
     with pytest.raises(PermissionDenied):
-        readonly_aperto.require_write("log_time")
+        readonly_open.require_write("log_time")
 
 
 def test_the_switch_defaults_to_closed() -> None:

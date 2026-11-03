@@ -40,7 +40,7 @@ def get_config(session: SessionDep, actor: ActorDep) -> AutomationConfigRead:
     requires the slice-6 exclusion list to be exactly one name, and a public `get` beside
     the public `update` would put a second name on it.
     """
-    return AutomationConfigService(session).describe_automations(actor).configurazione
+    return AutomationConfigService(session).describe_automations(actor).configuration
 
 
 @router.put("/api/automation-config", response_model=AutomationConfigRead)

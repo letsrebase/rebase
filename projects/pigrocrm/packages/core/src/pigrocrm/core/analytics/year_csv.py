@@ -1,4 +1,4 @@
-"""The CSV of one azienda's year, for the accountant (REB-757).
+"""The CSV of one legal entity's year, for the accountant (REB-757).
 
 Mastro's year export, ported: Italian spreadsheet format, a UTF-8 byte-order mark, the
 semicolon as delimiter and the comma as decimal mark, because that combination is what
@@ -7,10 +7,11 @@ every money column as text, or reads `1.234,56` as a thousand times too much.
 
 Two tables in one file, separated by one blank line, so a single download answers both
 questions: **the lines** (one row per invoice line, with the rate, the `Natura` and the
-legal reference it printed) and **the register** (one row per invoice, with the rivalsa
+legal reference it printed) and **the register** (one row per invoice, with the social security
+surcharge
 and the stamp duty apart and the declaration the document carries). Each ends in a total
 row, and the two totals are the same figure: `Σ lines = Σ imponibile`, which is what
-`YearOverview.totali.imponibile` says and what the page shows.
+`YearOverview.totali.taxable_amount` says and what the page shows.
 
 The invoice number and the partita IVA are written as text cells (`_identifier`): left
 bare, an Italian Excel reads `2026/1` as a date and drops the leading zero of a partita IVA.
@@ -64,7 +65,7 @@ REGISTER_COLUMNS = (
     "Pagamento",
     "Data incasso",
 )
-PAGAMENTO = {"incassato": "Incassata", "da_incassare": "Da incassare"}
+PAYMENT = {"paid": "Incassata", "unpaid": "Da incassare"}
 
 
 def _text(value: str | None) -> str:
@@ -122,33 +123,33 @@ def render_year_csv(overview: YearOverview, lines: dict[UUID, list[InvoiceLine]]
     """`overview`'s register and the lines of each invoice, as the file's text."""
     out = [
         BOM,
-        _row([_text(f"Righe delle fatture emesse {overview.anno} - {overview.azienda_nome}")]),
+        _row([_text(f"Righe delle fatture emesse {overview.year} - {overview.legal_entity_name}")]),
     ]
     out.append(_row([_text(column) for column in LINE_COLUMNS]))
     total_lines = Decimal("0.00")
-    for invoice in overview.registro:
-        numero = _identifier(f"{invoice.anno}/{invoice.numero}")
+    for invoice in overview.register:
+        number = _identifier(f"{invoice.year}/{invoice.number}")
         for line in lines.get(invoice.invoice_id, []):
-            total_lines += line.prezzo_totale
+            total_lines += line.total_price
             out.append(
                 _row(
                     [
-                        numero,
-                        invoice.data_emissione.isoformat(),
-                        _text(invoice.ragione_sociale),
-                        _identifier(invoice.partita_iva),
-                        invoice.tipo_documento,
-                        str(line.numero_linea),
-                        _text(line.descrizione),
-                        _factor(line.quantita),
-                        _text(line.unita_misura),
-                        _price(line.prezzo_unitario),
-                        _amount(line.prezzo_totale),
-                        _amount(line.aliquota_iva),
-                        _text(line.natura),
-                        _text(line.riferimento_normativo),
-                        PAGAMENTO.get(invoice.stato_pagamento, invoice.stato_pagamento),
-                        invoice.data_incasso.isoformat() if invoice.data_incasso else "",
+                        number,
+                        invoice.issue_date.isoformat(),
+                        _text(invoice.legal_name),
+                        _identifier(invoice.vat_number),
+                        invoice.sdi_document_type,
+                        str(line.line_number),
+                        _text(line.description),
+                        _factor(line.quantity),
+                        _text(line.unit_of_measure),
+                        _price(line.unit_price),
+                        _amount(line.total_price),
+                        _amount(line.vat_rate),
+                        _text(line.vat_nature),
+                        _text(line.legal_reference),
+                        PAYMENT.get(invoice.payment_status, invoice.payment_status),
+                        invoice.payment_date.isoformat() if invoice.payment_date else "",
                     ]
                 )
             )
@@ -156,38 +157,40 @@ def render_year_csv(overview: YearOverview, lines: dict[UUID, list[InvoiceLine]]
     out.append("\r\n")
 
     out.append(
-        _row([_text(f"Registro delle fatture emesse {overview.anno} - {overview.azienda_nome}")])
+        _row(
+            [_text(f"Registro delle fatture emesse {overview.year} - {overview.legal_entity_name}")]
+        )
     )
     out.append(_row([_text(column) for column in REGISTER_COLUMNS]))
-    for invoice in overview.registro:
+    for invoice in overview.register:
         out.append(
             _row(
                 [
-                    _identifier(f"{invoice.anno}/{invoice.numero}"),
-                    invoice.data_emissione.isoformat(),
-                    _text(invoice.ragione_sociale),
-                    _identifier(invoice.partita_iva),
-                    invoice.tipo_documento,
-                    _amount(invoice.imponibile),
-                    _amount(invoice.rivalsa),
-                    _amount(invoice.bollo),
-                    _amount(invoice.totale),
-                    _text(invoice.dichiarazione_bollo),
-                    PAGAMENTO.get(invoice.stato_pagamento, invoice.stato_pagamento),
-                    invoice.data_incasso.isoformat() if invoice.data_incasso else "",
+                    _identifier(f"{invoice.year}/{invoice.number}"),
+                    invoice.issue_date.isoformat(),
+                    _text(invoice.legal_name),
+                    _identifier(invoice.vat_number),
+                    invoice.sdi_document_type,
+                    _amount(invoice.taxable_amount),
+                    _amount(invoice.social_security_surcharge),
+                    _amount(invoice.stamp_duty),
+                    _amount(invoice.total),
+                    _text(invoice.stamp_duty_declaration),
+                    PAYMENT.get(invoice.payment_status, invoice.payment_status),
+                    invoice.payment_date.isoformat() if invoice.payment_date else "",
                 ]
             )
         )
-    totals = overview.totali
+    totals = overview.total
     out.append(
         _row(
             ["Totale registro"]
             + [""] * 4
             + [
-                _amount(totals.imponibile),
-                _amount(totals.rivalsa),
-                _amount(totals.bollo),
-                _amount(totals.totale),
+                _amount(totals.taxable_amount),
+                _amount(totals.social_security_surcharge),
+                _amount(totals.stamp_duty),
+                _amount(totals.total),
             ]
             + [""] * 3
         )
@@ -196,13 +199,13 @@ def render_year_csv(overview: YearOverview, lines: dict[UUID, list[InvoiceLine]]
 
 
 def year_csv_filename(overview: YearOverview) -> str:
-    """`registro-2026-studio-rossi.csv`: the year and the azienda's short name, reduced
+    """`registro-2026-studio-rossi.csv`: the year and the legal entity's short name, reduced
     to what any file system and any `Content-Disposition` header accept."""
     ascii_name = (
-        unicodedata.normalize("NFKD", overview.azienda_nome).encode("ascii", "ignore").decode()
+        unicodedata.normalize("NFKD", overview.legal_entity_name).encode("ascii", "ignore").decode()
     )
     slug = re.sub(r"[^a-z0-9]+", "-", ascii_name.lower()).strip("-") or "azienda"
-    return f"registro-{overview.anno}-{slug}.csv"
+    return f"registro-{overview.year}-{slug}.csv"
 
 
 __all__ = ["render_year_csv", "year_csv_filename"]

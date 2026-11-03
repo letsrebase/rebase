@@ -37,12 +37,12 @@ MARIA = "maria.rossi@acme.it"
 
 def _body(**overrides: Any) -> dict[str, Any]:
     body: dict[str, Any] = {
-        "azienda": "Acme S.r.l.",
-        "referente": {"nome": "Maria", "cognome": "Rossi", "email": MARIA},
+        "company": "Acme S.r.l.",
+        "contact": {"first_name": "Maria", "last_name": "Rossi", "email": MARIA},
         "deal": {
-            "nome": "Acme S.r.l.: Backend developer",
-            "valore_previsto": "24000.00",
-            "note": "Richiesta dell'azienda.",
+            "name": "Acme S.r.l.: Backend developer",
+            "expected_value": "24000.00",
+            "notes": "Richiesta dell'azienda.",
         },
     }
     body.update(overrides)
@@ -78,7 +78,7 @@ def _serving(settings: Settings, *, provision: bool = True) -> Iterator[TestClie
     if provision:
         with session_factory(registry)() as session:
             TenantService(session, settings).provision(
-                TenantSignup(slug=SLUG, nome="rebase", email="spazio@studio.it")
+                TenantSignup(slug=SLUG, name="rebase", email="spazio@studio.it")
             )
     try:
         with TestClient(app, base_url="https://testserver") as client:
@@ -164,12 +164,12 @@ def test_two_puts_leave_one_customer_one_person_and_one_deal(
     created = lead_client.put(f"/api/rebase/leads/{request_id}", json=_body(), headers=_bearer())
     assert created.status_code == 201, created.text
     body = created.json()
-    assert body["creato"] is True
+    assert body["created"] is True
     assert body["deal_url"] == f"https://pigro.test/{SLUG}/app/deal/{body['deal_id']}"
 
     again = lead_client.put(f"/api/rebase/leads/{request_id}", json=_body(), headers=_bearer())
     assert again.status_code == 200, again.text
-    assert again.json() == {**body, "creato": False}
+    assert again.json() == {**body, "created": False}
     assert _counts(container_settings) == (1, 1, 1)
 
 
@@ -194,7 +194,7 @@ def test_an_explicit_deal_is_linked_and_a_missing_one_is_422(
         f"/api/rebase/leads/{uuid4()}", json=_body(deal_id=deal_id), headers=_bearer()
     )
     assert linked.status_code == 200, linked.text
-    assert linked.json()["deal_id"] == deal_id and linked.json()["creato"] is False
+    assert linked.json()["deal_id"] == deal_id and linked.json()["created"] is False
     assert _counts(container_settings) == (1, 1, 1)
 
     missing = lead_client.put(
@@ -207,11 +207,11 @@ def test_an_explicit_deal_is_linked_and_a_missing_one_is_422(
 @pytest.mark.parametrize(
     "bad",
     [
-        {"referente": {"nome": "Maria", "email": "non-un-indirizzo"}},
-        {"azienda": ""},
+        {"contact": {"first_name": "Maria", "email": "non-un-indirizzo"}},
+        {"company": ""},
         {"extra": "sorpresa"},
-        {"deal": {"nome": "x" * 256}},
-        {"deal": {"nome": "ok", "valore_previsto": "1000000000000.00"}},
+        {"deal": {"name": "x" * 256}},
+        {"deal": {"name": "ok", "expected_value": "1000000000000.00"}},
     ],
 )
 def test_a_body_that_does_not_validate_is_422(lead_client: TestClient, bad: dict[str, Any]) -> None:

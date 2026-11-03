@@ -156,7 +156,7 @@ class ReminderRead(BaseModel):
 class AcknowledgeRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    key: str = Field(description="`tipo:identificativo`, come lo restituisce l'elenco")
+    key: str = Field(description="`type:identificativo`, come lo restituisce l'elenco")
     severity: Severity = Field(description="La gravità che hai visto")
 
 

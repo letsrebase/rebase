@@ -1,7 +1,8 @@
 """Spec §9's own call site: the unbilled-`work_unit`-to-`InvoiceLine` assembly step.
 
 This is the foundations half REB-359 owns -- fee lines only, for a day with no
-`applies_social_charge` awareness at all (that election, and the rivalsa line itself,
+`applies_social_charge` awareness at all (that election, and the social security surcharge line
+itself,
 is a later issue's job, appended by a separate step onto whatever this one produces).
 No schema change to `Invoice`/`InvoiceLine`: an approved, worked day becomes an
 ordinary `InvoiceLine` on a draft that `invoices.assembly.assemble_draft` creates, the
@@ -15,21 +16,22 @@ invoice_line_id IS NULL`), the same predicate shape `won_with_unbilled_hours_pre
 caller-chosen id list: an approved, worked day is billable by definition the moment
 nothing already covers it -- unlike an hour, invoicing which is `bind_to_invoice`'s
 own commercial choice, a day was already the commercial decision when it moved to
-`'lavorato'`.
+`'worked'`.
 
-Binding a day also moves it to `fatturato` (REB-751): the state is what a day's page
+Binding a day also moves it to `invoiced` (REB-751): the state is what a day's page
 offers its moves from, and the one that keeps a day on an invoice from being revoked or
 written off underneath it. A draft that is deleted or an invoice that is annulled gives
 its days back (`release_days_of_invoice`), through the two edges the state graph has.
 
 `assemble_unbilled_work_units_into_new_invoice` is the convenience path for the common
 case: a contract with nothing else being assembled onto the same invoice. A caller that
-also needs to append a rivalsa line or a rebillable expense to the *same* invoice
+also needs to append a social security surcharge line or a rebillable expense to the *same* invoice
 should use `unbilled_work_unit_lines` and `bind_work_units` directly around its own
 single `assemble_draft` call instead -- `InvoiceLineIn` deliberately carries no
-`natura`/`riferimento_normativo` (`invoices/schemas.py`), so an existing rivalsa line
+`vat_nature`/`legal_reference` (`invoices/schemas.py`), so an existing social security surcharge
+line
 read back and round-tripped through a second, independent line replacement would
-silently lose the very fields that make it a rivalsa line.
+silently lose the very fields that make it a social security surcharge line.
 """
 
 from collections import defaultdict
@@ -44,8 +46,9 @@ from pigrocrm.core.contracts.models import Contract, RateCard
 from pigrocrm.core.contracts.repository import RateCardRepository
 from pigrocrm.core.errors import Conflict, NotFound, ValidationFailed
 from pigrocrm.core.invoices.assembly import assemble_draft
-from pigrocrm.core.invoices.schemas import DIVISA, InvoiceCreate, InvoiceLineIn, InvoiceRead
+from pigrocrm.core.invoices.schemas import CURRENCY, InvoiceCreate, InvoiceLineIn, InvoiceRead
 from pigrocrm.core.invoices.service import InvoiceService
+from pigrocrm.core.labels import RATE_CARD_UNIT, label
 from pigrocrm.core.money import round_money
 from pigrocrm.core.storage.base import DocumentStorage
 from pigrocrm.core.timetracking.locks import period_label
@@ -76,22 +79,24 @@ def _require_contract(session: Session, contract_id: UUID) -> Contract:
 
 def _currency_block(contract: Contract) -> str | None:
     """Why this contract's days cannot become a draft, or `None`. Every invoice is issued in
-    euros (`invoices.schemas.DIVISA`) and nothing here converts: a draft of a USD contract
+    euros (`invoices.schemas.CURRENCY`) and nothing here converts: a draft of a USD contract
     would carry 500 EUR where the page promised 500 USD."""
-    if contract.divisa == DIVISA:
+    if contract.currency == CURRENCY:
         return None
     return (
-        f"il contratto è in {contract.divisa}: le fatture si emettono in {DIVISA} e qui non "
+        f"il contratto è in {contract.currency}: le fatture si emettono in {CURRENCY} e qui non "
         "si converte, quindi le giornate non si possono fatturare da qui"
     )
 
 
 def _gather(
-    session: Session, contract_id: UUID, da: date | None, a: date | None
+    session: Session, contract_id: UUID, date_from: date | None, date_to: date | None
 ) -> tuple[dict[_GroupKey, list[WorkUnit]], list[WorkUnit], dict[UUID, RateCard]]:
     """`(groups, uncovered, cards)`: the ready days grouped by the rate card in force on
     their own date and by month, the days no card covers, and the contract's cards by id."""
-    work_units = WorkUnitRepository(session).unbilled_for_contract(contract_id, da=da, a=a)
+    work_units = WorkUnitRepository(session).unbilled_for_contract(
+        contract_id, date_from=date_from, date_to=date_to
+    )
     cards = RateCardRepository(session).list_for_contract(contract_id)
 
     groups: dict[_GroupKey, list[WorkUnit]] = defaultdict(list)
@@ -101,15 +106,15 @@ def _gather(
             (
                 c
                 for c in cards
-                if c.valido_da <= work_unit.data
-                and (c.valido_a is None or work_unit.data <= c.valido_a)
+                if c.valid_from <= work_unit.date
+                and (c.valid_to is None or work_unit.date <= c.valid_to)
             ),
             None,
         )
         if card is None:
             uncovered.append(work_unit)
             continue
-        groups[(card.id, work_unit.data.year, work_unit.data.month)].append(work_unit)
+        groups[(card.id, work_unit.date.year, work_unit.date.month)].append(work_unit)
     return groups, uncovered, {card.id: card for card in cards}
 
 
@@ -118,130 +123,131 @@ def _ordered(groups: dict[_GroupKey, list[WorkUnit]]) -> list[tuple[_GroupKey, l
 
 
 def _quantity(members: list[WorkUnit]) -> Decimal:
-    return sum((m.quantita for m in members), start=Decimal("0"))
+    return sum((m.quantity for m in members), start=Decimal("0"))
 
 
-def _line_in(card: RateCard, anno: int, mese: int, quantita: Decimal) -> InvoiceLineIn:
+def _line_in(card: RateCard, year: int, month: int, quantity: Decimal) -> InvoiceLineIn:
+    unit = label(RATE_CARD_UNIT, card.unit)
     return InvoiceLineIn(
-        descrizione=f"Attività {period_label(anno, mese)} - {quantita} {card.unita}",
-        quantita=quantita,
-        unita_misura=card.unita,
-        prezzo_unitario=card.importo,
-        # `aliquota_iva` deliberately omitted: `None` means "the regime's
-        # answer" -- `natura`/`riferimento_normativo` are not on this schema
+        description=f"Attività {period_label(year, month)} - {quantity} {unit}",
+        quantity=quantity,
+        unit_of_measure=unit,
+        unit_price=card.amount,
+        # `vat_rate` deliberately omitted: `None` means "the regime's
+        # answer" -- `vat_nature`/`legal_reference` are not on this schema
         # at all (see the module docstring).
     )
 
 
 def unbilled_work_unit_lines(
-    session: Session, contract_id: UUID, da: date | None = None, a: date | None = None
+    session: Session, contract_id: UUID, date_from: date | None = None, date_to: date | None = None
 ) -> tuple[list[InvoiceLineIn], list[list[UUID]]]:
-    """`(righe, gruppi)`: one `InvoiceLineIn` per `(rate_card, month)` group of
+    """`(lines, groups)`: one `InvoiceLineIn` per `(rate_card, month)` group of
     unbilled, worked days, and the ids each line prices, in the same order --
     positionally zippable with the line ids `replace_lines` produces
     (`bind_work_units`), the same mechanism `bind_to_invoice` uses for
     `TimeEntry` since ``invoices.lines.compute_lines`` numbers `numero_linea` from
-    the order `righe` was built in. `da`/`a` (inclusive) take only the days of a period.
+    the order `lines` was built in. `da`/`a` (inclusive) take only the days of a period.
 
     Raises `ValidationFailed` if any gathered day has no rate card covering its own
-    `data` -- inventing a price here would be a commercial decision this step does
+    `date` -- inventing a price here would be a commercial decision this step does
     not own, the same refusal `bind_to_invoice` gives an unpriced `TimeEntry`.
     """
-    groups, uncovered, cards = _gather(session, contract_id, da, a)
+    grouped, uncovered, cards = _gather(session, contract_id, date_from, date_to)
     if uncovered:
         raise ValidationFailed(
             ENTITY,
-            "data",
+            "date",
             f"{len(uncovered)} giornate non hanno una rate_card in vigore alla propria data",
             expected="una rate_card del contratto valida su ogni data selezionata: "
             + ", ".join(str(w.id) for w in uncovered),
         )
 
-    righe: list[InvoiceLineIn] = []
-    gruppi: list[list[UUID]] = []
-    for (card_id, anno, mese), members in _ordered(groups):
-        righe.append(_line_in(cards[card_id], anno, mese, _quantity(members)))
-        gruppi.append([m.id for m in members])
-    return righe, gruppi
+    lines: list[InvoiceLineIn] = []
+    groups: list[list[UUID]] = []
+    for (card_id, year, month), members in _ordered(grouped):
+        lines.append(_line_in(cards[card_id], year, month, _quantity(members)))
+        groups.append([m.id for m in members])
+    return lines, groups
 
 
 def billable_days(
-    session: Session, contract_id: UUID, da: date | None = None, a: date | None = None
+    session: Session, contract_id: UUID, date_from: date | None = None, date_to: date | None = None
 ) -> BillableDays:
     """What `assemble_unbilled_work_units_into_new_invoice` would put on a draft, as
     figures a page can show before anybody presses the button. It builds the lines the
     way `unbilled_work_unit_lines` does, but names the days it cannot price instead of
     refusing, so the page can say which to fix."""
     contract = _require_contract(session, contract_id)
-    groups, uncovered, cards = _gather(session, contract_id, da, a)
+    groups, uncovered, cards = _gather(session, contract_id, date_from, date_to)
 
-    righe: list[BillableLine] = []
-    for (card_id, anno, mese), members in _ordered(groups):
+    lines: list[BillableLine] = []
+    for (card_id, year, month), members in _ordered(groups):
         card = cards[card_id]
-        quantita = _quantity(members)
-        righe.append(
+        quantity = _quantity(members)
+        lines.append(
             BillableLine(
-                mese=f"{anno:04d}-{mese:02d}",
-                descrizione=_line_in(card, anno, mese, quantita).descrizione,
-                giornate=len(members),
-                quantita=quantita,
-                unita_misura=card.unita,
-                prezzo_unitario=card.importo,
-                importo=round_money(quantita * card.importo),
+                month=f"{year:04d}-{month:02d}",
+                description=_line_in(card, year, month, quantity).description,
+                work_units=len(members),
+                quantity=quantity,
+                unit_of_measure=label(RATE_CARD_UNIT, card.unit),
+                unit_price=card.amount,
+                amount=round_money(quantity * card.amount),
             )
         )
-    senza_tariffa = sorted({w.data for w in uncovered})
+    without_rate = sorted({w.date for w in uncovered})
     return BillableDays(
         contract_id=contract.id,
-        divisa=contract.divisa,
-        righe=righe,
-        mesi=sorted({riga.mese for riga in righe}),
-        giornate=sum(riga.giornate for riga in righe),
-        quantita=sum((riga.quantita for riga in righe), start=Decimal("0")),
-        imponibile=sum((riga.importo for riga in righe), start=Decimal("0")),
-        senza_tariffa=senza_tariffa,
-        senza_approvazione=WorkUnitRepository(session).count_without_approval(contract_id),
-        fatturabile=bool(righe) and not senza_tariffa and _currency_block(contract) is None,
-        motivo_blocco=_currency_block(contract),
+        currency=contract.currency,
+        lines=lines,
+        months=sorted({line.month for line in lines}),
+        work_units=sum(line.work_units for line in lines),
+        quantity=sum((line.quantity for line in lines), start=Decimal("0")),
+        taxable_amount=sum((line.amount for line in lines), start=Decimal("0")),
+        without_rate=without_rate,
+        without_approval=WorkUnitRepository(session).count_without_approval(contract_id),
+        billable=bool(lines) and not without_rate and _currency_block(contract) is None,
+        block_reason=_currency_block(contract),
     )
 
 
 def bind_work_units(
     session: Session,
-    gruppi: list[list[UUID]],
+    groups: list[list[UUID]],
     line_ids: list[UUID],
     actor: Actor,
-    motivo: str = BOUND_REASON,
+    reason: str = BOUND_REASON,
 ) -> None:
     """Sets `invoice_line_id` on every day in each group to its assembled line's id,
-    positionally, and moves each to `fatturato` -- called only after
+    positionally, and moves each to `invoiced` -- called only after
     `InvoiceService.replace_lines` has returned, so the ids being bound are real,
     persisted lines. The move goes through the state graph's own trigger, which logs it
-    under `actor` and `motivo`; it flushes, never commits.
+    under `actor` and `reason`; it flushes, never commits.
 
     Each day is read again under a row lock (`populate_existing`, so a day already loaded
     by the gather is overwritten with the locked row, not returned stale) and refused
-    unless it is still `lavorato` and on no line: the gather above ran in another
+    unless it is still `worked` and on no line: the gather above ran in another
     transaction, and two requests (a double click, two tabs) can both have seen the same
     days as ready. The trigger would let the second one repoint the line of a day that
     keeps its state, so this is what makes the loser fail instead of leaving the first
     draft with lines whose days moved away."""
-    set_transition_context(session, actor, motivo)
-    for member_ids, line_id in zip(gruppi, line_ids, strict=True):
+    set_transition_context(session, actor, reason)
+    for member_ids, line_id in zip(groups, line_ids, strict=True):
         for work_unit_id in member_ids:
             work_unit = session.get(
                 WorkUnit, work_unit_id, with_for_update=True, populate_existing=True
             )
             if work_unit is None:
                 raise NotFound(ENTITY, work_unit_id)
-            if work_unit.stato != "lavorato" or work_unit.invoice_line_id is not None:
+            if work_unit.status != "worked" or work_unit.invoice_line_id is not None:
                 raise Conflict(
                     ENTITY,
                     "una giornata è già stata fatturata nel frattempo: riprova",
                     work_unit_id=str(work_unit_id),
                 )
             work_unit.invoice_line_id = line_id
-            work_unit.stato = "fatturato"
+            work_unit.status = "invoiced"
     session.flush()
 
 
@@ -250,12 +256,12 @@ def assemble_unbilled_work_units_into_new_invoice(
     storage: DocumentStorage,
     contract_id: UUID,
     actor: Actor,
-    da: date | None = None,
-    a: date | None = None,
+    date_from: date | None = None,
+    date_to: date | None = None,
 ) -> InvoiceRead:
     """The end-to-end common case: every unbilled, worked day on `contract_id` (or those
     in `[da, a]`) becomes one line each (grouped by rate card and month) on a fresh draft
-    invoice for the contract's own customer, under the contract's own azienda, and each
+    invoice for the contract's own customer, under the contract's own legal entity, and each
     day is bound to the line it produced. The draft, its lines and the binding are one
     transaction (`assemble_draft`): a day that was billed in the meantime refuses the
     whole thing and no draft is left behind.
@@ -268,10 +274,10 @@ def assemble_unbilled_work_units_into_new_invoice(
     contract = _require_contract(session, contract_id)
     blocked = _currency_block(contract)
     if blocked is not None:
-        raise ValidationFailed(ENTITY, "divisa", blocked, expected=f"un contratto in {DIVISA}")
+        raise ValidationFailed(ENTITY, "currency", blocked, expected=f"un contratto in {CURRENCY}")
 
-    righe, gruppi = unbilled_work_unit_lines(session, contract_id, da, a)
-    if not righe:
+    lines, groups = unbilled_work_unit_lines(session, contract_id, date_from, date_to)
+    if not lines:
         raise ValidationFailed(
             ENTITY,
             "contract_id",
@@ -283,10 +289,10 @@ def assemble_unbilled_work_units_into_new_invoice(
 
     return assemble_draft(
         InvoiceService(session, storage),
-        InvoiceCreate(customer_id=contract.customer_id, righe=righe),
+        InvoiceCreate(customer_id=contract.customer_id, lines=lines),
         actor,
-        azienda_id=contract.azienda_id,
-        bind=lambda line_ids: bind_work_units(session, gruppi, line_ids, actor),
+        legal_entity_id=contract.legal_entity_id,
+        bind=lambda line_ids: bind_work_units(session, groups, line_ids, actor),
     )
 
 

@@ -22,11 +22,11 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
     @mcp.tool(annotations=ADDITIVE)
     @guard
     def create_person(
-        nome: str,
-        cognome: str | None = None,
+        first_name: str,
+        last_name: str | None = None,
         email: str | None = None,
-        telefono: str | None = None,
-        ruolo: str | None = None,
+        phone: str | None = None,
+        role: str | None = None,
         linkedin: str | None = None,
         note: str | None = None,
         customer_id: str | None = None,
@@ -38,11 +38,11 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
         return people.create(
             context,
             {
-                "nome": nome,
-                "cognome": cognome,
+                "first_name": first_name,
+                "last_name": last_name,
                 "email": email,
-                "telefono": telefono,
-                "ruolo": ruolo,
+                "phone": phone,
+                "role": role,
                 "linkedin": linkedin,
                 "note": note,
                 "customer_id": UUID(customer_id) if customer_id else None,
@@ -61,7 +61,7 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
     @mcp.tool(annotations=READ_ONLY)
     @guard
     def get_person(person_id: str) -> dict[str, Any]:
-        """Legge una persona, con le ultime 50 note (`note`, dalla più recente; `note_totale`
+        """Legge una persona, con le ultime 50 note (`note`, dalla più recente; `note_total`
         le conta, tutte in `person://<id>`).
         """
         return people.get(context, person_id)
@@ -79,7 +79,7 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
         dir: str = "asc",
     ) -> dict[str, Any]:
         """Cerca persone per nome, cognome o email, anche entro un cliente. `sort`: `created_at`,
-        `updated_at`, `cognome`.
+        `updated_at`, `last_name`.
         """
         return people.search(
             context,

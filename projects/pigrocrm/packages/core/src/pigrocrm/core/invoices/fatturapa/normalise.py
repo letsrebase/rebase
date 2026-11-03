@@ -2,7 +2,7 @@
 
 import re
 
-from pigrocrm.core.invoices.fatturapa.constants import CAP_ESTERO, LATIN_SPELLINGS
+from pigrocrm.core.invoices.fatturapa.constants import LATIN_SPELLINGS, POSTAL_CODE_FOREIGN
 from pigrocrm.core.invoices.naming import FISCAL_ID_RE
 from pigrocrm.core.invoices.schemas import PartySnapshot
 
@@ -62,11 +62,11 @@ def normalise_foreign_fiscal_id(value: str | None) -> str | None:
 
 
 def is_italian(party: PartySnapshot) -> bool:
-    return (party.nazione or "").strip().upper() == "IT"
+    return (party.country or "").strip().upper() == "IT"
 
 
-def indirizzo_xml(party: PartySnapshot) -> str:
-    """The text `_sede` writes into `Indirizzo`, and the text `check_widths` measures.
+def address_xml(party: PartySnapshot) -> str:
+    """The text `_headquarters` writes into `Indirizzo`, and the text `check_widths` measures.
 
     One function for both on purpose: the pre-check exists to refuse before a register
     number is spent whatever the writer would refuse after, and a foreign address is
@@ -76,10 +76,10 @@ def indirizzo_xml(party: PartySnapshot) -> str:
     customer entered before ORB-38 does) gets the address alone: `00000` is the SdI's
     convention, not a postcode.
     """
-    indirizzo = (party.indirizzo or "").strip()
+    address = (party.address or "").strip()
     if is_italian(party):
-        return indirizzo
+        return address
     cap = (party.cap or "").strip()
-    if not cap or cap == CAP_ESTERO:
-        return indirizzo
-    return f"{indirizzo}, {cap}"
+    if not cap or cap == POSTAL_CODE_FOREIGN:
+        return address
+    return f"{address}, {cap}"

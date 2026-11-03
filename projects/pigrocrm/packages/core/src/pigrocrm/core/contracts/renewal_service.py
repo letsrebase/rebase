@@ -16,22 +16,22 @@ from pigrocrm.core.contracts.rules import ENTITY
 from pigrocrm.core.contracts.schemas import ContractRead, ContractRenew
 from pigrocrm.core.customers.repository import CustomerRepository
 from pigrocrm.core.db.transactions import savepoint
-from pigrocrm.core.emitter.service import LegalEntityService
 from pigrocrm.core.errors import Conflict, NotFound, ValidationFailed
+from pigrocrm.core.legal_entities.service import LegalEntityService
 
 # The columns a renewal does not copy from the contract it renews: the row's own identity
 # and bookkeeping, the term (which the renewal decides), the state (the successor is
-# `attivo`, whatever the contract it renews was) and the link back.
+# `active`, whatever the contract it renews was) and the link back.
 _NOT_RENEWED = frozenset(
     {
         "id",
         "created_at",
         "updated_at",
         "deleted_at",
-        "inizio",
-        "fine",
-        "stato",
-        "contratto_precedente_id",
+        "start",
+        "end",
+        "status",
+        "previous_contract_id",
     }
 )
 
@@ -42,14 +42,14 @@ class ContractRenewalService:
         self.repo = ContractRepository(session)
         self.customers = CustomerRepository(session)
         self.activities = ActivityService(session)
-        self.emitter = LegalEntityService(session)
+        self.legal_entity = LegalEntityService(session)
 
     def renew(self, contract_id: UUID, data: ContractRenew, actor: Actor) -> ContractRead:
         """REB-763: the contract that renews `contract_id`. The successor carries the
         contract's terms as they stand (every column but the ones named in
         `_NOT_RENEWED`, so a column added later travels by default instead of silently
         resetting on every renewal) on the renewed term (`renewal.renewed_term`), is
-        `attivo`, and is linked back through `contratto_precedente_id`. The rate cards
+        `active`, and is linked back through `previous_contract_id`. The rate cards
         that reach the new term go across with the validity they have on it
         (`renewal.carried_cards`); the contract's own cards are not touched, so the history
         of what was charged stays on the contract it was charged under.
@@ -57,7 +57,7 @@ class ContractRenewalService:
         Not carried, because each is a fact about the term that is ending: the renewal
         assumption (a belief about revenue beyond *that* term), the expenses and the days,
         and the clause notes, which read the words of a signed document that the renewed
-        term may have replaced. The contract it renews keeps its `stato`: nothing here
+        term may have replaced. The contract it renews keeps its `status`: nothing here
         decides that a term is over.
 
         A contract renews once (the unique key on the link is the database's own word, the
@@ -69,7 +69,7 @@ class ContractRenewalService:
         if contract is None:
             raise NotFound(ENTITY, contract_id)
         existing = self.session.scalar(
-            select(Contract.id).where(Contract.contratto_precedente_id == contract_id)
+            select(Contract.id).where(Contract.previous_contract_id == contract_id)
         )
         if existing is not None:
             raise Conflict(
@@ -79,39 +79,41 @@ class ContractRenewalService:
                 successor_id=str(existing),
             )
         try:
-            inizio, fine = renewed_term(
-                inizio=contract.inizio,
-                fine=contract.fine,
-                nuovo_inizio=data.inizio,
-                nuova_fine=data.fine,
-                durata=None if data.durata is None else (data.durata.conteggio, data.durata.unita),
+            start, end = renewed_term(
+                start=contract.start,
+                end=contract.end,
+                new_start=data.start,
+                new_end=data.end,
+                duration=None
+                if data.duration is None
+                else (data.duration.count, data.duration.unit),
             )
         except RenewalRefused as refused:
             raise ValidationFailed(
                 ENTITY, refused.field, str(refused), expected=refused.expected
             ) from refused
-        # The azienda of the customer as it is now, as `create` takes it, and never a
-        # deactivated one: a customer moved since the contract began renews on the azienda
+        # The legal entity of the customer as it is now, as `create` takes it, and never a
+        # deactivated one: a customer moved since the contract began renews on the legal entity
         # it has moved to, and an archived customer has nothing to renew for.
         customer = self.customers.get(contract.customer_id)
         if customer is None:
             raise NotFound("customer", contract.customer_id)
-        azienda_id = self.emitter.inherited(customer.azienda_id, ENTITY)
+        legal_entity_id = self.legal_entity.inherited(customer.legal_entity_id, ENTITY)
 
         carried = {
             column.key: deepcopy(getattr(contract, column.key))
             for column in sa_inspect(Contract).column_attrs
             if column.key not in _NOT_RENEWED
         }
-        if data.titolo is not None:
-            carried["titolo"] = data.titolo
-        carried["azienda_id"] = azienda_id
+        if data.title is not None:
+            carried["title"] = data.title
+        carried["legal_entity_id"] = legal_entity_id
         successor = Contract(
             **carried,
-            inizio=inizio,
-            fine=fine,
-            stato="attivo",
-            contratto_precedente_id=contract.id,
+            start=start,
+            end=end,
+            status="active",
+            previous_contract_id=contract.id,
         )
         # Two renewals racing: the lock above makes the second read the first's row, so
         # the unique key on the link is the last resort.
@@ -123,20 +125,20 @@ class ContractRenewalService:
         ):
             self.session.add(successor)
             self.session.flush()
-        for card, valido_da, valido_a in carried_cards(
-            RateCardRepository(self.session).list_for_contract(contract.id), inizio
+        for card, valid_from, valid_to in carried_cards(
+            RateCardRepository(self.session).list_for_contract(contract.id), start
         ):
             self.session.add(
                 RateCard(
                     contract_id=successor.id,
-                    valido_da=valido_da,
-                    valido_a=valido_a,
-                    tipo=card.tipo,
-                    importo=card.importo,
-                    unita=card.unita,
-                    frazioni_ammesse=list(card.frazioni_ammesse),
-                    ore_minime=card.ore_minime,
-                    periodo_erogazione=card.periodo_erogazione,
+                    valid_from=valid_from,
+                    valid_to=valid_to,
+                    type=card.type,
+                    amount=card.amount,
+                    unit=card.unit,
+                    allowed_fractions=list(card.allowed_fractions),
+                    minimum_hours=card.minimum_hours,
+                    delivery_period=card.delivery_period,
                 )
             )
         self.session.flush()
@@ -145,7 +147,7 @@ class ContractRenewalService:
             successor.id,
             "created",
             actor,
-            {"titolo": successor.titolo, "rinnova": str(contract.id)},
+            {"title": successor.title, "renew": str(contract.id)},
         )
         self.activities.record(
             ENTITY,
@@ -153,9 +155,9 @@ class ContractRenewalService:
             "renewed",
             actor,
             {
-                "successore": str(successor.id),
-                "inizio": inizio.isoformat(),
-                "fine": fine.isoformat(),
+                "successor": str(successor.id),
+                "start": start.isoformat(),
+                "end": end.isoformat(),
             },
         )
         self.session.commit()

@@ -17,7 +17,7 @@
  * `/hub/login`.
  *
  * The fetch is asynchronous and `utm.js`'s `carryUtm()` is not: on `/` and
- * `/pigrocrm`, `landing.js` has already appended `?da=...` (and any campaign keys)
+ * `/pigrocrm`, `landing.js` has already appended `?from=...` (and any campaign keys)
  * to the login link by the time this script's answer comes back, so the selector
  * matches the link by its path prefix rather than its exact value, and the rewrite
  * changes only the path, keeping whatever query string is already there.

@@ -9,11 +9,11 @@ from pigrocrm.core.proposals.schemas import (
     ProposalAccept,
     ProposalCreate,
     ProposalListQuery,
-    ProposalOrdine,
+    ProposalOrder,
     ProposalPage,
     ProposalRead,
     ProposalReject,
-    ProposalStato,
+    ProposalStatus,
     ProposalTargetType,
 )
 from pigrocrm.core.proposals.service import ProposalService
@@ -38,19 +38,19 @@ def create(data: ProposalCreate, session: SessionDep, actor: ActorDep) -> Propos
 def list_proposals(
     session: SessionDep,
     actor: ActorDep,
-    stato: ProposalStato | None = None,
+    status: ProposalStatus | None = None,
     target_type: ProposalTargetType | None = None,
     document_id: UUID | None = None,
     contract_id: UUID | None = None,
-    ordine: ProposalOrdine = "arrivo",
+    order: ProposalOrder = "arrival",
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
 ) -> ProposalPage:
     query = ProposalListQuery(
-        stato=stato,
+        status=status,
         target_type=target_type,
         document_id=document_id,
         contract_id=contract_id,
-        ordine=ordine,
+        order=order,
         limit=limit,
     )
     return ProposalService(session).list(query, actor)
@@ -67,7 +67,7 @@ def accept(
 ) -> ProposalRead:
     """The confirm half of "agents propose, humans confirm": creates the
     `contracts`+`rate_cards` pair or the `approvals`+`work_units` pair the proposal
-    named, in one transaction with the proposal's own `stato` flip."""
+    named, in one transaction with the proposal's own `status` flip."""
     return ProposalService(session).accept(proposal_id, data, actor)
 
 
@@ -79,7 +79,7 @@ def reject(
 
 
 def _proposal_exists(session: Session, proposal_id: UUID, actor: Actor) -> None:
-    # A rejection's `motivo` has no column on `proposals` (see `ProposalReject`). The
+    # A rejection's `reason` has no column on `proposals` (see `ProposalReject`). The
     # proposal is read first so an id that is not one answers 404, not an empty list.
     ProposalService(session).get(proposal_id, actor)
 

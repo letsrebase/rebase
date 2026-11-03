@@ -56,7 +56,7 @@ def test_the_cursor_walks_every_admin_once_with_no_dupes_or_gaps(clean: Session)
 
 
 def test_with_no_term_the_list_stays_oldest_first(clean: Session) -> None:
-    """ORB-123: unlike Talenti and Aziende, a bare (no `q`) admins list reads oldest
+    """ORB-123: unlike Talents and Companies, a bare (no `q`) admins list reads oldest
     first, so the page still reads as a history."""
     service = UserService(clean)
     first = an_admin(clean, "first@rebase.it", "First")
@@ -72,7 +72,9 @@ def test_a_malformed_cursor_is_refused(clean: Session) -> None:
 
 
 def test_a_non_admin_never_appears_in_the_list(clean: Session) -> None:
-    clean.add(User(email="membro@rebase.it", nome="Membro", cognome="Utente", role="member"))
+    clean.add(
+        User(email="membro@rebase.it", first_name="Membro", last_name="Utente", role="member")
+    )
     clean.commit()
     admin = an_admin(clean, "ivan@rebase.it", "Ivan")
 

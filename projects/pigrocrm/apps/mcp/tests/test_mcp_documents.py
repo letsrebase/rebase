@@ -46,7 +46,7 @@ from pigrocrm.core.timetracking.schemas import TimeEntryCreate  # noqa: E402
 from pigrocrm.core.timetracking.service import TimeEntryService  # noqa: E402
 from pigrocrm_mcp.server import build_server  # noqa: E402
 
-# A Drive file id of the shape the titolare types into Impostazioni → Drive.
+# A Drive file id of the shape the owner types into Settings → Drive.
 STORAGE_FOLDER = "1CartellaScritturaMCP"
 REFRESH_TOKEN = "1//0gMcpDriveStorageRefresh"
 DRIVE_MAILBOX = "titolare@example.it"
@@ -94,8 +94,8 @@ async def test_describe_template_reports_the_variables_before_anyone_is_asked(
         result = await client.call_tool("describe_template", {"template_id": seeded_template_id})
 
     described = _payload(result)
-    assert [v["nome"] for v in described["variabili"]] == ["oggetto"]
-    assert described["nome"] == "Consulenza CTO"
+    assert [v["name"] for v in described["variables"]] == ["subject"]
+    assert described["name"] == "Consulenza CTO"
 
 
 @needs_binaries
@@ -108,8 +108,8 @@ async def test_create_document_from_template_returns_an_identifier_not_bytes(
             {
                 "template_id": seeded_template_id,
                 "customer_id": seeded_customer_id,
-                "titolo": "Offerta 2026-01",
-                "variabili": {"oggetto": "Advisory"},
+                "title": "Offerta 2026-01",
+                "variables": {"subject": "Advisory"},
             },
         )
 
@@ -146,12 +146,12 @@ async def test_set_offer_state_refuses_an_undeclared_transition_with_guidance(
 ) -> None:
     async with Client(server) as client:
         result = await client.call_tool(
-            "set_offer_state", {"document_id": seeded_offer_id, "stato": "accettata"}
+            "set_offer_state", {"document_id": seeded_offer_id, "status": "accepted"}
         )
 
     assert result.is_error
     message = result.content[0].text
-    assert "bozza" in message
+    assert "draft" in message
     assert "errors.pydantic.dev" not in message
 
 
@@ -164,9 +164,9 @@ async def test_get_document_versions_lists_them_newest_first(server, seeded_offe
 
 async def test_the_four_document_tools_the_audit_added_are_registered(server) -> None:
     """Each was reachable over REST and excluded from MCP with a reason that only said
-    nobody had written the tool yet -- `TemplateService.preview` "non ha ancora
-    un'audience agentica", `DocumentService.regenerate` "e' una decisione della persona
-    che l'ha vista", `soft_delete`/`restore` "l'MCP non archivia documenti". None of the
+    nobody had written the tool yet -- `TemplateService.preview` "has no agent
+    audience yet", `DocumentService.regenerate` "is a decision for the person who
+    saw it", `soft_delete`/`restore` "MCP does not archive documents". None of the
     four decides anything a person has not already decided, and the last two are the
     archive/restore pair this surface already exposes for customers, deals, people,
     costs and time entries."""
@@ -196,7 +196,7 @@ async def test_preview_template_renders_without_creating_a_document(
                 # `cliente` is supplied by the caller here, unlike
                 # `create_document_from_template`, which reads it off the record: a
                 # preview is not filed under anything, so there is no record to read.
-                "variabili": {"oggetto": "Advisory", "cliente": {"ragione_sociale": "ACME"}},
+                "variables": {"subject": "Advisory", "cliente": {"ragione_sociale": "ACME"}},
             },
         )
         assert not result.is_error, result.content[0].text
@@ -218,12 +218,12 @@ async def test_preview_template_names_the_variable_it_is_missing(
             "preview_template",
             {
                 "template_id": seeded_template_id,
-                "variabili": {"cliente": {"ragione_sociale": "ACME"}},
+                "variables": {"customer": {"legal_name": "ACME"}},
             },
         )
 
     assert result.is_error
-    assert "oggetto" in result.content[0].text
+    assert "subject" in result.content[0].text
     assert "errors.pydantic.dev" not in result.content[0].text
 
 
@@ -233,7 +233,7 @@ async def test_regenerate_reproduces_a_version_and_leaves_the_original_in_place(
 ) -> None:
     """Slice 2's reproducibility promise, exercised from the surface that now offers it:
     the new version is rendered from the old one's own frozen `template_id` and
-    `variabili`, so its bytes hash the same, and the version it came from is still
+    `variables`, so its bytes hash the same, and the version it came from is still
     there. It adds; it does not overwrite."""
     async with Client(server) as client:
         created = _payload(
@@ -242,22 +242,22 @@ async def test_regenerate_reproduces_a_version_and_leaves_the_original_in_place(
                 {
                     "template_id": seeded_template_id,
                     "customer_id": seeded_customer_id,
-                    "titolo": "Offerta 2026-02",
-                    "variabili": {"oggetto": "Advisory"},
+                    "title": "Offerta 2026-02",
+                    "variables": {"subject": "Advisory"},
                 },
             )
         )
         regenerated = await client.call_tool(
-            "regenerate_document_version", {"document_id": created["id"], "numero": 1}
+            "regenerate_document_version", {"document_id": created["id"], "number": 1}
         )
         assert not regenerated.is_error, regenerated.content[0].text
-        assert _payload(regenerated)["numero"] == 2
+        assert _payload(regenerated)["number"] == 2
 
         versions = _payload(
             await client.call_tool("get_document_versions", {"document_id": created["id"]})
         )["versions"]
 
-    assert [v["numero"] for v in versions] == [2, 1]
+    assert [v["number"] for v in versions] == [2, 1]
     assert versions[0]["hash_sha256"] == versions[1]["hash_sha256"]
 
 
@@ -269,7 +269,7 @@ async def test_regenerate_refuses_a_version_that_was_never_generated_from_a_temp
     reproduce, and the refusal says so instead of inventing a document."""
     async with Client(server) as client:
         result = await client.call_tool(
-            "regenerate_document_version", {"document_id": seeded_offer_id, "numero": 1}
+            "regenerate_document_version", {"document_id": seeded_offer_id, "number": 1}
         )
 
     assert result.is_error
@@ -285,7 +285,7 @@ async def test_regenerate_rejects_a_wrong_typed_version_number_with_guidance(
     the guarded call instead."""
     async with Client(server) as client:
         result = await client.call_tool(
-            "regenerate_document_version", {"document_id": seeded_offer_id, "numero": "prima"}
+            "regenerate_document_version", {"document_id": seeded_offer_id, "number": "before"}
         )
 
     assert result.is_error
@@ -315,22 +315,22 @@ async def test_a_document_archived_by_an_agent_can_be_restored_by_one(
         ).is_error
 
 
-async def test_describe_azienda_reads_the_issuer_every_header_prints(
+async def test_describe_legal_entity_reads_the_issuer_every_header_prints(
     server, seeded_template_id: str
 ) -> None:
     """`seeded_template_id` is the fixture that seeds the emitter profile, because
     rendering a document needs one -- which is the same reason
     `LegalEntityService.get` is un-role-gated at the service layer: the PDF header
     needs it for every role, so there is no role for which this read is privileged. The
-    write on that row is `update_azienda`, admin-only (ORB-188)."""
+    write on that row is `update_legal_entity`, admin-only (ORB-188)."""
     async with Client(server) as client:
-        profile = _payload(await client.call_tool("describe_azienda", {}))
+        profile = _payload(await client.call_tool("describe_legal_entity", {}))
 
-    assert profile["ragione_sociale"] == "Studio Rossi"
-    assert profile["partita_iva"] == "01234567890"
+    assert profile["legal_name"] == "Studio Rossi"
+    assert profile["vat_number"] == "01234567890"
     # Whether a logo is set, never its storage key (REB-627): the keys are the server's,
-    # and an agent that reads this hands it back to `update_azienda` unchanged.
-    assert profile["ha_logo"] is False
+    # and an agent that reads this hands it back to `update_legal_entity` unchanged.
+    assert profile["has_logo"] is False
     assert "logo_key" not in profile
 
 
@@ -375,10 +375,10 @@ def _connected_drive(session: Session) -> GoogleDriveAccount:
     """
     user = User(
         email=f"titolare-{uuid4().hex[:8]}@example.it",
-        nome="Titolare",
+        name="Titolare",
         password_hash="x",
-        ruolo="admin",
-        attivo=True,
+        role="admin",
+        active=True,
     )
     session.add(user)
     session.flush()
@@ -452,8 +452,8 @@ async def test_a_document_an_agent_generates_lands_in_the_titolares_own_drive(
             {
                 "template_id": seeded_template_id,
                 "customer_id": seeded_customer_id,
-                "titolo": "Offerta su Drive",
-                "variabili": {"oggetto": "Advisory"},
+                "title": "Offerta su Drive",
+                "variables": {"subject": "Advisory"},
             },
         )
 
@@ -504,17 +504,17 @@ async def test_binding_hours_to_a_draft_writes_through_the_servers_own_storage(
     settings = gmail_settings(storage_backend="gdrive", mcp_full_access=True)
     monkeypatch.setattr(billing_service, "get_settings", lambda: settings)
     FiscalProfileService(mcp_session).upsert(
-        FiscalProfileUpsert(codice_regime="RF19"), Actor(id=None, type="system", role="admin")
+        FiscalProfileUpsert(regime_code="RF19"), Actor(id=None, type="system", role="admin")
     )
     entry = TimeEntryService(mcp_session).create(
         TimeEntryCreate(
             deal_id=seeded_deal_id,
             user_id=seeded_user_id,
-            data=date(2026, 3, 2),
-            ore=Decimal("4.00"),
-            descrizione="Analisi",
-            fatturabile=True,
-            tariffa_applicata=Decimal("100.000000"),
+            date=date(2026, 3, 2),
+            hours=Decimal("4.00"),
+            description="Analisi",
+            billable=True,
+            applied_rate=Decimal("100.000000"),
         ),
         Actor(id=None, type="user", role="admin"),
     )
@@ -533,15 +533,15 @@ async def test_binding_hours_to_a_draft_writes_through_the_servers_own_storage(
 
     assert not result.is_error, result.content[0].text
     draft = _payload(result)
-    assert draft["stato"] == "bozza"
-    assert draft["imponibile"] == "400.00"
+    assert draft["status"] == "draft"
+    assert draft["taxable_amount"] == "400.00"
 
 
 # --- read_document_text ----------------------------------------------------------------
 
 
 @pytest.fixture
-def documento_con_pdf(mcp_session: Session, seeded_customer_id: str, tmp_path: Path) -> str:
+def document_with_pdf(mcp_session: Session, seeded_customer_id: str, tmp_path: Path) -> str:
     """A document holding one real PDF, seeded through the same storage root the
     `server` fixture hands the context -- so the tool reads the very bytes written
     here, rather than a second copy in a second directory."""
@@ -554,7 +554,7 @@ def documento_con_pdf(mcp_session: Session, seeded_customer_id: str, tmp_path: P
     service = DocumentService(mcp_session, LocalFileStorage(tmp_path))
     document = service.create(
         DocumentCreate(
-            customer_id=UUID(seeded_customer_id), tipo="documento", titolo="Modulo d'ordine firmato"
+            customer_id=UUID(seeded_customer_id), type="document", title="Modulo d'ordine firmato"
         ),
         Actor(id=None, type="system", role="admin"),
     )
@@ -568,48 +568,48 @@ def documento_con_pdf(mcp_session: Session, seeded_customer_id: str, tmp_path: P
 
 
 async def test_read_document_text_returns_what_is_written_inside_the_pdf(
-    server, documento_con_pdf: str
+    server, document_with_pdf: str
 ) -> None:
-    """The reason the tool exists: a codice destinatario that lives only on a signed
+    """The reason the tool exists: a recipient code that lives only on a signed
     order form was, until this, recoverable solely by downloading the file and reading
     it by eye -- which an agent cannot do."""
     async with Client(server) as client:
-        result = await client.call_tool("read_document_text", {"document_id": documento_con_pdf})
+        result = await client.call_tool("read_document_text", {"document_id": document_with_pdf})
 
     assert not result.is_error, result.content[0].text
-    letto = _payload(result)
-    assert "ABCDEFG" in letto["testo"]
-    assert letto["numero"] == 1
-    assert letto["troncato"] is False
+    read = _payload(result)
+    assert "ABCDEFG" in read["text"]
+    assert read["number"] == 1
+    assert read["truncated"] is False
 
 
-async def test_read_document_text_carries_its_provenance(server, documento_con_pdf: str) -> None:
+async def test_read_document_text_carries_its_provenance(server, document_with_pdf: str) -> None:
     """Text extracted from somebody else's file reaches a model that reads its own
     instructions as text. The warning travels in the payload, not only in the tool
     description the model saw once."""
-    from pigrocrm.core.text import PROVENIENZA
+    from pigrocrm.core.text import PROVENANCE
 
     async with Client(server) as client:
-        result = await client.call_tool("read_document_text", {"document_id": documento_con_pdf})
+        result = await client.call_tool("read_document_text", {"document_id": document_with_pdf})
 
-    assert _payload(result)["provenienza"] == PROVENIENZA
+    assert _payload(result)["provenance"] == PROVENANCE
 
 
-async def test_read_document_text_returns_no_bytes(server, documento_con_pdf: str) -> None:
+async def test_read_document_text_returns_no_bytes(server, document_with_pdf: str) -> None:
     """The rule this tool is an exception to still binds it: text, never the file. No
     base64 payload and no storage key -- the download stays on the REST API."""
     async with Client(server) as client:
-        result = await client.call_tool("read_document_text", {"document_id": documento_con_pdf})
+        result = await client.call_tool("read_document_text", {"document_id": document_with_pdf})
 
-    letto = _payload(result)
-    assert set(letto) == {
+    read = _payload(result)
+    assert set(read) == {
         "document_id",
-        "numero",
-        "titolo",
-        "testo",
+        "number",
+        "title",
+        "text",
         "mime",
-        "troncato",
-        "provenienza",
+        "truncated",
+        "provenance",
     }
 
 

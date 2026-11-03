@@ -10,7 +10,7 @@ import pytest
 from card_eval_fixtures import MODEL, _person, _run
 from fakes_cards import (
     CARD,
-    FONTI,
+    SOURCES,
     card_response,
     judge_response,
 )
@@ -36,7 +36,7 @@ from rebase_core.models import (
 
 
 def _result(**changes: Any) -> CardEvalResult:
-    fields = {name: {"verdict": "supported", "reason": "r", "by": "judge"} for name in FONTI}
+    fields = {name: {"verdict": "supported", "reason": "r", "by": "judge"} for name in SOURCES}
     base: dict[str, Any] = {
         "run_id": uuid4(),
         "freelancer_id": uuid4(),
@@ -49,20 +49,20 @@ def _result(**changes: Any) -> CardEvalResult:
         "cost_eur": Decimal("0.01"),
         "judge_latency_ms": 2000,
         "judge_cost_eur": Decimal("0.02"),
-        "anni_ok": True,
+        "experience_years_ok": True,
     }
     return CardEvalResult(**{**base, **changes})
 
 
 def _worse(freelancer_id: UUID) -> CardEvalResult:
-    fields = {name: {"verdict": "supported", "reason": "r", "by": "judge"} for name in FONTI}
-    fields["anni"] = {"verdict": "contradicted", "reason": "r", "by": "rule"}
-    fields["competenze"] = {"verdict": "unsupported", "reason": "r", "by": "judge"}
+    fields = {name: {"verdict": "supported", "reason": "r", "by": "judge"} for name in SOURCES}
+    fields["experience_years"] = {"verdict": "contradicted", "reason": "r", "by": "rule"}
+    fields["skills"] = {"verdict": "unsupported", "reason": "r", "by": "judge"}
     return _result(
         freelancer_id=freelancer_id,
-        anni_ok=False,
+        experience_years_ok=False,
         judgement={"failure": None, "fields": fields, "invented": ["x", "y"], "identifying": []},
-        checks={"anonymity": ["sintesi"], "years": {"ok": False}},
+        checks={"anonymity": ["profile_summary"], "years": {"ok": False}},
     )
 
 
@@ -79,7 +79,7 @@ def test_the_totals_count_verdicts_costs_and_what_went_wrong() -> None:
     assert (totals["contradicted"], totals["contradicted_profiles"]) == (1, 1)
     assert (totals["invented"], totals["leaks_rule"], totals["leaks"]) == (2, 1, 1)
     assert (totals["failed"], totals["judged"], totals["guard_failures"]) == (1, 2, 1)
-    assert (totals["anni_checked"], totals["anni_ok"]) == (2, 1)
+    assert (totals["experience_years_checked"], totals["experience_years_ok"]) == (2, 1)
     assert (totals["cost_eur"], totals["judge_cost_eur"]) == ("0.03", "0.06")
     assert (totals["latency_ms_avg"], totals["judge_latency_ms_avg"]) == (1000, 2000)
 
@@ -95,7 +95,11 @@ def test_a_run_is_compared_with_its_baseline_on_the_people_both_wrote() -> None:
     measures = table["measures"]
     assert measures["supported_rate"] == {"this": 1.0, "baseline": 0.75, "verdict": "meglio"}
     assert measures["contradicted_rate"]["verdict"] == "meglio"
-    assert measures["anni_ok_rate"] == {"this": 1.0, "baseline": 0.0, "verdict": "meglio"}
+    assert measures["experience_years_ok_rate"] == {
+        "this": 1.0,
+        "baseline": 0.0,
+        "verdict": "meglio",
+    }
     assert measures["leaks"] == {"this": 0.0, "baseline": 1.0, "verdict": "meglio"}
     assert measures["guard_failures"]["verdict"] == "uguale"
     assert compare(baseline, candidate)["measures"]["supported_rate"]["verdict"] == "peggio"
@@ -106,7 +110,7 @@ def test_a_run_is_compared_with_its_baseline_on_the_people_both_wrote() -> None:
 def test_a_baseline_with_no_verdicts_is_compared_on_what_it_has() -> None:
     person = uuid4()
     manual = CardEvalResult(
-        run_id=uuid4(), freelancer_id=person, label="x", anni_ok=True, guard_clean=True
+        run_id=uuid4(), freelancer_id=person, label="x", experience_years_ok=True, guard_clean=True
     )
 
     measures = compare([_result(freelancer_id=person)], [manual])["measures"]
@@ -119,7 +123,7 @@ def test_the_default_baseline_is_the_live_configuration_and_an_explicit_one_repl
     clean_hub: Session,
 ) -> None:
     _person(clean_hub, label="lead")
-    bad = judge_response({"ruolo": ("contradicted", "the CV says otherwise")})
+    bad = judge_response({"role": ("contradicted", "the CV says otherwise")})
 
     first = _run(clean_hub, RecordingCall([card_response()]), RecordingCall([bad]))
     assert first.summary["baseline"] is None
@@ -200,7 +204,7 @@ def test_a_run_of_the_manual_evaluation_is_never_the_default_reference(clean_hub
         provider="anthropic",
         model=MODEL,
         prompt_version=PROMPT_VERSION,
-        summary={"complete": True, "ran": 15, "anni_ok": 15},
+        summary={"complete": True, "ran": 15, "experience_years_ok": 15},
     )
     clean_hub.add(manual)
     clean_hub.commit()
@@ -221,7 +225,7 @@ def test_the_report_carries_no_name_card_text_or_reason_of_the_judge(clean_hub: 
         RecordingCall(
             [
                 judge_response(
-                    {"luogo": ("contradicted", "The CV places her in Napoli, not Torino")},
+                    {"location": ("contradicted", "The CV places her in Napoli, not Torino")},
                     invented=["Kubernetes"],
                 )
             ]

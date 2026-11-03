@@ -4,7 +4,7 @@ reused until the CV or the prompt changes, and gone with the CV.
 The model is a `RecordingCall` answering canned CVs, or `_During` where a test needs an outage
 or something to happen while the model writes; the CVs are real PDFs with a line of text
 (`fakes_cards.text_pdf`), so the text goes through `FreelancerService.cv_text` exactly as a
-real upload's would. Every answer's `identita` is empty unless a test hands one, so each test
+real upload's would. Every answer's `identity` is empty unless a test hands one, so each test
 proves which reading of the person (the profile, the card's persona, the answer) caught it.
 """
 
@@ -30,7 +30,7 @@ from rebase_core.anonymous_cv.writer import (
     AnonymousCvWriter,
     Written,
 )
-from rebase_core.card_persona import PERSONA_CV
+from rebase_core.card_person import PERSON_CV
 from rebase_core.card_types import NO_TEXT
 from rebase_core.contract_schemas import FiscalData
 from rebase_core.db import session_factory
@@ -50,29 +50,29 @@ CV_2025 = text_pdf("Mario Messina Backend lead TIM 2019-2025")
 SCAN = b"%PDF-1.7\n1 0 obj<<>>endobj\n%%EOF\n"
 
 BODY: dict[str, Any] = {
-    "lingua": "it",
-    "titolo": "Backend developer",
-    "sommario": "Backend developer con cinque anni di servizi di fatturazione in TIM.",
-    "esperienze": [
+    "language": "it",
+    "title": "Backend developer",
+    "summary": "Backend developer con cinque anni di servizi di fatturazione in TIM.",
+    "experience": [
         {
-            "ruolo": "Backend developer",
-            "azienda": "TIM S.p.A.",
-            "luogo": "Roma, IT",
-            "periodo": "2019 – 2024",
-            "punti": [{"titolo": None, "testo": "Ha sviluppato i servizi di fatturazione."}],
+            "role": "Backend developer",
+            "company": "TIM S.p.A.",
+            "location": "Roma, IT",
+            "period": "2019 – 2024",
+            "points": [{"title": None, "text": "Ha sviluppato i servizi di fatturazione."}],
         }
     ],
-    "competenze": [{"area": "Competenze", "voci": ["Python", "PostgreSQL"]}],
-    "formazione": [],
-    "certificazioni": [],
-    "lingue": [{"lingua": "Italiano", "livello": "Madrelingua"}],
-    "altre_sezioni": [],
+    "skills": [{"area": "Competenze", "entries": ["Python", "PostgreSQL"]}],
+    "education": [],
+    "certifications": [],
+    "languages": [{"language": "Italiano", "level": "Madrelingua"}],
+    "other_sections": [],
 }
-NO_IDENTITA: dict[str, Any] = {
-    "nome": None,
-    "cognome": None,
+NO_IDENTITY: dict[str, Any] = {
+    "first_name": None,
+    "last_name": None,
     "email": None,
-    "telefoni": [],
+    "phones": [],
     "link": [],
 }
 # What the system prompt must name, each in its words: what never goes in the CV.
@@ -115,16 +115,16 @@ def _with(**fields: Any) -> dict[str, Any]:
     return {**copy.deepcopy(BODY), **fields}
 
 
-def _with_bullet(testo: str) -> dict[str, Any]:
+def _with_bullet(text: str) -> dict[str, Any]:
     body = copy.deepcopy(BODY)
-    body["esperienze"][0]["punti"][0]["testo"] = testo
+    body["experience"][0]["points"][0]["text"] = text
     return body
 
 
 def cv_response(
     body: dict[str, Any] | None = None,
     *,
-    identita: dict[str, Any] | None = None,
+    identity: dict[str, Any] | None = None,
     raw: str | None = None,
     stop_reason: str = "end_turn",
     input_tokens: int = 3000,
@@ -136,7 +136,7 @@ def cv_response(
     answer = (
         raw
         if raw is not None
-        else json.dumps({"cv": body or BODY, "identita": identita or NO_IDENTITA})
+        else json.dumps({"cv": body or BODY, "identity": identity or NO_IDENTITY})
     )
     try:
         parsed = AnonymousCvDraft.model_validate_json(answer) if stop_reason == "end_turn" else None
@@ -186,12 +186,12 @@ def _apply(
     email: str = "mario@studio.it",
 ) -> UUID:
     data = FreelancerCreate(
-        nome="Mario",
-        cognome="Messina",
+        first_name="Mario",
+        last_name="Messina",
         email=email,
-        tariffa_giornaliera=Decimal("450.00"),
-        posizione="Backend developer",
-        remoto="remoto",
+        daily_rate=Decimal("450.00"),
+        job_title="Backend developer",
+        remote="remote",
         links=links or [],
     )
     service = FreelancerService(session)
@@ -202,7 +202,7 @@ def _apply(
 
 
 def _admin(session: Session) -> UUID:
-    admin = User(email="ivan@rebase.it", nome="Ivan", cognome="", role="admin")
+    admin = User(email="ivan@rebase.it", first_name="Ivan", last_name="", role="admin")
     session.add(admin)
     session.commit()
     return admin.id
@@ -312,7 +312,7 @@ def test_reused_body_the_guard_now_refuses_is_written_again(clean: Session) -> N
     """A guard fixed later covers the bodies already kept: one it refuses now is stale, and
     is written again rather than served."""
     freelancer_id = _apply(clean)
-    _keep(clean, freelancer_id, _with(sommario="Mario Messina, backend developer in TIM."))
+    _keep(clean, freelancer_id, _with(summary="Mario Messina, backend developer in TIM."))
     llm = RecordingCall([cv_response()])
 
     written = _writer(clean, llm).get_or_write(freelancer_id)
@@ -327,7 +327,7 @@ def test_reused_body_the_guard_now_refuses_is_not_served_without_a_model(
     clean: Session,
 ) -> None:
     freelancer_id = _apply(clean)
-    _keep(clean, freelancer_id, _with(sommario="Mario Messina, backend developer in TIM."))
+    _keep(clean, freelancer_id, _with(summary="Mario Messina, backend developer in TIM."))
 
     with pytest.raises(LlmNotConfigured) as error:
         _writer(clean, None).get_or_write(freelancer_id)
@@ -339,7 +339,7 @@ def test_a_kept_body_that_is_no_longer_a_cv_is_written_again(clean: Session) -> 
     """A body kept under this version that the shape no longer reads (a field renamed by
     hand, a limit lowered) is stale: written again, never a 500."""
     freelancer_id = _apply(clean)
-    _keep(clean, freelancer_id, {**BODY, "riassunto": "un campo che non c'è più"})
+    _keep(clean, freelancer_id, {**BODY, "removed_field": "un campo che non c'è più"})
     llm = RecordingCall([cv_response()])
 
     written = _writer(clean, llm).get_or_write(freelancer_id)
@@ -354,7 +354,7 @@ def test_a_kept_body_that_is_no_longer_a_cv_is_not_served_without_a_model(
     clean: Session,
 ) -> None:
     freelancer_id = _apply(clean)
-    _keep(clean, freelancer_id, {"lingua": "fr"})
+    _keep(clean, freelancer_id, {"language": "fr"})
 
     with pytest.raises(LlmNotConfigured):
         _writer(clean, None).get_or_write(freelancer_id)
@@ -364,7 +364,7 @@ def test_new_cv_writes_again(clean: Session) -> None:
     freelancer_id = _apply(clean)
     _writer(clean, RecordingCall([cv_response()])).get_or_write(freelancer_id)
     MemberService(clean).replace_cv(freelancer_id, CV_2025, "cv 2025.pdf", "application/pdf")
-    newer = _with(titolo="Backend lead")
+    newer = _with(title="Backend lead")
     llm = RecordingCall([cv_response(newer)])
 
     written = _writer(clean, llm).get_or_write(freelancer_id)
@@ -407,8 +407,8 @@ def test_identifying_answer_is_rewritten_once(clean: Session) -> None:
     """The profile's name, in the summary: one rewrite, asked with the answer as the model's
     turn and the fields to fix (never the words) as the next user turn."""
     freelancer_id = _apply(clean)
-    named = _with(sommario="Mario Messina è un backend developer con cinque anni in TIM.")
-    clean_body = _with(sommario="Backend developer con cinque anni in TIM.")
+    named = _with(summary="Mario Messina è un backend developer con cinque anni in TIM.")
+    clean_body = _with(summary="Backend developer con cinque anni in TIM.")
     first = cv_response(named, input_tokens=3000, output_tokens=2500, thinking_tokens=400)
     second = cv_response(clean_body, input_tokens=5600, output_tokens=2400, thinking_tokens=300)
     llm = RecordingCall([first, second])
@@ -423,7 +423,7 @@ def test_identifying_answer_is_rewritten_once(clean: Session) -> None:
     assert [message.role for message in retry.messages] == ["user", "assistant", "user"]
     assert retry.messages[1].text == first.text
     fix = retry.messages[-1].text
-    assert "sommario" in fix
+    assert "summary" in fix
     assert "Messina" not in fix and "Mario" not in fix
     assert written == Written(
         AnonymousCv.model_validate(clean_body), reused=False, cv_sha256=_sha(CV)
@@ -438,7 +438,7 @@ def test_identifying_twice_fails_and_stores_nothing(
     clean: Session, logs: pytest.LogCaptureFixture
 ) -> None:
     freelancer_id = _apply(clean)
-    named = _with(sommario="Mario Messina, backend developer.")
+    named = _with(summary="Mario Messina, backend developer.")
     llm = RecordingCall([cv_response(named), cv_response(_with_bullet("Lavora con Messina."))])
 
     with pytest.raises(AnonymousCvFailed) as error:
@@ -452,7 +452,7 @@ def test_identifying_twice_fails_and_stores_nothing(
     assert _stored(clean, freelancer_id) is None
     # The log names the freelancer and the kind of failure, never the person or the CV.
     assert str(freelancer_id) in logs.text
-    for secret in ("Mario", "Messina", "backend developer", "sommario"):
+    for secret in ("Mario", "Messina", "backend developer", "summary"):
         assert secret not in logs.text
 
 
@@ -473,7 +473,7 @@ def test_a_rewrite_that_fails_says_why_and_stores_nothing(
     """The rewrite is a call like the first: refused, cut or not the shape, it fails with
     its own sentence rather than «still identifying»."""
     freelancer_id = _apply(clean)
-    llm = RecordingCall([cv_response(_with(sommario="Mario Messina, backend developer.")), again])
+    llm = RecordingCall([cv_response(_with(summary="Mario Messina, backend developer.")), again])
 
     with pytest.raises(AnonymousCvFailed) as error:
         _writer(clean, llm).get_or_write(freelancer_id)
@@ -494,7 +494,7 @@ def test_an_outage_on_the_rewrite_propagates_and_stores_nothing(clean: Session) 
                 raise down
             return super().complete(request)
 
-    llm = _DownOnTheRewrite([cv_response(_with(sommario="Mario Messina, backend developer."))])
+    llm = _DownOnTheRewrite([cv_response(_with(summary="Mario Messina, backend developer."))])
 
     with pytest.raises(LlmUnavailable) as error:
         _writer(clean, llm).get_or_write(freelancer_id)
@@ -505,43 +505,43 @@ def test_an_outage_on_the_rewrite_propagates_and_stores_nothing(clean: Session) 
 
 
 def test_identity_from_the_answer_is_checked(clean: Session) -> None:
-    """The profile has no phone: the numbers the CV itself states, read back in `identita`,
+    """The profile has no phone: the numbers the CV itself states, read back in `identity`,
     are what the guard finds in a bullet, the second as surely as the first."""
     freelancer_id = _apply(clean)
-    identita = {**NO_IDENTITA, "telefoni": ["333 1234567", "+39 06 9876 5432"]}
-    leaking = cv_response(_with_bullet("Ufficio: 06 98765432."), identita=identita)
-    llm = RecordingCall([leaking, cv_response(identita=identita)])
+    identity = {**NO_IDENTITY, "phones": ["333 1234567", "+39 06 9876 5432"]}
+    leaking = cv_response(_with_bullet("Ufficio: 06 98765432."), identity=identity)
+    llm = RecordingCall([leaking, cv_response(identity=identity)])
 
     written = _writer(clean, llm).get_or_write(freelancer_id)
 
     assert len(llm.requests) == 2
-    assert "esperienze[0].punti[0].testo" in llm.requests[1].messages[-1].text
+    assert "experience[0].points[0].text" in llm.requests[1].messages[-1].text
     assert written.cv == AnonymousCv.model_validate(BODY)
 
 
-def test_the_cards_persona_is_checked(clean: Session) -> None:
+def test_the_cards_person_is_checked(clean: Session) -> None:
     """The card's stored persona for this CV (REB-855) is the third reading of the person:
     its phone, which neither the profile nor the answer has, is found in a bullet."""
     freelancer_id = _apply(clean)
-    persona = {
-        "nome": "Mario",
-        "cognome": "Messina",
+    person = {
+        "first_name": "Mario",
+        "last_name": "Messina",
         "email": None,
-        "telefono": "+39 347 765 4321",
-        "citta": None,
+        "phone": "+39 347 765 4321",
+        "city": None,
         "linkedin_url": None,
-        "altri_link": [],
-        "aziende": [],
-        PERSONA_CV: _sha(CV),
+        "other_links": [],
+        "companies": [],
+        PERSON_CV: _sha(CV),
     }
-    clean.add(FreelancerCard(freelancer_id=freelancer_id, persona=persona))
+    clean.add(FreelancerCard(freelancer_id=freelancer_id, person=person))
     clean.commit()
     llm = RecordingCall([cv_response(_with_bullet("Chiamare il 3477654321.")), cv_response()])
 
     _writer(clean, llm).get_or_write(freelancer_id)
 
     assert len(llm.requests) == 2
-    assert "esperienze[0].punti[0].testo" in llm.requests[1].messages[-1].text
+    assert "experience[0].points[0].text" in llm.requests[1].messages[-1].text
 
 
 def _rewritten_for(llm: RecordingCall, path: str) -> None:
@@ -551,17 +551,17 @@ def _rewritten_for(llm: RecordingCall, path: str) -> None:
 
 
 def test_the_tax_data_is_checked(clean: Session, logs: pytest.LogCaptureFixture) -> None:
-    """The partita IVA and codice fiscale an admin saved for the contracts (REB-387) are
-    the person: the partita IVA written with no label, which only the saved one can catch,
+    """The VAT number and tax code an admin saved for the contracts (REB-387) are
+    the person: the VAT number written with no label, which only the saved one can catch,
     is asked again, and neither number reaches a log."""
     freelancer_id = _apply(clean)
     FiscalService(clean).save(
         freelancer_id,
         FiscalData(
-            codice_fiscale="MSSMRA85M01F158K",
-            partita_iva="01234567890",
-            domicilio="Via Roma 1, Messina",
-            pec="studio.fatture@pec.it",
+            tax_code="MSSMRA85M01F158K",
+            vat_number="01234567890",
+            domicile="Via Roma 1, Messina",
+            certified_email="studio.fatture@pec.it",
         ),
         _admin(clean),
     )
@@ -569,22 +569,22 @@ def test_the_tax_data_is_checked(clean: Session, logs: pytest.LogCaptureFixture)
 
     written = _writer(clean, llm).get_or_write(freelancer_id)
 
-    _rewritten_for(llm, "esperienze[0].punti[0].testo")
+    _rewritten_for(llm, "experience[0].points[0].text")
     assert written.cv == AnonymousCv.model_validate(BODY)
     for secret in ("01234567890", "0123 456 7890", "MSSMRA85M01F158K", "studio.fatture"):
         assert secret not in logs.text
 
 
-def test_the_pec_is_checked_as_an_email(clean: Session) -> None:
+def test_the_certified_email_is_checked_as_an_email(clean: Session) -> None:
     """The PEC's handle, written without its domain, is the person as an email's is."""
     freelancer_id = _apply(clean)
     FiscalService(clean).save(
         freelancer_id,
         FiscalData(
-            codice_fiscale="MSSMRA85M01F158K",
-            partita_iva=None,
-            domicilio="Via Roma 1, Messina",
-            pec="studio.fatture@pec.it",
+            tax_code="MSSMRA85M01F158K",
+            vat_number=None,
+            domicile="Via Roma 1, Messina",
+            certified_email="studio.fatture@pec.it",
         ),
         _admin(clean),
     )
@@ -594,7 +594,7 @@ def test_the_pec_is_checked_as_an_email(clean: Session) -> None:
 
     _writer(clean, llm).get_or_write(freelancer_id)
 
-    _rewritten_for(llm, "esperienze[0].punti[0].testo")
+    _rewritten_for(llm, "experience[0].points[0].text")
 
 
 def test_the_profiles_link_is_checked(clean: Session) -> None:
@@ -607,7 +607,7 @@ def test_the_profiles_link_is_checked(clean: Session) -> None:
 
     _writer(clean, llm).get_or_write(freelancer_id)
 
-    _rewritten_for(llm, "esperienze[0].punti[0].testo")
+    _rewritten_for(llm, "experience[0].points[0].text")
 
 
 def test_the_profiles_email_is_checked(clean: Session) -> None:
@@ -615,14 +615,14 @@ def test_the_profiles_email_is_checked(clean: Session) -> None:
     freelancer_id = _apply(clean, email="zorro.dev@studio.it")
     llm = RecordingCall(
         [
-            cv_response(_with(sommario="Backend developer, firma i commit come zorro.dev.")),
+            cv_response(_with(summary="Backend developer, firma i commit come zorro.dev.")),
             cv_response(),
         ]
     )
 
     _writer(clean, llm).get_or_write(freelancer_id)
 
-    _rewritten_for(llm, "sommario")
+    _rewritten_for(llm, "summary")
 
 
 def test_refusal(clean: Session) -> None:

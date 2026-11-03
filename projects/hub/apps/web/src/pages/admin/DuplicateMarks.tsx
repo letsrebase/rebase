@@ -28,10 +28,10 @@ export function DuplicatePill({ others }: { others: readonly string[] }) {
 export function DuplicateOf({ freelancerId }: { freelancerId: string }) {
   const duplicates = useDuplicates()
   if (!duplicates.data) return null
-  const others = [...duplicates.data.unibili, ...duplicates.data.da_rivedere].flatMap((pair) =>
+  const others = [...duplicates.data.mergeable, ...duplicates.data.to_review].flatMap((pair) =>
     pair.survivor.freelancer_id === freelancerId
-      ? [pair.assorbito.freelancer_id]
-      : pair.assorbito.freelancer_id === freelancerId
+      ? [pair.absorbed.freelancer_id]
+      : pair.absorbed.freelancer_id === freelancerId
         ? [pair.survivor.freelancer_id]
         : [],
   )

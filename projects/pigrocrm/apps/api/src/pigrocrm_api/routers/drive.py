@@ -123,7 +123,7 @@ def finish_oauth(
 
 @authenticated.delete(_ACCOUNT_PATH, status_code=204)
 def disconnect(session: SessionDep, actor: ActorDep, settings: SettingsDep) -> None:
-    """No `elimina_messaggi` flag: Drive stores no correspondence of its own, so there is
+    """No `delete_messages` flag: Drive stores no correspondence of its own, so there is
     nothing here for one to name -- see `GoogleDriveOAuthService.disconnect`."""
     _oauth(session, settings).disconnect(actor)
 

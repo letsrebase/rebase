@@ -1,11 +1,11 @@
 /**
  * «Primi passi», the start page (spec 2026-09-16 §4, REB-222), in three blocks:
  *
- * 1. **Porta dentro il tuo lavoro**: what brings a person's real work in without typing
+ * 1. **Bring your work in**: what brings a person's real work in without typing
  *    it, the Gmail door (`GmailDoor`) and the invoice door of §6 (`InvoiceDoor`,
  *    REB-224).
  * 2. **Fai lavorare l’assistente**: the connection itself, inline (`ConnectAgentPanel`,
- *    the body of the Agenti page's «Collega un agente» dialog), and the first prompt to say to it. Once this
+ *    the body of the Agents page's «Collega un agente» dialog), and the first prompt to say to it. Once this
  *    person has a token the block is the prompt alone.
  * 3. **Oppure a mano**: the four first steps, each with its screen and its prompt side
  *    by side. The §6.7 rules of 2026-09-12 stand: a step is ticked because the thing
@@ -31,7 +31,7 @@ import { GmailDoor } from './GmailDoor'
 import { InvoiceDoor } from './InvoiceDoor'
 import { INTRO_PROMPT, STEP_PROMPTS } from './prompts'
 
-export function GetStartedPage({ esito }: { esito?: string }) {
+export function GetStartedPage({ outcome }: { outcome?: string }) {
   const canWrite = useCanWrite()
   const state = useFirstSteps()
 
@@ -52,7 +52,7 @@ export function GetStartedPage({ esito }: { esito?: string }) {
               {/* Two doors side by side (§4.2): the mailbox, and the last invoice issued
                   (REB-224). */}
               <div className="grid gap-4 lg:grid-cols-2 lg:items-start">
-                <GmailDoor esito={esito} />
+                <GmailDoor outcome={outcome} />
                 <InvoiceDoor assistantConnected={state.assistantConnected} />
               </div>
             </Block>

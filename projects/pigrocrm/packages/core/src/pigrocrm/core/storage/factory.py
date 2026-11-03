@@ -11,7 +11,7 @@ from pigrocrm.core.storage.local import LocalFileStorage
 def _gdrive_not_configured() -> ValidationFailed:
     """Two ways to configure Drive, so the error names both: the service-account
     variables, and the connected Google account whose own credential writes into a
-    folder the titolare picks. A message naming only the first sends the reader to the
+    folder the owner picks. A message naming only the first sends the reader to the
     Google Cloud console for a setup they may have no reason to create, and this error
     is the only place they are looking.
 
@@ -45,7 +45,7 @@ def storage_from_settings(
     rather than a code change (spec 11 criterion 5).
 
     `session_factory` is what the second Drive route needs and the first does not: the
-    titolare's credential and the folder it writes into live in `google_drive_accounts`,
+    owner's credential and the folder it writes into live in `google_drive_accounts`,
     so that storage has to be able to open a session later, at each operation. It is
     optional because two of the three outcomes here have no use for one -- and because
     an adapter with no database (there is none today, but the parameter should not

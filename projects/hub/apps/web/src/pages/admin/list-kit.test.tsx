@@ -11,18 +11,18 @@ describe('the euro filters read Italian thousands, whatever the browser’s loca
     return spy.mock.calls.map((call) => String(call[0])).filter((url) => url.startsWith(endpoint))
   }
 
-  const TALENTI = { path: '/admin/talent', heading: 'Talenti', endpoint: '/api/hub/talent' }
-  const AZIENDE = { path: '/admin/companies', heading: 'Aziende', endpoint: '/api/hub/companies' }
+  const TALENTS = { path: '/admin/talent', heading: 'Talenti', endpoint: '/api/hub/talent' }
+  const LEGAL_ENTITIES = { path: '/admin/companies', heading: 'Aziende', endpoint: '/api/hub/companies' }
 
   it.each([
-    { ...TALENTI, label: 'Tariffa min (€/giorno)', param: 'tariffa_min' },
-    { ...TALENTI, label: 'Tariffa max (€/giorno)', param: 'tariffa_max' },
-    { ...AZIENDE, label: 'Budget min (€/giorno)', param: 'budget_min' },
-    { ...AZIENDE, label: 'Budget max (€/giorno)', param: 'budget_max' },
+    { ...TALENTS, label: 'Tariffa min (€/giorno)', param: 'min_rate' },
+    { ...TALENTS, label: 'Tariffa max (€/giorno)', param: 'max_rate' },
+    { ...LEGAL_ENTITIES, label: 'Budget min (€/giorno)', param: 'budget_min' },
+    { ...LEGAL_ENTITIES, label: 'Budget max (€/giorno)', param: 'budget_max' },
   ])('«1.500» in «$label» asks for $param=1500.00', async ({ path, heading, label, endpoint, param }) => {
     const spy = vi
       .spyOn(globalThis, 'fetch')
-      .mockImplementation(async () => answer(200, { totale: 0, items: [], per_stato: {} }))
+      .mockImplementation(async () => answer(200, { total: 0, items: [], by_status: {} }))
     mount(path)
     await screen.findByRole('heading', { name: heading })
 
@@ -34,16 +34,16 @@ describe('the euro filters read Italian thousands, whatever the browser’s loca
   })
 
   it.each([
-    { ...TALENTI, label: 'Tariffa min (€/giorno)', param: 'tariffa_min' },
-    { ...TALENTI, label: 'Tariffa max (€/giorno)', param: 'tariffa_max' },
-    { ...AZIENDE, label: 'Budget min (€/giorno)', param: 'budget_min' },
-    { ...AZIENDE, label: 'Budget max (€/giorno)', param: 'budget_max' },
+    { ...TALENTS, label: 'Tariffa min (€/giorno)', param: 'min_rate' },
+    { ...TALENTS, label: 'Tariffa max (€/giorno)', param: 'max_rate' },
+    { ...LEGAL_ENTITIES, label: 'Budget min (€/giorno)', param: 'budget_min' },
+    { ...LEGAL_ENTITIES, label: 'Budget max (€/giorno)', param: 'budget_max' },
   ])(
     '«1.500» in «$label» survives a reload of the address the app wrote',
     async ({ path, heading, label, endpoint, param }) => {
       const spy = vi
         .spyOn(globalThis, 'fetch')
-        .mockImplementation(async () => answer(200, { totale: 0, items: [], per_stato: {} }))
+        .mockImplementation(async () => answer(200, { total: 0, items: [], by_status: {} }))
       const router = mount(path)
       await screen.findByRole('heading', { name: heading })
       await userEvent.type(screen.getByLabelText(label), '1.500')
@@ -63,10 +63,10 @@ describe('the euro filters read Italian thousands, whatever the browser’s loca
   )
 
   it.each([
-    { ...TALENTI, label: 'Tariffa min (€/giorno)', param: 'tariffa_min' },
-    { ...TALENTI, label: 'Tariffa max (€/giorno)', param: 'tariffa_max' },
-    { ...AZIENDE, label: 'Budget min (€/giorno)', param: 'budget_min' },
-    { ...AZIENDE, label: 'Budget max (€/giorno)', param: 'budget_max' },
+    { ...TALENTS, label: 'Tariffa min (€/giorno)', param: 'min_rate' },
+    { ...TALENTS, label: 'Tariffa max (€/giorno)', param: 'max_rate' },
+    { ...LEGAL_ENTITIES, label: 'Budget min (€/giorno)', param: 'budget_min' },
+    { ...LEGAL_ENTITIES, label: 'Budget max (€/giorno)', param: 'budget_max' },
   ])(
     'reads a hand-typed «$param=1.500» as 1500 on a fresh load (REB-531)',
     async ({ path, heading, label, endpoint, param }) => {
@@ -74,7 +74,7 @@ describe('the euro filters read Italian thousands, whatever the browser’s loca
       // would read it as the number 1.5 before the page ever saw «1.500».
       const spy = vi
         .spyOn(globalThis, 'fetch')
-        .mockImplementation(async () => answer(200, { totale: 0, items: [], per_stato: {} }))
+        .mockImplementation(async () => answer(200, { total: 0, items: [], by_status: {} }))
       mount(`${path}?${param}=1.500`)
       await screen.findByRole('heading', { name: heading })
       expect(screen.getByLabelText(label)).toHaveValue('1.500')
@@ -85,7 +85,7 @@ describe('the euro filters read Italian thousands, whatever the browser’s loca
   it('says a filter that is not an amount is not one, and narrows nothing with it', async () => {
     const spy = vi
       .spyOn(globalThis, 'fetch')
-      .mockImplementation(async () => answer(200, { totale: 0, items: [], per_stato: {} }))
+      .mockImplementation(async () => answer(200, { total: 0, items: [], by_status: {} }))
     mount('/admin/talent')
     await screen.findByRole('heading', { name: 'Talenti' })
 
@@ -93,18 +93,18 @@ describe('the euro filters read Italian thousands, whatever the browser’s loca
 
     expect(await screen.findByRole('alert')).toHaveTextContent('Serve una cifra, in euro.')
     expect(screen.getByLabelText('Tariffa min (€/giorno)')).toHaveAttribute('aria-invalid', 'true')
-    expect(listCalls(spy, '/api/hub/talent').every((url) => !url.includes('tariffa_min'))).toBe(true)
+    expect(listCalls(spy, '/api/hub/talent').every((url) => !url.includes('min_rate'))).toBe(true)
   })
 })
 
 describe('two empty states, in Italian (REB-286)', () => {
   it.each([
-    ['/admin/talent?tariffa_min=tanto', 'Tariffa min (€/giorno)', 'Nessun profilo qui.'],
+    ['/admin/talent?min_rate=tanto', 'Tariffa min (€/giorno)', 'Nessun profilo qui.'],
     ['/admin/companies?budget_min=tanto', 'Budget min (€/giorno)', 'Nessuna richiesta qui.'],
   ])('does not count an amount it cannot send as a filter: %s (REB-485)', async (path, label, empty) => {
     const spy = vi
       .spyOn(globalThis, 'fetch')
-      .mockImplementation(async () => answer(200, { totale: 0, items: [], per_stato: {} }))
+      .mockImplementation(async () => answer(200, { total: 0, items: [], by_status: {} }))
     mount(path)
     expect(await screen.findByText(empty)).toBeInTheDocument()
     expect(screen.getByLabelText(label)).toHaveAttribute('aria-invalid', 'true')

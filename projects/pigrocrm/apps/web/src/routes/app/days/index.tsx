@@ -3,7 +3,7 @@ import { DaysPage } from '@/features/days/DaysPage'
 import { validateDaysSearch } from '@/features/days/search'
 
 /**
- * `/app/days?contract=&mese=`, the register of contract days (REB-745). Only `Route` is
+ * `/app/days?contract=&month=`, the register of contract days (REB-745). Only `Route` is
  * exported, so the router plugin keeps code-splitting it; the page is
  * `features/days/DaysPage.tsx` and the validator `features/days/search.ts`.
  */

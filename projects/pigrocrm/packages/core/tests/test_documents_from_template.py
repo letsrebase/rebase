@@ -2,7 +2,7 @@ import shutil
 from pathlib import Path
 
 import pytest
-from orologio import OGGI_IN_ITALIA, congela
+from frozen_clock import TODAY_IN_ITALY, freeze
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.actor import Actor
@@ -14,9 +14,9 @@ from pigrocrm.core.documents.schemas import (
     DocumentListQuery,
 )
 from pigrocrm.core.documents.service import OFFER_TRANSITIONS, DocumentService
-from pigrocrm.core.emitter.schemas import LegalEntityUpsert
-from pigrocrm.core.emitter.service import LegalEntityService
 from pigrocrm.core.errors import Conflict, NotFound, ValidationFailed
+from pigrocrm.core.legal_entities.schemas import LegalEntityUpsert
+from pigrocrm.core.legal_entities.service import LegalEntityService
 from pigrocrm.core.storage import LocalFileStorage
 from pigrocrm.core.templates.escaping import escape_markdown, escape_typst
 from pigrocrm.core.templates.schemas import TemplateCreate, TemplateVariable
@@ -49,23 +49,21 @@ Oggetto: {{offerta.oggetto}}
 @pytest.fixture
 def setup(db_session: Session, tmp_path: Path) -> tuple[DocumentService, Customer, object]:
     LegalEntityService(db_session).upsert_default(
-        LegalEntityUpsert(ragione_sociale="Studio Rossi", partita_iva="01234567890"),
+        LegalEntityUpsert(legal_name="Studio Rossi", vat_number="01234567890"),
         ADMIN,
     )
     template = TemplateService(db_session).create(
         TemplateCreate(
-            nome="Consulenza CTO",
-            tipo="offerta",
-            corpo_markdown=BODY,
-            variabili_dichiarate=[
-                TemplateVariable(
-                    nome="offerta", etichetta="Offerta", tipo="text", obbligatoria=True
-                ),
+            name="Consulenza CTO",
+            type="offer",
+            body_markdown=BODY,
+            declared_variables=[
+                TemplateVariable(name="offerta", label="Offerta", type="text", required=True),
             ],
         ),
         ADMIN,
     )
-    customer = Customer(ragione_sociale="ACME S.r.l.")
+    customer = Customer(legal_name="ACME S.r.l.")
     db_session.add(customer)
     db_session.flush()
     return DocumentService(db_session, LocalFileStorage(tmp_path)), customer, template
@@ -75,8 +73,8 @@ def _payload(customer: Customer, template: object, **overrides: object) -> Docum
     values: dict[str, object] = {
         "template_id": template.id,  # type: ignore[attr-defined]
         "customer_id": customer.id,
-        "titolo": "Offerta 2026-01",
-        "variabili": {"offerta": {"data": "10/08/2026", "oggetto": "Advisory"}},
+        "title": "Offerta 2026-01",
+        "variables": {"offerta": {"data": "10/08/2026", "oggetto": "Advisory"}},
     }
     values.update(overrides)
     return DocumentFromTemplate(**values)  # type: ignore[arg-type]
@@ -86,7 +84,7 @@ def _payload(customer: Customer, template: object, **overrides: object) -> Docum
 def test_create_from_template_produces_a_pdf_version(setup: tuple) -> None:
     service, customer, template = setup
     document = service.create_from_template(_payload(customer, template), ADMIN)
-    assert document.versione_corrente == 1
+    assert document.current_version == 1
     data, content_type, _ = service.download(document.id, None, ADMIN)
     assert data.startswith(b"%PDF")
     assert content_type == "application/pdf"
@@ -99,8 +97,8 @@ def test_the_version_keeps_the_template_and_the_variables_for_regeneration(setup
     assert version.template_id == template.id  # type: ignore[attr-defined]
     stored = service.repo.version(document.id, 1)
     assert stored is not None
-    assert stored.variabili["offerta"]["oggetto"] == "Advisory"
-    assert "Advisory" in stored.sorgente_markdown
+    assert stored.variables["offerta"]["oggetto"] == "Advisory"
+    assert "Advisory" in stored.markdown_source
 
 
 def test_the_customer_is_injected_into_the_template_scope(setup: tuple) -> None:
@@ -113,7 +111,7 @@ def test_the_customer_is_injected_into_the_template_scope(setup: tuple) -> None:
     document = service.create_from_template(_payload(customer, template), ADMIN)
     stored = service.repo.version(document.id, 1)
     assert stored is not None
-    assert escape_markdown(customer.ragione_sociale) in stored.sorgente_markdown
+    assert escape_markdown(customer.legal_name) in stored.markdown_source
 
 
 def test_an_injecting_customer_name_is_literal_in_both_contexts(
@@ -127,22 +125,22 @@ def test_an_injecting_customer_name_is_literal_in_both_contexts(
     or the raw fence's own Typst parser (typst context) from treating '#import' as
     a real directive."""
     service, customer, template = setup
-    customer.ragione_sociale = '#import "/etc/passwd"'
+    customer.legal_name = '#import "/etc/passwd"'
     db_session.flush()
     document = service.create_from_template(_payload(customer, template), ADMIN)
     stored = service.repo.version(document.id, 1)
     assert stored is not None
-    markdown_part, typst_part = stored.sorgente_markdown.split("```{=typst}", 1)
-    assert customer.ragione_sociale not in markdown_part
-    assert customer.ragione_sociale not in typst_part
-    assert escape_markdown(customer.ragione_sociale) in markdown_part
-    assert escape_typst(customer.ragione_sociale) in typst_part
+    markdown_part, typst_part = stored.markdown_source.split("```{=typst}", 1)
+    assert customer.legal_name not in markdown_part
+    assert customer.legal_name not in typst_part
+    assert escape_markdown(customer.legal_name) in markdown_part
+    assert escape_typst(customer.legal_name) in typst_part
 
 
 def test_a_missing_required_variable_fails_before_anything_is_written(setup: tuple) -> None:
     service, customer, template = setup
     with pytest.raises(ValidationFailed) as excinfo:
-        service.create_from_template(_payload(customer, template, variabili={}), ADMIN)
+        service.create_from_template(_payload(customer, template, variables={}), ADMIN)
     assert excinfo.value.details["field"] == "offerta"
     assert service.list.__self__ is service  # sanity: the service is intact
     from pigrocrm.core.documents.schemas import DocumentListQuery
@@ -157,7 +155,7 @@ def test_an_unknown_template_raises_not_found(setup: tuple) -> None:
     with pytest.raises(NotFound):
         service.create_from_template(
             DocumentFromTemplate(
-                template_id=uuid4(), customer_id=customer.id, titolo="X", variabili={}
+                template_id=uuid4(), customer_id=customer.id, title="X", variables={}
             ),
             ADMIN,
         )
@@ -169,19 +167,19 @@ def test_regenerate_reproduces_an_old_version_as_a_new_one(setup: tuple) -> None
     document = service.create_from_template(_payload(customer, template), ADMIN)
     first = service.repo.version(document.id, 1)
     regenerated = service.regenerate(document.id, 1, ADMIN)
-    assert regenerated.numero == 2
+    assert regenerated.number == 2
     second = service.repo.version(document.id, 2)
     assert second is not None and first is not None
     # Identical source means identical bytes: the whole promise of storing both
     # template_id and variabili (spec 11 criterion 4).
-    assert second.sorgente_markdown == first.sorgente_markdown
+    assert second.markdown_source == first.markdown_source
     assert second.hash_sha256 == first.hash_sha256
 
 
 def test_regenerate_of_an_uploaded_version_is_refused(setup: tuple, tmp_path: Path) -> None:
     service, customer, _ = setup
     document = service.create(
-        DocumentCreate(customer_id=customer.id, tipo="documento", titolo="Scansione"), ADMIN
+        DocumentCreate(customer_id=customer.id, type="document", title="Scansione"), ADMIN
     )
     service.add_version(document.id, b"%PDF-1.7\n", "application/pdf", ADMIN)
     with pytest.raises(ValidationFailed) as excinfo:
@@ -192,43 +190,43 @@ def test_regenerate_of_an_uploaded_version_is_refused(setup: tuple, tmp_path: Pa
 def test_the_offer_state_machine_allows_only_the_declared_transitions(setup: tuple) -> None:
     service, customer, template = setup
     document = service.create(
-        DocumentCreate(customer_id=customer.id, tipo="offerta", titolo="O"), ADMIN
+        DocumentCreate(customer_id=customer.id, type="offer", title="O"), ADMIN
     )
-    assert service.get(document.id, ADMIN).stato == "bozza"
-    assert service.set_offer_state(document.id, "inviata", ADMIN).stato == "inviata"
-    assert service.set_offer_state(document.id, "accettata", ADMIN).stato == "accettata"
+    assert service.get(document.id, ADMIN).status == "draft"
+    assert service.set_offer_state(document.id, "sent", ADMIN).status == "sent"
+    assert service.set_offer_state(document.id, "accepted", ADMIN).status == "accepted"
 
 
 def test_an_undeclared_transition_is_refused(setup: tuple) -> None:
     service, customer, _ = setup
     document = service.create(
-        DocumentCreate(customer_id=customer.id, tipo="offerta", titolo="O"), ADMIN
+        DocumentCreate(customer_id=customer.id, type="offer", title="O"), ADMIN
     )
     with pytest.raises(Conflict) as excinfo:
-        service.set_offer_state(document.id, "accettata", ADMIN)
+        service.set_offer_state(document.id, "accepted", ADMIN)
     assert "bozza" in excinfo.value.details["reason"]
 
 
 def test_an_accepted_offer_is_terminal(setup: tuple) -> None:
     service, customer, _ = setup
     document = service.create(
-        DocumentCreate(customer_id=customer.id, tipo="offerta", titolo="O"), ADMIN
+        DocumentCreate(customer_id=customer.id, type="offer", title="O"), ADMIN
     )
-    service.set_offer_state(document.id, "inviata", ADMIN)
-    service.set_offer_state(document.id, "accettata", ADMIN)
-    assert OFFER_TRANSITIONS["accettata"] == frozenset()
+    service.set_offer_state(document.id, "sent", ADMIN)
+    service.set_offer_state(document.id, "accepted", ADMIN)
+    assert OFFER_TRANSITIONS["accepted"] == frozenset()
     with pytest.raises(Conflict):
-        service.set_offer_state(document.id, "bozza", ADMIN)
+        service.set_offer_state(document.id, "draft", ADMIN)
 
 
 def test_a_non_offer_has_no_state_to_set(setup: tuple) -> None:
     service, customer, _ = setup
     document = service.create(
-        DocumentCreate(customer_id=customer.id, tipo="verbale", titolo="V"), ADMIN
+        DocumentCreate(customer_id=customer.id, type="minutes", title="V"), ADMIN
     )
     with pytest.raises(ValidationFailed) as excinfo:
-        service.set_offer_state(document.id, "inviata", ADMIN)
-    assert excinfo.value.details["field"] == "stato"
+        service.set_offer_state(document.id, "sent", ADMIN)
+    assert excinfo.value.details["field"] == "status"
 
 
 def test_a_state_change_leaves_a_timeline_entry(setup: tuple, db_session: Session) -> None:
@@ -236,9 +234,9 @@ def test_a_state_change_leaves_a_timeline_entry(setup: tuple, db_session: Sessio
 
     service, customer, _ = setup
     document = service.create(
-        DocumentCreate(customer_id=customer.id, tipo="offerta", titolo="O"), ADMIN
+        DocumentCreate(customer_id=customer.id, type="offer", title="O"), ADMIN
     )
-    service.set_offer_state(document.id, "inviata", ADMIN)
+    service.set_offer_state(document.id, "sent", ADMIN)
     kinds = [a.kind for a in ActivityService(db_session).timeline("document", document.id)]
     assert "state_changed" in kinds
 
@@ -256,10 +254,10 @@ def test_accepting_an_offer_that_has_no_deal_records_no_automation(
 
     service, customer, _ = setup
     document = service.create(
-        DocumentCreate(customer_id=customer.id, tipo="offerta", titolo="O senza deal"), ADMIN
+        DocumentCreate(customer_id=customer.id, type="offer", title="O senza deal"), ADMIN
     )
-    service.set_offer_state(document.id, "inviata", ADMIN)
-    service.set_offer_state(document.id, "accettata", ADMIN)
+    service.set_offer_state(document.id, "sent", ADMIN)
+    service.set_offer_state(document.id, "accepted", ADMIN)
 
     assert ActivityRepository(db_session).by_kind(list(AUTOMATION_KINDS), limit=10) == []
 
@@ -282,27 +280,27 @@ def test_the_automations_entry_precedes_the_documents_own(
     PipelineService(db_session).seed_defaults(ADMIN)
     stages = {s.code: s for s in PipelineService(db_session).list() if s.code is not None}
     deal = Deal(
-        nome="Impianto",
+        name="Impianto",
         customer_id=customer.id,
         pipeline_stage_id=stages["lead"].id,
-        probabilita=10,
+        probability=10,
         custom_fields={},
     )
     db_session.add(deal)
     db_session.flush()
 
     document = service.create(
-        DocumentCreate(deal_id=deal.id, tipo="offerta", titolo="O con deal"), ADMIN
+        DocumentCreate(deal_id=deal.id, type="offer", title="O con deal"), ADMIN
     )
-    service.set_offer_state(document.id, "inviata", ADMIN)
-    service.set_offer_state(document.id, "accettata", ADMIN)
+    service.set_offer_state(document.id, "sent", ADMIN)
+    service.set_offer_state(document.id, "accepted", ADMIN)
 
-    assert deal.pipeline_stage_id == stages["vinto"].id
+    assert deal.pipeline_stage_id == stages["won"].id
     ordered = ActivityRepository(db_session).by_kind([KIND_STAGE_MOVED, "state_changed"], limit=10)
     assert [entry.kind for entry in ordered][:2] == ["state_changed", KIND_STAGE_MOVED]
 
 
-def test_oggi_defaults_to_italys_own_day_not_the_processs(
+def test_today_defaults_to_italys_own_day_not_the_processs(
     db_session: Session, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """`{{oggi}}` is the date a template prints on the document itself. It is a date in
@@ -317,27 +315,27 @@ def test_oggi_defaults_to_italys_own_day_not_the_processs(
     called.
     """
     LegalEntityService(db_session).upsert_default(
-        LegalEntityUpsert(ragione_sociale="Studio Rossi", partita_iva="01234567890"),
+        LegalEntityUpsert(legal_name="Studio Rossi", vat_number="01234567890"),
         ADMIN,
     )
     template = TemplateService(db_session).create(
         TemplateCreate(
-            nome="Offerta datata",
-            tipo="offerta",
-            corpo_markdown="Milano, {{oggi}}\n",
-            variabili_dichiarate=[],
+            name="Offerta datata",
+            type="offer",
+            body_markdown="Milano, {{oggi}}\n",
+            declared_variables=[],
         ),
         ADMIN,
     )
-    customer = Customer(ragione_sociale="ACME S.r.l.")
+    customer = Customer(legal_name="ACME S.r.l.")
     db_session.add(customer)
     db_session.flush()
     service = DocumentService(db_session, LocalFileStorage(tmp_path))
 
-    congela(monkeypatch, documents_service_module)
+    freeze(monkeypatch, documents_service_module)
     document = service.create_from_template(
         DocumentFromTemplate(
-            template_id=template.id, customer_id=customer.id, titolo="Offerta", variabili={}
+            template_id=template.id, customer_id=customer.id, title="Offerta", variables={}
         ),
         ADMIN,
     )
@@ -346,22 +344,24 @@ def test_oggi_defaults_to_italys_own_day_not_the_processs(
     assert stored is not None
     # `escape_markdown` backslash-escapes every ASCII punctuation character, so the ISO
     # date never reaches the compiled markdown literally -- only in its escaped form.
-    assert escape_markdown(OGGI_IN_ITALIA.isoformat()) in stored.sorgente_markdown
+    assert escape_markdown(TODAY_IN_ITALY.isoformat()) in stored.markdown_source
 
 
-def test_a_sollecito_template_cannot_become_a_document(db_session: Session, setup: tuple) -> None:
-    """`TemplateTipo` and `DocumentTipo` used to be one Literal, so copying
-    `template.tipo` onto `Document.tipo` could not go wrong. Slice 5 widened the
-    template side with `email` and `sollecito`; `DocumentRead.tipo` is a plain `str`,
-    so without an explicit check the copy succeeds and a "sollecito" document appears
+def test_to_payment_reminder_template_cannot_become_to_document(
+    db_session: Session, setup: tuple
+) -> None:
+    """`TemplateType` and `DocumentType` used to be one Literal, so copying
+    `template.type` onto `Document.type` could not go wrong. Slice 5 widened the
+    template side with `email` and `payment_reminder`; `DocumentRead.type` is a plain `str`,
+    so without an explicit check the copy succeeds and a "payment_reminder" document appears
     in the customer's document list, with a body that is an email."""
     service, customer, _ = setup
-    sollecito = TemplateService(db_session).create(
-        TemplateCreate(nome="Sollecito", tipo="sollecito", corpo_markdown="Gentile cliente,"),
+    payment_reminder = TemplateService(db_session).create(
+        TemplateCreate(name="Sollecito", type="payment_reminder", body_markdown="Gentile cliente,"),
         ADMIN,
     )
     with pytest.raises(ValidationFailed) as excinfo:
-        service.create_from_template(_payload(customer, sollecito), ADMIN)
+        service.create_from_template(_payload(customer, payment_reminder), ADMIN)
     assert excinfo.value.details["field"] == "template_id"
     assert "sollecito" in excinfo.value.details["reason"]
     # Nothing was left behind by the refusal.

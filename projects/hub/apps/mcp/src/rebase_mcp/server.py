@@ -9,7 +9,7 @@ what the hub's admin API does behind its login; the admin is who a note, a statu
 a drafted card is signed by, with the door `mcp`, so the thread and the trail say who and
 from where.
 
-The tools live in one module per family (`tools_freelancers`, `tools_talenti`, `tools_cards`,
+The tools live in one module per family (`tools_freelancers`, `tools_talents`, `tools_cards`,
 `tools_companies`, `tools_campaigns`, `tools_team`, `tools_admin`, `tools_matches`,
 `tools_fiscal`), each with a `register(mcp, deps)`; what they share is `tools_common`. The
 tool names, parameters and Italian docstrings are the published surface: a refactor keeps
@@ -42,7 +42,7 @@ from rebase_mcp import (
     tools_fiscal,
     tools_freelancers,
     tools_matches,
-    tools_talenti,
+    tools_talents,
     tools_team,
 )
 from rebase_mcp.tools_common import (
@@ -65,8 +65,8 @@ INSTRUCTIONS = (
     "lei completa dalla sua area. Da qui si gestiscono anche i match fra un freelance e "
     "un'azienda, i loro contratti e la firma, come dall'area admin. Si leggono anche le "
     "campagne di mail della sezione «Campagne» e, per ogni persona, cosa ha fatto dopo la "
-    "mail. Per cercare persone adatte a una richiesta si usano `list_talenti`, "
-    "`get_talento` e `get_freelancer_card`, e una ricerca fatta da qui non scrive a "
+    "mail. Per cercare persone adatte a una richiesta si usano `list_talents`, "
+    "`get_talent` e `get_freelancer_card`, e una ricerca fatta da qui non scrive a "
     "nessuno: chi va contattato lo contatta una persona, a mano. L'unica mail di "
     "disponibilità che parte da qui è `contact_team_talents`, ai talenti di una "
     "richiesta team arrivata dal sito o dal talent cloud, e solo quando lo chiede "
@@ -95,7 +95,7 @@ def build_server(
     model_calls: RateLimiter | None = None,
 ) -> MCPServer:
     """`admin` answers the admin behind the current call; `settings` and `http` are what
-    reaches the CRM, for `list_pigro_spaces` and for the `pigro_slug` of `get_talento`,
+    reaches the CRM, for `list_pigro_spaces` and for the `pigro_slug` of `get_talent`,
     and without them the registry's tools answer the same sentence the admin area shows
     when it is not configured while the slug stays `None`. `middleware`
     is the HTTP transport's way of binding the request's admin around each call.
@@ -145,7 +145,7 @@ def build_server(
     )
     for family in (
         tools_freelancers,
-        tools_talenti,
+        tools_talents,
         tools_cards,
         tools_companies,
         tools_campaigns,

@@ -12,21 +12,21 @@ from rebase_core.vocabulary import NoteSource
 
 
 class NoteRead(ResponseModel):
-    """One note of a row's thread (REB-856): who wrote it (`autore`, the name as it read
-    then, and `autore_id`), by which door (`fonte`: `web`, `mcp`, `persona`, `sistema`, or
+    """One note of a row's thread (REB-856): who wrote it (`author`, the name as it read
+    then, and `author_id`), by which door (`source`: `web`, `mcp`, `person`, `system`, or
     `None` for a note that predates the tracking), when, and, once changed, who changed it
-    last and when. `modificabile` is whether an admin may edit or delete it: not an event
+    last and when. `editable` is whether an admin may edit or delete it: not an event
     of the person's or the hub's own."""
 
     id: UUID
-    testo: str
-    autore: str
-    autore_id: UUID | None
-    fonte: NoteSource | None
+    text: str
+    author: str
+    author_id: UUID | None
+    source: NoteSource | None
     created_at: datetime
-    modificata_at: datetime | None
-    modificata_da: str | None
-    modificabile: bool
+    edited_at: datetime | None
+    edited_by: str | None
+    editable: bool
 
 
 class NoteCreate(BaseModel):
@@ -35,14 +35,14 @@ class NoteCreate(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    testo: SafeStr = Field(min_length=1, max_length=NOTE_MAX_LENGTH)
+    text: SafeStr = Field(min_length=1, max_length=NOTE_MAX_LENGTH)
 
 
 class NoteUpdate(NoteCreate):
     """The new text of a note an admin edits."""
 
 
-def note_is_editable(fonte: str | None) -> bool:
+def note_is_editable(source: str | None) -> bool:
     """Whether an admin may edit or delete a note of this source (`NOTE_ADMIN_SOURCES`,
     or `None` for a row written before the source was tracked)."""
-    return fonte is None or fonte in NOTE_ADMIN_SOURCES
+    return source is None or source in NOTE_ADMIN_SOURCES

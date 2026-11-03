@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
 
 import {
-  AZIONE_FATTA_LABELS,
-  AZIONE_LABELS,
+  ACTION_DONE_LABELS,
+  ACTION_LABELS,
   CAMPAIGN_STATE_LABELS,
   META_LABELS,
   RECIPIENT_STATE_LABELS,
@@ -54,95 +54,95 @@ describe('personalise', () => {
 describe('romeToday', () => {
   it('reads the CET date and time before the spring change', () => {
     // 2026-01-15 10:30 UTC = 11:30 in Rome (UTC+1, CET)
-    expect(romeToday(new Date('2026-01-15T10:30:00Z'))).toEqual({ giorno: '2026-01-15', ora: '11:30' })
+    expect(romeToday(new Date('2026-01-15T10:30:00Z'))).toEqual({ day: '2026-01-15', time: '11:30' })
   })
 
   it('reads the CEST date and time after the spring change, across the DST jump', () => {
     // 2026-03-29 is Rome's spring-forward Sunday (02:00 -> 03:00 CEST).
     // 2026-03-29 23:30 UTC = 2026-03-30 01:30 in Rome (UTC+2, CEST).
-    expect(romeToday(new Date('2026-03-29T23:30:00Z'))).toEqual({ giorno: '2026-03-30', ora: '01:30' })
+    expect(romeToday(new Date('2026-03-29T23:30:00Z'))).toEqual({ day: '2026-03-30', time: '01:30' })
   })
 
   it('rolls the day forward across midnight in Rome even while still the prior day in UTC', () => {
     // 2026-06-30 22:15 UTC = 2026-07-01 00:15 in Rome (UTC+2, CEST).
-    expect(romeToday(new Date('2026-06-30T22:15:00Z'))).toEqual({ giorno: '2026-07-01', ora: '00:15' })
+    expect(romeToday(new Date('2026-06-30T22:15:00Z'))).toEqual({ day: '2026-07-01', time: '00:15' })
   })
 })
 
 describe('defaultSchedule', () => {
   it('proposes an hour from now, rounded up to the next quarter hour, in Rome time', () => {
     // 07:07 UTC = 09:07 in Rome (CEST); + 1 h = 10:07; next quarter = 10:15.
-    expect(defaultSchedule(new Date('2026-09-25T07:07:00Z'))).toEqual({ giorno: '2026-09-25', ora: '10:15' })
+    expect(defaultSchedule(new Date('2026-09-25T07:07:00Z'))).toEqual({ day: '2026-09-25', time: '10:15' })
   })
 
   it('keeps a time already on a quarter hour', () => {
     // 08:30 UTC = 09:30 in Rome (CET) + 1 h = 10:30.
-    expect(defaultSchedule(new Date('2026-01-15T08:30:00Z'))).toEqual({ giorno: '2026-01-15', ora: '10:30' })
+    expect(defaultSchedule(new Date('2026-01-15T08:30:00Z'))).toEqual({ day: '2026-01-15', time: '10:30' })
   })
 
   it('rolls over to the next Rome day late in the evening', () => {
     // 21:50 UTC = 23:50 in Rome (CEST); + 1 h = 00:50; next quarter = 01:00 the day after.
-    expect(defaultSchedule(new Date('2026-09-25T21:50:00Z'))).toEqual({ giorno: '2026-09-26', ora: '01:00' })
+    expect(defaultSchedule(new Date('2026-09-25T21:50:00Z'))).toEqual({ day: '2026-09-26', time: '01:00' })
   })
 })
 
 describe('labels', () => {
   it('labels every campaign state in Italian', () => {
-    expect(CAMPAIGN_STATE_LABELS.bozza).toBe('Bozza')
-    expect(CAMPAIGN_STATE_LABELS.programmata).toBe('Programmata')
-    expect(CAMPAIGN_STATE_LABELS.in_invio).toBe('In invio')
-    expect(CAMPAIGN_STATE_LABELS.inviata).toBe('Inviata')
-    expect(CAMPAIGN_STATE_LABELS.annullata).toBe('Annullata')
+    expect(CAMPAIGN_STATE_LABELS.draft).toBe('Bozza')
+    expect(CAMPAIGN_STATE_LABELS.scheduled).toBe('Programmata')
+    expect(CAMPAIGN_STATE_LABELS.sending).toBe('In invio')
+    expect(CAMPAIGN_STATE_LABELS.sent).toBe('Inviata')
+    expect(CAMPAIGN_STATE_LABELS.cancelled).toBe('Annullata')
   })
 
   it('labels every action in Italian', () => {
-    expect(AZIONE_LABELS.entrato).toBe('È entrato nell’area')
-    expect(AZIONE_LABELS.cv).toBe('Ha caricato il CV')
-    expect(AZIONE_LABELS.scheda_completa).toBe('Ha completato la scheda')
-    expect(AZIONE_LABELS.profilo_creato).toBe('Ha creato il profilo')
-    expect(AZIONE_LABELS.richiesta_aggiornata).toBe('Ha aggiornato la richiesta')
-    expect(AZIONE_LABELS.pigro_cliente).toBe('Primo cliente in Pigro')
+    expect(ACTION_LABELS.signed_in).toBe('È entrato nell’area')
+    expect(ACTION_LABELS.cv).toBe('Ha caricato il CV')
+    expect(ACTION_LABELS.card_complete).toBe('Ha completato la scheda')
+    expect(ACTION_LABELS.profile_created).toBe('Ha creato il profilo')
+    expect(ACTION_LABELS.request_updated).toBe('Ha aggiornato la richiesta')
+    expect(ACTION_LABELS.pigro_customer).toBe('Primo cliente in Pigro')
   })
 
   it('offers only the three phase-1 button destinations', () => {
     expect(META_LABELS.area).toBe('La sua area')
     expect(META_LABELS.wizard).toBe('Il wizard del profilo')
-    expect(META_LABELS.richiesta).toBe('La richiesta dell’azienda')
+    expect(META_LABELS.request).toBe('La richiesta dell’azienda')
     expect(META_LABELS.pigro).toBeUndefined()
   })
 
   it('labels every recipient state in Italian', () => {
-    expect(RECIPIENT_STATE_LABELS.in_coda).toBe('In coda')
-    expect(RECIPIENT_STATE_LABELS.inviata).toBe('Inviata')
-    expect(RECIPIENT_STATE_LABELS.saltata).toBe('Saltata')
-    expect(RECIPIENT_STATE_LABELS.fallita).toBe('Fallita')
+    expect(RECIPIENT_STATE_LABELS.queued).toBe('In coda')
+    expect(RECIPIENT_STATE_LABELS.sent).toBe('Inviata')
+    expect(RECIPIENT_STATE_LABELS.skipped).toBe('Saltata')
+    expect(RECIPIENT_STATE_LABELS.failed).toBe('Fallita')
   })
 })
 
 describe('campaignMoment', () => {
   it('says when a scheduled or sending campaign leaves, in Rome time', () => {
-    const at = { programmata_per: '2026-09-26T07:30:00Z', inviata_at: null }
-    expect(campaignMoment({ ...at, stato: 'programmata' })).toBe('Parte il 26 settembre 2026 alle 09:30 (ora di Roma)')
-    expect(campaignMoment({ ...at, stato: 'in_invio' })).toBe('Parte il 26 settembre 2026 alle 09:30 (ora di Roma)')
+    const at = { scheduled_for: '2026-09-26T07:30:00Z', sent_at: null }
+    expect(campaignMoment({ ...at, status: 'scheduled' })).toBe('Parte il 26 settembre 2026 alle 09:30 (ora di Roma)')
+    expect(campaignMoment({ ...at, status: 'sending' })).toBe('Parte il 26 settembre 2026 alle 09:30 (ora di Roma)')
   })
 
   it('says when a sent campaign left, in Rome time, across the winter change too', () => {
-    expect(campaignMoment({ stato: 'inviata', programmata_per: '2026-09-25T07:30:00Z', inviata_at: '2026-09-25T07:32:00Z' })).toBe(
+    expect(campaignMoment({ status: 'sent', scheduled_for: '2026-09-25T07:30:00Z', sent_at: '2026-09-25T07:32:00Z' })).toBe(
       'Inviata il 25 settembre 2026 alle 09:32',
     )
-    expect(campaignMoment({ stato: 'inviata', programmata_per: null, inviata_at: '2026-12-01T23:30:00Z' })).toBe(
+    expect(campaignMoment({ status: 'sent', scheduled_for: null, sent_at: '2026-12-01T23:30:00Z' })).toBe(
       'Inviata il 2 dicembre 2026 alle 00:30',
     )
   })
 
   it('says nothing for a draft or a campaign cancelled before it left', () => {
-    expect(campaignMoment({ stato: 'bozza', programmata_per: null, inviata_at: null })).toBeNull()
-    expect(campaignMoment({ stato: 'annullata', programmata_per: '2026-09-26T07:30:00Z', inviata_at: null })).toBeNull()
+    expect(campaignMoment({ status: 'draft', scheduled_for: null, sent_at: null })).toBeNull()
+    expect(campaignMoment({ status: 'cancelled', scheduled_for: '2026-09-26T07:30:00Z', sent_at: null })).toBeNull()
   })
 })
 
 describe('a stopped send (REB-524)', () => {
-  const stopped = { stato: 'in_invio' as const, fermo_at: '2026-09-28T09:32:00Z', fermo_motivo: 'Resend rifiuta l’invio: controlla la chiave e il dominio del mittente' }
+  const stopped = { status: 'sending' as const, stalled_at: '2026-09-28T09:32:00Z', stalled_reason: 'Resend rifiuta l’invio: controlla la chiave e il dominio del mittente' }
 
   it('reads «Invio fermo» with its reason and since when, in Rome time, in place of «In invio»', () => {
     expect(isStalled(stopped)).toBe(true)
@@ -153,12 +153,12 @@ describe('a stopped send (REB-524)', () => {
   })
 
   it('is nothing once the send moves again, or on a campaign no longer sending', () => {
-    const moving = { ...stopped, fermo_at: null, fermo_motivo: null }
+    const moving = { ...stopped, stalled_at: null, stalled_reason: null }
     expect(isStalled(moving)).toBe(false)
     expect(campaignStateLabel(moving)).toBe('In invio')
     expect(stallLine(moving)).toBeNull()
-    expect(isStalled({ ...stopped, stato: 'annullata' })).toBe(false)
-    expect(campaignStateLabel({ ...stopped, stato: 'annullata' })).toBe('Annullata')
+    expect(isStalled({ ...stopped, status: 'cancelled' })).toBe(false)
+    expect(campaignStateLabel({ ...stopped, status: 'cancelled' })).toBe('Annullata')
   })
 })
 
@@ -179,9 +179,9 @@ describe('the subject on one line, as render.py sends it (REB-524)', () => {
 
 describe('listRefetchEvery', () => {
   it('polls «Campagne» every 30 s while a campaign is scheduled or sending, and never otherwise', () => {
-    expect(listRefetchEvery([{ stato: 'inviata' }, { stato: 'in_invio' }])).toBe(30_000)
-    expect(listRefetchEvery([{ stato: 'programmata' }])).toBe(30_000)
-    expect(listRefetchEvery([{ stato: 'bozza' }, { stato: 'inviata' }, { stato: 'annullata' }])).toBe(false)
+    expect(listRefetchEvery([{ status: 'sent' }, { status: 'sending' }])).toBe(30_000)
+    expect(listRefetchEvery([{ status: 'scheduled' }])).toBe(30_000)
+    expect(listRefetchEvery([{ status: 'draft' }, { status: 'sent' }, { status: 'cancelled' }])).toBe(false)
     expect(listRefetchEvery([])).toBe(false)
   })
 })
@@ -190,18 +190,18 @@ describe('refetchEvery', () => {
   const now = Date.parse('2026-09-25T08:00:00Z')
 
   it('polls while the campaign is scheduled or sending', () => {
-    expect(refetchEvery({ stato: 'programmata', inviata_at: null }, now)).toBe(10_000)
-    expect(refetchEvery({ stato: 'in_invio', inviata_at: null }, now)).toBe(10_000)
+    expect(refetchEvery({ status: 'scheduled', sent_at: null }, now)).toBe(10_000)
+    expect(refetchEvery({ status: 'sending', sent_at: null }, now)).toBe(10_000)
   })
 
   it('keeps polling for five minutes after the send, while deliveries come in, then stops', () => {
-    expect(refetchEvery({ stato: 'inviata', inviata_at: '2026-09-25T07:56:00Z' }, now)).toBe(10_000)
-    expect(refetchEvery({ stato: 'inviata', inviata_at: '2026-09-25T07:54:59Z' }, now)).toBe(false)
+    expect(refetchEvery({ status: 'sent', sent_at: '2026-09-25T07:56:00Z' }, now)).toBe(10_000)
+    expect(refetchEvery({ status: 'sent', sent_at: '2026-09-25T07:54:59Z' }, now)).toBe(false)
   })
 
   it('never polls a draft or a cancelled campaign', () => {
-    expect(refetchEvery({ stato: 'bozza', inviata_at: null }, now)).toBe(false)
-    expect(refetchEvery({ stato: 'annullata', inviata_at: null }, now)).toBe(false)
+    expect(refetchEvery({ status: 'draft', sent_at: null }, now)).toBe(false)
+    expect(refetchEvery({ status: 'cancelled', sent_at: null }, now)).toBe(false)
   })
 })
 
@@ -231,25 +231,25 @@ describe('the outcome in words', () => {
   })
 
   it('names every action once it is done', () => {
-    expect(Object.keys(AZIONE_FATTA_LABELS).sort()).toEqual(Object.keys(AZIONE_LABELS).sort())
+    expect(Object.keys(ACTION_DONE_LABELS).sort()).toEqual(Object.keys(ACTION_LABELS).sort())
   })
 
   it('says what left and what it led to, and what went wrong only when something did', () => {
-    const counts = { destinatari: 10, in_coda: 0, inviate: 8, saltate: 1, fallite: 0, consegnate: 8, rimbalzate: 0, cliccate: 4, entrate: 3, azioni: 2 }
+    const counts = { recipients: 10, queued: 0, sent: 8, skipped: 1, failed: 0, delivered: 8, bounced: 0, clicked: 4, entered: 3, actions: 2 }
     expect(outcomeLine(counts, 'cv')).toBe('8 inviate · 8 consegnate · 4 clic · 3 entrati · 2 CV caricati · 1 saltate')
-    expect(outcomeLine({ ...counts, saltate: 0 }, 'entrato')).toBe('8 inviate · 8 consegnate · 4 clic · 3 entrati')
+    expect(outcomeLine({ ...counts, skipped: 0 }, 'signed_in')).toBe('8 inviate · 8 consegnate · 4 clic · 3 entrati')
   })
 })
 
 describe('«Un link» (REB-530)', () => {
   it('offers the link as a destination and names the click as its action', () => {
     expect(META_LABELS.link).toBe('Un link')
-    expect(AZIONE_LABELS.clic).toBe('Ha cliccato il link')
-    expect(AZIONE_FATTA_LABELS.clic).toBe('Hanno cliccato il link')
+    expect(ACTION_LABELS.click).toBe('Ha cliccato il link')
+    expect(ACTION_DONE_LABELS.click).toBe('Hanno cliccato il link')
   })
 
   it('says the click once, since for a link it is the action', () => {
-    const counts = { destinatari: 10, in_coda: 0, inviate: 8, saltate: 0, fallite: 0, consegnate: 8, rimbalzate: 0, cliccate: 4, entrate: 1, azioni: 4 }
-    expect(outcomeLine(counts, 'clic')).toBe('8 inviate · 8 consegnate · 4 clic · 1 entrati')
+    const counts = { recipients: 10, queued: 0, sent: 8, skipped: 0, failed: 0, delivered: 8, bounced: 0, clicked: 4, entered: 1, actions: 4 }
+    expect(outcomeLine(counts, 'click')).toBe('8 inviate · 8 consegnate · 4 clic · 1 entrati')
   })
 })

@@ -85,8 +85,8 @@ from rebase_core.referral_schemas import (
 from rebase_core.referral_settings import ReferralSettingsService
 from rebase_core.service import SignupService
 from rebase_core.signup_schemas import SignupList
-from rebase_core.talent_schemas import TalentoList, TalentoRead
-from rebase_core.talenti import TalentiService, lead_by_id
+from rebase_core.talent_schemas import TalentList, TalentRead
+from rebase_core.talents import TalentsService, lead_by_id
 from rebase_core.team_schemas import FreelancerCardAdminRead
 from rebase_core.users import UserService
 from rebase_core.validation import SafeStr
@@ -103,8 +103,8 @@ SOURCE = "web"
 #
 # Who reads this area, and the one form that grants or revokes the role (ORB-123,
 # REB-279): typing an email promotes whatever `users` row already answers to it, or
-# creates a bare one from `nome`/`cognome` when none exists yet. No deactivation and no
-# deletion here, on purpose: the `attivo` flag exists and nothing in the area changes it
+# creates a bare one from `nome`/`last_name` when none exists yet. No deactivation and no
+# deletion here, on purpose: the `active` flag exists and nothing in the area changes it
 # yet, and demoting is fully reversible since nothing is deleted.
 
 
@@ -123,14 +123,14 @@ def list_admins(
 
 
 class PromoteRequest(BaseModel):
-    """`POST /admins/promote`'s body: an email, and `nome`/`cognome` for an address
+    """`POST /admins/promote`'s body: an email, and `first_name`/`last_name` for an address
     with no `users` row yet -- ignored, harmlessly, when one already exists."""
 
     model_config = ConfigDict(extra="forbid")
 
     email: EmailStr
-    nome: SafeStr | None = Field(default=None, min_length=1, max_length=NAME_MAX_LENGTH)
-    cognome: SafeStr | None = Field(default=None, min_length=1, max_length=NAME_MAX_LENGTH)
+    first_name: SafeStr | None = Field(default=None, min_length=1, max_length=NAME_MAX_LENGTH)
+    last_name: SafeStr | None = Field(default=None, min_length=1, max_length=NAME_MAX_LENGTH)
 
 
 @router.post("/admins/promote", response_model=AdminRead)
@@ -147,7 +147,9 @@ def promote_admin(
     for it (§1, Nav and Amministratori). A brand-new row gets the same magic link
     everyone else gets, since it has no other way in yet."""
     users = UserService(session, settings)
-    user, created = users.promote(payload.email, payload.nome, payload.cognome, admin_id=admin.id)
+    user, created = users.promote(
+        payload.email, payload.first_name, payload.last_name, admin_id=admin.id
+    )
     if created and sender is not None:
         mail = users.request_link(user.email)
         if mail is not None:
@@ -175,9 +177,9 @@ def demote_admin(
 
 @router.get("/freelancers", response_model=FreelancerList)
 def list_freelancers(
-    _: AdminDep, session: SessionDep, limit: Limit = 100, stato: str | None = None
+    _: AdminDep, session: SessionDep, limit: Limit = 100, status: str | None = None
 ) -> FreelancerList:
-    return FreelancerService(session).list_recent(limit=limit, stato=stato)
+    return FreelancerService(session).list_recent(limit=limit, status=status)
 
 
 @router.get("/freelancers/{freelancer_id}", response_model=FreelancerDetail)
@@ -207,7 +209,7 @@ def move_freelancer(
     """Moves the card to another state; recorded on `GET .../audit` as `status_changed`
     with the admin and the door (`web`)."""
     return FreelancerService(session).set_status(
-        freelancer_id, change, admin_id=admin.id, fonte=SOURCE
+        freelancer_id, change, admin_id=admin.id, source=SOURCE
     )
 
 
@@ -215,7 +217,7 @@ def move_freelancer(
 def override_freelancer(
     admin: AdminDep, session: SessionDep, freelancer_id: UUID, change: FreelancerOverride
 ) -> FreelancerRead:
-    """Sets or clears any profile field beyond `stato` (REB-347): a name, a
+    """Sets or clears any profile field beyond `status` (REB-347): a name, a
     rate, a position, the identity on the linked `users` row. Recorded on
     `GET .../audit`; reversible with `POST .../audit/{action_id}/revert`."""
     return FreelancerService(session).override(freelancer_id, change, admin.id)
@@ -271,7 +273,7 @@ def regenerate_freelancer_card(
     CV that last failed, which is otherwise not tried again until it changes. A failure
     answers 200 with the previous card and `error`, as the page shows it; no key answers
     the team builder's own 503, rather than the card unchanged as if written again. What
-    became of it is signed in the talent's trail (`card_regenerated`, `fonte` `web`)."""
+    became of it is signed in the talent's trail (`card_regenerated`, `source` `web`)."""
     if llm is None:
         raise TeamBuilderOff("Il team builder è spento.")
     writer = CardWriter(session, llm, run=Regeneration(admin.id, "web"))
@@ -280,7 +282,7 @@ def regenerate_freelancer_card(
 
 
 @router.post(
-    "/freelancers/{freelancer_id}/cv-anonimo",
+    "/freelancers/{freelancer_id}/anonymous-cv",
     response_class=Response,
     responses={200: {"content": {"application/pdf": {}}}},
 )
@@ -294,7 +296,7 @@ def download_anonymous_cv(
     """«Scarica CV anonimo» (REB-862): the talent's CV without the person, as a PDF in
     rebase's style, for an admin to send to a client company. The body is written once per
     CV file and kept, so a second press is instant and free, and served even with the task
-    off; a CV that has to be written needs the `cv_anonimo` task configured (502 with the
+    off; a CV that has to be written needs the `anonymous_cv` task configured (502 with the
     sentence «Modelli AI» gives otherwise). The page's head carries the card's level, the
     admin's correction over it, and its city, only from a card of the same CV file; a
     seniority the card marks uncertain is left out until an admin says one. One
@@ -311,15 +313,15 @@ def download_anonymous_cv(
     # together and telling when the person signed up.
     ref = str(freelancer_id)[-8:]
     head = CvHead(
-        seniority=card.seniority if card and not card.seniority_incerta else None,
-        anni=card.anni if card else None,
-        luogo=card.luogo if card else None,
-        modalita=read.modalita,
+        seniority=card.seniority if card and not card.seniority_uncertain else None,
+        experience_years=card.experience_years if card else None,
+        location=card.location if card else None,
+        mode=read.mode,
         ref=ref,
     )
     pdf = renderer.render(written.cv, head)
     AdminActionService(session).record(
-        FREELANCER, freelancer_id, "anon_cv_downloaded", admin.id, {"riusato": written.reused}
+        FREELANCER, freelancer_id, "anon_cv_downloaded", admin.id, {"reused": written.reused}
     )
     return pdf_response(filename(written.cv, ref), pdf)
 
@@ -341,7 +343,7 @@ def revert_freelancer_action(
     return FreelancerService(session).revert(freelancer_id, action_id, admin.id)
 
 
-@router.get("/talent/duplicati", response_model=DuplicateListRead)
+@router.get("/talent/duplicates", response_model=DuplicateListRead)
 def list_duplicates(_: AdminDep, session: SessionDep) -> DuplicateListRead:
     """Who is on the list twice (REB-800): the pairs that share a LinkedIn profile, which
     can be merged, and the ones that only share a name or a number, which are for an
@@ -367,29 +369,29 @@ def list_companies(
     _: AdminDep,
     session: SessionDep,
     limit: Limit = 100,
-    stato: str | None = None,
+    status: str | None = None,
     q: SearchQ = None,
     cursor: Cursor = None,
     budget_min: Decimal | None = None,
     budget_max: Decimal | None = None,
-    periodo_da: date | None = None,
-    origine: str | None = None,
-    creato_da: datetime | None = None,
-    creato_a: datetime | None = None,
+    period_from: date | None = None,
+    origin: str | None = None,
+    created_from: datetime | None = None,
+    created_to: datetime | None = None,
 ) -> CompanyList:
-    """REB-285 adds `q` (nome_azienda/referente/email/progetto, trigram-ordered),
-    `cursor`, and every filter after `origine` beside the original `limit`/`stato`."""
+    """REB-285 adds `q` (company_name/referente/email/progetto, trigram-ordered),
+    `cursor`, and every filter after `origin` beside the original `limit`/`status`."""
     return CompanyService(session).list_recent(
         limit=limit,
-        stato=stato,
+        status=status,
         q=q,
         cursor=cursor,
         budget_min=budget_min,
         budget_max=budget_max,
-        periodo_da=periodo_da,
-        origine=origine,
-        creato_da=creato_da,
-        creato_a=creato_a,
+        period_from=period_from,
+        origin=origin,
+        created_from=created_from,
+        created_to=created_to,
     )
 
 
@@ -404,13 +406,13 @@ def create_company(
 ) -> CompanyRead:
     """An admin opens a request for a company met directly (REB-870): the wizard's fields,
     validated the same way, the referente found or created by email, and no mail to anybody.
-    Without `deal_id` it is a new request like any other: `da_collegare`, filed in the CRM in
+    Without `deal_id` it is a new request like any other: `to_link`, filed in the CRM in
     the background as a new deal. With `deal_id`, the CRM deal it already has, the CRM links
     it now and creates nothing (no second customer, no second deal): the answer carries
-    `collegato`, or `rifiutato` with the CRM's sentence when the CRM does not know the deal.
+    `linked`, or `rejected` with the CRM's sentence when the CRM does not know the deal.
     The deal stays on the request, so «Riprova» and the sweep ask for it again."""
     service = CompanyService(session)
-    created = service.create_by_admin(data, admin.id, fonte=SOURCE)
+    created = service.create_by_admin(data, admin.id, source=SOURCE)
     if data.deal_id is None:
         background.add_task(crm_filing, created.id)
         return created
@@ -429,7 +431,7 @@ def move_company(
 ) -> CompanyRead:
     """Moves the request to another state; recorded on `GET .../audit` as
     `status_changed` with the admin and the door (`web`)."""
-    return CompanyService(session).set_status(company_id, change, admin_id=admin.id, fonte=SOURCE)
+    return CompanyService(session).set_status(company_id, change, admin_id=admin.id, source=SOURCE)
 
 
 @router.post("/companies/{company_id}/crm/link", response_model=CompanyRead)
@@ -442,7 +444,7 @@ def link_company_to_crm(
     body: CrmLinkBody | None = None,
 ) -> CompanyRead:
     """«Riprova» (REB-868): the request is filed in rebase's CRM now, as the admin, and
-    comes back as it stands, `collegato` or with the CRM's sentence (`errore`, `rifiutato`).
+    comes back as it stands, `linked` or with the CRM's sentence (`error`, `rejected`).
     It also files a request from before the link existed. With `deal_id`, «Collega a un
     altro deal»: the CRM links that deal and creates nothing; a refusal is a 409 with its
     sentence and the stored link stays as it was. 404 for a request that does not exist or
@@ -459,7 +461,7 @@ def link_company_to_crm(
 def override_company(
     admin: AdminDep, session: SessionDep, company_id: UUID, change: CompanyOverride
 ) -> CompanyRead:
-    """Sets or clears any request field beyond `stato` (REB-347): the project
+    """Sets or clears any request field beyond `status` (REB-347): the project
     answers, the company's own name, the referente's identity on the linked `users`
     row. Recorded on `GET .../audit`; reversible with
     `POST .../audit/{action_id}/revert`."""
@@ -549,7 +551,7 @@ def login_stats(
     """Who entered the hub and when (ORB-158): every login through a magic link, the
     distinct members behind them, the last week -- unchanged aggregate counters. REB-313
     adds `q` (nome/cognome/email, trigram-ordered once searching) and `cursor` to
-    `recenti`, no longer a hardcoded top 20. Written by `POST /auth/enter` and by
+    `recent`, no longer a hardcoded top 20. Written by `POST /auth/enter` and by
     nothing else."""
     return LoginService(session).stats(limit=limit, q=q, cursor=cursor)
 
@@ -567,49 +569,49 @@ def list_signups(_: AdminDep, session: SessionDep, limit: Limit = 100) -> Signup
     return SignupService(session).list_recent(limit=limit)
 
 
-@router.get("/talent", response_model=TalentoList)
-def list_talenti(
+@router.get("/talent", response_model=TalentList)
+def list_talents(
     _: AdminDep,
     session: SessionDep,
     limit: Limit = 100,
-    stato: str | None = None,
+    status: str | None = None,
     q: SearchQ = None,
     cursor: Cursor = None,
-    posizione: str | None = None,
-    remoto: str | None = None,
-    tariffa_min: Decimal | None = None,
-    tariffa_max: Decimal | None = None,
-    origine: str | None = None,
-    pagina_origine: str | None = None,
+    job_title: str | None = None,
+    remote: str | None = None,
+    min_rate: Decimal | None = None,
+    max_rate: Decimal | None = None,
+    origin: str | None = None,
+    origin_page: str | None = None,
     utm_source: str | None = None,
     has_cv: bool | None = None,
-    con_accessi: bool | None = None,
-    creato_da: datetime | None = None,
-    creato_a: datetime | None = None,
-) -> TalentoList:
-    """`talenti` (REB-282): every freelancer card and every bare sign-up as one list,
-    `stato` «lead» for the bare ones -- the read model «Developer e CTO» and
+    with_logins: bool | None = None,
+    created_from: datetime | None = None,
+    created_to: datetime | None = None,
+) -> TalentList:
+    """`talents` (REB-282): every freelancer card and every bare sign-up as one list,
+    `status` «lead» for the bare ones -- the read model «Developer e CTO» and
     «Iscrizioni» read as two overlapping lists, merged. Additive beside both: neither
-    changes here. REB-285 adds `q` (nome/cognome/email/posizione, trigram-ordered),
-    `cursor`, and every filter after `stato`. `origine` is the channel a row shows
-    (`form`, `wizard`, `admin`) and `pagina_origine` the marketing page the person
-    started from (REB-798; the page filter was `origine` before)."""
-    return TalentiService(session).list_recent(
+    changes here. REB-285 adds `q` (first_name/last_name/email/job_title, trigram-ordered),
+    `cursor`, and every filter after `status`. `origin` is the channel a row shows
+    (`form`, `wizard`, `admin`) and `origin_page` the marketing page the person
+    started from (REB-798; the page filter was `origin` before)."""
+    return TalentsService(session).list_recent(
         limit=limit,
-        stato=stato,
+        status=status,
         q=q,
         cursor=cursor,
-        posizione=posizione,
-        remoto=remoto,
-        tariffa_min=tariffa_min,
-        tariffa_max=tariffa_max,
-        origine=origine,
-        pagina_origine=pagina_origine,
+        job_title=job_title,
+        remote=remote,
+        min_rate=min_rate,
+        max_rate=max_rate,
+        origin=origin,
+        origin_page=origin_page,
         utm_source=utm_source,
         has_cv=has_cv,
-        con_accessi=con_accessi,
-        creato_da=creato_da,
-        creato_a=creato_a,
+        with_logins=with_logins,
+        created_from=created_from,
+        created_to=created_to,
     )
 
 
@@ -629,9 +631,9 @@ def draft_card_from_signup(
     return FreelancerService(session).draft_from_signup(signup_id, payload, admin.id, SOURCE)
 
 
-@router.get("/signups/{signup_id}", response_model=TalentoRead)
-def get_signup(_: AdminDep, session: SessionDep, signup_id: UUID) -> TalentoRead:
-    """One bare sign-up as the row the Talenti list shows for it (`stato` «lead», `origine`
+@router.get("/signups/{signup_id}", response_model=TalentRead)
+def get_signup(_: AdminDep, session: SessionDep, signup_id: UUID) -> TalentRead:
+    """One bare sign-up as the row the Talenti list shows for it (`status` «lead», `origin`
     «form»): the page of a person who has no card yet. 404 for an unknown id, and for a
     person who already has a card, whom the list shows as that card."""
     lead = lead_by_id(session, signup_id)
@@ -663,7 +665,7 @@ def add_freelancer_note(
     admin: AdminDep, session: SessionDep, freelancer_id: UUID, payload: NoteCreate
 ) -> NoteRead:
     return NoteService(session).add(
-        "freelancer", freelancer_id, payload.testo, autore_id=admin.id, fonte=SOURCE
+        "freelancer", freelancer_id, payload.text, author_id=admin.id, source=SOURCE
     )
 
 
@@ -681,18 +683,18 @@ def add_company_note(
     admin: AdminDep, session: SessionDep, company_id: UUID, payload: NoteCreate
 ) -> NoteRead:
     return NoteService(session).add(
-        "company", company_id, payload.testo, autore_id=admin.id, fonte=SOURCE
+        "company", company_id, payload.text, author_id=admin.id, source=SOURCE
     )
 
 
 @router.patch("/notes/{note_id}", response_model=NoteRead)
 def edit_note(admin: AdminDep, session: SessionDep, note_id: UUID, payload: NoteUpdate) -> NoteRead:
-    return NoteService(session).update(note_id, payload.testo, admin_id=admin.id, fonte=SOURCE)
+    return NoteService(session).update(note_id, payload.text, admin_id=admin.id, source=SOURCE)
 
 
 @router.delete("/notes/{note_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_note(admin: AdminDep, session: SessionDep, note_id: UUID) -> Response:
-    NoteService(session).delete(note_id, admin_id=admin.id, fonte=SOURCE)
+    NoteService(session).delete(note_id, admin_id=admin.id, source=SOURCE)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
@@ -708,20 +710,20 @@ def list_referrals(
     _: AdminDep,
     session: SessionDep,
     limit: Limit = 100,
-    stato: str | None = None,
+    status: str | None = None,
     cursor: Cursor = None,
 ) -> ReferralLedgerList:
-    return ReferralLedgerService(session).list_rewards(limit=limit, stato=stato, cursor=cursor)
+    return ReferralLedgerService(session).list_rewards(limit=limit, status=status, cursor=cursor)
 
 
 @router.post("/referrals/{reward_id}/state", response_model=ReferralLedgerItem)
 def set_referral_state(
     admin: AdminDep, session: SessionDep, reward_id: UUID, payload: ReferralRewardStateChange
 ) -> ReferralLedgerItem:
-    """`da_confermare` to `confermato` to `pagato`, one step at a time (`ReferralLedgerService.
+    """`to_confirm` to `confirmed` to `paid`, one step at a time (`ReferralLedgerService.
     set_state`). Tracking only: nothing here pays anyone."""
     service = ReferralLedgerService(session)
-    service.set_state(reward_id, payload.stato, admin.id)
+    service.set_state(reward_id, payload.status, admin.id)
     return service.get_ledger_item(reward_id)
 
 
@@ -730,7 +732,7 @@ def set_referral_price(
     admin: AdminDep, session: SessionDep, reward_id: UUID, payload: ReferralRewardPrice
 ) -> ReferralLedgerItem:
     """What an admin prices by hand for a reward `record_reward_if_signed` left with
-    no figure (an `a corpo` letter with no `giorni_previsti` estimate)."""
+    no figure (a `lump_sum` letter with no `expected_days` estimate)."""
     service = ReferralLedgerService(session)
     service.set_price(reward_id, payload.base_amount, payload.reward_amount)
     return service.get_ledger_item(reward_id)
@@ -744,7 +746,7 @@ def get_referral_settings(_: AdminDep, session: SessionDep) -> ReferralSettingsR
         rate_freelancer=row.rate_freelancer,
         rate_company=row.rate_company,
         updated_at=row.updated_at,
-        updated_by_nome=updated_by.nome if updated_by is not None else None,
+        updated_by_name=updated_by.first_name if updated_by is not None else None,
     )
 
 
@@ -761,5 +763,5 @@ def save_referral_settings(
         rate_freelancer=row.rate_freelancer,
         rate_company=row.rate_company,
         updated_at=row.updated_at,
-        updated_by_nome=admin.nome,
+        updated_by_name=admin.first_name,
     )

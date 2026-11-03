@@ -44,7 +44,7 @@ CHANGES_TOOLS: list[tuple[str, dict[str, str]]] = [
     ("update_contract_expense", _ids("contract_id", "expense_id")),
     ("update_time_entry", _ids("entry_id")),
     ("update_cost", _ids("cost_id")),
-    ("update_attivita", _ids("attivita_id")),
+    ("update_task", _ids("task_id")),
 ]
 
 
@@ -76,42 +76,42 @@ async def test_a_tool_whose_fields_are_parameters_refuses_a_call_that_gives_none
 
 class _Row(BaseModel):
     id: str
-    nome: str
+    name: str
     note: str | None
-    valore: str
+    value: str
     updated_at: str
     custom_fields: dict[str, Any]
 
 
 class _Detail(_Row):
-    solo_nel_dettaglio: int = 1
+    only_in_detail: int = 1
 
 
 def test_report_lists_what_differs_and_what_was_cleared() -> None:
     before = _Detail(
         id="1",
-        nome="Vecchio",
+        name="Vecchio",
         note="da togliere",
-        valore="10.00",
+        value="10.00",
         updated_at="ieri",
-        custom_fields={"sede": "Roma", "livello": "A"},
+        custom_fields={"sede": "Roma", "level": "A"},
     )
     after = _Row(
         id="1",
-        nome="Nuovo",
+        name="Nuovo",
         note=None,
-        valore="10.00",
-        updated_at="oggi",
-        custom_fields={"sede": None, "livello": "A", "canale": "web"},
+        value="10.00",
+        updated_at="today",
+        custom_fields={"sede": None, "level": "A", "channel": "web"},
     )
 
     result = report(before, after)
 
-    # `solo_nel_dettaglio` is on one side only and `updated_at` is bookkeeping: neither is
+    # `only_in_detail` is on one side only and `updated_at` is bookkeeping: neither is
     # a change. A custom field that appeared or emptied is.
-    assert result["changed"] == ["custom_fields.canale", "custom_fields.sede", "nome", "note"]
+    assert result["changed"] == ["custom_fields.channel", "custom_fields.sede", "name", "note"]
     assert result["cleared"] == {"custom_fields.sede": "Roma", "note": "da togliere"}
-    assert result["nome"] == "Nuovo"
+    assert result["name"] == "Nuovo"
 
 
 async def _create(client: Client, tool: str, arguments: dict[str, Any]) -> dict[str, Any]:
@@ -125,9 +125,9 @@ async def _customer(client: Client) -> dict[str, Any]:
         client,
         "create_customer",
         {
-            "ragione_sociale": "ACME Srl",
-            "pec": "acme@pec.example.test",
-            "telefono": "0212345678",
+            "legal_name": "ACME Srl",
+            "certified_email": "acme@pec.example.test",
+            "phone": "0212345678",
             "email": "info@acme.example.test",
         },
     )
@@ -138,17 +138,17 @@ async def _deal(client: Client, customer_id: str) -> dict[str, Any]:
         client,
         "create_deal",
         {
-            "nome": "Progetto",
+            "name": "Progetto",
             "customer_id": customer_id,
-            "valore_previsto": "1000.00",
-            "data_chiusura_prevista": "2026-12-31",
-            "ore_preventivate": "10.00",
-            "valore_preventivato": "900.00",
+            "expected_value": "1000.00",
+            "expected_close_date": "2026-12-31",
+            "budgeted_hours": "10.00",
+            "budgeted_value": "900.00",
         },
     )
 
 
-@pytest.mark.parametrize("field", ["pec", "telefono", "email"])
+@pytest.mark.parametrize("field", ["certified_email", "phone", "email"])
 async def test_clearing_a_customer_field_is_reported_with_the_value_it_held(
     server, field: str
 ) -> None:
@@ -169,10 +169,10 @@ async def test_clearing_a_customer_field_is_reported_with_the_value_it_held(
 @pytest.mark.parametrize(
     "field",
     [
-        "valore_previsto",
-        "data_chiusura_prevista",
-        "ore_preventivate",
-        "valore_preventivato",
+        "expected_value",
+        "expected_close_date",
+        "budgeted_hours",
+        "budgeted_value",
     ],
 )
 async def test_clearing_a_deal_field_is_reported_with_the_value_it_held(
@@ -205,11 +205,11 @@ async def test_a_value_that_is_not_new_is_not_reported_as_changed(
             "update_deal",
             {
                 "deal_id": deal["id"],
-                "changes": {"nome": "Rinominato", "valore_previsto": deal["valore_previsto"]},
+                "changes": {"name": "Rinominato", "expected_value": deal["expected_value"]},
             },
         )
 
-    assert result["changed"] == ["nome"]
+    assert result["changed"] == ["name"]
     assert result["cleared"] == {}
 
 
@@ -218,14 +218,14 @@ async def test_clearing_a_person_field_is_reported(server) -> None:
         person = await _create(
             client,
             "create_person",
-            {"nome": "Mario", "cognome": "Rossi", "ruolo": "CTO"},
+            {"first_name": "Mario", "last_name": "Rossi", "role": "CTO"},
         )
         result = await _create(
-            client, "update_person", {"person_id": person["id"], "changes": {"ruolo": None}}
+            client, "update_person", {"person_id": person["id"], "changes": {"role": None}}
         )
 
-    assert result["changed"] == ["ruolo"]
-    assert result["cleared"] == {"ruolo": "CTO"}
+    assert result["changed"] == ["role"]
+    assert result["cleared"] == {"role": "CTO"}
 
 
 async def test_detaching_a_person_from_a_customer_is_reported_as_cleared(server) -> None:
@@ -234,37 +234,37 @@ async def test_detaching_a_person_from_a_customer_is_reported_as_cleared(server)
         person = await _create(
             client,
             "create_person",
-            {"nome": "Mario", "cognome": "Rossi", "customer_id": customer["id"]},
+            {"first_name": "Mario", "last_name": "Rossi", "customer_id": customer["id"]},
         )
         result = await _create(
             client, "update_person", {"person_id": person["id"], "changes": {"detach": True}}
         )
 
     # The customer's name travels with the person, so it goes with the id.
-    assert result["changed"] == ["customer_id", "customer_ragione_sociale"]
+    assert result["changed"] == ["customer_id", "customer_legal_name"]
     assert result["cleared"] == {
         "customer_id": customer["id"],
-        "customer_ragione_sociale": "ACME Srl",
+        "customer_legal_name": "ACME Srl",
     }
 
 
-@pytest.mark.parametrize("field", ["fine", "note"])
+@pytest.mark.parametrize("field", ["end", "note"])
 async def test_clearing_a_contract_field_is_reported(
     server, mcp_session: Session, field: str
 ) -> None:
-    customer = Customer(ragione_sociale="ACME Srl")
+    customer = Customer(legal_name="ACME Srl")
     mcp_session.add(customer)
     mcp_session.flush()
     contract = Contract(
         customer_id=customer.id,
-        titolo="Consulenza",
-        inizio=date(2026, 1, 1),
-        fine=date(2026, 12, 31),
+        title="Consulenza",
+        start=date(2026, 1, 1),
+        end=date(2026, 12, 31),
         note="rinnovo da discutere",
-        tipo_rinnovo="nessuno",
-        preavviso_disdetta_giorni=30,
-        cadenza_fatturazione="mensile",
-        politica_spese={"kind": "non_rimborsabile"},
+        renewal_type="none",
+        termination_notice_days=30,
+        billing_cadence="monthly",
+        expense_policy={"kind": "not_reimbursable"},
     )
     mcp_session.add(contract)
     mcp_session.flush()
@@ -282,36 +282,34 @@ async def test_clearing_a_contract_field_is_reported(
     assert list(result["cleared"]) == [field]
 
 
-async def test_clearing_an_attivita_date_by_flag_is_reported_as_cleared(server) -> None:
+async def test_clearing_an_task_date_by_flag_is_reported_as_cleared(server) -> None:
     async with Client(server) as client:
-        attivita = await _create(
-            client, "create_attivita", {"titolo": "Richiamare", "scadenza": "2026-11-30"}
+        task_row = await _create(
+            client, "create_task", {"title": "Richiamare", "due_date": "2026-11-30"}
         )
         result = await _create(
             client,
-            "update_attivita",
-            {"attivita_id": attivita["id"], "changes": {"scadenza_da_rimuovere": True}},
+            "update_task",
+            {"task_id": task_row["id"], "changes": {"due_date_to_remove": True}},
         )
 
-    assert result["scadenza"] is None
-    assert result["changed"] == ["scadenza"]
-    assert result["cleared"] == {"scadenza": "2026-11-30"}
+    assert result["due_date"] is None
+    assert result["changed"] == ["due_date"]
+    assert result["cleared"] == {"due_date": "2026-11-30"}
 
 
-async def test_update_attivita_advertises_its_fields(server) -> None:
+async def test_update_task_advertises_its_fields(server) -> None:
     async with Client(server) as client:
         tools = {tool.name: tool for tool in (await client.list_tools()).tools}
 
-    changes = tools["update_attivita"].input_schema["properties"]["changes"]
-    assert {"titolo", "scadenza", "assegnata_a", "scadenza_da_rimuovere"} <= set(
-        changes["properties"]
-    )
+    changes = tools["update_task"].input_schema["properties"]["changes"]
+    assert {"title", "due_date", "assigned_to", "due_date_to_remove"} <= set(changes["properties"])
 
 
 async def test_clearing_a_cost_and_a_time_entry_field_is_reported(
     server, mcp_session: Session, seeded_deal_id: UUID, seeded_user_id: UUID
 ) -> None:
-    category = CostCategory(nome="Software", posizione=0)
+    category = CostCategory(name="Software", position=0)
     mcp_session.add(category)
     mcp_session.flush()
     async with Client(server) as client:
@@ -321,36 +319,36 @@ async def test_clearing_a_cost_and_a_time_entry_field_is_reported(
             {
                 "deal_id": str(seeded_deal_id),
                 "user_id": str(seeded_user_id),
-                "data": "2026-03-10",
-                "ore": "2.00",
-                "descrizione": "Sviluppo",
-                "note_interne": "da rivedere",
+                "date": "2026-03-10",
+                "hours": "2.00",
+                "description": "Sviluppo",
+                "internal_notes": "da rivedere",
             },
         )
         cleared_entry = await _create(
             client,
             "update_time_entry",
-            {"entry_id": entry["id"], "changes": {"note_interne": None}},
+            {"entry_id": entry["id"], "changes": {"internal_notes": None}},
         )
         cost = await _create(
             client,
             "create_cost",
             {
                 "category_id": str(category.id),
-                "data": "2026-03-10",
-                "importo": "50.00",
-                "descrizione": "Licenza",
-                "fornitore": "Acme",
+                "date": "2026-03-10",
+                "amount": "50.00",
+                "description": "Licenza",
+                "supplier": "Acme",
             },
         )
         cleared_cost = await _create(
-            client, "update_cost", {"cost_id": cost["id"], "changes": {"fornitore": None}}
+            client, "update_cost", {"cost_id": cost["id"], "changes": {"supplier": None}}
         )
 
-    assert cleared_entry["changed"] == ["note_interne"]
-    assert cleared_entry["cleared"] == {"note_interne": "da rivedere"}
-    assert cleared_cost["changed"] == ["fornitore"]
-    assert cleared_cost["cleared"] == {"fornitore": "Acme"}
+    assert cleared_entry["changed"] == ["internal_notes"]
+    assert cleared_entry["cleared"] == {"internal_notes": "da rivedere"}
+    assert cleared_cost["changed"] == ["supplier"]
+    assert cleared_cost["cleared"] == {"supplier": "Acme"}
 
 
 async def test_the_same_amount_written_with_another_scale_is_not_a_change(
@@ -365,10 +363,10 @@ async def test_the_same_amount_written_with_another_scale_is_not_a_change(
         result = await _create(
             client,
             "update_deal",
-            {"deal_id": deal["id"], "changes": {"valore_previsto": 1000, "probabilita": 50}},
+            {"deal_id": deal["id"], "changes": {"expected_value": 1000, "probability": 50}},
         )
 
-    assert result["changed"] == ["probabilita"]
+    assert result["changed"] == ["probability"]
 
 
 async def test_custom_fields_emptied_by_a_client_that_drops_nulls_is_refused(server) -> None:
@@ -386,8 +384,8 @@ async def test_custom_fields_emptied_by_a_client_that_drops_nulls_is_refused(ser
 async def test_update_user_rates_writes_only_the_rate_it_is_given_and_says_so(
     mcp_session: Session, tmp_path, seeded_user_id: UUID
 ) -> None:
-    """It used to pass both rates on every call, so `tariffa_oraria_default=50` alone also
-    emptied `costo_orario_default`; and it answered a bare «tariffe aggiornate»."""
+    """It used to pass both rates on every call, so `default_hourly_rate=50` alone also
+    emptied `default_hourly_cost`; and it answered a bare «tariffe aggiornate»."""
     from decimal import Decimal
 
     from pigrocrm.core.auth.models import User
@@ -397,7 +395,7 @@ async def test_update_user_rates_writes_only_the_rate_it_is_given_and_says_so(
 
     user = mcp_session.get(User, seeded_user_id)
     assert user is not None
-    user.costo_orario_default = Decimal("30.00")
+    user.default_hourly_cost = Decimal("30.00")
     mcp_session.flush()
     privileged = build_server(
         lambda: mcp_session,
@@ -410,13 +408,13 @@ async def test_update_user_rates_writes_only_the_rate_it_is_given_and_says_so(
         written = await _create(
             client,
             "update_user_rates",
-            {"user_id": str(seeded_user_id), "tariffa_oraria_default": "50.00"},
+            {"user_id": str(seeded_user_id), "default_hourly_rate": "50.00"},
         )
         nothing = await client.call_tool("update_user_rates", {"user_id": str(seeded_user_id)})
 
-    assert written["changed"] == ["tariffa_oraria_default"]
+    assert written["changed"] == ["default_hourly_rate"]
     mcp_session.refresh(user)
-    assert user.tariffa_oraria_default == Decimal("50.00")
-    assert user.costo_orario_default == Decimal("30.00")
+    assert user.default_hourly_rate == Decimal("50.00")
+    assert user.default_hourly_cost == Decimal("30.00")
     assert nothing.is_error
     assert REFUSAL in nothing.content[0].text

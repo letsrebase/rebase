@@ -2,15 +2,15 @@
 version 2, REB-855, version 3): the `Card`, and beside it three things that are the
 writer's and never the card's.
 
-* `fonti`: for each field of the card, the sources the model says supported it. It is the
-  model's claim: `verify_fonti` keeps only the sources that exist for this person, and the
+* `sources`: for each field of the card, the sources the model says supported it. It is the
+  model's claim: `verify_sources` keeps only the sources that exist for this person, and the
   admin reads what is left as «secondo il modello».
 * `employers`: every employer, client or organisation the CV names, whether or not the
   card mentions it. The anonymity guard reads them (`card_guard.identifying`), and, since
   version 3, they are stored with the persona for the admin's named card; never in a usage
   record, a log line or a conflict, so a leak cannot start there.
-* `persona`: who the person is as the CV states it (name, email, phone, city, links). It
-  is stored beside the card and read by the admin alone (`clean_persona`); its identifiers
+* `person`: who the person is as the CV states it (name, email, phone, city, links). It
+  is stored beside the card and read by the admin alone (`clean_person`); its identifiers
   also feed the anonymity guard, so the anonymous card is checked against them. It is
   never itself checked by the guard: it is the named card.
 
@@ -31,14 +31,14 @@ from rebase_core.linkedin import (
     normalise_linkedin,
     reject_control_characters,
 )
-from rebase_core.models import NAME_MAX_LENGTH, TELEFONO_MAX_LENGTH
-from rebase_core.team_schemas import Card, CardPersonaRead, PersonaDifference
+from rebase_core.models import NAME_MAX_LENGTH, PHONE_MAX_LENGTH
+from rebase_core.team_schemas import Card, CardPersonRead, PersonDifference
 from rebase_core.validation import SafeStr
 
 # What the model may write for each field of the persona, far above what is kept: a long
-# value is dropped by `clean_persona`, it never fails the card (REB-855).
-PERSONA_TEXT_MAX = 300
-PERSONA_URL_MAX = 600
+# value is dropped by `clean_person`, it never fails the card (REB-855).
+PERSON_TEXT_MAX = 300
+PERSON_URL_MAX = 600
 EMAIL_MAX_LENGTH = 320
 CITY_MAX_LENGTH = 120
 LINK_MAX_LENGTH = 300
@@ -48,15 +48,15 @@ _EMAIL: TypeAdapter[str] = TypeAdapter(EmailStr)
 _PHONE = re.compile(r"\+?[\d\s().\-/]+")
 
 # The fields of a card the model names sources for, in the card's own order.
-FONTI_FIELDS = (
-    "ruolo",
-    "anni",
+SOURCES_FIELDS = (
+    "role",
+    "experience_years",
     "seniority",
-    "competenze",
-    "settori",
-    "lingue",
-    "luogo",
-    "sintesi",
+    "skills",
+    "industries",
+    "languages",
+    "location",
+    "profile_summary",
 )
 CV = "cv"
 HUB = "hub"
@@ -68,58 +68,58 @@ SourceKey = Annotated[str, StringConstraints(max_length=16)]
 SourceKeys = Annotated[list[SourceKey], Field(max_length=10)]
 
 
-class CardFonti(BaseModel):
+class CardSources(BaseModel):
     """The sources that supported each field, one list per field of the card. A fixed
     object rather than a free map: every provider's native structured output takes it,
     and a field the model forgot is a shape failure."""
 
     model_config = ConfigDict(extra="forbid")
 
-    ruolo: SourceKeys
-    anni: SourceKeys
+    role: SourceKeys
+    experience_years: SourceKeys
     seniority: SourceKeys
-    competenze: SourceKeys
-    settori: SourceKeys
-    lingue: SourceKeys
-    luogo: SourceKeys
-    sintesi: SourceKeys
+    skills: SourceKeys
+    industries: SourceKeys
+    languages: SourceKeys
+    location: SourceKeys
+    profile_summary: SourceKeys
 
     def as_dict(self) -> dict[str, list[str]]:
-        return {name: list(getattr(self, name)) for name in FONTI_FIELDS}
+        return {name: list(getattr(self, name)) for name in SOURCES_FIELDS}
 
 
-class CardPersona(BaseModel):
+class CardPerson(BaseModel):
     """Who the person is, as the CV and the sources state it (REB-855, prompt version 3):
     each field only when a document says it literally, `None` (or an empty list) when none
     does, never a guess. Answered by the same call as the card and read by nobody but the
-    admin: `clean_persona` normalises it and drops what does not pass, and it never goes
+    admin: `clean_person` normalises it and drops what does not pass, and it never goes
     through the anonymity guard. The limits here are far above what is kept, so a long
     value is dropped by the cleaning and never fails the card. All fields are required and
     nullable by a union, the shape every provider's strict structured output takes."""
 
     model_config = ConfigDict(extra="forbid")
 
-    nome: SafeStr | None = Field(max_length=PERSONA_TEXT_MAX)
-    cognome: SafeStr | None = Field(max_length=PERSONA_TEXT_MAX)
-    email: SafeStr | None = Field(max_length=PERSONA_TEXT_MAX)
-    telefono: SafeStr | None = Field(max_length=PERSONA_TEXT_MAX)
-    citta: SafeStr | None = Field(max_length=PERSONA_TEXT_MAX)
-    linkedin_url: SafeStr | None = Field(max_length=PERSONA_URL_MAX)
-    altri_link: list[Annotated[SafeStr, Field(max_length=PERSONA_URL_MAX)]] = Field(max_length=20)
+    first_name: SafeStr | None = Field(max_length=PERSON_TEXT_MAX)
+    last_name: SafeStr | None = Field(max_length=PERSON_TEXT_MAX)
+    email: SafeStr | None = Field(max_length=PERSON_TEXT_MAX)
+    phone: SafeStr | None = Field(max_length=PERSON_TEXT_MAX)
+    city: SafeStr | None = Field(max_length=PERSON_TEXT_MAX)
+    linkedin_url: SafeStr | None = Field(max_length=PERSON_URL_MAX)
+    other_links: list[Annotated[SafeStr, Field(max_length=PERSON_URL_MAX)]] = Field(max_length=20)
 
 
 class CardDraft(BaseModel):
-    """The model's whole answer under prompt version 3: `card`, then the private `fonti`,
-    `employers` and `persona`. Only `card` ever leaves the writer as the anonymous card.
-    `employers` are the anonymity guard's input and, with `persona`, what the admin's named
-    card shows (`clean_persona`): the one place a CV's identity and contacts are read."""
+    """The model's whole answer under prompt version 3: `card`, then the private `sources`,
+    `employers` and `person`. Only `card` ever leaves the writer as the anonymous card.
+    `employers` are the anonymity guard's input and, with `person`, what the admin's named
+    card shows (`clean_person`): the one place a CV's identity and contacts are read."""
 
     model_config = ConfigDict(extra="forbid")
 
     card: Card
-    fonti: CardFonti
+    sources: CardSources
     employers: list[Annotated[SafeStr, Field(max_length=120)]] = Field(max_length=60)
-    persona: CardPersona
+    person: CardPerson
 
 
 def _text(value: str | None, limit: int) -> str | None:
@@ -146,17 +146,17 @@ def _email(value: str | None) -> str | None:
         return None
 
 
-def _telefono(value: str | None) -> str | None:
+def _phone(value: str | None) -> str | None:
     """A phone as written, trimmed: digits and the separators a phone is written with,
-    at most `TELEFONO_MAX_LENGTH` characters and at least six digits."""
-    text = _text(value, TELEFONO_MAX_LENGTH)
+    at most `PHONE_MAX_LENGTH` characters and at least six digits."""
+    text = _text(value, PHONE_MAX_LENGTH)
     if text is None or not _PHONE.fullmatch(text) or len(phone_digits(text)) < 6:
         return None
     return text
 
 
 def _linkedin(value: str | None) -> str | None:
-    text = _text(value, PERSONA_URL_MAX)
+    text = _text(value, PERSON_URL_MAX)
     if text is None:
         return None
     try:
@@ -185,17 +185,17 @@ def _web_link(value: str) -> str | None:
     return url
 
 
-def clean_persona(persona: CardPersona, employers: list[str]) -> CardPersonaRead:
-    """What the admin may read of the model's `persona` and `employers`: the name and city
+def clean_person(person: CardPerson, employers: list[str]) -> CardPersonRead:
+    """What the admin may read of the model's `person` and `employers`: the name and city
     on one line; the email lower case and valid (the hub's `EmailStr` rule); the phone as
-    written, trimmed, at most `TELEFONO_MAX_LENGTH`; LinkedIn in its stored shape
+    written, trimmed, at most `PHONE_MAX_LENGTH`; LinkedIn in its stored shape
     (`normalise_linkedin`); the other links as `http(s)` addresses, without the LinkedIn
     profile already kept, each once, at most `MAX_OTHER_LINKS`; the companies each once.
     A value that does not pass is dropped, never an error: the contacts are a convenience
     beside the card and must not fail it."""
-    linkedin = _linkedin(persona.linkedin_url)
+    linkedin = _linkedin(person.linkedin_url)
     others: list[str] = []
-    for link in persona.altri_link:
+    for link in person.other_links:
         url = _web_link(link)
         if url is None:
             continue
@@ -212,15 +212,15 @@ def clean_persona(persona: CardPersona, employers: list[str]) -> CardPersonaRead
         name = _text(employer, 120)
         if name is not None:
             companies.setdefault(name.casefold(), name)
-    return CardPersonaRead(
-        nome=_text(persona.nome, NAME_MAX_LENGTH),
-        cognome=_text(persona.cognome, NAME_MAX_LENGTH),
-        email=_email(persona.email),
-        telefono=_telefono(persona.telefono),
-        citta=_text(persona.citta, CITY_MAX_LENGTH),
+    return CardPersonRead(
+        first_name=_text(person.first_name, NAME_MAX_LENGTH),
+        last_name=_text(person.last_name, NAME_MAX_LENGTH),
+        email=_email(person.email),
+        phone=_phone(person.phone),
+        city=_text(person.city, CITY_MAX_LENGTH),
         linkedin_url=linkedin,
-        altri_link=others[:MAX_OTHER_LINKS],
-        aziende=list(companies.values()),
+        other_links=others[:MAX_OTHER_LINKS],
+        companies=list(companies.values()),
     )
 
 
@@ -241,67 +241,72 @@ def _plain(value: str) -> str:
     return " ".join(value.split()).casefold()
 
 
-def differenze(
-    persona: CardPersonaRead,
+def differences(
+    person: CardPersonRead,
     *,
-    nome: str,
-    cognome: str,
+    first_name: str,
+    last_name: str,
     email: str,
-    telefono: str | None,
+    phone: str | None,
     linkedin_url: str | None,
-) -> list[PersonaDifference]:
+) -> list[PersonDifference]:
     """The fields where the CV and the profile both have a value and the values differ,
-    in the order `nome`, `cognome`, `email`, `telefono`, `linkedin_url`: names and email
+    in the order `nome`, `last_name`, `email`, `phone`, `linkedin_url`: names and email
     compared without case and spacing, the phone by its digits, LinkedIn by its stored
     shape. A field one side leaves empty is not listed: the page shows it as a gap."""
     pairs: list[
         tuple[
-            Literal["nome", "cognome", "email", "telefono", "linkedin_url"], str | None, str | None
+            Literal["first_name", "last_name", "email", "phone", "linkedin_url"],
+            str | None,
+            str | None,
         ]
     ] = [
-        ("nome", persona.nome, nome),
-        ("cognome", persona.cognome, cognome),
-        ("email", persona.email, email),
-        ("telefono", persona.telefono, telefono),
-        ("linkedin_url", persona.linkedin_url, linkedin_url),
+        ("first_name", person.first_name, first_name),
+        ("last_name", person.last_name, last_name),
+        ("email", person.email, email),
+        ("phone", person.phone, phone),
+        ("linkedin_url", person.linkedin_url, linkedin_url),
     ]
-    found: list[PersonaDifference] = []
-    for campo, cv, profilo in pairs:
-        if not cv or not profilo:
+    found: list[PersonDifference] = []
+    for field, cv, profile in pairs:
+        if not cv or not profile:
             continue
-        if campo == "telefono":
-            same = _same_phone(cv, profilo)
-        elif campo == "linkedin_url":
+        if field == "phone":
+            same = _same_phone(cv, profile)
+        elif field == "linkedin_url":
             same = (canonical_linkedin(cv) or "").lower() == (
-                canonical_linkedin(profilo) or ""
+                canonical_linkedin(profile) or ""
             ).lower()
         else:
-            same = _plain(cv) == _plain(profilo)
+            same = _plain(cv) == _plain(profile)
         if not same:
-            found.append(PersonaDifference(campo=campo, cv=cv, profilo=profilo))
+            found.append(PersonDifference(field=field, cv=cv, profile=profile))
     return found
 
 
-def verify_fonti(fonti: dict[str, list[str]], available: set[str]) -> dict[str, list[str]]:
-    """`fonti` with every source that does not exist for this person dropped (`link:9`
+def verify_sources(sources: dict[str, list[str]], available: set[str]) -> dict[str, list[str]]:
+    """`sources` with every source that does not exist for this person dropped (`link:9`
     for a person with two links, `github` for one with no account read), each source once,
     in the order the model gave. Every field is present in the answer."""
     return {
-        name: list(dict.fromkeys(key for key in fonti.get(name, []) if key in available))
-        for name in FONTI_FIELDS
+        name: list(dict.fromkeys(key for key in sources.get(name, []) if key in available))
+        for name in SOURCES_FIELDS
     }
 
 
 class Conflict(NamedTuple):
     """A disagreement the code found, stored on the card row as a plain dict.
-    `anni_diversi`: the hub's completed engagements add up to more years than the card's
-    `anni_scheda` (the CV's dates) by more than one; `anni_hub` is the hub's months in
-    whole years. `anni_scartata`: the card gave `anni_scheda` years but no source that
-    dates a profession supports them, so the code dropped them; `anni_hub` is `None`."""
+    `different_experience_years`: the hub's completed engagements add up to more years than the
+    card's
+    `experience_years_card` (the CV's dates) by more than one; `experience_years_hub` is the hub's
+    months in
+    whole years. `discarded_experience_years`: the card gave `experience_years_card` years but no
+    source that
+    dates a profession supports them, so the code dropped them; `experience_years_hub` is `None`."""
 
     kind: str
-    anni_scheda: int | None
-    anni_hub: int | None
+    experience_years_card: int | None
+    experience_years_hub: int | None
 
 
 # One year of slack: the CV's dates and the hub's months are counted differently (a
@@ -319,11 +324,11 @@ def conflicts(cv_years: int | None, hub_completed_months: int) -> list[Conflict]
         return []
     hub_years = hub_completed_months // 12
     if hub_years - cv_years > YEARS_TOLERANCE:
-        return [Conflict("anni_diversi", cv_years, hub_years)]
+        return [Conflict("different_experience_years", cv_years, hub_years)]
     return []
 
 
-def dated_by(fonti: dict[str, list[str]]) -> bool:
-    """Whether the sources named for `anni` include one that dates a profession: the CV
+def dated_by(sources: dict[str, list[str]]) -> bool:
+    """Whether the sources named for `experience_years` include one that dates a profession: the CV
     or the hub's own engagements. GitHub, a page and the wizard never set the years."""
-    return bool({CV, HUB} & set(fonti.get("anni", [])))
+    return bool({CV, HUB} & set(sources.get("experience_years", [])))

@@ -9,8 +9,8 @@ own and empty, so what is left is the root, as a single installation sees it.
 
 Two properties are asserted here rather than described:
 
-* **Who the cron is.** `sync` refuses an actor with no id (`solo un utente può
-  sincronizzare una casella`) because the mailbox belongs to a person, so the command
+* **Who the cron is.** `sync` refuses an actor with no id (only a user can
+  synchronise a mailbox) because the mailbox belongs to a person, so the command
   cannot simply pass `Actor.system()` the way `createadmin` does. It builds a *system*
   actor carrying the mailbox owner's id, and the timeline says so: `actor_type` is
   `system`, because nobody pressed anything.
@@ -100,7 +100,7 @@ def cli_gmail(
         connection.execute(text("delete from google_accounts"))
         connection.execute(text("delete from reminder_job_run"))
         connection.execute(text("delete from users where email like 'user-%@example.it'"))
-        connection.execute(text("delete from customers where ragione_sociale like 'CLI %'"))
+        connection.execute(text("delete from customers where legal_name like 'CLI %'"))
 
 
 def _connect(
@@ -108,8 +108,8 @@ def _connect(
     *,
     email_address: str,
     status: str = "active",
-    ruolo: str = "admin",
-    attivo: bool = True,
+    role: str = "admin",
+    active: bool = True,
 ) -> UUID:
     """A mailbox the CLI's own session can see: committed, not merely flushed."""
     with session_factory(engine)() as session:
@@ -117,8 +117,8 @@ def _connect(
         owner_id = account.user_id
         owner = session.get(User, owner_id)
         assert owner is not None
-        owner.ruolo = ruolo
-        owner.attivo = attivo
+        owner.role = role
+        owner.active = active
         session.commit()
     return owner_id
 
@@ -128,7 +128,7 @@ def _correspondent(engine: Engine) -> None:
     empty roster no request is issued at all, which is the right behaviour and the
     wrong starting point for a test about a request failing."""
     with session_factory(engine)() as session:
-        session.add(Customer(ragione_sociale="CLI Acme", email="info@acme.it"))
+        session.add(Customer(legal_name="CLI Acme", email="info@acme.it"))
         session.commit()
 
 
@@ -167,7 +167,7 @@ def test_the_cycle_is_recorded_as_the_system_acting_for_the_mailbox_owner(
         actor_type, actor_id = connection.execute(
             text(
                 "select actor_type, actor_id from activities "
-                "where kind = 'gmail.sync_eseguito' order by occurred_at desc limit 1"
+                "where kind = 'gmail.sync_run' order by occurred_at desc limit 1"
             )
         ).one()
     assert actor_type == "system"
@@ -290,7 +290,7 @@ def test_the_cron_does_not_act_for_a_deactivated_owner(
     being able to make the CRM do anything -- `deps.py` turns their session down with
     the same `get_active`. A cron that carried on would spend the Google consent of a
     person the titolare has just switched off, every quarter of an hour, silently."""
-    _connect(db_engine, email_address="cron@example.it", attivo=False)
+    _connect(db_engine, email_address="cron@example.it", active=False)
 
     assert _run() == 1
     err = capsys.readouterr().err
@@ -303,7 +303,7 @@ def test_the_cron_does_not_synchronise_for_an_owner_who_could_not_press_the_butt
     """`role="admin"` on the system actor was convenient and wrong: it let a `readonly`
     owner's mailbox synchronise from cron while their own Sincronizza button refuses
     them. The actor carries the owner's real role, and the refusal is in Italian."""
-    _connect(db_engine, email_address="cron@example.it", ruolo="readonly")
+    _connect(db_engine, email_address="cron@example.it", role="readonly")
 
     assert _run() == 1
     err = capsys.readouterr().err
@@ -313,9 +313,9 @@ def test_the_cron_does_not_synchronise_for_an_owner_who_could_not_press_the_butt
 def test_an_owner_who_can_write_still_runs(
     cli_gmail: FakeGmail, db_engine: Engine, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """The other half of the rule: `collaboratore` is a role that may synchronise, and
+    """The other half of the rule: `collaborator` is a role that may synchronise, and
     reading the owner's role must not have turned the check into "admin only"."""
-    _connect(db_engine, email_address="cron@example.it", ruolo="collaboratore")
+    _connect(db_engine, email_address="cron@example.it", role="collaborator")
 
     assert _run() == 0
 
@@ -406,7 +406,7 @@ def test_a_session_that_cannot_be_opened_costs_one_mailbox_and_not_the_run(
 ) -> None:
     """Each mailbox's session is opened inside that mailbox's own guard: a pool that
     refuses a connection, or a session that fails to close, is that mailbox's
-    `saltato` line, and the mailbox after it still gets its cycle. The factory below
+    `skipped` line, and the mailbox after it still gets its cycle. The factory below
     refuses its second session, which is the first mailbox's: the first is the
     listing's."""
     _connect(db_engine, email_address="prima@example.it")

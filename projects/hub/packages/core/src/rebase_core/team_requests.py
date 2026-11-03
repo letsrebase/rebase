@@ -111,9 +111,9 @@ def _is_card(card: Any) -> bool:
 
 def contactable(freelancer: Freelancer) -> bool:
     """Whether the availability mail may go to a talent: a card neither deleted nor
-    `scartato`, whenever that happened. The send skips the others, and the page offers
+    `discarded`, whenever that happened. The send skips the others, and the page offers
     no send when only they are silent."""
-    return freelancer.deleted_at is None and freelancer.stato != "scartato"
+    return freelancer.deleted_at is None and freelancer.status != "discarded"
 
 
 def _violates_unique_proposal(exc: IntegrityError) -> bool:
@@ -147,7 +147,7 @@ class TeamRequestService:
         self,
         data: TeamRequestCreate,
         *,
-        origine: str,
+        origin: str,
         user_id: UUID | None,
         company_id: UUID | None,
     ) -> tuple[TeamRequestRead, Mail]:
@@ -157,13 +157,13 @@ class TeamRequestService:
         contacts the visitor typed; the cloud's is `create_in_cloud`."""
         return self._create_for_proposal(
             data.proposal_id,
-            origine=origine,
-            azienda=data.azienda,
+            origin=origin,
+            company=data.company,
             email=str(data.email),
-            telefono=data.telefono,
+            phone=data.phone,
             user_id=user_id,
             company_id=company_id,
-            rif=data.rif,
+            ref=data.ref,
         )
 
     def create_in_cloud(
@@ -180,11 +180,11 @@ class TeamRequestService:
         one opened after the proposal was made (the grant it was made under was closed). A
         proposal from before the company was kept falls back to the caller's newest
         grant, and is refused with `OTHER_CONTEXT` when it is older than it."""
-        proposal = self._requestable(proposal_id, origine="cloud", user_id=caller.user_id)
+        proposal = self._requestable(proposal_id, origin="cloud", user_id=caller.user_id)
         if proposal.company_id is None:
             if caller.granted_at > proposal.created_at:
                 raise ValidationFailed(ENTITY, "proposal_id", OTHER_CONTEXT)
-            company_id, azienda = caller.company_id, caller.azienda
+            company_id, company_label = caller.company_id, caller.company
         else:
             company_id = proposal.company_id
             grant = TalentCloudService(self.session).live_for(caller.user_id, company_id)
@@ -194,13 +194,13 @@ class TeamRequestService:
             if grant is None or grant.granted_at > proposal.created_at:
                 raise ValidationFailed(ENTITY, "proposal_id", CLOUD_CLOSED_FOR_PROPOSAL)
             company = self.session.get_one(Company, company_id)
-            azienda = company.nome_azienda
+            company_label = company.company_name
         return self._file_proposal(
             proposal,
-            origine="cloud",
-            azienda=azienda,
+            origin="cloud",
+            company=company_label,
             email=caller.email,
-            telefono=caller.telefono,
+            phone=caller.phone,
             user_id=caller.user_id,
             company_id=company_id,
         )
@@ -209,9 +209,9 @@ class TeamRequestService:
         self,
         freelancer_id: UUID,
         *,
-        azienda: str,
+        company: str,
         email: str,
-        telefono: str | None,
+        phone: str | None,
         user_id: UUID,
         company_id: UUID,
     ) -> TeamRequestRead:
@@ -223,74 +223,74 @@ class TeamRequestService:
         card = cloud_card(self.session, freelancer_id)
         row = TeamRequest(
             proposal_id=None,
-            origine="cloud",
-            azienda=azienda,
+            origin="cloud",
+            company=company,
             email=email,
-            telefono=telefono,
+            phone=phone,
             user_id=user_id,
             company_id=company_id,
-            stato="nuova",
+            status="new",
         )
         self.session.add(row)
         self.session.flush()
         self.session.add(
-            TeamRequestTalent(request_id=row.id, freelancer_id=freelancer_id, ruolo=card.ruolo)
+            TeamRequestTalent(request_id=row.id, freelancer_id=freelancer_id, role=card.role)
         )
         self.session.commit()
         if self.tracker is not None:
-            self.tracker.team_event(TEAM_REQUEST_SENT, {"origine": "cloud"})
+            self.tracker.team_event(TEAM_REQUEST_SENT, {"origin": "cloud"})
         return self.get(row.id)
 
     def _create_for_proposal(
         self,
         proposal_id: UUID,
         *,
-        origine: str,
-        azienda: str,
+        origin: str,
+        company: str,
         email: str,
-        telefono: str | None,
+        phone: str | None,
         user_id: UUID | None,
         company_id: UUID | None,
-        rif: str | None = None,
+        ref: str | None = None,
     ) -> tuple[TeamRequestRead, Mail]:
-        if origine not in TEAM_REQUEST_ORIGINS:
-            raise ValueError(f"unknown origin {origine!r}")
-        proposal = self._requestable(proposal_id, origine=origine, user_id=user_id)
+        if origin not in TEAM_REQUEST_ORIGINS:
+            raise ValueError(f"unknown origin {origin!r}")
+        proposal = self._requestable(proposal_id, origin=origin, user_id=user_id)
         return self._file_proposal(
             proposal,
-            origine=origine,
-            azienda=azienda,
+            origin=origin,
+            company=company,
             email=email,
-            telefono=telefono,
+            phone=phone,
             user_id=user_id,
             company_id=company_id,
-            rif=rif,
+            ref=ref,
         )
 
     def _file_proposal(
         self,
         proposal: TeamProposal,
         *,
-        origine: str,
-        azienda: str,
+        origin: str,
+        company: str,
         email: str,
-        telefono: str | None,
+        phone: str | None,
         user_id: UUID | None,
         company_id: UUID | None,
-        rif: str | None = None,
+        ref: str | None = None,
     ) -> tuple[TeamRequestRead, Mail]:
         proposal_id = proposal.id
         members = self._members(proposal)
         row = TeamRequest(
             proposal_id=proposal.id,
-            origine=origine,
-            azienda=azienda,
+            origin=origin,
+            company=company,
             email=email,
-            telefono=telefono,
+            phone=phone,
             user_id=user_id,
             company_id=company_id,
-            rif=rif,
-            stato="nuova",
+            ref=ref,
+            status="new",
         )
         self.session.add(row)
         try:
@@ -303,14 +303,14 @@ class TeamRequestService:
                 raise
             raise InvalidState(ALREADY_REQUESTED, proposal_id=str(proposal_id)) from exc
         self.session.add_all(
-            TeamRequestTalent(request_id=row.id, freelancer_id=freelancer_id, ruolo=ruolo)
-            for freelancer_id, ruolo in members
+            TeamRequestTalent(request_id=row.id, freelancer_id=freelancer_id, role=role)
+            for freelancer_id, role in members
         )
         self.session.commit()
-        if names_the_company(proposal.riassunto, row.azienda):
+        if names_the_company(proposal.summary, row.company):
             logger.warning("team request %s: the summary names the company", row.id)
         if self.tracker is not None:
-            self.tracker.team_event(TEAM_REQUEST_SENT, {"origine": origine})
+            self.tracker.team_event(TEAM_REQUEST_SENT, {"origin": origin})
         read = self.get(row.id)
         return read, self.request_mail(read)
 
@@ -318,14 +318,14 @@ class TeamRequestService:
         """«Nuova richiesta team da …» to rebase's contracts address: the summary of the
         proposal, or for a request of one talent with no proposal (D3) that talent's
         name, and the link to the request's page, where the contacts are."""
-        talento = None
-        if read.proposal is None and read.talenti:
-            talento = f"{read.talenti[0].nome} {read.talenti[0].cognome}".strip()
+        talent = None
+        if read.proposal is None and read.talents:
+            talent = f"{read.talents[0].first_name} {read.talents[0].last_name}".strip()
         return team_request_mail(
             self.settings.contracts_mail,
-            azienda=read.azienda,
-            riassunto=read.riassunto,
-            talento=talento,
+            company=read.company,
+            summary=read.summary,
+            talent=talent,
             url=f"{self.settings.hub_url.rstrip('/')}/admin/team/{read.id}",
         )
 
@@ -334,34 +334,34 @@ class TeamRequestService:
     def list_recent(
         self,
         *,
-        stato: str | None,
-        origine: str | None,
+        status: str | None,
+        origin: str | None,
         limit: int = LIST_LIMIT_DEFAULT,
         cursor: str | None = None,
     ) -> TeamRequestList:
         """«Richieste team», newest first, by cursor; each row with how many talents
         were asked and how many said yes, counted for the page in the same query."""
-        if stato is not None and stato not in TEAM_REQUEST_STATES:
-            raise ValidationFailed(ENTITY, "stato", f"uno fra {', '.join(TEAM_REQUEST_STATES)}")
-        if origine is not None and origine not in TEAM_REQUEST_ORIGINS:
-            raise ValidationFailed(ENTITY, "origine", f"uno fra {', '.join(TEAM_REQUEST_ORIGINS)}")
+        if status is not None and status not in TEAM_REQUEST_STATES:
+            raise ValidationFailed(ENTITY, "status", f"uno fra {', '.join(TEAM_REQUEST_STATES)}")
+        if origin is not None and origin not in TEAM_REQUEST_ORIGINS:
+            raise ValidationFailed(ENTITY, "origin", f"uno fra {', '.join(TEAM_REQUEST_ORIGINS)}")
         limit = max(1, min(limit, LIST_LIMIT_MAX))
         counts = (
             select(
                 TeamRequestTalent.request_id.label("request_id"),
-                func.count().label("totale"),
-                func.count().filter(TeamRequestTalent.risposta == "si").label("si"),
+                func.count().label("total"),
+                func.count().filter(TeamRequestTalent.answer == "yes").label("yes"),
             )
             .group_by(TeamRequestTalent.request_id)
             .subquery()
         )
-        stmt = select(TeamRequest, counts.c.totale, counts.c.si).outerjoin(
+        stmt = select(TeamRequest, counts.c.total, counts.c.yes).outerjoin(
             counts, counts.c.request_id == TeamRequest.id
         )
-        if stato is not None:
-            stmt = stmt.where(TeamRequest.stato == stato)
-        if origine is not None:
-            stmt = stmt.where(TeamRequest.origine == origine)
+        if status is not None:
+            stmt = stmt.where(TeamRequest.status == status)
+        if origin is not None:
+            stmt = stmt.where(TeamRequest.origin == origin)
         if cursor:
             value, row_id = decode_cursor(_SORT, cursor)
             stmt = stmt.where(
@@ -379,15 +379,15 @@ class TeamRequestService:
             items=[
                 TeamRequestListItem(
                     id=request.id,
-                    azienda=request.azienda,
-                    origine=request.origine,
-                    stato=request.stato,
+                    company=request.company,
+                    origin=request.origin,
+                    status=request.status,
                     created_at=request.created_at,
                     contacted_at=request.contacted_at,
-                    talenti_totale=totale or 0,
-                    talenti_si=si or 0,
+                    total_talents=total or 0,
+                    yes_talents=yes or 0,
                 )
-                for request, totale, si in page
+                for request, total, yes in page
             ],
             next_cursor=next_cursor,
         )
@@ -406,17 +406,17 @@ class TeamRequestService:
                 if proposal is not None
                 else None
             ),
-            riassunto=proposal.riassunto if proposal is not None else None,
-            descrizione=proposal.descrizione if proposal is not None else None,
-            origine=row.origine,
-            azienda=row.azienda,
+            summary=proposal.summary if proposal is not None else None,
+            description=proposal.description if proposal is not None else None,
+            origin=row.origin,
+            company=row.company,
             email=row.email,
-            telefono=row.telefono,
+            phone=row.phone,
             user_id=row.user_id,
             company_id=row.company_id,
-            stato=row.stato,
+            status=row.status,
             note=row.note,
-            talenti=self._talenti(row, proposal),
+            talents=self._talents(row, proposal),
             contacted_at=row.contacted_at,
             closed_at=row.closed_at,
             created_at=row.created_at,
@@ -424,23 +424,23 @@ class TeamRequestService:
 
     # ---- the admin's edits --------------------------------------------------------------
 
-    def set_status(self, request_id: UUID, stato: str, admin_id: UUID) -> TeamRequestRead:
-        """«Segna come contattata», «Chiudi», or back to `nuova` after a mis-click.
+    def set_status(self, request_id: UUID, status: str, admin_id: UUID) -> TeamRequestRead:
+        """«Segna come contattata», «Chiudi», or back to `new` after a mis-click.
         `contacted_at` is set the first time the request is contacted and kept since;
         `closed_at` is when it was closed, and a request reopened has none."""
-        if stato not in TEAM_REQUEST_STATES:
-            raise ValidationFailed(ENTITY, "stato", f"uno fra {', '.join(TEAM_REQUEST_STATES)}")
+        if status not in TEAM_REQUEST_STATES:
+            raise ValidationFailed(ENTITY, "status", f"uno fra {', '.join(TEAM_REQUEST_STATES)}")
         row = self.lock(request_id)
-        before = row.stato
-        if stato == before:
+        before = row.status
+        if status == before:
             self.session.rollback()
             return self.get(request_id)
-        row.stato = stato
-        if stato == "contattata" and row.contacted_at is None:
+        row.status = status
+        if status == "contacted" and row.contacted_at is None:
             row.contacted_at = self.now()
-        row.closed_at = self.now() if stato == "chiusa" else None
+        row.closed_at = self.now() if status == "closed" else None
         self.session.commit()
-        self._record(row.id, admin_id, {"stato": before}, {"stato": stato})
+        self._record(row.id, admin_id, {"status": before}, {"status": status})
         return self.get(request_id)
 
     def set_note(self, request_id: UUID, note: str | None, admin_id: UUID) -> TeamRequestRead:
@@ -456,7 +456,7 @@ class TeamRequestService:
         self._record(row.id, admin_id, {"note": before}, {"note": cleaned})
         return self.get(request_id)
 
-    def set_summary(self, request_id: UUID, riassunto: str, admin_id: UUID) -> TeamRequestRead:
+    def set_summary(self, request_id: UUID, summary: str, admin_id: UUID) -> TeamRequestRead:
         """«Salva il riassunto»: the proposal's summary, the text the talents will read
         (D1), rewritten by the admin; recorded on the request, where it was edited. A
         summary that still names the company (`names_the_company`) is refused with the
@@ -466,19 +466,19 @@ class TeamRequestService:
             raise NotFound(ENTITY, request_id)
         if row.proposal_id is None:
             raise InvalidState(NO_SUMMARY)
-        if names_the_company(riassunto, row.azienda):
+        if names_the_company(summary, row.company):
             raise InvalidState(NAMES_THE_COMPANY)
         # A foreign key: the proposal is there, and `get_one` says so if it is not.
         proposal = self.session.get_one(
             TeamProposal, row.proposal_id, with_for_update=True, populate_existing=True
         )
-        before = proposal.riassunto
-        if riassunto == before:
+        before = proposal.summary
+        if summary == before:
             self.session.rollback()
             return self.get(request_id)
-        proposal.riassunto = riassunto
+        proposal.summary = summary
         self.session.commit()
-        self._record(row.id, admin_id, {"riassunto": before}, {"riassunto": riassunto})
+        self._record(row.id, admin_id, {"summary": before}, {"summary": summary})
         return self.get(request_id)
 
     # ---- helpers -----------------------------------------------------------------------
@@ -487,7 +487,7 @@ class TeamRequestService:
         self,
         proposal_id: UUID,
         *,
-        origine: str,
+        origin: str,
         user_id: UUID | None,
     ) -> TeamProposal:
         """The proposal a request may be for: of the caller's origin, on the cloud the
@@ -497,9 +497,9 @@ class TeamRequestService:
         proposal = self.session.get(TeamProposal, proposal_id)
         if (
             proposal is None
-            or proposal.errore is not None
-            or proposal.origine != origine
-            or (origine == "cloud" and proposal.user_id != user_id)
+            or proposal.error is not None
+            or proposal.origin != origin
+            or (origin == "cloud" and proposal.user_id != user_id)
             or proposal.created_at <= self.now() - REQUEST_MAX_AGE
         ):
             raise ValidationFailed(ENTITY, "proposal_id", PROPOSAL_REFUSED)
@@ -526,10 +526,10 @@ class TeamRequestService:
                 logger.info(
                     "team request on proposal %s: member %s is no longer in the catalogue",
                     proposal.id,
-                    member["posizione"],
+                    member["position"],
                 )
                 continue
-            members.append((freelancer_id, member["ruolo"]))
+            members.append((freelancer_id, member["role"]))
         if not members:
             raise ValidationFailed(ENTITY, "proposal_id", NOBODY_TO_HIRE)
         return members
@@ -540,7 +540,7 @@ class TeamRequestService:
         """The request's talents with their cards and names, in the proposal's order;
         `lock` takes the talents' rows for the send that writes their tokens."""
         order = (
-            {UUID(member["freelancer_id"]): member["posizione"] for member in proposal.team}
+            {UUID(member["freelancer_id"]): member["position"] for member in proposal.team}
             if proposal is not None
             else {}
         )
@@ -561,12 +561,12 @@ class TeamRequestService:
             rows,
             key=lambda found: (
                 order.get(found[0].freelancer_id, len(order) + 1),
-                found[2].cognome,
-                found[2].nome,
+                found[2].last_name,
+                found[2].first_name,
             ),
         )
 
-    def _talenti(
+    def _talents(
         self, row: TeamRequest, proposal: TeamProposal | None
     ) -> list[TeamRequestTalentRead]:
         """The request's talents with their names and rates, in the proposal's order."""
@@ -574,15 +574,15 @@ class TeamRequestService:
         return [
             TeamRequestTalentRead(
                 freelancer_id=talent.freelancer_id,
-                nome=user.nome,
-                cognome=user.cognome,
-                ruolo=talent.ruolo,
-                tariffa_giornaliera=freelancer.tariffa_giornaliera,
-                fascia=band_for(freelancer.tariffa_giornaliera),
+                first_name=user.first_name,
+                last_name=user.last_name,
+                role=talent.role,
+                daily_rate=freelancer.daily_rate,
+                band=band_for(freelancer.daily_rate),
                 mail_sent_at=talent.mail_sent_at,
-                risposta=talent.risposta,
-                risposta_at=talent.risposta_at,
-                contattabile=contactable(freelancer),
+                answer=talent.answer,
+                answered_at=talent.answered_at,
+                contactable=contactable(freelancer),
             )
             for talent, freelancer, user in ordered
         ]

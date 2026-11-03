@@ -18,12 +18,12 @@ from rebase_core.migrate import INI_PATH, upgrade_to_head
 
 REVISION = "0042"
 NEW_COLUMNS = {
-    "autore_id",
-    "fonte",
-    "modificata_at",
-    "modificata_da_id",
-    "eliminata_at",
-    "eliminata_da_id",
+    "author_id",
+    "source",
+    "edited_at",
+    "edited_by_id",
+    "deleted_at",
+    "deleted_by_id",
 }
 
 
@@ -116,9 +116,9 @@ def test_upgrade_moves_the_notes_into_the_thread(hub_postgres: Any) -> None:
             assert "note" not in _columns(connection, "freelancers")
             assert "note" not in _columns(connection, "companies")
             rows = {
-                (entity, testo): (autore, autore_id, fonte)
-                for entity, testo, autore, autore_id, fonte in connection.execute(
-                    text("SELECT entity_type, testo, autore, autore_id, fonte FROM notes")
+                (entity, note_text): (author, author_id, source)
+                for entity, note_text, author, author_id, source in connection.execute(
+                    text("SELECT entity_type, text, author, author_id, source FROM notes")
                 )
             }
             # The row's own note is in the thread, verbatim, signed by a fixed label.
@@ -133,13 +133,13 @@ def test_upgrade_moves_the_notes_into_the_thread(hub_postgres: Any) -> None:
             assert rows[("freelancer", "CV caricato dalla persona")] == (
                 "N C",
                 ids["user"],
-                "persona",
+                "person",
             )
-            assert rows[("freelancer", "Profilo aggiornato dalla persona: Tariffa")][2] == "persona"
+            assert rows[("freelancer", "Profilo aggiornato dalla persona: Tariffa")][2] == "person"
             assert rows[("company", "Richiesta aggiornata dal referente: Durata")] == (
                 "N C",
                 ids["boss"],
-                "persona",
+                "person",
             )
             assert len(rows) == 6
             diff = compare_metadata(MigrationContext.configure(connection), Base.metadata)
@@ -153,6 +153,7 @@ def test_upgrade_is_idempotent(hub_postgres: Any) -> None:
         config = _config(url)
         upgrade_to_head(url)
         engine = create_engine(url, future=True)
+        command.downgrade(config, "0042")
         with engine.begin() as connection:
             connection.execute(
                 text("UPDATE alembic_version SET version_num = :parent"),

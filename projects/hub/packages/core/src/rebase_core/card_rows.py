@@ -1,8 +1,8 @@
 """What the admin lists share about a card: which addresses have one, and the columns
 every row of a card carries (REB-805).
 
-`FreelancerService` (the «Developer e CTO» list), `TalentiService` (Talenti, the MCP's
-`list_talenti`) and the campaign states each need to ask «does this address have a card»
+`FreelancerService` (the «Developer e CTO» list), `TalentsService` (Talenti, the MCP's
+`list_talents`) and the campaign states each need to ask «does this address have a card»
 and to build a row from a `Freelancer` and the `User` it hangs on. They read it from here
 rather than each writing the anti-join and the column mapping again.
 """
@@ -32,34 +32,34 @@ def card_emails() -> Subquery:
 
 class CardRowFields(TypedDict):
     id: UUID
-    nome: str
-    cognome: str
+    first_name: str
+    last_name: str
     email: str
     linkedin_url: str | None
-    stato: str
+    status: str
     utm_source: str | None
     created_at: datetime
-    tariffa_giornaliera: Decimal | None
-    remoto: str | None
+    daily_rate: Decimal | None
+    remote: str | None
     vetted_at: datetime | None
-    posizione: str | None
+    job_title: str | None
 
 
 def card_row_fields(row: Freelancer, user: User) -> CardRowFields:
-    """The columns a `FreelancerRead` and a `TalentoRead` both carry for a card: the
+    """The columns a `FreelancerRead` and a `TalentRead` both carry for a card: the
     person off the `users` row, the rest off the card. Each caller adds what only its
     own row has."""
     return {
         "id": row.id,
-        "nome": user.nome,
-        "cognome": user.cognome,
+        "first_name": user.first_name,
+        "last_name": user.last_name,
         "email": user.email,
         "linkedin_url": user.linkedin_url,
-        "stato": row.stato,
+        "status": row.status,
         "utm_source": row.utm_source,
         "created_at": row.created_at,
-        "tariffa_giornaliera": row.tariffa_giornaliera,
-        "remoto": row.remoto,
+        "daily_rate": row.daily_rate,
+        "remote": row.remote,
         "vetted_at": row.vetted_at,
-        "posizione": row.posizione,
+        "job_title": row.job_title,
     }

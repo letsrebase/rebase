@@ -20,9 +20,9 @@ export function groupByDay(entries: TimeEntry[], days: WeekDay[]): DayGroup[] {
   const labels = new Map(days.map((day) => [day.iso, day.label]))
   const byDay = new Map<string, TimeEntry[]>()
   for (const entry of entries) {
-    const bucket = byDay.get(entry.data) ?? []
+    const bucket = byDay.get(entry.date) ?? []
     bucket.push(entry)
-    byDay.set(entry.data, bucket)
+    byDay.set(entry.date, bucket)
   }
   return [...byDay.entries()]
     .sort(([a], [b]) => (a < b ? 1 : a > b ? -1 : 0))
@@ -30,7 +30,7 @@ export function groupByDay(entries: TimeEntry[], days: WeekDay[]): DayGroup[] {
       iso,
       label: labels.get(iso) ?? formatIsoDateItalian(iso),
       total: sumDecimalStrings(
-        items.map((item) => item.ore),
+        items.map((item) => item.hours),
         HOURS_SCALE,
       ),
       entries: [...items].sort((a, b) => (a.created_at < b.created_at ? 1 : -1)),

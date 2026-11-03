@@ -10,7 +10,7 @@ of it is opened.
 The address travels in a JSON body and never in the URL: a query string is written by
 uvicorn's access log and by every proxy on the way, on both hosts, a body is not.
 
-Every failure is the same answer, `MemberLookup(membro=False)`: no token, no URL, a
+Every failure is the same answer, `MemberLookup(member=False)`: no token, no URL, a
 refused connection, a timeout, a status other than 2xx, a redirect, a body that is not
 the shape or is too long. The community is the fast lane of the signup, never a gate,
 so a hub that is down must cost the person nothing but the greeting. Nothing here logs:
@@ -52,9 +52,9 @@ class MemberLookup(BaseModel):
 
     model_config = ConfigDict(extra="ignore")
 
-    membro: bool
-    nome: str | None = None
-    cognome: str | None = None
+    member: bool
+    first_name: str | None = None
+    last_name: str | None = None
 
 
 class _NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -93,7 +93,7 @@ def urllib_call(method: str, url: str, headers: dict[str, str], body: bytes) -> 
 
 def lookup_member(settings: Settings, email: str, http: HttpCall | None = None) -> MemberLookup:
     """Asks the hub whether `email` belongs to a member. Any failure of the call is
-    `MemberLookup(membro=False)`, the same answer a non-member gets. What is caught is
+    `MemberLookup(member=False)`, the same answer a non-member gets. What is caught is
     the network and the parse (`OSError`, which `URLError` is, `http.client`'s own
     `HTTPException`, `ValueError`) and nothing wider: a test's `AssertionError` from the network
     guard, or a programming error, must surface rather than read as «not a member»."""
@@ -101,7 +101,7 @@ def lookup_member(settings: Settings, email: str, http: HttpCall | None = None) 
     base = settings.hub_url.strip().rstrip("/")
     address = email.strip().lower()
     if not token or not base or not address:
-        return MemberLookup(membro=False)
+        return MemberLookup(member=False)
     url = f"{base}{LOOKUP_PATH}"
     headers = {
         "Authorization": f"Bearer {token}",
@@ -114,10 +114,10 @@ def lookup_member(settings: Settings, email: str, http: HttpCall | None = None) 
     try:
         status, body = call("POST", url, headers, payload)
     except (OSError, HttpProtocolError, ValueError):
-        return MemberLookup(membro=False)
+        return MemberLookup(member=False)
     if not 200 <= status < 300 or len(body) > MAX_BODY_BYTES:
-        return MemberLookup(membro=False)
+        return MemberLookup(member=False)
     try:
         return MemberLookup.model_validate(json.loads(body))
     except (ValueError, ValidationError):
-        return MemberLookup(membro=False)
+        return MemberLookup(member=False)

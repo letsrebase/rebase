@@ -41,7 +41,7 @@ __all__ = [
 
 # The generic "template body" field name, unused: every
 # error this module raises now names the specific variable or dotted path at
-# fault as `field` instead (`variable.nome`, or `".".join(path)`) -- naming
+# fault as `field` instead (`variable.name`, or `".".join(path)`) -- naming
 # "which variable" via the same structured detail every caller already knows to
 # read, not only recoverable by parsing the free-text `reason`. Kept as ENTITY
 # only; there is no more FIELD constant to keep alongside it.
@@ -50,21 +50,21 @@ ENTITY = "template"
 
 @dataclass(frozen=True)
 class DeclaredVariable:
-    """One entry of a template's `variabili_dichiarate`.
+    """One entry of a template's `declared_variables`.
 
     Declared, not deduced (spec 4.3): the compilation form shows label, type and
     whether it is required, and the render fails with a precise error if a required
     one is missing -- instead of producing a PDF with a hole in it.
 
-    `tipo` is one of the nine `FieldType` values in fields/types.py, so the frontend
+    `type` is one of the nine `FieldType` values in fields/types.py, so the frontend
     can render it with the existing `DynamicFieldRenderer` and nothing new has to
     learn a tenth type.
     """
 
-    nome: str
-    etichetta: str
-    tipo: str
-    obbligatoria: bool
+    name: str
+    label: str
+    type: str
+    required: bool
 
 
 def _is_blank(value: Any) -> bool:
@@ -146,9 +146,9 @@ def _resolve(path: tuple[str, ...], scopes: list[dict[str, Any]]) -> tuple[bool,
     return False, None
 
 
-def _first_root_line_referencing(nodes: tuple[Node, ...], nome: str) -> int | None:
+def _first_root_line_referencing(nodes: tuple[Node, ...], name: str) -> int | None:
     """The template line of the first node -- a bare `{{nome...}}`, or the path an
-    `#if`/`#each` itself names -- whose top-level path segment is `nome`, at the
+    `#if`/`#each` itself names -- whose top-level path segment is `name`, at the
     *root* level only. Mirrors `parser.declared_paths`'s own root/loop_relative
     split exactly (same recursion, same `inside_each` gate): a `{{nome}}` inside
     an `#each` body is relative to that loop's current item, a different
@@ -156,7 +156,7 @@ def _first_root_line_referencing(nodes: tuple[Node, ...], nome: str) -> int | No
     share a spelling, and must not be mistaken for a match.
 
     Used only to enrich a missing-required-variable error with a line, on a
-    genuinely best-effort basis: `None` when `nome` is declared but never
+    genuinely best-effort basis: `None` when `name` is declared but never
     referenced anywhere at the root level, which is a legitimate shape --
     declared, not deduced (spec 4.3) -- not a bug to paper over with a fabricated
     line number.
@@ -166,10 +166,10 @@ def _first_root_line_referencing(nodes: tuple[Node, ...], nome: str) -> int | No
         for node in items:
             match node:
                 case VariableNode(path=path, line=line):
-                    if not inside_each and path[0] == nome:
+                    if not inside_each and path[0] == name:
                         return line
                 case IfNode(path=path, line=line, then=then, otherwise=otherwise):
-                    if not inside_each and path[0] == nome:
+                    if not inside_each and path[0] == name:
                         return line
                     found = walk(then, inside_each=inside_each)
                     if found is not None:
@@ -178,7 +178,7 @@ def _first_root_line_referencing(nodes: tuple[Node, ...], nome: str) -> int | No
                     if found is not None:
                         return found
                 case EachNode(path=path, line=line, body=body):
-                    if not inside_each and path[0] == nome:
+                    if not inside_each and path[0] == name:
                         return line
                     found = walk(body, inside_each=True)
                     if found is not None:
@@ -195,7 +195,7 @@ def _check_declared(
 ) -> None:
     """`field` is the variable's own name and `reason` names
     the line of its first root-level reference, when it has one -- both were
-    previously missing (`field` was the constant "corpo_markdown", the generic
+    previously missing (`field` was the constant "body_markdown", the generic
     template-body field; `reason` had no line at all, because this check used to
     run *before* `parse_template`, when no tree existed yet to search). `entity`
     stays the constant "template": this function has no notion of *which*
@@ -205,14 +205,14 @@ def _check_declared(
     to enrich a caught `ValidationFailed` with that fact, not this pure function.
     """
     for variable in declared:
-        if variable.obbligatoria and _is_blank(values.get(variable.nome)):
-            reason = f"variabile obbligatoria mancante: {variable.etichetta}"
-            line = _first_root_line_referencing(nodes, variable.nome)
+        if variable.required and _is_blank(values.get(variable.name)):
+            reason = f"variabile obbligatoria mancante: {variable.label}"
+            line = _first_root_line_referencing(nodes, variable.name)
             if line is not None:
                 reason = f"riga {line}: {reason}"
             raise ValidationFailed(
                 ENTITY,
-                variable.nome,
+                variable.name,
                 reason,
                 expected="un valore non vuoto",
             )
@@ -250,12 +250,12 @@ def render_template(
     # always wins, so an actual (even falsy) value is never masked by this default.
     #
     # This used to seed `""` unconditionally, regardless of
-    # `tipo`. For a scalar type that is merely cosmetic -- `format_value("")` and
+    # `type`. For a scalar type that is merely cosmetic -- `format_value("")` and
     # `format_value(None)` are both `""`, and `bool("")`/`bool(None)` are both
     # falsy, so `{{note}}` and `{{#if note}}` behave identically either way -- but
-    # for `multiselect` it was a real bug: `{{#each righe}}` resolved `righe` to
+    # for `multiselect` it was a real bug: `{{#each righe}}` resolved `lines` to
     # the string `""`, which is not a list, and raised "'righe' non e' una lista"
-    # -- on the exact template that renders as nothing at all if `righe` is never
+    # -- on the exact template that renders as nothing at all if `lines` is never
     # declared. Declaring an optional variable must never make a template *more*
     # likely to fail than leaving it undeclared.
     #
@@ -268,9 +268,9 @@ def render_template(
     # treats `value is None` as "no rows" (the same branch a genuinely absent
     # path takes); plain Python truthiness already treats `None` as falsy for
     # `#if`, the same as `False`, `0` or `[]`; and `format_value(None)` is `""`
-    # for a bare substitution. `tipo` therefore still is not consulted here --
+    # for a bare substitution. `type` therefore still is not consulted here --
     # matching it correctly does not require branching on it.
-    optional_defaults: dict[str, Any] = {v.nome: None for v in declared if not v.obbligatoria}
+    optional_defaults: dict[str, Any] = {v.name: None for v in declared if not v.required}
     scopes: list[dict[str, Any]] = [{**optional_defaults, **values}]
     out: list[str] = []
     _render_nodes(nodes, scopes, out, context)
@@ -319,8 +319,8 @@ def _render_variable(
     path: tuple[str, ...], context: RenderContext, line: int, scopes: list[dict[str, Any]]
 ) -> str:
     # `field` is the dotted path itself, not the constant
-    # "corpo_markdown" -- naming *which* variable failed via the same structured
-    # detail `_check_declared`'s error uses (`variable.nome` there), rather than
+    # "body_markdown" -- naming *which* variable failed via the same structured
+    # detail `_check_declared`'s error uses (`variable.name` there), rather than
     # leaving that fact recoverable only by parsing the free-text `reason`.
     dotted = ".".join(path)
     found, value = _resolve(path, scopes)
@@ -382,7 +382,7 @@ def _render_each(
         # Anything else -- a string, a number, a dict -- is not "no rows", it is
         # the wrong shape entirely, and worth surfacing rather than silently
         # iterating zero (or, for a string, character-by-character) times.
-        # `field` is the dotted path, not the generic "corpo_markdown" constant --
+        # `field` is the dotted path, not the generic "body_markdown" constant --
         # same as `_render_variable`'s two errors above.
         dotted = ".".join(path)
         raise ValidationFailed(
@@ -393,7 +393,7 @@ def _render_each(
         )
     for item in value:
         # `this` is the item itself; a dict item's own keys also become a scope, so
-        # `{{nome}}` inside `{{#each righe}}` reads the row's `nome` and falls back
+        # `{{nome}}` inside `{{#each righe}}` reads the row's `name` and falls back
         # to the outer scope when the row has none (`_resolve` walks scopes
         # outward). Pushed and popped per item, not left on the stack, so a
         # `{{this}}` two loops removed cannot see an inner loop's own item.

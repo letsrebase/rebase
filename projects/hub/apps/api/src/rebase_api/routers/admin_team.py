@@ -57,15 +57,15 @@ def list_team_requests(
     _: AdminDep,
     session: SessionDep,
     settings: SettingsDep,
-    stato: Word = None,
-    origine: Word = None,
+    status: Word = None,
+    origin: Word = None,
     limit: Limit = LIST_LIMIT_DEFAULT,
     cursor: Cursor = None,
 ) -> TeamRequestList:
-    """Newest first, by cursor; `stato` and `origine` filter, and a word that is not one
+    """Newest first, by cursor; `status` and `origin` filter, and a word that is not one
     of theirs is a 422 naming the field."""
     return TeamRequestService(session, settings=settings).list_recent(
-        stato=stato, origine=origine, limit=limit, cursor=cursor
+        status=status, origin=origin, limit=limit, cursor=cursor
     )
 
 
@@ -73,15 +73,15 @@ def list_team_requests(
 def list_team_proposals(
     _: AdminDep,
     builder: TeamBuilderDep,
-    origine: Word = None,
-    esito: Word = None,
+    origin: Word = None,
+    outcome: Word = None,
     limit: Limit = PROPOSALS_LIMIT_DEFAULT,
     cursor: Cursor = None,
 ) -> TeamProposalList:
-    """«Proposte» (0028): every ask, newest first, by cursor; `origine` (`pubblico`,
-    `cloud`, `admin`) and `esito` (`ok`, `errore`) filter, and a word that is not one of
+    """«Proposte» (0028): every ask, newest first, by cursor; `origin` (`public`,
+    `cloud`, `admin`) and `outcome` (`ok`, `error`) filter, and a word that is not one of
     theirs is a 422 naming the field. The builder needs no key to read."""
-    return builder.list_recent(origine=origine, esito=esito, limit=limit, cursor=cursor)
+    return builder.list_recent(origin=origin, outcome=outcome, limit=limit, cursor=cursor)
 
 
 @router.get("/requests/{request_id}", response_model=TeamRequestRead)
@@ -103,7 +103,7 @@ def set_team_request_status(
 ) -> TeamRequestRead:
     """«Segna come contattata», «Chiudi»; recorded as the admin's."""
     return TeamRequestService(session, settings=settings).set_status(
-        request_id, change.stato, admin.id
+        request_id, change.status, admin.id
     )
 
 
@@ -131,7 +131,7 @@ def set_team_request_summary(
 ) -> TeamRequestRead:
     """«Salva il riassunto»: the proposal's summary, what the talents will read."""
     return TeamRequestService(session, settings=settings).set_summary(
-        request_id, change.riassunto, admin.id
+        request_id, change.summary, admin.id
     )
 
 

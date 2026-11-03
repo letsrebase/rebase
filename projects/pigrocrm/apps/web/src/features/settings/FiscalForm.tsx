@@ -13,7 +13,7 @@ import {
   FIELDS,
   ORDINARY_RATE,
   PACK_OF,
-  REGIMI,
+  Regimes,
   bodyFrom,
   emptyValues,
   regimeOf,
@@ -27,9 +27,9 @@ import {
 import { StaleRowBanner } from './StaleRowBanner'
 import { isStaleRow, type StalePhase } from './staleRow'
 
-export function FiscalForm({ aziendaId, profile }: { aziendaId: string; profile: FiscalProfile | null }) {
+export function FiscalForm({ legalEntityId, profile }: { legalEntityId: string; profile: FiscalProfile | null }) {
   const queryClient = useQueryClient()
-  const save = useSaveFiscalProfile(aziendaId)
+  const save = useSaveFiscalProfile(legalEntityId)
   // The row the inputs were built from, `null` for a profile not saved yet. Its
   // `updated_at` is the version every save sends (REB-622, spec 2026-10-03 §11), and
   // only a reseed moves it: a newer row that arrives while a draft is open is not
@@ -45,12 +45,12 @@ export function FiscalForm({ aziendaId, profile }: { aziendaId: string; profile:
   const [stale, setStale] = useState<StalePhase>('none')
   const [adopt, setAdopt] = useState(false)
   const [reloading, setReloading] = useState(false)
-  // What leaving the forfettario empties, kept aside while the choice is unsaved: a
-  // person who looks at another regime and comes back finds their natura, declaration
-  // and bollo switch as they were, not the blanks a save would have written.
+  // What leaving the flat-rate regime empties, kept aside while the choice is unsaved: a
+  // person who looks at another regime and comes back finds their VAT nature, declaration
+  // and stamp duty switch as they were, not the blanks a save would have written.
   const [kept, setKept] = useState<Pick<
     Values,
-    'natura_default' | 'riferimento_normativo' | 'applica_bollo'
+    'default_vat_nature' | 'legal_reference' | 'apply_stamp_duty'
   > | null>(null)
 
   // As in `LegalEntityForm`: an untouched form follows a row as it arrives, and
@@ -100,7 +100,7 @@ export function FiscalForm({ aziendaId, profile }: { aziendaId: string; profile:
     setReloading(true)
     try {
       await queryClient.refetchQueries(
-        { queryKey: queryKeys.fiscalProfile(aziendaId) },
+        { queryKey: queryKeys.fiscalProfile(legalEntityId) },
         { throwOnError: true },
       )
     } catch (error) {
@@ -122,34 +122,34 @@ export function FiscalForm({ aziendaId, profile }: { aziendaId: string; profile:
     if (regime === leaving) return
     if (leaving === 'RF19') {
       setKept({
-        natura_default: values.natura_default,
-        riferimento_normativo: values.riferimento_normativo,
-        applica_bollo: values.applica_bollo,
+        default_vat_nature: values.default_vat_nature,
+        legal_reference: values.legal_reference,
+        apply_stamp_duty: values.apply_stamp_duty,
       })
     }
-    if (regime === 'estero') {
-      // The forfettario's natura and declaration mean nothing abroad; the bollo is an
+    if (regime === 'foreign') {
+      // The flat-rate regime's VAT nature and declaration mean nothing abroad; the stamp duty is an
       // Italian duty. Emptied here so the foreign save never carries them.
       change({
         pack_id: 'non-it',
-        codice_regime: '',
-        natura_default: '',
-        riferimento_normativo: '',
-        applica_bollo: false,
+        regime_code: '',
+        default_vat_nature: '',
+        legal_reference: '',
+        apply_stamp_duty: false,
       })
       return
     }
     if (regime === 'RF01') {
-      // The ordinary regime taxes every line: no natura, no declaration, no bollo, and a
-      // zero rate is refused, so the forfettario's 0.00 becomes the standard 22.00.
-      const zeroRate = !/[1-9]/.test(values.aliquota_iva_default)
+      // The ordinary regime taxes every line: no VAT nature, no declaration, no stamp duty, and a
+      // zero rate is refused, so the flat-rate regime's 0.00 becomes the standard 22.00.
+      const zeroRate = !/[1-9]/.test(values.default_vat_rate)
       change({
         pack_id: 'it-standard',
-        codice_regime: 'RF01',
-        natura_default: '',
-        riferimento_normativo: '',
-        applica_bollo: false,
-        ...(zeroRate ? { aliquota_iva_default: ORDINARY_RATE } : {}),
+        regime_code: 'RF01',
+        default_vat_nature: '',
+        legal_reference: '',
+        apply_stamp_duty: false,
+        ...(zeroRate ? { default_vat_rate: ORDINARY_RATE } : {}),
       })
       return
     }
@@ -158,39 +158,39 @@ export function FiscalForm({ aziendaId, profile }: { aziendaId: string; profile:
     // back as the server's defaults, to read and amend.
     const defaults = emptyValues()
     const restored = kept ?? {
-      natura_default: defaults.natura_default,
-      riferimento_normativo: defaults.riferimento_normativo,
-      applica_bollo: defaults.applica_bollo,
+      default_vat_nature: defaults.default_vat_nature,
+      legal_reference: defaults.legal_reference,
+      apply_stamp_duty: defaults.apply_stamp_duty,
     }
     const blank = (name: FiscalField['name']) => values[name].trim() === ''
     change({
       ...restored,
       pack_id: PACK_OF.RF19,
-      codice_regime: 'RF19',
-      aliquota_iva_default: '0.00',
-      ...(blank('soglia_bollo') ? { soglia_bollo: defaults.soglia_bollo } : {}),
-      ...(blank('importo_bollo') ? { importo_bollo: defaults.importo_bollo } : {}),
-      ...(blank('coefficiente_redditivita')
-        ? { coefficiente_redditivita: defaults.coefficiente_redditivita }
+      regime_code: 'RF19',
+      default_vat_rate: '0.00',
+      ...(blank('stamp_duty_threshold') ? { stamp_duty_threshold: defaults.stamp_duty_threshold } : {}),
+      ...(blank('stamp_duty_amount') ? { stamp_duty_amount: defaults.stamp_duty_amount } : {}),
+      ...(blank('profitability_coefficient')
+        ? { profitability_coefficient: defaults.profitability_coefficient }
         : {}),
-      ...(blank('aliquota_imposta_sostitutiva')
-        ? { aliquota_imposta_sostitutiva: defaults.aliquota_imposta_sostitutiva }
+      ...(blank('substitute_tax_rate')
+        ? { substitute_tax_rate: defaults.substitute_tax_rate }
         : {}),
-      ...(blank('aliquota_inps') ? { aliquota_inps: defaults.aliquota_inps } : {}),
+      ...(blank('social_security_rate') ? { social_security_rate: defaults.social_security_rate } : {}),
     })
   }
 
   const fieldError = problem ? fieldErrorFrom(problem) : null
   const regime = regimeOf(values)
-  const abroad = regime === 'estero'
-  const forfettario = regime === 'RF19'
+  const abroad = regime === 'foreign'
+  const flat_rate = regime === 'RF19'
   const visible = FIELDS.filter((field) => field.shownFor?.includes(regime) ?? true)
   // A refusal that names a field this regime does not show (a bollo value sent from
   // hidden state) has nowhere to land: it goes to the banner, never nowhere.
   const rendered = new Set<string>([
-    'codice_regime',
+    'regime_code',
     ...visible.map((field) => field.name),
-    ...(forfettario ? ['applica_bollo'] : []),
+    ...(flat_rate ? ['apply_stamp_duty'] : []),
   ])
   const bannered = problem && (!fieldError || !rendered.has(fieldError.field))
 
@@ -214,22 +214,22 @@ export function FiscalForm({ aziendaId, profile }: { aziendaId: string; profile:
             // Locked while a save is in flight, like the azienda's fields: an edit made
             // between the PUT and its answer would be replaced by the row that comes back.
             disabled={save.isPending}
-            aria-invalid={fieldError?.field === 'codice_regime' ? true : undefined}
+            aria-invalid={fieldError?.field === 'regime_code' ? true : undefined}
             onChange={(event) => pickRegime(event.target.value as Regime)}
           >
-            {REGIMI.map((option) => (
+            {Regimes.map((option) => (
               <option key={option.value} value={option.value}>
                 {option.label}
               </option>
             ))}
           </select>
-          {fieldError?.field === 'codice_regime' ? (
+          {fieldError?.field === 'regime_code' ? (
             <p className="text-destructive text-sm">{fieldError.message}</p>
           ) : (
             <p className="text-muted-foreground text-xs">
               {abroad
                 ? 'Un’azienda con sede all’estero: niente fattura elettronica, niente bollo.'
-                : forfettario
+                : flat_rate
                   ? 'Il codice che la fattura elettronica dichiara allo SdI.'
                   : 'IVA su ogni riga, nessuna soglia del forfettario, nessun bollo.'}
             </p>
@@ -247,11 +247,11 @@ export function FiscalForm({ aziendaId, profile }: { aziendaId: string; profile:
             />
             {fieldError?.field === field.name ? (
               <p className="text-destructive text-sm">{fieldError.message}</p>
-            ) : abroad && field.name === 'aliquota_iva_default' ? (
+            ) : abroad && field.name === 'default_vat_rate' ? (
               <p className="text-muted-foreground text-xs">
                 L’aliquota del paese in cui l’azienda ha sede.
               </p>
-            ) : abroad && field.name === 'natura_default' ? (
+            ) : abroad && field.name === 'default_vat_nature' ? (
               <p className="text-muted-foreground text-xs">
                 Solo se una riga ad aliquota zero deve portare una dicitura; altrimenti vuota.
               </p>
@@ -262,12 +262,12 @@ export function FiscalForm({ aziendaId, profile }: { aziendaId: string; profile:
         ))}
       </div>
 
-      {forfettario ? (
+      {flat_rate ? (
         <label className="flex items-center gap-2 text-sm">
           <Checkbox
-            checked={values.applica_bollo}
+            checked={values.apply_stamp_duty}
             disabled={save.isPending}
-            onCheckedChange={(checked) => change({ applica_bollo: checked === true })}
+            onCheckedChange={(checked) => change({ apply_stamp_duty: checked === true })}
           />
           Applica il bollo virtuale sopra la soglia
         </label>

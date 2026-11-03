@@ -31,12 +31,12 @@ export function AdminPigro() {
     fetchPage: (cursor) => admin.pigroSpaces({ q: debouncedQuery || undefined, cursor }),
     itemsOf: pageItems,
   })
-  const totale = list.data?.pages[0]?.totale ?? 0
+  const total = list.data?.pages[0]?.total ?? 0
   const failure = list.error instanceof ApiError ? list.error : null
 
   return (
     <>
-      <Header title="Istanze Pigro" count={totale}>
+      <Header title="Istanze Pigro" count={total}>
         <Input
           type="search"
           placeholder="Cerca per spazio o email…"
@@ -82,14 +82,14 @@ export function AdminPigro() {
                         )}
                       </TableCell>
                       <TableCell>
-                        {space.membro ? (
+                        {space.member ? (
                           <>
                             <Link
                               to="/admin/freelance/$id"
-                              params={{ id: space.membro.id }}
+                              params={{ id: space.member.id }}
                               className="font-medium hover:underline"
                             >
-                              {space.membro.nome} {space.membro.cognome}
+                              {space.member.first_name} {space.member.last_name}
                             </Link>
                             <p className="text-xs text-muted-foreground">{space.owner_email}</p>
                           </>

@@ -12,14 +12,14 @@ vi.mock('@/lib/api', async (importOriginal) => {
 })
 
 vi.mock('@/lib/auth', () => ({
-  useAuth: () => ({ user: { id: 'u-1', nome: 'Giulia Demo', ruolo: 'admin' } }),
+  useAuth: () => ({ user: { id: 'u-1', name: 'Giulia Demo', role: 'admin' } }),
 }))
 
 function ok(data: unknown) {
   return Promise.resolve({ data, response: new Response(null, { status: 200 }) }) as never
 }
 
-const DEAL = { id: 'd-1', nome: 'Progetto', pipeline_stage_id: 's-lead' }
+const DEAL = { id: 'd-1', name: 'Progetto', pipeline_stage_id: 's-lead' }
 
 function wrapper(client: QueryClient) {
   return ({ children }: { children: ReactNode }) => (

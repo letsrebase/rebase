@@ -6,7 +6,7 @@ from datetime import UTC, date, datetime
 import pytest
 from fakes_cards import CARD, judge_response, judgement_body
 
-from rebase_core.card_draft import FONTI_FIELDS
+from rebase_core.card_draft import SOURCES_FIELDS
 from rebase_core.card_judge import (
     JUDGE_MAX_OUTPUT_TOKENS,
     CardJudgement,
@@ -21,7 +21,7 @@ from rebase_core.llm import RecordingCall
 from rebase_core.sources import SourceItem, SourceSet
 from rebase_core.team_schemas import Card
 
-CV_TEXT = CvText(filename="cv.pdf", pagine=1, testo="Ada, backend 2017 - 2025", troncato=False)
+CV_TEXT = CvText(filename="cv.pdf", pages=1, text="Ada, backend 2017 - 2025", truncated=False)
 CARD_ = Card.model_validate(CARD)
 TODAY = date(2026, 10, 27)
 NOW = datetime(2026, 10, 27, 9, 0, tzinfo=UTC)
@@ -36,7 +36,7 @@ def _prompt(sources: SourceSet | None = None, facts: HubFacts | None = None, cv:
         cv,
         "Backend developer",
         sources or SourceSet([]),
-        facts or HubFacts(seniority_admin=None, anni_admin=None),
+        facts or HubFacts(seniority_admin=None, experience_years_admin=None),
         TODAY,
     )
 
@@ -48,7 +48,7 @@ def test_the_judge_reads_the_card_the_cv_and_the_date() -> None:
     assert message.role == "user"
     assert "Today: 2026-10-27" in message.text
     assert "Position on the profile: Backend developer" in message.text
-    assert '"ruolo": "Backend developer"' in message.text
+    assert '"role": "Backend developer"' in message.text
     assert "<cv>\nAda, backend 2017 - 2025\n</cv>" in message.text
     assert "Sources available" not in message.text
     assert request.output_model is CardJudgement
@@ -56,7 +56,7 @@ def test_the_judge_reads_the_card_the_cv_and_the_date() -> None:
 
 
 def test_every_source_the_writer_could_read_is_a_block_beside_the_cv() -> None:
-    facts = HubFacts(seniority_admin="senior", anni_admin=9)
+    facts = HubFacts(seniority_admin="senior", experience_years_admin=9)
 
     request = _prompt(SourceSet([GITHUB]), facts)
 
@@ -84,7 +84,7 @@ def test_a_source_cannot_close_its_block_and_speak_as_the_prompt() -> None:
 
 
 def test_a_cut_cv_says_so() -> None:
-    cut = CvText(filename="cv.pdf", pagine=9, testo="x", troncato=True)
+    cut = CvText(filename="cv.pdf", pages=9, text="x", truncated=True)
 
     assert "cut short" in _prompt(cv=cut).messages[0].text
 
@@ -92,7 +92,7 @@ def test_a_cut_cv_says_so() -> None:
 def test_the_answer_is_a_verdict_per_field_and_what_was_invented() -> None:
     answer = judgement_from(
         judge_response(
-            {"competenze": ("unsupported", "no source says Kubernetes")},
+            {"skills": ("unsupported", "no source says Kubernetes")},
             invented=["Kubernetes"],
             identifying=["Acme"],
         )
@@ -101,17 +101,17 @@ def test_the_answer_is_a_verdict_per_field_and_what_was_invented() -> None:
     assert isinstance(answer, CardJudgement)
     fields = answer.fields()
     assert list(fields) == [
-        "ruolo",
-        "anni",
+        "role",
+        "experience_years",
         "seniority",
-        "competenze",
-        "settori",
-        "lingue",
-        "luogo",
-        "sintesi",
+        "skills",
+        "industries",
+        "languages",
+        "location",
+        "profile_summary",
     ]
-    assert fields["competenze"].verdict == "unsupported"
-    assert fields["ruolo"].verdict == "supported"
+    assert fields["skills"].verdict == "unsupported"
+    assert fields["role"].verdict == "supported"
     assert (answer.invented, answer.identifying) == (["Kubernetes"], ["Acme"])
 
 
@@ -121,7 +121,7 @@ def test_the_answer_is_a_verdict_per_field_and_what_was_invented() -> None:
         (judge_response(stop_reason="refusal"), "refusal"),
         (judge_response(stop_reason="max_tokens"), "max_tokens"),
         (judge_response(text="not json"), "shape"),
-        (judge_response(text='{"ruolo": {"verdict": "maybe", "reason": "x"}}'), "shape"),
+        (judge_response(text='{"role": {"verdict": "maybe", "reason": "x"}}'), "shape"),
     ],
 )
 def test_an_answer_that_is_no_judgement_is_a_failure_of_its_kind(
@@ -147,7 +147,7 @@ def test_one_call_and_an_outage_is_the_callers() -> None:
 
 def test_the_longest_answer_the_schema_allows_is_read_whole_and_fits_the_judges_ceiling() -> None:
     """The card task's 2000-token ceiling would cut it; the judge's own does not."""
-    reasons = {name: ("supported", "r" * 200) for name in FONTI_FIELDS}
+    reasons = {name: ("supported", "r" * 200) for name in SOURCES_FIELDS}
     body = judgement_body(reasons, invented=["i" * 160] * 30, identifying=["n" * 120] * 30)
 
     answer = judgement_from(judge_response(text=body))

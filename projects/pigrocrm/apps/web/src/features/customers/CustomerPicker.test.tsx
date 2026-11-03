@@ -8,8 +8,8 @@ import { CustomerPicker, type PickedCustomer } from './CustomerPicker'
 
 const mockGet = vi.spyOn(api, 'GET')
 
-const ACME = { id: 'cust-acme', ragione_sociale: 'ACME Srl' }
-const ZETA = { id: 'cust-zeta', ragione_sociale: 'Zeta Srl' }
+const ACME = { id: 'cust-acme', legal_name: 'ACME Srl' }
+const ZETA = { id: 'cust-zeta', legal_name: 'Zeta Srl' }
 
 function answer(items: unknown[], nextCursor: string | null = null) {
   return Promise.resolve({
@@ -38,7 +38,7 @@ function Harness({
   const [value, setValue] = useState<string | null>(initial)
   return (
     <CustomerPicker
-      id="cliente"
+      id="customer"
       value={value}
       onChange={(customer) => {
         setValue(customer?.id ?? null)

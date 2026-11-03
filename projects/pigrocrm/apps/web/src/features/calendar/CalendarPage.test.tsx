@@ -14,7 +14,7 @@ vi.mock('@/lib/auth', () => ({
   useCanWrite: () => true,
   useIsAdmin: () => true,
   useAuth: () => ({
-    user: { id: '33333333-3333-7333-8333-333333333333', ruolo: 'admin' },
+    user: { id: '33333333-3333-7333-8333-333333333333', role: 'admin' },
     isLoading: false,
     login: vi.fn(),
     logout: vi.fn(),
@@ -35,76 +35,76 @@ const DEAL = 'aaaaaaaa-aaaa-7aaa-8aaa-aaaaaaaaaaaa'
 
 const deal = {
   id: DEAL,
-  nome: 'Progetto Alfa',
+  name: 'Progetto Alfa',
   customer_id: '11111111-1111-7111-8111-111111111111',
   pipeline_stage_id: '22222222-2222-7222-8222-222222222222',
-  valore_previsto: null,
-  probabilita: 10,
-  data_chiusura_prevista: null,
+  expected_value: null,
+  probability: 10,
+  expected_close_date: null,
   owner_id: null,
   note: null,
-  ore_preventivate: null,
-  valore_preventivato: null,
-  tariffa_oraria: null,
-  chiuso_il: null,
+  budgeted_hours: null,
+  budgeted_value: null,
+  hourly_rate: null,
+  closed_at: null,
   custom_fields: {},
   created_at: '2026-01-01T00:00:00Z',
   updated_at: '2026-01-01T00:00:00Z',
 }
 
-const attivita = {
+const task = {
   id: 'att-1',
-  titolo: 'Sollecitare Rossi',
+  title: 'Sollecitare Rossi',
   note: null,
-  scadenza: '2026-09-18',
-  stato: 'aperta',
-  completata_il: null,
-  assegnata_a: null,
+  due_date: '2026-09-18',
+  status: 'open',
+  completed_at: null,
+  assigned_to: null,
   customer_id: null,
   person_id: null,
   deal_id: null,
   invoice_id: null,
-  origine: 'manuale',
-  regola: null,
+  origin: 'manual',
+  rule: null,
   custom_fields: {},
   created_at: '2026-09-01T00:00:00Z',
   updated_at: '2026-09-01T00:00:00Z',
 }
 
 const month = {
-  mese: '2026-09',
-  da: '2026-09-01',
-  a: '2026-09-30',
-  oggi: '2026-09-09',
-  ore_totali: '8.00',
-  giorni: [
+  month: '2026-09',
+  from: '2026-09-01',
+  to: '2026-09-30',
+  today: '2026-09-09',
+  total_hours: '8.00',
+  days: [
     {
-      giorno: '2026-09-14',
-      ore: '8.00',
+      day: '2026-09-14',
+      hours: '8.00',
       per_deal: [
-        { deal_id: DEAL, deal_nome: 'Progetto Alfa', cliente: 'ACME S.r.l.', ore: '8.00' },
+        { deal_id: DEAL, deal_name: 'Progetto Alfa', customer: 'ACME S.r.l.', hours: '8.00' },
       ],
-      attivita: [],
-      fatture: [],
+      tasks: [],
+      invoices: [],
     },
     {
-      giorno: '2026-09-18',
-      ore: '0.00',
+      day: '2026-09-18',
+      hours: '0.00',
       per_deal: [],
-      attivita: [attivita],
-      fatture: [
+      tasks: [task],
+      invoices: [
         {
           id: 'inv-1',
-          numero: '3/2026',
-          cliente: 'ACME S.r.l.',
-          totale: '1000.00',
-          data_scadenza: '2026-09-18',
-          in_ritardo: false,
+          number: '3/2026',
+          customer: 'ACME S.r.l.',
+          total: '1000.00',
+          due_date: '2026-09-18',
+          overdue: false,
         },
       ],
     },
   ],
-  attivita_senza_scadenza: [{ ...attivita, id: 'att-2', titolo: 'Chiedere il codice SDI', scadenza: null }],
+  task_without_due_date: [{ ...task, id: 'att-2', title: 'Chiedere il codice SDI', due_date: null }],
 }
 
 function ok(data: unknown) {
@@ -131,7 +131,7 @@ function renderPage(onMonthChange = vi.fn()) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   render(
     <QueryClientProvider client={client}>
-      <CalendarPage mese="2026-09" onMonthChange={onMonthChange} />
+      <CalendarPage month="2026-09" onMonthChange={onMonthChange} />
     </QueryClientProvider>,
   )
   return onMonthChange
@@ -177,8 +177,8 @@ describe('CalendarPage', () => {
       .mocked(api.GET)
       .mock.calls.filter((call) => (call as unknown as unknown[])[0] === '/api/calendar')
     expect(calls).toHaveLength(1)
-    const first = calls[0] as unknown as [string, { params: { query: { mese: string } } }]
-    expect(first[1].params.query.mese).toBe('2026-09')
+    const first = calls[0] as unknown as [string, { params: { query: { month: string } } }]
+    expect(first[1].params.query.month).toBe('2026-09')
   })
 
   it('changes month through the caller, so the URL stays the source of truth', async () => {
@@ -279,7 +279,7 @@ describe('CalendarPage', () => {
     // refuses: the calendar fills that form, it does not write the table.
     expect(postedBody()).toEqual({
       path: '/api/time-entries',
-      body: expect.objectContaining({ deal_id: DEAL, data: '2026-09-14', ore: '8.00' }),
+      body: expect.objectContaining({ deal_id: DEAL, date: '2026-09-14', hours: '8.00' }),
     })
   })
 
@@ -288,13 +288,13 @@ describe('CalendarPage', () => {
     vi.mocked(api.POST).mockImplementation((() => ok({ id: 'new', deal_id: DEAL })) as never)
     await openDayAndPickDeal(/^14\/09\/2026:/)
 
-    const ore = screen.getByRole('textbox', { name: 'Ore' })
-    await userEvent.clear(ore)
-    await userEvent.type(ore, '3.5')
+    const hours = screen.getByRole('textbox', { name: 'Ore' })
+    await userEvent.clear(hours)
+    await userEvent.type(hours, '3.5')
     await userEvent.click(screen.getByRole('button', { name: 'Registra 3,5 h' }))
 
     await waitFor(() => expect(api.POST).toHaveBeenCalled())
-    expect(postedBody().body).toMatchObject({ ore: '3.5' })
+    expect(postedBody().body).toMatchObject({ hours: '3.5' })
   })
 
   it('accepts a comma, because that is what an Italian keyboard makes', async () => {
@@ -302,39 +302,39 @@ describe('CalendarPage', () => {
     vi.mocked(api.POST).mockImplementation((() => ok({ id: 'new', deal_id: DEAL })) as never)
     await openDayAndPickDeal(/^14\/09\/2026:/)
 
-    const ore = screen.getByRole('textbox', { name: 'Ore' })
-    await userEvent.clear(ore)
-    await userEvent.type(ore, '7,5')
+    const hours = screen.getByRole('textbox', { name: 'Ore' })
+    await userEvent.clear(hours)
+    await userEvent.type(hours, '7,5')
     await userEvent.click(screen.getByRole('button', { name: 'Registra 7,5 h' }))
 
     await waitFor(() => expect(api.POST).toHaveBeenCalled())
-    expect(postedBody().body).toMatchObject({ ore: '7.5' })
+    expect(postedBody().body).toMatchObject({ hours: '7.5' })
   })
 
   it('sends eight hours for «Giornata» even after something else was typed', async () => {
-    // The defect this test exists for: `setOre('8.00')` followed by a submit that read
+    // The defect this test exists for: `setHours('8.00')` followed by a submit that read
     // the *state* sent whatever was in the field before the click, so pressing
     // «Giornata» after typing 4 logged four hours and called it a day.
     routeGet()
     vi.mocked(api.POST).mockImplementation((() => ok({ id: 'new', deal_id: DEAL })) as never)
     await openDayAndPickDeal(/^14\/09\/2026:/)
 
-    const ore = screen.getByRole('textbox', { name: 'Ore' })
-    await userEvent.clear(ore)
-    await userEvent.type(ore, '4')
+    const hours = screen.getByRole('textbox', { name: 'Ore' })
+    await userEvent.clear(hours)
+    await userEvent.type(hours, '4')
     await userEvent.click(screen.getByRole('button', { name: 'Giornata (8h)' }))
 
     await waitFor(() => expect(api.POST).toHaveBeenCalled())
-    expect(postedBody().body).toMatchObject({ ore: '8.00' })
+    expect(postedBody().body).toMatchObject({ hours: '8.00' })
   })
 
   it('refuses to send hours that are not hours, and says what one looks like', async () => {
     routeGet()
     await openDayAndPickDeal(/^14\/09\/2026:/)
 
-    const ore = screen.getByRole('textbox', { name: 'Ore' })
-    await userEvent.clear(ore)
-    await userEvent.type(ore, 'otto')
+    const hours = screen.getByRole('textbox', { name: 'Ore' })
+    await userEvent.clear(hours)
+    await userEvent.type(hours, 'otto')
 
     expect(screen.getByRole('button', { name: 'Registra — h' })).toBeDisabled()
     expect(screen.getByText(/da 0,25 a 24/)).toBeInTheDocument()
@@ -343,7 +343,7 @@ describe('CalendarPage', () => {
 
   it('creates a deadline on the day it was opened from', async () => {
     routeGet()
-    vi.mocked(api.POST).mockImplementation((() => ok({ ...attivita, id: 'new' })) as never)
+    vi.mocked(api.POST).mockImplementation((() => ok({ ...task, id: 'new' })) as never)
     renderPage()
     await screen.findByRole('grid')
     await userEvent.click(screen.getByRole('button', { name: /^18\/09\/2026:/ }))
@@ -362,12 +362,12 @@ describe('CalendarPage', () => {
       { body: Record<string, unknown> },
     ]
     expect(path).toBe('/api/activities')
-    expect(options.body).toMatchObject({ titolo: 'Mandare il preventivo', scadenza: '2026-09-18' })
+    expect(options.body).toMatchObject({ title: 'Mandare il preventivo', due_date: '2026-09-18' })
   })
 
   it('closes a commitment as done, and cancelling is a different button', async () => {
     routeGet()
-    vi.mocked(api.POST).mockImplementation((() => ok(attivita)) as never)
+    vi.mocked(api.POST).mockImplementation((() => ok(task)) as never)
     renderPage()
     await screen.findByRole('grid')
     await userEvent.click(screen.getByRole('button', { name: /^18\/09\/2026:/ }))
@@ -377,31 +377,31 @@ describe('CalendarPage', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Fatto' }))
 
     await waitFor(() => expect(api.POST).toHaveBeenCalled())
-    expect(vi.mocked(api.POST).mock.calls[0]?.[0]).toBe('/api/activities/{attivita_id}/complete')
+    expect(vi.mocked(api.POST).mock.calls[0]?.[0]).toBe('/api/activities/{task_id}/complete')
   })
 
   it('draws a day worked without approval on its date, in words, and opens it from the panel (REB-748)', async () => {
     const worked = {
       id: 'day-1',
       contract_id: 'c1',
-      contract_titolo: 'Consulenza architetturale',
-      customer_nome: 'Acme S.r.l.',
-      quantita: '0.50',
-      stato: 'lavorato_senza_approvazione',
+      contract_title: 'Consulenza architetturale',
+      customer_name: 'Acme S.r.l.',
+      quantity: '0.50',
+      status: 'worked_without_approval',
     }
     routeGet({
       '/api/calendar': () =>
         ok({
           ...month,
-          giorni: [
-            ...month.giorni,
+          days: [
+            ...month.days,
             {
-              giorno: '2026-09-22',
-              ore: '0.00',
+              day: '2026-09-22',
+              hours: '0.00',
               per_deal: [],
-              attivita: [],
-              fatture: [],
-              giornate: [worked, { ...worked, id: 'day-2', stato: 'approvato', quantita: '1.00' }],
+              tasks: [],
+              invoices: [],
+              work_units: [worked, { ...worked, id: 'day-2', status: 'approved', quantity: '1.00' }],
             },
           ],
         }),

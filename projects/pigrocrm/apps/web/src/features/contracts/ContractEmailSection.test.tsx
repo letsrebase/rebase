@@ -20,21 +20,21 @@ function ok(data: unknown) {
 const TEMPLATE = {
   id: 't1',
   contract_id: 'c1',
-  nome: 'Fattura mensile',
-  oggetto: 'Fattura {{numero_fattura}}',
-  corpo: 'Gentile {{cliente}}',
-  allegati: ['fattura_pdf', 'registro_pdf'],
-  attivo: true,
+  name: 'Fattura mensile',
+  subject: 'Fattura {{numero_fattura}}',
+  body: 'Gentile {{cliente}}',
+  attachments: ['invoice_pdf', 'register_pdf'],
+  active: true,
   created_at: '2026-10-26T10:00:00Z',
   updated_at: '2026-10-26T10:00:00Z',
 }
 const INVOICE = {
   id: 'i1',
-  anno: 2026,
-  numero: 12,
-  riferimento: null,
-  totale: '1250.00',
-  divisa: 'EUR',
+  year: 2026,
+  number: 12,
+  reference: null,
+  total: '1250.00',
+  currency: 'EUR',
 }
 const DRAFT = {
   id: 'd1',
@@ -47,13 +47,13 @@ const DRAFT = {
 const PREVIEW = {
   subject: 'Fattura 2026/12',
   body: 'Gentile Acme S.r.l.,\n\nin allegato la fattura 2026/12.',
-  to_suggeriti: ['mario@acme.example'],
-  allegati: [
-    { tipo: 'fattura_pdf', nome: 'Fattura 2026/12' },
-    { tipo: 'registro_pdf', nome: 'Registro giornate 01/10/2026 - 31/10/2026' },
+  to_suggested: ['mario@acme.example'],
+  attachments: [
+    { type: 'invoice_pdf', name: 'Fattura 2026/12' },
+    { type: 'register_pdf', name: 'Registro giornate 01/10/2026 - 31/10/2026' },
   ],
-  da: '2026-10-01',
-  a: '2026-10-31',
+  from: '2026-10-01',
+  to: '2026-10-31',
 }
 
 function mockGets(templates: unknown[]) {
@@ -63,7 +63,7 @@ function mockGets(templates: unknown[]) {
       return ok(DRAFT)
     }
     if (path.endsWith('/email-template-variables')) {
-      return ok([{ nome: 'cliente', etichetta: 'Cliente' }])
+      return ok([{ name: 'cliente', label: 'Cliente' }])
     }
     return ok(templates)
   }) as never)
@@ -114,8 +114,8 @@ describe('ContractEmailSection', () => {
         '/api/contracts/{contract_id}/email-templates',
         expect.objectContaining({
           body: expect.objectContaining({
-            nome: 'Fattura mensile',
-            allegati: ['fattura_pdf', 'registro_pdf'],
+            name: 'Fattura mensile',
+            attachments: ['invoice_pdf', 'register_pdf'],
           }),
         }),
       ),

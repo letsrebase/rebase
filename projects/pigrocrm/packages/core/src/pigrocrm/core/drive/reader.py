@@ -1,4 +1,4 @@
-"""Read-only Drive, confined to the folders the titolare pointed at.
+"""Read-only Drive, confined to the folders the owner pointed at.
 
 Spec 9C names the failure to avoid: reading somebody's Drive. A personal Drive holds
 the photos of their children, their rent contract, the folder of another job. So this
@@ -20,7 +20,7 @@ transport received across the whole module and checks each listing named a folde
 the hierarchy.
 
 **One sentence for three different situations.** A file that does not exist, a file in
-an unconfigured corner of the titolare's own Drive and a file in a stranger's Drive all
+an unconfigured corner of the owner's own Drive and a file in a stranger's Drive all
 answer `NotFound("drive_file", <id>)`, in the same words. Distinguishing them would
 answer "is there a file with this id?" for anybody who can reach the tool, which is an
 existence oracle over all of Google Drive.
@@ -158,17 +158,17 @@ class DriveEntry:
     """One child of a folder. Italian field names, like every other schema a person or
     an agent reads.
 
-    `dimensione` is `None` and not `0` for a folder or a native Google file: those have
+    `size` is `None` and not `0` for a folder or a native Google file: those have
     no bytes on Drive to measure, and `0` would say "an empty file", which is a
-    different and false statement. Same for `modificato_il`, which Drive can omit.
+    different and false statement. Same for `modified_at`, which Drive can omit.
     """
 
     id: str
-    nome: str
+    name: str
     mime: str
-    dimensione: int | None
-    modificato_il: datetime | None
-    cartella: bool
+    size: int | None
+    modified_at: datetime | None
+    folder: bool
 
 
 @dataclass(frozen=True)
@@ -224,13 +224,13 @@ class DriveReader:
         `read_bytes` already make, answered to the caller instead of consumed
         internally, and it is confined by the same `is_within_roots` check they are --
         including the same single sentence for a file that does not exist, a file in an
-        unconfigured corner of the titolare's Drive and a file in a stranger's Drive
+        unconfigured corner of the owner's Drive and a file in a stranger's Drive
         (see the module docstring: telling those apart is an existence oracle over all
         of Google Drive).
 
         It exists because two callers need a *name* and there was no way to ask for
         one. An import records where a document came from -- `{"drive_file_id": ...,
-        "mime": ..., "nome": ...}` -- and "a file was uploaded" is not an answer to
+        "mime": ..., "name": ...}` -- and "a file was uploaded" is not an answer to
         "where did this come from?" years later; and `describe_roots` below needs the
         name of a folder that has no listable parent to have appeared in.
         """
@@ -244,10 +244,10 @@ class DriveReader:
         one has no way in, and the roots are the only folders it may be told about
         without being told about everything above them. So this is one `files.get` per
         root -- deliberately *not* a listing, because the folder above a root is the
-        titolare's Drive and enumerating it is the failure this module exists to
+        owner's Drive and enumerating it is the failure this module exists to
         prevent.
 
-        A root the titolare has since deleted, or that Drive answers 404 for, raises
+        A root the owner has since deleted, or that Drive answers 404 for, raises
         `NotFound` naming that id rather than being skipped: an entry point silently
         missing one of its folders would read as "this root is empty".
         """
@@ -265,7 +265,7 @@ class DriveReader:
     def is_within_roots(self, file_id: str) -> bool:
         """Whether a configured root is this file's ancestor -- or is this file.
 
-        A folder the titolare named is inside the roots by definition, and answering
+        A folder the owner named is inside the roots by definition, and answering
         that needs no call to Google at all. Everything else is `files.get` on the
         parents, level by level, with a cache for the duration of this one call: a file
         with several parents whose paths meet again is otherwise walked once per path.
@@ -340,7 +340,7 @@ class DriveReader:
         under `TRANSPORT_ENTITY` (`document_blob`), which is right for the caller it was
         written for -- `GDriveStorage` reaches Drive for the bytes of a CRM document --
         and wrong for every caller of this class. A Google 500 while listing a folder the
-        titolare named arrived as «document_blob: elenco fallito (500)»: there is no CRM
+        owner named arrived as «document_blob: elenco fallito (500)»: there is no CRM
         document in that operation, `OriginalPdfResolver.resolve` documents the opposite, and an
         adapter routing on the entity would send somebody to the documents screen. So the
         transport's entity, and *only* it, is re-stamped as `ENTITY` on the way out.
@@ -479,7 +479,7 @@ class DriveReader:
         propagates as a `Conflict` instead. That is the right answer for the caller --
         an outage or a permission change is worth reporting as itself, and swallowing
         it would make an unshared parent look like an unconfigured one -- but it does
-        mean a 403 on a *parent* of a file the titolare can read surfaces as a Drive
+        mean a 403 on a *parent* of a file the owner can read surfaces as a Drive
         error rather than as `NotFound`. It has not been seen, and inventing a
         translation for it would be inventing which of the two it was.
         """
@@ -565,7 +565,7 @@ def drive_reader_for(
     3. the roots, which must not be empty -- see below;
     4. only then the credential, composed by `user_transport_for` -- the row's refresh
        token unsealed, wrapped in `UserTokens`, handed to a `DriveTransport`. The roots
-       come from the row, so a reader cannot be pointed at a folder the titolare did not
+       come from the row, so a reader cannot be pointed at a folder the owner did not
        configure.
 
     `feature` is the name the refusal uses ("la lettura dei documenti da Drive"), so a
@@ -588,7 +588,7 @@ def drive_reader_for(
     exemption nobody had to ask for. A new route or tool composing a reader and not
     thinking about the ban inherited it silently, and this is the one omission in this
     module with no symptom -- the reader works, the roots are honoured, and an agent
-    credential the installation never opted in for reads the titolare's Drive. Spelling
+    credential the installation never opted in for reads the owner's Drive. Spelling
     it at the call site is what makes a reviewer ask "already authorized by whom?";
     nothing here can answer that, which is also why the three MCP tools are tested
     against a closed agent credential one by one.
@@ -598,7 +598,7 @@ def drive_reader_for(
     the only way to have none is never to have configured them -- and it is a
     configuration step, not a fault. Without this the reader would compose happily and
     every operation would answer "not found", or list nothing: an agent would report
-    that the titolare's Drive is empty, and the person would go looking for a bug
+    that the owner's Drive is empty, and the person would go looking for a bug
     instead of opening the settings screen.
 
     `on_revoked` closes the last gap: a revocation can only be *learned* by a refresh
@@ -654,11 +654,11 @@ def _entry(item: dict[str, Any]) -> DriveEntry:
     mime = str(item.get("mimeType") or "")
     return DriveEntry(
         id=str(item.get("id") or ""),
-        nome=str(item.get("name") or ""),
+        name=str(item.get("name") or ""),
         mime=mime,
-        dimensione=_as_int(item.get("size")),
-        modificato_il=_moment(item.get("modifiedTime")),
-        cartella=mime == FOLDER_MIME,
+        size=_as_int(item.get("size")),
+        modified_at=_moment(item.get("modifiedTime")),
+        folder=mime == FOLDER_MIME,
     )
 
 

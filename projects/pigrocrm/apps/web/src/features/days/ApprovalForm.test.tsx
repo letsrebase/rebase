@@ -15,8 +15,8 @@ vi.mock('@tanstack/react-router', () => ({
   Link: ({ to, children }: { to: string; children: React.ReactNode }) => <a href={to}>{children}</a>,
   useNavigate: () => navigate,
 }))
-const auth = { ruolo: 'collaboratore' as 'readonly' | 'collaboratore' }
-vi.mock('@/lib/auth', () => ({ useCanWrite: () => auth.ruolo !== 'readonly' }))
+const auth = { role: 'collaborator' as 'readonly' | 'collaborator' }
+vi.mock('@/lib/auth', () => ({ useCanWrite: () => auth.role !== 'readonly' }))
 vi.mock('@rebase/ui/sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
 
 const gmail = { configured: true }
@@ -38,7 +38,7 @@ const MESSAGE = {
   internal_date: '2026-03-01T09:12:00Z',
   body_text: 'Buongiorno, confermo le giornate del 2 e del 3 marzo.',
   body_truncated: false,
-  body_html_scartato: false,
+  body_html_discarded: false,
   attachments: [],
 }
 
@@ -47,13 +47,13 @@ function serving(messages: unknown[] = [MESSAGE]) {
     if (path === '/api/contracts') return Promise.resolve(ok({ items: [contract({ customer_id: CUSTOMER_ID })], next_cursor: null }))
     if (path === '/api/work-units') {
       const all = [
-        row({ id: 'd1', data: '2026-03-02', stato: 'proposto', descrizione: 'Workshop' }),
-        row({ id: 'd2', data: '2026-03-03', stato: 'lavorato_senza_approvazione', descrizione: 'Review' }),
-        row({ id: 'd3', data: '2026-03-04', stato: 'lavorato', descrizione: 'Già a posto' }),
+        row({ id: 'd1', date: '2026-03-02', status: 'proposed', description: 'Workshop' }),
+        row({ id: 'd2', date: '2026-03-03', status: 'worked_without_approval', description: 'Review' }),
+        row({ id: 'd3', date: '2026-03-04', status: 'worked', description: 'Già a posto' }),
       ]
       // The API filters by state: the form asks for the two states that can use an approval.
-      const wanted = (init as { params: { query: { stato?: string } } }).params.query.stato
-      return Promise.resolve(ok({ items: all.filter((day) => wanted === undefined || day.stato === wanted), troncato: false }))
+      const wanted = (init as { params: { query: { status?: string } } }).params.query.status
+      return Promise.resolve(ok({ items: all.filter((day) => wanted === undefined || day.status === wanted), truncated: false }))
     }
     if (path === '/api/gmail/messages') return Promise.resolve(ok(messages))
     return Promise.resolve(ok(undefined))
@@ -64,7 +64,7 @@ beforeEach(() => {
   vi.mocked(api.GET).mockReset()
   vi.mocked(api.POST).mockReset()
   navigate.mockReset()
-  auth.ruolo = 'collaboratore'
+  auth.role = 'collaborator'
   gmail.configured = true
 })
 
@@ -87,7 +87,7 @@ describe('recording an approval', () => {
   it('records an approval from a synced email and the days it names, then opens the contract’s days', async () => {
     serving()
     vi.mocked(api.POST).mockResolvedValue(
-      ok({ approval: { id: 'a1' }, work_units: [row({ id: 'd1', stato: 'approvato' }), row({ id: 'd2', stato: 'lavorato' })] }) as never,
+      ok({ approval: { id: 'a1' }, work_units: [row({ id: 'd1', status: 'approved' }), row({ id: 'd2', status: 'worked' })] }) as never,
     )
     const user = userEvent.setup()
     renderWithQuery(<ApprovalForm initialContractId={CONTRACT_ID} initialDayIds={['d1', 'd2']} />)
@@ -104,9 +104,9 @@ describe('recording an approval', () => {
     expect(vi.mocked(api.POST).mock.calls[0]?.[1]).toMatchObject({
       body: {
         contract_id: CONTRACT_ID,
-        canale: 'email',
-        mittente: 'giulia@cliente.example',
-        estratto: 'confermo le giornate del 2 e del 3 marzo.',
+        channel: 'email',
+        sender: 'giulia@cliente.example',
+        excerpt: 'confermo le giornate del 2 e del 3 marzo.',
         gmail_message_id: 'msg-1',
       },
     })
@@ -140,7 +140,7 @@ describe('recording an approval', () => {
     vi.mocked(fetchWithRefresh).mockResolvedValue(new Response(JSON.stringify({ id: 'v1' }), { status: 201 }))
     vi.mocked(api.POST).mockImplementation(((path: string) => {
       if (path === '/api/documents') return Promise.resolve(ok({ id: 'doc-7' }))
-      return Promise.resolve(ok({ approval: { id: 'a1' }, work_units: [row({ id: 'd1', stato: 'approvato' })] }))
+      return Promise.resolve(ok({ approval: { id: 'a1' }, work_units: [row({ id: 'd1', status: 'approved' })] }))
     }) as never)
     const user = userEvent.setup()
     renderWithQuery(<ApprovalForm initialContractId={CONTRACT_ID} initialDayIds={['d1']} />)
@@ -154,7 +154,7 @@ describe('recording an approval', () => {
     await waitFor(() => expect(api.POST).toHaveBeenCalledTimes(2))
     expect(vi.mocked(api.POST).mock.calls[0]?.[0]).toBe('/api/documents')
     expect(vi.mocked(api.POST).mock.calls[0]?.[1]).toMatchObject({
-      body: { contract_id: CONTRACT_ID, tipo: 'documento' },
+      body: { contract_id: CONTRACT_ID, type: 'document' },
     })
     expect(vi.mocked(fetchWithRefresh).mock.calls[0]?.[0]).toBe('/api/documents/doc-7/versions')
     expect(vi.mocked(api.POST).mock.calls[1]?.[1]).toMatchObject({ body: { document_id: 'doc-7', work_unit_ids: ['d1'] } })
@@ -193,7 +193,7 @@ describe('recording an approval', () => {
 
   it('lists the client’s messages as the API ordered them, newest first, and does not ask before the contract is known', async () => {
     const OLDER = { ...MESSAGE, id: 'msg-old', subject: 'Messaggio vecchio', internal_date: '2026-01-05T09:00:00Z' }
-    // `ordine=recenti` is the API's: what comes back is already newest first.
+    // `order=recent` is the API's: what comes back is already newest first.
     serving([MESSAGE, OLDER])
     renderWithQuery(<ApprovalForm initialContractId={CONTRACT_ID} initialDayIds={['d1']} />)
     await screen.findByRole('radio', { name: /Re: giornate di marzo/ })
@@ -204,7 +204,7 @@ describe('recording an approval', () => {
       ([path]) => path === '/api/gmail/messages',
     )
     expect(call?.[1]).toMatchObject({
-      params: { query: { entity_id: CUSTOMER_ID, limit: 200, ordine: 'recenti' } },
+      params: { query: { entity_id: CUSTOMER_ID, limit: 200, order: 'recent' } },
     })
     const early = (
       vi.mocked(api.GET).mock.calls as unknown as [string, { params: { query: { entity_id: string } } }][]
@@ -226,9 +226,9 @@ describe('recording an approval', () => {
     vi.mocked(api.GET).mockImplementation(((path: string) => {
       if (path === '/api/contracts') return Promise.resolve(ok({ items: [], next_cursor: null }))
       if (path === '/api/contracts/{contract_id}') {
-        return Promise.resolve(ok(contract({ id: CONTRACT_ID, titolo: 'Contratto finito', stato: 'terminato' })))
+        return Promise.resolve(ok(contract({ id: CONTRACT_ID, title: 'Contratto finito', status: 'terminated' })))
       }
-      if (path === '/api/work-units') return Promise.resolve(ok({ items: [], troncato: false }))
+      if (path === '/api/work-units') return Promise.resolve(ok({ items: [], truncated: false }))
       return Promise.resolve(ok([]))
     }) as never)
     renderWithQuery(<ApprovalForm initialContractId={CONTRACT_ID} initialDayIds={[]} />)
@@ -250,7 +250,7 @@ describe('recording an approval', () => {
       if (approvals === 1) {
         return Promise.resolve(refused(409, { title: 'x', status: 409, detail: 'una giornata è cambiata', code: 'conflict', instance: '/' }))
       }
-      return Promise.resolve(ok({ approval: { id: 'a1' }, work_units: [row({ id: 'd1', stato: 'approvato' })] }))
+      return Promise.resolve(ok({ approval: { id: 'a1' }, work_units: [row({ id: 'd1', status: 'approved' })] }))
     }) as never)
     const user = userEvent.setup()
     renderWithQuery(<ApprovalForm initialContractId={CONTRACT_ID} initialDayIds={['d1']} />)
@@ -268,7 +268,7 @@ describe('recording an approval', () => {
   })
 
   it('offers a reader nothing to record', () => {
-    auth.ruolo = 'readonly'
+    auth.role = 'readonly'
     serving()
     renderWithQuery(<ApprovalForm initialDayIds={[]} />)
     expect(screen.getByText(/puoi leggere le approvazioni ma non registrarne/)).toBeInTheDocument()

@@ -6,7 +6,7 @@ reimbursable expense for one line per `(rate_card, month)` group of unbilled day
 -- an expense has no rate card to group by, and each is its own commercial fact, so
 grouping would only hide which receipt a line covers.
 
-No schema change to `Invoice`/`InvoiceLine`, and no cap enforcement: `importo_tetto`
+No schema change to `Invoice`/`InvoiceLine`, and no cap enforcement: `amount_cap`
 (`contract_expenses.models`'s own docstring) constrains how much of an expense a
 human rebills at review time, not what this assembly step invents on its own --
 inventing a capped figure here would be exactly the commercial decision
@@ -48,15 +48,15 @@ def unbilled_contract_expense_lines(
     zippable with the line ids `replace_lines` produces (`bind_contract_expenses`),
     the same mechanism `bind_work_units` uses for a `work_unit`."""
     expenses = ContractExpenseRepository(session).unbilled_for_contract(contract_id)
-    righe = [
+    lines = [
         InvoiceLineIn(
-            descrizione=expense.descrizione,
-            quantita=Decimal(1),
-            prezzo_unitario=expense.importo,
+            description=expense.description,
+            quantity=Decimal(1),
+            unit_price=expense.amount,
         )
         for expense in expenses
     ]
-    return righe, [expense.id for expense in expenses]
+    return lines, [expense.id for expense in expenses]
 
 
 def bind_contract_expenses(session: Session, expense_ids: list[UUID], line_ids: list[UUID]) -> None:
@@ -90,8 +90,8 @@ def assemble_unbilled_contract_expenses_into_new_invoice(
 ) -> InvoiceRead:
     """The end-to-end common case: every unbilled, reimbursable expense on
     `contract_id` becomes one line each on a fresh draft invoice for the
-    contract's own customer, under the contract's own azienda (a customer billed by
-    another azienda than the contract does not move the draft), and each expense is
+    contract's own customer, under the contract's own legal entity (a customer billed by
+    another legal entity than the contract does not move the draft), and each expense is
     bound to the line it produced. The draft, its lines and the binding are one
     transaction (`assemble_draft`): an expense billed in the meantime refuses the whole
     thing and no draft is left behind."""
@@ -99,8 +99,8 @@ def assemble_unbilled_contract_expenses_into_new_invoice(
     if contract is None or contract.deleted_at is not None:
         raise NotFound("contract", contract_id)
 
-    righe, expense_ids = unbilled_contract_expense_lines(session, contract_id)
-    if not righe:
+    lines, expense_ids = unbilled_contract_expense_lines(session, contract_id)
+    if not lines:
         raise ValidationFailed(
             ENTITY,
             "contract_id",
@@ -113,9 +113,9 @@ def assemble_unbilled_contract_expenses_into_new_invoice(
 
     return assemble_draft(
         InvoiceService(session, storage),
-        InvoiceCreate(customer_id=contract.customer_id, righe=righe),
+        InvoiceCreate(customer_id=contract.customer_id, lines=lines),
         actor,
-        azienda_id=contract.azienda_id,
+        legal_entity_id=contract.legal_entity_id,
         bind=lambda line_ids: bind_contract_expenses(session, expense_ids, line_ids),
     )
 

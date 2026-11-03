@@ -4,7 +4,7 @@ import { useState, type ReactNode } from 'react'
 import { toast } from '@rebase/ui/sonner'
 import { renderFieldValue } from '@/components/DynamicFieldRenderer'
 import { EntityDetailLayout } from '@/components/EntityDetailLayout'
-import { EntityAttivita } from '@/features/attivita/EntityAttivita'
+import { EntityTask } from '@/features/tasks/EntityTask'
 import { QueryErrorBanner } from '@/components/QueryErrorBanner'
 import { RowActions } from '@/components/RowActions'
 import { Timeline } from '@/components/Timeline'
@@ -90,14 +90,14 @@ function DealCustomerCard({ customerId }: { customerId: string }) {
                 params={{ customerId }}
                 className="underline underline-offset-2"
               >
-                {customer.data.ragione_sociale}
+                {customer.data.legal_name}
               </Link>
             ) : (
               '…'
             )
           }
         />
-        <Row label="P.IVA" value={customer.data ? displayNative(customer.data.partita_iva) : '…'} />
+        <Row label="P.IVA" value={customer.data ? displayNative(customer.data.vat_number) : '…'} />
       </CardContent>
     </Card>
   )
@@ -105,10 +105,10 @@ function DealCustomerCard({ customerId }: { customerId: string }) {
 
 /** The first stage of a kind, by pipeline position: what «Vinto» and «Perso» move to.
  *  A tenant may define more than one of either; the first is the conventional one. */
-function firstOfKind(stages: Stage[], tipo: Stage['tipo']): Stage | undefined {
+function firstOfKind(stages: Stage[], type: Stage['type']): Stage | undefined {
   return stages
-    .filter((stage) => stage.tipo === tipo)
-    .sort((a, b) => a.posizione - b.posizione)[0]
+    .filter((stage) => stage.type === type)
+    .sort((a, b) => a.position - b.position)[0]
 }
 
 /**
@@ -127,7 +127,7 @@ export function DealDetail() {
   const { dealId } = useParams({ from: '/app/deal/$dealId' })
   const navigate = useNavigate()
   const canWrite = useCanWrite()
-  const azienda = useLegalEntity()
+  const legal_entity = useLegalEntity()
   const [editing, setEditing] = useState(false)
   const [problem, setProblem] = useState<ProblemDetail | null>(null)
 
@@ -160,7 +160,7 @@ export function DealDetail() {
   const custom = schema.data?.custom_fields ?? []
   const stageList = stages.data ?? []
   const stage = stageList.find((item) => item.id === deal.pipeline_stage_id)
-  const isOpen = stage?.tipo === 'open'
+  const isOpen = stage?.type === 'open'
   const won = firstOfKind(stageList, 'won')
   const lost = firstOfKind(stageList, 'lost')
 
@@ -172,7 +172,7 @@ export function DealDetail() {
     // re-implementation of any server rule. Mirrors `CustomerDetail`/
     // `PersonDetail`'s own `archive`.
     const confirmed = window.confirm(
-      `Archiviare ${deal.nome}? Il deal non comparirà più negli elenchi, ma i dati restano e l'operazione è reversibile.`,
+      `Archiviare ${deal.name}? Il deal non comparirà più negli elenchi, ma i dati restano e l'operazione è reversibile.`,
     )
     if (!confirmed) return
 
@@ -191,15 +191,15 @@ export function DealDetail() {
     move.mutate({ dealId, stageId })
   }
 
-  // The header's second line: whose deal, and for how much. `customer_ragione_sociale`
+  // The header's second line: whose deal, and for how much. `customer_legal_name`
   // rides on `DealRead` so this costs no request; the Collegamenti tab keeps the full
   // customer card.
-  // And, from the second azienda on, whose azienda it is (REB-626): the deal keeps the
+  // And, from the second legal entity on, whose legal entity it is (REB-626): the deal keeps the
   // one its customer had when it was created (spec §1.7), so the header says it.
   const subtitle = [
-    deal.customer_ragione_sociale,
-    formatMoney(deal.valore_previsto),
-    azienda.several ? azienda.byId(deal.azienda_id)?.nome : undefined,
+    deal.customer_legal_name,
+    formatMoney(deal.expected_value),
+    legal_entity.several ? legal_entity.byId(deal.legal_entity_id)?.name : undefined,
   ]
     .filter((part): part is string => typeof part === 'string' && part !== '' && part !== '—')
     .join(' · ')
@@ -208,7 +208,7 @@ export function DealDetail() {
     <>
       <EntityDetailLayout
         icon={Handshake}
-        title={deal.nome}
+        title={deal.name}
         subtitle={subtitle === '' ? 'Deal' : subtitle}
         entityType="deal"
         entityId={dealId}
@@ -216,7 +216,7 @@ export function DealDetail() {
         invoices={<InvoicesTab owner={{ dealId }} />}
         hours={<TimeEntriesTab dealId={dealId} />}
         economics={<EconomicsTab dealId={dealId} />}
-        attivita={<EntityAttivita link={{ kind: 'deal', id: dealId }} />}
+        tasks={<EntityTask link={{ kind: 'deal', id: dealId }} />}
         emails={gmailConfigured ? <EmailTab entityType="deal" entityId={dealId} /> : undefined}
         actions={
           canWrite && (
@@ -231,7 +231,7 @@ export function DealDetail() {
               <NewProformaButton
                 customerId={deal.customer_id}
                 dealId={deal.id}
-                prefill={{ descrizione: deal.nome, importo: deal.valore_previsto ?? '' }}
+                prefill={{ description: deal.name, amount: deal.expected_value ?? '' }}
               />
               {/* Two outcomes, top right, only while the deal is still open: closing it
                   is the decision this page exists for, but «una sola cosa forte per
@@ -294,11 +294,11 @@ export function DealDetail() {
                 <CardContent className="space-y-5 pt-6">
                   <Section title="Riepilogo">
                     <Row label="Responsabile" value={directory.nameOf(deal.owner_id) ?? '—'} />
-                    <Row label="Valore previsto" value={formatMoney(deal.valore_previsto)} />
-                    <Row label="Probabilità" value={`${deal.probabilita}%`} />
-                    <Row label="Chiusura prevista" value={formatDate(deal.data_chiusura_prevista)} />
-                    {deal.chiuso_il !== null && (
-                      <Row label="Chiuso il" value={formatDate(deal.chiuso_il)} />
+                    <Row label="Valore previsto" value={formatMoney(deal.expected_value)} />
+                    <Row label="Probabilità" value={`${deal.probability}%`} />
+                    <Row label="Chiusura prevista" value={formatDate(deal.expected_close_date)} />
+                    {deal.closed_at !== null && (
+                      <Row label="Chiuso il" value={formatDate(deal.closed_at)} />
                     )}
                     <Row
                       label="Cliente"
@@ -308,16 +308,16 @@ export function DealDetail() {
                           params={{ customerId: deal.customer_id }}
                           className="underline underline-offset-2"
                         >
-                          {deal.customer_ragione_sociale ?? 'Apri il cliente'}
+                          {deal.customer_legal_name ?? 'Apri il cliente'}
                         </Link>
                       }
                     />
                   </Section>
 
                   <Section title="Preventivo">
-                    <Row label="Ore preventivate" value={formatHours(deal.ore_preventivate)} />
-                    <Row label="Valore preventivato" value={formatMoney(deal.valore_preventivato)} />
-                    <Row label="Tariffa oraria" value={formatMoney(deal.tariffa_oraria)} />
+                    <Row label="Ore preventivate" value={formatHours(deal.budgeted_hours)} />
+                    <Row label="Valore preventivato" value={formatMoney(deal.budgeted_value)} />
+                    <Row label="Tariffa oraria" value={formatMoney(deal.hourly_rate)} />
                   </Section>
 
                   {custom.length > 0 && (

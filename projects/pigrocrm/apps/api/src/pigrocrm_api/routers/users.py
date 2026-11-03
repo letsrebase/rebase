@@ -71,8 +71,8 @@ def _invitation_mail(
     settings: Settings,
     origin: str,
     email: str,
-    invitato_da: str,
-    nome: str | None,
+    inviter_name: str,
+    name: str | None,
     raw: str,
 ) -> Mail:
     """The mail an invitation carries (spec §5): same construction as the link by mail,
@@ -81,9 +81,9 @@ def _invitation_mail(
     it reads. `origin` is resolved by each route before its row is committed: an
     installation that cannot build a link must not half-create an invitation over it."""
     slug = tenant_slug(request)
-    spazio = slug or settings.root_slug or "PigroCRM"
+    space = slug or settings.root_slug or "PigroCRM"
     url = _invite_url(origin, f"/{slug}" if slug else "", raw)
-    return invitation_mail(email, spazio, invitato_da, url, nome=nome, giorni=INVITATION_TTL_DAYS)
+    return invitation_mail(email, space, inviter_name, url, name=name, days=INVITATION_TTL_DAYS)
 
 
 @router.post("/invites", response_model=InvitationRead, status_code=status.HTTP_201_CREATED)
@@ -119,7 +119,7 @@ def create_invite(
     service = InvitationService(session)
     invite, raw = service.create(data, actor)
     receipt = sender.submit(
-        _invitation_mail(request, settings, origin, invite.email, inviter.nome, invite.nome, raw)
+        _invitation_mail(request, settings, origin, invite.email, inviter.name, invite.name, raw)
     )
     return service.record_mail(invite.id, receipt)
 
@@ -166,8 +166,8 @@ def resend_invite(
             settings,
             origin,
             invite.email,
-            inviter.nome if inviter else "",
-            invite.nome,
+            inviter.name if inviter else "",
+            invite.name,
             raw,
         )
     )

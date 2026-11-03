@@ -61,11 +61,11 @@ interface EntityDetailLayoutProps {
    */
   emails?: ReactNode
   /**
-   * The Attività tab's contents: what is still to be done about this record (REB-721), as
+   * The Tasks tab's contents: what is still to be done about this record (REB-721), as
    * opposed to the Timeline, which is what already happened to it. Optional like every
    * slot above, and the same reasoning: an absent prop is no tab at all.
    */
-  attivita?: ReactNode
+  tasks?: ReactNode
   entityType: TimelineEntityType
   entityId: string
   /**
@@ -80,10 +80,10 @@ interface EntityDetailLayoutProps {
 }
 
 /**
- * One layout for Customer, Person and Deal: the same *Panoramica · Timeline ·
- * Collegamenti* shape for all three, so the product is predictable to learn.
+ * One layout for Customer, Person and Deal: the same *Overview · Timeline ·
+ * Links* shape for all three, so the product is predictable to learn.
  * Three similar pages drift apart from each other over time; one shared
- * component cannot. Later slices add Documenti, Attività and Fatture as further
+ * component cannot. Later slices add Documents, Tasks and Invoices as further
  * tabs here, once, for all three entities at once -- never as a fourth near-copy
  * of this file.
  */
@@ -100,7 +100,7 @@ export function EntityDetailLayout({
   hours,
   economics,
   emails,
-  attivita,
+  tasks,
   entityType,
   entityId,
   timelineLimit,
@@ -118,19 +118,19 @@ export function EntityDetailLayout({
         tabs={
           <TabsList variant="line">
             <TabsTrigger value="panoramica">Panoramica</TabsTrigger>
-            {documents && <TabsTrigger value="documenti">Documenti</TabsTrigger>}
-            {invoices && <TabsTrigger value="fatture">Fatture</TabsTrigger>}
-            {contracts && <TabsTrigger value="contratti">Contratti</TabsTrigger>}
-            {hours && <TabsTrigger value="ore">Ore</TabsTrigger>}
-            {economics && <TabsTrigger value="economia">Economia</TabsTrigger>}
+            {documents && <TabsTrigger value="documents">Documenti</TabsTrigger>}
+            {invoices && <TabsTrigger value="invoices">Fatture</TabsTrigger>}
+            {contracts && <TabsTrigger value="contracts">Contratti</TabsTrigger>}
+            {hours && <TabsTrigger value="hours">Ore</TabsTrigger>}
+            {economics && <TabsTrigger value="economics">Economia</TabsTrigger>}
             {/* Before the Email and the Timeline tabs: those two are a record of what
                 already happened, and this is what is still to be done. */}
-            {attivita && <TabsTrigger value="attivita">Attività</TabsTrigger>}
+            {tasks && <TabsTrigger value="tasks">Attività</TabsTrigger>}
             {/* Immediately before Timeline: both are a record of what already happened,
                 and everything to the left of them is a thing the user maintains. */}
             {emails && <TabsTrigger value="email">Email</TabsTrigger>}
             <TabsTrigger value="timeline">Timeline</TabsTrigger>
-            <TabsTrigger value="collegamenti">Collegamenti</TabsTrigger>
+            <TabsTrigger value="links">Collegamenti</TabsTrigger>
           </TabsList>
         }
       />
@@ -140,33 +140,33 @@ export function EntityDetailLayout({
           {overview}
         </TabsContent>
         {documents && (
-          <TabsContent value="documenti" className="mt-6">
+          <TabsContent value="documents" className="mt-6">
             {documents}
           </TabsContent>
         )}
         {invoices && (
-          <TabsContent value="fatture" className="mt-6">
+          <TabsContent value="invoices" className="mt-6">
             {invoices}
           </TabsContent>
         )}
         {contracts && (
-          <TabsContent value="contratti" className="mt-6">
+          <TabsContent value="contracts" className="mt-6">
             {contracts}
           </TabsContent>
         )}
         {hours && (
-          <TabsContent value="ore" className="mt-6">
+          <TabsContent value="hours" className="mt-6">
             {hours}
           </TabsContent>
         )}
         {economics && (
-          <TabsContent value="economia" className="mt-6">
+          <TabsContent value="economics" className="mt-6">
             {economics}
           </TabsContent>
         )}
-        {attivita && (
-          <TabsContent value="attivita" className="mt-6">
-            {attivita}
+        {tasks && (
+          <TabsContent value="tasks" className="mt-6">
+            {tasks}
           </TabsContent>
         )}
         {emails && (
@@ -177,7 +177,7 @@ export function EntityDetailLayout({
         <TabsContent value="timeline" className="mt-6">
           <Timeline entityType={entityType} entityId={entityId} limit={timelineLimit} />
         </TabsContent>
-        <TabsContent value="collegamenti" className="mt-6">
+        <TabsContent value="links" className="mt-6">
           {links ?? <p className="text-muted-foreground">Nessun collegamento.</p>}
         </TabsContent>
       </div>

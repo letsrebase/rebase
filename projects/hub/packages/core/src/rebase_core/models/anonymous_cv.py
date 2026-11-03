@@ -18,7 +18,7 @@ from rebase_core.models.team import CARD_MODEL_MAX_LENGTH
 class AnonymousCvRow(Base):
     """The last anonymous CV written for a freelancer (REB-862, migration 0044): `body` is
     the `AnonymousCv` as validated, `cv_sha256` the hash of the CV file it was written
-    from (the value `cards.stored_persona` computes) and `prompt_version` the prompt that
+    from (the value `cards.stored_person` computes) and `prompt_version` the prompt that
     wrote it. A download reuses the row only when both still match; otherwise the CV is
     written again and the row replaced. Gone with the person (`ON DELETE CASCADE`) and
     with the CV (`FreelancerService.clear_cv`)."""

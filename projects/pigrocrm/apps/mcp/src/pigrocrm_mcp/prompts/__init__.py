@@ -43,30 +43,33 @@ def register_prompts(mcp: MCPServer, context: McpContext, guard: Callable[..., A
     than this does while adding a type nobody else in this package needs.
     """
 
-    @mcp.prompt(name="revisione-pipeline")
+    @mcp.prompt(name="pipeline-review")
     @guard
-    def revisione_pipeline(da: str | None = None, a: str | None = None) -> list[dict[str, Any]]:
+    def review_pipeline(
+        date_from: str | None = None, date_to: str | None = None
+    ) -> list[dict[str, Any]]:
         """La revisione settimanale della pipeline commerciale, con i deal fermi e le
-        offerte in attesa. `da` e `a` sono date ISO opzionali: senza, il mese in corso."""
-        return dashboard_prompts.revisione_pipeline(context, da, a)
+        offerte in attesa. `date_from` e `date_to` sono date ISO opzionali: senza, il mese in
+        corso."""
+        return dashboard_prompts.review_pipeline(context, date_from, date_to)
 
-    @mcp.prompt(name="chiusura-mese")
+    @mcp.prompt(name="month-close")
     @guard
-    def chiusura_mese(anno: int, mese: int) -> list[dict[str, Any]]:
+    def closing_month(year: int, month: int) -> list[dict[str, Any]]:
         """La lista di cose da fare prima di chiudere un mese: conto economico del periodo,
         ore non fatturate, fatture scadute, e se il periodo è già chiuso."""
-        return dashboard_prompts.chiusura_mese(context, anno, mese)
+        return dashboard_prompts.closing_month(context, year, month)
 
-    @mcp.prompt(name="ore-da-registrare")
+    @mcp.prompt(name="hours-to-log")
     @guard
-    def ore_da_registrare(settimana: str | None = None) -> list[dict[str, Any]]:
+    def hours_to_log(week: str | None = None) -> list[dict[str, Any]]:
         """I giorni della settimana corrente senza nessuna ora registrata, con i deal su
         cui si è lavorato di recente."""
-        return dashboard_prompts.ore_da_registrare(context, settimana)
+        return dashboard_prompts.hours_to_log(context, week)
 
-    @mcp.prompt(name="stato-cliente")
+    @mcp.prompt(name="customer-status")
     @guard
-    def stato_cliente(customer_id: str) -> list[dict[str, Any]]:
+    def status_customer(customer_id: str) -> list[dict[str, Any]]:
         """Il briefing prima di una telefonata: fatture non incassate, e la scheda completa
         del cliente allegata come risorsa."""
-        return customer_prompts.stato_cliente(context, customer_id)
+        return customer_prompts.status_customer(context, customer_id)

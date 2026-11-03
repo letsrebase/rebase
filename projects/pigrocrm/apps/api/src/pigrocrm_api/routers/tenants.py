@@ -30,7 +30,7 @@ from pigrocrm.core.tenants.welcome import welcome
 from pigrocrm_api.deps import SettingsDep, TenantsRegistryDep, space_session_factory
 from pigrocrm_api.errors import PROBLEM_RESPONSES
 from pigrocrm_api.ratelimit import (
-    DISPONIBILE_REQUESTS_PER_MINUTE,
+    AVAILABLE_REQUESTS_BY_MINUTE,
     RETRY_AFTER_SECONDS,
     TOO_MANY_REQUESTS_RESPONSE,
     spend_for_recipient,
@@ -131,7 +131,7 @@ class MemberAnswer(BaseModel):
     yet, so no names, no count and no slugs; which spaces are whose is the mail's to
     tell."""
 
-    membro: bool
+    member: bool
     has_spaces: bool
 
 
@@ -152,13 +152,13 @@ def member(
     address = str(payload.email).strip().lower()
     found = lookup_member(settings, address)
     return MemberAnswer(
-        membro=found.membro,
+        member=found.member,
         has_spaces=TenantService(registry, settings).count_for_owner(address) > 0,
     )
 
 
 @router.get(
-    "/{slug}/disponibile",
+    "/{slug}/available",
     response_model=TenantAvailability,
     responses={429: TOO_MANY_REQUESTS_RESPONSE},
 )
@@ -168,11 +168,11 @@ def availability(
     """Whether a name can still be taken, and if not why -- reserved, malformed or in
     use -- in the words the page shows while the person is still typing. Unauthenticated
     by design, like `member` and `signup`, so it is throttled the same way (REB-228) --
-    but on its own budget (`scope="disponibile"`, `DISPONIBILE_REQUESTS_PER_MINUTE`),
+    but on its own budget (`scope="available"`, `AVAILABLE_REQUESTS_BY_MINUTE`),
     since this is the one route of the three a person's own typing calls repeatedly: a
     shared bucket with `member` and `signup` would let a few hesitations while naming a
     business starve the tokens the actual `POST /` still needs to create the space."""
-    spend_one(request, scope="disponibile", per_minute=DISPONIBILE_REQUESTS_PER_MINUTE)
+    spend_one(request, scope="available", per_minute=AVAILABLE_REQUESTS_BY_MINUTE)
     return TenantService(registry, settings).availability(slug.strip().lower())
 
 
@@ -211,7 +211,7 @@ def signup(
     The one exception to "the signup proves nothing" (REB-677): a browser that holds a
     live `pigrocrm_identity` cookie for the very address the signup carries has already
     proven it, by a link it spent in another space, so the new admin starts with
-    `email_verificata_il` set and can invite at once. No cookie, an expired or revoked
+    `email_verified_at` set and can invite at once. No cookie, an expired or revoked
     one, or another address changes nothing: typing an address proves nothing, and
     trusting it would let anyone browse the spaces of an address they do not own."""
     spend_one(request)
@@ -221,7 +221,7 @@ def signup(
     # The global bucket guards the expensive part (the database and its migrations): a name
     # `provision` refuses at the registry row (taken or reserved: 409, 422) costs nothing
     # and goes straight there without spending it.
-    if spaces.availability(data.slug).disponibile:
+    if spaces.availability(data.slug).available:
         spend_global("signup", per_minute=GLOBAL_SIGNUPS_PER_MINUTE)
     with _provisioning_slot():
         tenant = spaces.provision(data)
@@ -239,10 +239,10 @@ def signup(
         if admin is None:  # pragma: no cover - provision just created it
             raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, "spazio senza admin")
         if already_proven:
-            admin.email_verificata_il = datetime.now(UTC)
+            admin.email_verified_at = datetime.now(UTC)
             space.commit()
-        access = issue_access_token(admin.id, admin.ruolo, settings, space=tenant.slug)
-        mail = welcome(space, settings, mailer, tenant.owner_email, tenant.slug, membro=data.membro)
+        access = issue_access_token(admin.id, admin.role, settings, space=tenant.slug)
+        mail = welcome(space, settings, mailer, tenant.owner_email, tenant.slug, member=data.member)
     set_access_cookie(
         response,
         access,

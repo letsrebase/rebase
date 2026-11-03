@@ -17,22 +17,22 @@ export type PeriodPnl = components['schemas']['PeriodPnl']
 export type PnlTotals = components['schemas']['PnlTotals']
 
 /**
- * Which date a period P&L attributes revenue by (ORB-61). `emissione` is the invoice's
+ * Which date a period P&L attributes revenue by (ORB-61). `issue` is the invoice's
  * own date, the reading slice 4 §7.1 chose («ricavo = fatturato») and the default;
- * `competenza` is `coalesce(competenza_da, data_emissione)` on the server, so August
+ * `accrual` is `coalesce(competenza_da, data_emissione)` on the server, so August
  * work invoiced in September lands in August, and an invoice with no period falls back
  * to its date rather than out of the year. Two readings side by side rather than one
  * silently changed, which is the spec's own pattern for cash against accrual (§13).
  */
-export type PnlBase = 'emissione' | 'competenza'
+export type PnlBase = 'issue' | 'accrual'
 
-export const PNL_BASES: readonly PnlBase[] = ['emissione', 'competenza']
+export const PNL_BASES: readonly PnlBase[] = ['issue', 'accrual']
 
 /** The chip that selects each reading. A total `Record`, like `INVOICE_STATE_LABELS`, so
  *  a third base fails to compile here rather than rendering an unlabelled chip. */
 export const PNL_BASE_LABELS: Record<PnlBase, string> = {
-  emissione: 'Per emissione',
-  competenza: 'Per competenza',
+  issue: 'Per emissione',
+  accrual: 'Per competenza',
 }
 
 /** The window every period-wide report is asked for. Not exported: the one hook that
@@ -69,7 +69,7 @@ export function usePeriodPnl(params: PeriodParams) {
 export function useToInvoiceDraft(dealId: string) {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: (body: { entry_ids: string[]; raggruppa_per_mese: boolean }) =>
+    mutationFn: (body: { entry_ids: string[]; group_by_month: boolean }) =>
       unwrap(
         api.POST('/api/deals/{deal_id}/time-entries/to-invoice-draft', {
           params: { path: { deal_id: dealId } },

@@ -14,8 +14,8 @@ import {
 const DEAL_A = 'aaaaaaaa-aaaa-7aaa-8aaa-aaaaaaaaaaaa'
 const DEAL_B = 'bbbbbbbb-bbbb-7bbb-8bbb-bbbbbbbbbbbb'
 
-const entry = (dealId: string, data: string, ore: string, id = `${dealId}-${data}`) =>
-  ({ id, deal_id: dealId, data, ore }) as never
+const entry = (dealId: string, date: string, hours: string, id = `${dealId}-${date}`) =>
+  ({ id, deal_id: dealId, date, hours }) as never
 
 describe('weekDays', () => {
   it('is Monday-first and seven days long', () => {
@@ -64,8 +64,8 @@ describe('the grid and its totals', () => {
   )
 
   it('places each entry in its deal row and its day column', () => {
-    expect(grid.get(DEAL_A)?.get('2026-03-09')?.ore).toBe('2.50')
-    expect(grid.get(DEAL_A)?.get('2026-03-10')?.ore).toBeNull()
+    expect(grid.get(DEAL_A)?.get('2026-03-09')?.hours).toBe('2.50')
+    expect(grid.get(DEAL_A)?.get('2026-03-10')?.hours).toBeNull()
     expect(grid.get(DEAL_A)?.get('2026-03-30')).toBeUndefined()
   })
 
@@ -99,7 +99,7 @@ describe('the grid and its totals', () => {
       ],
       days,
     )
-    expect(busy.get(DEAL_A)?.get('2026-03-09')).toEqual({ entryId: 'first', ore: '2.50' })
+    expect(busy.get(DEAL_A)?.get('2026-03-09')).toEqual({ entryId: 'first', hours: '2.50' })
   })
 })
 

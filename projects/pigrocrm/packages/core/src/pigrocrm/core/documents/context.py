@@ -18,12 +18,12 @@ from pigrocrm.core.documents.models import Document, DocumentVersion
 from pigrocrm.core.documents.naming import slugify_folder
 from pigrocrm.core.documents.repository import DocumentRepository
 from pigrocrm.core.documents.schemas import ALLOWED_CONTENT_TYPES, DocumentCreate
-from pigrocrm.core.emitter.assets import LegalEntityAssets
-from pigrocrm.core.emitter.service import LegalEntityService
 from pigrocrm.core.errors import NotFound, ValidationFailed
 from pigrocrm.core.fields.schemas import EntityType
 from pigrocrm.core.fields.service import FieldDefinitionService
 from pigrocrm.core.fields.validator import validate_custom_fields
+from pigrocrm.core.legal_entities.assets import LegalEntityAssets
+from pigrocrm.core.legal_entities.service import LegalEntityService
 from pigrocrm.core.storage.base import DocumentStorage
 from pigrocrm.core.templates.service import TemplateService
 
@@ -43,7 +43,7 @@ class DocumentContext:
         self.fields = FieldDefinitionService(session)
         self.activities = ActivityService(session)
         self.templates = TemplateService(session)
-        self.emitter = LegalEntityService(session)
+        self.legal_entity = LegalEntityService(session)
         self.assets = LegalEntityAssets(session, storage)
 
     def require(self, document_id: UUID) -> Document:
@@ -98,10 +98,10 @@ class DocumentContext:
             raise NotFound("contract", contract_id)
         return contract
 
-    def azienda_of(self, owner: Customer | Deal | Contract) -> UUID:
-        """The azienda a new document hangs on (REB-623, spec §1.7): its owner's.
-        Refused when that azienda is deactivated (spec §3)."""
-        return self.emitter.inherited(owner.azienda_id, ENTITY)
+    def legal_entity_of(self, owner: Customer | Deal | Contract) -> UUID:
+        """The legal entity a new document hangs on (REB-623, spec §1.7): its owner's.
+        Refused when that legal entity is deactivated (spec §3)."""
+        return self.legal_entity.inherited(owner.legal_entity_id, ENTITY)
 
     def customer_for(
         self, customer_id: UUID | None, deal_id: UUID | None, contract_id: UUID | None
@@ -120,10 +120,10 @@ class DocumentContext:
         return self.customer_for(document.customer_id, document.deal_id, document.contract_id)
 
     def storage_key_for(
-        self, document: Document, numero: int, content_type: str, *, prefix: str | None = None
+        self, document: Document, number: int, content_type: str, *, prefix: str | None = None
     ) -> str:
-        """`{cliente-slug}-{id[:8]}/{document_id}/v{numero}{ext}`, or
-        `{prefix}/v{numero}{ext}` when a caller supplies its own prefix.
+        """`{cliente-slug}-{id[:8]}/{document_id}/v{number}{ext}`, or
+        `{prefix}/v{number}{ext}` when a caller supplies its own prefix.
 
         The customer-id fragment is what keeps the folder stable when a customer is
         renamed -- the slug alone would send the next version into a different folder
@@ -136,37 +136,37 @@ class DocumentContext:
         to be the security boundary itself.
 
         The `prefix` override exists for the fiscal artefacts of slice 3, which need
-        `fatture/{anno}/{numero}/` and `proforma/{id}/` rather than a customer folder:
+        `invoices/{year}/{number}/` and `proforma/{id}/` rather than a customer folder:
         the bytes live under a prefix that keeps a file identifiable when it is pulled
         out of its context, which is one of the four independent mechanisms that stop a
         proforma from being read as an invoice.
         """
         extension = ALLOWED_CONTENT_TYPES[content_type]
         if prefix is not None:
-            return f"{prefix}/v{numero}{extension}"
+            return f"{prefix}/v{number}{extension}"
         customer = self.customer_of(document)
         folder = (
-            f"{slugify_folder(customer.ragione_sociale)}-{str(customer.id)[:_CUSTOMER_ID_FRAGMENT]}"
+            f"{slugify_folder(customer.legal_name)}-{str(customer.id)[:_CUSTOMER_ID_FRAGMENT]}"
             if customer
             else "senza-cliente"
         )
-        return f"{folder}/{document.id}/v{numero}{extension}"
+        return f"{folder}/{document.id}/v{number}{extension}"
 
     def resolve_version(
-        self, document_id: UUID, numero: int | None
+        self, document_id: UUID, number: int | None
     ) -> tuple[Document, DocumentVersion]:
         """The document and the version a caller asked for -- `None` meaning "the
         current one".
 
         Shared by `download` and `extract_text` rather than written twice: the two differ
-        only in what they do with the bytes, and a second copy of "no `numero` means
-        `versione_corrente`" is a second place for that default to drift. A document
-        with no version at all (`versione_corrente is None`) and a `numero` nobody ever
+        only in what they do with the bytes, and a second copy of "no `number` means
+        `current_version`" is a second place for that default to drift. A document
+        with no version at all (`versione_corrente is None`) and a `number` nobody ever
         uploaded answer the same `NotFound`, because to the caller they are the same
         fact: that version is not there.
         """
         document = self.require(document_id)
-        wanted = numero if numero is not None else document.versione_corrente
+        wanted = number if number is not None else document.current_version
         version = self.repo.version(document_id, wanted) if wanted else None
         if version is None:
             raise NotFound("document_version", f"{document_id}#{wanted}")
@@ -180,7 +180,7 @@ class DocumentContext:
     # ---- rows -----------------------------------------------------------------
 
     def create_row(
-        self, data: DocumentCreate, actor: Actor, *, azienda_id: UUID | None = None
+        self, data: DocumentCreate, actor: Actor, *, legal_entity_id: UUID | None = None
     ) -> Document:
         """Everything `DocumentService.create` does except the commit, so `import_bytes`
         can compose it with `add_version_row` inside one transaction.
@@ -193,24 +193,24 @@ class DocumentContext:
         """
         actor.require_write("create_document")
         payload = data.model_dump()
-        if azienda_id is None:
-            # The owner is the authority on the azienda, so it must be there to ask. A
-            # caller that names the azienda is filing a record's own child (an invoice's
+        if legal_entity_id is None:
+            # The owner is the authority on the legal entity, so it must be there to ask. A
+            # caller that names the legal entity is filing a record's own child (an invoice's
             # artefact): the record already holds its owner, which may have moved to an
-            # azienda this member cannot see, and the artefact must still render. The
-            # azienda is then the record's own, not the one its customer is in now: an
-            # invoice keeps its azienda when its customer moves (spec §1.7).
+            # legal entity this member cannot see, and the artefact must still render. The
+            # legal entity is then the record's own, not the one its customer is in now: an
+            # invoice keeps its legal entity when its customer moves (spec §1.7).
             owner = self.check_owner(
                 payload["customer_id"], payload["deal_id"], payload["contract_id"]
             )
-            azienda_id = self.azienda_of(owner)
+            legal_entity_id = self.legal_entity_of(owner)
         # Only an offer has a state; everything else keeps NULL. A new offer starts as
         # a draft rather than stateless, so a Kanban-style state picker always has a
         # value to show.
-        is_offer = payload["tipo"] == "offerta"
-        payload["stato"] = (payload.get("stato") or "bozza") if is_offer else None
+        is_offer = payload["type"] == "offer"
+        payload["status"] = (payload.get("status") or "draft") if is_offer else None
         payload["custom_fields"] = self.validated_custom(payload.get("custom_fields") or {})
-        payload["azienda_id"] = azienda_id
+        payload["legal_entity_id"] = legal_entity_id
 
         document = self.repo.add(Document(**payload))
         self.activities.record(
@@ -218,6 +218,6 @@ class DocumentContext:
             document.id,
             "created",
             actor,
-            {"titolo": document.titolo, "tipo": document.tipo},
+            {"title": document.title, "type": document.type},
         )
         return document

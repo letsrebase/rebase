@@ -28,10 +28,10 @@ export function SpaceMenu({
           disabled={enteringSlug !== null}
           onSelect={() => onEnter(space)}
         >
-          {space.invito ? <MailPlus className="size-4" /> : <ArrowLeftRight className="size-4" />}
+          {space.invitation ? <MailPlus className="size-4" /> : <ArrowLeftRight className="size-4" />}
           <span className="flex-1 truncate">{space.slug}</span>
           <span className="text-xs text-muted-foreground">
-            {space.invito ? 'Invito' : roleLabel(space.ruolo)}
+            {space.invitation ? 'Invito' : roleLabel(space.role)}
           </span>
         </DropdownMenuItem>
       ))}

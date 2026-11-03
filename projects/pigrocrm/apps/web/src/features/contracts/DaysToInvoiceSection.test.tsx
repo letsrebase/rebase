@@ -23,36 +23,36 @@ function ok(data: unknown) {
 }
 
 const OCTOBER = {
-  mese: '2026-10',
-  descrizione: 'Attività ottobre 2026 - 1.50 giorno',
-  giornate: 2,
-  quantita: '1.50',
-  unita_misura: 'giorno',
-  prezzo_unitario: '500.00',
-  importo: '750.00',
+  month: '2026-10',
+  description: 'Attività ottobre 2026 - 1.50 giorno',
+  work_units: 2,
+  quantity: '1.50',
+  unit_of_measure: 'giorno',
+  unit_price: '500.00',
+  amount: '750.00',
 }
 const NOVEMBER = {
-  mese: '2026-11',
-  descrizione: 'Attività novembre 2026 - 1.00 giorno',
-  giornate: 1,
-  quantita: '1.00',
-  unita_misura: 'giorno',
-  prezzo_unitario: '500.00',
-  importo: '500.00',
+  month: '2026-11',
+  description: 'Attività novembre 2026 - 1.00 giorno',
+  work_units: 1,
+  quantity: '1.00',
+  unit_of_measure: 'giorno',
+  unit_price: '500.00',
+  amount: '500.00',
 }
 
 function days(overrides: Record<string, unknown> = {}) {
   return {
     contract_id: 'c1',
-    divisa: 'EUR',
-    righe: [OCTOBER, NOVEMBER],
-    mesi: ['2026-10', '2026-11'],
-    giornate: 3,
-    quantita: '2.50',
-    imponibile: '1250.00',
-    senza_tariffa: [],
-    senza_approvazione: 0,
-    fatturabile: true,
+    currency: 'EUR',
+    lines: [OCTOBER, NOVEMBER],
+    months: ['2026-10', '2026-11'],
+    work_units: 3,
+    quantity: '2.50',
+    taxable_amount: '1250.00',
+    without_rate: [],
+    without_approval: 0,
+    billable: true,
     ...overrides,
   }
 }
@@ -61,7 +61,7 @@ function renderSection() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(
     <QueryClientProvider client={client}>
-      <DaysToInvoiceSection contractId="c1" divisa="EUR" />
+      <DaysToInvoiceSection contractId="c1" currency="EUR" />
     </QueryClientProvider>,
   )
 }
@@ -104,8 +104,8 @@ describe('DaysToInvoiceSection', () => {
   })
 
   it('bills one month when one is chosen, asking the server for that month', async () => {
-    vi.mocked(api.GET).mockImplementation(((_path: string, init: { params: { query?: { da?: string } } }) =>
-      ok(init.params.query?.da === '2026-10-01' ? days({ righe: [OCTOBER], mesi: ['2026-10', '2026-11'], imponibile: '750.00' }) : days())) as never)
+    vi.mocked(api.GET).mockImplementation(((_path: string, init: { params: { query?: { from?: string } } }) =>
+      ok(init.params.query?.from === '2026-10-01' ? days({ lines: [OCTOBER], months: ['2026-10', '2026-11'], taxable_amount: '750.00' }) : days())) as never)
     vi.mocked(api.POST).mockImplementation((() => ok({ id: 'inv-1' })) as never)
     renderSection()
 
@@ -116,13 +116,13 @@ describe('DaysToInvoiceSection', () => {
 
     expect(api.POST).toHaveBeenCalledWith(
       '/api/contracts/{contract_id}/invoice-days',
-      expect.objectContaining({ body: { da: '2026-10-01', a: '2026-10-31' } }),
+      expect.objectContaining({ body: { from: '2026-10-01', to: '2026-10-31' } }),
     )
   })
 
   it('stops the button and names the days no rate card covers', async () => {
     vi.mocked(api.GET).mockImplementation(
-      (() => ok(days({ senza_tariffa: ['2026-03-05'], fatturabile: false }))) as never,
+      (() => ok(days({ without_rate: ['2026-03-05'], billable: false }))) as never,
     )
     renderSection()
 
@@ -135,11 +135,11 @@ describe('DaysToInvoiceSection', () => {
       (() =>
         ok(
           days({
-            righe: [OCTOBER],
-            mesi: ['2026-10'],
-            imponibile: '750.00',
-            senza_tariffa: ['2026-11-03'],
-            fatturabile: false,
+            lines: [OCTOBER],
+            months: ['2026-10'],
+            taxable_amount: '750.00',
+            without_rate: ['2026-11-03'],
+            billable: false,
           }),
         )) as never,
     )
@@ -152,7 +152,7 @@ describe('DaysToInvoiceSection', () => {
 
   it('says why a contract in another currency cannot be billed from here', async () => {
     vi.mocked(api.GET).mockImplementation(
-      (() => ok(days({ fatturabile: false, motivo_blocco: 'il contratto è in USD: le fatture si emettono in EUR' }))) as never,
+      (() => ok(days({ billable: false, block_reason: 'il contratto è in USD: le fatture si emettono in EUR' }))) as never,
     )
     renderSection()
 
@@ -162,7 +162,7 @@ describe('DaysToInvoiceSection', () => {
 
   it('says how many days wait for an approval, and offers nothing when none is ready', async () => {
     vi.mocked(api.GET).mockImplementation(
-      (() => ok(days({ righe: [], mesi: [], giornate: 0, imponibile: '0.00', senza_approvazione: 2, fatturabile: false }))) as never,
+      (() => ok(days({ lines: [], months: [], work_units: 0, taxable_amount: '0.00', without_approval: 2, billable: false }))) as never,
     )
     renderSection()
 

@@ -68,7 +68,7 @@ def test_set_state_moves_one_step_at_a_time(clean_referrals: Session) -> None:
     referrer_id = _member(clean_referrals)
     code = ReferralService(clean_referrals).code_for(referrer_id)
     admin_id = an_admin(clean_referrals)
-    freelancer_id = _card(clean_referrals, rif=code)
+    freelancer_id = _card(clean_referrals, ref=code)
     company_id = _request(clean_referrals)
     _fiscal(clean_referrals, freelancer_id, admin_id)
     _active_framework(clean_referrals, freelancer_id, admin_id)
@@ -79,16 +79,16 @@ def test_set_state_moves_one_step_at_a_time(clean_referrals: Session) -> None:
     assert reward is not None
     service = ReferralLedgerService(clean_referrals)
 
-    with pytest.raises(ValidationFailed, match="si passa solo a"):
-        service.set_state(reward.id, "pagato", admin_id)
+    with pytest.raises(ValidationFailed, match="da da_confermare si passa solo a confermato"):
+        service.set_state(reward.id, "paid", admin_id)
 
-    confirmed = service.set_state(reward.id, "confermato", admin_id)
-    assert confirmed.stato == "confermato"
+    confirmed = service.set_state(reward.id, "confirmed", admin_id)
+    assert confirmed.status == "confirmed"
     assert confirmed.confirmed_by == admin_id
     assert confirmed.confirmed_at is not None
 
-    paid = service.set_state(reward.id, "pagato", admin_id)
-    assert paid.stato == "pagato"
+    paid = service.set_state(reward.id, "paid", admin_id)
+    assert paid.status == "paid"
     assert paid.paid_at is not None
 
 
@@ -96,7 +96,7 @@ def test_set_price_only_before_confirmation(clean_referrals: Session) -> None:
     referrer_id = _member(clean_referrals)
     code = ReferralService(clean_referrals).code_for(referrer_id)
     admin_id = an_admin(clean_referrals)
-    freelancer_id = _card(clean_referrals, rif=code)
+    freelancer_id = _card(clean_referrals, ref=code)
     company_id = _request(clean_referrals)
     _fiscal(clean_referrals, freelancer_id, admin_id)
     _active_framework(clean_referrals, freelancer_id, admin_id)
@@ -110,7 +110,7 @@ def test_set_price_only_before_confirmation(clean_referrals: Session) -> None:
     priced = service.set_price(reward.id, Decimal("100.00"), Decimal("10.00"))
     assert (priced.base_amount, priced.reward_amount) == (Decimal("100.00"), Decimal("10.00"))
 
-    service.set_state(reward.id, "confermato", admin_id)
+    service.set_state(reward.id, "confirmed", admin_id)
     with pytest.raises(ValidationFailed, match="prima della conferma"):
         service.set_price(reward.id, Decimal("1"), Decimal("1"))
 
@@ -118,9 +118,9 @@ def test_set_price_only_before_confirmation(clean_referrals: Session) -> None:
 def test_a_stale_writer_cannot_reprice_a_reward_another_admin_just_confirmed(
     clean_referrals: Session,
 ) -> None:
-    """REB-566: `set_price` read `stato`, checked it, then wrote, with no lock. A second
+    """REB-566: `set_price` read `status`, checked it, then wrote, with no lock. A second
     session that had loaded the reward before the confirmation committed still saw
-    `da_confermare` and wrote its price over the confirmed figure. The locking read
+    `to_confirm` and wrote its price over the confirmed figure. The locking read
     re-reads the row, so the stale session is refused."""
     admin_id = an_admin(clean_referrals)
     reward_id = _signed_reward(clean_referrals, admin_id)
@@ -130,9 +130,9 @@ def test_a_stale_writer_cannot_reprice_a_reward_another_admin_just_confirmed(
 
     with session_factory(clean_referrals.get_bind())() as stale:  # type: ignore[arg-type]
         loaded = stale.get(ReferralReward, reward_id)
-        assert loaded is not None and loaded.stato == "da_confermare"
+        assert loaded is not None and loaded.status == "to_confirm"
 
-        ReferralLedgerService(clean_referrals).set_state(reward_id, "confermato", admin_id)
+        ReferralLedgerService(clean_referrals).set_state(reward_id, "confirmed", admin_id)
 
         with pytest.raises(ValidationFailed, match="prima della conferma"):
             ReferralLedgerService(stale).set_price(reward_id, Decimal("1.00"), Decimal("0.10"))
@@ -140,7 +140,7 @@ def test_a_stale_writer_cannot_reprice_a_reward_another_admin_just_confirmed(
     clean_referrals.expire_all()
     stored = clean_referrals.get(ReferralReward, reward_id)
     assert stored is not None
-    assert stored.stato == "confermato"
+    assert stored.status == "confirmed"
     assert stored.reward_amount == confirmed_amount
 
 
@@ -149,19 +149,19 @@ def test_a_stale_writer_cannot_confirm_a_reward_twice(clean_referrals: Session) 
     same reward must leave the first one's signature and timestamp, and the second is
     told the reward has moved on."""
     admin_id = an_admin(clean_referrals)
-    other_admin = User(email="anna@rebase.it", nome="Anna", cognome="", role="admin")
+    other_admin = User(email="anna@rebase.it", first_name="Anna", last_name="", role="admin")
     clean_referrals.add(other_admin)
     clean_referrals.commit()
     reward_id = _signed_reward(clean_referrals, admin_id)
 
     with session_factory(clean_referrals.get_bind())() as stale:  # type: ignore[arg-type]
         loaded = stale.get(ReferralReward, reward_id)
-        assert loaded is not None and loaded.stato == "da_confermare"
+        assert loaded is not None and loaded.status == "to_confirm"
 
-        ReferralLedgerService(clean_referrals).set_state(reward_id, "confermato", admin_id)
+        ReferralLedgerService(clean_referrals).set_state(reward_id, "confirmed", admin_id)
 
-        with pytest.raises(ValidationFailed, match="si passa solo a pagato"):
-            ReferralLedgerService(stale).set_state(reward_id, "confermato", other_admin.id)
+        with pytest.raises(ValidationFailed, match="da confermato si passa solo a pagato"):
+            ReferralLedgerService(stale).set_state(reward_id, "confirmed", other_admin.id)
 
     clean_referrals.expire_all()
     stored = clean_referrals.get(ReferralReward, reward_id)
@@ -174,17 +174,17 @@ def test_a_price_waits_for_the_confirmation_in_flight_then_is_refused(
 ) -> None:
     """REB-566, Greptile on fb9dd39a2: the two stale-writer tests above finish the first
     write before the second starts, so they would pass without the row lock too. This is
-    the overlap: `clean_referrals` has moved the reward to `confermato`, locked and uncommitted,
+    the overlap: `clean_referrals` has moved the reward to `confirmed`, locked and uncommitted,
     and a second session's `set_price` starts meanwhile. It must block on the locking
-    read and, once `clean_referrals` commits, see `confermato` and refuse. Without `FOR UPDATE` the
-    plain read returns the committed `da_confermare`, the check passes, and only the
+    read and, once `clean_referrals` commits, see `confirmed` and refuse. Without `FOR UPDATE` the
+    plain read returns the committed `to_confirm`, the check passes, and only the
     final UPDATE waits, then writes the price over the confirmed figure: no error."""
     admin_id = an_admin(clean_referrals)
     reward_id = _signed_reward(clean_referrals, admin_id)
     row = clean_referrals.get(ReferralReward, reward_id, with_for_update=True)
     assert row is not None
     confirmed_amount = row.reward_amount
-    row.stato = "confermato"
+    row.status = "confirmed"
     row.confirmed_by = admin_id
     clean_referrals.flush()
 
@@ -250,16 +250,16 @@ def test_list_rewards_shows_a_referral_before_any_letter_is_signed(
     -- the admin had no way to tell it existed (Greptile, P-REB-44)."""
     referrer_id = _member(clean_referrals)
     code = ReferralService(clean_referrals).code_for(referrer_id)
-    _card(clean_referrals, rif=code)
+    _card(clean_referrals, ref=code)
     service = ReferralLedgerService(clean_referrals)
 
     page = service.list_rewards()
 
     assert len(page.items) == 1
     item = page.items[0]
-    assert item.referred_nome == "Ada Lovelace"
+    assert item.referred_name == "Ada Lovelace"
     assert item.reward_id is None
-    assert item.stato is None
+    assert item.status is None
     assert item.rate is None
     assert (item.base_amount, item.reward_amount) == (None, None)
 
@@ -268,17 +268,17 @@ def test_set_state_refuses_to_confirm_an_unpriced_reward(clean_referrals: Sessio
     """The same rule `set_price` already enforces from the other side (Greptile,
     P-REB-44): a fixed-price letter with no estimate leaves a reward with no figure,
     and confirming it anyway would make it unpriceable forever, since `set_price`
-    itself only accepts `da_confermare`."""
+    itself only accepts `to_confirm`."""
     referrer_id = _member(clean_referrals)
     code = ReferralService(clean_referrals).code_for(referrer_id)
     admin_id = an_admin(clean_referrals)
-    freelancer_id = _card(clean_referrals, rif=code)
+    freelancer_id = _card(clean_referrals, ref=code)
     company_id = _request(clean_referrals)
     _fiscal(clean_referrals, freelancer_id, admin_id)
     _active_framework(clean_referrals, freelancer_id, admin_id)
     renderer, fake = FakeRenderer(draft=False), FakeDocumenso()
-    body = _match_body(company_id, giorni_previsti=None)
-    body.lettera.modalita = body.lettera.unita = "a corpo"
+    body = _match_body(company_id, expected_days=None)
+    body.letter.mode, body.letter.unit = "lump_sum", "a corpo"
     match = MatchService(clean_referrals, renderer, SIGNER, today=lambda: TODAY).create(
         freelancer_id, body, admin_id
     )
@@ -291,21 +291,21 @@ def test_set_state_refuses_to_confirm_an_unpriced_reward(clean_referrals: Sessio
     service = ReferralLedgerService(clean_referrals)
 
     with pytest.raises(ValidationFailed, match="prezzato prima di confermarlo"):
-        service.set_state(reward.id, "confermato", admin_id)
+        service.set_state(reward.id, "confirmed", admin_id)
 
 
 def test_reward_reads_the_matchs_own_budget_snapshot_not_a_later_company_edit(
     clean_referrals: Session,
 ) -> None:
-    """Regression: this used to re-read `Company.budget_giornaliero` live, at signing
+    """Regression: this used to re-read `Company.daily_budget` live, at signing
     time; an admin editing the company's request between the match and the signature
     would silently change a reward the match had already promised (Greptile,
-    P-REB-44). `matches.company_budget_giornaliero` snapshots it at match creation,
-    the same way `lettera_compenso` already does."""
+    P-REB-44). `matches.company_daily_budget` snapshots it at match creation,
+    the same way `letter_fee` already does."""
     referrer_id = _member(clean_referrals)
     code = ReferralService(clean_referrals).code_for(referrer_id)
     admin_id = an_admin(clean_referrals)
-    freelancer_id = _card(clean_referrals, rif=code)
+    freelancer_id = _card(clean_referrals, ref=code)
     company_id = _request(clean_referrals)
     _fiscal(clean_referrals, freelancer_id, admin_id)
     _active_framework(clean_referrals, freelancer_id, admin_id)
@@ -315,11 +315,11 @@ def test_reward_reads_the_matchs_own_budget_snapshot_not_a_later_company_edit(
     )
     match_row = clean_referrals.get(Match, match.id)
     assert match_row is not None
-    assert match_row.company_budget_giornaliero == Decimal("800.00")
+    assert match_row.company_daily_budget == Decimal("800.00")
 
     company = clean_referrals.get(Company, company_id)
     assert company is not None
-    company.budget_giornaliero = Decimal("2000")
+    company.daily_budget = Decimal("2000")
     clean_referrals.commit()
 
     _signing(clean_referrals, renderer, fake, RecordingSender()).send_match(match.id, admin_id)

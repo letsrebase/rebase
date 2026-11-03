@@ -18,7 +18,7 @@ from pigrocrm_mcp.tools.params import (
     DealChanges,
     IsoDateStr,
     OptionalMoney,
-    OptionalProbabilita,
+    OptionalProbability,
     parse_legal_entity_id,
 )
 
@@ -29,18 +29,18 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
     @mcp.tool(annotations=ADDITIVE)
     @guard
     def create_deal(
-        nome: str,
+        name: str,
         customer_id: str,
-        valore_previsto: OptionalMoney = None,
-        probabilita: OptionalProbabilita = None,
-        data_chiusura_prevista: IsoDateStr = None,
+        expected_value: OptionalMoney = None,
+        probability: OptionalProbability = None,
+        expected_close_date: IsoDateStr = None,
         note: str | None = None,
-        ore_preventivate: OptionalMoney = None,
-        valore_preventivato: OptionalMoney = None,
+        budgeted_hours: OptionalMoney = None,
+        budgeted_value: OptionalMoney = None,
         custom_fields: dict[str, Any] | None = None,
         owner_id: str | None = None,
     ) -> dict[str, Any]:
-        """Crea un deal per un cliente, nel primo stato della pipeline. `data_chiusura_prevista` in
+        """Crea un deal per un cliente, nel primo stato della pipeline. `expected_close_date` in
         formato YYYY-MM-DD. `owner_id` è l'utente attivo che segue il deal e riceve i
         promemoria: omesso, è chi lo crea. `note` è la prima nota (senza data né autore: la
         firma il CRM).
@@ -48,14 +48,14 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
         return deals.create(
             context,
             {
-                "nome": nome,
+                "name": name,
                 "customer_id": UUID(customer_id),
-                "valore_previsto": valore_previsto,
-                "probabilita": probabilita,
-                "data_chiusura_prevista": data_chiusura_prevista,
+                "expected_value": expected_value,
+                "probability": probability,
+                "expected_close_date": expected_close_date,
                 "note": note,
-                "ore_preventivate": ore_preventivate,
-                "valore_preventivato": valore_preventivato,
+                "budgeted_hours": budgeted_hours,
+                "budgeted_value": budgeted_value,
                 "custom_fields": custom_fields or {},
                 "owner_id": UUID(owner_id) if owner_id else None,
             },
@@ -72,7 +72,7 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
     @mcp.tool(annotations=READ_ONLY)
     @guard
     def get_deal(deal_id: str) -> dict[str, Any]:
-        """Legge un deal, con le ultime 50 note (`note`, dalla più recente; `note_totale`
+        """Legge un deal, con le ultime 50 note (`note`, dalla più recente; `note_total`
         le conta, tutte in `deal://<id>`).
         """
         return deals.get(context, deal_id)
@@ -84,15 +84,15 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
         customer_id: str | None = None,
         stage_id: str | None = None,
         custom: dict[str, Any] | None = None,
-        azienda_id: str | None = None,
+        legal_entity_id: str | None = None,
         limit: BoundedLimit = 50,
         cursor: str | None = None,
         sort: str | None = None,
         # `str`, not a Literal -- see `search_customers`.
         dir: str = "asc",
     ) -> dict[str, Any]:
-        """Cerca deal per nome, cliente o stato di pipeline. `sort`: `created_at`, `updated_at`,
-        `nome`. `azienda_id` filtra per azienda.
+        """Cerca deal per nome (`name`), cliente o stato di pipeline. `sort`: `created_at`,
+        `updated_at`, `name`. `legal_entity_id` filtra per azienda.
         """
         return deals.search(
             context,
@@ -101,7 +101,7 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
                 customer_id=UUID(customer_id) if customer_id else None,
                 stage_id=UUID(stage_id) if stage_id else None,
                 custom=custom,
-                azienda_id=parse_legal_entity_id(azienda_id),
+                legal_entity_id=parse_legal_entity_id(legal_entity_id),
                 # cast: limit is `int | str` at runtime for the SDK-bypass reason
                 # documented on `BoundedLimit` in `tools/params.py`; the *ListQuery schema this
                 # feeds is what actually enforces (and coerces) "must be an int".

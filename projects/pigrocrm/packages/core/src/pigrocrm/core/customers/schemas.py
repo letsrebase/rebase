@@ -16,31 +16,31 @@ from pigrocrm.core.validation import SafeStr
 # pipeline/schemas.py's NOME_MAX_LENGTH/CODE_MAX_LENGTH already close; this is the
 # fourth time this project has hit it.
 #
-# `partita_iva` is deliberately absent from this list -- see the comment on
-# `CustomerCreate.partita_iva` below for why bounding it here would be actively wrong,
+# `vat_number` is deliberately absent from this list -- see the comment on
+# `CustomerCreate.vat_number` below for why bounding it here would be actively wrong,
 # not merely redundant.
-RAGIONE_SOCIALE_MAX_LENGTH = 255
-CODICE_FISCALE_MAX_LENGTH = 16
-CODICE_SDI_MAX_LENGTH = 7
-PEC_MAX_LENGTH = 320
-INDIRIZZO_MAX_LENGTH = 255
+LEGAL_NAME_MAX_LENGTH = 255
+TAX_CODE_MAX_LENGTH = 16
+SDI_CODE_MAX_LENGTH = 7
+CERTIFIED_EMAIL_MAX_LENGTH = 320
+ADDRESS_MAX_LENGTH = 255
 CAP_MAX_LENGTH = 10
-COMUNE_MAX_LENGTH = 120
-PROVINCIA_MAX_LENGTH = 2
-NAZIONE_MAX_LENGTH = 2
+CITY_MAX_LENGTH = 120
+PROVINCE_MAX_LENGTH = 2
+COUNTRY_MAX_LENGTH = 2
 EMAIL_MAX_LENGTH = 320
-TELEFONO_MAX_LENGTH = 40
-SITO_WEB_MAX_LENGTH = 255
-STATO_MAX_LENGTH = 40
-# The same bounds as the fiscal profile's `giorni_scadenza` (REB-326).
-GIORNI_PAGAMENTO_MIN = 0
-GIORNI_PAGAMENTO_MAX = 365
+PHONE_MAX_LENGTH = 40
+WEBSITE_MAX_LENGTH = 255
+STATUS_MAX_LENGTH = 40
+# The same bounds as the fiscal profile's `due_days` (REB-326).
+PAYMENT_DAYS_MIN = 0
+PAYMENT_DAYS_MAX = 365
 
 
 class CustomerCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    ragione_sociale: SafeStr = Field(max_length=RAGIONE_SOCIALE_MAX_LENGTH)
+    legal_name: SafeStr = Field(max_length=LEGAL_NAME_MAX_LENGTH)
     # No `max_length` here, unlike every other fiscal field below: the service's
     # `_check_fiscal` already requires an exact `^\d{11}$` match on every create and
     # update, which structurally rejects any value whose length is not 11 -- a stricter
@@ -52,20 +52,20 @@ class CustomerCreate(BaseModel):
     # 12-digit input must not trigger. `SafeStr` still applies: it only rejects a NUL
     # byte, an orthogonal concern to length that `_check_fiscal`'s digit-only regex
     # would also reject, just as a domain `ValidationFailed` instead of a schema error.
-    partita_iva: SafeStr | None = None
-    codice_fiscale: SafeStr | None = Field(default=None, max_length=CODICE_FISCALE_MAX_LENGTH)
-    # No `max_length` either, for the same reason as `partita_iva`: `_check_fiscal`
+    vat_number: SafeStr | None = None
+    tax_code: SafeStr | None = Field(default=None, max_length=TAX_CODE_MAX_LENGTH)
+    # No `max_length` either, for the same reason as `vat_number`: `_check_fiscal`
     # already requires exactly 7 characters on every create and update.
-    codice_sdi: SafeStr | None = None
-    pec: SafeStr | None = Field(default=None, max_length=PEC_MAX_LENGTH)
-    indirizzo: SafeStr | None = Field(default=None, max_length=INDIRIZZO_MAX_LENGTH)
+    sdi_code: SafeStr | None = None
+    certified_email: SafeStr | None = Field(default=None, max_length=CERTIFIED_EMAIL_MAX_LENGTH)
+    address: SafeStr | None = Field(default=None, max_length=ADDRESS_MAX_LENGTH)
     cap: SafeStr | None = Field(default=None, max_length=CAP_MAX_LENGTH)
-    comune: SafeStr | None = Field(default=None, max_length=COMUNE_MAX_LENGTH)
-    provincia: SafeStr | None = Field(default=None, max_length=PROVINCIA_MAX_LENGTH)
-    nazione: SafeStr = Field(default="IT", max_length=NAZIONE_MAX_LENGTH)
-    # The azienda that bills this customer (REB-623, spec §1.6). `None` asks the
-    # service for the one `nazione` proposes; an id names one, which must be active.
-    azienda_id: UUID | None = None
+    city: SafeStr | None = Field(default=None, max_length=CITY_MAX_LENGTH)
+    province: SafeStr | None = Field(default=None, max_length=PROVINCE_MAX_LENGTH)
+    country: SafeStr = Field(default="IT", max_length=COUNTRY_MAX_LENGTH)
+    # The legal entity that bills this customer (REB-623, spec §1.6). `None` asks the
+    # service for the one `country` proposes; an id names one, which must be active.
+    legal_entity_id: UUID | None = None
     # The owner (REB-773). Omitted, it is whoever creates the customer; naming someone
     # else is an admin's act, like changing it later.
     owner_id: UUID | None = None
@@ -76,49 +76,45 @@ class CustomerCreate(BaseModel):
     # syntax check (verified against the installed email-validator), but this field has
     # no such check to piggyback on.
     email: SafeStr | None = Field(default=None, max_length=EMAIL_MAX_LENGTH)
-    telefono: SafeStr | None = Field(default=None, max_length=TELEFONO_MAX_LENGTH)
-    sito_web: SafeStr | None = Field(default=None, max_length=SITO_WEB_MAX_LENGTH)
-    stato: SafeStr | None = Field(default=None, max_length=STATO_MAX_LENGTH)
+    phone: SafeStr | None = Field(default=None, max_length=PHONE_MAX_LENGTH)
+    website: SafeStr | None = Field(default=None, max_length=WEBSITE_MAX_LENGTH)
+    status: SafeStr | None = Field(default=None, max_length=STATUS_MAX_LENGTH)
     note: SafeStr | None = Field(default=None, max_length=NOTE_MAX_LENGTH)
     # Payment terms (REB-326): the days after the invoice date, and the end-of-month
-    # slide. Absent days mean the fiscal profile's `giorni_scadenza`; the bounds are the
+    # slide. Absent days mean the fiscal profile's `due_days`; the bounds are the
     # profile's own (`fiscal/schemas.py`), because a term the profile could not hold is
     # not one a customer can either.
-    giorni_pagamento: int | None = Field(
-        default=None, ge=GIORNI_PAGAMENTO_MIN, le=GIORNI_PAGAMENTO_MAX
-    )
-    pagamento_fine_mese: bool = False
+    payment_days: int | None = Field(default=None, ge=PAYMENT_DAYS_MIN, le=PAYMENT_DAYS_MAX)
+    payment_end_of_month: bool = False
     custom_fields: dict[str, Any] = {}
 
 
 class CustomerUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    ragione_sociale: SafeStr | None = Field(default=None, max_length=RAGIONE_SOCIALE_MAX_LENGTH)
+    legal_name: SafeStr | None = Field(default=None, max_length=LEGAL_NAME_MAX_LENGTH)
     # See CustomerCreate.partita_iva: _check_fiscal covers this field's length exactly,
     # so no Pydantic bound is added here either.
-    partita_iva: SafeStr | None = None
-    codice_fiscale: SafeStr | None = Field(default=None, max_length=CODICE_FISCALE_MAX_LENGTH)
+    vat_number: SafeStr | None = None
+    tax_code: SafeStr | None = Field(default=None, max_length=TAX_CODE_MAX_LENGTH)
     # See CustomerCreate.codice_sdi: _check_fiscal covers this field's length exactly.
-    codice_sdi: SafeStr | None = None
-    pec: SafeStr | None = Field(default=None, max_length=PEC_MAX_LENGTH)
-    indirizzo: SafeStr | None = Field(default=None, max_length=INDIRIZZO_MAX_LENGTH)
+    sdi_code: SafeStr | None = None
+    certified_email: SafeStr | None = Field(default=None, max_length=CERTIFIED_EMAIL_MAX_LENGTH)
+    address: SafeStr | None = Field(default=None, max_length=ADDRESS_MAX_LENGTH)
     cap: SafeStr | None = Field(default=None, max_length=CAP_MAX_LENGTH)
-    comune: SafeStr | None = Field(default=None, max_length=COMUNE_MAX_LENGTH)
-    provincia: SafeStr | None = Field(default=None, max_length=PROVINCIA_MAX_LENGTH)
-    nazione: SafeStr | None = Field(default=None, max_length=NAZIONE_MAX_LENGTH)
+    city: SafeStr | None = Field(default=None, max_length=CITY_MAX_LENGTH)
+    province: SafeStr | None = Field(default=None, max_length=PROVINCE_MAX_LENGTH)
+    country: SafeStr | None = Field(default=None, max_length=COUNTRY_MAX_LENGTH)
     # Editable afterwards (§1.6); moving it moves nothing already created (§1.7).
-    azienda_id: UUID | None = None
+    legal_entity_id: UUID | None = None
     # An admin's change (REB-773); an explicit `null` leaves the customer with no owner.
     owner_id: UUID | None = None
     email: SafeStr | None = Field(default=None, max_length=EMAIL_MAX_LENGTH)
-    telefono: SafeStr | None = Field(default=None, max_length=TELEFONO_MAX_LENGTH)
-    sito_web: SafeStr | None = Field(default=None, max_length=SITO_WEB_MAX_LENGTH)
-    stato: SafeStr | None = Field(default=None, max_length=STATO_MAX_LENGTH)
-    giorni_pagamento: int | None = Field(
-        default=None, ge=GIORNI_PAGAMENTO_MIN, le=GIORNI_PAGAMENTO_MAX
-    )
-    pagamento_fine_mese: bool | None = None
+    phone: SafeStr | None = Field(default=None, max_length=PHONE_MAX_LENGTH)
+    website: SafeStr | None = Field(default=None, max_length=WEBSITE_MAX_LENGTH)
+    status: SafeStr | None = Field(default=None, max_length=STATUS_MAX_LENGTH)
+    payment_days: int | None = Field(default=None, ge=PAYMENT_DAYS_MIN, le=PAYMENT_DAYS_MAX)
+    payment_end_of_month: bool | None = None
     custom_fields: dict[str, Any] | None = None
 
 
@@ -126,24 +122,24 @@ class CustomerRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
-    azienda_id: UUID
+    legal_entity_id: UUID
     owner_id: UUID | None
-    ragione_sociale: str
-    partita_iva: str | None
-    codice_fiscale: str | None
-    codice_sdi: str | None
-    pec: str | None
-    indirizzo: str | None
+    legal_name: str
+    vat_number: str | None
+    tax_code: str | None
+    sdi_code: str | None
+    certified_email: str | None
+    address: str | None
     cap: str | None
-    comune: str | None
-    provincia: str | None
-    nazione: str
+    city: str | None
+    province: str | None
+    country: str
     email: str | None
-    telefono: str | None
-    sito_web: str | None
-    stato: str | None
-    giorni_pagamento: int | None
-    pagamento_fine_mese: bool
+    phone: str | None
+    website: str | None
+    status: str | None
+    payment_days: int | None
+    payment_end_of_month: bool
     custom_fields: dict[str, Any]
     created_at: datetime
     updated_at: datetime
@@ -159,8 +155,8 @@ CUSTOMER_SORTS = SortWhitelist(
         SortSpec(key="created_at", column=Customer.created_at, kind="datetime", nullable=False),
         SortSpec(key="updated_at", column=Customer.updated_at, kind="datetime", nullable=False),
         SortSpec(
-            key="ragione_sociale",
-            column=Customer.ragione_sociale,
+            key="legal_name",
+            column=Customer.legal_name,
             kind="text",
             nullable=False,
         ),
@@ -174,9 +170,9 @@ class CustomerListQuery(BaseModel):
     # psycopg as query parameters, and a NUL byte there raises a raw `ValueError` out
     # of the driver rather than any exception this project handles.
     search: SafeStr | None = None
-    # One azienda's customers (REB-623); `None` is every azienda the caller may see.
-    azienda_id: UUID | None = None
-    stato: SafeStr | None = None
+    # One legal entity's customers (REB-623); `None` is every legal entity the caller may see.
+    legal_entity_id: UUID | None = None
+    status: SafeStr | None = None
     custom: dict[str, Any] | None = None
     # Upper-bounded so a caller (an MCP agent especially) cannot request an
     # unbounded page; the router will impose the same ceiling at the HTTP layer.
@@ -205,9 +201,9 @@ class PersonFromSuggestion(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    indirizzo: SafeStr = Field(max_length=EMAIL_MAX_LENGTH)
+    address: SafeStr = Field(max_length=EMAIL_MAX_LENGTH)
     # The display name the mail headers gave, or "" when they gave none.
-    nome: SafeStr = Field(default="", max_length=RAGIONE_SOCIALE_MAX_LENGTH)
+    name: SafeStr = Field(default="", max_length=LEGAL_NAME_MAX_LENGTH)
 
 
 class CustomerFromSuggestion(BaseModel):
@@ -216,11 +212,11 @@ class CustomerFromSuggestion(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    dominio: SafeStr = Field(max_length=SITO_WEB_MAX_LENGTH)
-    ragione_sociale: SafeStr = Field(max_length=RAGIONE_SOCIALE_MAX_LENGTH)
-    persone: list[PersonFromSuggestion] = Field(default_factory=list, max_length=50)
+    domain: SafeStr = Field(max_length=WEBSITE_MAX_LENGTH)
+    legal_name: SafeStr = Field(max_length=LEGAL_NAME_MAX_LENGTH)
+    people: list[PersonFromSuggestion] = Field(default_factory=list, max_length=50)
 
-    @field_validator("ragione_sociale")
+    @field_validator("legal_name")
     @classmethod
     def _named(cls, value: str) -> str:
         stripped = value.strip()
@@ -235,4 +231,4 @@ class CustomersFromSuggestions(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    clienti: list[CustomerFromSuggestion] = Field(min_length=1, max_length=50)
+    customers: list[CustomerFromSuggestion] = Field(min_length=1, max_length=50)

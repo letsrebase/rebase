@@ -396,7 +396,7 @@ class SourceService:
             delete(FreelancerSource).where(
                 FreelancerSource.freelancer_id.in_(
                     select(Freelancer.id).where(
-                        or_(Freelancer.stato == "scartato", Freelancer.cv_bytes.is_(None))
+                        or_(Freelancer.status == "discarded", Freelancer.cv_bytes.is_(None))
                     )
                 )
             )
@@ -419,7 +419,7 @@ class SourceService:
             select(Freelancer.id, Freelancer.links)
             .where(
                 Freelancer.deleted_at.is_(None),
-                Freelancer.stato != "scartato",
+                Freelancer.status != "discarded",
                 Freelancer.cv_bytes.is_not(None),
                 or_(
                     func.jsonb_array_length(Freelancer.links) > 0,

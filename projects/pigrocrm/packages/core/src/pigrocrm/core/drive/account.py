@@ -26,15 +26,15 @@ transaction the same way `GoogleAccountService.set_store_bodies` does.
 `storage_folder_id` alone is dereferenced, and only when it is being set to a new,
 non-null id: `set_roots` proves the folder exists, is visible to this credential, and
 is actually a folder -- one `files.get` through the owner's own transport, before a
-single column is written -- so a titolare who pastes the id of a file, a folder they
+single column is written -- so a owner who pastes the id of a file, a folder they
 cannot see, or a typo learns it on the spot rather than on the CRM's first upload.
 `root_folder_ids` are read roots and are never dereferenced here; they are verified at
 the moment they are used, by the Drive reader. `transport_factory` exists solely so a
 test can point that one `files.get` at a fake instead of Google -- production always
 takes the default, `transport/user_transport_for`.
 
-One new `activities` kind lives here: `drive.radici_impostate`, alongside
-`drive.credenziale_revocata` -- `activities.kind` is open by project (slice 1 §5.8),
+One new `activities` kind lives here: `drive.roots_set`, alongside
+`drive.credential_revoked` -- `activities.kind` is open by project (slice 1 §5.8),
 so neither costs a migration.
 """
 
@@ -117,7 +117,7 @@ def missing_scope_conflict(scope: str, feature: str) -> Conflict:
     folder, writing a document into it -- read identically to whoever hits any of them.
 
     Public for that third caller: the document storage holds no actor and asks no
-    question this class can answer for it, but the refusal a titolare reads must not
+    question this class can answer for it, but the refusal a owner reads must not
     depend on which of the three noticed the scope was missing.
     """
     return Conflict(
@@ -263,7 +263,7 @@ class GoogleDriveAccountService:
         stop `storage_account` from finding that row, so this must not hide it either.
 
         Admin-only, matching `set_roots`'s own gate on *naming* this folder
-        (`require_admin`): a collaboratore makes no decision about it, and what this
+        (`require_admin`): a collaborator makes no decision about it, and what this
         would otherwise answer is another user's name and email. Returning `None` here
         is what tells `drive_health` to leave `DriveHealth.space_storage` genuinely
         unset for them, rather than a `null` that would read the same on the wire as
@@ -339,7 +339,7 @@ class GoogleDriveAccountService:
         self.activities.record(
             "google_drive_account",
             account.id,
-            "drive.credenziale_revocata",
+            "drive.credential_revoked",
             actor,
             # The address and nothing else -- never the upstream body.
             {"email_address": account.email_address},
@@ -359,7 +359,7 @@ class GoogleDriveAccountService:
         **Choosing the write folder proves it is visible and a folder.** A new,
         non-null `storage_folder_id` is verified against Drive --
         `_verify_storage_folder`, below -- *before* anything on the row changes, so a
-        titolare who pastes the wrong id gets `ValidationFailed` naming it and nothing
+        owner who pastes the wrong id gets `ValidationFailed` naming it and nothing
         is written, rather than discovering the mistake on the CRM's first upload.
         Only existence, visibility and shape are proven this way; whether Drive will
         actually accept a write there has no cheap way to be asked ahead of one.
@@ -457,7 +457,7 @@ class GoogleDriveAccountService:
         self.activities.record(
             "google_drive_account",
             account.id,
-            "drive.radici_impostate",
+            "drive.roots_set",
             actor,
             payload,
         )
@@ -495,7 +495,7 @@ class GoogleDriveAccountService:
 
         The same call `GDriveStorage.verify_root_accessible` makes for a service
         account's configured root -- a `files.get` for `id,mimeType` -- made here
-        instead for the folder a titolare just chose, through their own transport
+        instead for the folder a owner just chose, through their own transport
         (`self._transport_factory`, a real `DriveTransport` in production, a fake one
         in a test). Only existence, visibility and shape are checked: whether Drive
         will actually accept a write there has no cheap way to be asked ahead of one,

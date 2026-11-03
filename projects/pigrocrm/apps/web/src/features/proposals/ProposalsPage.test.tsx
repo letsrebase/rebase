@@ -20,18 +20,18 @@ vi.mock('@tanstack/react-router', () => ({
 
 const PENDING = [proposal(), CONTRACT_PROPOSAL]
 
-function answering(byStato: Record<string, unknown[]>, failing: string[] = []) {
-  vi.mocked(api.GET).mockImplementation(((path: string, init?: { params?: { query?: { stato?: string } } }) => {
+function answering(byStatus: Record<string, unknown[]>, failing: string[] = []) {
+  vi.mocked(api.GET).mockImplementation(((path: string, init?: { params?: { query?: { status?: string } } }) => {
     if (path === '/api/proposals') {
-      const stato = init?.params?.query?.stato ?? 'in_attesa'
-      if (failing.includes(stato)) return Promise.resolve(refused(500, { detail: 'Il database non risponde.', code: 'internal', title: 'x', status: 500, instance: '/' }))
-      return Promise.resolve(ok({ items: byStato[stato] ?? [] }))
+      const status = init?.params?.query?.status ?? 'pending'
+      if (failing.includes(status)) return Promise.resolve(refused(500, { detail: 'Il database non risponde.', code: 'internal', title: 'x', status: 500, instance: '/' }))
+      return Promise.resolve(ok({ items: byStatus[status] ?? [] }))
     }
     if (path === '/api/customers/{customer_id}') {
-      return Promise.resolve(ok({ id: CUSTOMER_ID, ragione_sociale: 'Studio Rossi & Associati' }))
+      return Promise.resolve(ok({ id: CUSTOMER_ID, legal_name: 'Studio Rossi & Associati' }))
     }
     if (path === '/api/contracts/{contract_id}') {
-      return Promise.resolve(ok({ id: CONTRACT_ID, titolo: 'Consulenza operativa 2026' }))
+      return Promise.resolve(ok({ id: CONTRACT_ID, title: 'Consulenza operativa 2026' }))
     }
     return Promise.resolve(ok(undefined))
   }) as never)
@@ -43,8 +43,8 @@ beforeEach(() => {
 
 describe('the Proposte queue', () => {
   it('lists what waits, oldest first, with the kind, the subject and the excerpt', async () => {
-    answering({ in_attesa: PENDING })
-    renderWithQuery(<ProposalsPage stato="in_attesa" onStatoChange={vi.fn()} />)
+    answering({ pending: PENDING })
+    renderWithQuery(<ProposalsPage status="pending" onStatusChange={vi.fn()} />)
 
     expect(await screen.findByText('Giornata del 05/11/2026 · 1 gg')).toBeInTheDocument()
     expect(screen.getByText('Consulenza fiscale 2027')).toBeInTheDocument()
@@ -59,55 +59,55 @@ describe('the Proposte queue', () => {
   })
 
   it('counts the queue on its own tab', async () => {
-    answering({ in_attesa: PENDING })
-    renderWithQuery(<ProposalsPage stato="in_attesa" onStatoChange={vi.fn()} />)
+    answering({ pending: PENDING })
+    renderWithQuery(<ProposalsPage status="pending" onStatusChange={vi.fn()} />)
     expect(await screen.findByRole('tab', { name: /In attesa\s*2/ })).toBeInTheDocument()
   })
 
   it('says the queue is empty in words, not with a bare table', async () => {
     answering({})
-    renderWithQuery(<ProposalsPage stato="in_attesa" onStatoChange={vi.fn()} />)
+    renderWithQuery(<ProposalsPage status="pending" onStatusChange={vi.fn()} />)
     expect(await screen.findByRole('heading', { name: 'Niente da rivedere' })).toBeInTheDocument()
   })
 
   it('says who decided and when on a decided tab, and asks the API for the newest decision first', async () => {
     answering({
-      rifiutata: [
-        proposal({ id: 'new', stato: 'rifiutata', deciso_da: 'Lorenzo Fiore', deciso_il: '2026-10-25T10:00:00Z' }),
-        proposal({ id: 'old', stato: 'rifiutata', deciso_da: 'Ada', deciso_il: '2026-10-20T10:00:00Z' }),
+      rejected: [
+        proposal({ id: 'new', status: 'rejected', decided_by: 'Lorenzo Fiore', decided_at: '2026-10-25T10:00:00Z' }),
+        proposal({ id: 'old', status: 'rejected', decided_by: 'Ada', decided_at: '2026-10-20T10:00:00Z' }),
       ],
     })
-    renderWithQuery(<ProposalsPage stato="rifiutata" onStatoChange={vi.fn()} />)
+    renderWithQuery(<ProposalsPage status="rejected" onStatusChange={vi.fn()} />)
     const links = await screen.findAllByRole('link')
     // Drawn in the order the API answered: the page does not sort a list it asked to be ordered.
     expect(links.map((link) => link.getAttribute('href'))).toEqual(['/app/proposals/new', '/app/proposals/old'])
     expect(screen.getByText(/Rifiutata da Lorenzo Fiore · 25 ott 2026/)).toBeInTheDocument()
     expect(api.GET).toHaveBeenCalledWith('/api/proposals', {
-      params: { query: { stato: 'rifiutata', ordine: 'decisione', limit: 200 } },
+      params: { query: { status: 'rejected', order: 'decision', limit: 200 } },
     })
     // The queue itself is read in the order things arrived.
     expect(api.GET).toHaveBeenCalledWith('/api/proposals', {
-      params: { query: { stato: 'in_attesa', ordine: 'arrivo', limit: 200 } },
+      params: { query: { status: 'pending', order: 'arrival', limit: 200 } },
     })
   })
 
   it('does not print a placeholder for a decision whose author is not recorded', async () => {
-    answering({ accettata: [proposal({ stato: 'accettata', deciso_da: null, deciso_il: '2026-10-25T10:00:00Z' })] })
-    renderWithQuery(<ProposalsPage stato="accettata" onStatoChange={vi.fn()} />)
+    answering({ accepted: [proposal({ status: 'accepted', decided_by: null, decided_at: '2026-10-25T10:00:00Z' })] })
+    renderWithQuery(<ProposalsPage status="accepted" onStatusChange={vi.fn()} />)
     expect(await screen.findByText(/^Accettata · 25 ott 2026/)).toBeInTheDocument()
   })
 
   it('asks for the clicked tab', async () => {
-    answering({ in_attesa: PENDING })
-    const onStatoChange = vi.fn()
-    renderWithQuery(<ProposalsPage stato="in_attesa" onStatoChange={onStatoChange} />)
+    answering({ pending: PENDING })
+    const onStatusChange = vi.fn()
+    renderWithQuery(<ProposalsPage status="pending" onStatusChange={onStatusChange} />)
     await userEvent.click(await screen.findByRole('tab', { name: 'Accettate' }))
-    expect(onStatoChange).toHaveBeenCalledWith('accettata')
+    expect(onStatusChange).toHaveBeenCalledWith('accepted')
   })
 
   it('shows a failed read as a failure, never as an empty queue', async () => {
-    answering({}, ['in_attesa'])
-    renderWithQuery(<ProposalsPage stato="in_attesa" onStatoChange={vi.fn()} />)
+    answering({}, ['pending'])
+    renderWithQuery(<ProposalsPage status="pending" onStatusChange={vi.fn()} />)
     expect(await screen.findByRole('alert')).toHaveTextContent('Il database non risponde.')
     await waitFor(() => expect(screen.queryByText('Niente da rivedere')).toBeNull())
   })

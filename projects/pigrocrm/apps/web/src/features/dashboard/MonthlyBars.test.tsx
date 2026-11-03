@@ -11,34 +11,34 @@ import { MonthlyBars } from './MonthlyBars'
 import type { CashMonth } from './queries'
 
 function month(
-  mese: number,
-  amounts: Partial<Record<'incassato' | 'da_incassare' | 'bozze' | 'costi', string>>,
+  yearMonth: number,
+  amounts: Partial<Record<'paid' | 'unpaid' | 'drafts' | 'costs', string>>,
   shares: Record<string, number>,
-  pila: { andamento?: string; proiezione?: string } = {},
+  stack: { trend?: string; projection?: string } = {},
 ): CashMonth {
   return {
-    anno: 2026,
-    mese,
-    incassato: amounts.incassato ?? '0.00',
-    da_incassare: amounts.da_incassare ?? '0.00',
-    bozze: amounts.bozze ?? '0.00',
-    costi: amounts.costi ?? '0.00',
-    pila_andamento: pila.andamento ?? amounts.incassato ?? '0.00',
-    pila_proiezione: pila.proiezione ?? amounts.incassato ?? '0.00',
-    quote_andamento: shares,
-    quote_proiezione: shares,
+    year: 2026,
+    month: yearMonth,
+    paid: amounts.paid ?? '0.00',
+    unpaid: amounts.unpaid ?? '0.00',
+    drafts: amounts.drafts ?? '0.00',
+    costs: amounts.costs ?? '0.00',
+    trend_stack: stack.trend ?? amounts.paid ?? '0.00',
+    projection_stack: stack.projection ?? amounts.paid ?? '0.00',
+    trend_shares: shares,
+    projection_shares: shares,
   }
 }
 
-const ZERO = { incassato: 0, da_incassare: 0, bozze: 0, costi: 0 }
+const ZERO = { paid: 0, unpaid: 0, drafts: 0, costs: 0 }
 
 /** `count` empty months starting at `from`, to fill the row beside the one under test. */
 function empties(from: number, count: number): CashMonth[] {
   return Array.from({ length: count }, (_, i) => month(from + i, {}, ZERO))
 }
 
-function column(mese: number) {
-  return screen.getByTestId(`column-${mese}`)
+function column(month: number) {
+  return screen.getByTestId(`column-${month}`)
 }
 
 describe('MonthlyBars', () => {
@@ -49,21 +49,21 @@ describe('MonthlyBars', () => {
         months={[
           month(
             1,
-            { incassato: '4000.00', da_incassare: '3000.00', bozze: '2000.00' },
-            { ...ZERO, incassato: 0.4, da_incassare: 0.3, bozze: 0.2 },
-            { proiezione: '9000.00' },
+            { paid: '4000.00', unpaid: '3000.00', drafts: '2000.00' },
+            { ...ZERO, paid: 0.4, unpaid: 0.3, drafts: 0.2 },
+            { projection: '9000.00' },
           ),
           month(2, {}, ZERO),
           month(3, {}, ZERO),
         ]}
-        series={['incassato', 'da_incassare', 'bozze', 'costi']}
-        shares="quote_proiezione"
+        series={['paid', 'unpaid', 'drafts', 'costs']}
+        shares="projection_shares"
       />,
     )
-    const gennaio = column(1)
-    expect(within(gennaio).getByText('4.000,00 €')).toBeInTheDocument()
-    expect(within(gennaio).getByText('3.000,00 €')).toBeInTheDocument()
-    expect(within(gennaio).getByText('2.000,00 €')).toBeInTheDocument()
+    const january = column(1)
+    expect(within(january).getByText('4.000,00 €')).toBeInTheDocument()
+    expect(within(january).getByText('3.000,00 €')).toBeInTheDocument()
+    expect(within(january).getByText('2.000,00 €')).toBeInTheDocument()
   })
 
   it("says the stack's height as money above a stacked column, so the figure on top is the whole bar", () => {
@@ -73,18 +73,18 @@ describe('MonthlyBars', () => {
         months={[
           month(
             8,
-            { incassato: '7813.91', da_incassare: '9970.12', bozze: '5000.00' },
-            { ...ZERO, incassato: 0.3, da_incassare: 0.4, bozze: 0.2 },
-            { proiezione: '22784.03' },
+            { paid: '7813.91', unpaid: '9970.12', drafts: '5000.00' },
+            { ...ZERO, paid: 0.3, unpaid: 0.4, drafts: 0.2 },
+            { projection: '22784.03' },
           ),
           ...empties(10, 2),
         ]}
-        series={['incassato', 'da_incassare', 'bozze', 'costi']}
-        shares="quote_proiezione"
+        series={['paid', 'unpaid', 'drafts', 'costs']}
+        shares="projection_shares"
       />,
     )
-    const agosto = column(8)
-    expect(within(agosto).getByTestId('lifted-value')).toHaveTextContent('22.784,03 €')
+    const august = column(8)
+    expect(within(august).getByTestId('lifted-value')).toHaveTextContent('22.784,03 €')
   })
 
   /** August in the screenshot that opened ORB-139: a tall revenue segment and a sliver
@@ -96,57 +96,57 @@ describe('MonthlyBars', () => {
         months={[
           month(
             8,
-            { incassato: '7813.91', costi: '320.00' },
-            { ...ZERO, incassato: 0.96, costi: 0.04 },
-            { andamento: '8133.91' },
+            { paid: '7813.91', costs: '320.00' },
+            { ...ZERO, paid: 0.96, costs: 0.04 },
+            { trend: '8133.91' },
           ),
           ...empties(10, 2),
         ]}
-        series={['incassato', 'costi']}
-        shares="quote_andamento"
+        series={['paid', 'costs']}
+        shares="trend_shares"
       />,
     )
-    const agosto = column(8)
-    expect(within(agosto).getByTestId('lifted-value')).toHaveTextContent('8.133,91 €')
-    expect(within(agosto).getByText('7.813,91 €')).toBeInTheDocument()
-    expect(within(agosto).getAllByTestId('segment')).toHaveLength(2)
+    const august = column(8)
+    expect(within(august).getByTestId('lifted-value')).toHaveTextContent('8.133,91 €')
+    expect(within(august).getByText('7.813,91 €')).toBeInTheDocument()
+    expect(within(august).getAllByTestId('segment')).toHaveLength(2)
   })
 
   /** An API one deploy behind the web sends no `pila_*`: the chart says nothing above
    *  the stack rather than `NaN €`, and the segments keep their own figures. */
   it('prints nothing above a stacked column when the payload has no height for it', () => {
-    const senza = month(
+    const without = month(
       8,
-      { incassato: '7813.91', da_incassare: '9970.12' },
-      { ...ZERO, incassato: 0.4, da_incassare: 0.5 },
+      { paid: '7813.91', unpaid: '9970.12' },
+      { ...ZERO, paid: 0.4, unpaid: 0.5 },
     ) as Partial<CashMonth>
-    delete senza.pila_proiezione
+    delete without.projection_stack
     render(
       <MonthlyBars
         title="Proiezione"
-        months={[senza as CashMonth, ...empties(10, 2)]}
-        series={['incassato', 'da_incassare', 'bozze', 'costi']}
-        shares="quote_proiezione"
+        months={[without as CashMonth, ...empties(10, 2)]}
+        series={['paid', 'unpaid', 'drafts', 'costs']}
+        shares="projection_shares"
       />,
     )
-    const agosto = column(8)
-    expect(within(agosto).queryByTestId('lifted-value')).toBeNull()
-    expect(within(agosto).queryByText(/NaN/)).toBeNull()
-    expect(within(agosto).getByText('9.970,12 €')).toBeInTheDocument()
+    const august = column(8)
+    expect(within(august).queryByTestId('lifted-value')).toBeNull()
+    expect(within(august).queryByText(/NaN/)).toBeNull()
+    expect(within(august).getByText('9.970,12 €')).toBeInTheDocument()
   })
 
   it('prints no figure above a column with one segment: its value already says it', () => {
     render(
       <MonthlyBars
         title="Andamento"
-        months={[month(6, { incassato: '7740.72' }, { ...ZERO, incassato: 1 }), ...empties(10, 2)]}
-        series={['incassato', 'costi']}
-        shares="quote_andamento"
+        months={[month(6, { paid: '7740.72' }, { ...ZERO, paid: 1 }), ...empties(10, 2)]}
+        series={['paid', 'costs']}
+        shares="trend_shares"
       />,
     )
-    const giugno = column(6)
-    expect(within(giugno).getByText('7.740,72 €')).toBeInTheDocument()
-    expect(within(giugno).queryByTestId('lifted-value')).toBeNull()
+    const june = column(6)
+    expect(within(june).getByText('7.740,72 €')).toBeInTheDocument()
+    expect(within(june).queryByTestId('lifted-value')).toBeNull()
   })
 
   /** feb and apr in the screenshot that opened ORB-139: a column of a few pixels cannot
@@ -156,27 +156,27 @@ describe('MonthlyBars', () => {
       <MonthlyBars
         title="Andamento"
         months={[
-          month(2, { incassato: '1000.00' }, { ...ZERO, incassato: 0.05 }),
-          month(6, { incassato: '20000.00' }, { ...ZERO, incassato: 1 }),
+          month(2, { paid: '1000.00' }, { ...ZERO, paid: 0.05 }),
+          month(6, { paid: '20000.00' }, { ...ZERO, paid: 1 }),
           ...empties(10, 1),
         ]}
-        series={['incassato', 'costi']}
-        shares="quote_andamento"
+        series={['paid', 'costs']}
+        shares="trend_shares"
       />,
     )
-    const febbraio = column(2)
-    expect(within(febbraio).getByTestId('lifted-value')).toHaveTextContent('1.000,00 €')
+    const february = column(2)
+    expect(within(february).getByTestId('lifted-value')).toHaveTextContent('1.000,00 €')
     // Inside the segment there is no room, so no second copy of the figure sits there.
-    expect(within(febbraio).getByTestId('segment')).not.toHaveTextContent('1.000,00 €')
+    expect(within(february).getByTestId('segment')).not.toHaveTextContent('1.000,00 €')
   })
 
   it('says nothing above an empty month', () => {
     render(
       <MonthlyBars
         title="Andamento"
-        months={[month(6, { incassato: '20000.00' }, { ...ZERO, incassato: 1 }), ...empties(10, 2)]}
-        series={['incassato', 'costi']}
-        shares="quote_andamento"
+        months={[month(6, { paid: '20000.00' }, { ...ZERO, paid: 1 }), ...empties(10, 2)]}
+        series={['paid', 'costs']}
+        shares="trend_shares"
       />,
     )
     expect(within(column(10)).queryByTestId('lifted-value')).toBeNull()

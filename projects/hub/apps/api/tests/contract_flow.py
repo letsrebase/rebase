@@ -9,9 +9,9 @@ from typing import Any
 
 from contract_api_helpers import (
     ADMIN_EMAIL,
-    CLIENTE,
+    CUSTOMER,
     FISCAL,
-    LETTERA,
+    LETTER,
     MISSING,
     PDF,
     TABLES,
@@ -35,10 +35,10 @@ SIGNER = {
 
 __all__ = [
     "ADMIN_EMAIL",
-    "CLIENTE",
+    "CUSTOMER",
     "FISCAL",
     "FREELANCER_EMAIL",
-    "LETTERA",
+    "LETTER",
     "MISSING",
     "PDF",
     "SIGNER",
@@ -61,7 +61,7 @@ def draft_match(client: TestClient, sender: RecordingSender) -> dict[str, Any]:
     freelancer_id, company_id = ready(client, sender)
     created = client.post(
         f"/api/hub/freelancers/{freelancer_id}/matches",
-        json={"company_id": company_id, "cliente": CLIENTE, "lettera": LETTERA},
+        json={"company_id": company_id, "customer": CUSTOMER, "letter": LETTER},
     )
     assert created.status_code == 201, created.text
     body: dict[str, Any] = created.json()

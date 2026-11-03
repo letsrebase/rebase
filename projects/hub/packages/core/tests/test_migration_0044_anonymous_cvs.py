@@ -1,4 +1,4 @@
-"""0044 (REB-862): the `cv_anonimo` task, seeded from the `card` row, and `anonymous_cvs`;
+"""0044 (REB-862): the `anonymous_cv` task, seeded from the `card` row, and `anonymous_cvs`;
 a downgrade takes both away and puts the two CHECKs back."""
 
 from typing import Any
@@ -53,7 +53,7 @@ def _table_exists(connection: Connection) -> bool:
     return connection.execute(text("SELECT to_regclass('anonymous_cvs')")).scalar_one() is not None
 
 
-def test_revision_follows_the_card_persona() -> None:
+def test_revision_follows_the_card_person() -> None:
     assert _parent(Config(str(INI_PATH))) == "0043"
 
 
@@ -81,12 +81,12 @@ def test_upgrade_creates_the_table_and_the_task(hub_postgres: Any) -> None:
                     ),
                     {"t": task},
                 ).one()
-                for task in ("card", "cv_anonimo")
+                for task in ("card", "anonymous_cv")
             )
             assert cv[:4] == card[:4]
             assert cv.max_output_tokens == 16000
             assert cv.daily_cap_eur is None
-            _usage(connection, "cv_anonimo")
+            _usage(connection, "anonymous_cv")
         with pytest.raises(IntegrityError, match="ck_ai_usage_task"), engine.begin() as connection:
             _usage(connection, "altro")
         engine.dispose()
@@ -110,7 +110,7 @@ def test_upgrade_copies_a_changed_card_row(hub_postgres: Any) -> None:
         command.upgrade(config, "head")
         with engine.connect() as connection:
             row = connection.execute(
-                text("SELECT model, effort, enabled FROM ai_tasks WHERE task = 'cv_anonimo'")
+                text("SELECT model, effort, enabled FROM ai_tasks WHERE task = 'anonymous_cv'")
             ).one()
             assert tuple(row) == ("claude-sonnet-5", "high", True)
         engine.dispose()
@@ -131,7 +131,7 @@ def test_upgrade_without_a_card_row_seeds_anthropic_defaults(hub_postgres: Any) 
             row = connection.execute(
                 text(
                     "SELECT provider, model, effort, enabled, max_output_tokens "
-                    "FROM ai_tasks WHERE task = 'cv_anonimo'"
+                    "FROM ai_tasks WHERE task = 'anonymous_cv'"
                 )
             ).one()
             assert tuple(row) == ("anthropic", "claude-opus-5", "medium", False, 16000)
@@ -157,7 +157,7 @@ def test_downgrade_drops_table_and_row(hub_postgres: Any) -> None:
         config.set_main_option("sqlalchemy.url", url)
         engine = create_engine(url, future=True)
         with engine.begin() as connection:
-            _usage(connection, "cv_anonimo")
+            _usage(connection, "anonymous_cv")
             _usage(connection, "card")
         command.downgrade(config, _parent(config))
         with engine.connect() as connection:
@@ -182,7 +182,7 @@ def test_downgrade_drops_table_and_row(hub_postgres: Any) -> None:
                         )
                     )
                 else:
-                    _usage(connection, "cv_anonimo")
+                    _usage(connection, "anonymous_cv")
         command.upgrade(config, "head")
         with engine.connect() as connection:
             assert _table_exists(connection)

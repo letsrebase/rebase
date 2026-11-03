@@ -17,9 +17,9 @@ from pigrocrm.core.documents.schemas import DOCUMENT_SORTS, DocumentListQuery
 from pigrocrm.core.pipeline.models import PipelineStage
 
 
-def _azienda_filter(azienda_id: UUID | None) -> tuple[ColumnElement[bool], ...]:
+def _legal_entity_filter(legal_entity_id: UUID | None) -> tuple[ColumnElement[bool], ...]:
     """One azienda's documents, or every azienda's (REB-630, spec 2026-10-03 §1.9)."""
-    return () if azienda_id is None else (Document.azienda_id == azienda_id,)
+    return () if legal_entity_id is None else (Document.legal_entity_id == legal_entity_id,)
 
 
 def _accepted_with_unwon_deal_predicate() -> tuple[ColumnElement[bool], ...]:
@@ -42,10 +42,10 @@ def _accepted_with_unwon_deal_predicate() -> tuple[ColumnElement[bool], ...]:
     """
     return (
         Document.deleted_at.is_(None),
-        Document.tipo == "offerta",
-        Document.stato == "accettata",
+        Document.type == "offer",
+        Document.status == "accepted",
         Deal.deleted_at.is_(None),
-        PipelineStage.tipo != "won",
+        PipelineStage.type != "won",
     )
 
 
@@ -74,7 +74,7 @@ class DocumentRepository:
         """Re-points a document's ownership at a contract, clearing whichever of
         `customer_id`/`deal_id` it held before -- the accept half of REB-358 §11's
         widened three-way ownership (`ck_documents_customer_xor_deal`), read by
-        `ProposalService._accept_contratto` in the same transaction that creates the
+        `ProposalService._accept_contract` in the same transaction that creates the
         contract itself (spec §10's own "widen at accept time, not at archive time"
         ordering). Flushes -- and only flushes -- like every other method here: the
         surrounding service is the transaction."""
@@ -92,9 +92,9 @@ class DocumentRepository:
         self.session.flush()
         return version
 
-    def version(self, document_id: UUID, numero: int) -> DocumentVersion | None:
+    def version(self, document_id: UUID, number: int) -> DocumentVersion | None:
         stmt = select(DocumentVersion).where(
-            DocumentVersion.document_id == document_id, DocumentVersion.numero == numero
+            DocumentVersion.document_id == document_id, DocumentVersion.number == number
         )
         return self.session.execute(stmt).scalars().first()
 
@@ -102,7 +102,7 @@ class DocumentRepository:
         stmt = (
             select(DocumentVersion)
             .where(DocumentVersion.document_id == document_id)
-            .order_by(desc(DocumentVersion.numero))
+            .order_by(desc(DocumentVersion.number))
         )
         return list(self.session.execute(stmt).scalars())
 
@@ -113,7 +113,7 @@ class DocumentRepository:
         What serialises a version upload with `InvoiceService.import_issued` linking the
         same document as an invoice's PDF: each takes this lock before it reads what the
         other writes, so the second one waits for the first to commit and then reads its
-        outcome. `NO KEY UPDATE` is the lock an `UPDATE` of `versione_corrente` takes
+        outcome. `NO KEY UPDATE` is the lock an `UPDATE` of `current_version` takes
         anyway, and it leaves alone the `KEY SHARE` a foreign key from `invoices` takes.
         `populate_existing` because the session keeps objects across commits
         (`expire_on_commit=False`): a row loaded before the wait would otherwise answer
@@ -127,18 +127,20 @@ class DocumentRepository:
         )
         return self.session.execute(stmt).scalar_one_or_none()
 
-    def invoice_tipo_of_pdf(self, document_id: UUID) -> str | None:
-        """The `tipo` (`fattura` or `proforma`) of the invoice row that names this
+    def invoice_type_of_pdf(self, document_id: UUID) -> str | None:
+        """The `type` (`invoice` or `proforma`) of the invoice row that names this
         document as its PDF, a soft-deleted one included, or `None` when no invoice does.
         See `DocumentUploads.check_invoice_pdf` for why that is the test."""
         # Through the definer function of migration 0048 rather than a query on
-        # `invoices`: an invoice this session cannot see (another azienda's, named on a
+        # `invoices`: an invoice this session cannot see (another legal entity's, named on a
         # document it can) must still answer, or the guard would fail open (REB-634).
         return self.session.execute(
-            text("SELECT tipo_fattura_del_pdf(:document_id)"), {"document_id": document_id}
+            text("SELECT invoice_type_of_pdf(:document_id)"), {"document_id": document_id}
         ).scalar_one_or_none()
 
-    def pending_offers(self, limit: int = 20, azienda_id: UUID | None = None) -> list[PendingOffer]:
+    def pending_offers(
+        self, limit: int = 20, legal_entity_id: UUID | None = None
+    ) -> list[PendingOffer]:
         """Sent offers still awaiting an answer, oldest first, with their age in days.
 
         The age is computed in Python from `today_local()` rather than in SQL from
@@ -152,9 +154,9 @@ class DocumentRepository:
             select(Document)
             .where(
                 Document.deleted_at.is_(None),
-                *_azienda_filter(azienda_id),
-                Document.tipo == "offerta",
-                Document.stato == "inviata",
+                *_legal_entity_filter(legal_entity_id),
+                Document.type == "offer",
+                Document.status == "sent",
             )
             # Nulls last: an offer with no known start date is not the oldest one, and a
             # list meant to be worked from the top must not open with the least
@@ -162,37 +164,37 @@ class DocumentRepository:
             # this is spelled out rather than relied upon -- the default flips with the
             # direction (DESC defaults to NULLS FIRST), and an ordering that changes
             # meaning when someone reverses it is an ordering nobody can reason about.
-            .order_by(Document.stato_dal.asc().nulls_last(), Document.id.asc())
+            .order_by(Document.status_since.asc().nulls_last(), Document.id.asc())
             .limit(limit)
         ).scalars()
         return [
             PendingOffer(
                 document_id=str(row.id),
-                titolo=row.titolo,
+                title=row.title,
                 deal_id=str(row.deal_id) if row.deal_id else None,
                 customer_id=str(row.customer_id) if row.customer_id else None,
-                stato_dal=row.stato_dal,
-                giorni=(today - row.stato_dal).days if row.stato_dal is not None else None,
+                status_since=row.status_since,
+                days=(today - row.status_since).days if row.status_since is not None else None,
             )
             for row in rows
         ]
 
-    def count_pending_offers(self, azienda_id: UUID | None = None) -> int:
+    def count_pending_offers(self, legal_entity_id: UUID | None = None) -> int:
         """The real total behind `pending_offers`'s truncated list, so a dashboard showing
         twenty of ninety says ninety."""
         return (
             self.session.scalar(
                 select(func.count(Document.id)).where(
                     Document.deleted_at.is_(None),
-                    *_azienda_filter(azienda_id),
-                    Document.tipo == "offerta",
-                    Document.stato == "inviata",
+                    *_legal_entity_filter(legal_entity_id),
+                    Document.type == "offer",
+                    Document.status == "sent",
                 )
             )
             or 0
         )
 
-    def count_accepted_with_unwon_deal(self, azienda_id: UUID | None = None) -> int:
+    def count_accepted_with_unwon_deal(self, legal_entity_id: UUID | None = None) -> int:
         """§6.2's first signal: accepted offers whose deal is not in a `won` stage.
 
         This is the case where automation A1 did **not** fire -- switched off, or declined
@@ -210,7 +212,9 @@ class DocumentRepository:
                 select(func.count(Document.id))
                 .join(Deal, Deal.id == Document.deal_id)
                 .join(PipelineStage, PipelineStage.id == Deal.pipeline_stage_id)
-                .where(*_accepted_with_unwon_deal_predicate(), *_azienda_filter(azienda_id))
+                .where(
+                    *_accepted_with_unwon_deal_predicate(), *_legal_entity_filter(legal_entity_id)
+                )
             )
             or 0
         )
@@ -226,30 +230,30 @@ class DocumentRepository:
             stmt = stmt.where(Document.deal_id == query.deal_id)
         if query.contract_id:
             stmt = stmt.where(Document.contract_id == query.contract_id)
-        if query.azienda_id:
-            stmt = stmt.where(Document.azienda_id == query.azienda_id)
-        if query.tipo:
-            stmt = stmt.where(Document.tipo == query.tipo)
-        if query.stato:
-            stmt = stmt.where(Document.stato == query.stato)
+        if query.legal_entity_id:
+            stmt = stmt.where(Document.legal_entity_id == query.legal_entity_id)
+        if query.type:
+            stmt = stmt.where(Document.type == query.type)
+        if query.status:
+            stmt = stmt.where(Document.status == query.status)
         if query.search:
-            # New in slice 6. One column, so no `or_`: spec §8.1 searches `titolo` and
+            # New in slice 6. One column, so no `or_`: spec §8.1 searches `title` and
             # nothing else on this table -- a document's body lives in storage, not in
             # a column, and its Markdown source is explicitly out of scope.
             #
             # `escape_like` neutralises "%"/"_"/"\" in the *user's* term before it is
             # wrapped in the "%...%" this method builds; `escape="\\"` states which
             # character it used rather than relying on ILIKE's default. Task A2
-            # measured that the ESCAPE clause costs `ix_documents_titolo_trgm` nothing
+            # measured that the ESCAPE clause costs `ix_documents_title_trgm` nothing
             # -- the planner folds it into the same constant pattern -- so it stays
             # here exactly as in the other three repositories.
             like = f"%{escape_like(query.search.lower())}%"
-            stmt = stmt.where(Document.titolo.ilike(like, escape="\\"))
-        if query.solo_deal_non_vinto:
+            stmt = stmt.where(Document.title.ilike(like, escape="\\"))
+        if query.only_unwon_deals:
             # The drill-through of §6.2's signal card, sharing its predicate literally
             # rather than restating it -- see `_accepted_with_unwon_deal_predicate`.
             # An **additional** predicate on the statement built above, never a
-            # replacement for it: `tipo` and `stato` supplied alongside it still narrow
+            # replacement for it: `type` and `status` supplied alongside it still narrow
             # the result, because a drill-through that silently dropped the caller's own
             # filters would be answering a different question from the one asked.
             # Inner joins, so an offer with no deal simply has no matching row -- no

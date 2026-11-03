@@ -26,22 +26,22 @@ import { ROLES } from './userRoles'
 import { useInviteUser, useUpdateUser, type UserRecord } from './queries'
 
 /**
- * The three dialogs of the Utenti panel -- invite, rename, change the aziende of a member --
+ * The three dialogs of the Utenti panel -- invite, rename, change the legal entities of a member --
  * each with its own form state. The panel mounts one only while it is open, so every
  * opening starts from the member's current values, and passes the panel's `update` mutation
  * to the two that edit a member, so a pending change on any row disables both Save buttons.
  */
 
-const KNOWN_FIELDS = ['email', 'nome', 'ruolo', 'aziende']
+const KNOWN_FIELDS = ['email', 'name', 'role', 'legal_entities']
 
 function LegalEntitiesChecklist({
-  aziende,
+  legal_entities,
   checked,
   onChange,
   idPrefix,
   error,
 }: {
-  aziende: LegalEntityRecord[]
+  legal_entities: LegalEntityRecord[]
   checked: string[]
   onChange: (next: string[]) => void
   idPrefix: string
@@ -54,22 +54,22 @@ function LegalEntitiesChecklist({
         Vedrà solo le aziende selezionate: clienti, deal, documenti, fatture e cruscotti. Tutte
         selezionate significa tutto lo spazio, anche le aziende che aggiungerai.
       </p>
-      {aziende.map((azienda) => {
-        const id = `${idPrefix}-${azienda.id}`
+      {legal_entities.map((legal_entity) => {
+        const id = `${idPrefix}-${legal_entity.id}`
         return (
-          <div key={azienda.id} className="flex items-center gap-2">
+          <div key={legal_entity.id} className="flex items-center gap-2">
             <Checkbox
               id={id}
-              checked={checked.includes(azienda.id)}
+              checked={checked.includes(legal_entity.id)}
               onCheckedChange={(value) =>
                 onChange(
                   value === true
-                    ? [...checked, azienda.id]
-                    : checked.filter((item) => item !== azienda.id),
+                    ? [...checked, legal_entity.id]
+                    : checked.filter((item) => item !== legal_entity.id),
                 )
               }
             />
-            <Label htmlFor={id}>{azienda.nome}</Label>
+            <Label htmlFor={id}>{legal_entity.name}</Label>
           </div>
         )
       })}
@@ -85,19 +85,19 @@ function unattributed(problem: ProblemDetail | null): string | null {
   return problem.detail
 }
 
-/** «Invita»: the address, an optional name, the role and, from the second azienda on,
- *  the aziende the invited person will see. */
+/** «Invita»: the address, an optional name, the role and, from the second legal entity on,
+ *  the legal entities the invited person will see. */
 export function InviteUserDialog({ onClose }: { onClose: () => void }) {
   const [email, setEmail] = useState('')
-  const [nome, setNome] = useState('')
-  const [ruolo, setRuolo] = useState<UserRecord['ruolo']>('collaboratore')
+  const [name, setName] = useState('')
+  const [roleValue, setRole] = useState<UserRecord['role']>('collaborator')
   const [problem, setProblem] = useState<ProblemDetail | null>(null)
-  // The scope (REB-635): the checked aziende of the invite. Drawn from the second azienda
+  // The scope (REB-635): the checked legal entities of the invite. Drawn from the second legal entity
   // on, like the selector.
-  const azienda = useLegalEntity()
-  const several = azienda.aziende.length > 1
-  const [inviteAziende, setInviteAziende] = useState<string[]>(() =>
-    azienda.aziende.map((a) => a.id),
+  const legal_entity = useLegalEntity()
+  const several = legal_entity.legal_entities.length > 1
+  const [inviteLegalEntities, setInviteLegalEntities] = useState<string[]>(() =>
+    legal_entity.legal_entities.map((a) => a.id),
   )
   const invite = useInviteUser()
 
@@ -110,12 +110,12 @@ export function InviteUserDialog({ onClose }: { onClose: () => void }) {
       // The empty optional name is sent as null, the shape the API's own schema
       // answers `InvitationCreate.nome` with: the acceptance page asks for one when
       // the invitation carried none (spec §1), so "blank" here means "not known yet".
-      // The scope only from the second azienda on: a one-azienda space sends none.
+      // The scope only from the second legal entity on: a one-legal-entity space sends none.
       {
         email,
-        nome: nome.trim() === '' ? null : nome.trim(),
-        ruolo,
-        ...(several ? { aziende: scopeBody(inviteAziende, azienda.aziende) } : {}),
+        name: name.trim() === '' ? null : name.trim(),
+        role: roleValue,
+        ...(several ? { legal_entities: scopeBody(inviteLegalEntities, legal_entity.legal_entities) } : {}),
       },
       {
         onSuccess: (sent) => {
@@ -172,18 +172,18 @@ export function InviteUserDialog({ onClose }: { onClose: () => void }) {
             <Label htmlFor="invite-nome">Nome (opzionale)</Label>
             <Input
               id="invite-nome"
-              aria-invalid={fieldError?.field === 'nome'}
-              value={nome}
-              onChange={(event) => setNome(event.target.value)}
+              aria-invalid={fieldError?.field === 'name'}
+              value={name}
+              onChange={(event) => setName(event.target.value)}
             />
-            {fieldError?.field === 'nome' && (
+            {fieldError?.field === 'name' && (
               <p className="text-sm text-destructive">{fieldError.message}</p>
             )}
           </div>
           <div className="space-y-2">
-            <Label htmlFor="invite-ruolo">Ruolo</Label>
-            <Select value={ruolo} onValueChange={(value) => setRuolo(value as typeof ruolo)}>
-              <SelectTrigger id="invite-ruolo" className="w-full">
+            <Label htmlFor="invite-role">Ruolo</Label>
+            <Select value={roleValue} onValueChange={(value) => setRole(value as typeof roleValue)}>
+              <SelectTrigger id="invite-role" className="w-full">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -197,11 +197,11 @@ export function InviteUserDialog({ onClose }: { onClose: () => void }) {
           </div>
           {several && (
             <LegalEntitiesChecklist
-              aziende={azienda.aziende}
-              checked={inviteAziende}
-              onChange={setInviteAziende}
-              idPrefix="invite-azienda"
-              error={fieldError?.field === 'aziende' ? fieldError.message : undefined}
+              legal_entities={legal_entity.legal_entities}
+              checked={inviteLegalEntities}
+              onChange={setInviteLegalEntities}
+              idPrefix="invite-legal-entity"
+              error={fieldError?.field === 'legal_entities' ? fieldError.message : undefined}
             />
           )}
         </div>
@@ -211,7 +211,7 @@ export function InviteUserDialog({ onClose }: { onClose: () => void }) {
           </Button>
           <Button
             onClick={submit}
-            disabled={invite.isPending || (several && inviteAziende.length === 0)}
+            disabled={invite.isPending || (several && inviteLegalEntities.length === 0)}
           >
             {invite.isPending ? 'Invio…' : 'Invia invito'}
           </Button>
@@ -233,13 +233,13 @@ export function RenameUserDialog({
   update: ReturnType<typeof useUpdateUser>
   onClose: () => void
 }) {
-  const [renameNome, setRenameNome] = useState(user.nome)
+  const [renameName, setRenameName] = useState(user.name)
   const [renameProblem, setRenameProblem] = useState<ProblemDetail | null>(null)
 
   function saveRename() {
     setRenameProblem(null)
     update.mutate(
-      { userId: user.id, body: { nome: renameNome.trim() } },
+      { userId: user.id, body: { name: renameName.trim() } },
       {
         onSuccess: () => {
           toast.success('Nome aggiornato')
@@ -254,7 +254,7 @@ export function RenameUserDialog({
     <Dialog open onOpenChange={(next) => !next && onClose()}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Nome di {user.nome}</DialogTitle>
+          <DialogTitle>Nome di {user.name}</DialogTitle>
           <DialogDescription>
             È il nome che compare nei selettori di assegnatario e responsabile e nello storico.
           </DialogDescription>
@@ -265,8 +265,8 @@ export function RenameUserDialog({
             id="rename-nome"
             aria-invalid={renameProblem !== null}
             aria-describedby={renameProblem ? 'rename-nome-error' : undefined}
-            value={renameNome}
-            onChange={(event) => setRenameNome(event.target.value)}
+            value={renameName}
+            onChange={(event) => setRenameName(event.target.value)}
           />
           {renameProblem && (
             <p id="rename-nome-error" role="alert" className="text-sm text-destructive">
@@ -278,7 +278,7 @@ export function RenameUserDialog({
           <Button variant="ghost" onClick={onClose}>
             Annulla
           </Button>
-          <Button onClick={saveRename} disabled={update.isPending || renameNome.trim() === ''}>
+          <Button onClick={saveRename} disabled={update.isPending || renameName.trim() === ''}>
             {update.isPending ? 'Salvataggio…' : 'Salva'}
           </Button>
         </DialogFooter>
@@ -297,20 +297,20 @@ export function ScopeUserDialog({
   update: ReturnType<typeof useUpdateUser>
   onClose: () => void
 }) {
-  const azienda = useLegalEntity()
+  const legal_entity = useLegalEntity()
   // Only the ids the checklist draws: an azienda deactivated since the scope was set
   // is not there to uncheck, and sending it back would be refused as inactive.
-  const [scopeAziende, setScopeAziende] = useState<string[]>(() =>
-    Array.isArray(user.aziende)
-      ? user.aziende.filter((id) => azienda.byId(id) !== undefined)
-      : azienda.aziende.map((a) => a.id),
+  const [scopeLegalEntities, setScopeLegalEntities] = useState<string[]>(() =>
+    Array.isArray(user.legal_entities)
+      ? user.legal_entities.filter((id) => legal_entity.byId(id) !== undefined)
+      : legal_entity.legal_entities.map((a) => a.id),
   )
   const [scopeProblem, setScopeProblem] = useState<ProblemDetail | null>(null)
 
   function saveScope() {
     setScopeProblem(null)
     update.mutate(
-      { userId: user.id, body: { aziende: scopeBody(scopeAziende, azienda.aziende) } },
+      { userId: user.id, body: { legal_entities: scopeBody(scopeLegalEntities, legal_entity.legal_entities) } },
       {
         onSuccess: () => {
           toast.success('Aziende aggiornate')
@@ -325,14 +325,14 @@ export function ScopeUserDialog({
     <Dialog open onOpenChange={(next) => !next && onClose()}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Aziende di {user.nome}</DialogTitle>
+          <DialogTitle>Aziende di {user.name}</DialogTitle>
           <DialogDescription>
             La modifica vale dalla prossima richiesta. Lo spazio tiene sempre almeno un
             amministratore che vede tutte le aziende.
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-4">
-          {scopeProblem && fieldErrorFrom(scopeProblem)?.field !== 'aziende' && (
+          {scopeProblem && fieldErrorFrom(scopeProblem)?.field !== 'legal_entities' && (
             <p
               role="alert"
               className="rounded-lg border border-destructive/50 bg-destructive/10 px-3 py-2 text-sm text-destructive"
@@ -341,12 +341,12 @@ export function ScopeUserDialog({
             </p>
           )}
           <LegalEntitiesChecklist
-            aziende={azienda.aziende}
-            checked={scopeAziende}
-            onChange={setScopeAziende}
-            idPrefix="scope-azienda"
+            legal_entities={legal_entity.legal_entities}
+            checked={scopeLegalEntities}
+            onChange={setScopeLegalEntities}
+            idPrefix="scope-legal-entity"
             error={
-              scopeProblem && fieldErrorFrom(scopeProblem)?.field === 'aziende'
+              scopeProblem && fieldErrorFrom(scopeProblem)?.field === 'legal_entities'
                 ? fieldErrorFrom(scopeProblem)?.message
                 : undefined
             }
@@ -356,7 +356,7 @@ export function ScopeUserDialog({
           <Button variant="ghost" onClick={onClose}>
             Annulla
           </Button>
-          <Button onClick={saveScope} disabled={update.isPending || scopeAziende.length === 0}>
+          <Button onClick={saveScope} disabled={update.isPending || scopeLegalEntities.length === 0}>
             {update.isPending ? 'Salvataggio…' : 'Salva'}
           </Button>
         </DialogFooter>

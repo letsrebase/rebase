@@ -9,11 +9,11 @@ from dataclasses import replace
 
 from rebase_core.card_draft import (
     CV,
-    FONTI_FIELDS,
     HUB,
+    SOURCES_FIELDS,
     CardDraft,
-    CardFonti,
-    CardPersona,
+    CardPerson,
+    CardSources,
 )
 from rebase_core.card_guard import KnownIdentifiers, identifying
 from rebase_core.card_types import Failure
@@ -29,7 +29,7 @@ from rebase_core.team_schemas import Card
 # the prompt of REB-799 and REB-802, the CV alone; a card with no version recorded is
 # version 1. Version 2 (REB-839) reads the person's other sources too and answers a
 # private `CardDraft`. Version 3 (REB-855) also reads the person's identity and contacts
-# out of the CV, in `persona`, for the admin's named card. A bump spends nothing by
+# out of the CV, in `person`, for the admin's named card. A bump spends nothing by
 # itself: the cards of another version are listed for an admin to regenerate
 # (`CardWriter.stale_cards`); the hourly `refresh_stale` only writes a card whose CV is new.
 PROMPT_VERSION = 3
@@ -46,28 +46,28 @@ the person is.
 You receive the position the freelancer gave on their profile and the text of their \
 CV. Answer with the card alone, in the JSON schema you are given:
 
-- ruolo: the professional role, as a short title (for example "Backend developer").
-- anni: the years of professional experience in the role's field, a whole number \
+- role: the professional role, as a short title (for example "Backend developer").
+- experience_years: the years of professional experience in the role's field, a whole number \
 between 0 and 60, counted only from roles the CV dates: add up the dated periods \
 (a role still going ends today), overlapping roles counted once and the gaps between \
 roles left out, not the span from the first start to the last end; studies, theses, \
 internships under three months and undated projects left out. null, never a guess, \
 when the CV dates no professional role at all.
-- seniority: junior, mid, senior or lead, by these bands of anni: junior under 3 \
+- seniority: junior, mid, senior or lead, by these bands of experience_years: junior under 3 \
 years, mid from 3 to 5, senior from 6 up. lead is senior from 8 years up when the CV \
 states that the person leads people or a technical area (reporting lines, a team, a \
 technical direction); a founder or a "Fractional CTO" title alone is not leadership, \
-and a lead never has fewer than 8 years. When anni is null, give seniority as your \
+and a lead never has fewer than 8 years. When experience_years is null, give seniority as your \
 reading of the responsibility the CV shows (never lead): it is shown as uncertain.
-- competenze: at most 20 skills, technologies and methods, the most relevant first, \
+- skills: at most 20 skills, technologies and methods, the most relevant first, \
 each a few words.
-- settori: at most 10 industries the person worked in (for example "fintech", \
+- industries: at most 10 industries the person worked in (for example "fintech", \
 "e-commerce").
-- lingue: at most 8 languages the person speaks, in Italian and lowercase (for example \
+- languages: at most 8 languages the person speaks, in Italian and lowercase (for example \
 "italiano", "inglese").
-- luogo: the city or region the CV names as where the person lives or works, as \
+- location: the city or region the CV names as where the person lives or works, as \
 written there, at most 120 characters; null when the CV names none.
-- sintesi: two sentences at most, at most 400 characters, describing the profile.
+- profile_summary: two sentences at most, at most 400 characters, describing the profile.
 
 Rules:
 - Write every text in Italian, except the names of technologies and methods, which \
@@ -75,7 +75,7 @@ stay as they are.
 - Never write the person's name, the name of any employer, client or other \
 organisation they worked for, any link, email address or phone number: describe an \
 employer by its industry instead ("una banca", "una startup fintech").
-- Name a place only in luogo: ruolo, sintesi, competenze and settori name no city, \
+- Name a place only in location: role, profile_summary, skills and industries name no city, \
 region or country.
 - Use only what the CV says: never invent a skill, a sector, a language or a year; a \
 year you cannot read from a date in the CV is null.
@@ -99,18 +99,18 @@ The answer has four parts, in the JSON schema you are given:
 - card: the card described above, with every rule above. It is the only part that is \
 ever shown to companies, so the person's name, contacts, links and employers appear \
 nowhere in it.
-- fonti: for each field of the card, the keys of the sources that said it, taken only \
+- sources: for each field of the card, the keys of the sources that said it, taken only \
 from the "Sources available" line of the user turn (without that line the only source is \
 "cv", the CV). An empty list when none did. Never invent a key.
 - employers: the name of every employer, client or other organisation the CV or any \
 source block names, as it is written there, whether or not the card mentions it (a \
 GitHub bio that says "Backend @ Acme", a page that says "ex-Globex"). A check keeps them \
 out of the card; only the rebase admins read them, on the person's own page.
-- persona: who the person is, for the rebase admins only, never for the card: nome and \
-cognome (the person's own first name and surname as the CV writes them, without titles), \
-email, telefono (the number alone, as written, with the country prefix if there is one), \
-citta (the city where the person lives, as the CV writes it), linkedin_url (the person's \
-own LinkedIn profile) and altri_link (at most 5 other web addresses of the person: their \
+- person: who the person is, for the rebase admins only, never for the card: first_name and \
+last_name (the person's own first name and surname as the CV writes them, without titles), \
+email, phone (the number alone, as written, with the country prefix if there is one), \
+city (the city where the person lives, as the CV writes it), linkedin_url (the person's \
+own LinkedIn profile) and other_links (at most 5 other web addresses of the person: their \
 site, GitHub, portfolio). Copy only what the CV or a source block states literally; null \
 (or an empty list) for what none states. Never guess, complete or invent a value, never \
 take one of a referee, a company or a client, and never derive an address from the name. \
@@ -123,11 +123,11 @@ something else, however it is written.
 - No identifier from a source may reach the card: not a GitHub login, the name of a \
 repository, the address or domain of a website, a handle, an employer. Describe a \
 repository by what it does (for example "una libreria Python per ..."), never by name.
-- Years: anni is counted only from dated professional periods: the roles the CV dates, \
-as above, and the engagements of the hub marked "completato", for the months no role of \
+- Years: experience_years is counted only from dated professional periods: the roles the CV dates, \
+as above, and the engagements of the hub marked "completed", for the months no role of \
 the CV already covers. GitHub and web pages never give years: an account's age, a \
 repository's first commit or the date of a page is not professional experience. They may \
-inform competenze, settori and, when anni is null, your reading of the seniority (never \
+inform skills, industries and, when experience_years is null, your reading of the seniority (never \
 lead).
 - When the CV and another source disagree, follow the CV's dates.
 - What the hub marks "dato certo" was set by an admin: keep the card consistent with it."""
@@ -161,7 +161,7 @@ def prompt_sources(sources: SourceSet) -> list[SourceItem]:
 
 
 def source_keys(sources: SourceSet, facts: HubFacts) -> list[str]:
-    """The keys a card's `fonti` may name for this person, in the order the prompt lists
+    """The keys a card's `sources` may name for this person, in the order the prompt lists
     them: the CV always, each source the prompt carries, and `hub` when it has anything to
     say."""
     kept = prompt_sources(sources)
@@ -200,7 +200,7 @@ def source_blocks(sources: SourceSet, facts: HubFacts) -> list[str]:
 
 def card_prompt(
     cv: CvText,
-    posizione: str | None,
+    job_title: str | None,
     sources: SourceSet | None = None,
     facts: HubFacts | None = None,
 ) -> LlmRequest:
@@ -212,11 +212,11 @@ def card_prompt(
     the system text is far below the smallest prefix a provider caches, and one CV is
     read once. The output ceiling is the `card` task's (`ai_tasks`, «Modelli AI»)."""
     sources = sources or SourceSet([])
-    facts = facts or HubFacts(seniority_admin=None, anni_admin=None)
-    cut = " (cut short: the file is longer than what follows)" if cv.troncato else ""
+    facts = facts or HubFacts(seniority_admin=None, experience_years_admin=None)
+    cut = " (cut short: the file is longer than what follows)" if cv.truncated else ""
     user = (
-        f"Position on the profile: {posizione or 'not given'}\n\n"
-        f"The CV's text{cut}:\n<cv>\n{cv.testo}\n</cv>"
+        f"Position on the profile: {job_title or 'not given'}\n\n"
+        f"The CV's text{cut}:\n<cv>\n{cv.text}\n</cv>"
     )
     blocks = source_blocks(sources, facts)
     if blocks:
@@ -225,15 +225,15 @@ def card_prompt(
     return prompt_request(_system(bool(blocks)), [user], CardDraft)
 
 
-def card_prompt_v1(cv: CvText, posizione: str | None) -> LlmRequest:
+def card_prompt_v1(cv: CvText, job_title: str | None) -> LlmRequest:
     """Prompt version 1 as REB-799 and REB-802 left it, for an evaluation to write the
     baseline the present prompt is compared with (REB-842): `_SYSTEM` alone, a user turn
     of the position and the CV and nothing else, the answer `Card`. Never used to write a
     live card."""
-    cut = " (cut short: the file is longer than what follows)" if cv.troncato else ""
+    cut = " (cut short: the file is longer than what follows)" if cv.truncated else ""
     user = (
-        f"Position on the profile: {posizione or 'not given'}\n\n"
-        f"The CV's text{cut}:\n<cv>\n{cv.testo}\n</cv>"
+        f"Position on the profile: {job_title or 'not given'}\n\n"
+        f"The CV's text{cut}:\n<cv>\n{cv.text}\n</cv>"
     )
     return prompt_request(_SYSTEM, [user], Card)
 
@@ -289,18 +289,18 @@ def draft_from(response: LlmResponse, known: KnownIdentifiers) -> CardDraft | Fa
         # version 1 answers the card alone
         draft = CardDraft(
             card=response.parsed,
-            fonti=CardFonti.model_validate({name: [] for name in FONTI_FIELDS}),
+            sources=CardSources.model_validate({name: [] for name in SOURCES_FIELDS}),
             employers=[],
-            persona=CardPersona(
-                nome=None,
-                cognome=None,
+            person=CardPerson(
+                first_name=None,
+                last_name=None,
                 email=None,
-                telefono=None,
-                citta=None,
+                phone=None,
+                city=None,
                 linkedin_url=None,
-                altri_link=[],
+                other_links=[],
             ),
         )
-    if identifying(draft.card, KnownIdentifiers.empty(known.cognome, known.nome)):
+    if identifying(draft.card, KnownIdentifiers.empty(known.last_name, known.first_name)):
         return "identifying"
     return draft

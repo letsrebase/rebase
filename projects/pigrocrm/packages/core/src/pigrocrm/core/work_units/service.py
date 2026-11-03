@@ -2,7 +2,7 @@
 `work_unit_transitions` -- see `triggers.py`).
 
 This is the "repository layer" spec §5, §12 refer to: the one place that sets
-`pigrocrm.actor`/`pigrocrm.motivo` immediately before a `work_units` write, so
+`pigrocrm.actor`/`pigrocrm.reason` immediately before a `work_units` write, so
 `work_unit_log_transition` never falls back to its own system-actor/generic-reason
 default for an ordinary application write. A direct `psql` session or a future
 importer that skips this still gets a *correct* log -- just an anonymous one, which
@@ -23,13 +23,14 @@ from pigrocrm.core.actor import Actor
 from pigrocrm.core.contracts.repository import ContractRepository
 from pigrocrm.core.db.transactions import savepoint
 from pigrocrm.core.documents.models import Document
-from pigrocrm.core.documents.schemas import TITOLO_MAX_LENGTH
+from pigrocrm.core.documents.schemas import TITLE_MAX_LENGTH
 from pigrocrm.core.documents.service import DocumentService
 from pigrocrm.core.errors import Conflict, DomainError, NotFound, ValidationFailed
 from pigrocrm.core.gmail.repository import GmailRepository
+from pigrocrm.core.labels import WORK_UNIT_STATUS, label
 from pigrocrm.core.storage.base import DocumentStorage
 from pigrocrm.core.work_units.models import (
-    WORK_UNIT_ENTRY_STATI,
+    WORK_UNIT_ENTRY_STATUSES,
     WORK_UNIT_TRANSITIONS,
     Approval,
     WorkUnit,
@@ -52,7 +53,7 @@ from pigrocrm.core.work_units.schemas import (
     WorkUnitListQuery,
     WorkUnitRead,
     WorkUnitRow,
-    WorkUnitStato,
+    WorkUnitStatus,
     WorkUnitTransitionRead,
 )
 
@@ -69,33 +70,33 @@ CONTRACT_ENTITY = "contract"
 
 # The partial unique index that allows one live day per contract per date
 # (`models.py`): the name Postgres reports when a second one is recorded.
-LIVE_DAY_INDEX = "uq_work_units_contract_data_live"
+LIVE_DAY_INDEX = "uq_work_units_contract_date_live"
 
-# The two edges that are not a person's click on a day's page: `fatturato` is what an
-# invoice does to a day (`invoicing.py`), and `approvato` is what recording an approval
+# The two edges that are not a person's click on a day's page: `invoiced` is what an
+# invoice does to a day (`invoicing.py`), and `approved` is what recording an approval
 # does, with its proof. Offering either as a plain button would let a day be marked
 # approved or billed with no evidence and no invoice behind it.
 # The states a recorded approval can still use: a proposed day becomes approved, a day worked
 # without the approval its contract requires is recovered to worked.
-APPROVABLE_STATI: frozenset[str] = frozenset({"proposto", "lavorato_senza_approvazione"})
+APPROVABLE_STATUSES: frozenset[str] = frozenset({"proposed", "worked_without_approval"})
 
-NOT_A_MANUAL_ACTION: frozenset[str] = frozenset({"approvato", "fatturato"})
+NOT_A_MANUAL_ACTION: frozenset[str] = frozenset({"approved", "invoiced"})
 
 
-def allowed_actions(stato: str) -> list[WorkUnitStato]:
-    """The moves a person may make from `stato`: the state graph's own edges minus the two
-    above, in the order `WorkUnitStato` lists them. Empty for a terminal state."""
-    targets = WORK_UNIT_TRANSITIONS.get(stato, frozenset()) - NOT_A_MANUAL_ACTION
-    if stato == "lavorato_senza_approvazione":
-        # The graph has the edge back to `lavorato` and the trigger rewrites it straight
+def allowed_actions(status: str) -> list[WorkUnitStatus]:
+    """The moves a person may make from `status`: the state graph's own edges minus the two
+    above, in the order `WorkUnitStatus` lists them. Empty for a terminal state."""
+    targets = WORK_UNIT_TRANSITIONS.get(status, frozenset()) - NOT_A_MANUAL_ACTION
+    if status == "worked_without_approval":
+        # The graph has the edge back to `worked` and the trigger rewrites it straight
         # back to this state while no approval is linked: a button that moves nothing. The
         # way out is to link the approval, which the trigger recovers by itself.
-        targets = targets - {"lavorato"}
-    return [candidate for candidate in get_args(WorkUnitStato) if candidate in targets]
+        targets = targets - {"worked"}
+    return [candidate for candidate in get_args(WorkUnitStatus) if candidate in targets]
 
 
 def actor_to_transition_json(actor: Actor) -> str:
-    """`work_unit_transitions.attore`'s JSON shape (spec §5), derived from `Actor`
+    """`work_unit_transitions.actor`'s JSON shape (spec §5), derived from `Actor`
     (`actor.py:135`) rather than a new authentication concept: mastro's own
     `TransitionActor` names `human`/`agent`/`system`, and PigroCRM's `Actor.type`
     distinguishes those three cases as `user`/`mcp`/`system`. The fourth type, `rebase`
@@ -115,7 +116,7 @@ def actor_to_transition_json(actor: Actor) -> str:
     return json.dumps(payload)
 
 
-def set_transition_context(session: Session, actor: Actor, motivo: str) -> None:
+def set_transition_context(session: Session, actor: Actor, reason: str) -> None:
     """Session-local Postgres settings (`set_config(..., true)`, scoped to the
     transaction), read by `work_unit_log_transition` immediately after. Local, not
     global: the setting resets at the next commit or rollback, so it can never leak
@@ -124,7 +125,7 @@ def set_transition_context(session: Session, actor: Actor, motivo: str) -> None:
         text("SELECT set_config('pigrocrm.actor', :v, true)"),
         {"v": actor_to_transition_json(actor)},
     )
-    session.execute(text("SELECT set_config('pigrocrm.motivo', :v, true)"), {"v": motivo})
+    session.execute(text("SELECT set_config('pigrocrm.reason', :v, true)"), {"v": reason})
 
 
 class WorkUnitService:
@@ -144,7 +145,7 @@ class WorkUnitService:
         self,
         data: WorkUnitCreate,
         actor: Actor,
-        motivo: str = "creazione",
+        reason: str = "creazione",
         *,
         commit: bool = True,
     ) -> WorkUnitRead:
@@ -152,23 +153,24 @@ class WorkUnitService:
         and needs the writes to stand or fall together (`ApprovalRequestService.prepare`);
         the row is flushed and refreshed either way.
 
-        `WorkUnitCreate.stato`'s own `Literal` admits every state; this is the
-        narrower check against `WORK_UNIT_ENTRY_STATI` -- a `ValidationFailed` here
+        `WorkUnitCreate.status`'s own `Literal` admits every state; this is the
+        narrower check against `WORK_UNIT_ENTRY_STATUSES` -- a `ValidationFailed` here
         instead of the trigger's own `IntegrityError`, for the one case a schema can
         catch without a round trip to Postgres. The trigger enforces the identical
         rule regardless (`test_work_units_models.py`), so a caller that reaches this
         method through anything but this service is refused just the same."""
         actor.require_write("create_work_unit")
-        if data.stato not in WORK_UNIT_ENTRY_STATI:
+        if data.status not in WORK_UNIT_ENTRY_STATUSES:
             raise ValidationFailed(
                 WORK_UNIT_ENTITY,
-                "stato",
-                f"un work_unit non si crea direttamente in stato '{data.stato}'",
-                expected=f"uno tra {sorted(WORK_UNIT_ENTRY_STATI)}",
+                "status",
+                f"una giornata non si crea direttamente in stato "
+                f"'{label(WORK_UNIT_STATUS, data.status)}'",
+                expected=f"uno tra {sorted(WORK_UNIT_ENTRY_STATUSES)}",
             )
         if ContractRepository(self.session).get(data.contract_id) is None:
             raise NotFound("contract", data.contract_id)
-        set_transition_context(self.session, actor, motivo)
+        set_transition_context(self.session, actor, reason)
 
         def refuse(exc: IntegrityError) -> DomainError | IntegrityError:
             if LIVE_DAY_INDEX not in str(exc.orig):
@@ -178,22 +180,22 @@ class WorkUnitService:
                 "questo contratto ha gia' una giornata in quella data: "
                 "revoca o rifiuta quella esistente per registrarne un'altra",
                 contract_id=str(data.contract_id),
-                data=data.data.isoformat(),
+                date=data.date.isoformat(),
             )
 
         with savepoint(self.session, refuse):
             work_unit = self.repo.add(
                 WorkUnit(
                     contract_id=data.contract_id,
-                    data=data.data,
-                    quantita=data.quantita,
-                    descrizione=data.descrizione,
-                    stato=data.stato,
+                    date=data.date,
+                    quantity=data.quantity,
+                    description=data.description,
+                    status=data.status,
                     approval_id=data.approval_id,
                     note=data.note,
                 )
             )
-        # `work_unit_enforce_state_machine` can silently rewrite `stato` in flight
+        # `work_unit_enforce_state_machine` can silently rewrite `status` in flight
         # (the redirect/recovery, spec §5) -- `expire_on_commit=False`
         # (`db/session.py`) means the ORM object otherwise keeps showing the value
         # the caller *requested*, not the one the trigger actually wrote. A refresh
@@ -210,14 +212,14 @@ class WorkUnitService:
             work_unit.contract_id,
             "day_created",
             actor,
-            {"giornata": work_unit.data.isoformat(), "stato": work_unit.stato},
+            {"work_unit": work_unit.date.isoformat(), "status": work_unit.status},
         )
         if commit:
             self.session.commit()
         return WorkUnitRead.model_validate(work_unit)
 
     def transition(
-        self, work_unit_id: UUID, nuovo_stato: str, actor: Actor, motivo: str
+        self, work_unit_id: UUID, new_status: str, actor: Actor, reason: str
     ) -> WorkUnitRead:
         """Moves a day. The database is what actually enforces the edge
         (`work_unit_enforce_state_machine`) -- this is only where the transition
@@ -226,17 +228,18 @@ class WorkUnitService:
         work_unit = self.repo.get(work_unit_id)
         if work_unit is None:
             raise NotFound(WORK_UNIT_ENTITY, work_unit_id)
-        origine = work_unit.stato
-        if nuovo_stato != origine and nuovo_stato not in WORK_UNIT_TRANSITIONS.get(
-            origine, frozenset()
+        origin = work_unit.status
+        if new_status != origin and new_status not in WORK_UNIT_TRANSITIONS.get(
+            origin, frozenset()
         ):
             raise Conflict(
                 WORK_UNIT_ENTITY,
-                f"una giornata '{origine}' non puo' passare a '{nuovo_stato}'",
-                da=origine,
-                a=nuovo_stato,
+                f"una giornata '{label(WORK_UNIT_STATUS, origin)}' non puo' passare a "
+                f"'{label(WORK_UNIT_STATUS, new_status)}'",
+                from_status=origin,
+                to_status=new_status,
             )
-        set_transition_context(self.session, actor, motivo)
+        set_transition_context(self.session, actor, reason)
         # The trigger is the authority, and the check above only gives the common refusal a
         # clean answer: a move the graph allows can still be refused when another request
         # moved the day in between.
@@ -244,42 +247,44 @@ class WorkUnitService:
             self.session,
             lambda exc: Conflict(
                 WORK_UNIT_ENTITY,
-                f"la giornata non puo' passare a '{nuovo_stato}': e' cambiata nel frattempo",
-                a=nuovo_stato,
+                f"la giornata non puo' passare a '{label(WORK_UNIT_STATUS, new_status)}': e' "
+                f"cambiata nel frattempo",
+                to_status=new_status,
             ),
         ):
-            work_unit.stato = nuovo_stato
+            work_unit.status = new_status
         self.session.refresh(work_unit)  # see create()'s own comment
-        if work_unit.stato != origine:
+        if work_unit.status != origin:
             self.activities.record(
                 CONTRACT_ENTITY,
                 work_unit.contract_id,
                 "day_state_changed",
                 actor,
-                {"giornata": work_unit.data.isoformat(), "da": origine, "a": work_unit.stato},
+                {"work_unit": work_unit.date.isoformat(), "from": origin, "to": work_unit.status},
             )
         self.session.commit()
         return WorkUnitRead.model_validate(work_unit)
 
-    def move(self, work_unit_id: UUID, nuovo_stato: str, actor: Actor, motivo: str) -> WorkUnitRead:
+    def move(self, work_unit_id: UUID, new_status: str, actor: Actor, reason: str) -> WorkUnitRead:
         """A person's move (REB-746): `transition`, refused unless the day's own page would
         have offered it (`allowed_actions`). The graph in the database allows more than a
-        person may do from a screen: `approvato` is what recording an approval writes,
-        `fatturato` is what an invoice writes, and `lavorato` from a day worked without
+        person may do from a screen: `approved` is what recording an approval writes,
+        `invoiced` is what an invoice writes, and `worked` from a day worked without
         approval would be rewritten straight back by the trigger. `transition` stays the
         unrestricted write for the code that owns those edges."""
         actor.require_write("transition_work_unit")
         work_unit = self.repo.get(work_unit_id)
         if work_unit is None:
             raise NotFound(WORK_UNIT_ENTITY, work_unit_id)
-        if nuovo_stato not in allowed_actions(work_unit.stato):
+        if new_status not in allowed_actions(work_unit.status):
             raise Conflict(
                 WORK_UNIT_ENTITY,
-                f"una giornata '{work_unit.stato}' non puo' passare a '{nuovo_stato}' da qui",
-                da=work_unit.stato,
-                a=nuovo_stato,
+                f"una giornata '{label(WORK_UNIT_STATUS, work_unit.status)}' non puo' passare a "
+                f"'{label(WORK_UNIT_STATUS, new_status)}' da qui",
+                from_status=work_unit.status,
+                to_status=new_status,
             )
-        return self.transition(work_unit_id, nuovo_stato, actor, motivo)
+        return self.transition(work_unit_id, new_status, actor, reason)
 
     def transitions_for(self, work_unit_id: UUID) -> list[WorkUnitTransitionRead]:
         return [
@@ -302,62 +307,69 @@ class WorkUnitService:
                 approval = ApprovalDetail.model_validate(
                     {
                         **ApprovalRead.model_validate(row).model_dump(),
-                        "documento_titolo": approvals.document_title(row.document_id),
+                        "title_document": approvals.document_title(row.document_id),
                     }
                 )
         return WorkUnitDetail(
-            **_row(work_unit, contract.titolo, customer.id, customer.ragione_sociale).model_dump(),
+            **_row(work_unit, contract.title, customer.id, customer.legal_name).model_dump(),
             requires_prior_approval=contract.requires_prior_approval,
-            contratto_inizio=contract.inizio,
-            contratto_fine=contract.fine,
-            fuori_termine=_term_violation(work_unit.data, contract.inizio, contract.fine),
+            start_contract=contract.start,
+            contract_end=contract.end,
+            out_of_term=_term_violation(work_unit.date, contract.start, contract.end),
             approval=approval,
-            transizioni=self.transitions_for(work_unit_id),
-            azioni=allowed_actions(work_unit.stato),
+            transitions=self.transitions_for(work_unit_id),
+            actions=allowed_actions(work_unit.status),
         )
 
     # `list` stays the last method in this class: a later `def list(...)` would rebind
     # `list` in the class namespace and Python 3.13 evaluates annotations eagerly.
     def list(self, query: WorkUnitListQuery, actor: Actor) -> WorkUnitList:
-        if query.contract_id is None and query.da is None and query.a is None:
+        if query.contract_id is None and query.date_from is None and query.date_to is None:
             raise ValidationFailed(
                 WORK_UNIT_ENTITY,
                 "contract_id",
                 "indica un contratto o un intervallo di date",
                 expected="contract_id, da o a",
             )
-        if query.da is not None and query.a is not None and query.a < query.da:
+        if (
+            query.date_from is not None
+            and query.date_to is not None
+            and query.date_to < query.date_from
+        ):
             raise ValidationFailed(
-                WORK_UNIT_ENTITY, "a", "non puo' precedere da", expected=f">= {query.da}"
+                WORK_UNIT_ENTITY,
+                "to",
+                "non puo' precedere 'from'",
+                expected=f">= {query.date_from}",
             )
         rows = self.repo.list_labelled(query)
         return WorkUnitList(
             items=[
-                _row(work_unit, contract.titolo, customer.id, customer.ragione_sociale)
+                _row(work_unit, contract.title, customer.id, customer.legal_name)
                 for work_unit, contract, customer in rows[: query.limit]
             ],
-            troncato=len(rows) > query.limit,
+            truncated=len(rows) > query.limit,
         )
 
 
 def _row(
-    work_unit: WorkUnit, contract_titolo: str, customer_id: UUID, customer_nome: str
+    work_unit: WorkUnit, contract_title: str, customer_id: UUID, customer_name: str
 ) -> WorkUnitRow:
     return WorkUnitRow.model_validate(
         {
             **WorkUnitRead.model_validate(work_unit).model_dump(),
-            "contract_titolo": contract_titolo,
+            "contract_title": contract_title,
             "customer_id": customer_id,
-            "customer_nome": customer_nome,
+            "customer_name": customer_name,
         }
     )
 
 
-def _term_violation(giorno: date, inizio: date, fine: date | None) -> TermViolation | None:
-    if giorno < inizio:
-        return "prima_dell_inizio"
-    if fine is not None and giorno > fine:
-        return "dopo_la_fine"
+def _term_violation(day: date, start: date, end: date | None) -> TermViolation | None:
+    if day < start:
+        return "before_start"
+    if end is not None and day > end:
+        return "after_end"
     return None
 
 
@@ -379,17 +391,17 @@ class ApprovalService:
         approval = self.repo.add(
             Approval(
                 contract_id=data.contract_id,
-                canale=data.canale,
-                mittente=data.mittente,
-                ricevuto_il=data.ricevuto_il,
+                channel=data.channel,
+                sender=data.sender,
+                received_at=data.received_at,
                 message_id=data.message_id,
                 document_id=data.document_id,
-                estratto=data.estratto,
-                origine=data.origine,
+                excerpt=data.excerpt,
+                origin=data.origin,
             )
         )
         self.activities.record(
-            CONTRACT_ENTITY, data.contract_id, "approval_added", actor, {"canale": data.canale}
+            CONTRACT_ENTITY, data.contract_id, "approval_added", actor, {"channel": data.channel}
         )
         self.session.commit()
         return ApprovalRead.model_validate(approval)
@@ -400,9 +412,9 @@ class ApprovalService:
         day moves, so an approval is never left covering nothing and a day is never left
         approved by an approval that is not there.
 
-        A day moves according to where it is: `proposto` becomes `approvato` with the
-        approval linked in the same write, `lavorato_senza_approvazione` has the approval
-        linked and the trigger recovers it to `lavorato` (spec §5). Any other state refuses
+        A day moves according to where it is: `proposed` becomes `approved` with the
+        approval linked in the same write, `worked_without_approval` has the approval
+        linked and the trigger recovers it to `worked` (spec §5). Any other state refuses
         the whole recording with the days named: an approval is immutable evidence, and one
         recorded against a day that cannot use it is a correction nobody can make.
         """
@@ -429,26 +441,26 @@ class ApprovalService:
             approval = self.repo.add(
                 Approval(
                     contract_id=data.contract_id,
-                    canale=data.canale,
-                    mittente=data.mittente,
-                    ricevuto_il=data.ricevuto_il,
+                    channel=data.channel,
+                    sender=data.sender,
+                    received_at=data.received_at,
                     message_id=self._message_header(data),
                     document_id=document.id,
-                    estratto=data.estratto,
-                    origine={"kind": "manuale"},
+                    excerpt=data.excerpt,
+                    origin={"kind": "manual"},
                 )
             )
             for day in days:
                 day.approval_id = approval.id
-                if day.stato == "proposto":
-                    day.stato = "approvato"
+                if day.status == "proposed":
+                    day.status = "approved"
         for day in days:
             self.session.refresh(day)
         self.session.refresh(approval)
         detail = ApprovalDetail.model_validate(
             {
                 **ApprovalRead.model_validate(approval).model_dump(),
-                "documento_titolo": document.titolo,
+                "title_document": document.title,
             }
         )
         recorded = [WorkUnitRead.model_validate(day) for day in days]
@@ -457,7 +469,7 @@ class ApprovalService:
             data.contract_id,
             "approval_recorded",
             actor,
-            {"giorni": len(days), "canale": data.canale},
+            {"days": len(days), "channel": data.channel},
         )
         self.session.commit()
         return ApprovalRecorded(approval=detail, work_units=recorded)
@@ -471,14 +483,14 @@ class ApprovalService:
             day = self.session.get(WorkUnit, day_id, with_for_update=True, populate_existing=True)
             if day is None or day.contract_id != data.contract_id:
                 raise NotFound(WORK_UNIT_ENTITY, day_id)
-            if day.stato not in APPROVABLE_STATI or day.approval_id is not None:
-                refused.append(f"{day.data.isoformat()} ({day.stato})")
+            if day.status not in APPROVABLE_STATUSES or day.approval_id is not None:
+                refused.append(f"{day.date.isoformat()} ({label(WORK_UNIT_STATUS, day.status)})")
             days.append(day)
         if refused:
             raise Conflict(
                 APPROVAL_ENTITY,
                 "queste giornate non possono ricevere un'approvazione: " + ", ".join(refused),
-                giornate=refused,
+                work_units=refused,
             )
         return days
 
@@ -494,7 +506,7 @@ class ApprovalService:
                     "il documento non e' di questo contratto ne' del suo cliente",
                     expected="un documento del contratto o del cliente",
                 )
-            if document.versione_corrente < 1:
+            if document.current_version < 1:
                 raise ValidationFailed(
                     APPROVAL_ENTITY,
                     "document_id",
@@ -525,8 +537,8 @@ class ApprovalService:
                 expected="un messaggio con il testo sincronizzato",
             )
         # A header can carry a NUL, which `SafeStr` refuses in a title; a title is cut to its width.
-        titolo = f"Email di {message.from_address}: {message.subject}".replace("\x00", "")[
-            :TITOLO_MAX_LENGTH
+        title = f"Email di {message.from_address}: {message.subject}".replace("\x00", "")[
+            :TITLE_MAX_LENGTH
         ]
         text = (
             f"Da: {message.from_address}\n"
@@ -537,12 +549,12 @@ class ApprovalService:
         )
         filed = DocumentService(self.session, self.storage).import_bytes(
             contract_id=data.contract_id,
-            tipo="documento",
-            titolo=titolo,
+            type="document",
+            title=title,
             data=text.encode("utf-8"),
             content_type="text/plain",
             actor=actor,
-            origine={"gmail_message_id": str(message.id), "message_id": message.message_id_header},
+            origin={"gmail_message_id": str(message.id), "message_id": message.message_id_header},
             commit=False,
         )
         document = self.session.get(Document, filed.id)

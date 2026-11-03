@@ -20,7 +20,7 @@ class ProposalRepository:
 
     def get_for_update(self, proposal_id: UUID) -> Proposal | None:
         """The row locked and overwritten from the database: `session.get` alone would
-        return an already-loaded copy with its old `stato` (`populate_existing`)."""
+        return an already-loaded copy with its old `status` (`populate_existing`)."""
         return self.session.get(Proposal, proposal_id, with_for_update=True, populate_existing=True)
 
     def add(self, proposal: Proposal) -> Proposal:
@@ -34,20 +34,20 @@ class ProposalRepository:
     # convention every other repository's own `list`/`list_for_contract` follows).
     def list(self, query: ProposalListQuery) -> list[Proposal]:
         """Oldest first by default: a review queue is worked in the order proposals
-        arrived, not the order they were last touched. `ordine="decisione"` is the
+        arrived, not the order they were last touched. `order="decision"` is the
         decided lists' order, newest decision first."""
         stmt = select(Proposal)
-        if query.stato:
-            stmt = stmt.where(Proposal.stato == query.stato)
+        if query.status:
+            stmt = stmt.where(Proposal.status == query.status)
         if query.target_type:
             stmt = stmt.where(Proposal.target_type == query.target_type)
         if query.document_id:
             stmt = stmt.where(Proposal.document_id == query.document_id)
         if query.contract_id:
             stmt = stmt.where(Proposal.contract_id == query.contract_id)
-        if query.ordine == "decisione":
+        if query.order == "decision":
             stmt = stmt.order_by(
-                Proposal.deciso_il.desc().nulls_last(),
+                Proposal.decided_at.desc().nulls_last(),
                 Proposal.created_at.desc(),
                 Proposal.id.desc(),
             )

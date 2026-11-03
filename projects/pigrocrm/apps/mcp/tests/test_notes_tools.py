@@ -30,7 +30,7 @@ from pigrocrm.core.people.schemas import PersonCreate
 from pigrocrm.core.people.service import PersonService
 from pigrocrm.core.pipeline.service import PipelineService
 from pigrocrm.core.storage import LocalFileStorage
-from pigrocrm_mcp.provenance import PROVENIENZA_TESTO_LIBERO
+from pigrocrm_mcp.provenance import PROVENANCE_TEXT_FREE
 from pigrocrm_mcp.server import build_server
 from pigrocrm_mcp.tools.notes import THREAD_LIMIT
 
@@ -47,8 +47,8 @@ def _payload(result: Any) -> dict[str, Any]:
     return result.structured_content or json.loads(result.content[0].text)
 
 
-def _member(session: Session, nome: str, key: str, ruolo: str) -> User:
-    user = User(email=f"{key}@example.test", password_hash="x", nome=nome, ruolo=ruolo)
+def _member(session: Session, name: str, key: str, role: str) -> User:
+    user = User(email=f"{key}@example.test", password_hash="x", name=name, role=role)
     session.add(user)
     session.flush()
     return user
@@ -56,7 +56,7 @@ def _member(session: Session, nome: str, key: str, ruolo: str) -> User:
 
 def _server_of(session: Session, user: User, tmp_path: Path) -> Any:
     """The server as `PatService.resolve` hands it its actor: `mcp`, the owner's id and role."""
-    agent = Actor(id=user.id, type="mcp", role=user.ruolo)  # type: ignore[arg-type]
+    agent = Actor(id=user.id, type="mcp", role=user.role)  # type: ignore[arg-type]
     return build_server(
         lambda: session,
         lambda: agent,
@@ -67,12 +67,12 @@ def _server_of(session: Session, user: User, tmp_path: Path) -> Any:
 
 @pytest.fixture
 def marco(mcp_session: Session) -> User:
-    return _member(mcp_session, "Marco Verdi", "marco", "collaboratore")
+    return _member(mcp_session, "Marco Verdi", "marco", "collaborator")
 
 
 @pytest.fixture
 def giulia(mcp_session: Session) -> User:
-    return _member(mcp_session, "Giulia Bianchi", "giulia", "collaboratore")
+    return _member(mcp_session, "Giulia Bianchi", "giulia", "collaborator")
 
 
 @pytest.fixture
@@ -101,15 +101,15 @@ def records(mcp_session: Session, seeded_customer_id: str) -> dict[str, UUID]:
     PipelineService(mcp_session).seed_defaults(SYSTEM)
     customer = UUID(seeded_customer_id)
     deal = DealService(mcp_session).create(
-        DealCreate(nome="Progetto", customer_id=customer), SYSTEM
+        DealCreate(name="Progetto", customer_id=customer), SYSTEM
     )
-    person = PersonService(mcp_session).create(PersonCreate(nome="Anna"), SYSTEM)
+    person = PersonService(mcp_session).create(PersonCreate(first_name="Anna"), SYSTEM)
     return {"deal": deal.id, "customer": customer, "person": person.id}
 
 
-async def _note(client: Client, entity_type: str, entity_id: UUID, testo: str) -> dict[str, Any]:
+async def _note(client: Client, entity_type: str, entity_id: UUID, text: str) -> dict[str, Any]:
     result = await client.call_tool(
-        "add_note", {ADD_KEYS[entity_type]: str(entity_id), "testo": testo}
+        "add_note", {ADD_KEYS[entity_type]: str(entity_id), "text": text}
     )
     assert not result.is_error, result.content[0].text
     return _payload(result)
@@ -133,17 +133,17 @@ async def test_a_note_is_signed_with_the_token_owner_and_the_mcp_channel(
         added = await _note(client, entity_type, records[entity_type], "Richiamare a giugno")
         thread = await _thread(client, entity_type, records[entity_type])
 
-    assert added["testo"] == "Richiamare a giugno"
-    assert added["autore"] == "Marco Verdi"
-    assert added["autore_id"] == str(marco.id)
-    assert added["fonte"] == "mcp"
+    assert added["text"] == "Richiamare a giugno"
+    assert added["author"] == "Marco Verdi"
+    assert added["author_id"] == str(marco.id)
+    assert added["source"] == "mcp"
     assert added["entity_type"] == entity_type
     assert added["created_at"]
-    assert added["modificata_at"] is None
-    assert added["modificabile"] is True
-    assert "provenienza" in added
-    assert thread["note"] == [{k: v for k, v in added.items() if k != "provenienza"}]
-    assert thread["note_totale"] == 1
+    assert added["edited_at"] is None
+    assert added["editable"] is True
+    assert "provenance" in added
+    assert thread["note"] == [{k: v for k, v in added.items() if k != "provenance"}]
+    assert thread["note_total"] == 1
 
 
 async def test_no_note_tool_takes_an_author_or_a_date(marco_server: Any) -> None:
@@ -155,8 +155,8 @@ async def test_no_note_tool_takes_an_author_or_a_date(marco_server: Any) -> None
         for name in ("add_note", "update_note", "delete_note")
     }
     assert properties == {
-        "add_note": {"testo", "deal_id", "customer_id", "person_id"},
-        "update_note": {"note_id", "testo"},
+        "add_note": {"text", "deal_id", "customer_id", "person_id"},
+        "update_note": {"note_id", "text"},
         "delete_note": {"note_id"},
     }
     # The sentence is wrapped in the docstring: compare the words, not the line breaks.
@@ -170,9 +170,9 @@ async def test_an_author_or_a_date_in_the_call_is_refused(
     marco_server: Any, records: dict[str, UUID]
 ) -> None:
     async with Client(marco_server) as client:
-        for extra in ({"autore": "Giulia"}, {"created_at": "2020-01-01"}):
+        for extra in ({"author": "Giulia"}, {"created_at": "2020-01-01"}):
             result = await client.call_tool(
-                "add_note", {"deal_id": str(records["deal"]), "testo": "x", **extra}
+                "add_note", {"deal_id": str(records["deal"]), "text": "x", **extra}
             )
             assert result.is_error
         assert (await _thread(client, "deal", records["deal"]))["note"] == []
@@ -182,12 +182,10 @@ async def test_a_blank_note_and_an_unknown_record_are_refused(
     marco_server: Any, records: dict[str, UUID]
 ) -> None:
     async with Client(marco_server) as client:
-        blank = await client.call_tool(
-            "add_note", {"deal_id": str(records["deal"]), "testo": "   "}
-        )
+        blank = await client.call_tool("add_note", {"deal_id": str(records["deal"]), "text": "   "})
         missing = await client.call_tool(
             "add_note",
-            {"customer_id": "00000000-0000-4000-8000-000000000000", "testo": "x"},
+            {"customer_id": "00000000-0000-4000-8000-000000000000", "text": "x"},
         )
 
     assert blank.is_error
@@ -198,10 +196,10 @@ async def test_add_note_takes_exactly_one_record(
     marco_server: Any, records: dict[str, UUID]
 ) -> None:
     async with Client(marco_server) as client:
-        none = await client.call_tool("add_note", {"testo": "x"})
+        none = await client.call_tool("add_note", {"text": "x"})
         two = await client.call_tool(
             "add_note",
-            {"testo": "x", "deal_id": str(records["deal"]), "person_id": str(records["person"])},
+            {"text": "x", "deal_id": str(records["deal"]), "person_id": str(records["person"])},
         )
         assert none.is_error and two.is_error
         assert "uno solo fra" in none.content[0].text
@@ -219,16 +217,16 @@ async def test_the_author_edits_their_own_note_and_keeps_the_signature(
     async with Client(marco_server) as client:
         added = await _note(client, "deal", records["deal"], "Prima stesura")
         result = await client.call_tool(
-            "update_note", {"note_id": added["id"], "testo": "Seconda stesura"}
+            "update_note", {"note_id": added["id"], "text": "Seconda stesura"}
         )
         assert not result.is_error, result.content[0].text
         edited = _payload(result)
 
-    assert edited["testo"] == "Seconda stesura"
-    assert edited["autore"] == "Marco Verdi"
+    assert edited["text"] == "Seconda stesura"
+    assert edited["author"] == "Marco Verdi"
     assert edited["created_at"] == added["created_at"]
-    assert edited["modificata_at"] is not None
-    assert edited["modificata_da"] == "Marco Verdi"
+    assert edited["edited_at"] is not None
+    assert edited["edited_by"] == "Marco Verdi"
 
 
 async def test_a_member_cannot_edit_or_delete_a_note_of_another_member(
@@ -242,16 +240,16 @@ async def test_a_member_cannot_edit_or_delete_a_note_of_another_member(
 
     async with Client(giulia_server) as client:
         seen = (await _thread(client, "customer", records["customer"]))["note"]
-        edit = await client.call_tool("update_note", {"note_id": added["id"], "testo": "Di Giulia"})
+        edit = await client.call_tool("update_note", {"note_id": added["id"], "text": "Di Giulia"})
         delete = await client.call_tool("delete_note", {"note_id": added["id"]})
 
-    assert seen[0]["modificabile"] is False
+    assert seen[0]["editable"] is False
     for refused in (edit, delete):
         assert refused.is_error
         assert "chi l'ha scritta o un amministratore" in refused.content[0].text
     note = mcp_session.get(Note, UUID(added["id"]))
     assert note is not None
-    assert (note.testo, note.deleted_at) == ("Di Marco", None)
+    assert (note.text, note.deleted_at) == ("Di Marco", None)
 
 
 async def test_an_admin_edits_and_deletes_a_note_of_somebody_else(
@@ -263,32 +261,32 @@ async def test_an_admin_edits_and_deletes_a_note_of_somebody_else(
 
     async with Client(admin_server) as client:
         edited = _payload(
-            await client.call_tool("update_note", {"note_id": first["id"], "testo": "Corretta"})
+            await client.call_tool("update_note", {"note_id": first["id"], "text": "Corretta"})
         )
         deleted = _payload(await client.call_tool("delete_note", {"note_id": second["id"]}))
         thread = await _thread(client, "person", records["person"])
 
-    assert edited["autore"] == "Marco Verdi"
-    assert edited["modificata_da"] == "Anna Neri"
+    assert edited["author"] == "Marco Verdi"
+    assert edited["edited_by"] == "Anna Neri"
     assert deleted == {"status": "eliminata", "note_id": second["id"]}
-    assert [note["testo"] for note in thread["note"]] == ["Corretta"]
-    assert thread["note_totale"] == 1
+    assert [note["text"] for note in thread["note"]] == ["Corretta"]
+    assert thread["note_total"] == 1
 
 
 async def test_a_note_the_system_or_rebase_wrote_is_refused_even_to_an_admin(
     admin_server: Any, mcp_session: Session, records: dict[str, UUID]
 ) -> None:
     notes = NoteService(mcp_session)
-    by_system = notes.add("deal", records["deal"], NoteCreate(testo="Dal sistema"), SYSTEM)
-    by_rebase = notes.add("deal", records["deal"], NoteCreate(testo="Da rebase"), Actor.rebase())
-    assert (by_system.fonte, by_rebase.fonte) == ("sistema", "rebase")
+    by_system = notes.add("deal", records["deal"], NoteCreate(text="Dal sistema"), SYSTEM)
+    by_rebase = notes.add("deal", records["deal"], NoteCreate(text="Da rebase"), Actor.rebase())
+    assert (by_system.source, by_rebase.source) == ("system", "rebase")
 
     async with Client(admin_server) as client:
         results = []
         for note in (by_system, by_rebase):
             results.append(
                 await client.call_tool(
-                    "update_note", {"note_id": str(note.id), "testo": "Riscritta"}
+                    "update_note", {"note_id": str(note.id), "text": "Riscritta"}
                 )
             )
             results.append(await client.call_tool("delete_note", {"note_id": str(note.id)}))
@@ -297,14 +295,14 @@ async def test_a_note_the_system_or_rebase_wrote_is_refused_even_to_an_admin(
     for result in results:
         assert result.is_error
         assert "il sistema o rebase" in result.content[0].text
-    assert sorted(note["testo"] for note in thread) == ["Da rebase", "Dal sistema"]
-    assert {note["modificabile"] for note in thread} == {False}
+    assert sorted(note["text"] for note in thread) == ["Da rebase", "Dal sistema"]
+    assert {note["editable"] for note in thread} == {False}
 
 
 async def test_a_note_that_is_not_there_is_refused(marco_server: Any) -> None:
     async with Client(marco_server) as client:
         edit = await client.call_tool(
-            "update_note", {"note_id": "00000000-0000-4000-8000-000000000000", "testo": "x"}
+            "update_note", {"note_id": "00000000-0000-4000-8000-000000000000", "text": "x"}
         )
         delete = await client.call_tool(
             "delete_note", {"note_id": "00000000-0000-4000-8000-000000000000"}
@@ -325,8 +323,8 @@ def _write_thread(session: Session, entity_type: str, entity_id: UUID, count: in
             Note(
                 entity_type=entity_type,
                 entity_id=entity_id,
-                testo=f"nota {index:03d}",
-                fonte="web",
+                text=f"nota {index:03d}",
+                source="web",
                 created_at=start + timedelta(minutes=index),
             )
         )
@@ -343,16 +341,16 @@ async def test_get_carries_the_latest_notes_newest_first_and_says_how_many_there
         read = await _thread(client, entity_type, records[entity_type])
         tools = {tool.name: tool for tool in (await client.list_tools()).tools}
 
-    texts = [note["testo"] for note in read["note"]]
+    texts = [note["text"] for note in read["note"]]
     assert THREAD_LIMIT == 50
     assert len(texts) == 50
     assert texts[0] == "nota 054"
     assert texts[-1] == "nota 005"
-    assert read["note_totale"] == 55
-    assert read["provenienza"] == PROVENIENZA_TESTO_LIBERO
+    assert read["note_total"] == 55
+    assert read["provenance"] == PROVENANCE_TEXT_FREE
     description = tools[GET_TOOLS[entity_type][0]].description
     assert "ultime 50 note" in description
-    assert "note_totale" in description
+    assert "note_total" in description
 
 
 @pytest.mark.parametrize("entity_type", ["deal", "customer", "person"])
@@ -366,14 +364,14 @@ async def test_the_resource_renders_the_whole_thread_newest_first_with_its_prove
     _write_thread(mcp_session, entity_type, records[entity_type], THREAD_LIMIT + 5)
     async with Client(marco_server) as client:
         mine = await _note(client, entity_type, records[entity_type], "La più recente")
-        await client.call_tool("update_note", {"note_id": mine["id"], "testo": "La più recente."})
+        await client.call_tool("update_note", {"note_id": mine["id"], "text": "La più recente."})
     async with Client(giulia_server) as client:
         text = (
             (await client.read_resource(f"{entity_type}://{records[entity_type]}")).contents[0].text
         )
 
     section = text[text.index("## Note") :]
-    assert PROVENIENZA_TESTO_LIBERO in text.splitlines()[0]
+    assert PROVENANCE_TEXT_FREE in text.splitlines()[0]
     assert section.count("\n**") == THREAD_LIMIT + 6
     assert section.index("La più recente.") < section.index("nota 054") < section.index("nota 000")
     assert "Marco Verdi" in section
@@ -386,7 +384,7 @@ async def test_a_note_from_before_the_thread_is_shown_as_such(
     marco_server: Any, mcp_session: Session, records: dict[str, UUID]
 ) -> None:
     mcp_session.add(
-        Note(entity_type="customer", entity_id=records["customer"], testo="Vecchia", fonte=None)
+        Note(entity_type="customer", entity_id=records["customer"], text="Vecchia", source=None)
     )
     mcp_session.flush()
 
@@ -395,7 +393,7 @@ async def test_a_note_from_before_the_thread_is_shown_as_such(
         thread = (await _thread(client, "customer", records["customer"]))["note"]
 
     assert "Nota precedente" in text
-    assert (thread[0]["fonte"], thread[0]["autore"]) == (None, None)
+    assert (thread[0]["source"], thread[0]["author"]) == (None, None)
 
 
 async def test_a_record_without_notes_has_no_note_section_and_is_still_marked(
@@ -408,7 +406,7 @@ async def test_a_record_without_notes_has_no_note_section_and_is_still_marked(
     assert "## Note" not in text
     assert read["note"] == []
     # The name is free text too, so the answer is marked with or without notes.
-    assert read["provenienza"] == PROVENIENZA_TESTO_LIBERO
+    assert read["provenance"] == PROVENANCE_TEXT_FREE
 
 
 # --- create_* and update_* ----------------------------------------------------------
@@ -421,17 +419,19 @@ async def test_create_with_a_note_makes_it_the_first_note_signed_by_the_token_ow
     async with Client(marco_server) as client:
         customer = _payload(
             await client.call_tool(
-                "create_customer", {"ragione_sociale": "ACME", "note": "Cliente storico"}
+                "create_customer", {"legal_name": "ACME", "note": "Cliente storico"}
             )
         )
         deal = _payload(
             await client.call_tool(
                 "create_deal",
-                {"nome": "Progetto", "customer_id": customer["id"], "note": "In trattativa"},
+                {"name": "Progetto", "customer_id": customer["id"], "note": "In trattativa"},
             )
         )
         person = _payload(
-            await client.call_tool("create_person", {"nome": "Anna", "note": "Referente tecnico"})
+            await client.call_tool(
+                "create_person", {"first_name": "Anna", "note": "Referente tecnico"}
+            )
         )
         threads = {
             "customer": await _thread(client, "customer", UUID(customer["id"])),
@@ -445,18 +445,18 @@ async def test_create_with_a_note_makes_it_the_first_note_signed_by_the_token_ow
         "deal": "In trattativa",
         "person": "Referente tecnico",
     }
-    for entity_type, testo in expected.items():
+    for entity_type, text in expected.items():
         [note] = threads[entity_type]["note"]
-        assert (note["testo"], note["autore"], note["fonte"]) == (testo, "Marco Verdi", "mcp")
-        assert note["autore_id"] == str(marco.id)
+        assert (note["text"], note["author"], note["source"]) == (text, "Marco Verdi", "mcp")
+        assert note["author_id"] == str(marco.id)
 
 
 async def test_create_without_a_note_writes_none(marco_server: Any) -> None:
     async with Client(marco_server) as client:
-        customer = _payload(await client.call_tool("create_customer", {"ragione_sociale": "ACME"}))
+        customer = _payload(await client.call_tool("create_customer", {"legal_name": "ACME"}))
         thread = await _thread(client, "customer", UUID(customer["id"]))
 
-    assert thread["note"] == [] and thread["note_totale"] == 0
+    assert thread["note"] == [] and thread["note_total"] == 0
 
 
 @pytest.mark.parametrize("entity_type", ["deal", "customer", "person"])
@@ -504,7 +504,7 @@ async def test_the_timeline_names_the_member_for_an_added_edited_and_deleted_not
 ) -> None:
     async with Client(marco_server) as client:
         added = await _note(client, "deal", records["deal"], "Prima stesura")
-        await client.call_tool("update_note", {"note_id": added["id"], "testo": "Seconda"})
+        await client.call_tool("update_note", {"note_id": added["id"], "text": "Seconda"})
     async with Client(admin_server) as client:
         await client.call_tool("delete_note", {"note_id": added["id"]})
         entries = _payload(
@@ -521,4 +521,4 @@ async def test_the_timeline_names_the_member_for_an_added_edited_and_deleted_not
         ("note_deleted", "Anna Neri"),
     ):
         assert (by_kind[kind]["actor_name"], by_kind[kind]["actor_type"]) == (name, "mcp"), kind
-    assert "prima" not in by_kind["note_edited"]["payload"]
+    assert "before" not in by_kind["note_edited"]["payload"]

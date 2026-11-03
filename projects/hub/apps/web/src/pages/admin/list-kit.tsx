@@ -10,20 +10,20 @@ import { STATE_LABELS, TEAM_BUILDER_ORIGIN_LABEL, VETTED_LABEL } from '@/lib/for
 /** The parts every admin list and detail page is built from. */
 
 const TONE: Record<string, string> = {
-  nuovo: 'bg-[var(--color-royal-gold)]',
+  new: 'bg-[var(--color-royal-gold)]',
   lead: 'bg-muted',
-  contattato: 'bg-muted-foreground',
-  attivo: 'bg-foreground',
-  in_corso: 'bg-foreground',
-  scartato: 'bg-[var(--color-watermelon)]',
-  chiuso: 'bg-muted-foreground',
+  contacted: 'bg-muted-foreground',
+  active: 'bg-foreground',
+  in_progress: 'bg-foreground',
+  discarded: 'bg-[var(--color-watermelon)]',
+  closed: 'bg-muted-foreground',
 }
 
-export function StatePill({ stato }: { stato: string }) {
+export function StatePill({ status }: { status: string }) {
   return (
     <Badge variant="pill" className="gap-1.5">
-      <span aria-hidden="true" className={cn('size-1.5 rounded-full', TONE[stato] ?? 'bg-muted')} />
-      {STATE_LABELS[stato] ?? stato}
+      <span aria-hidden="true" className={cn('size-1.5 rounded-full', TONE[status] ?? 'bg-muted')} />
+      {STATE_LABELS[status] ?? status}
     </Badge>
   )
 }
@@ -75,7 +75,7 @@ export function StateFilter({
   states: readonly string[]
   value: string | undefined
   onChange: (value: string | undefined) => void
-  /** Talenti and Aziende share `STATE_LABELS`; a list over a different vocabulary
+  /** The talent and company lists share `STATE_LABELS`; a list over a different vocabulary
    *  (REB-413's own Match states) passes its own. */
   labels?: Record<string, string>
 }) {
@@ -83,7 +83,7 @@ export function StateFilter({
     <div className="flex flex-wrap gap-1.5" role="group" aria-label="Filtra per stato">
       {[undefined, ...states].map((state) => (
         <Button
-          key={state ?? 'tutti'}
+          key={state ?? 'all'}
           type="button"
           size="sm"
           variant={value === state ? 'default' : 'outline'}
@@ -222,23 +222,23 @@ export function Row({ label, children }: { label: string; children: React.ReactN
  *  refused save is said under the button. */
 export function StatusEditor({
   states,
-  stato,
+  status,
   onSave,
   saving,
   error,
 }: {
   states: readonly string[]
-  stato: string
-  onSave: (stato: string) => void
+  status: string
+  onSave: (status: string) => void
   saving: boolean
   error: string | null
 }) {
-  const [draftState, setDraftState] = useState(stato)
+  const [draftState, setDraftState] = useState(status)
   return (
     <div className="space-y-3 border p-4">
       <p className="text-sm font-medium">Stato</p>
       <StateFilter states={states} value={draftState} onChange={(value) => value && setDraftState(value)} />
-      <Button size="sm" onClick={() => onSave(draftState)} disabled={saving || draftState === stato}>
+      <Button size="sm" onClick={() => onSave(draftState)} disabled={saving || draftState === status}>
         {saving ? 'Salvo…' : 'Salva'}
       </Button>
       {error && (

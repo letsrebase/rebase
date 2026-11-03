@@ -42,75 +42,75 @@ from pigrocrm.core.invoices.fatturapa.checks import (
     check_text,
 )
 from pigrocrm.core.invoices.fatturapa.constants import (
+    ADDRESS_MAX,
     BASIC_LATIN_RE,
-    BOLLO_VIRTUALE,
-    CAP_ESTERO,
     CAP_RE,
-    CAUSALE_MAX,
-    CODICE_CIG_MAX,
-    CODICE_CUP_MAX,
-    CODICE_DESTINATARIO_ESTERO,
-    CODICE_DESTINATARIO_FALLBACK,
-    CODICE_DESTINATARIO_RE,
-    COMUNE_MAX,
-    DENOMINAZIONE_MAX,
-    DESCRIZIONE_MAX,
-    EMAIL_CONTATTI_RE,
+    CITY_MAX,
+    CODE_PROJECT_CODE_MAX,
+    CODE_RECIPIENT_FALLBACK,
+    CODE_RECIPIENT_FOREIGN,
+    CODE_RECIPIENT_RE,
+    CODE_TENDER_CODE_MAX,
+    COUNTRY_RE,
+    DENOMINATION_MAX,
+    DESCRIPTION_MAX,
+    EMAIL_CONTACTS_RE,
     EMAIL_MAX,
     EMAIL_MIN,
     EMAIL_PATTERN_EXPECTED,
     EMAIL_RE,
-    ESIGIBILITA_IVA,
-    FORMATO_TRASMISSIONE,
+    FORMAT_TRANSMISSION,
     FPR12_NAMESPACE,
     IBAN_RE,
-    ID_CODICE_MAX,
-    ID_DOCUMENTO_MAX,
-    INDIRIZZO_MAX,
+    ID_CODE_MAX,
+    ID_DOCUMENT_MAX,
     ISSUER_ENTITY,
-    NAZIONE_RE,
+    LEGAL_REFERENCE_MAX,
+    MEMO_MAX,
     NSMAP,
-    PROVINCIA_RE,
+    PHONE_MAX,
+    POSTAL_CODE_FOREIGN,
+    PROVINCE_RE,
     RECIPIENT_ENTITY,
-    RIFERIMENTO_NORMATIVO_MAX,
-    TELEFONO_MAX,
-    TIPO_PAGAMENTO_RE,
-    UNITA_MISURA_MAX,
+    STAMP_DUTY_VIRTUAL,
+    TYPE_PAYMENT_RE,
+    UNIT_OF_MEASURE_MAX,
+    VAT_COLLECTABILITY_VAT,
 )
 from pigrocrm.core.invoices.fatturapa.normalise import (
-    indirizzo_xml,
+    address_xml,
     is_italian,
     normalise_fiscal_id,
     normalise_foreign_fiscal_id,
 )
-from pigrocrm.core.invoices.naming import numero_completo, progressivo_invio
+from pigrocrm.core.invoices.naming import number_complete, send_sequential
 from pigrocrm.core.invoices.schemas import InvoiceForExport, InvoiceLineRead, PartySnapshot
 from pigrocrm.core.invoices.totals import (
     ComputedLine,
-    RiepilogoGroup,
-    build_riepilogo,
+    RecapGroup,
+    build_recap,
     format_amount_2,
     format_amount_8,
     format_rate,
 )
 
 
-class FatturaPAExporter:
+class InvoicePaExporter:
     """`InvoiceForExport` in, `bytes` out. No database, no profile lookup, no clock."""
 
     def to_bytes(self, invoice: InvoiceForExport) -> bytes:
-        if not invoice.righe:
+        if not invoice.lines:
             raise ValidationFailed(
                 "invoice",
-                "righe",
+                "lines",
                 "una fattura senza righe non e' esportabile",
                 expected="almeno una riga",
             )
-        emittente = invoice.snapshot.emittente
-        cliente = invoice.snapshot.cliente
-        check_party_exportable(emittente, ISSUER_ENTITY)
-        check_party_exportable(cliente, RECIPIENT_ENTITY)
-        check_recipient_identity(cliente)
+        legal_entity = invoice.snapshot.legal_entity
+        customer = invoice.snapshot.customer
+        check_party_exportable(legal_entity, ISSUER_ENTITY)
+        check_party_exportable(customer, RECIPIENT_ENTITY)
+        check_recipient_identity(customer)
 
         # `lxml-stubs` types `nsmap` as `Mapping[str, str]` here even though the
         # *property* it defines a few lines above is `Dict[Optional[str], str]` --
@@ -118,17 +118,17 @@ class FatturaPAExporter:
         # stub is simply incomplete for the write side. `NSMAP` has no `None` key in
         # this module, so this is a stub gap, not a real type mismatch.
         root = etree.Element(f"{{{FPR12_NAMESPACE}}}FatturaElettronica", nsmap=NSMAP)  # type: ignore[arg-type]
-        root.set("versione", FORMATO_TRASMISSIONE)
+        root.set("versione", FORMAT_TRANSMISSION)
 
         header = etree.SubElement(root, "FatturaElettronicaHeader")
-        self._dati_trasmissione(header, invoice)
-        self._cedente(header, invoice)
-        self._cessionario(header, cliente)
+        self._transmission_data(header, invoice)
+        self._supplier(header, invoice)
+        self._buyer(header, customer)
 
         body = etree.SubElement(root, "FatturaElettronicaBody")
-        self._dati_generali(body, invoice)
-        self._dati_beni_servizi(body, invoice)
-        self._dati_pagamento(body, invoice)
+        self._general_data(body, invoice)
+        self._goods_services_data(body, invoice)
+        self._payment_data(body, invoice)
 
         return etree.tostring(root, xml_declaration=True, encoding="UTF-8", pretty_print=True)
 
@@ -170,51 +170,51 @@ class FatturaPAExporter:
         element.text = value
         return element
 
-    def _anagrafica(self, parent: etree._Element, party: PartySnapshot, entity: str) -> None:
+    def _directory(self, parent: etree._Element, party: PartySnapshot, entity: str) -> None:
         """`Anagrafica/Denominazione`, even for a natural person with only a fiscal
         code: FPR12 allows `Nome`/`Cognome` instead, but `customers` has a single
-        `ragione_sociale`, so there is no choice to make."""
-        anagrafica = etree.SubElement(parent, "Anagrafica")
+        `legal_name`, so there is no choice to make."""
+        directory = etree.SubElement(parent, "Anagrafica")
         self._text(
-            anagrafica,
+            directory,
             "Denominazione",
-            party.ragione_sociale,
+            party.legal_name,
             entity=entity,
-            field="ragione_sociale",
-            max_length=DENOMINAZIONE_MAX,
+            field="legal_name",
+            max_length=DENOMINATION_MAX,
         )
 
-    def _sede(self, parent: etree._Element, party: PartySnapshot, entity: str) -> None:
+    def _headquarters(self, parent: etree._Element, party: PartySnapshot, entity: str) -> None:
         """`Indirizzo`, `CAP`, `Comune`, `Provincia?`, `Nazione`, the way the technical
         specifications want them for the party's country.
 
         An Italian address is written as stored. A foreign one is written the way the
         SdI describes it: `CAP` is the `00000` placeholder whatever the record holds,
         `Provincia` is left out, and the real postcode rides at the end of `Indirizzo`
-        (see `indirizzo_xml`, shared with the pre-check). Applying the five-digit
+        (see `address_xml`, shared with the pre-check). Applying the five-digit
         pattern to a real foreign postcode here is what ORB-38 was: `issue` had already
         spent the number by the time this method refused.
         """
-        italiano = is_italian(party)
-        sede = etree.SubElement(parent, "Sede")
+        italian = is_italian(party)
+        headquarters = etree.SubElement(parent, "Sede")
         self._text(
-            sede,
+            headquarters,
             "Indirizzo",
-            indirizzo_xml(party),
+            address_xml(party),
             entity=entity,
-            field="indirizzo",
-            max_length=INDIRIZZO_MAX,
+            field="address",
+            max_length=ADDRESS_MAX,
         )
         self._text(
-            sede,
+            headquarters,
             "CAP",
-            party.cap.strip() if italiano else CAP_ESTERO,
+            party.cap.strip() if italian else POSTAL_CODE_FOREIGN,
             entity=entity,
             field="cap",
             pattern=CAP_RE,
         )
         self._text(
-            sede, "Comune", party.comune, entity=entity, field="comune", max_length=COMUNE_MAX
+            headquarters, "Comune", party.city, entity=entity, field="city", max_length=CITY_MAX
         )
         # Omitted rather than emitted empty when there is none. `Provincia` is optional
         # in FPR12 for exactly this reason -- a London address has no two-letter Italian
@@ -223,33 +223,33 @@ class FatturaPAExporter:
         # mandatory for an Italian address, so a blank one here can only mean a party
         # that is legitimately without. Outside Italy it is omitted whatever the record
         # holds, since the element is the code of an Italian province and nothing else.
-        provincia = (party.provincia or "").strip().upper()
-        if italiano and provincia:
+        province = (party.province or "").strip().upper()
+        if italian and province:
             self._text(
-                sede,
+                headquarters,
                 "Provincia",
-                provincia,
+                province,
                 entity=entity,
-                field="provincia",
-                pattern=PROVINCIA_RE,
+                field="province",
+                pattern=PROVINCE_RE,
             )
         self._text(
-            sede,
+            headquarters,
             "Nazione",
-            party.nazione.strip().upper(),
+            party.country.strip().upper(),
             entity=entity,
-            field="nazione",
-            pattern=NAZIONE_RE,
+            field="country",
+            pattern=COUNTRY_RE,
         )
 
-    def _id_fiscale(
+    def _id_tax(
         self,
         parent: etree._Element,
         tag: str,
-        id_codice: str,
+        id_code: str,
         entity: str,
         field: str,
-        paese: str = "IT",
+        country: str = "IT",
     ) -> None:
         """`IdPaese` says which country's register `IdCodice` belongs to.
 
@@ -260,105 +260,105 @@ class FatturaPAExporter:
         the customer's is read from the customer.
         """
         block = etree.SubElement(parent, tag)
-        elemento = etree.SubElement(block, "IdPaese")
-        elemento.text = paese.strip().upper()
+        element = etree.SubElement(block, "IdPaese")
+        element.text = country.strip().upper()
         self._text(
             block,
             "IdCodice",
-            id_codice,
+            id_code,
             entity=entity,
             field=field,
-            max_length=ID_CODICE_MAX,
+            max_length=ID_CODE_MAX,
         )
 
     # ---- header ----------------------------------------------------------------
 
-    def _dati_trasmissione(self, header: etree._Element, invoice: InvoiceForExport) -> None:
+    def _transmission_data(self, header: etree._Element, invoice: InvoiceForExport) -> None:
         """Sequence: IdTrasmittente, ProgressivoInvio, FormatoTrasmissione,
         CodiceDestinatario, ContattiTrasmittente?, PECDestinatario?."""
-        emittente = invoice.snapshot.emittente
-        cliente = invoice.snapshot.cliente
+        legal_entity = invoice.snapshot.legal_entity
+        customer = invoice.snapshot.customer
         block = etree.SubElement(header, "DatiTrasmissione")
 
         # `IdTrasmittente/IdCodice` may be the issuer's *fiscal code* rather than the
         # VAT number, which is not obvious from the schema. Fiscal code first because
         # that is what the working generator sent.
-        trasmittente = normalise_fiscal_id(emittente.codice_fiscale) or normalise_fiscal_id(
-            emittente.partita_iva
+        transmitter = normalise_fiscal_id(legal_entity.tax_code) or normalise_fiscal_id(
+            legal_entity.vat_number
         )
-        if trasmittente is None:
+        if transmitter is None:
             raise ValidationFailed(
-                "emitter_profile",
-                "codice_fiscale",
+                "legal_entity",
+                "tax_code",
                 "serve un codice fiscale o una partita IVA dell'emittente per il "
                 "blocco IdTrasmittente",
                 expected="11 cifre oppure 16 caratteri",
             )
-        self._id_fiscale(block, "IdTrasmittente", trasmittente, "emitter_profile", "codice_fiscale")
+        self._id_tax(block, "IdTrasmittente", transmitter, "legal_entity", "tax_code")
 
-        progressivo = etree.SubElement(block, "ProgressivoInvio")
-        progressivo.text = progressivo_invio(invoice.anno, invoice.numero)
+        sequential = etree.SubElement(block, "ProgressivoInvio")
+        sequential.text = send_sequential(invoice.year, invoice.number)
 
-        formato = etree.SubElement(block, "FormatoTrasmissione")
+        format = etree.SubElement(block, "FormatoTrasmissione")
         # Not redundant with the root's own `versione` attribute: the SdI reads it here.
-        formato.text = FORMATO_TRASMISSIONE
+        format.text = FORMAT_TRANSMISSION
 
-        codice_sdi = (cliente.codice_sdi or "").strip().upper()
-        if (cliente.nazione or "").strip().upper() != "IT":
+        sdi_code = (customer.sdi_code or "").strip().upper()
+        if (customer.country or "").strip().upper() != "IT":
             # Checked before the SDI code, not after: a foreign customer that happens to
             # carry one — copied in by hand, or left behind by a country change — is
             # still a foreign customer, and routing the file to an Italian recipient's
             # code would send it to somebody else entirely.
-            destinatario = etree.SubElement(block, "CodiceDestinatario")
-            destinatario.text = CODICE_DESTINATARIO_ESTERO
-        elif codice_sdi:
+            recipient = etree.SubElement(block, "CodiceDestinatario")
+            recipient.text = CODE_RECIPIENT_FOREIGN
+        elif sdi_code:
             self._text(
                 block,
                 "CodiceDestinatario",
-                codice_sdi,
+                sdi_code,
                 entity="customer",
-                field="codice_sdi",
-                pattern=CODICE_DESTINATARIO_RE,
+                field="sdi_code",
+                pattern=CODE_RECIPIENT_RE,
             )
-        elif (cliente.pec or "").strip():
-            destinatario = etree.SubElement(block, "CodiceDestinatario")
-            destinatario.text = CODICE_DESTINATARIO_FALLBACK
+        elif (customer.certified_email or "").strip():
+            recipient = etree.SubElement(block, "CodiceDestinatario")
+            recipient.text = CODE_RECIPIENT_FALLBACK
         else:
             # The previous system emitted an empty element here: an invalid file, produced with no
             # error at all.
             raise ValidationFailed(
                 "customer",
-                "codice_sdi",
+                "sdi_code",
                 "serve un codice destinatario (SDI) oppure una PEC per emettere la fattura",
-                expected="codice_sdi di 7 caratteri oppure pec",
+                expected="sdi_code di 7 caratteri oppure certified_email",
             )
 
-        if (emittente.email or "").strip():
-            contatti = etree.SubElement(block, "ContattiTrasmittente")
+        if (legal_entity.email or "").strip():
+            contacts = etree.SubElement(block, "ContattiTrasmittente")
             self._text(
-                contatti,
+                contacts,
                 "Email",
-                (emittente.email or "").strip(),
-                entity="emitter_profile",
+                (legal_entity.email or "").strip(),
+                entity="legal_entity",
                 field="email",
                 max_length=EMAIL_MAX,
                 min_length=EMAIL_MIN,
-                pattern=EMAIL_CONTATTI_RE,
+                pattern=EMAIL_CONTACTS_RE,
                 pattern_expected=EMAIL_PATTERN_EXPECTED,
             )
-        if not codice_sdi and (cliente.pec or "").strip():
+        if not sdi_code and (customer.certified_email or "").strip():
             self._text(
                 block,
                 "PECDestinatario",
-                (cliente.pec or "").strip(),
+                (customer.certified_email or "").strip(),
                 entity="customer",
-                field="pec",
+                field="certified_email",
                 max_length=EMAIL_MAX,
                 pattern=EMAIL_RE,
                 pattern_expected=EMAIL_PATTERN_EXPECTED,
             )
 
-    def _cedente(self, header: etree._Element, invoice: InvoiceForExport) -> None:
+    def _supplier(self, header: etree._Element, invoice: InvoiceForExport) -> None:
         """Sequence: DatiAnagrafici(IdFiscaleIVA, CodiceFiscale?, Anagrafica,
         ..., RegimeFiscale), Sede, ..., Contatti?.
 
@@ -370,74 +370,74 @@ class FatturaPAExporter:
         This also matches Italian practice: an entity with no partita IVA is not a VAT
         subject and cannot be a `CedentePrestatore` on a FatturaPA document at all.
         """
-        emittente = invoice.snapshot.emittente
-        cedente = etree.SubElement(header, "CedentePrestatore")
-        anagrafici = etree.SubElement(cedente, "DatiAnagrafici")
+        legal_entity = invoice.snapshot.legal_entity
+        supplier = etree.SubElement(header, "CedentePrestatore")
+        master_data = etree.SubElement(supplier, "DatiAnagrafici")
 
-        piva = normalise_fiscal_id(emittente.partita_iva)
-        if piva is None:
+        vat_number = normalise_fiscal_id(legal_entity.vat_number)
+        if vat_number is None:
             raise ValidationFailed(
-                "emitter_profile",
-                "partita_iva",
+                "legal_entity",
+                "vat_number",
                 "l'emittente deve avere una partita IVA valida: IdFiscaleIVA e' "
                 "obbligatorio per il cedente/prestatore",
                 expected="11 cifre",
             )
-        self._id_fiscale(anagrafici, "IdFiscaleIVA", piva, "emitter_profile", "partita_iva")
-        codice_fiscale = normalise_fiscal_id(emittente.codice_fiscale)
-        if codice_fiscale is not None:
+        self._id_tax(master_data, "IdFiscaleIVA", vat_number, "legal_entity", "vat_number")
+        tax_code = normalise_fiscal_id(legal_entity.tax_code)
+        if tax_code is not None:
             self._text(
-                anagrafici,
+                master_data,
                 "CodiceFiscale",
-                codice_fiscale,
-                entity="emitter_profile",
-                field="codice_fiscale",
+                tax_code,
+                entity="legal_entity",
+                field="tax_code",
             )
-        self._anagrafica(anagrafici, emittente, "emitter_profile")
-        regime = etree.SubElement(anagrafici, "RegimeFiscale")
-        # From `fiscal_profile.codice_regime`, never a constant in the source: the
-        # whole point of the profile. `None` is a foreign azienda's profile (REB-619),
+        self._directory(master_data, legal_entity, "legal_entity")
+        regime = etree.SubElement(master_data, "RegimeFiscale")
+        # From `fiscal_profile.regime_code`, never a constant in the source: the
+        # whole point of the profile. `None` is a foreign legal entity's profile (REB-619),
         # which `InvoiceService.export_xml` refuses before this writer runs; refused
         # again here, since a writer that emitted an empty `RegimeFiscale` would hand
         # the SdI a file it rejects with a message nobody can act on.
-        if invoice.snapshot.fiscale.codice_regime is None:
+        if invoice.snapshot.tax.regime_code is None:
             raise ValidationFailed(
                 "fiscal_profile",
-                "codice_regime",
+                "regime_code",
                 "questa azienda non emette fatture elettroniche: il suo profilo fiscale "
                 "non ha un codice regime",
                 expected="un codice da RF01 a RF19",
             )
-        regime.text = invoice.snapshot.fiscale.codice_regime
+        regime.text = invoice.snapshot.tax.regime_code
 
-        self._sede(cedente, emittente, "emitter_profile")
+        self._headquarters(supplier, legal_entity, "legal_entity")
 
-        telefono = (emittente.telefono or "").strip()
-        email = (emittente.email or "").strip()
-        if telefono or email:
-            contatti = etree.SubElement(cedente, "Contatti")
-            if telefono:
+        phone = (legal_entity.phone or "").strip()
+        email = (legal_entity.email or "").strip()
+        if phone or email:
+            contacts = etree.SubElement(supplier, "Contatti")
+            if phone:
                 # FPR12's Telefono is 5-12 characters with no spaces or plus sign
                 # allowed by the pattern; strip the presentation characters a user
                 # typed rather than refusing a perfectly good number.
-                digits = re.sub(r"[^0-9]", "", telefono)[:TELEFONO_MAX]
+                digits = re.sub(r"[^0-9]", "", phone)[:PHONE_MAX]
                 if len(digits) >= 5:
-                    node = etree.SubElement(contatti, "Telefono")
+                    node = etree.SubElement(contacts, "Telefono")
                     node.text = digits
             if email:
                 self._text(
-                    contatti,
+                    contacts,
                     "Email",
                     email,
-                    entity="emitter_profile",
+                    entity="legal_entity",
                     field="email",
                     max_length=EMAIL_MAX,
                     min_length=EMAIL_MIN,
-                    pattern=EMAIL_CONTATTI_RE,
+                    pattern=EMAIL_CONTACTS_RE,
                     pattern_expected=EMAIL_PATTERN_EXPECTED,
                 )
 
-    def _cessionario(self, header: etree._Element, cliente: PartySnapshot) -> None:
+    def _buyer(self, header: etree._Element, customer: PartySnapshot) -> None:
         """Sequence: DatiAnagrafici(IdFiscaleIVA?, CodiceFiscale?, Anagrafica), Sede, ...
 
         Both identifiers are optional in the schema and at least one of them is not
@@ -447,88 +447,88 @@ class FatturaPAExporter:
         decides not to write an element: a check one call away from the decision it
         guards is a check a later edit can walk past.
         """
-        check_recipient_identity(cliente)
-        cessionario = etree.SubElement(header, "CessionarioCommittente")
-        anagrafici = etree.SubElement(cessionario, "DatiAnagrafici")
-        paese = (cliente.nazione or "IT").strip().upper()
+        check_recipient_identity(customer)
+        buyer = etree.SubElement(header, "CessionarioCommittente")
+        master_data = etree.SubElement(buyer, "DatiAnagrafici")
+        country = (customer.country or "IT").strip().upper()
         # Italy's two shapes are checked; every other country's is not, because there is
         # no shape to check. See `normalise_foreign_fiscal_id`.
-        piva = (
-            normalise_fiscal_id(cliente.partita_iva)
-            if paese == "IT"
-            else normalise_foreign_fiscal_id(cliente.partita_iva)
+        vat_number = (
+            normalise_fiscal_id(customer.vat_number)
+            if country == "IT"
+            else normalise_foreign_fiscal_id(customer.vat_number)
         )
-        if piva is not None:
-            self._id_fiscale(
-                anagrafici,
+        if vat_number is not None:
+            self._id_tax(
+                master_data,
                 "IdFiscaleIVA",
-                piva,
+                vat_number,
                 "customer",
-                "partita_iva",
-                paese=paese,
+                "vat_number",
+                country=country,
             )
-        codice_fiscale = normalise_fiscal_id(cliente.codice_fiscale)
-        if codice_fiscale is not None:
+        tax_code = normalise_fiscal_id(customer.tax_code)
+        if tax_code is not None:
             self._text(
-                anagrafici,
+                master_data,
                 "CodiceFiscale",
-                codice_fiscale,
+                tax_code,
                 entity="customer",
-                field="codice_fiscale",
+                field="tax_code",
             )
-        self._anagrafica(anagrafici, cliente, "customer")
-        self._sede(cessionario, cliente, "customer")
+        self._directory(master_data, customer, "customer")
+        self._headquarters(buyer, customer, "customer")
 
     # ---- body ------------------------------------------------------------------
 
-    def _dati_generali(self, body: etree._Element, invoice: InvoiceForExport) -> None:
+    def _general_data(self, body: etree._Element, invoice: InvoiceForExport) -> None:
         """Sequence: TipoDocumento, Divisa, Data, Numero, DatiRitenuta*, DatiBollo?,
         DatiCassaPrevidenziale*, ScontoMaggiorazione*, ImportoTotaleDocumento?,
         Arrotondamento?, Causale*, Art73?.
 
         Then `DatiOrdineAcquisto`, the next element of `DatiGenerali`, when the document
         has an order."""
-        generali = etree.SubElement(body, "DatiGenerali")
-        documento = etree.SubElement(generali, "DatiGeneraliDocumento")
+        general = etree.SubElement(body, "DatiGenerali")
+        document = etree.SubElement(general, "DatiGeneraliDocumento")
 
-        tipo = etree.SubElement(documento, "TipoDocumento")
-        tipo.text = invoice.tipo_documento
-        divisa = etree.SubElement(documento, "Divisa")
-        divisa.text = invoice.divisa
-        data = etree.SubElement(documento, "Data")
+        type = etree.SubElement(document, "TipoDocumento")
+        type.text = invoice.sdi_document_type
+        currency = etree.SubElement(document, "Divisa")
+        currency.text = invoice.currency
+        data = etree.SubElement(document, "Data")
         # A `date`, formatted with `isoformat()`. Never `toISOString()` on an instant:
         # that is what put an invoice issued on 31 December at 23:30 CET into the next
         # fiscal year.
-        data.text = self._iso(invoice.data_emissione)
-        numero = etree.SubElement(documento, "Numero")
-        numero.text = numero_completo(invoice.anno, invoice.numero)
+        data.text = self._iso(invoice.issue_date)
+        number = etree.SubElement(document, "Numero")
+        number.text = number_complete(invoice.year, invoice.number)
 
-        if invoice.bollo > Decimal("0.00"):
-            bollo = etree.SubElement(documento, "DatiBollo")
-            virtuale = etree.SubElement(bollo, "BolloVirtuale")
-            virtuale.text = BOLLO_VIRTUALE
-            importo = etree.SubElement(bollo, "ImportoBollo")
-            importo.text = format_amount_2(invoice.bollo)
+        if invoice.stamp_duty > Decimal("0.00"):
+            stamp_duty = etree.SubElement(document, "DatiBollo")
+            virtual = etree.SubElement(stamp_duty, "BolloVirtuale")
+            virtual.text = STAMP_DUTY_VIRTUAL
+            amount = etree.SubElement(stamp_duty, "ImportoBollo")
+            amount.text = format_amount_2(invoice.stamp_duty)
 
-        totale = etree.SubElement(documento, "ImportoTotaleDocumento")
+        total = etree.SubElement(document, "ImportoTotaleDocumento")
         # The stamp duty is not part of the total: `DatiBollo` declares that the
         # issuer settled it virtually, and charging it back would need a line with
         # `Natura N1` -- explicitly out of scope.
-        totale.text = format_amount_2(invoice.totale)
+        total.text = format_amount_2(invoice.total)
 
-        if (invoice.causale or "").strip():
+        if (invoice.memo or "").strip():
             self._text(
-                documento,
+                document,
                 "Causale",
-                invoice.causale or "",
+                invoice.memo or "",
                 entity="invoice",
-                field="causale",
-                max_length=CAUSALE_MAX,
+                field="memo",
+                max_length=MEMO_MAX,
             )
 
-        self._dati_ordine_acquisto(generali, invoice)
+        self._purchase_order_data(general, invoice)
 
-    def _dati_ordine_acquisto(self, generali: etree._Element, invoice: InvoiceForExport) -> None:
+    def _purchase_order_data(self, general: etree._Element, invoice: InvoiceForExport) -> None:
         """Sequence (`DatiDocumentiCorrelatiType`): RiferimentoNumeroLinea*, IdDocumento,
         Data?, NumItem?, CodiceCommessaConvenzione?, CodiceCUP?, CodiceCIG?.
 
@@ -536,73 +536,73 @@ class FatturaPAExporter:
         (REB-693). No `RiferimentoNumeroLinea`: the order covers every line, which is
         what the element's absence means. CUP before CIG is the schema's order.
         """
-        if not (invoice.ordine_numero or "").strip():
+        if not (invoice.purchase_order_number or "").strip():
             return
-        ordine = etree.SubElement(generali, "DatiOrdineAcquisto")
+        order = etree.SubElement(general, "DatiOrdineAcquisto")
         self._text(
-            ordine,
+            order,
             "IdDocumento",
-            invoice.ordine_numero or "",
+            invoice.purchase_order_number or "",
             entity="invoice",
-            field="ordine_numero",
-            max_length=ID_DOCUMENTO_MAX,
+            field="purchase_order_number",
+            max_length=ID_DOCUMENT_MAX,
             pattern=BASIC_LATIN_RE,
         )
-        if invoice.ordine_data is not None:
-            data = etree.SubElement(ordine, "Data")
-            data.text = self._iso(invoice.ordine_data)
-        if invoice.ordine_cup:
+        if invoice.purchase_order_date is not None:
+            data = etree.SubElement(order, "Data")
+            data.text = self._iso(invoice.purchase_order_date)
+        if invoice.purchase_order_project_code:
             self._text(
-                ordine,
+                order,
                 "CodiceCUP",
-                invoice.ordine_cup,
+                invoice.purchase_order_project_code,
                 entity="invoice",
-                field="ordine_cup",
-                max_length=CODICE_CUP_MAX,
+                field="purchase_order_project_code",
+                max_length=CODE_PROJECT_CODE_MAX,
                 pattern=BASIC_LATIN_RE,
             )
-        if invoice.ordine_cig:
+        if invoice.purchase_order_tender_code:
             self._text(
-                ordine,
+                order,
                 "CodiceCIG",
-                invoice.ordine_cig,
+                invoice.purchase_order_tender_code,
                 entity="invoice",
-                field="ordine_cig",
-                max_length=CODICE_CIG_MAX,
+                field="purchase_order_tender_code",
+                max_length=CODE_TENDER_CODE_MAX,
                 pattern=BASIC_LATIN_RE,
             )
 
-    def _dati_beni_servizi(self, body: etree._Element, invoice: InvoiceForExport) -> None:
-        beni = etree.SubElement(body, "DatiBeniServizi")
-        for riga in invoice.righe:
-            self._dettaglio_linea(beni, riga, invoice)
-        for group in build_riepilogo(
+    def _goods_services_data(self, body: etree._Element, invoice: InvoiceForExport) -> None:
+        goods = etree.SubElement(body, "DatiBeniServizi")
+        for invoice_line in invoice.lines:
+            self._detail_line(goods, invoice_line, invoice)
+        for group in build_recap(
             [
                 ComputedLine(
-                    numero_linea=r.numero_linea,
-                    descrizione=r.descrizione,
-                    quantita=r.quantita,
-                    unita_misura=r.unita_misura,
-                    prezzo_unitario=r.prezzo_unitario,
-                    sconto_percentuale=r.sconto_percentuale,
-                    sconto_importo=r.sconto_importo,
-                    prezzo_totale=r.prezzo_totale,
-                    aliquota_iva=r.aliquota_iva,
-                    natura=r.natura,
-                    riferimento_normativo=r.riferimento_normativo,
+                    line_number=r.line_number,
+                    description=r.description,
+                    quantity=r.quantity,
+                    unit_of_measure=r.unit_of_measure,
+                    unit_price=r.unit_price,
+                    discount_percentage=r.discount_percentage,
+                    discount_amount=r.discount_amount,
+                    total_price=r.total_price,
+                    vat_rate=r.vat_rate,
+                    vat_nature=r.vat_nature,
+                    legal_reference=r.legal_reference,
                 )
-                for r in invoice.righe
+                for r in invoice.lines
             ]
         ):
-            self._dati_riepilogo(beni, group)
+            self._summary_data(goods, group)
 
-    def _dettaglio_linea(
-        self, parent: etree._Element, riga: InvoiceLineRead, invoice: InvoiceForExport
+    def _detail_line(
+        self, parent: etree._Element, invoice_line: InvoiceLineRead, invoice: InvoiceForExport
     ) -> None:
         """Sequence: NumeroLinea, TipoCessionePrestazione?, CodiceArticolo*,
         Descrizione, Quantita?, UnitaMisura?, DataInizioPeriodo?, DataFinePeriodo?,
         PrezzoUnitario, ScontoMaggiorazione*, PrezzoTotale, AliquotaIVA, Ritenuta?,
-        Natura?, RiferimentoAmministrazione?, AltriDatiGestionali*.
+        VAT nature?, RiferimentoAmministrazione?, AltriDatiGestionali*.
 
         `UnitaMisura` comes *after* `Quantita` and *before* `PrezzoUnitario`: getting
         that wrong is a schema-invalid file with every value correct. The two period
@@ -610,113 +610,113 @@ class FatturaPAExporter:
         period is header level on the row, and every line repeats it because the schema
         has no place for it on the document.
         """
-        linea = etree.SubElement(parent, "DettaglioLinee")
-        numero = etree.SubElement(linea, "NumeroLinea")
+        line = etree.SubElement(parent, "DettaglioLinee")
+        number = etree.SubElement(line, "NumeroLinea")
         # A real line number per real line. The previous system hardcoded 1, quantity 1 and the
         # whole total as the unit price, so the detail of the work never reached the
         # customer.
-        numero.text = str(riga.numero_linea)
+        number.text = str(invoice_line.line_number)
         self._text(
-            linea,
+            line,
             "Descrizione",
-            riga.descrizione,
+            invoice_line.description,
             entity="invoice_line",
-            field="descrizione",
-            max_length=DESCRIZIONE_MAX,
+            field="description",
+            max_length=DESCRIPTION_MAX,
         )
-        quantita = etree.SubElement(linea, "Quantita")
-        quantita.text = format_amount_8(riga.quantita)
-        if (riga.unita_misura or "").strip():
+        quantity = etree.SubElement(line, "Quantita")
+        quantity.text = format_amount_8(invoice_line.quantity)
+        if (invoice_line.unit_of_measure or "").strip():
             self._text(
-                linea,
+                line,
                 "UnitaMisura",
-                riga.unita_misura or "",
+                invoice_line.unit_of_measure or "",
                 entity="invoice_line",
-                field="unita_misura",
-                max_length=UNITA_MISURA_MAX,
+                field="unit_of_measure",
+                max_length=UNIT_OF_MEASURE_MAX,
                 pattern=BASIC_LATIN_RE,
             )
-        if invoice.competenza_da is not None and invoice.competenza_a is not None:
+        if invoice.accrual_from is not None and invoice.accrual_to is not None:
             # Both or neither, which the row's own CHECK already guarantees: an empty
             # `<DataInizioPeriodo/>` would be a schema error, and a period invented from
             # the emission date would be a fact nobody stated.
-            inizio = etree.SubElement(linea, "DataInizioPeriodo")
-            inizio.text = self._iso(invoice.competenza_da)
-            fine = etree.SubElement(linea, "DataFinePeriodo")
-            fine.text = self._iso(invoice.competenza_a)
-        prezzo = etree.SubElement(linea, "PrezzoUnitario")
-        prezzo.text = format_amount_8(riga.prezzo_unitario)
+            start = etree.SubElement(line, "DataInizioPeriodo")
+            start.text = self._iso(invoice.accrual_from)
+            end = etree.SubElement(line, "DataFinePeriodo")
+            end.text = self._iso(invoice.accrual_to)
+        price = etree.SubElement(line, "PrezzoUnitario")
+        price.text = format_amount_8(invoice_line.unit_price)
         # `ScontoMaggiorazione` is deliberately not emitted: the discount is already
-        # inside `prezzo_totale` (totals.py::line_total), and declaring it twice would
+        # inside `total_price` (totals.py::line_total), and declaring it twice would
         # make the SdI's own check on PrezzoTotale fail.
-        totale = etree.SubElement(linea, "PrezzoTotale")
-        totale.text = format_amount_2(riga.prezzo_totale)
-        aliquota = etree.SubElement(linea, "AliquotaIVA")
-        aliquota.text = format_rate(riga.aliquota_iva)
-        if riga.natura:
-            natura = etree.SubElement(linea, "Natura")
-            natura.text = riga.natura
+        total = etree.SubElement(line, "PrezzoTotale")
+        total.text = format_amount_2(invoice_line.total_price)
+        rate = etree.SubElement(line, "AliquotaIVA")
+        rate.text = format_rate(invoice_line.vat_rate)
+        if invoice_line.vat_nature:
+            vat_nature = etree.SubElement(line, "Natura")
+            vat_nature.text = invoice_line.vat_nature
 
-    def _dati_riepilogo(self, parent: etree._Element, group: RiepilogoGroup) -> None:
-        """Sequence: AliquotaIVA, Natura?, SpeseAccessorie?, Arrotondamento?,
+    def _summary_data(self, parent: etree._Element, group: RecapGroup) -> None:
+        """Sequence: AliquotaIVA, VAT nature?, SpeseAccessorie?, Arrotondamento?,
         ImponibileImporto, Imposta, EsigibilitaIVA?, RiferimentoNormativo?."""
-        riepilogo = etree.SubElement(parent, "DatiRiepilogo")
-        aliquota = etree.SubElement(riepilogo, "AliquotaIVA")
-        aliquota.text = format_rate(group.aliquota_iva)
-        if group.natura:
-            natura = etree.SubElement(riepilogo, "Natura")
-            natura.text = group.natura
-        imponibile = etree.SubElement(riepilogo, "ImponibileImporto")
-        imponibile.text = format_amount_2(group.imponibile)
-        imposta = etree.SubElement(riepilogo, "Imposta")
-        imposta.text = format_amount_2(group.imposta)
-        esigibilita = etree.SubElement(riepilogo, "EsigibilitaIVA")
-        esigibilita.text = ESIGIBILITA_IVA
-        if group.natura and group.riferimento_normativo:
+        recap = etree.SubElement(parent, "DatiRiepilogo")
+        rate = etree.SubElement(recap, "AliquotaIVA")
+        rate.text = format_rate(group.vat_rate)
+        if group.vat_nature:
+            vat_nature = etree.SubElement(recap, "Natura")
+            vat_nature.text = group.vat_nature
+        taxable_amount = etree.SubElement(recap, "ImponibileImporto")
+        taxable_amount.text = format_amount_2(group.taxable_amount)
+        vat_amount = etree.SubElement(recap, "Imposta")
+        vat_amount.text = format_amount_2(group.vat_amount)
+        vat_collectability = etree.SubElement(recap, "EsigibilitaIVA")
+        vat_collectability.text = VAT_COLLECTABILITY_VAT
+        if group.vat_nature and group.legal_reference:
             # A real normative reference, from the profile. The previous system sent the
             # *description of the code* ("N2.2 (non soggette - altri casi)") in this field.
             self._text(
-                riepilogo,
+                recap,
                 "RiferimentoNormativo",
-                group.riferimento_normativo,
+                group.legal_reference,
                 entity="fiscal_profile",
-                field="riferimento_normativo",
-                max_length=RIFERIMENTO_NORMATIVO_MAX,
+                field="legal_reference",
+                max_length=LEGAL_REFERENCE_MAX,
             )
 
-    def _dati_pagamento(self, body: etree._Element, invoice: InvoiceForExport) -> None:
+    def _payment_data(self, body: etree._Element, invoice: InvoiceForExport) -> None:
         """Sequence: CondizioniPagamento, DettaglioPagamento+; and inside it
         Beneficiario?, ModalitaPagamento, DataRiferimentoTerminiPagamento?,
         GiorniTerminiPagamento?, DataScadenzaPagamento?, ImportoPagamento, ..., IBAN?."""
-        fiscale = invoice.snapshot.fiscale
-        pagamento = etree.SubElement(body, "DatiPagamento")
+        tax = invoice.snapshot.tax
+        payment = etree.SubElement(body, "DatiPagamento")
         self._text(
-            pagamento,
+            payment,
             "CondizioniPagamento",
-            fiscale.condizioni_pagamento,
+            tax.payment_terms,
             entity="fiscal_profile",
-            field="condizioni_pagamento",
-            pattern=TIPO_PAGAMENTO_RE,
+            field="payment_terms",
+            pattern=TYPE_PAYMENT_RE,
         )
-        dettaglio = etree.SubElement(pagamento, "DettaglioPagamento")
+        detail = etree.SubElement(payment, "DettaglioPagamento")
         self._text(
-            dettaglio,
+            detail,
             "ModalitaPagamento",
-            fiscale.modalita_pagamento,
+            tax.payment_method,
             entity="fiscal_profile",
-            field="modalita_pagamento",
-            pattern=TIPO_PAGAMENTO_RE,
+            field="payment_method",
+            pattern=TYPE_PAYMENT_RE,
         )
-        if invoice.data_scadenza is not None:
-            scadenza = etree.SubElement(dettaglio, "DataScadenzaPagamento")
-            scadenza.text = self._iso(invoice.data_scadenza)
-        importo = etree.SubElement(dettaglio, "ImportoPagamento")
-        importo.text = format_amount_2(invoice.totale)
-        if (fiscale.iban or "").strip():
+        if invoice.due_date is not None:
+            due_date = etree.SubElement(detail, "DataScadenzaPagamento")
+            due_date.text = self._iso(invoice.due_date)
+        amount = etree.SubElement(detail, "ImportoPagamento")
+        amount.text = format_amount_2(invoice.total)
+        if (tax.iban or "").strip():
             self._text(
-                dettaglio,
+                detail,
                 "IBAN",
-                (fiscale.iban or "").strip().replace(" ", ""),
+                (tax.iban or "").strip().replace(" ", ""),
                 entity="fiscal_profile",
                 field="iban",
                 pattern=IBAN_RE,

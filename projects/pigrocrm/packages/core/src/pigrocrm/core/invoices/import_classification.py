@@ -14,11 +14,11 @@ customer yet.
 from collections.abc import Callable, Sequence
 from typing import Literal
 
-from pigrocrm.core.emitter.models import LegalEntity
 from pigrocrm.core.invoices.import_dedup import check_invoice_duplicate
-from pigrocrm.core.invoices.import_direction import match_azienda
+from pigrocrm.core.invoices.import_direction import match_legal_entity
 from pigrocrm.core.invoices.import_schemas import ParsedInvoice
 from pigrocrm.core.invoices.models import Invoice
+from pigrocrm.core.legal_entities.models import LegalEntity
 
 InvoiceImportClassification = Literal["ready", "already_present", "conflict", "incoming_skipped"]
 """`"incoming_skipped"` -- a supplier's invoice: classified and reported, never
@@ -32,7 +32,7 @@ REB-365; the actual write, REB-366)."""
 
 def classify_parsed_invoice(
     invoice: ParsedInvoice,
-    aziende: Sequence[LegalEntity],
+    legal_entities: Sequence[LegalEntity],
     *,
     existing_for: Callable[[LegalEntity], Invoice | None],
     content: bytes,
@@ -40,21 +40,21 @@ def classify_parsed_invoice(
     """Direction first, register second -- exactly the order mastro's own
     `importer.ts` runs them in, and for the same reason: an incoming invoice has
     no natural key to check at all (PigroCRM's register only ever held its own
-    aziende's outgoing invoices), so checking duplication before direction would be
+    legal entities's outgoing invoices), so checking duplication before direction would be
     checking a fact that does not apply.
 
-    Answers the classification and the azienda the file lands on (REB-619, spec
-    §1.5): `None` with `"incoming_skipped"`, the matched azienda otherwise, which is
+    Answers the classification and the legal entity the file lands on (REB-619, spec
+    §1.5): `None` with `"incoming_skipped"`, the matched legal entity otherwise, which is
     whose register `existing_for` is asked about. `existing_for` is the caller's own
     `InvoiceRepository.existing_by_number(azienda.id, anno, numero)` lookup at
     whatever natural key the caller has already derived for this invoice, deferred
-    until the azienda is known, so an incoming invoice costs no register read at all.
+    until the legal entity is known, so an incoming invoice costs no register read at all.
     `content` is the raw bytes of the document being imported.
     """
-    azienda = match_azienda(invoice.fornitore, aziende)
-    if azienda is None:
+    legal_entity = match_legal_entity(invoice.supplier, legal_entities)
+    if legal_entity is None:
         return "incoming_skipped", None
-    duplicate = check_invoice_duplicate(existing_for(azienda), content)
+    duplicate = check_invoice_duplicate(existing_for(legal_entity), content)
     if duplicate == "new":
-        return "ready", azienda
-    return duplicate, azienda
+        return "ready", legal_entity
+    return duplicate, legal_entity

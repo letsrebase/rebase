@@ -18,8 +18,8 @@ vi.mock('@/lib/api', async (importOriginal) => {
   return { ...actual, api: { GET: vi.fn(), POST: vi.fn(), PUT: vi.fn(), DELETE: vi.fn() } }
 })
 
-const auth: { user: { id: string; email: string; nome: string; ruolo: string; attivo: boolean } | null } = {
-  user: { id: 'u1', email: 'ada@studio.it', nome: 'Ada', ruolo: 'admin', attivo: true },
+const auth: { user: { id: string; email: string; name: string; role: string; active: boolean } | null } = {
+  user: { id: 'u1', email: 'ada@studio.it', name: 'Ada', role: 'admin', active: true },
 }
 vi.mock('@/lib/auth', () => ({
   useAuth: () => ({
@@ -29,9 +29,9 @@ vi.mock('@/lib/auth', () => ({
     logout: vi.fn(),
     enterWithLink: vi.fn(),
   }),
-  useCanWrite: () => auth.user?.ruolo !== 'readonly',
+  useCanWrite: () => auth.user?.role !== 'readonly',
   // The invoice door's own gate (REB-224): registering an issued invoice is the admin's.
-  useCan: () => auth.user?.ruolo === 'admin',
+  useCan: () => auth.user?.role === 'admin',
 }))
 
 vi.mock('@rebase/ui/sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
@@ -73,7 +73,7 @@ const EMPTY: Record<string, unknown> = {
   '/api/gmail/account': NO_GMAIL,
 }
 
-/** Stubs by path: `overrides` win, `/api/aziende` is an empty list unless overridden, `failing`
+/** Stubs by path: `overrides` win, `/api/legal-entities` is an empty list unless overridden, `failing`
  *  answers that HTTP status with an error body. */
 function answers(overrides: Record<string, unknown> = {}, failing: Record<string, number> = {}) {
   vi.mocked(api.GET).mockImplementation(
@@ -83,18 +83,18 @@ function answers(overrides: Record<string, unknown> = {}, failing: Record<string
           ? { error: { detail: 'boom' }, response: new Response(null, { status: failing[path] }) }
           : path in overrides
             ? { data: overrides[path], response: new Response(null, { status: 200 }) }
-            : path === '/api/aziende'
+            : path === '/api/legal-entities'
               ? { data: [], response: new Response(null, { status: 200 }) }
               : { data: EMPTY[path], response: new Response(null, { status: 200 }) },
       )) as never,
   )
 }
 
-function renderPage(esito?: string) {
+function renderPage(outcome?: string) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   render(
     <QueryClientProvider client={client}>
-      <GetStartedPage esito={esito} />
+      <GetStartedPage outcome={outcome} />
     </QueryClientProvider>,
   )
 }
@@ -115,7 +115,7 @@ beforeEach(() => {
 })
 
 afterEach(() => {
-  auth.user = { id: 'u1', email: 'ada@studio.it', nome: 'Ada', ruolo: 'admin', attivo: true }
+  auth.user = { id: 'u1', email: 'ada@studio.it', name: 'Ada', role: 'admin', active: true }
 })
 
 describe('the start page', () => {
@@ -155,7 +155,7 @@ describe('the Gmail door', () => {
   })
 
   it('tells a collaboratore who sets the client, with no link to a page only an admin opens', async () => {
-    if (auth.user) auth.user.ruolo = 'collaboratore'
+    if (auth.user) auth.user.role = 'collaborator'
     renderPage()
     const door = within(await screen.findByRole('region', { name: 'Collega Gmail' }))
     expect(await door.findByText(/lo imposta l’amministratore dello spazio/)).toBeInTheDocument()
@@ -176,7 +176,7 @@ describe('the Gmail door', () => {
     answers({
       '/api/gmail/account': { ...GMAIL_READY, account: ACCOUNT },
       '/api/gmail/customer-suggestions': [
-        { dominio: 'acme.it', nome: 'Acme', conversazioni: 3, ultimo_messaggio: null, persone: [] },
+        { domain: 'acme.it', name: 'Acme', conversations: 3, last_message: null, people: [] },
       ],
     })
     renderPage()
@@ -203,7 +203,7 @@ describe('the Gmail door', () => {
   })
 
   it('tells a readonly user who can connect it', async () => {
-    if (auth.user) auth.user.ruolo = 'readonly'
+    if (auth.user) auth.user.role = 'readonly'
     answers({ '/api/gmail/account': GMAIL_READY })
     renderPage()
     const door = within(await screen.findByRole('region', { name: 'Collega Gmail' }))
@@ -213,13 +213,13 @@ describe('the Gmail door', () => {
 
   it('renders the consent flow’s outcome from the fixed table, and nothing for a code it does not know', async () => {
     answers({ '/api/gmail/account': { ...GMAIL_READY, account: ACCOUNT } })
-    renderPage('collegato')
+    renderPage('connected')
     expect(await screen.findByText('Casella Google collegata.')).toBeInTheDocument()
   })
 
   it('says a consent came back with no session, and offers «Riprova» beside the door', async () => {
     answers({ '/api/gmail/account': GMAIL_READY })
-    renderPage('sessione')
+    renderPage('session_expired')
     const door = within(await screen.findByRole('region', { name: 'Collega Gmail' }))
     expect(door.getByRole('status')).toHaveTextContent(
       'La sessione è scaduta mentre eri su Google, quindi la casella non è stata collegata.',
@@ -252,7 +252,7 @@ describe('the assistant block', () => {
         Promise.resolve(
           path === '/api/tokens'
             ? { data: tokens, response: new Response(null, { status: 200 }) }
-            : path === '/api/aziende'
+            : path === '/api/legal-entities'
               ? { data: [], response: new Response(null, { status: 200 }) }
               : { data: EMPTY[path], response: new Response(null, { status: 200 }) },
         )) as never,
@@ -262,7 +262,7 @@ describe('the assistant block', () => {
       return Promise.resolve({
         data: {
           id: 't2',
-          nome: 'Claude Code',
+          name: 'Claude Code',
           prefix: 'pgc_zzzz9999',
           last_used_at: null,
           revoked_at: null,
@@ -295,7 +295,7 @@ describe('the assistant block, once the token is copied', () => {
         Promise.resolve(
           path === '/api/tokens'
             ? { data: tokens, response: new Response(null, { status: 200 }) }
-            : path === '/api/aziende'
+            : path === '/api/legal-entities'
               ? { data: [], response: new Response(null, { status: 200 }) }
               : { data: EMPTY[path], response: new Response(null, { status: 200 }) },
         )) as never,
@@ -303,7 +303,7 @@ describe('the assistant block, once the token is copied', () => {
     vi.mocked(api.POST).mockImplementation((() => {
       tokens = [{ id: 't2' }]
       return Promise.resolve({
-        data: { id: 't2', nome: 'Claude Code', prefix: 'pgc_zzzz9999', last_used_at: null, revoked_at: null, created_at: '2026-09-23T10:00:00Z', token: 'pgc_x' },
+        data: { id: 't2', name: 'Claude Code', prefix: 'pgc_zzzz9999', last_used_at: null, revoked_at: null, created_at: '2026-09-23T10:00:00Z', token: 'pgc_x' },
         response: new Response(null, { status: 201 }),
       })
     }) as never)
@@ -325,7 +325,7 @@ describe('the manual steps', () => {
     const steps = within(block(await findHeading('Oppure a mano')))
     expect(steps.getByRole('link', { name: 'A mano: Impostazioni → Aziende' })).toHaveAttribute(
       'href',
-      '/app/settings/aziende',
+      '/app/settings/legal-entities',
     )
     expect(steps.getByRole('link', { name: 'A mano: Clienti' })).toHaveAttribute('href', '/app/customers')
     expect(steps.getAllByRole('link', { name: 'A mano: Deal' })).toHaveLength(2)
@@ -340,23 +340,23 @@ describe('the manual steps', () => {
   it('opens a step’s prompt under its row and copies it', async () => {
     renderPage()
     const steps = within(block(await findHeading('Oppure a mano')))
-    const [fiscali] = steps.getAllByRole('button', { name: 'Chiedilo all’assistente' })
-    expect(fiscali).toHaveAttribute('aria-expanded', 'false')
-    expect(screen.queryByText(STEP_PROMPTS.fiscali)).toBeNull()
-    await userEvent.click(fiscali as HTMLElement)
-    expect(fiscali).toHaveAttribute('aria-expanded', 'true')
-    const prompt = screen.getByText(STEP_PROMPTS.fiscali)
+    const [tax] = steps.getAllByRole('button', { name: 'Chiedilo all’assistente' })
+    expect(tax).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.queryByText(STEP_PROMPTS.tax)).toBeNull()
+    await userEvent.click(tax as HTMLElement)
+    expect(tax).toHaveAttribute('aria-expanded', 'true')
+    const prompt = screen.getByText(STEP_PROMPTS.tax)
     const body = prompt.closest('div') as HTMLElement
     await userEvent.click(within(body).getByRole('button', { name: 'Copia il prompt' }))
-    expect(navigator.clipboard.writeText).toHaveBeenCalledWith(STEP_PROMPTS.fiscali)
+    expect(navigator.clipboard.writeText).toHaveBeenCalledWith(STEP_PROMPTS.tax)
     await waitFor(() => expect(toast.success).toHaveBeenCalledWith('Prompt copiato'))
-    await userEvent.click(fiscali as HTMLElement)
-    expect(screen.queryByText(STEP_PROMPTS.fiscali)).toBeNull()
+    await userEvent.click(tax as HTMLElement)
+    expect(screen.queryByText(STEP_PROMPTS.tax)).toBeNull()
   })
 
   it('counts a step done when the thing exists, and only then', async () => {
     answers({
-      '/api/aziende': [{ ragione_sociale: 'Ada', partita_iva: '01234567890', codice_fiscale: null }],
+      '/api/legal-entities': [{ legal_name: 'Ada', vat_number: '01234567890', tax_code: null }],
       '/api/customers': { items: [{ id: 'c1' }], next_cursor: null },
     })
     renderPage()
@@ -368,10 +368,10 @@ describe('the manual steps', () => {
 
   it('does not tick «La prima offerta» for a document that is not an offer, such as an uploaded invoice', async () => {
     const base = vi.mocked(api.GET).getMockImplementation()
-    vi.mocked(api.GET).mockImplementation(((path: string, init?: { params?: { query?: { tipo?: string } } }) =>
+    vi.mocked(api.GET).mockImplementation(((path: string, init?: { params?: { query?: { type?: string } } }) =>
       path === '/api/documents'
         ? Promise.resolve({
-            data: init?.params?.query?.tipo === 'offerta' ? EMPTY_PAGE : { items: [{ id: 'fattura-1' }], next_cursor: null },
+            data: init?.params?.query?.type === 'offer' ? EMPTY_PAGE : { items: [{ id: 'fattura-1' }], next_cursor: null },
             response: new Response(null, { status: 200 }),
           })
         : (base as (p: string, i?: unknown) => unknown)(path, init)) as never)
@@ -389,7 +389,7 @@ describe('the manual steps', () => {
 
   it('keeps the steps, all ticked, once everything is done', async () => {
     answers({
-      '/api/aziende': [{ ragione_sociale: 'Ada', partita_iva: null, codice_fiscale: 'RSSMRA80A01H501U' }],
+      '/api/legal-entities': [{ legal_name: 'Ada', vat_number: null, tax_code: 'RSSMRA80A01H501U' }],
       '/api/customers': { items: [{ id: 'c1' }], next_cursor: null },
       '/api/time-entries': { items: [{ id: 't1' }], next_cursor: null },
       '/api/documents': { items: [{ id: 'd1' }], next_cursor: null },
@@ -402,7 +402,7 @@ describe('the manual steps', () => {
   })
 
   it('shows a readonly user the steps as text, with neither a screen nor a prompt', async () => {
-    if (auth.user) auth.user.ruolo = 'readonly'
+    if (auth.user) auth.user.role = 'readonly'
     renderPage()
     expect(await screen.findByText(/0 di 4/)).toBeInTheDocument()
     expect(screen.queryAllByRole('link', { name: /^A mano/ })).toHaveLength(0)
@@ -411,7 +411,7 @@ describe('the manual steps', () => {
   })
 
   it('gives a collaboratore neither the fiscal screen nor its prompt, since that step is the admin’s', async () => {
-    if (auth.user) auth.user.ruolo = 'collaboratore'
+    if (auth.user) auth.user.role = 'collaborator'
     renderPage()
     expect(await screen.findByText(/0 di 4/)).toBeInTheDocument()
     expect(screen.queryByRole('link', { name: 'A mano: Impostazioni → Aziende' })).toBeNull()
@@ -435,10 +435,10 @@ describe('the manual steps', () => {
     renderPage()
     await screen.findByText(/0 di 4/)
     await userEvent.click(screen.getAllByRole('button', { name: 'Chiedilo all’assistente' })[1] as HTMLElement)
-    const body = screen.getByText(STEP_PROMPTS.cliente).closest('div') as HTMLElement
+    const body = screen.getByText(STEP_PROMPTS.customer).closest('div') as HTMLElement
     await userEvent.click(within(body).getByRole('button', { name: 'Copia il prompt' }))
     await waitFor(() => expect(toast.error).toHaveBeenCalled())
-    expect(screen.getByText(STEP_PROMPTS.cliente)).toBeInTheDocument()
+    expect(screen.getByText(STEP_PROMPTS.customer)).toBeInTheDocument()
   })
 })
 

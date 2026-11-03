@@ -25,9 +25,9 @@ def sender(client: TestClient) -> Iterator[RecordingSender]:
     yield recording
 
 
-def _bootstrap_admin(session: Session, email: str, nome: str) -> None:
+def _bootstrap_admin(session: Session, email: str, name: str) -> None:
     """The users row migration A would have backfilled for a pre-existing admin."""
-    session.add(User(email=email, nome=nome, cognome="", role="admin"))
+    session.add(User(email=email, first_name=name, last_name="", role="admin"))
     session.commit()
 
 
@@ -43,7 +43,7 @@ def admin(api_session: Session) -> Iterator[None]:
 
 def _login(client: TestClient, sender: RecordingSender, email: str = ADMIN_EMAIL) -> None:
     assert client.post("/api/hub/auth/link", json={"email": email}).status_code == 202
-    match = re.search(r"/entra\?t=([A-Za-z0-9_-]+)", sender.sent[-1].text)
+    match = re.search(r"/verify\?t=([A-Za-z0-9_-]+)", sender.sent[-1].text)
     assert match
     assert client.post("/api/hub/auth/enter", json={"token": match.group(1)}).status_code == 200
 
@@ -53,12 +53,12 @@ def _apply(client: TestClient, email: str) -> None:
     response = client.post(
         "/api/hub/freelancers",
         data={
-            "nome": "Ada",
-            "cognome": "Lovelace",
+            "first_name": "Ada",
+            "last_name": "Lovelace",
             "email": email,
-            "tariffa_giornaliera": "450",
-            "posizione": "Backend developer",
-            "remoto": "remoto",
+            "daily_rate": "450",
+            "job_title": "Backend developer",
+            "remote": "remote",
         },
         files={"cv": ("Ada CV.pdf", PDF, "application/pdf")},
     )
@@ -67,7 +67,7 @@ def _apply(client: TestClient, email: str) -> None:
 
 def test_tokens_need_the_cookie(client: TestClient, admin: None) -> None:
     assert client.get("/api/hub/tokens").status_code == 401
-    assert client.post("/api/hub/tokens", json={"nome": "x"}).status_code == 401
+    assert client.post("/api/hub/tokens", json={"name": "x"}).status_code == 401
 
 
 def test_a_token_is_minted_once_listed_and_revoked(
@@ -77,15 +77,15 @@ def test_a_token_is_minted_once_listed_and_revoked(
     created = client.post("/api/hub/tokens", json={})
     assert created.status_code == 201, created.text
     body = created.json()
-    assert body["nome"] == "Claude Code" and body["token"].startswith("reb_")
+    assert body["name"] == "Claude Code" and body["token"].startswith("reb_")
     assert body["prefix"] == body["token"][:12]
 
     listed = client.get("/api/hub/tokens").json()["items"]
     assert [row["id"] for row in listed] == [body["id"]]
     assert "token" not in listed[0] and "token_hash" not in listed[0]
 
-    assert client.post("/api/hub/tokens", json={"nome": "   "}).status_code == 422
-    assert client.post("/api/hub/tokens", json={"nome": "x" * 121}).status_code == 422
+    assert client.post("/api/hub/tokens", json={"name": "   "}).status_code == 422
+    assert client.post("/api/hub/tokens", json={"name": "x" * 121}).status_code == 422
 
     assert client.delete(f"/api/hub/tokens/{body['id']}").status_code == 204
     [row] = client.get("/api/hub/tokens").json()["items"]
@@ -97,7 +97,7 @@ def test_another_admins_token_is_not_found(
 ) -> None:
     _bootstrap_admin(api_session, "ada@rebase.it", "Ada")
     _login(client, sender, "ada@rebase.it")
-    adas = client.post("/api/hub/tokens", json={"nome": "Cursor"}).json()
+    adas = client.post("/api/hub/tokens", json={"name": "Cursor"}).json()
     ok(client.post("/api/hub/me/logout"), 204)
 
     _login(client, sender)
@@ -109,11 +109,11 @@ def test_tokens_search_hits_a_partial_name(
     client: TestClient, admin: None, sender: RecordingSender
 ) -> None:
     _login(client, sender)
-    ok(client.post("/api/hub/tokens", json={"nome": "Claude Code laptop"}), 201)
-    ok(client.post("/api/hub/tokens", json={"nome": "Cursor desktop"}), 201)
+    ok(client.post("/api/hub/tokens", json={"name": "Claude Code laptop"}), 201)
+    ok(client.post("/api/hub/tokens", json={"name": "Cursor desktop"}), 201)
 
     by_name = client.get("/api/hub/tokens", params={"q": "Claude"}).json()
-    assert [row["nome"] for row in by_name["items"]] == ["Claude Code laptop"]
+    assert [row["name"] for row in by_name["items"]] == ["Claude Code laptop"]
 
 
 def test_a_malformed_cursor_on_tokens_is_a_422(
@@ -136,7 +136,7 @@ def test_a_signed_in_member_without_the_admin_role_is_403_on_every_token_route(
     _login(client, sender, "ada.member@studio.it")
     assert client.get("/api/hub/me").json()["role"] == "member"
     assert client.get("/api/hub/tokens").status_code == 403
-    assert client.post("/api/hub/tokens", json={"nome": "x"}).status_code == 403
+    assert client.post("/api/hub/tokens", json={"name": "x"}).status_code == 403
 
 
 def test_a_token_may_carry_an_expiry_and_a_bad_one_is_a_sentence(
@@ -146,15 +146,15 @@ def test_a_token_may_carry_an_expiry_and_a_bad_one_is_a_sentence(
     instant that is past or has no timezone is refused before a token exists."""
     _login(client, sender)
     future = (datetime.now(UTC) + timedelta(days=30)).isoformat()
-    created = client.post("/api/hub/tokens", json={"nome": "Per un mese", "expires_at": future})
+    created = client.post("/api/hub/tokens", json={"name": "Per un mese", "expires_at": future})
     assert created.status_code == 201, created.text
     assert created.json()["expires_at"] is not None
-    plain = client.post("/api/hub/tokens", json={"nome": "Per sempre"})
+    plain = client.post("/api/hub/tokens", json={"name": "Per sempre"})
     assert plain.json()["expires_at"] is None
     past = (datetime.now(UTC) - timedelta(days=1)).isoformat()
     naive = (datetime.now() + timedelta(days=1)).replace(tzinfo=None).isoformat()
     for bad in (past, naive):
-        refused = client.post("/api/hub/tokens", json={"nome": "x", "expires_at": bad})
+        refused = client.post("/api/hub/tokens", json={"name": "x", "expires_at": bad})
         assert refused.status_code == 422, refused.text
     listed = client.get("/api/hub/tokens").json()["items"]
     assert len(listed) == 2

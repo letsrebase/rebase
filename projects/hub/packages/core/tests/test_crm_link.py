@@ -37,14 +37,14 @@ TABLES = ("admin_actions", "notes", "referrals", "companies", "users")
 LEAD_URL = f"{PIGRO}/api/rebase/leads/"
 
 
-def _lead_answer(*, creato: bool = True) -> bytes:
+def _lead_answer(*, created: bool = True) -> bytes:
     return json.dumps(
         {
             "customer_id": str(CUSTOMER),
             "person_id": str(uuid4()),
             "deal_id": str(DEAL),
             "deal_url": DEAL_URL,
-            "creato": creato,
+            "created": created,
         }
     ).encode()
 
@@ -85,11 +85,11 @@ def _draft_response(**fields: Any) -> LlmResponse:
 
 
 DRAFT = {
-    "ruolo": "Sviluppatore backend",
-    "giorni_settimana": 3,
-    "durata_settimane": 12,
-    "competenze": ["Python", "Docker"],
-    "sintesi": "Serve una persona per migrare un gestionale.",
+    "role": "Sviluppatore backend",
+    "week_days": 3,
+    "duration_weeks": 12,
+    "skills": ["Python", "Docker"],
+    "profile_summary": "Serve una persona per migrare un gestionale.",
 }
 
 
@@ -113,18 +113,18 @@ def _service(
 
 def _create(session: Session, **over: Any) -> Company:
     fields: dict[str, Any] = {
-        "nome_azienda": "Acme S.r.l.",
-        "referente_nome": "Mario",
-        "referente_cognome": "Rossi",
+        "company_name": "Acme S.r.l.",
+        "contact_first_name": "Mario",
+        "contact_last_name": "Rossi",
         "email": "mario@acme.it",
-        "telefono": "+39 333 1234567",
-        "figura_richiesta": "Backend developer",
-        "progetto": "Portare un gestionale su servizi più piccoli.",
-        "periodo_da": START,
-        "durata": "3 mesi",
-        "budget_giornaliero": Decimal("400"),
-        "remoto": "remoto",
-        "numero_risorse": 2,
+        "phone": "+39 333 1234567",
+        "requested_role": "Backend developer",
+        "project": "Portare un gestionale su servizi più piccoli.",
+        "period_from": START,
+        "duration": "3 mesi",
+        "daily_budget": Decimal("400"),
+        "remote": "remote",
+        "headcount": 2,
     }
     fields.update(over)
     read, _ = CompanyService(session).request(CompanyCreate(**fields))
@@ -144,52 +144,52 @@ def _body(http: RecordedPigro, n: int = 0) -> dict[str, Any]:
     return json.loads(http.calls[n][3])
 
 
-def test_every_path_writes_the_request_da_collegare(clean: Session) -> None:
+def test_every_path_writes_the_request_to_link(clean: Session) -> None:
     row = _create(clean)
-    assert (row.crm_stato, row.crm_attempted_at, row.crm_bozza) == ("da_collegare", None, None)
+    assert (row.crm_status, row.crm_attempted_at, row.crm_draft) == ("to_link", None, None)
 
     fields = CompanyFields(
-        figura_richiesta="Data engineer",
-        progetto="Serve una pipeline dati.",
-        periodo_da=START,
-        durata="2 mesi",
-        budget_giornaliero=Decimal("300"),
-        remoto="remoto",
-        numero_risorse=1,
+        requested_role="Data engineer",
+        project="Serve una pipeline dati.",
+        period_from=START,
+        duration="2 mesi",
+        daily_budget=Decimal("300"),
+        remote="remote",
+        headcount=1,
     )
     _, second_id = MemberService(clean).create_additional_request(row.user_id, fields)
-    assert _row(clean, second_id).crm_stato == "da_collegare"
+    assert _row(clean, second_id).crm_status == "to_link"
 
 
 def test_a_linked_request_keeps_the_deal_and_sends_the_body_of_the_spec(clean: Session) -> None:
-    company = _create(clean, progetto="Un gestionale.")
+    company = _create(clean, project="Un gestionale.")
     http = RecordedPigro([OK])
     llm = RecordingCall([_draft_response(**DRAFT)])
 
     result = _service(clean, http, llm).link(company.id)
 
-    assert (result.stato, result.deal_url, result.errore) == ("collegato", DEAL_URL, None)
+    assert (result.status, result.deal_url, result.error) == ("linked", DEAL_URL, None)
     method, url, headers, _ = http.calls[0]
     assert (method, url) == ("PUT", f"{LEAD_URL}{company.id}")
     assert headers["Authorization"] == f"Bearer {TOKEN}"
     body = _body(http)
-    assert set(body) == {"azienda", "referente", "deal", "deal_id"}
-    assert body["azienda"] == "Acme S.r.l."
+    assert set(body) == {"company", "contact", "deal", "deal_id"}
+    assert body["company"] == "Acme S.r.l."
     assert body["deal_id"] is None
-    assert body["referente"] == {
-        "nome": "Mario",
-        "cognome": "Rossi",
+    assert body["contact"] == {
+        "first_name": "Mario",
+        "last_name": "Rossi",
         "email": "mario@acme.it",
-        "telefono": "+39 333 1234567",
+        "phone": "+39 333 1234567",
         "linkedin_url": None,
     }
     deal = body["deal"]
-    assert set(deal) == {"nome", "valore_previsto", "data_chiusura_prevista", "note"}
-    assert deal["nome"] == "Acme S.r.l.: Sviluppatore backend"
+    assert set(deal) == {"name", "expected_value", "expected_close_date", "notes"}
+    assert deal["name"] == "Acme S.r.l.: Sviluppatore backend"
     # 400 a day, 3 days a week, 12 weeks, 2 people.
-    assert deal["valore_previsto"] == "28800.00"
-    assert deal["data_chiusura_prevista"] == "2026-12-01"
-    note = deal["note"]
+    assert deal["expected_value"] == "28800.00"
+    assert deal["expected_close_date"] == "2026-12-01"
+    note = deal["notes"]
     assert "Progetto, come l'ha scritto l'azienda:" in note
     assert "Un gestionale." in note
     assert "Bozza AI, da rivedere" in note
@@ -197,10 +197,10 @@ def test_a_linked_request_keeps_the_deal_and_sends_the_body_of_the_spec(clean: S
     assert f"https://hub.test/hub/admin/companies/{company.id}" in note
     row = _row(clean, company.id)
     assert (row.crm_customer_id, row.crm_deal_id, row.crm_deal_url) == (CUSTOMER, DEAL, DEAL_URL)
-    assert row.crm_errore is None and row.crm_attempted_at == NOW
+    assert row.crm_error is None and row.crm_attempted_at == NOW
 
 
-def test_the_model_sees_the_four_fields_and_never_the_company_or_the_referente(
+def test_the_model_sees_the_four_fields_and_never_the_company_or_the_contact_person(
     clean: Session,
 ) -> None:
     company = _create(clean)
@@ -256,15 +256,15 @@ def test_the_draft_is_made_once_and_kept_for_every_retry(clean: Session) -> None
     service = _service(clean, http, llm)
 
     first = service.link(company.id)
-    assert first.stato == "errore"
-    kept = _row(clean, company.id).crm_bozza
-    assert kept is not None and kept["ruolo"] == "Sviluppatore backend"
+    assert first.status == "error"
+    kept = _row(clean, company.id).crm_draft
+    assert kept is not None and kept["role"] == "Sviluppatore backend"
 
     second = service.link(company.id)
 
-    assert second.stato == "collegato"
+    assert second.status == "linked"
     assert len(llm.requests) == 1  # the cap is not spent again
-    assert _body(http, 1)["deal"]["nome"] == "Acme S.r.l.: Sviluppatore backend"
+    assert _body(http, 1)["deal"]["name"] == "Acme S.r.l.: Sviluppatore backend"
 
 
 @pytest.mark.parametrize(
@@ -279,13 +279,13 @@ def test_without_a_draft_the_filing_goes_ahead(clean: Session, llm: LlmCall | No
     company = _create(clean)
     http = RecordedPigro([OK])
 
-    assert _service(clean, http, llm).link(company.id).stato == "collegato"
+    assert _service(clean, http, llm).link(company.id).status == "linked"
 
     deal = _body(http)["deal"]
-    assert deal["nome"] == "Acme S.r.l.: Backend developer"
-    assert deal["valore_previsto"] is None
-    assert "Nessuna bozza AI" in deal["note"]
-    assert _row(clean, company.id).crm_bozza is None  # asked again at the next attempt
+    assert deal["name"] == "Acme S.r.l.: Backend developer"
+    assert deal["expected_value"] is None
+    assert "Nessuna bozza AI" in deal["notes"]
+    assert _row(clean, company.id).crm_draft is None  # asked again at the next attempt
 
 
 def test_a_cap_reached_files_without_a_draft(clean: Session) -> None:
@@ -296,18 +296,18 @@ def test_a_cap_reached_files_without_a_draft(clean: Session) -> None:
             raise LlmCapReached("Tetto giornaliero raggiunto.")
 
     http = RecordedPigro([OK])
-    assert _service(clean, http, Capped()).link(company.id).stato == "collegato"
-    assert "Nessuna bozza AI" in _body(http)["deal"]["note"]
+    assert _service(clean, http, Capped()).link(company.id).status == "linked"
+    assert "Nessuna bozza AI" in _body(http)["deal"]["notes"]
 
 
 @pytest.mark.parametrize(
     ("draft", "expected"),
     [
         (DRAFT, "28800.00"),
-        ({**DRAFT, "giorni_settimana": None}, None),
-        ({**DRAFT, "giorni_settimana": 9}, None),  # out of bounds, dropped by the draft
-        ({**DRAFT, "durata_settimane": None}, None),
-        ({**DRAFT, "giorni_settimana": 2.5}, "24000.00"),
+        ({**DRAFT, "week_days": None}, None),
+        ({**DRAFT, "week_days": 9}, None),  # out of bounds, dropped by the draft
+        ({**DRAFT, "duration_weeks": None}, None),
+        ({**DRAFT, "week_days": 2.5}, "24000.00"),
     ],
 )
 def test_the_value_needs_every_input(
@@ -318,87 +318,87 @@ def test_the_value_needs_every_input(
 
     _service(clean, http, RecordingCall([_draft_response(**draft)])).link(company.id)
 
-    assert _body(http)["deal"]["valore_previsto"] == expected
+    assert _body(http)["deal"]["expected_value"] == expected
 
 
 def test_a_value_that_does_not_fit_the_column_is_dropped(clean: Session) -> None:
     company = _create(clean)
-    company.budget_giornaliero = Decimal("99999999.99")
-    company.numero_risorse = 1000
+    company.daily_budget = Decimal("99999999.99")
+    company.headcount = 1000
     clean.commit()
     http = RecordedPigro([OK])
 
     _service(clean, http, RecordingCall([_draft_response(**DRAFT)])).link(company.id)
 
-    assert _body(http)["deal"]["valore_previsto"] is None
+    assert _body(http)["deal"]["expected_value"] is None
 
 
 def test_the_closing_date_is_the_start_only_when_it_is_in_the_future(clean: Session) -> None:
-    future, past = _create(clean), _create(clean, periodo_da=TODAY)
+    future, past = _create(clean), _create(clean, period_from=TODAY)
     http = RecordedPigro([OK])
 
     _service(clean, http).link(future.id)
     _service(clean, http).link(past.id)
 
-    assert _body(http, 0)["deal"]["data_chiusura_prevista"] == "2026-12-01"
-    assert _body(http, 1)["deal"]["data_chiusura_prevista"] is None
+    assert _body(http, 0)["deal"]["expected_close_date"] == "2026-12-01"
+    assert _body(http, 1)["deal"]["expected_close_date"] is None
 
 
 def test_the_deal_name_is_cut_to_the_crms_limit(clean: Session) -> None:
     """The hub allows 200 characters of company and 160 of role, the CRM 255 for the name
     that joins them: cut, never a permanent 422."""
-    company = _create(clean, nome_azienda="A" * 200, figura_richiesta="B" * 160)
+    company = _create(clean, company_name="A" * 200, requested_role="B" * 160)
     http = RecordedPigro([OK])
 
     _service(clean, http).link(company.id)
 
     body = _body(http)
-    assert len(body["azienda"]) == 200
-    assert body["deal"]["nome"] == ("A" * 200 + ": " + "B" * 160)[:255]
+    assert len(body["company"]) == 200
+    assert body["deal"]["name"] == ("A" * 200 + ": " + "B" * 160)[:255]
 
 
 @pytest.mark.parametrize(
-    ("answer", "stato", "sentence"),
+    ("answer", "status", "sentence"),
     [
         (
             (422, b'{"detail": "deal_id: non valido"}'),
-            "rifiutato",
+            "rejected",
             "Il CRM ha rifiutato la richiesta: deal_id: non valido.",
         ),
         (
             (503, b'{"detail": "Spazio dei lead non configurato"}'),
-            "errore",
+            "error",
             "Il CRM non ha risposto: Spazio dei lead non configurato.",
         ),
-        ((500, b""), "errore", "Il CRM non ha risposto: HTTP 500."),
-        ((401, b""), "errore", "Il CRM non ha risposto: HTTP 401."),
-        ((200, b"not json"), "errore", "Il CRM non ha risposto: risposta non leggibile."),
+        ((500, b""), "error", "Il CRM non ha risposto: HTTP 500."),
+        ((401, b""), "error", "Il CRM non ha risposto: HTTP 401."),
+        ((200, b"not json"), "error", "Il CRM non ha risposto: risposta non leggibile."),
         (
             (201, json.dumps({"customer_id": str(CUSTOMER), "deal_id": str(DEAL)}).encode()),
-            "errore",
+            "error",
             "Il CRM non ha risposto: risposta non leggibile.",
         ),
         (
             TimeoutError("slow"),
-            "errore",
+            "error",
             f"Il CRM non ha risposto: {CAUSE_TIMEOUT}.",
         ),
     ],
     ids=["422", "503", "500", "401", "garbage", "no url", "timeout"],
 )
 def test_what_the_crm_refuses_or_fails_is_written_with_its_sentence(
-    clean: Session, answer: Any, stato: str, sentence: str
+    clean: Session, answer: Any, status: str, sentence: str
 ) -> None:
     company = _create(clean)
 
     result = _service(clean, RecordedPigro([answer])).link(company.id)
 
-    assert result.stato == stato
+    assert result.status == status
     row = _row(clean, company.id)
-    assert row.crm_stato == stato and row.crm_deal_id is None
+    assert row.crm_status == status and row.crm_deal_id is None
     from rebase_core.crm_words import crm_state_sentence
 
-    assert crm_state_sentence(row.crm_stato, row.crm_errore) == sentence
+    assert crm_state_sentence(row.crm_status, row.crm_error) == sentence
 
 
 def test_a_crm_that_is_not_https_is_never_asked(clean: Session) -> None:
@@ -407,7 +407,7 @@ def test_a_crm_that_is_not_https_is_never_asked(clean: Session) -> None:
 
     result = _service(clean, http, settings=_settings(url="http://pigro.test")).link(company.id)
 
-    assert (result.stato, result.errore, http.calls) == ("errore", HTTPS_ONLY, [])
+    assert (result.status, result.error, http.calls) == ("error", HTTPS_ONLY, [])
 
 
 def test_without_the_token_nothing_is_sent_and_the_request_waits(clean: Session) -> None:
@@ -416,22 +416,22 @@ def test_without_the_token_nothing_is_sent_and_the_request_waits(clean: Session)
 
     result = _service(clean, http, settings=_settings(token="")).link(company.id)
 
-    assert (result.stato, http.calls) == ("da_collegare", [])
+    assert (result.status, http.calls) == ("to_link", [])
     assert _row(clean, company.id).crm_attempted_at is None
 
 
-def test_a_referente_with_no_name_is_an_error_not_a_refusal(clean: Session) -> None:
+def test_to_contact_person_with_no_name_is_an_error_not_to_refusal(clean: Session) -> None:
     company = _create(clean)
     user = clean.get(User, company.user_id)
     assert user is not None
-    user.nome = " "
+    user.first_name = " "
     clean.commit()
     http = RecordedPigro([OK])
 
     result = _service(clean, http).link(company.id)
 
-    assert result.stato == "errore" and http.calls == []
-    assert result.errore == "Il referente non ha un nome: completalo e riprova."
+    assert result.status == "error" and http.calls == []
+    assert result.error == "Il referente non ha un nome: completalo e riprova."
 
 
 def test_a_request_linked_by_another_caller_meanwhile_keeps_its_link(clean: Session) -> None:
@@ -442,14 +442,14 @@ def test_a_request_linked_by_another_caller_meanwhile_keeps_its_link(clean: Sess
         def __call__(self, *args: Any) -> tuple[int, bytes]:
             with_session = clean.get(Company, company.id)
             assert with_session is not None
-            with_session.crm_stato = "collegato"
+            with_session.crm_status = "linked"
             with_session.crm_deal_id = other
             clean.commit()
             return super().__call__(*args)
 
     result = _service(clean, Racing([(503, b"")])).link(company.id)
 
-    assert result.stato == "collegato"
+    assert result.status == "linked"
     assert _row(clean, company.id).crm_deal_id == other
 
 
@@ -461,7 +461,7 @@ def test_a_soft_deleted_request_is_not_linked(clean: Session) -> None:
 
     result = _service(clean, http).link(company.id)
 
-    assert (result.stato, http.calls) == ("da_collegare", [])
+    assert (result.status, http.calls) == ("to_link", [])
     assert _row(clean, company.id).crm_attempted_at is None
 
 
@@ -477,9 +477,9 @@ def test_the_sweep_files_waiting_and_failed_requests_and_counts_them(clean: Sess
     old = _create(clean, email="dario@acme.it")
     fresh = _create(clean, email="eva@acme.it")
     broken = _create(clean, email="fabio@acme.it")
-    for row, stato in ((failed, "errore"), (refused, "rifiutato")):
-        row.crm_stato = stato
-    old.crm_stato = None  # written before the link existed
+    for row, status in ((failed, "error"), (refused, "rejected")):
+        row.crm_status = status
+    old.crm_status = None  # written before the link existed
     for row in (waiting, failed, refused, old, broken):
         row.created_at = NOW - timedelta(hours=1)
     fresh.created_at = NOW - timedelta(minutes=1)  # the first attempt may still be running
@@ -494,7 +494,7 @@ def test_the_sweep_files_waiting_and_failed_requests_and_counts_them(clean: Sess
     for row in (refused, old, fresh):
         assert _row(clean, row.id).crm_attempted_at is None
     assert (
-        _row(clean, old.id).crm_stato is None and _row(clean, refused.id).crm_stato == "rifiutato"
+        _row(clean, old.id).crm_status is None and _row(clean, refused.id).crm_status == "rejected"
     )
 
 
@@ -539,39 +539,39 @@ def test_a_failure_in_one_request_does_not_stop_the_round(clean: Session) -> Non
     assert service.link_pending() == (1, 1)
 
 
-def test_riprova_by_an_admin_asks_a_refused_request_again_and_signs_it(clean: Session) -> None:
-    admin = User(email="ivan@rebase.it", nome="Ivan", cognome="Sala", role="admin")
+def test_retry_by_an_admin_asks_to_refused_request_again_and_signs_it(clean: Session) -> None:
+    admin = User(email="ivan@rebase.it", first_name="Ivan", last_name="Sala", role="admin")
     clean.add(admin)
     company = _create(clean)
-    company.crm_stato = "rifiutato"
-    company.crm_errore = "deal_id: non valido"
+    company.crm_status = "rejected"
+    company.crm_error = "deal_id: non valido"
     clean.commit()
     http = RecordedPigro([OK])
 
     result = _service(clean, http).link(company.id, admin.id)
 
-    assert result.stato == "collegato"
+    assert result.status == "linked"
     action = clean.scalars(select(AdminAction).where(AdminAction.kind == "crm_link")).one()
     assert (action.entity_type, action.entity_id, action.admin_id) == (
         "company",
         company.id,
         admin.id,
     )
-    assert action.payload == {"esito": "collegato", "errore": None}
+    assert action.payload == {"outcome": "linked", "error": None}
 
 
-def test_riprova_files_a_request_from_before_the_link_existed(clean: Session) -> None:
+def test_retry_files_to_request_from_before_the_link_existed(clean: Session) -> None:
     company = _create(clean)
-    company.crm_stato = None
+    company.crm_status = None
     clean.commit()
     http = RecordedPigro([OK])
 
-    assert _service(clean, http).link(company.id).stato == "collegato"
+    assert _service(clean, http).link(company.id).status == "linked"
 
 
 def test_linking_to_another_deal_sends_the_deal_and_asks_no_draft(clean: Session) -> None:
     company = _create(clean)
-    company.crm_stato = "collegato"
+    company.crm_status = "linked"
     company.crm_deal_id = uuid4()
     clean.commit()
     other = uuid4()
@@ -580,17 +580,17 @@ def test_linking_to_another_deal_sends_the_deal_and_asks_no_draft(clean: Session
 
     result = _service(clean, http, llm).link(company.id, deal_id=other)
 
-    assert result.stato == "collegato" and llm.requests == []
+    assert result.status == "linked" and llm.requests == []
     assert _body(http)["deal_id"] == str(other)
     assert _row(clean, company.id).crm_deal_id == DEAL
 
 
 def test_a_refused_relink_changes_nothing_stored_and_says_why(clean: Session) -> None:
-    admin = User(email="ivan@rebase.it", nome="Ivan", cognome="Sala", role="admin")
+    admin = User(email="ivan@rebase.it", first_name="Ivan", last_name="Sala", role="admin")
     clean.add(admin)
     company = _create(clean)
     kept = uuid4()
-    company.crm_stato = "collegato"
+    company.crm_status = "linked"
     company.crm_deal_id = kept
     company.crm_deal_url = DEAL_URL
     clean.commit()
@@ -601,9 +601,9 @@ def test_a_refused_relink_changes_nothing_stored_and_says_why(clean: Session) ->
         _service(clean, http).link(company.id, admin.id, deal_id=other)
 
     row = _row(clean, company.id)
-    assert (row.crm_stato, row.crm_deal_id, row.crm_errore) == ("collegato", kept, None)
+    assert (row.crm_status, row.crm_deal_id, row.crm_error) == ("linked", kept, None)
     action = clean.scalars(select(AdminAction).where(AdminAction.kind == "crm_link")).one()
-    assert action.payload["deal_id"] == str(other) and action.payload["esito"] == "rifiutato"
+    assert action.payload["deal_id"] == str(other) and action.payload["outcome"] == "rejected"
 
 
 def test_the_first_attempt_after_the_response_never_raises(
@@ -618,7 +618,7 @@ def test_the_first_attempt_after_the_response_never_raises(
     opener = lambda: closing(session_factory(hub_engine)())  # noqa: E731
 
     link_after_response(opener, _settings(), http, None, company.id)
-    assert _row(clean, company.id).crm_stato == "collegato"
+    assert _row(clean, company.id).crm_status == "linked"
 
     def broken() -> Any:
         raise RuntimeError("no database")
@@ -631,16 +631,16 @@ def test_a_failure_never_takes_a_link_away(clean: Session, answer: tuple[int, by
     """«Riprova» on a request that is already linked (the MCP tool and the route allow it):
     a CRM that fails or refuses leaves the link as it was."""
     company = _create(clean)
-    company.crm_stato = "collegato"
+    company.crm_status = "linked"
     company.crm_deal_id = DEAL
     company.crm_deal_url = DEAL_URL
     clean.commit()
 
     result = _service(clean, RecordedPigro([answer])).link(company.id)
 
-    assert result.stato == "collegato"
+    assert result.status == "linked"
     row = _row(clean, company.id)
-    assert (row.crm_stato, row.crm_deal_id, row.crm_errore) == ("collegato", DEAL, None)
+    assert (row.crm_status, row.crm_deal_id, row.crm_error) == ("linked", DEAL, None)
 
 
 def test_the_sweep_looks_again_under_the_lock_and_skips_what_is_taken_care_of(
@@ -648,7 +648,7 @@ def test_the_sweep_looks_again_under_the_lock_and_skips_what_is_taken_care_of(
 ) -> None:
     linked = _create(clean)
     linked.created_at = NOW - timedelta(hours=1)
-    linked.crm_stato = "collegato"
+    linked.crm_status = "linked"
     deleted = _create(clean, email="anna@acme.it")
     deleted.created_at = NOW - timedelta(hours=1)
     deleted.deleted_at = NOW
@@ -669,25 +669,25 @@ def test_a_refused_relink_of_a_request_with_no_state_leaves_it_out_of_the_sweep(
     clean: Session,
 ) -> None:
     company = _create(clean)
-    company.crm_stato = None
+    company.crm_status = None
     clean.commit()
     http = RecordedPigro([(503, b"")])
 
     with pytest.raises(InvalidState):
         _service(clean, http).link(company.id, deal_id=uuid4())
 
-    assert _row(clean, company.id).crm_stato is None
+    assert _row(clean, company.id).crm_status is None
 
 
 def test_a_draft_with_a_value_that_is_not_a_number_still_files() -> None:
     from rebase_core.crm_lead import LeadDraft
 
     out = LeadDraftOut.model_construct(
-        ruolo="Dev",
-        giorni_settimana=float("nan"),
-        durata_settimane=float("inf"),
-        competenze=[],
-        sintesi="",
+        role="Dev",
+        week_days=float("nan"),
+        duration_weeks=float("inf"),
+        skills=[],
+        profile_summary="",
     )
     draft = LeadDraft.from_output(out)
-    assert (draft.ruolo, draft.giorni_settimana, draft.durata_settimane) == ("Dev", None, None)
+    assert (draft.role, draft.week_days, draft.duration_weeks) == ("Dev", None, None)

@@ -25,7 +25,7 @@ ADMIN = Actor(id=None, type="system", role="admin")
 
 def _make_user(db_session: Session, email: str = "refresh@test.it"):
     return UserService(db_session).create(
-        UserCreate(email=email, password="supersegreta1", nome="Refresh", ruolo="admin"), ADMIN
+        UserCreate(email=email, password="supersegreta1", name="Refresh", role="admin"), ADMIN
     )
 
 
@@ -264,7 +264,7 @@ def test_get_active_rejects_an_unknown_user(db_session: Session) -> None:
 def test_get_active_rejects_a_deactivated_user(db_session: Session) -> None:
     user = _make_user(db_session)
     _make_user(db_session, "refresh-superstite@test.it")  # REB-292: the guard needs a survivor
-    UserService(db_session).update(user.id, UserUpdate(attivo=False), ADMIN)
+    UserService(db_session).update(user.id, UserUpdate(active=False), ADMIN)
 
     with pytest.raises(ValidationFailed):
         UserRepository(db_session).get_active(user.id)
@@ -297,8 +297,8 @@ def test_two_concurrent_consumes_of_the_same_jti_do_not_both_succeed(
             UserCreate(
                 email=f"race-{uuid4()}@test.it",
                 password="supersegreta1",
-                nome="Race",
-                ruolo="admin",
+                name="Race",
+                role="admin",
             ),
             ADMIN,
         )

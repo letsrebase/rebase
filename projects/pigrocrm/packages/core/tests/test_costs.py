@@ -21,16 +21,16 @@ from pigrocrm.core.timetracking.schemas import (
     PeriodLockCreate,
 )
 
-WRITER = Actor(id=None, type="user", role="collaboratore")
+WRITER = Actor(id=None, type="user", role="collaborator")
 READER = Actor(id=None, type="user", role="readonly")
 
 
 def _create(service, category_id, **overrides):
     payload = {
         "category_id": category_id,
-        "data": date(2026, 3, 5),
-        "importo": Decimal("120.00"),
-        "descrizione": "Licenza annuale",
+        "date": date(2026, 3, 5),
+        "amount": Decimal("120.00"),
+        "description": "Licenza annuale",
     }
     payload.update(overrides)
     return service.create(CostCreate(**payload), WRITER)
@@ -47,7 +47,7 @@ def test_a_cost_with_no_deal_is_a_general_expense(
     attributed = _create(service, seeded_category_id, deal_id=seeded_deal_id)
     assert general.deal_id is None
 
-    only_general = service.list(CostListQuery(solo_generali=True), READER)
+    only_general = service.list(CostListQuery(only_general=True), READER)
     assert [c.id for c in only_general.items] == [general.id]
     per_deal = service.list(CostListQuery(deal_id=seeded_deal_id), READER)
     assert [c.id for c in per_deal.items] == [attributed.id]
@@ -57,15 +57,15 @@ def test_a_negative_amount_is_a_refund_and_zero_is_refused(
     db_session: Session, seeded_category_id: UUID
 ) -> None:
     """§4.4, the same choice slice 3 §6.1 rule 6 makes for a discount: represent the
-    correction with the instrument that already exists, instead of a `tipo` column that
+    correction with the instrument that already exists, instead of a `type` column that
     multiplies the cases in every sum."""
     service = CostService(db_session)
-    assert _create(service, seeded_category_id, importo=Decimal("-45.50")).importo == Decimal(
+    assert _create(service, seeded_category_id, amount=Decimal("-45.50")).amount == Decimal(
         "-45.50"
     )
     with pytest.raises(ValidationFailed) as excinfo:
-        _create(service, seeded_category_id, importo=Decimal("0.00"))
-    assert excinfo.value.details["field"] == "importo"
+        _create(service, seeded_category_id, amount=Decimal("0.00"))
+    assert excinfo.value.details["field"] == "amount"
 
 
 def test_an_archived_category_cannot_be_chosen_for_a_new_cost(
@@ -83,15 +83,15 @@ def test_a_write_into_a_closed_period_is_refused_both_ways(
 ) -> None:
     admin = Actor(id=seeded_user_id, type="user", role="admin")
     service = CostService(db_session)
-    cost = _create(service, seeded_category_id, data=date(2026, 4, 5))
-    PeriodLockService(db_session).close_period(PeriodLockCreate(anno=2026, mese=3), admin)
+    cost = _create(service, seeded_category_id, date=date(2026, 4, 5))
+    PeriodLockService(db_session).close_period(PeriodLockCreate(year=2026, month=3), admin)
 
     with pytest.raises(Conflict):
-        _create(service, seeded_category_id, data=date(2026, 3, 5))
+        _create(service, seeded_category_id, date=date(2026, 3, 5))
     with pytest.raises(Conflict):
-        service.update(cost.id, CostUpdate(data=date(2026, 3, 5)), WRITER)
+        service.update(cost.id, CostUpdate(date=date(2026, 3, 5)), WRITER)
 
-    PeriodLockService(db_session).close_period(PeriodLockCreate(anno=2026, mese=4), admin)
+    PeriodLockService(db_session).close_period(PeriodLockCreate(year=2026, month=4), admin)
     with pytest.raises(Conflict):
         service.soft_delete(cost.id, WRITER)
 
@@ -129,8 +129,8 @@ def test_the_list_is_ordered_by_date_descending(
 ) -> None:
     service = CostService(db_session)
     for day in (5, 20, 12):
-        _create(service, seeded_category_id, data=date(2026, 3, day))
-    assert [c.data.day for c in service.list(CostListQuery(), READER).items] == [20, 12, 5]
+        _create(service, seeded_category_id, date=date(2026, 3, day))
+    assert [c.date.day for c in service.list(CostListQuery(), READER).items] == [20, 12, 5]
 
 
 def test_a_cursor_that_names_no_cost_is_refused_not_read_as_the_first_page(

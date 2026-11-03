@@ -29,13 +29,13 @@ from rebase_core.team_prompt import ProposalAnswer
 NOW = datetime(2026, 9, 26, 9, 30, tzinfo=UTC)
 
 
-DESCRIZIONE = (
+DESCRIPTION = (
     "Acme Logistica rifà il gestionale degli ordini: un backend in Python con FastAPI, "
     "un frontend in React, sei mesi di lavoro, da remoto."
 )
 
 
-RIASSUNTO = (
+SUMMARY = (
     "Un'azienda di logistica rifà il gestionale degli ordini: backend Python e frontend "
     "React, sei mesi da remoto."
 )
@@ -64,26 +64,26 @@ class FakeCapture:
 
 def team_member(
     position: str,
-    ruolo: str = "Backend developer",
-    motivazione: str = "Nove anni di API in Python e FastAPI, quello che serve al gestionale.",
-    giorni: int | None = 5,
+    role: str = "Backend developer",
+    reasoning: str = "Nove anni di API in Python e FastAPI, quello che serve al gestionale.",
+    days: int | None = 5,
 ) -> dict[str, Any]:
-    return {"id": position, "ruolo": ruolo, "motivazione": motivazione, "giorni_settimana": giorni}
+    return {"id": position, "role": role, "reasoning": reasoning, "week_days": days}
 
 
 def proposal_response(
     team: list[dict[str, Any]] | None = None,
     *,
-    riassunto: str = RIASSUNTO,
-    locale: bool = False,
-    dove: str | None = None,
+    summary: str = SUMMARY,
+    on_site: bool = False,
+    place: str | None = None,
     text: str | None = None,
     stop_reason: str = "end_turn",
     refusal_category: str | None = None,
 ) -> LlmResponse:
     body = {
-        "riassunto": riassunto,
-        "luogo": {"locale": locale, "dove": dove},
+        "summary": summary,
+        "location": {"on_site": on_site, "place": place},
         "team": team if team is not None else [],
     }
     answer = None if stop_reason == "refusal" else (text if text is not None else json.dumps(body))
@@ -108,25 +108,25 @@ def a_talent(
     n: int,
     *,
     card: Any = NO_CARD,
-    remoto: str | None = "remoto",
-    tariffa: Decimal | None = Decimal("450.00"),
-    stato: str = "nuovo",
+    remote: str | None = "remote",
+    rate: Decimal | None = Decimal("450.00"),
+    status: str = "new",
     deleted: bool = False,
     freelancer_id: UUID | None = None,
 ) -> UUID:
     """A freelancer with a name, a link and, unless `card` says otherwise, the card of
     `fakes_cards`: everything the catalogue must leave out sits in the row beside it."""
-    user = User(email=f"talento{n}@studio.it", nome="Ada", cognome=f"Lovelace{n}")
+    user = User(email=f"talento{n}@studio.it", first_name="Ada", last_name=f"Lovelace{n}")
     session.add(user)
     session.flush()
     row = Freelancer(
         user_id=user.id,
-        remoto=remoto,
-        tariffa_giornaliera=tariffa,
-        stato=stato,
+        remote=remote,
+        daily_rate=rate,
+        status=status,
         deleted_at=NOW if deleted else None,
         links=[f"https://github.com/ada{n}"],
-        posizione="Backend developer",
+        job_title="Backend developer",
     )
     if freelancer_id is not None:
         row.id = freelancer_id
@@ -149,7 +149,7 @@ def a_talent(
 
 
 def a_user(session: Session, email: str) -> UUID:
-    user = User(email=email, nome="Referente", cognome="Azienda")
+    user = User(email=email, first_name="Referente", last_name="Azienda")
     session.add(user)
     session.commit()
     return user.id

@@ -16,9 +16,9 @@ from pathlib import Path
 import pytest
 
 from pigrocrm.core.invoices.fatturapa_import import (
-    FatturaPaFormatError,
+    InvoicePaFormatError,
     detect,
-    fattura_pa_fpr12_adapter,
+    invoice_pa_fpr_12_adapter,
     parse,
 )
 from pigrocrm.core.invoices.import_adapter import InvoiceFormatAdapter
@@ -30,8 +30,8 @@ def _fixture(name: str) -> bytes:
     return (FIXTURES / name).read_bytes()
 
 
-CONSULENZA = "fpr12-consulenza-marzo.xml"
-LOTTO = "fpr12-lotto-due-fatture.xml"
+CONSULTING = "fpr-12-march-consulting.xml"
+LOTTO = "fpr-12-batch-due-invoices.xml"
 UNRELATED = "unrelated-well-formed.xml"
 
 
@@ -39,15 +39,15 @@ UNRELATED = "unrelated-well-formed.xml"
 
 
 def test_the_concrete_adapter_conforms_to_the_protocol() -> None:
-    assert isinstance(fattura_pa_fpr12_adapter, InvoiceFormatAdapter)
-    assert fattura_pa_fpr12_adapter.id == "FPR12"
+    assert isinstance(invoice_pa_fpr_12_adapter, InvoiceFormatAdapter)
+    assert invoice_pa_fpr_12_adapter.id == "FPR12"
 
 
 # --- detect() is total: never raises, whatever the bytes --------------------------
 
 
 def test_detect_claims_a_real_fpr12_document() -> None:
-    assert detect(_fixture(CONSULENZA)) is True
+    assert detect(_fixture(CONSULTING)) is True
 
 
 def test_detect_claims_the_lotto_batch_too() -> None:
@@ -62,7 +62,7 @@ def test_detect_rejects_a_document_transmitted_under_a_different_format_code() -
     """Otherwise-identical, fully valid document with both occurrences of the
     format code changed -- proves `detect` rejects on the format code
     specifically, not on some incidental structural difference."""
-    original = _fixture(CONSULENZA).decode("utf-8")
+    original = _fixture(CONSULTING).decode("utf-8")
     as_fpa12 = original.replace("FPR12", "FPA12").encode("utf-8")
     assert detect(as_fpa12) is False
 
@@ -75,7 +75,7 @@ def test_detect_rejects_empty_bytes_without_raising() -> None:
     assert detect(b"") is False
 
 
-def test_detect_rejects_a_root_with_no_namespace_or_prefix_that_is_not_fattura_pa() -> None:
+def test_detect_rejects_to_root_with_no_namespace_or_prefix_that_is_not_invoice_pa() -> None:
     assert detect(b"<Ordine><Numero>1</Numero></Ordine>") is False
 
 
@@ -83,61 +83,61 @@ def test_detect_rejects_a_root_with_no_namespace_or_prefix_that_is_not_fattura_p
 
 
 def test_parse_maps_the_real_fixture_into_a_complete_parsed_invoice() -> None:
-    [invoice] = parse(_fixture(CONSULENZA))
+    [invoice] = parse(_fixture(CONSULTING))
 
-    assert invoice.numero == "2026/6"
-    assert invoice.data_emissione.isoformat() == "2026-03-15"
-    assert invoice.tipo_documento == "parcella"  # TD06
-    assert invoice.divisa == "EUR"
+    assert invoice.number == "2026/6"
+    assert invoice.issue_date.isoformat() == "2026-03-15"
+    assert invoice.sdi_document_type == "fee_note"  # TD06
+    assert invoice.currency == "EUR"
 
-    assert invoice.fornitore.ragione_sociale == "Chiara Bianchi"
-    assert invoice.fornitore.partita_iva == "IT01234567890"
-    assert invoice.fornitore.codice_fiscale == "BNCCHR85M41H501Z"
-    assert invoice.fornitore.comune == "Milano"
-    assert invoice.fornitore.nazione == "IT"
+    assert invoice.supplier.legal_name == "Chiara Bianchi"
+    assert invoice.supplier.vat_number == "IT01234567890"
+    assert invoice.supplier.tax_code == "BNCCHR85M41H501Z"
+    assert invoice.supplier.city == "Milano"
+    assert invoice.supplier.country == "IT"
 
-    assert invoice.cliente.ragione_sociale == "Esempio Servizi S.r.l."
-    assert invoice.cliente.partita_iva == "IT09876543210"
-    assert invoice.cliente.comune == "Roma"
+    assert invoice.customer.legal_name == "Esempio Servizi S.r.l."
+    assert invoice.customer.vat_number == "IT09876543210"
+    assert invoice.customer.city == "Roma"
 
-    assert len(invoice.righe) == 1
-    riga = invoice.righe[0]
-    assert riga.descrizione == "Consulenza professionale - marzo 2026"
-    assert riga.quantita == Decimal("5.000000")
-    assert riga.prezzo_unitario == Decimal("200.000000")
-    assert riga.prezzo_totale == Decimal("1000.00")
-    assert riga.aliquota_iva == Decimal("0.00")
+    assert len(invoice.lines) == 1
+    line = invoice.lines[0]
+    assert line.description == "Consulenza professionale - marzo 2026"
+    assert line.quantity == Decimal("5.000000")
+    assert line.unit_price == Decimal("200.000000")
+    assert line.total_price == Decimal("1000.00")
+    assert line.vat_rate == Decimal("0.00")
 
-    assert len(invoice.riepiloghi) == 1
-    riepilogo = invoice.riepiloghi[0]
-    assert riepilogo.natura == "N2.2"
-    assert riepilogo.imponibile == Decimal("1000.00")
-    assert riepilogo.imposta == Decimal("0.00")
-    assert "regime forfettario" in (riepilogo.riferimento_normativo or "")
+    assert len(invoice.recaps) == 1
+    recap = invoice.recaps[0]
+    assert recap.vat_nature == "N2.2"
+    assert recap.taxable_amount == Decimal("1000.00")
+    assert recap.vat_amount == Decimal("0.00")
+    assert "regime forfettario" in (recap.legal_reference or "")
 
     # Sums of the tax-summary blocks, matching the sole block here exactly.
-    assert invoice.imponibile == Decimal("1000.00")
-    assert invoice.imposta == Decimal("0.00")
-    assert invoice.totale == Decimal("1000.00")
+    assert invoice.taxable_amount == Decimal("1000.00")
+    assert invoice.vat_amount == Decimal("0.00")
+    assert invoice.total == Decimal("1000.00")
 
     # Stamp duty survives; this fixture's fiscal profile has no social-security
     # fund, so the list is empty rather than defaulted to some placeholder.
-    assert invoice.bollo == Decimal("2.00")
-    assert invoice.cassa_previdenziale == []
+    assert invoice.stamp_duty == Decimal("2.00")
+    assert invoice.social_security_pension_fund == []
 
     # The due date comes straight from the document, for every instalment.
-    assert len(invoice.termini_pagamento) == 1
-    termini = invoice.termini_pagamento[0]
-    assert termini.condizioni_pagamento == "TP02"
-    assert len(termini.rate) == 1
-    rata = termini.rate[0]
-    assert rata.data_scadenza.isoformat() == "2026-04-14"
-    assert rata.origine_scadenza == "documento"
-    assert rata.importo == Decimal("1000.00")
-    assert rata.modalita_pagamento == "MP05"
-    assert rata.iban == "IT60X0542811101000000123456"
+    assert len(invoice.payment_terms) == 1
+    payment_block = invoice.payment_terms[0]
+    assert payment_block.payment_terms == "TP02"
+    assert len(payment_block.rate) == 1
+    installment = payment_block.rate[0]
+    assert installment.due_date.isoformat() == "2026-04-14"
+    assert installment.due_date_origin == "document"
+    assert installment.amount == Decimal("1000.00")
+    assert installment.payment_method == "MP05"
+    assert installment.iban == "IT60X0542811101000000123456"
 
-    assert invoice.trasmissione.progressivo_invio
+    assert invoice.transmission.send_sequential
 
 
 # --- the lotto batch: one file, several invoices, none dropped --------------------
@@ -146,40 +146,40 @@ def test_parse_maps_the_real_fixture_into_a_complete_parsed_invoice() -> None:
 def test_parse_handles_a_lotto_batch_two_bodies_produce_two_distinct_invoices() -> None:
     invoices = parse(_fixture(LOTTO))
     assert len(invoices) == 2
-    assert [invoice.numero for invoice in invoices] == ["2026/6", "2026/7"]
-    assert [invoice.totale for invoice in invoices] == [Decimal("1000.00"), Decimal("600.00")]
+    assert [invoice.number for invoice in invoices] == ["2026/6", "2026/7"]
+    assert [invoice.total for invoice in invoices] == [Decimal("1000.00"), Decimal("600.00")]
 
     # A lotto batch shares one FatturaElettronicaHeader: every invoice in it
     # carries the same supplier, customer and transmission -- exactly the
     # design record's own reason a batch-sourced invoice cannot claim a single
     # xml_document_id for itself (§5 item 3).
     first, second = invoices
-    assert first.fornitore == second.fornitore
-    assert first.cliente == second.cliente
-    assert first.trasmissione == second.trasmissione
+    assert first.supplier == second.supplier
+    assert first.customer == second.customer
+    assert first.transmission == second.transmission
 
-    # The second invoice's fiscal profile carried no stamp duty (`bollo=0` at
+    # The second invoice's fiscal profile carried no stamp duty (`stamp_duty=0` at
     # generation), so it is genuinely absent, not a copy of the first's.
-    assert first.bollo == Decimal("2.00")
-    assert second.bollo is None
+    assert first.stamp_duty == Decimal("2.00")
+    assert second.stamp_duty is None
 
 
 def test_the_adapter_object_parses_the_lotto_batch_identically_to_the_module_function() -> None:
-    assert fattura_pa_fpr12_adapter.detect(_fixture(LOTTO)) is True
-    invoices = fattura_pa_fpr12_adapter.parse(_fixture(LOTTO))
-    assert [invoice.numero for invoice in invoices] == ["2026/6", "2026/7"]
+    assert invoice_pa_fpr_12_adapter.detect(_fixture(LOTTO)) is True
+    invoices = invoice_pa_fpr_12_adapter.parse(_fixture(LOTTO))
+    assert [invoice.number for invoice in invoices] == ["2026/6", "2026/7"]
 
 
 # --- parse() raises rather than guessing, on content detect never claims ----------
 
 
-def test_parse_raises_on_content_that_is_not_a_well_formed_fattura_pa_document() -> None:
-    with pytest.raises(FatturaPaFormatError):
+def test_parse_raises_on_content_that_is_not_to_well_formed_invoice_pa_document() -> None:
+    with pytest.raises(InvoicePaFormatError):
         parse(_fixture(UNRELATED))
 
 
 def test_parse_raises_on_garbage_bytes() -> None:
-    with pytest.raises(FatturaPaFormatError):
+    with pytest.raises(InvoicePaFormatError):
         parse(b"not xml at all")
 
 
@@ -190,19 +190,19 @@ def test_parse_raises_on_garbage_bytes() -> None:
 
 _NAMESPACE = "http://ivaservizi.agenziaentrate.gov.it/docs/xsd/fatture/v1.2"
 
-_DEFAULT_CESSIONARIO_ID = (
+_DEFAULT_BUYER_ID = (
     "<IdFiscaleIVA><IdPaese>IT</IdPaese><IdCodice>09876543210</IdCodice></IdFiscaleIVA>"
 )
-_DEFAULT_RIEPILOGO = (
+_DEFAULT_RECAP = (
     "<DatiRiepilogo><AliquotaIVA>22.00</AliquotaIVA>"
     "<ImponibileImporto>100.00</ImponibileImporto><Imposta>22.00</Imposta></DatiRiepilogo>"
 )
-_DEFAULT_RIGA = (
+_DEFAULT_LINE = (
     "<DettaglioLinee><Descrizione>Consulenza</Descrizione>"
     "<PrezzoUnitario>100.00</PrezzoUnitario><PrezzoTotale>100.00</PrezzoTotale>"
     "<AliquotaIVA>22.00</AliquotaIVA></DettaglioLinee>"
 )
-_DEFAULT_PAGAMENTO = (
+_DEFAULT_PAYMENT = (
     "<DatiPagamento><CondizioniPagamento>TP02</CondizioniPagamento>"
     "<DettaglioPagamento><ModalitaPagamento>MP05</ModalitaPagamento>"
     "<DataScadenzaPagamento>2026-04-14</DataScadenzaPagamento>"
@@ -210,16 +210,16 @@ _DEFAULT_PAGAMENTO = (
 )
 
 
-def _fattura_xml(
+def _invoice_xml(
     *,
-    cessionario_identificativi: str = _DEFAULT_CESSIONARIO_ID,
-    tipo_documento: str = "TD01",
-    importo_totale_documento: str | None = "122.00",
-    righe: str = _DEFAULT_RIGA,
-    riepiloghi: str = _DEFAULT_RIEPILOGO,
-    dati_bollo: str = "",
-    dati_cassa: str = "",
-    dati_pagamento: str = _DEFAULT_PAGAMENTO,
+    buyer_identifiers: str = _DEFAULT_BUYER_ID,
+    sdi_document_type: str = "TD01",
+    amount_total_document: str | None = "122.00",
+    lines: str = _DEFAULT_LINE,
+    recaps: str = _DEFAULT_RECAP,
+    data_stamp_duty: str = "",
+    data_pension_fund: str = "",
+    data_payment: str = _DEFAULT_PAYMENT,
 ) -> bytes:
     """A minimal, well-formed `FatturaElettronica` document carrying only the
     elements this adapter reads. Uses a default (unprefixed) namespace on the
@@ -227,9 +227,9 @@ def _fattura_xml(
     exporter emits, to exercise the same namespace-agnostic tree walk against
     the other style real senders use.
     """
-    totale = (
-        f"<ImportoTotaleDocumento>{importo_totale_documento}</ImportoTotaleDocumento>"
-        if importo_totale_documento is not None
+    total = (
+        f"<ImportoTotaleDocumento>{amount_total_document}</ImportoTotaleDocumento>"
+        if amount_total_document is not None
         else ""
     )
     xml = f"""<?xml version="1.0" encoding="UTF-8"?>
@@ -249,7 +249,7 @@ def _fattura_xml(
     </CedentePrestatore>
     <CessionarioCommittente>
       <DatiAnagrafici>
-        {cessionario_identificativi}
+        {buyer_identifiers}
         <Anagrafica><Denominazione>Cliente Test S.p.A.</Denominazione></Anagrafica>
       </DatiAnagrafici>
       <Sede><Indirizzo>Via Cliente 2</Indirizzo><CAP>00200</CAP><Comune>Milano</Comune></Sede>
@@ -258,65 +258,65 @@ def _fattura_xml(
   <FatturaElettronicaBody>
     <DatiGenerali>
       <DatiGeneraliDocumento>
-        <TipoDocumento>{tipo_documento}</TipoDocumento>
+        <TipoDocumento>{sdi_document_type}</TipoDocumento>
         <Divisa>EUR</Divisa>
         <Data>2026-03-15</Data>
         <Numero>1/2026</Numero>
-        {dati_bollo}
-        {dati_cassa}
-        {totale}
+        {data_stamp_duty}
+        {data_pension_fund}
+        {total}
       </DatiGeneraliDocumento>
     </DatiGenerali>
     <DatiBeniServizi>
-      {righe}
-      {riepiloghi}
+      {lines}
+      {recaps}
     </DatiBeniServizi>
-    {dati_pagamento}
+    {data_payment}
   </FatturaElettronicaBody>
 </FatturaElettronica>
 """
     return xml.encode("utf-8")
 
 
-def test_the_common_case_a_company_customer_identified_by_id_fiscale_iva() -> None:
-    [invoice] = parse(_fattura_xml())
-    assert invoice.cliente.partita_iva == "IT09876543210"
-    assert invoice.cliente.codice_fiscale is None
+def test_the_common_case_to_company_customer_identified_by_id_tax_vat() -> None:
+    [invoice] = parse(_invoice_xml())
+    assert invoice.customer.vat_number == "IT09876543210"
+    assert invoice.customer.tax_code is None
 
 
-def test_an_individual_customer_identified_only_by_codice_fiscale() -> None:
-    xml = _fattura_xml(cessionario_identificativi="<CodiceFiscale>RSSMRA80A01H501U</CodiceFiscale>")
+def test_an_individual_customer_identified_only_by_tax_code() -> None:
+    xml = _invoice_xml(buyer_identifiers="<CodiceFiscale>RSSMRA80A01H501U</CodiceFiscale>")
     [invoice] = parse(xml)
-    assert invoice.cliente.partita_iva is None
-    assert invoice.cliente.codice_fiscale == "RSSMRA80A01H501U"
+    assert invoice.customer.vat_number is None
+    assert invoice.customer.tax_code == "RSSMRA80A01H501U"
 
 
-def test_a_customer_with_neither_id_fiscale_iva_nor_codice_fiscale_is_rejected() -> None:
-    xml = _fattura_xml(cessionario_identificativi="")
-    with pytest.raises(FatturaPaFormatError, match="neither IdFiscaleIVA nor CodiceFiscale"):
+def test_to_customer_with_neither_id_tax_vat_nor_tax_code_is_rejected() -> None:
+    xml = _invoice_xml(buyer_identifiers="")
+    with pytest.raises(InvoicePaFormatError, match="neither IdFiscaleIVA nor CodiceFiscale"):
         parse(xml)
 
 
-def test_an_unrecognised_tipo_documento_is_rejected_rather_than_guessed() -> None:
-    xml = _fattura_xml(tipo_documento="TD99")
-    with pytest.raises(FatturaPaFormatError, match="TipoDocumento"):
+def test_an_unrecognised_sdi_document_type_is_rejected_rather_than_guessed() -> None:
+    xml = _invoice_xml(sdi_document_type="TD99")
+    with pytest.raises(InvoicePaFormatError, match="TipoDocumento"):
         parse(xml)
 
 
-def test_a_document_missing_importo_totale_documento_is_rejected() -> None:
-    xml = _fattura_xml(importo_totale_documento=None)
-    with pytest.raises(FatturaPaFormatError, match="ImportoTotaleDocumento"):
+def test_to_document_missing_amount_total_document_is_rejected() -> None:
+    xml = _invoice_xml(amount_total_document=None)
+    with pytest.raises(InvoicePaFormatError, match="ImportoTotaleDocumento"):
         parse(xml)
 
 
-def test_a_document_with_no_dettaglio_linee_is_rejected_rather_than_producing_no_lines() -> None:
-    with pytest.raises(FatturaPaFormatError, match="DettaglioLinee"):
-        parse(_fattura_xml(righe=""))
+def test_to_document_with_no_detail_lines_is_rejected_rather_than_producing_no_lines() -> None:
+    with pytest.raises(InvoicePaFormatError, match="DettaglioLinee"):
+        parse(_invoice_xml(lines=""))
 
 
-def test_a_document_with_no_dati_riepilogo_is_rejected_rather_than_producing_zero_totals() -> None:
-    with pytest.raises(FatturaPaFormatError, match="DatiRiepilogo"):
-        parse(_fattura_xml(riepiloghi=""))
+def test_to_document_with_no_data_recap_is_rejected_rather_than_producing_zero_totals() -> None:
+    with pytest.raises(InvoicePaFormatError, match="DatiRiepilogo"):
+        parse(_invoice_xml(recaps=""))
 
 
 def test_a_non_iso_issue_date_is_rejected_as_fatturapa_format_error_not_a_bare_value_error() -> (
@@ -325,21 +325,21 @@ def test_a_non_iso_issue_date_is_rejected_as_fatturapa_format_error_not_a_bare_v
     """A document detect() still claims (the format-code fields are untouched) but
     whose `Data` is not an ISO date must fail with this module's own exception,
     not leak `ValueError` straight from `date.fromisoformat` -- a caller matching
-    on `FatturaPaFormatError` to turn a malformed document into a review outcome
+    on `InvoicePaFormatError` to turn a malformed document into a review outcome
     would otherwise see an unhandled exception instead.
     """
     xml = (
-        _fixture(CONSULENZA)
+        _fixture(CONSULTING)
         .decode("utf-8")
         .replace("<Data>2026-03-15</Data>", "<Data>15/03/2026</Data>")
     )
-    with pytest.raises(FatturaPaFormatError, match="ISO date"):
+    with pytest.raises(InvoicePaFormatError, match="ISO date"):
         parse(xml.encode("utf-8"))
 
 
-def test_a_non_integer_giorni_termini_pagamento_is_rejected_as_fatturapa_format_error() -> None:
-    xml = _fattura_xml(
-        dati_pagamento=(
+def test_to_not_integer_days_payment_terms_is_rejected_as_fatturapa_format_error() -> None:
+    xml = _invoice_xml(
+        data_payment=(
             "<DatiPagamento><CondizioniPagamento>TP02</CondizioniPagamento>"
             "<DettaglioPagamento><ModalitaPagamento>MP05</ModalitaPagamento>"
             "<DataRiferimentoTerminiPagamento>2026-03-15</DataRiferimentoTerminiPagamento>"
@@ -347,7 +347,7 @@ def test_a_non_integer_giorni_termini_pagamento_is_rejected_as_fatturapa_format_
             "<ImportoPagamento>122.00</ImportoPagamento></DettaglioPagamento></DatiPagamento>"
         )
     )
-    with pytest.raises(FatturaPaFormatError, match="not an integer"):
+    with pytest.raises(InvoicePaFormatError, match="not an integer"):
         parse(xml)
 
 
@@ -358,22 +358,22 @@ def test_a_non_integer_giorni_termini_pagamento_is_rejected_as_fatturapa_format_
 def test_a_malformed_decimal_is_rejected_as_fatturapa_format_error(malformed: str) -> None:
     """`Decimal()` accepts `NaN`, an exponent form, underscores and non-ASCII digits;
     `1E999999999` then raises `InvalidOperation` out of `quantize`, a bare 500 for a
-    caller that only handles `FatturaPaFormatError`. The lexical form is checked first."""
-    riga = (
+    caller that only handles `InvoicePaFormatError`. The lexical form is checked first."""
+    line_xml = (
         "<DettaglioLinee><Descrizione>Consulenza</Descrizione>"
         f"<PrezzoUnitario>{malformed}</PrezzoUnitario><PrezzoTotale>100.00</PrezzoTotale>"
         "<AliquotaIVA>22.00</AliquotaIVA></DettaglioLinee>"
     )
-    with pytest.raises(FatturaPaFormatError):
-        parse(_fattura_xml(righe=riga))
+    with pytest.raises(InvoicePaFormatError):
+        parse(_invoice_xml(lines=line_xml))
 
 
 @pytest.mark.parametrize("malformed", ["1_0", "\u0663\u0660", "1E2", "99999999999"])
-def test_a_malformed_giorni_termini_pagamento_is_rejected_as_fatturapa_format_error(
+def test_to_malformed_days_payment_terms_is_rejected_as_fatturapa_format_error(
     malformed: str,
 ) -> None:
-    xml = _fattura_xml(
-        dati_pagamento=(
+    xml = _invoice_xml(
+        data_payment=(
             "<DatiPagamento><CondizioniPagamento>TP02</CondizioniPagamento>"
             "<DettaglioPagamento><ModalitaPagamento>MP05</ModalitaPagamento>"
             "<DataRiferimentoTerminiPagamento>2026-03-15</DataRiferimentoTerminiPagamento>"
@@ -381,25 +381,25 @@ def test_a_malformed_giorni_termini_pagamento_is_rejected_as_fatturapa_format_er
             "<ImportoPagamento>122.00</ImportoPagamento></DettaglioPagamento></DatiPagamento>"
         )
     )
-    with pytest.raises(FatturaPaFormatError):
+    with pytest.raises(InvoicePaFormatError):
         parse(xml)
 
 
 def test_an_instalment_with_neither_explicit_nor_computable_relative_terms_is_rejected() -> None:
-    xml = _fattura_xml(
-        dati_pagamento=(
+    xml = _invoice_xml(
+        data_payment=(
             "<DatiPagamento><CondizioniPagamento>TP02</CondizioniPagamento>"
             "<DettaglioPagamento><ModalitaPagamento>MP05</ModalitaPagamento>"
             "<ImportoPagamento>122.00</ImportoPagamento></DettaglioPagamento></DatiPagamento>"
         )
     )
-    with pytest.raises(FatturaPaFormatError, match="due date"):
+    with pytest.raises(InvoicePaFormatError, match="due date"):
         parse(xml)
 
 
 def test_an_instalment_expressed_as_relative_terms_computes_a_due_date() -> None:
-    xml = _fattura_xml(
-        dati_pagamento=(
+    xml = _invoice_xml(
+        data_payment=(
             "<DatiPagamento><CondizioniPagamento>TP02</CondizioniPagamento>"
             "<DettaglioPagamento><ModalitaPagamento>MP05</ModalitaPagamento>"
             "<DataRiferimentoTerminiPagamento>2026-03-15</DataRiferimentoTerminiPagamento>"
@@ -408,15 +408,15 @@ def test_an_instalment_expressed_as_relative_terms_computes_a_due_date() -> None
         )
     )
     [invoice] = parse(xml)
-    [termini] = invoice.termini_pagamento
-    [rata] = termini.rate
-    assert rata.data_scadenza.isoformat() == "2026-04-14"
-    assert rata.origine_scadenza == "calcolata"
+    [payment_block] = invoice.payment_terms
+    [installment] = payment_block.rate
+    assert installment.due_date.isoformat() == "2026-04-14"
+    assert installment.due_date_origin == "calculated"
 
 
 def test_every_payment_terms_block_keeps_its_own_condition_code_and_instalments() -> None:
-    xml = _fattura_xml(
-        dati_pagamento=(
+    xml = _invoice_xml(
+        data_payment=(
             "<DatiPagamento><CondizioniPagamento>TP01</CondizioniPagamento>"
             "<DettaglioPagamento><ModalitaPagamento>MP05</ModalitaPagamento>"
             "<DataScadenzaPagamento>2026-04-01</DataScadenzaPagamento>"
@@ -428,22 +428,22 @@ def test_every_payment_terms_block_keeps_its_own_condition_code_and_instalments(
         )
     )
     [invoice] = parse(xml)
-    assert [t.condizioni_pagamento for t in invoice.termini_pagamento] == ["TP01", "TP02"]
-    assert [t.rate[0].modalita_pagamento for t in invoice.termini_pagamento] == ["MP05", "MP08"]
+    assert [t.payment_terms for t in invoice.payment_terms] == ["TP01", "TP02"]
+    assert [t.rate[0].payment_method for t in invoice.payment_terms] == ["MP05", "MP08"]
 
 
 def test_stamp_duty_and_social_charge_are_absent_not_defaulted_when_the_document_carries_none() -> (
     None
 ):
-    [invoice] = parse(_fattura_xml())
-    assert invoice.bollo is None
-    assert invoice.cassa_previdenziale == []
+    [invoice] = parse(_invoice_xml())
+    assert invoice.stamp_duty is None
+    assert invoice.social_security_pension_fund == []
 
 
 def test_stamp_duty_and_the_social_charge_survive_when_the_document_carries_them() -> None:
-    xml = _fattura_xml(
-        dati_bollo="<DatiBollo><ImportoBollo>2.00</ImportoBollo></DatiBollo>",
-        dati_cassa=(
+    xml = _invoice_xml(
+        data_stamp_duty="<DatiBollo><ImportoBollo>2.00</ImportoBollo></DatiBollo>",
+        data_pension_fund=(
             "<DatiCassaPrevidenziale><TipoCassa>TC22</TipoCassa><AlCassa>4.00</AlCassa>"
             "<ImportoContributoCassa>4.00</ImportoContributoCassa>"
             "<ImponibileCassa>100.00</ImponibileCassa><AliquotaIVA>22.00</AliquotaIVA>"
@@ -451,47 +451,49 @@ def test_stamp_duty_and_the_social_charge_survive_when_the_document_carries_them
         ),
     )
     [invoice] = parse(xml)
-    assert invoice.bollo == Decimal("2.00")
-    [cassa] = invoice.cassa_previdenziale
-    assert cassa.tipo_cassa == "TC22"
-    assert cassa.aliquota_cassa == Decimal("4.00")
-    assert cassa.importo_contributo_cassa == Decimal("4.00")
-    assert cassa.imponibile_cassa == Decimal("100.00")
+    assert invoice.stamp_duty == Decimal("2.00")
+    [pension_fund] = invoice.social_security_pension_fund
+    assert pension_fund.pension_fund_type == "TC22"
+    assert pension_fund.pension_fund_rate == Decimal("4.00")
+    assert pension_fund.pension_fund_contribution_amount == Decimal("4.00")
+    assert pension_fund.pension_fund_taxable_amount == Decimal("100.00")
 
 
-def test_imponibile_and_imposta_sum_every_tax_summary_block_for_a_mixed_rate_invoice() -> None:
-    riepiloghi = (
+def test_taxable_amount_and_vat_amount_sum_every_tax_summary_block_for_to_mixed_rate_invoice() -> (
+    None
+):
+    recaps = (
         "<DatiRiepilogo><AliquotaIVA>22.00</AliquotaIVA>"
         "<ImponibileImporto>100.00</ImponibileImporto><Imposta>22.00</Imposta></DatiRiepilogo>"
         "<DatiRiepilogo><AliquotaIVA>10.00</AliquotaIVA>"
         "<ImponibileImporto>50.00</ImponibileImporto><Imposta>5.00</Imposta></DatiRiepilogo>"
     )
-    xml = _fattura_xml(riepiloghi=riepiloghi, importo_totale_documento="177.00")
+    xml = _invoice_xml(recaps=recaps, amount_total_document="177.00")
     [invoice] = parse(xml)
-    assert invoice.imponibile == Decimal("150.00")
-    assert invoice.imposta == Decimal("27.00")
-    assert invoice.totale == Decimal("177.00")
-    assert len(invoice.riepiloghi) == 2
+    assert invoice.taxable_amount == Decimal("150.00")
+    assert invoice.vat_amount == Decimal("27.00")
+    assert invoice.total == Decimal("177.00")
+    assert len(invoice.recaps) == 2
 
 
-def test_quantita_defaults_to_one_when_the_document_omits_it() -> None:
-    riga = (
+def test_quantity_defaults_to_one_when_the_document_omits_it() -> None:
+    line_xml = (
         "<DettaglioLinee><Descrizione>Consulenza a corpo</Descrizione>"
         "<PrezzoUnitario>100.00</PrezzoUnitario><PrezzoTotale>100.00</PrezzoTotale>"
         "<AliquotaIVA>22.00</AliquotaIVA></DettaglioLinee>"
     )
-    [invoice] = parse(_fattura_xml(righe=riga))
-    assert invoice.righe[0].quantita == Decimal("1")
+    [invoice] = parse(_invoice_xml(lines=line_xml))
+    assert invoice.lines[0].quantity == Decimal("1")
 
 
 def test_a_batch_where_one_body_is_malformed_raises_rather_than_returning_partial_results() -> None:
     """A caller must not get one good invoice and one silently dropped -- the
     same reasoning `parse`'s own docstring states for a single-invoice document.
     """
-    good = _fattura_xml().decode("utf-8")
+    good = _invoice_xml().decode("utf-8")
     body_start = good.index("<FatturaElettronicaBody>")
     body_end = good.index("</FatturaElettronicaBody>") + len("</FatturaElettronicaBody>")
     second_body = good[body_start:body_end].replace("TD01", "TD99")
     batch = good[:body_end] + second_body + good[body_end:]
-    with pytest.raises(FatturaPaFormatError, match="TipoDocumento"):
+    with pytest.raises(InvoicePaFormatError, match="TipoDocumento"):
         parse(batch.encode("utf-8"))

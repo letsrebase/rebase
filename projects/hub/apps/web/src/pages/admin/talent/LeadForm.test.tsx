@@ -1,7 +1,7 @@
 import { screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { INCOMPLETE, LEAD_TALENTO, answer, mount, resetMocks } from '../list-test-kit'
+import { INCOMPLETE, LEAD_TALENT, answer, mount, resetMocks } from '../list-test-kit'
 
 afterEach(resetMocks)
 
@@ -12,21 +12,21 @@ describe('a lead offers to draft a card in place (ORB-155, REB-283)', () => {
       if (init?.method === 'POST') {
         expect(url).toBe('/api/hub/signups/s2/card')
         expect(JSON.parse(init.body as string)).toEqual({
-          nome: 'Bob',
-          cognome: 'Ross',
+          first_name: 'Bob',
+          last_name: 'Ross',
           linkedin_url: 'https://www.linkedin.com/in/bob',
           links: [],
-          fonti: ['https://bob.dev'],
+          sources: ['https://bob.dev'],
         })
-        return answer(201, { ...INCOMPLETE, id: 'f9', nome: 'Bob', cognome: 'Ross' })
+        return answer(201, { ...INCOMPLETE, id: 'f9', first_name: 'Bob', last_name: 'Ross' })
       }
       if (url === '/api/hub/freelancers/f9') {
-        return answer(200, { ...INCOMPLETE, id: 'f9', nome: 'Bob', cognome: 'Ross' })
+        return answer(200, { ...INCOMPLETE, id: 'f9', first_name: 'Bob', last_name: 'Ross' })
       }
       if (url === '/api/hub/freelancers/f9/audit') {
         return answer(200, [])
       }
-      return answer(200, LEAD_TALENTO)
+      return answer(200, LEAD_TALENT)
     })
     mount('/admin/talent/s2')
 
@@ -47,12 +47,12 @@ describe('a lead offers to draft a card in place (ORB-155, REB-283)', () => {
   it('drafts a card with a rate typed as «1.500» as 1500 (REB-485)', async () => {
     const spy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
       const url = String(input)
-      if (init?.method === 'POST') return answer(201, { ...INCOMPLETE, id: 'f9', nome: 'Bob', cognome: 'Ross' })
+      if (init?.method === 'POST') return answer(201, { ...INCOMPLETE, id: 'f9', first_name: 'Bob', last_name: 'Ross' })
       if (url === '/api/hub/freelancers/f9') {
-        return answer(200, { ...INCOMPLETE, id: 'f9', nome: 'Bob', cognome: 'Ross' })
+        return answer(200, { ...INCOMPLETE, id: 'f9', first_name: 'Bob', last_name: 'Ross' })
       }
       if (url === '/api/hub/freelancers/f9/audit') return answer(200, [])
-      return answer(200, LEAD_TALENTO)
+      return answer(200, LEAD_TALENT)
     })
     mount('/admin/talent/s2')
 
@@ -64,13 +64,13 @@ describe('a lead offers to draft a card in place (ORB-155, REB-283)', () => {
     await screen.findByText('scritta dall’admin, da completare')
     const post = spy.mock.calls.find(([, init]) => init?.method === 'POST')!
     expect(post[0]).toBe('/api/hub/signups/s2/card')
-    expect(JSON.parse(post[1]!.body as string).tariffa_giornaliera).toBe('1500.00')
+    expect(JSON.parse(post[1]!.body as string).daily_rate).toBe('1500.00')
   })
 
   it.each(['1,000.00', '12,345', '1e3'])(
     'refuses a rate typed as «%s» before any request (REB-485)',
     async (typed) => {
-      const spy = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => answer(200, LEAD_TALENTO))
+      const spy = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => answer(200, LEAD_TALENT))
       mount('/admin/talent/s2')
       await screen.findByRole('heading', { name: 'Bob Ross' })
       await userEvent.type(screen.getByLabelText('Tariffa a giornata'), typed)
@@ -83,14 +83,14 @@ describe('a lead offers to draft a card in place (ORB-155, REB-283)', () => {
   )
 
   it('refuses without at least one source, since a card written from research needs one', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(200, LEAD_TALENTO))
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(200, LEAD_TALENT))
     mount('/admin/talent/s2')
     await screen.findByRole('heading', { name: 'Bob Ross' })
     expect(screen.getByLabelText('Fonti')).toBeRequired()
   })
 
   it('reads the one sign-up by its id, never the list of every lead', async () => {
-    const spy = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => answer(200, LEAD_TALENTO))
+    const spy = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => answer(200, LEAD_TALENT))
     mount('/admin/talent/s2')
     await screen.findByRole('heading', { name: 'Bob Ross' })
     const urls = spy.mock.calls.map(([input]) => String(input))

@@ -10,7 +10,7 @@ describe('REB-356: the state-change mutations keep the notes thread visible', ()
     const withComment = {
       ...COMPANY_A,
       note: [
-        { id: 'c2', testo: 'In attesa di risposta.', autore: 'Ivan', autore_id: null, fonte: 'web', created_at: '2026-09-12T10:00:00Z', modificata_at: null, modificata_da: null, modificabile: true },
+        { id: 'c2', text: 'In attesa di risposta.', author: 'Ivan', author_id: null, source: 'web', created_at: '2026-09-12T10:00:00Z', edited_at: null, edited_by: null, editable: true },
       ],
     }
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
@@ -18,11 +18,11 @@ describe('REB-356: the state-change mutations keep the notes thread visible', ()
       if (url === '/api/hub/companies/c1/audit') return answer(200, [])
       if (url === '/api/hub/companies/c1' && init?.method === 'PATCH') {
         const body = JSON.parse(init.body as string)
-        expect(body.stato).toBe('contattato')
+        expect(body.status).toBe('contacted')
         // The moveCompany response's own `note` is always `[]` (only `get` fills
         // it): the old `setQueryData(['company', id], updated)` replaced the cache
         // outright with that empty array, which is exactly what this guards against.
-        return answer(200, { ...withComment, stato: 'contattato', note: [] })
+        return answer(200, { ...withComment, status: 'contacted', note: [] })
       }
       return answer(200, withComment)
     })
@@ -62,8 +62,8 @@ describe('the company detail', () => {
       if (url === '/api/hub/companies/c1/audit') return answer(200, [])
       if (url === '/api/hub/companies/c1/override' && init?.method === 'PATCH') {
         const body = JSON.parse(init.body as string)
-        expect(body.durata).toBe('6 mesi')
-        stored = { ...COMPANY_A, durata: '6 mesi' }
+        expect(body.duration).toBe('6 mesi')
+        stored = { ...COMPANY_A, duration: '6 mesi' }
         return answer(200, stored)
       }
       return answer(200, stored)
@@ -71,9 +71,9 @@ describe('the company detail', () => {
     mount('/admin/companies/c1')
     await screen.findByRole('heading', { name: 'Rossi Studio' })
     await userEvent.click(screen.getByRole('button', { name: 'Modifica richiesta' }))
-    const durata = await screen.findByLabelText('Durata')
-    await userEvent.clear(durata)
-    await userEvent.type(durata, '6 mesi')
+    const duration = await screen.findByLabelText('Durata')
+    await userEvent.clear(duration)
+    await userEvent.type(duration, '6 mesi')
     await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
     await waitFor(() => expect(screen.getByText(/6 mesi/)).toBeInTheDocument())
   })

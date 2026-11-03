@@ -55,7 +55,7 @@ def contracts_sweep() -> int:
     every ten minutes on production and the preview alike, from the `sweep` service in
     `docker-compose.yml` (REB-393). Prints the `unconfirmed` count only when it is not
     zero (REB-431): an expired, revoked or wrong token, or Documenso itself unreachable,
-    otherwise failed silently, leaving a document `inviato` and «0 documenti ripresi»
+    otherwise failed silently, leaving a document `sent` and «0 documenti ripresi»
     printed every ten minutes with nothing to say why. Then the round that links active
     matches to their deal on Pigro (REB-499): how many it linked, always, and how many
     it tried and left unlinked, only when there are any. Then, on a line of its own, the
@@ -81,7 +81,7 @@ def contracts_sweep() -> int:
 
 def crm_sweep(settings: Settings) -> str:
     """The round of `rebase contracts-sweep` that files company requests in rebase's CRM
-    (REB-868): every live request still `da_collegare` or in `errore`, in a session of its
+    (REB-868): every live request still `to_link` or in `error`, in a session of its
     own and wired outside `SigningService`, whose round returns early without an
     engagement service. Its line says how many it filed, and how many it tried and left
     unfiled only when there are any. The draft's model is asked for only when a request

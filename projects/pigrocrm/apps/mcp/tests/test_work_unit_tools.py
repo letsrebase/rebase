@@ -35,12 +35,12 @@ def _payload(result: Any) -> Any:
 def contract_id(mcp_session: Session, seeded_customer_id: str) -> UUID:
     contract = Contract(
         customer_id=UUID(seeded_customer_id),
-        titolo="Consulenza MCP",
-        inizio=date(2026, 1, 1),
-        tipo_rinnovo="nessuno",
-        preavviso_disdetta_giorni=30,
-        cadenza_fatturazione="mensile",
-        politica_spese={"kind": "non_rimborsabile"},
+        title="Consulenza MCP",
+        start=date(2026, 1, 1),
+        renewal_type="none",
+        termination_notice_days=30,
+        billing_cadence="monthly",
+        expense_policy={"kind": "not_reimbursable"},
         requires_prior_approval=True,
     )
     mcp_session.add(contract)
@@ -48,16 +48,16 @@ def contract_id(mcp_session: Session, seeded_customer_id: str) -> UUID:
     return contract.id
 
 
-def _record(session: Session, contract: UUID, giorno: date) -> UUID:
+def _record(session: Session, contract: UUID, day: date) -> UUID:
     return (
         WorkUnitService(session)
         .create(
             WorkUnitCreate(
                 contract_id=contract,
-                data=giorno,
-                quantita=Decimal("0.50"),
-                descrizione="Revisione",
-                stato="lavorato",
+                date=day,
+                quantity=Decimal("0.50"),
+                description="Revisione",
+                status="worked",
             ),
             HUMAN,
         )
@@ -93,11 +93,11 @@ async def test_an_agent_reads_a_contracts_days_and_one_days_history(
         )
         one = _payload(await client.call_tool("get_work_unit", {"work_unit_id": str(day_id)}))
 
-    assert [(row["id"], row["stato"], row["contract_titolo"]) for row in listed["items"]] == [
-        (str(day_id), "lavorato_senza_approvazione", "Consulenza MCP")
+    assert [(row["id"], row["status"], row["contract_title"]) for row in listed["items"]] == [
+        (str(day_id), "worked_without_approval", "Consulenza MCP")
     ]
     assert one["requires_prior_approval"] is True
-    assert [t["stato_nuovo"] for t in one["transizioni"]] == ["lavorato_senza_approvazione"]
+    assert [t["new_status"] for t in one["transitions"]] == ["worked_without_approval"]
 
 
 async def test_a_list_with_no_contract_and_no_date_is_refused_in_words(server) -> None:
@@ -105,7 +105,7 @@ async def test_a_list_with_no_contract_and_no_date_is_refused_in_words(server) -
         result = await client.call_tool("list_work_units", {})
 
     assert result.is_error
-    assert "contratto" in result.content[0].text
+    assert "contract" in result.content[0].text
 
 
 def test_the_ledger_writes_refuse_an_agent_credential(
@@ -116,10 +116,10 @@ def test_the_ledger_writes_refuse_an_agent_credential(
         WorkUnitService(mcp_session).create(
             WorkUnitCreate(
                 contract_id=contract_id,
-                data=date(2026, 3, 3),
-                quantita=Decimal("1.00"),
-                descrizione="Giornata",
-                stato="lavorato",
+                date=date(2026, 3, 3),
+                quantity=Decimal("1.00"),
+                description="Giornata",
+                status="worked",
             ),
             agent,
         )

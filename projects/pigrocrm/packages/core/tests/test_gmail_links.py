@@ -77,14 +77,16 @@ def _thread(fake: FakeGmail) -> None:
 
 
 def _acme(session: Session) -> Customer:
-    customer = Customer(ragione_sociale="Acme", email=None)
+    customer = Customer(legal_name="Acme", email=None)
     session.add(customer)
     session.flush()
     return customer
 
 
 def _ada(session: Session, customer: Customer) -> Person:
-    person = Person(nome="Ada", cognome="Byron", email="ada@acme.it", customer_id=customer.id)
+    person = Person(
+        first_name="Ada", last_name="Byron", email="ada@acme.it", customer_id=customer.id
+    )
     session.add(person)
     session.flush()
     return person
@@ -117,7 +119,7 @@ def test_an_email_appears_on_the_person_and_on_her_customer(
     account = connected_account(db_session)
     customer = _acme(db_session)
     person = _ada(db_session, customer)
-    deal = Deal(nome="Rinnovo", customer_id=customer.id, pipeline_stage_id=seeded_open_stage_id)
+    deal = Deal(name="Rinnovo", customer_id=customer.id, pipeline_stage_id=seeded_open_stage_id)
     db_session.add(deal)
     db_session.flush()
 
@@ -301,7 +303,7 @@ def test_a_received_message_writes_a_timeline_entry_on_the_linked_entity(
     db_session.commit()
 
     rows = (
-        db_session.execute(select(Activity).where(Activity.kind == "gmail.messaggio_ricevuto"))
+        db_session.execute(select(Activity).where(Activity.kind == "gmail.message_received"))
         .scalars()
         .all()
     )
@@ -314,7 +316,7 @@ def test_a_received_message_writes_a_timeline_entry_on_the_linked_entity(
 
 
 def test_a_message_we_sent_is_not_announced_as_received(db_session: Session) -> None:
-    """`gmail.messaggio_ricevuto` is a claim about direction. A cycle that recorded one
+    """`gmail.message_received` is a claim about direction. A cycle that recorded one
     for every stored message would tell the user their own reply had arrived, and would
     do it on every outbound message in the thread."""
     account = connected_account(db_session)
@@ -337,7 +339,7 @@ def test_a_message_we_sent_is_not_announced_as_received(db_session: Session) -> 
     db_session.commit()
 
     assert (
-        db_session.execute(select(Activity).where(Activity.kind == "gmail.messaggio_ricevuto"))
+        db_session.execute(select(Activity).where(Activity.kind == "gmail.message_received"))
         .scalars()
         .all()
         == []
@@ -372,7 +374,7 @@ def test_the_sync_itself_is_recorded_once_per_cycle(db_session: Session) -> None
     sync_service(db_session, FakeGmail()).sync(actor_for(account))
     db_session.commit()
     rows = (
-        db_session.execute(select(Activity).where(Activity.kind == "gmail.sync_eseguito"))
+        db_session.execute(select(Activity).where(Activity.kind == "gmail.sync_run"))
         .scalars()
         .all()
     )

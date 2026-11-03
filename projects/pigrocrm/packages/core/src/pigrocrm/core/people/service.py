@@ -32,7 +32,7 @@ from pigrocrm.core.schemas import reject_cleared_columns, supplied_changes
 # strict, which requires the narrower `Literal["customer", "person", "deal"]`.
 ENTITY: EntityType = "person"
 # `.fullmatch()`, not `.match()`, is load-bearing -- identical reasoning to
-# `PARTITA_IVA_RE` in customers/service.py: `.match()` with a `$`-anchored pattern
+# `VAT_NUMBER_RE` in customers/service.py: `.match()` with a `$`-anchored pattern
 # accepts a trailing "\n", because `$` matches just before a final newline, not only
 # at the true end of the string. "a@b.it\n" would pass `^...$` under `.match()` and
 # could reach `flush()` as a raw, session-poisoning `DataError` once combined with a
@@ -87,7 +87,7 @@ class PersonService:
         return self._reads([person])[0]
 
     def _reads(self, people: list[Person]) -> list[PersonRead]:
-        """The batched form, and the reason `customer_ragione_sociale` is resolved here
+        """The batched form, and the reason `customer_legal_name` is resolved here
         and not inside `PersonRead` itself: one lookup for the whole page (see
         `PersonRepository.customer_names`), so a 50-row list costs two queries rather
         than fifty-one. A schema-level validator or a lazy ORM relationship would both
@@ -102,7 +102,7 @@ class PersonService:
         )
         return [
             PersonRead.model_validate(person).model_copy(
-                update={"customer_ragione_sociale": names.get(person.customer_id)}
+                update={"customer_legal_name": names.get(person.customer_id)}
                 if person.customer_id is not None
                 else {}
             )
@@ -125,7 +125,9 @@ class PersonService:
         )
 
         person = self.repo.add(Person(**payload))
-        self.activities.record(ENTITY, person.id, "created", actor, {"nome": person.nome})
+        self.activities.record(
+            ENTITY, person.id, "created", actor, {"first_name": person.first_name}
+        )
         append_first_note(self.session, ENTITY, person.id, first_note, actor)
         return person
 
@@ -252,7 +254,7 @@ class PersonService:
         has_more = len(rows) > query.limit
         items = rows[: query.limit]
         # See `CustomerService.list` for why the cursor carries the sort value as well
-        # as the id. Here the value can legitimately be `None` -- `cognome` is
+        # as the id. Here the value can legitimately be `None` -- `last_name` is
         # nullable -- which is the whole reason the cursor is opaque rather than a
         # query parameter a client could compose.
         spec = PERSON_SORTS.resolve(query.sort)

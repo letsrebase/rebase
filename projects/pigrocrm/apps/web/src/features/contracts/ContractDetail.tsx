@@ -47,18 +47,18 @@ function Row({ label, value }: { label: string; value: string }) {
 }
 
 function paymentTerms(contract: Contract): string {
-  if (contract.giorni_pagamento === null) return 'Come il cliente'
-  return `${contract.giorni_pagamento} giorni${contract.pagamento_fine_mese ? ' fine mese' : ''}`
+  if (contract.payment_days === null) return 'Come il cliente'
+  return `${contract.payment_days} giorni${contract.payment_end_of_month ? ' fine mese' : ''}`
 }
 
 function expensePolicy(contract: Contract): string {
-  const policy = readExpensePolicy(contract.politica_spese)
-  if (policy === null) return JSON.stringify(contract.politica_spese)
+  const policy = readExpensePolicy(contract.expense_policy)
+  if (policy === null) return JSON.stringify(contract.expense_policy)
   const parts: string[] = [EXPENSE_POLICY_LABELS[policy.kind]]
-  if (policy.kind === 'rimborsabile_con_tetto' && policy.importo_tetto !== undefined) {
-    parts.push(`tetto ${formatAmount(policy.importo_tetto, contract.divisa)}`)
+  if (policy.kind === 'reimbursable_with_cap' && policy.amount_cap !== undefined) {
+    parts.push(`tetto ${formatAmount(policy.amount_cap, contract.currency)}`)
   }
-  if (policy.richiede_preautorizzazione === true) parts.push('autorizzazione preventiva')
+  if (policy.requires_pre_authorization === true) parts.push('autorizzazione preventiva')
   return parts.join(', ')
 }
 
@@ -85,13 +85,13 @@ export function ContractDetail() {
     <>
       <EntityDetailLayout
         icon={FileSignature}
-        title={row.titolo}
-        subtitle={customer.data?.ragione_sociale}
+        title={row.title}
+        subtitle={customer.data?.legal_name}
         entityType="contract"
         entityId={row.id}
         actions={
           <>
-            <StatusPill tone={stateTone(row.stato)}>{stateLabel(row.stato)}</StatusPill>
+            <StatusPill tone={stateTone(row.status)}>{stateLabel(row.status)}</StatusPill>
             <ContractStateActions contract={row} />
             {canEdit && (
               <Button variant="outline" onClick={() => setEditing(true)}>
@@ -114,21 +114,21 @@ export function ContractDetail() {
                     to="/app/customers/$customerId"
                     params={{ customerId: row.customer_id }}
                   >
-                    {customer.data?.ragione_sociale ?? EMPTY}
+                    {customer.data?.legal_name ?? EMPTY}
                   </Link>
                 </div>
-                <Row label="Inizio" value={formatDate(row.inizio)} />
-                <Row label="Fine" value={row.fine === null ? 'Senza scadenza' : formatDate(row.fine)} />
-                <Row label="Rinnovo" value={renewalLabel(row.tipo_rinnovo)} />
+                <Row label="Inizio" value={formatDate(row.start)} />
+                <Row label="Fine" value={row.end === null ? 'Senza scadenza' : formatDate(row.end)} />
+                <Row label="Rinnovo" value={renewalLabel(row.renewal_type)} />
                 <Row
                   label="Preavviso di rinnovo"
                   value={
-                    row.preavviso_rinnovo_giorni === null
+                    row.renewal_notice_days === null
                       ? EMPTY
-                      : `${row.preavviso_rinnovo_giorni} giorni`
+                      : `${row.renewal_notice_days} giorni`
                   }
                 />
-                <Row label="Preavviso di disdetta" value={`${row.preavviso_disdetta_giorni} giorni`} />
+                <Row label="Preavviso di disdetta" value={`${row.termination_notice_days} giorni`} />
                 <RenewalChain contract={row} />
               </CardContent>
             </Card>
@@ -136,9 +136,9 @@ export function ContractDetail() {
             <Card>
               <CardContent className="pt-6">
                 <h2 className="mb-3 font-semibold">Fatturazione</h2>
-                <Row label="Cadenza" value={cadenceLabel(row.cadenza_fatturazione)} />
+                <Row label="Cadenza" value={cadenceLabel(row.billing_cadence)} />
                 <Row label="Termini di pagamento" value={paymentTerms(row)} />
-                <Row label="Divisa" value={row.divisa} />
+                <Row label="Divisa" value={row.currency} />
                 <Row
                   label="Approvazione preventiva"
                   value={row.requires_prior_approval ? 'Richiesta' : 'Non richiesta'}
@@ -147,7 +147,7 @@ export function ContractDetail() {
                 <Row label="Spese" value={expensePolicy(row)} />
                 <Row
                   label="Tetto sulla quota"
-                  value={row.tetto_quota_cliente === null ? 'Nessuno' : formatCapPercent(row.tetto_quota_cliente)}
+                  value={row.customer_share_cap === null ? 'Nessuno' : formatCapPercent(row.customer_share_cap)}
                 />
               </CardContent>
             </Card>
@@ -162,7 +162,7 @@ export function ContractDetail() {
             )}
 
             <div className="lg:col-span-2">
-              <RateCardsSection contractId={row.id} divisa={row.divisa} />
+              <RateCardsSection contractId={row.id} currency={row.currency} />
             </div>
             <div className="lg:col-span-2">
               <ContractDays
@@ -172,10 +172,10 @@ export function ContractDetail() {
               />
             </div>
             <div className="lg:col-span-2">
-              <ExpensesSection contractId={row.id} divisa={row.divisa} />
+              <ExpensesSection contractId={row.id} currency={row.currency} />
             </div>
             <div className="lg:col-span-2">
-              <DaysToInvoiceSection contractId={row.id} divisa={row.divisa} />
+              <DaysToInvoiceSection contractId={row.id} currency={row.currency} />
             </div>
             <div className="lg:col-span-2">
               <RegisterSection contractId={row.id} />

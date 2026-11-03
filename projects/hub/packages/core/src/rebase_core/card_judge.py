@@ -20,7 +20,7 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
-from rebase_core.card_draft import FONTI_FIELDS
+from rebase_core.card_draft import SOURCES_FIELDS
 from rebase_core.card_prompt import source_blocks, source_keys
 from rebase_core.cv_text import CvText
 from rebase_core.hub_facts import HubFacts
@@ -61,24 +61,24 @@ class FieldVerdict(BaseModel):
 class CardJudgement(BaseModel):
     """The judge's whole answer: a verdict for each field of the card, every claim no
     source says, and every identifier of the person that appears in the card. A fixed object
-    rather than a free map, as `CardFonti`: every provider's native structured output takes
+    rather than a free map, as `CardSources`: every provider's native structured output takes
     it, and a field the judge forgot is a shape failure."""
 
     model_config = ConfigDict(extra="forbid")
 
-    ruolo: FieldVerdict
-    anni: FieldVerdict
+    role: FieldVerdict
+    experience_years: FieldVerdict
     seniority: FieldVerdict
-    competenze: FieldVerdict
-    settori: FieldVerdict
-    lingue: FieldVerdict
-    luogo: FieldVerdict
-    sintesi: FieldVerdict
+    skills: FieldVerdict
+    industries: FieldVerdict
+    languages: FieldVerdict
+    location: FieldVerdict
+    profile_summary: FieldVerdict
     invented: list[Annotated[str, StringConstraints(max_length=160)]] = Field(max_length=30)
     identifying: list[Annotated[str, StringConstraints(max_length=120)]] = Field(max_length=30)
 
     def fields(self) -> dict[str, FieldVerdict]:
-        return {name: getattr(self, name) for name in FONTI_FIELDS}
+        return {name: getattr(self, name) for name in SOURCES_FIELDS}
 
 
 _SYSTEM = """\
@@ -89,9 +89,9 @@ sources support it. You are given the card as JSON and the sources as data: the 
 person linked, and what the hub itself knows: engagements it staffed and facts an admin \
 set).
 
-For each of ruolo, anni, seniority, competenze, settori, lingue, luogo and sintesi answer \
-a verdict and a reason of one line (at most 160 characters, in English, quoting at most \
-a few words of a source):
+For each of role, experience_years, seniority, skills, industries, languages, location \
+and profile_summary answer a verdict and a reason of one line (at most 160 characters, \
+in English, quoting at most a few words of a source):
 - supported: a source says it, or it is an honest summary of what the sources say (a role \
 title that names the work the CV describes, a summary made of facts the sources state, an \
 employer described by its industry).
@@ -100,21 +100,21 @@ sources show.
 - contradicted: a source says something that disagrees with it.
 
 How to read each field:
-- anni: years of professional experience, counted from the roles the CV dates (a role \
+- experience_years: years of professional experience, counted from the roles the CV dates (a role \
 still going ends on the date given in the user turn), overlapping roles counted once, \
 studies and undated projects left out. GitHub and web pages never date a profession; \
-engagements of the hub marked "completato" do. null is supported when the CV dates no \
+engagements of the hub marked "completed" do. null is supported when the CV dates no \
 professional role, and contradicted when it dates some.
 - seniority: the band the years fall in: junior under 3 years, mid from 3 to 5, senior \
 from 6 up; lead only from 8 years and when a source states that the person leads people \
-or a technical area. With anni null it is a reading of the responsibility the sources \
+or a technical area. With experience_years null it is a reading of the responsibility the sources \
 show, never lead.
-- competenze, settori, lingue: supported only when every item is; an item no source \
+- skills, industries, languages: supported only when every item is; an item no source \
 says makes the field unsupported, an item a source contradicts makes it contradicted. \
-An empty list or a null luogo is supported when no source states one, and unsupported \
+An empty list or a null location is supported when no source states one, and unsupported \
 when a source plainly does.
-- luogo: the place the CV names as where the person lives or works.
-- sintesi: supported when what it says is said by the sources.
+- location: the place the CV names as where the person lives or works.
+- profile_summary: supported when what it says is said by the sources.
 - The card is written in Italian and describes employers by their industry ("una banca") \
 and repositories by what they do: that is the rule it was written under, not an invention.
 
@@ -133,7 +133,7 @@ you are given and nothing else."""
 def judge_prompt(
     card: Card,
     cv: CvText,
-    posizione: str | None,
+    job_title: str | None,
     sources: SourceSet,
     facts: HubFacts,
     today: date,
@@ -142,13 +142,13 @@ def judge_prompt(
     position the person gave, the card, the CV and every source the writer could read (the
     hub's facts included), as the writer's prompt carries them, whichever prompt version
     wrote the card, so a card of the CV alone is judged against everything we hold."""
-    cut = " (cut short: the file is longer than what follows)" if cv.troncato else ""
+    cut = " (cut short: the file is longer than what follows)" if cv.truncated else ""
     card_json = json.dumps(card.model_dump(mode="json"), ensure_ascii=False)
     user = (
         f"Today: {today.isoformat()}\n"
-        f"Position on the profile: {posizione or 'not given'}\n\n"
+        f"Position on the profile: {job_title or 'not given'}\n\n"
         f"The card to check:\n<card>\n{card_json}\n</card>\n\n"
-        f"The CV's text{cut}:\n<cv>\n{cv.testo}\n</cv>"
+        f"The CV's text{cut}:\n<cv>\n{cv.text}\n</cv>"
     )
     blocks = source_blocks(sources, facts)
     if blocks:
@@ -167,7 +167,7 @@ def judge(
     llm: LlmCall,
     card: Card,
     cv: CvText,
-    posizione: str | None,
+    job_title: str | None,
     sources: SourceSet,
     facts: HubFacts,
     today: date,
@@ -175,5 +175,5 @@ def judge(
     """One call: the verdicts, or why there are none. A provider that cannot answer raises
     `LlmUnavailable` (a cap reached and a missing key included) for the caller to read: this
     is `complete_request`, which propagates, not `try_complete_request`, which answers none."""
-    request = judge_prompt(card, cv, posizione, sources, facts, today)
+    request = judge_prompt(card, cv, job_title, sources, facts, today)
     return complete_request(llm, "card", request, CardJudgement).result

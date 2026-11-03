@@ -9,8 +9,10 @@
  *
  * A plain module, not a `.tsx`: it exports no component, so there is no
  * `react-refresh/only-export-components` override to buy it. That is the same reason
- * `lib/dates.ts` and `features/dashboard/periodo.ts` exist as modules of their own.
+ * `lib/dates.ts` and `features/dashboard/period.ts` exist as modules of their own.
  */
+
+import { KIND_FALLBACK_LABELS, PAYLOAD_KEY_LABELS, PAYLOAD_VALUE_LABELS } from './payloadLabels'
 
 const KIND_LABELS: Record<string, string> = {
   created: 'Creato',
@@ -23,7 +25,7 @@ const KIND_LABELS: Record<string, string> = {
   // render the English "Imported" on an Italian timeline, and phrased as what happened
   // to the document -- it was issued elsewhere and registered here -- without naming the
   // tool it came out of: the provenance value is the CRM's own record, not copy (see
-  // `invoices/models.py::Invoice.importata_da`).
+  // `invoices/models.py::Invoice.imported_from`).
   imported: 'Fattura importata',
   // A contract's own history (REB-741..744): what each write on its page records.
   rate_card_added: 'Tariffa aggiunta',
@@ -45,25 +47,25 @@ const KIND_LABELS: Record<string, string> = {
   note_edited: 'Nota modificata',
   note_deleted: 'Nota eliminata',
   // The mail drafts of a record and the Slack settings, the other writes that used to leave
-  // no row at all. `gmail.messaggio_inviato` and its siblings fall to `humanize`, as before.
-  'gmail.bozza_creata': 'Bozza di email creata',
-  'gmail.bozza_modificata': 'Bozza di email modificata',
-  'gmail.bozza_eliminata': 'Bozza di email eliminata',
+  // no row at all. `gmail.message_sent` and its siblings fall to `humanize`, as before.
+  'gmail.draft_created': 'Bozza di email creata',
+  'gmail.draft_edited': 'Bozza di email modificata',
+  'gmail.draft_deleted': 'Bozza di email eliminata',
   // A token's full access opened or closed (REB-810), recorded on its owner's account.
   pat_full_access_changed: 'Accesso completo di un token modificato',
-  'slack.abbinamento_manuale': 'Utente Slack abbinato a mano',
-  'slack.abbinamento_rimosso': 'Abbinamento Slack rimosso',
-  'slack.abbinamenti_rifatti': 'Abbinamenti Slack rifatti',
-  'slack.canale_impostato': 'Canale Slack impostato',
-  'slack.canale_rimosso': 'Canale Slack tolto',
+  'slack.manual_match': 'Utente Slack abbinato a mano',
+  'slack.match_removed': 'Abbinamento Slack rimosso',
+  'slack.matches_rebuilt': 'Abbinamenti Slack rifatti',
+  'slack.channel_set': 'Canale Slack impostato',
+  'slack.channel_removed': 'Canale Slack tolto',
   // A contract's days (REB-781): the day's own ledger keeps the transitions by id, and these
   // are the same moves with the member's name and the channel.
   day_created: 'Giornata registrata',
   day_state_changed: 'Giornata cambiata di stato',
   // The hub's company requests (REB-866): a request filed as a new deal, and one linked by
   // an admin to a deal the CRM already had.
-  'hub.richiesta_ricevuta': "Richiesta dall'hub ricevuta",
-  'hub.richiesta_collegata': "Collegata la richiesta dall'hub",
+  'hub.request_received': "Richiesta dall'hub ricevuta",
+  'hub.request_linked': "Collegata la richiesta dall'hub",
   // The space's reminder defaults, the only part of the reminder settings that is not one
   // person's own.
   defaults_updated: 'Promemoria: valori predefiniti modificati',
@@ -87,7 +89,19 @@ export function humanize(value: string): string {
 }
 
 export function labelForKind(kind: string): string {
-  return KIND_LABELS[kind] ?? humanize(kind)
+  return KIND_LABELS[kind] ?? KIND_FALLBACK_LABELS[kind] ?? humanize(kind)
+}
+
+/** A payload key (or a field name in `changed`) in the Italian word it was stored as before the rename. */
+export function labelForPayloadKey(key: string): string {
+  return Object.hasOwn(PAYLOAD_KEY_LABELS, key) ? PAYLOAD_KEY_LABELS[key]! : humanize(key)
+}
+
+/** A payload value as the timeline prints it: a coded value goes back to its Italian word, any other as it is. */
+export function labelForPayloadValue(kind: string, key: string, value: unknown): string {
+  const text = String(value)
+  const table = Object.hasOwn(PAYLOAD_VALUE_LABELS, kind) ? PAYLOAD_VALUE_LABELS[kind]![key] : undefined
+  return table !== undefined && Object.hasOwn(table, text) ? table[text]! : text
 }
 
 const dateTimeFormatter = new Intl.DateTimeFormat('it-IT', {

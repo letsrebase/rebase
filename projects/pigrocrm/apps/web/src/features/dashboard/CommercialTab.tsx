@@ -3,19 +3,19 @@ import { Skeleton } from '@rebase/ui/skeleton'
 import { BarRows, BigNumber, type BarRow } from './charts'
 import { money, percent } from './format'
 import { Freshness } from './Freshness'
-import type { Periodo } from './periodo'
+import type { Period } from './period'
 import { useCommercialDashboard, type PipelineStageSummary } from './queries'
 
 /** Ink for won and the `destructive` badge's own tint for lost -- two outcomes, told the
  *  way the rest of the app already tells them, and no sixth colour. The open stages keep
  *  the chart hues, so the sequence still reads as a sequence. */
-const CLOSED_FILL: Partial<Record<PipelineStageSummary['stage_tipo'], string>> = {
+const CLOSED_FILL: Partial<Record<PipelineStageSummary['stage_type'], string>> = {
   won: 'var(--foreground)',
   lost: 'color-mix(in oklab, var(--destructive) 10%, transparent)',
 }
 
 function isOpen(row: PipelineStageSummary) {
-  return row.stage_tipo === 'open'
+  return row.stage_type === 'open'
 }
 
 /**
@@ -30,8 +30,8 @@ function isOpen(row: PipelineStageSummary) {
  * answer -- and those two rows count what sits in the stage today, not what closed in the
  * period, which is what the four figures above the card already say.
  */
-export function CommercialTab({ periodo }: { periodo: Periodo }) {
-  const query = useCommercialDashboard(periodo)
+export function CommercialTab({ period }: { period: Period }) {
+  const query = useCommercialDashboard(period)
 
   if (query.isError) return <QueryErrorBanner error={query.error} />
   if (query.isPending || !query.data) {
@@ -44,21 +44,21 @@ export function CommercialTab({ periodo }: { periodo: Periodo }) {
   }
 
   const data = query.data
-  // Grouped by `stage_tipo` and never by `stage_nome`: the label is a string the user is
-  // free to rename in Impostazioni, and `tipo` is the attribute the rest of the product
-  // already reads a stage's meaning from. Within each group the server's `posizione`
+  // Grouped by `stage_type` and never by `stage_name`: the label is a string the user is
+  // free to rename in Impostazioni, and `type` is the attribute the rest of the product
+  // already reads a stage's meaning from. Within each group the server's `position`
   // order is kept as it arrived.
   const open = data.pipeline.filter(isOpen)
   const closed = data.pipeline.filter((row) => !isOpen(row))
   // The widest stage of *all* of them, closed included: two bars side by side that were
   // scaled against different maxima is a chart that lies about the pair it drew.
-  const widest = data.pipeline.reduce((best, row) => (row.numero > best ? row.numero : best), 0)
+  const widest = data.pipeline.reduce((best, row) => (row.number > best ? row.number : best), 0)
   const bar = (row: PipelineStageSummary, index: number): BarRow => ({
-    label: row.stage_nome,
-    value: `${row.numero}`,
-    ratio: widest === 0 ? 0 : row.numero / widest,
+    label: row.stage_name,
+    value: `${row.number}`,
+    ratio: widest === 0 ? 0 : row.number / widest,
     tone: index + 1,
-    color: CLOSED_FILL[row.stage_tipo],
+    color: CLOSED_FILL[row.stage_type],
     // The hairline belongs to the first closed row, so a pipeline with no closed stage
     // (or no open one) never draws a rule with nothing on one side of it.
     separator: open.length > 0 && index === open.length,
@@ -68,7 +68,7 @@ export function CommercialTab({ periodo }: { periodo: Periodo }) {
   return (
     <div className="space-y-6">
       <div className="flex justify-end">
-        <Freshness calcolatoAlle={data.calcolato_alle} onRefresh={() => void query.refetch()} />
+        <Freshness calculatedAt={data.calculated_at} onRefresh={() => void query.refetch()} />
       </div>
 
       {/* The pipeline first, then the closures (2026-09-09): what is open is the picture,
@@ -90,23 +90,23 @@ export function CommercialTab({ periodo }: { periodo: Periodo }) {
           value is 30px, and the fourth card of a four-up row was the one that wrapped
           first on a laptop anyway. */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        <BigNumber label="Deal vinti nel periodo" value={`${data.chiusure.vinti}`} />
-        <BigNumber label="Deal persi nel periodo" value={`${data.chiusure.persi}`} />
+        <BigNumber label="Deal vinti nel periodo" value={`${data.closings.won}`} />
+        <BigNumber label="Deal persi nel periodo" value={`${data.closings.lost}`} />
         <BigNumber
           label="Tasso di conversione"
-          value={percent(data.chiusure.tasso_conversione)}
+          value={percent(data.closings.conversion_rate)}
           hint="vinti su vinti + persi"
         />
         <BigNumber
           label="Valore vinto nel periodo"
-          value={money(data.chiusure.valore_vinto)}
+          value={money(data.closings.won_value)}
           hint="valore dichiarato dai deal, non fatturato"
         />
       </div>
 
-      {data.chiusure_non_attribuibili > 0 && (
+      {data.closings_not_attributable > 0 && (
         <p className="text-xs text-muted-foreground">
-          {data.chiusure_non_attribuibili} deal chiusi prima dell&apos;introduzione di questa
+          {data.closings_not_attributable} deal chiusi prima dell&apos;introduzione di questa
           misura <strong>non sono attribuibili</strong> a un periodo e non entrano nelle cifre
           sopra.
         </p>

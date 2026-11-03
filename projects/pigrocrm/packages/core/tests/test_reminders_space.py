@@ -24,7 +24,6 @@ from pigrocrm.core.contracts.models import Contract
 from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.documents.models import Document
 from pigrocrm.core.drive.models import GoogleDriveAccount
-from pigrocrm.core.emitter.models import LegalEntity
 from pigrocrm.core.fiscal.models import FiscalProfile
 from pigrocrm.core.fiscal.pack import PACK_NON_IT
 from pigrocrm.core.fiscal.schemas import FiscalProfileUpsert
@@ -32,6 +31,7 @@ from pigrocrm.core.fiscal.service import FiscalProfileService
 from pigrocrm.core.gmail.models import GoogleAccount
 from pigrocrm.core.gmail.schemas import SCOPE_READONLY, SCOPE_SEND
 from pigrocrm.core.invoices.models import Invoice
+from pigrocrm.core.legal_entities.models import LegalEntity
 from pigrocrm.core.proposals.models import Proposal
 from pigrocrm.core.reminders.catalogue import LADDER_MAX, REMINDER_TYPES, Severity
 from pigrocrm.core.reminders.detectors import DETECTORS
@@ -58,8 +58,8 @@ from pigrocrm.core.timetracking.models import PeriodLock
 TODAY = date(2026, 10, 26)
 NOON = datetime(2026, 10, 26, 12, 0, tzinfo=UTC)
 SETTINGS = Settings(_env_file=None)  # type: ignore[call-arg]
-RIVALSA = Decimal("85000.00")
-_NUMERO = count(1)
+SOCIAL_SECURITY_SURCHARGE = Decimal("85000.00")
+_NUMBER = count(1)
 
 
 @dataclass
@@ -68,7 +68,7 @@ class Space:
     owner: User  # an admin, and the space's owner
     other_admin: User
     member: User
-    azienda: UUID
+    legal_entity: UUID
 
     def evaluate(self, today: date = TODAY, now: datetime = NOON) -> Evaluation:
         self.session.flush()
@@ -80,10 +80,8 @@ class Space:
         evaluation = evaluation or self.evaluate()
         return {r.user_id: r.severity for r in evaluation.reminders if r.type == type_key}
 
-    def user(self, ruolo: str = "admin") -> User:
-        user = User(
-            email=f"u-{uuid4()}@example.test", password_hash="x", nome="Persona", ruolo=ruolo
-        )
+    def user(self, role: str = "admin") -> User:
+        user = User(email=f"u-{uuid4()}@example.test", password_hash="x", name="Persona", role=role)
         self.session.add(user)
         self.session.flush()
         return user
@@ -92,31 +90,31 @@ class Space:
         self,
         amount: str,
         *,
-        anno: int = 2026,
-        azienda: UUID | None = None,
+        year: int = 2026,
+        legal_entity: UUID | None = None,
         paid: bool = True,
         deleted: bool = False,
     ) -> Invoice:
-        """An issued fattura of `anno`: paid in June, or unpaid and due in December."""
-        customer = Customer(ragione_sociale=f"Acme {uuid4().hex[:6]}")
+        """An issued fattura of `year`: paid in June, or unpaid and due in December."""
+        customer = Customer(legal_name=f"Acme {uuid4().hex[:6]}")
         self.session.add(customer)
         self.session.flush()
-        imponibile = Decimal(amount)
+        taxable_amount = Decimal(amount)
         invoice = Invoice(
             customer_id=customer.id,
-            azienda_id=azienda or self.azienda,
-            tipo="fattura",
-            stato="emessa",
-            anno=None if deleted else anno,
-            numero=None if deleted else next(_NUMERO),
-            data_emissione=date(anno, 6, 15),
-            imponibile=imponibile,
-            imposta=Decimal("0.00"),
-            bollo=Decimal("0.00"),
-            totale=imponibile,
-            stato_pagamento="incassato" if paid else "da_incassare",
-            data_incasso=date(anno, 6, 20) if paid else None,
-            data_scadenza=None if paid else date(anno, 12, 15),
+            legal_entity_id=legal_entity or self.legal_entity,
+            type="invoice",
+            status="issued",
+            year=None if deleted else year,
+            number=None if deleted else next(_NUMBER),
+            issue_date=date(year, 6, 15),
+            taxable_amount=taxable_amount,
+            vat_amount=Decimal("0.00"),
+            stamp_duty=Decimal("0.00"),
+            total=taxable_amount,
+            payment_status="paid" if paid else "unpaid",
+            payment_date=date(year, 6, 20) if paid else None,
+            due_date=None if paid else date(year, 12, 15),
             deleted_at=NOON if deleted else None,
         )
         self.session.add(invoice)
@@ -125,7 +123,7 @@ class Space:
 
     def profile(self) -> FiscalProfile:
         return self.session.scalars(
-            select(FiscalProfile).where(FiscalProfile.azienda_id == self.azienda)
+            select(FiscalProfile).where(FiscalProfile.legal_entity_id == self.legal_entity)
         ).one()
 
 
@@ -135,19 +133,17 @@ def _admin() -> Actor:
 
 @pytest.fixture
 def space(db_session: Session) -> Space:
-    azienda = db_session.scalars(
-        select(LegalEntity.id).where(LegalEntity.predefinita.is_(True))
+    legal_entity = db_session.scalars(
+        select(LegalEntity.id).where(LegalEntity.is_default.is_(True))
     ).one()
     users = []
-    for ruolo in ("admin", "admin", "collaboratore"):
-        user = User(
-            email=f"u-{uuid4()}@example.test", password_hash="x", nome="Persona", ruolo=ruolo
-        )
+    for role in ("admin", "admin", "collaborator"):
+        user = User(email=f"u-{uuid4()}@example.test", password_hash="x", name="Persona", role=role)
         db_session.add(user)
         users.append(user)
     db_session.flush()
-    FiscalProfileService(db_session).upsert(FiscalProfileUpsert(codice_regime="RF19"), _admin())
-    return Space(db_session, users[0], users[1], users[2], azienda)
+    FiscalProfileService(db_session).upsert(FiscalProfileUpsert(regime_code="RF19"), _admin())
+    return Space(db_session, users[0], users[1], users[2], legal_entity)
 
 
 def _ordinary(space: Space) -> None:
@@ -160,7 +156,7 @@ def _ordinary(space: Space) -> None:
 # -- ceiling_approaching, year_end_overrun_projected: the card's proof ----------------------
 
 
-def test_a_forfettario_space_at_90_percent_tells_its_admins_not_members_and_an_ordinary_one_none(
+def test_to_flat_rate_space_at_90_percent_tells_its_admins_not_members_and_an_ordinary_one_none(
     space: Space,
 ) -> None:
     space.revenue("76500.00")  # 90% of 85,000
@@ -174,8 +170,8 @@ def test_a_forfettario_space_at_90_percent_tells_its_admins_not_members_and_an_o
     assert space.member.id not in {r.user_id for r in evaluation.reminders}
     reminder = next(r for r in evaluation.reminders if r.type == "ceiling_approaching")
     assert reminder.measure == 90.0
-    assert reminder.entity == "fiscal" and reminder.entity_id == space.azienda
-    assert reminder.azienda_id == space.azienda
+    assert reminder.entity == "fiscal" and reminder.entity_id == space.legal_entity
+    assert reminder.legal_entity_id == space.legal_entity
     assert "76.500,00 €" in reminder.detail and "85.000,00 €" in reminder.detail
     assert "ceiling_approaching" in evaluation.ran
 
@@ -212,7 +208,7 @@ def test_the_ceiling_ladder_climbs_at_80_90_and_100_percent(
 
 
 def test_only_revenue_paid_this_year_counts_towards_the_ceiling(space: Space) -> None:
-    space.revenue("90000.00", anno=2025)  # last year's money
+    space.revenue("90000.00", year=2025)  # last year's money
     space.revenue("90000.00", paid=False)  # issued, not collected: not the ceiling's basis
     space.revenue("90000.00", deleted=True)  # archived
 
@@ -231,17 +227,17 @@ def test_the_text_names_the_immediate_exit_ceiling_when_it_is_near(space: Space)
     assert "non vale più" in near.detail, "the 85,000 is crossed: the regime ends next year"
 
 
-def test_the_ceiling_is_one_reminder_per_azienda_and_belongs_to_a_forfettario_one(
+def test_the_ceiling_is_one_reminder_by_legal_entity_and_belongs_to_to_flat_rate_one(
     space: Space,
 ) -> None:
-    other = LegalEntity(nome="Seconda", ragione_sociale="Seconda Srl", attiva=True)
+    other = LegalEntity(name="Seconda", legal_name="Seconda Srl", active=True)
     space.session.add(other)
     space.session.flush()
     FiscalProfileService(space.session).upsert(
-        FiscalProfileUpsert(codice_regime="RF19"), _admin(), other.id
+        FiscalProfileUpsert(regime_code="RF19"), _admin(), other.id
     )
     space.revenue("76500.00")
-    space.revenue("68000.00", azienda=other.id)
+    space.revenue("68000.00", legal_entity=other.id)
 
     raised = {
         r.entity_id: r.severity
@@ -249,35 +245,35 @@ def test_the_ceiling_is_one_reminder_per_azienda_and_belongs_to_a_forfettario_on
         if r.type == "ceiling_approaching" and r.user_id == space.owner.id
     }
 
-    assert raised == {space.azienda: "serious", other.id: "warning"}, (
+    assert raised == {space.legal_entity: "serious", other.id: "warning"}, (
         "each azienda is measured against its own receipts"
     )
 
 
-def test_a_foreign_a_missing_or_an_inactive_azienda_has_no_ceiling(space: Space) -> None:
+def test_to_foreign_to_missing_or_an_inactive_legal_entity_has_no_ceiling(space: Space) -> None:
     space.revenue("90000.00")
     profile = space.profile()
     profile.pack_id = PACK_NON_IT
-    profile.codice_regime = None
+    profile.regime_code = None
     space.session.flush()
     assert space.told("ceiling_approaching") == {}, "the foreign pack has no ceiling"
 
     profile.pack_id = "it-flat-rate"
-    profile.codice_regime = "RF19"
+    profile.regime_code = "RF19"
     space.session.flush()
     assert space.told("ceiling_approaching") != {}
 
-    inactive = LegalEntity(nome="Chiusa", ragione_sociale="Chiusa Srl", attiva=False)
+    inactive = LegalEntity(name="Chiusa", legal_name="Chiusa Srl", active=False)
     space.session.add(inactive)
     space.session.flush()
     FiscalProfileService(space.session).upsert(
-        FiscalProfileUpsert(codice_regime="RF19"), _admin(), inactive.id
+        FiscalProfileUpsert(regime_code="RF19"), _admin(), inactive.id
     )
-    space.revenue("90000.00", azienda=inactive.id)
+    space.revenue("90000.00", legal_entity=inactive.id)
     reminders = space.evaluate().reminders
-    assert {r.entity_id for r in reminders if r.type == "ceiling_approaching"} == {space.azienda}, (
-        "an inactive azienda is not watched"
-    )
+    assert {r.entity_id for r in reminders if r.type == "ceiling_approaching"} == {
+        space.legal_entity
+    }, "an inactive azienda is not watched"
 
     space.session.delete(profile)
     space.session.flush()
@@ -286,8 +282,10 @@ def test_a_foreign_a_missing_or_an_inactive_azienda_has_no_ceiling(space: Space)
     assert "ceiling_approaching" not in evaluation.ran
 
 
-def test_a_scoped_admin_is_told_only_of_the_aziende_their_scope_covers(space: Space) -> None:
-    other = LegalEntity(nome="Seconda", ragione_sociale="Seconda Srl", attiva=True)
+def test_to_scoped_admin_is_told_only_of_the_legal_entities_their_scope_covers(
+    space: Space,
+) -> None:
+    other = LegalEntity(name="Seconda", legal_name="Seconda Srl", active=True)
     space.session.add(other)
     space.session.flush()
     apply_scope(space.session, space.other_admin, [other.id])
@@ -295,7 +293,7 @@ def test_a_scoped_admin_is_told_only_of_the_aziende_their_scope_covers(space: Sp
 
     assert space.told("ceiling_approaching") == {space.owner.id: "serious"}
 
-    apply_scope(space.session, space.other_admin, [space.azienda])
+    apply_scope(space.session, space.other_admin, [space.legal_entity])
 
     assert space.told("ceiling_approaching") == {
         space.owner.id: "serious",
@@ -307,8 +305,8 @@ def test_a_ceiling_whose_cause_is_fixed_is_gone_on_the_next_evaluation(space: Sp
     invoice = space.revenue("76500.00")
     assert space.told("ceiling_approaching")
 
-    invoice.stato_pagamento = "da_incassare"  # the payment is undone
-    invoice.data_incasso = None
+    invoice.payment_status = "unpaid"  # the payment is undone
+    invoice.payment_date = None
 
     assert space.told("ceiling_approaching") == {}
 
@@ -339,7 +337,7 @@ def test_the_year_end_projection_climbs_at_105_and_120_percent(
 
 def test_the_projected_overrun_of_next_year_is_a_new_occurrence(space: Space) -> None:
     space.revenue("90000.00", paid=False)
-    space.revenue("90000.00", anno=2027, paid=False)
+    space.revenue("90000.00", year=2027, paid=False)
 
     this_year = space.evaluate(date(2026, 12, 20), datetime(2026, 12, 20, 12, tzinfo=UTC))
     next_year = space.evaluate(date(2027, 1, 5), datetime(2027, 1, 5, 12, tzinfo=UTC))
@@ -353,21 +351,21 @@ def test_the_projected_overrun_of_next_year_is_a_new_occurrence(space: Space) ->
 def test_the_projection_is_the_cash_overviews_and_counts_drafts_and_proformas(
     space: Space,
 ) -> None:
-    customer = Customer(ragione_sociale="Acme Bozze")
+    customer = Customer(legal_name="Acme Bozze")
     space.session.add(customer)
     space.session.flush()
-    for tipo, stato in (("fattura", "bozza"), ("proforma", "confermata")):
+    for type, status in (("invoice", "draft"), ("proforma", "confirmed")):
         space.session.add(
             Invoice(
                 customer_id=customer.id,
-                azienda_id=space.azienda,
-                tipo=tipo,
-                stato=stato,
-                data_emissione=date(2026, 11, 10),
-                imponibile=Decimal("45000.00"),
-                imposta=Decimal("0.00"),
-                bollo=Decimal("0.00"),
-                totale=Decimal("45000.00"),
+                legal_entity_id=space.legal_entity,
+                type=type,
+                status=status,
+                issue_date=date(2026, 11, 10),
+                taxable_amount=Decimal("45000.00"),
+                vat_amount=Decimal("0.00"),
+                stamp_duty=Decimal("0.00"),
+                total=Decimal("45000.00"),
                 created_at=datetime(2026, 10, 1, tzinfo=UTC),
             )
         )
@@ -376,8 +374,8 @@ def test_the_projection_is_the_cash_overviews_and_counts_drafts_and_proformas(
     evaluation = space.evaluate()
 
     reminder = next(r for r in evaluation.reminders if r.type == "year_end_overrun_projected")
-    assert reminder.measure == 105.0, "90,000 of 85,000, the dashboard's `proiettato`"
-    assert reminder.entity == "fiscal" and reminder.entity_id == space.azienda
+    assert reminder.measure == 105.0, "90,000 of 85,000, the dashboard's `projected`"
+    assert reminder.entity == "fiscal" and reminder.entity_id == space.legal_entity
     assert "90.000,00 €" in reminder.detail
     assert space.told("ceiling_approaching", evaluation) == {}, "nothing is collected yet"
 
@@ -395,8 +393,8 @@ def test_the_projection_names_the_immediate_exit_ceiling_when_it_reaches_it(
 # -- month_not_closed -----------------------------------------------------------------------
 
 
-def _lock(space: Space, anno: int, mese: int) -> None:
-    space.session.add(PeriodLock(anno=anno, mese=mese, chiuso_il=NOON))
+def _lock(space: Space, year: int, month: int) -> None:
+    space.session.add(PeriodLock(year=year, month=month, closed_at=NOON))
     space.session.flush()
 
 
@@ -462,7 +460,7 @@ def test_the_month_subject_carries_the_month_and_goes_to_unscoped_admins_only(
     assert subject_period(period_subject(2026, 9)) == (2026, 9)
     assert subject_period(period_subject(2027, 12)) == (2027, 12)
     _lock(space, 2026, 8)
-    apply_scope(space.session, space.other_admin, [space.azienda])
+    apply_scope(space.session, space.other_admin, [space.legal_entity])
 
     evaluation = space.evaluate()
 
@@ -477,22 +475,22 @@ def test_the_month_subject_carries_the_month_and_goes_to_unscoped_admins_only(
 
 
 def _proposal(
-    space: Space, *, age_days: int, contract: Contract | None = None, stato: str = "in_attesa"
+    space: Space, *, age_days: int, contract: Contract | None = None, status: str = "pending"
 ) -> Proposal:
-    customer = Customer(ragione_sociale=f"Acme {uuid4().hex[:6]}")
+    customer = Customer(legal_name=f"Acme {uuid4().hex[:6]}")
     space.session.add(customer)
     space.session.flush()
-    document = Document(tipo="contratto", titolo="Documento archiviato", customer_id=customer.id)
+    document = Document(type="contract", title="Documento archiviato", customer_id=customer.id)
     space.session.add(document)
     space.session.flush()
     proposal = Proposal(
         document_id=document.id,
         contract_id=contract.id if contract is not None else None,
-        target_type="giornata" if contract is not None else "contratto",
-        campi_proposti={},
-        estratto="Confermiamo la giornata.",
-        confidenza=Decimal("0.90"),
-        stato=stato,
+        target_type="work_unit" if contract is not None else "contract",
+        proposed_fields={},
+        excerpt="Confermiamo la giornata.",
+        confidence=Decimal("0.90"),
+        status=status,
         created_at=NOON - timedelta(days=age_days),
     )
     space.session.add(proposal)
@@ -500,19 +498,19 @@ def _proposal(
     return proposal
 
 
-def _contract(space: Space, azienda: UUID | None = None) -> Contract:
-    customer = Customer(ragione_sociale="Acme Contratti")
+def _contract(space: Space, legal_entity: UUID | None = None) -> Contract:
+    customer = Customer(legal_name="Acme Contratti")
     space.session.add(customer)
     space.session.flush()
     contract = Contract(
         customer_id=customer.id,
-        azienda_id=azienda or space.azienda,
-        titolo="Consulenza",
-        inizio=date(2026, 1, 1),
-        tipo_rinnovo="nessuno",
-        preavviso_disdetta_giorni=30,
-        cadenza_fatturazione="mensile",
-        politica_spese={"kind": "non_rimborsabile"},
+        legal_entity_id=legal_entity or space.legal_entity,
+        title="Consulenza",
+        start=date(2026, 1, 1),
+        renewal_type="none",
+        termination_notice_days=30,
+        billing_cadence="monthly",
+        expense_policy={"kind": "not_reimbursable"},
     )
     space.session.add(contract)
     space.session.flush()
@@ -547,8 +545,8 @@ def test_a_proposal_waits_a_warning_at_3_days_a_serious_at_7_and_a_critical_at_1
 
 
 def test_only_proposals_still_waiting_count_and_each_is_its_own_reminder(space: Space) -> None:
-    _proposal(space, age_days=20, stato="accettata")
-    _proposal(space, age_days=20, stato="rifiutata")
+    _proposal(space, age_days=20, status="accepted")
+    _proposal(space, age_days=20, status="rejected")
     waiting = [_proposal(space, age_days=age) for age in (4, 9)]
 
     keys = {r.key for r in space.evaluate().reminders if r.type == "proposal_pending"}
@@ -572,8 +570,8 @@ def test_a_proposal_counts_its_days_in_the_installations_zone_not_in_utc(space: 
     assert space.told("proposal_pending") != {}
 
 
-def test_a_proposal_is_told_to_the_admins_who_see_its_contracts_azienda(space: Space) -> None:
-    other = LegalEntity(nome="Seconda", ragione_sociale="Seconda Srl", attiva=True)
+def test_to_proposal_is_told_to_the_admins_who_see_its_contracts_legal_entity(space: Space) -> None:
+    other = LegalEntity(name="Seconda", legal_name="Seconda Srl", active=True)
     space.session.add(other)
     space.session.flush()
     apply_scope(space.session, space.other_admin, [other.id])
@@ -584,7 +582,7 @@ def test_a_proposal_is_told_to_the_admins_who_see_its_contracts_azienda(space: S
     _proposal(space, age_days=8, contract=_contract(space, other.id))
 
     scoped = [r for r in space.evaluate().reminders if r.user_id == space.other_admin.id]
-    assert [r.azienda_id for r in scoped if r.type == "proposal_pending"] == [other.id]
+    assert [r.legal_entity_id for r in scoped if r.type == "proposal_pending"] == [other.id]
 
 
 def test_the_queue_is_listed_oldest_first_and_bounded(space: Space) -> None:
@@ -612,7 +610,7 @@ def _gmail(
     scopes: tuple[str, ...] = (SCOPE_READONLY, SCOPE_SEND),
 ) -> GoogleAccount:
     account = GoogleAccount(
-        user_id=space.user("collaboratore").id,
+        user_id=space.user("collaborator").id,
         google_sub=f"sub-{uuid4()}",
         email_address=f"box-{uuid4().hex[:6]}@example.test",
         refresh_token_ciphertext=b"x",
@@ -629,7 +627,7 @@ def _gmail(
 
 def _drive(space: Space, *, status: str = "active") -> GoogleDriveAccount:
     account = GoogleDriveAccount(
-        user_id=space.user("collaboratore").id,
+        user_id=space.user("collaborator").id,
         google_sub=f"sub-{uuid4()}",
         email_address=f"drive-{uuid4().hex[:6]}@example.test",
         refresh_token_ciphertext=b"x",
@@ -724,7 +722,7 @@ def test_connection_reminders_go_to_unscoped_admins_and_a_recovered_one_is_gone(
     space: Space,
 ) -> None:
     account = _gmail(space, status="revoked")
-    apply_scope(space.session, space.other_admin, [space.azienda])
+    apply_scope(space.session, space.other_admin, [space.legal_entity])
 
     assert set(space.told("connection_failing")) == {space.owner.id}
 
@@ -925,11 +923,11 @@ def test_a_detail_says_one_day_one_hour_one_minute_and_not_one_days(space: Space
     assert "da 1 minuto:" in details["job_late"]
 
 
-def test_the_aziende_are_read_once_per_evaluation(space: Space) -> None:
+def test_the_legal_entities_are_read_once_by_evaluation(space: Space) -> None:
     seen: list[str] = []
 
     def record(_c: object, _cur: object, statement: str, *_a: object) -> None:
-        if "FROM emitter_profile JOIN fiscal_profile" in statement:
+        if "FROM legal_entities JOIN fiscal_profile" in statement:
             seen.append(statement)
 
     engine = space.session.get_bind()
@@ -945,7 +943,7 @@ def test_the_aziende_are_read_once_per_evaluation(space: Space) -> None:
 
 def test_a_job_late_goes_to_unscoped_admins_and_recovers_when_it_runs(space: Space) -> None:
     _touch(space, REMINDER_PASS_JOB, 200)
-    apply_scope(space.session, space.other_admin, [space.azienda])
+    apply_scope(space.session, space.other_admin, [space.legal_entity])
 
     assert set(space.told("job_late")) == {space.owner.id}
 

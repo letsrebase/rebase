@@ -23,21 +23,21 @@ describe('RowActions', () => {
   })
 
   it('opens the menu with one item per action and runs the one that is chosen', async () => {
-    const apri = vi.fn()
-    const elimina = vi.fn()
+    const open = vi.fn()
+    const remove = vi.fn()
     render(
       <RowActions
         items={[
-          { label: 'Apri', onSelect: apri },
-          { label: 'Elimina', onSelect: elimina, destructive: true },
+          { label: 'Apri', onSelect: open },
+          { label: 'Elimina', onSelect: remove, destructive: true },
         ]}
       />,
     )
     await userEvent.click(screen.getByRole('button', { name: 'Azioni' }))
     expect(screen.getByRole('menuitem', { name: 'Apri' })).toBeInTheDocument()
     await userEvent.click(screen.getByRole('menuitem', { name: 'Elimina' }))
-    expect(elimina).toHaveBeenCalledOnce()
-    expect(apri).not.toHaveBeenCalled()
+    expect(remove).toHaveBeenCalledOnce()
+    expect(open).not.toHaveBeenCalled()
   })
 
   it('marks a destructive action as such rather than letting it read like the others', async () => {
@@ -68,16 +68,16 @@ describe('RowActions', () => {
    */
   it('never lets the row underneath it react to the menu', async () => {
     const rowClick = vi.fn()
-    const apri = vi.fn()
+    const open = vi.fn()
     render(
       <div onClick={rowClick}>
-        <RowActions items={[{ label: 'Apri', onSelect: apri }]} />
+        <RowActions items={[{ label: 'Apri', onSelect: open }]} />
       </div>,
     )
     await userEvent.click(screen.getByRole('button', { name: 'Azioni' }))
     expect(rowClick).not.toHaveBeenCalled()
     await userEvent.click(screen.getByRole('menuitem', { name: 'Apri' }))
-    expect(apri).toHaveBeenCalledOnce()
+    expect(open).toHaveBeenCalledOnce()
     expect(rowClick).not.toHaveBeenCalled()
   })
 
@@ -119,7 +119,7 @@ describe('RowActions', () => {
    */
   it('runs an action chosen entirely from the keyboard, once, and never wakes the row', async () => {
     const rowClick = vi.fn()
-    const apri = vi.fn()
+    const open = vi.fn()
     /* The row activates on Enter, on Space and on a click, and on nothing else (see
        `DataTable`'s `handleRowKeyDown`). So the invariant to hold is not "no key ever
        reaches the row" -- an arrow pressed inside an open menu bubbling past it is
@@ -128,13 +128,13 @@ describe('RowActions', () => {
     const rowKeys: string[] = []
     render(
       <div onClick={rowClick} onKeyDown={(event) => rowKeys.push(event.key)}>
-        <RowActions items={[{ label: 'Apri', onSelect: apri }]} />
+        <RowActions items={[{ label: 'Apri', onSelect: open }]} />
       </div>,
     )
     screen.getByRole('button', { name: 'Azioni' }).focus()
     await userEvent.keyboard('{Enter}')
     await userEvent.keyboard('{ArrowDown}{Enter}')
-    expect(apri).toHaveBeenCalledOnce()
+    expect(open).toHaveBeenCalledOnce()
     expect(rowClick).not.toHaveBeenCalled()
     expect(rowKeys).not.toContain('Enter')
     expect(rowKeys).not.toContain(' ')

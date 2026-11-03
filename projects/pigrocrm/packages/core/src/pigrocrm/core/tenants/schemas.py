@@ -34,16 +34,16 @@ RESERVED_SLUGS = frozenset(
         "www",
         "admin",
         "static",
-        "registrati",
+        "register",
         "mcp",
     }
 )
 
 
-def slugify(nome: str) -> str:
+def slugify(name: str) -> str:
     """What the page proposes from the name a person types: accents stripped, anything
     that is not a letter or digit turned into one hyphen, trimmed, lowercased."""
-    ascii_only = unicodedata.normalize("NFKD", nome).encode("ascii", "ignore").decode("ascii")
+    ascii_only = unicodedata.normalize("NFKD", name).encode("ascii", "ignore").decode("ascii")
     hyphenated = re.sub(r"[^a-z0-9]+", "-", ascii_only.lower()).strip("-")
     return hyphenated[:SLUG_MAX].rstrip("-")
 
@@ -64,7 +64,7 @@ def validate_slug(slug: str) -> str | None:
 
 class TenantSignup(BaseModel):
     slug: str = Field(min_length=SLUG_MIN, max_length=SLUG_MAX)
-    nome: SafeStr = Field(min_length=1, max_length=200)
+    name: SafeStr = Field(min_length=1, max_length=200)
     email: EmailStr
     # No password (spec 2026-09-12 §6.4): a space's first admin enters with a link by
     # mail, and a password chosen by whoever typed somebody else's address would outlive
@@ -72,7 +72,7 @@ class TenantSignup(BaseModel):
     # still sends one hears about it.
     # What the wizard learned from the hub about this address: decides whether the
     # welcome mail tells the person about rebase. Never trusted for anything else.
-    membro: bool = False
+    member: bool = False
 
     model_config = ConfigDict(extra="forbid")
 
@@ -96,6 +96,6 @@ class TenantRead(BaseModel):
 
 class TenantAvailability(BaseModel):
     slug: str
-    disponibile: bool
+    available: bool
     # Why not, when not: a reserved word, a taken name, a malformed one.
-    motivo: str | None = None
+    reason: str | None = None

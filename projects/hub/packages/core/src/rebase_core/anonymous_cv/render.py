@@ -42,36 +42,36 @@ TEMPLATE = Path(__file__).resolve().parent / "cv.typ"
 # How much of Typst's diagnostic a failed print logs.
 _DIAGNOSTIC_MAX_LENGTH = 2000
 
-# The web's `REMOTO_LABELS` (`lib/format.ts`), which Python has no copy of, and the same
+# The web's `RemoteLabels` (`lib/format.ts`), which Python has no copy of, and the same
 # three in English for a CV in English, whose head line would otherwise switch language
 # halfway. The footer stays Italian: it is rebase's own line.
-MODALITA_LABELS = {"remoto": "Da remoto", "ibrido": "Ibrido", "in_sede": "In sede"}
-MODALITA_LABELS_EN = {"remoto": "Remote", "ibrido": "Hybrid", "in_sede": "On-site"}
+MODE_LABELS = {"remote": "Da remoto", "hybrid": "Ibrido", "on_site": "In sede"}
+MODE_LABELS_EN = {"remote": "Remote", "hybrid": "Hybrid", "on_site": "On-site"}
 # The web's `SENIORITY_LABELS`, the card's four levels as a company reads them.
 SENIORITY_LABELS = {"junior": "Junior", "mid": "Mid", "senior": "Senior", "lead": "Lead"}
 
 FOOTER = "Profilo proposto da rebase · ciao@letsrebase.com · letsrebase.com"
 
-# The sections' headings in the CV's language (`AnonymousCv.lingua`); each of
-# `altre_sezioni` is headed by its own `titolo`, or by `altre` when it has none.
+# The sections' headings in the CV's language (`AnonymousCv.language`); each of
+# `other_sections` is headed by its own `title`, or by `other` when it has none.
 HEADINGS: dict[str, dict[str, str]] = {
     "it": {
-        "sommario": "Profilo",
-        "esperienze": "Esperienze",
-        "competenze": "Competenze",
-        "formazione": "Formazione",
-        "certificazioni": "Certificazioni",
-        "lingue": "Lingue",
-        "altre": "Altro",
+        "summary": "Profilo",
+        "experience": "Esperienze",
+        "skills": "Competenze",
+        "education": "Formazione",
+        "certifications": "Certificazioni",
+        "languages": "Lingue",
+        "other": "Altro",
     },
     "en": {
-        "sommario": "Profile",
-        "esperienze": "Experience",
-        "competenze": "Skills",
-        "formazione": "Education",
-        "certificazioni": "Certifications",
-        "lingue": "Languages",
-        "altre": "Other",
+        "summary": "Profile",
+        "experience": "Experience",
+        "skills": "Skills",
+        "education": "Education",
+        "certifications": "Certifications",
+        "languages": "Languages",
+        "other": "Other",
     },
 }
 
@@ -88,9 +88,9 @@ class CvHead:
     which the footer prints so a company can name the profile."""
 
     seniority: str | None
-    anni: int | None
-    luogo: str | None
-    modalita: str | None
+    experience_years: int | None
+    location: str | None
+    mode: str | None
     ref: str
 
 
@@ -120,30 +120,38 @@ class FakeCvRenderer:
         return b"%PDF-fake"
 
 
-def _years(anni: int, lingua: Literal["it", "en"]) -> str:
+def _years(experience_years: int, language: Literal["it", "en"]) -> str:
     """The card's years as the web's `formatExperience` writes them, in the CV's language."""
-    if lingua == "en":
-        if anni == 0:
+    if language == "en":
+        if experience_years == 0:
             return "less than a year of experience"
-        return "1 year of experience" if anni == 1 else f"{anni} years of experience"
-    if anni == 0:
+        return (
+            "1 year of experience"
+            if experience_years == 1
+            else f"{experience_years} years of experience"
+        )
+    if experience_years == 0:
         return "meno di un anno di esperienza"
-    return "1 anno di esperienza" if anni == 1 else f"{anni} anni di esperienza"
+    return (
+        "1 anno di esperienza"
+        if experience_years == 1
+        else f"{experience_years} anni di esperienza"
+    )
 
 
-def head_line(head: CvHead, lingua: Literal["it", "en"]) -> str:
+def head_line(head: CvHead, language: Literal["it", "en"]) -> str:
     """The line under the title: seniority, years, city and work mode, each left out when
     unknown, joined by « · ». Empty when nothing is known."""
     parts: list[str] = []
     if head.seniority:
         parts.append(SENIORITY_LABELS.get(head.seniority, head.seniority))
-    if head.anni is not None:
-        parts.append(_years(head.anni, lingua))
-    if head.luogo and head.luogo.strip():
-        parts.append(head.luogo.strip())
-    labels = MODALITA_LABELS_EN if lingua == "en" else MODALITA_LABELS
-    if head.modalita in labels:
-        parts.append(labels[head.modalita])
+    if head.experience_years is not None:
+        parts.append(_years(head.experience_years, language))
+    if head.location and head.location.strip():
+        parts.append(head.location.strip())
+    labels = MODE_LABELS_EN if language == "en" else MODE_LABELS
+    if head.mode in labels:
+        parts.append(labels[head.mode])
     return " · ".join(parts)
 
 
@@ -151,7 +159,7 @@ def filename(cv: AnonymousCv, ref: str) -> str:
     """`rebase-cv-<title as an ASCII slug>-<ref>.pdf`: accents folded, anything else a
     hyphen, at most `SLUG_MAX_LENGTH` characters cut at a word's end. A title with no ASCII
     letter or digit gives `rebase-cv-<ref>.pdf`."""
-    folded = unicodedata.normalize("NFKD", cv.titolo).encode("ascii", "ignore").decode()
+    folded = unicodedata.normalize("NFKD", cv.title).encode("ascii", "ignore").decode()
     slug = re.sub(r"[^a-z0-9]+", "-", folded.lower()).strip("-")
     if len(slug) > SLUG_MAX_LENGTH:
         cut = slug[: SLUG_MAX_LENGTH + 1]
@@ -164,8 +172,8 @@ def _document(cv: AnonymousCv, head: CvHead) -> dict[str, object]:
     """What `cv.typ` reads: the CV as validated, the head's words, the brand's colours."""
     return {
         "cv": cv.model_dump(mode="json"),
-        "head": {"riga": head_line(head, cv.lingua), "rif": f"Rif. {head.ref}"},
-        "headings": HEADINGS[cv.lingua],
+        "head": {"line": head_line(head, cv.language), "ref": f"Rif. {head.ref}"},
+        "headings": HEADINGS[cv.language],
         "footer": FOOTER,
         "palette": palette(),
         "echo": ECHO.name,

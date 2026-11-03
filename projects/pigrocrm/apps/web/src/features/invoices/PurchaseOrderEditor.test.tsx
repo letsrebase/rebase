@@ -24,12 +24,12 @@ function failed(error: unknown, status: number) {
 
 const PROFORMA = {
   id: 'pf-1',
-  tipo: 'proforma',
-  stato: 'bozza',
-  ordine_numero: 'ODA-14',
-  ordine_data: '2026-10-09',
-  ordine_cig: null,
-  ordine_cup: null,
+  type: 'proforma',
+  status: 'draft',
+  purchase_order_number: 'ODA-14',
+  purchase_order_date: '2026-10-09',
+  purchase_order_tender_code: null,
+  purchase_order_project_code: null,
 } as unknown as Invoice
 
 function wrap(children: ReactNode) {
@@ -77,12 +77,12 @@ describe('PurchaseOrderEditor', () => {
 
     await waitFor(() => expect(api.PATCH).toHaveBeenCalled())
     expect(vi.mocked(api.PATCH).mock.calls[0]?.[0]).toBe('/api/invoices/{invoice_id}')
-    expect(sent()).toEqual({ ordine_cig: 'z0a1b2c3d4' })
+    expect(sent()).toEqual({ purchase_order_tender_code: 'z0a1b2c3d4' })
     await waitFor(() => expect(toast.success).toHaveBeenCalledWith('Ordine salvato'))
   })
 
   it('shows what the server saved after a successful PATCH', async () => {
-    vi.mocked(api.PATCH).mockResolvedValue(ok({ ...PROFORMA, ordine_cig: 'Z0A1B2C3D4' }))
+    vi.mocked(api.PATCH).mockResolvedValue(ok({ ...PROFORMA, purchase_order_tender_code: 'Z0A1B2C3D4' }))
     wrap(<PurchaseOrderEditor invoice={PROFORMA} />)
     type('CIG', ' z0a1b2c3d4 ')
     await userEvent.click(screen.getByRole('button', { name: 'Salva ordine' }))
@@ -100,7 +100,7 @@ describe('PurchaseOrderEditor', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Salva ordine' }))
 
     await waitFor(() => expect(api.PATCH).toHaveBeenCalled())
-    expect(sent()).toEqual({ ordine_numero: 'ODA-1234567890123456789' })
+    expect(sent()).toEqual({ purchase_order_number: 'ODA-1234567890123456789' })
   })
 
   it('refuses a CIG without the order number before any request', async () => {
@@ -120,7 +120,7 @@ describe('PurchaseOrderEditor', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Salva ordine' }))
 
     await waitFor(() => expect(api.PATCH).toHaveBeenCalled())
-    expect(sent()).toEqual({ ordine_numero: null, ordine_data: null })
+    expect(sent()).toEqual({ purchase_order_number: null, purchase_order_date: null })
   })
 
   it('shows the server’s own refusal of a malformed CIG', async () => {
@@ -132,7 +132,7 @@ describe('PurchaseOrderEditor', () => {
           status: 422,
           detail: 'il CIG ha 10 caratteri, lettere e cifre',
           code: 'validation_failed',
-          field: 'ordine_cig',
+          field: 'purchase_order_tender_code',
         },
         422,
       ),
@@ -147,28 +147,28 @@ describe('PurchaseOrderEditor', () => {
 
   it('picks up a CIG added elsewhere and never erases it by saving another field', async () => {
     const view = wrap(<PurchaseOrderEditor invoice={PROFORMA} />)
-    view.rerenderWith(<PurchaseOrderEditor invoice={{ ...PROFORMA, ordine_cig: 'Z0A1B2C3D4' }} />)
+    view.rerenderWith(<PurchaseOrderEditor invoice={{ ...PROFORMA, purchase_order_tender_code: 'Z0A1B2C3D4' }} />)
     expect(screen.getByLabelText('CIG')).toHaveValue('Z0A1B2C3D4')
 
     type('Numero ordine', 'ODA-15')
     await userEvent.click(screen.getByRole('button', { name: 'Salva ordine' }))
 
     await waitFor(() => expect(api.PATCH).toHaveBeenCalled())
-    expect(sent()).toEqual({ ordine_numero: 'ODA-15' })
+    expect(sent()).toEqual({ purchase_order_number: 'ODA-15' })
   })
 
   it('keeps what the person typed when the stored order changes underneath', () => {
     const view = wrap(<PurchaseOrderEditor invoice={PROFORMA} />)
     type('CIG', 'Y9Y9Y9Y9Y9')
     view.rerenderWith(
-      <PurchaseOrderEditor invoice={{ ...PROFORMA, ordine_cig: 'Z0A1B2C3D4', ordine_numero: 'ODA-99' }} />,
+      <PurchaseOrderEditor invoice={{ ...PROFORMA, purchase_order_tender_code: 'Z0A1B2C3D4', purchase_order_number: 'ODA-99' }} />,
     )
     expect(screen.getByLabelText('CIG')).toHaveValue('Y9Y9Y9Y9Y9')
     expect(screen.getByLabelText('Numero ordine')).toHaveValue('ODA-99')
   })
 
   it('refuses locally on the merged order: number emptied while the stored CIG stays', async () => {
-    const stored = { ...PROFORMA, ordine_cig: 'Z0A1B2C3D4' } as Invoice
+    const stored = { ...PROFORMA, purchase_order_tender_code: 'Z0A1B2C3D4' } as Invoice
     wrap(<PurchaseOrderEditor invoice={stored} />)
     type('Numero ordine', '')
     await userEvent.click(screen.getByRole('button', { name: 'Salva ordine' }))
@@ -205,7 +205,7 @@ describe('PurchaseOrderEditor', () => {
           status: 422,
           detail: 'il CIG ha 10 caratteri, lettere e cifre',
           code: 'validation_failed',
-          field: 'ordine_cig',
+          field: 'purchase_order_tender_code',
         },
         422,
       ),

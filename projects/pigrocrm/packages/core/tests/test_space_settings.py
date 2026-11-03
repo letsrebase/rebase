@@ -36,26 +36,26 @@ def test_apply_overrides_gives_values_their_types_back_and_touches_nothing_else(
         {
             "google_client_id": "abc.apps",
             "mcp_full_access": "true",
-            "solleciti_grace_days": "12",
+            "payment_reminders_grace_days": "12",
             "storage_backend": "gdrive",
-            "concentrazione_soglia_preferita": "0.45",
+            "preferred_concentration_threshold": "0.45",
             "database_url": "postgresql://evil",  # not overridable: ignored
         },
     )
     assert effective.google_client_id == "abc.apps"
     assert effective.mcp_full_access is True
-    assert effective.solleciti_grace_days == 12
+    assert effective.payment_reminders_grace_days == 12
     assert effective.storage_backend == "gdrive"
-    assert effective.concentrazione_soglia_preferita == 0.45
+    assert effective.preferred_concentration_threshold == 0.45
     assert effective.database_url == BASE.database_url
     assert apply_overrides(BASE, {}) is BASE
 
 
 def test_a_value_the_environment_would_refuse_is_refused_from_the_database_too() -> None:
     with pytest.raises(ValueError):
-        apply_overrides(BASE, {"solleciti_max_reminders": "9"})
+        apply_overrides(BASE, {"payment_reminders_max_reminders": "9"})
     with pytest.raises(ValueError):
-        apply_overrides(BASE, {"concentrazione_soglia_preferita": "1.5"})
+        apply_overrides(BASE, {"preferred_concentration_threshold": "1.5"})
 
 
 def test_update_writes_rows_makes_a_token_key_once_and_never_shows_secrets(
@@ -67,16 +67,16 @@ def test_update_writes_rows_makes_a_token_key_once_and_never_shows_secrets(
             google_client_id="abc.apps", google_client_secret="shh", mcp_full_access=True
         ),
         ADMIN,
-        spazio="studio",
+        space="studio",
     )
     assert read.google_client_id == "abc.apps"
-    assert read.google_client_secret_impostato is True
-    assert read.google_token_key_impostata is True
-    assert read.gmail_configurato is True
+    assert read.google_client_secret_set is True
+    assert read.google_token_key_set is True
+    assert read.gmail_configured is True
     assert read.redirect_uri_gmail == "https://pigro.example/studio/api/gmail/oauth/callback"
     assert read.mcp_full_access is True
     assert "shh" not in read.model_dump_json()
-    assert set(read.sovrascritte) == {
+    assert set(read.overwritten) == {
         "google_client_id",
         "mcp_full_access",
         "google_client_secret",
@@ -85,29 +85,29 @@ def test_update_writes_rows_makes_a_token_key_once_and_never_shows_secrets(
     key_before = service.overrides()["google_token_key"]
 
     # A second save keeps the same key: rotating it would orphan every stored token.
-    service.update(SpaceSettingsUpdate(solleciti_grace_days=10), ADMIN, spazio="studio")
+    service.update(SpaceSettingsUpdate(payment_reminders_grace_days=10), ADMIN, space="studio")
     assert service.overrides()["google_token_key"] == key_before
-    assert service.effective().solleciti_grace_days == 10
-    assert service.effective().concentrazione_soglia_preferita == 0.30
+    assert service.effective().payment_reminders_grace_days == 10
+    assert service.effective().preferred_concentration_threshold == 0.30
 
 
 def test_an_empty_string_clears_an_override(db_session: Session) -> None:
     service = SpaceSettingsService(db_session, BASE)
-    service.update(SpaceSettingsUpdate(google_client_id="abc"), ADMIN, spazio=None)
-    read = service.update(SpaceSettingsUpdate(google_client_id=""), ADMIN, spazio=None)
+    service.update(SpaceSettingsUpdate(google_client_id="abc"), ADMIN, space=None)
+    read = service.update(SpaceSettingsUpdate(google_client_id=""), ADMIN, space=None)
     assert read.google_client_id == ""
-    assert "google_client_id" not in read.sovrascritte
+    assert "google_client_id" not in read.overwritten
 
 
 def test_only_an_admin_reads_or_writes(db_session: Session) -> None:
     service = SpaceSettingsService(db_session, BASE)
     with pytest.raises(PermissionDenied):
-        service.read(Actor(id=None, type="user", role="collaboratore"), spazio=None)
+        service.read(Actor(id=None, type="user", role="collaborator"), space=None)
     with pytest.raises(PermissionDenied):
         service.update(
             SpaceSettingsUpdate(mcp_full_access=True),
-            Actor(id=None, type="user", role="collaboratore"),
-            spazio=None,
+            Actor(id=None, type="user", role="collaborator"),
+            space=None,
         )
 
 
@@ -127,13 +127,13 @@ def _borrowing() -> Settings:
 def test_a_borrowing_space_reads_that_it_borrows_and_nothing_to_set(
     db_session: Session,
 ) -> None:
-    read = SpaceSettingsService(db_session, _borrowing()).read(ADMIN, spazio="studio")
-    assert read.gmail_configurato is True
-    assert read.google_client_condiviso is True
+    read = SpaceSettingsService(db_session, _borrowing()).read(ADMIN, space="studio")
+    assert read.gmail_configured is True
+    assert read.google_client_shared is True
     # The space's own addresses, for a client of its own: the borrowed one needs none.
     assert read.redirect_uri_gmail == "https://pigro.example/studio/api/gmail/oauth/callback"
     assert read.public_url == "https://pigro.example/studio"
-    assert read.sovrascritte == []
+    assert read.overwritten == []
     assert "root-secret" not in read.model_dump_json()
 
 
@@ -147,10 +147,10 @@ def test_a_borrowing_space_that_sets_its_own_client_gets_its_own_key_and_callbac
     read = service.update(
         SpaceSettingsUpdate(google_client_id="own.apps", google_client_secret="own"),
         ADMIN,
-        spazio="studio",
+        space="studio",
     )
-    assert read.google_client_condiviso is False
-    assert read.gmail_configurato is True
+    assert read.google_client_shared is False
+    assert read.gmail_configured is True
     assert read.redirect_uri_gmail == "https://pigro.example/studio/api/gmail/oauth/callback"
     own_key = service.overrides()["google_token_key"]
     assert own_key != base.google_token_key
@@ -173,7 +173,7 @@ def test_a_read_and_the_version_see_a_row_changed_behind_the_session(db_session:
     from pigrocrm.core.space_settings.models import SpaceSetting
 
     service = SpaceSettingsService(db_session, BASE)
-    first = service.update(SpaceSettingsUpdate(gmail_backfill_days=10), ADMIN, spazio="studio")
+    first = service.update(SpaceSettingsUpdate(gmail_backfill_days=10), ADMIN, space="studio")
     assert first.updated_at is not None
     # Held strongly, so the identity map keeps these instances through the test, as the
     # request's session keeps the rows its dependency loaded.
@@ -198,11 +198,11 @@ def test_a_read_and_the_version_see_a_row_changed_behind_the_session(db_session:
         service.update(
             SpaceSettingsUpdate(gmail_backfill_days=30, updated_at=first.updated_at),
             ADMIN,
-            spazio="studio",
+            space="studio",
         )
     assert excinfo.value.details["updated_at"] == later
     # And a read refreshes the held instances with what it answers.
-    again = service.read(ADMIN, spazio="studio")
+    again = service.read(ADMIN, space="studio")
     assert again.gmail_backfill_days == 20
     assert again.updated_at == later
     assert held["gmail_backfill_days"].value == "20"
@@ -216,12 +216,12 @@ def test_the_version_is_the_newest_override_row_and_a_stale_save_is_refused(
 
     service = SpaceSettingsService(db_session, BASE)
     assert service.version() is None
-    assert service.read(ADMIN, spazio="studio").updated_at is None
+    assert service.read(ADMIN, space="studio").updated_at is None
 
     # A draft built on the empty state says so with an explicit `null`, and is accepted
     # while nothing has been written.
     first = service.update(
-        SpaceSettingsUpdate(mcp_full_access=True, updated_at=None), ADMIN, spazio="studio"
+        SpaceSettingsUpdate(mcp_full_access=True, updated_at=None), ADMIN, space="studio"
     )
     assert first.updated_at is not None
     assert first.mcp_full_access is True
@@ -229,7 +229,7 @@ def test_the_version_is_the_newest_override_row_and_a_stale_save_is_refused(
     # The same `null` once a row exists is a draft built on a state that is gone.
     with pytest.raises(StaleRow) as excinfo:
         service.update(
-            SpaceSettingsUpdate(gmail_backfill_days=10, updated_at=None), ADMIN, spazio="studio"
+            SpaceSettingsUpdate(gmail_backfill_days=10, updated_at=None), ADMIN, space="studio"
         )
     assert excinfo.value.code == "stale_row"
     assert excinfo.value.details == {"entity": "space_settings", "updated_at": first.updated_at}
@@ -239,7 +239,7 @@ def test_the_version_is_the_newest_override_row_and_a_stale_save_is_refused(
     second = service.update(
         SpaceSettingsUpdate(gmail_backfill_days=10, updated_at=first.updated_at),
         ADMIN,
-        spazio="studio",
+        space="studio",
     )
     assert second.gmail_backfill_days == 10
     assert second.updated_at is not None and second.updated_at > first.updated_at
@@ -247,15 +247,15 @@ def test_the_version_is_the_newest_override_row_and_a_stale_save_is_refused(
         service.update(
             SpaceSettingsUpdate(gmail_backfill_days=20, updated_at=first.updated_at),
             ADMIN,
-            spazio="studio",
+            space="studio",
         )
 
     # A body that leaves the key out is an older client: nothing is checked, and the
     # version row never reaches `Settings` or the page.
-    third = service.update(SpaceSettingsUpdate(gmail_backfill_days=20), ADMIN, spazio="studio")
+    third = service.update(SpaceSettingsUpdate(gmail_backfill_days=20), ADMIN, space="studio")
     assert third.gmail_backfill_days == 20
     assert "_version" not in service.overrides()
-    assert "_version" not in third.sovrascritte
+    assert "_version" not in third.overwritten
 
     # Clearing an override moves the version even when a newer row stays on top: the
     # client id was written first, the backfill after it, and the clear touches no
@@ -263,24 +263,22 @@ def test_the_version_is_the_newest_override_row_and_a_stale_save_is_refused(
     with_client = service.update(
         SpaceSettingsUpdate(google_client_id="abc.apps", updated_at=third.updated_at),
         ADMIN,
-        spazio="studio",
+        space="studio",
     )
     newer = service.update(
         SpaceSettingsUpdate(gmail_backfill_days=25, updated_at=with_client.updated_at),
         ADMIN,
-        spazio="studio",
+        space="studio",
     )
     cleared = service.update(
         SpaceSettingsUpdate(google_client_id="", updated_at=newer.updated_at),
         ADMIN,
-        spazio="studio",
+        space="studio",
     )
-    assert "google_client_id" not in cleared.sovrascritte
+    assert "google_client_id" not in cleared.overwritten
     assert cleared.updated_at is not None and cleared.updated_at > newer.updated_at  # type: ignore[operator]
     # A save that changes nothing leaves the version where it was.
-    same = service.update(
-        SpaceSettingsUpdate(updated_at=cleared.updated_at), ADMIN, spazio="studio"
-    )
+    same = service.update(SpaceSettingsUpdate(updated_at=cleared.updated_at), ADMIN, space="studio")
     assert same.updated_at == cleared.updated_at
 
 
@@ -297,7 +295,7 @@ def test_the_client_secret_and_the_token_key_are_sealed_at_rest_and_read_back_wh
     service.update(
         SpaceSettingsUpdate(google_client_id="abc.apps", google_client_secret="shh-secret"),
         ADMIN,
-        spazio="studio",
+        space="studio",
     )
 
     secret_row = _stored(db_session, "google_client_secret")
@@ -318,7 +316,7 @@ def test_a_secret_this_installation_cannot_open_reads_as_not_set_and_never_break
     SpaceSettingsService(db_session, other).update(
         SpaceSettingsUpdate(google_client_id="abc.apps", google_client_secret="shh"),
         ADMIN,
-        spazio="studio",
+        space="studio",
     )
 
     with caplog.at_level(logging.WARNING):

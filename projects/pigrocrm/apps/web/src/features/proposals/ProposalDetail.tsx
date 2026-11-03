@@ -18,7 +18,7 @@ import { toast } from '@rebase/ui/sonner'
 import { Textarea } from '@rebase/ui/textarea'
 import { toProblem } from '@/lib/api'
 import { useCanWrite } from '@/lib/auth'
-import { Confidence, ProposalStatoPill, ProposalSubject } from './ProposalBits'
+import { Confidence, ProposalStatusPill, ProposalSubject } from './ProposalBits'
 import { decisionLine, describeProposal, type Proposal } from './fields'
 import { useAcceptProposal, useProposal, useProposalTimeline, useRejectProposal } from './queries'
 
@@ -29,7 +29,7 @@ import { useAcceptProposal, useProposal, useProposalTimeline, useRejectProposal 
  * the day it would become.
  *
  * Accepting builds the proposal exactly as proposed: editing a field first is the
- * `campi_accettati` of the API and is deliberately not offered here, because a correction
+ * `accepted_fields` of the API and is deliberately not offered here, because a correction
  * is a different decision from «yes» and the agent can be asked again. Rejecting takes a
  * reason, which the API keeps on the proposal's timeline.
  *
@@ -66,9 +66,9 @@ function Loaded({ proposal }: { proposal: Proposal }) {
   const reject = useRejectProposal(proposal.id)
   const [rejecting, setRejecting] = useState(false)
   const [reason, setReason] = useState('')
-  const pending = proposal.stato === 'in_attesa'
+  const pending = proposal.status === 'pending'
 
-  const backToQueue = () => void navigate({ to: '/app/proposals', search: { stato: 'in_attesa' } })
+  const backToQueue = () => void navigate({ to: '/app/proposals', search: { status: 'pending' } })
 
   const onAccept = () => {
     accept.mutate(
@@ -76,7 +76,7 @@ function Loaded({ proposal }: { proposal: Proposal }) {
       {
         onSuccess: () => {
           toast.success(
-            proposal.target_type === 'contratto'
+            proposal.target_type === 'contract'
               ? 'Proposta accettata: il contratto è stato creato'
               : 'Proposta accettata: la giornata è registrata',
           )
@@ -88,7 +88,7 @@ function Loaded({ proposal }: { proposal: Proposal }) {
 
   const onReject = () => {
     reject.mutate(
-      { motivo: reason.trim() === '' ? null : reason.trim() },
+      { reason: reason.trim() === '' ? null : reason.trim() },
       {
         onSuccess: () => {
           setRejecting(false)
@@ -109,7 +109,7 @@ function Loaded({ proposal }: { proposal: Proposal }) {
         icon={Inbox}
         title={description.title}
         description={
-          proposal.target_type === 'contratto'
+          proposal.target_type === 'contract'
             ? 'Proposta di nuovo contratto'
             : 'Proposta di giornata lavorata'
         }
@@ -138,7 +138,7 @@ function Loaded({ proposal }: { proposal: Proposal }) {
 
       <div className="max-w-4xl space-y-8 px-8 pb-10">
         <p>
-          <Link to="/app/proposals" search={{ stato: 'in_attesa' }} className="text-sm text-muted-foreground underline underline-offset-4">
+          <Link to="/app/proposals" search={{ status: 'pending' }} className="text-sm text-muted-foreground underline underline-offset-4">
             Tutte le proposte
           </Link>
         </p>
@@ -152,15 +152,15 @@ function Loaded({ proposal }: { proposal: Proposal }) {
 
         {pending ? null : <Outcome proposal={proposal} customerId={description.customerId} />}
 
-        <section aria-labelledby="proposta-origine" className="space-y-3">
-          <h2 id="proposta-origine" className="font-semibold">
+        <section aria-labelledby="proposal-origin" className="space-y-3">
+          <h2 id="proposal-origin" className="font-semibold">
             Da dove arriva
           </h2>
           <blockquote className="whitespace-pre-line border-l-2 border-foreground pl-4 text-sm">
-            {proposal.estratto}
+            {proposal.excerpt}
           </blockquote>
           <p className="text-xs text-muted-foreground">
-            {proposal.tipo_estratto === 'trascritto'
+            {proposal.excerpt_type === 'transcribed'
               ? 'Trascritto da una pagina senza testo: non è verificabile sul documento.'
               : 'Passo citato dal testo del documento.'}
           </p>
@@ -175,16 +175,16 @@ function Loaded({ proposal }: { proposal: Proposal }) {
           </Button>
         </section>
 
-        <section aria-labelledby="proposta-campi" className="space-y-6">
+        <section aria-labelledby="proposal-fields" className="space-y-6">
           <div className="space-y-1">
-            <h2 id="proposta-campi" className="font-semibold">
+            <h2 id="proposal-fields" className="font-semibold">
               Cosa propone
             </h2>
             <p className="text-sm text-muted-foreground">
               <ProposalSubject
                 description={description}
                 link
-                prefix={proposal.target_type === 'contratto' ? 'Per il cliente ' : 'Sul contratto '}
+                prefix={proposal.target_type === 'contract' ? 'Per il cliente ' : 'Sul contratto '}
               />
             </p>
           </div>
@@ -227,9 +227,9 @@ function Loaded({ proposal }: { proposal: Proposal }) {
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-2">
-            <Label htmlFor="proposta-motivo">Motivo (facoltativo)</Label>
+            <Label htmlFor="proposal-reason">Motivo (facoltativo)</Label>
             <Textarea
-              id="proposta-motivo"
+              id="proposal-reason"
               value={reason}
               onChange={(event) => setReason(event.target.value)}
               placeholder="Per esempio: la data non è quella della mail."
@@ -265,18 +265,18 @@ function Loaded({ proposal }: { proposal: Proposal }) {
  * rejected proposal reads that once to say why.
  */
 function Outcome({ proposal, customerId }: { proposal: Proposal; customerId: string | null }) {
-  const accepted = proposal.stato === 'accettata'
+  const accepted = proposal.status === 'accepted'
   const timeline = useProposalTimeline(proposal.id, !accepted)
-  const motivo = timeline.data?.find((entry) => entry.kind === 'rejected')?.payload.motivo
+  const reason = timeline.data?.find((entry) => entry.kind === 'rejected')?.payload.reason
   return (
     <section aria-label="Esito" className="space-y-2 border bg-paper px-4 py-3 text-sm">
       <p className="flex flex-wrap items-center gap-2">
-        <ProposalStatoPill stato={proposal.stato} />
+        <ProposalStatusPill status={proposal.status} />
         <span>{decisionLine(proposal)}</span>
       </p>
       {accepted ? (
         <p className="text-muted-foreground">
-          {proposal.target_type === 'contratto'
+          {proposal.target_type === 'contract'
             ? 'Ha creato il contratto, con la sua prima scheda tariffaria.'
             : 'Ha registrato la giornata come approvata.'}{' '}
           {customerId !== null ? (
@@ -295,10 +295,10 @@ function Outcome({ proposal, customerId }: { proposal: Proposal; customerId: str
         <p className="text-destructive">
           Non è stato possibile leggere il motivo del rifiuto. {toProblem(timeline.error).detail}
         </p>
-      ) : typeof motivo === 'string' && motivo !== '' ? (
+      ) : typeof reason === 'string' && reason !== '' ? (
         <p>
           <span className="text-muted-foreground">Motivo: </span>
-          {motivo}
+          {reason}
         </p>
       ) : null}
     </section>

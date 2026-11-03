@@ -7,8 +7,8 @@ working on one `InvoiceContext` (one session, one transaction):
 * `emission.InvoiceEmission`: `issue`, `annul`, `mark_transmitted_externally`;
 * `register.RegisterGaps`: the numbers a register will never carry;
 * `importing.InvoiceImporter` and `issued_import.IssuedInvoiceImporter`: reviewing and
-  confirming FatturaPA files, and registering a fattura another system issued;
-* `original_pdf.OriginalPdfResolver`: where an imported fattura's original PDF is;
+  confirming FatturaPA files, and registering an invoice another system issued;
+* `original_pdf.OriginalPdfResolver`: where an imported invoice's original PDF is;
 * `artifacts.InvoiceArtifacts`: the PDF and the FatturaPA file.
 
 The constructor and the public methods are the domain's API for the REST app, the MCP
@@ -82,7 +82,7 @@ class InvoiceService:
         self.repo = self.ctx.repo
         self.documents = self.ctx.documents
         self.fiscal = self.ctx.fiscal
-        self.emitter = self.ctx.emitter
+        self.legal_entity = self.ctx.legal_entity
         self.customers = self.ctx.customers
         self.fields = self.ctx.fields
         self.activities = self.ctx.activities
@@ -100,18 +100,18 @@ class InvoiceService:
         data: InvoiceCreate,
         actor: Actor,
         *,
-        azienda_id: UUID | None = None,
+        legal_entity_id: UUID | None = None,
         commit: bool = True,
     ) -> InvoiceRead:
-        return self.drafting.create(data, actor, azienda_id=azienda_id, commit=commit)
+        return self.drafting.create(data, actor, legal_entity_id=legal_entity_id, commit=commit)
 
     def update(self, invoice_id: UUID, data: InvoiceUpdate, actor: Actor) -> InvoiceRead:
         return self.drafting.update(invoice_id, data, actor)
 
     def replace_lines(
-        self, invoice_id: UUID, righe: list[InvoiceLineIn], actor: Actor
+        self, invoice_id: UUID, lines: list[InvoiceLineIn], actor: Actor
     ) -> InvoiceRead:
-        return self.drafting.replace_lines(invoice_id, righe, actor)
+        return self.drafting.replace_lines(invoice_id, lines, actor)
 
     def confirm_proforma(self, invoice_id: UUID, actor: Actor) -> InvoiceRead:
         return self.drafting.confirm_proforma(invoice_id, actor)
@@ -160,20 +160,20 @@ class InvoiceService:
 
     def declare_gaps(
         self,
-        anno: int,
+        year: int,
         data: RegisterGapsDeclare,
         actor: Actor,
-        azienda_id: UUID | None = None,
+        legal_entity_id: UUID | None = None,
     ) -> list[RegisterGapRead]:
-        return self.register.declare_gaps(anno, data, actor, azienda_id)
+        return self.register.declare_gaps(year, data, actor, legal_entity_id)
 
     def register_gaps(
-        self, anno: int, actor: Actor, azienda_id: UUID | None = None
+        self, year: int, actor: Actor, legal_entity_id: UUID | None = None
     ) -> list[RegisterGapRead]:
-        return self.register.register_gaps(anno, actor, azienda_id)
+        return self.register.register_gaps(year, actor, legal_entity_id)
 
-    def undeclared_gaps(self, anno: int, azienda_id: UUID | None = None) -> list[int]:
-        return self.register.undeclared_gaps(anno, azienda_id)
+    def undeclared_gaps(self, year: int, legal_entity_id: UUID | None = None) -> list[int]:
+        return self.register.undeclared_gaps(year, legal_entity_id)
 
     # ---- import ---------------------------------------------------------------
 
@@ -182,18 +182,18 @@ class InvoiceService:
         data: InvoiceImport,
         actor: Actor,
         *,
-        azienda_id: UUID | None = None,
+        legal_entity_id: UUID | None = None,
         xml_document_id: UUID | None = None,
         xml_hash_sha256: str | None = None,
-        importata_da: str | None = None,
+        imported_from: str | None = None,
     ) -> InvoiceRead:
         return self.issued_import.import_issued(
             data,
             actor,
-            azienda_id=azienda_id,
+            legal_entity_id=legal_entity_id,
             xml_document_id=xml_document_id,
             xml_hash_sha256=xml_hash_sha256,
-            importata_da=importata_da,
+            imported_from=imported_from,
         )
 
     def review_import(

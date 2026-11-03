@@ -7,7 +7,7 @@ import { api } from '@/lib/api'
 import { DocumentsTab } from './DocumentsTab'
 
 // REB-294: the tab gates its writes (`useCanWrite`, the whole cluster is
-// `collaboratore` in the service); these tests drive that path, so the session is a
+// `collaborator` in the service); these tests drive that path, so the session is a
 // writer by default. The readonly shape is asserted in `DocumentsTab.readonly` below.
 vi.mock('@/lib/auth', () => ({ useCanWrite: () => true }))
 vi.mock('@tanstack/react-router', () => ({
@@ -20,10 +20,10 @@ const DOCUMENT = {
   id: 'doc-1',
   customer_id: 'c-1',
   deal_id: null,
-  tipo: 'offerta',
-  titolo: 'Offerta 2026-01',
-  stato: 'bozza',
-  versione_corrente: 1,
+  type: 'offer',
+  title: 'Offerta 2026-01',
+  status: 'draft',
+  current_version: 1,
   custom_fields: {},
   created_at: '2026-08-10T09:00:00Z',
   updated_at: '2026-08-10T09:00:00Z',
@@ -70,9 +70,9 @@ afterEach(() => {
  *  loaded full `pnpm --filter web test` run this shape lost the race (REB-405), the
  *  same headroom `vite.config.ts`'s own `testTimeout: 20_000` comment already
  *  describes for the suite as a whole. Matching that headroom here. */
-async function openRowMenu(titolo: string) {
+async function openRowMenu(title: string) {
   await userEvent.click(
-    await screen.findByRole('button', { name: `Azioni per ${titolo}` }, { timeout: 10_000 }),
+    await screen.findByRole('button', { name: `Azioni per ${title}` }, { timeout: 10_000 }),
   )
   // Radix opens the menu content into a portal, so the trigger's click resolving does
   // not itself guarantee the content has mounted: wait for the menu here so every
@@ -109,7 +109,7 @@ describe('DocumentsTab', () => {
     mockPost.mockReturnValue(ok(DOCUMENT))
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       new Response(
-        JSON.stringify({ id: 'v-1', document_id: DOCUMENT.id, numero: 1 }),
+        JSON.stringify({ id: 'v-1', document_id: DOCUMENT.id, number: 1 }),
         { status: 201, headers: { 'content-type': 'application/json' } },
       ),
     )
@@ -173,7 +173,7 @@ describe('DocumentsTab', () => {
    *  state of this row rather than an action it can never take. */
   it('disables the download item on a document with no version yet', async () => {
     mockGet.mockReturnValue(
-      ok({ items: [{ ...DOCUMENT, versione_corrente: 0 }], next_cursor: null }),
+      ok({ items: [{ ...DOCUMENT, current_version: 0 }], next_cursor: null }),
     )
     render(<DocumentsTab owner={{ customerId: 'c-1' }} />, { wrapper })
     await openRowMenu('Offerta 2026-01')

@@ -55,7 +55,7 @@ function message(overrides: Partial<GmailMessageRead> = {}): GmailMessageRead {
     internal_date: '2026-08-18T10:00:00Z',
     body_text: 'Testo del messaggio.',
     body_truncated: false,
-    body_html_scartato: false,
+    body_html_discarded: false,
     attachments: [],
     ...overrides,
   }
@@ -80,7 +80,7 @@ function draft(overrides: Partial<EmailDraftRead> = {}): EmailDraftRead {
     attachments: [],
     message_id_header: '<a.1@crm.example.it>',
     in_reply_to_message_id: null,
-    send_state: 'bozza',
+    send_state: 'draft',
     send_attempted_at: null,
     last_error: null,
     sent_gmail_message_id: null,
@@ -271,7 +271,7 @@ describe('EmailTab', () => {
 
   it('marks a message whose body was dropped or truncated, rather than showing a lie', async () => {
     respond({
-      messages: ok([message({ body_truncated: true, body_html_scartato: true })]),
+      messages: ok([message({ body_truncated: true, body_html_discarded: true })]),
     })
     renderTab()
 
@@ -330,10 +330,10 @@ describe('EmailTab', () => {
           cc_addresses: ['amministrazione@acme.it'],
           attachment_version_ids: [VERSION_ID],
           attachments: [
-            { version_id: VERSION_ID, filename: 'offerta-q1-v2.pdf', dimensione: 184_320 },
+            { version_id: VERSION_ID, filename: 'offerta-q1-v2.pdf', size: 184_320 },
           ],
         }),
-        draft({ id: 'sent', subject: 'Già partita', send_state: 'inviato' }),
+        draft({ id: 'sent', subject: 'Già partita', send_state: 'sent' }),
       ),
     })
     renderTab()
@@ -382,8 +382,8 @@ describe('EmailTab', () => {
     let onServer: EmailDraftRead[] = [draft()]
     respond({ drafts: () => drafts(...onServer) })
     vi.mocked(api.POST).mockImplementation((() => {
-      onServer = [draft({ send_state: 'inviato' })]
-      return Promise.resolve(ok(draft({ send_state: 'inviato' })))
+      onServer = [draft({ send_state: 'sent' })]
+      return Promise.resolve(ok(draft({ send_state: 'sent' })))
     }) as never)
     renderTab()
 
@@ -495,7 +495,7 @@ describe('EmailTab', () => {
     vi.mocked(api.POST).mockImplementation(((_path: string, init: never) => {
       const id = (init as { params: { path: { draft_id: string } } }).params.path.draft_id
       if (id === DRAFT_ID) return Promise.resolve(failed({ detail: 'Gateway Timeout' }, 504))
-      return Promise.resolve(ok(draft({ id, subject: 'Altra bozza', send_state: 'inviato' })))
+      return Promise.resolve(ok(draft({ id, subject: 'Altra bozza', send_state: 'sent' })))
     }) as never)
     renderTab()
 
@@ -546,7 +546,7 @@ describe('EmailTab', () => {
   })
 
   /**
-   * Gmail refused: nothing left, and the server says so on the row (`fallito`, with its
+   * Gmail refused: nothing left, and the server says so on the row (`failed`, with its
    * own sentence). The card reads the row again and shows that, with «Invia» still there
    * because the draft is intact -- and no second banner repeating it.
    */
@@ -556,7 +556,7 @@ describe('EmailTab', () => {
     vi.mocked(api.POST).mockImplementation((() => {
       onServer = [
         draft({
-          send_state: 'fallito',
+          send_state: 'failed',
           last_error: 'Gmail ha rifiutato il messaggio: la bozza è intatta, correggila e riprova.',
         }),
       ]
@@ -566,7 +566,7 @@ describe('EmailTab', () => {
             code: 'conflict',
             detail: 'email_draft: Gmail ha rifiutato il messaggio',
             reason: 'Gmail ha rifiutato il messaggio',
-            send_state: 'fallito',
+            send_state: 'failed',
           },
           409,
         ),
@@ -641,7 +641,7 @@ describe('EmailTab', () => {
       }) as never)
       .mockImplementationOnce((() => {
         onServer = []
-        return Promise.resolve(ok({ ...edited, send_state: 'inviato' }))
+        return Promise.resolve(ok({ ...edited, send_state: 'sent' }))
       }) as never)
     renderTab()
 
@@ -710,7 +710,7 @@ describe('EmailTab', () => {
   })
 
   /**
-   * Gmail did not answer. The row is `incerto`, and the card must never call it
+   * Gmail did not answer. The row is `uncertain`, and the card must never call it
    * «inviata»: it says «esito da verificare», offers «Verifica», and offers no «Invia»
    * and no "riprova" -- the send has no idempotency key, so a second press is a second
    * email.
@@ -719,14 +719,14 @@ describe('EmailTab', () => {
     let onServer: EmailDraftRead[] = [draft()]
     respond({ drafts: () => drafts(...onServer) })
     vi.mocked(api.POST).mockImplementation((() => {
-      onServer = [draft({ send_state: 'incerto', last_error: 'Gmail non ha risposto.' })]
+      onServer = [draft({ send_state: 'uncertain', last_error: 'Gmail non ha risposto.' })]
       return Promise.resolve(
         failed(
           {
             code: 'conflict',
             detail: "email_draft: esito dell'invio da verificare: Gmail non ha risposto",
             reason: "esito dell'invio da verificare: Gmail non ha risposto",
-            send_state: 'incerto',
+            send_state: 'uncertain',
           },
           409,
         ),
@@ -746,11 +746,11 @@ describe('EmailTab', () => {
   })
 
   it('verifies by asking Gmail, and never by posting the send again', async () => {
-    let onServer: EmailDraftRead[] = [draft({ send_state: 'incerto' })]
+    let onServer: EmailDraftRead[] = [draft({ send_state: 'uncertain' })]
     respond({ drafts: () => drafts(...onServer) })
     vi.mocked(api.POST).mockImplementation((() => {
-      onServer = [draft({ send_state: 'inviato' })]
-      return Promise.resolve(ok(draft({ send_state: 'inviato' })))
+      onServer = [draft({ send_state: 'sent' })]
+      return Promise.resolve(ok(draft({ send_state: 'sent' })))
     }) as never)
     renderTab()
 
@@ -768,8 +768,8 @@ describe('EmailTab', () => {
   })
 
   it('says «not yet» when Gmail cannot confirm it yet, and still offers no send', async () => {
-    respond({ drafts: drafts(draft({ send_state: 'incerto' })) })
-    vi.mocked(api.POST).mockResolvedValue(ok(draft({ send_state: 'incerto' })))
+    respond({ drafts: drafts(draft({ send_state: 'uncertain' })) })
+    vi.mocked(api.POST).mockResolvedValue(ok(draft({ send_state: 'uncertain' })))
     renderTab()
 
     await userEvent.click(await screen.findByRole('button', { name: 'Verifica' }))
@@ -780,12 +780,12 @@ describe('EmailTab', () => {
   })
 
   /**
-   * `in_invio` is where a send whose request died after the claim is left. Without a
+   * `sending` is where a send whose request died after the claim is left. Without a
    * way out it would read «Invio in corso» forever; «Verifica» is that way, and it is
    * safe, since `reconcile` answers the draft unchanged while it may still be in flight.
    */
   it('offers «Verifica», and no send or delete, for a draft stuck in flight', async () => {
-    respond({ drafts: drafts(draft({ send_state: 'in_invio' })) })
+    respond({ drafts: drafts(draft({ send_state: 'sending' })) })
     renderTab()
 
     expect(await screen.findByText('Invio in corso')).toBeInTheDocument()
@@ -799,7 +799,7 @@ describe('EmailTab', () => {
       drafts: drafts(
         draft({
           attachment_version_ids: [VERSION_ID],
-          attachments: [{ version_id: VERSION_ID, filename: null, dimensione: null }],
+          attachments: [{ version_id: VERSION_ID, filename: null, size: null }],
         }),
       ),
     })
@@ -818,7 +818,7 @@ describe('EmailTab', () => {
           code: 'conflict',
           detail: 'email_draft: questa email è già inviata o in invio: duplicala per modificarla',
           reason: 'questa email è già inviata o in invio: duplicala per modificarla',
-          send_state: 'in_invio',
+          send_state: 'sending',
         },
         409,
       ),
@@ -865,7 +865,7 @@ describe('EmailTab', () => {
   it('shows a readonly person the draft and no button that the server would refuse', async () => {
     mockAuth.role = 'readonly'
     respond({
-      drafts: drafts(draft(), draft({ id: 'unsure', subject: 'Esito', send_state: 'incerto' })),
+      drafts: drafts(draft(), draft({ id: 'unsure', subject: 'Esito', send_state: 'uncertain' })),
     })
     renderTab()
 
@@ -877,9 +877,9 @@ describe('EmailTab', () => {
   })
 
   it('lets a collaboratore send, verify and delete, as the server does', async () => {
-    mockAuth.role = 'collaboratore'
+    mockAuth.role = 'collaborator'
     respond({
-      drafts: drafts(draft(), draft({ id: 'unsure', subject: 'Esito', send_state: 'incerto' })),
+      drafts: drafts(draft(), draft({ id: 'unsure', subject: 'Esito', send_state: 'uncertain' })),
     })
     renderTab()
 
@@ -897,8 +897,8 @@ describe('EmailTab', () => {
   })
 
   /**
-   * `draft_email` never attaches anything, so an assistant that writes «in allegato
-   * l'offerta» produces a draft that promises a file it does not carry. A warning, not a
+   * `draft_email` never attaches anything, so an assistant that writes «in attachment
+   * l'offer» produces a draft that promises a file it does not carry. A warning, not a
    * refusal: the text is the person's to judge.
    */
   it('warns when the text promises an attachment that is not there', async () => {

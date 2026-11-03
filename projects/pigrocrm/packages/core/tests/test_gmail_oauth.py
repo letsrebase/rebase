@@ -96,15 +96,15 @@ def _service(
     )
 
 
-def _user(session: Session, email: str = "owner@example.it", ruolo: str = "admin") -> User:
-    user = User(email=email, nome="Owner", password_hash="x", ruolo=ruolo, attivo=True)
+def _user(session: Session, email: str = "owner@example.it", role: str = "admin") -> User:
+    user = User(email=email, name="Owner", password_hash="x", role=role, active=True)
     session.add(user)
     session.flush()
     return user
 
 
-def _actor(user: User, ruolo: str = "admin") -> Actor:
-    return Actor(id=user.id, type="user", role=ruolo)  # type: ignore[arg-type]
+def _actor(user: User, role: str = "admin") -> Actor:
+    return Actor(id=user.id, type="user", role=role)  # type: ignore[arg-type]
 
 
 def _start(service: GmailOAuthService, actor: Actor) -> tuple[str, dict[str, list[str]]]:
@@ -211,7 +211,7 @@ def test_complete_stores_the_refresh_token_encrypted_and_records_the_connection(
     assert REFRESH.encode() not in account.refresh_token_ciphertext
     assert unseal(account.refresh_token_ciphertext, account.refresh_token_nonce, KEY) == REFRESH
     kinds = db_session.execute(select(Activity.kind)).scalars().all()
-    assert "gmail.account_collegato" in kinds
+    assert "gmail.account_connected" in kinds
 
 
 def test_the_verifier_that_reaches_google_is_the_pre_image_of_the_published_challenge(
@@ -605,7 +605,7 @@ def test_an_unconfigured_installation_refuses_the_callback_too(db_session: Sessi
 
 
 def test_a_readonly_actor_can_neither_start_nor_disconnect(db_session: Session) -> None:
-    user = _user(db_session, "reader@example.it", ruolo="readonly")
+    user = _user(db_session, "reader@example.it", role="readonly")
     service = _service(db_session, _fake())
     with pytest.raises(PermissionDenied):
         service.start(_actor(user, "readonly"))
@@ -628,7 +628,7 @@ def _stored_message(session: Session, account: GoogleAccount, gmail_id: str) -> 
         subject="Oggetto",
         snippet="anteprima",
         internal_date=datetime.now(UTC),
-        body_text="corpo",
+        body_text="body",
         attachments=[],
     )
     session.add(message)
@@ -653,7 +653,7 @@ def test_disconnect_overwrites_the_credential_rather_than_dereferencing_it(
     assert account.status == "disconnected"
     assert account.disconnected_at is not None
     kinds = db_session.execute(select(Activity.kind)).scalars().all()
-    assert "gmail.account_scollegato" in kinds
+    assert "gmail.account_disconnected" in kinds
 
 
 def test_disconnect_records_the_choice_about_the_stored_messages(db_session: Session) -> None:
@@ -670,13 +670,13 @@ def test_disconnect_records_the_choice_about_the_stored_messages(db_session: Ses
 
     payload = (
         db_session.execute(
-            select(Activity.payload).where(Activity.kind == "gmail.account_scollegato")
+            select(Activity.payload).where(Activity.kind == "gmail.account_disconnected")
         )
         .scalars()
         .one()
     )
-    assert payload["messaggi_cancellati"] is True
-    assert payload["messaggi_cancellati_conteggio"] == 1
+    assert payload["deleted_messages"] is True
+    assert payload["count_deleted_messages"] == 1
 
 
 def test_disconnecting_with_deletion_removes_the_messages_and_their_links(

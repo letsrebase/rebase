@@ -23,13 +23,13 @@ def assemble_draft(
     data: InvoiceCreate,
     actor: Actor,
     *,
-    azienda_id: UUID | None = None,
+    legal_entity_id: UUID | None = None,
     bind: Callable[[list[UUID]], None],
 ) -> InvoiceRead:
     """Create the draft in `data` and let `bind` attach what it bills, in ONE commit.
 
-    The lines come from `data.righe`. Inside a SAVEPOINT the draft is created without
-    committing, the ids of its new lines are read ordered by `numero_linea`, and
+    The lines come from `data.lines`. Inside a SAVEPOINT the draft is created without
+    committing, the ids of its new lines are read ordered by `line_number`, and
     `bind(line_ids)` is called: the caller points its days, expenses or hours at those ids
     positionally (the n-th billed row to the n-th line) and may record its own activity.
     Then the transaction commits and the draft is returned.
@@ -40,12 +40,12 @@ def assemble_draft(
     """
     session = service.session
     with session.begin_nested():
-        draft = service.create(data, actor, azienda_id=azienda_id, commit=False)
+        draft = service.create(data, actor, legal_entity_id=legal_entity_id, commit=False)
         line_ids = list(
             session.execute(
                 select(InvoiceLine.id)
                 .where(InvoiceLine.invoice_id == draft.id)
-                .order_by(InvoiceLine.numero_linea)
+                .order_by(InvoiceLine.line_number)
             ).scalars()
         )
         bind(line_ids)

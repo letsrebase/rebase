@@ -62,7 +62,7 @@ def admin(client: TestClient, api_session: Session) -> Iterator[None]:
         documenso_webhook_secret=SECRET,
     )
     client.app.dependency_overrides[get_settings] = lambda: settings  # type: ignore[attr-defined]
-    api_session.add(User(email=ADMIN_EMAIL, nome="Ivan", cognome="", role="admin"))
+    api_session.add(User(email=ADMIN_EMAIL, first_name="Ivan", last_name="", role="admin"))
     api_session.commit()
     yield
     api_session.rollback()
@@ -90,7 +90,7 @@ def _sent(
     from the row since no page shows it."""
     match = draft_match(client, sender)
     assert client.post(f"/api/hub/matches/{match['id']}/send").status_code == 200
-    envelope = _document(session, "quadro").documenso_id
+    envelope = _document(session, "framework").documenso_id
     assert envelope is not None
     return match, envelope
 
@@ -109,7 +109,7 @@ def test_a_webhook_without_the_secret_or_with_an_empty_one_is_refused(
     body = documenso.webhook(envelope, "DOCUMENT_COMPLETED")
     for secret in (None, "", "segreto-sbagliato", SECRET.upper()):
         assert _deliver(client, body, secret).status_code == 401, secret
-    assert _document(api_session, "quadro").stato == "inviato"
+    assert _document(api_session, "framework").status == "sent"
 
 
 def test_without_the_setting_the_webhook_is_off(
@@ -138,19 +138,19 @@ def test_a_signed_framework_is_stored_mailed_and_releases_its_letter(
     answered = _deliver(client, documenso.webhook(envelope, "DOCUMENT_COMPLETED"))
 
     assert answered.status_code == 200 and answered.json() == {"ok": True}
-    quadro = _document(api_session, "quadro")
-    assert (quadro.stato, quadro.signed_at) == ("firmato", SIGNED_AT)
-    assert quadro.signed_pdf == documenso.signed_pdf(envelope)
+    framework = _document(api_session, "framework")
+    assert (framework.status, framework.signed_at) == ("signed", SIGNED_AT)
+    assert framework.signed_pdf == documenso.signed_pdf(envelope)
     mails = sender.sent[before:]
     assert [(mail.to, mail.subject) for mail in mails[:2]] == [
         ("ada@studio.it", "Firmato: contratto quadro rebase"),
         (CONTRACTS_MAIL, "Firmato da Ada Lovelace: contratto quadro rebase"),
     ]
-    assert all(mail.attachments[0].content == quadro.signed_pdf for mail in mails[:2])
-    letter = _document(api_session, "lettera")
-    assert letter.stato == "inviato"
+    assert all(mail.attachments[0].content == framework.signed_pdf for mail in mails[:2])
+    letter = _document(api_session, "letter")
+    assert letter.status == "sent"
     assert letter.data["data-contratto-quadro"] == "1° ottobre 2026"
-    assert mails[2].subject == f"Da firmare: lettera di incarico n. {letter.numero}"
+    assert mails[2].subject == f"Da firmare: lettera di incarico n. {letter.number}"
 
     assert letter.documenso_id is not None
     documenso.sign(letter.documenso_id, SIGNED_AT)
@@ -158,7 +158,7 @@ def test_a_signed_framework_is_stored_mailed_and_releases_its_letter(
         _deliver(client, documenso.webhook(letter.documenso_id, "DOCUMENT_COMPLETED")).status_code
         == 200
     )
-    assert client.get(f"/api/hub/matches/{match['id']}").json()["stato"] == "attivo"
+    assert client.get(f"/api/hub/matches/{match['id']}").json()["status"] == "active"
 
 
 def test_a_signed_letter_links_its_match_to_pigro_through_the_apis_seam(
@@ -187,7 +187,7 @@ def test_a_signed_letter_links_its_match_to_pigro_through_the_apis_seam(
     match, envelope = _sent(client, sender, api_session)
     documenso.sign(envelope, SIGNED_AT)
     assert _deliver(client, documenso.webhook(envelope, "DOCUMENT_COMPLETED")).status_code == 200
-    letter = _document(api_session, "lettera").documenso_id
+    letter = _document(api_session, "letter").documenso_id
     assert letter is not None
     assert pigro.calls == []
     documenso.sign(letter, SIGNED_AT)
@@ -196,9 +196,9 @@ def test_a_signed_letter_links_its_match_to_pigro_through_the_apis_seam(
 
     assert answered.status_code == 200
     read = client.get(f"/api/hub/matches/{match['id']}").json()
-    assert (read["stato"], read["pigro_stato"], read["pigro_url"]) == (
-        "attivo",
-        "collegato",
+    assert (read["status"], read["pigro_status"], read["pigro_url"]) == (
+        "active",
+        "linked",
         DEAL_URL,
     )
     [(method, url, _headers, _body)] = pigro.calls
@@ -235,16 +235,16 @@ def test_a_refusal_cancels_the_document_and_says_why(
     match, envelope = _sent(client, sender, api_session)
     documenso.reject(envelope, "Il domicilio è sbagliato")
     assert _deliver(client, documenso.webhook(envelope, "DOCUMENT_REJECTED")).status_code == 200
-    quadro = _document(api_session, "quadro")
-    assert (quadro.stato, quadro.cancel_reason) == (
-        "annullato",
+    framework = _document(api_session, "framework")
+    assert (framework.status, framework.cancel_reason) == (
+        "cancelled",
         "Rifiutato dal freelance: Il domicilio è sbagliato",
     )
     # Spec § 6: a refused framework agreement is still shown on «Match e contratti»,
     # not hidden as a stale draft would be.
     page = client.get(f"/api/hub/freelancers/{match['freelancer_id']}/matches").json()
-    assert (page["quadro"]["stato"], page["quadro"]["cancel_reason"]) == (
-        "annullato",
+    assert (page["framework"]["status"], page["framework"]["cancel_reason"]) == (
+        "cancelled",
         "Rifiutato dal freelance: Il domicilio è sbagliato",
     )
 
@@ -262,7 +262,7 @@ def test_an_unknown_envelope_and_an_event_nobody_handles_are_acknowledged(
     stranger = {**documenso.webhook(envelope, "DOCUMENT_COMPLETED")}
     stranger["payload"] = {**stranger["payload"], "envelopeId": "envelope_di_un_altro_ambiente"}
     assert _deliver(client, stranger).status_code == 200
-    assert _document(api_session, "quadro").stato == "inviato"
+    assert _document(api_session, "framework").status == "sent"
 
 
 def test_a_malformed_signer_setting_does_not_stop_a_refusal_from_cancelling_its_document(
@@ -289,9 +289,9 @@ def test_a_malformed_signer_setting_does_not_stop_a_refusal_from_cancelling_its_
     answered = _deliver(client, documenso.webhook(envelope, "DOCUMENT_REJECTED"))
 
     assert answered.status_code == 200
-    quadro = _document(api_session, "quadro")
-    assert (quadro.stato, quadro.cancel_reason) == (
-        "annullato",
+    framework = _document(api_session, "framework")
+    assert (framework.status, framework.cancel_reason) == (
+        "cancelled",
         "Rifiutato dal freelance: Il domicilio non è raggiungibile",
     )
 
@@ -317,7 +317,7 @@ def test_an_exception_inside_apply_is_swallowed_into_a_200(
 
     class RaisingSigning:
         def apply(self, outcome: Outcome) -> UUID | None:
-            raise NotFound("documento", envelope)
+            raise NotFound("document", envelope)
 
     broken: Callable[[Session], RaisingSigning] = lambda session: RaisingSigning()  # noqa: E731
     client.app.dependency_overrides[get_signing_factory] = lambda: broken  # type: ignore[attr-defined]
@@ -327,4 +327,4 @@ def test_an_exception_inside_apply_is_swallowed_into_a_200(
 
     assert answered.status_code == 200 and answered.json() == {"ok": True}
     assert any(envelope in record.getMessage() for record in caplog.records)
-    assert _document(api_session, "quadro").stato == "inviato"
+    assert _document(api_session, "framework").status == "sent"

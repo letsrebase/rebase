@@ -36,10 +36,10 @@ from rebase_core.signing_recovery import SweepResult
 def test_sweep_finishes_a_signature_a_crashed_background_task_left_undone(
     clean: Session,
 ) -> None:
-    """The webhook's own `apply` committed, but left the document `inviato` for
+    """The webhook's own `apply` committed, but left the document `sent` for
     `finish` to confirm (REB-431); its background `finish` never ran (the process died
     first). `sweep` finds the document through `_to_finish` and runs `finish` on it:
-    confirmed `firmato`, its sealed copy stored and mailed, and the letter that waited
+    confirmed `signed`, its sealed copy stored and mailed, and the letter that waited
     for this framework agreement released."""
     admin_id, freelancer_id, company_id = _setup(clean)
     renderer, fake, sender = FakeRenderer(draft=False), FakeDocumenso(), RecordingSender()
@@ -49,18 +49,21 @@ def test_sweep_finishes_a_signature_a_crashed_background_task_left_undone(
     signing = _signing(clean, renderer, fake, sender)
     signed = signing.apply(_webhook(fake, envelope, "DOCUMENT_COMPLETED"))
     assert signed is not None
-    assert _framework_of(clean, freelancer_id).stato == "inviato"
+    assert _framework_of(clean, freelancer_id).status == "sent"
     assert _framework_of(clean, freelancer_id).signed_pdf is None
-    assert _letter_of(clean, match.id).stato == "in_attesa"
+    assert _letter_of(clean, match.id).status == "pending"
 
     result = signing.recovery.sweep()
 
     assert result == SweepResult(touched=1, unconfirmed=0)
-    quadro = _framework_of(clean, freelancer_id)
-    assert quadro.stato == "firmato"
-    assert quadro.signed_pdf == fake.signed_pdf(envelope)
-    assert (quadro.signed_copy_to_freelancer_at, quadro.signed_copy_to_rebase_at) == (NOW, NOW)
-    assert _letter_of(clean, match.id).stato == "inviato"
+    framework = _framework_of(clean, freelancer_id)
+    assert framework.status == "signed"
+    assert framework.signed_pdf == fake.signed_pdf(envelope)
+    assert (framework.signed_copy_to_freelancer_at, framework.signed_copy_to_rebase_at) == (
+        NOW,
+        NOW,
+    )
+    assert _letter_of(clean, match.id).status == "sent"
 
 
 def test_sweep_releases_a_waiting_letter_of_an_already_finished_framework(
@@ -80,34 +83,37 @@ def test_sweep_releases_a_waiting_letter_of_an_already_finished_framework(
     signed = signing.apply(_webhook(fake, envelope, "DOCUMENT_COMPLETED"))
     assert signed is not None
     signing.recovery.finish(signed)
-    quadro = _framework_of(clean, freelancer_id)
-    assert quadro.signed_pdf == fake.signed_pdf(envelope)
-    assert (quadro.signed_copy_to_freelancer_at, quadro.signed_copy_to_rebase_at) == (NOW, NOW)
-    # A letter `in_attesa` on a match `in_firma`, its framework agreement already active:
+    framework = _framework_of(clean, freelancer_id)
+    assert framework.signed_pdf == fake.signed_pdf(envelope)
+    assert (framework.signed_copy_to_freelancer_at, framework.signed_copy_to_rebase_at) == (
+        NOW,
+        NOW,
+    )
+    # A letter `pending` on a match `awaiting_signature`, its framework agreement already active:
     # the exact row shape `_release_letters` looks for, forged directly (as
     # `test_a_letter_whose_framework_was_refused_gets_a_new_one_when_its_match_is_sent`
     # forges its own scenario) rather than reached through a second real send, which
     # would dispatch it immediately since the framework is active by then.
     second = _draft(clean, renderer, freelancer_id, company_id, admin_id)
     second_letter = _letter_of(clean, second.id)
-    second_letter.stato = "in_attesa"
+    second_letter.status = "pending"
     second_match = clean.get(Match, second.id)
     assert second_match is not None
-    second_match.stato = "in_firma"
+    second_match.status = "awaiting_signature"
     clean.commit()
 
     result = signing.recovery.sweep()
 
     # 1, not 2: the first match's own letter, released by the `finish` above, is
-    # itself `inviato` with an envelope still pending on Documenso, so REB-431's wider
+    # itself `sent` with an envelope still pending on Documenso, so REB-431's wider
     # `_to_finish` visits it too, but nothing moves for it, and REB-433 counts only
     # what actually moved.
     assert result == SweepResult(touched=1, unconfirmed=0)
-    assert _letter_of(clean, second.id).stato == "inviato"
+    assert _letter_of(clean, second.id).status == "sent"
 
 
 def test_sweep_with_nothing_left_to_do_returns_zero(clean: Session) -> None:
-    """A document still `inviato`, not yet signed on Documenso, is in `_to_finish` now
+    """A document still `sent`, not yet signed on Documenso, is in `_to_finish` now
     too (REB-431): `finish` confirms nothing and moves nothing, so it still counts for
     zero (REB-433); still `PENDING` on Documenso is not a failed confirmation either, so
     `unconfirmed` stays zero too."""
@@ -118,7 +124,7 @@ def test_sweep_with_nothing_left_to_do_returns_zero(clean: Session) -> None:
     assert _signing(clean, renderer, fake, sender).recovery.sweep() == SweepResult(
         touched=0, unconfirmed=0
     )
-    assert _framework_of(clean, freelancer_id).stato == "inviato"
+    assert _framework_of(clean, freelancer_id).status == "sent"
 
 
 def test_sweep_does_not_keep_counting_a_document_stuck_on_a_failing_download(
@@ -126,7 +132,7 @@ def test_sweep_does_not_keep_counting_a_document_stuck_on_a_failing_download(
 ) -> None:
     """REB-433: `rebase contracts-sweep` must not print one more «documento ripreso»
     for a document that keeps failing the same way every ten minutes -- only a sweep
-    that actually moves something (here, the confirmation to `firmato`, on the first
+    that actually moves something (here, the confirmation to `signed`, on the first
     run) counts."""
     admin_id, freelancer_id, company_id = _setup(clean)
     renderer, fake, sender = FakeRenderer(draft=False), FakeDocumenso(), RecordingSender()
@@ -138,11 +144,11 @@ def test_sweep_does_not_keep_counting_a_document_stuck_on_a_failing_download(
 
     first = signing.recovery.sweep()
 
-    # the confirmation to `firmato` itself moved something, and it succeeded, so
+    # the confirmation to `signed` itself moved something, and it succeeded, so
     # unconfirmed stays zero even though the download that follows keeps failing.
     assert first == SweepResult(touched=1, unconfirmed=0)
-    quadro = _framework_of(clean, freelancer_id)
-    assert (quadro.stato, quadro.signed_pdf) == ("firmato", None)
+    framework = _framework_of(clean, freelancer_id)
+    assert (framework.status, framework.signed_pdf) == ("signed", None)
 
     fake.fail("download", 500, "Internal server error")
 
@@ -158,7 +164,7 @@ def test_sweep_counts_an_unreachable_documenso_as_unconfirmed_not_touched(
     clean: Session,
 ) -> None:
     """REB-431: Documenso not answering at all during the confirmation still leaves the
-    document `inviato`, as before, but the sweep no longer looks the same as one with
+    document `sent`, as before, but the sweep no longer looks the same as one with
     nothing to do: the attempt counts as `unconfirmed`, not `touched`, so a dead network
     shows up instead of «0 documenti ripresi» printed every ten minutes with nothing to
     say why."""
@@ -172,7 +178,7 @@ def test_sweep_counts_an_unreachable_documenso_as_unconfirmed_not_touched(
     result = _signing(clean, renderer, fake, sender).recovery.sweep()
 
     assert result == SweepResult(touched=0, unconfirmed=1)
-    assert _framework_of(clean, freelancer_id).stato == "inviato"
+    assert _framework_of(clean, freelancer_id).status == "sent"
 
 
 def test_sweep_counts_a_refused_token_as_unconfirmed_not_touched(clean: Session) -> None:
@@ -189,7 +195,7 @@ def test_sweep_counts_a_refused_token_as_unconfirmed_not_touched(clean: Session)
     result = _signing(clean, renderer, fake, sender).recovery.sweep()
 
     assert result == SweepResult(touched=0, unconfirmed=1)
-    assert _framework_of(clean, freelancer_id).stato == "inviato"
+    assert _framework_of(clean, freelancer_id).status == "sent"
 
 
 def test_sweep_on_an_environment_with_no_documenso_configured_counts_nothing(
@@ -197,7 +203,7 @@ def test_sweep_on_an_environment_with_no_documenso_configured_counts_nothing(
 ) -> None:
     """REB-431: a preview with signing off is a routine state, not a failure -- it must
     not inflate `unconfirmed` merely because every document `_to_finish` finds stays
-    `inviato`."""
+    `sent`."""
     admin_id, freelancer_id, company_id = _setup(clean)
     renderer, fake, sender = FakeRenderer(draft=False), FakeDocumenso(), RecordingSender()
     _sent(clean, renderer, fake, sender, freelancer_id, company_id, admin_id)
@@ -207,8 +213,8 @@ def test_sweep_on_an_environment_with_no_documenso_configured_counts_nothing(
     assert result == SweepResult(touched=0, unconfirmed=0)
 
 
-def test_confirm_completion_marks_the_match_da_collegare(clean: Session) -> None:
-    """The commit that turns a match `attivo` also marks its link to Pigro due, so the
+def test_confirm_completion_marks_the_match_to_link(clean: Session) -> None:
+    """The commit that turns a match `active` also marks its link to Pigro due, so the
     sweep finds it whether or not anything links it now."""
     renderer, fake, sender = FakeRenderer(draft=False), FakeDocumenso(), RecordingSender()
     match_id, letter, envelope = _letter_out(clean, renderer, fake, sender)
@@ -217,9 +223,9 @@ def test_confirm_completion_marks_the_match_da_collegare(clean: Session) -> None
     assert _signing(clean, renderer, fake, sender).recovery._confirm_completion(letter.id) is True
 
     match = _match_row(clean, match_id)
-    assert (match.stato, match.pigro_stato, match.pigro_attempted_at) == (
-        "attivo",
-        "da_collegare",
+    assert (match.status, match.pigro_status, match.pigro_attempted_at) == (
+        "active",
+        "to_link",
         None,
     )
 
@@ -237,12 +243,12 @@ def test_finish_links_a_match_that_just_turned_active(clean: Session) -> None:
     assert signing.recovery.finish(letter.id) is True
 
     match = _match_row(clean, match_id)
-    assert (match.stato, match.pigro_stato, match.pigro_url) == ("attivo", "collegato", DEAL_URL)
+    assert (match.status, match.pigro_status, match.pigro_url) == ("active", "linked", DEAL_URL)
     [call] = http.calls
     assert call[:2] == ("PUT", f"{PIGRO}/api/rebase/engagements/{match_id}")
     # The signature's own steps ran all the same: the sealed copy stored and mailed.
     stored = _letter_of(clean, match_id)
-    assert (stored.stato, stored.signed_pdf) == ("firmato", fake.signed_pdf(envelope))
+    assert (stored.status, stored.signed_pdf) == ("signed", fake.signed_pdf(envelope))
 
     signing.recovery.finish(letter.id)
 
@@ -252,7 +258,7 @@ def test_finish_links_a_match_that_just_turned_active(clean: Session) -> None:
 
 def test_finish_does_not_link_a_refused_letter(clean: Session) -> None:
     """`_confirm_completion` answers `True` for a rejection too: the match's state, read
-    again, decides, and a match still `in_firma` is never handed to `link`."""
+    again, decides, and a match still `awaiting_signature` is never handed to `link`."""
     renderer, fake, sender = FakeRenderer(draft=False), FakeDocumenso(), RecordingSender()
     match_id, letter, envelope = _letter_out(clean, renderer, fake, sender)
     fake.reject(envelope, "Il compenso non è quello concordato")
@@ -264,8 +270,8 @@ def test_finish_does_not_link_a_refused_letter(clean: Session) -> None:
     )
 
     match = _match_row(clean, match_id)
-    assert (match.stato, match.pigro_stato) == ("in_firma", None)
-    assert _letter_of(clean, match_id).stato == "annullato"
+    assert (match.status, match.pigro_status) == ("awaiting_signature", None)
+    assert _letter_of(clean, match_id).status == "cancelled"
     assert engagements.asked == []
     assert http.calls == []
 
@@ -273,7 +279,7 @@ def test_finish_does_not_link_a_refused_letter(clean: Session) -> None:
 def test_refresh_does_not_link(clean: Session) -> None:
     """«Aggiorna stato» (and the MCP `refresh_contract`) is an admin waiting on the page:
     it applies the signature and turns the match active, but never waits on the CRM to
-    open a space. The match stays `da_collegare` for the sweep or «Riprova»."""
+    open a space. The match stays `to_link` for the sweep or «Riprova»."""
     renderer, fake, sender = FakeRenderer(draft=False), FakeDocumenso(), RecordingSender()
     match_id, letter, envelope = _letter_out(clean, renderer, fake, sender)
     fake.sign(envelope, SIGNED_AT)
@@ -282,9 +288,9 @@ def test_refresh_does_not_link(clean: Session) -> None:
 
     read = _signing(clean, renderer, fake, sender, engagements=engagements).admin.refresh(letter.id)
 
-    assert read.stato == "firmato"
+    assert read.status == "signed"
     match = _match_row(clean, match_id)
-    assert (match.stato, match.pigro_stato) == ("attivo", "da_collegare")
+    assert (match.status, match.pigro_status) == ("active", "to_link")
     assert engagements.asked == []
     assert http.calls == []
 
@@ -304,13 +310,13 @@ def test_finish_survives_any_exception_from_the_link(clean: Session) -> None:
 
     assert engagements.asked == [match_id]
     match = _match_row(clean, match_id)
-    assert (match.stato, match.pigro_stato) == ("attivo", "da_collegare")
-    assert _letter_of(clean, match_id).stato == "firmato"
+    assert (match.status, match.pigro_status) == ("active", "to_link")
+    assert _letter_of(clean, match_id).status == "signed"
 
 
 def test_finish_leaves_a_link_that_fails_for_the_sweep(clean: Session) -> None:
     """A link that raises is logged and left for the sweep, as a signed copy that is not
-    stored yet is: the signature is done, and the match waits `da_collegare`."""
+    stored yet is: the signature is done, and the match waits `to_link`."""
     renderer, fake, sender = FakeRenderer(draft=False), FakeDocumenso(), RecordingSender()
     match_id, letter, envelope = _letter_out(clean, renderer, fake, sender)
     fake.sign(envelope, SIGNED_AT)
@@ -322,11 +328,11 @@ def test_finish_leaves_a_link_that_fails_for_the_sweep(clean: Session) -> None:
 
     assert engagements.asked == [match_id]
     match = _match_row(clean, match_id)
-    assert (match.stato, match.pigro_stato) == ("attivo", "da_collegare")
+    assert (match.status, match.pigro_status) == ("active", "to_link")
     assert _letter_of(clean, match_id).signed_pdf == fake.signed_pdf(envelope)
 
 
-def test_sweep_retries_errore_matches(clean: Session) -> None:
+def test_sweep_retries_error_matches(clean: Session) -> None:
     """A match whose last attempt failed is asked again by the sweep, after the
     documents, and counted as linked."""
     renderer, fake, sender = FakeRenderer(draft=False), FakeDocumenso(), RecordingSender()
@@ -334,7 +340,7 @@ def test_sweep_retries_errore_matches(clean: Session) -> None:
     fake.sign(envelope, SIGNED_AT)
     _signing(clean, renderer, fake, sender).recovery.finish(letter.id)
     match = _match_row(clean, match_id)
-    match.pigro_stato, match.pigro_errore = "errore", CAUSE_TIMEOUT
+    match.pigro_status, match.pigro_error = "error", CAUSE_TIMEOUT
     clean.commit()
     http = RecordedPigro([(201, linked_body())])
 
@@ -344,8 +350,8 @@ def test_sweep_retries_errore_matches(clean: Session) -> None:
 
     assert result == SweepResult(touched=0, unconfirmed=0, linked=1, link_failed=0)
     match = _match_row(clean, match_id)
-    assert (match.pigro_stato, match.pigro_errore, match.pigro_url) == (
-        "collegato",
+    assert (match.pigro_status, match.pigro_error, match.pigro_url) == (
+        "linked",
         None,
         DEAL_URL,
     )
@@ -367,16 +373,16 @@ def test_sweep_links_a_signature_it_confirms_once_and_counts_a_failure(clean: Se
     assert engagements.asked == [match_id]
     assert len(http.calls) == 1
     match = _match_row(clean, match_id)
-    assert (match.stato, match.pigro_stato, match.pigro_errore) == (
-        "attivo",
-        "errore",
+    assert (match.status, match.pigro_status, match.pigro_error) == (
+        "active",
+        "error",
         CAUSE_REFUSED,
     )
 
 
 def test_sweep_without_engagements_links_nothing(clean: Session) -> None:
     """A `SigningService` built without the engagement service links nothing, as one
-    without Documenso signs nothing: the match it turns active waits `da_collegare`."""
+    without Documenso signs nothing: the match it turns active waits `to_link`."""
     renderer, fake, sender = FakeRenderer(draft=False), FakeDocumenso(), RecordingSender()
     match_id, _letter, envelope = _letter_out(clean, renderer, fake, sender)
     fake.sign(envelope, SIGNED_AT)
@@ -385,4 +391,4 @@ def test_sweep_without_engagements_links_nothing(clean: Session) -> None:
 
     assert result == SweepResult(touched=1, unconfirmed=0, linked=0, link_failed=0)
     match = _match_row(clean, match_id)
-    assert (match.stato, match.pigro_stato) == ("attivo", "da_collegare")
+    assert (match.status, match.pigro_status) == ("active", "to_link")

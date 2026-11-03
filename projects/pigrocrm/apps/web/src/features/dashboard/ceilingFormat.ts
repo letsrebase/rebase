@@ -6,17 +6,17 @@ export const sharePercent = new Intl.NumberFormat('it-IT', { style: 'percent', m
 
 /**
  * What crossing a ceiling does, in the words the regime uses. Keyed on the API's closed
- * `conseguenza` enum, so a third consequence makes this map fail to compile instead of
+ * `consequence` enum, so a third consequence makes this map fail to compile instead of
  * printing nothing. «Se la superi» before the ceiling is crossed and «Superata» after it:
  * the same sentence under a ceiling with room left would say it already happened.
  */
-const CONSEGUENZA: Record<CeilingStatus['conseguenza'], string> = {
-  esce_dall_anno_successivo: 'si esce dal regime forfettario dall’anno successivo.',
-  esce_immediatamente: 'si esce dal regime forfettario subito, nell’anno stesso.',
+const Consequence: Record<CeilingStatus['consequence'], string> = {
+  leaves_next_year: 'si esce dal regime forfettario dall’anno successivo.',
+  leaves_immediately: 'si esce dal regime forfettario subito, nell’anno stesso.',
 }
 
-export function consequence(ceiling: CeilingStatus['conseguenza'], crossed: boolean): string {
-  return `${crossed ? 'Superata:' : 'Se la superi,'} ${CONSEGUENZA[ceiling]}`
+export function consequence(ceiling: CeilingStatus['consequence'], crossed: boolean): string {
+  return `${crossed ? 'Superata:' : 'Se la superi,'} ${Consequence[ceiling]}`
 }
 
 /** The fill of a bar with room left is the ink the other charts use for what was collected
@@ -27,8 +27,8 @@ export const FILL_TONE = 2
 const FILL_CROSSED = 'var(--destructive)'
 const FILL_ALERT = 'color-mix(in oklab, var(--destructive) 45%, var(--chart-2))'
 
-export function fill(superata: boolean, alert: string | null): string | undefined {
-  if (superata) return FILL_CROSSED
+export function fill(exceeded: boolean, alert: string | null): string | undefined {
+  if (exceeded) return FILL_CROSSED
   return alert === null ? undefined : FILL_ALERT
 }
 

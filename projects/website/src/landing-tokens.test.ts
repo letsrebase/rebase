@@ -383,10 +383,10 @@ describe('landing.css text pairs', () => {
     // canvas off), and this contract measures the body ground, not the canvas.
     // If the derivation ever stopped resolving `--landing-veil`, this fails on
     // the spot rather than the loop below passing quietly on whatever it found.
-    const voci = pairs.find(([, , element]) => element.id === 'voci')
-    expect(voci).toBeDefined()
-    expect(voci?.[0]).toBe('#c50d33')
-    expect(voci?.[1]).toBe('#f1f2f3')
+    const entries = pairs.find(([, , element]) => element.id === 'entries')
+    expect(entries).toBeDefined()
+    expect(entries?.[0]).toBe('#c50d33')
+    expect(entries?.[1]).toBe('#f1f2f3')
     // And not only this one page: index.html carries the same bare kicker on
     // its light bands, two until REB-605 and four since («Cosa trovi dentro», the
     // companies, the events and the perks), and six with «Porta qualcuno» (REB-711).
@@ -421,11 +421,11 @@ describe('landing.css text pairs', () => {
       vars,
       rawVars,
     )
-    const failingVoci = preFixAll.find(
-      ([, , element]) => element.id === 'voci' && !touchesPigrocrmCss(element),
+    const failingEntries = preFixAll.find(
+      ([, , element]) => element.id === 'entries' && !touchesPigrocrmCss(element),
     )
-    expect(failingVoci?.[0]).toBe('#e5133e')
-    expect(contrastRatio(failingVoci![0], failingVoci![1])).toBeLessThan(AA_TEXT)
+    expect(failingEntries?.[0]).toBe('#e5133e')
+    expect(contrastRatio(failingEntries![0], failingEntries![1])).toBeLessThan(AA_TEXT)
 
     const heroKicker = preFixAll.find(([, , element]) => element.matches('.hero .box .kicker'))
     expect(heroKicker?.[0]).toBe('#e5133e')

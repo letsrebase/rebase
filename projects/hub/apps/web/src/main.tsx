@@ -1,5 +1,5 @@
 import { initAnalytics } from '@rebase/analytics/browser'
-import { stripEntraToken } from '@rebase/analytics/entra-token'
+import { stripVerifyToken } from '@rebase/analytics/verify-token'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { RouterProvider } from '@tanstack/react-router'
 import { StrictMode } from 'react'
@@ -10,10 +10,12 @@ import './styles/tokens.css'
 
 // Before anything else, including analytics: `initAnalytics` (below) captures a
 // pageview with the URL as its first act, so a magic-link token sitting in `?t=`
-// would already be in that event by the time the entra route ever mounts to strip it
-// itself (REB-273). A no-op on every other route. The availability mail's answer page
+// would already be in that event by the time the verify route ever mounts to strip it
+// itself (REB-273). The magic-link mails sent before the 2026-11 rename point at
+// `/hub/entra`, which redirects to `/hub/verify`: the token leaves the URL on both. A
+// no-op on every other route. The availability mail's answer page
 // carries a token of the same kind, and loses it the same way (REB-517).
-stripEntraToken(/^\/hub\/verify$/)
+stripVerifyToken(/^\/hub\/(verify|entra)$/)
 stripAnswerLink()
 
 // Once, before anything renders: `initAnalytics` decides on the hostname whether this
@@ -30,7 +32,7 @@ initAnalytics({ maskText: true, requireConsent: true })
 // Thirty seconds fresh and no refetch on focus: an admin list is a stack of infinite-query
 // pages, and refetching every loaded page each time the window regains focus (or on
 // every back navigation) is a sequential burst of requests for data that has not
-// changed. The polling queries (`Campagna`, `ModelliAi`) set their own `refetchInterval`.
+// changed. The polling queries (`Campaign`, `AiModels`) set their own `refetchInterval`.
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: 1, staleTime: 30_000, refetchOnWindowFocus: false } },
 })

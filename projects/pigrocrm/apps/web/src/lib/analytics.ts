@@ -24,29 +24,29 @@ import { tenantPrefix } from './tenant'
  * (`api-types.ts`'s own shape for a resource id) matches any one path segment: the
  * invoice's own id is not something PostHog groups the funnel by. The upload flow
  * (`POST /api/documents`) and «Nuovo da template» (`POST /api/documents/from-template`)
- * both earn `documento_creato`: the funnel's meaning is «a new document was created»,
+ * both earn `document_created`: the funnel's meaning is «a new document was created»,
  * which is true of either, not which button was pressed. Restoring a version or
  * regenerating one is deliberately left out: neither makes a document that did not
  * already exist.
  */
 const EVENTS: ReadonlyArray<readonly [string, string]> = [
-  ['POST /api/tenants', 'spazio_creato'],
-  ['POST /api/auth/verify', 'entrato_con_link'],
-  ['POST /api/auth/invite', 'entrato_con_invito'],
-  ['POST /api/users/invites', 'invito_inviato'],
-  ['POST /api/users/invites/{invitation_id}/resend', 'invito_inviato'],
-  ['DELETE /api/users/invites/{invitation_id}', 'invito_revocato'],
-  ['POST /api/customers', 'cliente_creato'],
+  ['POST /api/tenants', 'space_created'],
+  ['POST /api/auth/verify', 'signed_in_with_link'],
+  ['POST /api/auth/invite', 'signed_in_with_invitation'],
+  ['POST /api/users/invites', 'invitation_sent'],
+  ['POST /api/users/invites/{invitation_id}/resend', 'invitation_sent'],
+  ['DELETE /api/users/invites/{invitation_id}', 'invitation_revoked'],
+  ['POST /api/customers', 'customer_created'],
   // The Gmail proposals a person ticked (REB-223): one event for the batch, not one
-  // `cliente_creato` per customer, so the funnel can tell an import from typing.
-  ['POST /api/customers/from-suggestions', 'clienti_importati'],
-  ['POST /api/deals', 'deal_creato'],
-  ['POST /api/documents', 'documento_creato'],
-  ['POST /api/documents/from-template', 'documento_creato'],
-  ['POST /api/time-entries', 'ore_registrate'],
-  ['POST /api/invoices/{invoice_id}/issue', 'fattura_emessa'],
-  ['POST /api/tokens', 'assistente_collegato'],
-  ['PUT /api/aziende/{azienda_id}', 'profilo_emittente_salvato'],
+  // `customer_created` per customer, so the funnel can tell an import from typing.
+  ['POST /api/customers/from-suggestions', 'customers_imported'],
+  ['POST /api/deals', 'deal_created'],
+  ['POST /api/documents', 'document_created'],
+  ['POST /api/documents/from-template', 'document_created'],
+  ['POST /api/time-entries', 'hours_logged'],
+  ['POST /api/invoices/{invoice_id}/issue', 'invoice_issued'],
+  ['POST /api/tokens', 'assistant_connected'],
+  ['PUT /api/legal-entities/{legal_entity_id}', 'legal_entity_profile_saved'],
 ]
 
 /**
@@ -105,11 +105,11 @@ export function spaceKey(prefix: string): string {
 /** The person and the space they are in. Email and name are sent on purpose: Ivan
  *  chose to see who a session belongs to (design, «What was decided»). */
 export function identifySession(
-  user: Pick<SessionUser, 'id' | 'email' | 'nome' | 'ruolo'>,
+  user: Pick<SessionUser, 'id' | 'email' | 'name' | 'role'>,
   prefix: string = tenantPrefix,
 ): void {
-  identifyUser(user.id, { email: user.email, nome: user.nome, ruolo: user.ruolo })
-  identifyGroup('spazio', spaceKey(prefix))
+  identifyUser(user.id, { email: user.email, name: user.name, role: user.role })
+  identifyGroup('space', spaceKey(prefix))
 }
 
 /** Forgets the person: on logout, and when the session vanished without one. */

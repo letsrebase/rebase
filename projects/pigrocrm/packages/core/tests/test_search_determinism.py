@@ -1,7 +1,7 @@
 """**Criterion 4.** The same database and the same term produce a byte-identical response
 on twenty runs, and the order that makes that true is total.
 
-The third sort key (`id DESC`) exists for this and only this: `punteggio DESC,
+The third sort key (`id DESC`) exists for this and only this: `score DESC,
 updated_at DESC` is not a total order, and on this schema it is not even close to one.
 `TimestampMixin` gives `updated_at` a `server_default` of `func.now()`, which Postgres
 resolves to `transaction_timestamp()` -- constant for a whole transaction -- so *every* row
@@ -49,7 +49,7 @@ from collections import Counter
 from typing import Any
 
 import pytest
-from corpus import KNOWN_PARTITA_IVA, KNOWN_RAGIONE_SOCIALE, SMALL, build_corpus
+from corpus import KNOWN_LEGAL_NAME, KNOWN_VAT_NUMBER, SMALL, build_corpus
 from sqlalchemy import insert, text
 from sqlalchemy.orm import Session
 
@@ -108,7 +108,7 @@ _ACCESS_PATHS = (
     ("no bitmap scan", "off", "on", "off"),
 )
 
-_FIXED_GROUP_ORDER = ["customer", "person", "deal", "document", "invoice", "attivita"]
+_FIXED_GROUP_ORDER = ["customer", "person", "deal", "document", "invoice", "task"]
 
 
 def _set_access_path(session: Session, seqscan: str, indexscan: str, bitmapscan: str) -> None:
@@ -135,10 +135,10 @@ def _reshuffle(session: Session) -> int:
     """
     moved = 0
     for table, column in (
-        ("customers", "nazione"),
-        ("people", "nome"),
-        ("deals", "nome"),
-        ("documents", "titolo"),
+        ("customers", "country"),
+        ("people", "first_name"),
+        ("deals", "name"),
+        ("documents", "title"),
     ):
         moved += session.execute(
             text(
@@ -149,7 +149,7 @@ def _reshuffle(session: Session) -> int:
     return moved
 
 
-def _renderings(session: Session, term: str, limite: int = 5) -> Counter[bytes]:
+def _renderings(session: Session, term: str, limit: int = 5) -> Counter[bytes]:
     """`_RUNS` responses, as bytes, under a rotating access path and a moving heap.
 
     Both disturbances are here because one of them is not enough, and that is a measurement
@@ -161,7 +161,7 @@ def _renderings(session: Session, term: str, limite: int = 5) -> Counter[bytes]:
     changes the order for a different reason.
     """
     service = SearchService(session)
-    query = SearchQuery(termine=term, limite=limite)
+    query = SearchQuery(term=term, limit=limit)
     seen: Counter[bytes] = Counter()
     for run in range(_RUNS):
         _, seqscan, indexscan, bitmapscan = _ACCESS_PATHS[run % len(_ACCESS_PATHS)]
@@ -175,7 +175,7 @@ def _renderings(session: Session, term: str, limite: int = 5) -> Counter[bytes]:
 def _assert_one_rendering(seen: Counter[bytes], term: str) -> None:
     assert len(seen) == 1, (
         f"{len(seen)} distinct responses across {_RUNS} runs of {term!r} -- the order is "
-        "not total. Check that every branch orders by punteggio DESC, updated_at DESC, "
+        "not total. Check that every branch orders by score DESC, updated_at DESC, "
         "id DESC.\n"
         + "\n".join(
             f"  seen {count}x: {rendering.decode()[:400]}" for rendering, count in seen.items()
@@ -192,14 +192,14 @@ def _assert_the_response_is_worth_comparing(rendering: bytes) -> None:
     could move.
     """
     payload = json.loads(rendering)
-    groups = payload["gruppi"]
+    groups = payload["groups"]
     assert [group["entity"] for group in groups] == _FIXED_GROUP_ORDER, payload
     hits = [hit for group in groups for hit in group["hits"]]
     assert len(hits) > 1, (
         "the compared responses carry fewer than two hits between them, so nothing in them "
         f"could have been ordered differently:\n{rendering.decode()}"
     )
-    assert all(hit["etichetta"] and hit["punteggio"] for hit in hits), rendering.decode()
+    assert all(hit["label"] and hit["score"] for hit in hits), rendering.decode()
 
 
 def test_repeated_runs_under_four_access_paths_produce_one_byte_identical_response(
@@ -284,7 +284,7 @@ def test_every_branch_orders_by_score_then_updated_at_then_id(
 def test_the_first_two_ordering_keys_really_do_tie(db_session: Session) -> None:
     """The other half of the argument above: the third key is load-bearing, not decoration.
 
-    If `punteggio, updated_at` were already unique, `id DESC` would never break anything and
+    If `score, updated_at` were already unique, `id DESC` would never break anything and
     every assertion about it would pass no matter what it said. They are not: the score is a
     four-place decimal off a four-rung ladder, and `updated_at` defaults to
     `transaction_timestamp()`, which is one value for the whole build. Both halves are
@@ -320,7 +320,7 @@ def test_the_property_holds_for_a_term_with_nothing_but_ties(db_session: Session
     transaction so they share `updated_at` to the microsecond: score and second key are both
     ties for every pair, and only `id DESC` can order them.
 
-    `partita_iva`, `codice_fiscale` and `email` are left NULL on purpose. `field_score`
+    `vat_number`, `tax_code` and `email` are left NULL on purpose. `field_score`
     scores a NULL column zero and `GREATEST` then hides it behind the name's score, so all
     two hundred rows carry exactly one non-zero field score and it is the same number.
     """
@@ -329,8 +329,8 @@ def test_the_property_holds_for_a_term_with_nothing_but_ties(db_session: Session
         [
             {
                 "id": uuid7(),
-                "ragione_sociale": "Identica Srl",
-                "nazione": "IT",
+                "legal_name": "Identica Srl",
+                "country": "IT",
                 "custom_fields": {},
             }
             for _ in range(200)
@@ -346,11 +346,11 @@ def test_the_property_holds_for_a_term_with_nothing_but_ties(db_session: Session
     # And the group really did fill up, so the five that were compared were five chosen out
     # of two hundred rather than the only five there were.
     results = SearchService(db_session).search_everything(
-        SearchQuery(termine="Identica", limite=5), READONLY
+        SearchQuery(term="Identica", limit=5), READONLY
     )
-    customers = next(group for group in results.gruppi if group.entity == "customer")
+    customers = next(group for group in results.groups if group.entity == "customer")
     assert len(customers.hits) == 5
-    assert customers.totale == 200
+    assert customers.total == 200
 
 
 def test_the_property_survives_the_rows_being_physically_reordered(db_session: Session) -> None:
@@ -358,7 +358,7 @@ def test_the_property_survives_the_rows_being_physically_reordered(db_session: S
 
     Rewriting half the matching rows moves their heap tuples to the end of the table, so the
     order a sequential scan hands back is no longer the order it handed back a moment ago.
-    Nothing about the *answer* changes: the `UPDATE` writes each row's own `nazione` back
+    Nothing about the *answer* changes: the `UPDATE` writes each row's own `country` back
     over itself, and it is issued as raw SQL, so SQLAlchemy's `onupdate` for `updated_at`
     does not fire and every ordering key is untouched. If the sequence were coming from the
     heap rather than from `ORDER BY`, it would move here.
@@ -368,8 +368,8 @@ def test_the_property_survives_the_rows_being_physically_reordered(db_session: S
         [
             {
                 "id": uuid7(),
-                "ragione_sociale": f"Riordinabile Srl {index:03d}",
-                "nazione": "IT",
+                "legal_name": f"Riordinabile Srl {index:03d}",
+                "country": "IT",
                 "custom_fields": {},
             }
             for index in range(200)
@@ -378,14 +378,14 @@ def test_the_property_survives_the_rows_being_physically_reordered(db_session: S
     db_session.flush()
 
     service = SearchService(db_session)
-    query = SearchQuery(termine="Riordinabile", limite=5)
+    query = SearchQuery(term="Riordinabile", limit=5)
     before = service.search_everything(query, READONLY).model_dump_json().encode()
 
     moved = db_session.execute(
         text(
-            "UPDATE customers SET nazione = nazione "
-            "WHERE ragione_sociale LIKE 'Riordinabile Srl %%' "
-            "AND right(ragione_sociale, 1) IN ('0', '2', '4', '6', '8')"
+            "UPDATE customers SET country = country "
+            "WHERE legal_name LIKE 'Riordinabile Srl %%' "
+            "AND right(legal_name, 1) IN ('0', '2', '4', '6', '8')"
         )
     ).rowcount
     assert moved == 100, f"the reshuffle moved {moved} rows, not the half it meant to"
@@ -399,10 +399,10 @@ def test_the_property_survives_the_rows_being_physically_reordered(db_session: S
     # Non-vacuity: five hits chosen out of two hundred, so there was a choice to get wrong.
     customers = next(
         group
-        for group in service.search_everything(query, READONLY).gruppi
+        for group in service.search_everything(query, READONLY).groups
         if group.entity == "customer"
     )
-    assert (len(customers.hits), customers.totale) == (5, 200)
+    assert (len(customers.hits), customers.total) == (5, 200)
 
 
 def test_an_exact_vat_number_puts_that_customer_first(db_session: Session) -> None:
@@ -415,42 +415,40 @@ def test_an_exact_vat_number_puts_that_customer_first(db_session: Session) -> No
     build_corpus(db_session, SMALL)
     db_session.add(
         Customer(
-            ragione_sociale=f"Studio {KNOWN_PARTITA_IVA} Srl",
-            nazione="IT",
+            legal_name=f"Studio {KNOWN_VAT_NUMBER} Srl",
+            country="IT",
             custom_fields={},
         )
     )
     db_session.flush()
 
     results = SearchService(db_session).search_everything(
-        SearchQuery(termine=KNOWN_PARTITA_IVA), READONLY
+        SearchQuery(term=KNOWN_VAT_NUMBER), READONLY
     )
-    customers = next(group for group in results.gruppi if group.entity == "customer")
+    customers = next(group for group in results.groups if group.entity == "customer")
 
-    labels = [hit.etichetta for hit in customers.hits]
+    labels = [hit.label for hit in customers.hits]
     assert len(labels) >= 2, f"only {labels} matched, so 'first' is not a ranking claim"
-    assert labels[0] == KNOWN_RAGIONE_SOCIALE, (
+    assert labels[0] == KNOWN_LEGAL_NAME, (
         f"the exact P.IVA did not come first: {labels}, scores "
-        f"{[str(hit.punteggio) for hit in customers.hits]}"
+        f"{[str(hit.score) for hit in customers.hits]}"
     )
-    assert customers.hits[0].campo == "partita_iva"
+    assert customers.hits[0].field == "vat_number"
 
 
 def test_a_prefix_outranks_a_mid_word_match(db_session: Session) -> None:
     """§16 criterion 4's second named expectation, at the service level rather than the
     expression level (task A7 covers the expression)."""
-    db_session.add(Customer(ragione_sociale="Vulcano Impianti Srl", nazione="IT", custom_fields={}))
-    db_session.add(
-        Customer(ragione_sociale="Grande Vulcanologia Spa", nazione="IT", custom_fields={})
-    )
+    db_session.add(Customer(legal_name="Vulcano Impianti Srl", country="IT", custom_fields={}))
+    db_session.add(Customer(legal_name="Grande Vulcanologia Spa", country="IT", custom_fields={}))
     db_session.flush()
 
     results = SearchService(db_session).search_everything(
-        SearchQuery(termine="Vulcan", limite=5), READONLY
+        SearchQuery(term="Vulcan", limit=5), READONLY
     )
     labels = [
-        hit.etichetta
-        for hit in next(group for group in results.gruppi if group.entity == "customer").hits
+        hit.label
+        for hit in next(group for group in results.groups if group.entity == "customer").hits
     ]
 
     # Both have to be shown before their order can mean anything: a floor that discarded the
@@ -468,13 +466,11 @@ def test_the_group_order_is_fixed_and_not_by_count(db_session: Session) -> None:
     pass against a service that sorted its groups by size.
     """
     build_corpus(db_session, SMALL)
-    results = SearchService(db_session).search_everything(
-        SearchQuery(termine="Ingegneria"), READONLY
-    )
+    results = SearchService(db_session).search_everything(SearchQuery(term="Ingegneria"), READONLY)
 
-    assert [group.entity for group in results.gruppi] == _FIXED_GROUP_ORDER
-    by_count = [group.entity for group in sorted(results.gruppi, key=lambda group: -group.totale)]
+    assert [group.entity for group in results.groups] == _FIXED_GROUP_ORDER
+    by_count = [group.entity for group in sorted(results.groups, key=lambda group: -group.total)]
     assert by_count != _FIXED_GROUP_ORDER, (
         "on this term the fixed order and the by-count order coincide, so the assertion "
-        f"above cannot tell them apart: {[(g.entity, g.totale) for g in results.gruppi]}"
+        f"above cannot tell them apart: {[(g.entity, g.total) for g in results.groups]}"
     )

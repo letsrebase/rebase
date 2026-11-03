@@ -3,7 +3,7 @@
 Mastro composed, previewed and sent a request for approval of named dates, in the form the
 contract's clause asks for. PigroCRM sends mail from the user's own Gmail only on a person's
 action (`gmail/send.py`), so this module stops short of sending, on purpose: it **composes**
-the request and **prepares** it, which records the named days as `proposto` and files the
+the request and **prepares** it, which records the named days as `proposed` and files the
 message as a draft of the customer in one transaction; the person reads it and presses Invia
 on the draft, which is the one existing send path. Nothing here calls Gmail.
 
@@ -17,7 +17,7 @@ the text is one: it names the contract, lists the dates with the part of the day
 work is, and asks for a written reply before the first date.
 """
 
-from datetime import date
+import datetime as dt
 from decimal import Decimal
 from typing import Annotated
 from uuid import UUID
@@ -74,11 +74,11 @@ class ApprovalRequestDay(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    data: date
-    quantita: Decimal = Field(max_digits=4, decimal_places=2)
-    descrizione: SafeStr = Field(min_length=1)
+    date: dt.date
+    quantity: Decimal = Field(max_digits=4, decimal_places=2)
+    description: SafeStr = Field(min_length=1)
 
-    @field_validator("quantita")
+    @field_validator("quantity")
     @classmethod
     def _full_or_half(cls, value: Decimal) -> Decimal:
         if value not in (FULL, HALF):
@@ -93,7 +93,7 @@ class ApprovalRequestCompose(BaseModel):
 
     @model_validator(mode="after")
     def _one_row_per_date(self) -> "ApprovalRequestCompose":
-        dates = [day.data for day in self.days]
+        dates = [day.date for day in self.days]
         if len(set(dates)) != len(dates):
             raise ValueError("una data e' indicata due volte")
         return self
@@ -102,8 +102,8 @@ class ApprovalRequestCompose(BaseModel):
 class ApprovalRequestMessage(BaseModel):
     """The subject and body the request would carry: what the person previews and edits."""
 
-    oggetto: str
-    corpo: str
+    subject: str
+    body: str
 
 
 class ApprovalRequestPrepare(ApprovalRequestCompose):
@@ -113,8 +113,8 @@ class ApprovalRequestPrepare(ApprovalRequestCompose):
     cc_addresses: list[Annotated[SafeStr, Field(max_length=EMAIL_ADDRESS_MAX_LENGTH)]] = Field(
         default_factory=list, max_length=ADDRESSES_MAX
     )
-    oggetto: SafeStr = Field(min_length=1, max_length=SUBJECT_MAX_LENGTH)
-    corpo: SafeStr = Field(min_length=1, max_length=BODY_MAX_LENGTH)
+    subject: SafeStr = Field(min_length=1, max_length=SUBJECT_MAX_LENGTH)
+    body: SafeStr = Field(min_length=1, max_length=BODY_MAX_LENGTH)
 
 
 class ApprovalRequestPrepared(BaseModel):
@@ -124,32 +124,32 @@ class ApprovalRequestPrepared(BaseModel):
     work_units: list[WorkUnitRead]
 
 
-def italian_date(giorno: date) -> str:
+def italian_date(day: dt.date) -> str:
     """`lunedì 2 novembre 2026`, spelled here rather than by a locale lookup: an ICU or libc
     default that changed would reword a request already in a client's inbox."""
-    return f"{WEEKDAYS[giorno.weekday()]} {giorno.day} {MONTHS[giorno.month - 1]} {giorno.year}"
+    return f"{WEEKDAYS[day.weekday()]} {day.day} {MONTHS[day.month - 1]} {day.year}"
 
 
-def compose(titolo: str, days: list[ApprovalRequestDay]) -> ApprovalRequestMessage:
-    """The request for `days` of the contract `titolo`, oldest date first (the order a
+def compose(title: str, days: list[ApprovalRequestDay]) -> ApprovalRequestMessage:
+    """The request for `days` of the contract `title`, oldest date first (the order a
     reader confirming a week expects), asking for a written reply before the first."""
-    ordered = sorted(days, key=lambda day: day.data)
+    ordered = sorted(days, key=lambda day: day.date)
     rows = [
-        f"- {italian_date(day.data)}: "
-        f"{'giornata intera' if day.quantita == FULL else 'mezza giornata'}, {day.descrizione}"
+        f"- {italian_date(day.date)}: "
+        f"{'giornata intera' if day.quantity == FULL else 'mezza giornata'}, {day.description}"
         for day in ordered
     ]
-    corpo = (
+    body = (
         "Buongiorno,\n\n"
-        f"come previsto dal contratto «{titolo}», le chiedo l'approvazione preventiva delle "
+        f"come previsto dal contratto «{title}», le chiedo l'approvazione preventiva delle "
         "seguenti giornate:\n\n"
         + "\n".join(rows)
         + "\n\nLe chiedo di confermarmi per iscritto, rispondendo a questa email, entro "
-        f"{italian_date(ordered[0].data)}, indicando le date approvate.\n\n"
+        f"{italian_date(ordered[0].date)}, indicando le date approvate.\n\n"
         "Grazie."
     )
     return ApprovalRequestMessage(
-        oggetto=f"Richiesta di approvazione delle giornate: {titolo}", corpo=corpo
+        subject=f"Richiesta di approvazione delle giornate: {title}", body=body
     )
 
 
@@ -162,14 +162,14 @@ class ApprovalRequestService:
         contract = ContractRepository(self.session).get(contract_id)
         if contract is None:
             raise NotFound("contract", contract_id)
-        return contract.titolo, contract.customer_id
+        return contract.title, contract.customer_id
 
     def compose(
         self, contract_id: UUID, data: ApprovalRequestCompose, actor: Actor
     ) -> ApprovalRequestMessage:
         """The text a request would carry, written and not stored: a read."""
-        titolo, _ = self._contract(contract_id)
-        return compose(titolo, list(data.days))
+        title, _ = self._contract(contract_id)
+        return compose(title, list(data.days))
 
     def prepare(
         self, contract_id: UUID, data: ApprovalRequestPrepare, actor: Actor
@@ -209,16 +209,16 @@ class ApprovalRequestService:
                 days.create(
                     WorkUnitCreate(
                         contract_id=contract_id,
-                        data=day.data,
-                        quantita=day.quantita,
-                        descrizione=day.descrizione,
-                        stato="proposto",
+                        date=day.date,
+                        quantity=day.quantity,
+                        description=day.description,
+                        status="proposed",
                     ),
                     actor,
                     "Richiesta di approvazione preparata",
                     commit=False,
                 )
-                for day in sorted(data.days, key=lambda day: day.data)
+                for day in sorted(data.days, key=lambda day: day.date)
             ]
             draft = EmailDraftService(self.session, settings=self.settings).create(
                 EmailDraftCreate(
@@ -226,8 +226,8 @@ class ApprovalRequestService:
                     entity_id=customer_id,
                     to_addresses=list(data.to_addresses),
                     cc_addresses=list(data.cc_addresses),
-                    subject=data.oggetto,
-                    body_markdown=data.corpo,
+                    subject=data.subject,
+                    body_markdown=data.body,
                 ),
                 actor,
             )
@@ -238,17 +238,17 @@ class ApprovalRequestService:
         return ApprovalRequestPrepared(draft=draft, work_units=proposed)
 
     def _taken(self, contract_id: UUID, data: ApprovalRequestPrepare) -> list[str]:
-        asked = {day.data for day in data.days}
+        asked = {day.date for day in data.days}
         live = WorkUnitRepository(self.session).list_labelled(
             WorkUnitListQuery(
                 contract_id=contract_id,
-                da=min(asked),
-                a=max(asked),
+                date_from=min(asked),
+                date_to=max(asked),
                 limit=LIST_LIMIT_MAX,
             )
         )
         return sorted(
-            work_unit.data.isoformat()
+            work_unit.date.isoformat()
             for work_unit, _, _ in live
-            if work_unit.data in asked and work_unit.stato not in ("revocato", "rifiutato")
+            if work_unit.date in asked and work_unit.status not in ("revoked", "rejected")
         )

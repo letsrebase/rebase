@@ -47,7 +47,7 @@ from rebase_core.card_eval_checks import (
 )
 from rebase_core.card_guard import KnownIdentifiers
 from rebase_core.card_judge import CardJudgement, JudgeFailure, judge
-from rebase_core.card_persona import known_identifiers
+from rebase_core.card_person import known_identifiers
 from rebase_core.card_prompt import PROMPT_VERSION, PROMPT_VERSIONS
 from rebase_core.card_writer import CardWriter
 from rebase_core.cv_text import CvText
@@ -154,7 +154,7 @@ class Inputs:
     read now: the CV, the position, the stored sources (no network), the hub's facts."""
 
     cv: CvText
-    posizione: str | None
+    job_title: str | None
     sources: SourceSet
     facts: HubFacts
     known: KnownIdentifiers
@@ -169,13 +169,13 @@ def inputs_of(session: Session, freelancer_id: UUID) -> Inputs:
     sources = default_source_service(session).current(freelancer_id)
     facts = hub_facts(session, freelancer_id)
     known = known_identifiers(
-        owner.cognome if owner is not None else "",
-        owner.nome if owner is not None else "",
+        owner.last_name if owner is not None else "",
+        owner.first_name if owner is not None else "",
         row.links,
         sources,
         facts,
     )
-    return Inputs(cv, row.posizione, sources, facts, known)
+    return Inputs(cv, row.job_title, sources, facts, known)
 
 
 @dataclass(frozen=True)
@@ -204,9 +204,9 @@ def check(card: Card, inputs: Inputs, today: date) -> Checked:
     return Checked(
         years=check_years(
             card,
-            inputs.cv.testo,
+            inputs.cv.text,
             hub_completed_months=inputs.facts.completed_months,
-            anni_admin=inputs.facts.anni_admin,
+            experience_years_admin=inputs.facts.experience_years_admin,
             today=today,
         ),
         leaks=anonymity_leaks(card, inputs.known),
@@ -225,7 +225,7 @@ def verdicts(checked: Checked, judgement: CardJudgement | None) -> dict[str, dic
             for name, item in judgement.fields().items()
         }
     if checked.years.ok is not None:
-        result["anni"] = {
+        result["experience_years"] = {
             "verdict": "supported" if checked.years.ok else "contradicted",
             "reason": f"years recomputed from the dated periods ({checked.years.mode})",
             "by": BY_RULE,
@@ -293,10 +293,11 @@ def aggregate(results: Sequence[CardEvalResult]) -> dict[str, Any]:
         "leaks_rule": sum(_leaks_rule(result) for result in results),
         "leaks_judge": sum(_leaks_judge(result) for result in results),
         "leaks": sum(_leaks_rule(r) or _leaks_judge(r) for r in results),
-        # From the rules' own record, so a result of the manual evaluation (whose `anni_ok`
+        # From the rules' own record, so a result of the manual evaluation (whose
+        # `experience_years_ok`
         # was a comparison with an expected card) counts for nothing here.
-        "anni_checked": sum(_years_ok(result) is not None for result in results),
-        "anni_ok": sum(_years_ok(result) is True for result in results),
+        "experience_years_checked": sum(_years_ok(result) is not None for result in results),
+        "experience_years_ok": sum(_years_ok(result) is True for result in results),
         "latency_ms_avg": _average([result.latency_ms for result in results]),
         "judge_latency_ms_avg": _average([result.judge_latency_ms for result in results]),
         "cost_eur": str(_sum([result.cost_eur for result in results])),
@@ -309,12 +310,12 @@ def _rate(numerator: int, denominator: int) -> float | None:
 
 
 # What each compared measure is, and whether more of it is better: «supportati» and
-# «anni» are shares, the rest counts or shares of what is wrong.
+# «experience_years» are shares, the rest counts or shares of what is wrong.
 MEASURES: tuple[tuple[str, bool], ...] = (
     ("supported_rate", True),
     ("contradicted_rate", False),
     ("invented_per_profile", False),
-    ("anni_ok_rate", True),
+    ("experience_years_ok_rate", True),
     ("guard_failures", False),
     ("leaks", False),
 )
@@ -326,7 +327,9 @@ def _measures(totals: dict[str, Any]) -> dict[str, float | None]:
         "supported_rate": _rate(totals["supported"], totals["fields"]),
         "contradicted_rate": _rate(totals["contradicted"], totals["fields"]),
         "invented_per_profile": _rate(totals["invented"], totals["judged"]),
-        "anni_ok_rate": _rate(totals["anni_ok"], totals["anni_checked"]),
+        "experience_years_ok_rate": _rate(
+            totals["experience_years_ok"], totals["experience_years_checked"]
+        ),
         "guard_failures": float(totals["guard_failures"]) if ran else None,
         "leaks": float(totals["leaks"]) if ran else None,
     }
@@ -598,7 +601,7 @@ def _evaluate(
         found = inputs_of(session, freelancer_id)
         checked = check(card, found, today)
         result.checks = checked.as_json()
-        result.anni_ok = checked.years.ok
+        result.experience_years_ok = checked.years.ok
         judge_clock = time.perf_counter()
         judged: CardJudgement | None = None
         judge_failure: JudgeFailure | Literal["unavailable"] | None = None
@@ -607,7 +610,7 @@ def _evaluate(
                 judge_for(freelancer_id),
                 card,
                 found.cv,
-                found.posizione,
+                found.job_title,
                 found.sources,
                 found.facts,
                 today,
@@ -666,7 +669,7 @@ LABELS = {
     "supported_rate": "campi supportati",
     "contradicted_rate": "campi contraddetti",
     "invented_per_profile": "inventati per scheda",
-    "anni_ok_rate": "anni ricalcolati",
+    "experience_years_ok_rate": "anni ricalcolati",
     "guard_failures": "respinte dalla guardia",
     "leaks": "schede con identificativi",
 }
@@ -700,7 +703,7 @@ def format_report(run: CardEvalRun, results: Sequence[CardEvalResult]) -> str:
         )
     lines += [
         "",
-        f"{'profilo':<22}{'campi':<8}{'contr':<7}{'inv':<5}{'anni':<6}{'guardia':<9}{'anonima':<9}"
+        f"{'profile':<22}{'fields':<8}{'contr':<7}{'inv':<5}{'experience_years':<6}{'guardia':<9}{'anonima':<9}"
         f"{'ms':>7}{'euro':>9}{'giudice':>9}",
     ]
     for result in results:
@@ -722,7 +725,7 @@ def format_report(run: CardEvalRun, results: Sequence[CardEvalResult]) -> str:
             note += f"  [giudice: {result.judgement['failure']}]"
         lines.append(
             f"{f'{result.label} {str(result.freelancer_id)[:8]}':<22}{supported:<8}"
-            f"{contradicted:<7}{invented:<5}{_mark(result.anni_ok):<6}"
+            f"{contradicted:<7}{invented:<5}{_mark(result.experience_years_ok):<6}"
             f"{_mark(result.guard_clean):<9}{anonymous:<9}"
             f"{result.latency_ms if result.latency_ms is not None else '-':>7}"
             f"{_euro(result.cost_eur):>9}{_euro(result.judge_cost_eur):>9}" + note
@@ -739,7 +742,8 @@ def format_report(run: CardEvalRun, results: Sequence[CardEvalResult]) -> str:
         f"({_percent(summary['supported'], fields)}), non supportati {summary['unsupported']}, "
         f"contraddetti {summary['contradicted']} in {summary['contradicted_profiles']} schede, "
         f"inventati {summary['invented']}",
-        f"  anni ricalcolati dal CV {summary['anni_ok']}/{summary['anni_checked']} "
+        f"  anni ricalcolati dal CV {summary['experience_years_ok']}/"
+        f"{summary['experience_years_checked']} "
         f"(gli altri al giudice); {summary['guard_failures']} respinte dalla guardia; "
         f"schede con identificativi {summary['leaks']} "
         f"(regole {summary['leaks_rule']}, giudice {summary['leaks_judge']})",

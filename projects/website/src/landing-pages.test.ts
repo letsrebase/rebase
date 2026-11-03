@@ -175,7 +175,7 @@ describe('index.html', () => {
     // keeps its claim, its lead, its two doors and its fine print, and between the lead
     // and the doors sits the builder: one line, the composer with «Proponi il team»
     // inside it, the four examples. The form is a plain GET to the hub's page, which
-    // fills its box from `?descrizione=`, so a visitor without JavaScript still gets a
+    // fills its box from `?description=`, so a visitor without JavaScript still gets a
     // team one page later; team.js turns the same form into a call to the hub's API.
     const hero = page.match(/<section class="hero">([\s\S]*?)<\/section>/)?.[1] ?? ''
     const order = ['<h1 class="measure-tight">', '<p class="lead measure">', '<form class="team-form', '<div class="team-result', '<p class="actions">', 'Sei già dentro?']
@@ -185,23 +185,23 @@ describe('index.html', () => {
     expect(hero).toMatch(/<form class="team-form ph-no-capture" action="\/hub\/team" method="get" data-team data-result="#team-result">/)
     expect(hero).toContain('<p class="team-claim">Hai un progetto? Descrivilo: <span class="accent">ti proponiamo il team.</span></p>')
     // The hub page's own four examples, each a description the API takes as it stands.
-    expect(hero.match(/<button type="button" class="chip" data-example="[^"]{40,}" data-persone="[1-9]">[^<]+<\/button>/g)).toHaveLength(4)
+    expect(hero.match(/<button type="button" class="chip" data-example="[^"]{40,}" data-people="[1-9]">[^<]+<\/button>/g)).toHaveLength(4)
     expect(hero).toContain('>Web app per una fintech</button>')
     expect(hero).toContain('>Un FDE nel team di un cliente</button>')
     // The box: the hub's placeholder, its own label for a screen reader, and the
     // lengths the API takes, which is what a browser enforces without the script.
-    expect(hero).toMatch(/<label class="sr-only" for="team-descrizione">Descrizione del progetto<\/label>/)
+    expect(hero).toMatch(/<label class="sr-only" for="team-description">Descrizione del progetto<\/label>/)
     expect(hero).toMatch(
-      /<textarea id="team-descrizione" name="descrizione" rows="3" required minlength="40" maxlength="4000" placeholder="Descrivi il progetto: cosa va fatto, per quanto tempo, dove, con che tecnologie"><\/textarea>/,
+      /<textarea id="team-description" name="description" rows="3" required minlength="40" maxlength="4000" placeholder="Descrivi il progetto: cosa va fatto, per quanto tempo, dove, con che tecnologie"><\/textarea>/,
     )
     expect(hero).toMatch(/<p class="team-error" id="team-error" role="alert"><\/p>/)
     // The headcount beside the button, as the hub's page asks it: ten options, one selected.
-    expect(hero).toMatch(/<label class="composer-count">\s*<span>Quante persone<\/span>\s*<select name="persone">/)
+    expect(hero).toMatch(/<label class="composer-count">\s*<span>Quante persone<\/span>\s*<select name="people">/)
     expect(hero.match(/<option value="(\d+)"/g)).toHaveLength(10)
     expect(hero).toContain('<option value="1" selected>1 persona</option>')
     expect(hero).toContain('<option value="10">10 persone</option>')
     // Each example says how many people its own text implies, like the hub's.
-    expect(hero.match(/data-persone="[1-9]"/g)).toHaveLength(4)
+    expect(hero.match(/data-people="[1-9]"/g)).toHaveLength(4)
     // The button sits inside the composer, under the box, so the two read as one control.
     expect(hero).toMatch(/<div class="composer">[\s\S]*?<textarea[\s\S]*?<div class="composer-bar">[\s\S]*?<button class="cta" type="submit">Proponi il team<\/button>\s*<\/div>\s*<\/div>/)
     // Where the result lands: empty and hidden until the script fills it, which then
@@ -224,7 +224,7 @@ describe('index.html', () => {
     const hero = page.match(/<section class="hero">([\s\S]*?)<\/section>/)?.[1] ?? ''
     const actions = hero.match(/<p class="actions">([\s\S]*?)<\/p>/)?.[1] ?? ''
     expect(actions).toMatch(/<a class="cta" href="\/hub\/freelance">Entra come talento<\/a>/)
-    expect(actions).toMatch(/<a class="cta secondary" href="\/hub\/aziende">[^<]+<\/a>/)
+    expect(actions).toMatch(/<a class="cta secondary" href="\/hub\/companies">[^<]+<\/a>/)
     expect(actions.match(/<a class="cta[^"]*" href="\/hub\//g)).toHaveLength(2)
     // The third door of REB-608 is gone: the builder itself sits where it pointed, and
     // the services band still carries one (checked further down).
@@ -239,7 +239,7 @@ describe('index.html', () => {
     // No invented plan or trial: the one price is "be in the community". The services
     // band is the one place a subscription is real, the talent cloud's (REB-681), so the
     // guard reads the page without it.
-    expect(page.replace(section('aziende'), '')).not.toMatch(/Prova gratis|abbonamento|piano (Pro|Business)/i)
+    expect(page.replace(section('companies'), '')).not.toMatch(/Prova gratis|abbonamento|piano (Pro|Business)/i)
   })
 
   it('explains itself in three steps and says what is inside', () => {
@@ -291,7 +291,7 @@ describe('index.html', () => {
     expect(page).toContain('Il top 1% di chi fa software')
     expect(page.match(/top 1%/g)).toHaveLength(1)
     expect(page.indexOf('top 1%')).toBeGreaterThan(page.indexOf('>La selezione<'))
-    const cards = section('aziende').match(/<article[\s\S]*?<\/article>/g) ?? []
+    const cards = section('companies').match(/<article[\s\S]*?<\/article>/g) ?? []
     expect(cards).toHaveLength(3)
     for (const [name, price] of [
       ['Team guidato', 'Pensiamo a tutto noi, prezzo su misura.'],
@@ -301,8 +301,8 @@ describe('index.html', () => {
       const card = cards.find((c) => c.includes(`<h3>${name}</h3>`)) ?? ''
       expect(card, name).toContain(`<p class="price">${price}</p>`)
     }
-    expect(section('aziende')).toContain('Ricerca continua: apri una posizione')
-    expect(section('aziende')).not.toContain('<h3>Ricerca</h3>')
+    expect(section('companies')).toContain('Ricerca continua: apri una posizione')
+    expect(section('companies')).not.toContain('<h3>Ricerca</h3>')
     // Seven roles, and the line that keeps the door open for an eighth.
     expect(page.match(/<ul class="roles"[\s\S]*?<\/ul>/)?.[0]?.match(/<li>/g)).toHaveLength(7)
     expect(page).toContain('Candidati lo stesso')
@@ -325,7 +325,7 @@ describe('index.html', () => {
     // of the page outside the client quotes (REB-686).
     expect(faq).toContain('Con Team guidato, due o tre nomi giusti entro 48 ore.')
     expect(faq).toContain("Con Team guidato c'è un CTO di rebase dentro dal primo giorno")
-    expect(section('aziende')).toContain('entro 48 ore ti portiamo due o tre')
+    expect(section('companies')).toContain('entro 48 ore ti portiamo due o tre')
     expect(page.replace(/<figure class="testimonial"[\s\S]*?<\/figure>/g, '')).not.toMatch(/sette giorni|7 giorni|una settimana/i)
     // The two company doors under the services are hub links, so utm.js carries the
     // campaign into them like the hero's.

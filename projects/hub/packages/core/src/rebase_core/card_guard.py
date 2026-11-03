@@ -50,7 +50,7 @@ STOPLIST = frozenset(
         "client",
         "project",
         "projects",
-        "progetto",
+        "project",
         "progetti",
         "example",
         "examples",
@@ -107,8 +107,8 @@ STOPLIST = frozenset(
         "della",
         "dei",
         "delle",
-        "prova",
-        "codice",
+        "test",
+        "code",
         # What a repository or a page is often called, and the sites a person's page sits
         # on (`mario.github.io`: the platform is not the person).
         "website",
@@ -188,7 +188,7 @@ _LEGAL = frozenset(
 )
 
 # Where an employer's name is read (`identifying`).
-EMPLOYER_FIELDS = frozenset(["ruolo", "sintesi", "settori"])
+EMPLOYER_FIELDS = frozenset(["role", "profile_summary", "industries"])
 
 _TOKEN = re.compile(r"[^\W_]+", re.UNICODE)
 _DOTTED = re.compile(r"\b(?:\w\.){2,}")
@@ -221,32 +221,32 @@ def _tokens(value: str) -> tuple[str, ...]:
 
 @dataclass(frozen=True)
 class KnownIdentifiers:
-    """What could name this person: `cognome` and `nome` from the user row, `github_login`
+    """What could name this person: `last_name` and `nome` from the user row, `github_login`
     and `repo_names` (the repositories they own) from the GitHub source, `hostnames` of
     the links they gave, `employers` as the CV's card draft names them. Everything but the
     two names is empty when no source was read.
 
-    What the card call itself read out of the CV (REB-855, `CardDraft.persona`) joins them
-    for that one call: `cv_cognome` and `cv_nome` (the CV may spell the name another way
+    What the card call itself read out of the CV (REB-855, `CardDraft.person`) joins them
+    for that one call: `cv_last_name` and `cv_first_name` (the CV may spell the name another way
     than the account), `emails` (lower case) and `phones` (digits only), and the links'
     hostnames and GitHub account are added to the two above. The persona itself never
     goes through this guard: it is the named card, and it is not anonymous."""
 
-    cognome: str
-    nome: str = ""
+    last_name: str
+    first_name: str = ""
     github_login: str | None = None
     repo_names: list[str] = field(default_factory=list)
     hostnames: list[str] = field(default_factory=list)
     employers: list[str] = field(default_factory=list)
-    cv_cognome: str = ""
-    cv_nome: str = ""
+    cv_last_name: str = ""
+    cv_first_name: str = ""
     emails: list[str] = field(default_factory=list)
     phones: list[str] = field(default_factory=list)
 
     @classmethod
-    def empty(cls, cognome: str = "", nome: str = "") -> "KnownIdentifiers":
+    def empty(cls, last_name: str = "", first_name: str = "") -> "KnownIdentifiers":
         """The no-source case: the person's name, and nothing from a source."""
-        return cls(cognome=cognome, nome=nome)
+        return cls(last_name=last_name, first_name=first_name)
 
 
 def _phrase(identifier: str, *, legal: bool = False) -> tuple[str, ...] | None:
@@ -308,7 +308,7 @@ def identifying(card: Card, known: KnownIdentifiers) -> list[str]:
     each once; empty when the card is anonymous.
 
     The surname is read, as a whole word written with a capital, in the role, the summary,
-    the skills and the sectors; `luogo` and `lingue` are left out because a city or a
+    the skills and the sectors; `location` and `languages` are left out because a city or a
     language is the CV's own (Messina, Russo, Tedesco). The first name, and each word of
     one of two («Maria Grazia») of three letters or more, is read in the role and the
     summary only, and not inside one of the card's own skills (Ada, Ruby, Julia, Pascal
@@ -320,25 +320,25 @@ def identifying(card: Card, known: KnownIdentifiers) -> list[str]:
     email address and its local part, and a phone number by its last nine digits, in any
     field."""
     fields: list[tuple[str, list[str]]] = [
-        ("ruolo", [card.ruolo]),
-        ("sintesi", [card.sintesi]),
-        ("competenze", card.competenze),
-        ("settori", card.settori),
-        ("lingue", card.lingue),
-        ("luogo", [card.luogo] if card.luogo is not None else []),
+        ("role", [card.role]),
+        ("profile_summary", [card.profile_summary]),
+        ("skills", card.skills),
+        ("industries", card.industries),
+        ("languages", card.languages),
+        ("location", [card.location] if card.location is not None else []),
     ]
-    named = {"ruolo", "sintesi", "competenze", "settori"}
-    prose = {"ruolo", "sintesi"}
+    named = {"role", "profile_summary", "skills", "industries"}
+    prose = {"role", "profile_summary"}
 
-    surnames = {name for name in (known.cognome.strip(), known.cv_cognome.strip()) if name}
+    surnames = {name for name in (known.last_name.strip(), known.cv_last_name.strip()) if name}
     given: set[str] = set()
-    for first in (known.nome.strip(), known.cv_nome.strip()):
+    for first in (known.first_name.strip(), known.cv_first_name.strip()):
         given |= {first, *(word for word in re.split(r"[\s\-]+", first) if len(word) >= 3)}
     given.discard("")
     emails = [email.strip().lower() for email in known.emails if email.strip()]
     phones = [digits[-PHONE_KEY_DIGITS:] for digits in known.phones if len(digits) >= 7]
 
-    skills = {_tokens(skill) for skill in card.competenze}
+    skills = {_tokens(skill) for skill in card.skills}
     repos = [
         phrase
         for name in known.repo_names
@@ -387,14 +387,14 @@ def identifying(card: Card, known: KnownIdentifiers) -> list[str]:
                 or (name in named and any(_names(value, surname) for surname in surnames))
                 or (
                     name in prose
-                    and any(_names(_without_skills(value, card.competenze), g) for g in given)
+                    and any(_names(_without_skills(value, card.skills), g) for g in given)
                 )
                 or any(_contains(_tokens(value), phrase) for phrase in searched)
-                or (name == "competenze" and _phrase(value, legal=True) in employers)
+                or (name == "skills" and _phrase(value, legal=True) in employers)
                 or (
                     name in EMPLOYER_FIELDS
                     and any(
-                        _contains(_tokens(_without_skills(value, card.competenze)), phrase)
+                        _contains(_tokens(_without_skills(value, card.skills)), phrase)
                         for phrase in employers
                     )
                 )

@@ -45,7 +45,7 @@ def test_a_minimal_document_renders_to_a_pdf() -> None:
     assert len(pdf) > 1000
 
 
-def test_the_emitter_profile_reaches_the_header() -> None:
+def test_the_legal_entity_reaches_the_header() -> None:
     header = build_header(PROFILE)
     assert "Studio Rossi" in header
     assert "01234567890" in header
@@ -235,7 +235,7 @@ def test_a_rendered_pdf_over_the_size_bound_is_refused(monkeypatch: pytest.Monke
     monkeypatch.setattr(pdf_module, "MAX_PDF_BYTES", 100)
     with pytest.raises(ValidationFailed) as excinfo:
         render_pdf("ok\n", header_typst=build_header(PROFILE), settings=SETTINGS)
-    assert excinfo.value.details["field"] == "corpo_markdown"
+    assert excinfo.value.details["field"] == "body_markdown"
 
 
 def test_only_a_bounded_number_of_renders_run_their_tools_at_once(

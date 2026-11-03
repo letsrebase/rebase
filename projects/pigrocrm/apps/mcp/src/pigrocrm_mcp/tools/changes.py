@@ -20,7 +20,7 @@ its own call,
 
 The difference is taken between a read before the call and the record the service
 answers with, not from the keys the caller sent: a key the service ignored, or set to the
-value it already had, is not a change, and a field the service derived (`rimborsabile`
+value it already had, is not a change, and a field the service derived (`reimbursable`
 recalculated from a new amount) is one.
 """
 
@@ -82,7 +82,7 @@ def refuse_nothing_given(**given: object) -> None:
     names = ", ".join(f"`{name}`" for name in given)
     raise ValidationFailed(
         "input",
-        "campi",
+        "fields",
         "nessun campo da modificare",
         expected=f"almeno uno fra {names}",
     )
@@ -105,7 +105,7 @@ def report(before: BaseModel | None, after: BaseModel) -> dict[str, Any]:
     `before`, the record read ahead of the update (`None` when there was none to read).
 
     A field is compared when both records carry it: a read and an update of the same row
-    can differ in the extras one of them computes (`scadenza_prevista` on an invoice's
+    can differ in the extras one of them computes (`expected_due_date` on an invoice's
     detail), and an extra is not a change. The exception is a custom field, which exists
     on one side only when it was set or removed: not set is empty, so `None` stands for
     the missing side.

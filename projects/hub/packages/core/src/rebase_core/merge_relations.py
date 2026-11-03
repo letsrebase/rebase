@@ -221,9 +221,9 @@ LEFT_IN_PLACE: dict[str, str] = {
     "contract_documents.created_by": "the admin who made it",
     "contract_documents.sent_by": "the admin who sent it",
     "admin_actions.admin_id": "the admin who acted",
-    "notes.autore_id": "who wrote the note, as written; the note itself moves with the card",
-    "notes.modificata_da_id": "the admin who edited the note",
-    "notes.eliminata_da_id": "the admin who deleted the note",
+    "notes.author_id": "who wrote the note, as written; the note itself moves with the card",
+    "notes.edited_by_id": "the admin who edited the note",
+    "notes.deleted_by_id": "the admin who deleted the note",
     "admin_tokens.user_id": "an admin's token; an admin is never merged away",
     "campaigns.created_by": "the admin who made it",
     "talent_cloud_grants.granted_by": "the admin who granted it",
@@ -260,9 +260,9 @@ def _movable(session: Session, relation: Relation, ctx: Context) -> tuple[list[U
 
 def move_relations(session: Session, ctx: Context) -> tuple[dict[str, list[UUID]], dict[str, int]]:
     """Moves every movable row to the survivor. Answers the ids moved per relation, and
-    the count left in place per relation (`lasciati`)."""
+    the count left in place per relation (`left_behind`)."""
     moved: dict[str, list[UUID]] = {}
-    left: dict[str, int] = {}
+    left_behind: dict[str, int] = {}
     for relation in RELATIONS:
         ids, allowed = _movable(session, relation, ctx)
         if allowed:
@@ -273,8 +273,8 @@ def move_relations(session: Session, ctx: Context) -> tuple[dict[str, list[UUID]
             )
             moved[relation.key] = allowed
         if len(ids) != len(allowed):
-            left[relation.key] = len(ids) - len(allowed)
-    return moved, left
+            left_behind[relation.key] = len(ids) - len(allowed)
+    return moved, left_behind
 
 
 def count_movable(session: Session, ctx: Context) -> dict[str, int]:

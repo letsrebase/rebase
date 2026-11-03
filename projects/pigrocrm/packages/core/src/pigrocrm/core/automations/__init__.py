@@ -3,13 +3,12 @@ from pigrocrm.core.automations.daily import AutomationPass, PassReport, RuleRepo
 from pigrocrm.core.automations.models import AutomationConfig
 from pigrocrm.core.automations.runner import AutomationOutcome, AutomationRunner
 from pigrocrm.core.automations.schemas import (
-    ATTIVITA_RULES,
     AUTOMATION_KINDS,
-    KIND_ATTIVITA_OPENED,
     KIND_CONFIG_CHANGED,
     KIND_NOT_EXECUTED,
     KIND_STAGE_MOVED,
-    AttivitaRule,
+    KIND_TASK_OPENED,
+    TASK_RULES,
     AutomationConfigRead,
     AutomationConfigUpdate,
     AutomationRule,
@@ -18,16 +17,17 @@ from pigrocrm.core.automations.schemas import (
     AutomationRun,
     AutomationsDescription,
     AutomationSkipReason,
+    TaskRule,
 )
 
 __all__ = [
-    "ATTIVITA_RULES",
+    "TASK_RULES",
     "AUTOMATION_KINDS",
-    "KIND_ATTIVITA_OPENED",
+    "KIND_TASK_OPENED",
     "KIND_CONFIG_CHANGED",
     "KIND_NOT_EXECUTED",
     "KIND_STAGE_MOVED",
-    "AttivitaRule",
+    "TaskRule",
     "AutomationConfig",
     "AutomationConfigRead",
     "AutomationConfigService",

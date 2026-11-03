@@ -29,25 +29,25 @@ def _crm_server(
 
 
 _COMPANY_ARGS = {
-    "nome_azienda": "Studio Rossi Srl",
-    "referente_nome": "Maria",
-    "referente_cognome": "Verdi",
+    "company_name": "Studio Rossi Srl",
+    "contact_first_name": "Maria",
+    "contact_last_name": "Verdi",
     "email": "maria@studiorossi.it",
-    "telefono": "+39 345 1234567",
-    "figura_richiesta": "Backend developer",
-    "progetto": "Un backend developer per tre mesi.",
-    "periodo_da": "2026-12-01",
-    "durata": "3 mesi",
-    "budget_giornaliero": "500",
-    "remoto": "remoto",
+    "phone": "+39 345 1234567",
+    "requested_role": "Backend developer",
+    "project": "Un backend developer per tre mesi.",
+    "period_from": "2026-12-01",
+    "duration": "3 mesi",
+    "daily_budget": "500",
+    "remote": "remote",
 }
 
 
 async def test_link_company_to_pigro_files_the_request_and_get_company_carries_the_state(
     factory: sessionmaker[Session],
 ) -> None:
-    """«Riprova» for agents: the recorded door answers, the company comes back `collegato`
-    with the deal's address, and `get_company` and `list_aziende` carry the same state."""
+    """«Riprova» for agents: the recorded door answers, the company comes back `linked`
+    with the deal's address, and `get_company` and `list_companies` carry the same state."""
     from fakes_pigro import DEAL, DEAL_URL, TOKEN, RecordedPigro
 
     _wipe(factory)
@@ -73,24 +73,24 @@ async def test_link_company_to_pigro_files_the_request_and_get_company_carries_t
     try:
         async with Client(_crm_server(factory, fake, TOKEN)) as client:
             before = _payload(await client.call_tool("get_company", {"company_id": company_id}))
-            assert before["crm_stato"] == "da_collegare"
+            assert before["crm_status"] == "to_link"
 
             failed = _payload(
                 await client.call_tool("link_company_to_pigro", {"company_id": company_id})
             )
-            assert failed["crm_stato"] == "errore"
-            assert failed["crm_situazione"] == (
+            assert failed["crm_status"] == "error"
+            assert failed["crm_situation"] == (
                 "Il CRM non ha risposto: Spazio dei lead non configurato."
             )
 
             linked = _payload(
                 await client.call_tool("link_company_to_pigro", {"company_id": company_id})
             )
-            assert (linked["crm_stato"], linked["crm_deal_url"]) == ("collegato", DEAL_URL)
-            assert linked["crm_situazione"] is None
+            assert (linked["crm_status"], linked["crm_deal_url"]) == ("linked", DEAL_URL)
+            assert linked["crm_situation"] is None
 
-            listed = _payload(await client.call_tool("list_aziende", {}))
-            assert [r["crm_stato"] for r in listed["items"]] == ["collegato"]
+            listed = _payload(await client.call_tool("list_companies", {}))
+            assert [r["crm_status"] for r in listed["items"]] == ["linked"]
         assert [c[1] for c in fake.calls] == [
             f"https://pigro.test/api/rebase/leads/{company_id}"
         ] * 2
@@ -174,7 +174,7 @@ async def test_create_company_opens_the_request_and_links_the_deal_the_crm_has(
     )
     try:
         async with Client(_crm_server(factory, fake, TOKEN)) as client:
-            bad = await client.call_tool("create_company", {**_COMPANY_ARGS, "remoto": "ibrido"})
+            bad = await client.call_tool("create_company", {**_COMPANY_ARGS, "remote": "hybrid"})
             assert bad.is_error
             made = _payload(
                 await client.call_tool(
@@ -182,9 +182,9 @@ async def test_create_company_opens_the_request_and_links_the_deal_the_crm_has(
                     {**_COMPANY_ARGS, "deal_id": f"https://crm.test/rebase/app/deal/{known}"},
                 )
             )
-        assert (made["nome_azienda"], made["crm_stato"], made["crm_deal_url"]) == (
+        assert (made["company_name"], made["crm_status"], made["crm_deal_url"]) == (
             "Studio Rossi Srl",
-            "collegato",
+            "linked",
             DEAL_URL,
         )
         assert json.loads(fake.calls[0][3])["deal_id"] == known
@@ -201,7 +201,7 @@ async def test_create_company_opens_the_request_and_links_the_deal_the_crm_has(
         _wipe(factory)
 
 
-async def test_create_company_without_the_crm_waits_as_da_collegare(
+async def test_create_company_without_the_crm_waits_as_to_link(
     factory: sessionmaker[Session],
 ) -> None:
     _wipe(factory)
@@ -209,6 +209,6 @@ async def test_create_company_without_the_crm_waits_as_da_collegare(
     try:
         async with Client(build_server(factory, lambda: IVAN)) as client:
             made = _payload(await client.call_tool("create_company", _COMPANY_ARGS))
-        assert made["crm_stato"] == "da_collegare"
+        assert made["crm_status"] == "to_link"
     finally:
         _wipe(factory)

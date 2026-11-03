@@ -15,7 +15,7 @@ vi.mock('@/lib/api', async (importOriginal) => {
 vi.mock('@rebase/ui/sonner', () => ({ toast: { error: vi.fn(), success: vi.fn() } }))
 vi.mock('@/lib/auth', () => ({ useAuth: vi.fn() }))
 
-function sessionAs(user: { id: string; ruolo: string } | null) {
+function sessionAs(user: { id: string; role: string } | null) {
   return { user, isLoading: false, login: vi.fn(), logout: vi.fn() } as never
 }
 
@@ -30,9 +30,9 @@ function failed(error: unknown, status: number) {
 const ADMIN = {
   id: 'u1',
   email: 'admin@pigro.it',
-  nome: 'Ada Admin',
-  ruolo: 'admin' as const,
-  attivo: true,
+  name: 'Ada Admin',
+  role: 'admin' as const,
+  active: true,
   created_at: '2026-08-01T10:00:00Z',
   last_login_at: '2026-09-20T08:30:00Z',
 }
@@ -40,9 +40,9 @@ const ADMIN = {
 const DISABLED_USER = {
   id: 'u2',
   email: 'ex@pigro.it',
-  nome: 'Ex Collega',
-  ruolo: 'collaboratore' as const,
-  attivo: false,
+  name: 'Ex Collega',
+  role: 'collaborator' as const,
+  active: false,
   created_at: '2026-08-01T10:00:00Z',
   last_login_at: null,
 }
@@ -50,9 +50,9 @@ const DISABLED_USER = {
 const OTHER_ACTIVE_USER = {
   id: 'u3',
   email: 'altro@pigro.it',
-  nome: 'Altro Utente',
-  ruolo: 'collaboratore' as const,
-  attivo: true,
+  name: 'Altro Utente',
+  role: 'collaborator' as const,
+  active: true,
   created_at: '2026-08-01T10:00:00Z',
   last_login_at: null,
 }
@@ -60,8 +60,8 @@ const OTHER_ACTIVE_USER = {
 const PENDING_INVITE = {
   id: 'i1',
   email: 'luca@pigro.it',
-  nome: 'Luca',
-  ruolo: 'collaboratore' as const,
+  name: 'Luca',
+  role: 'collaborator' as const,
   invited_by: 'u1',
   expires_at: '2026-09-29T10:00:00Z',
   created_at: '2026-09-22T10:00:00Z',
@@ -77,29 +77,29 @@ function respond(routes: Record<string, () => unknown>) {
   })
 }
 
-const HUMANCRAFT = { id: 'a1', nome: 'humancraft', predefinita: true, attiva: true } as LegalEntityRecord
-const REBASE = { id: 'a2', nome: 'rebase', predefinita: false, attiva: true } as LegalEntityRecord
+const HUMANCRAFT = { id: 'a1', name: 'humancraft', is_default: true, active: true } as LegalEntityRecord
+const REBASE = { id: 'a2', name: 'rebase', is_default: false, active: true } as LegalEntityRecord
 
-/** The provider's value for a two-azienda space, the shape `AppShell` reads too. */
-function twoAziende(): LegalEntityValue {
-  const aziende = [HUMANCRAFT, REBASE]
+/** The provider's value for a two-legal-entity space, the shape `AppShell` reads too. */
+function twoLegalEntities(): LegalEntityValue {
+  const legal_entities = [HUMANCRAFT, REBASE]
   return {
-    aziende,
+    legal_entities,
     selected: null,
     select: vi.fn(),
     several: true,
     scoped: false,
     pinned: false,
-    byId: (id) => aziende.find((a) => a.id === id),
+    byId: (id) => legal_entities.find((a) => a.id === id),
   }
 }
 
-function renderPanel(azienda?: LegalEntityValue) {
+function renderPanel(legal_entity?: LegalEntityValue) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   const panel = <UsersPanel />
   const rendered = render(
     <QueryClientProvider client={client}>
-      {azienda ? <LegalEntityContext value={azienda}>{panel}</LegalEntityContext> : panel}
+      {legal_entity ? <LegalEntityContext value={legal_entity}>{panel}</LegalEntityContext> : panel}
     </QueryClientProvider>,
   )
   return { ...rendered, client }
@@ -120,7 +120,7 @@ beforeEach(() => {
   // Not one of the users any fixture below represents -- tests that care who
   // "you" are override this explicitly, so a test that doesn't is provably
   // exercising the not-self path, not passing by accident.
-  vi.mocked(useAuth).mockReturnValue(sessionAs({ id: 'someone-else', ruolo: 'admin' }))
+  vi.mocked(useAuth).mockReturnValue(sessionAs({ id: 'someone-else', role: 'admin' }))
 })
 
 /**
@@ -136,9 +136,9 @@ beforeEach(() => {
  * same headroom `vite.config.ts`'s own `testTimeout: 20_000` comment already describes
  * for the suite as a whole. Matching that headroom here.
  */
-async function openRowMenu(nome: string) {
+async function openRowMenu(name: string) {
   await userEvent.click(
-    await screen.findByRole('button', { name: `Azioni per ${nome}` }, { timeout: 10_000 }),
+    await screen.findByRole('button', { name: `Azioni per ${name}` }, { timeout: 10_000 }),
   )
   // Radix opens the menu content into a portal, so the trigger's click resolving does
   // not itself guarantee the content has mounted: wait for the menu here so every
@@ -199,7 +199,7 @@ describe('UsersPanel', () => {
 
   it('toggles a user back on through the real endpoint', async () => {
     respond({ ...lists, '/api/users': () => ok([DISABLED_USER]) })
-    vi.mocked(api.PATCH).mockReturnValueOnce(Promise.resolve(ok({ ...DISABLED_USER, attivo: true })))
+    vi.mocked(api.PATCH).mockReturnValueOnce(Promise.resolve(ok({ ...DISABLED_USER, active: true })))
     renderPanel()
 
     await openRowMenu('Ex Collega')
@@ -210,7 +210,7 @@ describe('UsersPanel', () => {
         '/api/users/{user_id}',
         expect.objectContaining({
           params: { path: { user_id: 'u2' } },
-          body: { attivo: true },
+          body: { active: true },
         }),
       ),
     )
@@ -247,7 +247,7 @@ describe('UsersPanel', () => {
       expect(api.POST).toHaveBeenCalledWith(
         '/api/users/invites',
         expect.objectContaining({
-          body: { email: 'giulia@pigro.it', nome: null, ruolo: 'collaboratore' },
+          body: { email: 'giulia@pigro.it', name: null, role: 'collaborator' },
         }),
       ),
     )
@@ -373,7 +373,7 @@ describe('UsersPanel', () => {
       '/api/users': () => ok([OTHER_ACTIVE_USER]),
     })
     vi.mocked(api.PATCH).mockReturnValueOnce(
-      Promise.resolve(ok({ ...OTHER_ACTIVE_USER, attivo: false })),
+      Promise.resolve(ok({ ...OTHER_ACTIVE_USER, active: false })),
     )
     renderPanel()
 
@@ -388,7 +388,7 @@ describe('UsersPanel', () => {
   it('changes another user’s role through the real endpoint', async () => {
     respond({ ...lists, '/api/users': () => ok([OTHER_ACTIVE_USER]) })
     vi.mocked(api.PATCH).mockReturnValueOnce(
-      Promise.resolve(ok({ ...OTHER_ACTIVE_USER, ruolo: 'admin' })),
+      Promise.resolve(ok({ ...OTHER_ACTIVE_USER, role: 'admin' })),
     )
     renderPanel()
 
@@ -400,7 +400,7 @@ describe('UsersPanel', () => {
         '/api/users/{user_id}',
         expect.objectContaining({
           params: { path: { user_id: 'u3' } },
-          body: { ruolo: 'admin' },
+          body: { role: 'admin' },
         }),
       ),
     )
@@ -414,7 +414,7 @@ describe('UsersPanel', () => {
    */
   describe('acting on your own account', () => {
     it('disables "Disattiva" for your own row', async () => {
-      vi.mocked(useAuth).mockReturnValue(sessionAs({ id: ADMIN.id, ruolo: 'admin' }))
+      vi.mocked(useAuth).mockReturnValue(sessionAs({ id: ADMIN.id, role: 'admin' }))
       respond({ ...lists, '/api/users': () => ok([ADMIN]) })
       renderPanel()
 
@@ -431,7 +431,7 @@ describe('UsersPanel', () => {
     })
 
     it('still allows deactivating someone else', async () => {
-      vi.mocked(useAuth).mockReturnValue(sessionAs({ id: ADMIN.id, ruolo: 'admin' }))
+      vi.mocked(useAuth).mockReturnValue(sessionAs({ id: ADMIN.id, role: 'admin' }))
       respond({ ...lists, '/api/users': () => ok([ADMIN, OTHER_ACTIVE_USER]) })
       renderPanel()
 
@@ -443,7 +443,7 @@ describe('UsersPanel', () => {
     })
 
     it('disables the role selector for your own row too, so you cannot demote yourself out of this screen', async () => {
-      vi.mocked(useAuth).mockReturnValue(sessionAs({ id: ADMIN.id, ruolo: 'admin' }))
+      vi.mocked(useAuth).mockReturnValue(sessionAs({ id: ADMIN.id, role: 'admin' }))
       respond({ ...lists, '/api/users': () => ok([ADMIN]) })
       renderPanel()
 
@@ -455,9 +455,9 @@ describe('UsersPanel', () => {
 
   describe('correcting a member’s name', () => {
     it('renames a member through the real endpoint', async () => {
-      const founder = { ...OTHER_ACTIVE_USER, id: 'u9', nome: 'rebase' }
+      const founder = { ...OTHER_ACTIVE_USER, id: 'u9', name: 'rebase' }
       respond({ ...lists, '/api/users': () => ok([ADMIN, founder]) })
-      vi.mocked(api.PATCH).mockReturnValueOnce(Promise.resolve(ok({ ...founder, nome: 'Ivan' })))
+      vi.mocked(api.PATCH).mockReturnValueOnce(Promise.resolve(ok({ ...founder, name: 'Ivan' })))
       renderPanel()
 
       await openRowMenu('rebase')
@@ -471,16 +471,16 @@ describe('UsersPanel', () => {
       await waitFor(() =>
         expect(api.PATCH).toHaveBeenCalledWith(
           '/api/users/{user_id}',
-          expect.objectContaining({ body: { nome: 'Ivan' } }),
+          expect.objectContaining({ body: { name: 'Ivan' } }),
         ),
       )
       await waitFor(() => expect(toast.success).toHaveBeenCalledWith('Nome aggiornato'))
     })
 
     it('refreshes the signed-in user, so a renamed founder is renamed in the shell too', async () => {
-      const founder = { ...OTHER_ACTIVE_USER, id: 'u9', nome: 'rebase' }
+      const founder = { ...OTHER_ACTIVE_USER, id: 'u9', name: 'rebase' }
       respond({ ...lists, '/api/users': () => ok([founder]) })
-      vi.mocked(api.PATCH).mockReturnValueOnce(Promise.resolve(ok({ ...founder, nome: 'Ivan' })))
+      vi.mocked(api.PATCH).mockReturnValueOnce(Promise.resolve(ok({ ...founder, name: 'Ivan' })))
       const { client } = renderPanel()
       const invalidate = vi.spyOn(client, 'invalidateQueries')
 
@@ -526,16 +526,16 @@ describe('UsersPanel', () => {
   // --- the scope of a member (REB-635, spec 2026-10-03 §1.11, §5 Team) --------------------
 
   describe('the aziende a member sees', () => {
-    const SCOPED_USER = { ...OTHER_ACTIVE_USER, id: 'u4', nome: 'Bea Scoped', aziende: ['a2'] }
-    const EMPTIED_USER = { ...OTHER_ACTIVE_USER, id: 'u5', nome: 'Carla Vuota', aziende: [] }
+    const SCOPED_USER = { ...OTHER_ACTIVE_USER, id: 'u4', name: 'Bea Scoped', legal_entities: ['a2'] }
+    const EMPTIED_USER = { ...OTHER_ACTIVE_USER, id: 'u5', name: 'Carla Vuota', legal_entities: [] }
 
     it('says «Tutte», the names, or that no azienda is active, from the second azienda on', async () => {
       respond({
         ...lists,
-        '/api/users': () => ok([{ ...ADMIN, aziende: null }, SCOPED_USER, EMPTIED_USER]),
-        '/api/users/invites': () => ok([{ ...PENDING_INVITE, aziende: ['a1', 'a2'] }]),
+        '/api/users': () => ok([{ ...ADMIN, legal_entities: null }, SCOPED_USER, EMPTIED_USER]),
+        '/api/users/invites': () => ok([{ ...PENDING_INVITE, legal_entities: ['a1', 'a2'] }]),
       })
-      renderPanel(twoAziende())
+      renderPanel(twoLegalEntities())
 
       const rows = await screen.findAllByRole('row')
       const text = rows.map((row) => row.textContent ?? '').join('\n')
@@ -546,7 +546,7 @@ describe('UsersPanel', () => {
       expect(screen.getByRole('row', { name: /Luca/ })).toHaveTextContent('humancraft, rebase')
     })
 
-    it('draws no column and sends no scope in a one-azienda space where nobody is scoped', async () => {
+    it('draws no column and sends no scope in a one-legal-entity space where nobody is scoped', async () => {
       respond({ ...lists, '/api/users': () => ok([OTHER_ACTIVE_USER]) })
       vi.mocked(api.POST).mockReturnValueOnce(Promise.resolve(ok(PENDING_INVITE, 201)))
       renderPanel()
@@ -561,22 +561,22 @@ describe('UsersPanel', () => {
         expect(api.POST).toHaveBeenCalledWith(
           '/api/users/invites',
           expect.objectContaining({
-            body: { email: 'giulia@pigro.it', nome: null, ruolo: 'collaboratore' },
+            body: { email: 'giulia@pigro.it', name: null, role: 'collaborator' },
           }),
         ),
       )
     })
 
-    it('still shows a stranded scope in a one-azienda space, so an admin can widen it', async () => {
-      // The second azienda was deactivated after Bea was scoped to it: the space is back
-      // to one azienda, the selector is gone, and Bea sees nothing until this row says so.
+    it('still shows a stranded scope in a one-legal-entity space, so an admin can widen it', async () => {
+      // The second legal entity was deactivated after Bea was scoped to it: the space is back
+      // to one legal entity, the selector is gone, and Bea sees nothing until this row says so.
       respond({ ...lists, '/api/users': () => ok([SCOPED_USER]) })
       vi.mocked(api.PATCH).mockReturnValueOnce(
-        Promise.resolve(ok({ ...SCOPED_USER, aziende: null })),
+        Promise.resolve(ok({ ...SCOPED_USER, legal_entities: null })),
       )
       const one: LegalEntityValue = {
-        ...twoAziende(),
-        aziende: [HUMANCRAFT],
+        ...twoLegalEntities(),
+        legal_entities: [HUMANCRAFT],
         several: false,
         byId: (id) => (id === 'a1' ? HUMANCRAFT : undefined),
       }
@@ -586,7 +586,7 @@ describe('UsersPanel', () => {
       expect(row).toHaveTextContent('nessuna azienda attiva')
       await openRowMenu('Bea Scoped')
       await userEvent.click(screen.getByRole('menuitem', { name: 'Aziende…' }))
-      // The one azienda, unchecked (it is not in Bea's scope); checking it is «tutte».
+      // The one legal entity, unchecked (it is not in Bea's scope); checking it is «tutte».
       const box = await screen.findByLabelText('humancraft')
       expect(box).not.toBeChecked()
       await userEvent.click(box)
@@ -594,7 +594,7 @@ describe('UsersPanel', () => {
       await waitFor(() =>
         expect(api.PATCH).toHaveBeenCalledWith(
           '/api/users/{user_id}',
-          expect.objectContaining({ body: { aziende: null } }),
+          expect.objectContaining({ body: { legal_entities: null } }),
         ),
       )
     })
@@ -602,7 +602,7 @@ describe('UsersPanel', () => {
     it('invites with every azienda checked as the whole space, and with one unchecked as a scope', async () => {
       respond(lists)
       vi.mocked(api.POST).mockReturnValue(Promise.resolve(ok(PENDING_INVITE, 201)))
-      renderPanel(twoAziende())
+      renderPanel(twoLegalEntities())
 
       await userEvent.click(await screen.findByRole('button', { name: /^invita$/i }))
       const boxes = screen.getAllByRole('checkbox')
@@ -614,7 +614,7 @@ describe('UsersPanel', () => {
         expect(api.POST).toHaveBeenLastCalledWith(
           '/api/users/invites',
           expect.objectContaining({
-            body: { email: 'tutti@pigro.it', nome: null, ruolo: 'collaboratore', aziende: null },
+            body: { email: 'tutti@pigro.it', name: null, role: 'collaborator', legal_entities: null },
           }),
         ),
       )
@@ -627,7 +627,7 @@ describe('UsersPanel', () => {
         expect(api.POST).toHaveBeenLastCalledWith(
           '/api/users/invites',
           expect.objectContaining({
-            body: { email: 'bea@pigro.it', nome: null, ruolo: 'collaboratore', aziende: ['a2'] },
+            body: { email: 'bea@pigro.it', name: null, role: 'collaborator', legal_entities: ['a2'] },
           }),
         ),
       )
@@ -635,7 +635,7 @@ describe('UsersPanel', () => {
 
     it('refuses to send an invitation with no azienda checked', async () => {
       respond(lists)
-      renderPanel(twoAziende())
+      renderPanel(twoLegalEntities())
 
       await userEvent.click(await screen.findByRole('button', { name: /^invita$/i }))
       await userEvent.click(screen.getByLabelText('humancraft'))
@@ -647,9 +647,9 @@ describe('UsersPanel', () => {
     it('edits a member’s scope from the row’s menu through PATCH /api/users/{id}', async () => {
       respond({ ...lists, '/api/users': () => ok([OTHER_ACTIVE_USER]) })
       vi.mocked(api.PATCH).mockReturnValueOnce(
-        Promise.resolve(ok({ ...OTHER_ACTIVE_USER, aziende: ['a2'] })),
+        Promise.resolve(ok({ ...OTHER_ACTIVE_USER, legal_entities: ['a2'] })),
       )
-      renderPanel(twoAziende())
+      renderPanel(twoLegalEntities())
 
       await openRowMenu('Altro Utente')
       await userEvent.click(screen.getByRole('menuitem', { name: 'Aziende…' }))
@@ -665,7 +665,7 @@ describe('UsersPanel', () => {
           '/api/users/{user_id}',
           expect.objectContaining({
             params: { path: { user_id: 'u3' } },
-            body: { aziende: ['a2'] },
+            body: { legal_entities: ['a2'] },
           }),
         ),
       )
@@ -682,13 +682,13 @@ describe('UsersPanel', () => {
             {
               code: 'last_unscoped_admin',
               detail: 'lo spazio deve tenere almeno un amministratore che veda tutte le aziende',
-              field: 'aziende',
+              field: 'legal_entities',
             },
             409,
           ),
         ),
       )
-      renderPanel(twoAziende())
+      renderPanel(twoLegalEntities())
 
       await openRowMenu('Ada Admin')
       await userEvent.click(screen.getByRole('menuitem', { name: 'Aziende…' }))
@@ -713,9 +713,9 @@ describe('the mail of an invitation', () => {
       ...lists,
       '/api/users/invites': () =>
         ok([
-          withMail('delivered', { id: 'i1', nome: 'Luca' }),
-          withMail('bounced', { id: 'i2', nome: 'Bianca', email: 'bianca@pigro.it' }),
-          withMail('failed', { id: 'i3', nome: 'Carla', email: 'carla@pigro.it' }),
+          withMail('delivered', { id: 'i1', name: 'Luca' }),
+          withMail('bounced', { id: 'i2', name: 'Bianca', email: 'bianca@pigro.it' }),
+          withMail('failed', { id: 'i3', name: 'Carla', email: 'carla@pigro.it' }),
         ]),
     })
     renderPanel()
@@ -735,7 +735,7 @@ describe('the mail of an invitation', () => {
     respond({
       ...lists,
       '/api/users/invites': () =>
-        ok([withMail('delivered', { id: 'i1' }), withMail('suppressed', { id: 'i2', nome: 'B' })]),
+        ok([withMail('delivered', { id: 'i1' }), withMail('suppressed', { id: 'i2', name: 'B' })]),
     })
     renderPanel()
 

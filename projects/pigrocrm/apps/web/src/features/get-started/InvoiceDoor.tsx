@@ -8,10 +8,10 @@
  *    (REB-358, a database check), and an empty space has none, so the door first asks
  *    whom the invoice was issued to: one already on file, found by name as it is typed,
  *    or a new name, which is `POST /api/customers` exactly as «Nuovo cliente» on
- *    Clienti sends it.
- * 2. **The PDF.** One file, a PDF, filed as a `fattura` document of that customer
+ *    «Clienti» sends it.
+ * 2. **The PDF.** One file, a PDF, filed as a `invoice` document of that customer
  *    (`POST /api/documents`, then its first version), because that is the one shape
- *    `import_issued_invoice` accepts as the original (`pdf_sorgente.document_id`).
+ *    `import_issued_invoice` accepts as the original (`pdf_source.document_id`).
  * 3. **The handoff.** The prompt with the document's id, the connection beside it when
  *    this person has no token yet, and «Registrata» with the link as soon as an invoice
  *    of that customer has this document as its `pdf_document_id`. Nothing is parsed on
@@ -20,7 +20,7 @@
  *
  * Registering an issued invoice is `require_admin` in the service, so the door is the
  * admin's, like the fiscal step: anybody else reads who does it. The assistant also needs
- * the space's «Accesso completo per i token dell'agente», because `import_issued_invoice`
+ * the space's «Accesso completo per i token dell’agente», because `import_issued_invoice`
  * is registered only under `mcp_full_access` (it cannot be undone); the handoff says so,
  * with the link, while that switch is off.
  */
@@ -48,8 +48,8 @@ import { forgetHandoff, readHandoff, rememberHandoff, type InvoiceHandoff } from
 import { invoicePrompt } from './prompts'
 
 const PDF = 'application/pdf'
-// `documents.titolo` is `String(200)`, and `DocumentCreate` refuses anything longer.
-const TITOLO_MAX = 200
+// `documents.title` is `String(200)`, and `DocumentCreate` refuses anything longer.
+const TitleMax = 200
 
 export function InvoiceDoor({ assistantConnected }: { assistantConnected: boolean }) {
   const { user } = useAuth()
@@ -68,11 +68,11 @@ export function InvoiceDoor({ assistantConnected }: { assistantConnected: boolea
   }
 
   return (
-    <section aria-labelledby="porta-fattura" className="space-y-3 border p-4">
+    <section aria-labelledby="door-invoice" className="space-y-3 border p-4">
       <header className="flex items-start gap-3">
         <FileText className="mt-0.5 size-5 shrink-0" aria-hidden />
         <div className="space-y-1">
-          <h3 id="porta-fattura" className="font-medium">
+          <h3 id="door-invoice" className="font-medium">
             Carica l’ultima fattura che hai emesso
           </h3>
           <p className="text-muted-foreground text-sm">
@@ -108,15 +108,15 @@ function Upload({ onUploaded }: { onUploaded: (handoff: InvoiceHandoff) => void 
   )
 }
 
-/** Every customer whose name is exactly `nome`, read through the whole search rather
+/** Every customer whose name is exactly `name`, read through the whole search rather
  *  than its first page: the search is a substring match over several fields, oldest
  *  first, so an exact name can sit behind any number of partial ones. */
-async function customerNamed(nome: string): Promise<{ id: string; ragione_sociale: string } | null> {
-  const wanted = nome.toLowerCase()
+async function customerNamed(name: string): Promise<{ id: string; legal_name: string } | null> {
+  const wanted = name.toLowerCase()
   const { items } = await fetchAllPages((cursor) =>
-    unwrap(api.GET('/api/customers', { params: { query: { search: nome, limit: 200, cursor } } })),
+    unwrap(api.GET('/api/customers', { params: { query: { search: name, limit: 200, cursor } } })),
   )
-  return items.find((item) => item.ragione_sociale.trim().toLowerCase() === wanted) ?? null
+  return items.find((item) => item.legal_name.trim().toLowerCase() === wanted) ?? null
 }
 
 /**
@@ -128,8 +128,8 @@ async function customerNamed(nome: string): Promise<{ id: string; ragione_social
  * created. Nothing is created while the search for the typed name is still on its way.
  */
 function ChooseCustomer({ onChosen }: { onChosen: (customer: { id: string; name: string }) => void }) {
-  const [nome, setNome] = useState('')
-  const typed = nome.trim()
+  const [name, setName] = useState('')
+  const typed = name.trim()
   const query = useDebounced(typed, SEARCH_DEBOUNCE_MS)
   const searchable = query.length >= 2
   const matches = useQuery({
@@ -140,7 +140,7 @@ function ChooseCustomer({ onChosen }: { onChosen: (customer: { id: string; name:
   const create = useCreateCustomer()
   const ids = useId()
   const items = searchable ? (matches.data?.items ?? []) : []
-  const exact = items.find((item) => item.ragione_sociale.trim().toLowerCase() === typed.toLowerCase())
+  const exact = items.find((item) => item.legal_name.trim().toLowerCase() === typed.toLowerCase())
   // Until the search has answered for exactly what is in the field, «create» could make
   // a second copy of a customer the search was about to show.
   const searching = typed.length >= 2 && (query !== typed || matches.isFetching)
@@ -152,7 +152,7 @@ function ChooseCustomer({ onChosen }: { onChosen: (customer: { id: string; name:
     event.preventDefault()
     if (!typed || create.isPending || searching || checking) return
     if (exact) {
-      onChosen({ id: exact.id, name: exact.ragione_sociale })
+      onChosen({ id: exact.id, name: exact.legal_name })
       return
     }
     // The suggestions are the first eight matches: before creating, the whole search is
@@ -162,12 +162,12 @@ function ChooseCustomer({ onChosen }: { onChosen: (customer: { id: string; name:
     const onFile = await customerNamed(typed).catch(() => null)
     setChecking(false)
     if (onFile) {
-      onChosen({ id: onFile.id, name: onFile.ragione_sociale })
+      onChosen({ id: onFile.id, name: onFile.legal_name })
       return
     }
     create.mutate(
-      { ragione_sociale: typed },
-      { onSuccess: (created) => onChosen({ id: created.id, name: created.ragione_sociale }) },
+      { legal_name: typed },
+      { onSuccess: (created) => onChosen({ id: created.id, name: created.legal_name }) },
     )
   }
 
@@ -178,14 +178,14 @@ function ChooseCustomer({ onChosen }: { onChosen: (customer: { id: string; name:
         <Label htmlFor={`${ids}-nome`}>Ragione sociale del cliente</Label>
         <Input
           id={`${ids}-nome`}
-          value={nome}
+          value={name}
           maxLength={255}
           autoComplete="off"
           // Held while the name is being looked up or created: the customer that comes
           // back is chosen for the name that was submitted, so that is the one on screen.
           readOnly={busy}
           aria-busy={busy}
-          onChange={(event) => setNome(event.target.value)}
+          onChange={(event) => setName(event.target.value)}
         />
         <p className="text-muted-foreground">Se è già tra i tuoi clienti, lo trovi qui sotto.</p>
         {items.length > 0 && (
@@ -197,9 +197,9 @@ function ChooseCustomer({ onChosen }: { onChosen: (customer: { id: string; name:
                   variant="outline"
                   size="sm"
                   disabled={busy}
-                  onClick={() => onChosen({ id: item.id, name: item.ragione_sociale })}
+                  onClick={() => onChosen({ id: item.id, name: item.legal_name })}
                 >
-                  {item.partita_iva ? `${item.ragione_sociale} · P.IVA ${item.partita_iva}` : item.ragione_sociale}
+                  {item.vat_number ? `${item.legal_name} · P.IVA ${item.vat_number}` : item.legal_name}
                 </Button>
               </li>
             ))}
@@ -217,7 +217,7 @@ function ChooseCustomer({ onChosen }: { onChosen: (customer: { id: string; name:
         </p>
       ) : null}
       <Button type="submit" disabled={!typed || create.isPending || searching || checking}>
-        {exact ? `Usa ${exact.ragione_sociale}` : 'Crea il cliente e vai avanti'}
+        {exact ? `Usa ${exact.legal_name}` : 'Crea il cliente e vai avanti'}
       </Button>
     </form>
   )
@@ -242,10 +242,10 @@ function UploadPdf({
   const inFlight = useRef(false)
   const filed = useRef<string | null>(null)
   const createDocument = useMutation({
-    mutationFn: (titolo: string) =>
+    mutationFn: (title: string) =>
       unwrap(
         api.POST('/api/documents', {
-          body: { customer_id: customer.id, tipo: 'fattura', titolo, custom_fields: {} },
+          body: { customer_id: customer.id, type: 'invoice', title, custom_fields: {} },
         }),
       ),
   })
@@ -272,8 +272,8 @@ function UploadPdf({
     try {
       let id = filed.current
       if (id === null) {
-        const titolo = (file.name.trim() || 'Fattura emessa').slice(0, TITOLO_MAX)
-        id = (await createDocument.mutateAsync(titolo)).id
+        const title = (file.name.trim() || 'Fattura emessa').slice(0, TitleMax)
+        id = (await createDocument.mutateAsync(title)).id
         filed.current = id
         setDocumentId(id)
       }
@@ -282,7 +282,7 @@ function UploadPdf({
     } catch (error) {
       setProblem(toProblem(error).detail)
       // A document whose file never arrived is removed rather than left behind as an
-      // empty `fattura` on the customer, whether or not the person tries again: the next
+      // empty `invoice` on the customer, whether or not the person tries again: the next
       // drop files a fresh one. Kept for a retry only if even the removal fails.
       const orphan = filed.current
       if (orphan !== null) {
@@ -392,7 +392,7 @@ function Handoff({
   const invoice = registered.data
   if (invoice) {
     const label =
-      invoice.numero !== null && invoice.anno !== null ? `${invoice.numero}/${invoice.anno}` : ''
+      invoice.number !== null && invoice.year !== null ? `${invoice.number}/${invoice.year}` : ''
     return (
       <div role="status" className="space-y-2 text-sm">
         <p className="font-medium">Registrata</p>

@@ -191,7 +191,7 @@ describe('EntityDetailLayout', () => {
       invoices: <p>fatture</p>,
       hours: <p>ore</p>,
       economics: <p>conto economico</p>,
-      attivita: <p>cose da fare</p>,
+      tasks: <p>cose da fare</p>,
       emails: <p>conversazioni</p>,
     })
     expect(screen.getAllByRole('tab').map((tab) => tab.textContent)).toEqual([
@@ -207,8 +207,8 @@ describe('EntityDetailLayout', () => {
     ])
   })
 
-  it('shows an Attività tab, apart from the Timeline, when attivita is given', async () => {
-    renderLayout({ attivita: <p>cose da fare</p> })
+  it('shows an Attività tab, apart from the Timeline, when tasks is given', async () => {
+    renderLayout({ tasks: <p>cose da fare</p> })
     await userEvent.click(screen.getByRole('tab', { name: 'Attività' }))
     expect(screen.getByText('cose da fare')).toBeInTheDocument()
   })

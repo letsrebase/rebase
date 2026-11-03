@@ -47,26 +47,26 @@ class SearchService:
         """
         # `strip()` and nothing else. No lowercasing here: the scoring expression
         # lowercases on both sides where it needs to, and `similarity()` normalises
-        # internally, so a second normalisation would only make the returned `termine`
+        # internally, so a second normalisation would only make the returned `term`
         # differ from what the user typed.
-        term = query.termine.strip()
-        limit = query.limite
-        azienda = query.azienda_id
+        term = query.term.strip()
+        limit = query.limit
+        legal_entity = query.legal_entity_id
         return SearchResults(
-            termine=term,
-            gruppi=[
-                self.repo.customers(term, limit, azienda),
-                self.repo.people(term, limit, azienda),
-                self.repo.deals(term, limit, azienda),
-                self.repo.documents(term, limit, azienda),
+            term=term,
+            groups=[
+                self.repo.customers(term, limit, legal_entity),
+                self.repo.people(term, limit, legal_entity),
+                self.repo.deals(term, limit, legal_entity),
+                self.repo.documents(term, limit, legal_entity),
                 # Fifth and last. Added by Task C12, which is also what made `SearchEntity`
                 # true: it declared five entities from the start and four were searched, so
                 # an invoice number answered "nothing found" when it had never been looked
                 # for.
-                self.repo.invoices(term, limit, azienda),
+                self.repo.invoices(term, limit, legal_entity),
                 # Sixth and last (REB-723): what is still to be done about all of the
-                # above. It takes no azienda: an attività has none of its own, the same
-                # reason the calendar keeps them whatever azienda is selected.
-                self.repo.attivita(term, limit),
+                # above. It takes no legal entity: an task has none of its own, the same
+                # reason the calendar keeps them whatever legal entity is selected.
+                self.repo.tasks(term, limit),
             ],
         )

@@ -13,30 +13,30 @@ from pigrocrm.core.money import ZERO_MONEY, round_money, share, sum_money
 
 
 def contract_date_markers(
-    contracts: ContractRepository, anno: int, azienda_id: UUID | None = None
+    contracts: ContractRepository, year: int, legal_entity_id: UUID | None = None
 ) -> list[ContractDateMarker]:
     """REB-352 §1.6's overlay: every irrevocability-window close and renewal
-    deadline that falls inside `anno`'s calendar, across every non-deleted
+    deadline that falls inside `year`'s calendar, across every non-deleted
     contract. The irrevocability date is measured "as of" today regardless of
-    `anno` -- a notice period is a forward-looking promise, never a fact about a
-    past year -- so a past `anno` never grows one and a future one only does
-    once today's window actually reaches into it. One azienda's calendar carries its
+    `year` -- a notice period is a forward-looking promise, never a fact about a
+    past year -- so a past `year` never grows one and a future one only does
+    once today's window actually reaches into it. One legal entity's calendar carries its
     own contracts' dates (REB-630).
     """
-    year_start = date(anno, 1, 1)
-    year_end = date(anno, 12, 31)
-    oggi = today_local()
+    year_start = date(year, 1, 1)
+    year_end = date(year, 12, 31)
+    today = today_local()
     markers: list[ContractDateMarker] = []
-    for contract in contracts.list_active(azienda_id=azienda_id):
-        end = irrevocability_window_end(contract, oggi)
+    for contract in contracts.list_active(legal_entity_id=legal_entity_id):
+        end = irrevocability_window_end(contract, today)
         if end is not None and year_start <= end <= year_end:
             markers.append(
                 ContractDateMarker(
                     contract_id=contract.id,
-                    titolo=contract.titolo,
+                    title=contract.title,
                     customer_id=contract.customer_id,
-                    tipo="fine_irrevocabilita",
-                    data=end,
+                    type="irrevocability_end",
+                    date=end,
                 )
             )
         deadline = renewal_deadline(contract)
@@ -44,95 +44,87 @@ def contract_date_markers(
             markers.append(
                 ContractDateMarker(
                     contract_id=contract.id,
-                    titolo=contract.titolo,
+                    title=contract.title,
                     customer_id=contract.customer_id,
-                    tipo="scadenza_rinnovo",
-                    data=deadline,
+                    type="renewal_due",
+                    date=deadline,
                 )
             )
-    markers.sort(key=lambda m: (m.data, m.titolo))
+    markers.sort(key=lambda m: (m.date, m.title))
     return markers
 
 
 def cash_overview(
     repo: AnalyticsRepository,
     contracts: ContractRepository,
-    anno: int,
+    year: int,
     base: CashBase,
-    azienda_id: UUID | None,
+    legal_entity_id: UUID | None,
 ) -> CashOverview:
     """The year as cash, month by month (`CashOverview`): every figure is a SUM the
     repository produced plus additions done once, here. `base` says which month a
     document falls in (ORB-133). The year's totals agree under the two readings except
     for a document whose declared period and whose money fall in different years: that
-    one is in one year's view and not the other's. `azienda_id` narrows every sum to
-    one azienda (REB-630, spec 2026-10-03 §1.9); without it the cash of every azienda
+    one is in one year's view and not the other's. `legal_entity_id` narrows every sum to
+    one legal entity (REB-630, spec 2026-10-03 §1.9); without it the cash of every legal entity
     adds up, which is what «tutte» exists to show, and a cost without a deal is counted
     there alone (§1.7)."""
-    incassato = repo.monthly_incassato(anno, base, azienda_id)
-    da_incassare = repo.monthly_da_incassare(anno, base, azienda_id)
-    bozze = repo.monthly_bozze(anno, base, azienda_id)
-    costi = repo.monthly_costi(anno, azienda_id)
+    paid = repo.monthly_paid(year, base, legal_entity_id)
+    unpaid = repo.monthly_unpaid(year, base, legal_entity_id)
+    drafts = repo.monthly_drafts(year, base, legal_entity_id)
+    costs = repo.monthly_costs(year, legal_entity_id)
     months = range(1, 13)
     zero = ZERO_MONEY
-    stack_andamento = max(
-        (incassato.get(m, zero) + costi.get(m, zero) for m in months), default=zero
-    )
-    stack_proiezione = max(
+    stack_trend = max((paid.get(m, zero) + costs.get(m, zero) for m in months), default=zero)
+    stack_projection = max(
         (
-            incassato.get(m, zero)
-            + da_incassare.get(m, zero)
-            + bozze.get(m, zero)
-            + costi.get(m, zero)
+            paid.get(m, zero) + unpaid.get(m, zero) + drafts.get(m, zero) + costs.get(m, zero)
             for m in months
         ),
         default=zero,
     )
 
-    mesi = [
+    cash_months = [
         CashMonth(
-            anno=anno,
-            mese=m,
-            incassato=incassato.get(m, zero),
-            da_incassare=da_incassare.get(m, zero),
-            bozze=bozze.get(m, zero),
-            costi=costi.get(m, zero),
-            pila_andamento=round_money(incassato.get(m, zero) + costi.get(m, zero)),
-            pila_proiezione=round_money(
-                incassato.get(m, zero)
-                + da_incassare.get(m, zero)
-                + bozze.get(m, zero)
-                + costi.get(m, zero)
+            year=year,
+            month=m,
+            paid=paid.get(m, zero),
+            unpaid=unpaid.get(m, zero),
+            drafts=drafts.get(m, zero),
+            costs=costs.get(m, zero),
+            trend_stack=round_money(paid.get(m, zero) + costs.get(m, zero)),
+            projection_stack=round_money(
+                paid.get(m, zero) + unpaid.get(m, zero) + drafts.get(m, zero) + costs.get(m, zero)
             ),
-            quote_andamento={
-                "incassato": share(incassato.get(m, zero), stack_andamento),
-                "costi": share(costi.get(m, zero), stack_andamento),
+            trend_shares={
+                "paid": share(paid.get(m, zero), stack_trend),
+                "costs": share(costs.get(m, zero), stack_trend),
             },
-            quote_proiezione={
-                "incassato": share(incassato.get(m, zero), stack_proiezione),
-                "da_incassare": share(da_incassare.get(m, zero), stack_proiezione),
-                "bozze": share(bozze.get(m, zero), stack_proiezione),
-                "costi": share(costi.get(m, zero), stack_proiezione),
+            projection_shares={
+                "paid": share(paid.get(m, zero), stack_projection),
+                "unpaid": share(unpaid.get(m, zero), stack_projection),
+                "drafts": share(drafts.get(m, zero), stack_projection),
+                "costs": share(costs.get(m, zero), stack_projection),
             },
         )
         for m in months
     ]
-    tot_incassato = sum_money(incassato.values())
-    tot_da_incassare = sum_money(da_incassare.values())
-    tot_bozze = sum_money(bozze.values())
-    tot_costi = sum_money(costi.values())
-    proiettato = round_money(tot_incassato + tot_da_incassare + tot_bozze)
+    tot_paid = sum_money(paid.values())
+    tot_unpaid = sum_money(unpaid.values())
+    tot_drafts = sum_money(drafts.values())
+    tot_costs = sum_money(costs.values())
+    projected = round_money(tot_paid + tot_unpaid + tot_drafts)
     return CashOverview(
-        anno=anno,
+        year=year,
         base=base,
-        azienda_id=azienda_id,
-        incassato=tot_incassato,
-        da_incassare=tot_da_incassare,
-        bozze=tot_bozze,
-        proiettato=proiettato,
-        costi=tot_costi,
-        lordo_effettivo=round_money(tot_incassato - tot_costi),
-        lordo_proiettato=round_money(proiettato - tot_costi),
-        mesi=mesi,
-        scadenze_contrattuali=contract_date_markers(contracts, anno, azienda_id),
+        legal_entity_id=legal_entity_id,
+        paid=tot_paid,
+        unpaid=tot_unpaid,
+        drafts=tot_drafts,
+        projected=projected,
+        costs=tot_costs,
+        actual_gross=round_money(tot_paid - tot_costs),
+        projected_gross=round_money(projected - tot_costs),
+        months=cash_months,
+        contractual_due_dates=contract_date_markers(contracts, year, legal_entity_id),
     )

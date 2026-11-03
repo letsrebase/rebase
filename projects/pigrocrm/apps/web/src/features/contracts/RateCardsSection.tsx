@@ -27,7 +27,7 @@ import { formatDate, formatQuantity } from '@/features/invoices/format'
 import { fieldErrorFrom, toProblem, type ProblemDetail } from '@/lib/api'
 import { useCan } from '@/lib/auth'
 import { toIsoDate } from '@/lib/dates'
-import { RATE_PERIODI, RATE_TIPI, RATE_UNITA, currencySign, formatAmount } from './labels'
+import { RatePeriods, RATE_TYPE_OPTIONS, RateUnit, currencySign, formatAmount } from './labels'
 import {
   useCreateRateCard,
   useRateCards,
@@ -37,46 +37,46 @@ import {
   type RateCardUpdateBody,
 } from './queries'
 
-type Tipo = RateCardCreateBody['tipo']
-type Unita = RateCardCreateBody['unita']
-type Periodo = NonNullable<RateCardCreateBody['periodo_erogazione']>
+type Type = RateCardCreateBody['type']
+type Unit = RateCardCreateBody['unit']
+type Period = NonNullable<RateCardCreateBody['delivery_period']>
 
-const TIPI = Object.keys(RATE_TIPI) as Tipo[]
-const UNITA = Object.keys(RATE_UNITA) as Unita[]
-const PERIODI = Object.keys(RATE_PERIODI) as Periodo[]
+const TYPE_OPTIONS = Object.keys(RATE_TYPE_OPTIONS) as Type[]
+const Unit = Object.keys(RateUnit) as Unit[]
+const Periods = Object.keys(RatePeriods) as Period[]
 
 interface RateFormValues {
-  valido_da: string
-  valido_a: string
-  tipo: Tipo
-  importo: string
-  unita: Unita
-  frazioni: string
-  ore_minime: string
-  periodo_erogazione: Periodo | ''
+  valid_from: string
+  valid_to: string
+  type: Type
+  amount: string
+  unit: Unit
+  fractions: string
+  minimum_hours: string
+  delivery_period: Period | ''
 }
 
 const EMPTY_FORM: RateFormValues = {
-  valido_da: '',
-  valido_a: '',
-  tipo: 'giornaliero',
-  importo: '',
-  unita: 'giorno',
-  frazioni: '1',
-  ore_minime: '',
-  periodo_erogazione: '',
+  valid_from: '',
+  valid_to: '',
+  type: 'daily',
+  amount: '',
+  unit: 'day',
+  fractions: '1',
+  minimum_hours: '',
+  delivery_period: '',
 }
 
 function toFormValues(card: RateCard): RateFormValues {
   return {
-    valido_da: card.valido_da,
-    valido_a: card.valido_a ?? '',
-    tipo: card.tipo as Tipo,
-    importo: String(card.importo),
-    unita: card.unita as Unita,
-    frazioni: card.frazioni_ammesse.map(String).join(', '),
-    ore_minime: card.ore_minime === null ? '' : String(card.ore_minime),
-    periodo_erogazione: (card.periodo_erogazione ?? '') as Periodo | '',
+    valid_from: card.valid_from,
+    valid_to: card.valid_to ?? '',
+    type: card.type as Type,
+    amount: String(card.amount),
+    unit: card.unit as Unit,
+    fractions: card.allowed_fractions.map(String).join(', '),
+    minimum_hours: card.minimum_hours === null ? '' : String(card.minimum_hours),
+    delivery_period: (card.delivery_period ?? '') as Period | '',
   }
 }
 
@@ -91,28 +91,28 @@ function parseFractions(text: string): string[] {
 
 function toBody(values: RateFormValues): RateCardUpdateBody {
   return {
-    valido_da: values.valido_da,
-    valido_a: values.valido_a === '' ? null : values.valido_a,
-    tipo: values.tipo,
-    importo: values.importo.trim().replace(',', '.'),
-    unita: values.unita,
-    frazioni_ammesse: parseFractions(values.frazioni),
-    ore_minime: values.tipo === 'orario' && values.ore_minime.trim() !== ''
-      ? values.ore_minime.trim().replace(',', '.')
+    valid_from: values.valid_from,
+    valid_to: values.valid_to === '' ? null : values.valid_to,
+    type: values.type,
+    amount: values.amount.trim().replace(',', '.'),
+    unit: values.unit,
+    allowed_fractions: parseFractions(values.fractions),
+    minimum_hours: values.type === 'hourly' && values.minimum_hours.trim() !== ''
+      ? values.minimum_hours.trim().replace(',', '.')
       : null,
-    periodo_erogazione:
-      values.tipo === 'ricorrente_fisso' && values.periodo_erogazione !== ''
-        ? values.periodo_erogazione
+    delivery_period:
+      values.type === 'fixed_recurring' && values.delivery_period !== ''
+        ? values.delivery_period
         : null,
   }
 }
 
 /** Where a card stands today, read from its own two dates: never stored, so a card
  *  closed by a newer one and a card that has not started yet read right without a job. */
-function standing(card: RateCard, today: string): 'futura' | 'in_vigore' | 'chiusa' {
-  if (card.valido_da > today) return 'futura'
-  if (card.valido_a !== null && card.valido_a < today) return 'chiusa'
-  return 'in_vigore'
+function standing(card: RateCard, today: string): 'future' | 'in_force' | 'closed' {
+  if (card.valid_from > today) return 'future'
+  if (card.valid_to !== null && card.valid_to < today) return 'closed'
+  return 'in_force'
 }
 
 /**
@@ -125,8 +125,8 @@ function cardInForceOn(cards: RateCard[], start: string, except?: string): RateC
   return cards.find(
     (card) =>
       card.id !== except &&
-      card.valido_da < start &&
-      (card.valido_a === null || card.valido_a >= start),
+      card.valid_from < start &&
+      (card.valid_to === null || card.valid_to >= start),
   )
 }
 
@@ -134,13 +134,13 @@ interface DialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   contractId: string
-  divisa: string
+  currency: string
   cards: RateCard[]
   /** The card being edited, or absent for a new one. */
   card?: RateCard
 }
 
-function RateCardDialog({ open, onOpenChange, contractId, divisa, cards, card }: DialogProps) {
+function RateCardDialog({ open, onOpenChange, contractId, currency, cards, card }: DialogProps) {
   const isCreate = card === undefined
   const initial = card === undefined ? EMPTY_FORM : toFormValues(card)
   const [values, setValues] = useState<RateFormValues>(initial)
@@ -163,7 +163,7 @@ function RateCardDialog({ open, onOpenChange, contractId, divisa, cards, card }:
     setValues((previous) => ({ ...previous, [key]: value }))
   }
 
-  const replaced = isCreate ? cardInForceOn(cards, values.valido_da) : undefined
+  const replaced = isCreate ? cardInForceOn(cards, values.valid_from) : undefined
 
   function submit() {
     const body = toBody(values)
@@ -176,7 +176,7 @@ function RateCardDialog({ open, onOpenChange, contractId, divisa, cards, card }:
       create.mutate(
         {
           body: body as RateCardCreateBody,
-          chiudiPrecedente: replaced !== undefined && closePrevious,
+          closePrevious: replaced !== undefined && closePrevious,
         },
         { onSuccess: done('Tariffa aggiunta'), onError: (error) => setProblem(toProblem(error)) },
       )
@@ -202,14 +202,14 @@ function RateCardDialog({ open, onOpenChange, contractId, divisa, cards, card }:
   const drawn =
     fieldError !== null &&
     [
-      'valido_da',
-      'valido_a',
-      'tipo',
-      'unita',
-      'importo',
-      'frazioni_ammesse',
-      'ore_minime',
-      'periodo_erogazione',
+      'valid_from',
+      'valid_to',
+      'type',
+      'unit',
+      'amount',
+      'allowed_fractions',
+      'minimum_hours',
+      'delivery_period',
     ].includes(fieldError.field)
   const elsewhere =
     problem !== null && overlap === null && !drawn
@@ -231,23 +231,23 @@ function RateCardDialog({ open, onOpenChange, contractId, divisa, cards, card }:
             <Input
               id="rate-da"
               type="date"
-              value={values.valido_da}
-              onChange={(event) => set('valido_da', event.target.value)}
-              aria-invalid={fieldError?.field === 'valido_da' || overlap !== null}
+              value={values.valid_from}
+              onChange={(event) => set('valid_from', event.target.value)}
+              aria-invalid={fieldError?.field === 'valid_from' || overlap !== null}
             />
-            {errorOn('valido_da')}
+            {errorOn('valid_from')}
           </div>
           <div className="space-y-2">
             <Label htmlFor="rate-a">Valida fino al</Label>
             <Input
               id="rate-a"
               type="date"
-              value={values.valido_a}
-              onChange={(event) => set('valido_a', event.target.value)}
-              aria-invalid={fieldError?.field === 'valido_a' || overlap !== null}
+              value={values.valid_to}
+              onChange={(event) => set('valid_to', event.target.value)}
+              aria-invalid={fieldError?.field === 'valid_to' || overlap !== null}
             />
             <p className="text-xs text-muted-foreground">Vuoto: la tariffa resta in vigore.</p>
-            {errorOn('valido_a')}
+            {errorOn('valid_to')}
           </div>
         </div>
         {overlap !== null && <p className="text-sm text-destructive">{overlap}</p>}
@@ -260,7 +260,7 @@ function RateCardDialog({ open, onOpenChange, contractId, divisa, cards, card }:
               onCheckedChange={(checked) => setClosePrevious(checked === true)}
             />
             <Label htmlFor="rate-close-previous" className="font-normal leading-snug">
-              Chiudi la tariffa in vigore dal {formatDate(replaced.valido_da)} il giorno prima
+              Chiudi la tariffa in vigore dal {formatDate(replaced.valid_from)} il giorno prima
               di questa
             </Label>
           </div>
@@ -268,92 +268,92 @@ function RateCardDialog({ open, onOpenChange, contractId, divisa, cards, card }:
 
         <div className="grid grid-cols-2 gap-4">
           <div className="space-y-2">
-            <Label htmlFor="rate-tipo">Tipo</Label>
-            <Select value={values.tipo} onValueChange={(value) => set('tipo', value as Tipo)}>
-              <SelectTrigger id="rate-tipo" className="w-full">
+            <Label htmlFor="rate-type">Tipo</Label>
+            <Select value={values.type} onValueChange={(value) => set('type', value as Type)}>
+              <SelectTrigger id="rate-type" className="w-full">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {TIPI.map((tipo) => (
-                  <SelectItem key={tipo} value={tipo}>
-                    {RATE_TIPI[tipo]}
+                {TYPE_OPTIONS.map((type) => (
+                  <SelectItem key={type} value={type}>
+                    {RATE_TYPE_OPTIONS[type]}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
-            {errorOn('tipo')}
+            {errorOn('type')}
           </div>
           <div className="space-y-2">
-            <Label htmlFor="rate-unita">Unità</Label>
-            <Select value={values.unita} onValueChange={(value) => set('unita', value as Unita)}>
-              <SelectTrigger id="rate-unita" className="w-full">
+            <Label htmlFor="rate-unit">Unità</Label>
+            <Select value={values.unit} onValueChange={(value) => set('unit', value as Unit)}>
+              <SelectTrigger id="rate-unit" className="w-full">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {UNITA.map((unita) => (
-                  <SelectItem key={unita} value={unita}>
-                    {RATE_UNITA[unita]}
+                {Unit.map((unit) => (
+                  <SelectItem key={unit} value={unit}>
+                    {RateUnit[unit]}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
-            {errorOn('unita')}
+            {errorOn('unit')}
           </div>
         </div>
 
         <div className="grid grid-cols-2 gap-4">
           <div className="space-y-2">
-            <Label htmlFor="rate-importo">Importo ({currencySign(divisa)})</Label>
+            <Label htmlFor="rate-amount">Importo ({currencySign(currency)})</Label>
             <Input
-              id="rate-importo"
+              id="rate-amount"
               inputMode="decimal"
               placeholder="400.00"
-              value={values.importo}
-              onChange={(event) => set('importo', event.target.value)}
-              aria-invalid={fieldError?.field === 'importo'}
+              value={values.amount}
+              onChange={(event) => set('amount', event.target.value)}
+              aria-invalid={fieldError?.field === 'amount'}
             />
-            {errorOn('importo')}
+            {errorOn('amount')}
           </div>
           <div className="space-y-2">
-            <Label htmlFor="rate-frazioni">Frazioni ammesse</Label>
+            <Label htmlFor="rate-fractions">Frazioni ammesse</Label>
             <Input
-              id="rate-frazioni"
-              value={values.frazioni}
-              onChange={(event) => set('frazioni', event.target.value)}
-              aria-invalid={fieldError?.field === 'frazioni_ammesse'}
+              id="rate-fractions"
+              value={values.fractions}
+              onChange={(event) => set('fractions', event.target.value)}
+              aria-invalid={fieldError?.field === 'allowed_fractions'}
             />
             <p className="text-xs text-muted-foreground">Per esempio «1, 0,5» per giorno intero o mezzo.</p>
-            {errorOn('frazioni_ammesse')}
+            {errorOn('allowed_fractions')}
           </div>
         </div>
 
-        {values.tipo === 'orario' && (
+        {values.type === 'hourly' && (
           <div className="space-y-2">
-            <Label htmlFor="rate-ore-minime">Ore minime</Label>
+            <Label htmlFor="rate-hours-min">Ore minime</Label>
             <Input
-              id="rate-ore-minime"
+              id="rate-hours-min"
               inputMode="decimal"
-              value={values.ore_minime}
-              onChange={(event) => set('ore_minime', event.target.value)}
-              aria-invalid={fieldError?.field === 'ore_minime'}
+              value={values.minimum_hours}
+              onChange={(event) => set('minimum_hours', event.target.value)}
+              aria-invalid={fieldError?.field === 'minimum_hours'}
             />
-            {errorOn('ore_minime')}
+            {errorOn('minimum_hours')}
           </div>
         )}
-        {values.tipo === 'ricorrente_fisso' && (
+        {values.type === 'fixed_recurring' && (
           <div className="space-y-2">
-            <Label htmlFor="rate-periodo">Erogazione del canone</Label>
+            <Label htmlFor="rate-period">Erogazione del canone</Label>
             <Select
-              value={values.periodo_erogazione}
-              onValueChange={(value) => set('periodo_erogazione', value as Periodo)}
+              value={values.delivery_period}
+              onValueChange={(value) => set('delivery_period', value as Period)}
             >
-              <SelectTrigger id="rate-periodo" className="w-full">
+              <SelectTrigger id="rate-period" className="w-full">
                 <SelectValue placeholder="Seleziona…" />
               </SelectTrigger>
               <SelectContent>
-                {PERIODI.map((periodo) => (
-                  <SelectItem key={periodo} value={periodo}>
-                    {RATE_PERIODI[periodo]}
+                {Periods.map((period) => (
+                  <SelectItem key={period} value={period}>
+                    {RatePeriods[period]}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -361,7 +361,7 @@ function RateCardDialog({ open, onOpenChange, contractId, divisa, cards, card }:
             <p className="text-xs text-muted-foreground">
               Senza una cadenza il canone non entra nei ricavi programmati.
             </p>
-            {errorOn('periodo_erogazione')}
+            {errorOn('delivery_period')}
           </div>
         )}
 
@@ -381,30 +381,30 @@ function RateCardDialog({ open, onOpenChange, contractId, divisa, cards, card }:
 }
 
 function validity(card: RateCard): string {
-  return card.valido_a === null
-    ? `dal ${formatDate(card.valido_da)}`
-    : `dal ${formatDate(card.valido_da)} al ${formatDate(card.valido_a)}`
+  return card.valid_to === null
+    ? `dal ${formatDate(card.valid_from)}`
+    : `dal ${formatDate(card.valid_from)} al ${formatDate(card.valid_to)}`
 }
 
 function details(card: RateCard): string {
   const parts: string[] = []
-  if (card.ore_minime !== null) parts.push(`minimo ${formatQuantity(String(card.ore_minime))} ore`)
-  if (card.periodo_erogazione !== null) {
+  if (card.minimum_hours !== null) parts.push(`minimo ${formatQuantity(String(card.minimum_hours))} ore`)
+  if (card.delivery_period !== null) {
     parts.push(
-      card.periodo_erogazione in RATE_PERIODI
-        ? RATE_PERIODI[card.periodo_erogazione as Periodo].toLowerCase()
-        : card.periodo_erogazione,
+      card.delivery_period in RatePeriods
+        ? RatePeriods[card.delivery_period as Period].toLowerCase()
+        : card.delivery_period,
     )
   }
-  const fractions = card.frazioni_ammesse.map((fraction) => formatQuantity(String(fraction)))
+  const fractions = card.allowed_fractions.map((fraction) => formatQuantity(String(fraction)))
   if (fractions.join() !== '1') parts.push(`frazioni ${fractions.join(' · ')}`)
   return parts.join(' · ')
 }
 
 const STANDING_PILL = {
-  futura: { tone: 'gold', label: 'Futura' },
-  in_vigore: { tone: 'ink', label: 'In vigore' },
-  chiusa: { tone: 'muted', label: 'Chiusa' },
+  future: { tone: 'gold', label: 'Futura' },
+  in_force: { tone: 'ink', label: 'In vigore' },
+  closed: { tone: 'muted', label: 'Chiusa' },
 } as const
 
 /**
@@ -415,7 +415,7 @@ const STANDING_PILL = {
  * sentence the API gives; «chiudi il giorno prima» is the one way to replace a rate
  * without editing the old card by hand.
  */
-export function RateCardsSection({ contractId, divisa }: { contractId: string; divisa: string }) {
+export function RateCardsSection({ contractId, currency }: { contractId: string; currency: string }) {
   const canWrite = useCan('create_rate_card')
   const cards = useRateCards(contractId)
   const [dialog, setDialog] = useState<{ open: boolean; card?: RateCard }>({ open: false })
@@ -455,12 +455,12 @@ export function RateCardsSection({ contractId, divisa }: { contractId: string; d
                       <StatusPill tone={pill.tone}>{pill.label}</StatusPill>
                     </div>
                     <p className="text-sm text-muted-foreground">
-                      {RATE_TIPI[card.tipo as Tipo] ?? card.tipo}
+                      {RATE_TYPE_OPTIONS[card.type as Type] ?? card.type}
                       {extra === '' ? '' : ` · ${extra}`}
                     </p>
                   </div>
                   <span className="shrink-0 tabular-nums">
-                    {formatAmount(String(card.importo), divisa)} / {RATE_UNITA[card.unita as Unita] ?? card.unita}
+                    {formatAmount(String(card.amount), currency)} / {RateUnit[card.unit as Unit] ?? card.unit}
                   </span>
                   {canWrite && (
                     <Button
@@ -483,7 +483,7 @@ export function RateCardsSection({ contractId, divisa }: { contractId: string; d
         open={dialog.open}
         onOpenChange={(open) => setDialog((previous) => ({ ...previous, open }))}
         contractId={contractId}
-        divisa={divisa}
+        currency={currency}
         cards={cards.data ?? []}
         card={dialog.card}
       />

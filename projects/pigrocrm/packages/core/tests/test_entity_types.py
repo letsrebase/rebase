@@ -15,7 +15,7 @@ to five members instead of widening them to seven.
 import re
 from pathlib import Path
 
-from pigrocrm.core.documents.schemas import DocumentTipo
+from pigrocrm.core.documents.schemas import DocumentType
 from pigrocrm.core.fields.schemas import EntityType
 from pigrocrm.core.schema_registry import CREATE_MODELS, ENTITY_TYPES, native_fields
 
@@ -32,7 +32,7 @@ EXPECTED = (
     # Slice 10 (2026-09-09). A commitment carries custom fields for the reason
     # everything else does: whoever runs the installation knows what they need to record
     # about one, and the alternative is a `note` field holding a form.
-    "attivita",
+    "task",
     # REB-358. A contract engagement carries custom fields for the identical reason.
     "contract",
 )
@@ -50,17 +50,17 @@ def test_registry_agrees_with_the_literal() -> None:
 def test_native_fields_names_this_slice_columns() -> None:
     """The names A13 (Task 4A-2) has to defend. Asserted here so that renaming a
     column without revisiting the guard's own test still trips something."""
-    assert {"ore", "data", "descrizione"} <= set(native_fields("time_entry"))
-    assert {"importo", "data", "descrizione"} <= set(native_fields("cost"))
-    # REB-358, Greptile-flagged: `stato`/`contratto_precedente_id` are real
+    assert {"hours", "date", "description"} <= set(native_fields("time_entry"))
+    assert {"amount", "date", "description"} <= set(native_fields("cost"))
+    # REB-358, Greptile-flagged: `status`/`previous_contract_id` are real
     # `contracts` columns `ContractCreate` deliberately does not declare, so they
     # must be reserved here or an administrator could slugify a custom field onto
     # either native column.
-    assert {"stato", "contratto_precedente_id"} <= set(native_fields("contract"))
+    assert {"status", "previous_contract_id"} <= set(native_fields("contract"))
 
 
-def test_document_tipo_gained_the_time_report() -> None:
-    assert "rapporto_ore" in DocumentTipo.__args__
+def test_document_type_gained_the_time_report() -> None:
+    assert "hours_report" in DocumentType.__args__
 
 
 def test_the_frontend_literal_agrees() -> None:

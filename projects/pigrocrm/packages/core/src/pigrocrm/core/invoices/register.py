@@ -15,7 +15,7 @@ from pigrocrm.core.invoices.schemas import RegisterGapRead, RegisterGapsDeclare
 
 GAPS_ACTION = "declare_invoice_register_gaps"
 # How many undeclared numbers `issue`'s refusal spells out. The whole list always stays
-# in `details["numeri"]`, machine-readable; the *sentence* is read by a person, and a
+# in `details["numbers"]`, machine-readable; the *sentence* is read by a person, and a
 # register whose lowest imported number is high can leave hundreds of them.
 GAPS_SHOWN_IN_MESSAGE = 20
 
@@ -26,13 +26,13 @@ class RegisterGaps:
 
     def declare_gaps(
         self,
-        anno: int,
+        year: int,
         data: RegisterGapsDeclare,
         actor: Actor,
-        azienda_id: UUID | None = None,
+        legal_entity_id: UUID | None = None,
     ) -> list[RegisterGapRead]:
-        """Name the numbers the azienda's register will never carry, and why (spec 9
-        §3.2 rule 4); `None` is the default azienda (REB-619).
+        """Name the numbers the legal entity's register will never carry, and why (spec 9
+        §3.2 rule 4); `None` is the default legal entity (REB-619).
 
         A declared gap is the honest alternative to two dishonest ones: inventing a row
         to fill it, or leaving it silent so that it looks like a lost invoice. It is
@@ -44,79 +44,81 @@ class RegisterGaps:
         here and an import of the same number could each read the register before the
         other's write, and both would go through.
 
-        **The whole batch is validated before the first `add_gap`**: `data.buchi` carries
+        **The whole batch is validated before the first `add_gap`**: `data.gaps` carries
         no uniqueness rule of its own, so `seen` refuses a same-batch duplicate and
         `present`/`already` refuse a number that is an invoice or is already declared, all
         in one pass with nothing written yet. The writes run in a SAVEPOINT because a
         *concurrent* declaration of the same number can still reach the unique index
-        underneath `uq_invoice_register_gaps_anno_numero`; that becomes a `Conflict` and
+        underneath `uq_invoice_register_gaps_year_number`; that becomes a `Conflict` and
         only the savepoint is undone.
         """
         actor.require_admin(GAPS_ACTION)
-        check_register_year(anno)
+        check_register_year(year)
         ctx = self.ctx
-        azienda = ctx.writing_azienda(azienda_id)
-        ctx.repo.lock_counter(azienda.id, anno)
-        present = ctx.repo.numbers_present(azienda.id, anno)
-        already = ctx.repo.declared_gaps(azienda.id, anno)
+        legal_entity = ctx.writing_legal_entity(legal_entity_id)
+        ctx.repo.lock_counter(legal_entity.id, year)
+        present = ctx.repo.numbers_present(legal_entity.id, year)
+        already = ctx.repo.declared_gaps(legal_entity.id, year)
         seen: set[int] = set()
-        for buco in data.buchi:
-            if buco.numero in present:
+        for gap in data.gaps:
+            if gap.number in present:
                 raise Conflict(
                     ENTITY,
                     "questo numero e' una fattura del registro, non un buco",
-                    anno=anno,
-                    numero=buco.numero,
+                    year=year,
+                    number=gap.number,
                 )
-            if buco.numero in already or buco.numero in seen:
-                raise Conflict(ENTITY, "buco gia' dichiarato", anno=anno, numero=buco.numero)
-            seen.add(buco.numero)
+            if gap.number in already or gap.number in seen:
+                raise Conflict(ENTITY, "buco gia' dichiarato", year=year, number=gap.number)
+            seen.add(gap.number)
 
         def concurrent_declaration(exc: IntegrityError) -> Conflict:
             return Conflict(
-                ENTITY, "un altro processo ha dichiarato lo stesso buco: riprova", anno=anno
+                ENTITY, "un altro processo ha dichiarato lo stesso buco: riprova", year=year
             )
 
         with savepoint(ctx.session, concurrent_declaration):
-            for buco in data.buchi:
+            for gap in data.gaps:
                 ctx.repo.add_gap(
                     InvoiceRegisterGap(
-                        azienda_id=azienda.id,
-                        anno=anno,
-                        numero=buco.numero,
-                        motivo=buco.motivo,
-                        dichiarato_da=actor.id,
+                        legal_entity_id=legal_entity.id,
+                        year=year,
+                        number=gap.number,
+                        reason=gap.reason,
+                        declared_by=actor.id,
                     )
                 )
                 # The register has no row of its own to hang a timeline entry on, so the
-                # entity id is derived deterministically from the azienda and the year:
+                # entity id is derived deterministically from the legal entity and the year:
                 # `ActivityService.record` accepts any `entity_type` string, and `uuid5`
                 # gives the same id every time this register is touched again.
                 ctx.activities.record(
                     "invoice_register",
-                    uuid5(NAMESPACE_URL, f"pigrocrm:invoice_register:{azienda.id}:{anno}"),
+                    uuid5(NAMESPACE_URL, f"pigrocrm:invoice_register:{legal_entity.id}:{year}"),
                     "gap_declared",
                     actor,
                     {
-                        "azienda_id": str(azienda.id),
-                        "anno": anno,
-                        "numero": buco.numero,
-                        "motivo": buco.motivo,
+                        "legal_entity_id": str(legal_entity.id),
+                        "year": year,
+                        "number": gap.number,
+                        "reason": gap.reason,
                     },
                 )
         ctx.session.commit()
-        return self.register_gaps(anno, actor, azienda.id)
+        return self.register_gaps(year, actor, legal_entity.id)
 
     def register_gaps(
-        self, anno: int, actor: Actor, azienda_id: UUID | None = None
+        self, year: int, actor: Actor, legal_entity_id: UUID | None = None
     ) -> list[RegisterGapRead]:
-        check_register_year(anno)
-        azienda = self.ctx.emitter.resolve(azienda_id)
-        return [RegisterGapRead.model_validate(g) for g in self.ctx.repo.gaps(azienda.id, anno)]
+        check_register_year(year)
+        legal_entity = self.ctx.legal_entity.resolve(legal_entity_id)
+        return [
+            RegisterGapRead.model_validate(g) for g in self.ctx.repo.gaps(legal_entity.id, year)
+        ]
 
-    def undeclared_gaps(self, anno: int, azienda_id: UUID | None = None) -> list[int]:
-        """Numbers from 1 to the highest in the azienda's register that are neither an
-        invoice nor a declared gap; `None` is the default azienda (REB-619). Empty is
+    def undeclared_gaps(self, year: int, legal_entity_id: UUID | None = None) -> list[int]:
+        """Numbers from 1 to the highest in the legal entity's register that are neither an
+        invoice nor a declared gap; `None` is the default legal entity (REB-619). Empty is
         the only state in which native issuing may resume (spec 9 §3.2 rule 4): an
         import can arrive in any order, so a hole is expected until the operator has
         looked at every one of them and either imported or declared it.
@@ -128,32 +130,32 @@ class RegisterGaps:
         away. The upper bound stays exclusive at `max(present)`: numbers above the
         highest one present are simply the future, and the counter hands them out next.
         """
-        check_register_year(anno)
-        azienda = self.ctx.emitter.resolve(azienda_id)
+        check_register_year(year)
+        legal_entity = self.ctx.legal_entity.resolve(legal_entity_id)
         return holes(
-            self.ctx.repo.numbers_present(azienda.id, anno),
-            self.ctx.repo.declared_gaps(azienda.id, anno),
+            self.ctx.repo.numbers_present(legal_entity.id, year),
+            self.ctx.repo.declared_gaps(legal_entity.id, year),
         )
 
-    def refuse_undeclared_gaps(self, anno: int, azienda_id: UUID) -> None:
+    def refuse_undeclared_gaps(self, year: int, legal_entity_id: UUID) -> None:
         """Native issuing must not resume on top of a silent gap: the next number would
         look like it continues a register that has an unexplained hole underneath it.
 
-        Rendered short, reported whole: `details["numeri"]` carries every number, and the
+        Rendered short, reported whole: `details["numbers"]` carries every number, and the
         message names the first `GAPS_SHOWN_IN_MESSAGE` plus a count. A refusal a person
         cannot read is a refusal that does not explain itself."""
-        buchi = self.undeclared_gaps(anno, azienda_id)
-        if not buchi:
+        gaps = self.undeclared_gaps(year, legal_entity_id)
+        if not gaps:
             return
-        shown = ", ".join(str(n) for n in buchi[:GAPS_SHOWN_IN_MESSAGE])
-        if len(buchi) > GAPS_SHOWN_IN_MESSAGE:
-            shown += f", ... ({len(buchi)} in tutto)"
+        shown = ", ".join(str(n) for n in gaps[:GAPS_SHOWN_IN_MESSAGE])
+        if len(gaps) > GAPS_SHOWN_IN_MESSAGE:
+            shown += f", ... ({len(gaps)} in tutto)"
         raise Conflict(
             ENTITY,
             f"il registro importato ha buchi non dichiarati ai numeri {shown}: "
             "dichiarali (o importali) prima di riprendere a emettere",
-            anno=anno,
-            numeri=buchi,
+            year=year,
+            numbers=gaps,
         )
 
 

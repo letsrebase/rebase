@@ -20,7 +20,7 @@ class ActivityRead(BaseModel):
     actor_name: str | None = None
     actor_type: str
     # An automation's entry is written by `system`, with the member whose action set it
-    # off in `payload.attivata_da` (§9.5). Their name, resolved like `actor_name`, so the
+    # off in `payload.triggered_by` (§9.5). Their name, resolved like `actor_name`, so the
     # timeline can say «attivata da Mario» and not only that the system did it.
     triggered_by_name: str | None = None
     payload: dict[str, Any]
