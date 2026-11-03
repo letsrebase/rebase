@@ -35,7 +35,7 @@ def test_the_four_tables_exist_with_the_expected_columns(db_engine: Engine) -> N
         "rate_source",
         "cost_source",
         "invoice_line_id",
-        "note_interne",
+        "internal_notes",
         "custom_fields",
     }
 

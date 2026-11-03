@@ -34,7 +34,7 @@ from pigrocrm.core.work_units.models import WORK_UNIT_TRANSITIONS
 
 
 def _edges_array_sql() -> str:
-    """`ARRAY['proposto->approvato', ...]`, one entry per legal `(from, to)` pair."""
+    """`ARRAY['proposed->approved', ...]`, one entry per legal `(from, to)` pair."""
     edges = sorted(
         f"{origin}->{target}"
         for origin, targets in WORK_UNIT_TRANSITIONS.items()
@@ -58,10 +58,10 @@ DECLARE
     v_requires_approval boolean;
     -- What the caller actually asked for, captured before anything below rewrites
     -- `NEW.status` -- the edge check runs against this, not against the possibly
-    -- redirected value, so a state that was never allowed to reach 'lavorato' at
-    -- all cannot sneak into 'lavorato_senza_approvazione' by asking for the
+    -- redirected value, so a state that was never allowed to reach 'worked' at
+    -- all cannot sneak into 'worked_without_approval' by asking for the
     -- unapproved write instead.
-    v_requested text := NEW.stato;
+    v_requested text := NEW.status;
 BEGIN
     SELECT requires_prior_approval INTO v_requires_approval
     FROM contracts WHERE id = NEW.contract_id;
@@ -72,34 +72,34 @@ BEGIN
     END IF;
 
     IF TG_OP = 'INSERT' THEN
-        IF v_requested NOT IN ('proposto', 'approvato', 'lavorato') THEN
+        IF v_requested NOT IN ('proposed', 'approved', 'worked') THEN
             RAISE EXCEPTION
                 'a work_unit cannot be created directly in state %; '
-                'the legal entry states are proposto, approvato, lavorato',
+                'the legal entry states are proposed, approved, worked',
                 v_requested
                 USING ERRCODE = 'check_violation';
         END IF;
-    ELSIF v_requested <> OLD.stato
-        AND NOT ((OLD.stato || '->' || v_requested) = ANY (__EDGES__))
+    ELSIF v_requested <> OLD.status
+        AND NOT ((OLD.status || '->' || v_requested) = ANY (__EDGES__))
     THEN
-        RAISE EXCEPTION 'work_unit % cannot move from % to %', NEW.id, OLD.stato, v_requested
+        RAISE EXCEPTION 'work_unit % cannot move from % to %', NEW.id, OLD.status, v_requested
             USING ERRCODE = 'check_violation';
     END IF;
 
-    -- The automatic redirect (0013): a 'lavorato' write with no approval on a
+    -- The automatic redirect (0013): a 'worked' write with no approval on a
     -- contract that requires one is never rejected outright -- it is recorded,
     -- flagged, and recovered the moment an approval is linked (spec §5).
-    IF NEW.stato = 'lavorato' AND v_requires_approval AND NEW.approval_id IS NULL THEN
-        NEW.stato := 'lavorato_senza_approvazione';
+    IF NEW.status = 'worked' AND v_requires_approval AND NEW.approval_id IS NULL THEN
+        NEW.status := 'worked_without_approval';
     END IF;
 
-    -- The recovery half: the flagged state returns to plain 'lavorato' the instant
-    -- an approval is linked, whether the caller asked for 'lavorato' explicitly
+    -- The recovery half: the flagged state returns to plain 'worked' the instant
+    -- an approval is linked, whether the caller asked for 'worked' explicitly
     -- (already validated as a legal edge above) or only set approval_id while
-    -- leaving stato untouched (v_requested = OLD.stato, so the edge check above
+    -- leaving status untouched (v_requested = OLD.status, so the edge check above
     -- was a same-state no-op and this is the only thing that moves it).
-    IF NEW.stato = 'lavorato_senza_approvazione' AND NEW.approval_id IS NOT NULL THEN
-        NEW.stato := 'lavorato';
+    IF NEW.status = 'worked_without_approval' AND NEW.approval_id IS NOT NULL THEN
+        NEW.status := 'worked';
     END IF;
 
     RETURN NEW;
@@ -109,9 +109,9 @@ $$ LANGUAGE plpgsql;
 CREATE OR REPLACE FUNCTION work_unit_log_transition() RETURNS TRIGGER AS $$
 DECLARE
     v_actor jsonb;
-    v_motivo text;
+    v_reason text;
 BEGIN
-    IF TG_OP = 'UPDATE' AND NEW.stato = OLD.stato THEN
+    IF TG_OP = 'UPDATE' AND NEW.status = OLD.status THEN
         RETURN NEW;
     END IF;
 
@@ -123,20 +123,20 @@ BEGIN
         NULLIF(current_setting('pigrocrm.actor', true), '')::jsonb,
         '{"kind": "system"}'::jsonb
     );
-    v_motivo := COALESCE(
-        NULLIF(current_setting('pigrocrm.motivo', true), ''),
+    v_reason := COALESCE(
+        NULLIF(current_setting('pigrocrm.reason', true), ''),
         'nessun motivo fornito'
     );
 
     INSERT INTO work_unit_transitions
-        (id, work_unit_id, stato_precedente, stato_nuovo, attore, motivo)
+        (id, work_unit_id, previous_status, new_status, actor, reason)
     VALUES (
         gen_random_uuid(),
         NEW.id,
-        CASE WHEN TG_OP = 'INSERT' THEN NULL ELSE OLD.stato END,
-        NEW.stato,
+        CASE WHEN TG_OP = 'INSERT' THEN NULL ELSE OLD.status END,
+        NEW.status,
         v_actor,
-        v_motivo
+        v_reason
     );
 
     RETURN NEW;

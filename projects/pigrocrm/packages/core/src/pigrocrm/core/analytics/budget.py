@@ -63,7 +63,7 @@ def budget_vs_actual(session: Session, repo: AnalyticsRepository, query: BudgetQ
         query.da,
         query.a,
         query.customer_id,
-        after=(anchor.nome, anchor.id) if anchor is not None else None,
+        after=(anchor.name, anchor.id) if anchor is not None else None,
         limit=query.limit + 1,
     )
     window = deals[: query.limit]
@@ -94,7 +94,7 @@ def budget_vs_actual(session: Session, repo: AnalyticsRepository, query: BudgetQ
         rows.append(
             BudgetVsActualRow(
                 deal_id=deal.id,
-                nome=deal.nome,
+                name=deal.name,
                 # The stored column, not the narrowed one: a deal estimated at zero
                 # hours should show the zero somebody typed. What `comparable`
                 # governs is what may be divided by, never what may be displayed.

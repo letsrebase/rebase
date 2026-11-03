@@ -22,7 +22,7 @@ CURRENCY_MAX_LENGTH = 3
 RenewalType = Literal["none", "explicit", "counterparty_option", "tacit"]
 ContractState = Literal["draft", "active", "terminated", "expired"]
 RateCardType = Literal["fixed_recurring", "daily", "hourly", "one_off"]
-RateCardUnit = Literal["ora", "day", "month", "year", "flat"]
+RateCardUnit = Literal["hour", "day", "month", "year", "flat"]
 RateCardPeriod = Literal["monthly", "quarterly", "annual", "one_off"]
 
 # Mirror RateCard's Numeric(p, s) column widths (models.py): importo is
@@ -48,13 +48,13 @@ EXPENSE_POLICY_KINDS: tuple[str, ...] = (
 def check_expense_policy(policy: dict[str, Any]) -> dict[str, Any]:
     """The tagged shape `contract_expenses/triggers.py` reads: `kind` is one of three,
     `amount_cap` rides on the capped one only and is a non-negative decimal there,
-    `richiede_preautorizzazione` is a boolean when present. A document the trigger
+    `requires_pre_authorization` is a boolean when present. A document the trigger
     cannot read would make every later expense write on the contract fail with a
     `check_violation`, so a write that would store one is refused here."""
     kind = policy.get("kind")
     if kind not in EXPENSE_POLICY_KINDS:
         raise ValueError(
-            f"politica_spese.kind deve essere uno fra {', '.join(EXPENSE_POLICY_KINDS)}"
+            f"expense_policy.kind deve essere uno fra {', '.join(EXPENSE_POLICY_KINDS)}"
         )
     cap = policy.get("amount_cap")
     if kind == "reimbursable_with_cap":
@@ -64,14 +64,14 @@ def check_expense_policy(policy: dict[str, Any]) -> dict[str, Any]:
             valid = False
         if not valid:
             raise ValueError(
-                "politica_spese.importo_tetto è obbligatorio per rimborsabile_con_tetto "
+                "expense_policy.amount_cap è obbligatorio per reimbursable_with_cap "
                 "e va scritto come importo, per esempio 500.00"
             )
     elif cap is not None:
-        raise ValueError("politica_spese.importo_tetto vale solo per rimborsabile_con_tetto")
-    pre = policy.get("richiede_preautorizzazione")
+        raise ValueError("expense_policy.amount_cap vale solo per reimbursable_with_cap")
+    pre = policy.get("requires_pre_authorization")
     if pre is not None and not isinstance(pre, bool):
-        raise ValueError("politica_spese.richiede_preautorizzazione deve essere vero o falso")
+        raise ValueError("expense_policy.requires_pre_authorization deve essere vero o falso")
     return policy
 
 
@@ -105,7 +105,7 @@ class ContractCreate(BaseModel):
         default=None, max_digits=CAP_MAX_DIGITS, decimal_places=DECIMAL_PLACES, gt=0, lt=100
     )
     # mastro's ExpensePolicy (contract.ts:90-99), kept as an open tagged JSONB union
-    # -- see models.py's Contract.politica_spese for why this is not deeply
+    # -- see models.py's Contract.expense_policy for why this is not deeply
     # validated here.
     expense_policy: dict[str, Any]
     note: SafeStr | None = None

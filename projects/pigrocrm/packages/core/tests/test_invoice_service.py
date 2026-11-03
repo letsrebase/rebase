@@ -405,10 +405,10 @@ def test_the_memo_and_the_notes_are_editable_on_to_draft(
 ) -> None:
     invoice = service.create(InvoiceCreate(customer_id=customer_id, memo="Bozza"), ADMIN)
     updated = service.update(
-        invoice.id, InvoiceUpdate(memo="Consulenza agosto", note_interne="da rileggere"), ADMIN
+        invoice.id, InvoiceUpdate(memo="Consulenza agosto", internal_notes="da rileggere"), ADMIN
     )
     assert updated.memo == "Consulenza agosto"
-    assert updated.note_interne == "da rileggere"
+    assert updated.internal_notes == "da rileggere"
 
 
 def test_an_empty_string_clears_a_text_column(service: InvoiceService, customer_id: UUID) -> None:
@@ -420,9 +420,9 @@ def test_an_empty_string_clears_a_text_column(service: InvoiceService, customer_
 
 def test_an_omitted_key_clears_nothing(service: InvoiceService, customer_id: UUID) -> None:
     invoice = service.create(
-        InvoiceCreate(customer_id=customer_id, memo="Bozza", note_interne="note"), ADMIN
+        InvoiceCreate(customer_id=customer_id, memo="Bozza", internal_notes="note"), ADMIN
     )
-    assert service.update(invoice.id, InvoiceUpdate(memo="Altro"), ADMIN).note_interne == "note"
+    assert service.update(invoice.id, InvoiceUpdate(memo="Altro"), ADMIN).internal_notes == "note"
 
 
 # --- proforma confirmation ----------------------------------------------------------
@@ -600,7 +600,7 @@ def test_the_internal_notes_of_an_issued_invoice_can_still_be_changed(
     """They appear on no artefact, so they are not part of the document (spec 4)."""
     invoice = _issued_row(db_session, customer_id)
     assert (
-        service.update(invoice.id, InvoiceUpdate(note_interne="sollecitato"), ADMIN).note_interne
+        service.update(invoice.id, InvoiceUpdate(internal_notes="sollecitato"), ADMIN).internal_notes
         == "sollecitato"
     )
 

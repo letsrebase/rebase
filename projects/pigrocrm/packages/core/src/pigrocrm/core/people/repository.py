@@ -67,7 +67,7 @@ class PersonRepository:
             like = f"%{escape_like(query.search.lower())}%"
             stmt = stmt.where(
                 or_(
-                    Person.nome.ilike(like, escape="\\"),
+                    Person.first_name.ilike(like, escape="\\"),
                     Person.last_name.ilike(like, escape="\\"),
                     Person.email.ilike(like, escape="\\"),
                 )

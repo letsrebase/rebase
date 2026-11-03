@@ -205,10 +205,10 @@ def _party_name(directory: etree._Element, *, context: str) -> str:
     denomination = _text(directory, "Denominazione")
     if denomination is not None:
         return denomination
-    nome = _text(directory, "Nome")
+    first_name = _text(directory, "Nome")
     last_name = _text(directory, "Cognome")
-    if nome is not None and last_name is not None:
-        return f"{nome} {last_name}"
+    if first_name is not None and last_name is not None:
+        return f"{first_name} {last_name}"
     raise InvoicePaFormatError(f"{context}: Anagrafica has neither Denominazione nor Nome/Cognome")
 
 

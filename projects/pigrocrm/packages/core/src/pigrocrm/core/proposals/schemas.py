@@ -15,7 +15,8 @@ which are exactly where a human's edited `accepted_fields` gets the identical
 re-validation on the way to becoming a `Contract`/`WorkUnit`).
 """
 
-from datetime import date, datetime
+import datetime as dt
+from datetime import datetime
 from decimal import Decimal
 from typing import Any, Literal
 from uuid import UUID
@@ -67,7 +68,7 @@ class WorkUnitProposalFields(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     contract_id: UUID
-    data: date
+    date: dt.date
     quantity: Decimal = Field(
         gt=0, max_digits=QUANTITY_MAX_DIGITS, decimal_places=QUANTITY_DECIMAL_PLACES
     )

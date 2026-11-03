@@ -85,7 +85,7 @@ class DriveRepository:
         UUIDv7, so the tie-break is itself chronological rather than arbitrary.
         """
         row = self.session.execute(
-            select(GoogleDriveAccount, User.nome)
+            select(GoogleDriveAccount, User.name)
             .join(User, User.id == GoogleDriveAccount.user_id)
             .where(
                 GoogleDriveAccount.status == "active",

@@ -34,8 +34,8 @@ from pigrocrm.core.storage.base import DocumentStorage
 
 logger = logging.getLogger(__name__)
 
-ENTITY: Final = "legal_entities"
-DEFAULT_LABEL: Final = "predefinita"
+ENTITY: Final = "legal_entity"
+DEFAULT_LABEL: Final = "default"
 
 # Spec §3: «a PNG or SVG under 1 MiB».
 MAX_IMAGE_BYTES: Final = 1024 * 1024

@@ -76,7 +76,7 @@ class SlackService:
             members.append(
                 SlackMemberRead(
                     user_id=user.id,
-                    nome=user.nome,
+                    name=user.name,
                     email=user.email,
                     state=state,
                     slack_email=link.slack_email if link is not None else None,

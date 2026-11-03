@@ -38,21 +38,21 @@ class Deal(Base, PrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
     __tablename__ = "deals"
     __table_args__ = (
         Index("ix_deals_custom_fields", "custom_fields", postgresql_using="gin"),
-        # `DealRepository.list` searches `nome` and nothing else -- see
+        # `DealRepository.list` searches `name` and nothing else -- see
         # `Customer.__table_args__` for why the index is partial on `deleted_at IS NULL`
         # with no `lower()` in the expression.
         Index(
             "ix_deals_name_trgm",
-            "nome",
+            "name",
             postgresql_using="gin",
-            postgresql_ops={"nome": "gin_trgm_ops"},
+            postgresql_ops={"name": "gin_trgm_ops"},
             postgresql_where=text("deleted_at IS NULL"),
         ),
         # Residuo R9. See `customers/models.py` for why each admitted sort key costs a
         # `(column, id)` B-tree and why none of them is partial.
         Index("ix_deals_created_at_id", "created_at", "id"),
         Index("ix_deals_updated_at_id", "updated_at", "id"),
-        Index("ix_deals_nome_id", "nome", "id"),
+        Index("ix_deals_name_id", "name", "id"),
         # Slice 6 §4.1. Every period figure on the commercial dashboard filters on this
         # column, and `deals` grows without bound. Declared here and not only in the
         # migration: `Base.metadata.create_all` builds the test schema, so an index
@@ -63,7 +63,7 @@ class Deal(Base, PrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
         Index("ix_deals_rebase_refs", "rebase_refs", postgresql_using="gin"),
     )
 
-    nome: Mapped[str] = mapped_column(String(255), nullable=False)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
     # Required: see the class docstring above.
     customer_id: Mapped[UUID] = mapped_column(
         ForeignKey("customers.id"), nullable=False, index=True
@@ -72,7 +72,7 @@ class Deal(Base, PrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
     # kept whatever the customer does afterwards. The column default serves a row built
     # without one.
     legal_entity_id: Mapped[UUID] = mapped_column(
-        ForeignKey("emitter_profile.id"),
+        ForeignKey("legal_entities.id"),
         nullable=False,
         index=True,
         default=default_legal_entity_id,

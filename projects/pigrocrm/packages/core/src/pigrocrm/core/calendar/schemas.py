@@ -84,7 +84,7 @@ class CalendarDay(BaseModel):
     day: date
     hours: Decimal
     per_deal: list[DayDealHours] = Field(default_factory=list)
-    attivita: list[TaskRead] = Field(default_factory=list)
+    tasks: list[TaskRead] = Field(default_factory=list)
     invoices: list[DueInvoice] = Field(default_factory=list)
     work_units: list[DayWorkUnit] = Field(default_factory=list)
 

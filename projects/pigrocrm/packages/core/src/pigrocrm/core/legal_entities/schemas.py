@@ -49,7 +49,7 @@ class LegalEntityFields(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    nome: SafeStr | None = Field(default=None, max_length=NAME_MAX_LENGTH)
+    name: SafeStr | None = Field(default=None, max_length=NAME_MAX_LENGTH)
     legal_name: SafeStr = Field(max_length=LEGAL_NAME_MAX_LENGTH)
     vat_number: SafeStr | None = None
     tax_code: SafeStr | None = Field(default=None, max_length=TAX_CODE_MAX_LENGTH)
@@ -100,7 +100,7 @@ class LegalEntityCreate(LegalEntityFields):
     in the sidebar and on every list, and a derived name is a ragione sociale cut to
     eighty characters."""
 
-    nome: SafeStr = Field(max_length=NAME_MAX_LENGTH)
+    name: SafeStr = Field(max_length=NAME_MAX_LENGTH)
     fiscal_profile: FiscalProfileUpsert
 
 
@@ -108,8 +108,8 @@ class LegalEntityRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
-    nome: str
-    predefinita: bool
+    name: str
+    is_default: bool
     active: bool
     legal_name: str
     vat_number: str | None
@@ -144,5 +144,5 @@ class LegalEntityDeactivated(LegalEntityRead):
 # The fields `as_template_values` and the MCP `describe` leave out: identity, state and
 # timestamps are facts about the row, not about the business a template prints.
 TEMPLATE_EXCLUDED_FIELDS: frozenset[str] = frozenset(
-    {"id", "predefinita", "active", "created_at", "updated_at"}
+    {"id", "is_default", "active", "created_at", "updated_at"}
 )

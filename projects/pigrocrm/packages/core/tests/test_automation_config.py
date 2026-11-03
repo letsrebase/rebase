@@ -81,7 +81,7 @@ def test_describe_lists_every_rule_with_their_state(db_session: Session) -> None
     ]
     assert all(rule.active for rule in described.rules)
     # The description is what an agent reads to know what the system does by itself.
-    assert "vinto" in described.rules[0].description.lower()
+    assert "won" in described.rules[0].description.lower()
 
 
 def test_a_switched_off_rule_is_reported_as_inactive(db_session: Session) -> None:
@@ -132,10 +132,10 @@ def test_changing_the_threshold_is_audited_and_an_equal_value_is_not(db_session:
 
     service = AutomationConfigService(db_session)
     service.update_automation_config(AutomationConfigUpdate(a4_stalled_deal_days=30), ADMIN)
-    assert ActivityRepository(db_session).by_kind(["automazione.configurazione_modificata"]) == []
+    assert ActivityRepository(db_session).by_kind(["automation.config_changed"]) == []
 
     service.update_automation_config(AutomationConfigUpdate(a4_stalled_deal_days=45), ADMIN)
-    (entry,) = ActivityRepository(db_session).by_kind(["automazione.configurazione_modificata"])
+    (entry,) = ActivityRepository(db_session).by_kind(["automation.config_changed"])
     assert entry.payload["a4_stalled_deal_days"] == {"da": 30, "a": 45}
 
 
@@ -211,7 +211,7 @@ def test_every_change_writes_an_activity(db_session: Session) -> None:
         AutomationConfigUpdate(a1_wins_accepted_offer_deal=False), ADMIN
     )
     rows = ActivityRepository(db_session).by_kind(
-        ["automazione.configurazione_modificata"], limit=10
+        ["automation.config_changed"], limit=10
     )
     assert len(rows) == 1
     assert rows[0].actor_id == ADMIN.id
@@ -230,7 +230,7 @@ def test_a_no_op_update_writes_no_activity(db_session: Session) -> None:
         AutomationConfigUpdate(a1_wins_accepted_offer_deal=True), ADMIN
     )
     assert (
-        ActivityRepository(db_session).by_kind(["automazione.configurazione_modificata"], limit=10)
+        ActivityRepository(db_session).by_kind(["automation.config_changed"], limit=10)
         == []
     )
 
@@ -242,7 +242,7 @@ def test_describe_returns_the_recent_runs(db_session: Session) -> None:
         AutomationConfigUpdate(a2_advances_sent_offer_deal=False), ADMIN
     )
     described = AutomationConfigService(db_session).describe_automations(ADMIN)
-    assert [run.kind for run in described.runs] == ["automazione.configurazione_modificata"]
+    assert [run.kind for run in described.runs] == ["automation.config_changed"]
 
 
 def test_the_run_log_carries_the_deal_the_rule_acted_on(db_session: Session) -> None:
@@ -256,7 +256,7 @@ def test_the_run_log_carries_the_deal_the_rule_acted_on(db_session: Session) -> 
     ActivityService(db_session).record(
         "deal",
         deal_id,
-        "automazione.non_eseguita",
+        "automation.not_executed",
         ADMIN,
         {"rule": "A1", "reason": "target_stage_missing"},
     )
@@ -264,7 +264,7 @@ def test_the_run_log_carries_the_deal_the_rule_acted_on(db_session: Session) -> 
 
     described = AutomationConfigService(db_session).describe_automations(ADMIN)
     run = described.runs[0]
-    assert run.kind == "automazione.non_eseguita"
+    assert run.kind == "automation.not_executed"
     assert run.deal_id == deal_id
     assert run.rule == "A1"
     assert run.reason == "target_stage_missing"
@@ -299,12 +299,12 @@ def test_by_kind_orders_newest_first_and_respects_the_limit(db_session: Session)
     service = ActivityService(db_session)
     for index in range(5):
         row: Activity = service.record(
-            "deal", uuid7(), "automazione.stage_spostato", ADMIN, {"n": index}
+            "deal", uuid7(), "automation.stage_moved", ADMIN, {"n": index}
         )
         row.occurred_at = datetime(2026, 1, days[index], 12, 0, tzinfo=UTC)
     db_session.flush()
 
-    rows = ActivityRepository(db_session).by_kind(["automazione.stage_spostato"], limit=3)
+    rows = ActivityRepository(db_session).by_kind(["automation.stage_moved"], limit=3)
     assert len(rows) == 3
     assert [r.payload["n"] for r in rows] == [0, 2, 4]
 
@@ -316,15 +316,15 @@ def test_by_kind_matches_every_kind_it_is_given(db_session: Session) -> None:
     from pigrocrm.core.activities.service import ActivityService
 
     service = ActivityService(db_session)
-    service.record("deal", uuid7(), "automazione.stage_spostato", ADMIN, {})
-    service.record("deal", uuid7(), "automazione.non_eseguita", ADMIN, {})
+    service.record("deal", uuid7(), "automation.stage_moved", ADMIN, {})
+    service.record("deal", uuid7(), "automation.not_executed", ADMIN, {})
     service.record("deal", uuid7(), "deleted", ADMIN, {})
     db_session.flush()
 
     rows = ActivityRepository(db_session).by_kind(
-        ["automazione.stage_spostato", "automazione.non_eseguita"], limit=10
+        ["automation.stage_moved", "automation.not_executed"], limit=10
     )
-    assert {r.kind for r in rows} == {"automazione.stage_spostato", "automazione.non_eseguita"}
+    assert {r.kind for r in rows} == {"automation.stage_moved", "automation.not_executed"}
 
 
 def test_by_kind_with_an_empty_kind_list_returns_nothing(db_session: Session) -> None:
@@ -334,7 +334,7 @@ def test_by_kind_with_an_empty_kind_list_returns_nothing(db_session: Session) ->
     from pigrocrm.core.activities.service import ActivityService
 
     # A row that a broken empty filter would return, so the assertion is not vacuous.
-    ActivityService(db_session).record("deal", uuid7(), "automazione.stage_spostato", ADMIN, {})
+    ActivityService(db_session).record("deal", uuid7(), "automation.stage_moved", ADMIN, {})
     db_session.flush()
 
     assert ActivityRepository(db_session).by_kind([], limit=10) == []

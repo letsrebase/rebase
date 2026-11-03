@@ -85,7 +85,7 @@ REMINDER_TYPES: Mapping[str, ReminderType] = {
             key="task_due",
             label="Attività in scadenza",
             description="Un'attività aperta scade oggi, o fra i giorni di anticipo che scegli.",
-            subject="attivita",
+            subject="task",
             direction="until",
             unit="days",
             ladder={"warning": 0},
@@ -96,7 +96,7 @@ REMINDER_TYPES: Mapping[str, ReminderType] = {
             description=(
                 "Un'attività aperta ha superato la sua scadenza: te lo ricorda ogni mattina."
             ),
-            subject="attivita",
+            subject="task",
             direction="since",
             unit="days",
             ladder={"serious": 1, "critical": 14},

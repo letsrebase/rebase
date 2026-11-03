@@ -47,8 +47,8 @@ from pigrocrm.core.legal_entities.models import default_legal_entity_id
 # convention `documents.type`/`invoices.type` already use, for the same reason: a
 # future value costs a schema constant rather than an `ALTER TYPE` migration.
 RENEWAL_TYPES: tuple[str, ...] = ("none", "explicit", "counterparty_option", "tacit")
-RATE_CARD_TIPI: tuple[str, ...] = ("fixed_recurring", "daily", "hourly", "one_off")
-RATE_CARD_UNIT: tuple[str, ...] = ("ora", "day", "month", "year", "flat")
+RATE_CARD_TYPES: tuple[str, ...] = ("fixed_recurring", "daily", "hourly", "one_off")
+RATE_CARD_UNIT: tuple[str, ...] = ("hour", "day", "month", "year", "flat")
 RATE_CARD_PERIODS: tuple[str, ...] = ("monthly", "quarterly", "annual", "one_off")
 
 
@@ -72,7 +72,7 @@ class Contract(Base, PrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
     )
     # The customer's azienda at creation (REB-623, §1.7), kept from then on.
     legal_entity_id: Mapped[UUID] = mapped_column(
-        ForeignKey("emitter_profile.id"),
+        ForeignKey("legal_entities.id"),
         nullable=False,
         index=True,
         default=default_legal_entity_id,
@@ -117,7 +117,7 @@ class Contract(Base, PrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
     # rebillable-expenses issue (§7) is what reads and enforces its shape.
     expense_policy: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
     status: Mapped[str] = mapped_column(
-        String(20), nullable=False, default="draft", server_default=text("'bozza'")
+        String(20), nullable=False, default="draft", server_default=text("'draft'")
     )
     previous_contract_id: Mapped[UUID | None] = mapped_column(
         ForeignKey("contracts.id"), default=None, unique=True
@@ -127,7 +127,7 @@ class Contract(Base, PrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
 
     __table_args__ = (
         CheckConstraint(
-            f"tipo_rinnovo IN {RENEWAL_TYPES!r}",
+            f"renewal_type IN {RENEWAL_TYPES!r}",
             name="ck_contracts_renewal_type",
         ),
         # The "together" shape this schema already uses for
@@ -136,18 +136,18 @@ class Contract(Base, PrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
         # facts or neither, never `payment_days` paired with a
         # `payment_end_of_month` the contract never set.
         CheckConstraint(
-            "(giorni_pagamento IS NULL) = (pagamento_fine_mese IS NULL)",
+            "(payment_days IS NULL) = (payment_end_of_month IS NULL)",
             name="ck_contracts_payment_terms_together",
         ),
         CheckConstraint(
-            "tipo_rinnovo = 'nessuno' OR preavviso_rinnovo_giorni IS NOT NULL",
+            "renewal_type = 'none' OR renewal_notice_days IS NOT NULL",
             name="ck_contracts_notice_renewal_required",
         ),
-        CheckConstraint("fine IS NULL OR inizio <= fine", name="ck_contracts_fine_ordered"),
+        CheckConstraint('"end" IS NULL OR start <= "end"', name="ck_contracts_end_ordered"),
         # A cap of 0 forbids the customer and one of 100 never binds: neither is a clause.
         CheckConstraint(
-            "tetto_quota_cliente IS NULL "
-            "OR (tetto_quota_cliente > 0 AND tetto_quota_cliente < 100)",
+            "customer_share_cap IS NULL "
+            "OR (customer_share_cap > 0 AND customer_share_cap < 100)",
             name="ck_contracts_customer_share_cap_range",
         ),
         Index("ix_contracts_custom_fields", "custom_fields", postgresql_using="gin"),
@@ -191,22 +191,22 @@ class RateCard(Base, PrimaryKeyMixin, TimestampMixin):
     delivery_period: Mapped[str | None] = mapped_column(String(20), default=None)
 
     __table_args__ = (
-        CheckConstraint(f"tipo IN {RATE_CARD_TIPI!r}", name="ck_rate_cards_type"),
-        CheckConstraint(f"unita IN {RATE_CARD_UNIT!r}", name="ck_rate_cards_unit"),
+        CheckConstraint(f"type IN {RATE_CARD_TYPES!r}", name="ck_rate_cards_type"),
+        CheckConstraint(f"unit IN {RATE_CARD_UNIT!r}", name="ck_rate_cards_unit"),
         CheckConstraint(
-            f"periodo_erogazione IS NULL OR periodo_erogazione IN {RATE_CARD_PERIODS!r}",
+            f"delivery_period IS NULL OR delivery_period IN {RATE_CARD_PERIODS!r}",
             name="ck_rate_cards_delivery_period_values",
         ),
         CheckConstraint(
-            "tipo = 'orario' OR ore_minime IS NULL",
+            "type = 'hourly' OR minimum_hours IS NULL",
             name="ck_rate_cards_minimum_hours_only_hourly",
         ),
         CheckConstraint(
-            "tipo = 'ricorrente_fisso' OR periodo_erogazione IS NULL",
+            "type = 'fixed_recurring' OR delivery_period IS NULL",
             name="ck_rate_cards_period_only_fixed_recurring",
         ),
         CheckConstraint(
-            "valido_a IS NULL OR valido_da <= valido_a",
+            "valid_to IS NULL OR valid_from <= valid_to",
             name="ck_rate_cards_validity_ordered",
         ),
         # Non-overlapping validity per contract, database-enforced: a NULL bound in
@@ -255,11 +255,11 @@ class RenewalAssumption(Base, PrimaryKeyMixin, TimestampMixin):
 
     __table_args__ = (
         CheckConstraint(
-            "probabilita >= 0 AND probabilita <= 100",
+            "probability >= 0 AND probability <= 100",
             name="ck_renewal_assumptions_probability_range",
         ),
         CheckConstraint(
-            "volume_atteso >= 0", name="ck_renewal_assumptions_expected_volume_not_negative"
+            "expected_volume >= 0", name="ck_renewal_assumptions_expected_volume_not_negative"
         ),
     )
 

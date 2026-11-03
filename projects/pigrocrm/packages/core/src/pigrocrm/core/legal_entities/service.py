@@ -26,7 +26,7 @@ from pigrocrm.core.versioning import require_unchanged
 
 # The error label and the timeline entity keep the table's name (spec 2026-10-03 §10):
 # every row already written under it stays readable as history.
-ENTITY = "legal_entities"
+ENTITY = "legal_entity"
 # `.fullmatch()`, not `.match()`: `$` matches before a trailing newline, so
 # "01234567890\n" -- 12 characters, one more than the String(11) column -- would pass
 # a `.match()` check and reach flush() as a raw, session-poisoning DataError. The same
@@ -37,7 +37,7 @@ VAT_NUMBER_RE = re.compile(r"\d{11}")
 # flush as a session-poisoning DataError, so it is refused here in words.
 VAT_NUMBER_MAX_LENGTH = VAT_NUMBER_WIDTH
 SDI_CODE_LENGTH = 7
-DEFAULT_LABEL = "predefinita"
+DEFAULT_LABEL = "default"
 
 
 def _normalise_ids(data: dict[str, Any]) -> None:
@@ -93,8 +93,8 @@ def _check_fiscal(data: dict[str, Any]) -> None:
         raise ValidationFailed(
             ENTITY, "sdi_code", "deve essere di 7 caratteri", expected="7 caratteri"
         )
-    if not data.get("nome"):
-        data["nome"] = data["legal_name"][:NAME_MAX_LENGTH]
+    if not data.get("name"):
+        data["name"] = data["legal_name"][:NAME_MAX_LENGTH]
 
 
 class LegalEntityService:
@@ -236,7 +236,7 @@ class LegalEntityService:
         row = self.repo.default()
         try:
             if row is None:
-                row = self.repo.add(LegalEntity(**payload, predefinita=True, active=True))
+                row = self.repo.add(LegalEntity(**payload, is_default=True, active=True))
             else:
                 for key, value in payload.items():
                     setattr(row, key, value)
@@ -275,7 +275,7 @@ class LegalEntityService:
         FiscalProfileService.check(profilo)
         try:
             row = self.repo.add(
-                LegalEntity(**payload, predefinita=self.repo.default() is None, active=True)
+                LegalEntity(**payload, is_default=self.repo.default() is None, active=True)
             )
             profile = FiscalProfile(**profilo, legal_entity_id=row.id)
             self.session.add(profile)
@@ -332,17 +332,17 @@ class LegalEntityService:
         if not row.active:
             raise ValidationFailed(
                 ENTITY,
-                "predefinita",
+                "is_default",
                 "un'azienda disattivata non puo' essere la predefinita",
                 expected="un'azienda attiva",
             )
         current = self.repo.default()
         try:
             if current is not None and current.id != row.id:
-                current.predefinita = False
+                current.is_default = False
                 self.session.flush()
-            row.predefinita = True
-            self.activities.record(ENTITY, row.id, "updated", actor, {"changed": ["predefinita"]})
+            row.is_default = True
+            self.activities.record(ENTITY, row.id, "updated", actor, {"changed": ["is_default"]})
             self.session.commit()
         except IntegrityError as exc:
             # Two admins moving the default at once: the second flush meets the partial
@@ -361,7 +361,7 @@ class LegalEntityService:
         document or proforma until it is moved, so the count is the work left."""
         actor.require_unscoped_admin("deactivate_legal_entity")
         row = self.resolve(legal_entity_id)
-        if row.predefinita:
+        if row.is_default:
             raise ValidationFailed(
                 ENTITY,
                 "active",

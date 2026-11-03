@@ -28,7 +28,7 @@ class ContractEmailTemplate(Base, PrimaryKeyMixin, TimestampMixin):
     contract_id: Mapped[UUID] = mapped_column(
         ForeignKey("contracts.id"), nullable=False, index=True
     )
-    nome: Mapped[str] = mapped_column(String(120), nullable=False)
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
     subject: Mapped[str] = mapped_column(String(300), nullable=False)
     body: Mapped[str] = mapped_column(Text, nullable=False)
     attachments: Mapped[list[str]] = mapped_column(
@@ -39,7 +39,7 @@ class ContractEmailTemplate(Base, PrimaryKeyMixin, TimestampMixin):
     )
 
     __table_args__ = (
-        # On `lower(nome)` for the reason `templates` gives: a plain unique on a text
+        # On `lower(name)` for the reason `templates` gives: a plain unique on a text
         # column is case-sensitive and a Pydantic validator protects one path only.
-        Index("uq_contract_email_templates_nome", "contract_id", func.lower(nome), unique=True),
+        Index("uq_contract_email_templates_name", "contract_id", func.lower(name), unique=True),
     )

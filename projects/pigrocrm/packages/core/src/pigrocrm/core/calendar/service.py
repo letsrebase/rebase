@@ -21,7 +21,7 @@ from pigrocrm.core.money import ZERO_HOURS, sum_hours
 from pigrocrm.core.tasks.repository import TaskRepository
 from pigrocrm.core.tasks.schemas import TaskRead
 
-ENTITY = "calendario"
+ENTITY = "calendar"
 
 
 def month_bounds(month: str) -> tuple[date, date]:
@@ -52,7 +52,7 @@ class CalendarService:
     def __init__(self, session: Session) -> None:
         self.session = session
         self.repo = CalendarRepository(session)
-        self.attivita = TaskRepository(session)
+        self.tasks = TaskRepository(session)
 
     def month(
         self,
@@ -89,11 +89,11 @@ class CalendarService:
             return days.setdefault(when, CalendarDay(day=when, hours=ZERO_HOURS))
 
         for when, deal_id, hours_of_deal in hours:
-            nome, customer = etichette.get(deal_id, ("(deal archiviato)", None))
+            name, customer = etichette.get(deal_id, ("(deal archiviato)", None))
             bucket = day(when)
             bucket.per_deal.append(
                 DayDealHours(
-                    deal_id=deal_id, deal_name=nome, customer=customer, hours=hours_of_deal
+                    deal_id=deal_id, deal_name=name, customer=customer, hours=hours_of_deal
                 )
             )
 
@@ -103,7 +103,7 @@ class CalendarService:
         for bucket in days.values():
             bucket.hours = sum_hours(riga.hours for riga in bucket.per_deal)
 
-        for row in self.attivita.in_range(da, a):
+        for row in self.tasks.in_range(da, a):
             # `in_range` filters on `scadenza IS NOT NULL`, so this is never None -- and
             # the guard is here rather than an `assert` because an assert that fires in
             # production is a traceback shown to somebody who can only read it as a
@@ -111,7 +111,7 @@ class CalendarService:
             due_date_task = row.due_date
             if due_date_task is None:  # pragma: no cover - excluded by the query
                 continue
-            day(due_date_task).attivita.append(TaskRead.model_validate(row))
+            day(due_date_task).tasks.append(TaskRead.model_validate(row))
 
         for invoice, customer in self.repo.invoices_due(da, a, legal_entity_id=legal_entity_id):
             due_date = invoice.due_date
@@ -132,7 +132,7 @@ class CalendarService:
         for work_unit, contract_title, customer_name in self.repo.work_units_in_window(
             da, a, legal_entity_id=legal_entity_id
         ):
-            day(work_unit.data).work_units.append(
+            day(work_unit.date).work_units.append(
                 DayWorkUnit(
                     id=work_unit.id,
                     contract_id=work_unit.contract_id,
@@ -152,7 +152,7 @@ class CalendarService:
             days=[days[when] for when in sorted(days)],
             task_without_due_date=[
                 TaskRead.model_validate(row)
-                for row in self.attivita.without_due_date(limit=WITHOUT_DUE_DATE_LIMIT)
+                for row in self.tasks.without_due_date(limit=WITHOUT_DUE_DATE_LIMIT)
             ],
         )
 

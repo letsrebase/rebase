@@ -38,7 +38,7 @@ def detect_long_running(ctx: DetectorContext) -> list[Detection]:
         links = resolver.resolve(deal_id=row.deal_id)
         hours = int((ctx.now - row.started_at).total_seconds() // 3600)
         owner = ctx.directory.people.get(row.user_id)
-        who = f"{owner.nome}: " if owner is not None else ""
+        who = f"{owner.name}: " if owner is not None else ""
         what = f" ({row.description})" if row.description else ""
         found.append(
             Detection(

@@ -101,12 +101,12 @@ def seeded(db_engine: Engine) -> Iterator[Seeded]:
         # *its* stage, so a drill-through that dropped `stage_id` would return six.
         open = [deal(f"aperto {index}", "lead") for index in range(4)]
         for index in range(2):
-            deal(f"contattato {index}", "contattato")
+            deal(f"contattato {index}", "contacted")
         # Soft-deleted, in `lead`. Counted by neither side; counted by a side that forgot
         # `deleted_at IS NULL`.
         removed = deal("aperto cancellato", "lead", deleted_at=_cancellato())
-        won = deal("vinto", "vinto", closed_at=today_local())
-        lost = deal("perso", "perso", closed_at=today_local())
+        won = deal("won", "won", closed_at=today_local())
+        lost = deal("lost", "lost", closed_at=today_local())
         session.flush()
 
         def document(nome: str, *, type: str = "offer", **extra: object) -> None:
@@ -184,7 +184,7 @@ def test_the_open_deals_card_equals_its_deal_list(seeded: Seeded) -> None:
     ignored the stage would fail on neither if only one stage were asserted.
     """
     dashboard = _dashboard(seeded.engine)
-    for code, expected in (("lead", 4), ("contattato", 2)):
+    for code, expected in (("lead", 4), ("contacted", 2)):
         card = next(row for row in dashboard.pipeline if row.stage_code == code)
         with session_factory(seeded.engine)() as session:
             page = DealService(session).list(

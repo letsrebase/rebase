@@ -31,7 +31,7 @@ def _normalise_email(value: str | None) -> str | None:
 
 
 class PersonCreate(BaseModel):
-    nome: SafeStr = Field(max_length=NAME_MAX_LENGTH)
+    first_name: SafeStr = Field(max_length=NAME_MAX_LENGTH)
     last_name: SafeStr | None = Field(default=None, max_length=LAST_NAME_MAX_LENGTH)
     # Plain `str`, not `EmailStr`: format is checked separately by the service's own
     # `_check_email` regex below, not by the schema. `SafeStr` closes the NUL-byte gap
@@ -58,7 +58,7 @@ class PersonCreate(BaseModel):
 class PersonUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    nome: SafeStr | None = Field(default=None, max_length=NAME_MAX_LENGTH)
+    first_name: SafeStr | None = Field(default=None, max_length=NAME_MAX_LENGTH)
     last_name: SafeStr | None = Field(default=None, max_length=LAST_NAME_MAX_LENGTH)
     email: SafeStr | None = Field(default=None, max_length=EMAIL_MAX_LENGTH)
     phone: SafeStr | None = Field(default=None, max_length=PHONE_MAX_LENGTH)
@@ -96,7 +96,7 @@ class PersonRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
-    nome: str
+    first_name: str
     last_name: str | None
     email: str | None
     phone: str | None

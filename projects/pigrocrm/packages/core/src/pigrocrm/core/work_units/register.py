@@ -23,8 +23,9 @@ rather than hidden.
 """
 
 import csv
+import datetime as dt
 import io
-from datetime import date, datetime
+from datetime import datetime
 from decimal import Decimal
 from typing import Any
 from uuid import UUID
@@ -53,14 +54,14 @@ ENTITY = "contract_register"
 REGISTER_TEMPLATE_NAME = "Registro giornate"
 
 REGISTER_TEMPLATE_VARIABLES: tuple[dict[str, Any], ...] = (
-    {"nome": "period", "label": "Periodo", "type": "text", "required": True},
+    {"name": "period", "label": "Periodo", "type": "text", "required": True},
     {
-        "nome": "quantity_total",
+        "name": "quantity_total",
         "label": "Totale quantità",
         "type": "number",
         "required": True,
     },
-    {"nome": "numero_voci", "label": "Numero giornate", "type": "number", "required": True},
+    {"name": "numero_voci", "label": "Numero giornate", "type": "number", "required": True},
 )
 
 CSV_HEADER: tuple[str, ...] = ("Data", "Quantità", "Descrizione", "Fattura", "Approvazione")
@@ -77,7 +78,7 @@ class RegisterApproval(BaseModel):
 
 class RegisterEntry(BaseModel):
     work_unit_id: UUID
-    data: date
+    date: dt.date
     quantity: Decimal
     description: str
     status: str
@@ -89,8 +90,8 @@ class ContractRegister(BaseModel):
     contract_id: UUID
     title: str
     customer: str
-    da: date
-    a: date
+    da: dt.date
+    a: dt.date
     entries: list[RegisterEntry]
     quantity_total: Decimal
     without_approval: int
@@ -122,7 +123,7 @@ def _csv_text(value: str) -> str:
     return f"'{value}" if value.startswith(_FORMULA_LEADERS) else value
 
 
-def _italian_date(day: date) -> str:
+def _italian_date(day: dt.date) -> str:
     return f"{day.day:02d}/{day.month:02d}/{day.year}"
 
 
@@ -135,8 +136,8 @@ class ContractRegisterService:
     def build(
         self,
         contract_id: UUID,
-        da: date,
-        a: date,
+        da: dt.date,
+        a: dt.date,
         actor: Actor,
         *,
         invoice_id: UUID | None = None,
@@ -163,11 +164,11 @@ class ContractRegisterService:
             .outerjoin(Invoice, Invoice.id == InvoiceLine.invoice_id)
             .where(
                 WorkUnit.contract_id == contract_id,
-                WorkUnit.data >= da,
-                WorkUnit.data <= a,
+                WorkUnit.date >= da,
+                WorkUnit.date <= a,
                 WorkUnit.invoice_line_id.is_not(None),
             )
-            .order_by(WorkUnit.data, WorkUnit.id)
+            .order_by(WorkUnit.date, WorkUnit.id)
         )
         if invoice_id is not None:
             query = query.where(Invoice.id == invoice_id)
@@ -176,7 +177,7 @@ class ContractRegisterService:
         entries = [
             RegisterEntry(
                 work_unit_id=day.id,
-                data=day.data,
+                date=day.date,
                 quantity=day.quantity,
                 description=day.description,
                 status=day.status,
@@ -213,7 +214,7 @@ class ContractRegisterService:
             "contratto": {"titolo": register.title},
             "voci": [
                 {
-                    "data": _italian_date(entry.data),
+                    "data": _italian_date(entry.date),
                     "quantita": str(entry.quantity),
                     "descrizione": entry.description,
                     "fattura": entry.invoice_number or "",
@@ -240,7 +241,7 @@ class ContractRegisterService:
         for entry in register.entries:
             writer.writerow(
                 (
-                    entry.data.isoformat(),
+                    entry.date.isoformat(),
                     str(entry.quantity),
                     _csv_text(entry.description),
                     entry.invoice_number or "",
@@ -263,7 +264,7 @@ class ContractRegisterService:
             with self.session.begin_nested():
                 template = self.templates.add(
                     Template(
-                        nome=REGISTER_TEMPLATE_NAME,
+                        name=REGISTER_TEMPLATE_NAME,
                         type="hours_report",
                         body_markdown=(ASSETS_DIR / "template-day-register.md").read_text(
                             encoding="utf-8"
@@ -285,8 +286,8 @@ class ContractRegisterService:
     def render_pdf(
         self,
         contract_id: UUID,
-        da: date,
-        a: date,
+        da: dt.date,
+        a: dt.date,
         actor: Actor,
         *,
         invoice_id: UUID | None = None,

@@ -69,7 +69,7 @@ def _price_work_unit_on_date(work_unit: WorkUnit, rate_cards: Sequence[RateCard]
     `None` when no card covers that date, or the card covering it is not a
     day-rate one -- a day the calendar cannot honestly price stays unpriced, never
     guessed at, mirroring mastro's own restraint exactly."""
-    card = resolve_rate_card(rate_cards, work_unit.data)
+    card = resolve_rate_card(rate_cards, work_unit.date)
     if card is None or card.type != "daily":
         return None
     return round_money(card.amount * work_unit.quantity)
@@ -105,8 +105,8 @@ def propose_day_mapping(
         return None
 
     candidates = sorted(
-        (day for day in eligible_days if day.data <= issue_date),
-        key=lambda day: (day.data, day.id),
+        (day for day in eligible_days if day.date <= issue_date),
+        key=lambda day: (day.date, day.id),
     )
 
     picked: list[WorkUnit] = []
@@ -123,7 +123,7 @@ def propose_day_mapping(
         return None
 
     proposed_amount = sum_money(_price_work_unit_on_date(day, rate_cards) for day in picked)
-    date_scelte = [day.data for day in picked]
+    date_scelte = [day.date for day in picked]
     return WorkUnitDayMappingProposal(
         work_unit_ids=[day.id for day in picked],
         period_from=min(date_scelte),

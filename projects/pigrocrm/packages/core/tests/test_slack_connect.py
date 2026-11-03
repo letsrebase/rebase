@@ -337,7 +337,7 @@ def test_a_workspace_is_one_per_space_in_the_database(db_session: Session) -> No
             bot_token_nonce=b"y",
         )
     )
-    with pytest.raises(Exception, match="uq_slack_workspaces_one_by_space"):
+    with pytest.raises(Exception, match="uq_slack_workspaces_one_per_space"):
         db_session.flush()
 
 

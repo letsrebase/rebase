@@ -101,15 +101,15 @@ def _gather(
             (
                 c
                 for c in cards
-                if c.valid_from <= work_unit.data
-                and (c.valid_to is None or work_unit.data <= c.valid_to)
+                if c.valid_from <= work_unit.date
+                and (c.valid_to is None or work_unit.date <= c.valid_to)
             ),
             None,
         )
         if card is None:
             uncovered.append(work_unit)
             continue
-        groups[(card.id, work_unit.data.year, work_unit.data.month)].append(work_unit)
+        groups[(card.id, work_unit.date.year, work_unit.date.month)].append(work_unit)
     return groups, uncovered, {card.id: card for card in cards}
 
 
@@ -190,7 +190,7 @@ def billable_days(
                 amount=round_money(quantity * card.amount),
             )
         )
-    without_rate = sorted({w.data for w in uncovered})
+    without_rate = sorted({w.date for w in uncovered})
     return BillableDays(
         contract_id=contract.id,
         currency=contract.currency,

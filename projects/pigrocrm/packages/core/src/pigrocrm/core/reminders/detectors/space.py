@@ -40,7 +40,7 @@ from pigrocrm.core.gmail.schemas import SCOPE_READONLY
 from pigrocrm.core.proposals.models import Proposal
 from pigrocrm.core.reminders.catalogue import LADDER_MAX, REMINDER_TYPES
 from pigrocrm.core.reminders.detect import Detection, Detector, DetectorContext
-from pigrocrm.core.reminders.detectors.text import counted, days, hours
+from pigrocrm.core.reminders.detectors.text import counted, format_days, format_hours
 from pigrocrm.core.reminders.jobs import JOBS_BY_KEY, REMINDER_PASS_JOB, SCHEDULED_JOBS
 from pigrocrm.core.reminders.models import ReminderJobRun
 from pigrocrm.core.timetracking.locks import period_label
@@ -121,7 +121,7 @@ def detect_not_closed(ctx: DetectorContext) -> list[Detection]:
                 title=f"Mese non chiuso: {period_label(year, month)}",
                 detail=(
                     f"{period_label(year, month).capitalize()} è finito da "
-                    f"{days(days)} e non è "
+                    f"{format_days(days)} e non è "
                     "stato chiuso: finché è aperto, ore e costi del mese possono ancora cambiare"
                 ),
                 entity="period",
@@ -169,7 +169,7 @@ def detect_pending(ctx: DetectorContext) -> list[Detection]:
                 measure=float(days),
                 recipients=recipients,
                 title="Proposta in attesa di una decisione",
-                detail=(f"{what} aspetta da {days(days)}: accettala o rifiutala{about}"),
+                detail=(f"{what} aspetta da {format_days(days)}: accettala o rifiutala{about}"),
                 entity="proposal",
                 entity_id=proposal.id,
                 legal_entity_id=legal_entity_id,
@@ -247,8 +247,8 @@ def detect_failing(ctx: DetectorContext) -> list[Detection]:
             if hours < floor:
                 continue
             measure = float(hours)
-            title = f"Gmail non si sincronizza da {hours(hours)}"
-            detail = f"L'ultima sincronizzazione della casella {email} è di {hours(hours)} fa"
+            title = f"Gmail non si sincronizza da {format_hours(hours)}"
+            detail = f"L'ultima sincronizzazione della casella {email} è di {format_hours(hours)} fa"
         else:
             # Without `gmail.readonly` the sync is switched off and says so in its own
             # banner; there is nothing here that failed.
@@ -367,8 +367,8 @@ def _duration(minutes: int) -> str:
     if minutes < 120:
         return counted(minutes, "minuto", "minuti")
     if minutes < 48 * 60:
-        return hours(minutes // 60)
-    return days(minutes // (24 * 60))
+        return format_hours(minutes // 60)
+    return format_days(minutes // (24 * 60))
 
 
 DETECTORS = (

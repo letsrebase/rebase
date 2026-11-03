@@ -54,7 +54,7 @@ class Document(Base, PrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
     # The azienda of whichever owner the document hangs on at creation (REB-623, §1.7):
     # the customer's, the deal's or the contract's, since exactly one is set.
     legal_entity_id: Mapped[UUID] = mapped_column(
-        ForeignKey("emitter_profile.id"),
+        ForeignKey("legal_entities.id"),
         nullable=False,
         index=True,
         default=default_legal_entity_id,
@@ -66,7 +66,7 @@ class Document(Base, PrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
     # The day the current `status` was set. Written by `DocumentService.set_offer_state`,
     # the only writer of `documents.status`. `Date` for the same reason as
     # `deals.closed_at`. Backfilled in migration 0023 -- unlike `closed_at` -- because the
-    # offer timeline's payload is `{"da": "inviata", "a": "accettata"}`, literals of
+    # offer timeline's payload is `{"from": "sent", "to": "accepted"}`, literals of
     # `OfferState` rather than user-editable text.
     #
     # `NULL` on an offer that has never left `draft`, because a draft has no state change

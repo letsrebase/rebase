@@ -177,7 +177,7 @@ def map_parsed_invoice_to_import(
     already passes `xml_document_id`/`xml_hash_sha256`, so a value only this
     module's own caller can ever set never round-trips through a schema a
     hand-declare caller could also populate. `due_date`, `memo`,
-    `accrual_from`/`accrual_to`, `pdf_source`, `note_interne` and
+    `accrual_from`/`accrual_to`, `pdf_source`, `internal_notes` and
     `transmitted_externally_at` all stay unset too: none of them has a source
     on `ParsedInvoice` today, so `import_issued`'s own defaults (the regime's
     `due_days` for the due date, chief among them) apply exactly as

@@ -1016,7 +1016,7 @@ def test_the_original_pdf_can_come_straight_from_drive(
             select(Activity.payload).where(
                 Activity.entity_type == "document",
                 Activity.entity_id == document.id,
-                Activity.kind == "document.importato",
+                Activity.kind == "document.imported",
             )
         ).scalars()
     ]

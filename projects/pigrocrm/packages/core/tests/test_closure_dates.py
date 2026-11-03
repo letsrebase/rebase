@@ -94,7 +94,7 @@ def test_moving_to_a_won_stage_stamps_the_local_day(
     db_session: Session, stages: dict[str, PipelineStageRead]
 ) -> None:
     deal = _deal(db_session, stages["lead"].id)
-    DealService(db_session).move_stage(deal.id, stages["vinto"].id, ADMIN)
+    DealService(db_session).move_stage(deal.id, stages["won"].id, ADMIN)
     db_session.refresh(deal)
     assert deal.closed_at == today_local()
 
@@ -105,7 +105,7 @@ def test_moving_to_a_lost_stage_also_stamps_it(
     """`tipo != 'open'`, not `tipo == 'won'`: a lost deal is closed too, and the
     conversion rate needs both halves of the denominator."""
     deal = _deal(db_session, stages["lead"].id)
-    DealService(db_session).move_stage(deal.id, stages["perso"].id, ADMIN)
+    DealService(db_session).move_stage(deal.id, stages["lost"].id, ADMIN)
     db_session.refresh(deal)
     assert deal.closed_at == today_local()
 
@@ -125,7 +125,7 @@ def test_the_stamped_day_is_italys_own_and_not_the_processs(
     """
     congela(monkeypatch, deals_service_module)
     deal = _deal(db_session, stages["lead"].id)
-    DealService(db_session).move_stage(deal.id, stages["vinto"].id, ADMIN)
+    DealService(db_session).move_stage(deal.id, stages["won"].id, ADMIN)
     db_session.refresh(deal)
     assert deal.closed_at == TODAY_IN_ITALY
     assert deal.closed_at != TODAY_OF_PROCESSO
@@ -138,8 +138,8 @@ def test_reopening_a_deal_clears_the_closure_date(
     both the conversion rate and the open pipeline at the same time."""
     service = DealService(db_session)
     deal = _deal(db_session, stages["lead"].id)
-    service.move_stage(deal.id, stages["vinto"].id, ADMIN)
-    service.move_stage(deal.id, stages["negoziazione"].id, ADMIN)
+    service.move_stage(deal.id, stages["won"].id, ADMIN)
+    service.move_stage(deal.id, stages["negotiation"].id, ADMIN)
     db_session.refresh(deal)
     assert deal.closed_at is None
 
@@ -160,13 +160,13 @@ def test_moving_from_won_to_lost_keeps_the_original_closure_date(
     the deal into the month someone fixed the mistake in."""
     service = DealService(db_session)
     deal = _deal(db_session, stages["lead"].id)
-    service.move_stage(deal.id, stages["vinto"].id, ADMIN)
+    service.move_stage(deal.id, stages["won"].id, ADMIN)
     db_session.refresh(deal)
     original = deal.closed_at
     deal.closed_at = date(2026, 1, 15)  # simulate a closure recorded earlier
     db_session.flush()
 
-    service.move_stage(deal.id, stages["perso"].id, ADMIN)
+    service.move_stage(deal.id, stages["lost"].id, ADMIN)
     db_session.refresh(deal)
     assert deal.closed_at == date(2026, 1, 15), original
 
@@ -181,13 +181,13 @@ def test_reopening_then_closing_again_stamps_the_new_day(
     """
     service = DealService(db_session)
     deal = _deal(db_session, stages["lead"].id)
-    service.move_stage(deal.id, stages["vinto"].id, ADMIN)
+    service.move_stage(deal.id, stages["won"].id, ADMIN)
     db_session.refresh(deal)
     deal.closed_at = date(2026, 1, 15)
     db_session.flush()
 
-    service.move_stage(deal.id, stages["negoziazione"].id, ADMIN)
-    service.move_stage(deal.id, stages["vinto"].id, ADMIN)
+    service.move_stage(deal.id, stages["negotiation"].id, ADMIN)
+    service.move_stage(deal.id, stages["won"].id, ADMIN)
     db_session.refresh(deal)
     assert deal.closed_at == today_local()
 
@@ -196,7 +196,7 @@ def test_closed_at_is_exposed_on_the_read_schema(
     db_session: Session, stages: dict[str, PipelineStageRead]
 ) -> None:
     deal = _deal(db_session, stages["lead"].id)
-    read = DealService(db_session).move_stage(deal.id, stages["vinto"].id, ADMIN)
+    read = DealService(db_session).move_stage(deal.id, stages["won"].id, ADMIN)
     assert read.closed_at == today_local()
 
 

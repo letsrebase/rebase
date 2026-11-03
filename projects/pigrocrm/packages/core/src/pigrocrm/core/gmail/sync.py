@@ -472,7 +472,7 @@ class GmailSyncService:
         report.matching = [
             DiscoveredCorrespondent(
                 address=address,
-                nome=entry.name,
+                name=entry.name,
                 messages=entry.count,
                 conversations=len(entry.threads),
                 last_message=entry.last,
@@ -552,12 +552,12 @@ class GmailSyncService:
         proposals = [
             SuggestedCustomer(
                 domain=domain,
-                nome=company_name_from_domain(domain),
+                name=company_name_from_domain(domain),
                 conversations=len(entry.threads),
                 last_message=entry.last,
                 people=[
                     SuggestedPerson(
-                        address=address, nome=name, already_in_directory=address in known
+                        address=address, name=name, already_in_directory=address in known
                     )
                     for address, name in sorted(entry.people.items())
                 ],

@@ -32,9 +32,9 @@ class Person(Base, PrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
         # partial on `deleted_at IS NULL` with no `lower()` in the expression.
         Index(
             "ix_people_name_trgm",
-            "nome",
+            "first_name",
             postgresql_using="gin",
-            postgresql_ops={"nome": "gin_trgm_ops"},
+            postgresql_ops={"first_name": "gin_trgm_ops"},
             postgresql_where=text("deleted_at IS NULL"),
         ),
         Index(
@@ -72,7 +72,7 @@ class Person(Base, PrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
         #
         # `column("last_name")` rather than the mapped attribute because `id` comes from
         # `PrimaryKeyMixin` and is not bound in this class body at all. Unlike
-        # `func.lower("nome")` -- which would bind a *constant* (see
+        # `func.lower("first_name")` -- which would bind a *constant* (see
         # `templates/models.py`) -- `column()` is an explicit column reference, so the
         # string is safe here.
         Index(
@@ -86,7 +86,7 @@ class Person(Base, PrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
     customer_id: Mapped[UUID | None] = mapped_column(
         ForeignKey("customers.id"), default=None, index=True
     )
-    nome: Mapped[str] = mapped_column(String(120), nullable=False)
+    first_name: Mapped[str] = mapped_column(String(120), nullable=False)
     last_name: Mapped[str | None] = mapped_column(String(120), default=None)
     email: Mapped[str | None] = mapped_column(String(320), default=None, index=True)
     phone: Mapped[str | None] = mapped_column(String(40), default=None)

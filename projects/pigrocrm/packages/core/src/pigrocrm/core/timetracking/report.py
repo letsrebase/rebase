@@ -40,9 +40,9 @@ TIME_REPORT_TEMPLATE_NAME = "Rapporto ore"
 # `render_template` accepts undeclared supplied keys -- `{{#each voci}}` resolves from
 # `values`. Declaring it would put a list-typed variable on a form nobody fills in.
 TIME_REPORT_TEMPLATE_VARIABLES: tuple[dict[str, Any], ...] = (
-    {"nome": "period", "label": "Periodo", "type": "text", "required": True},
-    {"nome": "hours_total", "label": "Totale ore", "type": "number", "required": True},
-    {"nome": "numero_voci", "label": "Numero voci", "type": "number", "required": True},
+    {"name": "period", "label": "Periodo", "type": "text", "required": True},
+    {"name": "hours_total", "label": "Totale ore", "type": "number", "required": True},
+    {"name": "numero_voci", "label": "Numero voci", "type": "number", "required": True},
 )
 
 # `re.fullmatch` is what this is used with -- never `re.match` with `$`, because `$`
@@ -102,13 +102,13 @@ def report_variables(
         # produced just after midnight on 1 January carries the previous *year*, on the
         # document that justifies the hours billed for the year that just closed.
         "oggi": _italian_date(today_local()),
-        "deal": {"nome": deal.nome},
+        "deal": {"name": deal.name},
         "cliente": (
             CustomerRead.model_validate(customer).model_dump(mode="json") if customer else {}
         ),
         "voci": [
             {
-                "data": _italian_date(entry.data),
+                "data": _italian_date(entry.date),
                 # `str(Decimal)` keeps the stored scale exactly ("2.50", not "2.5"):
                 # the column the client reads must show two places, and formatting a
                 # float here would be the drift `Numeric` exists to avoid.
@@ -121,7 +121,7 @@ def report_variables(
         "numero_voci": str(len(entries)),
         # Kept as native types for the workbook, which needs real dates and real
         # numbers rather than the display strings above (Task 4A-15).
-        "_rows": [(entry.data, entry.hours, entry.description) for entry in entries],
+        "_rows": [(entry.date, entry.hours, entry.description) for entry in entries],
         "_anno": year,
         "_mese": month,
     }
@@ -191,7 +191,7 @@ class TimeReportService:
         variables = self.variables_for(deal_id, month, actor)
         content = build_time_report_xlsx(
             customer=str(variables["customer"].get("legal_name", "")),
-            offer=str(variables["deal"]["nome"]),
+            offer=str(variables["deal"]["name"]),
             period=str(variables["period"]),
             rows=variables["_rows"],
         )

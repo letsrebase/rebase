@@ -70,7 +70,7 @@ def sdi_filename(id_tax: str, year: int, number: int) -> str:
     """
     if not FISCAL_ID_RE.fullmatch(id_tax):
         raise ValidationFailed(
-            "legal_entities",
+            "legal_entity",
             "vat_number",
             "il nome del file XML richiede una partita IVA di 11 cifre o un codice "
             "fiscale di 16 caratteri",

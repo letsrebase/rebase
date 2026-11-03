@@ -155,7 +155,7 @@ class InvitationService:
         if open_row is not None:
             # Expired: overwrite in place exactly as a resend does.
             open_row.email = email
-            open_row.nome = data.nome
+            open_row.name = data.name
             open_row.role = data.role
             open_row.legal_entities = legal_entities
             open_row.token_hash = _hash(raw)
@@ -168,7 +168,7 @@ class InvitationService:
         else:
             row = Invitation(
                 email=email,
-                nome=data.nome,
+                name=data.name,
                 role=data.role,
                 legal_entities=legal_entities,
                 token_hash=_hash(raw),
@@ -311,11 +311,11 @@ class InvitationService:
         inviter = self.users.get(row.invited_by)
         return InvitationPeek(
             space=space,
-            invited_from=inviter.nome if inviter is not None else "",
-            nome=row.nome,
+            invited_from=inviter.name if inviter is not None else "",
+            name=row.name,
         )
 
-    def accept(self, raw: str, nome: str | None) -> UserRead:
+    def accept(self, raw: str, name: str | None) -> UserRead:
         """Spends the token and opens the account: creates the active user with the
         invitation's role, sets `email_verified_at` (the click proved the address,
         same as the magic link's first entry) and `last_login_at` (REB-297: the click
@@ -342,10 +342,10 @@ class InvitationService:
         """
         bind_scope(self.session, Actor.system())
         row = self._live_row(raw)
-        chosen = (nome or row.nome or "").strip()
+        chosen = (name or row.name or "").strip()
         if not chosen:
             raise ValidationFailed(
-                "invitation", "nome", "obbligatorio quando l'invito non porta un nome"
+                "invitation", "name", "obbligatorio quando l'invito non porta un nome"
             )
         role = as_role(row.role)
         # The scope the invitation carried, kept to the aziende still active at the
@@ -360,7 +360,7 @@ class InvitationService:
             else None
         )
         user = UserService(self.session).create_scoped(
-            UserCreate(email=row.email, password=None, nome=chosen, role=role),
+            UserCreate(email=row.email, password=None, name=chosen, role=role),
             Actor.system(),
             scope,
         )
@@ -409,8 +409,8 @@ class InvitationService:
         role = as_role(row.role)
         return InvitationOffer(
             role=role,
-            invited_from=inviter.nome if inviter is not None else "",
-            nome=row.nome,
+            invited_from=inviter.name if inviter is not None else "",
+            name=row.name,
         )
 
     def open_for(self, email: str) -> str:
