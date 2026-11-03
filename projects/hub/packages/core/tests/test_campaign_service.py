@@ -498,7 +498,7 @@ def test_the_counts_add_clicks_entries_and_actions(clean: Session) -> None:  # n
     _recipient(clean, campaign.id, "c@studio.it", first_click_at=later)
     _recipient(clean, campaign.id, "d@studio.it", status="skipped", sent_at=None)
     counts = CampaignService(clean, SETTINGS).detail(campaign.id).counts
-    assert (counts.sent, counts.clicked, counts.income, counts.actions) == (3, 3, 2, 1)
+    assert (counts.sent, counts.clicked, counts.entered, counts.actions) == (3, 3, 2, 1)
     listed = CampaignService(clean, SETTINGS).list_all().items[0].counts
     assert listed == counts
 

@@ -12,7 +12,7 @@ const DETAIL = {
     scheduled_for: '2026-09-26T07:30:00Z', test_sent_at: '2026-09-25T07:05:00Z', sent_at: null,
     created_at: '2026-09-25T07:00:00Z', stalled_at: null, stalled_reason: null, ready: true,
   },
-  counts: { recipients: 2, queued: 1, sent: 0, skipped: 1, failed: 0, delivered: 0, bounced: 0, clicked: 0, income: 0, actions: 0 },
+  counts: { recipients: 2, queued: 1, sent: 0, skipped: 1, failed: 0, delivered: 0, bounced: 0, clicked: 0, entered: 0, actions: 0 },
   recipients: [
     { id: 'r1', email: 'ada@studio.it', name: 'Ada', kind: 'freelancer', status: 'queued', reason: null, sent_at: null, delivered_at: null, bounced_at: null, first_click_at: null, complaint_at: null, signed_in_at: null, action_at: null, signed_in_from_mail: false, action_from_mail: false },
     { id: 'r2', email: 'bob@studio.it', name: 'Bob', kind: 'freelancer', status: 'skipped', reason: 'ha già fatto l’azione', sent_at: null, delivered_at: null, bounced_at: null, first_click_at: null, complaint_at: null, signed_in_at: null, action_at: null, signed_in_from_mail: false, action_from_mail: false },
@@ -88,7 +88,7 @@ describe('the campaign page', () => {
 
 const SENT = {
   campaign: { ...DETAIL.campaign, status: 'sent', sent_at: '2026-09-26T07:31:00Z', action: 'cv' },
-  counts: { recipients: 3, queued: 0, sent: 3, skipped: 0, failed: 0, delivered: 3, bounced: 0, clicked: 2, income: 2, actions: 1 },
+  counts: { recipients: 3, queued: 0, sent: 3, skipped: 0, failed: 0, delivered: 3, bounced: 0, clicked: 2, entered: 2, actions: 1 },
   recipients: [
     { id: 'r1', email: 'ada@studio.it', name: 'Ada', kind: 'freelancer', status: 'sent', reason: null, sent_at: '2026-09-26T07:31:00Z', delivered_at: '2026-09-26T07:32:00Z', bounced_at: null, first_click_at: '2026-09-26T08:00:00Z', complaint_at: null, signed_in_at: '2026-09-26T08:01:00Z', action_at: '2026-09-26T08:10:00Z', signed_in_from_mail: true, action_from_mail: false },
     { id: 'r2', email: 'bob@studio.it', name: 'Bob', kind: 'freelancer', status: 'sent', reason: null, sent_at: '2026-09-26T07:31:00Z', delivered_at: '2026-09-26T07:32:00Z', bounced_at: null, first_click_at: '2026-09-26T09:00:00Z', complaint_at: null, signed_in_at: '2026-09-26T09:01:00Z', action_at: null, signed_in_from_mail: false, action_from_mail: false },

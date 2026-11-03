@@ -103,7 +103,7 @@ async def test_an_agent_reads_the_campaigns_and_each_persons_outcome(
         _drop(factory, campaign_id, owner_id)
     item = next(i for i in listed["items"] if i["id"] == str(campaign_id))
     counts = item["counts"]
-    assert (counts["sent"], counts["clicked"], counts["income"], counts["actions"]) == (
+    assert (counts["sent"], counts["clicked"], counts["entered"], counts["actions"]) == (
         2,
         2,
         2,

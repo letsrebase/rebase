@@ -129,7 +129,8 @@ def test_the_walk_finds_every_route_the_app_serves() -> None:
     }
     # The pre-rename unsubscribe path stays served for the mails already sent, and out of
     # the schema.
-    legacy = {("GET", "/api/hub/campagne/disiscrizione"), ("POST", "/api/hub/campagne/disiscrizione")}
+    old = "/api/hub/campagne/disiscrizione"
+    legacy = {("GET", old), ("POST", old)}
     assert (set(ADMIN_ROUTES) | set(OTHER_ROUTES)) - legacy == published
     assert ADMIN_ROUTES, "no admin route found: the dependency walk is broken"
 

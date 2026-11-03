@@ -2751,10 +2751,10 @@ export interface components {
              */
             clicked: number;
             /**
-             * Income
+             * Entered
              * @default 0
              */
-            income: number;
+            entered: number;
             /**
              * Actions
              * @default 0

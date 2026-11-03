@@ -601,7 +601,7 @@ class CampaignService:
                 func.count(r.delivered_at).label("delivered"),
                 func.count(r.bounced_at).label("bounced"),
                 func.count(r.first_click_at).label("clicked"),
-                func.count(r.signed_in_at).label("income"),
+                func.count(r.signed_in_at).label("entered"),
                 func.count(r.action_at).label("actions"),
             )
             .where(r.campaign_id.in_(ids))
@@ -617,7 +617,7 @@ class CampaignService:
                 delivered=row.delivered,
                 bounced=row.bounced,
                 clicked=row.clicked,
-                income=row.income,
+                entered=row.entered,
                 actions=row.actions,
             )
             for row in rows

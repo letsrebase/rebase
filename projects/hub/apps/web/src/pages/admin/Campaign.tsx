@@ -314,7 +314,7 @@ export function AdminCampaign() {
         <Figure label="Inviate" value={counts.sent} note={`su ${counts.recipients}`} />
         <Figure label="Consegnate" value={counts.delivered} note={share(counts.delivered, counts.sent)} />
         <Figure label="Cliccate" value={counts.clicked} note={share(counts.clicked, counts.sent)} />
-        <Figure label="Entrate nell’area" value={counts.income} note={share(counts.income, counts.sent)} />
+        <Figure label="Entrate nell’area" value={counts.entered} note={share(counts.entered, counts.sent)} />
         <Figure label={ACTION_DONE_LABELS[campaign.action]} value={counts.actions} note={share(counts.actions, counts.sent)} />
         <Figure label="Rimbalzate" value={counts.bounced} note={share(counts.bounced, counts.sent)} />
         <Figure label="Saltate" value={counts.skipped} note={share(counts.skipped, counts.recipients)} />

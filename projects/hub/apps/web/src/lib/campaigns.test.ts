@@ -235,7 +235,7 @@ describe('the outcome in words', () => {
   })
 
   it('says what left and what it led to, and what went wrong only when something did', () => {
-    const counts = { recipients: 10, queued: 0, sent: 8, skipped: 1, failed: 0, delivered: 8, bounced: 0, clicked: 4, income: 3, actions: 2 }
+    const counts = { recipients: 10, queued: 0, sent: 8, skipped: 1, failed: 0, delivered: 8, bounced: 0, clicked: 4, entered: 3, actions: 2 }
     expect(outcomeLine(counts, 'cv')).toBe('8 inviate · 8 consegnate · 4 clic · 3 entrati · 2 CV caricati · 1 saltate')
     expect(outcomeLine({ ...counts, skipped: 0 }, 'signed_in')).toBe('8 inviate · 8 consegnate · 4 clic · 3 entrati')
   })
@@ -249,7 +249,7 @@ describe('«Un link» (REB-530)', () => {
   })
 
   it('says the click once, since for a link it is the action', () => {
-    const counts = { recipients: 10, queued: 0, sent: 8, skipped: 0, failed: 0, delivered: 8, bounced: 0, clicked: 4, income: 1, actions: 4 }
+    const counts = { recipients: 10, queued: 0, sent: 8, skipped: 0, failed: 0, delivered: 8, bounced: 0, clicked: 4, entered: 1, actions: 4 }
     expect(outcomeLine(counts, 'click')).toBe('8 inviate · 8 consegnate · 4 clic · 1 entrati')
   })
 })
