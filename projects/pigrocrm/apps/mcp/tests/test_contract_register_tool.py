@@ -73,7 +73,7 @@ async def test_the_register_lists_the_billed_days_and_their_total(server, mcp_se
     async with Client(server) as client:
         result = await client.call_tool(
             "get_contract_register",
-            {"contract_id": str(contract.id), "da": "2026-10-01", "a": "2026-10-31"},
+            {"contract_id": str(contract.id), "date_from": "2026-10-01", "date_to": "2026-10-31"},
         )
 
     body = result.structured_content
@@ -89,7 +89,7 @@ async def test_a_malformed_date_comes_back_as_guidance(server, mcp_session) -> N
     async with Client(server) as client:
         result = await client.call_tool(
             "get_contract_register",
-            {"contract_id": str(contract.id), "da": "ottobre", "a": "2026-10-31"},
+            {"contract_id": str(contract.id), "date_from": "ottobre", "date_to": "2026-10-31"},
         )
 
     assert result.is_error

@@ -52,8 +52,8 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
     @guard
     def describe_legal_entity(legal_entity_id: str | None = None) -> dict[str, Any]:
         """Chi emette: ragione sociale, partita IVA, indirizzo e recapiti dell'intestazione di
-        fatture e documenti; `legal_entity_id` omesso: predefinita. Leggilo invece di chiedere questi
-        dati all'utente.
+        fatture e documenti; `legal_entity_id` omesso: predefinita. Leggilo invece di chiedere
+        questi dati all'utente.
         """
         return invoices.describe_legal_entity(context, legal_entity_id)
 
@@ -87,10 +87,10 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
         non si cancella più, si disattiva. Non diventa la predefinita, salvo che lo spazio non
         ne abbia una.
 
-        `data` come `update_legal_entity` con `nome` obbligatorio (nome breve per selettore e liste);
-        `tax_profile` come `update_fiscal_profile` (`non-it` con IVA zero richiede
-        `default_vat_nature`). Un profilo rifiutato fa rifiutare tutta la chiamata. Un dato fiscale non
-        fornito non si inventa: chiedilo.
+        `data` come `update_legal_entity` con `name` obbligatorio (nome breve per selettore e
+        liste); `tax_profile` come `update_fiscal_profile` (`non-it` con IVA zero richiede
+        `default_vat_nature`). Un profilo rifiutato fa rifiutare tutta la chiamata. Un dato fiscale
+        non fornito non si inventa: chiedilo.
         """
         return invoices.create_legal_entity(context, data, tax_profile)
 
@@ -104,10 +104,11 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
 
         **Sostituzione totale**: ogni chiave assente torna vuota (`country` a `IT`;
         `legal_name` obbligatoria). Leggi prima `describe_legal_entity` e rimanda l'oggetto con le
-        sole modifiche. Chiavi: `nome`, `legal_name`, `vat_number` (11 cifre) o
+        sole modifiche. Chiavi: `name`, `legal_name`, `vat_number` (11 cifre) o
         `tax_code`, `address`, `cap`, `city`, `province`, `country`, `certified_email`, `sdi_code`
         (7 caratteri), `phone`, `email`, `website`, `tax_regime` (testo in calce),
-        `email_signature`, `logo_key`, `signature_key` (chiavi di storage, non byte). Chiedi conferma alla
-        persona sul riepilogo; un dato fiscale non fornito non si inventa. Solo un admin.
+        `email_signature`, `logo_key`, `signature_key` (chiavi di storage, non byte). Chiedi
+        conferma alla persona sul riepilogo; un dato fiscale non fornito non si inventa. Solo un
+        admin.
         """
         return invoices.update_legal_entity(context, data, legal_entity_id)

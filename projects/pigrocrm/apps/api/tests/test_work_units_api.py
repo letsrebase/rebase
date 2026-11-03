@@ -240,7 +240,7 @@ def test_the_window_lists_every_contracts_days_between_two_dates(logged_in: Test
     _record(logged_in, second, "2026-03-03")
     _record(logged_in, second, "2026-04-03")
 
-    response = logged_in.get("/api/work-units", params={"da": "2026-03-01", "a": "2026-03-31"})
+    response = logged_in.get("/api/work-units", params={"from": "2026-03-01", "to": "2026-03-31"})
 
     assert response.status_code == 200, response.text
     assert sorted(row["data"] for row in response.json()["items"]) == ["2026-03-02", "2026-03-03"]

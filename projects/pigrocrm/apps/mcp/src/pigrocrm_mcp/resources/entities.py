@@ -116,12 +116,13 @@ def render_customer(context: McpContext, customer_id: UUID) -> str:
         "",
     ]
     lines += [
-        f"- {p.nome} {p.last_name or ''} — {p.role or 'ruolo non indicato'} — {p.email or '—'}"
+        f"- {p.first_name} {p.last_name or ''} — {p.role or 'ruolo non indicato'} — "
+        f"{p.email or '—'}"
         for p in people.items
     ] or ["_Nessun contatto._"]
     lines += ["", "## Deal", ""]
     lines += [
-        f"- {d.nome} — valore previsto {_or_dash(d.expected_value)} — probabilità {d.probability}%"
+        f"- {d.name} — valore previsto {_or_dash(d.expected_value)} — probabilità {d.probability}%"
         for d in deals.items
     ] or ["_Nessun deal._"]
     lines += _custom_lines(customer.custom_fields)
@@ -135,7 +136,7 @@ def render_person(context: McpContext, person_id: UUID) -> str:
     lines = [
         _provenance_line(),
         "",
-        f"# {person.nome} {person.last_name or ''}".strip(),
+        f"# {person.first_name} {person.last_name or ''}".strip(),
         "",
         f"- Ruolo: {person.role or '—'}",
         f"- Email: {person.email or '—'}",
@@ -162,10 +163,10 @@ def render_deal(context: McpContext, deal_id: UUID) -> str:
     lines = [
         _provenance_line(),
         "",
-        f"# {deal.nome}",
+        f"# {deal.name}",
         "",
         f"- Cliente: {customer.legal_name} (`customer://{customer.id}`)",
-        f"- Stato: {stage.nome} ({stage.type})",
+        f"- Stato: {stage.name} ({stage.type})",
         f"- Valore previsto: {_or_dash(deal.expected_value)}",
         f"- Probabilità: {deal.probability}%",
         f"- Chiusura prevista: {deal.expected_close_date or '—'}",

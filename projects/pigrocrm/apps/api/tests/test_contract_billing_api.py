@@ -56,7 +56,7 @@ def test_billable_days_reads_as_the_lines_the_draft_would_carry(
 
     october = logged_in.get(
         f"/api/contracts/{contract['id']}/billable-days",
-        params={"da": "2026-10-01", "a": "2026-10-31"},
+        params={"from": "2026-10-01", "to": "2026-10-31"},
     ).json()
     assert [r["month"] for r in october["lines"]] == ["2026-10"]
 
@@ -69,7 +69,7 @@ def test_invoicing_a_month_makes_a_draft_and_the_days_stop_being_ready(
 
     response = logged_in.post(
         f"/api/contracts/{contract['id']}/invoice-days",
-        json={"da": "2026-10-01", "a": "2026-10-31"},
+        json={"date_from": "2026-10-01", "date_to": "2026-10-31"},
     )
 
     assert response.status_code == 201, response.text
@@ -95,7 +95,7 @@ def test_a_period_that_ends_before_it_starts_is_refused(
 ) -> None:
     response = logged_in.post(
         f"/api/contracts/{contract['id']}/invoice-days",
-        json={"da": "2026-10-31", "a": "2026-10-01"},
+        json={"date_from": "2026-10-31", "date_to": "2026-10-01"},
     )
     assert response.status_code == 422, response.text
 
@@ -134,9 +134,9 @@ def test_the_register_json_csv_and_pdf_agree_on_the_month(
     _day(api_session, contract, date(2026, 10, 8), "0.50")
     invoice = logged_in.post(
         f"/api/contracts/{contract['id']}/invoice-days",
-        json={"da": "2026-10-01", "a": "2026-10-31"},
+        json={"date_from": "2026-10-01", "date_to": "2026-10-31"},
     ).json()
-    period = {"da": "2026-10-01", "a": "2026-10-31"}
+    period = {"date_from": "2026-10-01", "date_to": "2026-10-31"}
 
     register = logged_in.get(f"/api/contracts/{contract['id']}/register", params=period)
     assert register.status_code == 200, register.text
@@ -171,6 +171,6 @@ def test_the_register_needs_a_period(logged_in: TestClient, contract: dict[str, 
 def test_the_register_of_a_contract_that_does_not_exist_is_a_404(logged_in: TestClient) -> None:
     response = logged_in.get(
         "/api/contracts/00000000-0000-4000-8000-000000000000/register",
-        params={"da": "2026-10-01", "a": "2026-10-31"},
+        params={"from": "2026-10-01", "to": "2026-10-31"},
     )
     assert response.status_code == 404, response.text

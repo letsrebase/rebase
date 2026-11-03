@@ -270,7 +270,7 @@ def test_the_period_report_uses_the_spec_query_names(logged_in: TestClient) -> N
     assert body["closed"]["deal"] == 0
     assert body["da"] == DA and body["a"] == A
 
-    assert logged_in.get("/api/analytics/pnl", params={"da": DA, "a": A}).status_code == 422
+    assert logged_in.get("/api/analytics/pnl", params={"from": DA, "to": A}).status_code == 422
 
 
 def test_the_backlog_takes_no_period_and_serialises_its_decimals_as_strings(
@@ -915,7 +915,7 @@ def test_the_days_route_answers_by_month_and_state_and_takes_one_legal_entity(
     assert worked["days"] == "1.00"
 
     year = logged_in.get(
-        "/api/analytics/days", params={"da": DA, "a": A, "legal_entity_id": default}
+        "/api/analytics/days", params={"from": DA, "to": A, "legal_entity_id": default}
     )
     assert year.status_code == 200, year.text
     assert len(year.json()["months"]) == 12
@@ -926,6 +926,6 @@ def test_the_days_route_answers_by_month_and_state_and_takes_one_legal_entity(
     elsewhere = logged_in.get("/api/analytics/days", params={"legal_entity_id": other.json()["id"]})
     assert elsewhere.json()["days_in_period"] == "0.00"
 
-    half = logged_in.get("/api/analytics/days", params={"da": DA})
+    half = logged_in.get("/api/analytics/days", params={"from": DA})
     assert half.status_code == 422
     assert half.json()["field"] == "a"

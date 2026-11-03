@@ -304,14 +304,18 @@ def test_the_endpoint_returns_what_the_service_returns(
 def test_the_period_round_trips_through_the_query_string(
     logged_in: TestClient, dashboard_corpus: Engine
 ) -> None:
-    response = logged_in.get("/api/dashboard/sales", params={"da": "2026-03-01", "a": "2026-03-31"})
-    assert response.json()["period"] == {"da": "2026-03-01", "a": "2026-03-31"}
+    response = logged_in.get(
+        "/api/dashboard/sales", params={"from": "2026-03-01", "to": "2026-03-31"}
+    )
+    assert response.json()["period"] == {"date_from": "2026-03-01", "date_to": "2026-03-31"}
 
 
 def test_an_inverted_period_is_a_422_naming_the_field(
     logged_in: TestClient, dashboard_corpus: Engine
 ) -> None:
-    response = logged_in.get("/api/dashboard/sales", params={"da": "2026-03-31", "a": "2026-03-01"})
+    response = logged_in.get(
+        "/api/dashboard/sales", params={"from": "2026-03-31", "to": "2026-03-01"}
+    )
     assert response.status_code == 422
     assert response.json()["field"] == "da"
 
@@ -367,7 +371,7 @@ def test_the_economic_dashboard_is_one_request(
     a `revenue` key at the top level would mean somebody had recombined the two columns on
     the way out."""
     response = logged_in.get(
-        "/api/dashboard/economic", params={"da": "2026-03-01", "a": "2026-03-31"}
+        "/api/dashboard/economic", params={"from": "2026-03-01", "to": "2026-03-31"}
     )
     assert response.status_code == 200, response.text
     body = response.json()
@@ -426,7 +430,7 @@ def test_an_inverted_period_on_the_economic_endpoint_is_a_422_naming_the_field(
     """The same `PeriodQuery.resolve`, so the same answer: the route adds no validation
     of its own and must not lose the one the service performs."""
     response = logged_in.get(
-        "/api/dashboard/economic", params={"da": "2026-03-31", "a": "2026-03-01"}
+        "/api/dashboard/economic", params={"from": "2026-03-31", "to": "2026-03-01"}
     )
     assert response.status_code == 422
     assert response.json()["field"] == "da"
@@ -469,7 +473,7 @@ def test_a_period_on_the_operational_endpoint_is_ignored_not_honoured(
     """
     plain = logged_in.get("/api/dashboard/operational").json()
     with_period = logged_in.get(
-        "/api/dashboard/operational", params={"da": "2020-01-01", "a": "2020-01-31"}
+        "/api/dashboard/operational", params={"from": "2020-01-01", "to": "2020-01-31"}
     )
     assert with_period.status_code == 200, with_period.text
     body = with_period.json()

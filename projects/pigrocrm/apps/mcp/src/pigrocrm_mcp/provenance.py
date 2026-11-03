@@ -136,7 +136,7 @@ FREE_TEXT_KEYS: frozenset[str] = frozenset(
         "label",
         "markdown",
         "legal_name",
-        "nome",
+        "name",
         "last_name",
         "role",
         "supplier",

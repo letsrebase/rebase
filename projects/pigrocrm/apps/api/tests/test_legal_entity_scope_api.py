@@ -319,7 +319,9 @@ def test_the_dashboards_sum_the_scope_alone(served: TestClient, world: ScopedWor
     receivables = client.get("/api/dashboard/receivables")
     assert receivables.status_code == 200, receivables.text
     assert Decimal(receivables.json()["total"]) == Decimal("100.00")
-    economic = client.get("/api/dashboard/economic", params={"da": "2026-03-01", "a": "2026-03-31"})
+    economic = client.get(
+        "/api/dashboard/economic", params={"from": "2026-03-01", "to": "2026-03-31"}
+    )
     assert economic.status_code == 200, economic.text
     assert Decimal(economic.json()["pnl"]["in_progress"]["revenue"]) == Decimal("100.00")
 

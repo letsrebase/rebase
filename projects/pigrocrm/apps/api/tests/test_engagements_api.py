@@ -299,7 +299,7 @@ def test_report_answers_the_hours(door_client: TestClient, container_settings: S
 
     report = door_client.get(
         f"/api/rebase/engagements/{match_id}/report",
-        params={"da": first.isoformat()},
+        params={"from": first.isoformat()},
         headers=_bearer(),
     )
     assert report.status_code == 200, report.text
@@ -376,7 +376,7 @@ def test_report_reversed_period_is_422(door_client: TestClient) -> None:
 
     refused = door_client.get(
         f"/api/rebase/engagements/{match_id}/report",
-        params={"da": "2026-10-02", "a": "2026-10-01"},
+        params={"from": "2026-10-02", "to": "2026-10-01"},
         headers=_bearer(),
     )
     assert refused.status_code == 422, refused.text

@@ -22,7 +22,7 @@ from pigrocrm_api.errors import PROBLEM_RESPONSES
 
 router = APIRouter(
     prefix="/api/activities",
-    tags=["attivita"],
+    tags=["tasks"],
     responses=PROBLEM_RESPONSES,
     dependencies=[Depends(get_actor)],
 )

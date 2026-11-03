@@ -126,7 +126,7 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
         contract_id: str,
         excerpt: str,
         confidence: Confidence,
-        data: str,
+        date: str,
         quantity: QuantityArg,
         description: str,
         channel: str,
@@ -153,7 +153,7 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
                 "confidence_reason": confidence_reason,
                 "proposed_fields": {
                     "contract_id": contract_id,
-                    "data": data,
+                    "date": date,
                     "quantity": quantity,
                     "description": description,
                     "approval": {

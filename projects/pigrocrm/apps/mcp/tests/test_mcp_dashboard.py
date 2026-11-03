@@ -183,7 +183,7 @@ async def test_the_tool_promises_the_agent_a_date_and_a_default(dashboard_server
         )
         payload = _payload(await client.call_tool("get_commercial_dashboard", {}))
 
-    assert payload["period"] == {"da": first.isoformat(), "a": last.isoformat()}
+    assert payload["period"] == {"date_from": first.isoformat(), "date_to": last.isoformat()}
     for bound in ("da", "a"):
         advertised = tool.input_schema["properties"][bound]
         formats = {branch.get("format") for branch in advertised.get("anyOf", [advertised])}
@@ -242,10 +242,10 @@ async def test_the_period_is_taken_from_the_arguments_and_echoed_back(
     async with Client(dashboard_server) as client:
         payload = _payload(
             await client.call_tool(
-                "get_commercial_dashboard", {"da": "2026-03-01", "a": "2026-03-31"}
+                "get_commercial_dashboard", {"date_from": "2026-03-01", "date_to": "2026-03-31"}
             )
         )
-    assert payload["period"] == {"da": "2026-03-01", "a": "2026-03-31"}
+    assert payload["period"] == {"date_from": "2026-03-01", "date_to": "2026-03-31"}
 
 
 async def test_two_calls_in_a_row_both_succeed(dashboard_server: Any) -> None:
@@ -263,9 +263,9 @@ async def test_two_calls_in_a_row_both_succeed(dashboard_server: Any) -> None:
 @pytest.mark.parametrize(
     ("arguments", "perche"),
     [
-        ({"da": "2026-03-31", "a": "2026-03-01"}, "il periodo è invertito"),
-        ({"da": "2026-03-01"}, "metà periodo non è un periodo"),
-        ({"da": "non-una-data", "a": "2026-03-31"}, "la data non è ISO"),
+        ({"date_from": "2026-03-31", "date_to": "2026-03-01"}, "il periodo è invertito"),
+        ({"date_from": "2026-03-01"}, "metà periodo non è un periodo"),
+        ({"date_from": "non-una-data", "date_to": "2026-03-31"}, "la data non è ISO"),
     ],
 )
 async def test_a_bad_period_is_an_error_the_agent_can_read(
@@ -290,7 +290,7 @@ async def test_the_session_survives_a_rejected_period(dashboard_server: Any) -> 
     session, which is exactly the kind of state that outlives a naive error path."""
     async with Client(dashboard_server) as client:
         rejected = await client.call_tool(
-            "get_commercial_dashboard", {"da": "2026-03-31", "a": "2026-03-01"}
+            "get_commercial_dashboard", {"date_from": "2026-03-31", "date_to": "2026-03-01"}
         )
         assert rejected.is_error
         after = await client.call_tool("get_commercial_dashboard", {})

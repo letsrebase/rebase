@@ -533,7 +533,7 @@ async def test_a_period_where_nothing_closed_reports_a_dash_and_not_zero_per_cen
     lost everything"; nothing closed means something else, and a briefing that renders the
     second as the first is telling the reader a bad month was a catastrophe."""
     rendered = await mcp_server.get_prompt(
-        "pipeline-review", {"da": "2019-01-01", "a": "2019-01-31"}
+        "pipeline-review", {"date_from": "2019-01-01", "date_to": "2019-01-31"}
     )
     text_block = _text_of(rendered)
     assert "Tasso di conversione: —" in text_block
@@ -1036,7 +1036,7 @@ async def test_closing_month_matches_the_pnl_value_by_value(
     da, a = month_bounds(_YEAR, _MONTH)
     with prompt_corpus.factory() as session:
         pnl = AnalyticsService(session).period_pnl(
-            PeriodPnlQuery(da=da, a=a, customer_id=None), ADMIN
+            PeriodPnlQuery(date_from=da, date_to=a, customer_id=None), ADMIN
         )
 
     text_block = _text_of(

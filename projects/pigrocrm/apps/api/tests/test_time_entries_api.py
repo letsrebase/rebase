@@ -174,7 +174,7 @@ def test_recalculate_requires_admin(logged_in: TestClient) -> None:
     collaborator = _second_actor(logged_in, "collaborator")
     response = collaborator.post(
         f"/api/deals/{deal_id}/rates/recalculate",
-        json={"da": "2026-03-01", "a": "2026-03-31"},
+        json={"date_from": "2026-03-01", "date_to": "2026-03-31"},
     )
     assert response.status_code == 403
     assert response.json()["code"] == "permission_denied"

@@ -77,7 +77,7 @@ async def test_get_deal_pnl_returns_the_service_figures_verbatim(server, deal_wi
 
 async def test_get_period_pnl_answers_in_two_columns_and_no_total(server, deal_with_hours) -> None:
     async with Client(server) as client:
-        result = await client.call_tool("get_period_pnl", {"da": DA, "a": A})
+        result = await client.call_tool("get_period_pnl", {"date_from": DA, "date_to": A})
     body = result.structured_content
     assert "total" not in body
     assert body["in_progress"]["deal"] == 1
@@ -92,7 +92,7 @@ async def test_get_budget_vs_actual_marks_the_unestimated_deal_rather_than_scori
     """An absent estimate is not an estimate of zero, and is never counted as a 100%
     overrun: the row says so and the aggregates leave it out."""
     async with Client(server) as client:
-        result = await client.call_tool("get_budget_vs_actual", {"da": DA, "a": A})
+        result = await client.call_tool("get_budget_vs_actual", {"date_from": DA, "date_to": A})
     page = result.structured_content
     assert [row["deal_id"] for row in page["items"]] == [str(deal_with_hours)]
     assert page["items"][0]["actuals_hours"] == "4.00"
@@ -105,7 +105,7 @@ async def test_an_inverted_window_comes_back_as_guidance_not_a_pydantic_dump(ser
     """Spec §8.2: the query schema is built *inside* the guarded call, so a refused window
     is rendered guidance and not a raw English pydantic dump with a link in it."""
     async with Client(server) as client:
-        result = await client.call_tool("get_period_pnl", {"da": A, "a": DA})
+        result = await client.call_tool("get_period_pnl", {"date_from": A, "date_to": DA})
     assert result.is_error
     # The service's own reason, in Italian, not "tool not found" and not a raw dump:
     # without this line the test would pass just as happily against a tool that was
@@ -133,10 +133,12 @@ async def test_get_period_pnl_offers_the_accrual_reading_and_refuses_an_unknown_
     two readings' arithmetic is proven in core; here the tool accepts the name, keeps the
     default, and renders an unknown base as guidance rather than a pydantic dump."""
     async with Client(server) as client:
-        default = await client.call_tool("get_period_pnl", {"da": DA, "a": A})
-        accrual = await client.call_tool("get_period_pnl", {"da": DA, "a": A, "base": "accrual"})
+        default = await client.call_tool("get_period_pnl", {"date_from": DA, "date_to": A})
+        accrual = await client.call_tool(
+            "get_period_pnl", {"date_from": DA, "date_to": A, "base": "accrual"}
+        )
         unknown = await client.call_tool(
-            "get_period_pnl", {"da": DA, "a": A, "base": "pension_fund"}
+            "get_period_pnl", {"date_from": DA, "date_to": A, "base": "pension_fund"}
         )
     assert not default.is_error and not accrual.is_error
     # No invoice in the fixture, so the hours are the same under both readings: costs and
@@ -235,6 +237,6 @@ async def test_get_days_analysis_defaults_to_the_current_month(server) -> None:
 
 async def test_get_days_analysis_with_half_a_period_is_guidance_not_a_dump(server) -> None:
     async with Client(server) as client:
-        result = await client.call_tool("get_days_analysis", {"da": DA})
+        result = await client.call_tool("get_days_analysis", {"date_from": DA})
     assert result.is_error
     assert "errors.pydantic.dev" not in result.content[0].text

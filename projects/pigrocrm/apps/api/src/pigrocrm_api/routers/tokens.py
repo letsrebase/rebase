@@ -30,7 +30,7 @@ NAME_MAX_LENGTH = 120
 
 
 class CreateTokenRequest(BaseModel):
-    nome: SafeStr = Field(max_length=NAME_MAX_LENGTH)
+    name: SafeStr = Field(max_length=NAME_MAX_LENGTH)
     # Closed unless asked for (REB-810): the invoice, rate and period-lock tools are a
     # decision about one agent, taken when its token is made.
     full_access: bool = False
@@ -67,7 +67,7 @@ def create(
     # `settings`: the space's own, so the ceiling the token is checked against is the
     # one `resolve` will stamp it with, not the process environment's.
     record, raw = PatService(session, settings).create(
-        data.nome, actor, full_access=data.full_access
+        data.name, actor, full_access=data.full_access
     )
     return CreatedToken(**record.model_dump(), token=raw)
 

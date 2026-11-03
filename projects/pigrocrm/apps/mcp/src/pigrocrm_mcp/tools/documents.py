@@ -68,7 +68,7 @@ def list_templates(context: McpContext, include_archived: bool) -> dict[str, Any
     )
     return {
         "templates": [
-            {"id": str(t.id), "nome": t.nome, "type": t.type, "active": t.active}
+            {"id": str(t.id), "name": t.name, "type": t.type, "active": t.active}
             for t in page.items
         ],
         # `TemplatePage.next_cursor` is still a `UUID`: `templates` has no sort
@@ -99,8 +99,8 @@ def extract_text(
 ) -> dict[str, Any]:
     """The text of an archived file. Text and not bytes, which is why it may exist at
     all under the "MCP returns identifiers, never files" rule this module's registration
-    block states: a base64 PDF in a model's context is waste, and the codice
-    destinatario printed on page one of that same PDF is the answer somebody asked for.
+    block states: a base64 PDF in a model's context is waste, and the recipient
+    code printed on page one of that same PDF is the answer somebody asked for.
 
     `number` stays optional and defaults, in the service, to the current version -- an
     agent that has just read `get_document` holds one id and no version number, and

@@ -219,7 +219,7 @@ ROWS: list[Row] = [
     Row(
         "POST",
         "/api/contracts/{contract_id}/register/pdf",
-        params={"da": "2026-10-01", "a": "2026-10-31"},
+        params={"from": "2026-10-01", "to": "2026-10-31"},
     ),
     # --- contracts / email templates (REB-753): `require_write` ----------------------
     Row(
@@ -349,7 +349,7 @@ ROWS: list[Row] = [
         "POST",
         "/api/deals/{deal_id}/rates/recalculate",
         admin_only=True,
-        body={"da": "2026-01-01", "a": "2026-01-31"},
+        body={"date_from": "2026-01-01", "date_to": "2026-01-31"},
     ),
     Row("POST", "/api/deals/{deal_id}/restore"),
     Row("PATCH", "/api/deals/{deal_id}/stage", body={"stage_id": "__FAKE__"}),

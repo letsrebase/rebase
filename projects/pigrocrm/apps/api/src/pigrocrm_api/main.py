@@ -1,6 +1,7 @@
 from typing import Any
 
 from fastapi import FastAPI
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.exc import DBAPIError
 
@@ -10,6 +11,7 @@ from pigrocrm_api.errors import (
     domain_error_handler,
     ensure_validation_error_schemas_are_declared,
     insufficient_privilege_handler,
+    request_validation_handler,
 )
 from pigrocrm_api.routers import (
     activities,
@@ -90,6 +92,7 @@ def create_app() -> FastAPI:
         )
     app.add_exception_handler(DomainError, domain_error_handler)
     app.add_exception_handler(DBAPIError, insufficient_privilege_handler)
+    app.add_exception_handler(RequestValidationError, request_validation_handler)
 
     for module in (
         auth,

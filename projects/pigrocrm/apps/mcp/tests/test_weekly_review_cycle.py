@@ -284,13 +284,13 @@ async def test_the_economic_dashboard_the_agent_reads_passes_criterion_one(
 
     async with Client(cycle_server.server) as client:
         result = await client.call_tool(
-            "get_economic_dashboard", {"da": da.isoformat(), "a": a.isoformat()}
+            "get_economic_dashboard", {"date_from": da.isoformat(), "date_to": a.isoformat()}
         )
     assert not result.is_error, str(result.content)
 
     with session_factory(mcp_engine)() as session:
         direct = AnalyticsService(session).period_pnl(
-            PeriodPnlQuery(da=da, a=a, customer_id=None), AGENTE
+            PeriodPnlQuery(date_from=da, date_to=a, customer_id=None), AGENTE
         )
     assert _payload(result)["pnl"] == direct.model_dump(mode="json")
 

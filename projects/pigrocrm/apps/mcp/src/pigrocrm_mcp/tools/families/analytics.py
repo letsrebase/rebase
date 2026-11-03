@@ -45,14 +45,14 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
     @mcp.tool(annotations=READ_ONLY)
     @guard
     def get_period_pnl(
-        da: str, a: str, customer_id: str | None = None, base: str = "issue"
+        date_from: str, date_to: str, customer_id: str | None = None, base: str = "issue"
     ) -> dict[str, Any]:
         """Conto economico di periodo in due colonne: deal chiusi e deal in corso; il numero
         riportabile è il primo. `closed_period` e `written_entries_overdue` dicono se la cifra
         può ancora cambiare. Le spese generali sono in una riga a parte, non ripartite.
 
         `base` sceglie la data che colloca il ricavo di una fattura nel periodo: `"issue"`
-        (predefinita, come il fisco) o `"accrual"` (`accrual_from`, o l'emissione se manca; per
+        (predefinito, come il fisco) o `"accrual"` (`accrual_from`, o l'emissione se manca; per
         le fatture emesse in ritardo). Costi e ore restano alla propria data; una proforma non è
         mai ricavo.
         """
@@ -60,8 +60,8 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
             context,
             PeriodPnlQuery.model_validate(
                 {
-                    "da": da,
-                    "a": a,
+                    "date_from": date_from,
+                    "date_to": date_to,
                     "customer_id": UUID(customer_id) if customer_id else None,
                     "base": base,
                 }
@@ -82,22 +82,22 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
     @mcp.tool(annotations=READ_ONLY)
     @guard
     def get_budget_vs_actual(
-        da: str,
-        a: str,
+        date_from: str,
+        date_to: str,
         customer_id: str | None = None,
         limit: BoundedLimit = 50,
         cursor: str | None = None,
     ) -> dict[str, Any]:
         """Preventivo contro consuntivo per deal. Lo scostamento di valore è contro il preventivo
-        pro-rata (preventivo × avanzamento ore). Una riga con `non_preventivato = true` non ha
+        pro-rata (preventivo × avanzamento ore). Una riga con `unbudgeted = true` non ha
         preventivo (non è zero) ed è esclusa dagli aggregati.
         """
         return timetracking.get_budget_vs_actual(
             context,
             BudgetQuery.model_validate(
                 {
-                    "da": da,
-                    "a": a,
+                    "date_from": date_from,
+                    "date_to": date_to,
                     "customer_id": UUID(customer_id) if customer_id else None,
                     "limit": limit,
                     "cursor": UUID(cursor) if cursor else None,
@@ -120,15 +120,15 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
     @mcp.tool(annotations=READ_ONLY)
     @guard
     def get_days_analysis(
-        da: str | None = None, a: str | None = None, legal_entity_id: str | None = None
+        date_from: str | None = None, date_to: str | None = None, legal_entity_id: str | None = None
     ) -> dict[str, Any]:
         """Le giornate di un periodo: per mese e stato, tariffa reale contro listino, per cliente e
         contratto, e quante giornate sono finite in «lavorato senza approvazione» mese per mese.
-        `da`/`a` (YYYY-MM-DD) vanno dati entrambi o nessuno (allora è il mese corrente).
-        `legal_entity_id` filtra per azienda; senza, tutte. Non richiede `admin`.
+        `date_from`/`date_to` (YYYY-MM-DD) vanno dati entrambi o nessuno (allora è il mese
+        corrente). `legal_entity_id` filtra per azienda; senza, tutte. Non richiede `admin`.
         """
         return timetracking.get_days_analysis(
-            context, da, a, parse_legal_entity_id(legal_entity_id)
+            context, date_from, date_to, parse_legal_entity_id(legal_entity_id)
         )
 
     @mcp.tool(annotations=READ_ONLY)
