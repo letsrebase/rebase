@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Badge } from '@rebase/ui/badge'
 import { Button } from '@rebase/ui/button'
 import { ApiError, admin, type AdminAction, type ThreadKind } from '@/lib/api'
-import { STATE_LABELS, formatDateTime, formatSmallEuro } from '@/lib/format'
+import { FILLED_BY_LABELS, REMOTE_LABELS, STATE_LABELS, formatDateTime, formatSmallEuro } from '@/lib/format'
 import { noteSourceLabel, regenerationReason } from '@/lib/notes'
 import { keys } from '@/lib/query-keys'
 
@@ -41,7 +41,7 @@ function mergeSummary(action: AdminAction): string | null {
     0,
   )
   const parts = [moved === 1 ? '1 riga spostata' : `${moved} righe spostate`]
-  if (action.payload.cv === 'assorbita') parts.push('CV più recente passato alla scheda tenuta')
+  if (action.payload.cv === 'absorbed') parts.push('CV più recente passato alla scheda tenuta')
   if (action.payload.card_to_regenerate) parts.push('scheda anonima da riscrivere')
   return parts.join(' · ')
 }
@@ -109,10 +109,20 @@ function stateWord(value: unknown): string {
   return STATE_LABELS[raw]?.toLowerCase() ?? raw
 }
 
-function renderValue(value: unknown): string {
+/** The fields of a diff whose values are codes, each in the admin's words: a state reads as
+ *  in `stateWord`, how the work is done and who filled the card as their labels say. A value
+ *  with no word, and every other field, is shown as it came. */
+const CODED_VALUE_WORDS: Record<string, (value: string) => string | undefined> = {
+  status: (value) => STATE_LABELS[value]?.toLowerCase(),
+  remote: (value) => REMOTE_LABELS[value as keyof typeof REMOTE_LABELS],
+  filled_by: (value) => FILLED_BY_LABELS[value],
+}
+
+function renderValue(field: string, value: unknown): string {
   if (value === null || value === undefined) return '—'
   if (Array.isArray(value)) return value.length ? value.join(', ') : '—'
-  return String(value)
+  const raw = String(value)
+  return CODED_VALUE_WORDS[field]?.(raw) ?? raw
 }
 
 /**
@@ -220,9 +230,9 @@ export function AuditTrail({
                       <div key={field} className="grid grid-cols-[9rem_1fr] gap-2">
                         <dt className="text-muted-foreground">{FIELD_LABELS[field] ?? field}</dt>
                         <dd className="min-w-0 break-words">
-                          <span className="line-through">{renderValue(before[field])}</span>
+                          <span className="line-through">{renderValue(field, before[field])}</span>
                           {' → '}
-                          <span>{renderValue(after[field])}</span>
+                          <span>{renderValue(field, after[field])}</span>
                         </dd>
                       </div>
                     ))}

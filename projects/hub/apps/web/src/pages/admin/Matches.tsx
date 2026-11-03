@@ -10,6 +10,7 @@ import { matchHeadingId } from '@/lib/contracts'
 import {
   MATCH_STATES,
   MATCH_STATE_LABELS,
+  PAY_MODE_WORDS,
   PIGRO_STATE_LABELS,
   REFERRAL_KIND_LABELS,
   REFERRAL_STATE_LABELS,
@@ -101,10 +102,12 @@ function ReferrerName({ referral }: { referral: Pick<MatchReferral, 'referrer_na
   )
 }
 
-/** The letter's fee and what it is priced by, with the estimated days under it. */
+/** The letter's fee and what it is priced by (`a giornata`, `a corpo`: the API carries the
+ *  pay mode, the page the words), with the estimated days under it. */
 function Fee({ item }: { item: MatchListItem }) {
   if (item.letter_fee === null) return <span className="text-muted-foreground">—</span>
-  const detail = [item.unit_letter, item.expected_days !== null ? `${item.expected_days} gg` : null]
+  const unit = item.unit_letter === null ? null : (PAY_MODE_WORDS[item.unit_letter] ?? item.unit_letter)
+  const detail = [unit, item.expected_days !== null ? `${item.expected_days} gg` : null]
     .filter(Boolean)
     .join(' · ')
   return (

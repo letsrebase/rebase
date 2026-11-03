@@ -42,7 +42,7 @@ const CONFIRMED_REWARD = {
   status: 'to_confirm',
   referral_status: 'verified',
   verified_at: '2026-09-27T08:00:00Z',
-  verified_via: 'access',
+  verified_via: 'login',
   note: null,
   created_at: '2026-09-26T10:00:00Z',
   confirmed_at: null,
