@@ -330,7 +330,7 @@ class InvoicePaExporter:
                 "customer",
                 "sdi_code",
                 "serve un codice destinatario (SDI) oppure una PEC per emettere la fattura",
-                expected="codice_sdi di 7 caratteri oppure pec",
+                expected="sdi_code di 7 caratteri oppure certified_email",
             )
 
         if (legal_entity.email or "").strip():

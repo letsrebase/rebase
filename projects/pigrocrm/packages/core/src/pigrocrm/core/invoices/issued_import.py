@@ -223,7 +223,7 @@ class IssuedInvoiceImporter:
                 ENTITY,
                 "payment_date",
                 "una data di incasso senza incasso non ha senso",
-                expected="stato_pagamento = incassato, oppure nessuna data",
+                expected="payment_status = paid, oppure nessuna data",
             )
         # The same two facts `mark_transmitted_externally` checks, and it has to be here:
         # the column is immutable once written and it is what `annul` reads to decide

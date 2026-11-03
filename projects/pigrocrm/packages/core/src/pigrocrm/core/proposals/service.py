@@ -117,9 +117,9 @@ class ProposalService:
                 raise ValidationFailed(
                     ENTITY,
                     "contract_id",
-                    "una proposta di tipo 'contratto' non punta a un contratto "
+                    "una proposta di tipo 'contract' non punta a un contratto "
                     "esistente: e' la prima bozza, non un rinnovo",
-                    expected="assente quando target_type = 'contratto'",
+                    expected="assente quando target_type = 'contract'",
                 )
             fields = self._parse_contract_fields(data.proposed_fields)
             if self.session.get(Customer, fields.contract.customer_id) is None:
@@ -129,7 +129,7 @@ class ProposalService:
                 raise ValidationFailed(
                     ENTITY,
                     "contract_id",
-                    "obbligatorio per una proposta di tipo 'giornata'",
+                    "obbligatorio per una proposta di tipo 'work_unit'",
                     expected="un contract_id esistente",
                 )
             work_unit_fields = self._parse_work_unit_fields(data.proposed_fields)

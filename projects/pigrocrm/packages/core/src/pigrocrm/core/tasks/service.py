@@ -175,7 +175,7 @@ class TaskService:
                     "due_date",
                     "non si può indicare una scadenza e chiederne la rimozione nella stessa "
                     "richiesta",
-                    expected="una scadenza oppure scadenza_da_rimuovere",
+                    expected="una scadenza oppure due_date_to_remove",
                 )
             changes["due_date"] = None
         if data.reference_to_remove:
@@ -184,7 +184,7 @@ class TaskService:
                     ENTITY,
                     "reference_to_remove",
                     "non si può collegare un'attività e scollegarla nella stessa richiesta",
-                    expected="un riferimento oppure riferimento_da_rimuovere",
+                    expected="un riferimento oppure reference_to_remove",
                 )
             for field in REFERENCES:
                 changes[field] = None

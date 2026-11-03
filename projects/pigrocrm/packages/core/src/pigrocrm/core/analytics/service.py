@@ -91,7 +91,7 @@ def _synthetic_addition(query: CeilingSimulationQuery) -> Decimal:
         ENTITY,
         "budgeted_value",
         "serve una stima per simulare l'aggiunta",
-        expected="valore_preventivato, oppure ore_preventivate insieme a tariffa_oraria",
+        expected="budgeted_value, oppure budgeted_hours insieme a hourly_rate",
     )
 
 

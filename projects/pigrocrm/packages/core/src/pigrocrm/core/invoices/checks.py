@@ -59,7 +59,7 @@ def check_accrual(date_from: date | None, date_to: date | None) -> None:
             missing,
             "un periodo di competenza ha un inizio e una fine: indicali entrambi "
             "oppure nessuno dei due",
-            expected="competenza_da e competenza_a insieme",
+            expected="accrual_from e accrual_to insieme",
         )
     if date_from is not None and date_to is not None and date_to < date_from:
         raise ValidationFailed(

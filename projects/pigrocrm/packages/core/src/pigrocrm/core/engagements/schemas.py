@@ -98,7 +98,7 @@ class ReportInvoice(BaseModel):
     `None` on an entry's own `invoice`."""
 
     id: UUID
-    type: str  # "fattura" | "proforma"
+    type: str  # "invoice" | "proforma"
     year: int | None
     number: int | None
     status: str

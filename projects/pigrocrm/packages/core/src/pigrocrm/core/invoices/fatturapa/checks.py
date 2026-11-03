@@ -423,5 +423,5 @@ def check_recipient_routing(party: PartySnapshot) -> None:
             "customer",
             "sdi_code",
             "serve un codice destinatario (SDI) oppure una PEC per emettere la fattura",
-            expected="codice_sdi di 7 caratteri oppure pec",
+            expected="sdi_code di 7 caratteri oppure certified_email",
         )
