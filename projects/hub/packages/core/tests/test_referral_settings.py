@@ -79,7 +79,7 @@ def test_set_state_moves_one_step_at_a_time(clean_referrals: Session) -> None:
     assert reward is not None
     service = ReferralLedgerService(clean_referrals)
 
-    with pytest.raises(ValidationFailed, match="si passa solo a"):
+    with pytest.raises(ValidationFailed, match="da da_confermare si passa solo a confermato"):
         service.set_state(reward.id, "paid", admin_id)
 
     confirmed = service.set_state(reward.id, "confirmed", admin_id)
@@ -160,7 +160,7 @@ def test_a_stale_writer_cannot_confirm_a_reward_twice(clean_referrals: Session) 
 
         ReferralLedgerService(clean_referrals).set_state(reward_id, "confirmed", admin_id)
 
-        with pytest.raises(ValidationFailed, match="si passa solo a paid"):
+        with pytest.raises(ValidationFailed, match="da confermato si passa solo a pagato"):
             ReferralLedgerService(stale).set_state(reward_id, "confirmed", other_admin.id)
 
     clean_referrals.expire_all()

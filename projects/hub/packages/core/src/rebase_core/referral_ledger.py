@@ -48,6 +48,9 @@ _SORT = SortSpec("created_at", "datetime")
 LIST_LIMIT_DEFAULT = 100
 LIST_LIMIT_MAX = 500
 STATE_ORDER = ("to_confirm", "confirmed", "paid")
+# The word an admin reads for each state, in the 422 that refuses a step: the stored values
+# are English, the sentence is Italian.
+STATE_WORDS = {"to_confirm": "da_confermare", "confirmed": "confermato", "paid": "pagato"}
 
 
 class _MatchFacts(NamedTuple):
@@ -318,10 +321,10 @@ class ReferralLedgerService:
         if status not in STATE_ORDER:
             raise ValidationFailed(ENTITY, "status", "stato non valido")
         index = STATE_ORDER.index(row.status)
-        next_state = STATE_ORDER[index + 1] if row.status != "paid" else "niente"
+        next_state = STATE_WORDS[STATE_ORDER[index + 1]] if row.status != "paid" else "niente"
         if STATE_ORDER.index(status) != index + 1:
             raise ValidationFailed(
-                ENTITY, "status", f"da {row.status} si passa solo a {next_state}"
+                ENTITY, "status", f"da {STATE_WORDS[row.status]} si passa solo a {next_state}"
             )
         if status == "confirmed" and row.reward_amount is None:
             raise ValidationFailed(ENTITY, "status", "il reward va prezzato prima di confermarlo")
