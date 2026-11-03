@@ -22,7 +22,8 @@ invoices» means the customer's: an issued fattura of the contract's customer.
 - `fixed_fee_period_unbilled`: the **oldest uncovered period**: the first closed period
   after the customer's last issued invoice (or after the contract's `start`) in which the
   contract ran and a fee card was in force on its last day. A period is covered by an
-  invoice dated on or after its last day (Mastro's rule, by issue date). The measure is the
+  invoice dated on or after its last day (Mastro's rule, by issue date); on a contract that
+  also bills days, an invoice of days alone does not count (REB-937). The measure is the
   days since that period's last day, so a fee left unbilled for months climbs to `serious`
   and `critical`. The subject is the contract **and** that period (a uuid5 of both), stable
   until the period is covered; the entity the web opens is the contract.
@@ -50,7 +51,7 @@ from uuid import UUID, uuid5
 
 from sqlalchemy import ColumnElement, exists, func, or_, select
 
-from pigrocrm.core.contracts.models import Contract, RateCard
+from pigrocrm.core.contracts.models import RATE_CARD_DAY_HOUR_TYPES, Contract, RateCard
 from pigrocrm.core.contracts.projection import RECURRING_FEE_TYPE
 from pigrocrm.core.db.clock import month_bounds
 from pigrocrm.core.invoices.models import Invoice, InvoiceLine
@@ -220,12 +221,29 @@ def _next_period_end(months: int, end: date) -> date:
     return period_end(months, end + timedelta(days=1))
 
 
+def _not_days_only() -> ColumnElement[bool]:
+    """An invoice that is not just worked days: it has a line no work unit is bound to, or
+    no line at all (an imported one, whose content cannot be shown to be days)."""
+    free_line = (
+        select(InvoiceLine.id)
+        .where(
+            InvoiceLine.invoice_id == Invoice.id,
+            ~exists().where(WorkUnit.invoice_line_id == InvoiceLine.id),
+        )
+        .exists()
+    )
+    no_line = ~exists().where(InvoiceLine.invoice_id == Invoice.id)
+    return or_(free_line, no_line)
+
+
 def _latest_invoice_by_customer(
-    ctx: DetectorContext, customers: Collection[UUID]
+    ctx: DetectorContext, customers: Collection[UUID], *, beyond_days: bool = False
 ) -> dict[UUID, date]:
-    """The date of the most recent issued fattura of each of these customers."""
+    """The date of the most recent issued fattura of each of these customers; with
+    `beyond_days`, only those that are not made of worked days alone."""
     if not customers:
         return {}
+    extra = (_not_days_only(),) if beyond_days else ()
     return {
         customer_id: issued
         for customer_id, issued in ctx.session.execute(
@@ -236,6 +254,7 @@ def _latest_invoice_by_customer(
                 Invoice.status == "issued",
                 Invoice.issue_date.is_not(None),
                 Invoice.customer_id.in_(customers),
+                *extra,
             )
             .group_by(Invoice.customer_id)
         )
@@ -262,16 +281,35 @@ def _oldest_uncovered(
     return None
 
 
+def _bills_days(ctx: DetectorContext, contract_ids: list[UUID]) -> set[UUID]:
+    """The contracts among `contract_ids` that also bill days: a daily or hourly card, or
+    a day on record."""
+    if not contract_ids:
+        return set()
+    carded = select(RateCard.contract_id).where(
+        RateCard.contract_id.in_(contract_ids), RateCard.type.in_(RATE_CARD_DAY_HOUR_TYPES)
+    )
+    worked = select(WorkUnit.contract_id).where(WorkUnit.contract_id.in_(contract_ids))
+    return set(ctx.session.scalars(carded.union(worked)))
+
+
 def detect_fixed_fee(ctx: DetectorContext) -> list[Detection]:
     """Contracts with a fixed-fee card whose **oldest uncovered period** has closed, at
     least `bound` days ago and never fewer than one.
 
     A period is covered by an issued invoice of the customer dated on or after its last
-    day. The oldest uncovered one is the first period ending after the customer's last
-    invoice (or after the contract's `start` when that is later) in which the contract
-    ran and a fee card was in force on the last day; the measure is the days since that
-    day, so a fee left unbilled for months climbs to `serious` and `critical` instead of
-    resetting every period. The subject is the contract and that period's first day."""
+    day. An invoice carries no contract or rate card (only a customer, a deal and an
+    accrual period), so the strongest link the data has is its lines: a line bound to a
+    work unit is a billed day (`work_units/invoicing.py` builds days-only invoices that
+    way), and a fee is a line no work unit is bound to. For a contract that also bills
+    days (a daily or hourly card, or a day on record) only an invoice with such a line, or
+    with no line at all, can cover the fee: an invoice of days alone does not. A contract
+    with only a fee keeps the plain rule, any issued invoice covers. The oldest uncovered
+    period is the first one ending after the last covering invoice (or after the
+    contract's `start` when that is later) in which the contract ran and a fee card was
+    in force on the last day; the measure is the days since that day, so a fee left
+    unbilled for months climbs to `serious` and `critical` instead of resetting every
+    period. The subject is the contract and that period's first day."""
     has_fee = exists().where(
         RateCard.contract_id == Contract.id, RateCard.type == RECURRING_FEE_TYPE
     )
@@ -288,12 +326,17 @@ def detect_fixed_fee(ctx: DetectorContext) -> list[Detection]:
     latest = _latest_invoice_by_customer(ctx, {c.customer_id for c in contracts.values()})
     resolver = LinkResolver(ctx.session)
     resolver.preload(customers=(contract.customer_id for contract in contracts.values()))
+    day_billers = _bills_days(ctx, list(contracts))
+    customers = {c.customer_id for c in contracts.values()}
+    latest_fee = _latest_invoice_by_customer(ctx, customers, beyond_days=True)
     found: list[Detection] = []
     for contract in contracts.values():
         months = _periodic(contract)
         assert months is not None
         last_closed = period_start(months, ctx.today) - timedelta(days=1)
-        last_invoice = latest.get(contract.customer_id)
+        last_invoice = (latest_fee if contract.id in day_billers else latest).get(
+            contract.customer_id
+        )
         first_day = contract.start
         if last_invoice is not None:
             first_day = max(first_day, last_invoice + timedelta(days=1))
