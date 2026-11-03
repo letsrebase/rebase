@@ -358,6 +358,19 @@ ROWS: list[Row] = [
         admin_only=True,
         body={"date_from": "2026-01-01", "date_to": "2026-01-31"},
     ),
+    Row(
+        "POST",
+        "/api/deals/{deal_id}/contract",
+        body={
+            "title": "Matrice",
+            "start": "2026-01-01",
+            "end": None,
+            "renewal_type": "none",
+            "termination_notice_days": 30,
+            "billing_cadence": "monthly",
+            "expense_policy": {"kind": "not_reimbursable"},
+        },
+    ),
     Row("POST", "/api/deals/{deal_id}/restore"),
     Row("PATCH", "/api/deals/{deal_id}/stage", body={"stage_id": "__FAKE__"}),
     Row(
@@ -1022,6 +1035,7 @@ AGENT_REACHABLE: frozenset[tuple[str, str]] = frozenset(
         ("POST", "/api/customers/{customer_id}/restore"),
         ("POST", "/api/customers/from-suggestions"),
         ("POST", "/api/deals"),
+        ("POST", "/api/deals/{deal_id}/contract"),
         ("POST", "/api/deals/{deal_id}/restore"),
         ("POST", "/api/deals/value-preview"),
         ("POST", "/api/documents"),
