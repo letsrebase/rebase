@@ -6,6 +6,7 @@ from pigrocrm.core.customers.schemas import CustomerRead
 from pigrocrm.core.customers.service import CustomerService
 from pigrocrm.core.deals.schemas import DealListQuery
 from pigrocrm.core.deals.service import DealService
+from pigrocrm.core.labels import ACTIVITY_KIND, NOTE_SOURCE, label
 from pigrocrm.core.notes.service import NoteService
 from pigrocrm.core.people.schemas import PersonListQuery
 from pigrocrm.core.people.service import PersonService
@@ -21,7 +22,10 @@ def _timeline_lines(context: McpContext, entity: str, entity_id: UUID) -> list[s
     entries = ActivityService(context.session).timeline(entity, entity_id, limit=10)
     if not entries:
         return ["_Nessuna attività registrata._"]
-    return [f"- {e.occurred_at:%Y-%m-%d %H:%M} · **{e.kind}** · da {e.actor_type}" for e in entries]
+    return [
+        f"- {e.occurred_at:%Y-%m-%d %H:%M} · **{label(ACTIVITY_KIND, e.kind)}** · da {e.actor_type}"
+        for e in entries
+    ]
 
 
 def _custom_lines(custom_fields: dict[str, object]) -> list[str]:
@@ -41,10 +45,10 @@ def _note_lines(context: McpContext, entity_type: str, entity_id: UUID) -> list[
     lines = ["", "## Note"]
     for note in notes:
         # A note from before the thread existed has no source and no author.
-        who = note.author or ("Nota precedente" if note.source is None else note.source)
+        who = note.author or ("Nota precedente" if note.source is None else label(NOTE_SOURCE, note.source))
         header = f"**{note.created_at:%Y-%m-%d %H:%M}** · {who}"
         if note.source is not None:
-            header += f" · fonte: {note.source}"
+            header += f" · fonte: {label(NOTE_SOURCE, note.source)}"
         if note.edited_at is not None:
             header += f" · modificata il {note.edited_at:%Y-%m-%d %H:%M}"
             if note.edited_by:
