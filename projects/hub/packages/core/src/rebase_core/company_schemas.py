@@ -71,7 +71,7 @@ class CompanyFields(BaseModel):
         too so the wizard and the member area refuse the same request the database
         would, with a sentence rather than an `IntegrityError`."""
         if (self.remote == "hybrid") != (self.onsite_days is not None):
-            raise ValueError("giorni_presenza va indicato solo, e sempre, per il lavoro ibrido")
+            raise ValueError("onsite_days va indicato solo, e sempre, per il lavoro ibrido")
         return self
 
 
