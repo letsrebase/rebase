@@ -21,6 +21,7 @@ from pigrocrm.core.documents.schemas import (
 )
 from pigrocrm.core.documents.uploads import DocumentUploads
 from pigrocrm.core.errors import Conflict, NotFound, ValidationFailed
+from pigrocrm.core.labels import TEMPLATE_TYPE, label
 from pigrocrm.core.legal_entities.assets import logo_file_in
 from pigrocrm.core.render.pdf import build_header, render_pdf
 from pigrocrm.core.templates.models import Template
@@ -62,7 +63,7 @@ class DocumentTemplating:
             raise ValidationFailed(
                 ENTITY,
                 "template_id",
-                f"il template '{template.name}' è di tipo '{template.type}', "
+                f"il template '{template.name}' è di tipo '{label(TEMPLATE_TYPE, template.type)}', "
                 "che non è un tipo di documento",
                 expected=f"un template fra: {', '.join(sorted(DOCUMENT_TIPI))}",
             )

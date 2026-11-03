@@ -175,8 +175,8 @@ def test_the_command_opens_one_task_in_the_root_and_in_every_space(
 
     out = capsys.readouterr().out
     for label in ("root", *SPACES):
-        assert f"{label}: overdue_invoice aperte 1, già aperte 0" in out
-        assert f"{label}: stalled_deal aperte 0, già aperte 0" in out
+        assert f"{label}: fattura_scaduta aperte 1, già aperte 0" in out
+        assert f"{label}: deal_fermo aperte 0, già aperte 0" in out
         assert _count(settings, None if label == "root" else label) == 1
 
 
@@ -236,7 +236,7 @@ def test_a_clock_that_cannot_be_written_is_a_line_and_an_exit_status(
     captured = capsys.readouterr()
     assert captured.err.splitlines() == [f"{UNO}: orologio non scritto (RuntimeError)"]
     assert "secret" not in captured.err
-    assert f"{UNO}: overdue_invoice aperte 1" in captured.out, "the pass itself worked"
+    assert f"{UNO}: fattura_scaduta aperte 1" in captured.out, "the pass itself worked"
     assert _clock(settings, UNO) is None
 
 
@@ -249,7 +249,7 @@ def test_the_second_run_opens_nothing_new(
 
     out = capsys.readouterr().out
     for label in ("root", *SPACES):
-        assert f"{label}: overdue_invoice aperte 0, già aperte 1" in out
+        assert f"{label}: fattura_scaduta aperte 0, già aperte 1" in out
         assert _count(settings, None if label == "root" else label) == 1
 
 
@@ -259,7 +259,7 @@ def test_a_rehearsal_says_what_it_would_open_and_writes_nothing(
     assert cli.main(["automations", "--dry-run", "--slug", UNO]) == 0
 
     out = capsys.readouterr().out
-    assert f"{UNO}: overdue_invoice aperte 1, già aperte 0 (prova)" in out
+    assert f"{UNO}: fattura_scaduta aperte 1, già aperte 0 (prova)" in out
     assert "root:" not in out and DUE not in out
     assert _count(settings, UNO) == 0
 
@@ -277,7 +277,7 @@ def test_a_switched_off_rule_is_reported_and_opens_nothing(
 
     assert cli.main(["automations", "--slug", UNO]) == 0
 
-    assert f"{UNO}: overdue_invoice disattivata" in capsys.readouterr().out
+    assert f"{UNO}: fattura_scaduta disattivata" in capsys.readouterr().out
     assert _count(settings, UNO) == 0
 
 

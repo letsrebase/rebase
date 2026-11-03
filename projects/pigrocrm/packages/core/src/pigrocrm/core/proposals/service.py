@@ -36,6 +36,7 @@ from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.db.transactions import savepoint
 from pigrocrm.core.documents.repository import DocumentRepository
 from pigrocrm.core.errors import Conflict, NotFound, ValidationFailed
+from pigrocrm.core.labels import PROPOSAL_STATUS, label
 from pigrocrm.core.legal_entities.service import LegalEntityService
 from pigrocrm.core.proposals.models import Proposal
 from pigrocrm.core.proposals.repository import ProposalRepository
@@ -183,7 +184,8 @@ class ProposalService:
         if proposal.status != "pending":
             raise Conflict(
                 ENTITY,
-                f"già decisa ({proposal.status}): una proposta si decide una sola volta",
+                f"già decisa ({label(PROPOSAL_STATUS, proposal.status)}): una proposta si "
+                f"decide una sola volta",
                 proposal_id=str(proposal_id),
             )
         return proposal

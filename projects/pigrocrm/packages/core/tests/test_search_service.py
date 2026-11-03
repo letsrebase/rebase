@@ -312,7 +312,7 @@ def test_a_document_hit_carries_its_type_as_the_subtitle(db_session: Session) ->
 
     group = _search(db_session, "capitolato speciale")["document"]
     assert group.hits[0].label == "Capitolato speciale d'appalto"
-    assert group.hits[0].subtitle == "offer"
+    assert group.hits[0].subtitle == "offerta"
 
 
 def test_a_two_character_term_is_refused_by_the_schema() -> None:

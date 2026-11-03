@@ -150,7 +150,7 @@ def test_one_day_that_cannot_use_the_approval_refuses_all_and_writes_nothing(
         ApprovalService(db_session).record(
             _record(contract, [end, worked], document_id=document.id), WRITER
         )
-    assert refused.value.details["work_units"] == ["2026-03-03 (approved)"]
+    assert refused.value.details["work_units"] == ["2026-03-03 (approvato)"]
 
     assert WorkUnitService(db_session).get(end).status == "proposed"
     assert db_session.scalars(select(Approval)).all() == []
