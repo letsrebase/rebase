@@ -89,7 +89,7 @@ describe('the card itself', () => {
     // production is this block, and the card has to sit under it; `public/assets/` is
     // how a file keeps an unhashed name and still lands there. The 200 itself is
     // asserted against a real server in `e2e/site.spec.ts`.
-    expect(nginx).toMatch(/location \/assets\/\s*\{\s*try_files \$uri =404;\s*\}/)
+    expect(nginx).toMatch(/location \/assets\/\s*\{[^}]*\btry_files \$uri =404;[^}]*\}/)
     expect(CARD_PATH.startsWith('/assets/')).toBe(true)
     expect(statSync(CARD_ON_DISK).isFile()).toBe(true)
   })
