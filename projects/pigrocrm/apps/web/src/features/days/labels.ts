@@ -130,7 +130,7 @@ export const ACTIONS: Partial<Record<WorkUnitStatus, ActionSpec>> = {
  * a sentence, so it has its words here.
  */
 const REASON_LABELS: Record<string, string> = {
-  creation: 'Giornata registrata',
+  'creazione': 'Giornata registrata',
 }
 
 export function reasonLabel(reason: string): string {
@@ -178,7 +178,7 @@ export function allowsFraction(card: RateCard | null, quantity: string): boolean
 }
 
 const UnitPhrases: Record<string, string> = {
-  ora: 'all’ora',
+  hour: 'all’ora',
   day: 'al giorno',
   month: 'al mese',
   year: 'all’anno',

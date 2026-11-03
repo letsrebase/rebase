@@ -20,7 +20,7 @@ import { formatOccurredAt } from '@/components/activityLabels'
 import { toProblem } from '@/lib/api'
 import { useCanWrite } from '@/lib/auth'
 import { formatIsoDateItalian } from '@/lib/dates'
-import { canReceiveApproval } from './approvals'
+import { canReceiveApproval, channelLabel } from './approvals'
 import { DayStatePill } from './DayStatePill'
 import {
   ACTIONS,
@@ -261,7 +261,7 @@ function Approval({ day }: { day: WorkUnitDetail }) {
         <>
           <p className="text-sm text-muted-foreground">
             Ricevuta il {formatOccurredAt(approval.received_at)} da {approval.sender}, per{' '}
-            {approval.channel.replace('_', ' ')}.
+            {channelLabel(approval.channel).toLowerCase()}.
           </p>
           <blockquote className="whitespace-pre-line border-l-2 border-foreground pl-4 text-sm">
             {approval.excerpt}

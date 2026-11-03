@@ -1,6 +1,12 @@
 import { useQuery } from '@tanstack/react-query'
 import { Bot, CircleHelp, Cog, DoorOpen, User, type LucideIcon } from 'lucide-react'
-import { formatOccurredAtExact, humanize, labelForKind } from '@/components/activityLabels'
+import {
+  formatOccurredAtExact,
+  humanize,
+  labelForKind,
+  labelForPayloadKey,
+  labelForPayloadValue,
+} from '@/components/activityLabels'
 import { Badge } from '@rebase/ui/badge'
 import { Skeleton } from '@rebase/ui/skeleton'
 import { api, toProblem, unwrap } from '@/lib/api'
@@ -143,11 +149,11 @@ function TriggeredBy({ entry }: { entry: ActivityEntry }) {
  *    ugly-but-true `snake_case: value` dump otherwise, which beats saying
  *    nothing about a real event.
  */
-function ActivityDetail({ payload }: { payload: ActivityEntry['payload'] }) {
+function ActivityDetail({ kind, payload }: { kind: string; payload: ActivityEntry['payload'] }) {
   if (Array.isArray(payload.changed) && payload.changed.length > 0) {
     return (
       <p className="mt-1 text-sm text-muted-foreground">
-        Campi modificati: {payload.changed.map((field) => humanize(String(field))).join(', ')}
+        Campi modificati: {payload.changed.map((field) => labelForPayloadKey(String(field))).join(', ')}
       </p>
     )
   }
@@ -155,8 +161,8 @@ function ActivityDetail({ payload }: { payload: ActivityEntry['payload'] }) {
   if ('from' in payload && 'to' in payload) {
     return (
       <p className="mt-1 text-sm text-muted-foreground">
-        Da <strong className="font-medium text-foreground">{String(payload.from)}</strong> a{' '}
-        <strong className="font-medium text-foreground">{String(payload.to)}</strong>
+        Da <strong className="font-medium text-foreground">{labelForPayloadValue(kind, 'from', payload.from)}</strong> a{' '}
+        <strong className="font-medium text-foreground">{labelForPayloadValue(kind, 'to', payload.to)}</strong>
       </p>
     )
   }
@@ -184,7 +190,7 @@ function ActivityDetail({ payload }: { payload: ActivityEntry['payload'] }) {
   if (rest.length === 0) return null
   return (
     <p className="mt-1 text-sm text-muted-foreground">
-      {rest.map(([key, value]) => `${humanize(key)}: ${String(value)}`).join(' · ')}
+      {rest.map(([key, value]) => `${labelForPayloadKey(key)}: ${labelForPayloadValue(kind, key, value)}`).join(' · ')}
     </p>
   )
 }
@@ -304,7 +310,7 @@ export function Timeline({ entityType, entityId, limit = 50 }: TimelineProps) {
           </div>
           <ActorLine entry={entry} />
           <TriggeredBy entry={entry} />
-          <ActivityDetail payload={entry.payload} />
+          <ActivityDetail kind={entry.kind} payload={entry.payload} />
         </li>
       ))}
     </ol>

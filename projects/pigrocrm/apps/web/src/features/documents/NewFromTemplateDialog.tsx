@@ -15,6 +15,7 @@ import { toProblem, type ProblemDetail } from '@/lib/api'
 import { isBlank } from '@/lib/formValues'
 import type { FieldDefinition, FieldType } from '@/lib/schema'
 import {
+  DOCUMENT_TYPE_LABELS,
   useCreateFromTemplate,
   useTemplateDescription,
   useTemplatePreview,
@@ -163,7 +164,7 @@ export function NewFromTemplateDialog({ open, onOpenChange, owner }: Props) {
                   onClick={() => chooseTemplate(template.id)}
                 >
                   <span className="font-medium">{template.name}</span>
-                  <span className="ml-2 text-sm text-muted-foreground">{template.type}</span>
+                  <span className="ml-2 text-sm text-muted-foreground">{DOCUMENT_TYPE_LABELS[template.type] ?? template.type}</span>
                 </button>
               </li>
             ))}

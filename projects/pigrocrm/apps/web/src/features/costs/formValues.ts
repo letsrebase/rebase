@@ -36,7 +36,7 @@ export type CostFormValues = FormValues
 /** Today, from the local calendar parts: `toISOString().slice(0, 10)` converts to UTC
  *  first, so east of Greenwich late in the evening the dialog would open on tomorrow. */
 export function defaultCostFormValues(today: Date = new Date()): CostFormValues {
-  return { native: { data: toIsoDate(today) }, custom: {} }
+  return { native: { date: toIsoDate(today) }, custom: {} }
 }
 
 /**

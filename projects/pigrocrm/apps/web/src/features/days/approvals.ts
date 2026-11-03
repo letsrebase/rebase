@@ -15,6 +15,11 @@ export const Channels: Record<ApprovalChannel, string> = {
   other: 'Altro',
 }
 
+/** The channel's words, or the stored code for one this build does not know. */
+export function channelLabel(channel: string): string {
+  return Object.hasOwn(Channels, channel) ? Channels[channel as ApprovalChannel] : channel
+}
+
 export const ChannelIds = Object.keys(Channels) as ApprovalChannel[]
 
 /** The two states a recorded approval can still use: the API refuses a day in any other. */

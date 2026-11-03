@@ -182,7 +182,7 @@ function LogHours({
       {
         deal_id: dealId,
         user_id: user.id,
-        data: day,
+        date: day,
         hours: hours,
         description: description.trim() === '' ? 'Ore' : description.trim(),
       },

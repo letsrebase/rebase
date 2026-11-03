@@ -55,13 +55,13 @@ export function renewalLabel(value: string): string {
 /** `billing_cadence` has no CHECK in the database (the value set is the
  *  engagement's own to pin, `contracts/models.py`), so the form offers these four and
  *  keeps whatever else a contract already holds. */
-export const CADENCES = ['monthly', 'quarterly', 'annual', 'a_completamento'] as const
+export const CADENCES = ['monthly', 'quarterly', 'annual', 'on_completion'] as const
 
 export const CADENCE_LABELS: Record<(typeof CADENCES)[number], string> = {
   monthly: 'Mensile',
   quarterly: 'Trimestrale',
   annual: 'Annuale',
-  a_completamento: 'A completamento',
+  on_completion: 'A completamento',
 }
 
 export function cadenceLabel(value: string): string {

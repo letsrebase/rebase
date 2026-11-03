@@ -12,6 +12,8 @@
  * `lib/dates.ts` and `features/dashboard/period.ts` exist as modules of their own.
  */
 
+import { KIND_FALLBACK_LABELS, PAYLOAD_KEY_LABELS, PAYLOAD_VALUE_LABELS } from './payloadLabels'
+
 const KIND_LABELS: Record<string, string> = {
   created: 'Creato',
   updated: 'Modificato',
@@ -87,7 +89,19 @@ export function humanize(value: string): string {
 }
 
 export function labelForKind(kind: string): string {
-  return KIND_LABELS[kind] ?? humanize(kind)
+  return KIND_LABELS[kind] ?? KIND_FALLBACK_LABELS[kind] ?? humanize(kind)
+}
+
+/** A payload key (or a field name in `changed`) in the Italian word it was stored as before the rename. */
+export function labelForPayloadKey(key: string): string {
+  return Object.hasOwn(PAYLOAD_KEY_LABELS, key) ? PAYLOAD_KEY_LABELS[key]! : humanize(key)
+}
+
+/** A payload value as the timeline prints it: a coded value goes back to its Italian word, any other as it is. */
+export function labelForPayloadValue(kind: string, key: string, value: unknown): string {
+  const text = String(value)
+  const table = Object.hasOwn(PAYLOAD_VALUE_LABELS, kind) ? PAYLOAD_VALUE_LABELS[kind]![key] : undefined
+  return table !== undefined && Object.hasOwn(table, text) ? table[text]! : text
 }
 
 const dateTimeFormatter = new Intl.DateTimeFormat('it-IT', {

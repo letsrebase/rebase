@@ -55,7 +55,7 @@ const RATE_KIND_LABELS: Record<string, string> = {
 }
 
 const RATE_UNIT_LABELS: Record<string, string> = {
-  ora: 'ora',
+  hour: 'ora',
   day: 'giorno',
   month: 'mese',
   year: 'anno',
@@ -206,6 +206,17 @@ function raw(value: unknown): string {
   return typeof value === 'string' ? value : JSON.stringify(value)
 }
 
+/** The policy's codes in the words the screen printed before the English rename. */
+const POLICY_KIND_WORDS: Record<string, string> = {
+  not_reimbursable: 'non rimborsabile',
+  reimbursable: 'rimborsabile',
+  reimbursable_with_cap: 'rimborsabile con tetto',
+}
+const POLICY_KEY_WORDS: Record<string, string> = {
+  amount_cap: 'importo tetto',
+  requires_pre_authorization: 'richiede preautorizzazione',
+}
+
 /**
  * `expense_policy` is an open tagged union (`{"kind": ..., ...payload}`): the tag in words
  * and whatever else it carries as `chiave: valore`, so a reviewer sees the whole policy a
@@ -215,8 +226,10 @@ function expensePolicy(value: unknown): string | null {
   if (!isRecord(value)) return null
   const { kind, ...payload } = value
   return [
-    typeof kind === 'string' ? kind.replace(/_/g, ' ') : null,
-    ...Object.entries(payload).map(([key, item]) => `${key.replace(/_/g, ' ')}: ${raw(item)}`),
+    typeof kind === 'string' ? (POLICY_KIND_WORDS[kind] ?? kind.replace(/_/g, ' ')) : null,
+    ...Object.entries(payload).map(
+      ([key, item]) => `${POLICY_KEY_WORDS[key] ?? key.replace(/_/g, ' ')}: ${raw(item)}`,
+    ),
   ]
     .filter((part) => part !== null)
     .join(' · ')

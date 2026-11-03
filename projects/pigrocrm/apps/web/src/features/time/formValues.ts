@@ -57,7 +57,7 @@ export type TimeEntryFormValues = FormValues
  * `formatIsoDateItalian` (@/lib/dates) closes.
  */
 export function defaultFormValues(today: Date = new Date()): TimeEntryFormValues {
-  return { native: { billable: true, data: toIsoDate(today) }, custom: {} }
+  return { native: { billable: true, date: toIsoDate(today) }, custom: {} }
 }
 
 /**

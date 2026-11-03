@@ -63,7 +63,7 @@ export function InvoicePdfPreview({ invoice }: { invoice: Invoice }) {
       ) : !isPdf(blob) ? (
         <NotPdf invoice={invoice} />
       ) : (
-        <PdfFrame blob={blob} title={`Anteprima PDF ${invoice.type === 'proforma' ? 'proforma' : 'invoice'}`} />
+        <PdfFrame blob={blob} title={`Anteprima PDF ${invoice.type === 'proforma' ? 'proforma' : 'fattura'}`} />
       )}
     </aside>
   )
