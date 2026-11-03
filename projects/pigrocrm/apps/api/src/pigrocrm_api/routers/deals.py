@@ -12,6 +12,8 @@ from pigrocrm.core.analytics.schemas import (
     DealPnl,
 )
 from pigrocrm.core.analytics.service import AnalyticsService
+from pigrocrm.core.contracts.schemas import ContractFromDeal, ContractFromDealProposal, ContractRead
+from pigrocrm.core.contracts.service import ContractService
 from pigrocrm.core.deals.schemas import (
     DealCreate,
     DealDetailRead,
@@ -108,8 +110,43 @@ def list_deals(
 
 @router.get("/{deal_id}", response_model=DealDetailRead)
 def get(deal_id: UUID, session: SessionDep, actor: ActorDep) -> DealDetailRead:
-    """One deal with its value lines; the list carries only the figures."""
+    """One deal with its value lines; the list carries only the figures. `contract_id` is the
+    contract it was converted into, once it was."""
     return DealService(session).get(deal_id, actor)
+
+
+@router.get("/{deal_id}/contract-proposal", response_model=ContractFromDealProposal)
+def contract_proposal(
+    deal_id: UUID,
+    session: SessionDep,
+    actor: ActorDep,
+    start: Annotated[
+        date | None,
+        Query(
+            description="The start the contract would be confirmed with. The lines with no "
+            "start of their own follow it, and so do the end and the cards in the answer."
+        ),
+    ] = None,
+) -> ContractFromDealProposal:
+    """What converting this deal into a contract would start from: the suggested title, start
+    and end, and the rate cards its lines become. Refused (409) like the conversion: the deal
+    must be won, have value lines and no contract yet. Writes nothing."""
+    return ContractService(session).proposal_from_deal(deal_id, actor, start)
+
+
+@router.post(
+    "/{deal_id}/contract", response_model=ContractRead, status_code=status.HTTP_201_CREATED
+)
+def convert_to_contract(
+    deal_id: UUID, data: ContractFromDeal, session: SessionDep, actor: ActorDep
+) -> ContractRead:
+    """Turns a won deal into a draft contract for its customer, with one rate card per value
+    line. The body is what the person confirms: title, start, end (`null` for none), the
+    renewal type and notices, the billing cadence and the expense policy. Payment terms stay
+    empty and cascade from the customer. Refused (409) unless the deal is won, has value
+    lines and has no contract yet; from then on its value lines are locked, and the contract
+    is the price."""
+    return ContractService(session).create_from_deal(deal_id, data, actor)
 
 
 @router.patch("/{deal_id}", response_model=DealDetailRead)

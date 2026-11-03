@@ -162,11 +162,17 @@ export function quantityLabel(quantity: string): string {
   return `${formatItalianQuantity(quantity)} giornate`
 }
 
-/** The rate card whose validity range contains `data` (ISO dates compare as strings). */
+/** The day or hour rate card whose validity range contains `data` (ISO dates compare as
+ *  strings). A fee card (`fixed_recurring`, `one_off`) never prices a day and overlaps
+ *  the day rate freely, so it is skipped. */
 export function activeRateCard(cards: readonly RateCard[], data: string): RateCard | null {
   return (
-    cards.find((card) => card.valid_from <= data && (card.valid_to === null || data <= card.valid_to)) ??
-    null
+    cards.find(
+      (card) =>
+        (card.type === 'daily' || card.type === 'hourly') &&
+        card.valid_from <= data &&
+        (card.valid_to === null || data <= card.valid_to),
+    ) ?? null
   )
 }
 

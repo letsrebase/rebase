@@ -9,6 +9,7 @@ from pigrocrm.core.activities.service import ActivityService
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.contract_expenses.models import ContractExpense
 from pigrocrm.core.contracts.cap_service import Addition, ContractCapService
+from pigrocrm.core.contracts.conversion_service import ContractConversionService
 from pigrocrm.core.contracts.models import ClauseNote, Contract
 from pigrocrm.core.contracts.renewal_service import ContractRenewalService
 from pigrocrm.core.contracts.repository import ContractRepository
@@ -24,6 +25,8 @@ from pigrocrm.core.contracts.schemas import (
     ContractConcentrationCap,
     ContractCreate,
     ContractDetail,
+    ContractFromDeal,
+    ContractFromDealProposal,
     ContractListQuery,
     ContractPage,
     ContractRead,
@@ -221,6 +224,17 @@ class ContractService:
     def renew(self, contract_id: UUID, data: ContractRenew, actor: Actor) -> ContractRead:
         """The contract that renews `contract_id`. See `ContractRenewalService.renew`."""
         return ContractRenewalService(self.session).renew(contract_id, data, actor)
+
+    def proposal_from_deal(
+        self, deal_id: UUID, actor: Actor, start: date | None = None
+    ) -> ContractFromDealProposal:
+        """What converting a won deal would start from. See
+        `ContractConversionService.propose`."""
+        return ContractConversionService(self.session).propose(deal_id, actor, start)
+
+    def create_from_deal(self, deal_id: UUID, data: ContractFromDeal, actor: Actor) -> ContractRead:
+        """The contract a won deal becomes. See `ContractConversionService.create`."""
+        return ContractConversionService(self.session).create(deal_id, data, actor)
 
     def concentration_cap(
         self,

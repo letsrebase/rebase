@@ -27,7 +27,7 @@ import { formatDate, formatQuantity } from '@/features/invoices/format'
 import { fieldErrorFrom, toProblem, type ProblemDetail } from '@/lib/api'
 import { useCan } from '@/lib/auth'
 import { toIsoDate } from '@/lib/dates'
-import { RatePeriods, RATE_TYPE_OPTIONS, RateUnit, currencySign, formatAmount } from './labels'
+import { RatePeriods, RATE_TYPE_OPTIONS, cardInForceOn, RateUnit, currencySign, formatAmount } from './labels'
 import {
   useCreateRateCard,
   useRateCards,
@@ -44,6 +44,9 @@ type Period = NonNullable<RateCardCreateBody['delivery_period']>
 const TYPE_OPTIONS = Object.keys(RATE_TYPE_OPTIONS) as Type[]
 const Unit = Object.keys(RateUnit) as Unit[]
 const Periods = Object.keys(RatePeriods) as Period[]
+/** A day or hour card forecasts per one of these; a quarterly fee has no counterpart. */
+const FORECAST_PERIODS = Periods.filter((period) => period !== 'quarterly')
+const NO_PERIOD = 'none'
 
 interface RateFormValues {
   valid_from: string
@@ -54,7 +57,11 @@ interface RateFormValues {
   fractions: string
   minimum_hours: string
   delivery_period: Period | ''
+  expected_quantity: string
 }
+
+/** The two cards a worked day is priced by: only they cannot overlap each other. */
+const isDayOrHour = (type: Type) => type === 'daily' || type === 'hourly'
 
 const EMPTY_FORM: RateFormValues = {
   valid_from: '',
@@ -65,6 +72,7 @@ const EMPTY_FORM: RateFormValues = {
   fractions: '1',
   minimum_hours: '',
   delivery_period: '',
+  expected_quantity: '',
 }
 
 function toFormValues(card: RateCard): RateFormValues {
@@ -77,6 +85,7 @@ function toFormValues(card: RateCard): RateFormValues {
     fractions: card.allowed_fractions.map(String).join(', '),
     minimum_hours: card.minimum_hours === null ? '' : String(card.minimum_hours),
     delivery_period: (card.delivery_period ?? '') as Period | '',
+    expected_quantity: card.expected_quantity === null ? '' : String(card.expected_quantity),
   }
 }
 
@@ -101,8 +110,13 @@ function toBody(values: RateFormValues): RateCardUpdateBody {
       ? values.minimum_hours.trim().replace(',', '.')
       : null,
     delivery_period:
-      values.type === 'fixed_recurring' && values.delivery_period !== ''
+      (values.type === 'fixed_recurring' || isDayOrHour(values.type)) &&
+      values.delivery_period !== ''
         ? values.delivery_period
+        : null,
+    expected_quantity:
+      isDayOrHour(values.type) && values.expected_quantity.trim() !== ''
+        ? values.expected_quantity.trim().replace(',', '.')
         : null,
   }
 }
@@ -113,21 +127,6 @@ function standing(card: RateCard, today: string): 'future' | 'in_force' | 'close
   if (card.valid_from > today) return 'future'
   if (card.valid_to !== null && card.valid_to < today) return 'closed'
   return 'in_force'
-}
-
-/**
- * The card in force on `start`, when one began earlier: the one a new rate from `start`
- * would overlap, and the one «chiudi il giorno prima» ends. A hint to the person only;
- * the server decides what it closes and the database what it refuses.
- */
-function cardInForceOn(cards: RateCard[], start: string, except?: string): RateCard | undefined {
-  if (start === '') return undefined
-  return cards.find(
-    (card) =>
-      card.id !== except &&
-      card.valid_from < start &&
-      (card.valid_to === null || card.valid_to >= start),
-  )
 }
 
 interface DialogProps {
@@ -163,7 +162,7 @@ function RateCardDialog({ open, onOpenChange, contractId, currency, cards, card 
     setValues((previous) => ({ ...previous, [key]: value }))
   }
 
-  const replaced = isCreate ? cardInForceOn(cards, values.valid_from) : undefined
+  const replaced = isCreate && isDayOrHour(values.type) ? cardInForceOn(cards, values.valid_from) : undefined
 
   function submit() {
     const body = toBody(values)
@@ -210,6 +209,7 @@ function RateCardDialog({ open, onOpenChange, contractId, currency, cards, card 
       'allowed_fractions',
       'minimum_hours',
       'delivery_period',
+      'expected_quantity',
     ].includes(fieldError.field)
   const elsewhere =
     problem !== null && overlap === null && !drawn
@@ -365,6 +365,50 @@ function RateCardDialog({ open, onOpenChange, contractId, currency, cards, card 
           </div>
         )}
 
+        {isDayOrHour(values.type) && (
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="rate-expected-quantity">
+                {values.type === 'daily' ? 'Giornate previste' : 'Ore previste'}
+              </Label>
+              <Input
+                id="rate-expected-quantity"
+                inputMode="decimal"
+                value={values.expected_quantity}
+                onChange={(event) => set('expected_quantity', event.target.value)}
+                aria-invalid={fieldError?.field === 'expected_quantity'}
+              />
+              {errorOn('expected_quantity')}
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="rate-forecast-period">Per periodo</Label>
+              <Select
+                value={values.delivery_period === '' ? NO_PERIOD : values.delivery_period}
+                onValueChange={(value) =>
+                  set('delivery_period', value === NO_PERIOD ? '' : (value as Period))
+                }
+              >
+                <SelectTrigger id="rate-forecast-period" className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={NO_PERIOD}>Nessuna previsione</SelectItem>
+                  {FORECAST_PERIODS.map((period) => (
+                    <SelectItem key={period} value={period}>
+                      {RatePeriods[period]}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                Quantità e periodo vanno indicati insieme. Non cambiano come si prezza una
+                giornata.
+              </p>
+              {errorOn('delivery_period')}
+            </div>
+          </div>
+        )}
+
         {elsewhere !== null && <p className="text-sm text-destructive">{elsewhere}</p>}
 
         <DialogFooter>
@@ -394,6 +438,11 @@ function details(card: RateCard): string {
       card.delivery_period in RatePeriods
         ? RatePeriods[card.delivery_period as Period].toLowerCase()
         : card.delivery_period,
+    )
+  }
+  if (card.expected_quantity !== null) {
+    parts.push(
+      `${formatQuantity(String(card.expected_quantity))} ${card.type === 'hourly' ? 'ore' : 'giornate'} previste`,
     )
   }
   const fractions = card.allowed_fractions.map((fraction) => formatQuantity(String(fraction)))

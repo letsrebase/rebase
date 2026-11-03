@@ -16,6 +16,7 @@ import { EconomicsTab } from '@/features/analytics/EconomicsTab'
 import { useCustomer } from '@/features/customers/queries'
 import { useLegalEntity } from '@/lib/legalEntity'
 import { useMemberDirectory } from '@/features/users/directory'
+import { ConvertDealButton, DealContractSection } from '@/features/deals/DealContract'
 import { DealForm, dealToFormValues } from '@/features/deals/DealForm'
 import { DealStageBar } from '@/features/deals/DealStageBar'
 import {
@@ -328,6 +329,7 @@ export function DealDetail() {
                   Perso
                 </Button>
               )}
+              <ConvertDealButton deal={deal} />
               <Button
                 variant="outline"
                 onClick={() => {
@@ -387,6 +389,8 @@ export function DealDetail() {
 
                   <ValueSection deal={deal} />
 
+                  <DealContractSection contractId={deal.contract_id} />
+
                   <Section title="Preventivo">
                     <Row label="Ore preventivate" value={formatHours(deal.budgeted_hours)} />
                     <Row label="Valore preventivato" value={formatMoney(deal.budgeted_value)} />
@@ -433,6 +437,7 @@ export function DealDetail() {
         customFields={custom}
         owners={directory.members}
         initial={dealToFormValues(deal)}
+        contractId={deal.contract_id}
         problem={problem}
         busy={update.isPending}
         onSubmit={(values) => {

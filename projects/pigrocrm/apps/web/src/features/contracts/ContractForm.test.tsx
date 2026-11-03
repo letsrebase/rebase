@@ -39,6 +39,7 @@ const CONTRACT = {
   expense_policy: { kind: 'not_reimbursable' },
   status: 'active',
   previous_contract_id: null,
+  deal_id: null,
   note: null,
   custom_fields: {},
   created_at: '2026-01-01T00:00:00Z',

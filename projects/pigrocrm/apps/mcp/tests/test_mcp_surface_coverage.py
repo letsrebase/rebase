@@ -875,6 +875,20 @@ _COVERED_OR_HUMAN: dict[Method, str] = {
         "reached through the `ContractService` facade, which keeps the method "
         "name: `renew_contract`"
     ),
+    (
+        "ContractConversionService",
+        "create",
+    ): (
+        "reached through the `ContractService` facade, which names it `create_from_deal`: "
+        "`convert_deal_to_contract`"
+    ),
+    (
+        "ContractConversionService",
+        "propose",
+    ): (
+        "reached through the `ContractService` facade, which names it `proposal_from_deal`: "
+        "`preview_deal_contract`"
+    ),
     ("TemplateService", "get"): "describe_template espone gia' il template",
     ("GoogleDriveAccountService", "space_storage"): (
         "read only by the admin's Drive page as part of Drive health; "

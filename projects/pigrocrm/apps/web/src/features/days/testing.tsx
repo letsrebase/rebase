@@ -34,6 +34,7 @@ export function rateCard(overrides: Partial<RateCard> = {}): RateCard {
     allowed_fractions: ['1.00', '0.50'],
     minimum_hours: null,
     delivery_period: null,
+    expected_quantity: null,
     created_at: '2026-01-01T00:00:00Z',
     updated_at: '2026-01-01T00:00:00Z',
     ...overrides,

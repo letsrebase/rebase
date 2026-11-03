@@ -4,6 +4,8 @@ import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { api } from '@/lib/api'
 import { RateCardsSection } from './RateCardsSection'
+import { cardInForceOn } from './labels'
+import type { RateCard } from './queries'
 
 vi.mock('@/lib/api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/api')>()
@@ -30,6 +32,7 @@ const CLOSED = {
   allowed_fractions: ['1.00', '0.50'],
   minimum_hours: null,
   delivery_period: null,
+  expected_quantity: null,
 }
 const OPEN = {
   ...CLOSED,
@@ -147,5 +150,47 @@ describe('RateCardsSection', () => {
         }),
       }),
     )
+  })
+})
+
+describe('cardInForceOn', () => {
+  const card = (overrides: Partial<RateCard>) => ({ ...CLOSED, ...OPEN, ...overrides }) as RateCard
+
+  it('finds the day or hour card in force and ignores the fees that overlap it', () => {
+    const fee = card({ id: 'fee', type: 'fixed_recurring', valid_from: '2026-01-01', valid_to: null })
+    const upfront = card({ id: 'upfront', type: 'one_off', valid_from: '2026-02-01', valid_to: null })
+    const daily = card({ id: 'day', type: 'daily', valid_from: '2026-03-01', valid_to: null })
+    expect(cardInForceOn([fee, upfront, daily], '2026-09-01')?.id).toBe('day')
+    expect(cardInForceOn([fee, upfront], '2026-09-01')).toBeUndefined()
+    expect(cardInForceOn([fee, upfront, daily], '2026-03-01')).toBeUndefined()
+  })
+})
+
+describe('the forecast of a day card', () => {
+  it('shows the expected quantity and period of a day card, and sends both when saving one', async () => {
+    const forecast = { ...OPEN, expected_quantity: '10.00', delivery_period: 'monthly' }
+    vi.mocked(api.GET).mockImplementation((() => ok([forecast])) as never)
+    vi.mocked(api.PATCH).mockImplementation((() => ok(forecast)) as never)
+    renderSection()
+    expect(await screen.findByText(/10 giornate previste/)).toBeInTheDocument()
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Modifica la tariffa dal 01/07/2026' }),
+    )
+    await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
+    expect(api.PATCH).toHaveBeenCalledWith(
+      '/api/contracts/{contract_id}/rate-cards/{rate_card_id}',
+      expect.objectContaining({
+        body: expect.objectContaining({ expected_quantity: '10.00', delivery_period: 'monthly' }),
+      }),
+    )
+  })
+
+  it('does not offer to close a day rate for a fee that starts inside it', async () => {
+    renderSection()
+    await userEvent.click(await screen.findByRole('button', { name: 'Nuova tariffa' }))
+    await userEvent.click(screen.getByLabelText('Tipo'))
+    await userEvent.click(await screen.findByRole('option', { name: /ricorrente|canone/i }))
+    await userEvent.type(screen.getByLabelText('Valida dal'), '2027-01-01')
+    expect(screen.queryByLabelText(/Chiudi la tariffa in vigore/)).not.toBeInTheDocument()
   })
 })

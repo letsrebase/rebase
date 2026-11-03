@@ -38,19 +38,46 @@ def check_renewal_notice(payload: dict[str, Any]) -> None:
 
 
 def check_rate_card_shape(payload: dict[str, Any]) -> None:
-    """Mirrors the two conditional CHECKs on `rate_cards`: `minimum_hours` only for
-    `type = 'hourly'`, `delivery_period` only for `type = 'fixed_recurring'`."""
-    if payload["type"] != "hourly" and payload.get("minimum_hours") is not None:
+    """Mirrors the conditional CHECKs on `rate_cards`: `minimum_hours` only for
+    `type = 'hourly'`; `expected_quantity` only for a day or hour card; `delivery_period`
+    for a `fixed_recurring` card, or for a day or hour card only together with
+    `expected_quantity` and as one_off, monthly or annual."""
+    kind = payload["type"]
+    day_or_hour = kind in ("daily", "hourly")
+    period = payload.get("delivery_period")
+    quantity = payload.get("expected_quantity")
+    if kind != "hourly" and payload.get("minimum_hours") is not None:
         raise ValidationFailed(
             "rate_card",
             "minimum_hours",
             "significativo solo per una scheda di tipo 'hourly'",
             expected="assente per ogni altro tipo",
         )
-    if payload["type"] != "fixed_recurring" and payload.get("delivery_period") is not None:
+    if quantity is not None and not day_or_hour:
+        raise ValidationFailed(
+            "rate_card",
+            "expected_quantity",
+            "significativo solo per una scheda di tipo 'daily' o 'hourly'",
+            expected="assente per ogni altro tipo",
+        )
+    if period is not None and kind != "fixed_recurring" and not day_or_hour:
         raise ValidationFailed(
             "rate_card",
             "delivery_period",
-            "significativo solo per una scheda di tipo 'fixed_recurring'",
+            "significativo solo per una scheda di tipo 'fixed_recurring', 'daily' o 'hourly'",
             expected="assente per ogni altro tipo",
+        )
+    if day_or_hour and (period is None) != (quantity is None):
+        raise ValidationFailed(
+            "rate_card",
+            "expected_quantity",
+            "expected_quantity e delivery_period vanno impostati insieme, o nessuno dei due",
+            expected="entrambi valorizzati oppure entrambi assenti",
+        )
+    if day_or_hour and period is not None and period not in ("one_off", "monthly", "annual"):
+        raise ValidationFailed(
+            "rate_card",
+            "delivery_period",
+            "per una scheda 'daily' o 'hourly' ammette solo one_off, monthly o annual",
+            expected="one_off, monthly o annual",
         )

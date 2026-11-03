@@ -65,6 +65,7 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
         rate_card_allowed_fractions: list[float] | None = None,
         rate_card_minimum_hours: OptionalMoney = None,
         rate_card_delivery_period: str | None = None,
+        rate_card_expected_quantity: OptionalMoney = None,
         excerpt_type: str = "quoted",
         confidence_reason: str | None = None,
     ) -> dict[str, Any]:
@@ -83,6 +84,7 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
             "unit": rate_card_unit,
             "minimum_hours": rate_card_minimum_hours,
             "delivery_period": rate_card_delivery_period,
+            "expected_quantity": rate_card_expected_quantity,
         }
         if rate_card_allowed_fractions is not None:
             rate_card["allowed_fractions"] = rate_card_allowed_fractions

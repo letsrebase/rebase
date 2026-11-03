@@ -1,3 +1,4 @@
+import { Link } from '@tanstack/react-router'
 import { Plus, Trash2 } from 'lucide-react'
 import { Button } from '@rebase/ui/button'
 import { Input } from '@rebase/ui/input'
@@ -240,6 +241,49 @@ export function DealValueLines({ lines, onChange, preview, problem }: Props) {
           </dd>
         </div>
       </dl>
+    </section>
+  )
+}
+
+/**
+ * The lines of a deal that became a contract: read-only, because from the conversion on the
+ * contract's rate cards are the price (`DealService.update` refuses a write to the lines). The
+ * deal form shows what was booked and where the price lives now, and sends no `value_lines`.
+ */
+export function LockedValueLines({
+  lines,
+  contractId,
+}: {
+  lines: LineDraft[]
+  contractId: string
+}) {
+  return (
+    <section className="space-y-3" aria-labelledby="deal-value-lines">
+      <h3 id="deal-value-lines" className="text-sm font-medium">
+        Valore
+      </h3>
+      <p className="text-sm text-muted-foreground">
+        Il prezzo ora è nel contratto, le righe non si modificano più.{' '}
+        <Link
+          to="/app/contracts/$contractId"
+          params={{ contractId }}
+          className="underline underline-offset-2"
+        >
+          Apri il contratto
+        </Link>
+      </p>
+      <ul className="divide-y rounded-md border text-sm">
+        {lines.map((line, index) => (
+          <li key={line.key} className="flex justify-between gap-4 px-3 py-2">
+            <span>
+              {line.description || `Riga ${index + 1}`} · {UNIT_LABEL[line.unit]} ·{' '}
+              {PERIOD_LABEL[line.delivery_period]}
+              {line.unit === 'flat' ? '' : ` · ${line.quantity} previsti`}
+            </span>
+            <span className="text-right font-medium">{formatMoney(line.unit_price)}</span>
+          </li>
+        ))}
+      </ul>
     </section>
   )
 }

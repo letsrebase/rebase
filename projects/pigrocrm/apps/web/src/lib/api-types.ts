@@ -401,7 +401,8 @@ export interface paths {
         };
         /**
          * Get
-         * @description One deal with its value lines; the list carries only the figures.
+         * @description One deal with its value lines; the list carries only the figures. `contract_id` is the
+         *     contract it was converted into, once it was.
          */
         get: operations["get_api_deals__deal_id__get"];
         put?: never;
@@ -415,6 +416,53 @@ export interface paths {
          * @description Updates a deal. `value_lines`, when sent, replaces the whole list.
          */
         patch: operations["update_api_deals__deal_id__patch"];
+        trace?: never;
+    };
+    "/api/deals/{deal_id}/contract-proposal": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Contract Proposal
+         * @description What converting this deal into a contract would start from: the suggested title, start
+         *     and end, and the rate cards its lines become. Refused (409) like the conversion: the deal
+         *     must be won, have value lines and no contract yet. Writes nothing.
+         */
+        get: operations["contract_proposal_api_deals__deal_id__contract_proposal_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/deals/{deal_id}/contract": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Convert To Contract
+         * @description Turns a won deal into a draft contract for its customer, with one rate card per value
+         *     line. The body is what the person confirms: title, start, end (`null` for none), the
+         *     renewal type and notices, the billing cadence and the expense policy. Payment terms stay
+         *     empty and cascade from the customer. Refused (409) unless the deal is won, has value
+         *     lines and has no contract yet; from then on its value lines are locked, and the contract
+         *     is the price.
+         */
+        post: operations["convert_to_contract_api_deals__deal_id__contract_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/api/deals/{deal_id}/stage": {
@@ -5985,6 +6033,8 @@ export interface components {
             status: string;
             /** Previous Contract Id */
             previous_contract_id: string | null;
+            /** Deal Id */
+            deal_id: string | null;
             /** Note */
             note: string | null;
             /** Custom Fields */
@@ -6245,6 +6295,84 @@ export interface components {
             /** Document Id */
             document_id?: string | null;
         };
+        /**
+         * ContractFromDeal
+         * @description What a person (or an agent) gives, or confirms, to turn a won deal into a contract
+         *     (spec 2026-11-03 §8). The deal gives the customer, the legal entity and the rate cards;
+         *     the contract starts as `draft` and its payment terms stay empty, so they cascade from the
+         *     customer. Every field is required, `end` included (`null` is a contract with no end): the
+         *     proposal (`ContractFromDealProposal`) is a suggestion to confirm, never a default that
+         *     applies itself.
+         */
+        ContractFromDeal: {
+            /** Title */
+            title: string;
+            /**
+             * Start
+             * Format: date
+             */
+            start: string;
+            /** End */
+            end: string | null;
+            /**
+             * Renewal Type
+             * @enum {string}
+             */
+            renewal_type: "none" | "explicit" | "counterparty_option" | "tacit";
+            /** Renewal Notice Days */
+            renewal_notice_days?: number | null;
+            /** Termination Notice Days */
+            termination_notice_days: number;
+            /** Billing Cadence */
+            billing_cadence: string;
+            /** Expense Policy */
+            expense_policy: {
+                [key: string]: unknown;
+            };
+            /**
+             * Custom Fields
+             * @default {}
+             */
+            custom_fields: {
+                [key: string]: unknown;
+            };
+        };
+        /**
+         * ContractFromDealProposal
+         * @description What the conversion of a deal would start from: the title, the start and the end the
+         *     deal suggests and the rate cards its lines become with that start. `end` is `null` when
+         *     a line has none, and for a deal of lump sums alone, where the person enters the delivery
+         *     date. A line with no start of its own takes the start the contract is confirmed with, so
+         *     the cards listed here are the ones the proposed start gives.
+         */
+        ContractFromDealProposal: {
+            /**
+             * Deal Id
+             * Format: uuid
+             */
+            deal_id: string;
+            /**
+             * Customer Id
+             * Format: uuid
+             */
+            customer_id: string;
+            /**
+             * Legal Entity Id
+             * Format: uuid
+             */
+            legal_entity_id: string;
+            /** Title */
+            title: string;
+            /**
+             * Start
+             * Format: date
+             */
+            start: string;
+            /** End */
+            end: string | null;
+            /** Cards */
+            cards: components["schemas"]["ProposedRateCard"][];
+        };
         /** ContractPage */
         ContractPage: {
             /** Items */
@@ -6344,6 +6472,8 @@ export interface components {
             status: string;
             /** Previous Contract Id */
             previous_contract_id: string | null;
+            /** Deal Id */
+            deal_id: string | null;
             /** Note */
             note: string | null;
             /** Custom Fields */
@@ -7125,6 +7255,8 @@ export interface components {
              * @default []
              */
             value_lines: components["schemas"]["DealValueLineRead"][];
+            /** Contract Id */
+            contract_id?: string | null;
         };
         /** DealPage */
         DealPage: {
@@ -10659,6 +10791,41 @@ export interface components {
             reason?: string | null;
         };
         /**
+         * ProposedRateCard
+         * @description A rate card the conversion of a deal would create. Its own schema, and not
+         *     `RateCardCreate` itself, so that one stays an input-only schema in the OpenAPI document:
+         *     a model used on both sides is published twice (`-Input` and `-Output`).
+         */
+        ProposedRateCard: {
+            /**
+             * Valid From
+             * Format: date
+             */
+            valid_from: string;
+            /** Valid To */
+            valid_to?: string | null;
+            /**
+             * Type
+             * @enum {string}
+             */
+            type: "fixed_recurring" | "daily" | "hourly" | "one_off";
+            /** Amount */
+            amount: string;
+            /**
+             * Unit
+             * @enum {string}
+             */
+            unit: "hour" | "day" | "month" | "year" | "flat";
+            /** Allowed Fractions */
+            allowed_fractions?: string[];
+            /** Minimum Hours */
+            minimum_hours?: string | null;
+            /** Delivery Period */
+            delivery_period?: ("monthly" | "quarterly" | "annual" | "one_off") | null;
+            /** Expected Quantity */
+            expected_quantity?: string | null;
+        };
+        /**
          * PushConfigRead
          * @description What the app needs to offer push: whether this installation can send it at all and
          *     the key a browser subscribes with (`applicationServerKey`). No key, no push: the page
@@ -10772,6 +10939,8 @@ export interface components {
             minimum_hours?: number | string | null;
             /** Delivery Period */
             delivery_period?: ("monthly" | "quarterly" | "annual" | "one_off") | null;
+            /** Expected Quantity */
+            expected_quantity?: number | string | null;
         };
         /** RateCardRead */
         RateCardRead: {
@@ -10804,6 +10973,8 @@ export interface components {
             minimum_hours: string | null;
             /** Delivery Period */
             delivery_period: string | null;
+            /** Expected Quantity */
+            expected_quantity: string | null;
             /**
              * Created At
              * Format: date-time
@@ -10818,7 +10989,8 @@ export interface components {
         /**
          * RateCardUpdate
          * @description A partial patch of a rate card. The conditional shape (`minimum_hours` only for
-         *     `hourly`, `delivery_period` only for `fixed_recurring`) and the validity order
+         *     `hourly`, `expected_quantity` only for `daily` or `hourly`, `delivery_period` for
+         *     `fixed_recurring` or together with `expected_quantity`) and the validity order
          *     are checked against the *merged* row by `RateCardService.update`; the overlap is
          *     the database's, as on create.
          */
@@ -10839,6 +11011,8 @@ export interface components {
             minimum_hours?: number | string | null;
             /** Delivery Period */
             delivery_period?: ("monthly" | "quarterly" | "annual" | "one_off") | null;
+            /** Expected Quantity */
+            expected_quantity?: number | string | null;
         };
         /**
          * RateDescription
@@ -16860,6 +17034,251 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DealDetailRead"];
+                };
+            };
+            /** @description Permission denied: the actor does not have the required role. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The requested resource does not exist or was removed. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The request conflicts with the current state of the resource. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    contract_proposal_api_deals__deal_id__contract_proposal_get: {
+        parameters: {
+            query?: {
+                /** @description The start the contract would be confirmed with. The lines with no start of their own follow it, and so do the end and the cards in the answer. */
+                start?: string | null;
+            };
+            header?: never;
+            path: {
+                deal_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ContractFromDealProposal"];
+                };
+            };
+            /** @description Permission denied: the actor does not have the required role. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The requested resource does not exist or was removed. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The request conflicts with the current state of the resource. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    convert_to_contract_api_deals__deal_id__contract_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                deal_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ContractFromDeal"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ContractRead"];
                 };
             };
             /** @description Permission denied: the actor does not have the required role. */
@@ -42866,7 +43285,7 @@ export interface operations {
     create_rate_card_api_contracts__contract_id__rate_cards_post: {
         parameters: {
             query?: {
-                /** @description Closes, the day before, the rate card in force at this one's start date, instead of refusing the overlap */
+                /** @description Closes, the day before, the day or hour rate card in force at this one's start date, instead of refusing the overlap; refused on a fee card */
                 close_previous?: boolean;
             };
             header?: never;

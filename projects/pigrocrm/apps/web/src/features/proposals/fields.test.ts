@@ -168,6 +168,26 @@ describe('describeProposal, a contract', () => {
     expect(rowsOf(flat, 'Prima scheda tariffaria')['Importo']?.replace(/\s/g, ' ')).toBe('1.800,00 € (forfait)')
   })
 
+  it('shows the days or hours a day or hour card forecasts, in its own unit', () => {
+    const day = describeProposal(
+      waiting('contract', {
+        ...CONTRACT,
+        rate_card: { ...CONTRACT.rate_card, type: 'daily', unit: 'day', expected_quantity: '4.00' },
+      }),
+    )
+    expect(rowsOf(day, 'Prima scheda tariffaria')['Quantità prevista']).toBe('4 gg')
+    const hour = describeProposal(
+      waiting('contract', {
+        ...CONTRACT,
+        rate_card: { ...CONTRACT.rate_card, type: 'hourly', unit: 'hour', expected_quantity: 25.5 },
+      }),
+    )
+    expect(rowsOf(hour, 'Prima scheda tariffaria')['Quantità prevista']).toBe('25,5 ore')
+    expect(rowsOf(describeProposal(waiting('contract', CONTRACT)), 'Prima scheda tariffaria')).not.toHaveProperty(
+      'Quantità prevista',
+    )
+  })
+
   it('shows what the accept would write even when no label exists for it', () => {
     const full = describeProposal(
       waiting('contract', {

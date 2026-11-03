@@ -89,6 +89,52 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
             },
         )
 
+    @mcp.tool(annotations=DESTRUCTIVE)
+    @guard
+    def convert_deal_to_contract(
+        deal_id: str,
+        title: str,
+        start: str,
+        end: str | None,
+        renewal_type: str,
+        termination_notice_days: int,
+        billing_cadence: str,
+        expense_policy: dict[str, Any],
+        renewal_notice_days: int | None = None,
+        custom_fields: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Turn a won deal into a `draft` contract for its customer, one rate card per value line.
+        Only a won deal with lines and no contract; its lines are locked afterwards. Pass the
+        `title`, `start` and `end` (`null`: none) of `preview_deal_contract` once the person
+        confirmed them; the other arguments are those of `create_contract`. Payment terms stay
+        empty (the customer's apply). Ask for confirmation first.
+        """
+        return contracts.convert_deal(
+            context,
+            deal_id,
+            {
+                "title": title,
+                "start": start,
+                "end": end,
+                "renewal_type": renewal_type,
+                "renewal_notice_days": renewal_notice_days,
+                "termination_notice_days": termination_notice_days,
+                "billing_cadence": billing_cadence,
+                "expense_policy": expense_policy,
+                "custom_fields": custom_fields or {},
+            },
+        )
+
+    @mcp.tool(annotations=READ_ONLY)
+    @guard
+    def preview_deal_contract(deal_id: str, start: IsoDateStr = None) -> dict[str, Any]:
+        """What `convert_deal_to_contract` would start from: the `title`, `start` and `end` the deal
+        suggests (`end` null: no line has one, ask for the delivery date) and the rate `cards` its
+        lines become. Pass `start` (`YYYY-MM-DD`) to see them for another start: lines with no
+        start follow it, and so do `end` and `cards`. Saves nothing.
+        """
+        return contracts.propose_from_deal(context, deal_id, iso_date(start, "start"))
+
     @mcp.tool(annotations=READ_ONLY)
     @guard
     def get_contract(contract_id: str) -> dict[str, Any]:
@@ -182,13 +228,18 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
         allowed_fractions: list[float] | None = None,
         minimum_hours: OptionalMoney = None,
         delivery_period: str | None = None,
+        expected_quantity: OptionalMoney = None,
         close_previous: bool = False,
     ) -> dict[str, Any]:
         """Create a rate card for a contract. `valid_from`/`valid_to` in `YYYY-MM-DD` format;
         without `valid_to` the card is open-ended. A period that overlaps another card of the
         contract is rejected, unless `close_previous` is true: then the card in force on
-        `valid_from` is closed the day before. `minimum_hours` applies only to `type =
-        'hourly'`, `delivery_period` only to `'fixed_recurring'`.
+        `valid_from` is closed the day before. Only `daily` and `hourly` cards cannot overlap
+        each other (they price the worked days); fee cards (`fixed_recurring`, `one_off`) overlap
+        freely and refuse `close_previous`. `minimum_hours` applies only to `type = 'hourly'`.
+        `delivery_period` applies to `'fixed_recurring'`, and to a `daily` or `hourly` card
+        (`one_off`, `monthly` or `annual`) only together with `expected_quantity`, the days or
+        hours forecast per period; a day or hour card carries both or neither.
         """
         payload: dict[str, Any] = {
             "valid_from": valid_from,
@@ -198,6 +249,7 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
             "unit": unit,
             "minimum_hours": minimum_hours,
             "delivery_period": delivery_period,
+            "expected_quantity": expected_quantity,
         }
         # Omitted rather than `None`: `RateCardCreate.allowed_fractions` has no `None`
         # branch (its default is `[1]`, mirroring `RateCard.allowed_fractions`'s own

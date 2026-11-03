@@ -29,6 +29,10 @@ export const queryKeys = {
   person: (id: string) => ['person', id] as const,
   deals: (params?: unknown) => ['deals', params ?? {}] as const,
   deal: (id: string) => ['deal', id] as const,
+  // What converting a won deal into a contract would start from; under the deal's prefix, so
+  // any write to the deal refreshes it.
+  dealContractProposal: (id: string, start?: string) =>
+    ['deal', id, 'contract-proposal', start ?? null] as const,
   timeline: (entity: string, id: string) => ['timeline', entity, id] as const,
   // The notes thread of a deal, a customer or a person (REB-879), keyed like the timeline
   // by entity type and id so one write can refresh both.

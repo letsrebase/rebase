@@ -42,7 +42,7 @@ from uuid import UUID
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.actor import Actor
-from pigrocrm.core.contracts.models import Contract, RateCard
+from pigrocrm.core.contracts.models import RATE_CARD_DAY_HOUR_TYPES, Contract, RateCard
 from pigrocrm.core.contracts.repository import RateCardRepository
 from pigrocrm.core.errors import Conflict, NotFound, ValidationFailed
 from pigrocrm.core.invoices.assembly import assemble_draft
@@ -106,7 +106,8 @@ def _gather(
             (
                 c
                 for c in cards
-                if c.valid_from <= work_unit.date
+                if c.type in RATE_CARD_DAY_HOUR_TYPES
+                and c.valid_from <= work_unit.date
                 and (c.valid_to is None or work_unit.date <= c.valid_to)
             ),
             None,

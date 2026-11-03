@@ -48,6 +48,8 @@ from pigrocrm.core.legal_entities.models import default_legal_entity_id
 # future value costs a schema constant rather than an `ALTER TYPE` migration.
 RENEWAL_TYPES: tuple[str, ...] = ("none", "explicit", "counterparty_option", "tacit")
 RATE_CARD_TYPES: tuple[str, ...] = ("fixed_recurring", "daily", "hourly", "one_off")
+# The cards a worked day is priced by; at most one is in force on a date.
+RATE_CARD_DAY_HOUR_TYPES: tuple[str, ...] = ("daily", "hourly")
 RATE_CARD_UNIT: tuple[str, ...] = ("hour", "day", "month", "year", "flat")
 RATE_CARD_PERIODS: tuple[str, ...] = ("monthly", "quarterly", "annual", "one_off")
 
@@ -123,6 +125,10 @@ class Contract(Base, PrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
     previous_contract_id: Mapped[UUID | None] = mapped_column(
         ForeignKey("contracts.id"), default=None, unique=True
     )
+    # The deal this contract was converted from (spec 2026-11-03 §8), written only by
+    # `ContractService.create_from_deal`. Unique: a deal becomes at most one contract. A
+    # renewal does not carry it; the chain is `previous_contract_id`.
+    deal_id: Mapped[UUID | None] = mapped_column(ForeignKey("deals.id"), default=None, unique=True)
     note: Mapped[str | None] = mapped_column(Text, default=None)
     custom_fields: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
 
@@ -188,7 +194,11 @@ class RateCard(Base, PrimaryKeyMixin, TimestampMixin):
     # Meaningful, and CHECK-enforceable, only for `tipo = 'orario'`.
     minimum_hours: Mapped[Decimal | None] = mapped_column(Numeric(6, 2), default=None)
     # Meaningful, and CHECK-enforceable, only for `tipo = 'ricorrente_fisso'`.
+    # A fee card's period; a day or hour card carries one only together with
+    # `expected_quantity` (the forecast a converted deal line brought).
     delivery_period: Mapped[str | None] = mapped_column(String(20), default=None)
+    # The days or hours expected per delivery period; day and hour cards only.
+    expected_quantity: Mapped[Decimal | None] = mapped_column(Numeric(8, 2), default=None)
 
     __table_args__ = (
         CheckConstraint(f"type IN {RATE_CARD_TYPES!r}", name="ck_rate_cards_type"),
@@ -202,14 +212,26 @@ class RateCard(Base, PrimaryKeyMixin, TimestampMixin):
             name="ck_rate_cards_minimum_hours_only_hourly",
         ),
         CheckConstraint(
-            "type = 'fixed_recurring' OR delivery_period IS NULL",
+            "type = 'fixed_recurring' OR delivery_period IS NULL "
+            "OR (type IN ('daily', 'hourly') AND expected_quantity IS NOT NULL "
+            "AND delivery_period IN ('one_off', 'monthly', 'annual'))",
             name="ck_rate_cards_period_only_fixed_recurring",
+        ),
+        CheckConstraint(
+            "type IN ('daily', 'hourly') OR expected_quantity IS NULL",
+            name="ck_rate_cards_quantity_only_day_hour",
+        ),
+        CheckConstraint(
+            "type NOT IN ('daily', 'hourly') OR expected_quantity IS NULL "
+            "OR delivery_period IS NOT NULL",
+            name="ck_rate_cards_quantity_with_period",
         ),
         CheckConstraint(
             "valid_to IS NULL OR valid_from <= valid_to",
             name="ck_rate_cards_validity_ordered",
         ),
-        # Non-overlapping validity per contract, database-enforced: a NULL bound in
+        # Non-overlapping validity of the day and hour cards per contract (the one rate a
+        # worked day is priced by); fee cards overlap freely. Database-enforced: a NULL bound in
         # `daterange(...)` is Postgres's own "unbounded on this side", which is
         # exactly the open-ended-current-card semantics `valido_a IS NULL` already
         # carries. `'[]'` (both bounds inclusive) matches how `valid_from`/`valid_to`
@@ -219,6 +241,7 @@ class RateCard(Base, PrimaryKeyMixin, TimestampMixin):
             (column("contract_id"), "="),
             (func.daterange(column("valid_from"), column("valid_to"), text("'[]'")), "&&"),
             using="gist",
+            where=text("type IN ('daily', 'hourly')"),
             name="ck_rate_cards_no_overlap",
         ),
     )

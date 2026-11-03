@@ -30,6 +30,7 @@ const KIND_LABELS: Record<string, string> = {
   // A contract's own history (REB-741..744): what each write on its page records.
   rate_card_added: 'Tariffa aggiunta',
   renewed: 'Contratto rinnovato',
+  converted_to_contract: 'Convertito in contratto',
   clause_note_added: 'Nota su una clausola aggiunta',
   clause_note_updated: 'Nota su una clausola modificata',
   rate_card_updated: 'Tariffa modificata',

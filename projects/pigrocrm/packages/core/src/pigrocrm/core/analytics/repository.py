@@ -29,7 +29,7 @@ from pigrocrm.core.analytics.filters import (
     revenue_filter,
 )
 from pigrocrm.core.analytics.schemas import CashBase, RevenueBase
-from pigrocrm.core.contracts.models import Contract, RateCard
+from pigrocrm.core.contracts.models import RATE_CARD_DAY_HOUR_TYPES, Contract, RateCard
 from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.deals.models import Deal
 from pigrocrm.core.invoices.models import Invoice, InvoiceLine
@@ -312,7 +312,9 @@ class AnalyticsRepository:
                 (
                     c
                     for c in cards_by_contract.get(contract_id, [])
-                    if c.valid_from <= day and (c.valid_to is None or day <= c.valid_to)
+                    if c.type in RATE_CARD_DAY_HOUR_TYPES
+                    and c.valid_from <= day
+                    and (c.valid_to is None or day <= c.valid_to)
                 ),
                 None,
             )

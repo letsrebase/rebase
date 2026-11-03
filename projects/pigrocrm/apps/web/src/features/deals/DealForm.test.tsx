@@ -8,6 +8,16 @@ import type { Deal } from './queries'
 import { api } from '@/lib/api'
 import type { FieldDefinition } from '@/lib/schema'
 
+vi.mock('@tanstack/react-router', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@tanstack/react-router')>()
+  return {
+    ...actual,
+    Link: ({ children, params }: { children: React.ReactNode; params: Record<string, string> }) => (
+      <a href={`/contracts/${params.contractId}`}>{children}</a>
+    ),
+  }
+})
+
 // `api.GET` is spied on directly (not `vi.mock('@/lib/api', ...)`), mirroring
 // `PersonForm.test.tsx`: `DealForm` mounts `CustomerPicker` (for the "Cliente"
 // picker), which calls `useCustomers` through the real `unwrap`, so what is under test is this form's own
@@ -668,5 +678,52 @@ describe('«Nessuno» on the owner picker (REB-780)', () => {
       rerender(form(true, '77.00'))
       expect(screen.getByTestId('preview-total')).toHaveTextContent('—')
     })
+  })
+
+  /** Once the deal is a contract the cards are the price: the lines show, nothing edits them,
+   *  and the save never sends them (the server would refuse a changed list). */
+  it('shows the lines of a converted deal read-only, linked to the contract, and sends none', async () => {
+    const onSubmit = vi.fn()
+    const converted = {
+      ...BASE_DEAL,
+      contract_id: 'k1',
+      value_lines: [
+        {
+          id: 'l1',
+          position: 0,
+          description: 'Sviluppo',
+          unit: 'flat' as const,
+          delivery_period: 'one_off' as const,
+          unit_price: '20000.00',
+          quantity: '1.00',
+          start: null,
+          duration_months: null,
+        },
+      ],
+    }
+    renderWithClient(
+      <DealForm
+        title="Modifica deal"
+        open
+        onOpenChange={vi.fn()}
+        customFields={[]}
+        initial={dealToFormValues(converted)}
+        contractId="k1"
+        onSubmit={onSubmit}
+      />,
+    )
+
+    expect(screen.getByText(/Il prezzo ora è nel contratto/)).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Apri il contratto' })).toHaveAttribute(
+      'href',
+      '/contracts/k1',
+    )
+    expect(screen.getByText(/Sviluppo/)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Aggiungi riga/ })).not.toBeInTheDocument()
+    expect(screen.queryByLabelText(/^Descrizione/)).not.toBeInTheDocument()
+
+    await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
+    expect(submitted(onSubmit)).not.toHaveProperty('value_lines')
+    expect(mockPost).not.toHaveBeenCalled()
   })
 })

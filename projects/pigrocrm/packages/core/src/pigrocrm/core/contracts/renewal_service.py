@@ -21,7 +21,8 @@ from pigrocrm.core.legal_entities.service import LegalEntityService
 
 # The columns a renewal does not copy from the contract it renews: the row's own identity
 # and bookkeeping, the term (which the renewal decides), the state (the successor is
-# `active`, whatever the contract it renews was) and the link back.
+# `active`, whatever the contract it renews was), the link back and the deal it was converted
+# from (a deal becomes one contract; the renewal chain is `previous_contract_id`).
 _NOT_RENEWED = frozenset(
     {
         "id",
@@ -32,6 +33,7 @@ _NOT_RENEWED = frozenset(
         "end",
         "status",
         "previous_contract_id",
+        "deal_id",
     }
 )
 
@@ -139,6 +141,7 @@ class ContractRenewalService:
                     allowed_fractions=list(card.allowed_fractions),
                     minimum_hours=card.minimum_hours,
                     delivery_period=card.delivery_period,
+                    expected_quantity=card.expected_quantity,
                 )
             )
         self.session.flush()

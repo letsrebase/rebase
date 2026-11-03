@@ -11,6 +11,7 @@ from pigrocrm.core.contracts.schemas import (
     ClauseNoteCreate,
     ClauseNoteUpdate,
     ContractCreate,
+    ContractFromDeal,
     ContractListQuery,
     ContractProjectionQuery,
     ContractRenew,
@@ -30,6 +31,22 @@ def create(context: McpContext, data: dict[str, Any]) -> dict[str, Any]:
     return (
         ContractService(context.session)
         .create(ContractCreate(**data), context.actor)
+        .model_dump(mode="json")
+    )
+
+
+def convert_deal(context: McpContext, deal_id: str, data: dict[str, Any]) -> dict[str, Any]:
+    return (
+        ContractService(context.session)
+        .create_from_deal(UUID(deal_id), ContractFromDeal(**data), context.actor)
+        .model_dump(mode="json")
+    )
+
+
+def propose_from_deal(context: McpContext, deal_id: str, start: date | None) -> dict[str, Any]:
+    return (
+        ContractService(context.session)
+        .proposal_from_deal(UUID(deal_id), context.actor, start)
         .model_dump(mode="json")
     )
 

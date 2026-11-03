@@ -666,6 +666,32 @@ def test_a_fixed_fee_period_with_no_invoice_since_its_last_day_is_raised_for_tha
     assert "chiuso da 26 giorni" in reminder.detail
 
 
+def test_a_days_only_invoice_does_not_cover_the_fee_of_a_contract_with_a_daily_card(
+    world: World,
+) -> None:
+    contract = _fee_contract(world, start=date(2026, 9, 1))
+    world.fee(contract, type="daily", amount=Decimal("500.00"), unit="day", delivery_period=None)
+    invoice = world.invoice(issue_date=date(2026, 9, 30))
+    world.day(contract, date(2026, 9, 10), invoice_line_id=world.line(invoice).id)
+
+    subject = uuid5(contract.id, "2026-09-01")
+    assert set(world.raised("fixed_fee_period_unbilled")) == {subject}
+
+    fee_invoice = world.invoice(issue_date=date(2026, 10, 1))
+    world.line(fee_invoice)  # a line no day is bound to: the fee
+
+    assert world.raised("fixed_fee_period_unbilled") == {}
+
+
+def test_a_fee_only_contract_is_covered_by_any_issued_invoice(world: World) -> None:
+    _fee_contract(world)
+    other = world.contract()
+    invoice = world.invoice(issue_date=date(2026, 9, 30))
+    world.day(other, date(2026, 9, 10), invoice_line_id=world.line(invoice).id)
+
+    assert world.raised("fixed_fee_period_unbilled") == {}
+
+
 def test_an_invoice_dated_on_the_periods_last_day_or_later_covers_it(world: World) -> None:
     _fee_contract(world)
     world.invoice(issue_date=date(2026, 9, 30))
@@ -843,6 +869,22 @@ def test_a_one_off_fee_is_covered_by_an_invoice_dated_on_or_after_the_end(world:
     assert set(world.raised("on_completion_unbilled")) == {contract.id}
 
     before.issue_date = _ago(10)
+
+    assert world.raised("on_completion_unbilled") == {}
+
+
+def test_a_days_only_invoice_does_not_cover_the_one_off_fee_of_a_contract_with_a_daily_card(
+    world: World,
+) -> None:
+    contract = world.contract("on_completion", end=_ago(10))
+    _one_off(world, contract)
+    world.fee(contract, type="daily", amount=Decimal("500.00"), unit="day", delivery_period=None)
+    days = world.invoice(issue_date=_ago(5))
+    world.day(contract, _ago(20), invoice_line_id=world.line(days).id)
+
+    assert set(world.raised("on_completion_unbilled")) == {contract.id}
+
+    world.line(world.invoice(issue_date=_ago(4)))  # a line no day is bound to: the fee
 
     assert world.raised("on_completion_unbilled") == {}
 
