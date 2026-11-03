@@ -56,7 +56,11 @@ def check_party_exportable(party: PartySnapshot, entity: str) -> None:
     country = (party.country or "").strip().upper()
     if not COUNTRY_RE.fullmatch(country):
         raise ValidationFailed(
-            entity, "country", "codice paese non valido", expected="due lettere ISO 3166-1"
+            entity,
+            "country",
+            "codice paese non valido",
+            expected="due lettere ISO 3166-1",
+            in_words=True,
         )
     italian = country == "IT"
 
@@ -64,7 +68,7 @@ def check_party_exportable(party: PartySnapshot, entity: str) -> None:
     # makes `Provincia` optional precisely so that a London address is not forced to
     # invent one. Requiring it of everybody is what made a foreign customer
     # unrepresentable -- along with the outright refusal that used to stand here, which
-    # this replaces. `cap` is not required outside Italy either, since `CAP` carries the
+    # this replaces. `postal_code` is not required outside Italy either, since `CAP` carries the
     # `00000` placeholder there. `city` is required of everybody: the schema's
     # `Comune` is one to sixty characters with no `minOccurs="0"`, and leaving it out
     # of this list let an emission through that the writer could never serialise.
@@ -76,17 +80,22 @@ def check_party_exportable(party: PartySnapshot, entity: str) -> None:
                 field,
                 "campo obbligatorio per la fattura elettronica",
                 expected="un valore non vuoto",
+                in_words=True,
             )
     if not party.legal_name.strip():
         raise ValidationFailed(
-            entity, "legal_name", "campo obbligatorio", expected="un valore non vuoto"
+            entity,
+            "legal_name",
+            "campo obbligatorio",
+            expected="un valore non vuoto",
+            in_words=True,
         )
 
     # The formats, and not merely the presence — checked *here* because this function's
     # whole reason for existing is that `InvoiceService.issue` calls it before consuming
     # a register number. Presence alone was not enough: `customers.legal_name` is
     # `String(255)` against FPR12's 80, `address` and `city` are `String(255)` and
-    # `String(120)` against 60, and `cap` is `String(10)` where the schema wants exactly
+    # `String(120)` against 60, and `postal_code` is `String(10)` where the schema wants exactly
     # five digits. So an ordinary customer — a long consortium name, a mistyped CAP —
     # passed this check, the emission committed, and every later `export_xml` raised
     # forever, leaving annulment as the only remedy. A refusal before the number is spent
@@ -110,7 +119,11 @@ def check_widths(party: PartySnapshot, entity: str, italian: bool) -> None:
     postal_code = (party.postal_code or "").strip()
     if italian and not POSTAL_CODE_RE.fullmatch(postal_code):
         raise ValidationFailed(
-            entity, "postal_code", "CAP non valido", expected="esattamente 5 cifre"
+            entity,
+            "postal_code",
+            "CAP non valido",
+            expected="esattamente 5 cifre",
+            in_words=True,
         )
 
     # `Provincia` is written only for an Italian address (the specifications fill it only
@@ -118,7 +131,9 @@ def check_widths(party: PartySnapshot, entity: str, italian: bool) -> None:
     # is neither emitted nor a reason to refuse.
     province = (party.province or "").strip().upper()
     if italian and province and not PROVINCE_RE.fullmatch(province):
-        raise ValidationFailed(entity, "province", "sigla non valida", expected="due lettere")
+        raise ValidationFailed(
+            entity, "province", "sigla non valida", expected="due lettere", in_words=True
+        )
 
 
 def _latin_message(tag: str) -> str:
@@ -163,7 +178,11 @@ def check_text(
         escape_xml(value)
     except ValueError as exc:
         raise ValidationFailed(
-            entity, field, str(exc), expected="solo caratteri rappresentabili in XML 1.0"
+            entity,
+            field,
+            str(exc),
+            expected="solo caratteri rappresentabili in XML 1.0",
+            in_words=True,
         ) from exc
     value = latinise(value)
     if max_length is not None and len(value) > max_length:
@@ -172,6 +191,7 @@ def check_text(
             field,
             f"il valore supera i {max_length} caratteri ammessi da FPR12 per {tag}",
             expected=f"al massimo {max_length} caratteri",
+            in_words=True,
         )
     if min_length is not None and len(value) < min_length:
         raise ValidationFailed(
@@ -179,15 +199,19 @@ def check_text(
             field,
             f"il valore ha meno dei {min_length} caratteri richiesti da FPR12 per {tag}",
             expected=f"almeno {min_length} caratteri",
+            in_words=True,
         )
     if not LATIN_RE.fullmatch(value):
-        raise ValidationFailed(entity, field, _latin_message(tag), expected="solo caratteri latini")
+        raise ValidationFailed(
+            entity, field, _latin_message(tag), expected="solo caratteri latini", in_words=True
+        )
     if pattern is not None and not pattern.fullmatch(value):
         raise ValidationFailed(
             entity,
             field,
             f"il valore non ha la forma richiesta da FPR12 per {tag}: {value!r}",
             expected=pattern_expected or pattern.pattern,
+            in_words=True,
         )
     return value
 
@@ -403,6 +427,7 @@ def check_recipient_identity(party: PartySnapshot) -> None:
         "serve un identificativo fiscale del cliente: lo SdI rifiuta una fattura senza "
         "partita IVA e senza codice fiscale del cessionario",
         expected="una partita IVA, anche estera, oppure un codice fiscale italiano",
+        in_words=True,
     )
 
 
@@ -425,5 +450,6 @@ def check_recipient_routing(party: PartySnapshot) -> None:
             "customer",
             "sdi_code",
             "serve un codice destinatario (SDI) oppure una PEC per emettere la fattura",
-            expected="sdi_code di 7 caratteri oppure certified_email",
+            expected="un codice destinatario di 7 caratteri oppure una PEC",
+            in_words=True,
         )

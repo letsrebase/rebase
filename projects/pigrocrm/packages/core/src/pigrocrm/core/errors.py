@@ -3,6 +3,7 @@ from typing import Any
 from uuid import UUID
 
 from pigrocrm.core.agent_actions import action_label
+from pigrocrm.core.labels import entity_not_found, field_path
 
 
 class DomainError(Exception):
@@ -22,19 +23,35 @@ class DomainError(Exception):
 
 
 class NotFound(DomainError):
+    """The record is not there. The message is Italian, like every other a person can read,
+    and the `entity` and `identifier` in the details stay the machine names. `message` is for
+    the one case where the sentence can say what to do about it, not only what is missing."""
+
     code = "not_found"
 
-    def __init__(self, entity: str, identifier: str | UUID) -> None:
+    def __init__(self, entity: str, identifier: str | UUID, *, message: str | None = None) -> None:
         super().__init__(
-            f"{entity} {identifier} not found", entity=entity, identifier=str(identifier)
+            message if message is not None else entity_not_found(entity, str(identifier)),
+            entity=entity,
+            identifier=str(identifier),
         )
 
 
 class ValidationFailed(DomainError):
+    """A value the rules refuse. `entity`, `field` and `reason` in the details are the machine
+    names; `in_words` names the field in the message as a person says it («azienda emittente,
+    indirizzo») where `labels.FIELD_PATH` has the words, and as `entity.field` where it has none."""
+
     code = "validation_failed"
 
     def __init__(
-        self, entity: str, field: str, reason: str, *, expected: str | None = None
+        self,
+        entity: str,
+        field: str,
+        reason: str,
+        *,
+        expected: str | None = None,
+        in_words: bool = False,
     ) -> None:
         details: dict[str, Any] = {
             "entity": entity,
@@ -43,7 +60,8 @@ class ValidationFailed(DomainError):
         }
         if expected is not None:
             details["expected"] = expected
-        super().__init__(f"{entity}.{field}: {reason}", **details)
+        subject = field_path(entity, field) if in_words else f"{entity}.{field}"
+        super().__init__(f"{subject}: {reason}", **details)
 
 
 class Conflict(DomainError):

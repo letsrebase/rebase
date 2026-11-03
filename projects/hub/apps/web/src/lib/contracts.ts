@@ -20,7 +20,7 @@ import {
   type SendReport,
 } from './api'
 import { amountNumber, sentAmount } from './amount'
-import { formatDate } from './format'
+import { PAY_MODE_WORDS, formatDate } from './format'
 
 /** The tax form as typed: every field a string, and the box for an occasional engagement
  *  with no VAT number (REB-687), ticked exactly when the VAT number is saved as `null`. */
@@ -314,15 +314,13 @@ export const LETTER_MULTILINE: ReadonlySet<LetterFieldKey> = new Set<LetterField
 /** «Come si paga»: one choice that the letter prints twice, as `mode` and as the
  *  fee's `unit` («450,00 € a giornata»), so the page sets both. */
 export type PayMode = 'to_work_unit' | 'lump_sum'
-/** The words the letter prints after the fee (`unit`): what the core's `PAY_MODE_WORDS` says. */
-const PAY_UNIT_WORDS: Record<PayMode, string> = { to_work_unit: 'a giornata', lump_sum: 'a corpo' }
 
 export function payModeOf(form: LetterForm): PayMode {
   return form.mode.trim() === 'lump_sum' ? 'lump_sum' : 'to_work_unit'
 }
 
 export function withPayMode(form: LetterForm, mode: PayMode): LetterForm {
-  return { ...form, mode, unit: PAY_UNIT_WORDS[mode] }
+  return { ...form, mode, unit: PAY_MODE_WORDS[mode]! }
 }
 
 /** «Tipo di lettera» on «Chi e per chi» (REB-687), in the order the page shows them. */

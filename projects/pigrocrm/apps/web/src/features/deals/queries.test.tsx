@@ -248,4 +248,24 @@ describe('useMoveDeal', () => {
       expect.objectContaining({ queryKey: queryKeys.stages }),
     )
   })
+
+  // The deal's Timeline tab keeps its own cache: a move writes a «Cambio stato» row, so it
+  // has to refetch or it shows the old history until the page is reloaded.
+  it('invalidates the deal timeline on settle', async () => {
+    const client = newClient()
+    const invalidateSpy = vi.spyOn(client, 'invalidateQueries')
+    mockPatch.mockReturnValueOnce(Promise.resolve(ok({ id: 'a', pipeline_stage_id: 's2' })))
+
+    const { result } = renderHook(() => useMoveDeal(), { wrapper: createWrapper(client) })
+
+    act(() => {
+      result.current.mutate({ dealId: 'a', stageId: 's2' })
+    })
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true))
+
+    expect(invalidateSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ queryKey: queryKeys.timeline('deal', 'a') }),
+    )
+  })
 })

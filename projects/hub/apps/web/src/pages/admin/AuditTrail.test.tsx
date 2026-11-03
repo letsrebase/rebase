@@ -106,7 +106,7 @@ const MERGED: AdminAction = {
   payload: {
     into_freelancer_id: 'f2',
     moved: { logins: ['l1', 'l2'], notes: ['c1'] },
-    cv: 'assorbita',
+    cv: 'absorbed',
     card_to_regenerate: true,
   },
   created_at: '2026-10-02T09:00:00Z',
@@ -116,7 +116,7 @@ const ABSORBED: AdminAction = {
   id: 'a9',
   entity_id: 'f2',
   kind: 'absorbed',
-  payload: { from_freelancer_id: 'f1', moved: { logins: 1 }, cv: 'invariato', card_to_regenerate: false },
+  payload: { from_freelancer_id: 'f1', moved: { logins: 1 }, cv: 'kept', card_to_regenerate: false },
 }
 const UNMERGED: AdminAction = { ...MERGED, id: 'a10', kind: 'unmerged', payload: {} }
 
@@ -161,7 +161,7 @@ const CARD_REGENERATED: AdminAction = {
     start_action_id: 's1',
     prompt_version: 3,
     model: 'claude-opus-5',
-    outcome: 'scritta',
+    outcome: 'written',
     cost_eur: '0.012300',
   },
   created_at: '2026-10-30T09:00:00Z',
@@ -211,6 +211,30 @@ describe('AuditTrail', () => {
     expect(entries[0]).toHaveTextContent('—')
     expect(entries[0]).toHaveTextContent('500.00')
     expect(entries[1]).toHaveTextContent('Eliminazione')
+  })
+
+  it('shows the closed values of a field diff in the admin’s words, never as the stored codes', async () => {
+    const changed: AdminAction = {
+      ...OVERRIDE,
+      id: 'a30',
+      payload: {
+        changed: ['remote', 'status', 'filled_by'],
+        before: { remote: 'hybrid', status: 'contacted', filled_by: 'person' },
+        after: { remote: 'on_site', status: 'in_progress', filled_by: 'admin' },
+      },
+    }
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(200, [changed]))
+    mount()
+    const entry = (await screen.findByText('Modifica')).closest('li')!
+    expect(entry).toHaveTextContent('Ibrido')
+    expect(entry).toHaveTextContent('In sede')
+    expect(entry).toHaveTextContent('contattato')
+    expect(entry).toHaveTextContent('in corso')
+    expect(entry).toHaveTextContent('la persona')
+    expect(entry).toHaveTextContent('un admin')
+    for (const code of ['hybrid', 'on_site', 'contacted', 'in_progress']) {
+      expect(entry).not.toHaveTextContent(code)
+    }
   })
 
   it('shows the CV that was there before a clear, even though `changed` names a field absent from before/after', async () => {

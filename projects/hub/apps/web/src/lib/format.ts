@@ -60,6 +60,8 @@ export function formatBytes(size: number): string {
 }
 
 export const REMOTE_LABELS = { remote: 'Da remoto', hybrid: 'Ibrido', on_site: 'In sede' } as const
+/** Who filled a freelancer's card, as a diff of the audit trail reads it (`filled_by`). */
+export const FILLED_BY_LABELS: Record<string, string> = { person: 'la persona', admin: 'un admin' }
 export const FREELANCER_STATES = ['new', 'contacted', 'active', 'discarded'] as const
 /** The states the freelancer list filters by: the card's four, plus the pseudo-state of a
  *  signup with no card (ORB-163). */
@@ -95,6 +97,14 @@ export const DOCUMENT_STATE_LABELS: Record<string, string> = {
   signed: 'Firmato',
   cancelled: 'Annullato',
   notice_served: 'Disdetto',
+}
+
+/** What a letter prints after its fee for each way of pricing it, and what the admin reads
+ *  wherever a letter's pay mode is shown: the core's `PAY_MODE_WORDS` (`match_words.py`),
+ *  held equal by `tests/test_web_labels.py`. The API carries the mode, never the words. */
+export const PAY_MODE_WORDS: Record<string, string> = {
+  to_work_unit: 'a giornata',
+  lump_sum: 'a corpo',
 }
 
 /** P-REB-43: a team request's states, in the order the admin moves it («Richieste
@@ -194,7 +204,7 @@ export const REFERRAL_STATE_LABELS: Record<string, string> = {
 }
 /** What verified a referral (REB-658), as the ledger row says it, one whole sentence each. */
 export const REFERRAL_VERIFIED_VIA_LABELS: Record<string, string> = {
-  access: 'Verificato con il primo accesso',
+  login: 'Verificato con il primo accesso',
   letter: 'Verificato con la lettera firmata',
   history: 'Già contava prima della verifica',
 }

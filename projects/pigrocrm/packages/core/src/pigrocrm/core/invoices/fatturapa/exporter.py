@@ -105,6 +105,7 @@ class InvoicePaExporter:
                 "lines",
                 "una fattura senza righe non e' esportabile",
                 expected="almeno una riga",
+                in_words=True,
             )
         legal_entity = invoice.snapshot.legal_entity
         customer = invoice.snapshot.customer
@@ -293,6 +294,7 @@ class InvoicePaExporter:
                 "serve un codice fiscale o una partita IVA dell'emittente per il "
                 "blocco IdTrasmittente",
                 expected="11 cifre oppure 16 caratteri",
+                in_words=True,
             )
         self._id_tax(block, "IdTrasmittente", transmitter, "legal_entity", "tax_code")
 
@@ -330,7 +332,8 @@ class InvoicePaExporter:
                 "customer",
                 "sdi_code",
                 "serve un codice destinatario (SDI) oppure una PEC per emettere la fattura",
-                expected="sdi_code di 7 caratteri oppure certified_email",
+                expected="un codice destinatario di 7 caratteri oppure una PEC",
+                in_words=True,
             )
 
         if (legal_entity.email or "").strip():
@@ -382,6 +385,7 @@ class InvoicePaExporter:
                 "l'emittente deve avere una partita IVA valida: IdFiscaleIVA e' "
                 "obbligatorio per il cedente/prestatore",
                 expected="11 cifre",
+                in_words=True,
             )
         self._id_tax(master_data, "IdFiscaleIVA", vat_number, "legal_entity", "vat_number")
         tax_code = normalise_fiscal_id(legal_entity.tax_code)
@@ -407,6 +411,7 @@ class InvoicePaExporter:
                 "questa azienda non emette fatture elettroniche: il suo profilo fiscale "
                 "non ha un codice regime",
                 expected="un codice da RF01 a RF19",
+                in_words=True,
             )
         regime.text = invoice.snapshot.tax.regime_code
 

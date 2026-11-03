@@ -216,7 +216,14 @@ class FiscalProfileService:
         legal_entity = self.legal_entities.resolve(legal_entity_id)
         profile = self.repo.get(legal_entity.id)
         if profile is None:
-            raise NotFound(ENTITY, str(legal_entity.id))
+            raise NotFound(
+                ENTITY,
+                str(legal_entity.id),
+                message=(
+                    f"l'azienda {legal_entity.name} non ha un profilo fiscale: "
+                    "compilalo in Impostazioni, Aziende"
+                ),
+            )
         return profile
 
 

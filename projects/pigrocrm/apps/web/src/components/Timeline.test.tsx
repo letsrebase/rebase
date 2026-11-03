@@ -201,6 +201,52 @@ describe('Timeline', () => {
       expect(detail).toBeInTheDocument()
     })
 
+    it('prints a contract’s state change in the words it was stored with, not the English codes', async () => {
+      mockGet.mockReturnValue(
+        ok([entry({ kind: 'state_changed', payload: { to: 'active', from: 'draft' } })]),
+      )
+      renderWithClient(<Timeline entityType="contract" entityId="k1" />)
+      expect(await screen.findByText('A: attivo · Da: bozza')).toBeInTheDocument()
+    })
+
+    it('names the invoice events in Italian', async () => {
+      mockGet.mockReturnValue(
+        ok([
+          entry({ kind: 'confirmed', payload: {} }),
+          entry({ kind: 'issued', payload: { year: 2026, number: 1 } }),
+          entry({ kind: 'payment_state_changed', payload: { payment_status: 'paid' } }),
+          entry({ kind: 'transmitted_externally', payload: {} }),
+        ]),
+      )
+      renderWithClient(<Timeline entityType="invoice" entityId="i1" />)
+      expect(await screen.findByText('Confermata')).toBeInTheDocument()
+      expect(screen.getByText('Emessa')).toBeInTheDocument()
+      expect(screen.getByText('Stato di pagamento cambiato')).toBeInTheDocument()
+      expect(screen.getByText('Stato pagamento: incassato')).toBeInTheDocument()
+      expect(screen.getByText('Trasmessa esternamente')).toBeInTheDocument()
+      for (const english of ['Confirmed', 'Issued', 'Payment state changed', 'Transmitted externally']) {
+        expect(screen.queryByText(english)).not.toBeInTheDocument()
+      }
+    })
+
+    it('names a deal’s first stage and a customer’s custom fields in Italian', async () => {
+      mockGet.mockReturnValue(
+        ok([entry({ kind: 'created', payload: { name: 'Deal Walk', stage: 'Lead' } })]),
+      )
+      renderWithClient(<Timeline entityType="deal" entityId="d1" />)
+      expect(await screen.findByText('Nome: Deal Walk · Stato: Lead')).toBeInTheDocument()
+    })
+
+    it('names the custom fields of a customer in Italian', async () => {
+      mockGet.mockReturnValue(
+        ok([entry({ kind: 'updated', payload: { changed: ['custom_fields', 'phone'] } })]),
+      )
+      renderWithClient(<Timeline entityType="customer" entityId="c1" />)
+      expect(
+        await screen.findByText('Campi modificati: Campi personalizzati, Telefono'),
+      ).toBeInTheDocument()
+    })
+
     it('falls back to a generic, humanized dump for a "created" entry\'s per-entity payload', async () => {
       mockGet.mockReturnValue(
         ok([entry({ kind: 'created', payload: { legal_name: 'ACME Srl' } })]),

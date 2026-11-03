@@ -13,17 +13,23 @@ export const PAYLOAD_KEY_LABELS: Record<string, string> = {
   accrual_to: 'Competenza a',
   active: 'Attivo',
   address: 'Indirizzo',
+  adopted_interpretation: 'Interpretazione adottata',
+  allowed_fractions: 'Frazioni ammesse',
   after: 'Dopo',
   amount: 'Importo',
+  applied_cost: 'Costo applicato',
   applied_rate: 'Tariffa applicata',
   apply_stamp_duty: 'Applica bollo',
   archived: 'Archiviata',
   assigned_to: 'Assegnata a',
+  attachments: 'Allegati',
   at: 'Il',
   authorization_reference: 'Riferimento autorizzazione',
   before: 'Prima',
   billing_cadence: 'Cadenza fatturazione',
+  billable: 'Fatturabile',
   body_markdown: 'Corpo markdown',
+  body: 'Corpo',
   budgeted_hours: 'Ore preventivate',
   budgeted_value: 'Valore preventivato',
   cancellation_reason: 'Motivo annullamento',
@@ -38,14 +44,17 @@ export const PAYLOAD_KEY_LABELS: Record<string, string> = {
   confidence_reason: 'Motivo confidenza',
   cost_after: 'Costo dopo',
   cost_before: 'Costo prima',
+  cost_source: 'Costo origine',
   costs: 'Costi',
   count_deleted_messages: 'Messaggi cancellati conteggio',
   country: 'Nazione',
   currency: 'Divisa',
+  custom_fields: 'Campi personalizzati',
   current_version: 'Versione corrente',
   customer_share_cap: 'Tetto quota cliente',
   date: 'Data',
   days: 'Giorni',
+  delivery_period: 'Periodo di erogazione',
   decided_at: 'Deciso il',
   decided_by: 'Deciso da',
   declared_variables: 'Variabili dichiarate',
@@ -67,6 +76,7 @@ export const PAYLOAD_KEY_LABELS: Record<string, string> = {
   excerpt_type: 'Tipo estratto',
   expected_close_date: 'Data chiusura prevista',
   expected_value: 'Valore previsto',
+  expected_volume: 'Volume atteso',
   expense_policy: 'Politica spese',
   fields: 'Campi',
   first_name: 'Nome',
@@ -82,13 +92,16 @@ export const PAYLOAD_KEY_LABELS: Record<string, string> = {
   keys: 'Chiavi',
   last_name: 'Cognome',
   legal_entity: 'Azienda',
+  legal_entities: 'Aziende',
   legal_entity_id: 'Azienda id',
   legal_name: 'Ragione sociale',
   legal_reference: 'Riferimento normativo',
   level: 'Livello',
+  literal_text: 'Testo letterale',
   limited_scope: 'Ambito limitato',
   lines: 'Righe',
   memo: 'Causale',
+  minimum_hours: 'Ore minime',
   month: 'Mese',
   name: 'Nome',
   note_id: 'Nota id',
@@ -103,6 +116,7 @@ export const PAYLOAD_KEY_LABELS: Record<string, string> = {
   payment_terms: 'Condizioni pagamento',
   phone: 'Telefono',
   position: 'Posizione',
+  postal_code: 'CAP',
   pre_authorized: 'Pre autorizzata',
   previous_contract_id: 'Contratto precedente id',
   previous_valid_from: 'Precedente valido da',
@@ -111,6 +125,7 @@ export const PAYLOAD_KEY_LABELS: Record<string, string> = {
   profitability_coefficient: 'Coefficiente redditivita',
   proposed_fields: 'Campi proposti',
   province: 'Provincia',
+  quantity: 'Quantità',
   purchase_order_date: 'Ordine data',
   purchase_order_number: 'Ordine numero',
   purchase_order_project_code: 'Ordine cup',
@@ -141,19 +156,25 @@ export const PAYLOAD_KEY_LABELS: Record<string, string> = {
   stamp_duty: 'Bollo',
   stamp_duty_amount: 'Importo bollo',
   stamp_duty_threshold: 'Soglia bollo',
+  stage: 'Stato',
   start: 'Inizio',
   status: 'Stato',
   status_since: 'Stato dal',
   substitute_tax_rate: 'Aliquota imposta sostitutiva',
+  subject: 'Oggetto',
+  supplier: 'Fornitore',
   successor: 'Successore',
   tax_code: 'Codice fiscale',
   tax_regime: 'Regime fiscale',
   taxable_amount: 'Imponibile',
   termination_notice_days: 'Preavviso disdetta giorni',
+  text: 'Testo',
   title: 'Titolo',
   to: 'A',
   total: 'Totale',
   transmitted_externally_at: 'Trasmessa esternamente il',
+  unit: 'Unità',
+  valid_to: 'Valido a',
   triggered_by: 'Attivata da',
   triggered_via: 'Attivata via',
   type: 'Tipo',
@@ -206,203 +227,173 @@ export const KIND_FALLBACK_LABELS: Record<string, string> = {
   'slack.workspace_disconnected': 'Slack.workspace scollegato',
 }
 
+/**
+ * The closed vocabularies migration 0068 renamed, each as `{ stored English code: the
+ * Italian word it was before }`. One table per `COLUMN_VALUES` entry of the migration that a
+ * timeline line can print, so a vocabulary is written once and bound to the payload keys
+ * that carry it below. `payloadLabels.test.ts` reads the migration itself and fails when a
+ * word here differs from its old-to-new map, or when a renamed column is neither bound to a
+ * payload key nor listed there as one the timeline never prints.
+ */
+const APPROVAL_CHANNEL = {
+  certified_mail: 'posta_certificata',
+  courier: 'corriere',
+  other: 'altro',
+  registered_mail: 'raccomandata',
+}
+
+const TASK_RULE = {
+  overdue_invoice: 'fattura_scaduta',
+  sent_offer_follow_up: 'offerta_inviata_richiama',
+  stalled_deal: 'deal_fermo',
+}
+
+const AUTOMATION_REASON = {
+  already_in_state: 'gia_nello_stato',
+  rule_disabled: 'regola_disattivata',
+  target_stage_ambiguous: 'stage_bersaglio_ambiguo',
+  target_stage_missing: 'stage_bersaglio_assente',
+}
+
+const PIPELINE_STAGE_CODE = {
+  contacted: 'contattato',
+  lost: 'perso',
+  negotiation: 'negoziazione',
+  offer: 'offerta',
+  won: 'vinto',
+}
+
+const COST_CATEGORY_CODE = {
+  external_consulting: 'consulenza_esterna',
+  materials: 'materiali',
+  other: 'altro',
+  software_licenses: 'software_licenze',
+  travel: 'viaggi_trasferte',
+}
+
+const RATE_SOURCE = {
+  absent: 'assente',
+  manual: 'manuale',
+  user: 'utente',
+}
+
+const USER_ROLE = { collaborator: 'collaboratore' }
+
+const DOCUMENT_TYPE = {
+  contract: 'contratto',
+  document: 'documento',
+  hours_report: 'rapporto_ore',
+  invoice: 'fattura',
+  invoice_xml: 'fattura_xml',
+  minutes: 'verbale',
+  offer: 'offerta',
+}
+
+const TEMPLATE_TYPE = { payment_reminder: 'sollecito' }
+
+const RATE_CARD_TYPE = {
+  daily: 'giornaliero',
+  fixed_recurring: 'ricorrente_fisso',
+  hourly: 'orario',
+  one_off: 'una_tantum',
+}
+
+const REMINDER_TYPE = {
+  task_due: 'attivita_due',
+  task_overdue: 'attivita_overdue',
+}
+
+const PROPOSAL_TARGET_TYPE = {
+  contract: 'contratto',
+  work_unit: 'giornata',
+}
+
+const DOCUMENT_STATUS = {
+  accepted: 'accettata',
+  draft: 'bozza',
+  rejected: 'rifiutata',
+  sent: 'inviata',
+}
+
+const CONTRACT_STATUS = {
+  active: 'attivo',
+  draft: 'bozza',
+  expired: 'scaduto',
+  terminated: 'terminato',
+}
+
+const WORK_UNIT_STATUS = {
+  approved: 'approvato',
+  disputed: 'contestato',
+  invoiced: 'fatturato',
+  non_billable: 'non_fatturabile',
+  paid: 'pagato',
+  proposed: 'proposto',
+  rejected: 'rifiutato',
+  revoked: 'revocato',
+  worked: 'lavorato',
+  worked_without_approval: 'lavorato_senza_approvazione',
+}
+
+const PAYMENT_STATUS = {
+  paid: 'incassato',
+  unpaid: 'da_incassare',
+}
+
+const SPACE_SETTING_KEY = {
+  payment_reminders_grace_days: 'solleciti_grace_days',
+  payment_reminders_max_reminders: 'solleciti_max_reminders',
+  payment_reminders_min_interval_days: 'solleciti_min_interval_days',
+  preferred_concentration_threshold: 'concentrazione_soglia_preferita',
+}
+
+const FIELD_ENTITY_TYPE = { task: 'attivita' }
+
+const NOTE_SOURCE = { system: 'sistema' }
+
+/** A `from`/`to` pair that moves between the states of any record that logs a `state_changed`. */
+const STATE_CHANGED_WORDS = { ...DOCUMENT_STATUS, ...CONTRACT_STATUS }
+
+/** `type` as `created` and its kin print it: a document, an invoice, a rate card or a reminder. */
+const TYPE_WORDS = {
+  ...DOCUMENT_TYPE,
+  ...TEMPLATE_TYPE,
+  ...RATE_CARD_TYPE,
+  ...REMINDER_TYPE,
+}
+
+/** `code` as `created` prints it: a pipeline stage or a cost category. */
+const CODE_WORDS = { ...PIPELINE_STAGE_CODE, ...COST_CATEGORY_CODE }
+
 /** Coded payload values, per kind then per key, to the word that was stored before. */
 export const PAYLOAD_VALUE_LABELS: Record<string, Record<string, Record<string, string>>> = {
-  approval_added: {
-    channel: {
-      certified_mail: 'posta_certificata',
-      courier: 'corriere',
-      other: 'altro',
-      registered_mail: 'raccomandata',
-    },
-  },
-  approval_recorded: {
-    channel: {
-      certified_mail: 'posta_certificata',
-      courier: 'corriere',
-      other: 'altro',
-      registered_mail: 'raccomandata',
-    },
-  },
-  'automation.not_executed': {
-    reason: {
-      already_in_state: 'gia_nello_stato',
-      rule_disabled: 'regola_disattivata',
-      target_stage_ambiguous: 'stage_bersaglio_ambiguo',
-      target_stage_missing: 'stage_bersaglio_assente',
-    },
-    rule: {
-      overdue_invoice: 'fattura_scaduta',
-      sent_offer_follow_up: 'offerta_inviata_richiama',
-      stalled_deal: 'deal_fermo',
-    },
-  },
-  'automation.stage_moved': {
-    rule: {
-      overdue_invoice: 'fattura_scaduta',
-      sent_offer_follow_up: 'offerta_inviata_richiama',
-      stalled_deal: 'deal_fermo',
-    },
-  },
-  'automation.task_opened': {
-    rule: {
-      overdue_invoice: 'fattura_scaduta',
-      sent_offer_follow_up: 'offerta_inviata_richiama',
-      stalled_deal: 'deal_fermo',
-    },
-  },
+  approval_added: { channel: APPROVAL_CHANNEL },
+  approval_recorded: { channel: APPROVAL_CHANNEL },
+  archived: { entity_type: FIELD_ENTITY_TYPE },
+  'automation.not_executed': { reason: AUTOMATION_REASON, rule: TASK_RULE },
+  'automation.stage_moved': { rule: TASK_RULE },
+  'automation.task_opened': { rule: TASK_RULE },
   created: {
-    code: {
-      contacted: 'contattato',
-      external_consulting: 'consulenza_esterna',
-      lost: 'perso',
-      materials: 'materiali',
-      negotiation: 'negoziazione',
-      offer: 'offerta',
-      other: 'altro',
-      software_licenses: 'software_licenze',
-      travel: 'viaggi_trasferte',
-      won: 'vinto',
-    },
-    rate_source: {
-      absent: 'assente',
-      manual: 'manuale',
-      user: 'utente',
-    },
-    role: {
-      collaborator: 'collaboratore',
-    },
-    type: {
-      contract: 'contratto',
-      daily: 'giornaliero',
-      document: 'documento',
-      fixed_recurring: 'ricorrente_fisso',
-      hourly: 'orario',
-      hours_report: 'rapporto_ore',
-      invoice: 'fattura',
-      invoice_xml: 'fattura_xml',
-      minutes: 'verbale',
-      offer: 'offerta',
-      one_off: 'una_tantum',
-      payment_reminder: 'sollecito',
-      task_due: 'attivita_due',
-      task_overdue: 'attivita_overdue',
-    },
+    code: CODE_WORDS,
+    entity_type: FIELD_ENTITY_TYPE,
+    rate_source: RATE_SOURCE,
+    role: USER_ROLE,
+    target_type: PROPOSAL_TARGET_TYPE,
+    type: TYPE_WORDS,
   },
-  day_created: {
-    status: {
-      approved: 'approvato',
-      disputed: 'contestato',
-      invoiced: 'fatturato',
-      non_billable: 'non_fatturabile',
-      paid: 'pagato',
-      proposed: 'proposto',
-      rejected: 'rifiutato',
-      revoked: 'revocato',
-      worked: 'lavorato',
-      worked_without_approval: 'lavorato_senza_approvazione',
-    },
-  },
-  day_state_changed: {
-    from: {
-      approved: 'approvato',
-      disputed: 'contestato',
-      invoiced: 'fatturato',
-      non_billable: 'non_fatturabile',
-      paid: 'pagato',
-      proposed: 'proposto',
-      rejected: 'rifiutato',
-      revoked: 'revocato',
-      worked: 'lavorato',
-      worked_without_approval: 'lavorato_senza_approvazione',
-    },
-    to: {
-      approved: 'approvato',
-      disputed: 'contestato',
-      invoiced: 'fatturato',
-      non_billable: 'non_fatturabile',
-      paid: 'pagato',
-      proposed: 'proposto',
-      rejected: 'rifiutato',
-      revoked: 'revocato',
-      worked: 'lavorato',
-      worked_without_approval: 'lavorato_senza_approvazione',
-    },
-  },
-  'document.imported': {
-    type: {
-      contract: 'contratto',
-      daily: 'giornaliero',
-      document: 'documento',
-      fixed_recurring: 'ricorrente_fisso',
-      hourly: 'orario',
-      hours_report: 'rapporto_ore',
-      invoice: 'fattura',
-      invoice_xml: 'fattura_xml',
-      minutes: 'verbale',
-      offer: 'offerta',
-      one_off: 'una_tantum',
-      payment_reminder: 'sollecito',
-      task_due: 'attivita_due',
-      task_overdue: 'attivita_overdue',
-    },
-  },
-  imported: {
-    imported_from: {
-      external: 'esterno',
-    },
-  },
-  note_added: {
-    source: {
-      system: 'sistema',
-    },
-  },
-  note_deleted: {
-    source: {
-      system: 'sistema',
-    },
-  },
-  note_edited: {
-    source: {
-      system: 'sistema',
-    },
-  },
-  payment_state_changed: {
-    payment_status: {
-      paid: 'incassato',
-      unpaid: 'da_incassare',
-    },
-  },
-  rate_card_added: {
-    type: {
-      contract: 'contratto',
-      daily: 'giornaliero',
-      document: 'documento',
-      fixed_recurring: 'ricorrente_fisso',
-      hourly: 'orario',
-      hours_report: 'rapporto_ore',
-      invoice: 'fattura',
-      invoice_xml: 'fattura_xml',
-      minutes: 'verbale',
-      offer: 'offerta',
-      one_off: 'una_tantum',
-      payment_reminder: 'sollecito',
-      task_due: 'attivita_due',
-      task_overdue: 'attivita_overdue',
-    },
-  },
-  state_changed: {
-    from: {
-      accepted: 'accettata',
-      draft: 'bozza',
-      rejected: 'rifiutata',
-      sent: 'inviata',
-    },
-    to: {
-      accepted: 'accettata',
-      draft: 'bozza',
-      rejected: 'rifiutata',
-      sent: 'inviata',
-    },
-  },
+  day_created: { status: WORK_UNIT_STATUS },
+  day_state_changed: { from: WORK_UNIT_STATUS, to: WORK_UNIT_STATUS },
+  defaults_reset: { type: REMINDER_TYPE },
+  defaults_updated: { type: REMINDER_TYPE },
+  deleted: { code: CODE_WORDS },
+  'document.imported': { type: TYPE_WORDS },
+  imported: { imported_from: { external: 'esterno' } },
+  note_added: { source: NOTE_SOURCE },
+  note_deleted: { source: NOTE_SOURCE },
+  note_edited: { source: NOTE_SOURCE },
+  payment_state_changed: { payment_status: PAYMENT_STATUS },
+  rate_card_added: { type: TYPE_WORDS },
+  state_changed: { from: STATE_CHANGED_WORDS, to: STATE_CHANGED_WORDS },
+  unarchived: { entity_type: FIELD_ENTITY_TYPE },
+  updated: { code: PIPELINE_STAGE_CODE, keys: SPACE_SETTING_KEY },
 }

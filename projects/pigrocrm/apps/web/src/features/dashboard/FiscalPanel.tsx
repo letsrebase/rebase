@@ -114,8 +114,8 @@ export function FiscalPanel({
   if (estimate.isError) {
     if (quiet && [403, 404].includes(toProblem(estimate.error).status)) return null
     // `get_fiscal_estimate` raises `NotFound("fiscal_profile", "singleton")` when nothing
-    // has been configured, whose detail is "fiscal_profile singleton not found" -- true,
-    // English, and useless to the person who has to fix it. Every other failure keeps
+    // has been configured, whose detail says the profile is missing -- true, and no help
+    // to the person who has to fix it. Every other failure keeps
     // the server's own words, including the 403.
     if (toProblem(estimate.error).status === 404) {
       return (
