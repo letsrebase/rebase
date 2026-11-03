@@ -129,7 +129,7 @@ def test_an_admin_matches_a_card_with_a_request_and_downloads_both_pdfs(
     assert pdf.status_code == 200
     assert pdf.content.startswith(b"%PDF-")
     assert pdf.headers["content-type"].startswith("application/pdf")
-    assert f"engagement-letter-{letter['number']}.pdf" in pdf.headers["content-disposition"]
+    assert f"lettera-di-incarico-{letter['number']}.pdf" in pdf.headers["content-disposition"]
     assert (
         client.get(f"/api/hub/contract-documents/{page['framework']['id']}/pdf").status_code == 200
     )
@@ -1037,7 +1037,7 @@ def test_to_match_for_to_member_without_to_vat_number_is_occasional_end_to_end(
         json=occasional,
     )
     assert preview.status_code == 200, preview.text
-    assert "preview-engagement-letter-occasional.pdf" in preview.headers["content-disposition"]
+    assert "anteprima-lettera-di-incarico-occasionale.pdf" in preview.headers["content-disposition"]
     created = client.post(f"/api/hub/freelancers/{freelancer_id}/matches", json=occasional)
     assert created.status_code == 201, created.text
     letter = created.json()["letter"]
@@ -1047,6 +1047,6 @@ def test_to_match_for_to_member_without_to_vat_number_is_occasional_end_to_end(
     assert page["occasional_framework"]["label"] == "Contratto quadro per prestazioni occasionali"
     pdf = client.get(f"/api/hub/contract-documents/{letter['id']}/pdf")
     assert (
-        f"engagement-letter-occasional-{letter['number']}.pdf"
+        f"lettera-di-incarico-occasionale-{letter['number']}.pdf"
         in (pdf.headers["content-disposition"])
     )

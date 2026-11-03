@@ -69,7 +69,7 @@ def test_the_first_send_hands_documenso_the_framework_and_the_letter_waits(
     assert (framework.sent_at, framework.sent_by) == (NOW, admin_id)
     assert envelope.payload["title"] == "Contratto quadro rebase"
     assert envelope.payload["externalId"] == str(framework.id)
-    assert envelope.filename == f"framework-agreement-v{FRAMEWORK_VERSION}.pdf"
+    assert envelope.filename == f"contratto-quadro-v{FRAMEWORK_VERSION}.pdf"
     assert envelope.payload["meta"]["distributionMethod"] == "NONE"
     assert not any(envelope.payload["meta"]["emailSettings"].values())
     fields = envelope.payload["recipients"][0]["fields"]
@@ -124,7 +124,7 @@ def test_with_an_active_framework_the_letter_leaves_and_cites_its_signature(
     assert letter.data["data-contratto-quadro"] == "1° ottobre 2026"
     [envelope] = fake.envelopes.values()
     assert envelope.payload["title"] == f"Lettera di incarico n. {letter.number}"
-    assert envelope.filename == f"engagement-letter-{letter.number}.pdf"
+    assert envelope.filename == f"lettera-di-incarico-{letter.number}.pdf"
     assert [mail.subject for mail in sender.sent] == [
         f"Da firmare: lettera di incarico n. {letter.number}"
     ]

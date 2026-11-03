@@ -202,7 +202,7 @@ export function share(part: number, whole: number): string | undefined {
  *  something did. For `signed_in`, entering is the action, and for `click` the click is
  *  (REB-530), so each is said once. */
 export function outcomeLine(c: CampaignCounts, action: CampaignAction): string {
-  const parts = [`${c.sent} inviate`, `${c.delivered} consegnate`, `${c.clicked} clic`, `${c.income} entrati`]
+  const parts = [`${c.sent} inviate`, `${c.delivered} consegnate`, `${c.clicked} clic`, `${c.entered} entrati`]
   if (action !== 'signed_in' && action !== 'click') parts.push(`${c.actions} ${ACTION_SHORT[action]}`)
   if (c.bounced) parts.push(`${c.bounced} rimbalzate`)
   if (c.skipped) parts.push(`${c.skipped} saltate`)

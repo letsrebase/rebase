@@ -35,7 +35,7 @@ def register(mcp: MCPServer, deps: Deps) -> None:
           `request_updated`, oppure `click` quando il bottone porta a un link;
         - in `counts` quante sono state inviate, saltate, fallite, consegnate,
           rimbalzate e cliccate, quante persone sono entrate nella loro area dopo la mail
-          (`income`) e quante hanno fatto l'azione (`actions`);
+          (`entered`) e quante hanno fatto l'azione (`actions`);
         - dove porta il bottone (`button_meta`: `area`, `wizard`, `request` o `link`) e, per
           un link, il suo indirizzo (`button_url`), `null` altrimenti.
 

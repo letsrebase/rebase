@@ -138,7 +138,7 @@ def test_migration_a_backfills_users_from_freelancers_admin_users_and_companies(
             }
 
             ada = rows["ada@studio.it"]
-            assert (ada["nome"], ada["last_name"], ada["role"], ada["active"]) == (
+            assert (ada["nome"], ada["cognome"], ada["role"], ada["attivo"]) == (
                 "Ada",
                 "Lovelace",
                 "admin",
@@ -146,20 +146,20 @@ def test_migration_a_backfills_users_from_freelancers_admin_users_and_companies(
             ), "the freelancer's own two names survive; the admin_users row only promotes the role"
 
             bob = rows["bob@studio.it"]
-            assert (bob["role"], bob["active"]) == (
+            assert (bob["role"], bob["attivo"]) == (
                 "member",
                 True,
             ), "a deactivated admin who is also a freelancer stays a member, attivo=true"
 
             ivan = rows["ivan@rebase.it"]
-            assert (ivan["nome"], ivan["last_name"], ivan["role"]) == (
+            assert (ivan["nome"], ivan["cognome"], ivan["role"]) == (
                 "Ivan Fiore",
                 "",
                 "admin",
             ), "an admin with no card at all: cognome blank on purpose (decision d)"
 
             acme = rows["acme@example.it"]
-            assert (acme["nome"], acme["last_name"], acme["role"]) == (
+            assert (acme["nome"], acme["cognome"], acme["role"]) == (
                 "Wile E. Coyote",
                 "",
                 "member",
@@ -206,7 +206,9 @@ def test_migration_a_backfills_users_from_freelancers_admin_users_and_companies(
             session = factory()
             try:
                 resolved = AdminTokenService(session).resolve(raw_token)
-                assert resolved.email == "carla@rebase.it" and resolved.nome == "Carla Cattivi"
+                assert (
+                    resolved.email == "carla@rebase.it" and resolved.first_name == "Carla Cattivi"
+                )
             finally:
                 session.close()
         engine.dispose()

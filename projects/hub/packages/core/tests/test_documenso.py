@@ -42,7 +42,7 @@ def _create(fake: FakeDocumenso) -> str:
     return fake.client().create(
         title="Lettera di incarico n. 2026-001",
         external_id=EXTERNAL,
-        filename="engagement-letter-2026-001.pdf",
+        filename="lettera-di-incarico-2026-001.pdf",
         pdf=PDF,
         signer_email="ada@studio.it",
         signer_name="Ada Lovelace",
@@ -99,7 +99,7 @@ def test_the_create_sends_the_probes_payload_with_every_documenso_mail_off() -> 
     # The owner's «Signing Complete!» is the one Documenso mail the probe still saw.
     assert EMAIL_SETTINGS_OFF["ownerDocumentCompleted"] is False
     assert len(EMAIL_SETTINGS_OFF) == 9
-    assert (envelope.filename, envelope.pdf) == ("engagement-letter-2026-001.pdf", PDF)
+    assert (envelope.filename, envelope.pdf) == ("lettera-di-incarico-2026-001.pdf", PDF)
     assert fake.calls == [("POST", "/envelope/create")]
     assert fake.headers[0]["Authorization"] == TOKEN
     assert fake.headers[0]["Content-Type"].startswith("multipart/form-data; boundary=")

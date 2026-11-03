@@ -295,13 +295,13 @@ def test_resend_sends_each_attachment_as_base64_with_its_name() -> None:
     """REB-387: the signed contracts leave as attachments. Resend takes each file as
     base64 in the JSON body; a mail with none sends no `attachments` key at all."""
     http = FakeHttp()
-    attachment = Attachment("engagement-letter-2026-001-signed.pdf", b"%PDF-1.7 firmato")
+    attachment = Attachment("lettera-di-incarico-2026-001-firmato.pdf", b"%PDF-1.7 firmato")
     mail = Mail(to="ada@studio.it", subject="x", text="y", attachments=(attachment,))
     assert ResendSender(KEY, FROM, http=http).send(mail) is True
     body = json.loads(http.calls[0][3])
     assert body["attachments"] == [
         {
-            "filename": "engagement-letter-2026-001-signed.pdf",
+            "filename": "lettera-di-incarico-2026-001-firmato.pdf",
             "content": base64.b64encode(b"%PDF-1.7 firmato").decode("ascii"),
         }
     ]
@@ -357,7 +357,7 @@ def test_the_cancellation_mail_names_the_document_and_carries_no_button() -> Non
 def test_the_signed_copy_travels_as_an_attachment_to_both_parties() -> None:
     """Spec § 6: the sealed PDF to the freelancer and to rebase's contracts address. Its
     last page is Documenso's certificate, in English (probe § 7): the mail says so."""
-    attachment = Attachment("engagement-letter-2026-001-signed.pdf", b"%PDF-1.7 firmato")
+    attachment = Attachment("lettera-di-incarico-2026-001-firmato.pdf", b"%PDF-1.7 firmato")
     mine = signed_copy_mail(
         "ada@studio.it",
         kind="letter",

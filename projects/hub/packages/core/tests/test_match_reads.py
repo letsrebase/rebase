@@ -124,11 +124,11 @@ def test_a_document_downloads_as_its_own_pdf_and_a_missing_signed_copy_is_not_fo
     service = _service(clean)
     match = service.create(freelancer_id, _body(company_id), admin_id)
     pdf = service.reads.document_pdf(match.letter.id)
-    assert (pdf.filename, pdf.content[:5]) == ("engagement-letter-2026-001.pdf", b"%PDF-")
+    assert (pdf.filename, pdf.content[:5]) == ("lettera-di-incarico-2026-001.pdf", b"%PDF-")
     framework = _documents(clean, freelancer_id, "framework")[0]
     assert (
         service.reads.document_pdf(framework.id).filename
-        == f"framework-agreement-v{FRAMEWORK_VERSION}.pdf"
+        == f"contratto-quadro-v{FRAMEWORK_VERSION}.pdf"
     )
     with pytest.raises(NotFound):
         service.reads.document_pdf(match.letter.id, signed=True)

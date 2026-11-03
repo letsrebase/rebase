@@ -202,7 +202,7 @@ class CampaignCounts(ResponseModel):
     delivered: int = 0
     bounced: int = 0
     clicked: int = 0
-    income: int = 0
+    entered: int = 0
     actions: int = 0
 
 

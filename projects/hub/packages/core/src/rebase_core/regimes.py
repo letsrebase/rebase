@@ -23,6 +23,14 @@ TEXT_NAMES: Final[dict[tuple[str, str], str]] = {
     ("letter", VAT_REGISTERED): "engagement-letter",
     ("letter", OCCASIONAL): "engagement-letter-occasional",
 }
+# The file name each document is downloaded, signed and mailed under (what a freelancer, a
+# client and Documenso see, so it stays Italian).
+FILE_NAMES: Final[dict[tuple[str, str], str]] = {
+    ("framework", VAT_REGISTERED): "contratto-quadro",
+    ("framework", OCCASIONAL): "contratto-quadro-occasionale",
+    ("letter", VAT_REGISTERED): "lettera-di-incarico",
+    ("letter", OCCASIONAL): "lettera-di-incarico-occasionale",
+}
 # The type of each document, as «Match e contratti», «Contratti» and the MCP tools name it.
 DOCUMENT_LABELS: Final[dict[tuple[str, str], str]] = {
     ("framework", VAT_REGISTERED): "Contratto quadro",
@@ -50,6 +58,14 @@ def text_name(kind: str, regime: str) -> str:
         raise ValueError(f"no contract text for kind {kind!r} and regime {regime!r}") from None
 
 
+def file_name(kind: str, regime: str) -> str:
+    """The Italian stem a document of `kind` and `regime` is downloaded under."""
+    try:
+        return FILE_NAMES[(kind, regime)]
+    except KeyError:
+        raise ValueError(f"no contract file name for kind {kind!r} and regime {regime!r}") from None
+
+
 def document_label(kind: str, regime: str) -> str:
     """The document's type as a page names it: «Lettera di incarico occasionale»."""
     try:
@@ -61,6 +77,6 @@ def document_label(kind: str, regime: str) -> str:
 def document_stem(kind: str, regime: str, number: str | None, version: str) -> str:
     """A document's file name without `.pdf`: its own text's name, then the letter's
     number or the framework agreement's text version, so the two families never share a
-    name (`framework-agreement-occasional-v1.0`, `engagement-letter-occasional-2026-001`)."""
-    text = text_name(kind, regime)
+    name (`contratto-quadro-occasionale-v1.0`, `lettera-di-incarico-occasionale-2026-001`)."""
+    text = file_name(kind, regime)
     return f"{text}-{number}" if kind == "letter" else f"{text}-v{version}"

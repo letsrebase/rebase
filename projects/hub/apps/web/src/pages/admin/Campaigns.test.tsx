@@ -26,7 +26,7 @@ const ITEM = {
   stalled_at: null,
   stalled_reason: null,
   ready: true,
-  counts: { recipients: 11, queued: 0, sent: 8, skipped: 1, failed: 2, delivered: 8, bounced: 0, clicked: 4, income: 3, actions: 2 },
+  counts: { recipients: 11, queued: 0, sent: 8, skipped: 1, failed: 2, delivered: 8, bounced: 0, clicked: 4, entered: 3, actions: 2 },
 }
 
 function mount() {

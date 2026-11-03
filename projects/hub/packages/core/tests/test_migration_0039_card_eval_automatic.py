@@ -68,6 +68,8 @@ def test_the_schema_matches_the_models_and_a_retried_deploy_lands_on_it(hub_post
             assert _columns(connection, "card_eval_results") == RESULT_COLUMNS
             diff = compare_metadata(MigrationContext.configure(connection), Base.metadata)
             assert diff == [], diff
+        # The deploy that retries runs on 0039's own schema, 0049's English names undone.
+        command.downgrade(config, REVISION)
         with engine.begin() as connection:
             connection.execute(
                 text("UPDATE alembic_version SET version_num = :parent"),
@@ -143,7 +145,7 @@ def test_the_people_and_the_earlier_results_stay_and_the_expected_cards_go(
             assert (profile.freelancer_id, profile.label) == (freelancer_id, "senza date")
             result = connection.execute(
                 text(
-                    "SELECT anni_ok, cost_eur, checks, judgement, judge_cost_eur "
+                    "SELECT experience_years_ok, cost_eur, checks, judgement, judge_cost_eur "
                     "FROM card_eval_results"
                 )
             ).one()

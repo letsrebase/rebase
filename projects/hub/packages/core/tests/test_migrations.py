@@ -158,7 +158,8 @@ def test_the_contract_constraints_are_installed(hub_engine: Engine) -> None:
         match_id = connection.execute(
             text(
                 "INSERT INTO matches (id, freelancer_id, company_id, customer_legal_name, "
-                "customer_vat_number, customer_registered_office, status, created_by) VALUES (gen_random_uuid(), "
+                "customer_vat_number, customer_registered_office, status, created_by) "
+                "VALUES (gen_random_uuid(), "
                 ":freelancer_id, :company_id, 'ACME S.r.l.', '01234567890', 'Milano', 'draft', "
                 ":user_id) RETURNING id"
             ),

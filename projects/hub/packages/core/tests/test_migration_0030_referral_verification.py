@@ -124,7 +124,7 @@ def _rows(connection: Connection) -> dict[str, tuple[str, bool, str | None]]:
     return {
         str(row.id): (row.status, row.verified_at is not None, row.verified_via)
         for row in connection.execute(
-            text("SELECT id, stato, verified_at, verified_via FROM referrals")
+            text("SELECT id, status, verified_at, verified_via FROM referrals")
         )
     }
 
@@ -188,9 +188,9 @@ def test_migration_0030_keeps_what_counts_counting_and_runs_again() -> None:
                 connection, referrer, "freelancer", "00000000-0000-0000-0000-00000000dead"
             )
         expected = {
-            with_reward: ("verified", True, "storico"),
+            with_reward: ("verified", True, "history"),
             signed: ("verified", True, "letter"),
-            logged_in: ("verified", True, "accesso"),
+            logged_in: ("verified", True, "login"),
             old_login: ("to_verify", False, None),
             plain: ("to_verify", False, None),
             orphan: ("to_verify", False, None),
@@ -210,8 +210,11 @@ def test_migration_0030_keeps_what_counts_counting_and_runs_again() -> None:
                     text("SELECT logged_at FROM logins WHERE user_id = :u"), {"u": road}
                 ).scalar_one()
                 assert moments[logged_in] == login_at
-                # A person who logs in after the migration is verified by the code, and the
-                # revision run again over the columns must not undo it or promote anything else.
+            # A person who logs in after the migration is verified by the code, and the
+            # revision run again over the columns must not undo it or promote anything else.
+            # Rewound to 0030, the schema the revision was written for.
+            command.downgrade(config, "0030")
+            with engine.begin() as connection:
                 connection.execute(
                     text(
                         "UPDATE referrals SET stato = 'verificato', verified_at = now(), "
@@ -222,10 +225,10 @@ def test_migration_0030_keeps_what_counts_counting_and_runs_again() -> None:
                 connection.execute(text("UPDATE alembic_version SET version_num = '0029'"))
             command.upgrade(config, "head")
             with engine.begin() as connection:
-                assert _rows(connection) == {**expected, plain: ("verified", True, "accesso")}
+                assert _rows(connection) == {**expected, plain: ("verified", True, "login")}
                 connection.execute(
                     text(
-                        "UPDATE referrals SET stato = 'da_verificare', verified_at = NULL, "
+                        "UPDATE referrals SET status = 'to_verify', verified_at = NULL, "
                         "verified_via = NULL WHERE id = :i"
                     ),
                     {"i": plain},
@@ -236,7 +239,7 @@ def test_migration_0030_keeps_what_counts_counting_and_runs_again() -> None:
                     text(
                         "SELECT column_name FROM information_schema.columns "
                         "WHERE table_name = 'referrals' AND column_name IN "
-                        "('stato', 'verified_at', 'verified_via')"
+                        "('stato', 'status', 'verified_at', 'verified_via')"
                     )
                 ).all()
                 assert columns == []

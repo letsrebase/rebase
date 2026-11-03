@@ -78,9 +78,7 @@ def _three_channels(session: Session) -> dict[str, str]:
     )
     search = _signup(session, "admin@studio.it")
     FreelancerService(session).draft_from_signup(search, _draft(), an_admin(session), "web")
-    session.execute(
-        text("UPDATE freelancers SET origin = 'pigrocrm' WHERE filled_by = 'admin'")
-    )
+    session.execute(text("UPDATE freelancers SET origin = 'pigrocrm' WHERE filled_by = 'admin'"))
     session.commit()
     _signup(session, "lead@studio.it")
     return {"wizard": "wizard@studio.it", "admin": "admin@studio.it", "form": "lead@studio.it"}

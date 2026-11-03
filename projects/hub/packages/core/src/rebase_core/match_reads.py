@@ -280,7 +280,7 @@ class MatchReads:
         if content is None:
             raise NotFound("documento firmato", document_id)
         base = document_stem(document.kind, document.regime, document.number, document.text_version)
-        return ContractPdf(filename=f"{base}{'-signed' if signed else ''}.pdf", content=content)
+        return ContractPdf(filename=f"{base}{'-firmato' if signed else ''}.pdf", content=content)
 
     def _match_read(
         self,

@@ -26,26 +26,33 @@ def _parent(config: Config) -> str:
     return parent
 
 
-def _user(connection: Any) -> Any:
+def _user(connection: Any, *, legacy: bool = False) -> Any:
     user_id = uuid4()
+    columns = "nome, cognome, attivo" if legacy else "first_name, last_name, active"
     connection.execute(
         text(
-            "INSERT INTO users (id, email, nome, cognome, role, attivo) "
-            "VALUES (:id, :e, 'A', 'B', 'member', true)"
+            f"INSERT INTO users (id, email, {columns}, role) "
+            "VALUES (:id, :e, 'A', 'B', true, 'member')"
         ),
         {"id": user_id, "e": f"{user_id}@acme.it"},
     )
     return user_id
 
 
-def _freelancer(connection: Any, *, status: str = "new", cv: bytes | None = None) -> Any:
+def _freelancer(
+    connection: Any, *, status: str = "new", cv: bytes | None = None, legacy: bool = False
+) -> Any:
+    """`legacy` writes the row with the Italian names of the schema before 0049."""
     freelancer_id = uuid4()
+    columns, filled_by = (
+        ("stato, compilata_da", "persona") if legacy else ("status, filled_by", "person")
+    )
     connection.execute(
         text(
-            "INSERT INTO freelancers (id, user_id, stato, compilata_da, links, cv_bytes) "
-            "VALUES (:id, :u, :s, 'persona', '[]', :cv)"
+            f"INSERT INTO freelancers (id, user_id, {columns}, links, cv_bytes) "
+            f"VALUES (:id, :u, :s, '{filled_by}', '[]', :cv)"
         ),
-        {"id": freelancer_id, "u": _user(connection), "s": status, "cv": cv},
+        {"id": freelancer_id, "u": _user(connection, legacy=legacy), "s": status, "cv": cv},
     )
     return freelancer_id
 
@@ -81,12 +88,14 @@ def test_a_value_outside_its_closed_set_is_refused(hub_postgres: Any) -> None:
         engine = create_engine(url, future=True)
         with engine.begin() as connection:
             _freelancer(connection, status="active")
-        with pytest.raises(IntegrityError, match="ck_freelancers_stato"), engine.begin() as c:
+        with pytest.raises(IntegrityError, match="ck_freelancers_status"), engine.begin() as c:
             _freelancer(c, status="altro")
         engine.dispose()
 
 
 def test_a_legacy_row_outside_the_set_does_not_stop_the_upgrade(hub_postgres: Any) -> None:
+    """Upgraded as far as 0048: 0049 renames the CHECK and validates it, which a row outside
+    the set (never converted, since 0049 only maps the known values) would stop."""
     with hub_postgres.fresh_container() as container:
         url = container.get_connection_url()
         config = Config(str(INI_PATH))
@@ -95,8 +104,8 @@ def test_a_legacy_row_outside_the_set_does_not_stop_the_upgrade(hub_postgres: An
         command.downgrade(config, _parent(config))
         engine = create_engine(url, future=True)
         with engine.begin() as connection:
-            _freelancer(connection, status="vecchio")
-        command.upgrade(config, "head")
+            _freelancer(connection, status="vecchio", legacy=True)
+        command.upgrade(config, "0048")
         with engine.begin() as connection:
             enforced = connection.execute(
                 text(
@@ -105,7 +114,7 @@ def test_a_legacy_row_outside_the_set_does_not_stop_the_upgrade(hub_postgres: An
             ).scalar_one()
         assert enforced is False
         with pytest.raises(IntegrityError, match="ck_freelancers_stato"), engine.begin() as c:
-            _freelancer(c, status="altro")
+            _freelancer(c, status="altro", legacy=True)
         engine.dispose()
 
 

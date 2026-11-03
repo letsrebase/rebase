@@ -51,7 +51,7 @@ from rebase_core.match_rows import (
 )
 from rebase_core.match_words import check_sentences
 from rebase_core.models import Company, FreelancerFiscal, Match
-from rebase_core.regimes import OCCASIONAL, VAT_REGISTERED, Regime, text_name
+from rebase_core.regimes import OCCASIONAL, VAT_REGISTERED, Regime, file_name, text_name
 
 # Pydantic's own error types, whose messages are English; any other type is one the hub
 # raised itself (`PydanticCustomError`), with an Italian message.
@@ -224,7 +224,9 @@ class MatchDrafts:
             active = active_framework(self.session, freelancer.id, data.regime)
             fields = self.documents.letter_date(user, fiscal, data, None, active, today)
         rendered = renderer.render(name, fields)
-        return ContractPdf(filename=f"preview-{name}.pdf", content=rendered.pdf)
+        return ContractPdf(
+            filename=f"anteprima-{file_name(kind, data.regime)}.pdf", content=rendered.pdf
+        )
 
     def check(self, freelancer_id: UUID, payload: MatchCreate) -> MatchCheck:
         """What saving `payload` would do, in sentences: step 3 of «Crea match», and what

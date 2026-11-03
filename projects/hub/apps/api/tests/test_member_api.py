@@ -562,7 +562,7 @@ def test_the_guide_is_a_perk_of_the_session_and_not_a_public_file(
     assert answer.headers["content-type"] == "application/pdf"
     assert (
         answer.headers["content-disposition"]
-        == 'attachment; filename="rebase-guide-first-steps-freelance.pdf"'
+        == 'attachment; filename="rebase-guida-primi-passi-freelance.pdf"'
     )
     assert answer.content == GUIDE_PATH.read_bytes()
 
