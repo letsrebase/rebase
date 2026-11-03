@@ -23,7 +23,7 @@ def counted(value: int | Decimal, one: str, many: str) -> str:
     return f"{number(value)} {one if value == 1 else many}"
 
 
-def days(value: int) -> str:
+def format_days(value: int) -> str:
     return counted(value, "day", "days")
 
 
@@ -31,19 +31,19 @@ def work_units(value: int | Decimal) -> str:
     return counted(value, "work_unit", "work_units")
 
 
-def entries(value: int) -> str:
+def format_entries(value: int) -> str:
     return counted(value, "voce", "entries")
 
 
-def hours(value: int | Decimal) -> str:
+def format_hours(value: int | Decimal) -> str:
     return counted(value, "ora", "hours")
 
 
-def days_fa(value: int) -> str:
+def format_days_ago(value: int) -> str:
     """`ieri` for one day, `5 giorni fa` otherwise."""
-    return "ieri" if value == 1 else f"{days(value)} fa"
+    return "ieri" if value == 1 else f"{format_days(value)} fa"
 
 
 def ago(days: int) -> str:
     """`today` for none, then as `days_fa`."""
-    return "today" if days == 0 else days_fa(days)
+    return "today" if days == 0 else format_days_ago(days)

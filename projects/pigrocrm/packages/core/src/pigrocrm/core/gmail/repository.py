@@ -756,7 +756,7 @@ class GmailRepository:
         record that has no azienda of its own (a contact with no customer).
         """
         return self.session.execute(
-            select(LegalEntity).where(LegalEntity.predefinita.is_(True))
+            select(LegalEntity).where(LegalEntity.is_default.is_(True))
         ).scalar_one_or_none()
 
     def legal_entity_for_draft(self, draft: EmailDraft) -> LegalEntity | None:

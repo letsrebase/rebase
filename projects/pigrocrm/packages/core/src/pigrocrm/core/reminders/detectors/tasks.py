@@ -72,7 +72,7 @@ def _detections(ctx: DetectorContext, rows: list[Task], type_key: str) -> list[D
                 ),
                 title=title,
                 detail=f"{when}{where}",
-                entity="attivita",
+                entity="task",
                 entity_id=row.id,
                 legal_entity_id=links.legal_entity_id,
                 customer_id=links.customer_id,

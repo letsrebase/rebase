@@ -169,7 +169,7 @@ class GmailAttachmentService:
             # to hand over whole; there is nothing to fetch and nothing was lost, but
             # saying so is better than fetching an empty id and reporting a file with no
             # text.
-            raise Conflict(ENTITY, _WITHOUT_BYTE.format(nome=nome_file), nome_file=nome_file)
+            raise Conflict(ENTITY, _WITHOUT_BYTE.format(name=nome_file), nome_file=nome_file)
         fetched = self.transport.json(
             "GET",
             attachment_get_url(row.gmail_message_id, attachment_id),
@@ -223,7 +223,7 @@ class GmailAttachmentService:
             "nome_file",
             _WITHOUT_ATTACHMENTS
             if not present
-            else _NOT_FOUND.format(nome=wanted, present=", ".join(f"«{name}»" for name in present)),
+            else _NOT_FOUND.format(name=wanted, present=", ".join(f"«{name}»" for name in present)),
             expected=", ".join(present) or None,
         )
 

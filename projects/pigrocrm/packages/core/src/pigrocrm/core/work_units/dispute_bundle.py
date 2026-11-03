@@ -121,17 +121,17 @@ def _proof_label(unit: WorkUnit, approvals: dict[UUID, Approval]) -> str:
 def _register_lines(session: Session, detail: WorkUnitDetail) -> tuple[str, str, list[str]]:
     """The contract's days in the month of the day, the window a register of approvals is read
     in, each with the state it is in and the approval it rests on."""
-    first, end = month_bounds(detail.data.year, detail.data.month)
+    first, end = month_bounds(detail.date.year, detail.date.month)
     units = list(
         session.execute(
             select(WorkUnit)
             .where(
                 WorkUnit.contract_id == detail.contract_id,
-                WorkUnit.data >= first,
-                WorkUnit.data <= end,
+                WorkUnit.date >= first,
+                WorkUnit.date <= end,
                 WorkUnit.status.not_in(NEVER_HAPPENED),
             )
-            .order_by(WorkUnit.data, WorkUnit.id)
+            .order_by(WorkUnit.date, WorkUnit.id)
         ).scalars()
     )
     approval_ids = {unit.approval_id for unit in units if unit.approval_id is not None}
@@ -150,7 +150,7 @@ def _register_lines(session: Session, detail: WorkUnitDetail) -> tuple[str, str,
             total += unit.quantity
         mark = " <- questa giornata" if unit.id == detail.id else ""
         proof = _proof_label(unit, approvals)
-        lines.append(f"{unit.data.isoformat()}  {unit.quantity}  {unit.status}  ({proof}){mark}")
+        lines.append(f"{unit.date.isoformat()}  {unit.quantity}  {unit.status}  ({proof}){mark}")
     lines.append(
         f"Totale giornate del mese: {total} (approvate, lavorate, contestate, fatturate, pagate)"
     )
@@ -180,7 +180,7 @@ def _invoice_lines(session: Session, detail: WorkUnitDetail) -> list[str]:
 def render_summary(session: Session, detail: WorkUnitDetail, source_line: str) -> str:
     first, last, register = _register_lines(session, detail)
     parts: list[str] = [
-        f"FASCICOLO DELLA GIORNATA {detail.data.isoformat()}",
+        f"FASCICOLO DELLA GIORNATA {detail.date.isoformat()}",
         "",
         *_section(
             "Giornata",
@@ -262,7 +262,7 @@ def build_dispute_bundle(
             info.external_attr = 0o644 << 16
             archive.writestr(info, content)
     return (
-        f"fascicolo-giornata-{detail.data.isoformat()}-{str(detail.id)[:8]}.zip",
+        f"fascicolo-giornata-{detail.date.isoformat()}-{str(detail.id)[:8]}.zip",
         buffer.getvalue(),
     )
 

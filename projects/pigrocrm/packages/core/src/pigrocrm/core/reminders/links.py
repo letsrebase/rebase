@@ -20,7 +20,7 @@ NOTIFICATIONS_PATH = "/app/settings/notifications"
 
 _PATHS: dict[str, Callable[[UUID], str]] = {
     # An attività has no page of its own: the list opens it in a dialog.
-    "attivita": lambda id_: f"/app/activities?open={id_}",
+    "task": lambda id_: f"/app/activities?open={id_}",
     "deal": lambda id_: f"/app/deal/{id_}",
     "customer": lambda id_: f"/app/customers/{id_}",
     "invoice": lambda id_: f"/app/invoices/{id_}",

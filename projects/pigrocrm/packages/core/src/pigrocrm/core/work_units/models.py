@@ -18,7 +18,8 @@ evidence, a `proposals` accept path) can move it without this issue re-litigatin
 lifecycle it was built to serve.
 """
 
-from datetime import date, datetime
+import datetime as dt
+from datetime import datetime
 from typing import Any
 from uuid import UUID
 
@@ -149,7 +150,7 @@ APPROVAL_CHANNELS: tuple[str, ...] = (
     "certified_mail",
     "registered_mail",
     "courier",
-    "altro",
+    "other",
 )
 
 
@@ -159,7 +160,7 @@ class WorkUnit(Base, PrimaryKeyMixin, TimestampMixin):
 
     No `SoftDeleteMixin`: nothing here is ever hard-removed. `revoked` is the
     withdrawal state -- a day that should no longer count is moved there, not
-    deleted, which is also what frees its `(contract_id, data)` slot for a fresh
+    deleted, which is also what frees its `(contract_id, date)` slot for a fresh
     proposal (the partial unique index below).
 
     `quantity` is not validated against the rate card's own unit here -- "which one
@@ -172,11 +173,11 @@ class WorkUnit(Base, PrimaryKeyMixin, TimestampMixin):
     contract_id: Mapped[UUID] = mapped_column(
         ForeignKey("contracts.id"), nullable=False, index=True
     )
-    data: Mapped[date] = mapped_column(Date, nullable=False)
+    date: Mapped[dt.date] = mapped_column(Date, nullable=False)
     quantity: Mapped[Any] = mapped_column(Numeric(6, 2), nullable=False)
     description: Mapped[str] = mapped_column(Text, nullable=False)
     status: Mapped[str] = mapped_column(
-        String(40), nullable=False, default="proposed", server_default=text("'proposto'")
+        String(40), nullable=False, default="proposed", server_default=text("'proposed'")
     )
     # No explicit `ondelete`: RESTRICT is the schema-wide default, and mastro's own
     # reasoning applies unchanged -- a day already relying on an approval cannot have
@@ -195,18 +196,18 @@ class WorkUnit(Base, PrimaryKeyMixin, TimestampMixin):
     note: Mapped[str | None] = mapped_column(Text, default=None)
 
     __table_args__ = (
-        CheckConstraint(f"stato IN {WORK_UNIT_STATUSES!r}", name="ck_work_units_status"),
+        CheckConstraint(f"status IN {WORK_UNIT_STATUSES!r}", name="ck_work_units_status"),
         # At most one *live* day per contract per date -- mirroring
         # `0012_work_unit_state_machine.sql:40-42`. `rejected`/`revoked` are
         # excluded because those are exactly the two outcomes that leave a date free
         # for a fresh proposal; `non_billable` stays counted because it is still
         # real, recorded work, just not billable.
         Index(
-            "uq_work_units_contract_data_live",
+            "uq_work_units_contract_date_live",
             "contract_id",
-            "data",
+            "date",
             unique=True,
-            postgresql_where=text("stato NOT IN ('rifiutato', 'revocato')"),
+            postgresql_where=text("status NOT IN ('rejected', 'revoked')"),
         ),
     )
 
@@ -274,5 +275,5 @@ class Approval(Base, PrimaryKeyMixin, TimestampMixin):
     origin: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
 
     __table_args__ = (
-        CheckConstraint(f"canale IN {APPROVAL_CHANNELS!r}", name="ck_approvals_channel"),
+        CheckConstraint(f"channel IN {APPROVAL_CHANNELS!r}", name="ck_approvals_channel"),
     )

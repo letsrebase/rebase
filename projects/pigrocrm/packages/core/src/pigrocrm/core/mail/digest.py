@@ -102,7 +102,7 @@ def _invoice_line(inv: DigestInvoice, extra: str = "") -> str:
     plus whichever one extra fact the section is about (§3.1 item 3: «Numero, cliente,
     importo, stato»). Not yet escaped: the caller decides, once, whether this line is
     going into the text or the html."""
-    base = f"{inv.number} — {inv.customer} — {euro(inv.amount)} — {day_short(inv.data)}"
+    base = f"{inv.number} — {inv.customer} — {euro(inv.amount)} — {day_short(inv.date)}"
     return f"{base} — {extra}" if extra else base
 
 
@@ -269,11 +269,11 @@ def digest_mail(to: str, digest: WeeklyDigest, *, public_url: str) -> Mail:
     # 8. «Da fare»: the recipient's own commitments, late first and then the coming seven
     # days. The week's view only (REB-726): the daily summary of the reminders spec is
     # another mail.
-    attivita = digest.attivita
+    tasks = digest.tasks
     lines_fare: list[tuple[str, str]] = []
     for group, totale, delay in (
-        (attivita.overdue, attivita.overdue_total, True),
-        (attivita.in_week, attivita.in_week_total, False),
+        (tasks.overdue, tasks.overdue_total, True),
+        (tasks.in_week, tasks.in_week_total, False),
     ):
         for riga in group:
             when = day_short(riga.due_date)

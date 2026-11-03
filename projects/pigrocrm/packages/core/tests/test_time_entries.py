@@ -183,7 +183,7 @@ def test_an_entry_on_an_issued_invoice_freezes_the_named_fields(
     seeded_user_id: UUID,
     issued_invoice_line_id: UUID,
 ) -> None:
-    """§4.3's table. `note_interne` and `custom_fields` stay mutable because they appear
+    """§4.3's table. `internal_notes` and `custom_fields` stay mutable because they appear
     on no artefact; `description` is frozen and that is not obvious -- it is the column
     the client reads in the timesheet attached to the invoice, so changing it after
     issue would make the delivered document and the database say two different things.
@@ -214,8 +214,8 @@ def test_an_entry_on_an_issued_invoice_freezes_the_named_fields(
             service.update(entry.id, TimeEntryUpdate(**{field: value}), WRITER)
         assert excinfo.value.details["field"] == field
 
-    updated = service.update(entry.id, TimeEntryUpdate(note_interne="da ricontrollare"), WRITER)
-    assert updated.note_interne == "da ricontrollare"
+    updated = service.update(entry.id, TimeEntryUpdate(internal_notes="da ricontrollare"), WRITER)
+    assert updated.internal_notes == "da ricontrollare"
 
     with pytest.raises(Conflict):
         service.soft_delete(entry.id, WRITER)

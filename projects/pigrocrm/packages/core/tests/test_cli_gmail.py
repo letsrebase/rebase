@@ -167,7 +167,7 @@ def test_the_cycle_is_recorded_as_the_system_acting_for_the_mailbox_owner(
         actor_type, actor_id = connection.execute(
             text(
                 "select actor_type, actor_id from activities "
-                "where kind = 'gmail.sync_eseguito' order by occurred_at desc limit 1"
+                "where kind = 'gmail.sync_run' order by occurred_at desc limit 1"
             )
         ).one()
     assert actor_type == "system"

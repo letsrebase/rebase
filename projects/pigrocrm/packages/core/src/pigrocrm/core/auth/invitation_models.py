@@ -28,7 +28,7 @@ class Invitation(Base, PrimaryKeyMixin, TimestampMixin):
     __tablename__ = "invitations"
 
     email: Mapped[str] = mapped_column(String(320), index=True, nullable=False)
-    nome: Mapped[str | None] = mapped_column(String(200), default=None)
+    name: Mapped[str | None] = mapped_column(String(200), default=None)
     role: Mapped[str] = mapped_column(String(20), nullable=False)
     token_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True, nullable=False)
     invited_by: Mapped[UUID] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)

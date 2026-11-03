@@ -111,7 +111,7 @@ class AutomationConfigService:
             # every save is an audit entry nobody reads. `!=` and not `is not`, because the
             # threshold is an int and two equal ints are not promised to be one object.
             if current != value:
-                changes[field] = {"da": current, "a": value}
+                changes[field] = {"from": current, "to": value}
                 setattr(row, field, value)
 
         if changes:

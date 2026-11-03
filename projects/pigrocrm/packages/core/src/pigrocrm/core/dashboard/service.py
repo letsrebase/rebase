@@ -90,7 +90,7 @@ _BUSINESS_ENTITIES: frozenset[str] = frozenset(
         "invoice",
         "contract",
         "contract_expense",
-        "attivita",
+        "task",
         "work_unit",
         "approval",
         "proposal",
@@ -378,7 +378,7 @@ class DashboardService:
                     link=_CONCENTRATION_LINK,
                 ),
             ],
-            recent_task=serve_activities(self.session, self._recent_feed(actor)),
+            recent_activity=serve_activities(self.session, self._recent_feed(actor)),
         )
 
     def get_receivables_dashboard(

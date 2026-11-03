@@ -19,7 +19,7 @@ class User(Base, PrimaryKeyMixin, TimestampMixin):
     # `None` for a user who has only ever entered with a link by mail (spec 2026-09-12
     # §6.2); `UserService.authenticate` refuses them exactly like a wrong password.
     password_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    nome: Mapped[str] = mapped_column(String(200), nullable=False)
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
     role: Mapped[str] = mapped_column(String(20), nullable=False, default="collaborator")
     active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     # Whether the weekly report reaches this person (spec 2026-09-16 §3.3). On by
@@ -83,5 +83,5 @@ class UserLegalEntity(Base):
         ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
     )
     legal_entity_id: Mapped[UUID] = mapped_column(
-        ForeignKey("emitter_profile.id", ondelete="CASCADE"), primary_key=True
+        ForeignKey("legal_entities.id", ondelete="CASCADE"), primary_key=True
     )

@@ -57,7 +57,7 @@ SLUG = "studio-esempio"
 
 _PREFIX = "DIGESTRUN"
 _ENTITY = "digest"
-_KIND = "digest.inviato"
+_KIND = "digest.sent"
 
 # The five sections this corpus fills: «da emettere» (six unbilled hours), «emesse» (the
 # invoice of the week), «le ore», «in pipeline» (one open deal in one stage) and «da

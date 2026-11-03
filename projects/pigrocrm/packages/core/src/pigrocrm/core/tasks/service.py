@@ -34,7 +34,7 @@ from pigrocrm.core.tasks.schemas import (
     TaskUpdate,
 )
 
-ENTITY: EntityType = "attivita"
+ENTITY: EntityType = "task"
 
 # The two closed states, and the one open one. As a frozenset rather than repeated
 # literals because three methods ask the same question.
@@ -71,7 +71,7 @@ class TaskService:
     def _check_reference(self, payload: dict[str, Any]) -> None:
         """At most one reference, and it must exist.
 
-        The database has the same check (`ck_tasks_a_only_reference`) and is the
+        The database has the same check (`ck_tasks_single_reference`) and is the
         line that holds under concurrency; this is the one that turns a syntactically
         valid but unknown UUID into this project's own `NotFound` instead of a raw
         `ForeignKeyViolation` arriving from `flush()`.
@@ -229,7 +229,7 @@ class TaskService:
             )
         row.status = "completed"
         row.completed_at = today_local()
-        self.activities.record(ENTITY, row.id, "completed", actor, {"il": row.completed_at})
+        self.activities.record(ENTITY, row.id, "completed", actor, {"at": row.completed_at})
         self.session.commit()
         return TaskRead.model_validate(row)
 
@@ -269,7 +269,7 @@ class TaskService:
         row.status = "open"
         row.completed_at = None
         self._flush_or_conflict(row.id)
-        self.activities.record(ENTITY, row.id, "riaperta", actor)
+        self.activities.record(ENTITY, row.id, "reopened", actor)
         self.session.commit()
         return TaskRead.model_validate(row)
 

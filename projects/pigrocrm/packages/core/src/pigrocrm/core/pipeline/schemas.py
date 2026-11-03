@@ -39,7 +39,7 @@ POSITION_MAX = 100_000
 
 
 class PipelineStageCreate(BaseModel):
-    nome: SafeStr = Field(max_length=NAME_MAX_LENGTH)
+    name: SafeStr = Field(max_length=NAME_MAX_LENGTH)
     position: int = Field(ge=POSITION_MIN, le=POSITION_MAX)
     default_probability: int = 0
     type: StageKind = "open"
@@ -54,7 +54,7 @@ class PipelineStageUpdate(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    nome: SafeStr | None = Field(default=None, max_length=NAME_MAX_LENGTH)
+    name: SafeStr | None = Field(default=None, max_length=NAME_MAX_LENGTH)
     position: int | None = Field(default=None, ge=POSITION_MIN, le=POSITION_MAX)
     default_probability: int | None = None
     type: StageKind | None = None
@@ -64,7 +64,7 @@ class PipelineStageRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
-    nome: str
+    name: str
     position: int
     default_probability: int
     type: StageKind

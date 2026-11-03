@@ -75,8 +75,8 @@ class TimeEntryRepository:
         return list(
             self.session.execute(
                 self._live_for_deal(deal_id)
-                .where(TimeEntry.data >= da, TimeEntry.data <= a)
-                .order_by(TimeEntry.data, TimeEntry.created_at)
+                .where(TimeEntry.date >= da, TimeEntry.date <= a)
+                .order_by(TimeEntry.date, TimeEntry.created_at)
             ).scalars()
         )
 
@@ -116,13 +116,13 @@ class TimeEntryRepository:
         two totals of the same hours begin to disagree.
         """
         stmt = (
-            select(TimeEntry.data, func.sum(TimeEntry.hours))
+            select(TimeEntry.date, func.sum(TimeEntry.hours))
             .where(
                 TimeEntry.deleted_at.is_(None),
-                TimeEntry.data >= da,
-                TimeEntry.data <= a,
+                TimeEntry.date >= da,
+                TimeEntry.date <= a,
             )
-            .group_by(TimeEntry.data)
+            .group_by(TimeEntry.date)
         )
         if legal_entity_id is not None:
             # An entry's azienda is its deal's (REB-623, REB-630): the same subquery
@@ -208,9 +208,9 @@ class TimeEntryRepository:
         if query.user_id is not None:
             stmt = stmt.where(TimeEntry.user_id == query.user_id)
         if query.da is not None:
-            stmt = stmt.where(TimeEntry.data >= query.da)
+            stmt = stmt.where(TimeEntry.date >= query.da)
         if query.a is not None:
-            stmt = stmt.where(TimeEntry.data <= query.a)
+            stmt = stmt.where(TimeEntry.date <= query.a)
         if query.billable is not None:
             stmt = stmt.where(TimeEntry.billable.is_(query.billable))
         if query.invoiced is not None:
@@ -234,12 +234,12 @@ class TimeEntryRepository:
                     expected="il cursore di una pagina",
                 )
             stmt = stmt.where(
-                (TimeEntry.data < anchor.data)
-                | ((TimeEntry.data == anchor.data) & (TimeEntry.id < anchor.id))
+                (TimeEntry.date < anchor.date)
+                | ((TimeEntry.date == anchor.date) & (TimeEntry.id < anchor.id))
             )
         return list(
             self.session.execute(
-                stmt.order_by(TimeEntry.data.desc(), TimeEntry.id.desc()).limit(query.limit + 1)
+                stmt.order_by(TimeEntry.date.desc(), TimeEntry.id.desc()).limit(query.limit + 1)
             ).scalars()
         )
 
@@ -284,9 +284,9 @@ class CostRepository:
         if query.category_id is not None:
             stmt = stmt.where(Cost.category_id == query.category_id)
         if query.da is not None:
-            stmt = stmt.where(Cost.data >= query.da)
+            stmt = stmt.where(Cost.date >= query.da)
         if query.a is not None:
-            stmt = stmt.where(Cost.data <= query.a)
+            stmt = stmt.where(Cost.date <= query.a)
         if query.custom:
             stmt = stmt.where(Cost.custom_fields.contains(query.custom))
         if query.cursor is not None:
@@ -296,10 +296,10 @@ class CostRepository:
                     "cost", "cursor", "cursore sconosciuto", expected="il cursore di una pagina"
                 )
             stmt = stmt.where(
-                (Cost.data < anchor.data) | ((Cost.data == anchor.data) & (Cost.id < anchor.id))
+                (Cost.date < anchor.date) | ((Cost.date == anchor.date) & (Cost.id < anchor.id))
             )
         return list(
             self.session.execute(
-                stmt.order_by(Cost.data.desc(), Cost.id.desc()).limit(query.limit + 1)
+                stmt.order_by(Cost.date.desc(), Cost.id.desc()).limit(query.limit + 1)
             ).scalars()
         )

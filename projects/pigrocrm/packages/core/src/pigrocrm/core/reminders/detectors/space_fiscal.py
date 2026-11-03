@@ -70,7 +70,7 @@ def _load_legal_entities(ctx: DetectorContext) -> _LegalEntities:
             FiscalProfile.pack_id == PACK_IT_FLAT_RATE,
             FiscalProfile.regime_code == FLAT_RATE.code,
         )
-        .order_by(LegalEntity.predefinita.desc(), LegalEntity.nome, LegalEntity.id)
+        .order_by(LegalEntity.is_default.desc(), LegalEntity.name, LegalEntity.id)
     )
     found: list[tuple[LegalEntity, FiscalPack]] = []
     for legal_entity, profile in rows:
@@ -148,7 +148,7 @@ def detect_approaching(ctx: DetectorContext) -> list[Detection]:
                 subject_id=legal_entity.id,
                 measure=float(percent),
                 recipients=recipients,
-                title=f"Soglia del forfettario al {percent}%: {legal_entity.nome}",
+                title=f"Soglia del forfettario al {percent}%: {legal_entity.name}",
                 detail=detail + _immediate_note(statuses.get(IMMEDIATE_CEILING)),
                 entity="fiscal",
                 entity_id=legal_entity.id,
@@ -190,7 +190,7 @@ def detect_overrun(ctx: DetectorContext) -> list[Detection]:
                 subject_id=uuid5(legal_entity.id, str(year)),
                 measure=float(percent),
                 recipients=recipients,
-                title=f"A fine anno oltre la soglia del forfettario: {legal_entity.nome}",
+                title=f"A fine anno oltre la soglia del forfettario: {legal_entity.name}",
                 detail=(
                     f"Fra incassato, da incassare e bozze il {year} arriva a {euro(projected)}, "
                     f"il {percent}% della soglia di {euro(ceiling.threshold)}" + note

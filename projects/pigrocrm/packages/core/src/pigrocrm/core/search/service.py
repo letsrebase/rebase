@@ -47,13 +47,13 @@ class SearchService:
         """
         # `strip()` and nothing else. No lowercasing here: the scoring expression
         # lowercases on both sides where it needs to, and `similarity()` normalises
-        # internally, so a second normalisation would only make the returned `deadline`
+        # internally, so a second normalisation would only make the returned `term`
         # differ from what the user typed.
-        term = query.deadline.strip()
+        term = query.term.strip()
         limit = query.limit
         legal_entity = query.legal_entity_id
         return SearchResults(
-            deadline=term,
+            term=term,
             groups=[
                 self.repo.customers(term, limit, legal_entity),
                 self.repo.people(term, limit, legal_entity),
@@ -67,6 +67,6 @@ class SearchService:
                 # Sixth and last (REB-723): what is still to be done about all of the
                 # above. It takes no azienda: an attività has none of its own, the same
                 # reason the calendar keeps them whatever azienda is selected.
-                self.repo.attivita(term, limit),
+                self.repo.tasks(term, limit),
             ],
         )

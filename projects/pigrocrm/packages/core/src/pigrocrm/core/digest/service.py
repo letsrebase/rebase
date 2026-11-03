@@ -374,7 +374,7 @@ class DigestService:
             number=number_complete(invoice.year or 0, invoice.number or 0),
             customer=nomi.get(invoice.customer_id, ""),
             amount=invoice.total,
-            data=day,
+            date=day,
             status=invoice.status,
             payment_status=invoice.payment_status,
             # `transmitted_externally_at` is the day the document was deposited with the

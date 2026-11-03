@@ -33,7 +33,7 @@ class FiscalProfile(Base, PrimaryKeyMixin, TimestampMixin):
     __tablename__ = "fiscal_profile"
 
     legal_entity_id: Mapped[UUID] = mapped_column(
-        ForeignKey("emitter_profile.id"), nullable=False, unique=True
+        ForeignKey("legal_entities.id"), nullable=False, unique=True
     )
     # RF01..RF19, as FPR12's RegimeFiscaleType enumerates them; `NULL` on a profile
     # whose `pack_id` is `non-it` (REB-619), since the codes mean nothing abroad.

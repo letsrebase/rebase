@@ -135,7 +135,7 @@ class DocumentRepository:
         # `invoices`: an invoice this session cannot see (another azienda's, named on a
         # document it can) must still answer, or the guard would fail open (REB-634).
         return self.session.execute(
-            text("SELECT tipo_fattura_del_pdf(:document_id)"), {"document_id": document_id}
+            text("SELECT invoice_type_of_pdf(:document_id)"), {"document_id": document_id}
         ).scalar_one_or_none()
 
     def pending_offers(

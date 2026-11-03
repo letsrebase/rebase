@@ -65,7 +65,7 @@ FACTOR_DECIMAL_PLACES = 6
 
 
 class DealCreate(BaseModel):
-    nome: SafeStr = Field(max_length=NAME_MAX_LENGTH)
+    name: SafeStr = Field(max_length=NAME_MAX_LENGTH)
     customer_id: UUID
     pipeline_stage_id: UUID | None = None
     expected_value: Decimal | None = Field(
@@ -99,7 +99,7 @@ class DealUpdate(BaseModel):
     # generic update would bypass the validation and probability-settling logic that
     # `create`/`move_stage` exist to enforce. `move_stage` is the only supported way
     # to change a deal's stage.
-    nome: SafeStr | None = Field(default=None, max_length=NAME_MAX_LENGTH)
+    name: SafeStr | None = Field(default=None, max_length=NAME_MAX_LENGTH)
     expected_value: Decimal | None = Field(
         default=None, max_digits=VALUE_MAX_DIGITS, decimal_places=DECIMAL_PLACES
     )
@@ -124,7 +124,7 @@ class DealRead(BaseModel):
     id: UUID
     # The customer's azienda when the deal was created (REB-623); read-only.
     legal_entity_id: UUID
-    nome: str
+    name: str
     customer_id: UUID
     pipeline_stage_id: UUID
     expected_value: Decimal | None
@@ -167,7 +167,7 @@ DEAL_SORTS = SortWhitelist(
     specs=(
         SortSpec(key="created_at", column=Deal.created_at, kind="datetime", nullable=False),
         SortSpec(key="updated_at", column=Deal.updated_at, kind="datetime", nullable=False),
-        SortSpec(key="nome", column=Deal.nome, kind="text", nullable=False),
+        SortSpec(key="name", column=Deal.name, kind="text", nullable=False),
     ),
     default_key="created_at",
 )

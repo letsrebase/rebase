@@ -97,7 +97,7 @@ class Customer(Base, PrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
     # moves nothing already created (§1.7). The column default is the space's default
     # azienda, for a row built without one; the service always names it.
     legal_entity_id: Mapped[UUID] = mapped_column(
-        ForeignKey("emitter_profile.id"),
+        ForeignKey("legal_entities.id"),
         nullable=False,
         index=True,
         default=default_legal_entity_id,

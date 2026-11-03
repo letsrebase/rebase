@@ -125,7 +125,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     settings = get_settings()
     match args.command:
         case "createadmin":
-            return createadmin(settings, args.email, args.nome)
+            return createadmin(settings, args.email, args.name)
         case "resetpassword":
             return resetpassword(settings, args.email)
         case "seed-templates":

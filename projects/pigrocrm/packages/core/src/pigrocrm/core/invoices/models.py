@@ -41,7 +41,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 from pigrocrm.core.db import Base, PrimaryKeyMixin, SoftDeleteMixin, TimestampMixin
 from pigrocrm.core.legal_entities.models import default_legal_entity_id
 
-PROFORMA_SEQUENCE_NAME = "proforma_riferimento_seq"
+PROFORMA_SEQUENCE_NAME = "proforma_reference_seq"
 
 # Attached to the metadata, not only created by the migration. The test suite builds its
 # schema with `Base.metadata.create_all` (packages/core/tests/conftest.py), so a sequence
@@ -67,7 +67,7 @@ class Invoice(Base, PrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
     # until the customer chain of milestone 3 decides it); the column default is for a
     # row built without one, see `default_legal_entity_id`.
     legal_entity_id: Mapped[UUID] = mapped_column(
-        ForeignKey("emitter_profile.id"),
+        ForeignKey("legal_entities.id"),
         nullable=False,
         index=True,
         default=default_legal_entity_id,
@@ -149,7 +149,7 @@ class Invoice(Base, PrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
     origin_proforma_id: Mapped[UUID | None] = mapped_column(ForeignKey("invoices.id"), default=None)
     cancelled_at: Mapped[date | None] = mapped_column(Date, default=None)
     cancellation_reason: Mapped[str | None] = mapped_column(String(500), default=None)
-    note_interne: Mapped[str | None] = mapped_column(Text, default=None)
+    internal_notes: Mapped[str | None] = mapped_column(Text, default=None)
     custom_fields: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
     # `'external'` for a row registered by slice 9's import: issued elsewhere, numbered
     # elsewhere, and therefore without an XML or a PDF this CRM produced. `NULL` is the
@@ -164,59 +164,59 @@ class Invoice(Base, PrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
         # constraint and not a convention of the service: `stato = 'consumata'` on a
         # `invoice` is not storable at all.
         CheckConstraint(
-            "(tipo = 'fattura' AND stato IN ('bozza', 'emessa', 'annullata')) "
-            "OR (tipo = 'proforma' AND stato IN ('bozza', 'confermata', 'consumata'))",
+            "(type = 'invoice' AND status IN ('draft', 'issued', 'cancelled')) "
+            "OR (type = 'proforma' AND status IN ('draft', 'confirmed', 'consumed'))",
             name="ck_invoices_type_status",
         ),
         CheckConstraint(
-            "(anno IS NULL) = (numero IS NULL)", name="ck_invoices_year_number_together"
+            "(year IS NULL) = (number IS NULL)", name="ck_invoices_year_number_together"
         ),
         CheckConstraint(
-            "numero IS NULL OR (tipo = 'fattura' AND stato <> 'bozza')",
+            "number IS NULL OR (type = 'invoice' AND status <> 'draft')",
             name="ck_invoices_number_requires_issued_invoice",
         ),
-        CheckConstraint("numero IS NULL OR numero > 0", name="ck_invoices_number_positive"),
+        CheckConstraint("number IS NULL OR number > 0", name="ck_invoices_number_positive"),
         CheckConstraint(
-            "riferimento IS NULL OR tipo = 'proforma'",
+            "reference IS NULL OR type = 'proforma'",
             name="ck_invoices_reference_only_on_proforma",
         ),
         CheckConstraint(
-            "(snapshot IS NULL) = (snapshot_versione IS NULL)",
+            "(snapshot IS NULL) = (snapshot_version IS NULL)",
             name="ck_invoices_snapshot_together",
         ),
         CheckConstraint(
-            "(annullata_il IS NULL AND motivo_annullamento IS NULL) "
-            "OR (stato = 'annullata' AND annullata_il IS NOT NULL "
-            "AND motivo_annullamento IS NOT NULL)",
+            "(cancelled_at IS NULL AND cancellation_reason IS NULL) "
+            "OR (status = 'cancelled' AND cancelled_at IS NOT NULL "
+            "AND cancellation_reason IS NOT NULL)",
             name="ck_invoices_cancellation_complete",
         ),
         CheckConstraint(
-            "data_incasso IS NULL OR stato_pagamento = 'incassato'",
+            "payment_date IS NULL OR payment_status = 'paid'",
             name="ck_invoices_collection_requires_state",
         ),
         # A half period is not a period: the XML writer would have to invent the other
         # end. Two constraints rather than one so the violation names which rule broke.
         CheckConstraint(
-            "(competenza_da IS NULL) = (competenza_a IS NULL)",
+            "(accrual_from IS NULL) = (accrual_to IS NULL)",
             name="ck_invoices_accrual_together",
         ),
         CheckConstraint(
-            "competenza_da IS NULL OR competenza_da <= competenza_a",
+            "accrual_from IS NULL OR accrual_from <= accrual_to",
             name="ck_invoices_accrual_ordered",
         ),
         # An order's date, CIG and CUP hang on its number: `IdDocumento` is the one
         # mandatory child of `DatiOrdineAcquisto`, so a CIG alone is a fact with nothing
         # to belong to (REB-693).
         CheckConstraint(
-            "ordine_numero IS NOT NULL "
-            "OR (ordine_data IS NULL AND ordine_cig IS NULL AND ordine_cup IS NULL)",
+            "purchase_order_number IS NOT NULL "
+            "OR (purchase_order_date IS NULL AND purchase_order_tender_code IS NULL AND purchase_order_project_code IS NULL)",
             name="ck_invoices_order_needs_number",
         ),
         # Spec 4: what never consumed a number is deletable; what consumed one is not,
         # not even by direct SQL -- and neither is a `consumed` proforma, which is the
         # antecedent of an immutable document.
         CheckConstraint(
-            "deleted_at IS NULL OR (numero IS NULL AND stato <> 'consumata')",
+            "deleted_at IS NULL OR (number IS NULL AND status <> 'consumed')",
             name="ck_invoices_no_delete_once_consumed",
         ),
         # The net under the row lock, not the mechanism (spec 3): it turns any future
@@ -231,7 +231,7 @@ class Invoice(Base, PrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
             "year",
             "number",
             unique=True,
-            postgresql_where=text("numero IS NOT NULL"),
+            postgresql_where=text("number IS NOT NULL"),
         ),
         # The lookup path the unique index above no longer offers: a number searched
         # across the space's aziende (`SearchRepository._invoices_by_number`, «2026/7»
@@ -242,7 +242,7 @@ class Invoice(Base, PrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
             "ix_invoices_year_number",
             "year",
             "number",
-            postgresql_where=text("numero IS NOT NULL"),
+            postgresql_where=text("number IS NOT NULL"),
         ),
         Index("ix_invoices_custom_fields", "custom_fields", postgresql_using="gin"),
         # The tenth trigram index (spec 6 §8.3), and the one that lets the global palette
@@ -307,10 +307,10 @@ class InvoiceLine(Base, PrimaryKeyMixin, TimestampMixin):
         # rejected. The invalid combination is therefore not storable, so it is not
         # exportable either.
         CheckConstraint(
-            "(aliquota_iva = 0) = (natura IS NOT NULL)",
+            "(vat_rate = 0) = (vat_nature IS NOT NULL)",
             name="ck_invoice_lines_vat_nature_agrees_with_rate",
         ),
-        CheckConstraint("numero_linea >= 1", name="ck_invoice_lines_number_positive"),
+        CheckConstraint("line_number >= 1", name="ck_invoice_lines_number_positive"),
     )
 
 
@@ -334,13 +334,13 @@ class InvoiceCounter(Base):
     __tablename__ = "invoice_counters"
 
     legal_entity_id: Mapped[UUID] = mapped_column(
-        ForeignKey("emitter_profile.id"), primary_key=True, default=default_legal_entity_id
+        ForeignKey("legal_entities.id"), primary_key=True, default=default_legal_entity_id
     )
     year: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=False)
     last_number: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
     __table_args__ = (
-        CheckConstraint("ultimo_numero >= 0", name="ck_invoice_counters_non_negative"),
+        CheckConstraint("last_number >= 0", name="ck_invoice_counters_non_negative"),
     )
 
 
@@ -358,7 +358,7 @@ class InvoiceRegisterGap(Base, PrimaryKeyMixin):
     __tablename__ = "invoice_register_gaps"
 
     legal_entity_id: Mapped[UUID] = mapped_column(
-        ForeignKey("emitter_profile.id"),
+        ForeignKey("legal_entities.id"),
         nullable=False,
         index=True,
         default=default_legal_entity_id,
@@ -378,7 +378,7 @@ class InvoiceRegisterGap(Base, PrimaryKeyMixin):
             "number",
             name="uq_invoice_register_gaps_legal_entity_year_number",
         ),
-        CheckConstraint("numero >= 1", name="ck_invoice_register_gaps_number_positive"),
+        CheckConstraint("number >= 1", name="ck_invoice_register_gaps_number_positive"),
     )
 
 

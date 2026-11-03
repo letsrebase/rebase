@@ -150,7 +150,7 @@ class DiscoveredCorrespondent(BaseModel):
 
     address: str
     # The display name the headers gave, or "" when they never did.
-    nome: str
+    name: str
     messages: int
     # In how many conversations the address took part, which is what a person reads off
     # a customer's page; `messages` stays the tally the order of the list follows.
@@ -167,7 +167,7 @@ class SuggestedPerson(BaseModel):
 
     address: str
     # The display name the headers gave, or "" when they never did.
-    nome: str
+    name: str
     # Already a Person in this CRM: importing leaves them alone.
     already_in_directory: bool
 
@@ -181,7 +181,7 @@ class SuggestedCustomer(BaseModel):
 
     domain: str
     # A company name guessed from the domain, for the person to correct before importing.
-    nome: str
+    name: str
     # Conversations (Gmail threads) the mailbox wrote in with somebody at this domain.
     conversations: int
     last_message: datetime | None

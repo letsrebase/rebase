@@ -59,7 +59,7 @@ def release_days_of_invoice(session: Session, invoice_id: UUID, actor: Actor, re
                 InvoiceLine.invoice_id == invoice_id,
                 WorkUnit.status.in_(("invoiced", "worked")),
             )
-            .order_by(WorkUnit.data, WorkUnit.id)
+            .order_by(WorkUnit.date, WorkUnit.id)
             .with_for_update(of=WorkUnit)
             .execution_options(populate_existing=True)
         )

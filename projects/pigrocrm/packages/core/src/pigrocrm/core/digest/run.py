@@ -71,7 +71,7 @@ from pigrocrm.core.timetracking.models import TimeEntry
 # meant to become one: nobody adds custom fields to a mail that was sent. `activities`
 # accepts any string, and `attivita`/`google_account` are the precedent.
 ENTITY = "digest"
-KIND = "digest.inviato"
+KIND = "digest.sent"
 
 Outcome = Literal["sent", "empty", "already_sent", "no_recipient", "skipped"]
 
@@ -148,7 +148,7 @@ def sections_with_lines(digest: WeeklyDigest) -> int:
             digest.hours is not None,
             bool(digest.pipeline or digest.deal_mossi or digest.offers_pending),
             bool(digest.signals),
-            not digest.attivita.empty,
+            not digest.tasks.empty,
         ]
     )
 
@@ -322,7 +322,7 @@ class DigestRun:
             for user_id, address in group:
                 # «Da fare» is the person's, so it is set on a copy per address; the rest
                 # of the report is shared by the scope's group.
-                his = digest.model_copy(update={"attivita": service.task_of(user_id)})
+                his = digest.model_copy(update={"tasks": service.task_of(user_id)})
                 sections = max(sections, sections_with_lines(his))
                 # `send` answers `False` for a refusal rather than raising, so only the
                 # addresses the provider took are recorded, counted and reported.

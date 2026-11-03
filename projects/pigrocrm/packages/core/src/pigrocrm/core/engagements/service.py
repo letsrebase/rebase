@@ -113,7 +113,7 @@ class SpaceUnreachable(Exception):
 def full_name(freelancer: EngagementFreelancer) -> str:
     """`Ada Lovelace`, cut to the signup's 200 characters: the space's name and its
     admin's, the same on a space the door opens and on an admin it completes."""
-    return f"{freelancer.nome} {freelancer.last_name}"[:SPACE_NAME_MAX_LENGTH]
+    return f"{freelancer.first_name} {freelancer.last_name}"[:SPACE_NAME_MAX_LENGTH]
 
 
 def deal_name(number: str, role: str, legal_entity: str) -> str:
@@ -253,7 +253,7 @@ class EngagementService:
                 on_invoice.setdefault(invoice_id, []).append(entry.hours)
             days.append(
                 ReportEntry(
-                    data=entry.data,
+                    date=entry.date,
                     hours=entry.hours,
                     description=entry.description,
                     billable=entry.billable,
@@ -267,8 +267,8 @@ class EngagementService:
         newest_first = sorted(
             invoices.values(),
             key=lambda pair: (
-                pair[0].data is not None,
-                pair[0].data or date.min,
+                pair[0].date is not None,
+                pair[0].date or date.min,
                 pair[1],
                 pair[0].id,
             ),
@@ -279,7 +279,7 @@ class EngagementService:
             deal_url=deal_url(self.settings, tenant.slug, deal_id),
             deal=ReportDeal(
                 id=deal.id,
-                nome=deal.nome,
+                name=deal.name,
                 hourly_rate=deal.hourly_rate,
                 budgeted_hours=deal.budgeted_hours,
                 status=status,
@@ -333,7 +333,7 @@ class EngagementService:
             )
             entries.extend(page.items)
             if page.next_cursor is None:
-                return sorted(entries, key=lambda e: (e.data, e.created_at, e.id))
+                return sorted(entries, key=lambda e: (e.date, e.created_at, e.id))
             cursor = page.next_cursor
 
     @staticmethod
@@ -375,7 +375,7 @@ class EngagementService:
                     number=number,
                     status=status,
                     payment_status=payment,
-                    data=issue,
+                    date=issue,
                 ),
                 created,
             )
@@ -513,8 +513,8 @@ class EngagementService:
         candidate's, is the caller's. The welcome the signup sends is not sent here but
         by `_ensure` once the deal exists, from the row's `space_created`."""
         tenants = TenantService(registry, self.settings)
-        nome = full_name(freelancer)
-        base = slugify(nome) or FALLBACK_SLUG
+        name = full_name(freelancer)
+        base = slugify(name) or FALLBACK_SLUG
         for n in range(1, SLUG_SUFFIX_MAX + 1):
             suffix = "" if n == 1 else f"-{n}"
             candidate = base if n == 1 else f"{base[: SLUG_MAX - len(suffix)]}{suffix}"
@@ -524,7 +524,7 @@ class EngagementService:
                 created = tenants.provision(
                     TenantSignup(
                         slug=candidate,
-                        nome=nome,
+                        name=name,
                         email=email,
                         member=True,
                     )
@@ -554,7 +554,7 @@ class EngagementService:
         registry row does not, and without it the deal would have no owner and the hub
         would mail a link nobody can enter."""
         UserService(space).create(
-            UserCreate(email=email, password=None, nome=full_name(freelancer), role="admin"),
+            UserCreate(email=email, password=None, name=full_name(freelancer), role="admin"),
             Actor.system(),
         )
 
@@ -642,7 +642,7 @@ class EngagementService:
         owner = UserRepository(space).get_by_email(email)
         created = DealService(space).create(
             DealCreate(
-                nome=deal_name(letter.number, letter.role, letter.legal_entity),
+                name=deal_name(letter.number, letter.role, letter.legal_entity),
                 customer_id=customer_id,
                 hourly_rate=(letter.fee / HOURS_PER_DAY).quantize(RATE_PLACES),
                 budgeted_hours=(

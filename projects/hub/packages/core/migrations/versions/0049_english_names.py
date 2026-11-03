@@ -1005,12 +1005,28 @@ def _rename_indexes(forward: bool) -> None:
         op.execute(f"ALTER INDEX IF EXISTS {source} RENAME TO {target}")
 
 
+# Server defaults that spell a closed value: (table, new column, old default, new default).
+DEFAULTS: tuple[tuple[str, str, str, str], ...] = (
+    ("contract_documents", "regime", "partita_iva", "vat_registered"),
+    ("referral_rewards", "status", "da_confermare", "to_confirm"),
+    ("referrals", "status", "da_verificare", "to_verify"),
+)
+
+
+def _set_defaults(forward: bool) -> None:
+    for table, column, old, new in DEFAULTS:
+        op.execute(
+            f"ALTER TABLE {table} ALTER COLUMN {column} SET DEFAULT '{new if forward else old}'"
+        )
+
+
 def upgrade() -> None:
     conn = op.get_bind()
     _drop_checks(OLD_CHECKS)
     _rename_columns(forward=True)
     op.execute("ALTER TABLE contract_documents ALTER COLUMN regime TYPE VARCHAR(16)")
     _rewrite_values(forward=True)
+    _set_defaults(forward=True)
     for table, column, forward, _ in _json_columns():
         _rewrite(conn, table, column, forward)
     _rewrite_payloads(conn, forward=True)
@@ -1025,6 +1041,7 @@ def downgrade() -> None:
     _rewrite_payloads(conn, forward=False)
     for table, column, _, backward in reversed(_json_columns()):
         _rewrite(conn, table, column, backward)
+    _set_defaults(forward=False)
     _rewrite_values(forward=False)
     op.execute("ALTER TABLE contract_documents ALTER COLUMN regime TYPE VARCHAR(12)")
     _rename_columns(forward=False)

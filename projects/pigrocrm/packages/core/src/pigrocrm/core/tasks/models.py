@@ -52,28 +52,28 @@ class Task(Base, PrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
     commitment can be about nobody but you.
     """
 
-    __tablename__ = "attivita"
+    __tablename__ = "tasks"
     __table_args__ = (
         # `completed_at` is set when, and only when, the state says so -- the spec's
         # own wording. Written as an equivalence rather than two half-checks so that
         # neither direction can be forgotten: a completed activity with no date and a
         # date on an open one are the same defect seen from two sides.
         CheckConstraint(
-            "(stato = 'completata') = (completata_il IS NOT NULL)",
+            "(status = 'completed') = (completed_at IS NOT NULL)",
             name="ck_tasks_completed_at",
         ),
-        CheckConstraint("stato IN ('aperta', 'completata', 'annullata')", name="ck_tasks_status"),
+        CheckConstraint("status IN ('open', 'completed', 'cancelled')", name="ck_tasks_status"),
         CheckConstraint(
-            "origine IN ('manuale', 'automazione', 'sollecito')", name="ck_tasks_origin"
+            "origin IN ('manual', 'automation', 'payment_reminder')", name="ck_tasks_origin"
         ),
         # A rule only an automation may carry. Without this, `rule` on a manual
         # activity would read as «an automation made this», which is exactly the
         # question `origin` exists to answer.
-        CheckConstraint("regola IS NULL OR origine = 'automazione'", name="ck_tasks_rule_origin"),
+        CheckConstraint("rule IS NULL OR origin = 'automation'", name="ck_tasks_rule_origin"),
         CheckConstraint(
             "(customer_id IS NOT NULL)::int + (person_id IS NOT NULL)::int "
             "+ (deal_id IS NOT NULL)::int + (invoice_id IS NOT NULL)::int <= 1",
-            name="ck_tasks_a_only_reference",
+            name="ck_tasks_single_reference",
         ),
         # The three indexes of spec §3.3, each answering a question the interface really
         # asks. All partial on the soft-delete predicate, like every other index in this
@@ -102,7 +102,7 @@ class Task(Base, PrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
         ),
         # Slice 7 §6.1, REB-727: a rule never has two open attivita on one subject, and
         # the database is what says so, not a SELECT before the INSERT. The subject is
-        # the one reference an attivita carries (`ck_tasks_a_only_reference` allows
+        # the one reference an attivita carries (`ck_tasks_single_reference` allows
         # one at most), so `coalesce` over the four columns is that reference whichever
         # column holds it, and the index needs no `NULLS NOT DISTINCT`: four nullable
         # columns in one unique key would let every row through, a NULL being distinct
@@ -119,7 +119,7 @@ class Task(Base, PrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
                 column("invoice_id"),
             ),
             unique=True,
-            postgresql_where=text("regola IS NOT NULL AND stato = 'aperta' AND deleted_at IS NULL"),
+            postgresql_where=text("rule IS NOT NULL AND status = 'open' AND deleted_at IS NULL"),
         ),
         Index("ix_tasks_custom_fields", "custom_fields", postgresql_using="gin"),
         # Residuo R9: one `(column, id)` B-tree per admitted sort key -- see

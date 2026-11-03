@@ -110,7 +110,7 @@ class InvoiceDrafting:
             accrual_from=data.accrual_from,
             accrual_to=data.accrual_to,
             **order.columns(),
-            note_interne=data.note_interne,
+            internal_notes=data.internal_notes,
             taxable_amount=ZERO,
             vat_amount=ZERO,
             stamp_duty=ZERO,

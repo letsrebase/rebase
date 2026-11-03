@@ -31,13 +31,13 @@ PER_CLASS_LIMIT = 5
 # with `LIMIT 201`: exact when exactness matters, cheap when it does not, never a lie.
 COUNT_CEILING = 200
 
-SearchEntity = Literal["customer", "person", "deal", "document", "invoice", "attivita"]
+SearchEntity = Literal["customer", "person", "deal", "document", "invoice", "task"]
 
 
 class SearchQuery(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    deadline: SafeStr = Field(min_length=MIN_TERM_LENGTH, max_length=MAX_TERM_LENGTH)
+    term: SafeStr = Field(min_length=MIN_TERM_LENGTH, max_length=MAX_TERM_LENGTH)
     limit: int = Field(default=PER_CLASS_LIMIT, ge=1, le=20)
     # One azienda's records (REB-623): customers, deals, documents and invoices by their
     # own column, people through their customer. `None` is every azienda.
@@ -73,7 +73,7 @@ class SearchGroup(BaseModel):
 
 
 class SearchResults(BaseModel):
-    deadline: str
+    term: str
     groups: list[SearchGroup]
 
 

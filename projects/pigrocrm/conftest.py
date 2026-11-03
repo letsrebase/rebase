@@ -113,36 +113,23 @@ def pytest_unconfigure(config: pytest.Config) -> None:
 _TEMPLATE = "pigrocrm_template"
 
 
-# The revisions whose DDL `create_all` cannot express and the template applies after it,
-# in the order Alembic runs them: the policies of 0048 (REB-633), then 0049's rewrite of
-# the through-the-parent ones with the «tutte» fast path first (REB-656).
-_LEGAL_ENTITY_SCOPE_REVISIONS = (
-    "0048_azienda_scope.py",
-    "0049_azienda_scope_fast_path.py",
-    "0056_contract_email_templates.py",
-    "0060_clause_notes.py",
-    "0064_notes_thread.py",
-    "0066_definer_functions_search_path.py",
-)
-
-
 def _legal_entity_scope_statements() -> list[str]:
-    """`statements()` of each revision above, loaded from the file: a revision is a
-    script in `versions/`, not a module on the path."""
+    """`statements()` of revision 0068 (REB-898), loaded from the file: a revision is a
+    script in `versions/`, not a module on the path. It carries the final functions, the
+    policies, `ENABLE`/`FORCE` and the hardening of the definer functions, so the template
+    and production cannot disagree on a predicate; the earlier revisions' own versions of
+    them are replaced by it."""
     import importlib.util
     from pathlib import Path
 
     versions = Path(__file__).resolve().parent / "packages/core/migrations/versions"
-    out: list[str] = []
-    for filename in _LEGAL_ENTITY_SCOPE_REVISIONS:
-        spec = importlib.util.spec_from_file_location(
-            f"pigrocrm_migration_{filename[:4]}", versions / filename
-        )
-        assert spec is not None and spec.loader is not None
-        module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(module)
-        out.extend(module.statements())
-    return out
+    spec = importlib.util.spec_from_file_location(
+        "pigrocrm_migration_0068", versions / "0068_english_names.py"
+    )
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return list(module.statements())
 
 
 @pytest.fixture(scope="session")
@@ -182,8 +169,8 @@ def pigrocrm_postgres(postgres_per_worker: Any) -> Any:
         with engine.begin() as connection:
             connection.execute(text(WORK_UNIT_TRIGGER_SQL))
             connection.execute(text(CONTRACT_EXPENSE_TRIGGER_SQL))
-            # The row-level policies of 0048 (REB-633) and 0049's fast path on them
-            # (REB-656), the other DDL `create_all` cannot express: read from the
+            # The row-level policies of 0048 (REB-633) as 0068 leaves them
+            # (REB-898, with 0049's fast path), the other DDL `create_all` cannot express: read from the
             # revisions themselves, so the template and production cannot disagree on a
             # predicate. The suite's user is a superuser, which
             # Postgres keeps outside every policy, so no existing test sees them; the

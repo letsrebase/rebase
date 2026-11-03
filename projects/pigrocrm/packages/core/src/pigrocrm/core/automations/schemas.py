@@ -16,11 +16,11 @@ from pydantic import BaseModel, ConfigDict, Field
 # New `kind` values. No migration: `activities.kind` is an open value by project
 # (slice 1 §5.8) and `ActivityService.record` takes `kind: str` and truncates to the
 # column width without consulting any Literal.
-KIND_STAGE_MOVED = "automazione.stage_spostato"
-KIND_NOT_EXECUTED = "automazione.non_eseguita"
-KIND_CONFIG_CHANGED = "automazione.configurazione_modificata"
+KIND_STAGE_MOVED = "automation.stage_moved"
+KIND_NOT_EXECUTED = "automation.not_executed"
+KIND_CONFIG_CHANGED = "automation.config_changed"
 # One timeline entry per attivita the daily pass opens, on the attivita itself (REB-727).
-KIND_TASK_OPENED = "automazione.attivita_aperta"
+KIND_TASK_OPENED = "automation.task_opened"
 AUTOMATION_KINDS: tuple[str, ...] = (
     KIND_STAGE_MOVED,
     KIND_NOT_EXECUTED,

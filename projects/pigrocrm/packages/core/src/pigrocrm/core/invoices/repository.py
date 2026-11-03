@@ -129,7 +129,7 @@ class InvoiceRepository:
 
         Two statements, in this order and for these reasons:
 
-        1. `INSERT ... ON CONFLICT (azienda_id, anno) DO NOTHING` -- two concurrent
+        1. `INSERT ... ON CONFLICT (legal_entity_id, year) DO NOTHING` -- two concurrent
            first-invoices-of-the-year: one inserts, the other does nothing, both carry
            on. Without `ON CONFLICT` the loser would take a `UniqueViolation` and have
            to be retried by the caller.
@@ -152,8 +152,8 @@ class InvoiceRepository:
         """
         self.session.execute(
             text(
-                "INSERT INTO invoice_counters (azienda_id, anno, ultimo_numero) "
-                "VALUES (:azienda_id, :anno, 0) ON CONFLICT (azienda_id, anno) DO NOTHING"
+                "INSERT INTO invoice_counters (legal_entity_id, year, last_number) "
+                "VALUES (:legal_entity_id, :year, 0) ON CONFLICT (legal_entity_id, year) DO NOTHING"
             ),
             {"legal_entity_id": legal_entity_id, "year": year},
         )

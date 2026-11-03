@@ -40,7 +40,7 @@ def _read_new_password(prompt: str) -> str | None:
     return password
 
 
-def createadmin(settings: Settings, email: str | None, nome: str | None) -> int:
+def createadmin(settings: Settings, email: str | None, name: str | None) -> int:
     """Bootstrap the first administrator. There is no default account and no known
     default password — the direct lesson from the previous system's hardcoded credentials.
 
@@ -48,7 +48,7 @@ def createadmin(settings: Settings, email: str | None, nome: str | None) -> int:
     the system actor's scope first: the first azienda's row policy reads the scope and an
     unbound session sees no azienda and may write none."""
     email = email or input("Email: ").strip()
-    nome = nome or input("Nome: ").strip()
+    name = name or input("Nome: ").strip()
     password = _read_new_password("Password: ")
     if password is None:
         return 1
@@ -60,7 +60,7 @@ def createadmin(settings: Settings, email: str | None, nome: str | None) -> int:
         bind_scope(session, Actor.system())
         try:
             user = UserService(session).create(
-                UserCreate(email=email, password=password, nome=nome, role="admin"),
+                UserCreate(email=email, password=password, name=name, role="admin"),
                 Actor.system(),
             )
         except DomainError as exc:
@@ -68,14 +68,14 @@ def createadmin(settings: Settings, email: str | None, nome: str | None) -> int:
             # will make with this tool; a raw traceback here is a bad first impression.
             print(exc.message, file=sys.stderr)
             return 1
-        legal_entity_created = _bootstrap_root_legal_entity(session, nome)
+        legal_entity_created = _bootstrap_root_legal_entity(session, name)
     print(f"Creato amministratore {user.email}")
     if legal_entity_created:
-        print(f"Creata l'azienda predefinita «{nome}»: si rinomina da Impostazioni → Aziende")
+        print(f"Creata l'azienda predefinita «{name}»: si rinomina da Impostazioni → Aziende")
     return 0
 
 
-def _bootstrap_root_legal_entity(session: Session, nome: str) -> bool:
+def _bootstrap_root_legal_entity(session: Session, name: str) -> bool:
     """The root installation's first azienda, written with its first admin.
 
     The root is not in the registry, so `ensure_defaults` never reaches it, and the API
@@ -95,7 +95,7 @@ def _bootstrap_root_legal_entity(session: Session, nome: str) -> bool:
         return False
     try:
         with session.begin_nested():
-            repo.add(LegalEntity(legal_name=nome, predefinita=True, active=True))
+            repo.add(LegalEntity(legal_name=name, is_default=True, active=True))
     except IntegrityError:
         session.rollback()
         return False

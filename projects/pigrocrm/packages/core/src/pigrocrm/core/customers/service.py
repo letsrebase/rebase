@@ -271,7 +271,7 @@ class CustomerService:
                     )
                 if address not in known:
                     known.add(address)
-                    people.append((address, person.nome))
+                    people.append((address, person.name))
             plan.append((domain, choice, people))
 
         persons = PersonService(self.session)
@@ -282,10 +282,10 @@ class CustomerService:
                     CustomerCreate(legal_name=choice.legal_name, website=domain), actor
                 )
                 for address, display in people:
-                    nome, last_name = _person_name(display, address)
+                    first_name, last_name = _person_name(display, address)
                     persons._insert(
                         PersonCreate(
-                            nome=nome, last_name=last_name, email=address, customer_id=customer.id
+                            first_name=first_name, last_name=last_name, email=address, customer_id=customer.id
                         ),
                         actor,
                     )
@@ -337,11 +337,11 @@ class CustomerService:
         if AddressRoster(self.session).known_among([address]):
             raise Conflict(ENTITY, f"{address} è già in anagrafica", address=address)
         persons = PersonService(self.session)
-        nome, last_name = _person_name(data.nome, address)
+        first_name, last_name = _person_name(data.name, address)
         try:
             person = persons._insert(
                 PersonCreate(
-                    nome=nome, last_name=last_name, email=address, customer_id=customer.id
+                    first_name=first_name, last_name=last_name, email=address, customer_id=customer.id
                 ),
                 actor,
             )
