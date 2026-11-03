@@ -48,6 +48,7 @@ from pigrocrm.core.errors import Conflict, NotFound, ValidationFailed
 from pigrocrm.core.invoices.assembly import assemble_draft
 from pigrocrm.core.invoices.schemas import CURRENCY, InvoiceCreate, InvoiceLineIn, InvoiceRead
 from pigrocrm.core.invoices.service import InvoiceService
+from pigrocrm.core.labels import RATE_CARD_UNIT, label
 from pigrocrm.core.money import round_money
 from pigrocrm.core.storage.base import DocumentStorage
 from pigrocrm.core.timetracking.locks import period_label
@@ -126,10 +127,11 @@ def _quantity(members: list[WorkUnit]) -> Decimal:
 
 
 def _line_in(card: RateCard, year: int, month: int, quantity: Decimal) -> InvoiceLineIn:
+    unit = label(RATE_CARD_UNIT, card.unit)
     return InvoiceLineIn(
-        description=f"Attività {period_label(year, month)} - {quantity} {card.unit}",
+        description=f"Attività {period_label(year, month)} - {quantity} {unit}",
         quantity=quantity,
-        unit_of_measure=card.unit,
+        unit_of_measure=unit,
         unit_price=card.amount,
         # `vat_rate` deliberately omitted: `None` means "the regime's
         # answer" -- `vat_nature`/`legal_reference` are not on this schema
@@ -189,7 +191,7 @@ def billable_days(
                 description=_line_in(card, year, month, quantity).description,
                 work_units=len(members),
                 quantity=quantity,
-                unit_of_measure=card.unit,
+                unit_of_measure=label(RATE_CARD_UNIT, card.unit),
                 unit_price=card.amount,
                 amount=round_money(quantity * card.amount),
             )
