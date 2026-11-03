@@ -88,26 +88,22 @@ ALLOW: tuple[Allow, ...] = (
     # --- External links that must keep working ------------------------------------
     Allow(
         "projects/pigrocrm/apps/web/src/routes/**",
-        "Redirect stubs for browser routes already in bookmarks and sent mails "
-        "(`/app/clienti`, `/app/fatture`, ...): the file path is the old URL.",
-        kinds=frozenset({"path"}),
+        "The CRM's redirect stubs for browser routes already in bookmarks and sent mails "
+        "(`/app/clienti`, `/app/fatture`, `/app/oggi`, ...): under file-based routing the "
+        "file path is the old URL, so the stub's file name stays Italian.",
+        _words(
+            "calendario clienti lista documenti entra fatture impostazioni automazioni "
+            "campi categorie costo emittente fiscale periodi profilo spazio tariffe utenti "
+            "oggi persone registrati aziende avvisi"
+        ),
+        frozenset({"path"}),
     ),
     Allow(
-        "projects/hub/apps/web/src/routes/**",
-        "Redirect stubs for hub browser routes linked from sent mails (`/hub/entra`, "
-        "`/hub/accedi`, `/hub/disiscrizione`, ...): the file path is the old URL.",
-        kinds=frozenset({"path"}),
-    ),
-    Allow(
-        "projects/hub/apps/web/src/pages/**",
-        "Hub page modules whose file name is the route the page is mounted at.",
-        kinds=frozenset({"path"}),
-    ),
-    Allow(
-        "projects/website/**",
-        "The website's pages are Italian URLs (`/guida`, `/termini`, `/privacy`) that "
-        "are indexed or linked from outside; the `/termini` 301 stays.",
-        kinds=frozenset({"path"}),
+        "projects/hub/deploy/firma.letsrebase.conf",
+        "The vhost file is named after the host it serves, firma.letsrebase.com, the DNS "
+        "record Documenso answers on; the host name is outside this repository.",
+        _words("firma"),
+        frozenset({"path"}),
     ),
     # --- Words that are Italian and English at once --------------------------------
     Allow(

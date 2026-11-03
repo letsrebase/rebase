@@ -58,7 +58,7 @@ conventions are in `docs/tracker.md`.
 Conventional Commits, English, first person, written the way a person writes:
 
 ```
-feat(spazi): the root installation has a space name of its own
+feat(core): the root installation has a space name of its own
 fix(web): the sidebar is as tall as the window, not the page
 ```
 

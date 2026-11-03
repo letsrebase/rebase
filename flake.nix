@@ -369,7 +369,7 @@
                   settings = {
                     timezone = "Europe/Rome";
                     mcp_full_access = false;
-                    solleciti_grace_days = 7;
+                    payment_reminders_grace_days = 7;
                   };
                   # A throwaway secret for a throwaway VM; in the store on purpose,
                   # where a real one must never be.
@@ -389,7 +389,7 @@
                 machine.succeed("curl -fsS http://localhost/health | grep -F '\"status\":\"ok\"'")
                 # The SPA shell, on its prefix and on a deep link a refresh would hit.
                 machine.succeed("curl -fsS http://localhost/app/ | grep -F '/app/assets/'")
-                machine.succeed("curl -fsS http://localhost/app/clienti/some-uuid | grep -F '/app/assets/'")
+                machine.succeed("curl -fsS http://localhost/app/customers/some-uuid | grep -F '/app/assets/'")
                 machine.succeed("curl -fsS http://localhost/app/mark.svg >/dev/null")
                 # The magic link: the shell on /app/verify, the old /app/entra sent
                 # there with its query string, on the root and under a space, and the

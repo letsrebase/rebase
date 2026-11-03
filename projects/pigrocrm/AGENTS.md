@@ -212,7 +212,7 @@ the whole text an edit replaced is a row of `note_revisions`, since a timeline p
 2000 characters (`GET /api/notes/{id}/revisions`). `note` is a reserved name: no custom field
 may take it. The table has the row-level policy of its parent through
 `entity_visible` (migration 0064), so a scoped member reads and writes the notes of their
-aziende alone. The `rebase:request=<uuid>` / `rebase:match=<uuid>` references of the engagements
+legal entities alone. The `rebase:request=<uuid>` / `rebase:match=<uuid>` references of the engagements
 door are not text any more: they are `deals.rebase_refs`, written only through
 `DealService.create(rebase_ref=...)` and `attach_rebase_ref` and found by
 `DealRepository.find_by_rebase_ref`; the door's human sentence is the deal's (or the customer's)
@@ -287,7 +287,7 @@ mounting an empty directory (REB-258).
 
 **Two database roles since REB-634** (spec 2026-10-03 §4 «The role»). Requests run as
 `pigrocrm_app`, `LOGIN NOSUPERUSER NOBYPASSRLS`, which is what keeps a scoped member
-inside their aziende: a superuser is never subject to a row-level policy. The compose
+inside their legal entities: a superuser is never subject to a row-level policy. The compose
 file builds `PIGROCRM_DATABASE_URL` for that role from `PIGROCRM_APP_PASSWORD`, which
 has no default either, and `PIGROCRM_ADMIN_DATABASE_URL` for the bootstrap superuser,
 which keeps the owner's work: `alembic upgrade head`, `ensure-space-defaults`, `CREATE

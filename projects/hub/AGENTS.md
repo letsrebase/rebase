@@ -1185,7 +1185,7 @@ location ^~ /api/hub/freelancers {
     client_max_body_size 6M;
     proxy_pass http://127.0.0.1:8084;
     include /etc/nginx/snippets/rebase-proxy.conf;
-    location ~ ^/api/hub/freelancers/[^/]+/cv-anonimo$ {
+    location ~ ^/api/hub/freelancers/[^/]+/anonymous-cv$ {
         proxy_pass http://127.0.0.1:8084;
         include /etc/nginx/snippets/rebase-proxy.conf;
         proxy_read_timeout 330s;

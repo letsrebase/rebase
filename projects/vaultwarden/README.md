@@ -3,7 +3,7 @@
 The password manager of the rebase members: one organisation, `Rebase`, with a collection
 per set of credentials, assigned to named members with a permission each. Why Vaultwarden
 and not something else is `docs/design/DECISIONS.md`, 2026-10-05 (REB-644); this directory
-is how it runs (REB-648). The members' own page is `docs/guida-per-i-membri.md`, in Italian.
+is how it runs (REB-648). The members' own page is `docs/members-guide.md`, in Italian.
 
 ```
 docker-compose.yml          the server and its backup service, image pinned by tag and digest
@@ -13,7 +13,7 @@ branding/                   the look of the web vault, generated from shared/bra
 scripts/backup.sh           one encrypted backup, to R2    scripts/backup-loop.sh  its schedule
 scripts/restore.sh          open one backup into an empty directory
 docs/restore.md             the restore runbook
-docs/guida-per-i-membri.md  the member guide (Italian)
+docs/members-guide.md         the member guide (Italian)
 tests/                      the drill: config, backup and restore, on throwaway servers
 ```
 
