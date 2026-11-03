@@ -336,22 +336,22 @@ def test_users_email_has_a_case_insensitive_unique_index_in_postgres(
 # email-uniqueness race) does not catch it, and it poisons the session.
 
 
-def test_nome_over_the_column_width_is_rejected_on_create() -> None:
+def test_name_over_the_column_width_is_rejected_on_create() -> None:
     with pytest.raises(ValidationError):
         UserCreate(email="x@example.it", password="supersegreta1", name="x" * (NAME_MAX_LENGTH + 1))
 
 
-def test_nome_over_the_column_width_is_rejected_on_update() -> None:
+def test_name_over_the_column_width_is_rejected_on_update() -> None:
     with pytest.raises(ValidationError):
         UserUpdate(name="x" * (NAME_MAX_LENGTH + 1))
 
 
-def test_nome_at_the_column_width_is_accepted_on_create() -> None:
+def test_name_at_the_column_width_is_accepted_on_create() -> None:
     user = UserCreate(email="x@example.it", password="supersegreta1", name="x" * NAME_MAX_LENGTH)
     assert len(user.name) == NAME_MAX_LENGTH
 
 
-def test_a_nul_byte_in_nome_is_rejected_not_stored(db_session: Session) -> None:
+def test_a_nul_byte_in_name_is_rejected_not_stored(db_session: Session) -> None:
     """Same family as the max_length gap above (final review item 1): a NUL byte in
     a native string column reaches Postgres raw unless SafeStr catches it first."""
     with pytest.raises(ValidationError):

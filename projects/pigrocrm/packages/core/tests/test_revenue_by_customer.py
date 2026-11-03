@@ -60,9 +60,9 @@ def _corpus(session: Session) -> tuple[UUID, UUID, UUID]:
     both the total and the ranking, not just an edge case nobody would notice.
     """
     large = Customer(legal_name="Grande S.r.l.", country="IT", custom_fields={})
-    piccolo = Customer(legal_name="Piccolo S.r.l.", country="IT", custom_fields={})
+    small = Customer(legal_name="Piccolo S.r.l.", country="IT", custom_fields={})
     absent = Customer(legal_name="Assente S.r.l.", country="IT", custom_fields={})
-    session.add_all([large, piccolo, absent])
+    session.add_all([large, small, absent])
     session.flush()
 
     cancelled = _invoice(large.id, 4, "50000.00")
@@ -74,36 +74,36 @@ def _corpus(session: Session) -> tuple[UUID, UUID, UUID]:
         [
             _invoice(large.id, 1, "4000.00"),
             _invoice(large.id, 2, "2000.00"),
-            _invoice(piccolo.id, 3, "3000.00"),
+            _invoice(small.id, 3, "3000.00"),
             cancelled,
             _invoice(absent.id, 5, "9999.00", year=YEAR - 1),
         ]
     )
     session.flush()
-    return large.id, piccolo.id, absent.id
+    return large.id, small.id, absent.id
 
 
 def test_revenue_by_customer_ranks_by_share_of_the_years_whole_revenue(
     db_session: Session,
 ) -> None:
-    large_id, piccolo_id, absent_id = _corpus(db_session)
+    large_id, small_id, absent_id = _corpus(db_session)
     repo = AnalyticsRepository(db_session)
 
     rows = repo.revenue_by_customer(YEAR)
 
     # Ranked, largest first -- the acceptance criterion's own word.
-    assert [row.customer_id for row in rows] == [large_id, piccolo_id]
-    large, piccolo = rows
+    assert [row.customer_id for row in rows] == [large_id, small_id]
+    large, small = rows
     assert large.revenue == Decimal("6000.00")
     assert large.invoices == 2
-    assert piccolo.revenue == Decimal("3000.00")
-    assert piccolo.invoices == 1
+    assert small.revenue == Decimal("3000.00")
+    assert small.invoices == 1
 
     # The share of the *whole year's* revenue (9000.00), never of the largest row:
     # `InvoiceRepository._share`'s formula on this same data would give the top row
     # exactly 1.0, which is the bug this assertion is written to catch.
     assert abs(large.share - 2 / 3) < 1e-9
-    assert abs(piccolo.share - 1 / 3) < 1e-9
+    assert abs(small.share - 1 / 3) < 1e-9
     assert large.share != 1.0
     assert abs(sum(row.share for row in rows) - 1.0) < 1e-9
 
@@ -114,7 +114,7 @@ def test_revenue_by_customer_ranks_by_share_of_the_years_whole_revenue(
 def test_revenue_by_customer_excludes_an_annulled_invoice_from_both_total_and_count(
     db_session: Session,
 ) -> None:
-    large_id, _piccolo_id, _absent_id = _corpus(db_session)
+    large_id, _small_id, _absent_id = _corpus(db_session)
     repo = AnalyticsRepository(db_session)
 
     large = next(row for row in repo.revenue_by_customer(YEAR) if row.customer_id == large_id)
@@ -137,14 +137,14 @@ def test_revenue_by_customer_agrees_with_annual_revenue_to_the_cent(db_session: 
 def test_economic_overview_carries_the_same_concentration_for_every_role(
     db_session: Session,
 ) -> None:
-    large_id, piccolo_id, _absent_id = _corpus(db_session)
+    large_id, small_id, _absent_id = _corpus(db_session)
     service = AnalyticsService(db_session)
 
     for actor in (ADMIN, COLLABORATOR):
         overview = service.economic_overview(YEAR, actor)
         assert [row.customer_id for row in overview.customer_concentration] == [
             large_id,
-            piccolo_id,
+            small_id,
         ]
         assert overview.customer_concentration[0].revenue == Decimal("6000.00")
         assert overview.customer_concentration[0].legal_name == "Grande S.r.l."
@@ -172,14 +172,14 @@ def test_count_over_concentration_threshold_is_strictly_above_not_at_it(
 ) -> None:
     """A customer sitting exactly on the configured share has not yet crossed it -- the
     boundary the signal's own name promises."""
-    pari_uno = Customer(legal_name="Pari Uno S.r.l.", country="IT", custom_fields={})
-    pari_due = Customer(legal_name="Pari Due S.r.l.", country="IT", custom_fields={})
-    db_session.add_all([pari_uno, pari_due])
+    tied_first = Customer(legal_name="Pari Uno S.r.l.", country="IT", custom_fields={})
+    tied_second = Customer(legal_name="Pari Due S.r.l.", country="IT", custom_fields={})
+    db_session.add_all([tied_first, tied_second])
     db_session.flush()
     db_session.add_all(
         [
-            _invoice(pari_uno.id, 101, "5000.00", year=YEAR + 1),
-            _invoice(pari_due.id, 102, "5000.00", year=YEAR + 1),
+            _invoice(tied_first.id, 101, "5000.00", year=YEAR + 1),
+            _invoice(tied_second.id, 102, "5000.00", year=YEAR + 1),
         ]
     )
     db_session.flush()

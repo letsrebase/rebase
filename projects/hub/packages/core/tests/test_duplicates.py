@@ -17,9 +17,9 @@ from sqlalchemy.orm import Session
 
 from rebase_core.cli.members import talent_duplicates
 from rebase_core.duplicates import (
+    FIRST_NAME,
     FLAGS_PER_ROW,
     LINKEDIN,
-    NOME,
     PHONE,
     UNIQUE_INDEXES,
     IndexesEnsured,
@@ -301,7 +301,7 @@ def test_two_cards_with_one_profile_are_one_mergeable_pair_and_the_newest_cv_win
     pair = report.mergeable[0]
     assert pair.survivor.freelancer_id == new_card.id
     assert pair.absorbed.freelancer_id == old_card.id
-    assert LINKEDIN in pair.signals and NOME in pair.signals
+    assert LINKEDIN in pair.signals and FIRST_NAME in pair.signals
 
 
 def test_the_same_name_or_telephone_only_flags_and_is_never_mergeable(twice: Session) -> None:
@@ -316,7 +316,7 @@ def test_the_same_name_or_telephone_only_flags_and_is_never_mergeable(twice: Ses
 
     assert report.mergeable == []
     signals = sorted(p.signals for p in report.from_review)
-    assert signals == [(NOME,), (PHONE,)]
+    assert signals == [(FIRST_NAME,), (PHONE,)]
     assert not any(p.mergeable for p in report.from_review)
 
 

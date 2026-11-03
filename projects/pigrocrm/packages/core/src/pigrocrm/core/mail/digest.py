@@ -21,8 +21,8 @@ def _hours_recorded(value: Decimal) -> str:
     return "1 ora registrata" if value == 1 else f"{_hours_it(value)} ore registrate"
 
 
-def _count(n: int, singular: str, plurale: str) -> str:
-    return f"1 {singular}" if n == 1 else f"{n} {plurale}"
+def _count(n: int, singular: str, plural: str) -> str:
+    return f"1 {singular}" if n == 1 else f"{n} {plural}"
 
 
 def _delay(days: int | None) -> str:
@@ -49,21 +49,21 @@ def digest_subject(digest: WeeklyDigest) -> str:
     """The week's non-zero facts, in the fixed order spec 2026-09-16 §3.1 gives: issued
     invoices, unpaid, hours logged, offers pending, deals moved. «La tua
     settimana in PigroCRM» when none of the five has anything to say."""
-    parti: list[str] = []
+    parts: list[str] = []
     if digest.issued:
-        parti.append(_count(len(digest.issued), "fattura emessa", "fatture emesse"))
+        parts.append(_count(len(digest.issued), "fattura emessa", "fatture emesse"))
     total_overdue = _overdue_total(digest)
     if total_overdue:
-        parti.append(f"{euro(total_overdue)} da incassare")
+        parts.append(f"{euro(total_overdue)} da incassare")
     if digest.hours is not None and digest.hours.total_hours:
-        parti.append(_hours_recorded(digest.hours.total_hours))
+        parts.append(_hours_recorded(digest.hours.total_hours))
     if digest.offers_pending:
-        parti.append(_count(len(digest.offers_pending), "offerta in attesa", "offerte in attesa"))
+        parts.append(_count(len(digest.offers_pending), "offerta in attesa", "offerte in attesa"))
     if digest.deal_moves:
-        parti.append(_count(len(digest.deal_moves), "deal mosso", "deal mossi"))
-    if not parti:
+        parts.append(_count(len(digest.deal_moves), "deal mosso", "deal mossi"))
+    if not parts:
         return "La tua settimana in PigroCRM"
-    return "La tua settimana: " + ", ".join(parti)
+    return "La tua settimana: " + ", ".join(parts)
 
 
 def _from_digest(url: str) -> str:

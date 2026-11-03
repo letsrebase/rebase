@@ -32,7 +32,7 @@ from pigrocrm.core.templates.scope import CUSTOMER_KEYS, italian_keys
 # `DocumentType` itself, never retyped, so a value added there is covered here by
 # construction -- see `require_template` for why the two vocabularies stopped being
 # the same Literal.
-DOCUMENT_TIPI: frozenset[str] = frozenset(get_args(DocumentType))
+DOCUMENT_TYPES: frozenset[str] = frozenset(get_args(DocumentType))
 
 
 class DocumentTemplating:
@@ -53,7 +53,7 @@ class DocumentTemplating:
         template = self.ctx.templates.repo.get(template_id)
         if template is None:
             raise NotFound("template", template_id)
-        if template.type not in DOCUMENT_TIPI:
+        if template.type not in DOCUMENT_TYPES:
             # `TemplateType` and `DocumentType` used to be the same Literal. Slice 5
             # widened the template side with `email` and `payment_reminder` -- neither of which
             # is a thing a `documents` row can be -- and `DocumentRead.type` is a plain
@@ -65,7 +65,7 @@ class DocumentTemplating:
                 "template_id",
                 f"il template '{template.name}' è di tipo '{label(TEMPLATE_TYPE, template.type)}', "
                 "che non è un tipo di documento",
-                expected=f"un template fra: {', '.join(sorted(DOCUMENT_TIPI))}",
+                expected=f"un template fra: {', '.join(sorted(DOCUMENT_TYPES))}",
             )
         return template
 

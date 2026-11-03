@@ -203,7 +203,7 @@ def register(
         """
         service = InvoiceService(context.session, context.storage)
         lines = service.review_import([UUID(d) for d in document_ids], context.actor)
-        return {"lines": [riga.model_dump(mode="json") for riga in lines]}
+        return {"lines": [line.model_dump(mode="json") for line in lines]}
 
     @mcp.tool(annotations=DESTRUCTIVE)
     @guard
@@ -233,7 +233,7 @@ def register(
             customer_id=UUID(customer_id) if customer_id is not None else None,
             create_customer=create_customer,
         )
-        return {"lines": [riga.model_dump(mode="json") for riga in lines]}
+        return {"lines": [line.model_dump(mode="json") for line in lines]}
 
     @mcp.tool(annotations=DESTRUCTIVE)
     @guard

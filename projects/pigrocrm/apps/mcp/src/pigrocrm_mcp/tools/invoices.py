@@ -128,7 +128,7 @@ def replace_proforma_lines(
     identifier = UUID(invoice_id)
     _require_proforma(service, identifier, context)
     return service.replace_lines(
-        identifier, [InvoiceLineIn(**riga) for riga in lines], context.actor
+        identifier, [InvoiceLineIn(**line_data) for line_data in lines], context.actor
     ).model_dump(mode="json")
 
 

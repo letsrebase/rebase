@@ -265,7 +265,7 @@ def test_me_carries_talent_cloud(
     from rebase_core.cloud import TalentCloudService
 
     acme = _request_company(hub_session)
-    bianchi = _request_company(hub_session, company_name="Bianchi Srl")
+    second_company = _request_company(hub_session, company_name="Bianchi Srl")
     user = UserService(hub_session).by_email("wile@acme.it")
     assert user is not None
     assert members.me_read(user.id).talent_cloud is False
@@ -273,12 +273,12 @@ def test_me_carries_talent_cloud(
     admin = UserService(hub_session).get_or_create("ivan@rebase.it", "Ivan", "Sala")
     cloud = TalentCloudService(hub_session, settings)
     cloud.grant(acme, admin.id)
-    cloud.grant(bianchi, admin.id)
+    cloud.grant(second_company, admin.id)
     assert members.me_read(user.id).talent_cloud is True
 
     cloud.revoke(acme, admin.id)
     assert members.me_read(user.id).talent_cloud is True
-    cloud.revoke(bianchi, admin.id)
+    cloud.revoke(second_company, admin.id)
     assert members.me_read(user.id).talent_cloud is False
     # The admin who opened it is not a referente: nothing opened for them.
     assert members.me_read(admin.id).talent_cloud is False

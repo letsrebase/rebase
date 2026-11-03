@@ -79,7 +79,7 @@ Method = tuple[str, str]
 #    `FiscalProfileService.upsert` was until ORB-188: `LegalEntityService` has an
 #    `upsert` too) is the shape this table has used all along, and the reason the
 #    comparison test below compares the qualified bans as pairs and the rest as names.
-_VIETATE: dict[Method, str] = {
+_FORBIDDEN: dict[Method, str] = {
     ("InvoiceService", "issue"): "atto fiscale irreversibile (slice 3 §11)",
     ("InvoiceService", "issue_and_render"): (
         "`issue` followed by its artefacts: the one door a privileged tool and the REST route call"
@@ -729,7 +729,7 @@ _BYTE: dict[Method, str] = {
 #    placeholder wearing the clothes of a decision; this category is for the ones that
 #    survive being asked why, and the only way to keep that true is to delete the ones
 #    that do not the moment the tool is written.
-_COPERTE_O_UMANE: dict[Method, str] = {
+_COVERED_OR_HUMAN: dict[Method, str] = {
     ("ProposalService", "accept"): "REB-806: deciding a proposal is a person's act. The "
     "token that read the mail (text written by somebody else) would also have proposed it, "
     "and proposing then accepting in one turn closes the chain. `Actor.require_person` "
@@ -1014,13 +1014,13 @@ _COPERTE_O_UMANE: dict[Method, str] = {
 # 3 forbids. So the block is gone, the same cancellazione as `_IN_ATTESA_DI_DECISIONE`.
 
 
-ESCLUSIONI: dict[Method, str] = {
-    **_VIETATE,
+EXCLUSIONS: dict[Method, str] = {
+    **_FORBIDDEN,
     **_INTERNE,
     **_CREDENZIALI,
     **_CONFIGURATION,
     **_BYTE,
-    **_COPERTE_O_UMANE,
+    **_COVERED_OR_HUMAN,
 }
 
 
@@ -1191,7 +1191,7 @@ def test_every_public_service_method_is_a_tool_or_a_named_exclusion(
     """The half of the product's claim that had no test. A new service method fails here
     until it has a tool or a reason -- which is the only moment at which writing the
     reason is cheap."""
-    assert (service, method) in REACHABLE or (service, method) in ESCLUSIONI, (
+    assert (service, method) in REACHABLE or (service, method) in EXCLUSIONS, (
         f"'{service}.{method}' non e' raggiungibile da nessun tool o resource MCP e non "
         "compare fra le esclusioni dichiarate in questo file. Il prodotto promette che "
         "un agente possa fare tutto quello che puo' fare una persona, meno un elenco "
@@ -1200,7 +1200,7 @@ def test_every_public_service_method_is_a_tool_or_a_named_exclusion(
     )
 
 
-@pytest.mark.parametrize(("service", "method"), sorted(ESCLUSIONI), ids=lambda p: p)
+@pytest.mark.parametrize(("service", "method"), sorted(EXCLUSIONS), ids=lambda p: p)
 def test_every_declared_exclusion_still_names_a_real_method(service: str, method: str) -> None:
     """The other direction, which is what keeps the taxonomy from becoming folklore: a
     renamed or deleted service method must not leave a reason behind explaining why
@@ -1211,7 +1211,7 @@ def test_every_declared_exclusion_still_names_a_real_method(service: str, method
     )
 
 
-@pytest.mark.parametrize(("service", "method"), sorted(ESCLUSIONI), ids=lambda p: p)
+@pytest.mark.parametrize(("service", "method"), sorted(EXCLUSIONS), ids=lambda p: p)
 def test_no_declared_exclusion_is_actually_reachable(service: str, method: str) -> None:
     """An exclusion that is reachable is a false statement, and the most expensive kind:
     it reads as a considered refusal while the operation is in fact exposed. This is what
@@ -1237,11 +1237,11 @@ def test_the_forbidden_block_names_exactly_what_the_ban_test_bans() -> None:
     writing a category still has to appear in `FORBIDDEN_SERVICE_CALLS`, and
     `test_nothing_hides_in_the_out_of_sweep_block` checks its receivers really are
     outside the sweep rather than merely declared to be."""
-    declared = {method for _, method in _VIETATE} | {method for _, method in _OUTSIDE_FROM_SIEVE}
+    declared = {method for _, method in _FORBIDDEN} | {method for _, method in _OUTSIDE_FROM_SIEVE}
     assert declared == set(FORBIDDEN_SERVICE_CALLS) | {
         method for _, method in FORBIDDEN_QUALIFIED_CALLS
     }
-    assert set(FORBIDDEN_QUALIFIED_CALLS) <= set(_VIETATE)
+    assert set(FORBIDDEN_QUALIFIED_CALLS) <= set(_FORBIDDEN)
 
 
 def test_nothing_hides_in_the_out_of_sweep_block() -> None:
@@ -1259,7 +1259,7 @@ def test_nothing_hides_in_the_out_of_sweep_block() -> None:
             f"'{service}' e' un servizio di packages/core: la sua esclusione va in una "
             "delle sei categorie sopra, dove il metodo viene verificato ancora esistente"
         )
-        assert (service, method) not in ESCLUSIONI
+        assert (service, method) not in EXCLUSIONS
     # And the block is not vacuous. That each name is a real method of a real class is
     # already proved elsewhere and better: `test_mcp_invoice_ban.py`'s
     # `test_the_privileged_module_is_the_only_place_they_appear` requires every one of

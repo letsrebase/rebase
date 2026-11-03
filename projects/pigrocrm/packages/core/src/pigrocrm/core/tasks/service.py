@@ -322,8 +322,10 @@ class TaskService:
         return TaskToday(
             today=day,
             overdue=group(before_of=day),
-            today_due=group(dal=day, al=day),
-            next_seven_days=group(dal=day + timedelta(days=1), al=day + timedelta(days=DAYS_NEXT)),
+            today_due=group(date_from=day, date_to=day),
+            next_seven_days=group(
+                date_from=day + timedelta(days=1), date_to=day + timedelta(days=DAYS_NEXT)
+            ),
             without_due_date=group(without_due_date=True),
         )
 

@@ -64,14 +64,14 @@ class ContractCapService:
             revenue = [(contract.currency, Decimal("0.00"), Decimal("0.00"))]
         currencies = []
         for currency, customer_revenue, total_revenue in revenue:
-            quota = share(customer_revenue, total_revenue)
-            exceeded = (quota >= threshold) if threshold is not None else None
+            customer_share = share(customer_revenue, total_revenue)
+            exceeded = (customer_share >= threshold) if threshold is not None else None
             currencies.append(
                 ConcentrationFigures(
                     currency=currency,
                     customer_revenue=customer_revenue,
                     total_revenue=total_revenue,
-                    share=quota,
+                    share=customer_share,
                     exceeded=exceeded,
                 )
             )

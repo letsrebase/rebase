@@ -47,9 +47,9 @@ from rebase_core.schema_common import ResponseModel
 from rebase_core.vocabulary import enum_of
 
 LINKEDIN = "linkedin"
-NOME = "first_name"
+FIRST_NAME = "first_name"
 PHONE = "phone"
-SIGNALS = (LINKEDIN, NOME, PHONE)
+SIGNALS = (LINKEDIN, FIRST_NAME, PHONE)
 DuplicateSignal = Annotated[str, Field(json_schema_extra=enum_of(SIGNALS))]
 # Cards a Talenti row names as «may be this person»: a common name is shared by many, and a
 # row is read by an agent that pays for every id.
@@ -206,7 +206,7 @@ def _pairs_among(rows: Sequence[Row[Any]]) -> list[DuplicatePair]:
             by_phone[phone].append(person)
     found: dict[frozenset[UUID], set[str]] = defaultdict(set)
     _pairs(by_linkedin, LINKEDIN, found)
-    _pairs(by_name, NOME, found)
+    _pairs(by_name, FIRST_NAME, found)
     _pairs(by_phone, PHONE, found)
     order = SIGNALS
     pairs: list[DuplicatePair] = []
@@ -478,7 +478,7 @@ def duplicate_list(session: Session) -> DuplicateListRead:
 
 __all__ = [
     "LINKEDIN",
-    "NOME",
+    "FIRST_NAME",
     "PHONE",
     "UNIQUE_INDEXES",
     "DuplicateListRead",

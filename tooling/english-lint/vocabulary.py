@@ -107,8 +107,19 @@ tuttavia tutte tutti tutto ultima ultimi ultimo unibile unibili unita unitario u
 usate usati utente utenti utilizzo vai valide valido valore valute variabile variabili
 vecchia vecchio verbale verifica verificare verificata verificato versione verso viaggi
 vicino vinti vinto virtuale visibile viste voce voci vuota vuoto
+abbina agente attesi bandiera bloccata cartellino centesimi conflitto coperte decimali
+dialogo esclusioni fase foglio frammento indice mossa movimento negativo
+panoramica parti plurale quindici rotta scaricamento scorso sparito
+umane umani umano uno vietate vigore
 """
 )
+
+# Italian words that are also in an English dictionary (`nome` is a Greek province,
+# `persona` a UX term, `vista` a view). In prose they are as likely English as Italian, so
+# they never count towards an Italian comment; as a whole word of an identifier or a path
+# they are Italian in this code base, where the English for each is `name`, `person`,
+# `view`, `line`, `types` and `small`.
+IDENTIFIER_WORDS: frozenset[str] = _split("nome persona piccolo riga tipi vista")
 
 STEMS: tuple[str, ...] = (
     "fattur",

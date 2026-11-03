@@ -57,7 +57,7 @@ def _set_rates(
     *,
     coefficient: str | None,
     substitute: str | None,
-    inps: str | None,
+    social_security: str | None,
 ) -> None:
     """Rewrites the three income columns on the one `fiscal_profile` row.
 
@@ -70,7 +70,7 @@ def _set_rates(
             regime_code="RF19",
             profitability_coefficient=None if coefficient is None else Decimal(coefficient),
             substitute_tax_rate=None if substitute is None else Decimal(substitute),
-            social_security_rate=None if inps is None else Decimal(inps),
+            social_security_rate=None if social_security is None else Decimal(social_security),
         ),
         ADMIN,
     )
@@ -263,7 +263,7 @@ def test_the_service_reads_the_three_rates_from_the_profile_row(
     from the settings screen today. An implementation that read module-level literals
     instead of the row would return the seeded figures here and fail every line.
     """
-    _set_rates(db_session, coefficient="78.00", substitute="15.00", inps="24.00")
+    _set_rates(db_session, coefficient="78.00", substitute="15.00", social_security="24.00")
     estimate = AnalyticsService(db_session).get_fiscal_estimate(YEAR, ADMIN)
 
     assert estimate.profitability_coefficient == Decimal("78.00")
@@ -284,7 +284,7 @@ def test_cleared_rates_reach_the_report_as_null(
 ) -> None:
     """The columns are nullable and clearing them is an explicit act, so the report has
     to survive it -- with the revenue it does know and nothing invented for the rest."""
-    _set_rates(db_session, coefficient=None, substitute=None, inps=None)
+    _set_rates(db_session, coefficient=None, substitute=None, social_security=None)
     estimate = AnalyticsService(db_session).get_fiscal_estimate(YEAR, ADMIN)
 
     assert estimate.revenue == Decimal("1583.83")
@@ -351,7 +351,7 @@ def test_the_social_security_surcharge_amount_is_excluded_from_the_coefficient_b
     from pigrocrm.core.fiscal.pack import IT_FLAT_RATE_PACK
     from pigrocrm.core.invoices.models import Invoice, InvoiceLine
 
-    _set_rates(db_session, coefficient="67.00", substitute="5.00", inps="26.07")
+    _set_rates(db_session, coefficient="67.00", substitute="5.00", social_security="26.07")
     customer = Customer(legal_name="Acme")
     db_session.add(customer)
     db_session.flush()
@@ -411,7 +411,7 @@ def test_an_explicit_revenue_override_is_never_reduced_by_the_pack(
     per `get_fiscal_estimate`'s own docstring) is the caller's own already-decided
     number -- the pack's tag applies only to the default, `annual_revenue`-derived
     path, never to a figure a caller hands in explicitly."""
-    _set_rates(db_session, coefficient="67.00", substitute="5.00", inps="26.07")
+    _set_rates(db_session, coefficient="67.00", substitute="5.00", social_security="26.07")
     estimate = AnalyticsService(db_session).get_fiscal_estimate(
         YEAR, ADMIN, revenue=Decimal("1040.00")
     )

@@ -95,7 +95,7 @@ describe('«da team builder» and the talent cloud on Aziende (REB-518)', () => 
     mount('/admin/companies')
     const rossi = (await screen.findByText('Rossi Studio')).closest('tr')!
     expect(within(rossi).getByText('da team builder')).toBeInTheDocument()
-    const bianchi = screen.getByText('Bianchi Srl').closest('tr')!
-    expect(within(bianchi).queryByText('da team builder')).toBeNull()
+    const secondRow = screen.getByText('Bianchi Srl').closest('tr')!
+    expect(within(secondRow).queryByText('da team builder')).toBeNull()
   })
 })

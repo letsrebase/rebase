@@ -27,7 +27,7 @@ from pigrocrm.core.legal_entities.schemas import LegalEntityUpsert
 from pigrocrm.core.legal_entities.service import LegalEntityService
 from pigrocrm.core.storage import LocalFileStorage
 
-RIGA = {"description": "Consulenza", "quantity": "2", "unit_price": "100.00"}
+LINE = {"description": "Consulenza", "quantity": "2", "unit_price": "100.00"}
 
 
 def _legal_entity(session: Session) -> None:
@@ -78,7 +78,7 @@ async def test_a_proforma_draft_is_discarded_and_is_gone_from_the_reads(
     customer_id = _customer(mcp_session)
     async with Client(server) as client:
         created = await client.call_tool(
-            "create_proforma", {"customer_id": customer_id, "lines": [RIGA]}
+            "create_proforma", {"customer_id": customer_id, "lines": [LINE]}
         )
         assert not created.is_error, created.content[0].text
         invoice_id = created.structured_content["id"]
@@ -107,7 +107,7 @@ async def test_a_discarded_proforma_takes_its_pdf_out_of_the_customers_documents
     _legal_entity(mcp_session)
     async with Client(server) as client:
         created = await client.call_tool(
-            "create_proforma", {"customer_id": customer_id, "lines": [RIGA]}
+            "create_proforma", {"customer_id": customer_id, "lines": [LINE]}
         )
         assert not created.is_error, created.content[0].text
         invoice_id = created.structured_content["id"]
@@ -138,7 +138,7 @@ async def test_anything_that_is_not_a_proforma_is_refused_before_the_service_is_
         InvoiceCreate(
             customer_id=customer_id,
             type="invoice",
-            lines=[InvoiceLineIn(**RIGA)],
+            lines=[InvoiceLineIn(**LINE)],
         ),
         Actor(id=None, type="user", role="admin"),
     )
@@ -161,18 +161,18 @@ async def test_a_proforma_consumed_by_an_emission_is_refused_and_stays_consumed(
     there, and because nothing else exercised a soft delete on a consumed proforma."""
     customer_id = _customer(mcp_session, exportable=True)
     _legal_entity(mcp_session)
-    umano = Actor(id=None, type="user", role="admin")
+    human_actor = Actor(id=None, type="user", role="admin")
     async with Client(server) as client:
         created = await client.call_tool(
-            "create_proforma", {"customer_id": customer_id, "lines": [RIGA]}
+            "create_proforma", {"customer_id": customer_id, "lines": [LINE]}
         )
         assert not created.is_error, created.content[0].text
         proforma_id = created.structured_content["id"]
 
     # The human half: confirm, then issue from the proforma, which consumes it.
     service = InvoiceService(mcp_session, LocalFileStorage(tmp_path / "invoices"))
-    service.confirm_proforma(UUID(proforma_id), umano)
-    invoice = service.issue(UUID(proforma_id), InvoiceIssue(), umano)
+    service.confirm_proforma(UUID(proforma_id), human_actor)
+    invoice = service.issue(UUID(proforma_id), InvoiceIssue(), human_actor)
     assert invoice.number is not None
     assert str(invoice.origin_proforma_id) == proforma_id
 

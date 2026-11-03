@@ -235,7 +235,7 @@ def test_update_changes_name_and_records_it(db_session: Session, customer_id, st
 # --- Carried-over item 1: max_length on every string field ---------------------
 
 
-def test_nome_over_the_column_width_is_rejected_on_create() -> None:
+def test_name_over_the_column_width_is_rejected_on_create() -> None:
     """Mirrors CustomerCreate/PersonCreate's own *_MAX_LENGTH bounds: without a
     matching Pydantic bound, an over-length value sails past validation, reaches
     flush(), and comes back as a raw sqlalchemy.exc.DataError
@@ -245,7 +245,7 @@ def test_nome_over_the_column_width_is_rejected_on_create() -> None:
         DealCreate(name="x" * (NAME_MAX_LENGTH + 1), customer_id=uuid4())
 
 
-def test_nome_over_the_column_width_is_rejected_on_update() -> None:
+def test_name_over_the_column_width_is_rejected_on_update() -> None:
     with pytest.raises(ValidationError):
         DealUpdate(name="x" * (NAME_MAX_LENGTH + 1))
 

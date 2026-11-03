@@ -107,10 +107,10 @@ ALLOW: tuple[Allow, ...] = (
         frozenset({"comment"}),
     ),
     Allow(
-        "projects/pigrocrm/packages/core/tests/test_fields_dynamic.py",
-        "`settore` is a user's own custom-field key, which the model builder turns into an "
-        "attribute; users' custom-field keys stay as written.",
-        _words("settore"),
+        "projects/pigrocrm/apps/mcp/src/pigrocrm_mcp/tools/privileged.py",
+        "`read_gmail_attachment(message_id, nome_file)` is a published MCP tool parameter: "
+        "renaming it changes the wire contract agents call.",
+        _words("nome"),
         frozenset({"identifier"}),
     ),
     # --- Words that are Italian and English at once --------------------------------

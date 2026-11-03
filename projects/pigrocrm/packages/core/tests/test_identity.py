@@ -176,7 +176,7 @@ def test_upsert_and_issue_refuses_an_address_that_normalises_to_nothing(
     assert IdentityService(registry_session, settings).upsert_and_issue("   ") is None
 
 
-def test_an_identity_token_is_refused_as_an_access_token_and_vice_versa(
+def test_an_identity_token_is_refused_as_an_access_token_and_the_other_way_round(
     settings: Settings, registry_session: Session
 ) -> None:
     """The whole point of widening `TokenType` rather than reusing "access": a token

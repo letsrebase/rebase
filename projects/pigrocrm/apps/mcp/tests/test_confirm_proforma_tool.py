@@ -19,7 +19,7 @@ from pigrocrm.core.customers.service import CustomerService
 from pigrocrm.core.fiscal.schemas import FiscalProfileUpsert
 from pigrocrm.core.fiscal.service import FiscalProfileService
 
-RIGA = {"description": "Consulenza", "quantity": "2", "unit_price": "100.00"}
+LINE = {"description": "Consulenza", "quantity": "2", "unit_price": "100.00"}
 
 
 def _customer(session: Session) -> str:
@@ -35,7 +35,7 @@ async def test_a_draft_proforma_with_lines_is_confirmed(server: Any, mcp_session
     customer_id = _customer(mcp_session)
     async with Client(server) as client:
         created = await client.call_tool(
-            "create_proforma", {"customer_id": customer_id, "lines": [RIGA]}
+            "create_proforma", {"customer_id": customer_id, "lines": [LINE]}
         )
         assert not created.is_error, created.content[0].text
         invoice_id = created.structured_content["id"]
@@ -74,7 +74,7 @@ async def test_a_confirmed_proforma_is_not_confirmed_twice(
     customer_id = _customer(mcp_session)
     async with Client(server) as client:
         created = await client.call_tool(
-            "create_proforma", {"customer_id": customer_id, "lines": [RIGA]}
+            "create_proforma", {"customer_id": customer_id, "lines": [LINE]}
         )
         invoice_id = created.structured_content["id"]
         first = await client.call_tool("confirm_proforma", {"invoice_id": invoice_id})
@@ -93,13 +93,13 @@ async def test_a_confirmed_proforma_is_still_the_agent_s_to_shape(
     customer_id = _customer(mcp_session)
     async with Client(server) as client:
         created = await client.call_tool(
-            "create_proforma", {"customer_id": customer_id, "lines": [RIGA]}
+            "create_proforma", {"customer_id": customer_id, "lines": [LINE]}
         )
         invoice_id = created.structured_content["id"]
         await client.call_tool("confirm_proforma", {"invoice_id": invoice_id})
         relined = await client.call_tool(
             "replace_proforma_lines",
-            {"invoice_id": invoice_id, "lines": [{**RIGA, "unit_price": "150.00"}]},
+            {"invoice_id": invoice_id, "lines": [{**LINE, "unit_price": "150.00"}]},
         )
         assert not relined.is_error, relined.content[0].text
         assert relined.structured_content["status"] == "confirmed"

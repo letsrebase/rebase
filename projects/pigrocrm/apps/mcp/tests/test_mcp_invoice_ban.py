@@ -646,20 +646,20 @@ def test_the_structural_ban_has_a_second_line_on_the_credential_itself() -> None
     from pigrocrm.core.agent_actions import AGENT_ALLOWED_ACTIONS, FULL_ACCESS_ACTIONS
 
     tool_name_to_action = {"mark_invoice_transmitted": "mark_transmitted_externally"}
-    attesi = {tool_name_to_action.get(name, name) for name in FORBIDDEN}
+    expected = {tool_name_to_action.get(name, name) for name in FORBIDDEN}
 
     # The union would still balance if one of the three grew a tool and stayed in both
     # sets, so the disjointness is asserted on its own: `REST_ONLY_FORBIDDEN` claims
     # "no tool", and a claim nothing checks is a comment.
-    assert not (REST_ONLY_FORBIDDEN & attesi), (
+    assert not (REST_ONLY_FORBIDDEN & expected), (
         "un'operazione elencata in REST_ONLY_FORBIDDEN ha ora un tool MCP: togliela da "
-        f"quel set, la sua motivazione non vale piu' -- {sorted(REST_ONLY_FORBIDDEN & attesi)}"
+        f"quel set, la sua motivazione non vale piu' -- {sorted(REST_ONLY_FORBIDDEN & expected)}"
     )
-    assert not (attesi & AGENT_ALLOWED_ACTIONS), (
+    assert not (expected & AGENT_ALLOWED_ACTIONS), (
         "an operation with a banned tool is in AGENT_ALLOWED_ACTIONS: "
-        f"{sorted(attesi & AGENT_ALLOWED_ACTIONS)}"
+        f"{sorted(expected & AGENT_ALLOWED_ACTIONS)}"
     )
-    assert attesi | REST_ONLY_FORBIDDEN == set(FULL_ACCESS_ACTIONS), (
+    assert expected | REST_ONLY_FORBIDDEN == set(FULL_ACCESS_ACTIONS), (
         "le due meta' del divieto sono divergenti: FORBIDDEN vieta il tool, "
         "FULL_ACCESS_ACTIONS vieta l'operazione a qualunque credenziale di tipo "
         "agente. Un name aggiunto a una sola delle due lascia proprio il buco che la "
@@ -667,9 +667,9 @@ def test_the_structural_ban_has_a_second_line_on_the_credential_itself() -> None
         "stessa chiamata via REST con lo stesso token. Un'operazione vietata che non ha "
         "nessun tool va elencata e motivata in REST_ONLY_FORBIDDEN, non lasciata come "
         "gioco in questa asserzione.\n"
-        f"solo in FORBIDDEN: {sorted(attesi - set(FULL_ACCESS_ACTIONS))}\n"
+        f"solo in FORBIDDEN: {sorted(expected - set(FULL_ACCESS_ACTIONS))}\n"
         "solo in FULL_ACCESS_ACTIONS: "
-        f"{sorted(set(FULL_ACCESS_ACTIONS) - attesi - REST_ONLY_FORBIDDEN)}\n"
+        f"{sorted(set(FULL_ACCESS_ACTIONS) - expected - REST_ONLY_FORBIDDEN)}\n"
         "in REST_ONLY_FORBIDDEN ma non vietate: "
         f"{sorted(REST_ONLY_FORBIDDEN - set(FULL_ACCESS_ACTIONS))}"
     )

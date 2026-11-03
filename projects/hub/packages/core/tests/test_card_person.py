@@ -156,7 +156,7 @@ def test_the_guard_reads_the_name_the_cv_spells_the_contacts_and_the_links() -> 
     known = KnownIdentifiers(
         last_name="Zz",
         cv_last_name="Babbage",
-        cv_nome="Charles",
+        cv_first_name="Charles",
         emails=["charles@analytical.example"],
         phones=["393331234567"],
         hostnames=["difference-engine.example"],
@@ -194,8 +194,8 @@ def test_a_card_that_carries_the_persons_phone_is_asked_again_then_failed(
     assert IDENTIFYING_AGAIN in llm.requests[1].messages[2].text
     assert "Campi da correggere: profile_summary." in llm.requests[1].messages[2].text
     # The contacts are read all the same: the card was refused, not the persona.
-    persona = stored_person(clean_hub, person)
-    assert persona is not None and persona.phone == "+39 333 123 4567"
+    stored = stored_person(clean_hub, person)
+    assert stored is not None and stored.phone == "+39 333 123 4567"
 
 
 def test_a_rewrite_without_the_phone_is_written(clean_hub: Session) -> None:
@@ -278,8 +278,8 @@ def test_to_new_cvs_card_replaces_the_person(clean_hub: Session) -> None:
 
     _writer(clean_hub, RecordingCall([card_response(person=other)])).write(person)
 
-    persona = stored_person(clean_hub, person)
-    assert persona is not None and (persona.first_name, persona.email) == ("Charles", None)
+    stored = stored_person(clean_hub, person)
+    assert stored is not None and (stored.first_name, stored.email) == ("Charles", None)
 
 
 def test_to_person_read_from_another_cv_is_never_shown(clean_hub: Session) -> None:
@@ -308,8 +308,8 @@ def test_to_failed_regeneration_of_the_same_cv_keeps_the_person(clean_hub: Sessi
 
     again.write(person, force=True)
 
-    persona = stored_person(clean_hub, person)
-    assert persona is not None and persona.email == "ada.lovelace@example.org"
+    stored = stored_person(clean_hub, person)
+    assert stored is not None and stored.email == "ada.lovelace@example.org"
 
 
 def test_deleting_the_cv_deletes_the_person(clean_hub: Session) -> None:

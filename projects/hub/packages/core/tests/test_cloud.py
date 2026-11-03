@@ -108,8 +108,8 @@ def test_grant_is_one_live_per_user_and_company_and_mails(
 
     # The same person behind a second request is a second company: a grant of its own,
     # and a mail naming that company.
-    bianchi = _request(clean, company="Bianchi Srl")
-    other, other_mail = cloud.grant(bianchi, admin_id)
+    second_company = _request(clean, company="Bianchi Srl")
+    other, other_mail = cloud.grant(second_company, admin_id)
     assert other.id != first.id and other.user_id == first.user_id
     assert other_mail is not None and "Bianchi Srl" in other_mail.subject
     live = clean.scalars(select(TalentCloudGrant).where(TalentCloudGrant.revoked_at.is_(None)))
@@ -130,10 +130,10 @@ def test_grant_on_a_request_that_is_not_there_is_not_found(
 
 def test_revoke_closes_it(clean: Session, settings: Settings) -> None:
     admin_id = an_admin(clean)
-    acme, bianchi = _request(clean), _request(clean, company="Bianchi Srl")
+    acme, second_company = _request(clean), _request(clean, company="Bianchi Srl")
     cloud = TalentCloudService(clean, settings)
     opened, _ = cloud.grant(acme, admin_id)
-    kept, _ = cloud.grant(bianchi, admin_id)
+    kept, _ = cloud.grant(second_company, admin_id)
 
     closed = cloud.revoke(acme, admin_id)
     assert closed.id == opened.id
@@ -141,7 +141,7 @@ def test_revoke_closes_it(clean: Session, settings: Settings) -> None:
     assert (closed.revoked_by, closed.revoked_by_name) == (admin_id, "Ivan")
     # That company's grant only: the other company's stays live, and so does the cloud.
     assert cloud.for_company(acme) is None
-    live = cloud.for_company(bianchi)
+    live = cloud.for_company(second_company)
     assert live is not None and live.id == kept.id
     assert cloud.for_user(opened.user_id) is not None
 
@@ -159,16 +159,16 @@ def test_for_user_answers_the_newest_live_grant_across_companies(
     clean: Session, settings: Settings
 ) -> None:
     admin_id = an_admin(clean)
-    acme, bianchi = _request(clean), _request(clean, company="Bianchi Srl")
+    acme, second_company = _request(clean), _request(clean, company="Bianchi Srl")
     cloud = TalentCloudService(clean, settings)
     older, _ = cloud.grant(acme, admin_id)
     assert cloud.for_user(older.user_id) is not None
-    newer, _ = cloud.grant(bianchi, admin_id)
+    newer, _ = cloud.grant(second_company, admin_id)
 
     newest = cloud.for_user(older.user_id)
-    assert newest is not None and newest.id == newer.id and newest.company_id == bianchi
+    assert newest is not None and newest.id == newer.id and newest.company_id == second_company
 
-    cloud.revoke(bianchi, admin_id)
+    cloud.revoke(second_company, admin_id)
     remaining = cloud.for_user(older.user_id)
     assert remaining is not None and remaining.id == older.id
 
@@ -212,10 +212,10 @@ def test_the_list_reads_every_grant_newest_first_with_the_names(
     clean: Session, settings: Settings
 ) -> None:
     admin_id = an_admin(clean)
-    acme, bianchi = _request(clean), _request(clean, "ada@studio.it", "Bianchi Srl")
+    acme, second_company = _request(clean), _request(clean, "ada@studio.it", "Bianchi Srl")
     cloud = TalentCloudService(clean, settings)
     first, _ = cloud.grant(acme, admin_id)
-    second, _ = cloud.grant(bianchi, admin_id)
+    second, _ = cloud.grant(second_company, admin_id)
     cloud.revoke(acme, admin_id)
 
     grants = cloud.list()
@@ -231,15 +231,15 @@ def test_the_list_leaves_out_a_deleted_requests_grant_until_it_is_restored(
     """The list says what `for_user` does: a deleted request's live grant opens nothing,
     so it is not listed as live."""
     admin_id = an_admin(clean)
-    acme, bianchi = _request(clean), _request(clean, "ada@studio.it", "Bianchi Srl")
+    acme, second_company = _request(clean), _request(clean, "ada@studio.it", "Bianchi Srl")
     cloud = TalentCloudService(clean, settings)
     kept, _ = cloud.grant(acme, admin_id)
-    hidden, _ = cloud.grant(bianchi, admin_id)
+    hidden, _ = cloud.grant(second_company, admin_id)
 
-    CompanyService(clean).soft_delete(bianchi, admin_id)
+    CompanyService(clean).soft_delete(second_company, admin_id)
     assert [grant.id for grant in cloud.list()] == [kept.id]
 
-    CompanyService(clean).restore(bianchi, admin_id)
+    CompanyService(clean).restore(second_company, admin_id)
     assert [grant.id for grant in cloud.list()] == [hidden.id, kept.id]
 
 
@@ -424,7 +424,7 @@ def _ids(service: CloudTalentService, **filters: Any) -> set[UUID]:
 
 def test_the_cloud_shows_every_visible_talent_by_name_vetted_first(talents: Session) -> None:
     rossi = _talent(talents, "Rossi", first_name="Mario")
-    bianchi = _talent(talents, "Bianchi", first_name="Luca", vetted=True)
+    second_company = _talent(talents, "Bianchi", first_name="Luca", vetted=True)
     verdi = _talent(talents, "Verdi", first_name="Anna", vetted=True)
     abate = _talent(talents, "Abate", first_name="Carla", remote=None, rate=None, cv=False)
     # Outside `cloud_visible`: turned down, deleted, no card, a card retired, and a stored
@@ -440,7 +440,12 @@ def test_the_cloud_shows_every_visible_talent_by_name_vetted_first(talents: Sess
 
     listed = CloudTalentService(talents).list(CloudTalentQuery())
 
-    assert [talent.freelancer_id for talent in listed.items] == [bianchi, verdi, abate, rossi]
+    assert [talent.freelancer_id for talent in listed.items] == [
+        second_company,
+        verdi,
+        abate,
+        rossi,
+    ]
     assert listed.capped is False
     first = listed.items[0]
     assert (first.first_name, first.last_name, first.vetted) == ("Luca", "Bianchi", True)
@@ -754,8 +759,8 @@ def test_the_caller_is_the_newest_grants_company_and_the_users_phone(
     assert service.caller(user_id) is None
 
     TalentCloudService(talents, settings).grant(acme, admin_id)
-    bianchi = _request(talents, company="Bianchi Srl")
-    newest, _ = TalentCloudService(talents, settings).grant(bianchi, admin_id)
+    second_company = _request(talents, company="Bianchi Srl")
+    newest, _ = TalentCloudService(talents, settings).grant(second_company, admin_id)
     caller = service.caller(user_id)
 
     assert caller is not None
@@ -764,9 +769,9 @@ def test_the_caller_is_the_newest_grants_company_and_the_users_phone(
         "wile@acme.it",
         "+39 345 1234567",
     )
-    assert (caller.company_id, caller.company) == (bianchi, "Bianchi Srl")
+    assert (caller.company_id, caller.company) == (second_company, "Bianchi Srl")
     assert caller.granted_at == newest.granted_at
-    TalentCloudService(talents, settings).revoke(bianchi, admin_id)
+    TalentCloudService(talents, settings).revoke(second_company, admin_id)
     again = service.caller(user_id)
     assert again is not None and (again.company_id, again.company) == (acme, "Acme S.r.l.")
 

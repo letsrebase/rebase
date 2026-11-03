@@ -67,7 +67,7 @@ from pigrocrm.core.timetracking.service import TimeEntryService
 
 # The agent, identical to `conftest.py`'s own `ADMIN`, which is what the `server` fixture
 # hands every tool call.
-AGENTE = Actor(id=None, type="mcp", role="admin")
+AGENT_ACTOR = Actor(id=None, type="mcp", role="admin")
 
 # Never a literal year: `invoices.checks.check_issue_date` refuses a `issue_date`
 # outside the current one, so a hard-coded date would be a test that starts failing on the
@@ -111,7 +111,7 @@ def cycle(mcp_session: Session, tmp_path: Path) -> dict[str, Any]:
             province="MI",
             email="mario@example.com",
         ),
-        AGENTE,
+        AGENT_ACTOR,
     )
     stages = PipelineService(mcp_session).seed_defaults(Actor(id=None, type="system", role="admin"))
     customer = CustomerService(mcp_session).create(
@@ -125,11 +125,11 @@ def cycle(mcp_session: Session, tmp_path: Path) -> dict[str, Any]:
             province="RM",
             country="IT",
         ),
-        AGENTE,
+        AGENT_ACTOR,
     )
     deal = DealService(mcp_session).create(
         DealCreate(name="Progetto Ciclo", customer_id=customer.id, hourly_rate=RATE),
-        AGENTE,
+        AGENT_ACTOR,
     )
     worker = UserService(mcp_session).create(
         UserCreate(
@@ -141,7 +141,7 @@ def cycle(mcp_session: Session, tmp_path: Path) -> dict[str, Any]:
         ),
         Actor.system(),
     )
-    umano = UserService(mcp_session).create(
+    human_user = UserService(mcp_session).create(
         UserCreate(
             email="umano-full-cycle@pigro.it",
             password="supersegreta1",
@@ -157,7 +157,7 @@ def cycle(mcp_session: Session, tmp_path: Path) -> dict[str, Any]:
         # `type="user"` with a real id: exactly the Actor `get_actor` builds from a cookie
         # login, and the only reason the timeline assertion at the end can tell the two
         # halves of this test apart at all.
-        "umano": Actor(id=umano.id, type="user", role="admin"),
+        "umano": Actor(id=human_user.id, type="user", role="admin"),
         # `bind_to_invoice` reaches `InvoiceService`, whose constructor takes a
         # backend because a *later* emission renders artefacts through it. A tmp-dir
         # backend for the same reason the `server` fixture builds one: the default root is
@@ -192,7 +192,7 @@ async def test_the_full_cycle_ends_on_the_tool_an_agent_cannot_find(
     server: Any, mcp_session: Session, cycle: dict[str, Any]
 ) -> None:
     deal_id: UUID = cycle["deal_id"]
-    umano: Actor = cycle["umano"]
+    human_user: Actor = cycle["umano"]
     storage: LocalFileStorage = cycle["storage"]
 
     # 1. Claude records the hours and reads the deal back.
@@ -244,28 +244,28 @@ async def test_the_full_cycle_ends_on_the_tool_an_agent_cannot_find(
     #    inherits. The link-based reading would leave the work in neither figure: priced,
     #    done, and invisible until somebody pressed "issue".
     draft = TimeBilling(mcp_session, storage).bind_to_invoice(
-        deal_id, BindTimeRequest(entry_ids=[entry_id], group_by_month=True), umano
+        deal_id, BindTimeRequest(entry_ids=[entry_id], group_by_month=True), human_user
     )
     assert draft.status == "draft"
     assert draft.taxable_amount == Decimal("800.00")
 
-    pending = AnalyticsService(mcp_session).deal_pnl(deal_id, umano)
+    pending = AnalyticsService(mcp_session).deal_pnl(deal_id, human_user)
     assert pending.revenue == Decimal("0.00") == _revenue_from_sql(mcp_session, deal_id)
     assert pending.billable_uninvoiced_hours == Decimal("8.00")
 
     # 4. ...and then issues it, which is the step that makes it revenue -- and the step
     #    with no MCP tool behind it (slice 3 §11).
-    issued = InvoiceService(mcp_session, storage).issue(draft.id, InvoiceIssue(), umano)
+    issued = InvoiceService(mcp_session, storage).issue(draft.id, InvoiceIssue(), human_user)
     assert issued.number is not None
     assert issued.year == TODAY.year
 
     # 5. The deal is won, so its margin earns the right to stop being provisional: `status`
     #    is `closed` only when the stage is not `open` *and* nothing billable is left
     #    unbilled. Both halves are now true, and neither alone would have been enough.
-    DealService(mcp_session).move_stage(deal_id, cycle["won_id"], umano)
+    DealService(mcp_session).move_stage(deal_id, cycle["won_id"], human_user)
 
     # 6. Criterion 1, against direct SQL rather than a second call to the method checked.
-    pnl = AnalyticsService(mcp_session).deal_pnl(deal_id, umano)
+    pnl = AnalyticsService(mcp_session).deal_pnl(deal_id, human_user)
     assert pnl.revenue == _revenue_from_sql(mcp_session, deal_id) == Decimal("800.00")
     assert pnl.status == "closed"
     assert pnl.issued_invoices == 1
@@ -281,7 +281,7 @@ async def test_the_full_cycle_ends_on_the_tool_an_agent_cannot_find(
     #    state through it -- which is why the same hour was still editable one step ago.
     with pytest.raises(ImmutableField) as refusal:
         TimeEntryService(mcp_session).update(
-            entry_id, TimeEntryUpdate(hours=Decimal("9.00")), umano
+            entry_id, TimeEntryUpdate(hours=Decimal("9.00")), human_user
         )
     assert refusal.value.details["field"] == "hours"
     assert refusal.value.code == "immutable_field"
@@ -289,12 +289,12 @@ async def test_the_full_cycle_ends_on_the_tool_an_agent_cannot_find(
     # 8. The timeline tells the two actors apart -- which is the whole reason an agent is
     #    allowed to write at all: everything it did is attributable to it, by name.
     timeline = ActivityService(mcp_session).timeline("deal", deal_id, 200)
-    tipi_actor = {entry.actor_type for entry in timeline}
-    assert {"mcp", "user"} <= tipi_actor
-    umani = {entry.kind for entry in timeline if entry.actor_type == "user"}
-    agente = {entry.kind for entry in timeline if entry.actor_type == "mcp"}
-    assert "time_bound_to_invoice" in umani
-    assert "time_bound_to_invoice" not in agente
+    actor_types = {entry.actor_type for entry in timeline}
+    assert {"mcp", "user"} <= actor_types
+    human_kinds = {entry.kind for entry in timeline if entry.actor_type == "user"}
+    agent_kinds = {entry.kind for entry in timeline if entry.actor_type == "mcp"}
+    assert "time_bound_to_invoice" in human_kinds
+    assert "time_bound_to_invoice" not in agent_kinds
 
     # 9. And Claude, reading the same resource again, sees the decision it could not take.
     async with Client(server) as client:

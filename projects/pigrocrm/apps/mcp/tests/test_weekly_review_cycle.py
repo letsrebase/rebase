@@ -62,7 +62,7 @@ from pigrocrm_mcp.server import build_server
 
 # The agent, identical to `conftest.py`'s own `ADMIN`: `type="mcp"`, which is what every
 # tool call and every prompt render below is attributed to.
-AGENTE = Actor(id=None, type="mcp", role="admin")
+AGENT_ACTOR = Actor(id=None, type="mcp", role="admin")
 
 _PREFIX = "MCPCICLO"
 STAGE_OPEN = f"{_PREFIX} stato aperto"
@@ -78,7 +78,7 @@ OFFER_ACCEPTED = f"{_PREFIX} offerta precedente"
 # it. Five digits, comfortably over the three-character floor, and distinctive enough that
 # the per-class result limit cannot push this row out of the group.
 VAT_NUMBER = "97531864200"
-FRAMMENTO = VAT_NUMBER[3:8]
+VAT_FRAGMENT = VAT_NUMBER[3:8]
 
 # How long the stalled offer has been waiting. A literal number of days back from *today*,
 # never a literal date: a fixed date would make the age drift by one every morning and the
@@ -183,7 +183,7 @@ def cycle_server(mcp_engine: Engine, tmp_path: Path) -> Iterator[Corpus]:
     try:
         yield Corpus(
             server=build_server(
-                ScopedSessionProvider(factory), lambda: AGENTE, LocalFileStorage(tmp_path)
+                ScopedSessionProvider(factory), lambda: AGENT_ACTOR, LocalFileStorage(tmp_path)
             ),
             factory=factory,
             customer_id=customer_id,
@@ -243,8 +243,8 @@ async def test_the_agent_runs_the_weekly_review_end_to_end(cycle_server: Corpus)
         # 4. Resolve the customer from a fragment of its VAT number. The fragment appears in
         #    neither the briefing nor the dashboard payload, which is what makes this a
         #    *resolution* and not a lookup of something already in hand.
-        assert FRAMMENTO not in briefing
-        found = await client.call_tool("search_everything", {"term": FRAMMENTO})
+        assert VAT_FRAGMENT not in briefing
+        found = await client.call_tool("search_everything", {"term": VAT_FRAGMENT})
         assert not found.is_error, str(found.content)
         customers = next(
             group for group in _payload(found)["groups"] if group["entity"] == "customer"
@@ -280,17 +280,18 @@ async def test_the_economic_dashboard_the_agent_reads_passes_criterion_one(
     start failing on the first of the next one.
     """
     today = today_local()
-    da, a = month_bounds(today.year, today.month)
+    month_start, month_end = month_bounds(today.year, today.month)
 
     async with Client(cycle_server.server) as client:
         result = await client.call_tool(
-            "get_economic_dashboard", {"date_from": da.isoformat(), "date_to": a.isoformat()}
+            "get_economic_dashboard",
+            {"date_from": month_start.isoformat(), "date_to": month_end.isoformat()},
         )
     assert not result.is_error, str(result.content)
 
     with session_factory(mcp_engine)() as session:
         direct = AnalyticsService(session).period_pnl(
-            PeriodPnlQuery(date_from=da, date_to=a, customer_id=None), AGENTE
+            PeriodPnlQuery(date_from=month_start, date_to=month_end, customer_id=None), AGENT_ACTOR
         )
     assert _payload(result)["pnl"] == direct.model_dump(mode="json")
 

@@ -511,7 +511,7 @@ def test_the_cloud_proposals_count_in_the_daily_cap(
 # ---- the requests, with no form --------------------------------------------------------------
 
 
-def test_richiedi_files_one_talent_for_the_grants_company_and_mails_rebase(
+def test_request_files_one_talent_for_the_grants_company_and_mails_rebase(
     client: TestClient, cloud: Session, sender: RecordingSender
 ) -> None:
     ada = _talent(cloud, "Lovelace", card={"role": "Data engineer"})

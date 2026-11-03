@@ -210,7 +210,7 @@ def _second_legal_entity(db_session: Session, **overrides: object) -> LegalEntit
     return row
 
 
-def test_nome_is_derived_from_the_legal_name_when_missing(db_session: Session) -> None:
+def test_name_is_derived_from_the_legal_name_when_missing(db_session: Session) -> None:
     read = LegalEntityService(db_session).upsert_default(_upsert(legal_name="S" * 120), ADMIN)
     assert read.name == "S" * 80
     assert read.is_default is True
@@ -334,7 +334,7 @@ def test_the_database_refuses_an_inactive_default(db_session: Session) -> None:
     db_session.rollback()
 
 
-def test_a_lower_case_country_code_does_not_make_an_italian_p_iva_foreign(
+def test_a_lower_case_country_code_does_not_make_an_italian_vat_number_foreign(
     db_session: Session,
 ) -> None:
     with pytest.raises(ValidationFailed) as excinfo:

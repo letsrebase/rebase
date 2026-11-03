@@ -369,13 +369,13 @@ def test_to_row_with_to_broken_requests_snapshot_is_left_out_and_logged(
         status="sent",
         sent_at=T0,
     )
-    rotta = company(clean, "rotta@studio.it")
+    broken_company = company(clean, "rotta@studio.it")
     broken = CampaignRecipient(
         campaign_id=parent.id,
         email="rotta@studio.it",
         kind="company",
         code="2",
-        before={"requests": {str(rotta.id): bad_value}},
+        before={"requests": {str(broken_company.id): bad_value}},
         unsubscribe_token="t-broken",
         status="sent",
         sent_at=T0,
@@ -410,14 +410,14 @@ def test_the_follow_ups_preview_and_schedule_survive_a_broken_parent_row(
             sent_at=T0,
         )
     )
-    rotta = company(clean, "rotta2@studio.it")
+    broken_company = company(clean, "rotta2@studio.it")
     clean.add(
         CampaignRecipient(
             campaign_id=parent.id,
             email="rotta2@studio.it",
             kind="company",
             code="2",
-            before={"requests": {str(rotta.id): "not-a-date"}},
+            before={"requests": {str(broken_company.id): "not-a-date"}},
             unsubscribe_token="t-broken2",
             status="sent",
             sent_at=T0,

@@ -25,8 +25,8 @@ from pigrocrm.core.legal_entities.schemas import LegalEntityUpsert
 from pigrocrm.core.legal_entities.service import LegalEntityService
 from pigrocrm.core.storage import LocalFileStorage
 
-RIGA = {"description": "Consulenza", "quantity": "2", "unit_price": "100.00"}
-UMANO = Actor(id=None, type="user", role="admin")
+LINE = {"description": "Consulenza", "quantity": "2", "unit_price": "100.00"}
+HUMAN_ACTOR = Actor(id=None, type="user", role="admin")
 
 
 def _customer(session: Session) -> str:
@@ -65,7 +65,7 @@ async def test_a_proforma_is_created_dated_today_and_takes_a_period_and_a_date(
     customer_id = _customer(mcp_session)
     async with Client(server) as client:
         created = await client.call_tool(
-            "create_proforma", {"customer_id": customer_id, "lines": [RIGA]}
+            "create_proforma", {"customer_id": customer_id, "lines": [LINE]}
         )
         assert not created.is_error, created.content[0].text
         body = created.structured_content
@@ -76,7 +76,7 @@ async def test_a_proforma_is_created_dated_today_and_takes_a_period_and_a_date(
             "create_proforma",
             {
                 "customer_id": customer_id,
-                "lines": [RIGA],
+                "lines": [LINE],
                 "memo": "FDE, agosto 2026",
                 "issue_date": "2026-09-05",
                 "accrual_from": "2026-08-01",
@@ -99,7 +99,7 @@ async def test_update_proforma_moves_the_date_and_sets_the_period_on_a_draft(
     async with Client(server) as client:
         created = await client.call_tool(
             "create_proforma",
-            {"customer_id": customer_id, "lines": [RIGA], "memo": "Consulenza"},
+            {"customer_id": customer_id, "lines": [LINE], "memo": "Consulenza"},
         )
         assert not created.is_error, created.content[0].text
         invoice_id = created.structured_content["id"]
@@ -148,8 +148,8 @@ async def test_update_proforma_refuses_to_invoice_and_to_consumed_proforma(
     customer_id = _customer(mcp_session)
     service = InvoiceService(mcp_session, LocalFileStorage(tmp_path / "invoices"))
     invoice = service.create(
-        InvoiceCreate(customer_id=UUID(customer_id), type="invoice", lines=[InvoiceLineIn(**RIGA)]),
-        UMANO,
+        InvoiceCreate(customer_id=UUID(customer_id), type="invoice", lines=[InvoiceLineIn(**LINE)]),
+        HUMAN_ACTOR,
     )
     async with Client(server) as client:
         refused = await client.call_tool(
@@ -162,13 +162,13 @@ async def test_update_proforma_refuses_to_invoice_and_to_consumed_proforma(
 
         created = await client.call_tool(
             "create_proforma",
-            {"customer_id": customer_id, "lines": [RIGA], "issue_date": "2026-09-05"},
+            {"customer_id": customer_id, "lines": [LINE], "issue_date": "2026-09-05"},
         )
         assert not created.is_error, created.content[0].text
         proforma_id = created.structured_content["id"]
 
-    service.confirm_proforma(UUID(proforma_id), UMANO)
-    issued = service.issue(UUID(proforma_id), InvoiceIssue(), UMANO)
+    service.confirm_proforma(UUID(proforma_id), HUMAN_ACTOR)
+    issued = service.issue(UUID(proforma_id), InvoiceIssue(), HUMAN_ACTOR)
     assert issued.number is not None
 
     async with Client(server) as client:
@@ -193,7 +193,7 @@ async def test_a_proforma_takes_its_purchase_order_at_creation_and_on_update(
             "create_proforma",
             {
                 "customer_id": customer_id,
-                "lines": [RIGA],
+                "lines": [LINE],
                 "purchase_order_number": "ODA-14",
                 "purchase_order_date": "2026-10-09",
             },
@@ -217,7 +217,7 @@ async def test_a_proforma_takes_its_purchase_order_at_creation_and_on_update(
             "create_proforma",
             {
                 "customer_id": customer_id,
-                "lines": [RIGA],
+                "lines": [LINE],
                 "purchase_order_tender_code": "Z0A1B2C3D4",
             },
         )

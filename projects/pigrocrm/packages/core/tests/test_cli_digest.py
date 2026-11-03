@@ -55,13 +55,13 @@ from pigrocrm.core.tenants.database import tenant_database_name, tenant_database
 from pigrocrm.core.tenants.service import migrate_to_head
 
 PUBLIC_URL = "https://crm.example.it"
-UNO = "prova-digest-uno"
-DUE = "prova-digest-due"
+FIRST_SPACE = "prova-digest-uno"
+SECOND_SPACE = "prova-digest-due"
 # Provisioned like the others and left as it is born: nobody has entered a customer, a
 # deal, an invoice or an hour, which is the one space that hears nothing (§2).
 EMPTY = "prova-digest-vuoto"
-OWNERS = {UNO: "uno@studio.it", DUE: "due@studio.it"}
-SPACES = (UNO, DUE, EMPTY)
+OWNERS = {FIRST_SPACE: "uno@studio.it", SECOND_SPACE: "due@studio.it"}
+SPACES = (FIRST_SPACE, SECOND_SPACE, EMPTY)
 OWNER_EMPTY = "vuoto@studio.it"
 # The root installation: its own database, and `PIGROCRM_ROOT_SLUG` in its links.
 ROOT_DB = "prova_digest_radice"
@@ -299,8 +299,8 @@ def test_the_cron_mails_every_space_its_week_and_prints_one_line_each(
     assert cli.main(["digest"]) == 0
 
     out = capsys.readouterr().out
-    assert f"{UNO}: inviato a 1" in out
-    assert f"{DUE}: inviato a 1" in out
+    assert f"{FIRST_SPACE}: inviato a 1" in out
+    assert f"{SECOND_SPACE}: inviato a 1" in out
     # The space nobody has started using hears nothing, and says so in the same log: a
     # report where every section is empty is the one mail §2 exists to prevent.
     assert f"{EMPTY}: vuoto" in out
@@ -382,12 +382,12 @@ def test_a_week_already_sent_is_not_sent_a_second_time(
     `digests` row is unique on the week, and the second run says which week it is skipping
     so the log answers «did last week go out» without opening the database."""
     iso = iso_week(_last_week(settings)[0])
-    assert cli.main(["digest", "--slug", UNO]) == 0
+    assert cli.main(["digest", "--slug", FIRST_SPACE]) == 0
     capsys.readouterr()
 
-    assert cli.main(["digest", "--slug", UNO]) == 0
+    assert cli.main(["digest", "--slug", FIRST_SPACE]) == 0
 
-    assert capsys.readouterr().out.strip() == f"{UNO}: già inviato per {iso}"
+    assert capsys.readouterr().out.strip() == f"{FIRST_SPACE}: già inviato per {iso}"
     assert len(_my(cron)) == 1
 
 
@@ -397,23 +397,23 @@ def test_a_rehearsal_says_what_would_go_out_and_sends_nothing(
     """`--dry-run` is how the cron line is verified by hand on the day it is installed.
     It must be distinguishable in the log from the real thing, or the rehearsal reads as
     the week having gone out."""
-    assert cli.main(["digest", "--slug", UNO, "--dry-run"]) == 0
+    assert cli.main(["digest", "--slug", FIRST_SPACE, "--dry-run"]) == 0
 
-    assert capsys.readouterr().out.strip() == f"{UNO}: inviato a 1 (prova)"
+    assert capsys.readouterr().out.strip() == f"{FIRST_SPACE}: inviato a 1 (prova)"
     assert _my(cron) == []
-    assert _weeks(settings, UNO) == []
+    assert _weeks(settings, FIRST_SPACE) == []
 
 
 def test_slug_visits_that_space_and_leaves_the_others_alone(
     settings: Settings, cron: RecordingSender, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    assert cli.main(["digest", "--slug", DUE]) == 0
+    assert cli.main(["digest", "--slug", SECOND_SPACE]) == 0
 
     out = capsys.readouterr().out
-    assert f"{DUE}: inviato a 1" in out
-    assert UNO not in out
-    assert [mail.to for mail in _my(cron)] == [OWNERS[DUE]]
-    assert _weeks(settings, UNO) == []
+    assert f"{SECOND_SPACE}: inviato a 1" in out
+    assert FIRST_SPACE not in out
+    assert [mail.to for mail in _my(cron)] == [OWNERS[SECOND_SPACE]]
+    assert _weeks(settings, FIRST_SPACE) == []
 
 
 def test_a_slug_that_is_not_in_the_registry_is_one_line_and_not_a_failure(
@@ -450,15 +450,15 @@ def test_a_space_where_everybody_switched_it_off_is_said_and_not_sent(
     (`users.weekly_digest`), and the cron reports it rather than obeying it in
     silence: a space that receives nothing for weeks has to be distinguishable in the log
     from a space that is not being visited at all."""
-    engine = _space_engine(settings, UNO)
+    engine = _space_engine(settings, FIRST_SPACE)
     try:
         with engine.begin() as connection:
             connection.execute(text("update users set weekly_digest = false"))
-        assert cli.main(["digest", "--slug", UNO]) == 0
+        assert cli.main(["digest", "--slug", FIRST_SPACE]) == 0
 
-        assert capsys.readouterr().out.strip() == f"{UNO}: nessun destinatario"
+        assert capsys.readouterr().out.strip() == f"{FIRST_SPACE}: nessun destinatario"
         assert _my(cron) == []
-        assert _weeks(settings, UNO) == []
+        assert _weeks(settings, FIRST_SPACE) == []
     finally:
         with engine.begin() as connection:
             connection.execute(text("update users set weekly_digest = true"))
@@ -472,14 +472,14 @@ def test_force_with_a_day_of_that_week_sends_it_again(
     is already there is not an answer. The row moves, it is not duplicated."""
     monday = _last_week(settings)[0]
     iso = iso_week(monday)
-    assert cli.main(["digest", "--slug", UNO]) == 0
+    assert cli.main(["digest", "--slug", FIRST_SPACE]) == 0
     capsys.readouterr()
 
-    assert cli.main(["digest", "--slug", UNO, "--force", "--date", monday.isoformat()]) == 0
+    assert cli.main(["digest", "--slug", FIRST_SPACE, "--force", "--date", monday.isoformat()]) == 0
 
-    assert capsys.readouterr().out.strip() == f"{UNO}: inviato a 1"
-    assert [mail.to for mail in _my(cron)] == [OWNERS[UNO], OWNERS[UNO]]
-    assert _weeks(settings, UNO) == [iso]
+    assert capsys.readouterr().out.strip() == f"{FIRST_SPACE}: inviato a 1"
+    assert [mail.to for mail in _my(cron)] == [OWNERS[FIRST_SPACE], OWNERS[FIRST_SPACE]]
+    assert _weeks(settings, FIRST_SPACE) == [iso]
 
 
 def test_a_space_whose_database_is_gone_does_not_take_the_others_with_it(
@@ -505,19 +505,21 @@ def test_a_space_whose_database_is_gone_does_not_take_the_others_with_it(
         "tenant_database_url",
         lambda settings, db_name: real(
             settings,
-            "pigrocrm_space_never_created" if db_name == tenant_database_name(DUE) else db_name,
+            "pigrocrm_space_never_created"
+            if db_name == tenant_database_name(SECOND_SPACE)
+            else db_name,
         ),
     )
 
     assert cli.main(["digest"]) == 0
 
     captured = capsys.readouterr()
-    assert f"{UNO}: inviato a 1" in captured.out
-    assert DUE not in captured.out
+    assert f"{FIRST_SPACE}: inviato a 1" in captured.out
+    assert SECOND_SPACE not in captured.out
     # The type and never the text: a psycopg error carries the connection's URL.
-    assert captured.err.strip() == f"{DUE}: saltato (OperationalError)"
-    assert [mail.to for mail in _my(cron)] == [OWNERS[UNO]]
-    assert _weeks(settings, DUE) == []
+    assert captured.err.strip() == f"{SECOND_SPACE}: saltato (OperationalError)"
+    assert [mail.to for mail in _my(cron)] == [OWNERS[FIRST_SPACE]]
+    assert _weeks(settings, SECOND_SPACE) == []
 
 
 def test_a_client_that_cannot_be_built_is_one_line_and_still_shuts_the_sdk_down(
@@ -538,7 +540,7 @@ def test_a_client_that_cannot_be_built_is_one_line_and_still_shuts_the_sdk_down(
     monkeypatch.setattr(cli_cron, "tracker_from_settings", explode)
     monkeypatch.setattr(telemetry, "shutdown", lambda: closed.append("shutdown"))
 
-    assert cli.main(["digest", "--slug", UNO]) == 0
+    assert cli.main(["digest", "--slug", FIRST_SPACE]) == 0
 
     captured = capsys.readouterr()
     assert captured.err.strip() == "invio non configurabile (RuntimeError)"
@@ -597,12 +599,12 @@ def test_every_space_the_command_walked_has_its_clock_moved_whatever_the_outcome
 def test_a_space_where_nobody_wants_the_report_still_counts_as_a_run(
     settings: Settings, cron: RecordingSender
 ) -> None:
-    engine = _space_engine(settings, UNO)
+    engine = _space_engine(settings, FIRST_SPACE)
     try:
         with engine.begin() as connection:
             connection.execute(text("update users set weekly_digest = false"))
-        assert cli.main(["digest", "--slug", UNO]) == 0
-        assert _clock(settings, UNO) == (True, None), "nessun destinatario ran to the end"
+        assert cli.main(["digest", "--slug", FIRST_SPACE]) == 0
+        assert _clock(settings, FIRST_SPACE) == (True, None), "nessun destinatario ran to the end"
     finally:
         with engine.begin() as connection:
             connection.execute(text("update users set weekly_digest = true"))
@@ -610,9 +612,9 @@ def test_a_space_where_nobody_wants_the_report_still_counts_as_a_run(
 
 
 def test_a_rehearsal_leaves_the_clock_alone(settings: Settings, cron: RecordingSender) -> None:
-    assert cli.main(["digest", "--slug", UNO, "--dry-run"]) == 0
+    assert cli.main(["digest", "--slug", FIRST_SPACE, "--dry-run"]) == 0
 
-    assert _clock(settings, UNO) is None
+    assert _clock(settings, FIRST_SPACE) is None
 
 
 def test_a_space_that_skips_its_week_records_why_and_the_next_run_clears_it(
@@ -624,19 +626,19 @@ def test_a_space_that_skips_its_week_records_why_and_the_next_run_clears_it(
     original = DigestRun.send_for_space
 
     def refused(self, slug, *args, **kwargs):  # type: ignore[no-untyped-def]
-        if slug == UNO:
+        if slug == FIRST_SPACE:
             return DigestOutcome(slug, "skipped", "2026-W43", reason=SEND_REJECTED)
         return original(self, slug, *args, **kwargs)
 
     monkeypatch.setattr(DigestRun, "send_for_space", refused)
-    assert cli.main(["digest", "--slug", UNO]) == 0
+    assert cli.main(["digest", "--slug", FIRST_SPACE]) == 0
     capsys.readouterr()
 
-    assert _clock(settings, UNO) == (False, SEND_REJECTED), "a failure and no success yet"
+    assert _clock(settings, FIRST_SPACE) == (False, SEND_REJECTED), "a failure and no success yet"
 
     monkeypatch.setattr(DigestRun, "send_for_space", original)
-    assert cli.main(["digest", "--slug", UNO]) == 0
-    assert _clock(settings, UNO) == (True, None), "the success ends the failure"
+    assert cli.main(["digest", "--slug", FIRST_SPACE]) == 0
+    assert _clock(settings, FIRST_SPACE) == (True, None), "the success ends the failure"
 
 
 def test_a_space_the_command_cannot_open_is_recorded_nowhere_and_says_so_once(
@@ -655,14 +657,16 @@ def test_a_space_the_command_cannot_open_is_recorded_nowhere_and_says_so_once(
         "tenant_database_url",
         lambda settings, db_name: real(
             settings,
-            "pigrocrm_space_never_created" if db_name == tenant_database_name(DUE) else db_name,
+            "pigrocrm_space_never_created"
+            if db_name == tenant_database_name(SECOND_SPACE)
+            else db_name,
         ),
     )
 
     assert cli.main(["digest"]) == 0
 
-    assert capsys.readouterr().err.strip() == f"{DUE}: saltato (OperationalError)"
-    assert _clock(settings, UNO) == (True, None)
+    assert capsys.readouterr().err.strip() == f"{SECOND_SPACE}: saltato (OperationalError)"
+    assert _clock(settings, FIRST_SPACE) == (True, None)
 
 
 def test_an_error_before_the_send_records_the_exception_type(
@@ -676,10 +680,10 @@ def test_an_error_before_the_send_records_the_exception_type(
 
     monkeypatch.setattr(DigestRun, "send_for_space", broken)
 
-    assert cli.main(["digest", "--slug", UNO]) == 0
+    assert cli.main(["digest", "--slug", FIRST_SPACE]) == 0
 
-    assert capsys.readouterr().err.splitlines() == [f"{UNO}: saltato (RuntimeError)"]
-    assert _clock(settings, UNO) == (False, "RuntimeError")
+    assert capsys.readouterr().err.splitlines() == [f"{FIRST_SPACE}: saltato (RuntimeError)"]
+    assert _clock(settings, FIRST_SPACE) == (False, "RuntimeError")
 
 
 def test_a_clock_that_cannot_be_written_is_a_line_and_the_digest_still_exits_zero(
@@ -696,9 +700,9 @@ def test_a_clock_that_cannot_be_written_is_a_line_and_the_digest_still_exits_zer
 
     monkeypatch.setattr(JobClock, "succeeded", refuse)
 
-    assert cli.main(["digest", "--slug", UNO]) == 0
+    assert cli.main(["digest", "--slug", FIRST_SPACE]) == 0
 
     captured = capsys.readouterr()
-    assert captured.err.splitlines() == [f"{UNO}: orologio non scritto (RuntimeError)"]
-    assert f"{UNO}: inviato a 1" in captured.out
-    assert _clock(settings, UNO) is None
+    assert captured.err.splitlines() == [f"{FIRST_SPACE}: orologio non scritto (RuntimeError)"]
+    assert f"{FIRST_SPACE}: inviato a 1" in captured.out
+    assert _clock(settings, FIRST_SPACE) is None
