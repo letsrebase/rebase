@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
-import { useEffect, useState } from 'react'
+import { useDebounced } from '@/hooks/useDebounced'
 import { useLegalEntity } from '@/lib/legalEntity'
 import { api, unwrap } from '@/lib/api'
 import type { components } from '@/lib/api-types'
@@ -26,15 +26,6 @@ export const MIN_TERM_LENGTH = 3
  * "rossi" is one request, not three.
  */
 export const SEARCH_DEBOUNCE_MS = 250
-
-function useDebounced(value: string, delayMs: number): string {
-  const [settled, setSettled] = useState(value)
-  useEffect(() => {
-    const timer = setTimeout(() => setSettled(value), delayMs)
-    return () => clearTimeout(timer)
-  }, [value, delayMs])
-  return settled
-}
 
 /**
  * The previous request is not aborted by hand. TanStack Query keys the cache by the term,

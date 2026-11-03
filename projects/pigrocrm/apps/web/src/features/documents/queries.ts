@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, fetchWithRefresh, isMissingFile, toProblem, unwrap } from '@/lib/api'
+import { downloadFromApi } from '@/lib/download'
 import type { StatusTone } from '@/components/StatusPill'
 import type { components } from '@/lib/api-types'
 import { queryKeys } from '@/lib/query'
@@ -214,7 +215,7 @@ export function useSetOfferState(documentId: string) {
       // closures and the "offerta accettata, deal non vinto" signal. By the ['dashboard']
       // prefix rather than an exact key: this mutation cannot know which period the user is
       // looking at, and the prefix covers every cached period and every tab.
-      void queryClient.invalidateQueries({ queryKey: ['dashboard'] })
+      void queryClient.invalidateQueries({ queryKey: queryKeys.dashboardAll })
     },
   })
 }
@@ -295,37 +296,11 @@ export function useTemplatePreview() {
 
 /**
  * Downloads through the API, which is the only place authorisation exists on either
- * storage backend. The `Content-Disposition` the server sets is what names the file;
- * this only has to hand the blob to the browser and release the object URL, or the
- * page leaks one per download for as long as it stays open.
+ * storage backend. The `Content-Disposition` the server sets is what names the file.
  */
-export async function downloadDocument(documentId: string, numero?: number): Promise<void> {
+export function downloadDocument(documentId: string, numero?: number): Promise<void> {
   const search = numero === undefined ? '' : `?numero=${numero}`
-  // `fetchWithRefresh`, not a bare `fetch`: this call is outside the typed client
-  // because of the *response type*, and that used to silently also put it outside the
-  // session handling every other request gets -- so a download attempted more than
-  // fifteen minutes after the last request failed with «Autenticazione richiesta»
-  // while a valid refresh cookie sat in the jar. See `lib/api.ts`.
-  const response = await fetchWithRefresh(`/api/documents/${documentId}/download${search}`)
-  if (!response.ok) {
-    const payload: unknown = await response.json().catch(() => null)
-    throw toProblem(payload, response.status)
-  }
-  const blob = await response.blob()
-  const url = URL.createObjectURL(blob)
-  const anchor = document.createElement('a')
-  anchor.href = url
-  // Empty `download` keeps the server's own Content-Disposition filename, which is
-  // already slugified server-side; naming it here would re-derive a name the server
-  // already decided.
-  anchor.download = ''
-  // Snyk Code javascript/DOMXSS here is a false positive: the href is a blob: URL made
-  // just above, never a script URL, and `download` makes the click save the file
-  // whatever its type, so nothing it holds is ever rendered.
-  document.body.appendChild(anchor)
-  anchor.click()
-  anchor.remove()
-  URL.revokeObjectURL(url)
+  return downloadFromApi(`/api/documents/${documentId}/download${search}`)
 }
 
 /**

@@ -2,6 +2,7 @@ import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tansta
 import { useMemo } from 'react'
 import { useLegalEntityScope } from '@/lib/legalEntity'
 import { api, fetchWithRefresh, toProblem, unwrap } from '@/lib/api'
+import { downloadFromApi } from '@/lib/download'
 import type { StatusTone } from '@/components/StatusPill'
 import type { components } from '@/lib/api-types'
 import { queryKeys } from '@/lib/query'
@@ -83,8 +84,8 @@ export const PAYMENT_STATE_LABELS: Record<StatoPagamento, string> = {
  * labels, and a total `Record`, so a state added to `InvoiceStato` fails to compile here
  * rather than rendering as a default nobody chose. Note what that does and does not buy:
  * `InvoiceStato` is a union written by hand a few lines above, not a generated type, so
- * the compile breaks when somebody widens *it* -- adding a state to `STATO_TRANSITIONS`
- * on the server does not by itself reach this file.
+ * the compile breaks when somebody widens *it* -- adding a state on the server does not
+ * by itself reach this file.
  *
  * `emessa` and `confermata` are settled: a number is assigned, or a proforma is ready to
  * become one, and neither is a problem to be looked at. `bozza` and `consumata` are
@@ -111,22 +112,6 @@ export const INVOICE_STATE_TONE: Record<InvoiceStato, StatusTone> = {
 export const PAYMENT_STATE_TONE: Record<StatoPagamento, StatusTone> = {
   da_incassare: 'gold',
   incassato: 'ink',
-}
-
-/**
- * Which buttons a row can offer, mirroring `STATO_TRANSITIONS` in
- * `packages/core/src/pigrocrm/core/invoices/schemas.py`.
- *
- * A mirror for rendering only: the server validates every transition and its 409
- * message is what gets shown. Same convention as `OFFER_TRANSITIONS` in
- * `features/documents/queries.ts`.
- */
-export const INVOICE_TRANSITIONS: Record<InvoiceStato, InvoiceStato[]> = {
-  bozza: ['emessa', 'confermata'],
-  confermata: ['consumata'],
-  emessa: ['annullata'],
-  annullata: [],
-  consumata: [],
 }
 
 function ownerQuery(owner: InvoiceOwner): { customer_id?: string; deal_id?: string } {
@@ -249,19 +234,6 @@ export function useInvoiceLines(invoiceId: string) {
   })
 }
 
-export function useInvoiceTimeline(invoiceId: string) {
-  return useQuery({
-    enabled: invoiceId !== '',
-    queryKey: queryKeys.timeline('invoice', invoiceId),
-    queryFn: () =>
-      unwrap(
-        api.GET('/api/invoices/{invoice_id}/timeline', {
-          params: { path: { invoice_id: invoiceId } },
-        }),
-      ),
-  })
-}
-
 export function useFiscalProfile(aziendaId: string) {
   return useQuery({
     queryKey: queryKeys.fiscalProfile(aziendaId),
@@ -289,10 +261,10 @@ function useInvoiceInvalidation() {
     // The year's register and the room under the ceilings read the same invoices (REB-755,
     // REB-757): issuing, annulling or collecting one moves both, and their cache would
     // otherwise keep the old figures while the CSV, read fresh, shows the new ones.
-    void queryClient.invalidateQueries({ queryKey: ['year-overview'] })
+    void queryClient.invalidateQueries({ queryKey: queryKeys.yearOverviewAll })
     void queryClient.invalidateQueries({ queryKey: ['ceilings'] })
     // And the days analysis' realised rate, which reads the lines of issued invoices (REB-756).
-    void queryClient.invalidateQueries({ queryKey: ['dashboard'] })
+    void queryClient.invalidateQueries({ queryKey: queryKeys.dashboardAll })
     if (invoiceId !== undefined) {
       void queryClient.invalidateQueries({ queryKey: queryKeys.invoice(invoiceId) })
       void queryClient.invalidateQueries({ queryKey: queryKeys.invoiceLines(invoiceId) })
@@ -508,36 +480,8 @@ export function useSaveFiscalProfile(aziendaId: string) {
   })
 }
 
-/**
- * A blob download, the one documented exception to "no `fetch` inside components"
- * already established by `downloadDocument` in `features/documents/queries.ts`:
- * `openapi-fetch` cannot express a binary response, and the server's own
- * `Content-Disposition` is what names the file -- which for the XML is the SdI's
- * convention and matters to whoever receives it.
- *
- * Through `fetchWithRefresh`, not a bare `fetch`: being outside the typed client is a
- * statement about response *types*, and it used to silently also mean "and outside the
- * session handling", so a PDF asked for more than fifteen minutes after the last
- * request answered «Autenticazione richiesta». See `lib/api.ts`.
- */
-export async function downloadInvoiceArtifact(
-  invoiceId: string,
-  kind: 'pdf' | 'xml',
-): Promise<void> {
-  const response = await fetchWithRefresh(`/api/invoices/${invoiceId}/${kind}`)
-  if (!response.ok) {
-    const payload: unknown = await response.json().catch(() => null)
-    throw toProblem(payload, response.status)
-  }
-  const url = URL.createObjectURL(await response.blob())
-  const anchor = document.createElement('a')
-  anchor.href = url
-  anchor.download = ''
-  // Snyk Code javascript/DOMXSS here is a false positive: the href is a blob: URL made
-  // just above, never a script URL, and `download` makes the click save the file
-  // whatever its type, so nothing it holds is ever rendered.
-  document.body.appendChild(anchor)
-  anchor.click()
-  anchor.remove()
-  URL.revokeObjectURL(url)
+/** The invoice's PDF or FatturaPA XML as a file download; the server's own
+ *  `Content-Disposition` names it, which for the XML is the SdI's convention. */
+export function downloadInvoiceArtifact(invoiceId: string, kind: 'pdf' | 'xml'): Promise<void> {
+  return downloadFromApi(`/api/invoices/${invoiceId}/${kind}`)
 }

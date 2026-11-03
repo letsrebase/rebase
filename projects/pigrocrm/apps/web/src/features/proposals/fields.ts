@@ -1,3 +1,4 @@
+import { formatMoney as formatEuro } from '@rebase/ui/format'
 import { formatOccurredAt } from '@/components/activityLabels'
 import { formatIsoDateItalian } from '@/lib/dates'
 import type { components } from '@/lib/api-types'
@@ -133,6 +134,7 @@ export function formatAmount(value: unknown, currency: unknown): string | null {
   const raw = decimal(value)
   if (raw === null) return null
   const code = text(currency) ?? 'EUR'
+  if (code === 'EUR') return formatEuro(raw)
   try {
     return new Intl.NumberFormat('it-IT', {
       style: 'currency',

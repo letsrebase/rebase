@@ -10,6 +10,7 @@ import { useAuth, useIsAdmin } from '@/lib/auth'
 import type { Attivita } from '@/features/calendar/queries'
 import type { components } from '@/lib/api-types'
 import type { LinkKind, LinkValue } from './links'
+import { queryKeys } from '@/lib/query'
 
 /**
  * The name of the record an attività hangs from, read by id.
@@ -102,14 +103,14 @@ export interface AttivitaFilters {
 }
 
 /**
- * One page of the attività list, under the `['attivita']` prefix every attività write
+ * One page of the attività list, under the `queryKeys.activitiesAll` prefix every attività write
  * invalidates (`invalidateAfterWrite`): a task created from the calendar shows on the
  * record's tab and on the page without anybody refetching by hand.
  */
 export function useAttivitaList(filters: AttivitaFilters, options: { enabled?: boolean } = {}) {
   return useQuery({
     enabled: options.enabled ?? true,
-    queryKey: ['attivita', 'list', filters] as const,
+    queryKey: [...queryKeys.activitiesAll, 'list', filters] as const,
     queryFn: () => unwrap(api.GET('/api/activities', { params: { query: filters } })),
   })
 }
@@ -121,7 +122,7 @@ export function useAttivitaList(filters: AttivitaFilters, options: { enabled?: b
  */
 export function useAttivitaPages(filters: AttivitaFilters) {
   const query = useInfiniteQuery({
-    queryKey: ['attivita', 'pages', filters] as const,
+    queryKey: [...queryKeys.activitiesAll, 'pages', filters] as const,
     queryFn: ({ pageParam }) =>
       unwrap(api.GET('/api/activities', { params: { query: { ...filters, cursor: pageParam } } })),
     initialPageParam: undefined as string | undefined,
@@ -149,7 +150,7 @@ export type AttivitaOggi = components['schemas']['AttivitaOggi']
 /**
  * The four sections of the Oggi panel, cut by the server on the emitter's own «oggi» so
  * the sidebar count and the page can never disagree with the digest about what is late.
- * Under the `['attivita']` prefix every attività write invalidates: completing the last
+ * Under the `queryKeys.activitiesAll` prefix every attività write invalidates: completing the last
  * overdue one empties the section and the sidebar count in the same refetch.
  *
  * `assegnata_a` undefined is the whole space; `enabled` is how a caller waits for the
@@ -161,7 +162,7 @@ export function useAttivitaOggi(
 ) {
   return useQuery({
     enabled: options.enabled ?? true,
-    queryKey: ['attivita', 'oggi', params] as const,
+    queryKey: [...queryKeys.activitiesAll, 'oggi', params] as const,
     queryFn: () => unwrap(api.GET('/api/activities/oggi', { params: { query: params } })),
   })
 }
@@ -184,7 +185,7 @@ export function useAttivita(id: string | undefined) {
   return useQuery({
     // An absent id must never produce a request (residuo B1).
     enabled: id !== undefined && id !== '',
-    queryKey: ['attivita', 'one', id] as const,
+    queryKey: [...queryKeys.activitiesAll, 'one', id] as const,
     queryFn: () =>
       unwrap(
         api.GET('/api/activities/{attivita_id}', { params: { path: { attivita_id: id ?? '' } } }),

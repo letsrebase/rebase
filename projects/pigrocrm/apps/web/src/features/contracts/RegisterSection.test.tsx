@@ -3,6 +3,7 @@ import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { api } from '@/lib/api'
+import { downloadFromApi } from '@/lib/download'
 import { RegisterSection } from './RegisterSection'
 
 vi.mock('@/lib/api', async (importOriginal) => {
@@ -14,6 +15,7 @@ vi.mock('@/features/documents/queries', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/features/documents/queries')>()),
   downloadDocument: download,
 }))
+vi.mock('@/lib/download', () => ({ downloadFromApi: vi.fn().mockResolvedValue(undefined) }))
 vi.mock('@rebase/ui/sonner', () => ({ toast: { error: vi.fn(), success: vi.fn() } }))
 vi.mock('@/lib/auth', () => ({ useCan: () => true }))
 
@@ -93,14 +95,14 @@ describe('RegisterSection', () => {
     expect(screen.getByText(/1 giornata è nel registro senza approvazione/)).toBeInTheDocument()
   })
 
-  it('points the CSV at the period and downloads the PDF through its archived document', async () => {
+  it('downloads the CSV of the period and downloads the PDF through its archived document', async () => {
     vi.mocked(api.GET).mockImplementation((() => ok(REGISTER)) as never)
     vi.mocked(api.POST).mockImplementation((() => ok({ id: 'doc-1' })) as never)
     renderSection()
     await screen.findByText('Giornata')
 
-    expect(screen.getByRole('link', { name: 'CSV' })).toHaveAttribute(
-      'href',
+    await userEvent.click(screen.getByRole('button', { name: 'CSV' }))
+    expect(downloadFromApi).toHaveBeenCalledWith(
       '/api/contracts/c1/register/csv?da=2026-10-01&a=2026-10-31',
     )
     await userEvent.click(screen.getByRole('button', { name: 'PDF' }))

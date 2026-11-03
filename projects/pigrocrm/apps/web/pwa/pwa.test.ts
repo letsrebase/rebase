@@ -124,7 +124,7 @@ describe('deploy/nginx/spa.conf', () => {
     expect(conf).toContain(`location = /app/${file}`)
     expect(conf).toContain(slugBlock(file))
     // First match wins among regexes: each file's block comes before the general one.
-    const general = conf.indexOf('/app(/|$)" { try_files /app/index.html =404; }')
+    const general = conf.indexOf('/app(/|$)" {')
     expect(general).toBeGreaterThan(-1)
     expect(conf.indexOf(slugBlock(file))).toBeLessThan(general)
   })

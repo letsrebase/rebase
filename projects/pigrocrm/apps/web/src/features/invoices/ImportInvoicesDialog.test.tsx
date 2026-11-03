@@ -14,13 +14,26 @@ import { ImportInvoicesButton } from './ImportInvoicesDialog'
 const mockAuth = vi.hoisted(() => ({ may: true }))
 vi.mock('@/lib/auth', () => ({ useCan: () => mockAuth.may }))
 
-// The customer list of the picker (REB-777): `useCustomers` goes through `openapi-fetch`,
+// The customer search of the picker (REB-777): `useCustomers` goes through `openapi-fetch`,
 // which hands `fetch` a `Request` and not a URL, so it is stood in for rather than routed
-// through the `fetch` seam the two multipart routes use. `undefined` is a list that could
-// not be read.
+// through the `fetch` seam the two multipart routes use. Like the server, it answers only
+// the customers of the azienda it is asked for. `undefined` is a search that could not be
+// read.
 const mockCustomers = vi.hoisted(() => ({ data: undefined as unknown }))
 vi.mock('@/features/customers/queries', () => ({
-  useCustomers: () => ({ data: mockCustomers.data }),
+  useCustomers: (params: { azienda_id?: string }) => {
+    const page = mockCustomers.data as { items: { azienda_id: string }[] } | undefined
+    return {
+      data: page && {
+        ...page,
+        items: page.items.filter(
+          (item) => params.azienda_id === undefined || item.azienda_id === params.azienda_id,
+        ),
+      },
+      isError: page === undefined,
+    }
+  },
+  useCustomer: () => ({ data: undefined }),
 }))
 
 const REVIEW = '/api/invoices/import/upload/review'
@@ -198,8 +211,7 @@ describe('the import dialog', () => {
     mockCustomers.data = CUSTOMERS
     const user = await openAndPick([xml('a.xml')])
     const section = await screen.findByRole('region', { name: 'Clienti da creare' })
-    await user.click(within(section).getByRole('combobox', { name: /Cliente di Esempio Servizi/ }))
-    await user.click(await screen.findByRole('option', { name: 'Acme Ltd' }))
+    await user.click(await within(section).findByRole('button', { name: 'Acme Ltd' }))
 
     // The row says where the invoice goes, and is no longer a «cliente nuovo».
     expect(screen.getByText(/Va al cliente «Acme Ltd»/)).toBeInTheDocument()
@@ -213,7 +225,7 @@ describe('the import dialog', () => {
     })
   })
 
-  it('goes back to creating the customer when «Crea un nuovo cliente» is picked again', async () => {
+  it('goes back to creating the customer when the chosen one is removed again', async () => {
     mockFetch.mockImplementation((url) => {
       if (url === REVIEW) {
         return json({ righe: [reviewRow('a.xml', 'needs_customer_confirmation', '2026/1')] })
@@ -224,11 +236,8 @@ describe('the import dialog', () => {
     mockCustomers.data = CUSTOMERS
     const user = await openAndPick([xml('a.xml')])
     const section = await screen.findByRole('region', { name: 'Clienti da creare' })
-    const picker = within(section).getByRole('combobox', { name: /Cliente di Esempio Servizi/ })
-    await user.click(picker)
-    await user.click(await screen.findByRole('option', { name: 'Rossi Consulting S.r.l.' }))
-    await user.click(picker)
-    await user.click(await screen.findByRole('option', { name: 'Crea un nuovo cliente' }))
+    await user.click(await within(section).findByRole('button', { name: 'Rossi Consulting S.r.l.' }))
+    await user.click(within(section).getByRole('button', { name: 'Rimuovi il cliente' }))
     await user.click(screen.getByRole('button', { name: 'Importa 1 fattura' }))
 
     await waitFor(() => expect(mockFetch.mock.calls.some(([url]) => url === CONFIRM)).toBe(true))
@@ -246,12 +255,11 @@ describe('the import dialog', () => {
         : json({}, 500),
     )
 
-    const user = await openAndPick([xml('a.xml')])
+    await openAndPick([xml('a.xml')])
     const section = await screen.findByRole('region', { name: 'Clienti da creare' })
-    await user.click(within(section).getByRole('combobox', { name: /Cliente di Esempio Servizi/ }))
 
-    expect(await screen.findByRole('option', { name: 'Acme Ltd' })).toBeInTheDocument()
-    expect(screen.queryByRole('option', { name: 'Altrove S.p.A.' })).not.toBeInTheDocument()
+    expect(await within(section).findByRole('button', { name: 'Acme Ltd' })).toBeInTheDocument()
+    expect(within(section).queryByRole('button', { name: 'Altrove S.p.A.' })).not.toBeInTheDocument()
   })
 
   it('does not let a customer be picked for a party whose invoices span two aziende', async () => {
@@ -270,11 +278,11 @@ describe('the import dialog', () => {
     await openAndPick([xml('a.xml'), xml('b.xml')])
     const section = await screen.findByRole('region', { name: 'Clienti da creare' })
 
-    expect(within(section).getByRole('combobox', { name: /Cliente di Esempio Servizi/ })).toBeDisabled()
+    expect(within(section).getByRole('textbox', { name: /Cliente di Esempio Servizi/ })).toBeDisabled()
     expect(within(section).getByText(/sono di più aziende/)).toBeInTheDocument()
   })
 
-  it('says the list is partial when the customers do not fit in one page', async () => {
+  it('says the matches are partial when the customers do not fit in one page', async () => {
     mockCustomers.data = { ...CUSTOMERS, next_cursor: 'abc' }
     mockFetch.mockImplementation((url) =>
       url === REVIEW
@@ -284,7 +292,7 @@ describe('the import dialog', () => {
 
     await openAndPick([xml('a.xml')])
 
-    expect(await screen.findByText(/Elenco parziale: solo i primi 200 clienti/)).toBeInTheDocument()
+    expect(await screen.findByText(/Ci sono altri clienti: scrivi per restringere/)).toBeInTheDocument()
   })
 
   it('keeps two customers of the same name apart, each with its own picker', async () => {
@@ -304,12 +312,11 @@ describe('the import dialog', () => {
 
     const user = await openAndPick([xml('a.xml'), xml('b.xml')])
     const section = await screen.findByRole('region', { name: 'Clienti da creare' })
-    const pickers = within(section).getAllByRole('combobox')
+    const pickers = within(section).getAllByRole('textbox', { name: /Cliente di/ })
     expect(pickers).toHaveLength(2)
     expect(new Set(pickers.map((picker) => picker.id)).size).toBe(2)
 
-    await user.click(pickers[1]!)
-    await user.click(await screen.findByRole('option', { name: 'Acme Ltd' }))
+    await user.click(within(pickers[1]!.parentElement!).getByRole('button', { name: 'Acme Ltd' }))
     await user.click(screen.getByRole('button', { name: 'Importa 2 fatture' }))
 
     await waitFor(() => expect(mockFetch.mock.calls.some(([url]) => url === CONFIRM)).toBe(true))
@@ -331,10 +338,10 @@ describe('the import dialog', () => {
     const section = await screen.findByRole('region', { name: 'Clienti da creare' })
     await user.click(within(section).getByRole('checkbox'))
 
-    expect(within(section).getByRole('combobox', { name: /Cliente di Esempio Servizi/ })).toBeDisabled()
+    expect(within(section).getByRole('textbox', { name: /Cliente di Esempio Servizi/ })).toBeDisabled()
   })
 
-  it('keeps the old choice, create or skip, when the customer list cannot be read', async () => {
+  it('keeps the old choice, create or skip, when the customer search cannot be read', async () => {
     mockFetch.mockImplementation((url) =>
       url === REVIEW
         ? json({ righe: [reviewRow('a.xml', 'needs_customer_confirmation', '2026/1')] })
@@ -344,10 +351,8 @@ describe('the import dialog', () => {
     const user = await openAndPick([xml('a.xml')])
     const section = await screen.findByRole('region', { name: 'Clienti da creare' })
     expect(within(section).getByRole('checkbox')).toBeChecked()
-    await user.click(within(section).getByRole('combobox', { name: /Cliente di Esempio Servizi/ }))
-    expect(await screen.findAllByRole('option')).toHaveLength(1)
-    expect(screen.getByRole('option', { name: 'Crea un nuovo cliente' })).toBeInTheDocument()
-    await user.keyboard('{Escape}')
+    expect(within(section).getByRole('textbox', { name: /Cliente di Esempio Servizi/ })).toBeInTheDocument()
+    expect(within(section).getByText('La ricerca non è disponibile.')).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Importa 1 fattura' }))
 
     await waitFor(() => expect(mockFetch.mock.calls.some(([url]) => url === CONFIRM)).toBe(true))
@@ -553,8 +558,7 @@ describe('the import dialog', () => {
 
     const user = await openAndPick(files)
     const section = await screen.findByRole('region', { name: 'Clienti da creare' })
-    await user.click(within(section).getByRole('combobox', { name: /Cliente di Esempio Servizi/ }))
-    await user.click(await screen.findByRole('option', { name: 'Acme Ltd' }))
+    await user.click(await within(section).findByRole('button', { name: 'Acme Ltd' }))
     await user.click(screen.getByRole('button', { name: 'Importa 30 fatture' }))
 
     await screen.findByText(/non manca nessun numero/)
@@ -577,15 +581,13 @@ describe('the import dialog', () => {
 
     const user = await openAndPick([xml('a.xml')])
     let section = await screen.findByRole('region', { name: 'Clienti da creare' })
-    await user.click(within(section).getByRole('combobox', { name: /Cliente di Esempio Servizi/ }))
-    await user.click(await screen.findByRole('option', { name: 'Acme Ltd' }))
+    await user.click(await within(section).findByRole('button', { name: 'Acme Ltd' }))
     await user.click(screen.getByRole('button', { name: 'Scegli altri file' }))
     await user.upload(screen.getByLabelText('Carica i file delle fatture'), [xml('b.xml')])
 
     section = await screen.findByRole('region', { name: 'Clienti da creare' })
-    expect(within(section).getByRole('combobox', { name: /Cliente di Esempio Servizi/ })).toHaveTextContent(
-      'Crea un nuovo cliente',
-    )
+    expect(within(section).getByRole('textbox', { name: /Cliente di Esempio Servizi/ })).toHaveValue('')
+    expect(within(section).queryByRole('button', { name: 'Rimuovi il cliente' })).not.toBeInTheDocument()
   })
 
   it('names the file of every invoice the register refused, and why a file did not read', async () => {

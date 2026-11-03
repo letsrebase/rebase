@@ -4,7 +4,6 @@ import { api, unwrap } from '@/lib/api'
 import type { components } from '@/lib/api-types'
 import { useLegalEntity } from '@/lib/legalEntity'
 import { queryKeys } from '@/lib/query'
-import { tenantPrefix } from '@/lib/tenant'
 import type { Periodo } from './periodo'
 import type { CashBase } from './search'
 
@@ -52,15 +51,6 @@ export function useCommercialDashboard(periodo: Periodo) {
   return useQuery({
     queryKey: queryKeys.dashboard('commerciale', params),
     queryFn: () => unwrap(api.GET('/api/dashboard/sales', { params: { query: params } })),
-    staleTime: DASHBOARD_STALE_MS,
-  })
-}
-
-export function useEconomicDashboard(periodo: Periodo) {
-  const params = { ...periodo, ...useLegalEntityParam() }
-  return useQuery({
-    queryKey: queryKeys.dashboard('economica', params),
-    queryFn: () => unwrap(api.GET('/api/dashboard/economic', { params: { query: params } })),
     staleTime: DASHBOARD_STALE_MS,
   })
 }
@@ -209,16 +199,11 @@ export function useYearOverview(anno: number, aziendaId?: string | null) {
   })
 }
 
-/**
- * Where the year's CSV is downloaded from. A plain URL, not a fetch, like the timesheet's
- * XLSX: the browser saves the file itself and the bytes never pass through JavaScript.
- * Same-origin, so the session cookie travels with it, and the space's prefix is part of
- * the path.
- */
-export function yearCsvUrl(anno: number, aziendaId: string | null): string {
+/** The API path of the year's CSV, to download through `DownloadButton`. */
+export function yearCsvPath(anno: number, aziendaId: string | null): string {
   const query = new URLSearchParams({ anno: String(anno) })
   if (aziendaId !== null) query.set('azienda_id', aziendaId)
-  return `${tenantPrefix}/api/analytics/year/csv?${query.toString()}`
+  return `/api/analytics/year/csv?${query.toString()}`
 }
 
 export function useAutomations() {
@@ -237,7 +222,7 @@ export function useUpdateAutomationConfig() {
       // configuration change is a reason to re-read it. By the `['dashboard']` prefix
       // rather than an exact key: a mutation cannot know which period the user is looking
       // at, and the prefix covers every cached period and every tab.
-      void client.invalidateQueries({ queryKey: ['dashboard'] })
+      void client.invalidateQueries({ queryKey: queryKeys.dashboardAll })
       toast.success('Configurazione aggiornata')
       // Awaited, last: a caller's own `onSuccess` runs once the description is fresh, so a
       // box that held a typed number can let go of it without flashing the old one.

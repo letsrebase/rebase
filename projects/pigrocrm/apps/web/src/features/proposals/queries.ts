@@ -103,7 +103,7 @@ function useDecisionCache(proposalId: string) {
       queryClient.setQueryData(queryKeys.proposal(decided.id), decided)
       void queryClient.invalidateQueries({ queryKey: ['proposals'] })
       if (decided.stato === 'accettata') {
-        void queryClient.invalidateQueries({ queryKey: ['documents'] })
+        void queryClient.invalidateQueries({ queryKey: queryKeys.documents() })
         void queryClient.invalidateQueries({ queryKey: ['document'] })
         void queryClient.invalidateQueries({ queryKey: ['timeline'] })
       }

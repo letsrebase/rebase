@@ -12,24 +12,14 @@ import {
 import { useState } from 'react'
 import { toast } from '@rebase/ui/sonner'
 import { Button } from '@rebase/ui/button'
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@rebase/ui/dialog'
-import { Input } from '@rebase/ui/input'
-import { Label } from '@rebase/ui/label'
-import { Textarea } from '@rebase/ui/textarea'
 import { QueryErrorBanner } from '@/components/QueryErrorBanner'
-import { isMissingFile, toProblem, type ProblemDetail } from '@/lib/api'
+import { toProblem, type ProblemDetail } from '@/lib/api'
 import { useCan } from '@/lib/auth'
-import { toIsoDate } from '@/lib/dates'
+import { AnnulDialog, CollectDialog, TransmitDialog } from './InvoiceActionDialogs'
+import { downloadErrorSentence, missingFilesSentence } from './invoiceActionMessages'
 import { formatInvoiceNumber } from './format'
 import {
   downloadInvoiceArtifact,
-  useAnnulInvoice,
   useConfirmProforma,
   useDeleteInvoice,
   useIssueInvoice,
@@ -56,13 +46,8 @@ export function InvoiceActions({
 }) {
   const [problem, setProblem] = useState<ProblemDetail | null>(null)
   const [annulOpen, setAnnulOpen] = useState(false)
-  const [motivo, setMotivo] = useState('')
-  // The two dates default to today, read from local parts (`toIsoDate`): late in the
-  // evening the UTC route would propose tomorrow, which the server refuses.
   const [collectOpen, setCollectOpen] = useState(false)
-  const [dataIncasso, setDataIncasso] = useState(() => toIsoDate(new Date()))
   const [transmitOpen, setTransmitOpen] = useState(false)
-  const [dataTrasmissione, setDataTrasmissione] = useState(() => toIsoDate(new Date()))
   // REB-294: one check per button, each against the action its own service passes to
   // `require_write`/`require_admin`. This bar used to read the role only for
   // «Segna trasmessa», so a readonly person stood in front of «Emetti», «Annulla» and
@@ -80,7 +65,6 @@ export function InvoiceActions({
 
   const issue = useIssueInvoice(invoice.id)
   const confirm = useConfirmProforma(invoice.id)
-  const annul = useAnnulInvoice(invoice.id)
   const artifacts = useProduceArtifacts(invoice.id)
   const payment = useSetPaymentState(invoice.id)
   const transmitted = useMarkTransmitted(invoice.id)
@@ -216,31 +200,6 @@ export function InvoiceActions({
     })
   }
 
-  function onAnnul() {
-    setProblem(null)
-    annul.mutate(motivo, {
-      onSuccess: () => {
-        toast.success('Documento annullato. Il numero resta nel registro.')
-        setAnnulOpen(false)
-      },
-      onError: (error) => setProblem(toProblem(error)),
-    })
-  }
-
-  function onCollect() {
-    setProblem(null)
-    payment.mutate(
-      { stato_pagamento: 'incassato', data_incasso: dataIncasso },
-      {
-        onSuccess: () => {
-          toast.success('Incasso registrato')
-          setCollectOpen(false)
-        },
-        onError: (error) => setProblem(toProblem(error)),
-      },
-    )
-  }
-
   /**
    * The way back. A collection recorded on the wrong invoice is an ordinary mistake,
    * and the server clears the date with the state (`set_payment_state`), so undoing it
@@ -257,17 +216,6 @@ export function InvoiceActions({
         onError: (error) => setProblem(toProblem(error)),
       },
     )
-  }
-
-  function onTransmit() {
-    setProblem(null)
-    transmitted.mutate(dataTrasmissione, {
-      onSuccess: () => {
-        toast.success('Trasmissione registrata')
-        setTransmitOpen(false)
-      },
-      onError: (error) => setProblem(toProblem(error)),
-    })
   }
 
   async function onDownload(kind: 'pdf' | 'xml') {
@@ -411,154 +359,24 @@ export function InvoiceActions({
         </p>
       ) : null}
 
-      <Dialog open={collectOpen} onOpenChange={setCollectOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Registra l&apos;incasso</DialogTitle>
-          </DialogHeader>
-          {/* The date is required by the server («un incasso senza data non è un
-              incasso»): the day the money arrived is what the cash view and the fiscal
-              estimate read, so it is asked for here rather than assumed to be today. */}
-          <p className="text-muted-foreground text-sm">
-            La fattura passa a «Incassato» e la data entra nella vista economica dell&apos;anno
-            in cui cade. Si può tornare indietro.
-          </p>
-          <div className="space-y-2">
-            <Label htmlFor="data-incasso">Data incasso</Label>
-            <Input
-              id="data-incasso"
-              type="date"
-              required
-              value={dataIncasso}
-              onChange={(event) => setDataIncasso(event.target.value)}
-            />
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setCollectOpen(false)}>
-              Chiudi
-            </Button>
-            <Button onClick={onCollect} disabled={payment.isPending || dataIncasso === ''}>
-              Registra incasso
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={transmitOpen} onOpenChange={setTransmitOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Segna come trasmessa</DialogTitle>
-          </DialogHeader>
-          {/* Once. This is the column that tells an invoice that never left -- still
-              annullable -- from one already deposited with the Agenzia delle Entrate,
-              and it stays frozen for exactly that reason (`mark_transmitted_externally`). */}
-          <p className="text-muted-foreground text-sm">
-            Registra che l&apos;XML è stato consegnato all&apos;intermediario o allo SDI fuori da
-            PigroCRM. Non si può annullare.
-          </p>
-          <div className="space-y-2">
-            <Label htmlFor="data-trasmissione">Data di trasmissione</Label>
-            <Input
-              id="data-trasmissione"
-              type="date"
-              required
-              value={dataTrasmissione}
-              onChange={(event) => setDataTrasmissione(event.target.value)}
-            />
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setTransmitOpen(false)}>
-              Chiudi
-            </Button>
-            <Button
-              onClick={onTransmit}
-              disabled={transmitted.isPending || dataTrasmissione === ''}
-            >
-              Segna trasmessa
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={annulOpen} onOpenChange={setAnnulOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Annulla documento</DialogTitle>
-          </DialogHeader>
-          {/* Annulment is not deletion: the number stays in the register and the row
-              stays readable, because a fiscal register with a hole in it is a problem
-              with the tax authority. The reason is required for the same purpose --
-              it is what the document's own history will say later. */}
-          <p className="text-muted-foreground text-sm">
-            Il numero resta nel registro e il documento resta consultabile. Per correggere
-            un errore si emette un nuovo documento, non si modifica questo.
-          </p>
-          <div className="space-y-2">
-            <Label htmlFor="motivo-annullamento">Motivo</Label>
-            <Textarea
-              id="motivo-annullamento"
-              value={motivo}
-              rows={3}
-              onChange={(event) => setMotivo(event.target.value)}
-            />
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setAnnulOpen(false)}>
-              Chiudi
-            </Button>
-            <Button variant="destructive" onClick={onAnnul} disabled={annul.isPending}>
-              Annulla documento
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <CollectDialog
+        payment={payment}
+        open={collectOpen}
+        onOpenChange={setCollectOpen}
+        onProblem={setProblem}
+      />
+      <TransmitDialog
+        transmitted={transmitted}
+        open={transmitOpen}
+        onOpenChange={setTransmitOpen}
+        onProblem={setProblem}
+      />
+      <AnnulDialog
+        invoiceId={invoice.id}
+        open={annulOpen}
+        onOpenChange={setAnnulOpen}
+        onProblem={setProblem}
+      />
     </div>
   )
-}
-
-/**
- * What the bar says under an issued invoice whose PDF or XML does not exist, or `null`
- * when both do. The pointer at «Rigenera documenti» follows the role: a person who cannot
- * press it is told where the file comes from rather than to press a button they do not
- * have (REB-294 hides it from a readonly role).
- */
-function missingFilesSentence(
-  hasPdf: boolean,
-  hasXml: boolean,
-  mayProduce: boolean,
-): string | null {
-  if (hasPdf && hasXml) return null
-  const both = !hasPdf && !hasXml
-  const what = both
-    ? 'Il PDF e l’XML FatturaPA di questa fattura non sono stati generati.'
-    : hasPdf
-      ? 'L’XML FatturaPA di questa fattura non è stato generato.'
-      : 'Il PDF di questa fattura non è stato generato.'
-  const how = mayProduce
-    ? `Premi «Rigenera documenti» per ${both ? 'generarli' : 'generarlo'}: il numero resta quello.`
-    : `${both ? 'Si generano' : 'Si genera'} con «Rigenera documenti», che il tuo ruolo non può usare.`
-  return `${what} ${how}`
-}
-
-/**
- * The toast for a failed download. A 404 here means the row points at no file, at a
- * document with no current version, or at a stored file that is gone, and the server's
- * detail for each is written for a log: `invoice_artifact <uuid>#xml not found` (REB-168,
- * seen on production 2026-09-11), `document_blob <key> not found`. It becomes a sentence
- * naming the file, and «Rigenera documenti» when that button is on the page: it produces a
- * missing file and repairs a lost one with identical bytes (`produce_artifacts`). Keyed
- * on the status via `isMissingFile` (`lib/api.ts`), rather than on the entity, so a lost
- * `document_blob` gets the same sentence. Any other failure keeps the server's `detail`
- * as every other action on this bar does.
- */
-function downloadErrorSentence(
-  problem: ProblemDetail,
-  kind: 'pdf' | 'xml',
-  noun: 'fattura' | 'proforma',
-  canRegenerate: boolean,
-): string {
-  if (!isMissingFile(problem)) return problem.detail
-  const file = kind === 'xml' ? 'L’XML FatturaPA' : 'Il PDF'
-  const retry = canRegenerate ? ' Premi «Rigenera documenti» per generarlo di nuovo.' : ''
-  return `${file} di questa ${noun} non è disponibile.${retry}`
 }

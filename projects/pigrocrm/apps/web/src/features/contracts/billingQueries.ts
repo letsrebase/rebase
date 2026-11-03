@@ -3,7 +3,6 @@ import { api, unwrap } from '@/lib/api'
 import type { components } from '@/lib/api-types'
 import { downloadDocument } from '@/features/documents/queries'
 import { queryKeys } from '@/lib/query'
-import { tenantPrefix } from '@/lib/tenant'
 
 /** Wire shapes straight from the generated schema. `Decimal`s arrive as strings. */
 export type BillableDays = components['schemas']['BillableDays']
@@ -53,8 +52,8 @@ export function useInvoiceDays(contractId: string) {
       void queryClient.invalidateQueries({ queryKey: queryKeys.contract(contractId) })
       void queryClient.invalidateQueries({ queryKey: queryKeys.invoices() })
       // The days list and the calendar read the same days, now `fatturato`.
-      void queryClient.invalidateQueries({ queryKey: ['work-units'] })
-      void queryClient.invalidateQueries({ queryKey: ['calendario'] })
+      void queryClient.invalidateQueries({ queryKey: queryKeys.workUnitsAll })
+      void queryClient.invalidateQueries({ queryKey: queryKeys.calendarAll })
     },
   })
 }
@@ -77,13 +76,10 @@ export function useContractRegister(
   })
 }
 
-/** The CSV is a working copy the browser downloads itself: a same-origin URL, so the
- *  session cookie travels with it and no token goes into a query string. */
-export function registerCsvUrl(contractId: string, period: { da: string; a: string }): string {
+/** The API path of the register's CSV, to download through `DownloadButton`. */
+export function registerCsvPath(contractId: string, period: { da: string; a: string }): string {
   const query = new URLSearchParams(period)
-  // Under the space's own prefix: a link is not a fetch, so the client's base URL does not
-  // reach it, and `/api/...` from `/studio/app/...` would ask the root installation.
-  return `${tenantPrefix}/api/contracts/${contractId}/register/csv?${query.toString()}`
+  return `/api/contracts/${contractId}/register/csv?${query.toString()}`
 }
 
 /** The PDF is an archived artefact, so it is two steps and not a link: render (which

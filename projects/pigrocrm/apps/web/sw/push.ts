@@ -57,7 +57,7 @@ export function notificationOptions(message: ReminderNotification, icon: string)
   }
 }
 
-/** Where a tap opens: the message's path or URL when it is on this origin, the space's
+/** Where a tap opens: the message's path or URL when it is inside this space, the space's
  *  list of reminders otherwise. `scope` is the worker's (`https://host/acme/app`). */
 export function clickTarget(data: unknown, scope: string): string {
   const fallback = `${scope}/avvisi`
@@ -65,7 +65,7 @@ export function clickTarget(data: unknown, scope: string): string {
   if (typeof url !== 'string') return fallback
   try {
     const target = new URL(url, scope)
-    return target.origin === new URL(scope).origin ? target.href : fallback
+    return inScope(target.href, scope) ? target.href : fallback
   } catch {
     return fallback
   }

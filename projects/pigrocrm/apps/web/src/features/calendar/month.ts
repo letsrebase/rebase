@@ -92,8 +92,8 @@ export function monthCells(mese: string): MonthCell[] {
 }
 
 /** `settembre 2026`, for the page's own description. */
+const monthLabelFormatter = new Intl.DateTimeFormat('it-IT', { month: 'long', year: 'numeric' })
+
 export function monthLabel(mese: string): string {
-  return new Intl.DateTimeFormat('it-IT', { month: 'long', year: 'numeric' }).format(
-    firstOfMonth(mese),
-  )
+  return monthLabelFormatter.format(firstOfMonth(mese))
 }

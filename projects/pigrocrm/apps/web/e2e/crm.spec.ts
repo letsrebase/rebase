@@ -83,8 +83,9 @@ test('creating a customer, a person and a deal, then moving it across the board'
 
   await page.goto('/app/deal')
   await page.getByRole('button', { name: /nuovo deal/i }).click()
-  await page.getByLabel(/^Cliente/).click()
-  await page.getByRole('option', { name }).click()
+  // The customer picker is a search box with the matches as buttons under it.
+  await page.getByLabel('Cerca un cliente').fill(name)
+  await page.getByRole('button', { name }).click()
   await page.getByLabel(/^Nome\b/).fill('Progetto E2E')
   await page.getByRole('button', { name: 'Salva' }).click()
 

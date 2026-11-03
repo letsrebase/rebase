@@ -2,6 +2,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, toProblem, unwrap } from '@/lib/api'
 import { putVersion } from '@/features/documents/queries'
 import type { ApprovalRecordBody, GmailMessage } from './approvals'
+import { queryKeys } from '@/lib/query'
+import { gmailKeys } from '@/features/gmail/queries'
 
 /**
  * The proof as a document of the contract, before the approval that rests on it: a file
@@ -36,11 +38,11 @@ export function useRecordApproval() {
     mutationFn: (body: ApprovalRecordBody) =>
       unwrap(api.POST('/api/approvals', { body })),
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ['work-units'] })
-      void queryClient.invalidateQueries({ queryKey: ['work-unit'] })
-      void queryClient.invalidateQueries({ queryKey: ['calendario'] })
-      void queryClient.invalidateQueries({ queryKey: ['dashboard'] })
-      void queryClient.invalidateQueries({ queryKey: ['documents'] })
+      void queryClient.invalidateQueries({ queryKey: queryKeys.workUnitsAll })
+      void queryClient.invalidateQueries({ queryKey: queryKeys.workUnitAll })
+      void queryClient.invalidateQueries({ queryKey: queryKeys.calendarAll })
+      void queryClient.invalidateQueries({ queryKey: queryKeys.dashboardAll })
+      void queryClient.invalidateQueries({ queryKey: queryKeys.documents() })
     },
   })
 }
@@ -58,7 +60,7 @@ const MESSAGES_LIMIT = 200
 export function useCustomerMessages(customerId: string | undefined, enabled: boolean) {
   return useQuery({
     enabled: enabled && customerId !== undefined,
-    queryKey: ['gmail', 'messages', 'customer', customerId ?? '', 'proof'],
+    queryKey: [...gmailKeys.messages('customer', customerId ?? ''), 'proof'],
     queryFn: (): Promise<GmailMessage[]> =>
       unwrap(
         api.GET('/api/gmail/messages', {

@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useRef } from 'react'
 import { api, unwrap } from '@/lib/api'
 import type { components } from '@/lib/api-types'
+import { queryKeys } from '@/lib/query'
 
 export type EmailTemplate = components['schemas']['ContractEmailTemplateRead']
 export type EmailTemplateCreateBody = components['schemas']['ContractEmailTemplateCreate']
@@ -9,11 +10,9 @@ export type EmailTemplateUpdateBody = components['schemas']['ContractEmailTempla
 export type EmailPreview = components['schemas']['ContractEmailPreview']
 export type AttachmentKind = EmailTemplate['allegati'][number]
 
-const templatesKey = (contractId: string) => ['contract', contractId, 'email-templates'] as const
-
 export function useEmailTemplates(contractId: string) {
   return useQuery({
-    queryKey: templatesKey(contractId),
+    queryKey: queryKeys.contractEmailTemplates(contractId),
     queryFn: () =>
       unwrap(
         api.GET('/api/contracts/{contract_id}/email-templates', {
@@ -25,7 +24,7 @@ export function useEmailTemplates(contractId: string) {
 
 export function useEmailVariables(contractId: string) {
   return useQuery({
-    queryKey: ['contract', contractId, 'email-template-variables'] as const,
+    queryKey: queryKeys.contractEmailVariables(contractId),
     queryFn: () =>
       unwrap(
         api.GET('/api/contracts/{contract_id}/email-template-variables', {
@@ -46,9 +45,9 @@ export function useCreateEmailTemplate(contractId: string) {
         }),
       ),
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: templatesKey(contractId) })
+      void queryClient.invalidateQueries({ queryKey: queryKeys.contractEmailTemplates(contractId) })
       // What a send would say depends on the template: a cached preview is now another text.
-      void queryClient.invalidateQueries({ queryKey: ['contract', contractId, 'email-preview'] })
+      void queryClient.invalidateQueries({ queryKey: queryKeys.contractEmailPreviews(contractId) })
     },
   })
 }
@@ -64,9 +63,9 @@ export function useUpdateEmailTemplate(contractId: string, templateId: string) {
         }),
       ),
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: templatesKey(contractId) })
+      void queryClient.invalidateQueries({ queryKey: queryKeys.contractEmailTemplates(contractId) })
       // What a send would say depends on the template: a cached preview is now another text.
-      void queryClient.invalidateQueries({ queryKey: ['contract', contractId, 'email-preview'] })
+      void queryClient.invalidateQueries({ queryKey: queryKeys.contractEmailPreviews(contractId) })
     },
   })
 }
@@ -80,7 +79,7 @@ export function useEmailPreview(
   return useQuery({
     enabled: templateId !== undefined && invoiceId !== undefined,
     staleTime: 0,
-    queryKey: ['contract', contractId, 'email-preview', templateId, invoiceId] as const,
+    queryKey: queryKeys.contractEmailPreview(contractId, templateId, invoiceId),
     queryFn: () =>
       unwrap(
         api.POST('/api/contracts/{contract_id}/email/preview', {
@@ -183,7 +182,7 @@ export function useSendContractEmail(contractId: string) {
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['email-drafts'] })
-      void queryClient.invalidateQueries({ queryKey: ['documents'] })
+      void queryClient.invalidateQueries({ queryKey: queryKeys.documents() })
     },
   })
 }

@@ -2,6 +2,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { fetchWithRefresh, toProblem } from '@/lib/api'
 import type { components } from '@/lib/api-types'
 import type { ConfirmRow, ImportDecisions, ReviewRow } from './importPlan'
+import { queryKeys } from '@/lib/query'
 
 /**
  * The invoices page's import: the two multipart routes of REB-758.
@@ -59,9 +60,9 @@ export function useInvalidateAfterImport() {
     void queryClient.invalidateQueries({ queryKey: ['invoices-list'] })
     // The year's register and the room under the ceilings read the same invoices, as in
     // `useInvoiceInvalidation`.
-    void queryClient.invalidateQueries({ queryKey: ['year-overview'] })
+    void queryClient.invalidateQueries({ queryKey: queryKeys.yearOverviewAll })
     void queryClient.invalidateQueries({ queryKey: ['ceilings'] })
     void queryClient.invalidateQueries({ queryKey: ['customers'] })
-    void queryClient.invalidateQueries({ queryKey: ['documents'] })
+    void queryClient.invalidateQueries({ queryKey: queryKeys.documents() })
   }
 }

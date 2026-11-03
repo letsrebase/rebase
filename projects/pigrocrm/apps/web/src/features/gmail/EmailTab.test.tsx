@@ -182,7 +182,7 @@ describe('EmailTab', () => {
     // And nothing on either read is a Gmail search string: both reach the CRM's own rows.
     await waitFor(() =>
       expect(new Set(vi.mocked(api.GET).mock.calls.map((call) => call[0]))).toEqual(
-        new Set(['/api/gmail/messages', '/api/email-drafts']),
+        new Set(['/api/gmail/messages', '/api/email-drafts', '/api/gmail/account']),
       ),
     )
   })
@@ -234,13 +234,15 @@ describe('EmailTab', () => {
     ])
   })
 
-  it('offers open in Gmail on every message', async () => {
+  it('opens the message in the mailbox the CRM synced, not the first signed-in account', async () => {
     respond({ messages: ok([message()]) })
     renderTab()
 
-    expect(await screen.findByRole('link', { name: 'Apri in Gmail' })).toHaveAttribute(
-      'href',
-      'https://mail.google.com/mail/u/0/#all/m1',
+    await waitFor(() =>
+      expect(screen.getByRole('link', { name: 'Apri in Gmail' })).toHaveAttribute(
+        'href',
+        'https://mail.google.com/mail/?authuser=io%40example.it#all/m1',
+      ),
     )
   })
 

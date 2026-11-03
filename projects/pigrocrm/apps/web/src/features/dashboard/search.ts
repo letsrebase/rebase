@@ -98,7 +98,7 @@ export function defaultDashboardSearch(): DashboardSearch {
 /**
  * The Home's search: the dashboard's, plus the Gmail consent flow's `esito`, which the
  * callback appends when it brings an empty space back to its start page (REB-222). A
- * string or nothing, looked up in a fixed table where it is shown (`messaggioEsito`),
+ * string or nothing, looked up in a fixed table where it is shown (`consentOutcome`),
  * exactly as on Impostazioni → Gmail. Optional, so a link into the dashboard never has
  * to name it.
  */
