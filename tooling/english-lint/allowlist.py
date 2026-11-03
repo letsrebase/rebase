@@ -64,26 +64,14 @@ ALLOW: tuple[Allow, ...] = (
     # --- Published product surface -------------------------------------------------
     Allow(
         "projects/pigrocrm/packages/core/src/pigrocrm/core/invoices/fatturapa/**",
-        "FatturaPA XML element names are fixed by the SdI specification: the tags the "
-        "module builds and reads are Italian, and so are the helpers named after them.",
+        "FatturaPA XML element names are fixed by the SdI specification, and the "
+        "docstrings that list the schema's sequence name them as written.",
         _words(
-            "cedente prestatore cessionario committente imponibile imposta aliquota "
-            "natura riepilogo dettaglio linee causale bollo importo divisa numero data "
-            "dati generali documento trasmissione trasmittente formato progressivo "
-            "codice destinatario pec anagrafica denominazione nome cognome sede "
-            "indirizzo civico cap comune provincia nazione fiscale idpaese idcodice "
-            "regime fiscale ritenuta cassa previdenziale rivalsa scadenza pagamento "
-            "condizioni modalita beneficiario iban sconto maggiorazione quantita unita "
-            "misura prezzo unitario totale riferimento normativo amministrazione "
-            "ordine acquisto cig cup"
+            "anagrafica divisa numero data natura imponibile imposta aliquota descrizione "
+            "causale bollo importo codice fiscale dati ritenuta cassa riepilogo "
+            "scadenza pagamento sede partita quantita"
         ),
-    ),
-    Allow(
-        "projects/pigrocrm/packages/core/src/pigrocrm/core/templates/**",
-        "Document template variables are typed by users (`{{cliente.provincia}}`): the "
-        "scope builders keep producing the Italian variable names from English fields.",
-        _words("cliente clienti persona persone azienda offerta contratto fattura"),
-        frozenset({"identifier"}),
+        frozenset({"comment"}),
     ),
     # --- External links that must keep working ------------------------------------
     Allow(
