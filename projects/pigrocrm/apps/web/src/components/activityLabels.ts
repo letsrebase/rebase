@@ -70,6 +70,15 @@ const KIND_LABELS: Record<string, string> = {
   // person's own.
   defaults_updated: 'Promemoria: valori predefiniti modificati',
   defaults_reset: 'Promemoria: valori predefiniti ripristinati',
+  // An invoice's own history: what each step from draft to register records. Named here
+  // because `humanize` would print the English word on an Italian timeline.
+  lines_replaced: 'Righe sostituite',
+  confirmed: 'Confermata',
+  issued: 'Emessa',
+  annulled: 'Annullata',
+  payment_state_changed: 'Stato di pagamento cambiato',
+  transmitted_externally: 'Trasmessa esternamente',
+  time_bound_to_invoice: 'Ore collegate a una fattura',
 }
 
 /**
@@ -97,11 +106,18 @@ export function labelForPayloadKey(key: string): string {
   return Object.hasOwn(PAYLOAD_KEY_LABELS, key) ? PAYLOAD_KEY_LABELS[key]! : humanize(key)
 }
 
-/** A payload value as the timeline prints it: a coded value goes back to its Italian word, any other as it is. */
+/**
+ * A payload value as the timeline prints it: a coded value goes back to its Italian word, any
+ * other as it is. A list (the `keys` of a settings change) is read item by item and joined the
+ * way `String(list)` always joined it.
+ */
 export function labelForPayloadValue(kind: string, key: string, value: unknown): string {
-  const text = String(value)
   const table = Object.hasOwn(PAYLOAD_VALUE_LABELS, kind) ? PAYLOAD_VALUE_LABELS[kind]![key] : undefined
-  return table !== undefined && Object.hasOwn(table, text) ? table[text]! : text
+  const word = (item: unknown): string => {
+    const text = String(item)
+    return table !== undefined && Object.hasOwn(table, text) ? table[text]! : text
+  }
+  return Array.isArray(value) ? value.map(word).join(',') : word(value)
 }
 
 const dateTimeFormatter = new Intl.DateTimeFormat('it-IT', {

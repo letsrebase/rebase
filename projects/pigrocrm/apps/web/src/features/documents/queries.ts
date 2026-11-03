@@ -64,11 +64,20 @@ export const OFFER_STATE_TONE: Record<OfferState, StatusTone> = {
   rejected: 'danger',
 }
 
+/**
+ * One word for every `documents.type` the API stores, the invoice side included: the
+ * customer's Documenti tab lists the generated invoice PDF, its FatturaPA XML and the
+ * proforma beside the offers, and a code without a word printed the English enum raw.
+ * `payment_reminder` is a template type, kept for the template picker that shares this table.
+ */
 export const DOCUMENT_TYPE_LABELS: Record<string, string> = {
   offer: 'Offerta',
   contract: 'Contratto',
   minutes: 'Verbale',
   document: 'Documento',
+  invoice: 'Fattura',
+  invoice_xml: 'Fattura XML',
+  proforma: 'Proforma',
   hours_report: 'Rapporto ore',
   payment_reminder: 'Sollecito',
 }

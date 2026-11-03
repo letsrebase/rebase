@@ -90,6 +90,22 @@ describe('DocumentsTab', () => {
     expect(screen.getByText('v1')).toBeInTheDocument()
   })
 
+  it('words the invoice documents too: the PDF, the FatturaPA file and the proforma', async () => {
+    const invoice = (id: string, type: string) => ({ ...DOCUMENT, id, type, title: `Doc ${type}`, status: null })
+    mockGet.mockReturnValue(
+      ok({
+        items: [invoice('d-1', 'invoice'), invoice('d-2', 'invoice_xml'), invoice('d-3', 'proforma')],
+        next_cursor: null,
+      }),
+    )
+    render(<DocumentsTab owner={{ customerId: 'c-1' }} />, { wrapper })
+    expect(await screen.findByText('Fattura')).toBeInTheDocument()
+    expect(screen.getByText('Fattura XML')).toBeInTheDocument()
+    expect(screen.getByText('Proforma')).toBeInTheDocument()
+    expect(screen.queryByText('invoice')).not.toBeInTheDocument()
+    expect(screen.queryByText('invoice_xml')).not.toBeInTheDocument()
+  })
+
   it('shows an explicit empty state when there really are none', async () => {
     mockGet.mockReturnValue(ok({ items: [], next_cursor: null }))
     render(<DocumentsTab owner={{ customerId: 'c-1' }} />, { wrapper })

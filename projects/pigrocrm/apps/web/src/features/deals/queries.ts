@@ -251,6 +251,10 @@ export function useMoveDeal() {
     onSettled: (_date, _error, variables) => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.deals() })
       void queryClient.invalidateQueries({ queryKey: queryKeys.deal(variables.dealId) })
+      // The move writes a «Cambio stato» row (and an automation may write more): the Timeline
+      // tab of the deal keeps its own cache, so without this it showed the old history until
+      // a reload.
+      void queryClient.invalidateQueries({ queryKey: queryKeys.timeline('deal', variables.dealId) })
       // A stage can be deleted server-side (admin-only, `PipelineService.delete`)
       // between one load of the board and the next. `useStages`'s own cache has
       // no other reason to refresh mid-session, so without this a deleted stage
