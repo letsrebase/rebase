@@ -11,7 +11,8 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from rebase_core.errors import NotFound
-from rebase_core.hub_facts import HubFacts, hub_facts
+from rebase_core.card_provenance import sha
+from rebase_core.hub_facts import HubFacts, MatchFact, hub_facts
 from rebase_core.models import AdminAction, Company, Freelancer, Match, Note, User
 
 TODAY = date(2026, 10, 27)
@@ -250,3 +251,50 @@ def test_the_close_date_is_the_trails_not_the_last_edit(clean: Session) -> None:
 
     assert [(m.months, m.outcome) for m in facts.matches] == [(6, "completed")]
     assert facts.completed_months == 6
+
+
+def _fixed_facts() -> HubFacts:
+    return HubFacts(
+        seniority_admin="senior",
+        experience_years_admin=7,
+        matches=[
+            MatchFact(
+                role="Backend per il cliente", months=14, outcome="completed", since="2024-01"
+            ),
+            MatchFact(role="Data engineer", months=3, outcome="in_progress", since="2026-08"),
+            MatchFact(role="Frontend", months=2, outcome="closed_before", since="2025-05"),
+        ],
+        completed_months=14,
+        clients=["Acme"],
+    )
+
+
+def test_the_hash_and_the_text_are_what_the_italian_code_made_of_them() -> None:
+    """Every stored card keeps `source_hashes["hub"]`, so a byte of `hash_material()` that
+    moves marks them all stale, and the block the model reads is the one it always read.
+    Both are the values the code before the English rename produced for this fixture
+    (`origin/main`: `Esito`, `ruolo`, `mesi`, `anni=`, `completati=`)."""
+    facts = _fixed_facts()
+
+    assert facts.hash_material() == (
+        "seniority=senior\n"
+        "anni=7\n"
+        "2024-01|Backend per il cliente|completato|14\n"
+        "2026-08|Data engineer|in corso|\n"
+        "2025-05|Frontend|chiuso prima|2\n"
+        "completati=14"
+    )
+    assert (
+        sha(facts.hash_material())
+        == "cbc7335923d4154c19b26bd3cf902cb7590c655c740a430dca9f9318468b0503"
+    )
+    assert facts.text() == (
+        "FONTE: dati della hub\n"
+        "Seniority stabilita da un admin: senior (dato certo)\n"
+        "Anni di esperienza stabiliti da un admin: 7 (dato certo)\n"
+        "Incarichi svolti tramite la hub (ruolo, inizio, durata, esito):\n"
+        "- Backend per il cliente, dal 2024-01, 14 mesi, completato\n"
+        "- Data engineer, dal 2026-08, 3 mesi, in corso\n"
+        "- Frontend, dal 2025-05, 2 mesi, chiuso prima\n"
+        "Mesi di incarichi completati: 14"
+    )

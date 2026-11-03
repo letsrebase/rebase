@@ -29,6 +29,13 @@ from rebase_core.errors import NotFound
 from rebase_core.models import AdminAction, Company, Freelancer, Match
 
 Outcome = Literal["completed", "in_progress", "closed_before"]
+# The words an outcome has in the block the model reads and in the hash material: they are
+# what every stored card's `source_hashes["hub"]` was made from, so they stay as they were.
+OUTCOME_WORDS: dict[Outcome, str] = {
+    "completed": "completato",
+    "in_progress": "in corso",
+    "closed_before": "chiuso prima",
+}
 
 HEADER = "FONTE: dati della hub"
 _DAYS_PER_MONTH = 30.4375
@@ -80,7 +87,8 @@ class HubFacts:
         if self.matches:
             lines.append("Incarichi svolti tramite la hub (ruolo, inizio, durata, esito):")
             lines.extend(
-                f"- {m.role}, dal {m.since}, {_months(m.months)}, {m.outcome}" for m in self.matches
+                f"- {m.role}, dal {m.since}, {_months(m.months)}, {OUTCOME_WORDS[m.outcome]}"
+                for m in self.matches
             )
         if self.completed_months:
             lines.append(f"Mesi di incarichi completati: {self.completed_months}")
@@ -90,19 +98,21 @@ class HubFacts:
 
     def hash_material(self) -> str:
         """`text()` without what moves by itself: the months of an engagement still
-        `in_progress` grow every month and would mark the card stale each time."""
+        in progress grow every month and would mark the card stale each time. The keys and
+        the outcome words are the ones the hash was first made from, since a changed byte
+        marks every stored card stale."""
         if self.empty:
             return ""
         return "\n".join(
             [
                 f"seniority={self.seniority_admin}",
-                f"experience_years={self.experience_years_admin}",
+                f"anni={self.experience_years_admin}",
                 *(
-                    f"{m.since}|{m.role}|{m.outcome}|"
+                    f"{m.since}|{m.role}|{OUTCOME_WORDS[m.outcome]}|"
                     f"{'' if m.outcome == 'in_progress' else m.months}"
                     for m in self.matches
                 ),
-                f"completed_months={self.completed_months}",
+                f"completati={self.completed_months}",
             ]
         )
 

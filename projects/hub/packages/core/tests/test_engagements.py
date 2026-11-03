@@ -1054,7 +1054,9 @@ def test_report_names_an_invoice_by_the_codes_the_crm_sends() -> None:
     """The CRM's invoice type is `invoice` (it was `fattura`): a day's column names an
     invoice by its bare number and any other type, a proforma, by its type first."""
     invoice, proforma = _invoice("invoice", 7), _invoice("proforma", 7)
-    crm = _crm([_entry("2026-11-02", "8.00", "Setup", invoice), _entry("2026-11-03", "8.00", "", proforma)])
+    crm = _crm(
+        [_entry("2026-11-02", "8.00", "Setup", invoice), _entry("2026-11-03", "8.00", "", proforma)]
+    )
 
     days = group_report(crm, None)["by_day"]
 
