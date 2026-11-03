@@ -6,7 +6,7 @@ import { Button } from '@rebase/ui/button'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@rebase/ui/table'
 import { admin, ApiError, type CampaignRecipient } from '@/lib/api'
 import {
-  ActionDoneLabels,
+  ACTION_DONE_LABELS,
   RECIPIENT_STATE_LABELS,
   campaignMoment,
   campaignStateLabel,
@@ -95,17 +95,17 @@ function NeverWriteCell({ email }: { email: string }) {
   )
 }
 
-type Filter = 'tutti' | 'action' | 'niente'
+type Filter = 'all' | 'action' | 'nothing'
 
 const FILTERS: [Filter, string][] = [
-  ['tutti', 'Tutti'],
+  ['all', 'Tutti'],
   ['action', 'Ha fatto l’azione'],
-  ['niente', 'Non ha fatto niente'],
+  ['nothing', 'Non ha fatto niente'],
 ]
 
-/** Whom the mail reached with no action after it: the list «Riscrivi a chi non ha fatto
- *  niente» starts from (spec § 4.3). A bounced mail reached nobody and a complaint is a
- *  «never again», so neither counts, as the server's `waiting_rows` (REB-524). */
+/** Whom the mail reached with no action after it: the follow-up list for those who did
+ *  nothing starts from (spec § 4.3). A bounced mail reached nobody and a complaint is a
+ *  never-again, so neither counts, as the server's `waiting_rows` (REB-524). */
 function didNothing(recipient: CampaignRecipient): boolean {
   return (
     recipient.status === 'sent' &&
@@ -117,7 +117,7 @@ function didNothing(recipient: CampaignRecipient): boolean {
 
 function matches(recipient: CampaignRecipient, filter: Filter): boolean {
   if (filter === 'action') return recipient.action_at !== null
-  if (filter === 'niente') return didNothing(recipient)
+  if (filter === 'nothing') return didNothing(recipient)
   return true
 }
 
@@ -135,7 +135,7 @@ function RecipientRow({ recipient }: { recipient: CampaignRecipient }) {
   return (
     <TableRow>
       <TableCell>
-        <p className="font-medium">{recipient.nome ?? '—'}</p>
+        <p className="font-medium">{recipient.name ?? '—'}</p>
         <p className="text-xs text-muted-foreground">{recipient.email}</p>
       </TableCell>
       <TableCell>
@@ -204,7 +204,7 @@ export function AdminCampaign() {
       void navigate({ to: '/admin/campaigns' })
     },
   })
-  const [filter, setFilter] = useState<Filter>('tutti')
+  const [filter, setFilter] = useState<Filter>('all')
   const followUp = useMutation({
     mutationFn: () => admin.followUpCampaign(id),
     onSuccess: (draft) => void navigate({ to: '/admin/campaigns/$id/edit', params: { id: draft.id } }),
@@ -240,7 +240,7 @@ export function AdminCampaign() {
 
   return (
     <>
-      <Header title={campaign.nome}>
+      <Header title={campaign.name}>
         <div className="flex flex-wrap items-center gap-2">
           <Badge variant="pill" dot={isStalled(campaign) ? 'danger' : undefined}>
             {campaignStateLabel(campaign)}
@@ -296,10 +296,10 @@ export function AdminCampaign() {
           {stall}
         </p>
       )}
-      {campaign.segue_id && (
+      {campaign.follows_id && (
         <p className="px-6 pt-2 text-sm text-muted-foreground">
           Riscrive a chi non aveva fatto niente dopo{' '}
-          <Link to="/admin/campaigns/$id" params={{ id: campaign.segue_id }} className="underline">
+          <Link to="/admin/campaigns/$id" params={{ id: campaign.follows_id }} className="underline">
             un'altra campagna
           </Link>
           .
@@ -314,12 +314,12 @@ export function AdminCampaign() {
         <Figure label="Inviate" value={counts.sent} note={`su ${counts.recipients}`} />
         <Figure label="Consegnate" value={counts.delivered} note={share(counts.delivered, counts.sent)} />
         <Figure label="Cliccate" value={counts.clicked} note={share(counts.clicked, counts.sent)} />
-        <Figure label="Entrate nell’area" value={counts.income} note={share(counts.income, counts.sent)} />
-        <Figure label={ActionDoneLabels[campaign.action]} value={counts.actions} note={share(counts.actions, counts.sent)} />
+        <Figure label="Entrate nell’area" value={counts.entered} note={share(counts.entered, counts.sent)} />
+        <Figure label={ACTION_DONE_LABELS[campaign.action]} value={counts.actions} note={share(counts.actions, counts.sent)} />
         <Figure label="Rimbalzate" value={counts.bounced} note={share(counts.bounced, counts.sent)} />
         <Figure label="Saltate" value={counts.skipped} note={share(counts.skipped, counts.recipients)} />
         <Figure label="Fallite" value={counts.failed} note={share(counts.failed, counts.recipients)} />
-        {counts.in_coda > 0 && <Figure label="In coda" value={counts.in_coda} />}
+        {counts.queued > 0 && <Figure label="In coda" value={counts.queued} />}
       </dl>
       {recipients.length === 0 ? (
         <Empty>Nessun destinatario.</Empty>

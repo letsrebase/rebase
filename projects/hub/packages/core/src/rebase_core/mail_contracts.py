@@ -20,10 +20,10 @@ from rebase_core.regimes import OCCASIONAL, VAT_REGISTERED
 
 
 def document_name(kind: str, number: str | None, regime: str = VAT_REGISTERED) -> str:
-    """How a mail and Documenso name a contract: «contratto quadro rebase», «lettera di
-    incarico n. 2026-001», and for a prestazione occasionale (REB-687) «contratto quadro
-    rebase per prestazioni occasionali», «lettera di incarico occasionale n. 2026-001».
-    `kind` is `framework` or `letter`."""
+    """How a mail and Documenso name a contract:
+    «contratto quadro rebase», «lettera di incarico n. 2026-001», and for an occasional
+    one (REB-687) «contratto quadro rebase per prestazioni occasionali»,
+    «lettera di incarico occasionale n. 2026-001». `kind` is `framework` or `letter`."""
     occasional = regime == OCCASIONAL
     if kind == "framework":
         if occasional:
@@ -34,7 +34,7 @@ def document_name(kind: str, number: str | None, regime: str = VAT_REGISTERED) -
 
 def signing_request_mail(
     to: str,
-    nome: str,
+    first_name: str,
     kind: str,
     number: str | None,
     signing_url: str,
@@ -65,7 +65,7 @@ def signing_request_mail(
         "bottone qui sotto; la copia firmata ti arriva per email e resta nella tua area "
         "su rebase."
     )
-    greeting = f"Ciao {nome}," if nome else "Ciao,"
+    greeting = f"Ciao {first_name}," if first_name else "Ciao,"
     subject = f"Da firmare: {name}"
     text = f"{greeting}\n\n{paragraph}\n\n{signing_url}\n\nNoi di rebase\n"
     safe_url = e(signing_url, quote=True)
@@ -89,7 +89,7 @@ def _article(kind: str) -> str:
 
 
 def signing_cancelled_mail(
-    to: str, nome: str, kind: str, number: str | None, *, regime: str = VAT_REGISTERED
+    to: str, first_name: str, kind: str, number: str | None, *, regime: str = VAT_REGISTERED
 ) -> Mail:
     """A document that had already left for signature, cancelled by rebase before it was
     signed (REB-407): the same frame as `signing_request_mail`, with no button, since
@@ -97,14 +97,16 @@ def signing_cancelled_mail(
     on, and a new document, if one is needed, arrives on its own."""
     e = html_escape.escape
     name = document_name(kind, number, regime)
-    cancelled = "cancelled" if kind == "framework" else "cancelled"
-    nuovo = "un nuovo contratto quadro" if kind == "framework" else "una nuova lettera di incarico"
+    cancelled = "annullato" if kind == "framework" else "annullata"
+    new_one = (
+        "un nuovo contratto quadro" if kind == "framework" else "una nuova lettera di incarico"
+    )
     if regime == OCCASIONAL:
-        nuovo += " per prestazioni occasionali" if kind == "framework" else " occasionale"
-    greeting = f"Ciao {nome}," if nome else "Ciao,"
+        new_one += " per prestazioni occasionali" if kind == "framework" else " occasionale"
+    greeting = f"Ciao {first_name}," if first_name else "Ciao,"
     paragraph = (
         f"il link che ti avevamo mandato per firmare {_article(kind)} {name} non funziona "
-        f"più: lo abbiamo annullato noi di rebase. Se serve {nuovo}, ti scriviamo."
+        f"più: lo abbiamo annullato noi di rebase. Se serve {new_one}, ti scriviamo."
     )
     subject = f"{name[0].upper()}{name[1:]} {cancelled}"
     text = f"{greeting}\n\n{paragraph}\n\nNoi di rebase\n"
@@ -124,7 +126,7 @@ def signed_copy_mail(
     kind: str,
     number: str | None,
     attachment: Attachment,
-    nome: str,
+    first_name: str,
     last_name: str,
     for_rebase: bool = False,
     regime: str = VAT_REGISTERED,
@@ -140,12 +142,12 @@ def signed_copy_mail(
     if for_rebase:
         greeting = "Ciao,"
         paragraph = (
-            f"{nome} {last_name} ha firmato {_article(kind)} {name}: la copia firmata è in "
+            f"{first_name} {last_name} ha firmato {_article(kind)} {name}: la copia firmata è in "
             f"allegato. {certificate}"
         )
-        subject = f"{signed} da {nome} {last_name}: {name}"
+        subject = f"{signed} da {first_name} {last_name}: {name}"
     else:
-        greeting = f"Ciao {nome}," if nome else "Ciao,"
+        greeting = f"Ciao {first_name}," if first_name else "Ciao,"
         paragraph = (
             f"hai firmato {_article(kind)} {name}: la copia firmata è in allegato, e la "
             f"trovi anche nella tua area su rebase. {certificate}"
@@ -172,7 +174,7 @@ def signed_copy_mail(
 
 
 def engagement_ready_mail(
-    to: str, *, nome: str, number: str, company: str, deal_url: str, space_created: bool
+    to: str, *, first_name: str, number: str, company: str, deal_url: str, space_created: bool
 ) -> Mail:
     """Sent once a match is linked to its deal on Pigro (spec § 3.7): the letter is
     active, its hours are logged on Pigro in the project the button opens, rebase reads
@@ -180,7 +182,7 @@ def engagement_ready_mail(
     itself, that Pigro's own mail carries the way in. The same box as the signing mails;
     the link goes into an attribute and into text, escaped both times."""
     e = html_escape.escape
-    greeting = f"Ciao {nome}," if nome else "Ciao,"
+    greeting = f"Ciao {first_name}," if first_name else "Ciao,"
     subject = f"La tua lettera n. {number} è attiva: le ore si registrano su Pigro"
     active = (
         f"la lettera di incarico n. {number} con {company} è attiva. Le ore di questo "

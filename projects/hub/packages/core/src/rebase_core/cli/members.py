@@ -32,12 +32,12 @@ def _ask(value: str | None, label: str) -> str | None:
 
 def createtoken(
     email: str | None,
-    nome: str | None,
+    name: str | None,
     *,
     token_file: str | None = None,
     expires_in_days: int | None = None,
 ) -> int:
-    """`rebase createtoken --email a@b.it [--nome "Claude Code"] [--expires-in-days N]
+    """`rebase createtoken --email a@b.it [--name "Claude Code"] [--expires-in-days N]
     [--token-file PATH]`: a personal token for an admin, for the operator who has no browser
     at hand (REB-213). The raw value is shown once and the hub keeps only its hash: on stdout
     and nowhere else, or, with `--token-file`, in that file alone, created with mode 0600 and
@@ -77,7 +77,7 @@ def createtoken(
         if admin is None or admin.role != "admin":
             print(f"Nessun amministratore con email {email}", file=sys.stderr)
             return 1
-        _, raw = AdminTokenService(session).create(admin.id, nome or DEFAULT_NAME, expires_at)
+        _, raw = AdminTokenService(session).create(admin.id, name or DEFAULT_NAME, expires_at)
     except DomainError as exc:
         print(exc.message, file=sys.stderr)
         return 1
@@ -97,10 +97,12 @@ def createtoken(
     return 0
 
 
-def setrole(email: str | None, role: str | None, nome: str | None, last_name: str | None) -> int:
-    """`rebase setrole --email a@b.it --role admin|member [--nome ...] [--cognome ...]`:
+def setrole(
+    email: str | None, role: str | None, first_name: str | None, last_name: str | None
+) -> int:
+    """`rebase setrole --email a@b.it --role admin|member [--first-name ...] [--last-name ...]`:
     admin creation from now on (REB-278), the shape of `createtoken`. Looks up `users`
-    by lowercased email, creates a minimal row when none exists (`nome`/`last_name`
+    by lowercased email, creates a minimal row when none exists (`first_name`/`last_name`
     prompted at a terminal if not given, a refusal without one), sets `role`, and for a
     promotion of a brand-new row sends the same magic link everyone else gets rather than
     a password printed to a terminal. Demoting is `--role member`, fully reversible."""
@@ -122,12 +124,12 @@ def setrole(email: str | None, role: str | None, nome: str | None, last_name: st
     try:
         users = UserService(session, settings)
         if users.by_email(email) is None:
-            nome = _ask(nome, "Nome")
+            first_name = _ask(first_name, "Nome")
             last_name = _ask(last_name, "Cognome")
-            if nome is None or last_name is None:
-                print("--nome e --cognome servono per un indirizzo nuovo.", file=sys.stderr)
+            if first_name is None or last_name is None:
+                print("--first-name e --last-name servono per un indirizzo nuovo.", file=sys.stderr)
                 return 2
-        user, created = users.set_role(email, asked_role, nome or "", last_name or "")
+        user, created = users.set_role(email, asked_role, first_name or "", last_name or "")
         if created and asked_role == "admin":
             sender = sender_from_settings(settings)
             if sender is not None:
@@ -188,7 +190,7 @@ def talent_duplicates(
         moved = ", ".join(f"{key}={count}" for key, count in sorted(done.moved.items()))
         note = (
             " (il profilo LinkedIn resta alla scheda che l'ha tenuto: l'indice unico ne vuole uno)"
-            if done.left.get("linkedin")
+            if done.left_behind.get("linkedin")
             else ""
         )
         return 0, [
@@ -286,7 +288,7 @@ def talent_duplicates(
 
 def _merge_line(done: "MergeRead", *, short: bool = False) -> str:
     moved = ", ".join(f"{key}={count}" for key, count in sorted(done.moved.items())) or "niente"
-    flag = ", scheda da rigenerare" if done.card_from_regenerate else ""
+    flag = ", scheda da rigenerare" if done.card_to_regenerate else ""
     text_ = f"unite (azione {done.action_id}): cv {done.cv}, spostato {moved}{flag}"
     return (
         text_
@@ -358,14 +360,14 @@ def send_welcome(
         signup = signups.get(email)
         if entry is not None:
             card, user = entry
-            if card.compilata_da == "person":
+            if card.filled_by == "person":
                 kind = "person"
                 mail = welcome_mail(
                     user.email,
-                    user.nome,
+                    user.first_name,
                     login,
                     kind=kind,
-                    posizione=card.posizione,
+                    job_title=card.job_title,
                     # Read through the schema so «completa» is the one definition the
                     # admin area and the member area already read (`_is_complete`),
                     # never a second list of columns written here. For this voice the
@@ -378,20 +380,22 @@ def send_welcome(
                 kind = "admin"
                 mail = welcome_mail(
                     user.email,
-                    user.nome,
+                    user.first_name,
                     login,
                     kind=kind,
                     summary=CardSummary(
-                        nome=user.nome,
+                        first_name=user.first_name,
                         last_name=user.last_name,
-                        posizione=card.posizione,
+                        job_title=card.job_title,
                         linkedin_url=user.linkedin_url,
                         links=tuple(card.links),
                     ),
                 )
         elif signup is not None:
-            kind = "nessuna"
-            mail = welcome_mail(signup.email, signup.nome, login, kind=kind, wizard_link=wizard)
+            kind = "none"
+            mail = welcome_mail(
+                signup.email, signup.first_name, login, kind=kind, wizard_link=wizard
+            )
         else:
             outcomes.append((email, "indirizzo sconosciuto"))
             continue
@@ -437,7 +441,7 @@ def _token_arguments(parser: argparse.ArgumentParser) -> None:
 def _role_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--email")
     parser.add_argument("--role", choices=USER_ROLES)
-    parser.add_argument("--name")
+    parser.add_argument("--first-name")
     parser.add_argument("--last-name")
 
 
@@ -459,13 +463,14 @@ COMMANDS = {
         _token_arguments,
         lambda args: createtoken(
             args.email,
-            args.nome,
+            args.name,
             token_file=args.token_file,
             expires_in_days=args.expires_in_days,
         ),
     ),
     "setrole": Command(
-        _role_arguments, lambda args: setrole(args.email, args.role, args.nome, args.last_name)
+        _role_arguments,
+        lambda args: setrole(args.email, args.role, args.first_name, args.last_name),
     ),
     "welcome": Command(_welcome_arguments, lambda args: welcome(args.email, args.all)),
     "talent-duplicates": Command(

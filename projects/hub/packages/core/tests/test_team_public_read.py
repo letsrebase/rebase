@@ -32,6 +32,7 @@ from rebase_core.llm import (
 )
 from rebase_core.models import Freelancer, FreelancerCard
 from rebase_core.team_public import (
+    PLACE_WITHHELD_PROFILE_SUMMARY,
     PLACE_WITHHELD_REASON,
     PLACE_WITHHELD_SUMMARY,
 )
@@ -139,18 +140,18 @@ def test_the_cloud_read_names_each_member_and_the_public_read_never(clean_hub: S
         TeamProposalCreate(description=DESCRIPTION), origin="public", user_id=None
     )
 
-    assert [(m.freelancer_id, m.nome, m.last_name) for m in cloud.team] == [
+    assert [(m.freelancer_id, m.first_name, m.last_name) for m in cloud.team] == [
         (first, "Ada", "Lovelace1"),
         (second, "Ada", "Lovelace2"),
     ]
     assert builder.get(cloud.id, public=False) == cloud
     for anonymous in (public, builder.get(cloud.id, public=True)):
-        assert [(m.nome, m.last_name) for m in anonymous.team] == [(None, None)] * 2
+        assert [(m.first_name, m.last_name) for m in anonymous.team] == [(None, None)] * 2
         assert "Lovelace" not in anonymous.model_dump_json()
 
 
 def test_a_public_reason_that_names_the_cards_place_is_withheld(clean_hub: Session) -> None:
-    """The prompt forbids a place in a motivazione; one that names the place on the
+    """The prompt forbids a place in a reasoning; one that names the place on the
     member's card anyway would give back what the public read withholds, so that read
     says the hub's sentence, in any case and for any word of the place but its kind;
     the admin's read keeps the model's words, and a place the card does not hold stays."""
@@ -201,7 +202,7 @@ def test_a_public_summary_that_names_a_members_place_is_withheld(clean_hub: Sess
     """The prompt lets the summary name the place the description names and no place of
     a person; a summary that names a member's card place anyway would give back what the
     public read withholds, unless that place is the one the description names as the
-    client's (`location.dove`). The row and the admin's read keep the model's words."""
+    client's (`location.place`). The row and the admin's read keep the model's words."""
     torino = a_talent(clean_hub, 1, card={**CARD, "location": "Torino"})
     verona = a_talent(clean_hub, 2, card={**CARD, "location": "Provincia di Verona"})
     alba = a_talent(clean_hub, 3, card={**CARD, "location": "Alba"})
@@ -216,22 +217,22 @@ def test_a_public_summary_that_names_a_members_place_is_withheld(clean_hub: Sess
     llm = RecordingCall(
         [
             proposal_response(
-                [team_member(positions[torino])], summary=kept, locale=True, dove="Torino"
+                [team_member(positions[torino])], summary=kept, on_site=True, place="Torino"
             ),
             proposal_response(
-                [team_member(positions[verona])], summary=leaked, locale=True, dove="Torino"
+                [team_member(positions[verona])], summary=leaked, on_site=True, place="Torino"
             ),
             proposal_response(
-                [team_member(positions[verona])], summary=lowered, locale=True, dove="Torino"
+                [team_member(positions[verona])], summary=lowered, on_site=True, place="Torino"
             ),
             proposal_response(
-                [team_member(positions[alba])], summary=dawn, locale=False, dove=None
+                [team_member(positions[alba])], summary=dawn, on_site=False, place=None
             ),
             proposal_response(
-                [team_member(positions[alba])], summary=copied, locale=True, dove="Alba"
+                [team_member(positions[alba])], summary=copied, on_site=True, place="Alba"
             ),
             proposal_response(
-                [team_member(positions[rho])], summary=short, locale=True, dove="Torino"
+                [team_member(positions[rho])], summary=short, on_site=True, place="Torino"
             ),
         ]
     )
@@ -266,19 +267,19 @@ def test_a_public_summary_that_names_a_members_place_is_withheld(clean_hub: Sess
     # «Torino» is the place the description names as the client's, whatever case the
     # visitor typed it in; «Verona» is the catalogue's alone, and the summary is read in
     # any case, unlike a card's field; «all'alba» in a description is no pass for Alba,
-    # and neither is an «Alba» the model wrote into `dove` on its own.
+    # and neither is an «Alba» the model wrote into `place` on its own.
     assert named.summary == kept
     assert withheld.summary == PLACE_WITHHELD_SUMMARY
     assert withheld_lower.summary == PLACE_WITHHELD_SUMMARY
     assert withheld_dawn.summary == PLACE_WITHHELD_SUMMARY
     assert withheld_copied.summary == PLACE_WITHHELD_SUMMARY
     assert withheld_short.summary == PLACE_WITHHELD_SUMMARY
-    # The public `location` keeps a `dove` the visitor wrote and drops one the model made up.
-    assert named.location.model_dump() == {"locale": True, "dove": "Torino"}
-    assert withheld_copied.location.model_dump() == {"locale": True, "dove": None}
+    # The public `location` keeps a `place` the visitor wrote and drops one the model made up.
+    assert named.location.model_dump() == {"on_site": True, "place": "Torino"}
+    assert withheld_copied.location.model_dump() == {"on_site": True, "place": None}
     assert builder.get(withheld_copied.id, public=False).location.model_dump() == {
-        "locale": True,
-        "dove": "Alba",
+        "on_site": True,
+        "place": "Alba",
     }
     assert PLACE_WITHHELD_SUMMARY == (
         "Il riassunto di questa proposta non è pubblico: la modalità di lavoro di ogni "
@@ -313,14 +314,14 @@ def test_a_public_card_names_its_place_nowhere(clean_hub: Session) -> None:
         TeamProposalCreate(description=DESCRIPTION), origin="public", user_id=None
     )
 
-    [scheda] = [member.card for member in public.team]
-    assert scheda.location is None
-    assert scheda.role == "Backend lead"
-    assert scheda.profile_summary == PLACE_WITHHELD_SUMMARY
-    assert PLACE_WITHHELD_SUMMARY == "La sintesi di questo profilo non è pubblica."
-    assert scheda.skills == ["Python"]
+    [member_card] = [member.card for member in public.team]
+    assert member_card.location is None
+    assert member_card.role == "Backend lead"
+    assert member_card.profile_summary == PLACE_WITHHELD_PROFILE_SUMMARY
+    assert PLACE_WITHHELD_PROFILE_SUMMARY == "La sintesi di questo profilo non è pubblica."
+    assert member_card.skills == ["Python"]
     # «bergamasco» is another word: the guard reads the place's own words.
-    assert scheda.industries == ["fintech", "turismo bergamasco"]
+    assert member_card.industries == ["fintech", "turismo bergamasco"]
     assert "Bergamo" not in public.model_dump_json()
     [admin] = [member.card for member in builder.get(public.id, public=False).team]
     assert admin == CardRead.model_validate(card)
@@ -346,7 +347,7 @@ def test_a_read_leaves_out_who_left_the_catalogue(clean_hub: Session, change: st
 
     read = builder.get(proposal.id, public=False)
 
-    assert [(m.posizione, m.freelancer_id) for m in read.team] == [(1, staying)]
+    assert [(m.position, m.freelancer_id) for m in read.team] == [(1, staying)]
     assert read.economics.day == Band(min=500, max=650)  # the one left, alone
     [stored] = proposal_rows(clean_hub)
     assert len(stored.team) == 2  # the row keeps them
@@ -370,6 +371,6 @@ def test_a_read_skips_a_card_that_no_longer_validates(
 
     read = builder.get(proposal.id, public=True)
 
-    assert [m.posizione for m in read.team] == [1]
+    assert [m.position for m in read.team] == [1]
     assert f"{proposal.id}: member 2" in logs.text and "not a card" in logs.text
     assert "Ruolo segreto" not in logs.text

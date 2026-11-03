@@ -88,7 +88,7 @@ class AiTask(Base):
 
     __table_args__ = (
         CheckConstraint(
-            "task IN ('card', 'team_proposal', 'cv_anonimo', 'crm_lead')", name="ck_ai_tasks_task"
+            "task IN ('card', 'team_proposal', 'anonymous_cv', 'crm_lead')", name="ck_ai_tasks_task"
         ),
         CheckConstraint("max_output_tokens > 0", name="ck_ai_tasks_max_output_tokens"),
         CheckConstraint(
@@ -167,9 +167,9 @@ class AiUsage(Base, PrimaryKeyMixin):
     __table_args__ = (
         Index("ix_ai_usage_task_at", "task", "at"),
         CheckConstraint(
-            "task IN ('card', 'team_proposal', 'cv_anonimo', 'crm_lead')", name="ck_ai_usage_task"
+            "task IN ('card', 'team_proposal', 'anonymous_cv', 'crm_lead')", name="ck_ai_usage_task"
         ),
-        CheckConstraint("purpose IN ('run', 'prova', 'eval')", name="ck_ai_usage_purpose"),
+        CheckConstraint("purpose IN ('run', 'test', 'eval')", name="ck_ai_usage_purpose"),
         CheckConstraint("priced = (cost_eur IS NOT NULL)", name="ck_ai_usage_priced"),
     )
 

@@ -29,7 +29,7 @@ def _talent_with_card(session: Session, n: int = 1) -> UUID:
     """A live freelancer with an anonymous card already written (`CARD`/`MODEL`,
     `fakes_cards.py`), the way `TeamBuilder.catalogue_lines` and `.get`'s
     `cloud_visible` need one to keep a proposal's member in a read."""
-    user = User(email=f"talento{n}@studio.it", nome=f"Ada{n}", last_name=f"Lovelace{n}")
+    user = User(email=f"talento{n}@studio.it", first_name=f"Ada{n}", last_name=f"Lovelace{n}")
     session.add(user)
     session.flush()
     row = Freelancer(
@@ -37,7 +37,7 @@ def _talent_with_card(session: Session, n: int = 1) -> UUID:
         remote="remote",
         daily_rate=Decimal("450.00"),
         status="new",
-        posizione="Backend developer",
+        job_title="Backend developer",
     )
     session.add(row)
     session.flush()
@@ -63,10 +63,10 @@ def _proposal_row(session: Session, members: list[UUID], *, origin: str = "publi
             "sei mesi, da remoto."
         ),
         summary="Un'azienda di logistica rifà il gestionale degli ordini, backend in Python.",
-        location={"locale": False, "dove": None},
+        location={"on_site": False, "place": None},
         team=[
             {
-                "posizione": index,
+                "position": index,
                 "freelancer_id": str(freelancer_id),
                 "role": "Backend developer",
                 "reasoning": "Nove anni di API in Python.",
@@ -132,7 +132,7 @@ async def test_team_request_tools_list_and_read_the_admins_page(
         assert rest["next_cursor"] is None
         item = rest["items"][0]
         assert (item["company"], item["origin"], item["status"]) == ("Uno Srl", "public", "new")
-        assert (item["total_talents"], item["self_talents"]) == (1, 0)
+        assert (item["total_talents"], item["yes_talents"]) == (1, 0)
 
         only = _payload(await client.call_tool("list_team_requests", {"status": "closed"}))
         assert only["items"] == []
@@ -143,7 +143,7 @@ async def test_team_request_tools_list_and_read_the_admins_page(
         assert detail["email"] == "wile@acme.it" and detail["phone"] == "+39 345 1234567"
         assert detail["proposal"]["team"][0]["freelancer_id"] == str(member)
         [talent] = detail["talents"]
-        assert (talent["nome"], talent["last_name"]) == ("Ada1", "Lovelace1")
+        assert (talent["first_name"], talent["last_name"]) == ("Ada1", "Lovelace1")
         assert talent["daily_rate"] == "450.00"
 
         missing = await client.call_tool(
@@ -280,10 +280,10 @@ async def test_contact_team_talents_mails_once_then_snooze_only_the_silent(
         assert "già stati contattati" in again.content[0].text
 
         first_mail = next(mail for mail in sender.sent if mail.to == "talento1@studio.it")
-        found = re.search(r"[?&]t=([A-Za-z0-9_-]+)&r=si", first_mail.text)
+        found = re.search(r"[?&]t=([A-Za-z0-9_-]+)&r=yes", first_mail.text)
         assert found
         session2 = factory()
-        TeamAvailabilityService(session2, settings=_team_settings()).answer(found.group(1), "si")
+        TeamAvailabilityService(session2, settings=_team_settings()).answer(found.group(1), "yes")
         session2.close()
 
         snooze = _payload(
@@ -331,7 +331,7 @@ async def test_list_team_proposals_reads_every_ask_with_its_request(
     attempt = TeamProposal(
         description="Una pipeline dati su Google Cloud, in sede a Milano, quattro mesi di lavoro.",
         summary="",
-        location={"locale": False, "dove": None},
+        location={"on_site": False, "place": None},
         team=[],
         economics={"day": None, "month": None, "days_month": 22},
         model="",
@@ -364,7 +364,7 @@ async def test_list_team_proposals_reads_every_ask_with_its_request(
         )
         # REB-607: who the proposal held, by name and id, and nobody on an attempt.
         [held] = cloud["team"]
-        assert (held["freelancer_id"], held["nome"], held["last_name"], held["role"]) == (
+        assert (held["freelancer_id"], held["first_name"], held["last_name"], held["role"]) == (
             str(member),
             "Ada1",
             "Lovelace1",

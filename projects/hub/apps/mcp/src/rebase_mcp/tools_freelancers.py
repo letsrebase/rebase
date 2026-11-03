@@ -29,11 +29,11 @@ def register(mcp: MCPServer, deps: Deps) -> None:
     @mcp.tool()
     def create_freelancer_from_signup(
         signup_id: str,
-        nome: str,
+        first_name: str,
         last_name: str,
         sources: list[str],
         linkedin_url: str | None = None,
-        posizione: str | None = None,
+        job_title: str | None = None,
         daily_rate: str | None = None,
         remote: str | None = None,
         links: list[str] | None = None,
@@ -47,10 +47,10 @@ def register(mcp: MCPServer, deps: Deps) -> None:
         scheda, firmata dall'admin dietro il token. Una
         scheda che la persona ha già compilato non si tocca: il tool rifiuta."""
         draft = FreelancerDraft(
-            nome=nome,
+            first_name=first_name,
             last_name=last_name,
             linkedin_url=linkedin_url,
-            posizione=posizione,
+            job_title=job_title,
             daily_rate=number(daily_rate, "daily_rate"),
             remote=as_remote(remote),
             links=links or [],
@@ -74,10 +74,10 @@ def register(mcp: MCPServer, deps: Deps) -> None:
         """Un freelance, per id, con `note`: il thread di chi lo ha seguito, dal più
         recente, ognuna con `id`, autore, data, `source` (`web`, `mcp`, `person`, `system`),
         l'ultima modifica e `editable`. Le note cancellate non ci sono. `phone` è
-        quello dell'account; `contatti_cv` è quanto il CV dice della persona, letto da
+        quello dell'account; `cv_contacts` è quanto il CV dice della persona, letto da
         Claude insieme alla scheda anonima (nome, cognome, email, telefono, città, LinkedIn,
         altri link, aziende), `None` se la scheda non ne ha ancora (scritta prima della
-        versione 3 del prompt o senza CV) e `differenze_cv` dove il CV e il profilo
+        versione 3 del prompt o senza CV) e `cv_differences` dove il CV e il profilo
         dicono cose diverse. Sono dati personali: solo per l'admin, mai per le schede
         anonime, il cloud o il team builder."""
 
@@ -87,8 +87,8 @@ def register(mcp: MCPServer, deps: Deps) -> None:
             person = stored_person(session, key)
             return {
                 **read.model_dump(mode="json"),
-                "contatti_cv": person.model_dump(mode="json") if person is not None else None,
-                "differenze_cv": [
+                "cv_contacts": person.model_dump(mode="json") if person is not None else None,
+                "cv_differences": [
                     difference.model_dump(mode="json")
                     for difference in person_differences(session, person, key)
                 ],
@@ -154,22 +154,22 @@ def register(mcp: MCPServer, deps: Deps) -> None:
             NoteService(session).delete(
                 to_uuid(note_id, "note_id"), admin_id=deps.admin().id, source=SOURCE
             )
-            return {"nota": note_id, "cancellata": True}
+            return {"note": note_id, "deleted": True}
 
         return deps.call(call)
 
     @mcp.tool()
     def override_freelancer(
         freelancer_id: str,
-        nome: str | None = None,
+        first_name: str | None = None,
         last_name: str | None = None,
         linkedin_url: str | None = None,
         daily_rate: str | None = None,
-        posizione: str | None = None,
+        job_title: str | None = None,
         remote: str | None = None,
         links: list[str] | None = None,
         status: str | None = None,
-        compilata_da: str | None = None,
+        filled_by: str | None = None,
         seniority: str | None = None,
         experience_years: str | None = None,
     ) -> dict[str, Any]:
@@ -188,24 +188,24 @@ def register(mcp: MCPServer, deps: Deps) -> None:
         modifica reale finisce nel registro di `get_freelancer_audit`, con il valore
         prima e dopo; per annullarla c'è `revert_freelancer_action`."""
         kwargs: dict[str, Any] = {}
-        if nome is not None:
-            kwargs["nome"] = supplied_text(nome)
+        if first_name is not None:
+            kwargs["first_name"] = supplied_text(first_name)
         if last_name is not None:
             kwargs["last_name"] = supplied_text(last_name)
         if linkedin_url is not None:
             kwargs["linkedin_url"] = supplied_text(linkedin_url)
         if daily_rate is not None:
             kwargs["daily_rate"] = None if daily_rate == "" else number(daily_rate, "daily_rate")
-        if posizione is not None:
-            kwargs["posizione"] = supplied_text(posizione)
+        if job_title is not None:
+            kwargs["job_title"] = supplied_text(job_title)
         if remote is not None:
             kwargs["remote"] = supplied_text(remote)
         if links is not None:
             kwargs["links"] = links
         if status is not None:
             kwargs["status"] = supplied_text(status)
-        if compilata_da is not None:
-            kwargs["compilata_da"] = supplied_text(compilata_da)
+        if filled_by is not None:
+            kwargs["filled_by"] = supplied_text(filled_by)
         if seniority is not None:
             kwargs["seniority_admin"] = supplied_text(seniority)
         if experience_years is not None:

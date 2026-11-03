@@ -184,7 +184,7 @@ class TeamRequestService:
         if proposal.company_id is None:
             if caller.granted_at > proposal.created_at:
                 raise ValidationFailed(ENTITY, "proposal_id", OTHER_CONTEXT)
-            company_id, azienda = caller.company_id, caller.company
+            company_id, company_label = caller.company_id, caller.company
         else:
             company_id = proposal.company_id
             grant = TalentCloudService(self.session).live_for(caller.user_id, company_id)
@@ -194,11 +194,11 @@ class TeamRequestService:
             if grant is None or grant.granted_at > proposal.created_at:
                 raise ValidationFailed(ENTITY, "proposal_id", CLOUD_CLOSED_FOR_PROPOSAL)
             company = self.session.get_one(Company, company_id)
-            azienda = company.company_name
+            company_label = company.company_name
         return self._file_proposal(
             proposal,
             origin="cloud",
-            company=azienda,
+            company=company_label,
             email=caller.email,
             phone=caller.phone,
             user_id=caller.user_id,
@@ -320,7 +320,7 @@ class TeamRequestService:
         name, and the link to the request's page, where the contacts are."""
         talent = None
         if read.proposal is None and read.talents:
-            talent = f"{read.talents[0].nome} {read.talents[0].last_name}".strip()
+            talent = f"{read.talents[0].first_name} {read.talents[0].last_name}".strip()
         return team_request_mail(
             self.settings.contracts_mail,
             company=read.company,
@@ -350,12 +350,12 @@ class TeamRequestService:
             select(
                 TeamRequestTalent.request_id.label("request_id"),
                 func.count().label("total"),
-                func.count().filter(TeamRequestTalent.answer == "si").label("si"),
+                func.count().filter(TeamRequestTalent.answer == "yes").label("yes"),
             )
             .group_by(TeamRequestTalent.request_id)
             .subquery()
         )
-        stmt = select(TeamRequest, counts.c.total, counts.c.si).outerjoin(
+        stmt = select(TeamRequest, counts.c.total, counts.c.yes).outerjoin(
             counts, counts.c.request_id == TeamRequest.id
         )
         if status is not None:
@@ -385,9 +385,9 @@ class TeamRequestService:
                     created_at=request.created_at,
                     contacted_at=request.contacted_at,
                     total_talents=total or 0,
-                    self_talents=si or 0,
+                    yes_talents=yes or 0,
                 )
-                for request, total, si in page
+                for request, total, yes in page
             ],
             next_cursor=next_cursor,
         )
@@ -526,7 +526,7 @@ class TeamRequestService:
                 logger.info(
                     "team request on proposal %s: member %s is no longer in the catalogue",
                     proposal.id,
-                    member["posizione"],
+                    member["position"],
                 )
                 continue
             members.append((freelancer_id, member["role"]))
@@ -540,7 +540,7 @@ class TeamRequestService:
         """The request's talents with their cards and names, in the proposal's order;
         `lock` takes the talents' rows for the send that writes their tokens."""
         order = (
-            {UUID(member["freelancer_id"]): member["posizione"] for member in proposal.team}
+            {UUID(member["freelancer_id"]): member["position"] for member in proposal.team}
             if proposal is not None
             else {}
         )
@@ -562,7 +562,7 @@ class TeamRequestService:
             key=lambda found: (
                 order.get(found[0].freelancer_id, len(order) + 1),
                 found[2].last_name,
-                found[2].nome,
+                found[2].first_name,
             ),
         )
 
@@ -574,7 +574,7 @@ class TeamRequestService:
         return [
             TeamRequestTalentRead(
                 freelancer_id=talent.freelancer_id,
-                nome=user.nome,
+                first_name=user.first_name,
                 last_name=user.last_name,
                 role=talent.role,
                 daily_rate=freelancer.daily_rate,

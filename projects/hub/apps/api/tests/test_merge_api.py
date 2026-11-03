@@ -31,7 +31,7 @@ TABLES = (
 
 @pytest.fixture
 def admin(api_session: Session) -> Iterator[User]:
-    row = User(email=ADMIN_EMAIL, nome="Ivan", last_name="", role="admin")
+    row = User(email=ADMIN_EMAIL, first_name="Ivan", last_name="", role="admin")
     api_session.add(row)
     api_session.commit()
     yield row
@@ -43,18 +43,18 @@ def admin(api_session: Session) -> Iterator[User]:
 
 def _login(client: TestClient, sender: RecordingSender, email: str = ADMIN_EMAIL) -> None:
     assert client.post("/api/hub/auth/link", json={"email": email}).status_code == 202
-    match = re.search(r"/entra\?t=([A-Za-z0-9_-]+)", sender.sent[-1].text)
+    match = re.search(r"/verify\?t=([A-Za-z0-9_-]+)", sender.sent[-1].text)
     assert match
     assert client.post("/api/hub/auth/enter", json={"token": match.group(1)}).status_code == 200
 
 
 def _apply(client: TestClient, email: str, linkedin: str | None = None) -> None:
     data = {
-        "nome": "Ada",
+        "first_name": "Ada",
         "last_name": "Lovelace",
         "email": email,
         "daily_rate": "450",
-        "posizione": "Backend developer",
+        "job_title": "Backend developer",
         "remote": "remote",
     }
     if linkedin:
@@ -188,7 +188,7 @@ def test_an_address_with_no_card_and_a_profile_on_a_card_mails_the_cards_owner(
     client: TestClient, api_session: Session, sender: RecordingSender, admin: User
 ) -> None:
     _apply(client, "vecchia@studio.it", ADA)
-    api_session.add(User(email="senzascheda@studio.it", nome="Wile", last_name="Coyote"))
+    api_session.add(User(email="senzascheda@studio.it", first_name="Wile", last_name="Coyote"))
     api_session.commit()
     sender.sent.clear()
     _apply(client, "senzascheda@studio.it", ADA)

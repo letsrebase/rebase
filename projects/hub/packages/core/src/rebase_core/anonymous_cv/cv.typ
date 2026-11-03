@@ -30,7 +30,7 @@
 #let sep = text(fill: inkquiet)[#h(0.15em) · #h(0.15em)]
 #let spaced(s) = s.split(" · ").map(text).join(sep)
 
-#set document(title: cv.titolo, author: "rebase")
+#set document(title: cv.title, author: "rebase")
 
 #set page(
   paper: "a4",
@@ -45,7 +45,7 @@
   footer: context {
     set text(size: 7.5pt, fill: inkquiet)
     let number = str(counter(page).get().first()) + " / " + str(counter(page).final().first())
-    let where = text(data.head.rif) + sep + text(number)
+    let where = text(data.head.ref) + sep + text(number)
     block(width: 100%, stroke: (top: 0.5pt + gridline.darken(20%)), inset: (top: 5pt))[
       #grid(columns: (1fr, auto), column-gutter: 12pt, spaced(data.footer), where)
     ]
@@ -61,7 +61,7 @@
   size: 10pt,
   weight: 300,
   fill: ink,
-  lang: cv.lingua,
+  lang: cv.language,
   hyphenate: false,
   kerning: false,
 )
@@ -134,66 +134,66 @@
 
 // The head: the CV's title large and centred where the name was, the line under it.
 #align(center)[
-  #if present(cv.titolo) {
-    block(below: 0.8em, text(size: 19pt, weight: 500, cv.titolo))
+  #if present(cv.title) {
+    block(below: 0.8em, text(size: 19pt, weight: 500, cv.title))
   }
-  #if present(data.head.riga) {
-    text(size: 10pt, fill: inkquiet, spaced(data.head.riga))
+  #if present(data.head.line) {
+    text(size: 10pt, fill: inkquiet, spaced(data.head.line))
   }
 ]
 #v(0.2em)
 
-#if present(cv.sommario) {
-  section(headings.sommario)
-  text(cv.sommario)
+#if present(cv.summary) {
+  section(headings.summary)
+  text(cv.summary)
 }
 
 // A bullet: the bold lead and its text, the lead alone (no colon to close) or the text
 // alone; one with neither is not a bullet.
 #let point(p) = {
-  if present(p.titolo) and present(p.testo) {
-    [#lead(p.titolo) #p.testo]
-  } else if present(p.titolo) {
-    strong(p.titolo)
+  if present(p.title) and present(p.text) {
+    [#lead(p.title) #p.text]
+  } else if present(p.title) {
+    strong(p.title)
   } else {
-    text(p.testo)
+    text(p.text)
   }
 }
 
 #let roles = {
   cv
-    .esperienze
-    .map(r => (..r, punti: r.punti.filter(p => present(p.titolo) or present(p.testo))))
-    .filter(r => (r.ruolo, r.azienda, r.luogo, r.periodo).any(present) or r.punti.len() > 0)
+    .experience
+    .map(r => (..r, points: r.points.filter(p => present(p.title) or present(p.text))))
+    .filter(r => (r.role, r.company, r.location, r.period).any(present) or r.points.len() > 0)
 }
 #if roles.len() > 0 {
-  section(headings.esperienze)
+  section(headings.experience)
   for (i, role) in roles.enumerate() {
     // The two rows stay with the first bullet: a role's name at the foot of a page with
     // its work on the next reads as two roles. Without a company the place takes its
     // slot, rather than sitting alone at the right of an empty line.
-    let second = if present(role.azienda) {
-      (oblique(role.azienda), oblique(role.luogo))
+    let second = if present(role.company) {
+      (oblique(role.company), oblique(role.location))
     } else {
-      (oblique(role.luogo), none)
+      (oblique(role.location), none)
     }
     block(above: if i == 0 { 0.7em } else { 1.15em }, below: 0.5em, sticky: true, rows(
-      (if present(role.ruolo) { strong(role.ruolo) }, opt(role.periodo)),
+      (if present(role.role) { strong(role.role) }, opt(role.period)),
       second,
     ))
-    bullets(role.punti.map(point))
+    bullets(role.points.map(point))
   }
 }
 
 #let groups = {
-  cv.competenze.map(g => (area: g.area, voci: g.voci.filter(present))).filter(g => g.voci.len() > 0)
+  cv.skills.map(g => (area: g.area, entries: g.entries.filter(present))).filter(g => g.entries.len() > 0)
 }
 #if groups.len() > 0 {
-  section(headings.competenze)
+  section(headings.skills)
   // One paragraph per area, a long one hanging under its own name. The first stays with
   // the heading, so a page never ends on the heading and a single area.
   for (i, group) in groups.enumerate() {
-    let words = group.voci.join(", ")
+    let words = group.entries.join(", ")
     let line = if present(group.area) {
       par(hanging-indent: 1em)[#lead(group.area) #words]
     } else {
@@ -203,38 +203,38 @@
   }
 }
 
-#let degrees = cv.formazione.filter(t => present(t.titolo) or present(t.istituto))
+#let degrees = cv.education.filter(t => present(t.title) or present(t.institution))
 #if degrees.len() > 0 {
-  section(headings.formazione)
+  section(headings.education)
   for (i, title) in degrees.enumerate() {
-    let pairs = if present(title.istituto) {
-      ((strong(title.istituto), opt(title.luogo)), (oblique(title.titolo), opt(title.periodo)))
+    let pairs = if present(title.institution) {
+      ((strong(title.institution), opt(title.location)), (oblique(title.title), opt(title.period)))
     } else {
-      let when = (title.luogo, title.periodo).filter(present).map(text).join(sep)
-      ((strong(title.titolo), when),)
+      let when = (title.location, title.period).filter(present).map(text).join(sep)
+      ((strong(title.title), when),)
     }
     block(above: if i == 0 { 0.7em } else { 0.9em }, breakable: false, rows(..pairs))
   }
 }
 
-#let certificates = cv.certificazioni.filter(present)
+#let certificates = cv.certifications.filter(present)
 #if certificates.len() > 0 {
-  section(headings.certificazioni)
+  section(headings.certifications)
   bullets(certificates.map(text))
 }
 
-#let languages = cv.lingue.filter(l => present(l.lingua))
+#let languages = cv.languages.filter(l => present(l.language))
 #if languages.len() > 0 {
-  section(headings.lingue)
+  section(headings.languages)
   languages
-    .map(l => if present(l.livello) [#lead(l.lingua) #l.livello] else { strong(l.lingua) })
+    .map(l => if present(l.level) [#lead(l.language) #l.level] else { strong(l.language) })
     .join(sep)
 }
 
 // A section the CV gives no title still prints, under the page's own word for it.
-#for other in cv.altre_sezioni.map(s => (titolo: s.titolo, voci: s.voci.filter(present))) {
-  if other.voci.len() > 0 {
-    section(if present(other.titolo) { other.titolo } else { headings.altre })
-    bullets(other.voci.map(text))
+#for other in cv.other_sections.map(s => (title: s.title, entries: s.entries.filter(present))) {
+  if other.entries.len() > 0 {
+    section(if present(other.title) { other.title } else { headings.other })
+    bullets(other.entries.map(text))
   }
 }

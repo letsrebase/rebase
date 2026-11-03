@@ -51,7 +51,7 @@ def _card(
     factory: sessionmaker[Session],
     email: str,
     *,
-    nome: str = "Ada",
+    first_name: str = "Ada",
     rate: str = "450",
     page: str | None = None,
     card: dict[str, Any] | None = None,
@@ -60,11 +60,11 @@ def _card(
     try:
         row, _ = FreelancerService(session).apply(
             FreelancerCreate(
-                nome=nome,
+                first_name=first_name,
                 last_name="Lovelace",
                 email=email,
                 daily_rate=Decimal(rate),
-                posizione="Backend developer",
+                job_title="Backend developer",
                 remote="remote",
                 utm=SignupUtm(origin=page) if page else None,
             ),
@@ -85,7 +85,7 @@ def _lead(factory: sessionmaker[Session], email: str) -> str:
     try:
         return str(
             SignupService(session)
-            .subscribe(SignupCreate(email=email, nome="Giulia", last_name="Branda"))
+            .subscribe(SignupCreate(email=email, first_name="Giulia", last_name="Branda"))
             .id
         )
     finally:
@@ -93,7 +93,7 @@ def _lead(factory: sessionmaker[Session], email: str) -> str:
 
 
 def _admin_id(session: Session) -> UUID:
-    admin = User(email="claude@rebase.it", nome="Claude", last_name="", role="admin")
+    admin = User(email="claude@rebase.it", first_name="Claude", last_name="", role="admin")
     session.add(admin)
     session.commit()
     return admin.id
@@ -103,14 +103,14 @@ def _admin_draft(factory: sessionmaker[Session], email: str) -> None:
     session = factory()
     try:
         signup = SignupService(session).subscribe(
-            SignupCreate(email=email, nome="Ricerca", last_name="Fatta")
+            SignupCreate(email=email, first_name="Ricerca", last_name="Fatta")
         )
         FreelancerService(session).draft_from_signup(
             signup.id,
             FreelancerDraft(
-                nome="Ricerca",
+                first_name="Ricerca",
                 last_name="Fatta",
-                posizione="Designer",
+                job_title="Designer",
                 links=[],
                 sources=["https://www.linkedin.com/in/ricerca"],
             ),
@@ -149,14 +149,14 @@ def _row(**fields: Any) -> dict[str, Any]:
 
 
 def test_the_short_row_is_the_card_without_addresses_dates_or_empty_keys() -> None:
-    row = talent_row(_row(nome="Ada", last_name="Lovelace", **FULL_CARD), None)
+    row = talent_row(_row(first_name="Ada", last_name="Lovelace", **FULL_CARD), None)
     assert set(row) <= set(SHORT_FIELDS)
     assert "email" not in row and "linkedin_url" not in row and "created_at" not in row
     assert row["skills"] == [f"Skill {n}" for n in range(1, SHORT_SKILLS + 1)]
     assert "industries" not in row and "languages" not in row
     assert row["profile_summary"] == FULL_CARD["profile_summary"]
-    lead = talent_row(_row(nome="Giulia", last_name="Branda"), None)
-    assert set(lead) == {"id", "nome", "last_name", "status"}
+    lead = talent_row(_row(first_name="Giulia", last_name="Branda"), None)
+    assert set(lead) == {"id", "first_name", "last_name", "status"}
 
 
 def test_the_short_row_says_when_the_seniority_is_a_guess() -> None:
@@ -186,15 +186,15 @@ def test_fields_names_the_fields_whole_with_the_id_and_all_is_the_full_row() -> 
     picked = talent_row(row, row_fields(["industries", "skills"]))
     assert list(picked) == ["id", "industries", "skills"]
     assert picked["skills"] == FULL_CARD["skills"]
-    assert set(talent_row(row, row_fields(["tutti"]))) == set(TalentRead.model_fields)
+    assert set(talent_row(row, row_fields(["all"]))) == set(TalentRead.model_fields)
     assert row_fields(None) is None and row_fields([]) is None and row_fields([" "]) is None
 
 
 def test_an_unknown_field_is_refused_with_the_names_that_exist() -> None:
-    with pytest.raises(ValidationFailed, match="«telefono» non esiste"):
+    with pytest.raises(ValidationFailed, match="«phone» non esiste"):
         row_fields(["email", "phone"])
-    with pytest.raises(ValidationFailed, match="«telefono» non esiste"):
-        row_fields(["tutti", "phone"])
+    with pytest.raises(ValidationFailed, match="«phone» non esiste"):
+        row_fields(["all", "phone"])
 
 
 # ---- through the tools -----------------------------------------------------------------
@@ -205,11 +205,11 @@ async def test_the_default_row_is_short_and_fields_widens_it(clean: sessionmaker
     _lead(clean, "giulia@studio.it")
     async with _server(clean) as client:
         short = _payload(await client.call_tool("list_talents", {}))
-        wide = _payload(await client.call_tool("list_talents", {"fields": ["tutti"]}))
+        wide = _payload(await client.call_tool("list_talents", {"fields": ["all"]}))
         some = _payload(await client.call_tool("list_talents", {"fields": ["email", "band"]}))
         bad = await client.call_tool("list_talents", {"fields": ["phone"]})
     by_status = {item["status"]: item for item in short["items"]}
-    assert set(by_status["lead"]) == {"id", "nome", "last_name", "status"}
+    assert set(by_status["lead"]) == {"id", "first_name", "last_name", "status"}
     ada = by_status["new"]
     assert (
         ada["role"] == "Data engineer"
@@ -233,7 +233,7 @@ async def test_origin_filters_what_the_row_shows_and_origin_page_the_page(
     _admin_draft(clean, "ricerca@studio.it")
     _lead(clean, "giulia@studio.it")
     async with _server(clean) as client:
-        listed = _payload(await client.call_tool("list_talents", {"fields": ["tutti"]}))
+        listed = _payload(await client.call_tool("list_talents", {"fields": ["all"]}))
         for origin, email in (
             ("wizard", "wizard@studio.it"),
             ("admin", "ricerca@studio.it"),
@@ -264,7 +264,7 @@ async def test_get_talent_carries_every_field_the_list_row_has(
     async with _server(clean) as client:
         rows = {
             item["id"]: item
-            for item in _payload(await client.call_tool("list_talents", {"fields": ["tutti"]}))[
+            for item in _payload(await client.call_tool("list_talents", {"fields": ["all"]}))[
                 "items"
             ]
         }
@@ -288,12 +288,12 @@ async def test_the_card_filters_and_the_sort_answer_one_request_in_one_call(
     def card(**fields: Any) -> dict[str, Any]:
         return {**FULL_CARD, **fields}
 
-    _card(clean, "a@studio.it", nome="A", rate="380", card=card(experience_years=6))
-    _card(clean, "b@studio.it", nome="B", rate="350", card=card(experience_years=9))
-    _card(clean, "c@studio.it", nome="C", rate="500", card=card())
-    _card(clean, "d@studio.it", nome="D", rate="300", card=card(seniority="mid"))
-    _card(clean, "e@studio.it", nome="E", rate="300", card=card(experience_years=2))
-    _card(clean, "f@studio.it", nome="F", rate="300", card=card(languages=["francese"]))
+    _card(clean, "a@studio.it", first_name="A", rate="380", card=card(experience_years=6))
+    _card(clean, "b@studio.it", first_name="B", rate="350", card=card(experience_years=9))
+    _card(clean, "c@studio.it", first_name="C", rate="500", card=card())
+    _card(clean, "d@studio.it", first_name="D", rate="300", card=card(seniority="mid"))
+    _card(clean, "e@studio.it", first_name="E", rate="300", card=card(experience_years=2))
+    _card(clean, "f@studio.it", first_name="F", rate="300", card=card(languages=["francese"]))
     request = {
         "seniority": ["senior"],
         "min_years": 5,
@@ -333,7 +333,7 @@ async def test_the_card_filters_and_the_sort_answer_one_request_in_one_call(
     assert first["next_cursor"] is not None and second["next_cursor"] is None
     assert wrong_order.is_error and "ordinamento" in wrong_order.content[0].text
     assert bad_level.is_error and "seniority" in bad_level.content[0].text
-    assert too_many.is_error and "lingue: al massimo" in too_many.content[0].text
+    assert too_many.is_error and "languages: al massimo" in too_many.content[0].text
     assert bad_card.is_error and "card" in bad_card.content[0].text
     assert bad_sort.is_error and "sort" in bad_sort.content[0].text
 
@@ -341,7 +341,8 @@ async def test_the_card_filters_and_the_sort_answer_one_request_in_one_call(
 async def test_a_corrected_seniority_is_the_one_every_read_shows(
     clean: sessionmaker[Session],
 ) -> None:
-    """REB-799, REB-805: an admin's `seniority` and `experience_years` beat Claude's in the list row,
+    """REB-799, REB-805: an admin's `seniority` and `experience_years` beat Claude's in the list
+    row,
     in `get_talent` and in the `seniority` filter, so the three agree on one person."""
     ada = _card(clean, "ada@studio.it", card=FULL_CARD)
     _seed_admin(clean)
@@ -350,7 +351,7 @@ async def test_a_corrected_seniority_is_the_one_every_read_shows(
             "override_freelancer",
             {"freelancer_id": ada, "seniority": "junior", "experience_years": "2"},
         )
-        row = _payload(await client.call_tool("list_talents", {"fields": ["tutti"]}))["items"][0]
+        row = _payload(await client.call_tool("list_talents", {"fields": ["all"]}))["items"][0]
         detail = _payload(await client.call_tool("get_talent", {"talent_id": ada}))
         junior = _payload(await client.call_tool("list_talents", {"seniority": ["junior"]}))
         senior = _payload(await client.call_tool("list_talents", {"seniority": ["senior"]}))
@@ -384,7 +385,7 @@ async def test_fifty_rows_of_a_realistic_list_fit_in_a_prompt(
         _card(
             clean,
             f"persona{n}@studio.it",
-            nome=f"Persona{n}",
+            first_name=f"Persona{n}",
             card={
                 "role": "Full stack developer e tech lead",
                 "seniority": "senior",
@@ -398,7 +399,7 @@ async def test_fifty_rows_of_a_realistic_list_fit_in_a_prompt(
         )
     async with _server(clean) as client:
         short = (await client.call_tool("list_talents", {})).content[0].text
-        full = (await client.call_tool("list_talents", {"fields": ["tutti"]})).content[0].text
+        full = (await client.call_tool("list_talents", {"fields": ["all"]})).content[0].text
     assert len(json.loads(short)["items"]) == 50
     # What every call answered before: the row without the four fields REB-798 adds,
     # in the server's usual indented text.
@@ -435,13 +436,13 @@ async def test_the_talent_list_is_newest_first_and_the_total_counts_everything(
     async with Client(build_server(factory, lambda: IVAN)) as client:
         result = await client.call_tool(
             "list_talents",
-            {"limit": 1, "fields": ["nome", "last_name", "status", "email", "linkedin_url"]},
+            {"limit": 1, "fields": ["first_name", "last_name", "status", "email", "linkedin_url"]},
         )
     body = _payload(result)
     assert body["total"] == 2
     assert [item["email"] for item in body["items"]] == ["due@studio.it"]
     item = body["items"][0]
-    assert (item["nome"], item["last_name"]) == ("Ada", "Lovelace")
+    assert (item["first_name"], item["last_name"]) == ("Ada", "Lovelace")
     assert item["linkedin_url"] == "https://www.linkedin.com/in/due"
     assert item["status"] == "lead"
 

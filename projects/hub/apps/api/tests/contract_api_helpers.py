@@ -16,7 +16,7 @@ MISSING = "00000000-0000-7000-8000-000000000000"
 BUDGET = "777.77"
 FISCAL = {
     "tax_code": "LVLDAA85T50H501Z",
-    "partita_iva": "01234567890",
+    "vat_number": "01234567890",
     "domicile": "Via Roma 1, Milano",
     "certified_email": None,
 }
@@ -35,7 +35,7 @@ LETTER = {
     "month_end": True,
 }
 # The same letter priced by the day, which is what a reward can project without an estimate.
-DAY_RATE_LETTER = {**LETTER, "mode": "to_work_unit", "unit": "to_work_unit"}
+DAY_RATE_LETTER = {**LETTER, "mode": "to_work_unit", "unit": "a giornata"}
 TABLES = (
     "referral_rewards",
     "referrals",
@@ -55,7 +55,7 @@ TABLES = (
 def login_as(client: TestClient, sender: RecordingSender, email: str) -> None:
     """Signs `email` in through the magic link, as the member area does."""
     assert client.post("/api/hub/auth/link", json={"email": email}).status_code == 202
-    match = re.search(r"/entra\?t=([A-Za-z0-9_-]+)", sender.sent[-1].text)
+    match = re.search(r"/verify\?t=([A-Za-z0-9_-]+)", sender.sent[-1].text)
     assert match
     assert client.post("/api/hub/auth/enter", json={"token": match.group(1)}).status_code == 200
 
@@ -68,11 +68,11 @@ def apply_freelancer(client: TestClient) -> str:
     response = client.post(
         "/api/hub/freelancers",
         data={
-            "nome": "Ada",
+            "first_name": "Ada",
             "last_name": "Lovelace",
             "email": "ada@studio.it",
             "daily_rate": "450",
-            "posizione": "Backend developer",
+            "job_title": "Backend developer",
             "remote": "remote",
         },
         files={"cv": ("Ada CV.pdf", PDF, "application/pdf")},
@@ -116,11 +116,11 @@ def apply_member(client: TestClient, email: str) -> None:
     response = client.post(
         "/api/hub/freelancers",
         data={
-            "nome": "Bob",
+            "first_name": "Bob",
             "last_name": "Ross",
             "email": email,
             "daily_rate": "300",
-            "posizione": "Designer",
+            "job_title": "Designer",
             "remote": "remote",
         },
         files={"cv": ("Bob CV.pdf", PDF, "application/pdf")},

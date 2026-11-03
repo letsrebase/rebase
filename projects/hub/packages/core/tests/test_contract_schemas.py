@@ -11,6 +11,7 @@ from pydantic import ValidationError
 
 from rebase_core.contract_schemas import (
     LETTER_AUTO_FIELDS_BY_REGIME,
+    TEMPLATE_KEYS,
     CustomerDate,
     FiscalData,
     LetterDraft,
@@ -54,7 +55,7 @@ def test_tax_identifiers_are_stored_the_way_they_print() -> None:
     ("field", "value"),
     [
         ("tax_code", "LVLDAA85T50"),
-        ("partita_iva", "0123456789"),
+        ("vat_number", "0123456789"),
         ("domicile", "Via Roma 1\nMilano"),
         ("certified_email", "non-una-pec"),
     ],
@@ -62,7 +63,7 @@ def test_tax_identifiers_are_stored_the_way_they_print() -> None:
 def test_tax_data_a_contract_could_not_print_are_refused(field: str, value: str) -> None:
     payload = {
         "tax_code": "LVLDAA85T50H501Z",
-        "partita_iva": "01234567890",
+        "vat_number": "01234567890",
         "domicile": "Via Roma 1, Milano",
         field: value,
     }
@@ -71,14 +72,14 @@ def test_tax_data_a_contract_could_not_print_are_refused(field: str, value: str)
 
 
 def test_a_letter_turns_into_the_markdowns_own_keys_and_printable_values() -> None:
-    fields = LetterFields(**REQUIRED, data_fine=date(2027, 1, 29)).to_fields()  # type: ignore[arg-type]
+    fields = LetterFields(**REQUIRED, end_date=date(2027, 1, 29)).to_fields()  # type: ignore[arg-type]
     assert fields["data-inizio"] == "1° ottobre 2026"
     assert fields["data-fine"] == "29 gennaio 2027"
-    assert fields["fee"] == 450 and isinstance(fields["fee"], int)
+    assert fields["compenso"] == 450 and isinstance(fields["compenso"], int)
     assert fields["giorni-pagamento"] == 30 and fields["fine-mese"] is True
-    assert fields["results"] is None
+    assert fields["risultati"] is None
     half = LetterFields(**{**REQUIRED, "fee": Decimal("450.50")}).to_fields()  # type: ignore[arg-type]
-    assert half["fee"] == 450.5
+    assert half["compenso"] == 450.5
 
 
 @pytest.mark.parametrize(
@@ -89,7 +90,7 @@ def test_a_letter_turns_into_the_markdowns_own_keys_and_printable_values() -> No
         {"fee": Decimal("0")},
         {"fee": Decimal("450.005")},
         {"role": "   "},
-        {"start_date": date(2026, 10, 1), "data_fine": date(2026, 9, 30)},
+        {"start_date": date(2026, 10, 1), "end_date": date(2026, 9, 30)},
     ],
 )
 def test_a_letter_the_law_or_the_page_would_not_allow_is_refused(change: dict[str, object]) -> None:
@@ -187,14 +188,14 @@ def test_expected_days_written_as_a_whole_number_are_taken(days: object) -> None
     assert _match(days).expected_days == 40
 
 
-@pytest.mark.parametrize("regime", ["partita_iva", "occasional"])
+@pytest.mark.parametrize("regime", ["vat_registered", "occasional"])
 def test_the_form_covers_every_field_of_the_letter_and_the_hub_fills_the_rest(regime: str) -> None:
     """A field added to a letter's Markdown and to neither list is a blank nobody fills.
-    The occasional letter asks the same form and names its collaborator by the codice
-    fiscale instead of a partita IVA (REB-687)."""
+    The occasional letter asks the same form and names its collaborator by the
+    `codice fiscale` instead of a `partita IVA` (REB-687)."""
     letter = text_path(text_name("letter", regime)).read_text(encoding="utf-8")
     asked = set(FIELD.findall(letter))
-    written = {name.replace("_", "-") for name in LetterDraft.model_fields}
+    written = {TEMPLATE_KEYS[name] for name in LetterDraft.model_fields}
     assert asked == (written - {DAYS, MONTH_END}) | LETTER_AUTO_FIELDS_BY_REGIME[regime] | {TERM}
 
 
@@ -215,9 +216,9 @@ def test_nothing_in_the_flow_can_carry_the_client_budget() -> None:
         assert not any("budget" in name for name in model.model_fields), model
 
 
-@pytest.mark.parametrize("partita_iva", [None, "", "   "])
-def test_tax_data_without_a_partita_iva_are_stored_as_none(vat_number: str | None) -> None:
-    """REB-687: a member paid as a prestazione occasionale has no partita IVA."""
+@pytest.mark.parametrize("vat_number", [None, "", "   "])
+def test_tax_data_without_a_vat_number_are_stored_as_none(vat_number: str | None) -> None:
+    """REB-687: a member paid as a `prestazione occasionale` has no `partita IVA`."""
     data = FiscalData(
         tax_code="LVLDAA85T50H501Z", vat_number=vat_number, domicile="Via Roma 1, Milano"
     )
@@ -226,7 +227,7 @@ def test_tax_data_without_a_partita_iva_are_stored_as_none(vat_number: str | Non
     assert omitted.vat_number is None
 
 
-@pytest.mark.parametrize("partita_iva", ["IT", "0123456789", "IT 0123456789", "012345678901"])
+@pytest.mark.parametrize("vat_number", ["IT", "0123456789", "IT 0123456789", "012345678901"])
 def test_to_vat_number_that_is_given_still_has_eleven_digits(vat_number: str) -> None:
     with pytest.raises(ValidationError, match="la partita IVA ha 11 cifre"):
         FiscalData(

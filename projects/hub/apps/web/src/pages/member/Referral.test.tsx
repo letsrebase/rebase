@@ -25,14 +25,14 @@ describe('«Il tuo link di segnalazione» in the member area (P-REB-44)', () => 
   it('shows the code as a link, and «Nessuna segnalazione ancora» with nothing referred', async () => {
     mount({ ...RATES, code: 'ABC123', referred: [] })
     const input = await screen.findByLabelText('Link di segnalazione da copiare')
-    expect(input).toHaveValue(`${window.location.origin}/hub/?rif=ABC123`)
+    expect(input).toHaveValue(`${window.location.origin}/hub/?ref=ABC123`)
     expect(screen.getByText('Nessuna segnalazione ancora.')).toBeInTheDocument()
   })
 
   it('escapes a code that is not plain letters and digits before it goes into the link', async () => {
     mount({ ...RATES, code: 'A B&C', referred: [] })
     const input = await screen.findByLabelText('Link di segnalazione da copiare')
-    expect(input).toHaveValue(`${window.location.origin}/hub/?rif=A%20B%26C`)
+    expect(input).toHaveValue(`${window.location.origin}/hub/?ref=A%20B%26C`)
   })
 
   it('lists who the code brought in, freelance and company alike', async () => {
@@ -40,8 +40,8 @@ describe('«Il tuo link di segnalazione» in the member area (P-REB-44)', () => 
       ...RATES,
       code: 'ABC123',
       referred: [
-        { kind: 'freelancer', nome: 'Ada Lovelace', created_at: '2026-09-20T10:00:00Z', status: 'new' },
-        { kind: 'company', nome: 'ACME S.r.l.', created_at: '2026-09-22T10:00:00Z', status: 'new' },
+        { kind: 'freelancer', first_name: 'Ada Lovelace', created_at: '2026-09-20T10:00:00Z', status: 'new' },
+        { kind: 'company', first_name: 'ACME S.r.l.', created_at: '2026-09-22T10:00:00Z', status: 'new' },
       ],
     })
     expect(await screen.findByText('Ada Lovelace')).toBeInTheDocument()
@@ -61,7 +61,7 @@ describe('«Il tuo link di segnalazione» in the member area (P-REB-44)', () => 
 
     await user.click(button)
 
-    expect(writeText).toHaveBeenCalledWith(`${window.location.origin}/hub/?rif=ABC123`)
+    expect(writeText).toHaveBeenCalledWith(`${window.location.origin}/hub/?ref=ABC123`)
     expect(await screen.findByRole('button', { name: 'Copiato' })).toBeInTheDocument()
   })
 

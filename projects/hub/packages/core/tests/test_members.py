@@ -33,11 +33,11 @@ from rebase_core.users import UserService
 PDF = b"%PDF-1.7\n1 0 obj<<>>endobj\n%%EOF\n"
 
 GOOD = {
-    "nome": "Ada",
+    "first_name": "Ada",
     "last_name": "Lovelace",
     "linkedin_url": "https://www.linkedin.com/in/ada",
     "daily_rate": "450",
-    "posizione": "Backend developer",
+    "job_title": "Backend developer",
     "remote": "remote",
     "links": ["https://github.com/ada", " "],
 }
@@ -66,7 +66,7 @@ def test_company_update_accepts_only_the_eight_project_answers() -> None:
 
 def test_member_update_applies_the_wizards_rules_and_nothing_else() -> None:
     update = MemberUpdate(**GOOD)
-    assert update.nome == "Ada" and update.daily_rate == Decimal("450")
+    assert update.first_name == "Ada" and update.daily_rate == Decimal("450")
     with pytest.raises(ValidationError):
         MemberUpdate(**{**GOOD, "email": "ada@studio.it"})  # type: ignore[arg-type]
 
@@ -77,7 +77,7 @@ def test_freelancer_create_strips_blank_links() -> None:
 
 def test_member_profile_carries_no_admin_field() -> None:
     fields = set(MemberProfile.model_fields)
-    assert {"nome", "last_name", "email", "cv_filename", "cv_size", "links"} <= fields
+    assert {"first_name", "last_name", "email", "cv_filename", "cv_size", "links"} <= fields
     assert not fields & {"status", "note", "utm_source", "utm_campaign", "cv_bytes"}
 
 
@@ -123,12 +123,12 @@ def _draft_card(session: Session, email: str = "ada@studio.it") -> UUID:
     from rebase_core.signup_schemas import SignupCreate
 
     signup = SignupService(session).subscribe(
-        SignupCreate(email=email, nome="Ada", last_name="Lovelace")
+        SignupCreate(email=email, first_name="Ada", last_name="Lovelace")
     )
     draft = FreelancerDraft(
-        nome="Ada",
+        first_name="Ada",
         last_name="Lovelace",
-        posizione="Backend developer",
+        job_title="Backend developer",
         sources=["https://www.linkedin.com/in/ada"],
     )
     return (
@@ -191,10 +191,12 @@ def test_a_name_change_is_also_written_onto_the_linked_user(
     freelancer_id = _apply(hub_session)
     row = hub_session.scalar(select(Freelancer).where(Freelancer.id == freelancer_id))
     assert row is not None
-    members.update(freelancer_id, MemberUpdate(**{**GOOD, "nome": "Augusta", "last_name": "King"}))
+    members.update(
+        freelancer_id, MemberUpdate(**{**GOOD, "first_name": "Augusta", "last_name": "King"})
+    )
     user = UserService(hub_session).by_email("ada@studio.it")
     assert user is not None
-    assert (user.nome, user.last_name) == ("Augusta", "King")
+    assert (user.first_name, user.last_name) == ("Augusta", "King")
 
 
 def test_a_new_cv_is_checked_like_the_wizards_and_leaves_its_note(
@@ -240,7 +242,7 @@ def test_me_read_answers_the_identity_and_the_card_together(
     user = UserService(hub_session).by_email("ada@studio.it")
     assert user is not None
     me = members.me_read(user.id)
-    assert me.has_card is True and me.nome == "Ada" and me.role == "member"
+    assert me.has_card is True and me.first_name == "Ada" and me.role == "member"
     assert me.cv_filename == "Ada CV.pdf" and me.complete is True
 
     bare = UserService(hub_session).get_or_create("ivan@rebase.it", "Ivan", "Fiore")
@@ -492,7 +494,7 @@ def test_the_person_completes_the_card_and_takes_it_over(
     after_cv = members.replace_cv(freelancer_id, PDF, "Ada CV.pdf", "application/pdf")
     assert after_cv.complete is True and after_cv.cv_filename == "Ada CV.pdf"
     row = hub_session.scalar(select(Freelancer).where(Freelancer.id == freelancer_id))
-    assert row is not None and row.compilata_da == "person"
+    assert row is not None and row.filled_by == "person"
     texts = [c.text for c in NoteService(hub_session).list("freelancer", freelancer_id)]
     assert texts[0] == "CV caricato dalla persona"
     assert texts[1].startswith("Profilo aggiornato dalla persona: ")
@@ -508,14 +510,14 @@ def test_confirming_a_researched_card_unchanged_still_makes_it_the_persons(
         MemberUpdate(**{**GOOD, "linkedin_url": None, "links": []}),
     )
     # Nothing but the rate and the remote option moved the first time; the second call
-    # sends the very same answers, and the card still says «persona» afterwards.
+    # sends the very same answers, and the card still says «person» afterwards.
     row = hub_session.scalar(select(Freelancer).where(Freelancer.id == freelancer_id))
     assert row is not None
-    row.compilata_da = "admin"
+    row.filled_by = "admin"
     hub_session.commit()
     members.update(freelancer_id, MemberUpdate(**{**GOOD, "linkedin_url": None, "links": []}))
     hub_session.refresh(row)
-    assert row.compilata_da == "person"
+    assert row.filled_by == "person"
     texts = [c.text for c in NoteService(hub_session).list("freelancer", freelancer_id)]
     assert texts[0] == "Scheda confermata dalla persona"
 
@@ -572,17 +574,17 @@ def test_the_welcome_mailing_speaks_to_every_address_the_hub_knows(
     _apply(hub_session, "ada@studio.it")  # a card the person filled, no signup
     _draft_card(hub_session, "bruna@studio.it")  # a signup and a card we drafted
     SignupService(hub_session).subscribe(
-        SignupCreate(email="carlo@studio.it", nome="Carlo", last_name="Verdi")
+        SignupCreate(email="carlo@studio.it", first_name="Carlo", last_name="Verdi")
     )  # a signup and nothing else
     sender = RecordingSender()
     outcomes = send_welcome(hub_session, settings, sender, None)
     assert outcomes == [
         ("bruna@studio.it", "inviata (admin)"),
-        ("carlo@studio.it", "inviata (nessuna)"),
-        ("ada@studio.it", "inviata (persona)"),
+        ("carlo@studio.it", "inviata (none)"),
+        ("ada@studio.it", "inviata (person)"),
     ]
     by_to = {mail.to: mail for mail in sender.sent}
-    assert "http://localhost:5180/hub/accedi" in by_to["ada@studio.it"].text
+    assert "http://localhost:5180/hub/login" in by_to["ada@studio.it"].text
     assert "scheda è completa" in by_to["ada@studio.it"].text
     assert "- Posizione: Backend developer" in by_to["bruna@studio.it"].text
     assert "offerta in linea" in by_to["bruna@studio.it"].text
@@ -593,7 +595,7 @@ def test_the_welcome_mailing_speaks_to_every_address_the_hub_knows(
         hub_session, settings, RecordingSender(), ["ADA@studio.it", "nessuno@studio.it"]
     )
     assert named == [
-        ("ada@studio.it", "inviata (persona)"),
+        ("ada@studio.it", "inviata (person)"),
         ("nessuno@studio.it", "indirizzo sconosciuto"),
     ]
     hub_session.execute(text("DELETE FROM signups"))

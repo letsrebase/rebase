@@ -27,17 +27,17 @@ import {
 } from '@/lib/api'
 import { bandLabel } from '@/lib/bands'
 import { resolveReferral } from '@/lib/utm'
-import { RemoteLabels, formatDaysPerWeek, formatLevel } from '@/lib/format'
+import { REMOTE_LABELS, formatDaysPerWeek, formatLevel } from '@/lib/format'
 
 /** The lengths core's `TeamProposalCreate` takes (`team_schemas.py`), measured as it
  *  measures them, stripped: the page says so before the API has to. */
-const DescriptionMin = 40
-const DescriptionMax = 4000
+const DESCRIPTION_MIN = 40
+const DESCRIPTION_MAX = 4000
 const NOTE_MAX = 500
 /** The number of people a company can ask for (`PEOPLE_MAX` in `team_schemas.py`):
  *  one by default, since most requests are for one person (REB-591). */
-const People = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10] as const
-const PeopleDefault = 1
+const PEOPLE = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10] as const
+const PEOPLE_DEFAULT = 1
 const PEOPLE_MAX = 10
 
 function peopleLabel(people: number): string {
@@ -101,7 +101,7 @@ export type TeamBuilderProps =
       hire: (proposalId: string) => Promise<unknown>
     }
 
-type Run = 'proponi' | 'rigenera'
+type Run = 'propose' | 'regenerate'
 
 /** The API's own sentence whenever it gave one (the builder off, too many requests,
  *  Claude not answering, a field, a proposal already requested); ours only when nothing
@@ -112,8 +112,8 @@ function sentence(error: unknown, fallback: string): string {
 
 /** «Nome Cognome» of a member the cloud's read names; `null` for anyone else. */
 function nameOf(member: TeamMember | CloudTeamMember): string | null {
-  if (!('nome' in member) || !member.nome) return null
-  return `${member.nome} ${member.last_name}`.trim()
+  if (!('first_name' in member) || !member.first_name) return null
+  return `${member.first_name} ${member.last_name}`.trim()
 }
 
 /**
@@ -132,10 +132,10 @@ export function TeamBuilder(props: TeamBuilderProps) {
   // team the visitor saw rather than shrinking it to one.
   const askedPeople = props.mode === 'public' ? props.people : undefined
   const openedPeople = opened
-    ? (opened.people ?? Math.min(PEOPLE_MAX, Math.max(PeopleDefault, opened.team.length)))
-    : askedPeople && Number.isInteger(askedPeople) && askedPeople >= PeopleDefault && askedPeople <= PEOPLE_MAX
+    ? (opened.people ?? Math.min(PEOPLE_MAX, Math.max(PEOPLE_DEFAULT, opened.team.length)))
+    : askedPeople && Number.isInteger(askedPeople) && askedPeople >= PEOPLE_DEFAULT && askedPeople <= PEOPLE_MAX
       ? askedPeople
-      : PeopleDefault
+      : PEOPLE_DEFAULT
   const [description, setDescription] = useState(
     opened?.description ?? (props.mode === 'public' ? (props.description ?? '') : ''),
   )
@@ -150,7 +150,7 @@ export function TeamBuilder(props: TeamBuilderProps) {
   } | null>(
     opened ? { proposal: opened, description: opened.description, people: openedPeople } : null,
   )
-  const [nota, setNote] = useState('')
+  const [note, setNote] = useState('')
   const [running, setRunning] = useState<Run | null>(null)
   const [runError, setRunError] = useState<{ from: Run; message: string } | null>(null)
   const heading = useRef<HTMLHeadingElement>(null)
@@ -167,20 +167,20 @@ export function TeamBuilder(props: TeamBuilderProps) {
     // The page always says how many: the API sizes from the description only when
     // the field is absent, which is the MCP tool's case, not this one.
     let body: TeamProposalCreate & { people: number }
-    if (from === 'proponi') {
+    if (from === 'propose') {
       const text = description.trim()
-      if (text.length < DescriptionMin) {
-        setDescriptionError(`Raccontaci qualcosa in più: servono almeno ${DescriptionMin} caratteri.`)
+      if (text.length < DESCRIPTION_MIN) {
+        setDescriptionError(`Raccontaci qualcosa in più: servono almeno ${DESCRIPTION_MIN} caratteri.`)
         return
       }
       body = { description: text, people }
     } else {
       if (!result) return
-      const note = nota.trim()
+      const trimmed = note.trim()
       body = {
         description: result.description,
         people: result.people,
-        ...(note ? { note: note } : {}),
+        ...(trimmed ? { note: trimmed } : {}),
         previous_id: result.proposal.id,
       }
     }
@@ -209,7 +209,7 @@ export function TeamBuilder(props: TeamBuilderProps) {
         className="space-y-4"
         onSubmit={(event) => {
           event.preventDefault()
-          void run('proponi')
+          void run('propose')
         }}
       >
         <div className="space-y-2">
@@ -242,7 +242,7 @@ export function TeamBuilder(props: TeamBuilderProps) {
             placeholder="Descrivi il progetto: cosa va fatto, per quanto tempo, dove, con che tecnologie"
             value={description}
             onChange={(event) => setDescription(event.target.value)}
-            maxLength={DescriptionMax}
+            maxLength={DESCRIPTION_MAX}
             rows={6}
             className="text-base md:text-base"
           />
@@ -252,7 +252,7 @@ export function TeamBuilder(props: TeamBuilderProps) {
             </p>
           )}
         </div>
-        {runError?.from === 'proponi' && (
+        {runError?.from === 'propose' && (
           <p role="alert" className="text-sm text-destructive">
             {runError.message}
           </p>
@@ -265,7 +265,7 @@ export function TeamBuilder(props: TeamBuilderProps) {
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {People.map((count) => (
+                {PEOPLE.map((count) => (
                   <SelectItem key={count} value={String(count)}>
                     {peopleLabel(count)}
                   </SelectItem>
@@ -274,7 +274,7 @@ export function TeamBuilder(props: TeamBuilderProps) {
             </Select>
           </div>
           <Button type="submit" disabled={busy}>
-            {running === 'proponi' ? PENDING : 'Proponi il team'}
+            {running === 'propose' ? PENDING : 'Proponi il team'}
           </Button>
         </div>
       </form>
@@ -297,7 +297,7 @@ export function TeamBuilder(props: TeamBuilderProps) {
             <>
               <ul aria-label="Il team" className="grid gap-4 sm:grid-cols-2">
                 {members.map((member) => (
-                  <li key={member.posizione}>
+                  <li key={member.position}>
                     <MemberCard member={member} name={props.mode === 'cloud' ? nameOf(member) : null} />
                   </li>
                 ))}
@@ -311,7 +311,7 @@ export function TeamBuilder(props: TeamBuilderProps) {
             className="space-y-2"
             onSubmit={(event) => {
               event.preventDefault()
-              void run('rigenera')
+              void run('regenerate')
             }}
           >
             <Label htmlFor={`${ids}-nota`}>Cosa cambieresti?</Label>
@@ -319,15 +319,15 @@ export function TeamBuilder(props: TeamBuilderProps) {
               <Input
                 id={`${ids}-nota`}
                 placeholder="Per esempio: togli il designer, serve più esperienza sul backend"
-                value={nota}
+                value={note}
                 onChange={(event) => setNote(event.target.value)}
                 maxLength={NOTE_MAX}
               />
               <Button type="submit" variant="outline" disabled={busy}>
-                {running === 'rigenera' ? PENDING : 'Rigenera'}
+                {running === 'regenerate' ? PENDING : 'Rigenera'}
               </Button>
             </div>
-            {runError?.from === 'rigenera' && (
+            {runError?.from === 'regenerate' && (
               <p role="alert" className="text-sm text-destructive">
                 {runError.message}
               </p>
@@ -376,7 +376,7 @@ function MemberCard({ member, name }: { member: TeamMember; name: string | null 
         )}
         <p className="mt-auto flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
           <span className="text-muted-foreground">
-            {[formatDaysPerWeek(member.week_days), member.mode && RemoteLabels[member.mode]]
+            {[formatDaysPerWeek(member.week_days), member.mode && REMOTE_LABELS[member.mode]]
               .filter(Boolean)
               .join(' · ')}
           </span>

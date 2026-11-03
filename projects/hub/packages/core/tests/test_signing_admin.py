@@ -275,7 +275,7 @@ def test_a_notice_ends_the_active_framework_and_the_next_match_writes_a_new_one(
         _matches(clean, renderer).drafts.prefill(freelancer_id, company_id).required_framework
         is True
     )
-    with pytest.raises(InvalidState, match="active"):
+    with pytest.raises(InvalidState, match="attivo"):
         signing.admin.record_notice(active.id, admin_id)
     with pytest.raises(NotFound):
         signing.admin.record_notice(UUID("00000000-0000-7000-8000-000000000000"), admin_id)

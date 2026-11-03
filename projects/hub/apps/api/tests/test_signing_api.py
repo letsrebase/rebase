@@ -43,7 +43,7 @@ def admin(client: TestClient, api_session: Session) -> Iterator[None]:
         _env_file=None, signer_json=json.dumps(SIGNER), contracts_mail=CONTRACTS_MAIL
     )
     client.app.dependency_overrides[get_settings] = lambda: settings  # type: ignore[attr-defined]
-    api_session.add(User(email=ADMIN_EMAIL, nome="Ivan", last_name="", role="admin"))
+    api_session.add(User(email=ADMIN_EMAIL, first_name="Ivan", last_name="", role="admin"))
     api_session.commit()
     yield
     api_session.rollback()
@@ -144,7 +144,7 @@ def test_an_ordinary_draft_whose_vat_number_was_removed_is_to_422_on_regime(
     match = draft_match(client, sender)
     fiscal = client.put(
         f"/api/hub/freelancers/{match['freelancer_id']}/fiscal",
-        json={**FISCAL, "partita_iva": None},
+        json={**FISCAL, "vat_number": None},
     )
     assert fiscal.status_code == 200, fiscal.text
 
@@ -330,5 +330,5 @@ def test_a_soft_deleted_freelancers_document_actions_are_hidden(
     answered = client.post(f"/api/hub/contract-documents/{framework['id']}/{action}")
 
     assert answered.status_code == 404
-    assert answered.json() == {"detail": f"documento {framework['id']} non trovato"}
+    assert answered.json() == {"detail": f"document {framework['id']} non trovato"}
     assert len(documenso.calls) == calls_before

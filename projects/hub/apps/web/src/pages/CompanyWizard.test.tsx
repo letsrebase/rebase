@@ -213,3 +213,17 @@ describe('CompanyWizard, opened from the team builder (REB-518)', () => {
     expect(screen.queryByRole('note', { name: 'Talent cloud' })).toBeNull()
   })
 })
+
+describe('CompanyWizard, the draft a browser kept before the 2026-11 rename', () => {
+  it('picks up a draft left under `rebase.wizard.azienda`, with its Italian answers, and moves it', async () => {
+    window.localStorage.setItem(
+      'rebase.wizard.azienda',
+      JSON.stringify({ v: 1, savedAt: Date.now(), index: 1, value: { 'nome_azienda': 'ACME Srl', 'remoto': 'ibrido' } }),
+    )
+    mount()
+    expect(await screen.findByRole('note', { name: 'Risposte ritrovate' })).toBeInTheDocument()
+    expect(window.localStorage.getItem('rebase.wizard.azienda')).toBeNull()
+    expect(loadDraft(COMPANY_DRAFT_KEY)).toMatchObject({ index: 1, value: { company_name: 'ACME Srl', remote: 'hybrid' } })
+  })
+})
+

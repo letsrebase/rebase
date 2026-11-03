@@ -5,7 +5,7 @@ import { useState } from 'react'
 import { Button } from '@rebase/ui/button'
 import { admin, type Company, type CompanyOverride, type Note, type TalentCloudGrant } from '@/lib/api'
 import { failureMessage } from '@/lib/adminList'
-import { COMPANY_STATES, RemoteLabels, TEAM_BUILDER_ORIGIN, formatDate } from '@/lib/format'
+import { COMPANY_STATES, REMOTE_LABELS, TEAM_BUILDER_ORIGIN, formatDate } from '@/lib/format'
 import { formatMoney } from '@rebase/ui/format'
 import { keys } from '@/lib/query-keys'
 import { AuditTrail } from '../AuditTrail'
@@ -134,7 +134,7 @@ export function AdminCompanyDetail() {
           <Row label="Periodo">dal {formatDate(c.period_from)}, {c.duration}</Row>
           <Row label="Budget a giornata">{formatMoney(c.daily_budget)}</Row>
           <Row label="Modalità">
-            {RemoteLabels[c.remote]}
+            {REMOTE_LABELS[c.remote]}
             {c.onsite_days ? ` · ${c.onsite_days} giorni a settimana in sede` : ''}
           </Row>
           <Row label="Persone richieste">{c.headcount}</Row>

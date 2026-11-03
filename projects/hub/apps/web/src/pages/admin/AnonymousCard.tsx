@@ -15,7 +15,7 @@ import {
 } from '@/lib/api'
 import { useFreelancerCard } from '@/hooks/use-freelancer-card'
 import { bandLabel } from '@/lib/bands'
-import { RemoteLabels, SENIORITY_LABELS, formatDateTime, formatExperience } from '@/lib/format'
+import { REMOTE_LABELS, SENIORITY_LABELS, formatDateTime, formatExperience } from '@/lib/format'
 
 export function Field({ label, children }: { label: string; children: ReactNode }) {
   return (
@@ -140,7 +140,7 @@ const STALE_SENTENCES: Record<string, string> = {
   source: 'Da aggiornare: le fonti o i dati della hub sono cambiati dopo che la scheda è stata scritta',
   prompt: 'Da aggiornare: esiste una versione più recente del prompt',
 }
-// The card's own order, which a stored `sources` (a JSONB object, keys sorted by length) does not keep.
+// The card's own order, which a stored `field_sources` (a JSONB object, keys sorted by length) does not keep.
 const FIELD_LABELS: Record<string, string> = {
   role: 'Ruolo',
   experience_years: 'Esperienza',
@@ -171,7 +171,7 @@ function conflictSentence(conflict: CardConflict): string {
 
 function Provenance({ provenance }: { provenance: CardProvenance }) {
   const written = Object.keys(provenance.sources).length > 0
-  const fields = Object.keys(FIELD_LABELS).filter((field) => field in provenance.sources)
+  const fields = Object.keys(FIELD_LABELS).filter((field) => field in provenance.field_sources)
   return (
     <div className="space-y-2 rounded-md border p-3 text-sm">
       <p className="font-medium">Da dove viene la scheda</p>
@@ -185,7 +185,7 @@ function Provenance({ provenance }: { provenance: CardProvenance }) {
           {written ? (
             <ul>
               {fields.map((field) => {
-                const keys = provenance.sources[field] ?? []
+                const keys = provenance.field_sources[field] ?? []
                 return (
                   <li key={field}>
                     {FIELD_LABELS[field]}: {keys.length ? keys.map(sourceLabel).join(', ') : 'nessuna'}
@@ -273,7 +273,7 @@ function Written({ read }: { read: FreelancerCard }) {
       <Field label="Lingue">{words(card.languages)}</Field>
       <Field label="Luogo">{card.location ?? '—'}</Field>
       <Field label="Sintesi">{card.profile_summary}</Field>
-      <Field label="Modalità">{read.mode ? (RemoteLabels[read.mode] ?? read.mode) : '—'}</Field>
+      <Field label="Modalità">{read.mode ? (REMOTE_LABELS[read.mode] ?? read.mode) : '—'}</Field>
       <Field label="Fascia cliente">{read.band ? bandLabel(read.band) : 'Tariffa da definire'}</Field>
       <Field label="Scritta">
         {read.generated_at ? `${formatDateTime(read.generated_at)} · ${read.model ?? '—'}` : '—'}

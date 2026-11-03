@@ -46,7 +46,7 @@ _PARENTS: dict[str, type[Freelancer] | type[Company]] = {
 
 
 def display_name(user: User) -> str:
-    return f"{user.nome} {user.last_name}".strip()[:AUTHOR_MAX_LENGTH]
+    return f"{user.first_name} {user.last_name}".strip()[:AUTHOR_MAX_LENGTH]
 
 
 class NoteService:

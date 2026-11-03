@@ -23,7 +23,7 @@ function OutcomeFilter({ value, onChange }: { value: string | undefined; onChang
     <div className="flex flex-wrap gap-1.5" role="group" aria-label="Filtra per esito">
       {[undefined, ...OUTCOMES].map((outcome) => (
         <Button
-          key={outcome ?? 'tutte'}
+          key={outcome ?? 'all'}
           type="button"
           size="sm"
           variant={value === outcome ? 'default' : 'outline'}
@@ -77,7 +77,7 @@ function Members({ team }: { team: TeamProposalListMember[] }) {
     <ul className="space-y-0.5">
       {team.map((member) => (
         <li key={member.freelancer_id}>
-          {member.nome === null ? (
+          {member.first_name === null ? (
             <span className="text-muted-foreground">Profilo cancellato</span>
           ) : (
             <Link
@@ -85,7 +85,7 @@ function Members({ team }: { team: TeamProposalListMember[] }) {
               params={{ id: member.freelancer_id }}
               className="font-medium hover:underline"
             >
-              {`${member.nome} ${member.last_name}`}
+              {`${member.first_name} ${member.last_name}`}
             </Link>
           )}
           <span className="text-muted-foreground">{` · ${member.role}`}</span>
@@ -146,7 +146,7 @@ function ProposalRow({ item }: { item: TeamProposalListItem }) {
  *  2026-09-29: the asks a company never files are the measure of use. The outcome pill
  *  lives in the URL, as «Richieste team»'s state does; the list walks the API's cursor
  *  a page at a time. */
-export function AdminProposalsTeam() {
+export function AdminTeamProposals() {
   const search = useSearch({ from: '/signedIn/admin/team/proposals' })
   const navigate = useNavigate()
 

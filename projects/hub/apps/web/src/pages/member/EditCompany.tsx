@@ -36,7 +36,7 @@ export function editCompanyFields(): Field<CompanyRequest>[] {
  *  An id that is not in the person's list (somebody else's, deleted by an admin, made
  *  up) or a person with no request at all would otherwise let the whole form be built
  *  from blank fields before the `PATCH` refuses it with a 404 (the same shape of bug
- *  Greptile found on `NewRequestCompany.tsx`, PR #313; REB-383 is this page's own
+ *  Greptile found on `NewCompanyRequest.tsx`, PR #313; REB-383 is this page's own
  *  fix): the same mount-time redirect `AdminGuard` uses for its own access rule bounces
  *  it back to `/me` before the form ever renders. */
 export function EditCompany() {

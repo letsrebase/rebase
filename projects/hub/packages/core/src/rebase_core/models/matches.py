@@ -34,9 +34,9 @@ MATCH_STATES = ("draft", "awaiting_signature", "active", "concluded", "cancelled
 PIGRO_STATES = ("to_link", "linked", "error", "rejected")
 CONTRACT_KINDS = ("framework", "letter")
 CONTRACT_STATES = ("generated", "pending", "sent", "signed", "cancelled", "notice_served")
-# `contract_documents.regime` (REB-687): `vat_number` or `occasional`, 11 characters each,
-# in the 12 that migration 0033 gave the column.
-REGIME_MAX_LENGTH = 12
+# `contract_documents.regime` (REB-687): `vat_registered` or `occasional`, at most 14
+# characters, in the 16 that migration 0049 gave the column (0033 gave it 12).
+REGIME_MAX_LENGTH = 16
 TAX_CODE_MAX_LENGTH = 16
 VAT_NUMBER_MAX_LENGTH = 11
 DOMICILE_MAX_LENGTH = 300
@@ -136,16 +136,15 @@ class Match(Base, PrimaryKeyMixin, TimestampMixin):
     __table_args__ = (
         Index("ix_matches_freelancer_created", "freelancer_id", "created_at"),
         CheckConstraint(
-            "stato IN ('bozza', 'in_firma', 'attivo', 'concluso', 'annullato')",
+            "status IN ('draft', 'awaiting_signature', 'active', 'concluded', 'cancelled')",
             name="ck_matches_status",
         ),
         CheckConstraint(
-            "giorni_previsti IS NULL OR giorni_previsti BETWEEN 1 AND 366",
+            "expected_days IS NULL OR expected_days BETWEEN 1 AND 366",
             name="ck_matches_expected_days",
         ),
         CheckConstraint(
-            "pigro_stato IS NULL OR pigro_stato IN "
-            "('da_collegare', 'collegato', 'errore', 'rifiutato')",
+            "pigro_status IS NULL OR pigro_status IN ('to_link', 'linked', 'error', 'rejected')",
             name="ck_matches_pigro_status",
         ),
     )
@@ -163,7 +162,7 @@ class ContractDocument(Base, PrimaryKeyMixin, TimestampMixin):
     __tablename__ = "contract_documents"
 
     kind: Mapped[str] = mapped_column(String(10), nullable=False)
-    # Which family of texts the document belongs to (REB-687): `vat_number`, the
+    # Which family of texts the document belongs to (REB-687): `vat_registered`, the
     # ordinary pair, or `occasional`, a prestazione occasionale's. With `kind` it names
     # the text (`rebase_core.regimes.text_name`); a match's regime is its letter's.
     regime: Mapped[str] = mapped_column(
@@ -210,24 +209,24 @@ class ContractDocument(Base, PrimaryKeyMixin, TimestampMixin):
         Index("ix_contract_documents_freelancer", "freelancer_id", "kind", "created_at"),
         Index("ix_contract_documents_match_id", "match_id"),
         Index("uq_contract_documents_number", "number", unique=True),
-        CheckConstraint("kind IN ('quadro', 'lettera')", name="ck_contract_documents_kind"),
+        CheckConstraint("kind IN ('framework', 'letter')", name="ck_contract_documents_kind"),
         CheckConstraint(
-            "regime IN ('partita_iva', 'occasionale')", name="ck_contract_documents_regime"
+            "regime IN ('vat_registered', 'occasional')", name="ck_contract_documents_regime"
         ),
         CheckConstraint(
-            "stato IN ('generato', 'in_attesa', 'inviato', 'firmato', 'annullato', 'disdetto')",
+            "status IN ('generated', 'pending', 'sent', 'signed', 'cancelled', 'notice_served')",
             name="ck_contract_documents_status",
         ),
         CheckConstraint(
-            "(kind = 'quadro') = (match_id IS NULL)",
+            "(kind = 'framework') = (match_id IS NULL)",
             name="ck_contract_documents_match_for_letters",
         ),
         CheckConstraint(
-            "(kind = 'lettera') = (numero IS NOT NULL)",
+            "(kind = 'letter') = (number IS NOT NULL)",
             name="ck_contract_documents_number_for_letters",
         ),
         CheckConstraint(
-            "stato <> 'disdetto' OR kind = 'quadro'",
+            "status <> 'notice_served' OR kind = 'framework'",
             name="ck_contract_documents_notice_for_framework",
         ),
         # The webhook finds its document by the envelope: one envelope, one document.
@@ -250,4 +249,4 @@ class LetterCounter(Base):
     year: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=False)
     last: Mapped[int] = mapped_column(Integer, nullable=False)
 
-    __table_args__ = (CheckConstraint("ultimo >= 1", name="ck_contract_letter_counters_positive"),)
+    __table_args__ = (CheckConstraint("last >= 1", name="ck_contract_letter_counters_positive"),)

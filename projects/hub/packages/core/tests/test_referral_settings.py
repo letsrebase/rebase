@@ -149,7 +149,7 @@ def test_a_stale_writer_cannot_confirm_a_reward_twice(clean_referrals: Session) 
     same reward must leave the first one's signature and timestamp, and the second is
     told the reward has moved on."""
     admin_id = an_admin(clean_referrals)
-    other_admin = User(email="anna@rebase.it", nome="Anna", last_name="", role="admin")
+    other_admin = User(email="anna@rebase.it", first_name="Anna", last_name="", role="admin")
     clean_referrals.add(other_admin)
     clean_referrals.commit()
     reward_id = _signed_reward(clean_referrals, admin_id)
@@ -160,7 +160,7 @@ def test_a_stale_writer_cannot_confirm_a_reward_twice(clean_referrals: Session) 
 
         ReferralLedgerService(clean_referrals).set_state(reward_id, "confirmed", admin_id)
 
-        with pytest.raises(ValidationFailed, match="si passa solo a pagato"):
+        with pytest.raises(ValidationFailed, match="si passa solo a paid"):
             ReferralLedgerService(stale).set_state(reward_id, "confirmed", other_admin.id)
 
     clean_referrals.expire_all()
@@ -278,7 +278,7 @@ def test_set_state_refuses_to_confirm_an_unpriced_reward(clean_referrals: Sessio
     _active_framework(clean_referrals, freelancer_id, admin_id)
     renderer, fake = FakeRenderer(draft=False), FakeDocumenso()
     body = _match_body(company_id, expected_days=None)
-    body.letter.mode = body.letter.unit = "to_body"
+    body.letter.mode, body.letter.unit = "to_body", "a corpo"
     match = MatchService(clean_referrals, renderer, SIGNER, today=lambda: TODAY).create(
         freelancer_id, body, admin_id
     )

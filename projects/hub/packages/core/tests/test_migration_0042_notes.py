@@ -116,9 +116,9 @@ def test_upgrade_moves_the_notes_into_the_thread(hub_postgres: Any) -> None:
             assert "note" not in _columns(connection, "freelancers")
             assert "note" not in _columns(connection, "companies")
             rows = {
-                (entity, testo): (author, author_id, source)
-                for entity, testo, author, author_id, source in connection.execute(
-                    text("SELECT entity_type, testo, autore, autore_id, fonte FROM notes")
+                (entity, note_text): (author, author_id, source)
+                for entity, note_text, author, author_id, source in connection.execute(
+                    text("SELECT entity_type, text, author, author_id, source FROM notes")
                 )
             }
             # The row's own note is in the thread, verbatim, signed by a fixed label.
@@ -153,6 +153,7 @@ def test_upgrade_is_idempotent(hub_postgres: Any) -> None:
         config = _config(url)
         upgrade_to_head(url)
         engine = create_engine(url, future=True)
+        command.downgrade(config, "0042")
         with engine.begin() as connection:
             connection.execute(
                 text("UPDATE alembic_version SET version_num = :parent"),

@@ -59,7 +59,7 @@ class Settings(BaseSettings):
     # lives in the server's `.env` only (`.env.example`).
     resend_api_key: str = ""
     mail_from: str = "Rebase <ciao@letsrebase.com>"
-    # Where the SPA answers, for the link in the mail: `{hub_url}/entra?t=...`. Local
+    # Where the SPA answers, for the link in the mail: `{hub_url}/verify?t=...`. Local
     # development points it at the Vite dev server.
     hub_url: str = "https://letsrebase.com/hub"
     magic_link_minutes: int = 15
@@ -119,7 +119,7 @@ class Settings(BaseSettings):
     # Mails Resend lets this key send in a day: 100 on the free plan (REB-779). The
     # campaigns tick counts the rows sent since midnight in Rome across every campaign
     # and holds the rest for the next day, so a long list never reaches Resend's 429.
-    resend_daily_share: int = Field(default=100, ge=1)
+    resend_daily_quota: int = Field(default=100, ge=1)
     # Of that quota, what a campaign never spends: the magic links, the member area's
     # mails and the campaign test mails (not rows, so not counted) all share the key. A
     # campaign may send `resend_daily_quota - campaign_daily_reserve` a day.
@@ -188,7 +188,7 @@ class Settings(BaseSettings):
     def _reserve_leaves_room(self) -> "Settings":
         # A reserve that eats the whole quota would hold every campaign for good while
         # the page kept promising tomorrow (REB-779).
-        if self.campaign_daily_reserve >= self.resend_daily_share:
+        if self.campaign_daily_reserve >= self.resend_daily_quota:
             raise ValueError(
                 "REBASE_CAMPAIGN_DAILY_RESERVE must be below REBASE_RESEND_DAILY_QUOTA"
             )

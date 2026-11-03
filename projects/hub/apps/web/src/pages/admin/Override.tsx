@@ -16,40 +16,40 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Textarea } from '@rebase/ui/textarea'
 import { AMOUNT_PROBLEM, acceptedAmount, sentAmount } from '@/lib/amount'
 import type { Company, CompanyOverride, Freelancer, FreelancerOverride, Remote } from '@/lib/api'
-import { RemoteLabels, formatDate } from '@/lib/format'
+import { REMOTE_LABELS, formatDate } from '@/lib/format'
 
 // A `Select` needs a non-empty string; `remote` is the one override field that is both
 // nullable and rendered as a `Select`, so it alone needs a sentinel for "not set".
 const UNSET = '__non_impostata__'
 
 interface FreelancerOverrideDraft {
-  nome: string
+  first_name: string
   last_name: string
   linkedinUrl: string
   dailyRate: string
-  posizione: string
+  job_title: string
   remote: Remote | typeof UNSET
   links: string
-  compilataDa: 'person' | 'admin'
+  filledBy: 'person' | 'admin'
 }
 
 function draftFromFreelancer(f: Freelancer): FreelancerOverrideDraft {
   return {
-    nome: f.nome,
+    first_name: f.first_name,
     last_name: f.last_name,
     linkedinUrl: f.linkedin_url ?? '',
     dailyRate: f.daily_rate ?? '',
-    posizione: f.posizione ?? '',
+    job_title: f.job_title ?? '',
     remote: f.remote ?? UNSET,
     links: f.links.join('\n'),
-    compilataDa: f.compilata_da,
+    filledBy: f.filled_by,
   }
 }
 
 /**
  * The admin's own edit form for a freelancer card, beyond `status`/`note`
  * (`StatusEditor`'s own field): every field `FreelancerOverride` names, pre-filled with
- * the card's current values. `nome`/`last_name`/`links` are never nullable columns, so
+ * the card's current values. `first_name`/`last_name`/`links` are never nullable columns, so
  * they always carry a value; the rest read as «—» on the card when cleared, which is
  * exactly what an emptied box here sends (`null`), the same convention the read view
  * already uses. Stays mounted across opens (`DealForm`'s own reasoning): `Dialog`'s
@@ -81,23 +81,23 @@ export function FreelancerOverrideDialog({
   function submit(event: FormEvent) {
     event.preventDefault()
     onSave({
-      nome: draft.nome.trim(),
+      first_name: draft.first_name.trim(),
       last_name: draft.last_name.trim(),
       linkedin_url: draft.linkedinUrl.trim() || null,
       daily_rate: sentAmount(draft.dailyRate) || null,
-      posizione: draft.posizione.trim() || null,
+      job_title: draft.job_title.trim() || null,
       remote: draft.remote === UNSET ? null : draft.remote,
       links: draft.links
         .split('\n')
         .map((link) => link.trim())
         .filter(Boolean),
-      compilata_da: draft.compilataDa,
+      filled_by: draft.filledBy,
     })
   }
 
   // Blank is allowed here: it clears the rate.
   const rateProblem = draft.dailyRate.trim() !== '' && !acceptedAmount(draft.dailyRate)
-  const valid = draft.nome.trim() !== '' && draft.last_name.trim() !== '' && !rateProblem
+  const valid = draft.first_name.trim() !== '' && draft.last_name.trim() !== '' && !rateProblem
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -113,18 +113,18 @@ export function FreelancerOverrideDialog({
         <form className="space-y-4" onSubmit={submit}>
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-1.5">
-              <Label htmlFor="override-freelancer-nome">Nome</Label>
+              <Label htmlFor="override-freelancer-first-name">Nome</Label>
               <Input
-                id="override-freelancer-nome"
-                value={draft.nome}
-                onChange={(event) => setDraft({ ...draft, nome: event.target.value })}
+                id="override-freelancer-first-name"
+                value={draft.first_name}
+                onChange={(event) => setDraft({ ...draft, first_name: event.target.value })}
                 required
               />
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="override-freelancer-cognome">Cognome</Label>
+              <Label htmlFor="override-freelancer-last-name">Cognome</Label>
               <Input
-                id="override-freelancer-cognome"
+                id="override-freelancer-last-name"
                 value={draft.last_name}
                 onChange={(event) => setDraft({ ...draft, last_name: event.target.value })}
                 required
@@ -142,44 +142,44 @@ export function FreelancerOverrideDialog({
           </div>
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-1.5">
-              <Label htmlFor="override-freelancer-posizione">Posizione</Label>
+              <Label htmlFor="override-freelancer-job-title">Posizione</Label>
               <Input
-                id="override-freelancer-posizione"
-                value={draft.posizione}
-                onChange={(event) => setDraft({ ...draft, posizione: event.target.value })}
+                id="override-freelancer-job-title"
+                value={draft.job_title}
+                onChange={(event) => setDraft({ ...draft, job_title: event.target.value })}
                 placeholder="Vuoto per rimuoverla"
               />
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="override-freelancer-tariffa">Tariffa a giornata (€)</Label>
+              <Label htmlFor="override-freelancer-rate">Tariffa a giornata (€)</Label>
               <Input
-                id="override-freelancer-tariffa"
+                id="override-freelancer-rate"
                 inputMode="decimal"
                 value={draft.dailyRate}
                 onChange={(event) => setDraft({ ...draft, dailyRate: event.target.value })}
                 placeholder="Vuoto per rimuoverla"
                 aria-invalid={rateProblem || undefined}
-                aria-describedby={rateProblem ? 'override-freelancer-tariffa-error' : undefined}
+                aria-describedby={rateProblem ? 'override-freelancer-rate-error' : undefined}
               />
               {rateProblem && (
-                <p role="alert" id="override-freelancer-tariffa-error" className="text-sm text-destructive">
+                <p role="alert" id="override-freelancer-rate-error" className="text-sm text-destructive">
                   {AMOUNT_PROBLEM}
                 </p>
               )}
             </div>
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor="override-freelancer-remoto">Modalità</Label>
+            <Label htmlFor="override-freelancer-remote">Modalità</Label>
             <Select
               value={draft.remote}
               onValueChange={(value) => setDraft({ ...draft, remote: value as Remote | typeof UNSET })}
             >
-              <SelectTrigger id="override-freelancer-remoto">
+              <SelectTrigger id="override-freelancer-remote">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value={UNSET}>Non impostata</SelectItem>
-                {Object.entries(RemoteLabels).map(([value, label]) => (
+                {Object.entries(REMOTE_LABELS).map(([value, label]) => (
                   <SelectItem key={value} value={value}>
                     {label}
                   </SelectItem>
@@ -197,12 +197,12 @@ export function FreelancerOverrideDialog({
             />
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor="override-freelancer-compilata-da">Scheda compilata da</Label>
+            <Label htmlFor="override-freelancer-filled-by">Scheda compilata da</Label>
             <Select
-              value={draft.compilataDa}
-              onValueChange={(value) => setDraft({ ...draft, compilataDa: value as 'person' | 'admin' })}
+              value={draft.filledBy}
+              onValueChange={(value) => setDraft({ ...draft, filledBy: value as 'person' | 'admin' })}
             >
-              <SelectTrigger id="override-freelancer-compilata-da">
+              <SelectTrigger id="override-freelancer-filled-by">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -258,7 +258,7 @@ function draftFromCompany(c: Company): CompanyOverrideDraft {
     onsiteDays: c.onsite_days !== null ? String(c.onsite_days) : '',
     headcount: String(c.headcount),
     // `CompanyRead` carries the referente as one combined `contact_person` string, never the
-    // separate `nome`/`last_name`/`linkedin_url` `CompanyOverride` takes (those live on
+    // separate `first_name`/`last_name`/`linkedin_url` `CompanyOverride` takes (those live on
     // the linked `users` row, REB-281) -- so there is no current value to pre-fill,
     // and these three start blank: left alone, they are simply not sent.
     contactFirstName: '',
@@ -314,7 +314,7 @@ export function CompanyOverrideDialog({
       onsite_days: draft.remote === 'hybrid' ? Number(draft.onsiteDays) : null,
       headcount: Number(draft.headcount),
     }
-    if (draft.contactFirstName.trim()) payload.nome = draft.contactFirstName.trim()
+    if (draft.contactFirstName.trim()) payload.first_name = draft.contactFirstName.trim()
     if (draft.contactLastName.trim()) payload.last_name = draft.contactLastName.trim()
     if (draft.clearContactPersonLinkedin) payload.linkedin_url = null
     else if (draft.contactPersonLinkedin.trim()) payload.linkedin_url = draft.contactPersonLinkedin.trim()
@@ -345,27 +345,27 @@ export function CompanyOverrideDialog({
         </DialogHeader>
         <form className="space-y-4" onSubmit={submit}>
           <div className="space-y-1.5">
-            <Label htmlFor="override-company-nome-azienda">Azienda</Label>
+            <Label htmlFor="override-company-company-name">Azienda</Label>
             <Input
-              id="override-company-nome-azienda"
+              id="override-company-company-name"
               value={draft.companyName}
               onChange={(event) => setDraft({ ...draft, companyName: event.target.value })}
               required
             />
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor="override-company-figura-richiesta">Figura richiesta</Label>
+            <Label htmlFor="override-company-requested-role">Figura richiesta</Label>
             <Input
-              id="override-company-figura-richiesta"
+              id="override-company-requested-role"
               value={draft.requestedRole}
               onChange={(event) => setDraft({ ...draft, requestedRole: event.target.value })}
               required
             />
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor="override-company-progetto">Progetto</Label>
+            <Label htmlFor="override-company-project">Progetto</Label>
             <Textarea
-              id="override-company-progetto"
+              id="override-company-project"
               rows={4}
               value={draft.project}
               onChange={(event) => setDraft({ ...draft, project: event.target.value })}
@@ -374,9 +374,9 @@ export function CompanyOverrideDialog({
           </div>
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-1.5">
-              <Label htmlFor="override-company-periodo-da">Da quando</Label>
+              <Label htmlFor="override-company-period-from">Da quando</Label>
               <Input
-                id="override-company-periodo-da"
+                id="override-company-period-from"
                 type="date"
                 value={draft.periodFrom}
                 onChange={(event) => setDraft({ ...draft, periodFrom: event.target.value })}
@@ -384,9 +384,9 @@ export function CompanyOverrideDialog({
               />
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="override-company-durata">Durata</Label>
+              <Label htmlFor="override-company-duration">Durata</Label>
               <Input
-                id="override-company-durata"
+                id="override-company-duration"
                 value={draft.duration}
                 onChange={(event) => setDraft({ ...draft, duration: event.target.value })}
                 required
@@ -411,9 +411,9 @@ export function CompanyOverrideDialog({
             )}
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor="override-company-numero-risorse">Numero di persone</Label>
+            <Label htmlFor="override-company-headcount">Numero di persone</Label>
             <Input
-              id="override-company-numero-risorse"
+              id="override-company-headcount"
               type="number"
               min="1"
               step="1"
@@ -423,7 +423,7 @@ export function CompanyOverrideDialog({
             />
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor="override-company-remoto">Modalità</Label>
+            <Label htmlFor="override-company-remote">Modalità</Label>
             <Select
               value={draft.remote}
               onValueChange={(value) =>
@@ -434,11 +434,11 @@ export function CompanyOverrideDialog({
                 })
               }
             >
-              <SelectTrigger id="override-company-remoto">
+              <SelectTrigger id="override-company-remote">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {Object.entries(RemoteLabels).map(([value, label]) => (
+                {Object.entries(REMOTE_LABELS).map(([value, label]) => (
                   <SelectItem key={value} value={value}>
                     {label}
                   </SelectItem>
@@ -448,9 +448,9 @@ export function CompanyOverrideDialog({
           </div>
           {draft.remote === 'hybrid' && (
             <div className="space-y-1.5">
-              <Label htmlFor="override-company-giorni-presenza">Giorni in sede a settimana</Label>
+              <Label htmlFor="override-company-onsite-days">Giorni in sede a settimana</Label>
               <Input
-                id="override-company-giorni-presenza"
+                id="override-company-onsite-days"
                 type="number"
                 min="1"
                 max="4"
@@ -469,26 +469,26 @@ export function CompanyOverrideDialog({
             </p>
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-1.5">
-                <Label htmlFor="override-company-referente-nome">Nome</Label>
+                <Label htmlFor="override-company-contact-first-name">Nome</Label>
                 <Input
-                  id="override-company-referente-nome"
+                  id="override-company-contact-first-name"
                   value={draft.contactFirstName}
                   onChange={(event) => setDraft({ ...draft, contactFirstName: event.target.value })}
                 />
               </div>
               <div className="space-y-1.5">
-                <Label htmlFor="override-company-referente-cognome">Cognome</Label>
+                <Label htmlFor="override-company-contact-last-name">Cognome</Label>
                 <Input
-                  id="override-company-referente-cognome"
+                  id="override-company-contact-last-name"
                   value={draft.contactLastName}
                   onChange={(event) => setDraft({ ...draft, contactLastName: event.target.value })}
                 />
               </div>
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="override-company-referente-linkedin">LinkedIn</Label>
+              <Label htmlFor="override-company-contact-linkedin">LinkedIn</Label>
               <Input
-                id="override-company-referente-linkedin"
+                id="override-company-contact-linkedin"
                 value={draft.contactPersonLinkedin}
                 disabled={draft.clearContactPersonLinkedin}
                 onChange={(event) => setDraft({ ...draft, contactPersonLinkedin: event.target.value })}
@@ -496,13 +496,13 @@ export function CompanyOverrideDialog({
             </div>
             <div className="flex items-center gap-2">
               <Checkbox
-                id="override-company-referente-clear-linkedin"
+                id="override-company-contact-clear-linkedin"
                 checked={draft.clearContactPersonLinkedin}
                 onCheckedChange={(checked) =>
                   setDraft({ ...draft, clearContactPersonLinkedin: checked === true })
                 }
               />
-              <Label htmlFor="override-company-referente-clear-linkedin" className="font-normal">
+              <Label htmlFor="override-company-contact-clear-linkedin" className="font-normal">
                 Rimuovi il profilo LinkedIn del referente
               </Label>
             </div>

@@ -12,7 +12,7 @@ import userEvent from '@testing-library/user-event'
 import type { UserEvent } from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { CompanyRequest } from '@/lib/api'
-import { newCompanyFields, NewRequestCompany } from './NewCompanyRequest'
+import { newCompanyFields, NewCompanyRequest } from './NewCompanyRequest'
 
 function answer(status: number, body: unknown) {
   return new Response(JSON.stringify(body), {
@@ -23,7 +23,7 @@ function answer(status: number, body: unknown) {
 
 const PROFILE = {
   id: 'c1',
-  nome: 'Wile',
+  first_name: 'Wile',
   last_name: 'E.',
   email: 'wile@acme.it',
   linkedin_url: null,
@@ -35,7 +35,7 @@ const PROFILE = {
   cv_filename: null,
   cv_size: null,
   daily_rate: null,
-  posizione: null,
+  job_title: null,
   remote: null,
   links: [],
   complete: false,
@@ -61,7 +61,7 @@ function mount() {
   const newRequestLegalEntity = createRoute({
     getParentRoute: () => root,
     path: '/me/new-company',
-    component: NewRequestCompany,
+    component: NewCompanyRequest,
   })
   const me = createRoute({ getParentRoute: () => root, path: '/me', component: () => <h1>La tua area</h1> })
   const router = createRouter({

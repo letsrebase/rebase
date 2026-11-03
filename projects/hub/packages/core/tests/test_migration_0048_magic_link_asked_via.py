@@ -48,7 +48,7 @@ def test_a_token_names_its_door_or_none_and_nothing_else(hub_postgres: Any) -> N
         with engine.begin() as connection:
             connection.execute(
                 text(
-                    "INSERT INTO users (id, email, nome, cognome, role, attivo) "
+                    "INSERT INTO users (id, email, first_name, last_name, role, active) "
                     "VALUES (:id, 'a@acme.it', 'A', 'B', 'member', true)"
                 ),
                 {"id": user_id},

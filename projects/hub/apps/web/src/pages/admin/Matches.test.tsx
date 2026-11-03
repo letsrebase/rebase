@@ -55,7 +55,7 @@ const MATCH_A = {
   letter_start_date: '1° ottobre 2026',
   letter_end_date: null,
   letter_fee: '450.00',
-  unit_letter: 'to_work_unit',
+  unit_letter: 'a giornata',
   created_at: '2026-09-20T10:00:00Z',
   created_by_name: 'Ivan',
   created_by_email: 'ivan@rebase.it',
@@ -221,7 +221,7 @@ describe('the Match list (REB-413)', () => {
   })
 
   it('shows the letter’s fee, right-aligned, with its unit and the estimated days (REB-609)', async () => {
-    const lump = { ...MATCH_B, letter_fee: '12000.00', unit_letter: 'to_body', expected_days: 40 }
+    const lump = { ...MATCH_B, letter_fee: '12000.00', unit_letter: 'a corpo', expected_days: 40 }
     const none = { ...MATCH_A, id: 'm9', freelancer_email: 'none@studio.it', letter_fee: null, unit_letter: null }
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(200, { total: 3, items: [MATCH_A, lump, none] }))
     mount('/admin/matches')
@@ -378,7 +378,7 @@ describe('the Match list (REB-413)', () => {
 
     await waitFor(() => expect(router.state.location.search).toMatchObject({ status: 'draft' }))
     const calls = spy.mock.calls.map((call) => String(call[0])).filter((url) => url.includes('/api/hub/matches'))
-    expect(calls.some((url) => url.includes('stato=bozza'))).toBe(true)
+    expect(calls.some((url) => url.includes('status=draft'))).toBe(true)
   })
 
   it('debounces the search box before it reaches the API and the URL', async () => {

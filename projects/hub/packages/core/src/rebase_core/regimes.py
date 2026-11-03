@@ -1,6 +1,6 @@
 """The two families of contract documents a freelancer signs (REB-687).
 
-`vat_number` is the ordinary pair, the framework agreement and the letter of engagement
+`vat_registered` is the ordinary pair, the framework agreement and the letter of engagement
 of a member who works and invoices with a partita IVA; `occasional` is the pair of a
 member who works without one, paid as a prestazione occasionale. Every contract document
 carries its regime (`contract_documents.regime`), and its kind and its regime together
@@ -10,8 +10,8 @@ letter's. Pure: every module of the contracts flow imports it, the models includ
 
 from typing import Final, Literal
 
-Regime = Literal["partita_iva", "occasional"]
-VAT_REGISTERED: Final[Literal["partita_iva"]] = "partita_iva"
+Regime = Literal["vat_registered", "occasional"]
+VAT_REGISTERED: Final[Literal["vat_registered"]] = "vat_registered"
 OCCASIONAL: Final[Literal["occasional"]] = "occasional"
 REGIMES: Final[tuple[Regime, ...]] = (VAT_REGISTERED, OCCASIONAL)
 
@@ -22,6 +22,14 @@ TEXT_NAMES: Final[dict[tuple[str, str], str]] = {
     ("framework", OCCASIONAL): "framework-agreement-occasional",
     ("letter", VAT_REGISTERED): "engagement-letter",
     ("letter", OCCASIONAL): "engagement-letter-occasional",
+}
+# The file name each document is downloaded, signed and mailed under (what a freelancer, a
+# client and Documenso see, so it stays Italian).
+FILE_NAMES: Final[dict[tuple[str, str], str]] = {
+    ("framework", VAT_REGISTERED): "contratto-quadro",
+    ("framework", OCCASIONAL): "contratto-quadro-occasionale",
+    ("letter", VAT_REGISTERED): "lettera-di-incarico",
+    ("letter", OCCASIONAL): "lettera-di-incarico-occasionale",
 }
 # The type of each document, as «Match e contratti», «Contratti» and the MCP tools name it.
 DOCUMENT_LABELS: Final[dict[tuple[str, str], str]] = {
@@ -50,6 +58,14 @@ def text_name(kind: str, regime: str) -> str:
         raise ValueError(f"no contract text for kind {kind!r} and regime {regime!r}") from None
 
 
+def file_name(kind: str, regime: str) -> str:
+    """The Italian stem a document of `kind` and `regime` is downloaded under."""
+    try:
+        return FILE_NAMES[(kind, regime)]
+    except KeyError:
+        raise ValueError(f"no contract file name for kind {kind!r} and regime {regime!r}") from None
+
+
 def document_label(kind: str, regime: str) -> str:
     """The document's type as a page names it: «Lettera di incarico occasionale»."""
     try:
@@ -62,5 +78,5 @@ def document_stem(kind: str, regime: str, number: str | None, version: str) -> s
     """A document's file name without `.pdf`: its own text's name, then the letter's
     number or the framework agreement's text version, so the two families never share a
     name (`contratto-quadro-occasionale-v1.0`, `lettera-di-incarico-occasionale-2026-001`)."""
-    text = text_name(kind, regime)
+    text = file_name(kind, regime)
     return f"{text}-{number}" if kind == "letter" else f"{text}-v{version}"

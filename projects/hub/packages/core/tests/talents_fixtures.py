@@ -21,11 +21,11 @@ PDF = b"%PDF-1.7\n%\xe2\xe3\xcf\xd3\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF\n"
 
 def _application(email: str = "ada@studio.it", **extra: object) -> FreelancerCreate:
     payload: dict[str, object] = {
-        "nome": "Ada",
+        "first_name": "Ada",
         "last_name": "Lovelace",
         "email": email,
         "daily_rate": Decimal("450.00"),
-        "posizione": "Backend developer",
+        "job_title": "Backend developer",
         "remote": "remote",
         "links": ["https://github.com/ada"],
     }
@@ -34,17 +34,17 @@ def _application(email: str = "ada@studio.it", **extra: object) -> FreelancerCre
 
 
 def _signup(session: Session, email: str = "lead@studio.it", **extra: object) -> UUID:
-    payload: dict[str, object] = {"email": email, "nome": "Nuovo", "last_name": "Arrivato"}
+    payload: dict[str, object] = {"email": email, "first_name": "Nuovo", "last_name": "Arrivato"}
     payload.update(extra)
     return SignupService(session).subscribe(SignupCreate(**payload)).id  # type: ignore[arg-type]
 
 
 def _draft(**extra: object) -> FreelancerDraft:
     payload: dict[str, object] = {
-        "nome": "Ada",
+        "first_name": "Ada",
         "last_name": "Lovelace",
         "linkedin_url": "https://www.linkedin.com/in/ada",
-        "posizione": "Backend developer",
+        "job_title": "Backend developer",
         "links": ["https://github.com/ada"],
         "sources": ["https://www.linkedin.com/in/ada"],
     }
@@ -78,9 +78,7 @@ def _three_channels(session: Session) -> dict[str, str]:
     )
     search = _signup(session, "admin@studio.it")
     FreelancerService(session).draft_from_signup(search, _draft(), an_admin(session), "web")
-    session.execute(
-        text("UPDATE freelancers SET origine = 'pigrocrm' WHERE compilata_da = 'admin'")
-    )
+    session.execute(text("UPDATE freelancers SET origin = 'pigrocrm' WHERE filled_by = 'admin'"))
     session.commit()
     _signup(session, "lead@studio.it")
     return {"wizard": "wizard@studio.it", "admin": "admin@studio.it", "form": "lead@studio.it"}
@@ -98,15 +96,15 @@ def _profile(
     experience_years: object = None,
     industries: list[str] | None = None,
     languages: list[str] | None = None,
-    nome: str = "Ada",
+    first_name: str = "Ada",
 ) -> UUID:
-    extra: dict[str, object] = {"nome": nome}
+    extra: dict[str, object] = {"first_name": first_name}
     if rate is not None:
         extra["daily_rate"] = Decimal(rate)
     freelancer = _apply(session, email, **extra)
     if rate is None:
         session.execute(
-            text("UPDATE freelancers SET tariffa_giornaliera = NULL WHERE id = :id"),
+            text("UPDATE freelancers SET daily_rate = NULL WHERE id = :id"),
             {"id": freelancer},
         )
         session.commit()

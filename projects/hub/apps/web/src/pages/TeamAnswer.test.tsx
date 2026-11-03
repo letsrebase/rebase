@@ -37,8 +37,8 @@ afterEach(() => {
 
 describe('the answer to the availability mail (REB-517, spec § 3.2)', () => {
   it('asks before recording, then posts the token and the answer and thanks for the yes', async () => {
-    const fetch = answering(200, { outcome: 'si' })
-    mount('/team/answer?t=abc_-1&r=si')
+    const fetch = answering(200, { outcome: 'yes' })
+    mount('/team/answer?t=abc_-1&r=yes')
 
     expect(await screen.findByRole('heading', { name: 'Vuoi confermare che sei disponibile?' })).toBeInTheDocument()
     // Opening the link records nothing: a mail scanner opens every link on its own.
@@ -52,7 +52,7 @@ describe('the answer to the availability mail (REB-517, spec § 3.2)', () => {
     const [url, init] = fetch.mock.calls[0]!
     expect(url).toBe('/api/hub/team/availability')
     expect(init?.method).toBe('POST')
-    expect(JSON.parse(init?.body as string)).toEqual({ t: 'abc_-1', answer: 'si' })
+    expect(JSON.parse(init?.body as string)).toEqual({ t: 'abc_-1', answer: 'yes' })
   })
 
   it('asks and thanks for the no in its own words', async () => {
@@ -70,7 +70,7 @@ describe('the answer to the availability mail (REB-517, spec § 3.2)', () => {
 
   it('says the link is no longer valid for a spent, unknown or expired token, and nothing else', async () => {
     answering(200, { outcome: 'invalid' })
-    mount('/team/answer?t=abc&r=si')
+    mount('/team/answer?t=abc&r=yes')
 
     await userEvent.click(await screen.findByRole('button', { name: 'Conferma' }))
 
@@ -99,7 +99,7 @@ describe('the answer to the availability mail (REB-517, spec § 3.2)', () => {
 
   it('asks to reopen the mail’s link when no token was ever read, and posts nothing', async () => {
     const fetch = vi.spyOn(globalThis, 'fetch')
-    mount('/team/answer?r=si')
+    mount('/team/answer?r=yes')
     expect(await screen.findByRole('heading', { name: REOPEN })).toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: INVALID })).toBeNull()
     expect(screen.queryByRole('button')).toBeNull()
@@ -115,8 +115,8 @@ describe('the answer to the availability mail (REB-517, spec § 3.2)', () => {
   })
 
   it('asks again after a reload before «Conferma», then forgets the pair once answered', async () => {
-    const fetch = answering(200, { outcome: 'si' })
-    window.history.replaceState(null, '', '/hub/team/answer?t=abc_-1&r=si')
+    const fetch = answering(200, { outcome: 'yes' })
+    window.history.replaceState(null, '', '/hub/team/answer?t=abc_-1&r=yes')
     stripAnswerLink()
     // What a reload finds: the tab's copy of the pair, nothing in the module's memory
     // (`forgetAnswerLink` would drop both, so the copy is written back as it was).
@@ -130,7 +130,7 @@ describe('the answer to the availability mail (REB-517, spec § 3.2)', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Conferma' }))
 
     expect(await screen.findByRole('heading', { name: 'Grazie, abbiamo registrato la tua disponibilità' })).toBeInTheDocument()
-    expect(JSON.parse(fetch.mock.calls[0]![1]?.body as string)).toEqual({ t: 'abc_-1', answer: 'si' })
+    expect(JSON.parse(fetch.mock.calls[0]![1]?.body as string)).toEqual({ t: 'abc_-1', answer: 'yes' })
     expect(window.sessionStorage.getItem(ANSWER_LINK_KEY)).toBeNull()
   })
 
@@ -156,12 +156,42 @@ describe('the answer to the availability mail (REB-517, spec § 3.2)', () => {
 
   it('keeps the button when the post fails, with the API’s sentence', async () => {
     answering(429, { detail: 'Troppe richieste da qui. Riprova tra un minuto.' })
-    mount('/team/answer?t=abc&r=si')
+    mount('/team/answer?t=abc&r=yes')
 
     await userEvent.click(await screen.findByRole('button', { name: 'Conferma' }))
 
     expect(await screen.findByRole('alert')).toHaveTextContent('Troppe richieste da qui. Riprova tra un minuto.')
     expect(screen.getByRole('button', { name: 'Conferma' })).toBeEnabled()
     expect(screen.getByRole('heading', { name: 'Vuoi confermare che sei disponibile?' })).toBeInTheDocument()
+  })
+})
+
+describe('the links of the mails sent before the 2026-11 rename', () => {
+  it('reads `r=si` as a yes and posts `yes`, which is all the API knows', async () => {
+    const fetch = answering(200, { outcome: 'yes' })
+    mount('/team/answer?t=abc&r=si')
+
+    expect(await screen.findByRole('heading', { name: 'Vuoi confermare che sei disponibile?' })).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Conferma' }))
+
+    expect(await screen.findByRole('heading', { name: 'Grazie, abbiamo registrato la tua disponibilità' })).toBeInTheDocument()
+    expect(JSON.parse(fetch.mock.calls[0]![1]?.body as string)).toEqual({ t: 'abc', answer: 'yes' })
+  })
+
+  it('maps the answer of a link taken out of the old path the same way', async () => {
+    const fetch = answering(200, { outcome: 'yes' })
+    window.history.replaceState(null, '', '/hub/team/risposta?t=abc_-1&r=si')
+    stripAnswerLink()
+    mount('/team/answer')
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Conferma' }))
+
+    await screen.findByRole('heading', { name: 'Grazie, abbiamo registrato la tua disponibilità' })
+    expect(JSON.parse(fetch.mock.calls[0]![1]?.body as string)).toEqual({ t: 'abc_-1', answer: 'yes' })
+  })
+
+  it('still calls an answer that is neither a yes nor a no an invalid link', async () => {
+    mount('/team/answer?t=abc&r=forse')
+    expect(await screen.findByRole('heading', { name: INVALID })).toBeInTheDocument()
   })
 })

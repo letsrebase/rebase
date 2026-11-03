@@ -29,7 +29,7 @@ UNSUBSCRIBE_LINE = "Non vuoi più ricevere queste mail?"
 @dataclass(frozen=True)
 class RenderTarget:
     email: str
-    nome: str | None
+    name: str | None
     code: str
     token: str
     recipient_id: str | None = None
@@ -57,9 +57,9 @@ def one_line(text: str) -> str:
     return _CONTROL.sub(" ", text).strip()
 
 
-def personalise(text: str, nome: str | None) -> str:
-    if nome:
-        return text.replace("{nome}", nome)
+def personalise(text: str, name: str | None) -> str:
+    if name:
+        return text.replace("{nome}", name)
     return text.replace(" {nome}", "").replace("{nome}", "")
 
 
@@ -109,10 +109,10 @@ def unsubscribe_urls(token: str, settings: Settings) -> tuple[str, str]:
 def render(
     campaign: Campaign, target: RenderTarget, settings: Settings, *, test: bool = False
 ) -> RenderedMail:
-    paragraphs = _paragraphs(personalise(campaign.text, target.nome))
+    paragraphs = _paragraphs(personalise(campaign.text, target.name))
     # The subject follows the body's rule (REB-524): «{nome}» was left literal there. A
     # name is the person's own input, so it goes in on one line, and so does the whole.
-    subject = one_line(personalise(campaign.subject, one_line(target.nome or "") or None))
+    subject = one_line(personalise(campaign.subject, one_line(target.name or "") or None))
     url = _tracked(destination(campaign, settings), campaign, target.code)
     page, api = unsubscribe_urls(target.token, settings)
     text = "\n\n".join(

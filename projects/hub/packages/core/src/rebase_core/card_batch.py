@@ -552,7 +552,7 @@ class CardBatches:
         )
         if payload is None:
             return None
-        if payload.get("outcome") == "scritta":
+        if payload.get("outcome") == "written":
             return "written"
         reason = payload.get("reason")
         if reason in ("superseded", "unchanged"):

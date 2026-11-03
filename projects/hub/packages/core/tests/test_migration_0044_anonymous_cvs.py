@@ -110,7 +110,7 @@ def test_upgrade_copies_a_changed_card_row(hub_postgres: Any) -> None:
         command.upgrade(config, "head")
         with engine.connect() as connection:
             row = connection.execute(
-                text("SELECT model, effort, enabled FROM ai_tasks WHERE task = 'cv_anonimo'")
+                text("SELECT model, effort, enabled FROM ai_tasks WHERE task = 'anonymous_cv'")
             ).one()
             assert tuple(row) == ("claude-sonnet-5", "high", True)
         engine.dispose()
@@ -131,7 +131,7 @@ def test_upgrade_without_a_card_row_seeds_anthropic_defaults(hub_postgres: Any) 
             row = connection.execute(
                 text(
                     "SELECT provider, model, effort, enabled, max_output_tokens "
-                    "FROM ai_tasks WHERE task = 'cv_anonimo'"
+                    "FROM ai_tasks WHERE task = 'anonymous_cv'"
                 )
             ).one()
             assert tuple(row) == ("anthropic", "claude-opus-5", "medium", False, 16000)

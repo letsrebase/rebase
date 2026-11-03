@@ -170,8 +170,10 @@ class SourceProvenance(ResponseModel):
 
 class ConflictRead(ResponseModel):
     """A disagreement the code found while writing a card (`card_draft.conflicts`):
-    `different_experience_years`, the hub's completed engagements add up to more years than the card's
-    `experience_years_card` (the CV's dates) by more than a year; `discarded_experience_years`, the model gave
+    `different_experience_years`, the hub's completed engagements add up to more years than the
+    card's
+    `experience_years_card` (the CV's dates) by more than a year; `discarded_experience_years`, the
+    model gave
     `experience_years_card` years on the strength of sources that date no profession (GitHub, a
     page) and the code dropped it. `experience_years_hub` is the hub's completed months in whole
     years, `None` when the hub had no say."""
@@ -185,7 +187,7 @@ class CardProvenance(ResponseModel):
     """What a card was written from and by what, for the admin only (REB-839): never part
     of `Card`, of a public page, of the cloud or of the talent list.
 
-    `sources` is what the model *said* supported each field, kept only for sources that
+    `field_sources` is what the model *said* supported each field, kept only for sources that
     existed (`verify_sources`): the page shows it as «secondo il modello». `{}` and
     `prompt_version` 1 for a card written before provenance existed. `sources` is what is
     stored now, with its read times; `source_hashes` what the card was written from;
@@ -195,7 +197,7 @@ class CardProvenance(ResponseModel):
 
     prompt_version: int
     provider: str | None
-    sources: dict[str, list[str]]
+    field_sources: dict[str, list[str]]
     conflicts: list[ConflictRead]
     sources: list[SourceProvenance]
     source_hashes: dict[str, str]
@@ -213,7 +215,7 @@ class CardPersonRead(ResponseModel):
     part of `Card`, of `FreelancerCardRead`, of the cloud, the talent list or the team
     builder."""
 
-    nome: str | None = None
+    first_name: str | None = None
     last_name: str | None = None
     email: str | None = None
     phone: str | None = None
@@ -229,7 +231,7 @@ class PersonDifference(ResponseModel):
     `linkedin_url`, `cv` what the CV says and `profile` what the account holds. A field one
     side leaves empty is no disagreement."""
 
-    field: Literal["nome", "last_name", "email", "phone", "linkedin_url"]
+    field: Literal["first_name", "last_name", "email", "phone", "linkedin_url"]
     cv: str
     profile: str
 
@@ -291,18 +293,18 @@ class TeamProposalCreate(BaseModel):
 
 
 class TeamMemberRead(ResponseModel):
-    """One person of a proposed team (§ 3.3): `posizione` is their index in this
+    """One person of a proposed team (§ 3.3): `position` is their index in this
     proposal (1, 2, 3), the only handle the public read gives; `freelancer_id` is
     `None` there, so a visitor cannot follow a talent across proposals, and so is the
-    card's `location`, which only the engine and the admin read. `nome` and `last_name` are
+    card's `location`, which only the engine and the admin read. `first_name` and `last_name` are
     the person's, for the cloud and the admin, which show who each member is (§ 4.2);
     `None` on the public read, like the id. `mode` is `Freelancer.remote` and
     `band` the band of their current rate, both read when the proposal is, the way
     the card is shown everywhere (§ 2.1)."""
 
-    posizione: int
+    position: int
     freelancer_id: UUID | None
-    nome: str | None = None
+    first_name: str | None = None
     last_name: str | None = None
     role: str
     reasoning: str
@@ -317,8 +319,8 @@ class TeamPlace(ResponseModel):
     wants someone local, and where (`None` when no place was named, or on the public read
     when the visitor did not write it)."""
 
-    locale: bool
-    dove: str | None
+    on_site: bool
+    place: str | None
 
 
 class TeamEconomics(ResponseModel):
@@ -353,15 +355,15 @@ class TeamProposalRead(ResponseModel):
 class TeamProposalListMember(ResponseModel):
     """One person a listed proposal held (REB-607): their index in the proposal, the
     role it proposed them for, and who they are, so the admin can open their profile
-    from the list. `nome` and `last_name` are read when the list is, and are `None` for
+    from the list. `first_name` and `last_name` are read when the list is, and are `None` for
     a talent removed with «Elimina» since, whose admin page no longer opens: the row
     keeps them all by id, since the list is about what was proposed and not about who
     is still in the catalogue."""
 
-    posizione: int
+    position: int
     freelancer_id: UUID
     role: str
-    nome: str | None
+    first_name: str | None
     last_name: str | None
 
 
@@ -445,7 +447,7 @@ class TeamRequestTalentRead(ResponseModel):
     whose card was deleted or `discarded`: the availability mail skips them."""
 
     freelancer_id: UUID
-    nome: str
+    first_name: str
     last_name: str
     role: str
     daily_rate: Decimal | None
@@ -481,7 +483,7 @@ class TeamRequestRead(ResponseModel):
 
 
 class TeamRequestListItem(ResponseModel):
-    """One row of «Richieste team»: who, from where, when, where it stands, and «N sì su
+    """One row of «Richieste team»: who, from where, when, where it stands, and «N yes out of
     M» from the talents' answers."""
 
     id: UUID
@@ -491,7 +493,7 @@ class TeamRequestListItem(ResponseModel):
     created_at: datetime
     contacted_at: datetime | None
     total_talents: int
-    self_talents: int
+    yes_talents: int
 
 
 class TeamRequestList(ResponseModel):
@@ -547,13 +549,19 @@ class TeamAvailabilityAnswer(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     t: str = Field(max_length=AVAILABILITY_TOKEN_MAX_LENGTH)
-    answer: Literal["si", "no"]
+    answer: Literal["yes", "no"]
+
+    @field_validator("answer", mode="before")
+    @classmethod
+    def _old_links_say_si(cls, value: object) -> object:
+        """The links in mails already sent carry `r=si`; the page forwards it as it is."""
+        return "yes" if value == "si" else value
 
 
 class TeamAvailabilityOutcome(ResponseModel):
     """The answer recorded, or `invalid` for a token unknown, spent or expired alike."""
 
-    outcome: Literal["si", "no", "invalid"]
+    outcome: Literal["yes", "no", "invalid"]
 
 
 # ---- the talent cloud (REB-519, spec § 4.2) -------------------------------------------------
@@ -590,7 +598,7 @@ class CloudTalentRead(ResponseModel):
     so no read can carry them."""
 
     freelancer_id: UUID
-    nome: str
+    first_name: str
     last_name: str
     linkedin_url: str | None
     links: list[str]
@@ -598,7 +606,7 @@ class CloudTalentRead(ResponseModel):
     card: CardRead
     mode: RemoteOption | None
     band: Band | None
-    ha_cv: bool
+    has_cv: bool
 
 
 class CloudTalentList(ResponseModel):

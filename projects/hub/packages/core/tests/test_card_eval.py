@@ -198,7 +198,7 @@ def test_the_judge_is_given_the_card_and_what_the_card_was_written_from(clean_hu
 
     [request] = judging.requests
     message = request.messages[0].text
-    assert "<card>" in message and '"ruolo": "Backend developer"' in message
+    assert "<card>" in message and '"role": "Backend developer"' in message
     assert "Backend developer, Acme, 2017 - 2025" in message  # the CV, as data
 
 
@@ -215,7 +215,7 @@ def test_a_rule_settles_the_years_over_a_judge_who_says_supported(clean_hub: Ses
     assert result.judgement["fields"]["experience_years"]["verdict"] == "contradicted"
     assert result.judgement["fields"]["experience_years"]["by"] == "rule"
     assert run.summary["contradicted"] == 1 and run.summary["contradicted_profiles"] == 1
-    assert (run.summary["anni_checked"], run.summary["experience_years_ok"]) == (1, 0)
+    assert (run.summary["experience_years_checked"], run.summary["experience_years_ok"]) == (1, 0)
 
 
 def test_an_identifier_of_the_person_left_in_a_card_is_found_by_the_rules(

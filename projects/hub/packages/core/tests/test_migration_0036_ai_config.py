@@ -129,11 +129,11 @@ def test_upgrade_creates_four_tables_and_columns(hub_postgres: Any) -> None:
                     "enabled FROM ai_tasks ORDER BY task"
                 )
             ).all() == [
+                # 0044's row, copied from the card's
+                ("anonymous_cv", "anthropic", "claude-opus-5", "medium", 16000, None, True),
                 ("card", "anthropic", "claude-opus-5", "medium", 2000, None, True),
                 # 0045's row, copied from team_proposal's, off
                 ("crm_lead", "anthropic", "claude-opus-5", "low", 1500, 1, False),
-                # 0044's row, copied from the card's
-                ("anonymous_cv", "anthropic", "claude-opus-5", "medium", 16000, None, True),
                 ("team_proposal", "anthropic", "claude-opus-5", "medium", 8000, None, True),
             ]
             assert connection.execute(text("SELECT count(*) FROM ai_prices")).scalar_one() == 0
@@ -149,6 +149,9 @@ def test_upgrade_is_idempotent(hub_postgres: Any) -> None:
         config = Config(str(INI_PATH))
         config.set_main_option("sqlalchemy.url", url)
         engine = create_engine(url, future=True)
+        # Rewound to 0036 itself: the schema there is the Italian one, so every later revision
+        # (0049's renames included) runs again over the schema it was written for.
+        command.downgrade(config, REVISION)
         with engine.begin() as connection:
             # An admin's change survives the revision running again over its own tables.
             connection.execute(text("UPDATE ai_tasks SET model = 'gpt-5' WHERE task = 'card'"))

@@ -17,7 +17,7 @@ const TEMPLATE = {
 /** A second template, its own `journey_status` and its own `action`: switching from
  *  `TEMPLATE` to this one is a switch the saved `action` has to show (fix 4, REB-472). */
 const TEMPLATE2 = {
-  journey_status: 'profilo_incompleto',
+  journey_status: 'card_empty_signed_in',
   label: 'Profilo da completare',
   subject: 'Completa il profilo',
   text: 'Ciao {nome},\n\ncompleta il profilo.',
@@ -26,7 +26,7 @@ const TEMPLATE2 = {
   action: 'card_complete',
 }
 const DRAFT = {
-  id: 'c1', nome: 'Manca solo il CV', slug: 's', source: 'status', journey_status: 'missing_cv', filters: null,
+  id: 'c1', name: 'Manca solo il CV', slug: 's', source: 'status', journey_status: 'missing_cv', filters: null,
   subject: TEMPLATE.subject, text: TEMPLATE.text, button_text: TEMPLATE.button_text, button_meta: 'area', action: 'cv',
   status: 'draft', content_at: '2026-09-25T07:00:00Z', scheduled_for: null, test_sent_at: null, sent_at: null,
   created_at: '2026-09-25T07:00:00Z', ready: false,
@@ -35,23 +35,23 @@ const DRAFT = {
 const TESTED = { ...DRAFT, ready: true, test_sent_at: '2026-09-25T07:05:00Z' }
 const AUDIENCE = {
   lines: [
-    { email: 'ada@studio.it', nome: 'Ada', kind: 'freelancer', excluded: null },
-    { email: 'ivan@rebase.it', nome: 'Ivan', kind: 'freelancer', excluded: 'amministratore' },
+    { email: 'ada@studio.it', name: 'Ada', kind: 'freelancer', excluded: null },
+    { email: 'ivan@rebase.it', name: 'Ivan', kind: 'freelancer', excluded: 'amministratore' },
   ],
   included: 1,
   excluded: 1,
 }
 const AUDIENCE_TWO = {
   lines: [
-    { email: 'ada@studio.it', nome: 'Ada', kind: 'freelancer', excluded: null },
-    { email: 'bruno@studio.it', nome: 'Bruno', kind: 'freelancer', excluded: null },
-    { email: 'ivan@rebase.it', nome: 'Ivan', kind: 'freelancer', excluded: 'amministratore' },
+    { email: 'ada@studio.it', name: 'Ada', kind: 'freelancer', excluded: null },
+    { email: 'bruno@studio.it', name: 'Bruno', kind: 'freelancer', excluded: null },
+    { email: 'ivan@rebase.it', name: 'Ivan', kind: 'freelancer', excluded: 'amministratore' },
   ],
   included: 2,
   excluded: 1,
 }
-const ME = { email: 'ivan@rebase.it', nome: 'Ivan', role: 'admin' }
-const COUNTS_EMPTY = { recipients: 0, in_coda: 0, sent: 0, skipped: 0, failed: 0, delivered: 0, bounced: 0 }
+const ME = { email: 'ivan@rebase.it', name: 'Ivan', role: 'admin' }
+const COUNTS_EMPTY = { recipients: 0, queued: 0, sent: 0, skipped: 0, failed: 0, delivered: 0, bounced: 0 }
 
 /** The draft saves itself 600 ms after the last change: anything that waits on a save
  *  waits longer than Testing Library's default second. */
@@ -130,7 +130,7 @@ function sendBar() {
 }
 
 function preview() {
-  return within(screen.getByTestId('anteprima-mail'))
+  return within(screen.getByTestId('mail-preview'))
 }
 
 /** Every Talenti filter filled, as the admin types it. */
@@ -138,7 +138,7 @@ const TALENTS_FILTERS = {
   list: 'talents',
   status: 'active',
   q: 'react',
-  posizione: 'Frontend',
+  job_title: 'Frontend',
   remote: 'hybrid',
   min_rate: '300',
   max_rate: '500',
@@ -198,7 +198,7 @@ describe('«Nuova campagna» on one page (REB-526)', () => {
     expect(preview().getByText('Ciao Ada,')).toBeInTheDocument()
     expect(bodies(calls, 'POST', /\/api\/hub\/campaigns$/)).toEqual([
       {
-        nome: 'Manca solo il CV',
+        name: 'Manca solo il CV',
         source: 'status',
         journey_status: 'missing_cv',
         filters: null,
@@ -253,10 +253,10 @@ describe('«Nuova campagna» on one page (REB-526)', () => {
       'GET /api/hub/me': () => json(ME),
       'GET /api/hub/campaigns/templates': () => json([TEMPLATE, TEMPLATE2]),
       'GET /api/hub/campaigns/c1/audience': () => json(AUDIENCE_TWO),
-      'POST /api/hub/campaigns/c1/test': () => json({ ...TESTED, journey_status: 'profilo_incompleto', action: 'card_complete' }),
+      'POST /api/hub/campaigns/c1/test': () => json({ ...TESTED, journey_status: 'card_empty_signed_in', action: 'card_complete' }),
       'POST /api/hub/campaigns/c1/schedule': () => json({ ...TESTED, status: 'scheduled' }),
       'POST /api/hub/campaigns': () => json(DRAFT, 201),
-      'PATCH /api/hub/campaigns/c1': () => json({ ...DRAFT, journey_status: 'profilo_incompleto', action: 'card_complete' }),
+      'PATCH /api/hub/campaigns/c1': () => json({ ...DRAFT, journey_status: 'card_empty_signed_in', action: 'card_complete' }),
     })
     mount()
     await pick('Stato del percorso', 'Manca solo il CV')
@@ -279,8 +279,8 @@ describe('«Nuova campagna» on one page (REB-526)', () => {
       'GET /api/hub/me': () => json(ME),
       'GET /api/hub/campaigns/templates': () => json([TEMPLATE, TEMPLATE2]),
       'GET /api/hub/campaigns/c1/audience': () => json(AUDIENCE),
-      'POST /api/hub/campaigns': () => json({ ...DRAFT, nome: 'CV di settembre' }, 201),
-      'PATCH /api/hub/campaigns/c1': () => json({ ...DRAFT, nome: 'CV di settembre' }),
+      'POST /api/hub/campaigns': () => json({ ...DRAFT, name: 'CV di settembre' }, 201),
+      'PATCH /api/hub/campaigns/c1': () => json({ ...DRAFT, name: 'CV di settembre' }),
     })
     mount()
     await userEvent.type(await screen.findByLabelText('Nome della campagna'), 'CV di settembre')
@@ -497,7 +497,7 @@ describe('«Nuova campagna» on one page (REB-526)', () => {
     expect(screen.getByLabelText('Ora')).toHaveValue('12:15') // 11:07 in Rome, + 1 h, next quarter
     await userEvent.click(sendBar().getByRole('button', { name: 'Programma per 1 persona, ven 25 set, 12:15' }))
     await screen.findByText('pagina campagna')
-    expect(bodies(calls, 'POST', /\/schedule$/)).toEqual([{ day: '2026-09-25', ora: '12:15', excluded: [] }])
+    expect(bodies(calls, 'POST', /\/schedule$/)).toEqual([{ day: '2026-09-25', at_time: '12:15', excluded: [] }])
   })
 })
 
@@ -508,16 +508,16 @@ describe('filters (REB-472, carried over)', () => {
       'GET /api/hub/campaigns/templates': () => json([TEMPLATE]),
       'GET /api/hub/campaigns/c2/audience': () => json(AUDIENCE),
       'POST /api/hub/campaigns': () =>
-        json({ ...DRAFT, id: 'c2', nome: 'Campagna da filtri', source: 'filters', journey_status: null, filters: { list: 'talents' } }, 201),
+        json({ ...DRAFT, id: 'c2', name: 'Campagna da filtri', source: 'filters', journey_status: null, filters: { list: 'talents' } }, 201),
       'PATCH /api/hub/campaigns/c2': () =>
-        json({ ...DRAFT, id: 'c2', nome: 'Campagna da filtri', source: 'filters', journey_status: null, filters: { list: 'talents', status: 'new' } }),
+        json({ ...DRAFT, id: 'c2', name: 'Campagna da filtri', source: 'filters', journey_status: null, filters: { list: 'talents', status: 'new' } }),
     })
     mount()
     await userEvent.click(await screen.findByRole('button', { name: 'Filtri' }))
     await pick('Stato', 'Nuovo')
     await screen.findByText('riceverà la mail', { exact: false }, SAVED)
     await vi.waitFor(() => expect(lastSaved(calls).filters).toEqual({ list: 'talents', status: 'new' }), SAVED)
-    expect(lastSaved(calls).nome).toBe('Campagna da filtri')
+    expect(lastSaved(calls).name).toBe('Campagna da filtri')
     expect(lastSaved(calls).source).toBe('filters')
   })
 
@@ -726,7 +726,7 @@ describe('the edit route', () => {
       'GET /api/hub/campaigns/c4/audience': () => json(AUDIENCE),
       'GET /api/hub/campaigns/c4': () => json({ campaign: editCampaign, counts: COUNTS_EMPTY, recipients: [] }),
       'PATCH /api/hub/campaigns/c4': () =>
-        json({ ...editCampaign, journey_status: 'profilo_incompleto', action: 'card_complete' }),
+        json({ ...editCampaign, journey_status: 'card_empty_signed_in', action: 'card_complete' }),
     })
     mountEdit('c4')
     await pick('Stato del percorso', 'Profilo da completare')
@@ -734,7 +734,7 @@ describe('the edit route', () => {
     expect(screen.getByLabelText('Oggetto')).toHaveValue('Manca solo il CV')
     await vi.waitFor(() => expect(bodies(calls, 'PATCH', /\/campaigns\/c4$/)).toHaveLength(1), SAVED)
     expect(lastSaved(calls).action).toBe('card_complete')
-    expect(lastSaved(calls).journey_status).toBe('profilo_incompleto')
+    expect(lastSaved(calls).journey_status).toBe('card_empty_signed_in')
   })
 
   it('refuses to edit a campaign that has left «bozza»', async () => {
@@ -751,14 +751,14 @@ describe('the edit route', () => {
 })
 
 describe('a «Riscrivi» draft (phase 2)', () => {
-  const PARENT = { ...TESTED, id: 'c0', nome: 'Manca il CV', status: 'sent' }
+  const PARENT = { ...TESTED, id: 'c0', name: 'Manca il CV', status: 'sent' }
   const LIST = {
     ...DRAFT,
     id: 'c9',
-    nome: 'Manca il CV · riscrivi',
+    name: 'Manca il CV · riscrivi',
     source: 'list',
     journey_status: null,
-    segue_id: 'c0',
+    follows_id: 'c0',
     action: 'cv',
   }
 
@@ -781,7 +781,7 @@ describe('a «Riscrivi» draft (phase 2)', () => {
     await vi.waitFor(() => expect(bodies(calls, 'PATCH', /\/campaigns\/c9$/)).toHaveLength(1), SAVED)
     const body = lastSaved(calls)
     expect(body.subject).toBe('Manca solo il CV!')
-    expect(Object.keys(body).sort()).toEqual(['button_meta', 'button_text', 'nome', 'subject', 'text'])
+    expect(Object.keys(body).sort()).toEqual(['button_meta', 'button_text', 'name', 'subject', 'text'])
   })
 
   it('says it when the parent campaign cannot be read (item 4)', async () => {
@@ -820,7 +820,7 @@ describe('the subject in the preview (REB-524)', () => {
     const greeting = { ...TEMPLATE, subject: '{nome}, manca solo il CV' }
     const sneaky = {
       ...AUDIENCE_TWO,
-      lines: [{ email: 'ada@studio.it', nome: 'Ada\r\nBcc: x@y', kind: 'freelancer', excluded: null }, ...AUDIENCE_TWO.lines.slice(1)],
+      lines: [{ email: 'ada@studio.it', name: 'Ada\r\nBcc: x@y', kind: 'freelancer', excluded: null }, ...AUDIENCE_TWO.lines.slice(1)],
     }
     api({
       'GET /api/hub/me': () => json(ME),

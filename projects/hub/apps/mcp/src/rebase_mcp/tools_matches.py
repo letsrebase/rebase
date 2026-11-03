@@ -33,7 +33,7 @@ from rebase_mcp.tools_common import (
 
 # `MatchDrafts.proposal` names the letter's fields as the admin API's body does
 # (`letter.fee`); the tools take them as `terms`, and a refusal says so.
-LETTER_PART, CONDITIONS_PART = "lettera.", "condizioni."
+LETTER_PART, CONDITIONS_PART = "letter.", "terms."
 
 
 def _proposal(
@@ -70,7 +70,7 @@ def register(mcp: MCPServer, deps: Deps) -> None:
         path = f"/api/hub/contract-documents/{document['id']}/pdf"
         document["pdf_url"] = f"{api_origin}{path}"
         if document.get("has_pdf_signed"):
-            document["pdf_firmato_url"] = f"{api_origin}{path}?firmato=true"
+            document["pdf_signed_url"] = f"{api_origin}{path}?signed=true"
 
     def _on_match(match_id: str, action: Callable[[Session, UUID], BaseModel]) -> dict[str, Any]:
         key = to_uuid(match_id, "match_id")
@@ -143,8 +143,8 @@ def register(mcp: MCPServer, deps: Deps) -> None:
     @mcp.tool()
     def get_match(match_id: str) -> dict[str, Any]:
         """Un match, per id: l'azienda e la figura richiesta, i dati del cliente come li
-        stampa la lettera, lo stato (bozza, in_firma, attivo, concluso, annullato), la
-        lettera di incarico con numero, stato e `kind` («Lettera di incarico» o «Lettera
+        stampa la lettera, lo stato (draft, awaiting_signature, active, concluded, cancelled), la
+        lettera di incarico con numero, stato e `label` («Lettera di incarico» o «Lettera
         di incarico occasionale»), e in `framework` il contratto quadro del freelance dello
         stesso tipo della lettera. Ogni documento porta `pdf_url`, mai i byte. Il match e
         i documenti portano `situation`, `next_action` e `other_actions`, e quale strumento fa
@@ -187,7 +187,7 @@ def register(mcp: MCPServer, deps: Deps) -> None:
         frasi, `what_happens` quale documento parte per primo, `required_framework` se
         serve un nuovo contratto quadro, `missing_tax_data` se mancano i dati
         fiscali del freelance (si salvano con `set_freelancer_tax_data`), `regime` il tipo
-        di lettera. `regime` è `vat_number` (lettera di incarico, per chi lavora con
+        di lettera. `regime` è `vat_registered` (lettera di incarico, per chi lavora con
         partita IVA) o `occasional` (lettera di incarico occasionale, prestazione
         occasionale); omesso, quello che propone l'hub: occasionale se i dati fiscali sono
         salvati senza partita IVA. Una lettera con partita IVA senza partita IVA salvata è
@@ -195,8 +195,9 @@ def register(mcp: MCPServer, deps: Deps) -> None:
         match della stessa azienda (altrimenti solo il nome dell'azienda), la lettera dalla
         richiesta, dalla scheda e dalle condizioni di rebase. `customer` e `terms` la
         cambiano campo per campo, con i nomi dell'API: per il cliente
-        `customer_legal_name`, `customer_vat_number`, `customer_registered_office`; per le condizioni i campi
-        della lettera, come `role`, `activities`, `start_date` e `data_fine` (AAAA-MM-GG),
+        `customer_legal_name`, `customer_vat_number`, `customer_registered_office`; per le
+        condizioni i campi
+        della lettera, come `role`, `activities`, `start_date` e `end_date` (AAAA-MM-GG),
         `commitment`, `location`, `fee` (IVA esclusa nella lettera con partita IVA, lordo in
         quella occasionale; anche all'italiana: «1.500», «1.234,50»), `unit`,
         `payment_days`, `month_end`. Un campo omesso resta come lo propone l'hub,
@@ -270,7 +271,7 @@ def register(mcp: MCPServer, deps: Deps) -> None:
         """«Invia per la firma»: il documento che può partire ora va su Documenso e il
         freelance riceve la mail con il link per firmarlo. Se non ha un contratto quadro
         attivo parte prima quello, e la lettera di incarico parte da sola dopo la sua
-        firma. `messaggio` dice cosa è partito, con le parole della pagina; `sent` è
+        firma. `message` dice cosa è partito, con le parole della pagina; `sent` è
         `framework`, `letter` o `null` (la lettera aspetta un contratto quadro già in
         firma), `mail_sent` se la mail è partita (altrimenti `resend_signing_mail`).
         Non si torna indietro: il documento arriva al freelance, e da lì si può solo
@@ -281,7 +282,7 @@ def register(mcp: MCPServer, deps: Deps) -> None:
         def call(session: Session) -> dict[str, Any]:
             require_live_match(session, key)
             report = deps.contracts(session).send_match(key, deps.admin().id)
-            return {**report.model_dump(mode="json"), "messaggio": send_report_sentence(report)}
+            return {**report.model_dump(mode="json"), "message": send_report_sentence(report)}
 
         body = deps.call(call)
         _document_links(body["match"]["letter"])
@@ -302,7 +303,7 @@ def register(mcp: MCPServer, deps: Deps) -> None:
         come farebbe la sua notifica, poi fa quello che una firma lascia da fare (salva e
         manda la copia firmata, fa partire le lettere che aspettavano questo contratto
         quadro). Serve quando una notifica non è arrivata. Risponde il documento con
-        `situation`, `pdf_url` e, quando c'è la copia firmata, `pdf_firmato_url`."""
+        `situation`, `pdf_url` e, quando c'è la copia firmata, `pdf_signed_url`."""
         return _on_document(document_id, lambda service, key: service.admin.refresh(key))
 
     @mcp.tool()
@@ -362,12 +363,12 @@ def register(mcp: MCPServer, deps: Deps) -> None:
 
     @mcp.tool()
     def get_match_report(
-        match_id: str, da: str | None = None, a: str | None = None
+        match_id: str, from_date: str | None = None, to_date: str | None = None
     ) -> dict[str, Any]:
         """Il consuntivo delle ore di un match, come «Consuntivo» nell'area admin: ore e
         giorni totali, l'avanzamento sui giorni previsti quando ce ne sono, il dettaglio
         per giorno con le fatture di ciascuno e le ore su ognuna, i totali per settimana
-        e per mese, e le fatture del periodo. `da` e `a` (AAAA-MM-GG) restringono il
+        e per mese, e le fatture del periodo. `from_date` e `to_date` (AAAA-MM-GG) restringono il
         periodo, l'intero incarico per difetto (dall'inizio della lettera a oggi).
         Rifiutato per un match non collegato a Pigro, con la frase di dove sta il
         collegamento. Risponde un errore anche quando Pigro non è configurato su questo
@@ -376,8 +377,8 @@ def register(mcp: MCPServer, deps: Deps) -> None:
         «Riprova» lo ricollega."""
         build_engagements = _require_engagements()
         key = to_uuid(match_id, "match_id")
-        start = day(da, "da")
-        end = day(a, "a")
+        start = day(from_date, "from_date")
+        end = day(to_date, "to_date")
 
         def call(session: Session) -> dict[str, Any]:
             require_live_match(session, key)

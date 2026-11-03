@@ -178,7 +178,7 @@ def stale_cards(admin: AdminDep, session: SessionDep, settings: SettingsDep) -> 
         items=[
             StaleCardRead(
                 freelancer_id=item.freelancer_id,
-                nome=item.nome,
+                first_name=item.first_name,
                 reason=item.reason,
                 generated_at=item.generated_at,
             )

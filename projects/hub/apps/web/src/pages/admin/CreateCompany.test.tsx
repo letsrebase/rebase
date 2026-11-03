@@ -55,7 +55,7 @@ describe('«Nuova richiesta»', () => {
     await fill(user, `https://crm.test/rebase/app/deal/${DEAL}`)
     await user.click(screen.getByRole('button', { name: 'Apri la richiesta' }))
 
-    expect(await screen.findByText('card')).toBeInTheDocument()
+    expect(await screen.findByText('scheda')).toBeInTheDocument()
     const [url, init] = fetch.mock.calls[0]!
     expect(url).toBe('/api/hub/admin/companies')
     expect(JSON.parse(String(init?.body))).toMatchObject({
@@ -81,7 +81,7 @@ describe('«Nuova richiesta»', () => {
 
     await user.clear(screen.getByLabelText('Deal nel CRM'))
     await user.click(screen.getByRole('button', { name: 'Apri la richiesta' }))
-    await screen.findByText('card')
+    await screen.findByText('scheda')
     expect(JSON.parse(String(fetch.mock.calls[0]![1]?.body)).deal_id).toBeNull()
   })
 })

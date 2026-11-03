@@ -20,8 +20,8 @@ import {
 const on = (number: string, hours: string, kind = 'invoice'): ReportDayInvoice => ({ number, kind, hours })
 
 /** A day as the hub sends it: `invoices` names the invoices of `shares`, in their order. */
-const day = (data: string, hours: string, shares: ReportDayInvoice[] = [], descriptions: string[] = []): ReportDay => ({
-  data,
+const day = (date: string, hours: string, shares: ReportDayInvoice[] = [], descriptions: string[] = []): ReportDay => ({
+  date,
   hours,
   descriptions,
   invoices: shares.map(invoiceLabel),
@@ -61,7 +61,7 @@ const REPORT: MatchReport = {
     {
       number: '4/2026',
       kind: 'proforma',
-      data: '2026-10-31',
+      date: '2026-10-31',
       status: 'confirmed',
       payment_status: 'from_unpaid',
       hours: '16.00',
@@ -69,7 +69,7 @@ const REPORT: MatchReport = {
     {
       number: '12/2026',
       kind: 'invoice',
-      data: '2026-10-02',
+      date: '2026-10-02',
       status: 'issued',
       payment_status: 'paid',
       hours: '32.00',
@@ -121,7 +121,7 @@ describe('the months the page offers', () => {
 
 describe('the days of a period', () => {
   it('slices a month out of the whole engagement, and keeps every day for «tutto»', () => {
-    expect(sliceDays(REPORT.by_day, '2026-09').map((d) => d.data)).toEqual(['2026-09-29', '2026-09-30'])
+    expect(sliceDays(REPORT.by_day, '2026-09').map((d) => d.date)).toEqual(['2026-09-29', '2026-09-30'])
     expect(sliceDays(REPORT.by_day, '2026-11')).toHaveLength(4)
     expect(sliceDays(REPORT.by_day, ALL)).toHaveLength(12)
     expect(sliceDays(REPORT.by_day, '2026-12')).toEqual([])
@@ -138,29 +138,29 @@ describe('the sums', () => {
 
   it('groups a period by ISO week, Monday to Sunday, only with the period’s own days', () => {
     expect(perWeek(REPORT.by_day)).toEqual([
-      { week: '2026-W40', da: '2026-09-28', a: '2026-10-04', hours: '32.00' },
-      { week: '2026-W41', da: '2026-10-05', a: '2026-10-11', hours: '16.00' },
-      { week: '2026-W44', da: '2026-10-26', a: '2026-11-01', hours: '16.00' },
-      { week: '2026-W45', da: '2026-11-02', a: '2026-11-08', hours: '32.00' },
+      { week: '2026-W40', from_date: '2026-09-28', to_date: '2026-10-04', hours: '32.00' },
+      { week: '2026-W41', from_date: '2026-10-05', to_date: '2026-10-11', hours: '16.00' },
+      { week: '2026-W44', from_date: '2026-10-26', to_date: '2026-11-01', hours: '16.00' },
+      { week: '2026-W45', from_date: '2026-11-02', to_date: '2026-11-08', hours: '32.00' },
     ])
     // October alone: week 40 keeps only its October days.
     expect(perWeek(sliceDays(REPORT.by_day, '2026-10'))[0]).toEqual({
       week: '2026-W40',
-      da: '2026-09-28',
-      a: '2026-10-04',
+      from_date: '2026-09-28',
+      to_date: '2026-10-04',
       hours: '16.00',
     })
   })
 
   it('numbers the weeks across a year end as the server does', () => {
-    expect(isoWeek('2026-12-31')).toEqual({ week: '2026-W53', da: '2026-12-28', a: '2027-01-03' })
+    expect(isoWeek('2026-12-31')).toEqual({ week: '2026-W53', from_date: '2026-12-28', to_date: '2027-01-03' })
     expect(isoWeek('2027-01-01').week).toBe('2026-W53')
     expect(isoWeek('2027-01-04').week).toBe('2027-W01')
     expect(
       perWeek([day('2026-12-31', '4.00'), day('2027-01-01', '3.50'), day('2027-01-04', '8.00')]),
     ).toEqual([
-      { week: '2026-W53', da: '2026-12-28', a: '2027-01-03', hours: '7.50' },
-      { week: '2027-W01', da: '2027-01-04', a: '2027-01-10', hours: '8.00' },
+      { week: '2026-W53', from_date: '2026-12-28', to_date: '2027-01-03', hours: '7.50' },
+      { week: '2027-W01', from_date: '2027-01-04', to_date: '2027-01-10', hours: '8.00' },
     ])
   })
 
@@ -196,7 +196,7 @@ describe('the invoices of a period', () => {
       ['12/2026', '16.00'],
     ])
     // The rest of each row is the invoice's own.
-    expect(october[1]).toMatchObject({ data: '2026-10-02', status: 'issued', payment_status: 'paid' })
+    expect(october[1]).toMatchObject({ date: '2026-10-02', status: 'issued', payment_status: 'paid' })
   })
 
   it('shows no invoice for a month whose days none sits on', () => {
@@ -212,7 +212,7 @@ describe('the invoices of a period', () => {
     const partly: Pick<MatchReport, 'by_day' | 'invoices'> = {
       by_day: [day('2026-10-30', '8.00', [on('14/2026', '8.00')]), day('2026-11-02', '8.00', [on('14/2026', '3.00')])],
       invoices: [
-        { number: '14/2026', kind: 'invoice', data: null, status: 'draft', payment_status: 'from_unpaid', hours: '11.00' },
+        { number: '14/2026', kind: 'invoice', date: null, status: 'draft', payment_status: 'from_unpaid', hours: '11.00' },
       ],
     }
     expect(periodInvoices(partly, '2026-11').map((i) => [invoiceLabel(i), i.hours])).toEqual([['14/2026', '3.00']])
@@ -229,8 +229,8 @@ describe('the invoices of a period', () => {
         day('2026-12-01', '8.00', [on('14/2026', '8.00')]),
       ],
       invoices: [
-        { number: '14/2026', kind: 'invoice', data: null, status: 'draft', payment_status: 'from_unpaid', hours: '13.00' },
-        { number: '13/2026', kind: 'invoice', data: '2026-11-30', status: 'issued', payment_status: 'from_unpaid', hours: '11.00' },
+        { number: '14/2026', kind: 'invoice', date: null, status: 'draft', payment_status: 'from_unpaid', hours: '13.00' },
+        { number: '13/2026', kind: 'invoice', date: '2026-11-30', status: 'issued', payment_status: 'from_unpaid', hours: '11.00' },
       ],
     }
     expect(periodInvoices(split, '2026-11').map((i) => [invoiceLabel(i), i.hours])).toEqual([
@@ -247,8 +247,8 @@ describe('the invoices of a period', () => {
         day('2026-12-01', '8.00', [on('5/2026', '8.00', 'proforma')]),
       ],
       invoices: [
-        { number: '5/2026', kind: 'proforma', data: null, status: 'draft', payment_status: 'from_unpaid', hours: '10.00' },
-        { number: '5/2026', kind: 'invoice', data: '2026-11-30', status: 'issued', payment_status: 'from_unpaid', hours: '14.00' },
+        { number: '5/2026', kind: 'proforma', date: null, status: 'draft', payment_status: 'from_unpaid', hours: '10.00' },
+        { number: '5/2026', kind: 'invoice', date: '2026-11-30', status: 'issued', payment_status: 'from_unpaid', hours: '14.00' },
       ],
     }
     expect(periodInvoices(same, '2026-11').map((i) => [invoiceLabel(i), i.hours])).toEqual([
@@ -265,8 +265,8 @@ describe('the invoices of a period', () => {
         day('2026-11-03', '8.00', [on('13/2026', '3.00'), on('14/2026', '5.00')]),
       ],
       invoices: [
-        { number: '14/2026', kind: 'invoice', data: null, status: 'draft', payment_status: 'from_unpaid', hours: '5.00' },
-        { number: '13/2026', kind: 'invoice', data: '2026-11-30', status: 'issued', payment_status: 'from_unpaid', hours: '11.00' },
+        { number: '14/2026', kind: 'invoice', date: null, status: 'draft', payment_status: 'from_unpaid', hours: '5.00' },
+        { number: '13/2026', kind: 'invoice', date: '2026-11-30', status: 'issued', payment_status: 'from_unpaid', hours: '11.00' },
       ],
     }
     expect(periodInvoices(shared, '2026-11').map((i) => i.hours)).toEqual(['5.00', '11.00'])

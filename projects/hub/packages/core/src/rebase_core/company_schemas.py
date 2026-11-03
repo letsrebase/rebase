@@ -3,7 +3,6 @@ talent-cloud grant a company shows."""
 
 from datetime import date, datetime
 from decimal import Decimal
-from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator, model_validator
@@ -34,8 +33,6 @@ from rebase_core.schema_common import (
 from rebase_core.signup_schemas import SignupUtm
 from rebase_core.validation import SafeStr
 from rebase_core.vocabulary import CompanyStatus, PigroState, RemoteOption
-
-CompanyStatus = Literal["new", "contacted", "in_progress", "closed"]
 
 
 class CompanyFields(BaseModel):
@@ -208,7 +205,7 @@ class CompanyOverride(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    nome: SafeStr | None = Field(default=None, max_length=NAME_MAX_LENGTH)
+    first_name: SafeStr | None = Field(default=None, max_length=NAME_MAX_LENGTH)
     last_name: SafeStr | None = Field(default=None, max_length=NAME_MAX_LENGTH)
     linkedin_url: SafeStr | None = Field(default=None, max_length=LINKEDIN_INPUT_MAX_LENGTH)
     company_name: SafeStr | None = Field(default=None, max_length=COMPANY_MAX_LENGTH)
@@ -225,7 +222,7 @@ class CompanyOverride(BaseModel):
     status: CompanyStatus | None = None
 
     @field_validator(
-        "nome", "last_name", "company_name", "duration", "requested_role", mode="after"
+        "first_name", "last_name", "company_name", "duration", "requested_role", mode="after"
     )
     @classmethod
     def _trimmed(cls, value: str | None) -> str | None:

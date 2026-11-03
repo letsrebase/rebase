@@ -33,7 +33,7 @@ class Clock:
 @pytest.fixture
 def token(mcp_engine: Engine) -> Iterator[tuple[str, User]]:
     with session_factory(mcp_engine)() as session:
-        user = User(email="ivan@rebase.it", nome="Ivan", last_name="Fiore", role="admin")
+        user = User(email="ivan@rebase.it", first_name="Ivan", last_name="Fiore", role="admin")
         session.add(user)
         session.commit()
         _, raw = AdminTokenService(session).create(user.id, "Claude Code")
@@ -60,11 +60,11 @@ def test_the_admin_is_resolved_once_a_minute_not_on_every_call(
     admin = _provider(factory, raw, clock)
     assert admin.refresh().id == owner.id
     with factory() as session:
-        session.execute(text("UPDATE users SET nome = 'Ivano'"))
+        session.execute(text("UPDATE users SET first_name = 'Ivano'"))
         session.commit()
-    assert admin().nome == "Ivan"  # inside the minute: the cached one
+    assert admin().first_name == "Ivan"  # inside the minute: the cached one
     clock.now += ADMIN_CACHE_SECONDS + 1
-    assert admin().nome == "Ivano"  # past it: asked again
+    assert admin().first_name == "Ivano"  # past it: asked again
 
 
 @pytest.mark.parametrize("change", ["revoke", "demote", "deactivate", "expire"])
@@ -82,7 +82,7 @@ def test_a_token_that_stops_being_valid_stops_the_admin_within_the_minute(
         elif change == "demote":
             session.execute(text("UPDATE users SET role = 'member'"))
         elif change == "deactivate":
-            session.execute(text("UPDATE users SET attivo = false"))
+            session.execute(text("UPDATE users SET active = false"))
         else:
             session.execute(
                 text("UPDATE admin_tokens SET expires_at = :past"),
@@ -115,7 +115,7 @@ async def test_a_revoked_token_stops_the_writes_of_a_running_server(
         from rebase_core.signup_schemas import SignupCreate
 
         signup = SignupService(session).subscribe(
-            SignupCreate(email="ada@studio.it", nome="Ada", last_name="Lovelace")
+            SignupCreate(email="ada@studio.it", first_name="Ada", last_name="Lovelace")
         )
         signup_id = str(signup.id)
     async with Client(build_server(factory, admin)) as client:
@@ -128,7 +128,7 @@ async def test_a_revoked_token_stops_the_writes_of_a_running_server(
             "create_freelancer_from_signup",
             {
                 "signup_id": signup_id,
-                "nome": "Ada",
+                "first_name": "Ada",
                 "last_name": "Lovelace",
                 "sources": ["https://www.linkedin.com/in/ada"],
             },

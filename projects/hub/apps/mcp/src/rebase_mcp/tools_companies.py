@@ -81,9 +81,9 @@ def register(mcp: MCPServer, deps: Deps) -> None:
         bounded(cursor, "cursor")
         budget_from = number(budget_min, "budget_min")
         budget_to = number(budget_max, "budget_max")
-        period_from = day(period_from, "period_from")
-        created_from = moment(created_from, "created_from")
-        created_to = moment(created_to, "created_to")
+        period_start = day(period_from, "period_from")
+        created_after = moment(created_from, "created_from")
+        created_before = moment(created_to, "created_to")
 
         def call(session: Session) -> dict[str, Any]:
             page = CompanyService(session).list_recent(
@@ -93,10 +93,10 @@ def register(mcp: MCPServer, deps: Deps) -> None:
                 cursor=cursor,
                 budget_min=budget_from,
                 budget_max=budget_to,
-                period_from=period_from,
+                period_from=period_start,
                 origin=origin,
-                created_from=created_from,
-                created_to=created_to,
+                created_from=created_after,
+                created_to=created_before,
             )
             body = page.model_dump(mode="json")
             # Every row carries the referente's address: a list of them is a read of
@@ -158,7 +158,7 @@ def register(mcp: MCPServer, deps: Deps) -> None:
     @mcp.tool()
     def override_company(
         company_id: str,
-        nome: str | None = None,
+        first_name: str | None = None,
         last_name: str | None = None,
         linkedin_url: str | None = None,
         company_name: str | None = None,
@@ -185,8 +185,8 @@ def register(mcp: MCPServer, deps: Deps) -> None:
         finisce nel registro di `get_company_audit`, con il valore prima e dopo; per
         annullarla c'è `revert_company_action`."""
         kwargs: dict[str, Any] = {}
-        if nome is not None:
-            kwargs["nome"] = supplied_text(nome)
+        if first_name is not None:
+            kwargs["first_name"] = supplied_text(first_name)
         if last_name is not None:
             kwargs["last_name"] = supplied_text(last_name)
         if linkedin_url is not None:

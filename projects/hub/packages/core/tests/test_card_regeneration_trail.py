@@ -199,9 +199,9 @@ def test_each_card_a_start_rewrites_is_in_its_talents_trail(clean_hub: Session) 
         assert (p["prompt_version"], p["model"]) == (PROMPT_VERSION, MODEL)
         assert _cost(p) == CALL_COST
         if person == people[1]:
-            assert (p["outcome"], p["reason"]) == ("non_scritta", "refusal")
+            assert (p["outcome"], p["reason"]) == ("not_written", "refusal")
         else:
-            assert p["outcome"] == "scritta" and "reason" not in p
+            assert p["outcome"] == "written" and "reason" not in p
         _no_personal_data(action)
 
 
@@ -318,7 +318,7 @@ def test_a_single_regeneration_is_signed_in_the_talents_trail(
     action = _one(clean_hub, "card_regenerated", person)
     assert action.admin_id == admin
     p = action.payload
-    assert (p["source"], p["bulk"], p["outcome"]) == (source, False, "scritta")
+    assert (p["source"], p["bulk"], p["outcome"]) == (source, False, "written")
     assert "start_action_id" not in p
     assert (p["prompt_version"], p["model"], _cost(p)) == (PROMPT_VERSION, MODEL, CALL_COST)
     assert _actions(clean_hub, "cards_regenerate") == []
@@ -337,7 +337,7 @@ def test_a_single_regeneration_that_fails_says_why_and_what_it_cost(clean_hub: S
     ).write(person, force=True)
 
     p = _one(clean_hub, "card_regenerated", person).payload
-    assert (p["outcome"], p["reason"]) == ("non_scritta", "gendered")
+    assert (p["outcome"], p["reason"]) == ("not_written", "gendered")
     # The first call and the one rewrite it asks for.
     assert _cost(p) == 2 * CALL_COST
 
@@ -353,7 +353,7 @@ def test_an_outage_on_a_single_regeneration_is_recorded_as_such(clean_hub: Sessi
     ).write(person, force=True)
 
     p = _one(clean_hub, "card_regenerated", person).payload
-    assert (p["outcome"], p["reason"], _cost(p)) == ("non_scritta", "unavailable", 0)
+    assert (p["outcome"], p["reason"], _cost(p)) == ("not_written", "unavailable", 0)
 
 
 def test_the_hourly_refresh_and_a_write_nobody_started_record_nothing(clean_hub: Session) -> None:
@@ -398,7 +398,7 @@ def test_a_batch_records_its_start_with_the_batch_and_its_end_when_it_is_applied
     }
     # The position is an input of the card: the answer for the third was written for another.
     clean_hub.execute(
-        text("UPDATE freelancers SET posizione = 'Data engineer' WHERE id = :id"),
+        text("UPDATE freelancers SET job_title = 'Data engineer' WHERE id = :id"),
         {"id": people[2]},
     )
     clean_hub.commit()
@@ -436,11 +436,11 @@ def test_a_batch_records_its_start_with_the_batch_and_its_end_when_it_is_applied
     _no_personal_data(start, end)
 
     expected = {
-        people[0]: ("non_scritta", "gendered", BATCH_COST + CALL_COST),
-        people[1]: ("non_scritta", "errored", Decimal(0)),
-        people[2]: ("non_scritta", "superseded", BATCH_COST),
-        people[3]: ("scritta", None, BATCH_COST),
-        people[4]: ("scritta", None, BATCH_COST),
+        people[0]: ("not_written", "gendered", BATCH_COST + CALL_COST),
+        people[1]: ("not_written", "errored", Decimal(0)),
+        people[2]: ("not_written", "superseded", BATCH_COST),
+        people[3]: ("written", None, BATCH_COST),
+        people[4]: ("written", None, BATCH_COST),
     }
     for person, (outcome, reason, cost) in expected.items():
         card = _one(clean_hub, "card_regenerated", person)
@@ -472,7 +472,7 @@ def test_a_card_waiting_for_the_model_is_recorded_once_it_is_settled(clean_hub: 
 
     assert second == BatchPolled("applied", written=1, failed=0)
     waited = _one(clean_hub, "card_regenerated", people[0]).payload
-    assert waited["outcome"] == "scritta" and _cost(waited) == BATCH_COST + CALL_COST
+    assert waited["outcome"] == "written" and _cost(waited) == BATCH_COST + CALL_COST
     end = _one(clean_hub, "cards_regenerated").payload
     assert (end["written"], end["failed"]) == (3, 0)
     assert _cost(end) == 3 * BATCH_COST + CALL_COST
@@ -647,7 +647,7 @@ def test_a_settle_that_fails_after_the_card_was_saved_enters_it_once_and_settles
     assert seen == ["written"]
     assert polled == BatchPolled("applied", written=3, failed=0)
     entries = _actions(clean_hub, "card_regenerated", people[0])
-    assert [(e.payload["outcome"], e.admin_id) for e in entries] == [("scritta", admin)]
+    assert [(e.payload["outcome"], e.admin_id) for e in entries] == [("written", admin)]
     assert {i.status for i in clean_hub.scalars(select(CardBatchItem))} == {"written"}
     end = _one(clean_hub, "cards_regenerated").payload
     assert (end["written"], end["errored"], end["failed"]) == (3, 0, 0)
@@ -673,7 +673,7 @@ def test_an_item_that_cannot_be_settled_is_settled_from_its_entry_by_the_next_pa
 
     assert second == BatchPolled("applied", written=1, failed=0)
     assert [e.payload["outcome"] for e in _actions(clean_hub, "card_regenerated", people[0])] == [
-        "scritta"
+        "written"
     ]
     assert {i.status for i in clean_hub.scalars(select(CardBatchItem))} == {"written"}
     end = _one(clean_hub, "cards_regenerated").payload

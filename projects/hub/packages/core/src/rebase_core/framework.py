@@ -232,7 +232,7 @@ def document_read(
         id=document.id,
         kind=document.kind,
         regime=as_regime(document.regime),
-        tipo=document_label(document.kind, document.regime),
+        label=document_label(document.kind, document.regime),
         freelancer_id=document.freelancer_id,
         match_id=document.match_id,
         number=document.number,

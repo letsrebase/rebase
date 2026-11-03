@@ -110,13 +110,13 @@ describe('«Dove porta» and the action (REB-530)', () => {
   })
 
   it('keeps the click when a state is picked after the admin chose «Un link»', () => {
-    expect(withTemplate(LINK, TEMPLATE, 'missing_cv', { mail: true, nome: false }).action).toBe('click')
-    expect(withTemplate(STATUS, TEMPLATE, 'missing_cv', { mail: true, nome: false }).action).toBe('cv')
+    expect(withTemplate(LINK, TEMPLATE, 'missing_cv', { mail: true, name: false }).action).toBe('click')
+    expect(withTemplate(STATUS, TEMPLATE, 'missing_cv', { mail: true, name: false }).action).toBe('cv')
   })
 
   it('fills the untouched mail from the state and keeps a destination picked before it', () => {
     const blank: CampaignForm = { ...EMPTY_FORM, buttonMeta: 'link', buttonUrl: LUMA, action: 'click' }
-    const filled = withTemplate(blank, TEMPLATE, 'missing_cv', { mail: false, nome: false, meta: true })
+    const filled = withTemplate(blank, TEMPLATE, 'missing_cv', { mail: false, name: false, meta: true })
     expect(filled).toMatchObject({
       subject: TEMPLATE.subject,
       text: TEMPLATE.text,
@@ -125,9 +125,9 @@ describe('«Dove porta» and the action (REB-530)', () => {
       buttonUrl: LUMA,
       action: 'click',
     })
-    const wizard = withTemplate({ ...EMPTY_FORM, buttonMeta: 'wizard' }, TEMPLATE, 'missing_cv', { mail: false, nome: false, meta: true })
+    const wizard = withTemplate({ ...EMPTY_FORM, buttonMeta: 'wizard' }, TEMPLATE, 'missing_cv', { mail: false, name: false, meta: true })
     expect([wizard.buttonMeta, wizard.action, wizard.subject]).toEqual(['wizard', 'cv', TEMPLATE.subject])
-    expect(withTemplate(EMPTY_FORM, TEMPLATE, 'missing_cv', { mail: false, nome: false }).buttonMeta).toBe('area')
+    expect(withTemplate(EMPTY_FORM, TEMPLATE, 'missing_cv', { mail: false, name: false }).buttonMeta).toBe('area')
   })
 })
 
@@ -137,7 +137,7 @@ describe('what the page saves (REB-530)', () => {
     const hub = payloadOf({ ...LINK, buttonMeta: 'area', action: 'signed_in' })
     expect(JSON.stringify(hub)).not.toContain('button_url')
     const list = payloadOf({ ...LINK, source: 'list', segueId: 'c1' })
-    expect(list).toEqual({ nome: 'Nuova campagna', subject: 'o', text: 't', button_text: 'b', button_meta: 'link', button_url: LUMA })
+    expect(list).toEqual({ name: 'Nuova campagna', subject: 'o', text: 't', button_text: 'b', button_meta: 'link', button_url: LUMA })
   })
 
   it('reads a stored address back into the field, and an empty one as nothing typed', () => {

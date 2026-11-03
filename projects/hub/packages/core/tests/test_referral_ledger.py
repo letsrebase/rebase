@@ -44,7 +44,7 @@ from rebase_core.referrals import ReferralService
 
 
 @pytest.mark.parametrize(
-    ("status", "cancelled", "mode", "giorni", "expected"),
+    ("status", "cancelled", "mode", "days", "expected"),
     [
         ("draft", False, "to_work_unit", 20, Decimal("700.00")),
         ("awaiting_signature", False, "to_work_unit", None, Decimal("35.00")),
@@ -83,8 +83,8 @@ def test_the_match_list_shows_a_referral_projected_then_real_then_by_state(
     assert [
         (r.kind, r.referrer_name, r.status, r.rate, r.amount, r.reward_id) for r in before.referrals
     ] == [
-        ("freelancer", "Mario Rossi", "previsto", Decimal("0.1000"), Decimal("700.00"), None),
-        ("company", "Mario Rossi", "previsto", Decimal("0.3000"), Decimal("2100.00"), None),
+        ("freelancer", "Mario Rossi", "expected", Decimal("0.1000"), Decimal("700.00"), None),
+        ("company", "Mario Rossi", "expected", Decimal("0.3000"), Decimal("2100.00"), None),
     ]
 
     _sign_the_letter(clean_referrals, renderer, fake, match)
@@ -154,14 +154,14 @@ def test_a_match_with_no_referral_lists_none_and_an_unpriceable_one_projects_not
     service = MatchService(clean_referrals, FakeRenderer(draft=False), SIGNER, today=lambda: TODAY)
     plain = service.create(plain_id, _match_body(company_id), admin_id)
     body = _match_body(company_id, expected_days=None)
-    body.letter.mode = body.letter.unit = "to_body"
+    body.letter.mode, body.letter.unit = "to_body", "a corpo"
     lump = service.create(referred_id, body, admin_id)
 
     listed = {item.id: item for item in _match_list(clean_referrals)}
 
     assert listed[plain.id].referrals == []
     (side,) = listed[lump.id].referrals
-    assert (side.status, side.amount) == ("previsto", None)
+    assert (side.status, side.amount) == ("expected", None)
     assert listed[lump.id].unit_letter == "to_body"
 
 
@@ -175,7 +175,7 @@ def test_a_cancelled_match_still_names_its_referral_but_promises_no_amount(
 
     (row,) = _match_list(clean_referrals)
 
-    assert [(r.status, r.amount) for r in row.referrals] == [("previsto", None), ("previsto", None)]
+    assert [(r.status, r.amount) for r in row.referrals] == [("expected", None), ("expected", None)]
 
 
 def test_a_referrer_with_a_card_of_his_own_is_named_with_it(clean_referrals: Session) -> None:

@@ -104,7 +104,7 @@ def test_the_sent_copy_says_the_day_it_left_and_prints_the_tax_data_saved_since_
     assert framework.data["professionista-domicilio"] == "Corso Como 1, Milano"
     document, data = renderer.calls[-1]
     assert document == "framework-agreement" and data == framework.data
-    assert framework.pdf == b"%PDF-1.7 fake contratto-quadro"
+    assert framework.pdf == b"%PDF-1.7 fake framework-agreement"
     assert framework.draft_text is False
 
 
@@ -234,7 +234,7 @@ def test_a_draft_text_leaves_on_the_preview_when_the_setting_allows_it(clean: Se
     assert framework.draft_text is True
     assert framework.status == "sent"
     [envelope] = fake.envelopes.values()
-    assert envelope.pdf == framework.pdf == b"%PDF-1.7 fake contratto-quadro"
+    assert envelope.pdf == framework.pdf == b"%PDF-1.7 fake framework-agreement"
 
 
 def test_without_rebases_signer_nothing_leaves(clean: Session) -> None:
@@ -316,8 +316,8 @@ def test_a_cancelled_match_has_nothing_to_send(clean: Session) -> None:
 def test_a_letter_whose_framework_was_refused_gets_a_new_one_when_its_match_is_sent(
     clean: Session,
 ) -> None:
-    """A framework agreement refused or cancelled while its letter waited: «Invia per la
-    firma» on the match writes a new one from today's tax data and sends it."""
+    """A framework agreement refused or cancelled while its letter waited:
+    «Invia per la firma» on the match writes a new one from today's tax data and sends it."""
     admin_id, freelancer_id, company_id = _setup(clean)
     renderer, fake = FakeRenderer(draft=False), FakeDocumenso()
     match = _draft(clean, renderer, freelancer_id, company_id, admin_id)

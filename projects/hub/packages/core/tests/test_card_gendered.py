@@ -112,7 +112,7 @@ RUBY_SKILLS = ["Ruby on Rails", "PostgreSQL"]
 def test_a_first_name_inside_the_persons_own_skill_is_the_skill(clean_hub: Session) -> None:
     """Ruby who writes Ruby on Rails: where the role or the summary writes one of the
     card's own skills whole, the first name inside it is the technology."""
-    freelancer_id = apply_freelancer(clean_hub, nome="Ruby")
+    freelancer_id = apply_freelancer(clean_hub, first_name="Ruby")
     card = {
         **CARD,
         "role": "Ruby on Rails developer",
@@ -138,7 +138,7 @@ def test_a_first_name_that_is_also_a_skill_still_names_the_person(
     clean_hub: Session, field: str, value: str
 ) -> None:
     """The same Ruby, written as herself rather than inside «Ruby on Rails», is named."""
-    freelancer_id = apply_freelancer(clean_hub, nome="Ruby")
+    freelancer_id = apply_freelancer(clean_hub, first_name="Ruby")
     llm = RecordingCall([card_response({**CARD, "skills": RUBY_SKILLS, field: value})])
 
     read = CardWriter(clean_hub, llm).write(freelancer_id)
@@ -182,7 +182,7 @@ def test_the_prompt_keeps_the_gender_out() -> None:
     for kept in (
         "Write every text in Italian",
         "Never write the person's name",
-        "Name a place only in luogo",
+        "Name a place only in location",
         "Use only what the CV says",
     ):
         assert kept in system

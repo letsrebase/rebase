@@ -175,7 +175,7 @@ export function FrameworkCard({
   busy: boolean
   error: string | null
 }) {
-  const headingId = frameworkHeadingId(framework?.regime ?? 'partita_iva')
+  const headingId = frameworkHeadingId(framework?.regime ?? 'vat_registered')
   return (
     <section aria-labelledby={headingId} className="space-y-2">
       <Card>
@@ -183,7 +183,7 @@ export function FrameworkCard({
           <CardTitle>
             {/* Focusable by the page alone, to land on when an action took its control away. */}
             <h2 id={headingId} tabIndex={-1}>
-              {framework?.kind ?? 'Contratto quadro'}
+              {framework?.label ?? 'Contratto quadro'}
             </h2>
           </CardTitle>
           {framework && (
@@ -243,7 +243,7 @@ function MatchCard({ match, handles, busy }: { match: Match; handles: ActionHand
         </CardHeader>
         <CardContent className="space-y-3">
           <p>{match.situation}</p>
-          <p className="text-sm text-muted-foreground">{`${match.letter.kind} n. ${match.letter.number}`}</p>
+          <p className="text-sm text-muted-foreground">{`${match.letter.label} n. ${match.letter.number}`}</p>
           <NextSteps
             next={match.next_action}
             others={match.other_actions}

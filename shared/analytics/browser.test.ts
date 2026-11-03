@@ -54,7 +54,7 @@ describe('on a developer machine', () => {
     expect(a.initAnalytics({ hostname: 'localhost' })).toBe(false)
     await settled()
     a.identifyUser('u1', { email: 'a@b.it' })
-    a.identifyGroup('spazio', 'root')
+    a.identifyGroup('space', 'root')
     a.capture('cliente_creato')
     a.resetUser()
     expect(init).not.toHaveBeenCalled()
@@ -162,12 +162,12 @@ describe('on a real host', () => {
   it('passes identify, group, capture and reset through', async () => {
     a.initAnalytics({ hostname: 'pigro.letsrebase.com' })
     await settled()
-    a.identifyUser('u1', { email: 'a@b.it', nome: 'Ada' })
-    a.identifyGroup('spazio', 'studio', { nome: 'Studio' })
+    a.identifyUser('u1', { email: 'a@b.it', name: 'Ada' })
+    a.identifyGroup('space', 'studio', { name: 'Studio' })
     a.capture('cliente_creato', { via: 'ui' })
     a.resetUser()
-    expect(posthog.identify).toHaveBeenCalledWith('u1', { email: 'a@b.it', nome: 'Ada' })
-    expect(posthog.group).toHaveBeenCalledWith('spazio', 'studio', { nome: 'Studio' })
+    expect(posthog.identify).toHaveBeenCalledWith('u1', { email: 'a@b.it', name: 'Ada' })
+    expect(posthog.group).toHaveBeenCalledWith('space', 'studio', { name: 'Studio' })
     expect(posthog.capture).toHaveBeenCalledWith('cliente_creato', { via: 'ui' })
     expect(posthog.reset).toHaveBeenCalledTimes(1)
   })
@@ -177,7 +177,7 @@ describe('on a page with public routes (requireConsent)', () => {
   it('measures nothing until the visitor said yes on the website', async () => {
     stubBrowser(null)
     expect(a.initAnalytics({ hostname: 'letsrebase.com', requireConsent: true })).toBe(false)
-    a.capture('wizard_iniziato')
+    a.capture('wizard_started')
     await settled()
     expect(init).not.toHaveBeenCalled()
     expect(posthog.capture).not.toHaveBeenCalled()
@@ -211,14 +211,14 @@ describe('on a page with public routes (requireConsent)', () => {
   it('starts for a person who signs in, and stops again at logout', async () => {
     stubBrowser(null)
     a.initAnalytics({ hostname: 'letsrebase.com', requireConsent: true })
-    a.identifyUser('u1', { ruolo: 'admin' })
+    a.identifyUser('u1', { role: 'admin' })
     await settled()
     expect(init).toHaveBeenCalledTimes(1)
-    expect(posthog.identify).toHaveBeenCalledWith('u1', { ruolo: 'admin' })
+    expect(posthog.identify).toHaveBeenCalledWith('u1', { role: 'admin' })
     a.resetUser()
     expect(posthog.reset).toHaveBeenCalledTimes(1)
     expect(posthog.opt_out_capturing).toHaveBeenCalledTimes(1)
-    a.capture('wizard_iniziato')
+    a.capture('wizard_started')
     expect(posthog.capture).not.toHaveBeenCalled()
     a.identifyUser('u2')
     expect(posthog.opt_in_capturing).toHaveBeenCalledTimes(1)
@@ -232,8 +232,8 @@ describe('on a page with public routes (requireConsent)', () => {
     await settled()
     a.resetUser()
     expect(posthog.opt_out_capturing).not.toHaveBeenCalled()
-    a.capture('wizard_iniziato')
-    expect(posthog.capture).toHaveBeenCalledWith('wizard_iniziato', undefined)
+    a.capture('wizard_started')
+    expect(posthog.capture).toHaveBeenCalledWith('wizard_started', undefined)
   })
 })
 
@@ -265,24 +265,24 @@ describe('the magic-link token scrubber', () => {
       uuid: 'ev1',
       event: '$pageview',
       properties: {
-        $current_url: 'https://letsrebase.com/hub/entra?t=abc&x=1',
-        $referrer: 'https://letsrebase.com/hub/entra?t=abc&x=1',
+        $current_url: 'https://letsrebase.com/hub/verify?t=abc&x=1',
+        $referrer: 'https://letsrebase.com/hub/verify?t=abc&x=1',
         x: 1,
       },
     })
-    expect(scrubbed?.properties.$current_url).toBe('https://letsrebase.com/hub/entra?x=1')
-    expect(scrubbed?.properties.$referrer).toBe('https://letsrebase.com/hub/entra?x=1')
+    expect(scrubbed?.properties.$current_url).toBe('https://letsrebase.com/hub/verify?x=1')
+    expect(scrubbed?.properties.$referrer).toBe('https://letsrebase.com/hub/verify?x=1')
     expect(scrubbed?.properties.x).toBe(1)
   })
 
-  it('removes the team page\'s proposta and descrizione too, and keeps the rest (REB-675)', async () => {
+  it('removes the team page\'s proposal and description too, and keeps the rest (REB-675)', async () => {
     a.initAnalytics({ hostname: 'letsrebase.com' })
     await settled()
     const beforeSend = init.mock.calls[0]?.[1]?.before_send as (
       result: CaptureResult | null,
     ) => CaptureResult | null
     const url =
-      'https://letsrebase.com/hub/team?proposta=5b1f2c3d-4e5f-4a6b-8c7d-00000000abcd&descrizione=Siamo%20ACME%20e%20ci%20serve%20un%20team&da=home'
+      'https://letsrebase.com/hub/team?proposal=5b1f2c3d-4e5f-4a6b-8c7d-00000000abcd&description=Siamo%20ACME%20e%20ci%20serve%20un%20team&from=home'
     const scrubbed = beforeSend({
       event: '$pageview',
       uuid: 'u',
@@ -290,9 +290,9 @@ describe('the magic-link token scrubber', () => {
       properties: { $current_url: url, $referrer: url },
       $set_once: { $initial_current_url: url },
     })
-    expect(scrubbed?.properties.$current_url).toBe('https://letsrebase.com/hub/team?da=home')
-    expect(scrubbed?.properties.$referrer).toBe('https://letsrebase.com/hub/team?da=home')
-    expect(scrubbed?.$set_once?.$initial_current_url).toBe('https://letsrebase.com/hub/team?da=home')
+    expect(scrubbed?.properties.$current_url).toBe('https://letsrebase.com/hub/team?from=home')
+    expect(scrubbed?.properties.$referrer).toBe('https://letsrebase.com/hub/team?from=home')
+    expect(scrubbed?.$set_once?.$initial_current_url).toBe('https://letsrebase.com/hub/team?from=home')
   })
 
   it('scrubs the same parameters from what a recording keeps of a URL (REB-675)', async () => {
@@ -303,10 +303,10 @@ describe('the magic-link token scrubber', () => {
     ) => CapturedNetworkRequest
     expect(mask).toBeTypeOf('function')
     const request = {
-      name: 'https://letsrebase.com/hub/team?proposta=5b1f2c3d-4e5f-4a6b-8c7d-00000000abcd&t=abc&da=home',
+      name: 'https://letsrebase.com/hub/team?proposal=5b1f2c3d-4e5f-4a6b-8c7d-00000000abcd&t=abc&from=home',
       method: 'GET',
     } as CapturedNetworkRequest
-    expect(mask(request)).toMatchObject({ name: 'https://letsrebase.com/hub/team?da=home', method: 'GET' })
+    expect(mask(request)).toMatchObject({ name: 'https://letsrebase.com/hub/team?from=home', method: 'GET' })
     const clean = { name: 'https://letsrebase.com/hub/me', method: 'GET' } as CapturedNetworkRequest
     expect(mask(clean)).toBe(clean)
   })
@@ -324,9 +324,9 @@ describe('the magic-link token scrubber', () => {
       uuid: 'ev1',
       event: '$pageview',
       properties: {},
-      $set_once: { $initial_current_url: 'https://letsrebase.com/hub/entra?t=abc&x=1' },
+      $set_once: { $initial_current_url: 'https://letsrebase.com/hub/verify?t=abc&x=1' },
     })
-    expect(scrubbed?.$set_once?.$initial_current_url).toBe('https://letsrebase.com/hub/entra?x=1')
+    expect(scrubbed?.$set_once?.$initial_current_url).toBe('https://letsrebase.com/hub/verify?x=1')
   })
 
   it('is a no-op on an event with none of those properties, on an event with no $set_once, and on a null result', async () => {

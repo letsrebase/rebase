@@ -39,17 +39,21 @@ def _wipe(factory: sessionmaker[Session]) -> None:
 def _seed(factory: sessionmaker[Session], *emails: str) -> list[UUID]:
     session = factory()
     try:
-        session.add(User(id=IVAN.id, email=IVAN.email, nome=IVAN.nome, last_name="", role="admin"))
+        session.add(
+            User(
+                id=IVAN.id, email=IVAN.email, first_name=IVAN.first_name, last_name="", role="admin"
+            )
+        )
         session.commit()
         ids = []
         for email in emails:
             read, _ = FreelancerService(session).apply(
                 FreelancerCreate(
-                    nome="Ada",
+                    first_name="Ada",
                     last_name="Lovelace",
                     email=email,
                     daily_rate=Decimal("450"),
-                    posizione="Backend developer",
+                    job_title="Backend developer",
                     remote="remote",
                 ),
                 PDF,
@@ -74,7 +78,7 @@ async def test_merge_freelancers_moves_the_card_and_answers_counts_and_the_actio
         )
     assert done["survivor_freelancer_id"] == str(keep)
     assert done["absorbed_freelancer_id"] == str(other)
-    assert done["cv"] in ("invariato", "assorbita") and "action_id" in done
+    assert done["cv"] in ("kept", "absorbed") and "action_id" in done
     session = factory()
     absorbed = session.scalar(select(Freelancer).where(Freelancer.id == other))
     assert absorbed is not None and absorbed.deleted_at is not None

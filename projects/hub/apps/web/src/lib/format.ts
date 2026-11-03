@@ -59,7 +59,7 @@ export function formatBytes(size: number): string {
   return `${(size / (1024 * 1024)).toFixed(1)} MB`
 }
 
-export const RemoteLabels = { remote: 'Da remoto', hybrid: 'Ibrido', on_site: 'In sede' } as const
+export const REMOTE_LABELS = { remote: 'Da remoto', hybrid: 'Ibrido', on_site: 'In sede' } as const
 export const FREELANCER_STATES = ['new', 'contacted', 'active', 'discarded'] as const
 /** The states the freelancer list filters by: the card's four, plus the pseudo-state of a
  *  signup with no card (ORB-163). */
@@ -113,7 +113,7 @@ export const TEAM_ORIGIN_LABELS: Record<string, string> = {
   admin: 'Admin',
 }
 export const TALENT_ANSWER_LABELS: Record<string, string> = {
-  si: 'Sì',
+  yes: 'Sì',
   no: 'No',
 }
 /** A talent who has the availability mail and has not answered (D1): core's
@@ -163,7 +163,7 @@ export const VETTED_UNMARK_LABEL = 'Togli la verifica'
 /** REB-519: the badge a vetted talent's card carries in the talent cloud, core's
  *  `team_words.CLOUD_VETTED_LABEL`, held equal by `tests/test_web_labels.py`. */
 export const CLOUD_VETTED_LABEL = 'Verificato da rebase'
-/** A company request that came from the team builder's beta box (`?da=team-builder`,
+/** A company request that came from the team builder's beta box (`?from=team-builder`,
  *  spec § 4.3), and the word its row in «Aziende» shows: core's `team_words`
  *  `TEAM_BUILDER_ORIGIN` and `TEAM_BUILDER_ORIGIN_LABEL`, held equal by
  *  `tests/test_web_labels.py`. */
@@ -199,7 +199,7 @@ export const REFERRAL_VERIFIED_VIA_LABELS: Record<string, string> = {
   history: 'Già contava prima della verifica',
 }
 /** Which side of a match a referral brought in. */
-export const REFERRAL_KIND_LABELS: Record<string, string> = { freelancer: 'freelance', company: 'company' }
+export const REFERRAL_KIND_LABELS: Record<string, string> = { freelancer: 'freelance', company: 'azienda' }
 
 /** An invoice the hours of «Consuntivo» sit on (REB-503), in the words PigroCRM's own
  *  invoice list uses for its state and its payment: the CRM's vocabulary, copied, since

@@ -12,16 +12,16 @@ describe('a lead offers to draft a card in place (ORB-155, REB-283)', () => {
       if (init?.method === 'POST') {
         expect(url).toBe('/api/hub/signups/s2/card')
         expect(JSON.parse(init.body as string)).toEqual({
-          nome: 'Bob',
+          first_name: 'Bob',
           last_name: 'Ross',
           linkedin_url: 'https://www.linkedin.com/in/bob',
           links: [],
           sources: ['https://bob.dev'],
         })
-        return answer(201, { ...INCOMPLETE, id: 'f9', nome: 'Bob', last_name: 'Ross' })
+        return answer(201, { ...INCOMPLETE, id: 'f9', first_name: 'Bob', last_name: 'Ross' })
       }
       if (url === '/api/hub/freelancers/f9') {
-        return answer(200, { ...INCOMPLETE, id: 'f9', nome: 'Bob', last_name: 'Ross' })
+        return answer(200, { ...INCOMPLETE, id: 'f9', first_name: 'Bob', last_name: 'Ross' })
       }
       if (url === '/api/hub/freelancers/f9/audit') {
         return answer(200, [])
@@ -47,9 +47,9 @@ describe('a lead offers to draft a card in place (ORB-155, REB-283)', () => {
   it('drafts a card with a rate typed as «1.500» as 1500 (REB-485)', async () => {
     const spy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
       const url = String(input)
-      if (init?.method === 'POST') return answer(201, { ...INCOMPLETE, id: 'f9', nome: 'Bob', last_name: 'Ross' })
+      if (init?.method === 'POST') return answer(201, { ...INCOMPLETE, id: 'f9', first_name: 'Bob', last_name: 'Ross' })
       if (url === '/api/hub/freelancers/f9') {
-        return answer(200, { ...INCOMPLETE, id: 'f9', nome: 'Bob', last_name: 'Ross' })
+        return answer(200, { ...INCOMPLETE, id: 'f9', first_name: 'Bob', last_name: 'Ross' })
       }
       if (url === '/api/hub/freelancers/f9/audit') return answer(200, [])
       return answer(200, LEAD_TALENT)

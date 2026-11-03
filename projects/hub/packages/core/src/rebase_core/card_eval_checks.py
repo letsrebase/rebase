@@ -1,7 +1,8 @@
 """The checks of a card that need no model (REB-842): what a rule can say about it, so the
 judging call is asked only what a rule cannot.
 
-* `experience_years`, recomputed from the CV's dated periods when the text allows a reliable parse, and
+* `experience_years`, recomputed from the CV's dated periods when the text allows a reliable parse,
+and
   left to the judge when it does not;
 * the anonymity, read again by `card_guard.identifying` against every identifier the
   person's own data holds, whichever prompt wrote the card.
@@ -237,7 +238,8 @@ YearsMode = Literal["admin", "undated", "recomputed", "judged"]
 
 @dataclass(frozen=True)
 class YearsCheck:
-    """What the rule says of a card's `experience_years`. `ok` is `None` when the CV does not allow a
+    """What the rule says of a card's `experience_years`. `ok` is `None` when the CV does not allow
+    a
     reliable parse (`mode` `judged`): the judging call then decides. `low` is the years of
     the CV's periods at their shortest and without the studies, `high` at their longest and
     with them; `None` when no period was found."""

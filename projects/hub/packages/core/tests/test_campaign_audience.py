@@ -86,7 +86,7 @@ def test_a_cv_uploaded_after_the_snapshot_counts_and_one_from_before_does_not(
     card = person(clean, "nocv@studio.it", cv=False)
     candidate = candidates_for_state(clean, "missing_cv")[0]
     before = snapshot(clean, candidate, T0)
-    assert before["ha_cv"] is False and before["has_card"] is True
+    assert before["has_cv"] is False and before["has_card"] is True
     row = recipient_for(clean, candidate, before)
     assert done_at(clean, row, "cv") is None
     card.cv_size, card.cv_filename, card.cv_bytes = 4, "cv.pdf", b"%PDF"
@@ -112,7 +112,7 @@ def test_a_lead_who_makes_a_card_has_created_a_profile(clean: Session) -> None: 
     candidate = candidates_for_state(clean, "lead")[0]
     row = recipient_for(clean, candidate, snapshot(clean, candidate, T0 - timedelta(days=1)))
     assert done_at(clean, row, "profile_created") is None
-    person(clean, "giulia@studio.it", nome="Giulia")
+    person(clean, "giulia@studio.it", first_name="Giulia")
     assert done_at(clean, row, "profile_created") is not None
 
 
@@ -121,7 +121,7 @@ def test_any_of_a_referentes_open_requests_updated_counts(
 ) -> None:
     first = company(clean, "info@block-buy.it")
     company(clean, "info@block-buy.it", status="contacted")
-    candidate = candidates_for_state(clean, "azienda_aperta")[0]
+    candidate = candidates_for_state(clean, "company_open")[0]
     row = recipient_for(clean, candidate, snapshot(clean, candidate, datetime.now(UTC)))
     assert done_at(clean, row, "request_updated") is None
     first.duration = "18 mesi"
@@ -152,7 +152,7 @@ def test_a_card_soft_deleted_after_completing_counts_as_not_done(
     card = person(clean, "gone@studio.it", cv=False)
     candidate = candidates_for_state(clean, "missing_cv")[0]
     before = snapshot(clean, candidate, T0)
-    assert before["ha_cv"] is False and before["complete"] is False
+    assert before["has_cv"] is False and before["complete"] is False
     row = recipient_for(clean, candidate, before)
     card.cv_size, card.cv_filename, card.cv_bytes = 4, "cv.pdf", b"%PDF"
     card.deleted_at = datetime.now(UTC)
@@ -175,21 +175,20 @@ def test_filters_reuse_talents_and_merge_one_person_across_cases(
     assert [c.email for c in candidates(clean, campaign)] == ["giulia@studio.it"]
 
 
-def test_to_stored_origin_filter_is_still_the_marketing_page(
+def test_to_stored_origin_page_filter_is_the_marketing_page(
     clean: Session,  # noqa: F811  (fixture)
 ) -> None:
-    """REB-798: the list's `origin` became the channel a row shows; a campaign stored
-    before that keeps `origin` for the page the person started from, and the replay
-    asks the list for `origin_page`."""
+    """REB-798: the list's `origin_page` is the marketing page the person started from,
+    and the replay asks the list for it by that name."""
     ada = person(clean, "ada@studio.it", rate=False)
     ada.origin = "pigrocrm"
-    person(clean, "bob@studio.it", nome="Bob")
+    person(clean, "bob@studio.it", first_name="Bob")
     clean.commit()
     campaign = campaign_row(
         clean,
         source="filters",
         journey_status=None,
-        filters={"list": "talents", "origin": "pigrocrm"},
+        filters={"list": "talents", "origin_page": "pigrocrm"},
     )
     assert [c.email for c in candidates(clean, campaign)] == ["ada@studio.it"]
 
@@ -278,7 +277,7 @@ def test_the_legal_entities_filter_merges_open_requests_and_drops_the_closed_one
     found = candidates(clean, campaign)
     assert [c.email for c in found] == ["info@block-buy.it"]
     assert set(found[0].company_ids) == {first.id, second.id}
-    assert found[0].nome == "Ciro"
+    assert found[0].name == "Ciro"
 
 
 def test_a_cross_case_address_across_a_lead_and_a_card_is_one_lowercase_row(
@@ -319,7 +318,7 @@ def test_no_list_snapshot_or_check_reads_a_cvs_bytes(clean: Session) -> None:  #
         clean, source="filters", journey_status=None, filters={"list": "talents", "has_cv": True}
     )
     with statements(clean) as seen:
-        for state in ("missing_cv", "complete", "scheda_vuota_nuovi", "scheda_vuota_entrati"):
+        for state in ("missing_cv", "complete", "card_empty_new", "card_empty_signed_in"):
             candidates_for_state(clean, state)
         candidate = candidates_for_state(clean, "missing_cv")[0]
         row = recipient_for(clean, candidate, snapshot(clean, candidate, T0))
@@ -657,7 +656,7 @@ def _reference_done_at(
             created = not before.get("has_card") and card.created_at > moment
             return card.created_at if created else None
         if action == "cv":
-            if before.get("ha_cv") or card.cv_size is None:
+            if before.get("has_cv") or card.cv_size is None:
                 return None
             noted = session.scalar(
                 select(func.min(Note.created_at)).where(
@@ -697,7 +696,7 @@ def _a_waiting_crowd(session: Session) -> tuple[Any, list[CampaignRecipient]]:
     lead(session, "lead@studio.it")
     first = company(session, "azienda@studio.it")
     company(session, "altra@studio.it")
-    for state in ("missing_cv", "complete", "lead", "azienda_aperta"):
+    for state in ("missing_cv", "complete", "lead", "company_open"):
         candidates_ += candidates_for_state(session, state)
     rows = []
     for n, candidate in enumerate(candidates_):
@@ -728,7 +727,7 @@ def _a_waiting_crowd(session: Session) -> tuple[Any, list[CampaignRecipient]]:
     assert done0 is not None and done1 is not None
     session.add(Login(user_id=done0.id, logged_at=T0 + timedelta(hours=2)))
     session.add(Login(user_id=done1.id, logged_at=T0 - timedelta(hours=2)))
-    person(session, "lead@studio.it", nome="Giulia")
+    person(session, "lead@studio.it", first_name="Giulia")
     first.duration = "18 mesi"
     session.commit()
     return parent, rows
@@ -772,7 +771,7 @@ def test_waiting_rows_reads_a_fixed_number_of_statements(
                 email=f"extra{action}{n}@studio.it",
                 kind="freelancer",
                 code=f"x{n}"[:8],
-                before={"t": T0.isoformat(), "ha_cv": False},
+                before={"t": T0.isoformat(), "has_cv": False},
                 unsubscribe_token=f"x{action}{n}",
                 status="sent",
                 sent_at=T0,

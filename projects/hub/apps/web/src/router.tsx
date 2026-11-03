@@ -19,6 +19,7 @@ import { parseSearch } from '@/lib/search'
 import { Shell } from '@/components/Shell'
 import { Chooser } from '@/pages/Chooser'
 import { SignedInLayout } from '@/pages/SignedInLayout'
+import { modernSearch, searchParam } from '@/lib/legacy'
 import { Thanks } from '@/pages/Thanks'
 
 // Every page but the chooser and the two frames is its own chunk: an anonymous visitor on
@@ -30,11 +31,11 @@ const TeamAnswer = lazyRouteComponent(() => import('@/pages/TeamAnswer'), 'TeamA
 const AdminLogins = lazyRouteComponent(() => import('@/pages/admin/Logins'), 'AdminLogins')
 const AdminAdmins = lazyRouteComponent(() => import('@/pages/admin/Admins'), 'AdminAdmins')
 const AdminAgents = lazyRouteComponent(() => import('@/pages/admin/Agents'), 'AdminAgents')
-const AdminModelsAi = lazyRouteComponent(() => import('@/pages/admin/AiModels'), 'AdminModelsAi')
+const AdminAiModels = lazyRouteComponent(() => import('@/pages/admin/AiModels'), 'AdminAiModels')
 const AdminGuard = lazyRouteComponent(() => import('@/pages/admin/AdminGuard'), 'AdminGuard')
 const AdminGuide = lazyRouteComponent(() => import('@/pages/admin/Guide'), 'AdminGuide')
 const AdminPigro = lazyRouteComponent(() => import('@/pages/admin/Pigro'), 'AdminPigro')
-const AdminActuals = lazyRouteComponent(() => import('@/pages/admin/MatchReport'), 'AdminActuals')
+const AdminMatchReport = lazyRouteComponent(() => import('@/pages/admin/MatchReport'), 'AdminMatchReport')
 const AdminContracts = lazyRouteComponent(() => import('@/pages/admin/Contracts'), 'AdminContracts')
 const AdminCampaign = lazyRouteComponent(() => import('@/pages/admin/Campaign'), 'AdminCampaign')
 const AdminCampaigns = lazyRouteComponent(() => import('@/pages/admin/Campaigns'), 'AdminCampaigns')
@@ -44,22 +45,22 @@ const AdminCreateMatch = lazyRouteComponent(() => import('@/pages/admin/CreateMa
 const AdminDuplicates = lazyRouteComponent(() => import('@/pages/admin/Duplicates'), 'AdminDuplicates')
 const AdminMatches = lazyRouteComponent(() => import('@/pages/admin/Matches'), 'AdminMatches')
 const AdminReferrals = lazyRouteComponent(() => import('@/pages/admin/Referrals'), 'AdminReferrals')
-const AdminProposalsTeam = lazyRouteComponent(() => import('@/pages/admin/TeamProposals'), 'AdminProposalsTeam')
-const AdminRequestTeam = lazyRouteComponent(() => import('@/pages/admin/TeamRequest'), 'AdminRequestTeam')
-const AdminRequestsTeam = lazyRouteComponent(() => import('@/pages/admin/TeamRequests'), 'AdminRequestsTeam')
-const Unsubscribe = lazyRouteComponent(() => import('@/pages/Unsubscribe'), 'Disiscrizione')
+const AdminTeamProposals = lazyRouteComponent(() => import('@/pages/admin/TeamProposals'), 'AdminTeamProposals')
+const AdminTeamRequest = lazyRouteComponent(() => import('@/pages/admin/TeamRequest'), 'AdminTeamRequest')
+const AdminTeamRequests = lazyRouteComponent(() => import('@/pages/admin/TeamRequests'), 'AdminTeamRequests')
+const Unsubscribe = lazyRouteComponent(() => import('@/pages/Unsubscribe'), 'Unsubscribe')
 const AdminCompanies = lazyRouteComponent(() => import('@/pages/admin/companies/CompanyList'), 'AdminCompanies')
 const AdminCompanyDetail = lazyRouteComponent(() => import('@/pages/admin/companies/CompanyDetail'), 'AdminCompanyDetail')
 const AdminFreelancerDetail = lazyRouteComponent(() => import('@/pages/admin/freelancer/FreelancerDetail'), 'AdminFreelancerDetail')
 const AdminTalents = lazyRouteComponent(() => import('@/pages/admin/talent/TalentList'), 'AdminTalents')
 const AdminTalentLead = lazyRouteComponent(() => import('@/pages/admin/talent/LeadForm'), 'AdminTalentLead')
-const Login = lazyRouteComponent(() => import('@/pages/member/Login'), 'Accedi')
+const Login = lazyRouteComponent(() => import('@/pages/member/Login'), 'Login')
 const Area = lazyRouteComponent(() => import('@/pages/member/Area'), 'Area')
 const Cloud = lazyRouteComponent(() => import('@/pages/member/Cloud'), 'Cloud')
-const Verify = lazyRouteComponent(() => import('@/pages/member/Verify'), 'Entra')
-const Edit = lazyRouteComponent(() => import('@/pages/member/Edit'), 'Modifica')
+const Verify = lazyRouteComponent(() => import('@/pages/member/Verify'), 'Verify')
+const Edit = lazyRouteComponent(() => import('@/pages/member/Edit'), 'Edit')
 const EditCompany = lazyRouteComponent(() => import('@/pages/member/EditCompany'), 'EditCompany')
-const NewRequestCompany = lazyRouteComponent(() => import('@/pages/member/NewCompanyRequest'), 'NewRequestCompany')
+const NewCompanyRequest = lazyRouteComponent(() => import('@/pages/member/NewCompanyRequest'), 'NewCompanyRequest')
 
 /** A present, non-empty string out of `Record<string, unknown>`'s raw search params,
  *  or `undefined` -- the shape every optional filter on `/admin/talent` and
@@ -150,10 +151,12 @@ const team = createRoute({
   validateSearch: (
     search: Record<string, unknown>,
   ): { proposal?: string; description?: string; people?: number } => {
-    const proposal = strParam(search.proposal)
-    const description = strParam(search.description)
+    // The links made before the 2026-11 rename (`proposta`, `descrizione`, `persone`) are
+    // accepted for good: the landing's form and the mails already sent carry them.
+    const proposal = strParam(searchParam(search, 'proposal', 'proposta'))
+    const description = strParam(searchParam(search, 'description', 'descrizione'))
     // The headcount the landing's form sends beside the description: 1 to 10, whole.
-    const people = Number(strParam(search.people))
+    const people = Number(strParam(searchParam(search, 'people', 'persone')))
     return {
       ...(proposal ? { proposal } : {}),
       ...(description ? { description } : {}),
@@ -177,7 +180,8 @@ const thanks = createRoute({
   getParentRoute: () => publicLayout,
   path: '/thanks',
   validateSearch: (search: Record<string, unknown>): { who: 'freelance' | 'company' } => ({
-    who: search.who === 'company' ? 'company' : 'freelance',
+    // `chi=azienda` is what the wizards and the mails said before the 2026-11 rename.
+    who: searchParam(search, 'who', 'chi') === 'company' || searchParam(search, 'who', 'chi') === 'azienda' ? 'company' : 'freelance',
   }),
   component: Thanks,
 })
@@ -276,7 +280,7 @@ const meEditCompanyById = createRoute({
 const meNewCompany = createRoute({
   getParentRoute: () => me,
   path: '/new-company',
-  component: NewRequestCompany,
+  component: NewCompanyRequest,
 })
 // The talent cloud (REB-519, spec § 4.2): REB-518 opens its door from «Aziende», and the
 // nav's «Talent cloud» leads here while a grant of the person is live.
@@ -332,7 +336,7 @@ const adminTalent = createRoute({
   validateSearch: (search: Record<string, unknown>): TalentsFilters => ({
     status: strParam(search.status),
     q: strParam(search.q),
-    posizione: strParam(search.posizione),
+    job_title: strParam(search.job_title),
     remote:
       search.remote === 'remote' || search.remote === 'hybrid' || search.remote === 'on_site'
         ? (search.remote as Remote)
@@ -357,8 +361,8 @@ const adminTalent = createRoute({
 const adminTalentRedirect = createRoute({
   getParentRoute: () => adminArea,
   path: '/talenti',
-  beforeLoad: () => {
-    throw redirect({ to: '/admin/talent', search: true })
+  beforeLoad: ({ search }) => {
+    throw redirect({ to: '/admin/talent', search: () => modernSearch(search) as never })
   },
 })
 // REB-800: the people who are on the list twice, from the link on Talenti. A static
@@ -425,7 +429,7 @@ const adminMatches = createRoute({
 const adminTeamRequests = createRoute({
   getParentRoute: () => adminArea,
   path: '/team',
-  component: AdminRequestsTeam,
+  component: AdminTeamRequests,
   validateSearch: (search: Record<string, unknown>): TeamRequestsFilters => ({
     status: strParam(search.status),
   }),
@@ -433,14 +437,14 @@ const adminTeamRequests = createRoute({
 const adminTeamRequest = createRoute({
   getParentRoute: () => adminArea,
   path: '/team/$id',
-  component: AdminRequestTeam,
+  component: AdminTeamRequest,
 })
 // 0028: «Proposte», every «Proponi il team» asked, filed or not; a static segment
 // beside `$id`, which the router ranks first. The outcome pill lives in the URL.
 const adminTeamProposals = createRoute({
   getParentRoute: () => adminArea,
   path: '/team/proposals',
-  component: AdminProposalsTeam,
+  component: AdminTeamProposals,
   validateSearch: (search: Record<string, unknown>): TeamProposalsFilters => ({
     outcome: strParam(search.outcome),
   }),
@@ -451,8 +455,8 @@ const adminTeamProposals = createRoute({
 const adminMatchReport = createRoute({
   getParentRoute: () => adminArea,
   path: '/matches/$id/report',
-  component: AdminActuals,
-  validateSearch: (search: Record<string, unknown>): { month?: string } => ({ month: periodParam(search.month) }),
+  component: AdminMatchReport,
+  validateSearch: (search: Record<string, unknown>): { month?: string } => ({ month: periodParam(modernSearch(search).month) }),
 })
 // P-REB-41: the list, a stub for the new/edit form (Task 20) and a stub for the
 // detail (Task 21). `adminCampaignNew` sits before `adminCampaign` in the tree below --
@@ -488,8 +492,8 @@ const adminCompanies = createRoute({
 const adminCompaniesRedirect = createRoute({
   getParentRoute: () => adminArea,
   path: '/aziende',
-  beforeLoad: () => {
-    throw redirect({ to: '/admin/companies', search: true })
+  beforeLoad: ({ search }) => {
+    throw redirect({ to: '/admin/companies', search: () => modernSearch(search) as never })
   },
 })
 // REB-870: «Nuova richiesta». Static, so it ranks above `/companies/$id`.
@@ -548,7 +552,7 @@ const adminAgents = createRoute({ getParentRoute: () => adminArea, path: '/agent
 const adminModelsAi = createRoute({
   getParentRoute: () => adminArea,
   path: '/ai-models',
-  component: AdminModelsAi,
+  component: AdminAiModels,
 })
 const adminAgentsRedirect = createRoute({
   getParentRoute: () => adminArea,
@@ -562,8 +566,8 @@ const adminAgentsRedirect = createRoute({
 const adminTeamProposalsRedirect = createRoute({
   getParentRoute: () => adminArea,
   path: '/team/proposte',
-  beforeLoad: () => {
-    throw redirect({ to: '/admin/team/proposals', search: true })
+  beforeLoad: ({ search }) => {
+    throw redirect({ to: '/admin/team/proposals', search: () => modernSearch(search) as never })
   },
 })
 const adminCompaniesNewRedirect = createRoute({

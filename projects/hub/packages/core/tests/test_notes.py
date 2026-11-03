@@ -34,11 +34,11 @@ def clean(hub_session: Session) -> Session:
 def _freelancer(session: Session) -> FreelancerRead:
     read, _ = FreelancerService(session).apply(
         FreelancerCreate(
-            nome="Ada",
+            first_name="Ada",
             last_name="Lovelace",
             email="ada@studio.it",
             daily_rate=Decimal("450"),
-            posizione="Backend developer",
+            job_title="Backend developer",
             remote="remote",
         ),
         PDF,
@@ -68,8 +68,8 @@ def _company(session: Session) -> CompanyRead:
     return read
 
 
-def _admin(session: Session, email: str = "ivan@rebase.it", nome: str = "Ivan") -> User:
-    admin = User(email=email, nome=nome, last_name="Rossi", role="admin")
+def _admin(session: Session, email: str = "ivan@rebase.it", first_name: str = "Ivan") -> User:
+    admin = User(email=email, first_name=first_name, last_name="Rossi", role="admin")
     session.add(admin)
     session.commit()
     return admin

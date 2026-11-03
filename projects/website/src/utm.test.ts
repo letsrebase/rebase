@@ -63,9 +63,9 @@ describe('carryUtm', () => {
     const utm = load()
     utm.carryUtm(fixture(['/hub/freelance']), '?utm_source=linkedin&utm_medium=paid', '/pigrocrm')
     expect(utm.UTM_STORAGE_KEY).toBe('rebase.utm')
-    expect(utm.ORIGIN_STORAGE_KEY).toBe('rebase.da')
+    expect(utm.ORIGIN_STORAGE_KEY).toBe('rebase.from')
     expect(window.sessionStorage.getItem('rebase.utm')).toBe('utm_source=linkedin&utm_medium=paid')
-    expect(window.sessionStorage.getItem('rebase.da')).toBe('pigrocrm')
+    expect(window.sessionStorage.getItem('rebase.from')).toBe('pigrocrm')
   })
 
   it('drops the names the keys had before REB-668 when it writes the new ones', () => {
@@ -74,11 +74,13 @@ describe('carryUtm', () => {
     // surviving a release skew.
     window.sessionStorage.setItem('orbiters.utm', 'utm_source=old')
     window.sessionStorage.setItem('orbiters.da', 'home')
+    window.sessionStorage.setItem('rebase.da', 'home')
     load().carryUtm(fixture(['/hub/freelance']), '?utm_source=linkedin', '/pigrocrm')
     expect(window.sessionStorage.getItem('rebase.utm')).toBe('utm_source=linkedin')
-    expect(window.sessionStorage.getItem('rebase.da')).toBe('pigrocrm')
+    expect(window.sessionStorage.getItem('rebase.from')).toBe('pigrocrm')
     expect(window.sessionStorage.getItem('orbiters.utm')).toBeNull()
     expect(window.sessionStorage.getItem('orbiters.da')).toBeNull()
+    expect(window.sessionStorage.getItem('rebase.da')).toBeNull()
   })
 
   it('never overrides a key a link already carries', () => {
@@ -94,7 +96,7 @@ describe('carryUtm', () => {
     expect(utm.carryUtm(root, '?ref=friend', '/pigrocrm')).toBe(2)
     expect(hrefsOf(root)).toEqual(['/hub/freelance?from=pigrocrm', '/hub/companies?from=pigrocrm'])
     expect(window.sessionStorage.getItem('rebase.utm')).toBeNull()
-    expect(window.sessionStorage.getItem('rebase.da')).toBe('pigrocrm')
+    expect(window.sessionStorage.getItem('rebase.from')).toBe('pigrocrm')
   })
 
   it('names the page by its path, home for the front door', () => {

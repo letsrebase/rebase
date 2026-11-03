@@ -49,7 +49,7 @@ class PigroMember(ResponseModel):
     """The hub member who owns a space, enough to name them and link their card."""
 
     id: UUID
-    nome: str
+    first_name: str
     last_name: str
 
 
@@ -173,11 +173,11 @@ class PigroRegistry:
         if not emails:
             return {}
         rows = session.execute(
-            select(Freelancer.id, User.email, User.nome, User.last_name)
+            select(Freelancer.id, User.email, User.first_name, User.last_name)
             .join(User, User.id == Freelancer.user_id)
             .where(func.lower(User.email).in_(emails))
         ).all()
         return {
-            email.lower(): PigroMember(id=freelancer_id, nome=nome, last_name=last_name)
-            for freelancer_id, email, nome, last_name in rows
+            email.lower(): PigroMember(id=freelancer_id, first_name=first_name, last_name=last_name)
+            for freelancer_id, email, first_name, last_name in rows
         }

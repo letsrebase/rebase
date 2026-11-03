@@ -86,7 +86,7 @@ class Card(BaseModel):
     experience_years: int | None = Field(ge=0, le=60)
 
 
-ANSWER = '{"riassunto": "Sviluppatore backend", "anni": 7}'
+ANSWER = '{"summary": "Sviluppatore backend", "experience_years": 7}'
 
 
 def _request(**changes: Any) -> LlmRequest:
@@ -115,7 +115,7 @@ def opener(hub_engine: Engine) -> Iterator[SessionOpener]:
         return closing(Session(hub_engine))
 
     with open_session() as session:
-        admin = User(email="ivan@rebase.it", nome="Ivan", last_name="Sala", role="admin")
+        admin = User(email="ivan@rebase.it", first_name="Ivan", last_name="Sala", role="admin")
         session.add(admin)
         session.commit()
         service = AiConfigService(session, _settings(), now=lambda: NOON)
@@ -131,7 +131,7 @@ def opener(hub_engine: Engine) -> Iterator[SessionOpener]:
             "key_last4 = NULL, saved_by = NULL, saved_at = NULL, enabled = false",
             "UPDATE ai_tasks SET provider = 'anthropic', model = 'claude-opus-5', "
             "effort = 'medium', daily_cap_eur = NULL, enabled = true, "
-            "max_output_tokens = CASE task WHEN 'card' THEN 2000 WHEN 'cv_anonimo' THEN 16000 "
+            "max_output_tokens = CASE task WHEN 'card' THEN 2000 WHEN 'anonymous_cv' THEN 16000 "
             "ELSE 8000 END",
             "DELETE FROM admin_actions",
             "DELETE FROM freelancers",
@@ -306,7 +306,7 @@ def test_a_call_for_a_person_records_their_id(opener: SessionOpener) -> None:
     """A request that names the talent it is about (`LlmRequest.freelancer_id`, REB-861) puts
     them on its usage row, for the anonymous CV's task as for the card's (REB-862)."""
     with opener() as session:
-        person = User(email="mario@studio.it", nome="Mario", last_name="Messina")
+        person = User(email="mario@studio.it", first_name="Mario", last_name="Messina")
         session.add(person)
         session.flush()
         freelancer = Freelancer(user_id=person.id)

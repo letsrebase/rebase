@@ -3,6 +3,7 @@ written before it reads `NULL`, a retried deploy lands on the same schema, and t
 downgrade drops the column and nothing else."""
 
 from typing import Any
+from uuid import uuid4
 
 from alembic import command
 from alembic.autogenerate import compare_metadata
@@ -10,12 +11,10 @@ from alembic.config import Config
 from alembic.migration import MigrationContext
 from alembic.script import ScriptDirectory
 from sqlalchemy import Connection, create_engine, text
-from sqlalchemy.orm import Session
 
 import rebase_core.models  # noqa: F401
 from rebase_core.db import Base
 from rebase_core.migrate import INI_PATH, head_revision, upgrade_to_head
-from rebase_core.models import Freelancer, FreelancerCard, User
 
 REVISION = "0043"
 
@@ -26,12 +25,13 @@ def _parent(config: Config) -> str:
     return parent
 
 
-def _person_column(connection: Connection) -> tuple[str, str] | None:
+def _person_column(connection: Connection, name: str) -> tuple[str, str] | None:
     row = connection.execute(
         text(
             "SELECT data_type, is_nullable FROM information_schema.columns "
-            "WHERE table_name = 'freelancer_cards' AND column_name = 'persona'"
-        )
+            "WHERE table_name = 'freelancer_cards' AND column_name = :c"
+        ),
+        {"c": name},
     ).one_or_none()
     return (row[0], row[1]) if row is not None else None
 
@@ -46,7 +46,7 @@ def test_upgrade_adds_a_nullable_jsonb_and_matches_the_models(hub_postgres: Any)
         upgrade_to_head(url)
         engine = create_engine(url, future=True)
         with engine.connect() as connection:
-            assert _person_column(connection) == ("jsonb", "YES")
+            assert _person_column(connection, "person") == ("jsonb", "YES")
             diff = compare_metadata(MigrationContext.configure(connection), Base.metadata)
             assert diff == [], diff
         engine.dispose()
@@ -59,15 +59,30 @@ def test_upgrade_is_idempotent_and_keeps_what_the_column_holds(hub_postgres: Any
         config = Config(str(INI_PATH))
         config.set_main_option("sqlalchemy.url", url)
         engine = create_engine(url, future=True)
-        with Session(engine) as session:
-            user = User(email="a@x.it", nome="A", last_name="B")
-            session.add(user)
-            session.flush()
-            row = Freelancer(user_id=user.id)
-            session.add(row)
-            session.flush()
-            session.add(FreelancerCard(freelancer_id=row.id, person={"email": "ada@example.org"}))
-            session.commit()
+        command.downgrade(config, REVISION)  # 0043's own schema, 0049's English names undone
+        user_id, freelancer_id = uuid4(), uuid4()
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    "INSERT INTO users (id, email, nome, cognome, role, attivo) "
+                    "VALUES (:id, 'a@x.it', 'A', 'B', 'member', true)"
+                ),
+                {"id": user_id},
+            )
+            connection.execute(
+                text(
+                    "INSERT INTO freelancers (id, user_id, posizione, links, stato, compilata_da) "
+                    "VALUES (:id, :u, 'dev', '[]', 'nuovo', 'persona')"
+                ),
+                {"id": freelancer_id, "u": user_id},
+            )
+            connection.execute(
+                text(
+                    "INSERT INTO freelancer_cards (freelancer_id, persona) "
+                    'VALUES (:f, \'{"email": "ada@example.org"}\'::jsonb)'
+                ),
+                {"f": freelancer_id},
+            )
         with engine.begin() as connection:
             connection.execute(
                 text("UPDATE alembic_version SET version_num = :parent"),
@@ -80,7 +95,7 @@ def test_upgrade_is_idempotent_and_keeps_what_the_column_holds(hub_postgres: Any
             )
             assert (
                 connection.execute(
-                    text("SELECT persona->>'email' FROM freelancer_cards")
+                    text("SELECT person->>'email' FROM freelancer_cards")
                 ).scalar_one()
                 == "ada@example.org"
             )
@@ -96,7 +111,7 @@ def test_downgrade_drops_only_the_column(hub_postgres: Any) -> None:
         engine = create_engine(url, future=True)
         command.downgrade(config, _parent(config))
         with engine.connect() as connection:
-            assert _person_column(connection) is None
+            assert _person_column(connection, "persona") is None
             assert (
                 connection.execute(
                     text(
@@ -108,5 +123,5 @@ def test_downgrade_drops_only_the_column(hub_postgres: Any) -> None:
             )
         command.upgrade(config, "head")
         with engine.connect() as connection:
-            assert _person_column(connection) == ("jsonb", "YES")
+            assert _person_column(connection, "person") == ("jsonb", "YES")
         engine.dispose()

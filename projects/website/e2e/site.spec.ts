@@ -394,7 +394,7 @@ test('/ defines each window global before landing.js reads it, in the built bund
 // preview, so the one call the page makes is answered here, and what is checked is
 // the page's own side: the example fills the box, the call carries the description
 // alone, the minimal result is the summary, the roles with their bands and the team's,
-// and the door into /hub/team carries the proposal's id, the campaign and da=home like
+// and the door into /hub/team carries the proposal's id, the campaign and from=home like
 // every other hub link. A short description never leaves the page, a refusal is read
 // in the API's own words, and without JavaScript the form hands the description to
 // the hub's page itself.
@@ -407,7 +407,7 @@ test.describe('the team builder on the first screen', () => {
     location: { locale: false, dove: null },
     team: [
       {
-        posizione: 1,
+        position: 1,
         role: 'Backend developer',
         reasoning: 'Ha costruito le API di pagamento di due banche.',
         week_days: 5,
@@ -416,7 +416,7 @@ test.describe('the team builder on the first screen', () => {
         band: { min: 400, max: 500 },
       },
       {
-        posizione: 2,
+        position: 2,
         role: 'Frontend developer',
         reasoning: 'Porta React.',
         week_days: 3,
@@ -515,7 +515,7 @@ test.describe('the team builder on the first screen', () => {
       await page.getByLabel('Descrizione del progetto').fill(description)
       await page.getByRole('button', { name: 'Proponi il team' }).click()
       // The preview server answers a stand-in for `/hub/`, as it does for every hub path.
-      await page.waitForURL(/\/hub\/team\?descrizione=/)
+      await page.waitForURL(/\/hub\/team\?description=/)
       const url = new URL(page.url())
       expect(url.pathname).toBe('/hub/team')
       expect(url.searchParams.get('description')).toBe(description)
@@ -578,7 +578,7 @@ test.describe('the path map, as production serves it', () => {
   })
 
   test('/termini redirects to /terms, its name before REB-318', async ({ request }) => {
-    const response = await request.get('/terms', { maxRedirects: 0 })
+    const response = await request.get('/termini', { maxRedirects: 0 })
     expect(response.status()).toBe(301)
     expect(response.headers()['location']).toBe('/terms')
   })
@@ -722,7 +722,7 @@ test.describe('Accedi finds a session already there', () => {
     )
     await page.goto('/', { waitUntil: 'networkidle' })
     expect(await page.locator('a[href^="/hub/login"]').count()).toBe(0)
-    // utm.js has already tagged the link with `?da=home` by the time session.js's
+    // utm.js has already tagged the link with `?from=home` by the time session.js's
     // answer lands, so the path is what is asserted, not the whole href.
     await expect(page.getByRole('link', { name: 'Accedi' })).toHaveAttribute('href', /^\/hub\/me(\?|$)/)
     await expect(page.getByRole('link', { name: 'Entra nella tua area' })).toHaveAttribute(

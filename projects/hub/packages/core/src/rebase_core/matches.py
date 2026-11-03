@@ -1,7 +1,7 @@
 """Matches: a freelancer card paired with a company request, and the contracts they
 write (REB-387, phase 2: generate, never send).
 
-A match's regime is its letter's (REB-687), `vat_number` or `occasional`, chosen on
+A match's regime is its letter's (REB-687), `vat_registered` or `occasional`, chosen on
 «Crea match» and proposed from the tax data: every framework lookup here takes it, so an
 ordinary framework agreement never stands in for an occasional one, nor the reverse. An
 ordinary letter needs a saved partita IVA (`require_regime_fits`).
@@ -60,6 +60,7 @@ from rebase_core.match_rows import (
     matchable_company,
     require_regime_fits,
 )
+from rebase_core.match_words import STATE_WORDS
 from rebase_core.models import ContractDocument, Freelancer, Match
 from rebase_core.regimes import VAT_REGISTERED
 
@@ -150,8 +151,8 @@ class MatchService:
         self.drafts = MatchDrafts(session, self.documents)
 
     def create(self, freelancer_id: UUID, data: MatchCreate, admin_id: UUID) -> MatchRead:
-        """Two admins racing to match the same freelancer (or one double click on «Salva
-        senza inviare») must not both read "no active framework" and both write a fresh
+        """Two admins racing to match the same freelancer (or one double click on
+        «Salva senza inviare») must not both read "no active framework" and both write a fresh
         `generated` one: the first statement of the transaction locks the freelancer's own
         row (`SELECT ... FOR UPDATE`), so the second waits here, before it reads
         `active_framework`/`pending_framework`, for the first to commit or roll back.
@@ -245,7 +246,7 @@ class MatchService:
                 request_fingerprint=fingerprint,
                 expected_days=data.expected_days,
                 letter_start_date=data.letter.start_date,
-                letter_end_date=data.letter.data_fine,
+                letter_end_date=data.letter.end_date,
                 letter_fee=data.letter.fee,
                 # A referral reward reads this later, at signing, which can be weeks
                 # after the request the budget belonged to (P-REB-44); snapshotted
@@ -274,7 +275,7 @@ class MatchService:
                     renderer,
                     LETTER,
                     data.regime,
-                    self.documents.lettera_data(user, fiscal, data, number, active, today),
+                    self.documents.letter_date(user, fiscal, data, number, active, today),
                     freelancer.id,
                     match.id,
                     number,
@@ -296,7 +297,7 @@ class MatchService:
                 "company_id": company.id,
                 "number": number,
                 "documents": [d.id for d in documents],
-                "cancelled_frameworks": stale_ids,
+                "frameworks_cancelled": stale_ids,
             },
         )
         return self.reads.get(match.id)
@@ -316,7 +317,8 @@ class MatchService:
         if match.status != "draft":
             self.session.rollback()
             raise InvalidState(
-                f"Si annulla solo un match in bozza: questo è {match.status}.", status=match.status
+                f"Si annulla solo un match in bozza: questo è {STATE_WORDS[match.status]}.",
+                status=match.status,
             )
         letters = list(
             self.session.scalars(
@@ -348,7 +350,8 @@ class MatchService:
         if match.status != "active":
             self.session.rollback()
             raise InvalidState(
-                f"Si chiude solo un match attivo: questo è {match.status}.", status=match.status
+                f"Si chiude solo un match attivo: questo è {STATE_WORDS[match.status]}.",
+                status=match.status,
             )
         match.status = "concluded"
         self.session.commit()

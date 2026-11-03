@@ -50,7 +50,7 @@ from rebase_core.models import Campaign, CampaignRecipient
 LUMA = "https://lu.ma/rebase-house"
 NO_PAUSE = lambda _seconds: None  # noqa: E731
 TARGET = RenderTarget(
-    email="ada@studio.it", nome="Ada", code="ab12cd34", token="tok", recipient_id="r-1"
+    email="ada@studio.it", name="Ada", code="ab12cd34", token="tok", recipient_id="r-1"
 )
 
 
@@ -60,7 +60,7 @@ def link_draft(**fields: object) -> CampaignDraft:
 
 def link_campaign(url: str) -> Campaign:
     return Campaign(
-        nome="Casa",
+        name="Casa",
         slug="c-2026-09-28-casa",
         source="status",
         journey_status="complete",
@@ -89,8 +89,8 @@ def test_an_external_link_is_the_button_as_it_was_written() -> None:
 def test_a_link_on_our_own_domain_is_tracked_like_the_hub() -> None:
     mail = render(link_campaign("https://letsrebase.com/eventi/casa"), TARGET, SETTINGS).mail
     assert (
-        "https://letsrebase.com/eventi/casa?utm_source=email&utm_medium=campagna"
-        "&utm_campaign=c-2026-09-28-casa&utm_content=clic&utm_term=ab12cd34"
+        "https://letsrebase.com/eventi/casa?utm_source=email&utm_medium=campaign"
+        "&utm_campaign=c-2026-09-28-casa&utm_content=click&utm_term=ab12cd34"
     ) in mail.text
 
 
@@ -98,8 +98,8 @@ def test_tracking_joins_a_query_already_there_and_stays_before_the_fragment() ->
     url = "https://preview.letsrebase.com/casa?giorno=3#programma"
     mail = render(link_campaign(url), TARGET, SETTINGS).mail
     assert (
-        "https://preview.letsrebase.com/casa?giorno=3&utm_source=email&utm_medium=campagna"
-        "&utm_campaign=c-2026-09-28-casa&utm_content=clic&utm_term=ab12cd34#programma"
+        "https://preview.letsrebase.com/casa?giorno=3&utm_source=email&utm_medium=campaign"
+        "&utm_campaign=c-2026-09-28-casa&utm_content=click&utm_term=ab12cd34#programma"
     ) in mail.text
 
 
@@ -118,8 +118,8 @@ def test_the_hub_destinations_keep_their_exact_tracked_url() -> None:
     campaign = link_campaign(LUMA)
     campaign.button_meta, campaign.button_url, campaign.action = "area", None, "signed_in"
     assert (
-        "https://letsrebase.com/hub/login?utm_source=email&utm_medium=campagna"
-        "&utm_campaign=c-2026-09-28-casa&utm_content=entrato&utm_term=ab12cd34"
+        "https://letsrebase.com/hub/login?utm_source=email&utm_medium=campaign"
+        "&utm_campaign=c-2026-09-28-casa&utm_content=signed_in&utm_term=ab12cd34"
     ) in render(campaign, TARGET, SETTINGS).mail.text
 
 
@@ -372,24 +372,24 @@ def test_the_link_constraints_are_installed(hub_engine: Engine) -> None:
         outer = connection.begin()
         user_id = connection.execute(
             text(
-                "INSERT INTO users (id, email, nome, cognome, role, attivo, created_at, "
+                "INSERT INTO users (id, email, first_name, last_name, role, active, created_at, "
                 "updated_at) VALUES (gen_random_uuid(), 'l@rebase.it', 'L', '', 'admin', "
                 "true, now(), now()) RETURNING id"
             )
         ).scalar_one()
         insert = text(
-            "INSERT INTO campaigns (id, created_by, nome, slug, fonte, stato_percorso, "
-            "oggetto, testo, bottone_testo, bottone_meta, bottone_url, azione, stato, "
-            "contenuto_at, created_at, updated_at) VALUES (gen_random_uuid(), :u, 'n', "
-            ":slug, 'stato', 'lead', '', '', '', :meta, :url, :azione, 'bozza', now(), "
+            "INSERT INTO campaigns (id, created_by, name, slug, source, journey_status, "
+            "subject, text, button_text, button_meta, button_url, action, status, "
+            "content_at, created_at, updated_at) VALUES (gen_random_uuid(), :u, 'n', "
+            ":slug, 'status', 'lead', '', '', '', :meta, :url, :action, 'draft', now(), "
             "now(), now())"
         )
         good = {"meta": "link", "url": LUMA, "action": "click"}
         for slug, bad in (
-            ("a", {**good, "url": None}),  # ck_campaigns_bottone_url
-            ("b", {**good, "meta": "area"}),  # ck_campaigns_bottone_url
-            ("c", {**good, "action": "signed_in"}),  # ck_campaigns_link_clic
-            ("d", {"meta": "area", "url": None, "action": "click"}),  # ck_campaigns_link_clic
+            ("a", {**good, "url": None}),  # ck_campaigns_button_url
+            ("b", {**good, "meta": "area"}),  # ck_campaigns_button_url
+            ("c", {**good, "action": "signed_in"}),  # ck_campaigns_link_click
+            ("d", {"meta": "area", "url": None, "action": "click"}),  # ck_campaigns_link_click
         ):
             savepoint = connection.begin_nested()
             with pytest.raises(IntegrityError):
@@ -413,29 +413,29 @@ def test_migration_0027_can_run_again_and_roll_back() -> None:
     rather than delete it, and the table stays as it was."""
     with PostgresContainer("postgres:17-alpine", driver="psycopg") as container:
         url = container.get_connection_url()
-        upgrade_to_head(url)
         config = Config(str(INI_PATH))
         config.set_main_option("sqlalchemy.url", url)
+        command.upgrade(config, "0027")
         engine = create_engine(url, future=True)
         with engine.begin() as connection:
             connection.execute(text("UPDATE alembic_version SET version_num = '0026'"))
-        command.upgrade(config, "head")
+        command.upgrade(config, "0027")
         command.downgrade(config, "0026")
-        command.upgrade(config, "head")
+        upgrade_to_head(url)
         with engine.begin() as connection:
             user_id = connection.execute(
                 text(
-                    "INSERT INTO users (id, email, nome, cognome, role, attivo, created_at, "
-                    "updated_at) VALUES (gen_random_uuid(), 'l@rebase.it', 'L', '', 'admin', "
-                    "true, now(), now()) RETURNING id"
+                    "INSERT INTO users (id, email, first_name, last_name, role, active, "
+                    "created_at, updated_at) VALUES (gen_random_uuid(), 'l@rebase.it', 'L', "
+                    "'', 'admin', true, now(), now()) RETURNING id"
                 )
             ).scalar_one()
             connection.execute(
                 text(
-                    "INSERT INTO campaigns (id, created_by, nome, slug, fonte, stato_percorso, "
-                    "oggetto, testo, bottone_testo, bottone_meta, bottone_url, azione, stato, "
-                    "contenuto_at) VALUES (gen_random_uuid(), :u, 'n', 'casa', 'stato', 'lead', "
-                    "'', '', '', 'link', :url, 'clic', 'bozza', now())"
+                    "INSERT INTO campaigns (id, created_by, name, slug, source, journey_status, "
+                    "subject, text, button_text, button_meta, button_url, action, status, "
+                    "content_at) VALUES (gen_random_uuid(), :u, 'n', 'casa', 'status', 'lead', "
+                    "'', '', '', 'link', :url, 'click', 'draft', now())"
                 ),
                 {"u": user_id, "url": LUMA},
             )
@@ -446,7 +446,7 @@ def test_migration_0027_can_run_again_and_roll_back() -> None:
                 connection.execute(text("SELECT version_num FROM alembic_version")).scalar()
                 == head_revision()
             )
-            assert connection.execute(text("SELECT bottone_url FROM campaigns")).scalar() == LUMA
+            assert connection.execute(text("SELECT button_url FROM campaigns")).scalar() == LUMA
             diff = compare_metadata(MigrationContext.configure(connection), Base.metadata)
             assert diff == [], diff
         engine.dispose()

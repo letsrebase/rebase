@@ -122,24 +122,24 @@ async def test_get_match_report_groups_the_crms_rows_by_day_week_and_month(
 
     invoice = {
         "id": "0192e0a0-0000-7000-8000-0000000f0012",
-        "kind": "fattura",
+        "type": "fattura",
         "year": 2026,
         "number": 12,
         "status": "emessa",
-        "payment_status": "from_unpaid",
-        "data": "2026-10-31",
+        "payment_status": "unpaid",
+        "date": "2026-10-31",
     }
     crm_report = {
         "slug": "ada-lovelace",
         "deal_url": DEAL_URL,
-        "deal": {"id": str(DEAL), "nome": "Lettera n. 2026-001", "status": "in_progress"},
-        "giorni": [
-            {"data": "2026-10-01", "hours": "8.00", "description": "Setup", "fattura": invoice},
-            {"data": "2026-10-02", "hours": "4.00", "description": "API", "fattura": None},
+        "deal": {"id": str(DEAL), "name": "Lettera n. 2026-001", "status": "in_progress"},
+        "days": [
+            {"date": "2026-10-01", "hours": "8.00", "description": "Setup", "invoice": invoice},
+            {"date": "2026-10-02", "hours": "4.00", "description": "API", "invoice": None},
         ],
-        "hours_total": "12.00",
-        "invoiced_hours": "8.00",
-        "hours_uninvoiced": "4.00",
+        "total_hours": "12.00",
+        "billed_hours": "8.00",
+        "unbilled_hours": "4.00",
         "invoices": [{**invoice, "hours": "8.00"}],
     }
     _card, match_id = _seed(factory)
@@ -161,14 +161,14 @@ async def test_get_match_report_groups_the_crms_rows_by_day_week_and_month(
             body = _payload(
                 await client.call_tool(
                     "get_match_report",
-                    {"match_id": match_id, "da": "2026-10-01", "a": "2026-10-31"},
+                    {"match_id": match_id, "from_date": "2026-10-01", "to_date": "2026-10-31"},
                 )
             )
         assert (body["match_id"], body["pigro_status"]) == (match_id, "linked")
         assert (body["expected_days"], body["expected_hours"]) == (40, "320.00")
         assert (body["hours_total"], body["progress"]) == ("12.00", "3.75")
         assert body["by_day"][0] == {
-            "data": "2026-10-01",
+            "date": "2026-10-01",
             "hours": "8.00",
             "descriptions": ["Setup"],
             "invoices": ["12/2026"],
@@ -178,16 +178,16 @@ async def test_get_match_report_groups_the_crms_rows_by_day_week_and_month(
             {
                 "number": "12/2026",
                 "kind": "fattura",
-                "data": "2026-10-31",
+                "date": "2026-10-31",
                 "status": "emessa",
-                "payment_status": "from_unpaid",
+                "payment_status": "unpaid",
                 "hours": "8.00",
             }
         ]
         [(method, url, _headers, _sent)] = fake.calls
         assert (method, url) == (
             "GET",
-            f"{PIGRO}/api/rebase/engagements/{match_id}/report?from=2026-10-01&a=2026-10-31",
+            f"{PIGRO}/api/rebase/engagements/{match_id}/report?from=2026-10-01&to=2026-10-31",
         )
     finally:
         _wipe_matches(factory)

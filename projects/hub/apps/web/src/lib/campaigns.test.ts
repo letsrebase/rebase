@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
 
 import {
-  ActionDoneLabels,
-  ActionLabels,
+  ACTION_DONE_LABELS,
+  ACTION_LABELS,
   CAMPAIGN_STATE_LABELS,
   META_LABELS,
   RECIPIENT_STATE_LABELS,
@@ -54,35 +54,35 @@ describe('personalise', () => {
 describe('romeToday', () => {
   it('reads the CET date and time before the spring change', () => {
     // 2026-01-15 10:30 UTC = 11:30 in Rome (UTC+1, CET)
-    expect(romeToday(new Date('2026-01-15T10:30:00Z'))).toEqual({ day: '2026-01-15', ora: '11:30' })
+    expect(romeToday(new Date('2026-01-15T10:30:00Z'))).toEqual({ day: '2026-01-15', time: '11:30' })
   })
 
   it('reads the CEST date and time after the spring change, across the DST jump', () => {
     // 2026-03-29 is Rome's spring-forward Sunday (02:00 -> 03:00 CEST).
     // 2026-03-29 23:30 UTC = 2026-03-30 01:30 in Rome (UTC+2, CEST).
-    expect(romeToday(new Date('2026-03-29T23:30:00Z'))).toEqual({ day: '2026-03-30', ora: '01:30' })
+    expect(romeToday(new Date('2026-03-29T23:30:00Z'))).toEqual({ day: '2026-03-30', time: '01:30' })
   })
 
   it('rolls the day forward across midnight in Rome even while still the prior day in UTC', () => {
     // 2026-06-30 22:15 UTC = 2026-07-01 00:15 in Rome (UTC+2, CEST).
-    expect(romeToday(new Date('2026-06-30T22:15:00Z'))).toEqual({ day: '2026-07-01', ora: '00:15' })
+    expect(romeToday(new Date('2026-06-30T22:15:00Z'))).toEqual({ day: '2026-07-01', time: '00:15' })
   })
 })
 
 describe('defaultSchedule', () => {
   it('proposes an hour from now, rounded up to the next quarter hour, in Rome time', () => {
     // 07:07 UTC = 09:07 in Rome (CEST); + 1 h = 10:07; next quarter = 10:15.
-    expect(defaultSchedule(new Date('2026-09-25T07:07:00Z'))).toEqual({ day: '2026-09-25', ora: '10:15' })
+    expect(defaultSchedule(new Date('2026-09-25T07:07:00Z'))).toEqual({ day: '2026-09-25', time: '10:15' })
   })
 
   it('keeps a time already on a quarter hour', () => {
     // 08:30 UTC = 09:30 in Rome (CET) + 1 h = 10:30.
-    expect(defaultSchedule(new Date('2026-01-15T08:30:00Z'))).toEqual({ day: '2026-01-15', ora: '10:30' })
+    expect(defaultSchedule(new Date('2026-01-15T08:30:00Z'))).toEqual({ day: '2026-01-15', time: '10:30' })
   })
 
   it('rolls over to the next Rome day late in the evening', () => {
     // 21:50 UTC = 23:50 in Rome (CEST); + 1 h = 00:50; next quarter = 01:00 the day after.
-    expect(defaultSchedule(new Date('2026-09-25T21:50:00Z'))).toEqual({ day: '2026-09-26', ora: '01:00' })
+    expect(defaultSchedule(new Date('2026-09-25T21:50:00Z'))).toEqual({ day: '2026-09-26', time: '01:00' })
   })
 })
 
@@ -96,12 +96,12 @@ describe('labels', () => {
   })
 
   it('labels every action in Italian', () => {
-    expect(ActionLabels.signed_in).toBe('È entrato nell’area')
-    expect(ActionLabels.cv).toBe('Ha caricato il CV')
-    expect(ActionLabels.card_complete).toBe('Ha completato la scheda')
-    expect(ActionLabels.profile_created).toBe('Ha creato il profilo')
-    expect(ActionLabels.request_updated).toBe('Ha aggiornato la richiesta')
-    expect(ActionLabels.pigro_customer).toBe('Primo cliente in Pigro')
+    expect(ACTION_LABELS.signed_in).toBe('È entrato nell’area')
+    expect(ACTION_LABELS.cv).toBe('Ha caricato il CV')
+    expect(ACTION_LABELS.card_complete).toBe('Ha completato la scheda')
+    expect(ACTION_LABELS.profile_created).toBe('Ha creato il profilo')
+    expect(ACTION_LABELS.request_updated).toBe('Ha aggiornato la richiesta')
+    expect(ACTION_LABELS.pigro_customer).toBe('Primo cliente in Pigro')
   })
 
   it('offers only the three phase-1 button destinations', () => {
@@ -112,7 +112,7 @@ describe('labels', () => {
   })
 
   it('labels every recipient state in Italian', () => {
-    expect(RECIPIENT_STATE_LABELS.in_coda).toBe('In coda')
+    expect(RECIPIENT_STATE_LABELS.queued).toBe('In coda')
     expect(RECIPIENT_STATE_LABELS.sent).toBe('Inviata')
     expect(RECIPIENT_STATE_LABELS.skipped).toBe('Saltata')
     expect(RECIPIENT_STATE_LABELS.failed).toBe('Fallita')
@@ -231,11 +231,11 @@ describe('the outcome in words', () => {
   })
 
   it('names every action once it is done', () => {
-    expect(Object.keys(ActionDoneLabels).sort()).toEqual(Object.keys(ActionLabels).sort())
+    expect(Object.keys(ACTION_DONE_LABELS).sort()).toEqual(Object.keys(ACTION_LABELS).sort())
   })
 
   it('says what left and what it led to, and what went wrong only when something did', () => {
-    const counts = { recipients: 10, in_coda: 0, sent: 8, skipped: 1, failed: 0, delivered: 8, bounced: 0, clicked: 4, income: 3, actions: 2 }
+    const counts = { recipients: 10, queued: 0, sent: 8, skipped: 1, failed: 0, delivered: 8, bounced: 0, clicked: 4, entered: 3, actions: 2 }
     expect(outcomeLine(counts, 'cv')).toBe('8 inviate · 8 consegnate · 4 clic · 3 entrati · 2 CV caricati · 1 saltate')
     expect(outcomeLine({ ...counts, skipped: 0 }, 'signed_in')).toBe('8 inviate · 8 consegnate · 4 clic · 3 entrati')
   })
@@ -244,12 +244,12 @@ describe('the outcome in words', () => {
 describe('«Un link» (REB-530)', () => {
   it('offers the link as a destination and names the click as its action', () => {
     expect(META_LABELS.link).toBe('Un link')
-    expect(ActionLabels.click).toBe('Ha cliccato il link')
-    expect(ActionDoneLabels.click).toBe('Hanno cliccato il link')
+    expect(ACTION_LABELS.click).toBe('Ha cliccato il link')
+    expect(ACTION_DONE_LABELS.click).toBe('Hanno cliccato il link')
   })
 
   it('says the click once, since for a link it is the action', () => {
-    const counts = { recipients: 10, in_coda: 0, sent: 8, skipped: 0, failed: 0, delivered: 8, bounced: 0, clicked: 4, income: 1, actions: 4 }
+    const counts = { recipients: 10, queued: 0, sent: 8, skipped: 0, failed: 0, delivered: 8, bounced: 0, clicked: 4, entered: 1, actions: 4 }
     expect(outcomeLine(counts, 'click')).toBe('8 inviate · 8 consegnate · 4 clic · 1 entrati')
   })
 })

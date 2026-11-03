@@ -70,8 +70,9 @@ def _require_pigro(settings: Settings) -> None:
 
 def _reading(session: Session, settings: Settings) -> MatchReads:
     """The service as the routes that answer a match's words need it: whether this
-    environment has the CRM's token, so an active match's card says «Consuntivo non
-    configurato su questo ambiente.» and offers no «Riprova» without it (spec § 3.2)."""
+    environment has the CRM's token, so an active match's card says
+    «Consuntivo non configurato su questo ambiente.» and offers no «Riprova» without it
+    (spec § 3.2)."""
     return MatchReads(session, pigro_configured=bool(settings.pigro_engagements_token))
 
 
@@ -233,19 +234,19 @@ def match_report(
     settings: SettingsDep,
     engagements: EngagementsDep,
     match_id: UUID,
-    da: date | None = None,
-    a: date | None = None,
+    from_date: Annotated[date | None, Query(alias="from")] = None,
+    to_date: Annotated[date | None, Query(alias="to")] = None,
 ) -> MatchReport:
     """«Consuntivo» (REB-499): the hours on the match's deal, asked of the CRM now and
-    stored nowhere, by default over the whole engagement (`da` the letter's start, `a`
+    stored nowhere, by default over the whole engagement (`from` the letter's start, `to`
     today). 409 with where the link stands for a match not `linked`, and for a deal
     the CRM says was deleted in the space, which files the match `rejected` (spec
-    § 3.10); 422 naming `da` for a period that ends before it starts, 502 with the
+    § 3.10); 422 naming `from` for a period that ends before it starts, 502 with the
     seam's sentence when the CRM does not answer with a report, 503 without the token."""
     require_live_match(session, match_id)
     _require_pigro(settings)
     try:
-        return engagements.report(match_id, da, a)
+        return engagements.report(match_id, from_date, to_date)
     except PigroUnavailable as exc:
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, str(exc)) from exc
 

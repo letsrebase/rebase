@@ -7,9 +7,9 @@ const MERGED: MergeResult = {
   absorbed_freelancer_id: 'f1',
   action_id: 'act-1',
   moved: { logins: 3, comments: 2, matches: 1 },
-  left: {},
-  cv: 'invariato',
-  card_from_regenerate: true,
+  left_behind: {},
+  cv: 'kept',
+  card_to_regenerate: true,
 }
 
 describe('the line a merge leaves (REB-800)', () => {
@@ -18,16 +18,16 @@ describe('the line a merge leaves (REB-800)', () => {
   })
 
   it('says «1 riga spostata» for one and leaves the card alone when it needs nothing', () => {
-    expect(mergeResultLine({ ...MERGED, moved: { logins: 1 }, card_from_regenerate: false })).toBe(
+    expect(mergeResultLine({ ...MERGED, moved: { logins: 1 }, card_to_regenerate: false })).toBe(
       'Unite: 1 riga spostata.',
     )
   })
 
   it('says how many rows stayed where they were', () => {
-    expect(mergeResultLine({ ...MERGED, card_from_regenerate: false, left: { referrals_made: 2 } })).toBe(
+    expect(mergeResultLine({ ...MERGED, card_to_regenerate: false, left_behind: { referrals_made: 2 } })).toBe(
       'Unite: 6 righe spostate. 2 righe sono rimaste dov’erano perché la scheda tenuta ne aveva già una uguale.',
     )
-    expect(mergeResultLine({ ...MERGED, card_from_regenerate: false, left: { fiscal: 1 } })).toBe(
+    expect(mergeResultLine({ ...MERGED, card_to_regenerate: false, left_behind: { fiscal: 1 } })).toBe(
       'Unite: 6 righe spostate. 1 riga è rimasta dov’era perché la scheda tenuta ne aveva già una uguale.',
     )
   })

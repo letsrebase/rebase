@@ -28,7 +28,7 @@ export function newCompanyFields(): Field<CompanyRequest>[] {
  *  `POST /me/company` refuses it with a 404 (Greptile, PR #313): the same
  *  mount-time redirect `AdminGuard` uses for its own access rule bounces it back to
  *  `/me` before the form ever renders. */
-export function NewRequestCompany() {
+export function NewCompanyRequest() {
   const navigate = useNavigate()
   const me = useMe()
   const create = useCreateCompanyRequest()

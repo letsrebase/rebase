@@ -99,7 +99,7 @@ def person_differences(
         return []
     return differences(
         person,
-        nome=user.nome,
+        first_name=user.first_name,
         last_name=user.last_name,
         email=user.email,
         phone=user.phone,
@@ -141,7 +141,7 @@ def gendered_words(card: Card) -> list[str]:
 
 
 def known_identifiers(
-    last_name: str, nome: str, links: list[str], sources: SourceSet, facts: HubFacts
+    last_name: str, first_name: str, links: list[str], sources: SourceSet, facts: HubFacts
 ) -> KnownIdentifiers:
     """What could name this person beyond their name: the account their links name and
     the hostname of every link (the person's own, whether or not a source is read), the
@@ -154,7 +154,7 @@ def known_identifiers(
             repos.extend(owned_repo_names(item.text))
     return KnownIdentifiers(
         last_name=last_name,
-        nome=nome,
+        first_name=first_name,
         github_login=github_login_of(links),
         repo_names=repos,
         hostnames=link_hostnames(links),
@@ -180,7 +180,7 @@ def fill_person(new: CardPersonRead, old: CardPersonRead) -> CardPersonRead:
     return CardPersonRead(
         **{
             name: getattr(new, name) or getattr(old, name)
-            for name in ("nome", "last_name", "email", "phone", "city", "linkedin_url")
+            for name in ("first_name", "last_name", "email", "phone", "city", "linkedin_url")
         },
         other_links=list(dict.fromkeys([*new.other_links, *old.other_links])),
         companies=list(dict.fromkeys([*new.companies, *old.companies])),
@@ -201,7 +201,7 @@ def with_person(
     return replace(
         known,
         cv_last_name=person.last_name or "",
-        cv_nome=person.nome or "",
+        cv_nome=person.first_name or "",
         emails=[email for email in {person.email, raw.email} if email and "@" in email],
         phones=[digits for digits in phones if digits],
         github_login=known.github_login or github_login_of(links),

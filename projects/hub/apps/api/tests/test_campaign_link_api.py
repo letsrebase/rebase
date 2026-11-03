@@ -17,7 +17,7 @@ from rebase_core.mail import RecordingSender
 
 LUMA = "https://lu.ma/rebase-house"
 BODY = {
-    "nome": "Casa",
+    "name": "Casa",
     "source": "status",
     "journey_status": "complete",
     "subject": "Vieni alla rebase house",
@@ -32,7 +32,7 @@ BODY = {
 def signed_in(client: TestClient, sender: RecordingSender, session: Session) -> None:
     an_admin(session, last_name="Sala")
     assert client.post("/api/hub/auth/link", json={"email": "ivan@rebase.it"}).status_code == 202
-    token = re.search(r"/entra\?t=([A-Za-z0-9_-]+)", sender.sent[-1].text).group(1)  # type: ignore[union-attr]
+    token = re.search(r"/verify\?t=([A-Za-z0-9_-]+)", sender.sent[-1].text).group(1)  # type: ignore[union-attr]
     assert client.post("/api/hub/auth/enter", json={"token": token}).status_code == 200
 
 

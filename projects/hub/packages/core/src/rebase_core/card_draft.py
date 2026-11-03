@@ -99,7 +99,7 @@ class CardPerson(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    nome: SafeStr | None = Field(max_length=PERSON_TEXT_MAX)
+    first_name: SafeStr | None = Field(max_length=PERSON_TEXT_MAX)
     last_name: SafeStr | None = Field(max_length=PERSON_TEXT_MAX)
     email: SafeStr | None = Field(max_length=PERSON_TEXT_MAX)
     phone: SafeStr | None = Field(max_length=PERSON_TEXT_MAX)
@@ -213,7 +213,7 @@ def clean_person(person: CardPerson, employers: list[str]) -> CardPersonRead:
         if name is not None:
             companies.setdefault(name.casefold(), name)
     return CardPersonRead(
-        nome=_text(person.nome, NAME_MAX_LENGTH),
+        first_name=_text(person.first_name, NAME_MAX_LENGTH),
         last_name=_text(person.last_name, NAME_MAX_LENGTH),
         email=_email(person.email),
         phone=_phone(person.phone),
@@ -244,7 +244,7 @@ def _plain(value: str) -> str:
 def differences(
     person: CardPersonRead,
     *,
-    nome: str,
+    first_name: str,
     last_name: str,
     email: str,
     phone: str | None,
@@ -256,10 +256,12 @@ def differences(
     shape. A field one side leaves empty is not listed: the page shows it as a gap."""
     pairs: list[
         tuple[
-            Literal["nome", "last_name", "email", "phone", "linkedin_url"], str | None, str | None
+            Literal["first_name", "last_name", "email", "phone", "linkedin_url"],
+            str | None,
+            str | None,
         ]
     ] = [
-        ("nome", person.nome, nome),
+        ("first_name", person.first_name, first_name),
         ("last_name", person.last_name, last_name),
         ("email", person.email, email),
         ("phone", person.phone, phone),
@@ -294,9 +296,12 @@ def verify_sources(sources: dict[str, list[str]], available: set[str]) -> dict[s
 
 class Conflict(NamedTuple):
     """A disagreement the code found, stored on the card row as a plain dict.
-    `different_experience_years`: the hub's completed engagements add up to more years than the card's
-    `experience_years_card` (the CV's dates) by more than one; `experience_years_hub` is the hub's months in
-    whole years. `discarded_experience_years`: the card gave `experience_years_card` years but no source that
+    `different_experience_years`: the hub's completed engagements add up to more years than the
+    card's
+    `experience_years_card` (the CV's dates) by more than one; `experience_years_hub` is the hub's
+    months in
+    whole years. `discarded_experience_years`: the card gave `experience_years_card` years but no
+    source that
     dates a profession supports them, so the code dropped them; `experience_years_hub` is `None`."""
 
     kind: str

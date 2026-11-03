@@ -32,7 +32,7 @@ CAMPAIGN_ACTIONS = (
     "click",
 )
 CAMPAIGN_DESTINATIONS = ("area", "wizard", "pigro", "request", "link")
-RECIPIENT_STATES = ("in_coda", "sent", "skipped", "failed")
+RECIPIENT_STATES = ("queued", "sent", "skipped", "failed")
 RECIPIENT_KINDS = ("freelancer", "lead", "company", "owner")
 OPTOUT_SOURCES = ("link", "complaint", "admin")
 CAMPAIGN_NAME_MAX_LENGTH = 120
@@ -48,7 +48,7 @@ CAMPAIGN_STALL_MAX_LENGTH = 200
 class Campaign(Base, PrimaryKeyMixin, TimestampMixin):
     """One list and one mail (spec § 1). `source` says where the list comes from: a
     journey state (`journey_status`), the Talenti or company filters (`filters`), or the
-    recipients of an earlier campaign who did nothing (`segue_id`, phase 2), and the
+    recipients of an earlier campaign who did nothing (`follows_id`, phase 2), and the
     constraints keep each source with its own field. `content_at` moves only when the
     admin edits the list or the mail, never on the writes that record a test or a
     send, because «Invia» compares it with `test_sent_at`: `updated_at` would move
@@ -57,7 +57,7 @@ class Campaign(Base, PrimaryKeyMixin, TimestampMixin):
     __tablename__ = "campaigns"
 
     created_by: Mapped[UUID] = mapped_column(ForeignKey("users.id"), nullable=False)
-    nome: Mapped[str] = mapped_column(String(CAMPAIGN_NAME_MAX_LENGTH), nullable=False)
+    name: Mapped[str] = mapped_column(String(CAMPAIGN_NAME_MAX_LENGTH), nullable=False)
     slug: Mapped[str] = mapped_column(String(CAMPAIGN_SLUG_MAX_LENGTH), nullable=False)
     source: Mapped[str] = mapped_column(String(10), nullable=False)
     journey_status: Mapped[str | None] = mapped_column(String(30), default=None)
@@ -66,7 +66,7 @@ class Campaign(Base, PrimaryKeyMixin, TimestampMixin):
     # `filters` on an edit without tripping `ck_campaigns_filters`. Bind-side only, no
     # migration needed.
     filters: Mapped[dict[str, Any] | None] = mapped_column(JSONB(none_as_null=True), default=None)
-    segue_id: Mapped[UUID | None] = mapped_column(ForeignKey("campaigns.id"), default=None)
+    follows_id: Mapped[UUID | None] = mapped_column(ForeignKey("campaigns.id"), default=None)
     subject: Mapped[str] = mapped_column(String(CAMPAIGN_SUBJECT_MAX_LENGTH), nullable=False)
     text: Mapped[str] = mapped_column(Text, nullable=False)
     button_text: Mapped[str] = mapped_column(String(CAMPAIGN_BUTTON_MAX_LENGTH), nullable=False)
@@ -95,30 +95,34 @@ class Campaign(Base, PrimaryKeyMixin, TimestampMixin):
     __table_args__ = (
         Index("uq_campaigns_slug", "slug", unique=True),
         Index("ix_campaigns_status_scheduled_for", "status", "scheduled_for"),
-        CheckConstraint("fonte IN ('stato', 'filtri', 'lista')", name="ck_campaigns_source"),
+        CheckConstraint("source IN ('status', 'filters', 'list')", name="ck_campaigns_source"),
         CheckConstraint(
-            "stato IN ('bozza', 'programmata', 'in_invio', 'inviata', 'annullata')",
+            "status IN ('draft', 'scheduled', 'sending', 'sent', 'cancelled')",
             name="ck_campaigns_status",
         ),
         CheckConstraint(
-            "azione IN ('entrato', 'cv', 'scheda_completa', 'profilo_creato', "
-            "'richiesta_aggiornata', 'pigro_cliente', 'clic')",
+            "action IN ('signed_in', 'cv', 'card_complete', 'profile_created', "
+            "'request_updated', 'pigro_customer', 'click')",
             name="ck_campaigns_action",
         ),
         CheckConstraint(
-            "bottone_meta IN ('area', 'wizard', 'pigro', 'richiesta', 'link')",
+            "button_meta IN ('area', 'wizard', 'pigro', 'request', 'link')",
             name="ck_campaigns_button_meta",
         ),
         CheckConstraint(
-            "(fonte = 'stato') = (stato_percorso IS NOT NULL)", name="ck_campaigns_journey_status"
-        ),
-        CheckConstraint("(fonte = 'filtri') = (filtri IS NOT NULL)", name="ck_campaigns_filters"),
-        CheckConstraint("(fonte = 'lista') = (segue_id IS NOT NULL)", name="ck_campaigns_segue"),
-        CheckConstraint(
-            "(bottone_meta = 'link') = (bottone_url IS NOT NULL)", name="ck_campaigns_button_url"
+            "(source = 'status') = (journey_status IS NOT NULL)", name="ck_campaigns_journey_status"
         ),
         CheckConstraint(
-            "(bottone_meta = 'link') = (azione = 'clic')", name="ck_campaigns_link_click"
+            "(source = 'filters') = (filters IS NOT NULL)", name="ck_campaigns_filters"
+        ),
+        CheckConstraint(
+            "(source = 'list') = (follows_id IS NOT NULL)", name="ck_campaigns_follows"
+        ),
+        CheckConstraint(
+            "(button_meta = 'link') = (button_url IS NOT NULL)", name="ck_campaigns_button_url"
+        ),
+        CheckConstraint(
+            "(button_meta = 'link') = (action = 'click')", name="ck_campaigns_link_click"
         ),
     )
 
@@ -137,7 +141,7 @@ class CampaignRecipient(Base, PrimaryKeyMixin):
         ForeignKey("campaigns.id", ondelete="CASCADE"), nullable=False
     )
     email: Mapped[str] = mapped_column(String(320), nullable=False)
-    nome: Mapped[str | None] = mapped_column(String(NAME_MAX_LENGTH), default=None)
+    name: Mapped[str | None] = mapped_column(String(NAME_MAX_LENGTH), default=None)
     kind: Mapped[str] = mapped_column(String(12), nullable=False)
     user_id: Mapped[UUID | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL"), default=None
@@ -151,7 +155,7 @@ class CampaignRecipient(Base, PrimaryKeyMixin):
     pigro_slugs: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
     code: Mapped[str] = mapped_column(String(8), nullable=False)
     before: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
-    status: Mapped[str] = mapped_column(String(10), nullable=False, default="in_coda")
+    status: Mapped[str] = mapped_column(String(10), nullable=False, default="queued")
     reason: Mapped[str | None] = mapped_column(String(RECIPIENT_REASON_MAX_LENGTH), default=None)
     attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     resend_id: Mapped[str | None] = mapped_column(String(64), default=None)
@@ -174,11 +178,11 @@ class CampaignRecipient(Base, PrimaryKeyMixin):
         Index("ix_campaign_recipients_email", "email"),
         Index("ix_campaign_recipients_campaign_status", "campaign_id", "status"),
         CheckConstraint(
-            "stato IN ('in_coda', 'inviata', 'saltata', 'fallita')",
+            "status IN ('queued', 'sent', 'skipped', 'failed')",
             name="ck_campaign_recipients_status",
         ),
         CheckConstraint(
-            "tipo IN ('freelancer', 'lead', 'azienda', 'proprietario')",
+            "kind IN ('freelancer', 'lead', 'company', 'owner')",
             name="ck_campaign_recipients_kind",
         ),
     )
@@ -201,5 +205,7 @@ class CampaignOptout(Base):
     )
 
     __table_args__ = (
-        CheckConstraint("fonte IN ('link', 'reclamo', 'admin')", name="ck_campaign_optouts_source"),
+        CheckConstraint(
+            "source IN ('link', 'complaint', 'admin')", name="ck_campaign_optouts_source"
+        ),
     )

@@ -109,6 +109,17 @@ ALLOW: tuple[Allow, ...] = (
         "are indexed or linked from outside; the `/termini` 301 stays.",
         kinds=frozenset({"path"}),
     ),
+    Allow(
+        "projects/hub/deploy/firma.letsrebase.conf",
+        "Named after the public host firma.letsrebase.com, a DNS name (glossary).",
+        kinds=frozenset({"path"}),
+    ),
+    Allow(
+        "projects/hub/packages/core/tests/test_migration_0049_english_names.py",
+        "Builds rows on the pre-rename schema, so its keyword arguments are the old Italian "
+        "column names the migration renames.",
+        kinds=frozenset({"identifier"}),
+    ),
     # --- Words that are Italian and English at once --------------------------------
     Allow(
         "**",

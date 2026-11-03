@@ -31,7 +31,7 @@ from rebase_core.contracts.render import (
     text_version,
 )
 
-EXAMPLE = Path(__file__).resolve().parents[3] / "content" / "contratti" / "engagement.example.json"
+EXAMPLE = Path(__file__).resolve().parents[3] / "content" / "contracts" / "engagement.example.json"
 # 55 mm, the room a pen needs, in points.
 SIGNATURE_WIDTH_PT = 155.0
 LETTER_BLANKS = {
@@ -106,7 +106,7 @@ def test_a_value_full_of_typst_syntax_prints_as_text() -> None:
         "cliente-ragione-sociale": customer,
         "attivita": activities,
     }
-    rendered = render("lettera-di-incarico", data)
+    rendered = render("engagement-letter", data)
     assert rendered.pdf.startswith(b"%PDF-")
     assert set(rendered.blank) == LETTER_BLANKS
     reader = PdfReader(BytesIO(rendered.pdf))
@@ -195,7 +195,7 @@ def test_the_occasional_framework_marks_two_signatures_and_one_date() -> None:
 
 def test_an_occasional_letter_marks_one_signature_and_prints_its_term_from_the_receipt() -> None:
     """REB-687: the real render writes «data ricevuta», and a filled occasional letter
-    leaves blank what the filled ordinary one does, the codice fiscale included in the
+    leaves blank what the filled ordinary one does, the `codice fiscale` included in the
     example."""
     data = _example()
     names = [blank.name for blank in signature_blanks("engagement-letter-occasional", data)]

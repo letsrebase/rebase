@@ -19,14 +19,14 @@ const TEMPLATE = {
   action: 'cv',
 }
 const DRAFT = {
-  id: 'c1', nome: 'Manca solo il CV', slug: 's', source: 'status', journey_status: 'missing_cv', filters: null, segue_id: null,
+  id: 'c1', name: 'Manca solo il CV', slug: 's', source: 'status', journey_status: 'missing_cv', filters: null, follows_id: null,
   subject: TEMPLATE.subject, text: TEMPLATE.text, button_text: TEMPLATE.button_text, button_meta: 'area', button_url: null,
   action: 'cv', status: 'draft', content_at: '2026-09-25T07:00:00Z', scheduled_for: null, test_sent_at: null,
   sent_at: null, created_at: '2026-09-25T07:00:00Z', ready: false,
 }
-const AUDIENCE = { lines: [{ email: 'ada@studio.it', nome: 'Ada', kind: 'freelancer', excluded: null }], included: 1, excluded: 0 }
-const ME = { email: 'ivan@rebase.it', nome: 'Ivan', role: 'admin' }
-const COUNTS_EMPTY = { recipients: 0, in_coda: 0, sent: 0, skipped: 0, failed: 0, delivered: 0, bounced: 0 }
+const AUDIENCE = { lines: [{ email: 'ada@studio.it', name: 'Ada', kind: 'freelancer', excluded: null }], included: 1, excluded: 0 }
+const ME = { email: 'ivan@rebase.it', name: 'Ivan', role: 'admin' }
+const COUNTS_EMPTY = { recipients: 0, queued: 0, sent: 0, skipped: 0, failed: 0, delivered: 0, bounced: 0 }
 const SAVED = { timeout: 3000 }
 
 function json(body: unknown, status = 200) {
@@ -85,7 +85,7 @@ function patches(calls: Calls, id: string) {
 }
 
 function preview() {
-  return within(screen.getByTestId('anteprima-mail'))
+  return within(screen.getByTestId('mail-preview'))
 }
 
 describe('«Un link» (REB-530)', () => {
@@ -246,8 +246,8 @@ describe('«Un link» (REB-530)', () => {
   })
 
   it('keeps a «Riscrivi» of a link on a link, and saves a new address as its mail', async () => {
-    const parent = { ...DRAFT, id: 'c0', nome: 'Casa', status: 'sent', button_meta: 'link', button_url: LUMA, action: 'click' }
-    const list = { ...parent, id: 'c9', nome: 'Casa · riscrivi', status: 'draft', source: 'list', journey_status: null, segue_id: 'c0' }
+    const parent = { ...DRAFT, id: 'c0', name: 'Casa', status: 'sent', button_meta: 'link', button_url: LUMA, action: 'click' }
+    const list = { ...parent, id: 'c9', name: 'Casa · riscrivi', status: 'draft', source: 'list', journey_status: null, follows_id: 'c0' }
     const calls = api({
       'GET /api/hub/me': () => json(ME),
       'GET /api/hub/campaigns/templates': () => json([TEMPLATE]),
@@ -262,7 +262,7 @@ describe('«Un link» (REB-530)', () => {
     await userEvent.type(screen.getByLabelText('Indirizzo del link'), '-2')
     await vi.waitFor(() => expect(patches(calls, 'c9')).toHaveLength(1), SAVED)
     expect(patches(calls, 'c9')[0]).toEqual({
-      nome: 'Casa · riscrivi',
+      name: 'Casa · riscrivi',
       subject: DRAFT.subject,
       text: DRAFT.text,
       button_text: DRAFT.button_text,

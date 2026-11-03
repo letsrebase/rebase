@@ -3,7 +3,7 @@ import { WebLink } from '@/components/WebLink'
 import { Row } from '../list-kit'
 
 const DIFFERENCE_LABELS: Record<PersonDifferenceField, string> = {
-  nome: 'Nome',
+  first_name: 'Nome',
   last_name: 'Cognome',
   email: 'Email',
   phone: 'Telefono',
