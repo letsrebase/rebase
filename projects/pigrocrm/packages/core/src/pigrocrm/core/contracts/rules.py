@@ -20,37 +20,37 @@ def check_payment_terms_together(payload: dict[str, Any]) -> None:
         raise ValidationFailed(
             ENTITY,
             "payment_days",
-            "giorni_pagamento e pagamento_fine_mese vanno impostati insieme, o nessuno dei due",
+            "payment_days e payment_end_of_month vanno impostati insieme, o nessuno dei due",
             expected="entrambi valorizzati oppure entrambi assenti",
         )
 
 
 def check_renewal_notice(payload: dict[str, Any]) -> None:
     """Mirrors `ck_contracts_notice_renewal_required`: applicable, and required,
-    for every renewal type except 'nessuno'."""
+    for every renewal type except 'none'."""
     if payload["renewal_type"] != "none" and payload.get("renewal_notice_days") is None:
         raise ValidationFailed(
             ENTITY,
             "renewal_notice_days",
-            "obbligatorio per ogni tipo di rinnovo diverso da 'nessuno'",
+            "obbligatorio per ogni tipo di rinnovo diverso da 'none'",
             expected="un numero di giorni",
         )
 
 
 def check_rate_card_shape(payload: dict[str, Any]) -> None:
     """Mirrors the two conditional CHECKs on `rate_cards`: `minimum_hours` only for
-    `tipo = 'orario'`, `delivery_period` only for `tipo = 'ricorrente_fisso'`."""
+    `type = 'hourly'`, `delivery_period` only for `type = 'fixed_recurring'`."""
     if payload["type"] != "hourly" and payload.get("minimum_hours") is not None:
         raise ValidationFailed(
             "rate_card",
             "minimum_hours",
-            "significativo solo per una scheda di tipo 'orario'",
+            "significativo solo per una scheda di tipo 'hourly'",
             expected="assente per ogni altro tipo",
         )
     if payload["type"] != "fixed_recurring" and payload.get("delivery_period") is not None:
         raise ValidationFailed(
             "rate_card",
             "delivery_period",
-            "significativo solo per una scheda di tipo 'ricorrente_fisso'",
+            "significativo solo per una scheda di tipo 'fixed_recurring'",
             expected="assente per ogni altro tipo",
         )

@@ -149,7 +149,7 @@ class ContractService:
             raise ValidationFailed(
                 ENTITY,
                 "end",
-                "non può precedere start",
+                "non può precedere inizio",
                 expected=f">= {merged['start'].isoformat()}",
             )
         if data.custom_fields is not None:

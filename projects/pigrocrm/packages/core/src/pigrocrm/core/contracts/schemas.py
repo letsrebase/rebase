@@ -119,7 +119,7 @@ class ContractCreate(BaseModel):
     @model_validator(mode="after")
     def _end_not_before_start(self) -> "ContractCreate":
         if self.end is not None and self.end < self.start:
-            raise ValueError("end non può precedere start")
+            raise ValueError("fine non può precedere inizio")
         return self
 
 

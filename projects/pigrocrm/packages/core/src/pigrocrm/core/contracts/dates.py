@@ -40,7 +40,7 @@ def irrevocability_window_end(contract: Contract, as_of: date) -> date | None:
 def renewal_deadline(contract: Contract) -> date | None:
     """The last date this contract's own renewal clause can still be exercised --
     `renewal_notice_days` days before `end`. `None` for a contract with no
-    renewal clause (`tipo_rinnovo == 'nessuno'`) or with no known end date: an
+    renewal clause (`renewal_type == 'none'`) or with no known end date: an
     open-ended contract has no date to count backward from, and there is nothing to
     give notice against.
     """
