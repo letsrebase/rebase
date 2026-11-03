@@ -1,13 +1,13 @@
 /* The team builder on the landing's first screen (REB-676).
  *
  * Ivan, 2026-10-07: the first thing a visitor sees is the box with the examples and the
- * chance to build their team, «in una forma semplificata ... con un output minimo che poi
- * può essere visto in modo completo all'interno della pagina di dettaglio». So this is
+ * chance to build their team, «in a simplified form ... with a minimal output that can then
+ * be seen in full on the detail page» (said in Italian). So this is
  * the hub's team builder (projects/hub, TeamBuilder.tsx) cut to what a static page can
  * carry without a framework: four examples that fill the box, one call to the hub's own
  * POST /api/hub/team/proposals on the same origin, and the least of the answer that
  * says whether it is worth a click: the summary, each role with its seniority and its
- * day band, the team's day band, and one door into /hub/team?proposta=<id>, where the
+ * day band, the team's day band, and one door into /hub/team?proposal=<id>, where the
  * hub reads the proposal back (REB-675) and the whole page is. No «Rigenera», no
  * «Assumi team»: the page sends the description and the headcount the visitor picked
  * (one by default, as the hub's page), and everything past the minimum lives on the
@@ -33,9 +33,9 @@
 ;(function () {
   var API = '/api/hub/team/proposals'
   var PAGE = '/hub/team'
-  var DescriptionMin = 40
+  var DESCRIPTION_MIN = 40
   var PENDING = 'Sto leggendo i profili…'
-  var TOO_SHORT = 'Raccontaci qualcosa in più: servono almeno ' + DescriptionMin + ' caratteri.'
+  var TOO_SHORT = 'Raccontaci qualcosa in più: servono almeno ' + DESCRIPTION_MIN + ' caratteri.'
   var FAILED = 'Non siamo riusciti a proporre un team. Riprova.'
   // The model call takes up to about 90 s (the host vhost's proxy_read_timeout); a few
   // seconds past it the request is given up as a failure rather than left spinning.
@@ -112,7 +112,7 @@
   }
 
   /** The minimal result into `result`, then the door, decorated by utm.js like every
-   *  other link into the hub so the campaign and `da=home` follow the visitor. Text
+   *  other link into the hub so the campaign and `from=home` follow the visitor. Text
    *  nodes only, no innerHTML: the summary and the roles are the model's words. */
   function render(result, proposal) {
     while (result.firstChild) result.removeChild(result.firstChild)
@@ -141,7 +141,7 @@
     }
     var actions = el('p', 'actions')
     var door = el('a', 'cta', members.length ? 'Vedi il team completo' : 'Riprova nel team builder')
-    door.href = PAGE + '?proposta=' + encodeURIComponent(proposal.id)
+    door.href = PAGE + '?proposal=' + encodeURIComponent(proposal.id)
     actions.appendChild(door)
     result.appendChild(actions)
     if (window.__utm) window.__utm.carryUtm(result)
@@ -162,8 +162,8 @@
    *  `fetchImpl` is for the tests; the page uses `window.fetch`. Returns whether the
    *  form had everything it needs. */
   function mount(form, fetchImpl) {
-    var box = form.querySelector('textarea[name="descrizione"]')
-    var count = form.querySelector('select[name="persone"]')
+    var box = form.querySelector('textarea[name="description"]')
+    var count = form.querySelector('select[name="people"]')
     var button = form.querySelector('button[type="submit"]')
     var error = form.querySelector('.team-error')
     var result = document.querySelector(form.getAttribute('data-result') || '')
@@ -232,7 +232,7 @@
       if (busy) return
       var text = box.value.trim()
       var people = count ? parseInt(count.value, 10) : NaN
-      if (text.length < DescriptionMin) {
+      if (text.length < DESCRIPTION_MIN) {
         say(TOO_SHORT, true)
         box.focus()
         return

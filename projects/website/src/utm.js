@@ -10,9 +10,9 @@
  * what the markup says and the attribution is lost, which is what happened before and
  * is the honest fallback.
  *
- * Campaign or not, every door also says which page it is on (ORB-167): `da=home` from
- * `/`, `da=pigrocrm` from `/pigrocrm`, so the hub can tell who came through which
- * page. Remembered for the tab as `rebase.da`.
+ * Campaign or not, every door also says which page it is on (ORB-167): `from=home` from
+ * `/`, `from=pigrocrm` from `/pigrocrm`, so the hub can tell who came through which
+ * page. Remembered for the tab as `rebase.from`.
  *
  * An IIFE publishing `window.__utm`, like `field.js` and `typewriter.js`: `landing.js`,
  * the page script that calls it, stays self-contained and its tests can load it with
@@ -22,14 +22,17 @@
 ;(function () {
   var UTM_KEYS = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term', 'utm_id']
   var UTM_STORAGE_KEY = 'rebase.utm'
-  var ORIGIN_STORAGE_KEY = 'rebase.da'
+  var ORIGIN_STORAGE_KEY = 'rebase.from'
   /* What the two keys were called until REB-668. A tab opened before the rename may still
      hold them, and the hub reads them as a fallback; writing the new key drops the old
      one so the tab keeps a single copy. Gone with REB-697. */
   var LEGACY_UTM_STORAGE_KEY = 'orbiters.utm'
   var LEGACY_ORIGIN_STORAGE_KEY = 'orbiters.da'
+  /* `rebase.from` was `rebase.da` until the 2026-11 English rename; the hub reads both
+     for 30 days (until 2026-12-03), and a write drops the old one. */
+  var PREVIOUS_ORIGIN_STORAGE_KEY = 'rebase.da'
 
-  /** The page's slug for `da=`: `home` for the front door, the path's own name otherwise. */
+  /** The page's slug for `from=`: `home` for the front door, the path's own name otherwise. */
   function pageSlug(pathname) {
     var slug = (pathname || window.location.pathname).replace(/^\/+|\/+$/g, '')
     return (slug || 'home').toLowerCase().replace(/[^a-z0-9-]/g, '-').slice(0, 40)
@@ -46,7 +49,7 @@
     return utm
   }
 
-  /** Appends the page's UTM keys and its own `da=` slug to every link into the hub, and
+  /** Appends the page's UTM keys and its own `from=` slug to every link into the hub, and
    *  remembers both for the tab. Returns how many links were rewritten, for the test. */
   function carryUtm(root, search, pathname) {
     var utm = readUtm(search === undefined ? window.location.search : search)
@@ -59,6 +62,7 @@
       }
       window.sessionStorage.setItem(ORIGIN_STORAGE_KEY, page)
       window.sessionStorage.removeItem(LEGACY_ORIGIN_STORAGE_KEY)
+      window.sessionStorage.removeItem(PREVIOUS_ORIGIN_STORAGE_KEY)
     } catch {
       /* storage refused: the links still carry everything */
     }
@@ -68,7 +72,7 @@
       keys.forEach(function (key) {
         if (!url.searchParams.has(key)) url.searchParams.set(key, utm.get(key))
       })
-      if (!url.searchParams.has('da')) url.searchParams.set('da', page)
+      if (!url.searchParams.has('from')) url.searchParams.set('from', page)
       link.setAttribute('href', url.pathname + url.search + url.hash)
       rewritten += 1
     })

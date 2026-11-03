@@ -113,7 +113,7 @@
         band, the team's day band, and one door, «Vedi il team completo», into
         /hub/team?proposal=<id>, where the hub reads the proposal back (REB-675) and the
         whole page is: the cards, «Rigenera», «Assumi team». Without JavaScript the form
-        is a plain GET to /hub/team, and the hub fills its box from ?descrizione=. The
+        is a plain GET to /hub/team, and the hub fills its box from ?description=. The
         hero's third door of REB-608 went: the builder itself sits where it pointed. -->
       <section class="hero">
         <div class="wrap">
@@ -130,8 +130,8 @@
             <form class="team-form ph-no-capture" action="/hub/team" method="get" data-team data-result="#team-result">
               <p class="team-claim">Hai un progetto? Descrivilo: <span class="accent">ti proponiamo il team.</span></p>
               <div class="composer">
-                <label class="sr-only" for="team-descrizione">Descrizione del progetto</label>
-                <textarea id="team-descrizione" name="description" rows="3" required minlength="40" maxlength="4000" placeholder="Descrivi il progetto: cosa va fatto, per quanto tempo, dove, con che tecnologie"></textarea>
+                <label class="sr-only" for="team-description">Descrizione del progetto</label>
+                <textarea id="team-description" name="description" rows="3" required minlength="40" maxlength="4000" placeholder="Descrivi il progetto: cosa va fatto, per quanto tempo, dove, con che tecnologie"></textarea>
                 <div class="composer-bar">
                   <!-- The headcount, as the hub's page asks it (REB-591): one by default,
                     since most requests are for one person; an example sets the number its
@@ -325,10 +325,10 @@
         continuous search per open position, a monthly subscription from 100 € a day. Two
         doors under the cards: the company wizard and the team builder, both in the hub, so
         utm.js carries the campaign into them too. -->
-      <section class="band" aria-labelledby="aziende">
+      <section class="band" aria-labelledby="companies">
         <div class="wrap section">
           <p class="kicker" data-reveal>Per le aziende</p>
-          <h2 class="statement" id="aziende" data-reveal style="--d: 0.1s">
+          <h2 class="statement" id="companies" data-reveal style="--d: 0.1s">
             Tre modi di lavorare con noi. <span class="accent">Il prezzo lo sai prima.</span>
           </h2>
           <div class="grid-3">
