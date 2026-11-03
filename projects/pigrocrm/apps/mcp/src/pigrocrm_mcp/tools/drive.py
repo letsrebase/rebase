@@ -48,10 +48,10 @@ def register(
     @mcp.tool(annotations=READ_ONLY)
     @guard
     def describe_drive_account() -> dict[str, Any]:
-        """Stato della credenziale Google Drive collegata. `banner` distingue revocato, in
-        scadenza, scaduto, autorizzazione mancante: nessuno si risolve riprovando, ricollegare
-        Drive lo fa una persona da Impostazioni → Drive. Nessun account collegato non è un
-        errore.
+        """State of the connected Google Drive credential. `banner` tells revoked, expiring,
+        expired, missing authorization apart: none is fixed by retrying, a person reconnects
+        Drive from «Impostazioni → Drive». No connected account is not an
+        error.
         """
         health = GoogleDriveAccountService(context.session, settings=settings).health(context.actor)
         return health.model_dump(mode="json")

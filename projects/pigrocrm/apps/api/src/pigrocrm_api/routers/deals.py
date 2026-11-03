@@ -177,7 +177,7 @@ def time_report_xlsx(
     session: SessionDep,
     actor: ActorDep,
     storage: StorageDep,
-    month: Annotated[str, Query(description="Periodo nella forma AAAA-MM")],
+    month: Annotated[str, Query(description="Period in the form YYYY-MM")],
 ) -> Response:
     """The XLSX of the month's hours, streamed: it is a working copy that whoever checks
     it filters, not an artefact, so nothing is archived and a GET is safe. The PDF is
@@ -196,7 +196,7 @@ def render_time_report_pdf(
     session: SessionDep,
     actor: ActorDep,
     storage: StorageDep,
-    month: Annotated[str, Query(description="Periodo nella forma AAAA-MM")],
+    month: Annotated[str, Query(description="Period in the form YYYY-MM")],
 ) -> DocumentRead:
     """The month's hours as a PDF, archived as a `document` of the deal, which this
     returns: the bytes are fetched from the document download endpoint, like every other
@@ -220,8 +220,8 @@ def deal_budget(
     deal_id: UUID,
     session: SessionDep,
     actor: ActorDep,
-    date_from: Annotated[date, Query(alias="from", description="Inizio del periodo, YYYY-MM-DD")],
-    date_to: Annotated[date, Query(alias="to", description="Fine del periodo, YYYY-MM-DD")],
+    date_from: Annotated[date, Query(alias="from", description="Start of the period, YYYY-MM-DD")],
+    date_to: Annotated[date, Query(alias="to", description="End of the period, YYYY-MM-DD")],
 ) -> BudgetVsActualRow:
     """One deal's row of the estimate-versus-actual report. Served from the same method as
     the list so the two can never disagree: a per-deal reimplementation is how the detail

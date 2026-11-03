@@ -60,7 +60,7 @@ async def test_an_agent_sets_and_resets_a_persons_preference(mcp_session: Sessio
                 "reset_reminder_preference", {"scope": "me", "type": "deal_stale"}
             )
         )
-        assert reset["status"] == "ripristinato"
+        assert reset["status"] == "reset"
 
 
 async def test_a_member_agent_cannot_set_the_spaces_defaults(mcp_session: Session) -> None:

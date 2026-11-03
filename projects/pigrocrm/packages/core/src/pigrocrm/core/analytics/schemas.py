@@ -279,16 +279,16 @@ class CashMonth(BaseModel):
         max_digits=12,
         decimal_places=2,
         description=(
-            "Altezza della colonna dell'andamento come importo: incassato + costi passivi. "
-            "Non e' un ricavo: i costi sono dentro."
+            "Height of the trend column as an amount: collected + passive costs. It is not "
+            "revenue: the costs are inside."
         ),
     )
     projection_stack: Decimal = Field(
         max_digits=12,
         decimal_places=2,
         description=(
-            "Altezza della colonna della proiezione come importo: incassato + da incassare + "
-            "bozze/proforma + costi passivi. Non e' un ricavo: i costi sono dentro."
+            "Height of the projection column as an amount: collected + to collect + "
+            "drafts/proformas + passive costs. It is not revenue: the costs are inside."
         ),
     )
     trend_shares: dict[str, float]

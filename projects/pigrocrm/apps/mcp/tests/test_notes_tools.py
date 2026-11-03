@@ -161,9 +161,9 @@ async def test_no_note_tool_takes_an_author_or_a_date(marco_server: Any) -> None
     }
     # The sentence is wrapped in the docstring: compare the words, not the line breaks.
     said = " ".join(tools["add_note"].description.split())
-    assert "Il CRM la firma e la data da solo" in said
-    assert "non deve iniziare con una data né dire chi scrive" in said
-    assert "Niente data né autore nel testo" in tools["update_note"].description
+    assert "The CRM signs and dates it itself" in said
+    assert "must not start with a date or say who is writing" in said
+    assert "No date or author in the text" in tools["update_note"].description
 
 
 async def test_an_author_or_a_date_in_the_call_is_refused(
@@ -202,8 +202,8 @@ async def test_add_note_takes_exactly_one_record(
             {"text": "x", "deal_id": str(records["deal"]), "person_id": str(records["person"])},
         )
         assert none.is_error and two.is_error
-        assert "uno solo fra" in none.content[0].text
-        assert "alternativi" in two.content[0].text
+        assert "exactly one of" in none.content[0].text
+        assert "alternatives" in two.content[0].text
         for entity_type in ("deal", "person"):
             assert (await _thread(client, entity_type, records[entity_type]))["note"] == []
 
@@ -349,7 +349,7 @@ async def test_get_carries_the_latest_notes_newest_first_and_says_how_many_there
     assert read["note_total"] == 55
     assert read["provenance"] == PROVENANCE_TEXT_FREE
     description = tools[GET_TOOLS[entity_type][0]].description
-    assert "ultime 50 note" in description
+    assert "last 50 notes" in description or "latest 50 notes" in description
     assert "note_total" in description
 
 
@@ -375,9 +375,9 @@ async def test_the_resource_renders_the_whole_thread_newest_first_with_its_prove
     assert section.count("\n**") == THREAD_LIMIT + 6
     assert section.index("La più recente.") < section.index("nota 054") < section.index("nota 000")
     assert "Marco Verdi" in section
-    assert "fonte: mcp" in section
-    assert "modificata il" in section
-    assert "da Marco Verdi" in section
+    assert "source: mcp" in section
+    assert "edited on" in section
+    assert "by Marco Verdi" in section
 
 
 async def test_a_note_from_before_the_thread_is_shown_as_such(
@@ -392,7 +392,7 @@ async def test_a_note_from_before_the_thread_is_shown_as_such(
         text = (await client.read_resource(f"customer://{records['customer']}")).contents[0].text
         thread = (await _thread(client, "customer", records["customer"]))["note"]
 
-    assert "Nota precedente" in text
+    assert "Earlier note" in text
     assert (thread[0]["source"], thread[0]["author"]) == (None, None)
 
 
@@ -483,7 +483,7 @@ async def test_the_creating_tools_still_advertise_a_note(marco_server: Any) -> N
 
     for name in ("create_deal", "create_customer", "create_person"):
         assert "note" in tools[name].input_schema["properties"], name
-        assert "prima nota" in tools[name].description, name
+        assert "first note" in tools[name].description, name
 
 
 @pytest.mark.parametrize("entity_type", ["deal", "customer", "person"])

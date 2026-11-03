@@ -1,5 +1,5 @@
 """What every tool module shares: the dependencies a tool is handed and the parsers that
-turn a tool's string parameters into values with an Italian refusal.
+turn a tool's string parameters into values with an English refusal.
 
 `Deps` is what `build_server` used to close over: the session factory, the admin behind
 the call, the settings and the collaborators the transports build
@@ -34,7 +34,7 @@ from rebase_core.errors import DomainError
 from rebase_core.http import HttpCall
 from rebase_core.llm import LlmCall
 from rebase_core.mail import EmailSender
-from rebase_core.match_drafts import field_reason
+from rebase_core.match_drafts import NOT_VALID, field_reason
 from rebase_core.match_reads import MatchReads
 from rebase_core.ratelimit import RateLimiter
 from rebase_core.schema_common import Remote
@@ -63,8 +63,7 @@ SOURCE = "mcp"
 MODEL_CALLS_PER_WINDOW = 30
 MODEL_CALLS_WINDOW_SECONDS = 3600.0
 MODEL_CALLS_REFUSED = (
-    "Troppe richieste che usano il modello: al massimo {limit} all'ora per amministratore. "
-    "Riprova più tardi."
+    "Too many requests that use the model: at most {limit} an hour per admin. Try again later."
 )
 
 # A request names a handful of skills; more than this many terms is a list nobody
@@ -87,27 +86,33 @@ def read_entity_id(tool: str) -> UUID:
 
 def not_configured(what: str, env: str) -> ToolError:
     """The refusal of a tool whose service needs a token this environment does not have:
-    «`what` non è configurato su questo ambiente: manca `env`»."""
-    return ToolError(f"{what} non è configurato su questo ambiente: manca {env}.")
+    «`what` is not configured in this environment: `env` is missing»."""
+    return ToolError(f"{what} is not configured in this environment: {env} is missing.")
+
+
+# `field_reason`'s two own words, shared with the web app and so Italian there; a tool's
+# refusal says them in English. A validator's own sentence is the core's and is passed on.
+_REASON_WORDS = {"manca": "missing", NOT_VALID: "not valid"}
 
 
 def field_refusal(exc: PydanticValidationError) -> ToolError:
-    """A tool's input refused in the hub's Italian, «campo: motivo»: `field_reason`'s
+    """A tool's input refused as «field: reason»: `field_reason`'s
     words (those `MatchDrafts.proposal` uses), never Pydantic's own text, which repeats
     the value typed -- a tax identifier does not come back in an answer this way -- and
-    for a text past its limit the limit itself, the way the note tools say it («al
-    massimo 4000 caratteri»). An optional text's limit is Pydantic's `too_long`, a plain
+    for a text past its limit the limit itself, the way the note tools say it («at
+    most 4000 characters»). An optional text's limit is Pydantic's `too_long`, a plain
     one's `string_too_long`: both carry `max_length`. `set_freelancer_tax_data`,
     `create_match`'s `expected_days` and the team tools refuse through this."""
     error = exc.errors()[0]
     field = ".".join(str(part) for part in error["loc"])
     if error["type"] in {"string_too_long", "too_long"}:
-        return ToolError(f"{field}: al massimo {error['ctx']['max_length']} caratteri")
-    return ToolError(f"{field}: {field_reason(error)}")
+        return ToolError(f"{field}: at most {error['ctx']['max_length']} characters")
+    reason = field_reason(error)
+    return ToolError(f"{field}: {_REASON_WORDS.get(reason, reason)}")
 
 
 def number(value: str | None, field: str) -> Decimal | None:
-    """An amount passed as a string, so a tariffa or a budget keeps its two decimals
+    """An amount passed as a string, so a rate or a budget keeps its two decimals
     exactly (a JSON number would not), and read the Italian way the web app reads it:
     «1.500» is 1500, «1.234,50» is 1234.50 (`rebase_core.amounts`, REB-485)."""
     if value is None or not value.strip():
@@ -115,7 +120,7 @@ def number(value: str | None, field: str) -> Decimal | None:
     try:
         return italian_amount(value)
     except NotAnAmount:
-        raise ToolError(f"{field}: «{value}» non è un numero") from None
+        raise ToolError(f"{field}: «{value}» is not a number") from None
 
 
 def integer(value: str | None, field: str) -> int | None:
@@ -126,18 +131,18 @@ def integer(value: str | None, field: str) -> int | None:
     try:
         return int(value.strip())
     except ValueError:
-        raise ToolError(f"{field}: «{value}» non è un numero intero") from None
+        raise ToolError(f"{field}: «{value}» is not a whole number") from None
 
 
 def day(value: str | None, field: str) -> date | None:
-    """An ISO 8601 calendar date (`AAAA-MM-GG`), parsed here so the refusal is an
-    Italian sentence and not a traceback from the service."""
+    """An ISO 8601 calendar date (`YYYY-MM-DD`), parsed here so the refusal is an
+    English sentence and not a traceback from the service."""
     if value is None or not value.strip():
         return None
     try:
         return date.fromisoformat(value.strip())
     except ValueError:
-        raise ToolError(f"{field}: «{value}» non è una data ISO 8601 (AAAA-MM-GG)") from None
+        raise ToolError(f"{field}: «{value}» is not an ISO 8601 date (YYYY-MM-DD)") from None
 
 
 def moment(value: str | None, field: str) -> datetime | None:
@@ -147,7 +152,7 @@ def moment(value: str | None, field: str) -> datetime | None:
     try:
         return datetime.fromisoformat(value.strip())
     except ValueError:
-        raise ToolError(f"{field}: «{value}» non è una data e ora ISO 8601") from None
+        raise ToolError(f"{field}: «{value}» is not an ISO 8601 date and time") from None
 
 
 # What of a bad id is echoed back: an agent that pasted a paragraph does not get it
@@ -156,13 +161,13 @@ _ID_ECHO_MAX = 40
 
 
 def to_uuid(value: str, field: str) -> UUID:
-    """An id passed as a string, refused with an Italian sentence naming the parameter:
+    """An id passed as a string, refused with a sentence naming the parameter:
     a malformed one would otherwise surface as a bare `ValueError` from `UUID(...)`."""
     try:
         return UUID(value.strip())
     except (ValueError, AttributeError):
         shown = value if len(value) <= _ID_ECHO_MAX else value[:_ID_ECHO_MAX] + "…"
-        raise ToolError(f"{field}: «{shown}» non è un identificativo valido") from None
+        raise ToolError(f"{field}: «{shown}» is not a valid id") from None
 
 
 def as_remote(value: str | None) -> Remote | None:
@@ -173,7 +178,7 @@ def as_remote(value: str | None) -> Remote | None:
     for word in _REMOTE_WORDS:
         if value == word:
             return word
-    raise ToolError(f"remoto: «{value}» non è ammesso: {', '.join(_REMOTE_WORDS)}")
+    raise ToolError(f"remote: «{value}» is not allowed: {', '.join(_REMOTE_WORDS)}")
 
 
 def search_term(value: str | None) -> str | None:
@@ -182,7 +187,7 @@ def search_term(value: str | None) -> str | None:
     Every free-text filter of a list tool (`q`, `location`, `job_title`, `utm_source`,
     `origin`, `origin_page`) goes through this."""
     if value is not None and len(value) > SEARCH_MAX_LENGTH:
-        raise ToolError(f"la ricerca deve stare in {SEARCH_MAX_LENGTH} caratteri")
+        raise ToolError(f"the search must fit in {SEARCH_MAX_LENGTH} characters")
     return value
 
 
@@ -191,7 +196,7 @@ def bounded(value: str | None, field: str) -> str | None:
     would type at that length never reaches a query or an error message
     (`search_term` is the same bound for `q`, in its own words)."""
     if value is not None and len(value) > SEARCH_MAX_LENGTH:
-        raise ToolError(f"{field}: al massimo {SEARCH_MAX_LENGTH} caratteri")
+        raise ToolError(f"{field}: at most {SEARCH_MAX_LENGTH} characters")
     return value
 
 
@@ -202,7 +207,7 @@ def skill_terms(values: list[str] | None, field: str = "skills") -> list[str] | 
     if values is None:
         return None
     if len(values) > SKILL_TERMS_MAX:
-        raise ToolError(f"{field}: al massimo {SKILL_TERMS_MAX} termini")
+        raise ToolError(f"{field}: at most {SKILL_TERMS_MAX} terms")
     for value in values:
         search_term(value)
     return values
@@ -292,7 +297,7 @@ class Deps:
         (a hub URL, a contracts mailbox). A server built for tools that never touch this
         family (most of this suite's tests) still needs none."""
         if self.settings is None:
-            raise ToolError("i tool del team builder e del cloud richiedono `settings`")
+            raise ToolError("the team builder and cloud tools require `settings`")
         return self.settings
 
     def spend_model_call(self) -> None:

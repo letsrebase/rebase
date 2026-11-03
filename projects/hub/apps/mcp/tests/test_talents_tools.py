@@ -191,9 +191,9 @@ def test_fields_names_the_fields_whole_with_the_id_and_all_is_the_full_row() -> 
 
 
 def test_an_unknown_field_is_refused_with_the_names_that_exist() -> None:
-    with pytest.raises(ValidationFailed, match="«phone» non esiste"):
+    with pytest.raises(ValidationFailed, match="«phone» does not exist"):
         row_fields(["email", "phone"])
-    with pytest.raises(ValidationFailed, match="«phone» non esiste"):
+    with pytest.raises(ValidationFailed, match="«phone» does not exist"):
         row_fields(["all", "phone"])
 
 
@@ -333,7 +333,7 @@ async def test_the_card_filters_and_the_sort_answer_one_request_in_one_call(
     assert first["next_cursor"] is not None and second["next_cursor"] is None
     assert wrong_order.is_error and "ordinamento" in wrong_order.content[0].text
     assert bad_level.is_error and "seniority" in bad_level.content[0].text
-    assert too_many.is_error and "languages: al massimo" in too_many.content[0].text
+    assert too_many.is_error and "languages: at most" in too_many.content[0].text
     assert bad_card.is_error and "card" in bad_card.content[0].text
     assert bad_sort.is_error and "sort" in bad_sort.content[0].text
 

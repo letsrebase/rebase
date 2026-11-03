@@ -255,7 +255,7 @@ def get_ceiling_headroom(
     context: McpContext, year: int | str, legal_entity_id: UUID | None = None
 ) -> dict[str, Any]:
     """The headroom under every active ceiling of the configured pack (REB-352 §1.4),
-    on the year's real paid revenue. Of one azienda (REB-631): the only one when none
+    on the year's real paid revenue. Of one legal entity (REB-631): the only one when none
     is named, required by name otherwise."""
     return (
         AnalyticsService(context.session)
@@ -272,7 +272,7 @@ def simulate_ceiling(
 ) -> dict[str, Any]:
     """The "would this fit?" simulator (REB-352 §1.4): the synthetic addition `query`
     carries, re-evaluated against every active ceiling without saving anything. The
-    azienda resolves as in `get_ceiling_headroom` (REB-631)."""
+    legal entity resolves as in `get_ceiling_headroom` (REB-631)."""
     return (
         AnalyticsService(context.session)
         .simulate_ceiling(_YEAR.validate_python(year), query, context.actor, legal_entity_id)

@@ -69,7 +69,7 @@ class AutomationConfigUpdate(BaseModel):
 
     With two booleans, `None` and "not sent" must be distinguishable: `exclude_none` would
     make "switch A1 off without mentioning A2" indistinguishable from "switch A1 off and
-    A2 on". This is residuo A14's shape, avoided rather than inherited -- there is no
+    A2 on". This is the leftover shape of A14, avoided rather than inherited -- there is no
     nullable typed column here, so no spelling of "clear it" is needed at all.
 
     `extra="forbid"`, because the only thing a misspelled key can do on a settings form is

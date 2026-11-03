@@ -666,7 +666,7 @@ async def test_set_freelancer_tax_data_saves_them_and_never_answers_them(
         assert "XYZ987" not in refused
         # `SafeStr`'s sentence already names the field: said once.
         assert nul == "tax_code: il testo contiene un carattere nullo (\\x00), non ammesso"
-        assert certified_email == "certified_email: non valido"
+        assert certified_email == "certified_email: not valid"
         assert saved == {"tax_data": "saved"}
         assert after["missing_tax_data"] is False
         session = factory()
@@ -795,8 +795,8 @@ async def test_the_actions_that_cannot_be_taken_back_say_so(world: World) -> Non
         "record_notice",
         "close_match",
     ):
-        assert "Non si torna indietro" in tools[name], name
-    assert "incarico finisce" in tools["close_match"]
+        assert "no going back" in tools[name].lower(), name
+    assert "engagement ends" in tools["close_match"]
     assert "area admin" not in tools["list_matches"]
 
 

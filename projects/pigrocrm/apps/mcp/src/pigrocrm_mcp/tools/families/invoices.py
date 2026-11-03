@@ -47,10 +47,10 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
         limit: BoundedLimit = 50,
         cursor: str | None = None,
     ) -> dict[str, Any]:
-        """Elenca fatture e proforma. `exclude_consumed` lascia fuori le proforma già emesse come
-        fattura: la fattura porta il loro numero e `origin_proforma_id` punta alla proforma.
-        `legal_entity_id` filtra per azienda. PDF e XML si scaricano dall'API REST: qui ci sono solo
-        identificativi.
+        """List invoices and proformas. `exclude_consumed` leaves out proformas already issued as an
+        invoice: the invoice carries their number and `origin_proforma_id` points to the proforma.
+        `legal_entity_id` filters by legal entity. PDFs and XML are downloaded from the REST API:
+        only identifiers are returned here.
         """
         return invoices.search(
             context,
@@ -72,15 +72,15 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
     def list_invoice_register_gaps(
         year: int, legal_entity_id: str | None = None
     ) -> list[dict[str, Any]]:
-        """I numeri che il registro di `year` non porta per dichiarazione esplicita, con il motivo.
-        Vuoto se non ci sono buchi dichiarati. `legal_entity_id` omesso: azienda predefinita.
+        """The numbers the `year` register does not carry by explicit declaration, with the reason.
+        Empty if no gaps are declared. `legal_entity_id` omitted: default legal entity.
         """
         return invoices.list_register_gaps(context, year, legal_entity_id)
 
     @mcp.tool(annotations=READ_ONLY)
     @guard
     def get_invoice(invoice_id: str) -> dict[str, Any]:
-        """Legge una fattura o una proforma: numero, stato, totali e righe."""
+        """Read an invoice or a proforma: number, status, totals and lines."""
         return invoices.get(context, invoice_id)
 
     @mcp.tool(annotations=ADDITIVE)
@@ -98,14 +98,14 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
         purchase_order_tender_code: str | None = None,
         purchase_order_project_code: str | None = None,
     ) -> dict[str, Any]:
-        """Crea una proforma. Non è un documento fiscale: non prende un numero, non produce XML per
-        il Sistema di Interscambio e diventa fattura solo quando una persona la emette.
+        """Create a proforma. It is not a fiscal document: it takes no number, produces no XML for
+        the SdI (Sistema di Interscambio) and becomes an invoice only when a person issues it.
 
-        `issue_date` (YYYY-MM-DD): oggi se manca; la fattura prenderà la propria data.
-        `accrual_from` e `accrual_to` (YYYY-MM-DD, insieme o nessuno): il periodo di competenza
-        del lavoro, per esempio il mese. `purchase_order_number`, `purchase_order_date`
-        (YYYY-MM-DD), `purchase_order_tender_code` (10 caratteri) e `purchase_order_project_code`
-        (15) sono l'ordine d'acquisto del cliente.
+        `issue_date` (YYYY-MM-DD): today if missing; the invoice will take its own date.
+        `accrual_from` and `accrual_to` (YYYY-MM-DD, both or neither): the accrual period
+        of the work, for example the month. `purchase_order_number`, `purchase_order_date`
+        (YYYY-MM-DD), `purchase_order_tender_code` (10 characters) and `purchase_order_project_code`
+        (15) are the customer's purchase order.
         """
         return invoices.create_proforma(
             context,
@@ -138,11 +138,11 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
         purchase_order_tender_code: str | None = None,
         purchase_order_project_code: str | None = None,
     ) -> dict[str, Any]:
-        """Corregge l'intestazione di una proforma ancora modificabile: causale, data, scadenza,
-        competenza e ordine d'acquisto. Cambia solo ciò che passi; un campo omesso resta com'è e
-        non si svuota niente. Senza `due_date`, all'emissione la calcolano i termini di
-        pagamento del cliente (`expected_due_date` su `get_invoice`). Rifiuta una fattura e una
-        proforma già consumata da un'emissione. Le righe si cambiano con
+        """Correct the header of a proforma that is still editable: memo, date, due date,
+        accrual and purchase order. Changes only what you pass; an omitted field stays as it is and
+        nothing is cleared. Without `due_date`, it is computed at issue time from the customer's
+        payment terms (`expected_due_date` on `get_invoice`). Rejects an invoice and a
+        proforma already consumed by an issue. Lines are changed with
         `replace_proforma_lines`.
         """
         return invoices.update_proforma(
@@ -162,42 +162,42 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
     @mcp.tool(annotations=DESTRUCTIVE)
     @guard
     def replace_proforma_lines(invoice_id: str, lines: list[dict[str, Any]]) -> dict[str, Any]:
-        """Sostituisce **tutte** le righe di una proforma e ricalcola i totali. Rifiuta una fattura
-        emessa.
+        """Replace **all** the lines of a proforma and recompute the totals. Rejects an issued
+        invoice.
         """
         return invoices.replace_proforma_lines(context, invoice_id, lines)
 
     @mcp.tool(annotations=ADDITIVE)
     @guard
     def confirm_proforma(invoice_id: str) -> dict[str, Any]:
-        """Conferma una proforma in bozza: l'importo è concordato e il documento è pronto per
-        l'emissione. Non consuma numeri e non tocca il registro. Rifiuta una fattura, una
-        proforma già confermata o consumata e una senza righe. Il passo successivo è
-        `issue_invoice`, disponibile solo dove l'installazione l'ha aperto.
+        """Confirm a draft proforma: the amount is agreed and the document is ready for
+        issuing. Consumes no numbers and does not touch the register. Rejects an invoice, a
+        proforma already confirmed or consumed, and one with no lines. The next step is
+        `issue_invoice`, available only where the installation has enabled it.
         """
         return invoices.confirm_proforma(context, invoice_id)
 
     @mcp.tool(annotations=DESTRUCTIVE)
     @guard
     def discard_proforma(invoice_id: str) -> dict[str, Any]:
-        """Scarta una proforma: sparisce dagli elenchi e non si ripristina, se serve si ricrea.
-        Rifiuta una fattura e una proforma già consumata da un'emissione.
+        """Discard a proforma: it disappears from the lists and cannot be restored; recreate it if
+        needed. Rejects an invoice and a proforma already consumed by an issue.
         """
         return invoices.discard_proforma(context, invoice_id)
 
     @mcp.tool(annotations=ADDITIVE)
     @guard
     def render_proforma_pdf(invoice_id: str) -> dict[str, Any]:
-        """Genera il PDF di una proforma e restituisce l'identificativo del documento. I byte si
-        scaricano dall'API REST.
+        """Generate the PDF of a proforma and return the document identifier. The bytes are
+        downloaded from the REST API.
         """
         return invoices.render_proforma_pdf(context, invoice_id)
 
     @mcp.tool(annotations=READ_ONLY)
     @guard
     def get_invoice_xml_url(invoice_id: str) -> dict[str, Any]:
-        """Il percorso REST da cui scaricare il file FatturaPA di una fattura emessa. Non
-        restituisce i byte.
+        """The REST path to download the FatturaPA file of an issued invoice. It does not
+        return the bytes.
         """
         return invoices.xml_url(context, invoice_id)
 
@@ -206,7 +206,7 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
     def set_invoice_payment_state(
         invoice_id: str, payment_status: str, payment_date: str | None = None
     ) -> dict[str, Any]:
-        """Registra un incasso o lo annulla. Non cambia lo stato fiscale della fattura, che resta
-        emessa.
+        """Record a payment or undo it. Does not change the invoice's fiscal status, which stays
+        issued.
         """
         return invoices.set_payment_state(context, invoice_id, payment_status, payment_date)

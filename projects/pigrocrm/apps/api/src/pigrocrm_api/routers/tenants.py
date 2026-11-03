@@ -57,8 +57,8 @@ SIGNUP_BUSY = "Stiamo creando altri spazi in questo momento. Riprova tra un minu
 SIGNUP_CLOSED = "Per ora non si possono aprire nuovi spazi su questa installazione."
 SERVICE_UNAVAILABLE_RESPONSE: dict[str, Any] = {
     "description": (
-        "Il servizio non può creare uno spazio adesso: troppe creazioni in corso "
-        "(`Retry-After` secondi) oppure il numero massimo di spazi è raggiunto."
+        "The service cannot create a space now: too many creations in progress "
+        "(`Retry-After` seconds) or the maximum number of spaces has been reached."
     ),
     "content": {
         "application/json": {

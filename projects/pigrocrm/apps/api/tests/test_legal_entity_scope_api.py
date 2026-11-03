@@ -346,8 +346,8 @@ def test_a_write_the_policy_refuses_is_a_404_and_never_a_500(
     served: TestClient, world: ScopedWorld
 ) -> None:
     """Two refusals with the same status. Moving a customer onto the other legal entity is
-    stopped by the service, which cannot resolve an legal entity the policy hides. A cost
-    without a deal and without an legal entity is shared («all entities»'s alone, §1.7), and nothing
+    stopped by the service, which cannot resolve a legal entity the policy hides. A cost
+    without a deal and without a legal entity is shared («all entities»'s alone, §1.7), and nothing
     in the service says a scoped member may not write one: Postgres does, with
     `insufficient_privilege`, and the API turns that into the same problem document a
     missing row gets instead of the 500 it was."""
@@ -465,7 +465,7 @@ def test_a_scoped_admin_is_refused_the_space_level_writes(
         assert problem["code"] == "permission_denied" and "invite_user" in problem["detail"]
         assert "senza limiti di azienda" in problem["reason"]
         assert client.post("/api/pipeline-stages/seed").status_code == 403
-        # What the legal entity's own admin keeps: the fiscal profile of an legal entity in scope.
+        # What the legal entity's own admin keeps: the fiscal profile of a legal entity in scope.
         assert client.get(f"/api/legal-entities/{world.ltd}").status_code == 200
     finally:
         with factory() as session:

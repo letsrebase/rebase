@@ -48,7 +48,7 @@ def test_resetpassword_reads_the_new_password_from_stdin_when_there_is_no_tty(
     monkeypatch.setattr("sys.argv", ["pigrocrm", "resetpassword", "--email", "cli-reset@studio.it"])
 
     assert cli.main() == 0
-    assert "Password aggiornata per cli-reset@studio.it" in capsys.readouterr().out
+    assert "Password updated for cli-reset@studio.it" in capsys.readouterr().out
     with cli_engine.connect() as connection:
         stored = connection.execute(
             text("select password_hash from users where email = 'cli-reset@studio.it'")
@@ -116,8 +116,8 @@ def test_createadmin_gives_to_root_with_no_legal_entity_one_named_after_the_admi
     row Settings → Legal entities needs, and a later admin leaves it alone."""
     assert _createadmin(monkeypatch, "cli-root@studio.it", "Ada Lovelace") == 0
     out = capsys.readouterr().out
-    assert "Creato amministratore cli-root@studio.it" in out
-    assert "Creata l'azienda predefinita «Ada Lovelace»" in out
+    assert "Admin created: cli-root@studio.it" in out
+    assert "Default legal entity «Ada Lovelace»" in out
     with cli_engine.connect() as connection:
         rows = connection.execute(
             text("select name, legal_name, is_default, active from legal_entities")
@@ -151,7 +151,7 @@ def test_createadmin_works_as_the_application_role_the_api_container_connects_as
 
     assert _createadmin(monkeypatch, "cli-app-role@studio.it", "Ada Lovelace") == 0
 
-    assert "Creata l'azienda predefinita «Ada Lovelace»" in capsys.readouterr().out
+    assert "Default legal entity «Ada Lovelace»" in capsys.readouterr().out
     with cli_engine.connect() as connection:
         assert connection.execute(text("select name from legal_entities")).scalars().all() == [
             "Ada Lovelace"

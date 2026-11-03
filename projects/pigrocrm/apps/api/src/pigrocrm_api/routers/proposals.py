@@ -90,8 +90,8 @@ router.include_router(
         id_param="proposal_id",
         guard=_proposal_exists,
         description=(
-            "La cronologia della proposta: depositata, poi accettata o rifiutata. Il motivo "
-            "di un rifiuto sta solo qui, nel payload della riga `rejected`."
+            "The proposal's timeline: filed, then accepted or rejected. The reason for a "
+            "rejection lives only here, in the payload of the `rejected` row."
         ),
     )
 )

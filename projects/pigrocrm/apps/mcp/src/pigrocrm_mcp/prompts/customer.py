@@ -46,35 +46,35 @@ def status_customer(context: McpContext, customer_id: str) -> list[dict[str, Any
     unpaid = fetched[:UNPAID_INVOICES_SHOWN]
     truncated = len(fetched) > UNPAID_INVOICES_SHOWN
 
-    lines = ["## Fatture non incassate", ""]
+    lines = ["## Unpaid invoices", ""]
     if not unpaid:
-        lines.append("Nessuna fattura da incassare.")
+        lines.append("No invoices to collect.")
     else:
         for invoice in unpaid:
             # A draft that was issued always has both `year` and `number`
             # (`ck_invoices_year_number_together`), but the pair is nullable on the column,
             # so it is rendered defensively rather than assumed.
             number = (
-                f"{invoice.year}/{invoice.number}" if invoice.number is not None else "senza numero"
+                f"{invoice.year}/{invoice.number}" if invoice.number is not None else "no number"
             )
-            due_date = invoice.due_date or "senza scadenza"
+            due_date = invoice.due_date or "no due date"
             total = str(invoice.total).replace(".", ",")
-            lines.append(f"- {number} — {total} € (totale con IVA), scadenza {due_date}")
+            lines.append(f"- {number} — {total} € (total incl. VAT), due {due_date}")
         if truncated:
             lines += [
                 "",
-                f"_Mostrate le {UNPAID_INVOICES_SHOWN} con scadenza più vicina; ce ne sono "
-                "altre. L'elenco completo è `list_invoices`._",
+                f"_Showing the {UNPAID_INVOICES_SHOWN} with the nearest due date; there are "
+                "more. The full list is `list_invoices`._",
             ]
     lines += [
         "",
         "---",
         "",
-        "La scheda completa del cliente — dati fiscali, contatti, deal e timeline — è "
-        "allegata come risorsa: leggila lì, non è ripetuta qui. Preparami il briefing per "
-        "una telefonata: cosa è aperto, cosa è in ritardo, e le due o tre domande da fare. "
-        "Le fatture non incassate sono crediti con IVA, non ricavi. Non proporre di mandare "
-        "solleciti: dimmi solo cosa c'è.",
+        "The customer's full record — tax data, contacts, deals and timeline — is "
+        "attached as a resource: read it there, it is not repeated here. Prepare the briefing "
+        "for a phone call: what is open, what is overdue, and the two or three questions to "
+        "ask. Unpaid invoices are receivables including VAT, not revenue. Do not suggest "
+        "sending reminders: just tell me what is there.",
     ]
     return [
         {"role": "user", "content": {"type": "text", "text": "\n".join(lines)}},

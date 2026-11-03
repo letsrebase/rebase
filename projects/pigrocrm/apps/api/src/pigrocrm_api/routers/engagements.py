@@ -173,9 +173,8 @@ def _plain_response(description: str) -> dict[str, Any]:
 
 
 _UNAVAILABLE_RESPONSE = _plain_response(
-    "PIGROCRM_PUBLIC_URL non è configurato, lo spazio del freelancer non è raggiungibile "
-    "in questo momento, oppure un'altra chiamata sta preparando lo spazio dello stesso "
-    "indirizzo: si riprova più tardi."
+    "PIGROCRM_PUBLIC_URL is not configured, the freelancer's space cannot be reached "
+    "right now, or another call is preparing the space of the same address: retry later."
 )
 
 
@@ -186,8 +185,8 @@ _UNAVAILABLE_RESPONSE = _plain_response(
         201: {
             "model": EngagementRead,
             "description": (
-                "Lo spazio, il cliente «rebase» e il deal della lettera sono stati "
-                "creati ora, per la prima volta con questo match."
+                "The space, the «rebase» customer and the letter's deal were created "
+                "now, for the first time with this match."
             ),
         },
         503: _UNAVAILABLE_RESPONSE,
@@ -201,9 +200,9 @@ def upsert_engagement(
     settings: SettingsDep,
     sender: SenderDep,
 ) -> EngagementRead:
-    """Crea o ritrova lo spazio del freelancer, il cliente «rebase» e il deal della
-    lettera per questo match dell'hub, sotto il bearer di `PIGROCRM_ENGAGEMENTS_TOKEN`
-    che solo l'hub possiede."""
+    """Creates or finds the freelancer's space, the «rebase» client and the letter's
+    deal for this hub match, under the bearer of `PIGROCRM_ENGAGEMENTS_TOKEN`
+    that only the hub holds."""
     answer = _run(match_id, lambda: _service(registry, settings, sender).ensure(match_id, data))
     response.status_code = status.HTTP_201_CREATED if answer.created else status.HTTP_200_OK
     return answer
@@ -222,9 +221,9 @@ def engagement_report(
     date_from: Annotated[date | None, Query(alias="from")] = None,
     date_to: Annotated[date | None, Query(alias="to")] = None,
 ) -> EngagementReport:
-    """Legge le ore del deal di questo match nel periodo dato, con le fatture su cui
-    siedono, sotto lo stesso bearer di `PIGROCRM_ENGAGEMENTS_TOKEN` che solo l'hub
-    possiede."""
+    """Reads the hours of this match's deal in the given period, with the invoices they
+    sit on, under the same bearer of `PIGROCRM_ENGAGEMENTS_TOKEN` that only the hub
+    holds."""
     return _run(
         match_id,
         lambda: _service(registry, settings, sender).report(
@@ -241,9 +240,9 @@ leads_router = APIRouter(
 )
 
 _LEADS_UNAVAILABLE_RESPONSE = _plain_response(
-    "Spazio dei lead non configurato (PIGROCRM_LEADS_SPACE), PIGROCRM_PUBLIC_URL non è "
-    "configurato, lo spazio non è raggiungibile in questo momento, oppure un'altra "
-    "richiesta della stessa persona è in corso: si riprova più tardi."
+    "The leads space is not configured (PIGROCRM_LEADS_SPACE), PIGROCRM_PUBLIC_URL is not "
+    "configured, the space cannot be reached right now, or another request from the same "
+    "person is in progress: retry later."
 )
 
 
@@ -253,7 +252,7 @@ _LEADS_UNAVAILABLE_RESPONSE = _plain_response(
     responses={
         201: {
             "model": LeadRead,
-            "description": "Il deal della richiesta è stato creato ora.",
+            "description": "The request's deal was created now.",
         },
         503: _LEADS_UNAVAILABLE_RESPONSE,
     },
@@ -265,12 +264,12 @@ def file_lead(
     registry: TenantsRegistryDep,
     settings: SettingsDep,
 ) -> LeadRead:
-    """Archivia nello spazio di rebase la richiesta di un'azienda dell'hub: cliente,
-    referente e un deal nuovo per ogni richiesta, sotto il bearer di
-    `PIGROCRM_ENGAGEMENTS_TOKEN` che solo l'hub possiede. Una seconda chiamata con lo
-    stesso `request_id` ritrova il deal e non scrive nulla; con `deal_id` la richiesta si
-    collega a un deal già presente e non si crea altro. Lo spazio è quello di
-    `PIGROCRM_LEADS_SPACE`, mai uno scelto da chi chiama."""
+    """Archives in the rebase space the request of a hub company: client,
+    contact and a new deal for each request, under the bearer of
+    `PIGROCRM_ENGAGEMENTS_TOKEN` that only the hub holds. A second call with the
+    same `request_id` finds the deal and writes nothing; with `deal_id` the request is
+    linked to an existing deal and nothing else is created. The space is the one in
+    `PIGROCRM_LEADS_SPACE`, never one chosen by the caller."""
     bind = _registry_engine(registry)
     answer = _run(
         request_id,

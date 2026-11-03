@@ -32,8 +32,8 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
         customer_id: str | None = None,
         custom_fields: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        """Crea una persona. `customer_id` è opzionale: un contatto può non avere ancora un
-        cliente. `note` è la prima nota (senza data né autore: la firma il CRM).
+        """Create a person. `customer_id` is optional: a contact may not have a
+        customer yet. `note` is the first note (no date or author: the CRM signs it).
         """
         return people.create(
             context,
@@ -53,16 +53,16 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
     @mcp.tool(annotations=DESTRUCTIVE)
     @guard
     def update_person(person_id: str, changes: PersonChanges) -> dict[str, Any]:
-        """Aggiorna una persona. Per staccarla dal cliente senza assegnarne uno nuovo passa
-        `changes.detach = true` invece di `customer_id`.
+        """Update a person. To detach it from the customer without assigning a new one, pass
+        `changes.detach = true` instead of `customer_id`.
         """
         return people.update(context, person_id, changes)
 
     @mcp.tool(annotations=READ_ONLY)
     @guard
     def get_person(person_id: str) -> dict[str, Any]:
-        """Legge una persona, con le ultime 50 note (`note`, dalla più recente; `note_total`
-        le conta, tutte in `person://<id>`).
+        """Read a person, with the last 50 notes (`note`, newest first; `note_total`
+        counts them, all in `person://<id>`).
         """
         return people.get(context, person_id)
 
@@ -78,7 +78,8 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
         # `str`, not a Literal -- see `search_customers`.
         dir: str = "asc",
     ) -> dict[str, Any]:
-        """Cerca persone per nome, cognome o email, anche entro un cliente. `sort`: `created_at`,
+        """Search people by first name, last name or email, optionally within a customer. `sort`:
+        `created_at`,
         `updated_at`, `last_name`.
         """
         return people.search(
@@ -101,11 +102,11 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
     @mcp.tool(annotations=ADDITIVE)
     @guard
     def archive_person(person_id: str) -> dict[str, str]:
-        """Archivia una persona (reversibile con `restore_person`)."""
+        """Archive a person (reversible with `restore_person`)."""
         return people.archive(context, person_id)
 
     @mcp.tool(annotations=ADDITIVE)
     @guard
     def restore_person(person_id: str) -> dict[str, Any]:
-        """Ripristina una persona archiviata."""
+        """Restore an archived person."""
         return people.restore(context, person_id)

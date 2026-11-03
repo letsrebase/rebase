@@ -55,17 +55,17 @@ def move(
         raise ValidationFailed(
             "input",
             "stage_id",
-            "`stage_id` e `pipeline_stage_id` indicano due stati diversi",
-            expected="uno solo dei due, o lo stesso identificativo in entrambi",
+            "`stage_id` and `pipeline_stage_id` name two different stages",
+            expected="only one of the two, or the same identifier in both",
         )
     if not given:
         raise ValidationFailed(
             "input",
             "stage_id",
-            "campo obbligatorio mancante",
+            "required field missing",
             expected=(
-                "l'identificativo dello stato di destinazione, in `stage_id` o "
-                "`pipeline_stage_id`; gli stati sono in `list_pipeline_stages`"
+                "the identifier of the destination stage, in `stage_id` or "
+                "`pipeline_stage_id`; the stages are in `list_pipeline_stages`"
             ),
         )
     destination = given.pop()

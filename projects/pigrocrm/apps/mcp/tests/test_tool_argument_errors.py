@@ -23,7 +23,7 @@ def _assert_guidance(message: str) -> None:
     assert "errors.pydantic.dev" not in message
     assert "validation error" not in message
     assert "Field required" not in message
-    assert "Correggi il valore indicato e riprova" in message
+    assert "Fix the indicated value and try again" in message
 
 
 async def test_a_missing_parameter_names_it_and_lists_what_the_tool_takes(server) -> None:
@@ -34,7 +34,7 @@ async def test_a_missing_parameter_names_it_and_lists_what_the_tool_takes(server
     message = result.content[0].text
     _assert_guidance(message)
     assert "customer_id" in message
-    assert "campo obbligatorio mancante" in message
+    assert "required field missing" in message
     assert "get_customer" in message
 
 
@@ -50,7 +50,7 @@ async def test_a_parameter_the_tool_does_not_have_is_refused_with_the_closest_na
     assert result.is_error
     message = result.content[0].text
     _assert_guidance(message)
-    assert "parametro non riconosciuto" in message
+    assert "parameter not recognized" in message
     assert "`id`" in message or "input.id" in message
     assert "customer_id" in message
 
@@ -62,7 +62,7 @@ async def test_a_misspelt_search_parameter_is_no_longer_silently_ignored(server)
     assert result.is_error
     message = result.content[0].text
     assert "limite" in message
-    assert "forse `limit`" in message
+    assert "maybe `limit`" in message
 
 
 async def test_move_deal_with_a_wrong_name_gets_italian_guidance_naming_stage_id(
@@ -122,7 +122,7 @@ async def test_move_deal_with_two_different_destinations_is_refused(server) -> N
         )
 
     assert result.is_error
-    assert "due stati diversi" in result.content[0].text
+    assert "two different stages" in result.content[0].text
 
 
 @pytest.mark.parametrize(
@@ -194,4 +194,4 @@ async def test_move_deal_with_an_empty_alias_uses_the_other_name(server) -> None
         )
 
     assert result.is_error
-    assert "campo obbligatorio mancante" in result.content[0].text
+    assert "required field missing" in result.content[0].text

@@ -63,7 +63,7 @@ export interface paths {
         };
         /**
          * List Companies
-         * @description REB-285 adds `q` (company_name/referente/email/progetto, trigram-ordered),
+         * @description REB-285 adds `q` (company_name/contact/email/project, trigram-ordered),
          *     `cursor`, and every filter after `origin` beside the original `limit`/`status`.
          */
         get: operations["list_companies_api_hub_companies_get"];
@@ -418,7 +418,7 @@ export interface paths {
         /**
          * Create Company
          * @description An admin opens a request for a company met directly (REB-870): the wizard's fields,
-         *     validated the same way, the referente found or created by email, and no mail to anybody.
+         *     validated the same way, the contact found or created by email, and no mail to anybody.
          *     Without `deal_id` it is a new request like any other: `to_link`, filed in the CRM in
          *     the background as a new deal. With `deal_id`, the CRM deal it already has, the CRM links
          *     it now and creates nothing (no second customer, no second deal): the answer carries
@@ -500,7 +500,7 @@ export interface paths {
         /**
          * Override Company
          * @description Sets or clears any request field beyond `status` (REB-347): the project
-         *     answers, the company's own name, the referente's identity on the linked `users`
+         *     answers, the company's own name, the contact's identity on the linked `users`
          *     row. Recorded on `GET .../audit`; reversible with
          *     `POST .../audit/{action_id}/revert`.
          */
@@ -577,7 +577,7 @@ export interface paths {
         /**
          * Open Talent Cloud
          * @description «Apri il talent cloud» on a company request's page: 201 with the grant to the
-         *     request's referente, whose mail leaves after this answer; 200 with the grant
+         *     request's contact, whose mail leaves after this answer; 200 with the grant
          *     already live for that person and request, a double click included, and no mail.
          *     Without a mail key the cloud opens all the same and nobody is mailed.
          */
@@ -736,7 +736,7 @@ export interface paths {
         };
         /**
          * Get Signup
-         * @description One bare sign-up as the row the Talenti list shows for it (`status` «lead», `origin`
+         * @description One bare sign-up as the row the «Talenti» list shows for it (`status` «lead», `origin`
          *     «form»): the page of a person who has no card yet. 404 for an unknown id, and for a
          *     person who already has a card, whom the list shows as that card.
          */
@@ -1734,7 +1734,7 @@ export interface paths {
          *     **200**: `{"rate_freelancer": "0.1000", "rate_company": "0.3000"}`. Both are the
          *     fraction of one as a decimal string with four places, the shape the member area's
          *     `rate_freelancer` and `rate_company` already carry (`"0.1000"` is 10%). Nothing else is
-         *     in the body, by schema: no margin, no compenso, no euro figure, no code, no counts.
+         *     in the body, by schema: no margin, no fee, no euro figure, no code, no counts.
          *
          *     **503**: the settings row is missing (a deploy never leaves that: migration 0024
          *     seeds it). The body is the Italian sentence `{"detail": ...}`, the answer carries
@@ -3213,7 +3213,7 @@ export interface components {
         };
         /**
          * CompanyAdminCreate
-         * @description What an admin opens a request with, on the referente's behalf (REB-870): the
+         * @description What an admin opens a request with, on the contact's behalf (REB-870): the
          *     wizard's fields, validated the same way, plus the CRM deal the company already has,
          *     when it has one. With it the CRM links that deal and creates nothing.
          */
@@ -3264,7 +3264,7 @@ export interface components {
         /**
          * CompanyCreate
          * @description What the wizard collects: the eight `CompanyFields` answers plus the company's
-         *     own identity and its referente's, get-or-created by email.
+         *     own identity and its contact's, get-or-created by email.
          */
         CompanyCreate: {
             /** Project */
@@ -3310,7 +3310,7 @@ export interface components {
         };
         /**
          * CompanyFields
-         * @description The eight answers about a request that its referente may write and later
+         * @description The eight answers about a request that its contact may write and later
          *     change: what `CompanyCreate` collects together with the company's own identity,
          *     and what `CompanyUpdate` alone accepts once signed in, mirroring
          *     `FreelancerFields`' split for the freelancer side (REB-314). REB-380 widens the
@@ -3363,8 +3363,8 @@ export interface components {
         /**
          * CompanyOverride
          * @description What an admin may set or clear on a `Company` request beyond `status`
-         *     (REB-347): the eight project answers a referente could have written
-         *     (`CompanyFields`), the company's own name, and the referente's identity fields on
+         *     (REB-347): the eight project answers a contact could have written
+         *     (`CompanyFields`), the company's own name, and the contact's identity fields on
          *     the linked `users` row -- both admin-only even for a self-edit, as
          *     `MemberService.update_company`'s own docstring says. Same optional-and-`null`
          *     contract as `FreelancerOverride`. `remote`/`headcount`/`requested_role`
@@ -3486,7 +3486,7 @@ export interface components {
          * CompanyUpdate
          * @description What a company contact changes about one of their requests (REB-314, by id since
          *     REB-602): the eight project answers, never `status`, `note`, `company_name`,
-         *     `phone` or the referente's identity -- the same field-isolation `MemberUpdate`
+         *     `phone` or the contact's identity -- the same field-isolation `MemberUpdate`
          *     keeps for the freelancer card.
          */
         CompanyUpdate: {
@@ -3715,7 +3715,7 @@ export interface components {
          * FiscalData
          * @description What «Chi e per chi», step 1 of «Crea match», and «Match e contratti» save for a
          *     freelancer. `vat_number` omitted, `null` or blank is none (REB-687): the member works
-         *     as a prestazione occasionale and signs only the occasional texts.
+         *     as an occasional service and signs only the occasional texts.
          */
         FiscalData: {
             /** Tax Code */
@@ -4654,7 +4654,7 @@ export interface components {
          *     project: no base, a cancelled match, one whose letter is already out of the
          *     running); `already_accrued` when the referral already paid on another match, since a
          *     referral pays once -- no figure then; `to_verify` when the referral is a
-         *     company's and its referente has not logged in yet (REB-658): nothing it could sign
+         *     company's and its contact has not logged in yet (REB-658): nothing it could sign
          *     earns anything until then, so no figure either. `referrer_name` is the referrer's
          *     whole name, and `referrer_freelancer_id` his own card, when he has one, so a page
          *     can link to it.
@@ -5375,7 +5375,7 @@ export interface components {
          *     `letter`, `storico`) when and by what; they are `None` while it is pending. A
          *     pending referral has no reward and nothing to confirm (`reward_id` and `status` are
          *     `None`), and a pending company has no `match_*` and no projection either, since
-         *     nothing it could sign would earn anything until its referente logs in.
+         *     nothing it could sign would earn anything until its contact logs in.
          */
         ReferralLedgerItem: {
             /**
@@ -5882,7 +5882,7 @@ export interface components {
         /**
          * TalentCloudGrantRead
          * @description One grant of the talent cloud (REB-518, spec § 4.1), as the admin reads it: the
-         *     request it was opened from and its company's name, the referente by name and
+         *     request it was opened from and its company's name, the contact by name and
          *     address (the admin sees names everywhere), who opened it and when, and who closed
          *     it and when, `None` while it is live.
          */
@@ -6044,7 +6044,7 @@ export interface components {
         };
         /**
          * TalentsFilters
-         * @description The Talenti list's own filters (`GET /api/hub/talent`, `talents.py:191`), stored
+         * @description The «Talenti» list's own filters (`GET /api/hub/talent`, `talents.py:191`), stored
          *     on the campaign and replayed through `TalentsService` when the list is shown and when
          *     a mail is about to leave. `origin_page` is the marketing page the person started from
          *     (`home`, `pigrocrm`).
@@ -6082,7 +6082,7 @@ export interface components {
         };
         /**
          * TalentsFilters
-         * @description The Talenti list's own filters (`GET /api/hub/talent`, `talents.py:191`), stored
+         * @description The «Talenti» list's own filters (`GET /api/hub/talent`, `talents.py:191`), stored
          *     on the campaign and replayed through `TalentsService` when the list is shown and when
          *     a mail is about to leave. `origin_page` is the marketing page the person started from
          *     (`home`, `pigrocrm`).

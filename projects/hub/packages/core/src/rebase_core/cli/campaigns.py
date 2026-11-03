@@ -22,23 +22,23 @@ def conversions_check() -> int:
     pixel = pixel_from_settings(settings)
     if pixel is None:
         print(
-            "Nessun pixel configurato: servono REBASE_OPENAI_PIXEL_ID e "
-            "REBASE_OPENAI_CONVERSIONS_API_KEY.",
+            "No pixel configured: REBASE_OPENAI_PIXEL_ID and "
+            "REBASE_OPENAI_CONVERSIONS_API_KEY are required.",
             file=sys.stderr,
         )
         return 1
     outcome = pixel.send(
         # A validation-only event needs an id like any other, and this one must not look
         # like a conversion in case the flag is ever ignored.
-        event_id=f"verifica-{datetime.now(UTC).strftime('%Y%m%d%H%M%S')}",
+        event_id=f"check-{datetime.now(UTC).strftime('%Y%m%d%H%M%S')}",
         source_url=settings.signup_url,
         validate_only=True,
     )
     if outcome.sent:
-        print(f"La chiave funziona: evento validato ({outcome.status}), niente registrato.")
+        print(f"The key works: event validated ({outcome.status}), nothing recorded.")
         return 0
     print(
-        f"OpenAI ha rifiutato la verifica: {outcome.status} {outcome.detail}".strip(),
+        f"OpenAI rejected the check: {outcome.status} {outcome.detail}".strip(),
         file=sys.stderr,
     )
     return 1
@@ -54,7 +54,7 @@ def campaigns_tick() -> int:
     settings = get_settings()
     sender = campaign_sender_from_settings(settings)
     if sender is None:
-        print("invio non configurato: nessuna campagna parte senza REBASE_RESEND_API_KEY")
+        print("sending not configured: no campaign goes out without REBASE_RESEND_API_KEY")
         return 0
     session = open_session(settings)()
     try:
@@ -62,9 +62,9 @@ def campaigns_tick() -> int:
     finally:
         session.close()
     print(
-        f"{result.campaigns} campagne, {result.sent} inviate, "
-        f"{result.skipped} saltate, {result.failed} fallite, "
-        f"{result.stamped} esiti registrati"
+        f"{result.campaigns} campaigns, {result.sent} sent, "
+        f"{result.skipped} skipped, {result.failed} failed, "
+        f"{result.stamped} outcomes recorded"
     )
     return 0
 

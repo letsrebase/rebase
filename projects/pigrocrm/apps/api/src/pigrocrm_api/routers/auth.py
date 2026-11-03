@@ -64,9 +64,8 @@ router = APIRouter(prefix="/api/auth", tags=["auth"], responses=PROBLEM_RESPONSE
 # FastAPI merges a route's own `responses=` with the router's.
 _LOGIN_UNAUTHORIZED_RESPONSE: dict[str, Any] = {
     "description": (
-        "Email o password non corrette, oppure l'utente è disattivato -- lo stesso "
-        "messaggio identico in tutti e tre i casi, così la risposta stessa non "
-        "rivela quale sia la causa reale."
+        "Wrong email or password, or the user is deactivated: the message is identical "
+        "in all three cases, so the answer itself does not reveal the real cause."
     ),
     "content": {
         "application/json": {
@@ -87,10 +86,9 @@ _LOGIN_UNAUTHORIZED_RESPONSE: dict[str, Any] = {
 # cannot answer 401.
 _UNAUTHENTICATED_RESPONSE: dict[str, Any] = {
     "description": (
-        "Non autenticato: il cookie di sessione è assente, scaduto o non valido, "
-        "oppure l'utente non è più attivo. Il client deve trattarlo come sessione "
-        "terminata (ritentare /api/auth/refresh e poi reindirizzare al login), non "
-        "come un errore da ripetere."
+        "Not authenticated: the session cookie is missing, expired or invalid, or the "
+        "user is no longer active. The client must treat it as an ended session (try "
+        "/api/auth/refresh, then redirect to the login), not as an error to retry."
     ),
     "content": {
         "application/json": {

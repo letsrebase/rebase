@@ -156,7 +156,7 @@ async def test_update_proforma_refuses_to_invoice_and_to_consumed_proforma(
             "update_proforma", {"invoice_id": str(invoice.id), "memo": "Altro"}
         )
         assert refused.is_error
-        assert "da MCP si modificano solo le proforma" in refused.content[0].text
+        assert "over MCP only proformas can be edited" in refused.content[0].text
         read = await client.call_tool("get_invoice", {"invoice_id": str(invoice.id)})
         assert read.structured_content["memo"] is None
 

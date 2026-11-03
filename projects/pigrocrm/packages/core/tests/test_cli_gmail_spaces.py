@@ -265,7 +265,7 @@ def test_one_run_synchronises_the_root_and_every_space_one_line_each(
     assert _line(ROOT_LABEL, None) in lines[0]
     assert _line(ONE, ONE) in lines[1]
     assert _line(TWO, TWO) in lines[2]
-    assert all("messaggi nuovi" in line for line in lines)
+    assert all("new messages" in line for line in lines)
     for slug in (None, *SPACES):
         assert _watermark(settings, slug) is not None
     # Each installation's token was opened with its own key, which only its own
@@ -349,7 +349,7 @@ def test_a_space_whose_schema_lags_is_skipped_on_its_own_line(
 
     captured = capsys.readouterr()
     skipped = (
-        f"gmail-sync {ONE}: saltato (ProgrammingError)"
+        f"gmail-sync {ONE}: skipped (ProgrammingError)"
         if where == "space"
         else f"{_line(ONE, ONE)}"
     )
@@ -391,7 +391,7 @@ def test_a_space_whose_database_is_gone_does_not_take_the_others_with_it(
     assert _run() == 1
 
     captured = capsys.readouterr()
-    assert f"gmail-sync {ONE}: saltato (OperationalError)" in captured.err
+    assert f"gmail-sync {ONE}: skipped (OperationalError)" in captured.err
     assert 'File "' in captured.err
     assert _line(TWO, TWO) in captured.out
     assert _watermark(settings, TWO) is not None
@@ -415,9 +415,7 @@ def test_an_unreachable_registry_still_synchronises_the_root(
     assert _run() == 1
 
     captured = capsys.readouterr()
-    assert captured.err.strip().endswith(
-        "gmail-sync: registro degli spazi non raggiungibile (RuntimeError)"
-    )
+    assert captured.err.strip().endswith("gmail-sync: space registry unreachable (RuntimeError)")
     assert "hunter2" not in captured.err
     assert _line(ROOT_LABEL, None) in captured.out
 
@@ -448,7 +446,7 @@ def test_no_mailbox_is_not_claimed_while_a_space_could_not_be_read(
     capsys: pytest.CaptureFixture[str],
     unread: str,
 ) -> None:
-    """«nessuna casella Google collegata» is a claim about every installation, and a run
+    """«no Google mailbox connected» is a claim about every installation, and a run
     that could not read the registry, or one space, cannot make it: the mailbox may be
     in the part it did not read. Its own line has said what went wrong already."""
     import pigrocrm.core.cli.spaces_walk as tenants_database
@@ -476,7 +474,7 @@ def test_no_mailbox_is_not_claimed_while_a_space_could_not_be_read(
     assert captured.out == ""
     # One line of log; a space's read that failed is followed by its frames.
     assert len([line for line in captured.err.splitlines() if "gmail-sync" in line]) == 1
-    assert "nessuna casella" not in captured.err
+    assert "no Google mailbox connected" not in captured.err
 
 
 def test_an_unmatched_email_says_the_match_may_be_incomplete(
@@ -505,9 +503,9 @@ def test_an_unmatched_email_says_the_match_may_be_incomplete(
     captured = capsys.readouterr()
     last = captured.err.strip().splitlines()[-1]
     assert "nobody@example.it" in last
-    assert "1 collegate" in last
-    assert "non è stato letto" in last
-    assert "non è una casella collegata" not in last
+    assert "1 connected" in last
+    assert "was not read" in last
+    assert "is not a connected mailbox" not in last
     assert _watermark(settings, TWO) is None
 
 
@@ -654,7 +652,7 @@ def test_a_clock_that_cannot_be_written_is_a_line_and_an_exit_status(
     assert _run() == 1
 
     captured = capsys.readouterr()
-    assert f"{ONE}: orologio non scritto (RuntimeError)" in captured.err
+    assert f"{ONE}: clock not written (RuntimeError)" in captured.err
     assert "secret" not in captured.err + captured.out
     assert _line(ONE, ONE) in captured.out, "the mailbox did synchronise"
     assert _clock(settings, ONE) is None

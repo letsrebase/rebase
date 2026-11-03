@@ -175,8 +175,8 @@ def test_the_command_opens_one_task_in_the_root_and_in_every_space(
 
     out = capsys.readouterr().out
     for label in ("root", *SPACES):
-        assert f"{label}: fattura_scaduta aperte 1, già aperte 0" in out
-        assert f"{label}: deal_fermo aperte 0, già aperte 0" in out
+        assert f"{label}: overdue_invoice opened 1, already open 0" in out
+        assert f"{label}: stalled_deal opened 0, already open 0" in out
         assert _count(settings, None if label == "root" else label) == 1
 
 
@@ -236,9 +236,9 @@ def test_a_clock_that_cannot_be_written_is_a_line_and_an_exit_status(
     )
 
     captured = capsys.readouterr()
-    assert captured.err.splitlines() == [f"{FIRST_SPACE}: orologio non scritto (RuntimeError)"]
+    assert captured.err.splitlines() == [f"{FIRST_SPACE}: clock not written (RuntimeError)"]
     assert "secret" not in captured.err
-    assert f"{FIRST_SPACE}: fattura_scaduta aperte 1" in captured.out, "the pass itself worked"
+    assert f"{FIRST_SPACE}: overdue_invoice opened 1" in captured.out, "the pass itself worked"
     assert _clock(settings, FIRST_SPACE) is None
 
 
@@ -251,7 +251,7 @@ def test_the_second_run_opens_nothing_new(
 
     out = capsys.readouterr().out
     for label in ("root", *SPACES):
-        assert f"{label}: fattura_scaduta aperte 0, già aperte 1" in out
+        assert f"{label}: overdue_invoice opened 0, already open 1" in out
         assert _count(settings, None if label == "root" else label) == 1
 
 
@@ -261,7 +261,7 @@ def test_a_rehearsal_says_what_it_would_open_and_writes_nothing(
     assert cli.main(["automations", "--dry-run", "--slug", FIRST_SPACE]) == 0
 
     out = capsys.readouterr().out
-    assert f"{FIRST_SPACE}: fattura_scaduta aperte 1, già aperte 0 (prova)" in out
+    assert f"{FIRST_SPACE}: overdue_invoice opened 1, already open 0 (dry run)" in out
     assert "root:" not in out and SECOND_SPACE not in out
     assert _count(settings, FIRST_SPACE) == 0
 
@@ -279,7 +279,7 @@ def test_a_switched_off_rule_is_reported_and_opens_nothing(
 
     assert cli.main(["automations", "--slug", FIRST_SPACE]) == 0
 
-    assert f"{FIRST_SPACE}: fattura_scaduta disattivata" in capsys.readouterr().out
+    assert f"{FIRST_SPACE}: overdue_invoice disabled" in capsys.readouterr().out
     assert _count(settings, FIRST_SPACE) == 0
 
 
@@ -287,9 +287,9 @@ def test_another_day_is_only_a_rehearsal(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     assert cli.main(["automations", "--date", "2030-01-01"]) == 2
-    assert "--date cambia il giorno" in capsys.readouterr().err
+    assert "--date changes the day" in capsys.readouterr().err
 
 
 def test_an_unknown_slug_is_an_error(capsys: pytest.CaptureFixture[str]) -> None:
     assert cli.main(["automations", "--slug", "non-esiste"]) == 1
-    assert "non-esiste: non nel registro" in capsys.readouterr().err
+    assert "non-esiste: not in the registry" in capsys.readouterr().err

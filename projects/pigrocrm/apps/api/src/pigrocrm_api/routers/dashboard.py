@@ -45,8 +45,8 @@ LegalEntityQuery = Annotated[
     UUID | None,
     Query(
         description=(
-            "Limita ogni cifra a un'azienda dello spazio; omesso, le cifre di tutte le "
-            "aziende sommate. La risposta lo riporta in `legal_entity_id`."
+            "Limits every figure to one legal entity of the space; omitted, the figures of all "
+            "legal entities summed. The response reports it in `legal_entity_id`."
         )
     ),
 ]

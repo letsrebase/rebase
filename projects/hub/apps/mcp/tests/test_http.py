@@ -132,7 +132,7 @@ async def test_without_a_valid_token_the_answer_is_one_uniform_401(
     _, client = served
     response = await client.post("/mcp", json=INITIALIZE, headers={**ACCEPT, **headers})
     assert response.status_code == 401
-    assert response.json() == {"detail": "Token non valido"}
+    assert response.json() == {"detail": "Invalid token"}
     assert response.headers["www-authenticate"] == "Bearer"
 
 

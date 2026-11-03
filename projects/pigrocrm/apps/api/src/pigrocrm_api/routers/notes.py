@@ -40,10 +40,10 @@ def list_notes(
     actor: ActorDep,
     limit: Annotated[int, Query(ge=1, le=PAGE_LIMIT_MAX)] = PAGE_LIMIT_MAX,
 ) -> list[NoteRead]:
-    """Le note di un deal, di un cliente o di una persona, la più recente per prima. Ognuna
-    dice chi l'ha scritta, quando e da dove, e se chi chiede può modificarla. Un thread è
-    una manciata di osservazioni: `limit` è un tetto contro una lettura senza fine, e il
-    suo valore predefinito è il massimo, perché mezzo thread vale meno di uno intero."""
+    """The notes of a deal, a client or a person, most recent first. Each one
+    says who wrote it, when and from where, and whether the caller can edit it. A thread is
+    a handful of remarks: `limit` is a cap against an endless read, and its
+    default is the maximum, because half a thread is worth less than a whole one."""
     return NoteService(session).list_for_entity(
         ENTITY_TYPES[collection], entity_id, actor, limit=limit
     )
@@ -61,25 +61,25 @@ def add_note(
     session: SessionDep,
     actor: ActorDep,
 ) -> NoteRead:
-    """Aggiunge una nota. Autore, data e origine li scrive il CRM: il corpo porta solo il
-    testo."""
+    """Adds a note. Author, date and origin are written by the CRM: the body carries only the
+    text."""
     return NoteService(session).add(ENTITY_TYPES[collection], entity_id, data, actor)
 
 
 @router.patch("/notes/{note_id}", response_model=NoteRead)
 def update_note(note_id: UUID, data: NoteUpdate, session: SessionDep, actor: ActorDep) -> NoteRead:
-    """Cambia il testo di una nota: la modifica chi l'ha scritta o un amministratore, e
-    mai una nota scritta dal sistema o da rebase."""
+    """Changes a note's text: its author or an admin can edit it, and
+    never a note written by the system or by rebase."""
     return NoteService(session).update(note_id, data, actor)
 
 
 @router.get("/notes/{note_id}/revisions", response_model=list[NoteRevisionRead])
 def list_revisions(note_id: UUID, session: SessionDep, actor: ActorDep) -> list[NoteRevisionRead]:
-    """Cosa diceva la nota prima di ogni modifica, per intero, la più recente per prima."""
+    """What the note said before each edit, in full, most recent first."""
     return NoteService(session).revisions(note_id, actor)
 
 
 @router.delete("/notes/{note_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_note(note_id: UUID, session: SessionDep, actor: ActorDep) -> None:
-    """Cancella una nota (resta nella cronologia): stesse regole della modifica."""
+    """Deletes a note (it stays in the history): same rules as editing."""
     NoteService(session).delete(note_id, actor)

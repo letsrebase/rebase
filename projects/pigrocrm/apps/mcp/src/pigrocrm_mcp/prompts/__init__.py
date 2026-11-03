@@ -48,28 +48,27 @@ def register_prompts(mcp: MCPServer, context: McpContext, guard: Callable[..., A
     def review_pipeline(
         date_from: str | None = None, date_to: str | None = None
     ) -> list[dict[str, Any]]:
-        """La revisione settimanale della pipeline commerciale, con i deal fermi e le
-        offerte in attesa. `date_from` e `date_to` sono date ISO opzionali: senza, il mese in
-        corso."""
+        """The weekly review of the sales pipeline, with stalled deals and pending offers.
+        `date_from` and `date_to` are optional ISO dates: without them, the current month."""
         return dashboard_prompts.review_pipeline(context, date_from, date_to)
 
     @mcp.prompt(name="month-close")
     @guard
     def closing_month(year: int, month: int) -> list[dict[str, Any]]:
-        """La lista di cose da fare prima di chiudere un mese: conto economico del periodo,
-        ore non fatturate, fatture scadute, e se il periodo è già chiuso."""
+        """The to-do list before closing a month: the period's profit and loss, unbilled
+        hours, overdue invoices, and whether the period is already closed."""
         return dashboard_prompts.closing_month(context, year, month)
 
     @mcp.prompt(name="hours-to-log")
     @guard
     def hours_to_log(week: str | None = None) -> list[dict[str, Any]]:
-        """I giorni della settimana corrente senza nessuna ora registrata, con i deal su
-        cui si è lavorato di recente."""
+        """The days of the current week with no hours logged, with the deals worked on
+        recently."""
         return dashboard_prompts.hours_to_log(context, week)
 
     @mcp.prompt(name="customer-status")
     @guard
     def status_customer(customer_id: str) -> list[dict[str, Any]]:
-        """Il briefing prima di una telefonata: fatture non incassate, e la scheda completa
-        del cliente allegata come risorsa."""
+        """The briefing before a phone call: unpaid invoices, and the customer's full record
+        attached as a resource."""
         return customer_prompts.status_customer(context, customer_id)

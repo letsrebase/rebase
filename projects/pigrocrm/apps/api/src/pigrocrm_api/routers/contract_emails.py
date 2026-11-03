@@ -26,7 +26,7 @@ router = APIRouter(
 
 @router.get("/{contract_id}/email-template-variables", response_model=list[ContractEmailVariable])
 def template_variables(contract_id: UUID) -> list[ContractEmailVariable]:  # noqa: ARG001
-    """I nomi che un modello può usare come `{{nome}}`. The path names the contract the page
+    """The names a template can use as `{{nome}}`. The path names the contract the page
     asks from; the names are the same for every contract, and the router's `get_actor`
     dependency is what authenticates."""
     return variables()
@@ -67,7 +67,7 @@ def update_template(
 def preview(
     contract_id: UUID, data: ContractEmailRequest, session: SessionDep, actor: ActorDep
 ) -> ContractEmailPreview:
-    """Cosa partirebbe con questo modello per questa fattura, senza scrivere niente."""
+    """What would go out with this template for this invoice, without writing anything."""
     return ContractEmailService(session).preview(
         contract_id, data.template_id, data.invoice_id, actor
     )
@@ -86,8 +86,8 @@ def prepare_draft(
     settings: SettingsDep,
     storage: StorageDep,
 ) -> EmailDraftRead:
-    """Prepara la bozza di email con la fattura e il registro in allegato. Non invia: la
-    persona invia con `POST /api/email-drafts/{id}/send`, che non ha un equivalente MCP."""
+    """Prepares the email draft with the invoice and the register attached. It does not send: the
+    person sends with `POST /api/email-drafts/{id}/send`, which has no MCP equivalent."""
     return ContractEmailService(session).prepare(
         contract_id,
         data.template_id,

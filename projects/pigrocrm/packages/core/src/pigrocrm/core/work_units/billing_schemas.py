@@ -18,7 +18,7 @@ class BillableLine(BaseModel):
 
     month: str = Field(description="AAAA-MM")
     description: str
-    work_units: int = Field(description="Quante giornate copre la riga")
+    work_units: int = Field(description="How many workdays the line covers")
     quantity: Decimal
     unit_of_measure: str
     unit_price: Decimal
@@ -37,7 +37,7 @@ class BillableDays(BaseModel):
     contract_id: UUID
     currency: str
     lines: list[BillableLine]
-    months: list[str] = Field(description="I mesi AAAA-MM che hanno giornate pronte")
+    months: list[str] = Field(description="The YYYY-MM months that have ready workdays")
     work_units: int
     quantity: Decimal
     taxable_amount: Decimal
@@ -45,9 +45,9 @@ class BillableDays(BaseModel):
     without_approval: int
     block_reason: str | None = Field(
         default=None,
-        description="Perché la bozza non si può creare da qui, quando non è questione di tariffe",
+        description="Why the draft cannot be created from here, when it is not a matter of rates",
     )
-    billable: bool = Field(description="C'è almeno una riga e ogni giornata ha la sua tariffa")
+    billable: bool = Field(description="There is at least one line and every workday has its rate")
 
 
 class InvoiceDaysRequest(BaseModel):

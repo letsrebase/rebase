@@ -23,18 +23,17 @@ def register(mcp: MCPServer, deps: Deps) -> None:
 
     @mcp.tool()
     def list_ai_config() -> dict[str, Any]:
-        """«Modelli AI», solo lettura: per ogni fornitore se la chiave c'è («configurata,
-        finisce con …abcd», mai la chiave) e se è acceso; per ogni compito (`card`,
-        `team_proposal`) fornitore, modello, livello di ragionamento, massimo di token,
-        tetto giornaliero in euro, quanto ha speso oggi e perché non può partire, se non
-        può; i prezzi per milione di token e la spesa del mese per compito e fornitore.
-        `trail` sono le ultime 50 voci del registro della configurazione, dalla più
-        recente, ognuna con l'amministratore: le chiavi, gli interruttori, i compiti e i
-        prezzi cambiati, e ogni rigenerazione delle schede, quando è stata avviata (`source`
-        `web` o `cli`, quante schede, se col Batch API) e quando è finita (quante scritte,
-        non riuscite, scartate, il costo in euro e per ogni scheda non scritta il motivo,
-        mai un nome o il testo di una scheda). Le chiavi si cambiano solo dalla pagina:
-        nessun tool le scrive."""
+        """«Modelli AI», read only: for each provider whether the key is there («configurata,
+        finisce con …abcd», never the key) and whether it is on; for each task (`card`,
+        `team_proposal`) provider, model, reasoning level, maximum tokens,
+        daily cap in euros, how much it spent today and why it cannot start, if it
+        cannot; the prices per million tokens and the month's spend per task and provider.
+        `trail` is the last 50 entries of the configuration log, most recent first, each
+        with the administrator: the keys, switches, tasks and prices changed, and every
+        regeneration of the cards, when it was started (`source` `web` or `cli`, how many
+        cards, whether with the Batch API) and when it finished (how many written, failed,
+        discarded, the cost in euros and for each card not written the reason, never a name
+        or the text of a card). Keys are changed only from the page: no tool writes them."""
 
         def read(s: Session) -> dict[str, Any]:
             service = AiConfigService(s, deps.team_settings())
@@ -47,12 +46,12 @@ def register(mcp: MCPServer, deps: Deps) -> None:
 
     @mcp.tool()
     def list_pigro_spaces() -> dict[str, Any]:
-        """Gli spazi di PigroCRM come li mostra «Istanze Pigro» nell'area admin: slug,
-        email di chi lo ha aperto, quando, l'indirizzo dello spazio e il membro dell'hub
-        dietro quell'email quando ne ha una scheda. Letti dall'API del CRM con il token
-        di registro, mai dal suo database; `total` li conta. Solo lettura."""
+        """The PigroCRM spaces as «Istanze Pigro» shows them in the admin area: slug,
+        email of who opened it, when, the space's address and the hub member behind that
+        email when they have a card. Read from the CRM's API with the registry token,
+        never from its database; `total` counts them. Read only."""
         if deps.settings is None or deps.http is None or not deps.settings.pigro_registry_token:
-            raise not_configured("Il registro di Pigro", "REBASE_PIGRO_REGISTRY_TOKEN")
+            raise not_configured("The Pigro registry", "REBASE_PIGRO_REGISTRY_TOKEN")
         registry = PigroRegistry(deps.settings, deps.http)
         session = deps.factory()
         try:
@@ -64,20 +63,20 @@ def register(mcp: MCPServer, deps: Deps) -> None:
 
     @mcp.tool()
     def guide_stats() -> dict[str, Any]:
-        """Quanti hanno scaricato la guida ai primi passi da freelance: `total` i
-        download, `members` le persone diverse dietro, `total_members` quante potevano,
-        `last_7_days` i download dell'ultima settimana e `recent` gli ultimi con
-        nome ed email. Solo lettura."""
+        """How many downloaded the first-steps guide for freelancers: `total` the
+        downloads, `members` the distinct people behind them, `total_members` how many could
+        have, `last_7_days` the downloads of the last week and `recent` the latest with
+        name and email. Read only."""
         return deps.run(lambda s: PerkService(s).guide_stats())
 
     @mcp.tool()
     def login_stats() -> dict[str, Any]:
-        """Chi è entrato nella sua area e quando: `total` gli accessi con il link via
-        email, `members` le persone diverse dietro, `total_members` quante hanno una
-        scheda, `last_7_days` gli accessi dell'ultima settimana e `recent` gli
-        ultimi con nome ed email. Ogni accesso in `recent` dice anche da dove è partito:
-        `utm_source`, `utm_medium`, `utm_campaign`, `utm_content`, `utm_term`, `utm_id` e
-        `origin`, letti dall'indirizzo della pagina di accesso (il link di una mail di
-        contatto li porta), `null` quando la pagina non ne aveva. Ogni scheda letta da
-        `get_talent` e da `get_freelancer` porta anche `logins` e `last_access`."""
+        """Who entered their area and when: `total` the logins with the link via
+        email, `members` the distinct people behind them, `total_members` how many have a
+        card, `last_7_days` the logins of the last week and `recent` the
+        latest with name and email. Every login in `recent` also says where it started:
+        `utm_source`, `utm_medium`, `utm_campaign`, `utm_content`, `utm_term`, `utm_id` and
+        `origin`, read from the address of the login page (the link in an outreach email
+        carries them), `null` when the page had none. Every card read by
+        `get_talent` and `get_freelancer` also carries `logins` and `last_access`."""
         return deps.run(lambda s: LoginService(s).stats())

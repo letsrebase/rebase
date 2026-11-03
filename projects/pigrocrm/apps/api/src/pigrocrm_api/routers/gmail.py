@@ -242,8 +242,8 @@ def read_messages(
         Literal["conversations", "recent"],
         Query(
             description=(
-                "`conversations`: per conversazione, come la pagina di un cliente; "
-                "`recent`: dal più recente, perché il limite tagli i più vecchi"
+                "`conversations`: grouped by conversation, like a client's page; `recent`: most "
+                "recent first, so that the limit cuts the oldest"
             )
         ),
     ] = "conversations",

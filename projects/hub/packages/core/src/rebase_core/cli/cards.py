@@ -15,26 +15,26 @@ from rebase_core.errors import DomainError
 def cards_refresh(limit: int) -> int:
     """`rebase cards-refresh [--limit N]`: the anonymous card of every freelancer whose CV
     has none yet, or has changed since, `limit` at a time, the oldest first (REB-510).
-    Run once after the deploy that brings the key, and again until it prints «0 schede
-    scritte, 0 non riuscite». A CV that failed on its own account is not tried again
+    Run once after the deploy that brings the key, and again until it prints «0 cards
+    written, 0 failed». A CV that failed on its own account is not tried again
     until it changes, so the runs end; a batch that met an outage stops there, counts it
-    among «non riuscite», says «fermato: modello non disponibile» and leaves it and the
+    among «failed», says «stopped: model unavailable» and leaves it and the
     rest to the next run. A card still giving the gender away after its rewrite is among
-    «non riuscite» (REB-802), and not tried again until its CV changes. Without a model
-    configured for the `card` task it says so, rather than printing «0 schede scritte» for
+    «failed» (REB-802), and not tried again until its CV changes. Without a model
+    configured for the `card` task it says so, rather than printing «0 cards written» for
     ever."""
     from rebase_core.card_writer import CardWriter
     from rebase_core.llm import call_for_task
 
     if limit < 1:
-        print("--limit deve essere almeno 1.", file=sys.stderr)
+        print("--limit must be at least 1.", file=sys.stderr)
         return 2
     settings = get_settings()
     opener = open_session(settings)
     llm = call_for_task(lambda: closing(opener()), settings, "card")
     if llm is None:
         print(
-            "Nessun modello configurato per le schede: apri «Modelli AI».",
+            "No model configured for the cards: open «Modelli AI».",
             file=sys.stderr,
         )
         return 1
@@ -43,9 +43,9 @@ def cards_refresh(limit: int) -> int:
         result = CardWriter(session, llm, workers=settings.cards_workers).refresh_stale(limit)
     finally:
         session.close()
-    summary = f"{result.written} schede scritte, {result.failed} non riuscite"
+    summary = f"{result.written} cards written, {result.failed} failed"
     if result.stopped:
-        summary += ", fermato: modello non disponibile"
+        summary += ", stopped: model unavailable"
     print(summary)
     return 0
 
@@ -68,11 +68,11 @@ def cards_regenerate(limit: int, batch: bool, admin_email: str | None) -> int:
     from rebase_core.users import UserService
 
     if limit < 1:
-        print("--limit deve essere almeno 1.", file=sys.stderr)
+        print("--limit must be at least 1.", file=sys.stderr)
         return 2
     if not admin_email or not admin_email.strip():
         print(
-            "--admin vuole l'indirizzo di un amministratore: la rigenerazione è firmata.",
+            "--admin needs an administrator's address: the regeneration is signed.",
             file=sys.stderr,
         )
         return 2
@@ -83,18 +83,18 @@ def cards_regenerate(limit: int, batch: bool, admin_email: str | None) -> int:
         admin = UserService(lookup, settings).by_email(email)
         admin_id = admin.id if admin is not None and admin.role == "admin" else None
     if admin_id is None:
-        print(f"Nessun amministratore con email {email}", file=sys.stderr)
+        print(f"No administrator with email {email}", file=sys.stderr)
         return 2
     llm = call_for_task(lambda: closing(opener()), settings, "card")
     if llm is None:
         print(
-            "Nessun modello configurato per le schede: apri «Modelli AI».",
+            "No model configured for the cards: open «Modelli AI».",
             file=sys.stderr,
         )
         return 1
     call = batch_for_task(lambda: closing(opener()), settings, "card")
     if call is None and batch:
-        print("Il fornitore delle schede non ha un Batch API: scrivo una scheda alla volta.")
+        print("The cards' provider has no Batch API: writing one card at a time.")
     batches = (
         CardBatches(call, 1 if batch else settings.cards_batch_threshold)
         if call is not None
@@ -104,17 +104,19 @@ def cards_regenerate(limit: int, batch: bool, admin_email: str | None) -> int:
     try:
         writer = CardWriter(session, llm, workers=settings.cards_workers, batches=batches)
         if writer.regeneration_running():
-            print("Una rigenerazione è già in corso: nessuna scheda avviata.")
+            print("A regeneration is already running: no card started.")
             return 0
         result = writer.regenerate_stale(admin_id, limit, source="cli")
     finally:
         session.close()
     if result.batched:
-        print(f"{result.batched} schede inviate al Batch API: `rebase cards-batch-poll` le applica")
+        print(
+            f"{result.batched} cards sent to the Batch API: `rebase cards-batch-poll` applies them"
+        )
         return 0
-    summary = f"{result.written} schede scritte, {result.failed} non riuscite"
+    summary = f"{result.written} cards written, {result.failed} failed"
     if result.stopped:
-        summary += ", fermato: modello non disponibile"
+        summary += ", stopped: model unavailable"
     print(summary)
     return 0
 
@@ -143,15 +145,14 @@ def cards_batch_poll() -> int:
     finally:
         session.close()
     lines = {
-        "none": "nessun batch di schede in corso",
-        "busy": "un altro passaggio sta applicando il batch",
-        "running": f"batch in corso al fornitore: {polled.left} schede da applicare",
-        "failed": "batch mai partito: le schede restano da aggiornare",
-        "unavailable": "il fornitore non risponde: riprovo al prossimo passaggio",
-        "applied": f"batch concluso: {polled.written} schede scritte, {polled.failed} non riuscite",
+        "none": "no card batch in progress",
+        "busy": "another pass is applying the batch",
+        "running": f"batch in progress at the provider: {polled.left} cards left to apply",
+        "failed": "batch never started: the cards stay to be updated",
+        "unavailable": "the provider does not answer: will retry on the next pass",
+        "applied": f"batch finished: {polled.written} cards written, {polled.failed} failed",
         "applying": (
-            f"{polled.written} schede scritte, {polled.failed} non riuscite, "
-            f"{polled.left} ancora da applicare"
+            f"{polled.written} cards written, {polled.failed} failed, {polled.left} still to apply"
         ),
     }
     print(lines[polled.state])
@@ -169,7 +170,7 @@ def sources_refetch(limit: int) -> int:
     from rebase_core.sources import default_source_service
 
     if limit < 1:
-        print("--limit deve essere almeno 1.", file=sys.stderr)
+        print("--limit must be at least 1.", file=sys.stderr)
         return 2
     settings = get_settings()
     opener = open_session(settings)
@@ -177,12 +178,12 @@ def sources_refetch(limit: int) -> int:
     try:
         service = default_source_service(session)
         if not service.enabled_kinds():
-            print("Nessuna fonte accesa: apri «Modelli AI».")
+            print("No source switched on: open «Modelli AI».")
             return 0
         refetched = service.refetch_due(limit)
     finally:
         session.close()
-    print(f"{refetched} persone riviste")
+    print(f"{refetched} people reviewed")
     return 0
 
 
@@ -227,13 +228,13 @@ def cards_eval(
     from rebase_core.models import AiProvider, AiTask
 
     if sample_size is not None and freelancers:
-        print("--sample e --freelancer si escludono.", file=sys.stderr)
+        print("--sample and --freelancer are mutually exclusive.", file=sys.stderr)
         return 2
     if (provider is None) != (model is None):
-        print("--provider e --model vanno insieme.", file=sys.stderr)
+        print("--provider and --model go together.", file=sys.stderr)
         return 2
     if (judge_provider is None) != (judge_model is None):
-        print("--judge-provider e --judge-model vanno insieme.", file=sys.stderr)
+        print("--judge-provider and --judge-model go together.", file=sys.stderr)
         return 2
     settings = get_settings()
     opener = open_session(settings)
@@ -241,7 +242,7 @@ def cards_eval(
     try:
         live = session.get(AiTask, "card")
         if live is None:
-            print("Nessun modello configurato per le schede: apri «Modelli AI».", file=sys.stderr)
+            print("No model configured for the cards: open «Modelli AI».", file=sys.stderr)
             return 1
         if provider is None or model is None:
             provider, model = live.provider, live.model
@@ -253,8 +254,8 @@ def cards_eval(
             )
         if (judge_provider, judge_model) == (provider, model):
             print(
-                f"Il giudice è lo stesso modello che scrive ({provider}/{model}): "
-                "scegli un altro --judge-provider e --judge-model.",
+                f"The judge is the same model as the writer ({provider}/{model}): "
+                "choose another --judge-provider and --judge-model.",
                 file=sys.stderr,
             )
             return 2
@@ -266,8 +267,8 @@ def cards_eval(
             account = session.get(AiProvider, name)
             if not allow_disabled and (account is None or not account.enabled):
                 print(
-                    f"{PROVIDER_OFF} ({name}): una valutazione manda i CV al fornitore, quindi "
-                    "serve --allow-disabled.",
+                    f"{PROVIDER_OFF} ({name}): an evaluation sends CVs to the provider, so "
+                    "--allow-disabled is required.",
                     file=sys.stderr,
                 )
                 return 1
@@ -315,12 +316,12 @@ def _limit_argument(parser: argparse.ArgumentParser) -> None:
 def _regenerate_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--limit", type=int, default=50)
     parser.add_argument(
-        "--batch", action="store_true", help="sempre col Batch API, qualunque sia la soglia"
+        "--batch", action="store_true", help="always use the Batch API, whatever the threshold"
     )
     # Not `required=True`: argparse would refuse in English, and the refusal is ours.
     parser.add_argument(
         "--admin",
-        help="l'indirizzo dell'amministratore che avvia la rigenerazione (obbligatorio: la firma)",
+        help="address of the administrator starting the regeneration (required: it is signed)",
     )
 
 
@@ -328,7 +329,7 @@ def _eval_arguments(parser: argparse.ArgumentParser) -> None:
     from rebase_core.card_prompt import PROMPT_VERSION, PROMPT_VERSIONS
     from rebase_core.models import AI_EFFORTS, AI_PROVIDERS
 
-    parser.add_argument("--sample", type=int, help="le prime N persone del campione fisso")
+    parser.add_argument("--sample", type=int, help="the first N people of the fixed sample")
     parser.add_argument("--freelancer", type=UUID, action="append", default=[])
     parser.add_argument("--provider", choices=AI_PROVIDERS)
     parser.add_argument("--model")

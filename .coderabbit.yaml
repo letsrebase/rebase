@@ -16,8 +16,8 @@ language: en-US
 inheritance: true
 tone_instructions: >-
   Plain, direct English. Lead with the concrete failure (input, state, wrong
-  result), then the smallest fix. No praise or filler. Italian UI copy, MCP
-  descriptions and «quoted» Italian are intentional, never a finding.
+  result), then the smallest fix. No praise or filler. Italian UI copy, emails
+  and «quoted» Italian are intentional; OpenAPI and MCP text is English.
 
 reviews:
   profile: chill

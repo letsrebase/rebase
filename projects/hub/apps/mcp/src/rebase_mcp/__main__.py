@@ -38,8 +38,8 @@ def main() -> int:
         admin.refresh()
     except DomainError:
         print(
-            f"Serve un token personale di un amministratore in {TOKEN_VARIABLE}: "
-            "si crea dall'area admin («Agenti») o con `rebase createtoken`.",
+            f"An admin's personal token is needed in {TOKEN_VARIABLE}: "
+            "create one from the admin area («Agenti») or with `rebase createtoken`.",
             file=sys.stderr,
         )
         return 1

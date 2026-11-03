@@ -304,10 +304,10 @@ def test_the_command_writes_nothing_without_apply(
     assert cli.main(argv) == 0
 
     out = capsys.readouterr().out
-    assert "root: cliente «ACME Srl» -> Ada Lovelace" in out
-    assert "«Generico Srl» lasciato senza responsabile: generic_account (creato da rebase)" in out
-    assert "root: cliente: 1 da assegnare, 1 lasciati, 0 già con responsabile" in out
-    assert "prova, non scritto niente" in out
+    assert "root: customer «ACME Srl» -> Ada Lovelace" in out
+    assert "«Generico Srl» left without an owner: generic_account (created by rebase)" in out
+    assert "root: customer: 1 to assign, 1 left, 0 already owned" in out
+    assert "dry run, nothing written" in out
     assert _owners(root.settings) == {"ACME Srl": None, "Generico Srl": None}
 
 
@@ -317,13 +317,13 @@ def test_the_command_applies_with_apply_and_a_second_run_has_nothing_left(
     argv = ["owner-backfill", "--slug", "root", "--generic-account", root.generic_email, "--apply"]
 
     assert cli.main(argv) == 0
-    assert "scritti 1" in capsys.readouterr().out
+    assert "written 1" in capsys.readouterr().out
     assert _owners(root.settings) == {"ACME Srl": "Ada Lovelace", "Generico Srl": None}
 
     assert cli.main(argv) == 0
     out = capsys.readouterr().out
-    assert "root: cliente: 0 da assegnare, 1 lasciati, 1 già con responsabile" in out
-    assert "scritti 0" in out
+    assert "root: customer: 0 to assign, 1 left, 1 already owned" in out
+    assert "written 0" in out
 
 
 def test_a_change_committed_between_the_plan_and_the_apply_is_respected(root: Root) -> None:
@@ -369,4 +369,4 @@ def test_an_unknown_space_is_one_line_on_stderr(
 
     assert cli.main(["owner-backfill", "--slug", "non-esiste"]) == 1
 
-    assert "non-esiste: non nel registro" in capsys.readouterr().err
+    assert "non-esiste: not in the registry" in capsys.readouterr().err

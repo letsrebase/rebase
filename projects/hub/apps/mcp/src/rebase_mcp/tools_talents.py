@@ -86,60 +86,57 @@ def register(mcp: MCPServer, deps: Deps) -> None:
         sort: str | None = None,
         fields: list[str] | None = None,
     ) -> CallToolResult:
-        """I talenti come li vede la schermata «Talenti» dell'area admin: le schede
-        freelance e le iscrizioni senza scheda in un'unica lista, `status` `lead` per
-        le seconde. Ogni riga è corta (`id`, `nome`, `last_name`, `status` e, dalla scheda
-        anonima di Claude, `role`, `seniority`, `experience_years`, `daily_rate`, `location`,
-        le prime cinque `skills` e la `profile_summary` accorciata; una chiave senza valore
-        manca): per valutare chi fa al caso di una richiesta basta questa lista, e una
-        pagina di cinquanta righe pesa circa 25 KB. `seniority` e `experience_years` sono quelli che
-        un admin ha corretto (`override_freelancer`) se ci sono; senza `experience_years` e con
-        `seniority_uncertain` vera il CV non data nessun ruolo e il livello è solo una
-        lettura delle responsabilità. `fields` sceglie i campi per nome e
-        dà solo quelli (con `id`), interi: `["email", "settori", "lingue", "fascia"]`,
-        con `skills` e `profile_summary` intere se le nomini; `["all"]` dà la riga
-        completa, con `email`, `linkedin_url`, `origin`, `utm_source`, `created_at`,
-        `vetted_at`, `has_anonymous_card`, `job_title`. Dal più recente, o dal più
-        pertinente quando `q` restringe. L'`id` di una riga va a `get_talent`, che per un
-        lead risponde la riga stessa; la scheda di un lead si crea con
-        `create_freelancer_from_signup`.
+        """The talents as the «Talenti» screen of the admin area shows them: the freelancer
+        cards and the sign-ups without a card in a single list, `status` `lead` for the
+        latter. Each row is short (`id`, `first_name`, `last_name`, `status` and, from
+        Claude's anonymous card, `role`, `seniority`, `experience_years`, `daily_rate`,
+        `location`, the first five `skills` and the shortened `profile_summary`; a key with no
+        value is missing): to judge who fits a request this list is enough, and a page of
+        fifty rows weighs about 25 KB. `seniority` and `experience_years` are the ones an
+        admin corrected (`override_freelancer`) if there are any; without `experience_years`
+        and with `seniority_uncertain` true the CV dates no role and the level is only a
+        reading of the responsibilities. `fields` chooses the fields by name and gives only
+        those (with `id`), whole: `["email", "industries", "languages", "band"]`, with
+        `skills` and `profile_summary` whole if you name them; `["all"]` gives the full row,
+        with `email`, `linkedin_url`, `origin`, `utm_source`, `created_at`, `vetted_at`,
+        `has_anonymous_card`, `job_title`. Newest first, or most relevant first when `q`
+        narrows. A row's `id` goes to `get_talent`, which for a lead answers the row itself;
+        a lead's card is created with `create_freelancer_from_signup`.
 
-        Filtri, tutti insieme: `q` cerca nome, cognome, email e posizione; `skills`
-        tiene le schede che nominano ogni termine dato (per esempio `["SQL Server",
-        "React"]`) nella posizione o nel ruolo, nelle competenze o nella sintesi della
-        scheda anonima; `seniority` quelle con uno dei livelli dati (`junior`, `mid`,
-        `senior`, `lead`); `min_years` e `max_years` per anni di esperienza della scheda
-        (estremi compresi); `industries` e `languages` per i settori e le lingue della scheda
-        (ogni termine deve comparire, come `skills`: `["fintech"]`,
-        `["inglese"]`); `location` per il luogo della scheda (`"Milano"`); `job_title` per
-        il ruolo dichiarato; `remote` per disponibilità (`remote`/`hybrid`/`on_site`);
-        `min_rate` e `max_rate` per tariffa a giornata (stringa, «500», «450.50»
-        o all'italiana «1.500», «1.234,50»); `origin` per come è nata la riga (`form`
-        iscrizione senza scheda, `wizard` compilata dalla persona, `admin` scritta da un
-        admin da una ricerca), `origin_page` per la pagina del sito da cui è partita
-        (`home`, `pigrocrm`); `utm_source` per campagna; `card` per lo stato della
-        scheda anonima (`present`; `failed` se Claude non è riuscito a scriverla;
-        `absent` se non c'è e non ha fallito, per esempio senza CV); `has_cv` per le
-        schede con o senza CV; `with_logins` per chi è entrato almeno una volta nella sua
-        area; `created_from` e `created_to` per data di creazione (ISO 8601, anche solo
-        `AAAA-MM-GG`). Un valore non ammesso per `origin`, `seniority`, `card`,
-        `sort` o `fields` è un errore, non una lista vuota. I filtri che una riga nuda
-        non ha (posizione, competenze, luogo, seniority, anni, settori, lingue, scheda,
-        remoto, tariffa, `origin_page`, `origin` `wizard` o `admin`, `has_cv=true`)
-        escludono i lead; `origin=form` esclude invece ogni scheda.
+        Filters, all together: `q` searches first name, last name, email and position;
+        `skills` keeps the cards that name every given term (for example `["SQL Server",
+        "React"]`) in the position or role, in the skills or in the summary of the anonymous
+        card; `seniority` those with one of the given levels (`junior`, `mid`, `senior`,
+        `lead`); `min_years` and `max_years` by the card's years of experience (bounds
+        included); `industries` and `languages` by the card's industries and languages (every
+        term must appear, like `skills`: `["fintech"]`, `["English"]`); `location` by the
+        card's location (`"Milano"`); `job_title` by the declared role; `remote` by
+        availability (`remote`/`hybrid`/`on_site`); `min_rate` and `max_rate` by daily rate
+        (string, «500», «450.50» or in Italian format «1.500», «1.234,50»); `origin` by how
+        the row was born (`form` sign-up without a card, `wizard` filled in by the person,
+        `admin` written by an admin from a search), `origin_page` by the site page it started
+        from (`home`, `pigrocrm`); `utm_source` by campaign; `card` by the state of the
+        anonymous card (`present`; `failed` if Claude could not write it; `absent` if there
+        is none and it did not fail, for example without a CV); `has_cv` for the cards with or
+        without a CV; `with_logins` for those who entered their area at least once;
+        `created_from` and `created_to` by creation date (ISO 8601, also just `YYYY-MM-DD`).
+        A value not allowed for `origin`, `seniority`, `card`, `sort` or `fields` is an error,
+        not an empty list. The filters a bare row does not have (position, skills, location,
+        seniority, years, industries, languages, card, remote, rate, `origin_page`, `origin`
+        `wizard` or `admin`, `has_cv=true`) exclude leads; `origin=form` instead excludes
+        every card.
 
-        `sort`: `recent` (più nuovi prima, anche se `q` cerca), `rate_asc`,
-        `rate_desc`, `experience_years_asc`, `experience_years_desc`. Ordinando per tariffa o per
-        anni
-        restano solo le schede che quel valore ce l'hanno (niente lead, niente schede
-        senza tariffa o senza anni), e `total` e `by_status` contano quelle. Senza
-        `sort`: dal più recente, o dal più pertinente quando `q` cerca.
+        `sort`: `recent` (newest first, even if `q` searches), `rate_asc`, `rate_desc`,
+        `experience_years_asc`, `experience_years_desc`. Sorting by rate or by years leaves
+        only the cards that have that value (no leads, no cards without a rate or without
+        years), and `total` and `by_status` count those. Without `sort`: newest first, or most
+        relevant first when `q` searches.
 
-        `limit` è di 50 righe se non lo dai e di 200 al massimo. `by_status` conta con
-        ogni filtro tranne `status`, `total` con tutti. `next_cursor` è il cursore opaco
-        della pagina successiva, `None` all'ultima: ripassalo in `cursor` insieme agli
-        stessi parametri (anche `sort`: un cursore nato con un altro ordine o con
-        un'altra `q` è rifiutato). Solo lettura."""
+        `limit` is 50 rows if you do not give it and 200 at most. `by_status` counts with
+        every filter except `status`, `total` with all of them. `next_cursor` is the opaque
+        cursor of the next page, `None` on the last: pass it again in `cursor` together with
+        the same parameters (also `sort`: a cursor born with another order or another `q` is
+        refused). Read-only."""
         term = search_term(q)
         skills = skill_terms(skills)
         sectors = skill_terms(industries, "industries")
@@ -206,20 +203,19 @@ def register(mcp: MCPServer, deps: Deps) -> None:
 
     @mcp.tool()
     def get_talent(talent_id: str) -> dict[str, Any]:
-        """Un talento, per id: la riga che `list_talents` mostra, letta una per una, con
-        tutti i suoi campi (anche `industries`, `languages`, `profile_summary` e `band`, la banda di
-        prezzo per il cliente). Per una scheda freelance risponde il dettaglio completo
-        della schermata admin (REB-284), lo stesso che legge «Dettaglio talento»: i dati
-        della persona con lo stato e il thread delle `note`, l'attribuzione
-        dell'iscrizione `signup_utm`, gli ultimi accessi e gli ultimi download della
-        guida, e lo spazio Pigro quando l'indirizzo ne ha uno. `origin` è quella della
-        lista (`wizard` o `admin`); la pagina del sito da cui è partita la persona
-        (`home`, `pigrocrm`) è `origin_page`. Per un'iscrizione senza scheda risponde
-        la riga nuda, `status` `lead`, da cui la scheda si crea con
-        `create_freelancer_from_signup`; un id la cui email ha ormai una scheda risponde
-        la scheda, come la lista. Ogni riga con una scheda porta anche `vetted_at`
-        (REB-518, `None` se non verificato) e `has_anonymous_card`, se Claude ne ha
-        scritta una da proporre nel team builder. Solo lettura."""
+        """One talent, by id: the row `list_talents` shows, read one at a time, with all its
+        fields (also `industries`, `languages`, `profile_summary` and `band`, the price band
+        for the customer). For a freelancer card it answers the full detail of the admin
+        screen (REB-284), the same one «Dettaglio talento» reads: the person's data with the
+        status and the `note` thread, the sign-up attribution `signup_utm`, the latest logins
+        and the latest downloads of the guide, and the Pigro space when the address has one.
+        `origin` is the list's (`wizard` or `admin`); the site page the person started from
+        (`home`, `pigrocrm`) is `origin_page`. For a sign-up without a card it answers the
+        bare row, `status` `lead`, from which the card is created with
+        `create_freelancer_from_signup`; an id whose email now has a card answers the card,
+        like the list. Every row with a card also carries `vetted_at` (REB-518, `None` if not
+        verified) and `has_anonymous_card`, whether Claude has written one to propose in the
+        team builder. Read-only."""
         key = to_uuid(talent_id, "talent_id")
 
         def call(session: Session) -> dict[str, Any]:
@@ -243,27 +239,26 @@ def register(mcp: MCPServer, deps: Deps) -> None:
 
     @mcp.tool()
     def list_duplicates() -> dict[str, Any]:
-        """Chi è in lista due volte (REB-800): `mergeable` sono le coppie di schede vive con
-        lo stesso profilo LinkedIn, che `merge_freelancers` può unire; `to_review` quelle
-        che hanno in comune solo il nome o il telefono, da guardare prima di decidere,
-        mai unite da sole; `signups` quante iscrizioni ripetono un profilo (nessuna
-        scheda da unire: restano fuori dalle liste dei lead). Per ogni coppia `survivor` è
-        la scheda col CV più recente, quella che tiene, e `absorbed` quella che entra
-        nell'altra. Solo lettura, senza indirizzi."""
+        """Who is on the list twice (REB-800): `mergeable` are the pairs of live cards with the
+        same LinkedIn profile, which `merge_freelancers` can merge; `to_review` those that
+        share only the name or the phone, to look at before deciding, never merged on their
+        own; `signups` how many sign-ups repeat a profile (no card to merge: they stay out of
+        the lead lists). For each pair `survivor` is the card with the most recent CV, the one
+        that stays, and `absorbed` the one that goes into the other. Read-only, without
+        addresses."""
         return deps.call(lambda s: _without_addresses(duplicate_list(s).model_dump(mode="json")))
 
     @mcp.tool()
     def merge_freelancers(freelancer_id: str, da_id: str) -> dict[str, Any]:
-        """Unisce la scheda `da_id` in `freelancer_id` (REB-800): note, accessi,
-        match, contratti, righe di campagna, referral e voci del registro passano alla
-        scheda che resta; il CV più recente resta lì, con la sua scheda anonima segnata
-        da riscrivere (la riscrive `cards-refresh`, oppure `regenerate_freelancer_card`);
-        l'altra scheda non si cancella, si nasconde e punta a questa, e l'indirizzo che
-        aveva continua a funzionare per entrare. Risponde quante righe sono passate, per
-        tipo, e l'id dell'azione. Rifiutata con una frase quando entrambe hanno un
-        contratto quadro in corso o firmato, un incarico attivo con la stessa azienda o
-        due codici fiscali diversi, o quando la scheda da assorbire è di un amministratore.
-        Si annulla da terminale con `rebase talent-duplicates --undo`."""
+        """Merges card `da_id` into `freelancer_id` (REB-800): notes, logins, matches,
+        contracts, campaign rows, referrals and log entries move to the card that stays; the
+        most recent CV stays there, with its anonymous card marked to be rewritten (rewritten
+        by `cards-refresh`, or `regenerate_freelancer_card`); the other card is not deleted,
+        it is hidden and points to this one, and the address it had still works to log in. The
+        answer is how many rows moved, by type, and the action id. Refused with a sentence
+        when both have a framework agreement in progress or signed, an active engagement with
+        the same company or two different tax codes, or when the card to absorb belongs to an
+        administrator. Undone from the terminal with `rebase talent-duplicates --undo`."""
         return deps.run(
             lambda s: PersonMergeService(s).merge(
                 to_uuid(freelancer_id, "freelancer_id"), to_uuid(da_id, "da_id"), deps.admin().id

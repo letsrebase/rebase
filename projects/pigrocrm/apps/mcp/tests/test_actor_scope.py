@@ -98,7 +98,7 @@ async def test_a_request_without_an_actor_is_refused_before_the_tool_runs() -> N
     starlette = _http_app(_server(provider))
     with pytest.raises(BaseException) as excinfo:
         await _call(_stamping(starlette, None), starlette)
-    assert any("nessun attore" in message for message in _messages(excinfo.value))
+    assert any("no actor" in message for message in _messages(excinfo.value))
 
 
 def test_the_provider_refuses_outside_a_request() -> None:

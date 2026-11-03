@@ -26,7 +26,7 @@ def ai_seed(eur_per_usd: str) -> int:
         return 2
     api_key = os.environ.get("REBASE_ANTHROPIC_API_KEY", "").strip()
     if not api_key:
-        print("REBASE_ANTHROPIC_API_KEY manca: non c'è niente da spostare.", file=sys.stderr)
+        print("REBASE_ANTHROPIC_API_KEY is missing: nothing to move.", file=sys.stderr)
         return 1
     model = os.environ.get("REBASE_TEAM_BUILDER_MODEL", "").strip() or "claude-opus-5"
     settings = get_settings()
@@ -38,8 +38,8 @@ def ai_seed(eur_per_usd: str) -> int:
         return 1
     finally:
         session.close()
-    print(f"chiave salvata, finisce con …{result.key_hint[-4:]}")
-    print(f"modello {result.model} per le schede e per il team, {result.prices} prezzi scritti")
+    print(f"key saved, ends with …{result.key_hint[-4:]}")
+    print(f"model {result.model} for the cards and the team, {result.prices} prices written")
     return 0
 
 
@@ -47,7 +47,7 @@ def _parse_rate(eur_per_usd: str) -> Decimal | None:
     try:
         return Decimal(eur_per_usd)
     except InvalidOperation:
-        print("--eur-per-usd deve essere un numero, per esempio 0.92.", file=sys.stderr)
+        print("--eur-per-usd must be a number, for example 0.92.", file=sys.stderr)
         return None
 
 
@@ -70,7 +70,7 @@ def ai_prices_seed(eur_per_usd: str) -> int:
         return 1
     finally:
         session.close()
-    print(f"{result.written} prezzi scritti, {result.kept} già presenti e lasciati com'erano")
+    print(f"{result.written} prices written, {result.kept} already present and left as they were")
     return 0
 
 
@@ -93,7 +93,7 @@ def ai_verify(provider: str, model: str) -> int:
     finally:
         session.close()
     if key is None:
-        print(f"Manca la chiave di {provider}: salvala in «Modelli AI» e riprova.", file=sys.stderr)
+        print(f"No key for {provider}: save it in «Modelli AI» and retry.", file=sys.stderr)
         return 1
     report = verify(provider, model, key)
     print("\n".join(report.lines()))
@@ -120,7 +120,7 @@ def ai_rotate_secrets() -> int:
     new = _key_from_argument(os.environ.get("REBASE_SECRETS_KEY_NEW", ""))
     if old is None or new is None:
         print(
-            "REBASE_SECRETS_KEY_OLD e REBASE_SECRETS_KEY_NEW devono essere 32 byte in base64.",
+            "REBASE_SECRETS_KEY_OLD and REBASE_SECRETS_KEY_NEW must be 32 bytes in base64.",
             file=sys.stderr,
         )
         return 2
@@ -133,7 +133,7 @@ def ai_rotate_secrets() -> int:
         return 1
     finally:
         session.close()
-    print(f"{count} chiavi ricifrate")
+    print(f"{count} keys re-sealed")
     return 0
 
 

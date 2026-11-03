@@ -34,10 +34,10 @@ class CostListParams(KeysetParams, CustomParams):
     deal_id: UUID | None = None
     legal_entity_id: UUID | None = Field(
         default=None,
-        description="Solo i costi di questa azienda; omesso, tutti, i generali compresi",
+        description="Only this legal entity's costs; omitted, all, general ones included",
     )
     only_general: bool = Field(
-        default=False, description="Solo spese generali, cioè senza deal (§7.4)"
+        default=False, description="Only general expenses, that is, without a deal (§7.4)"
     )
     category_id: UUID | None = None
     date_from: date | None = Field(default=None, alias="from")

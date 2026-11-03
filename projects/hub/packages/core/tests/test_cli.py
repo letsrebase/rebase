@@ -135,8 +135,8 @@ def test_the_contracts_sweep_command_builds_the_signing_service_and_prints_the_c
     assert kwargs["engagements"].door.http is urllib_engagements_call
     out = capsys.readouterr().out
     assert out.strip().splitlines() == [
-        "3 documenti ripresi, 0 match collegati a Pigro",
-        "0 richieste collegate al CRM",
+        "3 documents resumed, 0 matches linked to Pigro",
+        "0 requests linked to the CRM",
     ]
 
 
@@ -154,7 +154,7 @@ def test_the_contracts_sweep_command_also_prints_the_unconfirmed_count_when_it_i
 
     out = capsys.readouterr().out
     assert out.strip().splitlines()[0] == (
-        "1 documenti ripresi, 2 non confermati, 0 match collegati a Pigro"
+        "1 documents resumed, 2 unconfirmed, 0 matches linked to Pigro"
     )
 
 
@@ -172,7 +172,7 @@ def test_contracts_sweep_prints_the_pigro_counts(
 
     out = capsys.readouterr().out
     assert out.strip().splitlines()[0] == (
-        "2 documenti ripresi, 3 match collegati a Pigro, 1 non collegati"
+        "2 documents resumed, 3 matches linked to Pigro, 1 not linked"
     )
 
     _FakeSigningService.result = SweepResult(touched=0, unconfirmed=1, linked=1, link_failed=0)
@@ -181,7 +181,7 @@ def test_contracts_sweep_prints_the_pigro_counts(
 
     out = capsys.readouterr().out
     assert out.strip().splitlines()[0] == (
-        "0 documenti ripresi, 1 non confermati, 1 match collegati a Pigro"
+        "0 documents resumed, 1 unconfirmed, 1 matches linked to Pigro"
     )
 
 
@@ -198,7 +198,7 @@ def test_contracts_sweep_files_the_requests_in_a_round_of_its_own(
     assert main(["contracts-sweep"]) == 0
 
     assert capsys.readouterr().out.strip().splitlines()[1] == (
-        "4 richieste collegate al CRM, 2 non collegate"
+        "4 requests linked to the CRM, 2 not linked"
     )
     assert _FakeCrmLeadService.instances[0].http is urllib_engagements_call
 
@@ -212,7 +212,7 @@ def test_the_documenso_check_command_dispatches_to_documenso_check(
 
     assert main(["documenso-check"]) == 1
 
-    assert "la firma è spenta" in capsys.readouterr().err
+    assert "signing is off" in capsys.readouterr().err
 
 
 def test_the_campaigns_tick_command_runs_one_pass_and_prints_what_it_did(
@@ -235,7 +235,7 @@ def test_the_campaigns_tick_command_runs_one_pass_and_prints_what_it_did(
     assert main(["campaigns-tick"]) == 0
     assert (
         capsys.readouterr().out.strip()
-        == "1 campagne, 2 inviate, 1 saltate, 0 fallite, 3 esiti registrati"
+        == "1 campaigns, 2 sent, 1 skipped, 0 failed, 3 outcomes recorded"
     )
 
 
@@ -244,7 +244,7 @@ def test_without_a_key_the_tick_sends_nothing_and_says_so(
 ) -> None:
     monkeypatch.setattr(cli_campaigns, "get_settings", lambda: Settings(_env_file=None))  # type: ignore[call-arg]
     assert main(["campaigns-tick"]) == 0
-    assert "invio non configurato" in capsys.readouterr().out
+    assert "sending not configured" in capsys.readouterr().out
 
 
 class _FakeCardWriter:
@@ -279,7 +279,7 @@ def test_cards_refresh_prints_the_counts(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """One batch of `--limit` per run, the oldest first (`refresh_stale`), so the
-    operator runs it again until it prints «0 schede scritte»."""
+    operator runs it again until it prints «0 cards written»."""
     _FakeCardWriter.instances = []
     monkeypatch.setattr(cli_cards, "get_settings", lambda: Settings(_env_file=None))  # type: ignore[call-arg]
     monkeypatch.setattr(llm_module, "call_for_task", _configured_card_task)
@@ -292,7 +292,7 @@ def test_cards_refresh_prints_the_counts(
     assert writer.options == {"workers": 5}  # `REBASE_CARDS_WORKERS`' default
     assert _TASKS_ASKED[-1] == "card"
     assert writer.limits == [10]
-    assert capsys.readouterr().out.strip() == "3 schede scritte, 1 non riuscite"
+    assert capsys.readouterr().out.strip() == "3 cards written, 1 failed"
 
 
 @pytest.mark.parametrize(
@@ -300,12 +300,12 @@ def test_cards_refresh_prints_the_counts(
     [
         (
             CardsRefreshed(written=3, failed=1),
-            "3 schede scritte, 1 non riuscite",
+            "3 cards written, 1 failed",
         ),
         # An outage: counted among the failed, and the stop said.
         (
             CardsRefreshed(written=1, failed=1, stopped=True),
-            "1 schede scritte, 1 non riuscite, fermato: modello non disponibile",
+            "1 cards written, 1 failed, stopped: model unavailable",
         ),
     ],
     ids=["failures", "outage"],
@@ -317,8 +317,8 @@ def test_cards_refresh_says_the_stop(
     line: str,
 ) -> None:
     """A batch stopped by an outage says so; with no stop, the line is the plain one, so
-    «0 schede scritte, 0 non riuscite» still says the backlog is done. A card still
-    gendered after its rewrite is among the «non riuscite» (REB-802)."""
+    «0 cards written, 0 failed» still says the backlog is done. A card still
+    gendered after its rewrite is among the «failed» (REB-802)."""
     _FakeCardWriter.instances = []
     monkeypatch.setattr(cli_cards, "get_settings", lambda: Settings(_env_file=None))  # type: ignore[call-arg]
     monkeypatch.setattr(llm_module, "call_for_task", _configured_card_task)
@@ -384,7 +384,7 @@ def test_cards_regenerate_goes_through_the_batch_api_above_the_threshold(
     batches = writer.options["batches"]
     assert isinstance(batches, CardBatches) and batches.threshold == threshold
     assert _FakeRegeneratingWriter.started == [(regen_admin, 20, "cli")]
-    assert "14 schede inviate al Batch API" in capsys.readouterr().out
+    assert "14 cards sent to the Batch API" in capsys.readouterr().out
 
 
 def test_cards_regenerate_without_a_batch_api_writes_with_the_workers(
@@ -402,7 +402,7 @@ def test_cards_regenerate_without_a_batch_api_writes_with_the_workers(
     [writer] = _FakeCardWriter.instances
     assert writer.options["batches"] is None
     out = capsys.readouterr().out
-    assert "non ha un Batch API" in out and "4 schede scritte, 1 non riuscite" in out
+    assert "has no Batch API" in out and "4 cards written, 1 failed" in out
 
 
 def test_cards_regenerate_says_when_one_is_already_on(
@@ -419,18 +419,18 @@ def test_cards_regenerate_says_when_one_is_already_on(
     monkeypatch.setattr(_FakeRegeneratingWriter, "running", False)
 
     assert _FakeRegeneratingWriter.started == []
-    assert "già in corso" in capsys.readouterr().out
+    assert "already running" in capsys.readouterr().out
 
 
 @pytest.mark.parametrize(
     ("argv", "message"),
     [
         # REB-861: a regeneration is always signed, so nothing starts without an admin.
-        ([], "--admin vuole l'indirizzo di un amministratore"),
-        (["--admin", "  "], "--admin vuole l'indirizzo di un amministratore"),
-        (["--admin", "nessuno@rebase.it"], "Nessun amministratore con email nessuno@rebase.it"),
+        ([], "--admin needs an administrator's address"),
+        (["--admin", "  "], "--admin needs an administrator's address"),
+        (["--admin", "nessuno@rebase.it"], "No administrator with email nessuno@rebase.it"),
         # A member of the hub is not an administrator.
-        (["--admin", "ada@example.org"], "Nessun amministratore con email ada@example.org"),
+        (["--admin", "ada@example.org"], "No administrator with email ada@example.org"),
     ],
     ids=["missing", "blank", "unknown", "member"],
 )
@@ -457,17 +457,20 @@ def test_cards_regenerate_refuses_without_an_administrator(
 @pytest.mark.parametrize(
     ("polled", "line"),
     [
-        (BatchPolled("none"), "nessun batch di schede in corso"),
-        (BatchPolled("running", left=14), "batch in corso al fornitore: 14 schede da applicare"),
+        (BatchPolled("none"), "no card batch in progress"),
+        (
+            BatchPolled("running", left=14),
+            "batch in progress at the provider: 14 cards left to apply",
+        ),
         (
             BatchPolled("applied", written=13, failed=1),
-            "batch concluso: 13 schede scritte, 1 non riuscite",
+            "batch finished: 13 cards written, 1 failed",
         ),
         (
             BatchPolled("applying", written=5, failed=0, left=9),
-            "5 schede scritte, 0 non riuscite, 9 ancora da applicare",
+            "5 cards written, 0 failed, 9 still to apply",
         ),
-        (BatchPolled("unavailable"), "il fornitore non risponde: riprovo al prossimo passaggio"),
+        (BatchPolled("unavailable"), "the provider does not answer: will retry on the next pass"),
     ],
 )
 def test_cards_batch_poll_says_where_the_batch_stands(
@@ -502,7 +505,7 @@ def test_cards_batch_poll_says_where_the_batch_stands(
 def test_cards_refresh_names_models_ai_when_no_task_configured(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """With no model configured for the card task a run would print «0 schede scritte» for
+    """With no model configured for the card task a run would print «0 cards written» for
     ever: it says why instead, and where to fix it."""
     _FakeCardWriter.instances = []
     monkeypatch.setattr(cli_cards, "get_settings", lambda: Settings(_env_file=None))  # type: ignore[call-arg]
@@ -513,7 +516,7 @@ def test_cards_refresh_names_models_ai_when_no_task_configured(
 
     assert _FakeCardWriter.instances == []
     assert capsys.readouterr().err.strip() == (
-        "Nessun modello configurato per le schede: apri «Modelli AI»."
+        "No model configured for the cards: open «Modelli AI»."
     )
 
 
@@ -557,7 +560,7 @@ def test_sources_refetch_reads_nothing_while_every_switch_is_off(
     assert main(["sources-refetch"]) == 0
 
     assert fake_sources.asked == []
-    assert capsys.readouterr().out.strip() == "Nessuna fonte accesa: apri «Modelli AI»."
+    assert capsys.readouterr().out.strip() == "No source switched on: open «Modelli AI»."
 
 
 def test_sources_refetch_reads_the_limit_and_calls_no_model(
@@ -575,7 +578,7 @@ def test_sources_refetch_reads_the_limit_and_calls_no_model(
     assert main(["sources-refetch", "--limit", "7"]) == 0
 
     assert fake_sources.asked == [7]
-    assert capsys.readouterr().out.strip() == "2 persone riviste"
+    assert capsys.readouterr().out.strip() == "2 people reviewed"
     assert main(["sources-refetch", "--limit", "0"]) == 2
 
 
@@ -618,7 +621,7 @@ def test_ai_seed_stores_encrypted_and_prints_hint_only(
     assert main(["ai-seed", "--eur-per-usd", "0.92"]) == 0
 
     captured = capsys.readouterr()
-    assert "chiave salvata, finisce con …abcd" in captured.out
+    assert "key saved, ends with …abcd" in captured.out
     assert _OLD_KEY not in captured.out + captured.err
     with hub_engine.connect() as conn:
         row = conn.execute(
@@ -684,7 +687,7 @@ def test_ai_prices_seed_writes_the_table_and_keeps_edited_rows(
 
     assert main(["ai-prices-seed", "--eur-per-usd", "0.92"]) == 0
 
-    assert "4 prezzi scritti, 1 già presenti" in capsys.readouterr().out
+    assert "4 prices written, 1 already present" in capsys.readouterr().out
     with hub_engine.connect() as conn:
         edited = conn.execute(
             text("SELECT input_eur_per_mtok FROM ai_prices WHERE model = 'gpt-6.1-sol'")
@@ -704,7 +707,7 @@ def test_cli_requires_saved_key_and_exits_1_without(
     ai_db: Any, capsys: pytest.CaptureFixture[str]
 ) -> None:
     assert main(["ai-verify", "--provider", "google", "--model", "gemini-4-argon"]) == 1
-    assert "Manca la chiave di google" in capsys.readouterr().err
+    assert "No key for google" in capsys.readouterr().err
 
 
 def test_ai_verify_prints_the_report_and_never_the_key(
@@ -750,7 +753,7 @@ def test_ai_rotate_secrets_command_reencrypts_and_prints_the_count(
     monkeypatch.setenv("REBASE_SECRETS_KEY_NEW", new)
 
     assert main(["ai-rotate-secrets"]) == 0
-    assert capsys.readouterr().out.strip() == "1 chiavi ricifrate"
+    assert capsys.readouterr().out.strip() == "1 keys re-sealed"
 
     # The old key no longer opens it.
     assert main(["ai-rotate-secrets"]) == 1
@@ -982,7 +985,7 @@ def test_cards_eval_never_lets_the_writer_judge_itself(
         )
         == 2
     )
-    assert "stesso modello che scrive" in capsys.readouterr().err
+    assert "same model as the writer" in capsys.readouterr().err
     assert built == []
 
     # A writer that is the first default hands the judging to the next one.
@@ -1117,7 +1120,7 @@ def test_createtoken_never_overwrites_a_token_file_and_mints_nothing_then(
 
     assert target.read_text() == "keep me"
     assert token_db.scalars(select(AdminToken)).all() == []
-    assert "esiste già" in capsys.readouterr().err
+    assert "already exists" in capsys.readouterr().err
 
 
 def test_createtoken_leaves_no_empty_file_when_no_token_was_minted(
@@ -1145,4 +1148,4 @@ def test_createtoken_and_setrole_fail_rather_than_wait_for_input_without_a_termi
 ) -> None:
     assert main(["createtoken"]) == 2
     assert main(["setrole", "--role", "admin"]) == 2
-    assert capsys.readouterr().err.count("quando non c'è un terminale") == 2
+    assert capsys.readouterr().err.count("when there is no terminal") == 2

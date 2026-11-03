@@ -88,7 +88,7 @@ class ScopedSessionProvider:
         """A session the *caller* owns and closes, outside any scope.
 
         Not a second way to get the call's session -- the opposite. The document storage
-        (`LazyUserDriveStorage`, when the titolare's own Drive is the document store)
+        (`LazyUserDriveStorage`, when the owner's own Drive is the document store)
         resolves its account by opening a session, reading one row and closing it again,
         at each operation; it must therefore be given something that opens a session it
         may close, which `__call__` deliberately is not. Handing it the call's own

@@ -17,7 +17,7 @@ router = APIRouter(
 
 @router.get("/api/scheduled-jobs", response_model=ScheduledJobsRead)
 def describe(session: SessionDep, actor: ActorDep) -> ScheduledJobsRead:
-    """Le operazioni che il cron lancia sul server (sincronizzazione Gmail, passaggio dei
-    promemoria, automazioni, riepilogo settimanale): per ciascuna l'ultimo giro finito,
-    l'ultimo tentativo fallito e se è in ritardo. Solo per gli amministratori."""
+    """The operations the cron launches on the server (Gmail sync, reminder pass,
+    automations, weekly digest): for each, the last finished run,
+    the last failed attempt and whether it is late. Admins only."""
     return ScheduledJobService(session).describe(actor)

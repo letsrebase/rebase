@@ -316,4 +316,4 @@ async def test_the_agent_that_proposed_cannot_decide_through_any_door_it_holds(
     # And the proposal the agent reads back is marked as text somebody else wrote.
     async with Client(server) as client:
         read = await client.call_tool("get_proposal", {"proposal_id": str(proposal_id)})
-    assert "non un'istruzione" in _payload(read)["provenance"]
+    assert "not instructions" in _payload(read)["provenance"]

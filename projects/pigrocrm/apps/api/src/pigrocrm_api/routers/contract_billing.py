@@ -27,8 +27,8 @@ router = APIRouter(
     dependencies=[Depends(get_actor)],
 )
 
-DateFrom = Annotated[date, Query(alias="from", description="Dal giorno, YYYY-MM-DD, incluso")]
-DateTo = Annotated[date, Query(alias="to", description="Al giorno, YYYY-MM-DD, incluso")]
+DateFrom = Annotated[date, Query(alias="from", description="From the day, YYYY-MM-DD, inclusive")]
+DateTo = Annotated[date, Query(alias="to", description="To the day, YYYY-MM-DD, inclusive")]
 
 
 @router.get("/{contract_id}/billable-days", response_model=BillableDays)
@@ -36,12 +36,12 @@ def get_billable_days(
     contract_id: UUID,
     session: SessionDep,
     date_from: Annotated[
-        date | None, Query(alias="from", description="Dal giorno, incluso")
+        date | None, Query(alias="from", description="From the day, inclusive")
     ] = None,
-    date_to: Annotated[date | None, Query(alias="to", description="Al giorno, incluso")] = None,
+    date_to: Annotated[date | None, Query(alias="to", description="To the day, inclusive")] = None,
 ) -> BillableDays:
-    """Le giornate pronte da fatturare di un contratto, come le righe che metterebbero in una
-    bozza: `worked` e non ancora su una riga di fattura. Sola lettura."""
+    """A contract's workdays ready to invoice, as the rows they would make in a
+    draft: `worked` and not yet on an invoice line. Read-only."""
     return billable_days(session, contract_id, date_from, date_to)
 
 
@@ -55,10 +55,9 @@ def invoice_days(
     actor: ActorDep,
     storage: StorageDep,
 ) -> InvoiceRead:
-    """Crea la bozza di fattura con le giornate pronte del contratto (o quelle fra `date_from` e
-    `date_to`), alle tariffe del contratto, e le segna `invoiced`. Non emette niente. Solo un
-    amministratore e mai un agente: scegliere cosa finisce su una bozza decide cosa
-    congelerà l'emissione."""
+    """Creates the draft invoice with the contract's ready workdays (or those between `date_from`
+    and `date_to`), at the contract's rates, and marks them `invoiced`. It issues nothing. Admin
+    only and never an agent: choosing what ends up on a draft decides what issuing will freeze."""
     return assemble_unbilled_work_units_into_new_invoice(
         session, storage, contract_id, actor, data.date_from, data.date_to
     )
@@ -68,8 +67,8 @@ def invoice_days(
 def get_register(
     contract_id: UUID, session: SessionDep, actor: ActorDep, date_from: DateFrom, date_to: DateTo
 ) -> ContractRegister:
-    """Il registro delle giornate fatturate di un contratto nel periodo, ciascuna con la
-    prova di approvazione che la regge. Sola lettura."""
+    """The register of a contract's invoiced workdays in the period, each with the
+    approval proof that supports it. Read-only."""
     return ContractRegisterService(session).build(contract_id, date_from, date_to, actor)
 
 
@@ -77,8 +76,8 @@ def get_register(
 def get_register_csv(
     contract_id: UUID, session: SessionDep, actor: ActorDep, date_from: DateFrom, date_to: DateTo
 ) -> Response:
-    """Lo stesso registro come CSV (RFC 4180, UTF-8 con BOM). Una copia di lavoro che il
-    cliente filtra: si ricalcola a ogni richiesta e non si archivia, come l'XLSX delle ore."""
+    """The same register as CSV (RFC 4180, UTF-8 with BOM). A working copy the
+    client filters: recomputed on every request and not archived, like the hours XLSX."""
     service = ContractRegisterService(session)
     register = service.build(contract_id, date_from, date_to, actor)
     return attachment_response(
@@ -97,9 +96,9 @@ def render_register_pdf(
     date_from: DateFrom,
     date_to: DateTo,
 ) -> DocumentRead:
-    """Il registro come PDF, archiviato come documento del cliente: si scarica dal documento
-    e si allega alla fattura. Ogni chiamata archivia un documento nuovo: non ne sovrascrive
-    mai uno precedente."""
+    """The register as PDF, archived as a client document: download it from the document
+    and attach it to the invoice. Every call archives a new document: it never
+    overwrites a previous one."""
     return ContractRegisterService(session, storage).render_pdf(
         contract_id, date_from, date_to, actor
     )

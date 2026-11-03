@@ -34,10 +34,11 @@ def register(
     @mcp.tool(annotations=READ_ONLY)
     @guard
     def describe_slack() -> dict[str, Any]:
-        """Stato del collegamento Slack: workspace, canale dei promemoria e, per ogni utente, se è
-        riconosciuto (`matched`, `manual`, `unmatched`: non riceve nulla). `workspace.status` è
-        `active`, `revoked` (`last_error` dice come rimediare) o `disconnected`. Solo per un
-        amministratore dell'intero spazio. Nessun workspace collegato non è un errore.
+        """State of the Slack connection: workspace, reminders channel and, for each user,
+        whether they are recognized (`matched`, `manual`, `unmatched`: receives nothing).
+        `workspace.status` is `active`, `revoked` (`last_error` says how to fix it) or
+        `disconnected`. Only for an administrator of the whole space. No connected workspace
+        is not an error.
         """
         service = SlackService(
             context.session, settings=settings, client=slack_client_for(settings)

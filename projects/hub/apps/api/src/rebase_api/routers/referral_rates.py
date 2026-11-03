@@ -46,7 +46,7 @@ def referral_rates(session: SessionDep) -> PublicReferralRates:
     **200**: `{"rate_freelancer": "0.1000", "rate_company": "0.3000"}`. Both are the
     fraction of one as a decimal string with four places, the shape the member area's
     `rate_freelancer` and `rate_company` already carry (`"0.1000"` is 10%). Nothing else is
-    in the body, by schema: no margin, no compenso, no euro figure, no code, no counts.
+    in the body, by schema: no margin, no fee, no euro figure, no code, no counts.
 
     **503**: the settings row is missing (a deploy never leaves that: migration 0024
     seeds it). The body is the Italian sentence `{"detail": ...}`, the answer carries

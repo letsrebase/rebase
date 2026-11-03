@@ -97,12 +97,12 @@ def test_the_cli_indexes_every_users_row_not_only_the_owner_and_is_idempotent(
         monkeypatch.setattr(cli, "get_settings", lambda: settings)
         assert cli.main(["rebuild-identity-index"]) == 0
         out = capsys.readouterr().out
-        assert f"{slug}: 2 indirizzi, 2 nuove identità" in out
+        assert f"{slug}: 2 addresses, 2 new identities" in out
         assert _identities(registry_session, {owner, invited}) == {owner, invited}
 
         # A second run has nothing new to add and says so.
         assert cli.main(["rebuild-identity-index"]) == 0
-        assert f"{slug}: 2 indirizzi, già indicizzati" in capsys.readouterr().out
+        assert f"{slug}: 2 addresses, already indexed" in capsys.readouterr().out
         assert _identities(registry_session, {owner, invited}) == {owner, invited}
         assert (
             registry_session.scalar(select(Identity.id).where(Identity.email.in_({owner, invited})))
@@ -174,9 +174,9 @@ def test_the_cli_skips_a_space_it_cannot_reach_and_still_indexes_the_others(
         captured = capsys.readouterr()
         ghost_lines = [line for line in captured.err.splitlines() if line.startswith(ghost)]
         assert len(ghost_lines) == 1
-        assert ghost_lines[0].startswith(f"{ghost}: non raggiungibile (")
+        assert ghost_lines[0].startswith(f"{ghost}: unreachable (")
         assert "x:y" not in captured.err and settings.database_url not in captured.err
-        assert f"{slug}: 1 indirizzi, 1 nuove identità" in captured.out
+        assert f"{slug}: 1 addresses, 1 new identities" in captured.out
         assert _identities(registry_session, {owner}) == {owner}
     finally:
         _drop(settings, slug)
@@ -197,7 +197,7 @@ def test_the_cli_never_fails_when_the_registry_is_unreachable(
     monkeypatch.setattr(cli, "get_settings", lambda: unreachable)
     assert cli.main(["rebuild-identity-index"]) == 0
     err = capsys.readouterr().err
-    assert "registro degli spazi non raggiungibile (" in err and "x:y" not in err
+    assert "space registry unreachable (" in err and "x:y" not in err
 
 
 def test_a_space_with_no_users_is_reported_and_touches_no_identity(
@@ -224,7 +224,7 @@ def test_a_space_with_no_users_is_reported_and_touches_no_identity(
 
         monkeypatch.setattr(cli, "get_settings", lambda: settings)
         assert cli.main(["rebuild-identity-index"]) == 0
-        assert f"{slug}: nessun utente" in capsys.readouterr().out
+        assert f"{slug}: no users" in capsys.readouterr().out
     finally:
         _drop(settings, slug)
         registry_session.execute(text("delete from tenants where slug = :s"), {"s": slug})

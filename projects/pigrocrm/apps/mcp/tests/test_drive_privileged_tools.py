@@ -413,8 +413,8 @@ async def test_import_drive_file_lists_the_accepted_types_as_the_accepted_ones(
     description = tools["import_drive_file"].description or ""
     type_blocks = [block for block in description.split("\n\n") if ".docx" in block]
     assert len(type_blocks) == 1, description
-    assert "non conserva" not in type_blocks[0]
-    assert "conserva" in type_blocks[0]
+    assert "does not store" not in type_blocks[0]
+    assert "stores" in type_blocks[0]
 
 
 async def test_every_listing_carries_the_untrusted_provenance(

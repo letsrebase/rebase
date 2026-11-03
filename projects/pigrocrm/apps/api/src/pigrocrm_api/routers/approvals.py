@@ -17,11 +17,11 @@ router = APIRouter(
 def record(
     data: ApprovalRecord, session: SessionDep, actor: ActorDep, storage: StorageDep
 ) -> ApprovalRecorded:
-    """Registra l'approvazione di un cliente e le giornate che copre, in una transazione:
-    la prova (un documento già archiviato, o un messaggio di posta già sincronizzato che
-    il servizio archivia come documento del contratto), l'approvazione, e il passaggio di
-    ogni giornata (`proposed` diventa `approved`, `worked_without_approval` torna
-    `worked`). Immutabile: una correzione è una nuova approvazione. Chiusa a ogni
-    credenziale di tipo agente: un agente propone una giornata (`propose_day`), una persona
-    registra l'approvazione."""
+    """Records a client's approval and the workdays it covers, in one transaction:
+    the proof (an already archived document, or an already synced mail message that
+    the service archives as a contract document), the approval, and the transition of
+    every workday (`proposed` becomes `approved`, `worked_without_approval` goes back to
+    `worked`). Immutable: a correction is a new approval. Closed to every
+    agent-type credential: an agent proposes a workday (`propose_day`), a person
+    records the approval."""
     return ApprovalService(session, storage).record(data, actor)

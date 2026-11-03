@@ -48,11 +48,11 @@ def createtoken(
     from rebase_core.users import UserService
 
     if expires_in_days is not None and expires_in_days < 1:
-        print("--expires-in-days deve essere almeno 1.", file=sys.stderr)
+        print("--expires-in-days must be at least 1.", file=sys.stderr)
         return 2
     asked = _ask(email, "Email")
     if asked is None:
-        print("--email è obbligatorio quando non c'è un terminale.", file=sys.stderr)
+        print("--email is required when there is no terminal.", file=sys.stderr)
         return 2
     email = asked.strip().lower()
     settings = get_settings()
@@ -62,10 +62,10 @@ def createtoken(
         try:
             slot = os.open(token_file, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
         except FileExistsError:
-            print(f"{token_file} esiste già: non lo sovrascrivo.", file=sys.stderr)
+            print(f"{token_file} already exists: not overwriting it.", file=sys.stderr)
             return 2
         except OSError as exc:
-            print(f"Non posso scrivere {token_file}: {exc.strerror}", file=sys.stderr)
+            print(f"Cannot write {token_file}: {exc.strerror}", file=sys.stderr)
             return 2
     expires_at = (
         datetime.now(UTC) + timedelta(days=expires_in_days) if expires_in_days is not None else None
@@ -75,7 +75,7 @@ def createtoken(
     try:
         admin = UserService(session, settings).by_email(email)
         if admin is None or admin.role != "admin":
-            print(f"Nessun amministratore con email {email}", file=sys.stderr)
+            print(f"No administrator with email {email}", file=sys.stderr)
             return 1
         _, raw = AdminTokenService(session).create(admin.id, name or DEFAULT_NAME, expires_at)
     except DomainError as exc:
@@ -91,7 +91,7 @@ def createtoken(
                 os.close(slot)
                 os.unlink(token_file)
     if token_file is not None:
-        print(f"Token scritto in {token_file}")
+        print(f"Token written to {token_file}")
     else:
         print(raw)
     return 0
@@ -111,23 +111,23 @@ def setrole(
 
     settings = get_settings()
     asked_email = _ask(email, "Email")
-    asked_role = _ask(role, "Ruolo (member/admin)")
+    asked_role = _ask(role, "Role (member/admin)")
     if asked_email is None or asked_role is None:
-        print("--email e --role sono obbligatori quando non c'è un terminale.", file=sys.stderr)
+        print("--email and --role are required when there is no terminal.", file=sys.stderr)
         return 2
     email = asked_email.strip().lower()
     if asked_role not in USER_ROLES:
-        print(f"Il ruolo deve essere uno fra {', '.join(USER_ROLES)}", file=sys.stderr)
+        print(f"The role must be one of {', '.join(USER_ROLES)}", file=sys.stderr)
         return 2
     session = open_session(settings)()
     sent = False
     try:
         users = UserService(session, settings)
         if users.by_email(email) is None:
-            first_name = _ask(first_name, "Nome")
-            last_name = _ask(last_name, "Cognome")
+            first_name = _ask(first_name, "First name")
+            last_name = _ask(last_name, "Last name")
             if first_name is None or last_name is None:
-                print("--first-name e --last-name servono per un indirizzo nuovo.", file=sys.stderr)
+                print("--first-name and --last-name are needed for a new address.", file=sys.stderr)
                 return 2
         user, created = users.set_role(email, asked_role, first_name or "", last_name or "")
         if created and asked_role == "admin":
@@ -141,8 +141,8 @@ def setrole(
         return 1
     finally:
         session.close()
-    suffix = " (link mandato)" if sent else ""
-    print(f"{user.email}: ruolo impostato a {user.role}{suffix}")
+    suffix = " (link sent)" if sent else ""
+    print(f"{user.email}: role set to {user.role}{suffix}")
     return 0
 
 
@@ -159,9 +159,9 @@ def talent_duplicates(
 
     Without flags it only reads: every pair of live cards that share a LinkedIn profile
     (`mergeable`, with what a merge would move), every pair that only shares a name or a
-    telephone number (`da rivedere`: never merged on its own), and the sign-ups that
+    telephone number (`to review`: never merged on its own), and the sign-ups that
     repeat a profile. It prints counts and internal ids, never a name, an address or a
-    profile, so its output can go on a card. `--apply --admin EMAIL` merges every unibile
+    profile, so its output can go on a card. `--apply --admin EMAIL` merges every mergeable
     pair, the card with the newest CV surviving (`--survivor ID --absorbed ID` merges that
     one pair instead, whichever signals it has: an admin who read both cards chose), then
     creates the LinkedIn unique indexes if nothing shares a profile any more. `--undo
@@ -172,36 +172,35 @@ def talent_duplicates(
 
     lines: list[str] = []
     if (apply or undo is not None) and not admin_email:
-        return 2, ["--apply e --undo vogliono --admin con l'indirizzo di un amministratore."]
+        return 2, ["--apply and --undo need --admin with an administrator's address."]
     admin_id: UUID | None = None
     if admin_email:
         admin = UserService(session).by_email(admin_email)
         if admin is None or admin.role != "admin":
-            return 1, [f"Nessun amministratore con email {admin_email.strip().lower()}"]
+            return 1, [f"No administrator with email {admin_email.strip().lower()}"]
         admin_id = admin.id
     merges = PersonMergeService(session)
     if undo is not None:
         if admin_id is None:
-            return 2, ["--undo vuole --admin con l'indirizzo di un amministratore."]
+            return 2, ["--undo needs --admin with an administrator's address."]
         try:
             done = merges.undo(undo, admin_id)
         except DomainError as exc:
             return 1, [exc.message]
         moved = ", ".join(f"{key}={count}" for key, count in sorted(done.moved.items()))
         note = (
-            " (il profilo LinkedIn resta alla scheda che l'ha tenuto: l'indice unico ne vuole uno)"
+            " (the LinkedIn profile stays with the card that kept it: the unique index needs one)"
             if done.left_behind.get("linkedin")
             else ""
         )
         return 0, [
-            f"unione {undo} annullata: scheda {done.absorbed_freelancer_id} di nuovo viva "
-            f"({moved}){note}"
+            f"merge {undo} undone: card {done.absorbed_freelancer_id} alive again ({moved}){note}"
         ]
     if survivor is not None or absorbed is not None:
         if not (apply and survivor and absorbed):
-            return 2, ["--survivor e --absorbed vanno insieme, e con --apply."]
+            return 2, ["--survivor and --absorbed go together, and with --apply."]
         if admin_id is None:
-            return 2, ["--apply vuole --admin con l'indirizzo di un amministratore."]
+            return 2, ["--apply needs --admin with an administrator's address."]
         try:
             done = merges.merge(survivor, absorbed, admin_id)
         except DomainError as exc:
@@ -210,27 +209,27 @@ def talent_duplicates(
 
     report = find_duplicates(session)
     lines.append(
-        f"{len(report.mergeable)} coppie unibili (stesso LinkedIn), "
-        f"{len(report.to_review)} da rivedere (solo nome o telefono), "
-        f"{len(report.signups)} iscrizioni che ripetono un profilo"
+        f"{len(report.mergeable)} mergeable pairs (same LinkedIn), "
+        f"{len(report.to_review)} to review (name or phone only), "
+        f"{len(report.signups)} sign-ups that repeat a profile"
     )
     failed = 0
     for number, pair in enumerate(report.mergeable, 1):
         head = (
-            f"coppia {number}: tieni {pair.survivor.freelancer_id} "
-            f"assorbi {pair.absorbed.freelancer_id} [{','.join(pair.signals)}]"
+            f"pair {number}: keep {pair.survivor.freelancer_id} "
+            f"absorb {pair.absorbed.freelancer_id} [{','.join(pair.signals)}]"
         )
         if not apply:
             try:
                 plan = merges.plan(pair.survivor.freelancer_id, pair.absorbed.freelancer_id)
             except DomainError as exc:
-                lines.append(f"{head} bloccata: {exc.message}")
+                lines.append(f"{head} blocked: {exc.message}")
                 continue
-            moved = ", ".join(f"{key}={count}" for key, count in sorted(plan.items())) or "niente"
-            lines.append(f"{head} sposterebbe: {moved}")
+            moved = ", ".join(f"{key}={count}" for key, count in sorted(plan.items())) or "nothing"
+            lines.append(f"{head} would move: {moved}")
             continue
         if admin_id is None:  # `--apply` without `--admin` was refused above
-            return 2, ["--apply vuole --admin con l'indirizzo di un amministratore."]
+            return 2, ["--apply needs --admin with an administrator's address."]
         try:
             if (
                 session.scalar(
@@ -240,38 +239,38 @@ def talent_duplicates(
                 )
                 is not None
             ):
-                lines.append(f"{head} già assorbita")
+                lines.append(f"{head} already absorbed")
                 continue
             done = merges.merge(pair.survivor.freelancer_id, pair.absorbed.freelancer_id, admin_id)
         except DomainError as exc:
             session.rollback()
             failed += 1
-            lines.append(f"{head} bloccata: {exc.message}")
+            lines.append(f"{head} blocked: {exc.message}")
             continue
         lines.append(f"{head} {_merge_line(done, short=True)}")
     for pair in report.to_review:
         lines.append(
-            f"da rivedere: {pair.survivor.freelancer_id} e {pair.absorbed.freelancer_id} "
+            f"to review: {pair.survivor.freelancer_id} and {pair.absorbed.freelancer_id} "
             f"[{','.join(pair.signals)}]"
         )
     for lead in report.signups:
         other = lead.card_user_id or lead.other_signup_id
         lines.append(
-            f"iscrizione {lead.signup_id} ripete il profilo di "
-            f"{'una scheda (utente' if lead.card_user_id else "un'altra iscrizione ("}{other}): "
-            "fuori dalle liste dei lead, niente da unire"
+            f"sign-up {lead.signup_id} repeats the profile of "
+            f"{'a card (user' if lead.card_user_id else 'another sign-up ('}{other}): "
+            "outside the lead lists, nothing to merge"
         )
     if apply:
         ensured = ensure_unique_indexes(session)
         if ensured.created:
-            lines.append(f"indici unici creati: {', '.join(ensured.created)}")
+            lines.append(f"unique indexes created: {', '.join(ensured.created)}")
         for name, shared in ensured.blocked.items():
             lines.append(
-                f"indice {name} non creato: {shared} profili sono ancora su più righe "
-                "(coppie bloccate sopra, iscrizioni o utenti senza scheda da sistemare a mano)"
+                f"index {name} not created: {shared} profiles are still on several rows "
+                "(pairs blocked above, sign-ups or users without a card to fix by hand)"
             )
         if not ensured.created and not ensured.blocked:
-            lines.append("indici unici già presenti")
+            lines.append("unique indexes already present")
     else:
         present = {
             row
@@ -282,19 +281,19 @@ def talent_duplicates(
             )
         }
         missing = [name for name, _ in UNIQUE_INDEXES if name not in present]
-        lines.append(f"indici unici mancanti: {', '.join(missing) or 'nessuno'}")
+        lines.append(f"unique indexes missing: {', '.join(missing) or 'none'}")
     return (1 if failed else 0), lines
 
 
 def _merge_line(done: "MergeRead", *, short: bool = False) -> str:
-    moved = ", ".join(f"{key}={count}" for key, count in sorted(done.moved.items())) or "niente"
-    flag = ", scheda da rigenerare" if done.card_to_regenerate else ""
-    text_ = f"unite (azione {done.action_id}): cv {done.cv}, spostato {moved}{flag}"
+    moved = ", ".join(f"{key}={count}" for key, count in sorted(done.moved.items())) or "nothing"
+    flag = ", card to regenerate" if done.card_to_regenerate else ""
+    text_ = f"merged (action {done.action_id}): cv {done.cv}, moved {moved}{flag}"
     return (
         text_
         if short
         else (
-            f"scheda {done.absorbed_freelancer_id} unita in {done.survivor_freelancer_id}: {text_}"
+            f"card {done.absorbed_freelancer_id} merged into {done.survivor_freelancer_id}: {text_}"
         )
     )
 
@@ -330,7 +329,7 @@ def send_welcome(
     """One welcome mail per address the hub knows (ORB-157): every signup and every card,
     or the addresses given. The voice follows what we hold for the address: a card the
     person filled, a card we drafted from public sources, or no card at all (the wizard,
-    then). Answers one line per address -- `sent` with the kind, or `rifiutata dal
+    then). Answers one line per address -- `sent` with the kind, or `refused by the
     provider` -- which is the whole record of the mailing."""
     from rebase_core.freelancers import freelancer_read
     from rebase_core.mail_member import CardSummary, welcome_mail
@@ -397,10 +396,10 @@ def send_welcome(
                 signup.email, signup.first_name, login, kind=kind, wizard_link=wizard
             )
         else:
-            outcomes.append((email, "indirizzo sconosciuto"))
+            outcomes.append((email, "unknown address"))
             continue
         sent = sender.send(mail)
-        outcomes.append((email, f"inviata ({kind})" if sent else "rifiutata dal provider"))
+        outcomes.append((email, f"sent ({kind})" if sent else "refused by the provider"))
     return outcomes
 
 
@@ -409,12 +408,12 @@ def welcome(emails: Sequence[str], everyone: bool) -> int:
     from rebase_core.mail import sender_from_settings
 
     if everyone == bool(emails):
-        print("Serve --all oppure almeno un --email, non entrambi.", file=sys.stderr)
+        print("Give --all or at least one --email, not both.", file=sys.stderr)
         return 2
     settings = get_settings()
     sender = sender_from_settings(settings)
     if sender is None:
-        print("Nessuna chiave per la posta: serve REBASE_RESEND_API_KEY.", file=sys.stderr)
+        print("No mail key: REBASE_RESEND_API_KEY is required.", file=sys.stderr)
         return 1
     session = open_session(settings)()
     try:
@@ -429,12 +428,10 @@ def welcome(emails: Sequence[str], everyone: bool) -> int:
 def _token_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--email")
     parser.add_argument("--name")
-    parser.add_argument(
-        "--expires-in-days", type=int, help="il token smette di funzionare dopo N giorni"
-    )
+    parser.add_argument("--expires-in-days", type=int, help="the token stops working after N days")
     parser.add_argument(
         "--token-file",
-        help="scrive il token in questo file (0600, mai sopra uno che esiste) invece di stamparlo",
+        help="writes the token to this file (0600, never over an existing one), not stdout",
     )
 
 

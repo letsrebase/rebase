@@ -114,7 +114,7 @@ def create(
 
 
 class InvoiceImportResult(BaseModel):
-    """The imported fattura alongside the gaps still waiting for a declaration -- the
+    """The imported invoice alongside the gaps still waiting for a declaration -- the
     operator sees both in one round trip instead of importing blind and querying the
     register separately after every row."""
 
@@ -135,9 +135,9 @@ def import_issued(
     actor: ActorDep,
     legal_entity_id: Annotated[UUID | None, Query()] = None,
 ) -> InvoiceImportResult:
-    """Slice 9 §3: a fattura issued by the previous system. Admin only, enforced by the
+    """Slice 9 §3: an invoice issued by the previous system. Admin only, enforced by the
     service. No artefacts are produced: the PDF, if any, is the original. On the
-    register of `legal_entity_id`, the default azienda when omitted (REB-620)."""
+    register of `legal_entity_id`, the default legal entity when omitted (REB-620)."""
     service = _service(session, storage, settings)
     invoice = service.import_issued(data, actor, legal_entity_id=legal_entity_id)
     return InvoiceImportResult(
@@ -401,7 +401,7 @@ def issue(
     actor: ActorDep,
 ) -> InvoiceRead:
     """Admin only, enforced by the service. `{invoice_id}` is the *source* row: a
-    `draft` fattura is issued in place, and a `confirmed` proforma produces a new
+    `draft` invoice is issued in place, and a `confirmed` proforma produces a new
     numbered row linked back to it.
 
     `issue()` no longer produces the PDF/XML itself -- that used to be a second

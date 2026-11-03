@@ -27,12 +27,12 @@ def register(mcp: MCPServer, deps: Deps) -> None:
         vat_number: str | None = None,
         certified_email: str | None = None,
     ) -> dict[str, Any]:
-        """Salva i dati fiscali di un freelance, quelli che i contratti stampano: codice
-        fiscale (16 caratteri, o 11 cifre per una ditta), domicilio su una riga, la partita
-        IVA (11 cifre; omessa o vuota: nessuna, per chi lavora con prestazioni occasionali
-        e firma solo la lettera di incarico occasionale) e, se c'è, la PEC (omessa o vuota:
-        nessuna). Sostituisce quelli che c'erano. Risponde solo che sono salvati, mai i
-        valori; il registro delle modifiche nomina i campi cambiati, mai i valori."""
+        """Saves a freelancer's tax data, the ones the contracts print: tax code (16 characters,
+        or 11 digits for a sole proprietorship), domicile on one line, the VAT number (11
+        digits; omitted or empty: none, for those who work with occasional services and sign
+        only the occasional engagement letter) and, if there is one, the PEC (omitted or
+        empty: none). Replaces what was there. The answer only says they are saved, never the
+        values; the change log names the changed fields, never the values."""
         key = to_uuid(freelancer_id, "freelancer_id")
         try:
             data = FiscalData(

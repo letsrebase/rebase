@@ -174,9 +174,9 @@ async def test_the_deal_resource_carries_the_hours_block(
             },
         )
         rendered = (await client.read_resource(f"deal://{seeded_deal_id}")).contents[0].text
-    assert "## Ore" in rendered
-    assert "Ore consuntivate: 8.00" in rendered
-    assert "Stato: **in corso**" in rendered
+    assert "## Hours" in rendered
+    assert "Hours logged: 8.00" in rendered
+    assert "Status: **in progress**" in rendered
 
 
 async def test_the_timer_is_the_agents_clock_too(

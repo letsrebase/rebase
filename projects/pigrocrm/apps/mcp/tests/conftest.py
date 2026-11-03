@@ -27,7 +27,7 @@ SETUP = Actor(id=None, type="system", role="admin")
 
 def _ensure_committed_default(engine: Engine) -> None:
     """One committed default legal entity in the worker's database (REB-623): since the
-    chain, a customer row and everything under it need an legal entity, and a world that
+    chain, a customer row and everything under it need a legal entity, and a world that
     commits for real sees only committed rows. The per-test seed below then finds it
     and writes nothing. Inline rather than imported from the core suite's `fakes`,
     which this root's conftest does not put on the path."""

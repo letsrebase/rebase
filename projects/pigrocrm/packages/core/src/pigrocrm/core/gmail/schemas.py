@@ -326,7 +326,7 @@ class EmailDraftAttachment(BaseModel):
     """One file the send will attach, named the way the recipient will see it.
 
     `filename` is built by the same function the send composes with
-    (`attach.attachment_filename`), so the name a person reads before pressing Invia is
+    (`attach.attachment_filename`), so the name a person reads before pressing «Invia» is
     the name that leaves. `None` means the version id no longer resolves to a file the
     send could attach -- the send would refuse it -- and the interface says so rather
     than printing an id nobody can read.

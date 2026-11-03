@@ -129,7 +129,7 @@ async def test_anything_that_is_not_a_proforma_is_refused_before_the_service_is_
     async with Client(server) as client:
         refused = await client.call_tool("confirm_proforma", {"invoice_id": str(invoice.id)})
         assert refused.is_error
-        assert "da MCP si modificano solo le proforma" in refused.content[0].text
+        assert "over MCP only proformas can be edited" in refused.content[0].text
 
 
 async def test_the_tool_is_on_the_default_surface_not_behind_the_switch(server: Any) -> None:

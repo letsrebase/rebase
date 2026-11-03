@@ -237,12 +237,15 @@ omp, the kit's Linear gate refuses a card, comment or update that breaks the
 
   The line, and it is the only one: **what the product says to its users stays in the
   user's language**, which for PigroCRM is Italian. That means the strings a person
-  reads or hears, not the code around them: UI copy, validation and error messages,
-  the OpenAPI descriptions rendered on the public docs page, every MCP tool, prompt
-  and resource description (an assistant reads those out to an Italian freelancer),
-  document templates and seeded content. When you cannot tell whether a docstring is
-  documentation or product surface, check whether a framework publishes it: a
-  `@mcp.tool()` or a FastAPI `description=` is the product speaking.
+  reads or hears inside the product, not the code around them: UI copy, validation and
+  error messages the web apps show, emails, push and Slack text, document templates and
+  seeded content. **What the code publishes to a developer or an agent is English**
+  (Lorenzo, 2026-11-03, REB-908): the OpenAPI document (titles, summaries, route,
+  schema and field descriptions), the MCP server's instructions, every tool, prompt and
+  resource description and every parameter description, the prompt bodies, the hints
+  only the MCP layer writes, and the CLI's help and output. Italian stays there only for
+  proper nouns and Italian terms with no English equivalent (FatturaPA, SdI, INPS, PEC),
+  and for a UI label quoted as the user sees it («Genera»).
 
   **Identifiers are English too** (decided 2026-11-02, REB-897 to REB-904): database
   tables, columns, enum values, constraint, index and policy names, REST paths, JSON
@@ -250,8 +253,10 @@ omp, the kit's Linear gate refuses a card, comment or update that breaks the
   variables, module and file names, test names and comments. `docs/glossary.md` is the
   one mapping from an Italian term to its English name; add the term there before you
   invent a second one. `tooling/english-lint` enforces it on every pull request and in
-  preflight: it fails on an Italian word in an identifier or a file name and on a
-  comment or docstring written in Italian, and it never reads a string literal, which
+  preflight: it fails on an Italian word in an identifier or a file name, on a comment
+  or docstring written in Italian (a route's or a tool's included), and on the published
+  keyword strings (`description=`, `summary=`, `title=`, `help=`, `instructions=` of
+  FastAPI, Pydantic, MCP and argparse calls); it reads no other string literal, which
   is where the product's Italian lives. Run it with
   `python3 tooling/english-lint/english_lint.py <paths>` (`--summary` for counts per
   directory); its few exceptions, each with a reason, are in

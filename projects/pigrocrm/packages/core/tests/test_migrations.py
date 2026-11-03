@@ -252,7 +252,7 @@ def test_0045_gives_to_used_database_with_no_legal_entity_row_its_legal_entity(
     pigrocrm_postgres: Any,
 ) -> None:
     """The root installation is not in the registry, so `ensure_defaults` never reaches
-    it, and the API updates an legal entity by id: a root with no emitter row would have no
+    it, and the API updates a legal entity by id: a root with no emitter row would have no
     issuer to configure at all. 0045 inserts one, named after the database, on a database
     that already has a user (REB-615). A database with none is one being provisioned,
     whose migrations run before its owner is written: it gets nothing here, so that

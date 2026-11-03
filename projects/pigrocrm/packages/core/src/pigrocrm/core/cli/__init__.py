@@ -21,29 +21,28 @@ from pigrocrm.core.config import get_settings
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="pigrocrm")
     sub = parser.add_subparsers(dest="command", required=True)
-    admin = sub.add_parser("createadmin", help="Crea il primo utente amministratore")
+    admin = sub.add_parser("createadmin", help="Create the first admin user")
     admin.add_argument("--email")
     admin.add_argument("--name")
-    reset = sub.add_parser("resetpassword", help="Imposta una nuova password a un utente esistente")
+    reset = sub.add_parser("resetpassword", help="Set a new password for an existing user")
     reset.add_argument("--email")
-    sub.add_parser("seed-templates", help="Crea i template predefiniti, se mancano")
+    sub.add_parser("seed-templates", help="Create the default templates, if missing")
     sub.add_parser(
         "ensure-space-defaults",
-        help="Dà a ogni spazio del registro stati, template e categorie predefiniti, se mancano",
+        help="Give every space in the registry the default statuses, templates and categories, if "
+        "missing",
     )
     sub.add_parser(
         "rebuild-identity-index",
-        help="Indicizza in identities ogni indirizzo trovato negli users di ogni spazio",
+        help="Index in identities every address found in the users of every space",
     )
     sync = sub.add_parser(
         "gmail-sync",
-        help="Sincronizza ogni casella Google collegata, della radice e di ogni spazio (per cron)",
+        help="Sync every linked Google mailbox, of the root and of every space (for cron)",
     )
-    sync.add_argument("--email", help="Solo la casella con questo indirizzo, ovunque sia collegata")
-    weekly = sub.add_parser(
-        "digest", help="Manda a ogni spazio il resoconto della settimana (per cron)"
-    )
-    weekly.add_argument("--slug", help="Un solo spazio, invece di tutto il registro")
+    sync.add_argument("--email", help="Only the mailbox with this address, wherever it is linked")
+    weekly = sub.add_parser("digest", help="Send every space its weekly digest (for cron)")
+    weekly.add_argument("--slug", help="A single space, instead of the whole registry")
     weekly.add_argument(
         "--date",
         # `type=` rather than a parse in the dispatch below: a mistyped date then comes
@@ -51,69 +50,68 @@ def _build_parser() -> argparse.ArgumentParser:
         # bottom of a cron log.
         type=date.fromisoformat,
         metavar="YYYY-MM-DD",
-        help="Un giorno della settimana da mandare; senza, la settimana appena chiusa",
+        help="A day of the week to send; omitted, the week that just closed",
     )
-    weekly.add_argument(
-        "--force", action="store_true", help="Manda di nuovo una settimana già inviata"
-    )
+    weekly.add_argument("--force", action="store_true", help="Send again a week already sent")
     weekly.add_argument(
         "--dry-run",
         action="store_true",
-        help="Prova: prepara il resoconto, dice a quanti andrebbe e non manda niente",
+        help="Dry run: prepares the digest, says how many recipients it would reach "
+        "and sends nothing",
     )
 
     reminder = sub.add_parser(
-        "reminders", help="Alza i promemoria di ogni spazio e li mette nelle liste (per cron)"
+        "reminders", help="Raise the reminders of every space and put them in the lists (for cron)"
     )
-    reminder.add_argument("--slug", help="Un solo spazio, invece di tutto il registro")
+    reminder.add_argument("--slug", help="A single space, instead of the whole registry")
     reminder.add_argument(
         "--date",
         type=date.fromisoformat,
         metavar="YYYY-MM-DD",
-        help="Valuta un altro giorno, invece di oggi",
+        help="Evaluate another day, instead of today",
     )
     reminder.add_argument(
         "--dry-run",
         action="store_true",
-        help="Prova: dice cosa metterebbe nelle liste e non scrive niente",
+        help="Dry run: says what it would put in the lists and writes nothing",
     )
 
     sub.add_parser(
         "vapid-keys",
-        help="Genera la coppia di chiavi VAPID del push: scrive le righe per il .env (a mano)",
+        help="Generate the VAPID key pair for push: writes the lines for the .env (by hand)",
     )
 
     automations = sub.add_parser(
         "automations",
-        help="Apre le attività delle regole che scattano col tempo, in ogni spazio (per cron)",
+        help="Open the tasks of the time-triggered rules, in every space (for cron)",
     )
-    automations.add_argument("--slug", help="Un solo spazio, invece di tutto il registro")
+    automations.add_argument("--slug", help="A single space, instead of the whole registry")
     automations.add_argument(
         "--date",
         type=date.fromisoformat,
         metavar="YYYY-MM-DD",
-        help="Valuta un altro giorno, invece di oggi (solo con --dry-run)",
+        help="Evaluate another day, instead of today (only with --dry-run)",
     )
     automations.add_argument(
         "--dry-run",
         action="store_true",
-        help="Prova: dice cosa aprirebbe e non scrive niente",
+        help="Dry run: says what it would open and writes nothing",
     )
 
     backfill = sub.add_parser(
         "owner-backfill",
-        help="Dà a clienti e deal di uno spazio il responsabile che li ha creati (--apply scrive)",
+        help="Give the clients and deals of a space the owner who created them (--apply writes)",
     )
-    backfill.add_argument("--slug", required=True, help="Lo spazio da sistemare (o root)")
+    backfill.add_argument("--slug", required=True, help="The space to fix (or root)")
     backfill.add_argument(
         "--generic-account",
         action="append",
         default=[],
         metavar="EMAIL",
-        help="Un account generico: i suoi record si elencano e non si assegnano (ripetibile)",
+        help="A generic account: its records are listed and not assigned (repeatable)",
     )
     backfill.add_argument(
-        "--apply", action="store_true", help="Scrive; senza, stampa solo cosa farebbe"
+        "--apply", action="store_true", help="Writes; without it, only prints what it would do"
     )
     return parser
 

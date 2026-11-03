@@ -182,7 +182,7 @@ def _compact(value: str) -> str:
 class FiscalData(BaseModel):
     """What «Chi e per chi», step 1 of «Crea match», and «Match e contratti» save for a
     freelancer. `vat_number` omitted, `null` or blank is none (REB-687): the member works
-    as a prestazione occasionale and signs only the occasional texts."""
+    as an occasional service and signs only the occasional texts."""
 
     model_config = ConfigDict(extra="forbid")
 

@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 """Fails on Italian in the code of this repository (REB-904).
 
-The decision of 2026-11-02: every identifier, file name and comment is English; what a
-person reads or hears (UI copy, messages, template content, the OpenAPI and MCP prose)
-stays Italian and lives in string literals, which this check never reads. The mapping
-from the Italian word to its English identifier is `docs/glossary.md`.
+The decision of 2026-11-02, widened on 2026-11-03 (REB-908): every identifier, file name,
+comment and docstring is English, and so is the prose the code publishes to a developer or
+an agent (OpenAPI and MCP descriptions, CLI help). What a person reads inside the product
+(UI copy, messages, template content) stays Italian and lives in string literals, which this
+check never reads, except the keyword strings of `PUBLISHING_CALLS`. The mapping from the
+Italian word to its English identifier is `docs/glossary.md`.
 
 What it reads
     * Python: `tokenize` for names and comments, `ast` for docstrings.
@@ -20,7 +22,9 @@ What fails
     comment     a comment or docstring is written in Italian: two or more Italian
                 function words and words between them, or one plus an accented letter.
                 Text in quotes or backticks is removed first, since a comment may quote
-                the copy it describes.
+                the copy it describes. A published keyword string (`description=`,
+                `summary=`, `title=`, `help=`, `instructions=` of `PUBLISHING_CALLS`) is
+                read the same way, and up to five words one Italian word is enough.
 
 What it skips is `allowlist.py`, with a reason for each entry.
 
@@ -59,12 +63,67 @@ TS_SUFFIXES = {".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs", ".cjs"}
 HASH_COMMENT_SUFFIXES = {".sh", ".yml", ".yaml", ".toml", ".conf", ".tf", ".nix", ".ini", ".cfg"}
 HASH_COMMENT_NAMES = {"Dockerfile", ".dockerignore", ".gitignore", ".env.example", "crontab"}
 
-# A decorator whose last attribute is one of these publishes the function's docstring as
-# product copy: an OpenAPI description or an MCP tool, prompt or resource description.
+# A decorator whose last attribute is one of these publishes the function's docstring: an
+# OpenAPI description or an MCP tool, prompt or resource description. Since 2026-11-03 that
+# prose is English like the rest (REB-908); the docstring is read like any other, and the
+# decorator's own `description=`/`summary=`/`title=` strings are read as published text.
 PUBLISHING_DECORATORS = {
     "tool", "prompt", "resource", "get", "post", "put", "patch", "delete", "head",
     "options", "api_route", "websocket",
 }  # fmt: skip
+
+# Calls whose keyword strings below are published: FastAPI's parameters and app, Pydantic's
+# `Field` (an OpenAPI schema and an MCP tool's input schema), the MCP server and its tool
+# annotations, and argparse's help. A keyword of any other call is data (a document's
+# `title`, an invoice line's `description`) and stays unread like every string literal.
+PUBLISHING_CALLS = PUBLISHING_DECORATORS | {
+    "Field", "Query", "Path", "Body", "Header", "Cookie", "Form", "File", "FastAPI",
+    "APIRouter", "include_router", "FastMCP", "ToolAnnotations", "ArgumentParser",
+    "add_argument", "add_parser", "add_subparsers", "add_argument_group",
+}  # fmt: skip
+PUBLISHED_KEYWORDS = {
+    "description", "summary", "title", "help", "instructions", "epilog",
+    "response_description",
+}  # fmt: skip
+# An OpenAPI response object (`responses={401: {"description": ...}}`): a dict literal
+# whose string keys are all among these and include `description`.
+RESPONSE_OBJECT_KEYS = {"description", "content", "model", "headers", "links"}
+
+
+def _is_response_object(node: ast.Dict, marked: set[int]) -> bool:
+    """A dict literal with only string keys, all OpenAPI response keys, `description`
+    among them; a lone `{"description": ...}` counts only where `_marked_responses` found
+    it under a status code or bound to a `*_RESPONSE` name, since a lone description key
+    is otherwise as likely to be data."""
+    keys = [k.value if isinstance(k, ast.Constant) else None for k in node.keys]
+    if not keys or not all(isinstance(k, str) for k in keys) or "description" not in keys:
+        return False
+    if not set(keys) <= RESPONSE_OBJECT_KEYS:
+        return False
+    return len(keys) > 1 or id(node) in marked
+
+
+def _marked_responses(tree: ast.Module) -> set[int]:
+    marked: set[int] = set()
+    for node in ast.walk(tree):
+        if (
+            isinstance(node, ast.Dict)
+            and node.keys
+            and all(isinstance(k, ast.Constant) and isinstance(k.value, int) for k in node.keys)
+        ):
+            marked.update(id(v) for v in node.values if isinstance(v, ast.Dict))
+        targets: list[ast.expr] = []
+        if isinstance(node, ast.Assign):
+            targets = node.targets
+        elif isinstance(node, ast.AnnAssign):
+            targets = [node.target]
+        value = getattr(node, "value", None)
+        if isinstance(value, ast.Dict) and any(
+            isinstance(t, ast.Name) and t.id.upper().endswith("_RESPONSE") for t in targets
+        ):
+            marked.add(id(value))
+    return marked
+
 
 _WORD_RE = re.compile(r"[A-Z]+(?![a-z])|[A-Z]?[a-z]+|\d+")
 _QUOTED_RE = re.compile(r"`[^`]{0,200}`|\"[^\"]{0,400}\"|«[^»]{0,400}»|“[^”]{0,400}”|'[^'\n]{2,}'")
@@ -210,16 +269,83 @@ def join_runs(comments: list[tuple[str, int, bool]]) -> list[tuple[str, int]]:
     return runs
 
 
-def _publishing(node: ast.AST) -> bool:
-    for deco in getattr(node, "decorator_list", []):
-        target = deco.func if isinstance(deco, ast.Call) else deco
-        name = target.attr if isinstance(target, ast.Attribute) else getattr(target, "id", "")
-        if name in PUBLISHING_DECORATORS:
-            return True
-    return False
+def _call_name(node: ast.Call) -> str:
+    target = node.func
+    return target.attr if isinstance(target, ast.Attribute) else getattr(target, "id", "")
 
 
-def scan_python(path: str, source: str, out: list[Finding]) -> None:
+def _publishes(name: str) -> bool:
+    """A call whose keyword strings are published: one of `PUBLISHING_CALLS`, a router
+    factory (`timeline_router`), or a helper that builds an OpenAPI response object
+    (`_problem_response`), whose first argument is the response's description too."""
+    return name in PUBLISHING_CALLS or name.endswith(("router", "_response", "_responses"))
+
+
+def _string_constants(node: ast.AST, constants: dict[str, str]) -> str:
+    """Every string a keyword's value is built from: a literal, an implicit or `+`
+    concatenation, an f-string's text, or a module-level constant it names."""
+    if isinstance(node, ast.Name):
+        return constants.get(node.id, "")
+    return " ".join(
+        c.value for c in ast.walk(node) if isinstance(c, ast.Constant) and isinstance(c.value, str)
+    )
+
+
+# English function words: a published text holding one of them is English prose that may
+# borrow an ambiguous word (`per client`), not Italian.
+_ENGLISH_FUNCTION_WORDS = frozenset((
+    "the", "a", "an", "of", "to", "is", "are", "and", "or", "in", "on", "for", "with",
+    "by", "from", "as", "at", "it", "its", "this", "that", "be", "not",
+))  # fmt: skip
+
+
+def published_is_italian(text: str) -> tuple[bool, list[str]]:
+    """Stricter than a comment, since published prose is short (`title="Cliente"`,
+    `"Fine del periodo"`) and nobody quotes copy in it: one Italian word that is not
+    ambiguous is enough, and so are two ambiguous ones (`Il nome del comando`) in a text
+    with no English function word."""
+    score, hits = italian_score(text)
+    if score >= 1:
+        return True, hits
+    words = {w.lower() for w in _PROSE_WORD_RE.findall(_QUOTED_RE.sub(" ", text))}
+    return len(hits) >= 2 and not words & _ENGLISH_FUNCTION_WORDS, hits
+
+
+def _check_published(path: str, line: int, text: str, what: str, out: list[Finding]) -> None:
+    flagged, hits = published_is_italian(text)
+    if flagged and not all(allowed(path, "comment", _fold(h)) for h in hits):
+        sample = " ".join(text.split())[:70]
+        detail = f'Italian {what}: "{sample}" ({", ".join(hits[:4])})'
+        out.append(Finding(path, line, "comment", hits[0], detail))
+
+
+def module_constants(tree: ast.Module) -> dict[str, str]:
+    """The module-level string constants: `INSTRUCTIONS = "..."`, a `+` or implicit
+    concatenation, an f-string's text."""
+    constants: dict[str, str] = {}
+    for statement in tree.body:
+        if (
+            isinstance(statement, (ast.Assign, ast.AnnAssign))
+            and statement.value is not None
+            and isinstance(statement.value, (ast.Constant, ast.JoinedStr, ast.BinOp))
+        ):
+            targets = statement.targets if isinstance(statement, ast.Assign) else [statement.target]
+            text = _string_constants(statement.value, {})
+            for target in targets:
+                if isinstance(target, ast.Name) and text:
+                    constants[target.id] = text
+    return constants
+
+
+def _is_test(path: str) -> bool:
+    return "/tests/" in f"/{path}" or Path(path).name.startswith("test_")
+
+
+def scan_python(
+    path: str, source: str, out: list[Finding], shared: dict[str, str] | None = None
+) -> None:
+    """`shared` holds every module's constants, so `Query(description=IMPORTED_TEXT)` is
+    read with the text its own module gives the name."""
     try:
         tokens = list(tokenize.generate_tokens(io.StringIO(source).readline))
     except (tokenize.TokenError, IndentationError, SyntaxError) as error:
@@ -242,14 +368,38 @@ def scan_python(path: str, source: str, out: list[Finding]) -> None:
     except SyntaxError as error:
         out.append(Finding(path, error.lineno or 1, "identifier", "", f"cannot parse: {error.msg}"))
         return
+    texts = {**(shared or {}), **module_constants(tree)}
+    marked = _marked_responses(tree)
     for node in ast.walk(tree):
+        # A test publishes nothing; a dict shaped like a response object there is data.
+        if isinstance(node, ast.Dict) and not _is_test(path) and _is_response_object(node, marked):
+            for key, value in zip(node.keys, node.values, strict=True):
+                if isinstance(key, ast.Constant) and key.value == "description" and value:
+                    text = _string_constants(value, texts)
+                    if text:
+                        _check_published(path, value.lineno, text, "response description", out)
+            continue
+        if isinstance(node, ast.Call) and _publishes(_call_name(node)):
+            name = _call_name(node)
+            if name.endswith(("_response", "_responses")) and node.args and not _is_test(path):
+                text = _string_constants(node.args[0], texts)
+                if text:
+                    _check_published(path, node.args[0].lineno, text, "response description", out)
+            for keyword_arg in node.keywords:
+                if keyword_arg.arg in PUBLISHED_KEYWORDS:
+                    text = _string_constants(keyword_arg.value, texts)
+                    if text:
+                        _check_published(
+                            path, keyword_arg.value.lineno, text, f"`{keyword_arg.arg}=`", out
+                        )
+            continue
         if not isinstance(node, (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
             continue
         body = node.body
         if not (body and isinstance(body[0], ast.Expr) and isinstance(body[0].value, ast.Constant)):
             continue
         doc = body[0].value.value
-        if not isinstance(doc, str) or _publishing(node):
+        if not isinstance(doc, str):
             continue
         _check_comment(path, body[0].lineno, doc, "docstring", out)
 
@@ -335,6 +485,14 @@ def lint(root: Path, files: list[str]) -> list[Finding]:
     findings: list[Finding] = []
     typescript: list[str] = []
     seen_paths: set[str] = set()
+    shared: dict[str, str] = {}
+    for path in files:
+        if Path(path).suffix in PY_SUFFIXES and not skipped(path):
+            try:
+                tree = ast.parse((root / path).read_text(encoding="utf8", errors="replace"))
+            except SyntaxError:
+                continue
+            shared.update(module_constants(tree))
     for path in files:
         if skipped(path):
             continue
@@ -349,7 +507,8 @@ def lint(root: Path, files: list[str]) -> list[Finding]:
         suffix = Path(path).suffix
         name = Path(path).name
         if suffix in PY_SUFFIXES:
-            scan_python(path, (root / path).read_text(encoding="utf8", errors="replace"), findings)
+            source = (root / path).read_text(encoding="utf8", errors="replace")
+            scan_python(path, source, findings, shared)
         elif suffix in TS_SUFFIXES:
             typescript.append(path)
         elif (

@@ -81,8 +81,8 @@ class PersonUpdate(BaseModel):
     detach: bool = Field(
         default=False,
         description=(
-            "Se true, rimuove il collegamento della persona al cliente attuale invece di "
-            "assegnarne uno nuovo con customer_id."
+            "If true, removes the person's link to the current client instead of assigning a new "
+            "one with customer_id."
         ),
     )
 

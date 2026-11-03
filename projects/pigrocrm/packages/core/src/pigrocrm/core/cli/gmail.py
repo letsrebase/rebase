@@ -82,7 +82,7 @@ def gmail_sync(settings: Settings, email: str | None) -> int:
     if walk.unreadable is not None:
         # Not a `return`: the root is not in the registry and is still synced.
         print(
-            f"{_now()} gmail-sync: registro degli spazi non raggiungibile ({walk.unreadable})",
+            f"{_now()} gmail-sync: space registry unreachable ({walk.unreadable})",
             file=sys.stderr,
         )
 
@@ -98,7 +98,7 @@ def gmail_sync(settings: Settings, email: str | None) -> int:
                 with factory() as session:
                     space_settings = settings_of.effective_settings(target.slug, session)
                     # A mailbox somebody disconnected is not one: `usable` would refuse it
-                    # with «nessuna casella Google collegata» one line later.
+                    # with «no Google mailbox connected» one line later.
                     mailboxes = [
                         (account.id, account.email_address)
                         for account in GmailRepository(session).all_accounts()
@@ -106,7 +106,7 @@ def gmail_sync(settings: Settings, email: str | None) -> int:
                     ]
             except Exception as exc:  # noqa: BLE001 - one space must not stop the others
                 print(
-                    f"{_now()} gmail-sync {label}: saltato ({type(exc).__name__})", file=sys.stderr
+                    f"{_now()} gmail-sync {label}: skipped ({type(exc).__name__})", file=sys.stderr
                 )
                 # Which read failed, the space's settings or its mailboxes: the frames say
                 # it and the type alone does not. The message stays out.
@@ -168,21 +168,21 @@ def gmail_sync(settings: Settings, email: str | None) -> int:
 def _nothing_to_sync(email: str | None, connected: int, *, unread: bool) -> str | None:
     """What a run that synchronised nothing says about it, or `None` when it cannot say.
 
-    «nessuna casella Google collegata» is a claim about every installation, and with the
+    «no Google mailbox connected» is a claim about every installation, and with the
     registry or a space unread the mailbox may be exactly in the part that was not read:
     that line has already said what went wrong, and a second one guessing the rest
     would send the operator to connect a mailbox that may well be connected. An
     `--email` that matched nothing is the same claim narrowed to one address."""
     if email is None:
-        return None if unread else "nessuna casella Google collegata"
+        return None if unread else "no Google mailbox connected"
     if unread:
         return (
-            f"{email} non è fra le caselle degli spazi letti ({connected} collegate): "
-            "uno spazio non è stato letto, e potrebbe essere lì"
+            f"{email} is not among the mailboxes of the spaces read ({connected} connected): "
+            "a space was not read, and it may be there"
         )
     if connected:
-        return f"{email} non è una casella collegata ({connected} collegate)"
-    return "nessuna casella Google collegata"
+        return f"{email} is not a connected mailbox ({connected} connected)"
+    return "no Google mailbox connected"
 
 
 def _sync_mailbox(
@@ -204,7 +204,7 @@ def _sync_mailbox(
             account = GmailRepository(session).account(account_id)
             if account is None:
                 # Removed between the listing and now: the owner disconnected it.
-                raise Conflict("google_account", "nessuna casella Google collegata")
+                raise Conflict("google_account", "no Google mailbox connected")
             actor = _cron_actor(session, account)
             # The owner's own scope, never «tutte» (spec 2026-10-03 §4): a scoped
             # owner's mailbox is matched against the customers and people their scope
@@ -219,7 +219,7 @@ def _sync_mailbox(
         # The panel words each class.
         return type(exc).__name__
     except Exception as exc:  # noqa: BLE001 - one mailbox must not stop the others
-        print(f"{_now()} gmail-sync {label}: saltato ({type(exc).__name__})", file=sys.stderr)
+        print(f"{_now()} gmail-sync {label}: skipped ({type(exc).__name__})", file=sys.stderr)
         traceback.print_tb(exc.__traceback__, file=sys.stderr)
         return type(exc).__name__
     # `flush`: under `docker compose exec -T` stdout is a pipe, so Python buffers it by
@@ -234,7 +234,7 @@ def _reason(exc: DomainError) -> str:
 
     `DomainError` carries structured details and composes `message` for the adapters
     that render them -- `Conflict` as `f"{entity}: {reason}"`. In a log an operator
-    reads, `google_account:` in front of «nessuna casella Google collegata» says
+    reads, `google_account:` in front of «no Google mailbox connected» says
     nothing they can act on, so the bare `reason` is printed when there is one."""
     reason = exc.details.get("reason")
     return reason if isinstance(reason, str) else exc.message
@@ -254,24 +254,24 @@ def _cron_actor(session: Session, account: GoogleAccount) -> Actor:
     **The owner's real role.** Whether the sync may run is a decision this installation
     already made about that person, so the actor carries their role and `sync`'s own
     `require_write` decides: a `readonly` owner's mailbox must not synchronise from cron
-    while the Sincronizza button in their own settings page refuses them. The check below
-    only exists to say it in Italian first -- `PermissionDenied`'s message is written for
+    while the «Sincronizza» button in their own settings page refuses them. The check below
+    only exists to say it in plain words first -- `PermissionDenied`'s message is written for
     an API, not for a log."""
     try:
         user = UserRepository(session).get_active(account.user_id)
     except ValidationFailed as exc:
         raise Conflict(
             "google_account",
-            "la casella appartiene a un utente disattivato: "
-            "il sync resta fermo finché non viene riattivato",
+            "the mailbox belongs to a deactivated user: "
+            "the sync stays stopped until they are reactivated",
         ) from exc
     actor = actor_for(user, "system")
     if not actor.can_write:
         raise Conflict(
             "google_account",
-            f"il titolare della casella ha il ruolo {label(USER_ROLE, user.role)} e non può "
-            f"sincronizzarla: "
-            "il cron non agisce con più diritti del titolare",
+            f"the mailbox owner has the role {label(USER_ROLE, user.role)} and cannot "
+            f"sync it: "
+            "cron does not act with more rights than the owner",
         )
     return actor
 
@@ -291,12 +291,13 @@ def _outcome(report: SyncReport) -> str:
         # spent nothing. Exiting 1 here would put an error in the log for the system
         # working as designed.
         since = report.running_since
-        return f"già in corso da {since.isoformat(timespec='seconds') if since else 'poco fa'}"
+        when = since.isoformat(timespec="seconds") if since else "a moment ago"
+        return f"already running since {when}"
     return (
-        f"{report.messages_stored} messaggi nuovi, "
-        f"{report.messages_skipped} già presenti, "
-        f"{report.threads_fetched} conversazioni lette, "
-        f"{report.links_created} collegamenti, "
-        f"{report.reconciled} invii riconciliati "
+        f"{report.messages_stored} new messages, "
+        f"{report.messages_skipped} already present, "
+        f"{report.threads_fetched} threads read, "
+        f"{report.links_created} links, "
+        f"{report.reconciled} sends reconciled "
         f"({report.queries_issued} query)"
     )

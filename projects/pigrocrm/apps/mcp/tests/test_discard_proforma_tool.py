@@ -145,7 +145,7 @@ async def test_anything_that_is_not_a_proforma_is_refused_before_the_service_is_
     async with Client(server) as client:
         refused = await client.call_tool("discard_proforma", {"invoice_id": str(invoice.id)})
         assert refused.is_error
-        assert "da MCP si modificano solo le proforma" in refused.content[0].text
+        assert "over MCP only proformas can be edited" in refused.content[0].text
         # And the draft is still there.
         read = await client.call_tool("get_invoice", {"invoice_id": str(invoice.id)})
         assert not read.is_error, read.content[0].text
@@ -187,4 +187,4 @@ async def test_a_proforma_consumed_by_an_emission_is_refused_and_stays_consumed(
             "discard_proforma", {"invoice_id": str(invoice.id)}
         )
         assert refused_invoice.is_error
-        assert "da MCP si modificano solo le proforma" in refused_invoice.content[0].text
+        assert "over MCP only proformas can be edited" in refused_invoice.content[0].text

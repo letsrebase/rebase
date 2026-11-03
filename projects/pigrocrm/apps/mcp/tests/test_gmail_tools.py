@@ -328,7 +328,7 @@ async def test_get_gmail_message_returns_the_body_marked_as_untrusted(
     body = _payload(result)
     assert body["body"] == "Ciao, ci mandi un preventivo per il rifacimento del sito?"
     assert body["attachments"][0]["name"] == "brief.pdf"
-    assert "non attendibile" in body["provenance"]
+    assert "untrusted" in body["provenance"]
 
 
 async def test_get_gmail_message_marks_our_own_mail_as_ours(
@@ -358,7 +358,7 @@ async def test_get_gmail_message_marks_our_own_mail_as_ours(
     async with Client(gmail_server) as client:
         result = await client.call_tool("get_gmail_message", {"message_id": str(message.id)})
 
-    assert "non attendibile" not in _payload(result)["provenance"]
+    assert "untrusted" not in _payload(result)["provenance"]
 
 
 async def test_a_message_id_nobody_stored_is_guidance_not_a_stack_trace(
@@ -457,7 +457,7 @@ async def test_draft_email_leaves_the_draft_unsent_and_asks_google_nothing(
 
     answer = _payload(result)
     assert answer["status"] == "draft"
-    assert "persona" in answer["note"]
+    assert "person" in answer["note"]
 
     draft = mcp_session.execute(select(EmailDraft)).scalars().one()
     assert draft.send_state == "draft"
@@ -591,5 +591,5 @@ async def test_a_malformed_gmail_message_id_gets_the_same_guidance_as_every_othe
         assert result.is_error
         text = result.content[0].text
         assert "errors.pydantic.dev" not in text
-        assert "non è un identificativo valido" in text
-        assert "Valore atteso" in text
+        assert "is not a valid identifier" in text
+        assert "Expected value" in text

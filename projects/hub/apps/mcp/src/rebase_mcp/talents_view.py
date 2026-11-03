@@ -28,7 +28,7 @@ LIST_LIMIT_MAX = 200
 
 # The default row: who the person is and what the anonymous card says they do, with no
 # address, no UTM and no dates. A row has the keys it has a value for: a lead is just
-# `id`, `nome`, `last_name` and `status`. `seniority_uncertain` joins it when true (below).
+# `id`, `first_name`, `last_name` and `status`. `seniority_uncertain` joins it when true (below).
 SHORT_FIELDS = (
     "id",
     "first_name",
@@ -44,7 +44,7 @@ SHORT_FIELDS = (
 )
 # «Top skills»: the card lists up to twenty, the first ones are what the person leads
 # with, and the summary (up to 400 characters) is cut where a sentence of it is already
-# enough to tell whether to look closer. `campi=["competenze", "sintesi"]` asks for them
+# enough to tell whether to look closer. `fields=["skills", "profile_summary"]` asks for them
 # whole.
 SHORT_SKILLS = 5
 SHORT_PROFILE_SUMMARY = 160
@@ -67,7 +67,7 @@ def row_fields(fields: Sequence[str] | None) -> tuple[str, ...] | None:
         raise ValidationFailed(
             "talents",
             "fields",
-            f"«{unknown[0]}» non esiste: {', '.join(ROW_FIELDS)}, oppure «{ALL}»",
+            f"«{unknown[0]}» does not exist: {', '.join(ROW_FIELDS)}, or «{ALL}»",
         )
     if ALL in names:
         return ROW_FIELDS

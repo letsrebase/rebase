@@ -15,7 +15,6 @@ from pigrocrm.core.db.role import ensure_application_role
 from pigrocrm.core.db.scope import bind_scope
 from pigrocrm.core.identity.models import Identity
 from pigrocrm.core.identity.service import IdentityService
-from pigrocrm.core.labels import TEMPLATE_TYPE, label
 from pigrocrm.core.reminders.run import ROOT_LABEL
 from pigrocrm.core.templates.service import TemplateService
 from pigrocrm.core.tenants import ensure_defaults, ensure_tenants_database
@@ -33,9 +32,9 @@ def seed_templates(settings: Settings) -> int:
     ):
         created = TemplateService(session).seed_defaults(Actor.system())
     for template in created:
-        print(f"creato: {template.name} ({label(TEMPLATE_TYPE, template.type)})")
+        print(f"created: {template.name} ({template.type})")
     if not created:
-        print("nessun template da creare: sono già presenti")
+        print("no template to create: they are already there")
     return 0
 
 
@@ -75,18 +74,18 @@ def ensure_space_defaults(settings: Settings) -> int:
     # granted before uvicorn answers. One URL means no role, and one line that says so.
     try:
         if ensure_application_role(settings.owner_database_url, settings.database_url):
-            print(f"{ROOT_LABEL}: ruolo applicativo pronto")
+            print(f"{ROOT_LABEL}: application role ready")
         else:
-            print(f"{ROOT_LABEL}: un solo URL, nessun ruolo applicativo da creare")
+            print(f"{ROOT_LABEL}: a single URL, no application role to create")
     except Exception as exc:  # noqa: BLE001 - reported, then the boot stops
         # The CMD chains on this exit code, so the container restarts and says why.
-        print(f"{ROOT_LABEL}: ruolo applicativo non creato ({type(exc).__name__})", file=sys.stderr)
+        print(f"{ROOT_LABEL}: application role not created ({type(exc).__name__})", file=sys.stderr)
         return 1
     walk = read_spaces(settings, include_root=False)
     if report_unreadable(walk):
         return 0
     if not walk.targets:
-        print("nessuno spazio nel registro")
+        print("no space in the registry")
         return 0
     for target in walk.targets:
         slug, db_name = target.label, target.db_name
@@ -102,26 +101,26 @@ def ensure_space_defaults(settings: Settings) -> int:
                 after = _schema_revision(engine)
                 ensure_application_role(url, tenant_database_url(settings, db_name))
             except Exception as exc:  # noqa: BLE001 - one space must not stop the others
-                print(f"{slug}: non migrato ({type(exc).__name__})", file=sys.stderr)
+                print(f"{slug}: not migrated ({type(exc).__name__})", file=sys.stderr)
                 continue
             if before == after:
-                print(f"{slug}: schema già a {after}")
+                print(f"{slug}: schema already at {after}")
             else:
-                print(f"{slug}: schema migrato da {before or 'zero'} a {after}")
+                print(f"{slug}: schema migrated from {before or 'zero'} to {after}")
             try:
                 with session_factory(engine)() as space:
                     bind_scope(space, Actor.system())
                     report = ensure_defaults(space, name=slug)
             except Exception as exc:  # noqa: BLE001 - one space must not stop the others
-                print(f"{slug}: non arredato ({type(exc).__name__})", file=sys.stderr)
+                print(f"{slug}: not furnished ({type(exc).__name__})", file=sys.stderr)
                 continue
         if report.seeded:
             print(
-                f"{slug}: stati {report.stages}, template {report.templates}, "
-                f"categorie {report.categories}, aziende {report.legal_entities}"
+                f"{slug}: statuses {report.stages}, templates {report.templates}, "
+                f"categories {report.categories}, legal entities {report.legal_entities}"
             )
         else:
-            print(f"{slug}: già a posto")
+            print(f"{slug}: already in place")
     return 0
 
 
@@ -142,14 +141,14 @@ def rebuild_identity_index(settings: Settings) -> int:
     try:
         registry = ensure_tenants_database(settings)
     except Exception as exc:  # noqa: BLE001 - never fails the whole command
-        print(f"registro degli spazi non raggiungibile ({type(exc).__name__})", file=sys.stderr)
+        print(f"space registry unreachable ({type(exc).__name__})", file=sys.stderr)
         return 0
     try:
         walk = read_spaces(settings, include_root=False)
         if report_unreadable(walk):
             return 0
         if not walk.targets:
-            print("nessuno spazio nel registro")
+            print("no space in the registry")
             return 0
         for target in walk.targets:
             slug = target.label
@@ -163,10 +162,10 @@ def rebuild_identity_index(settings: Settings) -> int:
                         - {""}
                     )
             except Exception as exc:  # noqa: BLE001 - one space must not stop the others
-                print(f"{slug}: non raggiungibile ({type(exc).__name__})", file=sys.stderr)
+                print(f"{slug}: unreachable ({type(exc).__name__})", file=sys.stderr)
                 continue
             if not emails:
-                print(f"{slug}: nessun utente")
+                print(f"{slug}: no users")
                 continue
             try:
                 with session_factory(registry)() as registry_session:
@@ -179,13 +178,13 @@ def rebuild_identity_index(settings: Settings) -> int:
                     for email in emails:
                         service.get_or_create(email)
             except Exception as exc:  # noqa: BLE001 - one space must not stop the others
-                print(f"{slug}: identità non aggiornate ({type(exc).__name__})", file=sys.stderr)
+                print(f"{slug}: identities not updated ({type(exc).__name__})", file=sys.stderr)
                 continue
             new_count = len(emails) - len(existing)
             if new_count:
-                print(f"{slug}: {len(emails)} indirizzi, {new_count} nuove identità")
+                print(f"{slug}: {len(emails)} addresses, {new_count} new identities")
             else:
-                print(f"{slug}: {len(emails)} indirizzi, già indicizzati")
+                print(f"{slug}: {len(emails)} addresses, already indexed")
     finally:
         registry.dispose()
     return 0

@@ -33,8 +33,8 @@ ADMIN_STATE_KEY = "admin"
 # revoked token keeps writing, and the database is asked once per minute, not per call.
 ADMIN_CACHE_SECONDS = 60.0
 TOKEN_NO_LONGER_VALID = (
-    "Il token di questo server non è più valido: è stato revocato, è scaduto o il suo "
-    "amministratore non lo è più. Crea un nuovo token dall'area admin («Agenti»)."
+    "This server's token is no longer valid: it was revoked, it expired or its admin is no "
+    "longer an admin. Create a new token from the admin area («Agenti»)."
 )
 
 
@@ -43,7 +43,7 @@ class CachedAdmin:
     `AdminTokenService` and kept for `ttl` seconds. `refresh` resolves at once and
     raises the `DomainError` (the start-up check: a process nobody has a token for does
     not start); a call after the cache has expired resolves again, and a token that no
-    longer resolves is a `ToolError` in Italian, never the previous admin."""
+    longer resolves is a `ToolError` saying so, never the previous admin."""
 
     def __init__(
         self,
@@ -104,7 +104,7 @@ class AdminFromRequest:
         request = ctx.request
         admin = getattr(getattr(request, "state", None), ADMIN_STATE_KEY, None)
         if not isinstance(admin, AdminRead):
-            raise MCPError(code=-32001, message="nessun amministratore dietro la richiesta")
+            raise MCPError(code=-32001, message="no admin behind the request")
         token = _CURRENT_ADMIN.set(admin)
         try:
             return await call_next(ctx)

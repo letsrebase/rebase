@@ -57,7 +57,7 @@ def search(
     q: Annotated[SafeStr, Query(min_length=MIN_TERM_LENGTH, max_length=MAX_TERM_LENGTH)],
     limit: Annotated[int, Query(ge=1, le=20)] = PER_CLASS_LIMIT,
     legal_entity_id: Annotated[
-        UUID | None, Query(description="Solo i risultati di questa azienda; omesso, tutti")
+        UUID | None, Query(description="Only this legal entity's results; omitted, all")
     ] = None,
 ) -> SearchResults:
     return SearchService(session).search_everything(

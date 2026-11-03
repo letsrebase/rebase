@@ -162,7 +162,7 @@ async def test_every_entity_resource_opens_with_the_marker(
         ]
 
     for text in cards:
-        assert text.startswith("_Provenienza: ")
+        assert text.startswith("_Provenance: ")
         assert PROVENANCE_TEXT_FREE in text.splitlines()[0]
         assert text.count(PROVENANCE_TEXT_FREE) == 1
 

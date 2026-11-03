@@ -122,7 +122,7 @@ def test_the_contracts_check_command_typesets_both_texts(
     out = capsys.readouterr().out
     for document in DOCUMENTS:
         assert f"{document}: " in out
-    assert out.count("spazi da firmare") == len(DOCUMENTS)
+    assert out.count("signing blanks") == len(DOCUMENTS)
 
 
 def _words(pdf: bytes) -> str:

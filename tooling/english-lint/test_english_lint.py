@@ -105,7 +105,7 @@ class PythonRules(Tree):
         path = self.write("a/q.py", 'x = 1  # the page says "Cliente non trovato" and `scadenza`\n')
         self.assertEqual(self.lint(path), [])
 
-    def test_route_and_tool_docstrings_are_published_copy(self) -> None:
+    def test_route_and_tool_docstrings_are_read_like_any_docstring(self) -> None:
         path = self.write(
             "a/routes.py",
             "@router.get('/x')\n"
@@ -113,7 +113,63 @@ class PythonRules(Tree):
             '    """Legge il totale della fattura per il cliente."""\n\n\n'
             "@mcp.tool()\n"
             "def tool():\n"
-            '    """Restituisce il totale della fattura per il cliente."""\n',
+            '    """Return the invoice total for the customer."""\n',
+        )
+        self.assertEqual([f.line for f in self.lint(path)], [3])
+
+    def test_published_keyword_strings_fail_even_when_short(self) -> None:
+        path = self.write(
+            "a/schema.py",
+            'INSTRUCTIONS = "Il CRM per i freelance: " "leggi prima lo schema"\n'
+            "server = FastMCP('pigrocrm', instructions=INSTRUCTIONS)\n"
+            "def read(q: str = Query(None, description='Testo da cercare nel cliente')):\n"
+            "    return q\n"
+            "class Row(BaseModel):\n"
+            "    customer: str = Field(title='Cliente')\n"
+            "    amount: int = Field(description='The amount, in cents.')\n"
+            "parser.add_argument('--date', help='giorno da ricalcolare')\n"
+            "def end(to: str = Query(None, description='Fine del periodo, YYYY-MM-DD')):\n"
+            "    return to\n"
+            "def rows(limit: int = Query(5, description='The rows per section, per client')):\n"
+            "    return limit\n",
+        )
+        self.assertEqual([f.line for f in self.lint(path)], [2, 3, 6, 8, 9])
+
+    def test_keyword_strings_of_other_calls_are_data(self) -> None:
+        path = self.write(
+            "a/data.py",
+            "doc = Document(title='Offerta Rossi', description='Consulenza di marzo')\n"
+            "reminder = ReminderType(title='Fattura scaduta')\n",
+        )
+        self.assertEqual(self.lint(path), [])
+
+    def test_openapi_response_descriptions_are_published(self) -> None:
+        path = self.write(
+            "a/errors.py",
+            "PROBLEMS = {403: _problem_response('Permesso negato: manca il ruolo.')}\n"
+            "LIMIT_RESPONSE = {'description': 'Troppe richieste da questo indirizzo'}\n"
+            "@router.get('/x', responses={\n"
+            "    200: {'description': 'Il CSV dell anno', 'content': {}}})\n"
+            "def export():\n"
+            '    """Export the year as CSV."""\n',
+        )
+        self.assertEqual([f.line for f in self.lint(path)], [1, 2, 4])
+
+    def test_a_description_constant_is_read_where_another_module_uses_it(self) -> None:
+        texts = self.write("a/texts.py", "ENTITY_HELP = 'Solo le righe di questa azienda'\n")
+        route = self.write(
+            "a/route.py",
+            "from a.texts import ENTITY_HELP\n"
+            "def read(entity: int = Query(None, description=ENTITY_HELP)):\n"
+            "    return entity\n",
+        )
+        self.assertEqual([(f.path, f.line) for f in self.lint(texts, route)], [(route, 2)])
+
+    def test_a_test_publishes_nothing(self) -> None:
+        path = self.write(
+            "a/tests/test_fake.py",
+            "REPLY = {'description': 'Il profilo di Ada', 'content': 'x'}\n"
+            "answer = _fake_response('Il profilo di Ada, sviluppatrice')\n",
         )
         self.assertEqual(self.lint(path), [])
 

@@ -41,20 +41,20 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
         legal_entity_id: str | None = None,
         owner_id: str | None = None,
     ) -> dict[str, Any]:
-        """Crea un cliente.
+        """Create a customer.
 
-        `owner_id` è chi risponde del cliente e riceve i promemoria su fatture e contratti (id in
-        `list_members`): omesso, è chi crea; un altro lo indica solo un amministratore, come per
-        `update_customer`.
+        `owner_id` is who is responsible for the customer and receives reminders about invoices
+        and contracts (id in `list_members`): if omitted, it is the creator; only an administrator
+        can name someone else, as with `update_customer`.
 
-        `payment_days` e `payment_end_of_month` sono i termini concordati («30 giorni data
-        fattura fine mese» = `30` con `True`); da qui `issue_invoice` calcola la scadenza,
-        altrimenti usa il profilo fiscale.
+        `payment_days` and `payment_end_of_month` are the agreed terms («30 days invoice date
+        end of month» = `30` with `True`); `issue_invoice` computes the due date from them,
+        otherwise it uses the fiscal profile.
 
-        `country`: ISO 3166-1 alpha-2 (`IT` se omessa). `legal_entity_id`: l'azienda che lo fattura
-        (`list_legal_entities`); omessa, quella di `suggest_legal_entity`.
+        `country`: ISO 3166-1 alpha-2 (`IT` if omitted). `legal_entity_id`: the company that
+        invoices them (`list_legal_entities`); if omitted, the one from `suggest_legal_entity`.
 
-        `note` è la prima nota del cliente (senza data né autore: la firma il CRM).
+        `note` is the customer's first note (without date or author: the CRM signs it).
         """
         return customers.create(
             context,
@@ -83,25 +83,25 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
     @mcp.tool(annotations=READ_ONLY)
     @guard
     def suggest_legal_entity(country: str | None = None) -> dict[str, Any]:
-        """L'azienda che fatturerebbe un nuovo cliente di `country` (ISO 3166-1 alpha-2, `IT` se
-        omessa): la stessa che `create_customer` sceglie senza `legal_entity_id`. Chiedila per
-        mostrarla alla persona prima di creare.
+        """The company that would invoice a new customer of `country` (ISO 3166-1 alpha-2, `IT` if
+        omitted): the same one `create_customer` picks without `legal_entity_id`. Ask for it to
+        show it to the person before creating.
         """
         return invoices.suggest_legal_entity(context, country)
 
     @mcp.tool(annotations=DESTRUCTIVE)
     @guard
     def update_customer(customer_id: str, changes: CustomerChanges) -> dict[str, Any]:
-        """Aggiorna un cliente. `owner_id` (da `list_members`) lo cambia solo un amministratore;
-        `null` toglie il responsabile.
+        """Update a customer. Only an administrator can change `owner_id` (from `list_members`);
+        `null` removes the owner.
         """
         return customers.update(context, customer_id, changes)
 
     @mcp.tool(annotations=READ_ONLY)
     @guard
     def get_customer(customer_id: str) -> dict[str, Any]:
-        """Legge un cliente, con le ultime 50 note (`note`, dalla più recente; `note_total`
-        le conta, tutte in `customer://<id>`).
+        """Read a customer, with the latest 50 notes (`note`, most recent first; `note_total`
+        counts them, all of them are in `customer://<id>`).
         """
         return customers.get(context, customer_id)
 
@@ -122,8 +122,8 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
         # `validate_arguments` where the message is not ours.
         dir: str = "asc",
     ) -> dict[str, Any]:
-        """Cerca clienti per ragione sociale, P.IVA, codice fiscale o email. `sort`: `created_at`,
-        `updated_at`, `legal_name`. `legal_entity_id` filtra per azienda.
+        """Search customers by legal name, VAT number, tax code or email. `sort`: `created_at`,
+        `updated_at`, `legal_name`. `legal_entity_id` filters by company.
         """
         return customers.search(
             context,
@@ -152,11 +152,11 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
     @mcp.tool(annotations=ADDITIVE)
     @guard
     def archive_customer(customer_id: str) -> dict[str, str]:
-        """Archivia un cliente (reversibile con `restore_customer`). Fallisce se ha deal attivi."""
+        """Archive a customer (reversible with `restore_customer`). Fails if it has active deals."""
         return customers.archive(context, customer_id)
 
     @mcp.tool(annotations=ADDITIVE)
     @guard
     def restore_customer(customer_id: str) -> dict[str, Any]:
-        """Ripristina un cliente archiviato."""
+        """Restore an archived customer."""
         return customers.restore(context, customer_id)
