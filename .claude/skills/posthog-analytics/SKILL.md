@@ -110,9 +110,22 @@ personal key (`phx_…`) never enters a file, a card or a chat transcript.
 The PostHog MCP (`mcp__plugin_posthog_posthog__exec`) is the way in from a session. The
 OAuth grant it asks for on first use can be completed from Chrome, «Read-only» is enough
 for every query, and a write (a source edit, a schema reload, a cohort) needs a
-reconnect with that scope, which no browser login changes. The `querying-posthog-data`
+reconnect with that scope, which no browser login changes. For a write without that
+reconnect, a signed-in browser profile reaches the same API from inside the page with the
+session cookie and the `posthog_csrftoken` cookie as `X-CSRFToken`: Lorenzo's own login
+and `ciao@letsrebase.com` are both members of the organisation. The `querying-posthog-data`
 skill has the general method; these are the project's rules on top of it:
 
+- **An insight reads an action, never a bare event name.** The English rename of
+  2026-11-03 (REB-912) changed every event name the CRM and the hub send; each new name
+  has an action of the same name whose steps match it and the Italian name it replaced,
+  and the dashboards' insights read those actions, so their series run across that date.
+  A new insight on one of those events uses the action. A future rename adds the old name
+  as one more step of the action instead of breaking the insights. Properties have no
+  equivalent: a breakdown across the date reads both keys
+  (`coalesce(properties.step, properties.passo)`, as «Where people leave the wizard»
+  does), and the group type `spazio` (index 0) holds the spaces seen before it, `space`
+  (index 1) the ones after.
 - **Bound every query on `timestamp`**. For browser events filter
   `properties.$host = 'letsrebase.com'` (or `pigro.letsrebase.com`): the previews report
   under their own hosts and the old `joinorbiters.com` events are still there. A server

@@ -87,5 +87,9 @@ No nginx rewrite was added for them: the applications answer the old URLs themse
    breaking for the old image), release the CRM and the hub in the same window, and watch
    the deploy health probe, which now asks for `/api/tenants/zzz-healthcheck/available`.
 5. **PostHog**: update or alias the renamed events, properties and the `space` group type.
+   Done on 2026-11-03 (REB-912): one action per renamed event matching both names, the
+   dashboards' insights read those actions, the wizard breakdown reads both step keys, and
+   the old event and property definitions say what replaced them. The group type `spazio`
+   is shown as «space (before 2026-11-03)».
 6. **Agents and tokens**: PATs keep working; tell whoever scripts the API about the new
    paths; reconnect MCP clients so they reload the tool list.
