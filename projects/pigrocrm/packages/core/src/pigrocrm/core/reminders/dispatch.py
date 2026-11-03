@@ -8,8 +8,9 @@ resolved: the person's effective settings, and whether *now* is inside their qui
 
 **Three steps, in the digest's order** (reads, then the network, then the ledger):
 
-1. `ChannelDispatcher.prepare` reads, once, everything a pass needs (the people, the
-   settings, the ledger) and asks each channel to `prepare` its sends from plain values.
+1. `ChannelDispatcher.prepare` reads the ledger once, takes the people and the settings the
+   evaluation was made with (`Evaluation.directory`, `Evaluation.preferences`: not read a
+   second time) and asks each channel to `prepare` its sends from plain values.
 2. The caller ends the read transaction, then calls each `Prepared.send`, which touches the
    network and never the session. A channel's `send` **never raises**: a failure is a
    message left out of its `ChannelResult.accepted`.
@@ -170,6 +171,8 @@ class ChannelDispatcher:
         settings: Settings,
         open_reminders: Sequence[Reminder],
         *,
+        directory: Directory,
+        preferences: ReminderSettings,
         newly_listed: set[DeliveryIdentity],
         today: date,
         now: datetime,
@@ -179,13 +182,13 @@ class ChannelDispatcher:
     ) -> list[Prepared]:
         """Plans every channel's sends for the reminders the engine left open.
 
-        `newly_listed` is the in-app identities this pass is about to write, which is how
-        a candidate's `listed_at` is `now` for a reminder that is new or has climbed.
+        `directory` and `preferences` are the evaluation's own, so a channel resolves a
+        person from the same rows the detectors did. `newly_listed` is the in-app
+        identities this pass is about to write, which is how a candidate's `listed_at` is
+        `now` for a reminder that is new or has climbed.
         """
         if not self.channels:
             return []
-        preferences = ReminderSettings.load(session)
-        directory = Directory.load(session)
         delivered = ReminderLedger(session).deliveries({r.key for r in open_reminders})
         context = PassContext(
             settings=settings,

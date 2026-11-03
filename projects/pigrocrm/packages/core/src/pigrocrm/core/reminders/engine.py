@@ -25,6 +25,7 @@ import logging
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime
+from uuid import UUID
 
 from sqlalchemy import delete, select
 from sqlalchemy.exc import IntegrityError
@@ -53,11 +54,14 @@ _ATTIVITA_TYPES = frozenset({"attivita_due", "attivita_overdue"})
 @dataclass(frozen=True)
 class Evaluation:
     """What one evaluation found: the reminders (one per person and subject), the types
-    that ran, and the keys raised for anybody."""
+    that ran, and the keys raised for anybody, with the people and the settings it was made
+    with, read once and handed on to the channels of the same pass."""
 
     reminders: tuple[Reminder, ...]
     ran: frozenset[str]
     raised: frozenset[str]
+    directory: Directory
+    preferences: ReminderSettings
     # The wall-clock moment the evaluation began: what a row written later is told apart by.
     evaluated_at: datetime | None = None
 
@@ -82,29 +86,52 @@ class ReminderEngine:
     def evaluate(self, *, today: date | None = None, now: datetime | None = None) -> Evaluation:
         """Runs every detector that applies to the space and is switched on for it, and
         resolves each detection per recipient. Reads and writes nothing else."""
+        return self._evaluate(today, now, only_for=None)
+
+    def reminders_of(
+        self, user_id: UUID, *, today: date | None = None, now: datetime | None = None
+    ) -> list[Reminder]:
+        """What `evaluate` raises for one person, without running what only others could be
+        told: a type whose recipients are the space's admins is not run for somebody who is
+        not one, and nobody else's severity is resolved. A person who cannot be told at all
+        (archived, no address) has none. Only the reminders come back: what a pass records
+        needs the evaluation of the whole space (`evaluate`)."""
+        return list(self._evaluate(today, now, only_for=user_id).reminders)
+
+    def _evaluate(
+        self, today: date | None, now: datetime | None, *, only_for: UUID | None
+    ) -> Evaluation:
         evaluated_at = datetime.now(UTC)
         today = today if today is not None else today_local(self.settings)
         now = now if now is not None else evaluated_at
         preferences = ReminderSettings.load(self.session)
+        directory = Directory.load(self.session)
         ctx = DetectorContext(
             session=self.session,
             today=today,
             now=now,
             timezone=self.settings.timezone,
-            directory=Directory.load(self.session),
+            directory=directory,
             settings=preferences,
         )
         reminders: list[Reminder] = []
         ran: set[str] = set()
         raised: set[str] = set()
+        person = directory.people.get(only_for) if only_for is not None else None
+        if only_for is not None and person is None:
+            return Evaluation((), frozenset(), frozenset(), directory, preferences, evaluated_at)
         for detector in DETECTORS:
             kind = detector.kind
             if not preferences.space_enabled(kind) or not detector.applies(ctx):
+                continue
+            if kind.audience == "admins" and person is not None and not person.admin:
                 continue
             ran.add(kind.key)
             for detection in detector.detect(ctx):
                 key = reminder_key(kind.key, detection.subject_id)
                 for user_id in sorted(detection.recipients):
+                    if only_for is not None and user_id != only_for:
+                        continue
                     effective = preferences.for_user(user_id).type(kind)
                     if not effective.enabled:
                         continue
@@ -132,7 +159,14 @@ class ReminderEngine:
         # of an attivita must survive the day its reminder is not raised for them, and ends
         # only when the cause is gone (`forget_unraised`).
         reminders = self._without_what_a_reminder_already_says(reminders)
-        return Evaluation(tuple(reminders), frozenset(ran), frozenset(raised), evaluated_at)
+        return Evaluation(
+            tuple(reminders),
+            frozenset(ran),
+            frozenset(raised),
+            directory,
+            preferences,
+            evaluated_at,
+        )
 
     def _without_what_a_reminder_already_says(self, reminders: list[Reminder]) -> list[Reminder]:
         """Drops, for one person, the attività reminder of what `fattura_scaduta` opened

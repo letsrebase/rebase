@@ -27,7 +27,7 @@ from aziende_helpers import azienda_url
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
-from pigrocrm.core.clock import oggi_in_italia
+from pigrocrm.core.db.clock import today_local
 from pigrocrm.core.gmail.models import EmailDraft, PaymentReminder
 from pigrocrm.core.invoices.models import Invoice
 from pigrocrm.core.invoices.naming import numero_completo
@@ -117,7 +117,7 @@ def overdue_invoice(
 
     row = api_session.get(Invoice, issued.json()["id"])
     assert row is not None
-    row.data_scadenza = oggi_in_italia() - timedelta(days=40)
+    row.data_scadenza = today_local() - timedelta(days=40)
     api_session.flush()
     return issued.json()
 
@@ -166,7 +166,7 @@ def test_an_invoice_still_inside_its_grace_period_is_not_a_candidate(
     no due date in the condition at all -- it chased on `emailSentCount > 0`."""
     row = api_session.get(Invoice, overdue_invoice["id"])
     assert row is not None
-    row.data_scadenza = oggi_in_italia() - timedelta(days=1)
+    row.data_scadenza = today_local() - timedelta(days=1)
     api_session.flush()
 
     assert logged_in.get(CANDIDATES).json()["items"] == []

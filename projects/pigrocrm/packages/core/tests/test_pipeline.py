@@ -1,9 +1,7 @@
-from types import SimpleNamespace
 from typing import Any
 
 import pytest
 from pydantic import ValidationError
-from sqlalchemy import Column, Integer, MetaData, Table
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.actor import Actor
@@ -176,7 +174,7 @@ def test_create_rejects_a_duplicate_code_race_past_the_precheck(
 
     with pytest.raises(Conflict) as exc:
         service.create(PipelineStageCreate(nome="Due", posizione=1, code="dup"), ADMIN)
-    assert exc.value.details["code"] == "dup"
+    assert exc.value.details["stage_code"] == "dup"
 
     # The session must still be usable right after -- a leftover PendingRollbackError
     # would blow up on the very next statement issued on it.
@@ -208,38 +206,6 @@ def test_seed_defaults_race_past_the_precheck_converges_silently(
     result = service.seed_defaults(ADMIN)
 
     assert len(result) == 6
-
-
-def test_delete_fails_loudly_if_the_deals_table_lacks_the_expected_column(
-    db_session: Session, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """Returning 0 from `count_deals_in_stage` is only correct when `deals` does not
-    exist yet, or exists with the expected column. If it exists without
-    `pipeline_stage_id`, that is a bug in this code, not "no deals" -- silently
-    returning 0 would let `delete()` remove a stage that might still be full of deals.
-
-    Task 12 registered the real `Deal` model, which -- by construction -- always has
-    `pipeline_stage_id`, so the pre-Task-12 technique this test used (registering a
-    second, bare `Table("deals", Base.metadata, ...)` directly alongside the real one)
-    no longer works: a `MetaData` instance rejects two tables sharing the same name
-    with `InvalidRequestError`. Patching the module-level `Base` name that
-    `count_deals_in_stage` actually looks up (`pigrocrm.core.pipeline.repository.Base`)
-    substitutes a throwaway, unrelated `MetaData` for the duration of this test only --
-    the real, shared `Base.metadata` every other test depends on is never touched, and
-    `monkeypatch` reverts the substitution automatically, with no `finally` needed.
-    Mirrors `test_soft_delete_fails_loudly_if_the_deals_table_lacks_the_expected_column`
-    in test_customers.py."""
-    fake_metadata = MetaData()
-    Table("deals", fake_metadata, Column("id", Integer, primary_key=True))
-    monkeypatch.setattr(
-        "pigrocrm.core.pipeline.repository.Base", SimpleNamespace(metadata=fake_metadata)
-    )
-
-    service = PipelineService(db_session)
-    stage = service.create(PipelineStageCreate(nome="Occupato", posizione=0), ADMIN)
-
-    with pytest.raises(RuntimeError):
-        service.delete(stage.id, ADMIN)
 
 
 def test_nome_over_the_column_width_is_rejected_on_create_and_update() -> None:

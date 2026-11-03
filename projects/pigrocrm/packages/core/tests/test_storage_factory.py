@@ -35,6 +35,7 @@ from sqlalchemy.orm import Session
 from pigrocrm.core.activities.models import Activity
 from pigrocrm.core.auth.models import User
 from pigrocrm.core.config import Settings
+from pigrocrm.core.crypto import seal
 from pigrocrm.core.drive.errors import DriveCredentialRevoked
 from pigrocrm.core.drive.models import GoogleDriveAccount
 from pigrocrm.core.drive.query import file_meta_url
@@ -42,7 +43,6 @@ from pigrocrm.core.drive.repository import DriveRepository
 from pigrocrm.core.drive.schemas import DRIVE_SCOPE_FILE, DRIVE_SCOPE_READONLY
 from pigrocrm.core.drive.transport import user_transport_for
 from pigrocrm.core.errors import Conflict, NotFound, ValidationFailed
-from pigrocrm.core.gmail.crypto import seal
 from pigrocrm.core.gmail.tokens import GoogleTokenClient
 from pigrocrm.core.gmail.transport import GmailTransport
 from pigrocrm.core.storage import lazy_drive
@@ -86,10 +86,16 @@ class RecordingHttp:
     headers: list[dict[str, str]] = field(default_factory=list)
 
     def __call__(
-        self, method: str, url: str, headers: dict[str, str], body: bytes | None
-    ) -> tuple[int, bytes]:
+        self,
+        method: str,
+        url: str,
+        headers: dict[str, str],
+        body: bytes | None,
+        *,
+        max_bytes: int | None = None,
+    ) -> tuple[int, bytes, dict[str, str]]:
         self.headers.append(dict(headers))
-        return self.inner(method, url, headers, body)
+        return self.inner(method, url, headers, body, max_bytes=max_bytes)
 
 
 def _account(
@@ -807,8 +813,13 @@ def test_a_revocation_is_never_recorded_against_a_resolution_that_moved(
     swaps: list[str] = []
 
     def swap_then_refuse(
-        method: str, url: str, headers: dict[str, str], body: bytes | None
-    ) -> tuple[int, bytes]:
+        method: str,
+        url: str,
+        headers: dict[str, str],
+        body: bytes | None,
+        *,
+        max_bytes: int | None = None,
+    ) -> tuple[int, bytes, dict[str, str]]:
         swaps.append(url)
         storage._resolution = lazy_drive._Resolution(
             account_id=other.id,
@@ -819,7 +830,7 @@ def test_a_revocation_is_never_recorded_against_a_resolution_that_moved(
                 root_folder_id=STORAGE_FOLDER,
             ),
         )
-        return gmail(method, url, headers, body)
+        return gmail(method, url, headers, body, max_bytes=max_bytes)
 
     storage = LazyUserDriveStorage(
         _sessions(db_session),

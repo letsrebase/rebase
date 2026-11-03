@@ -11,13 +11,14 @@ from uuid import UUID
 
 import pytest
 from lxml import etree
+from orologio import fissa_oggi
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.activities.service import ActivityService
 from pigrocrm.core.actor import Actor
-from pigrocrm.core.clock import oggi_in_italia
 from pigrocrm.core.customers.models import Customer
+from pigrocrm.core.db.clock import today_local
 from pigrocrm.core.emitter.schemas import LegalEntityUpsert
 from pigrocrm.core.emitter.service import LegalEntityService
 from pigrocrm.core.errors import (
@@ -42,11 +43,18 @@ from pigrocrm.core.storage.local import LocalFileStorage
 
 ADMIN = Actor(id=None, type="system", role="admin")
 COLLABORATORE = Actor(id=None, type="user", role="collaboratore")
-# `oggi_in_italia()`, not `date.today()`: this test asserts the service's own output
+# `today_local()`, not `date.today()`: this test asserts the service's own output
 # against this constant, and the two must agree regardless of the host running this
 # suite -- a bare `date.today()` here would only coincidentally match the service if
 # the test machine happened to be configured for Europe/Rome, which nothing enforces.
-TODAY = oggi_in_italia()
+TODAY = today_local()
+
+
+@pytest.fixture(autouse=True)
+def _pinned_today(monkeypatch: pytest.MonkeyPatch) -> None:
+    fissa_oggi(monkeypatch, TODAY)
+
+
 # The other end of the legal issue window. `issue()` refuses a `data_emissione` after
 # today *and* one before 1 January, so `CAPODANNO` and `TODAY` are the only pair of dates
 # guaranteed to be accepted whatever day the suite runs on. The obvious "some date in
@@ -181,7 +189,7 @@ def test_the_issue_date_is_a_date_in_the_issuer_s_own_calendar(
 ) -> None:
     """Never a UTC projection of an instant: `toISOString()` on 31 December at
     23:30 CET yields 1 January, i.e. the wrong fiscal year on an immutable
-    document. `oggi_in_italia()` is the local civil date in Europe/Rome regardless of
+    document. `today_local()` is the local civil date in Europe/Rome regardless of
     the process's own system timezone, and `anno` is derived from it, so the year in
     the number and the year on the document cannot disagree."""
     invoice = service.issue(_draft(service, _customer(db_session)), InvoiceIssue(), ADMIN)
@@ -719,7 +727,7 @@ def test_a_fattura_issued_from_a_proforma_inherits_the_period_and_takes_its_own_
     service.confirm_proforma(proforma.id, ADMIN)
     issued = service.issue(proforma.id, InvoiceIssue(), ADMIN)
     assert (issued.competenza_da, issued.competenza_a) == (date(2025, 8, 1), date(2025, 8, 31))
-    assert issued.data_emissione == oggi_in_italia()
+    assert issued.data_emissione == today_local()
     assert issued.data_emissione != date(2025, 9, 5)
     # The consumed proforma is frozen with the rest: its date is no longer the sender's
     # to move, and neither is its period.

@@ -1,20 +1,25 @@
-from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Query, status
+from fastapi import APIRouter, Depends, status
+from sqlalchemy.orm import Session
 
-from pigrocrm.core.activities.schemas import ActivityRead
-from pigrocrm.core.activities.service import ActivityService
+from pigrocrm.core.actor import Actor
 from pigrocrm.core.pipeline.schemas import (
     PipelineStageCreate,
     PipelineStageRead,
     PipelineStageUpdate,
 )
 from pigrocrm.core.pipeline.service import PipelineService
-from pigrocrm_api.deps import ActorDep, SessionDep
+from pigrocrm_api.deps import ActorDep, SessionDep, get_actor
 from pigrocrm_api.errors import PROBLEM_RESPONSES
+from pigrocrm_api.timeline import timeline_router
 
-router = APIRouter(prefix="/api/pipeline-stages", tags=["pipeline"], responses=PROBLEM_RESPONSES)
+router = APIRouter(
+    prefix="/api/pipeline-stages",
+    tags=["pipeline"],
+    responses=PROBLEM_RESPONSES,
+    dependencies=[Depends(get_actor)],
+)
 
 
 @router.post("", response_model=PipelineStageRead, status_code=status.HTTP_201_CREATED)
@@ -23,7 +28,7 @@ def create(data: PipelineStageCreate, session: SessionDep, actor: ActorDep) -> P
 
 
 @router.get("", response_model=list[PipelineStageRead])
-def list_stages(session: SessionDep, actor: ActorDep) -> list[PipelineStageRead]:
+def list_stages(session: SessionDep) -> list[PipelineStageRead]:
     return PipelineService(session).list()
 
 
@@ -48,15 +53,20 @@ def seed(session: SessionDep, actor: ActorDep) -> list[PipelineStageRead]:
     return PipelineService(session).seed_defaults(actor)
 
 
-@router.get("/{stage_id}/timeline", response_model=list[ActivityRead])
-def timeline(
-    stage_id: UUID,
-    session: SessionDep,
-    actor: ActorDep,
-    limit: Annotated[int, Query(ge=1, le=200)] = 50,
-) -> list[ActivityRead]:
-    """Administrators only, matching who may change a stage. Deliberately still
-    answerable after the stage is gone: `delete` is the one hard DELETE in the domain,
-    and the entry it leaves is the only remaining record that the stage existed."""
+def _admin_reads_stage_timeline(_session: Session, _stage_id: UUID, actor: Actor) -> None:
     actor.require_admin("read_pipeline_stage_timeline")
-    return ActivityService(session).timeline("pipeline_stage", stage_id, limit)
+
+
+router.include_router(
+    timeline_router(
+        "pipeline_stage",
+        id_param="stage_id",
+        guard=_admin_reads_stage_timeline,
+        description=(
+            "Administrators only, matching who may change a stage. Deliberately still "
+            "answerable after the stage is gone: `delete` is the one hard DELETE in the "
+            "domain, and the entry it leaves is the only remaining record that the stage "
+            "existed."
+        ),
+    )
+)

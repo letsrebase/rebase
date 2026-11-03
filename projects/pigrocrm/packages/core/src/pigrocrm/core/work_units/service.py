@@ -21,10 +21,11 @@ from sqlalchemy.orm import Session
 from pigrocrm.core.activities.service import ActivityService
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.contracts.repository import ContractRepository
+from pigrocrm.core.db.transactions import savepoint
 from pigrocrm.core.documents.models import Document
 from pigrocrm.core.documents.schemas import TITOLO_MAX_LENGTH
 from pigrocrm.core.documents.service import DocumentService
-from pigrocrm.core.errors import Conflict, NotFound, ValidationFailed
+from pigrocrm.core.errors import Conflict, DomainError, NotFound, ValidationFailed
 from pigrocrm.core.gmail.repository import GmailRepository
 from pigrocrm.core.storage.base import DocumentStorage
 from pigrocrm.core.work_units.models import (
@@ -168,7 +169,19 @@ class WorkUnitService:
         if ContractRepository(self.session).get(data.contract_id) is None:
             raise NotFound("contract", data.contract_id)
         set_transition_context(self.session, actor, motivo)
-        try:
+
+        def refuse(exc: IntegrityError) -> DomainError | IntegrityError:
+            if LIVE_DAY_INDEX not in str(exc.orig):
+                return exc
+            return Conflict(
+                WORK_UNIT_ENTITY,
+                "questo contratto ha gia' una giornata in quella data: "
+                "revoca o rifiuta quella esistente per registrarne un'altra",
+                contract_id=str(data.contract_id),
+                data=data.data.isoformat(),
+            )
+
+        with savepoint(self.session, refuse):
             work_unit = self.repo.add(
                 WorkUnit(
                     contract_id=data.contract_id,
@@ -180,17 +193,6 @@ class WorkUnitService:
                     note=data.note,
                 )
             )
-        except IntegrityError as exc:
-            self.session.rollback()
-            if LIVE_DAY_INDEX not in str(exc.orig):
-                raise
-            raise Conflict(
-                WORK_UNIT_ENTITY,
-                "questo contratto ha gia' una giornata in quella data: "
-                "revoca o rifiuta quella esistente per registrarne un'altra",
-                contract_id=str(data.contract_id),
-                data=data.data.isoformat(),
-            ) from exc
         # `work_unit_enforce_state_machine` can silently rewrite `stato` in flight
         # (the redirect/recovery, spec §5) -- `expire_on_commit=False`
         # (`db/session.py`) means the ORM object otherwise keeps showing the value
@@ -235,19 +237,18 @@ class WorkUnitService:
                 a=nuovo_stato,
             )
         set_transition_context(self.session, actor, motivo)
-        work_unit.stato = nuovo_stato
-        try:
-            self.session.flush()
-        except IntegrityError as exc:
-            # The trigger is the authority, and the check above only gives the common
-            # refusal a clean answer: a move the graph allows can still be refused when
-            # another request moved the day in between.
-            self.session.rollback()
-            raise Conflict(
+        # The trigger is the authority, and the check above only gives the common refusal a
+        # clean answer: a move the graph allows can still be refused when another request
+        # moved the day in between.
+        with savepoint(
+            self.session,
+            lambda exc: Conflict(
                 WORK_UNIT_ENTITY,
                 f"la giornata non puo' passare a '{nuovo_stato}': e' cambiata nel frattempo",
                 a=nuovo_stato,
-            ) from exc
+            ),
+        ):
+            work_unit.stato = nuovo_stato
         self.session.refresh(work_unit)  # see create()'s own comment
         if work_unit.stato != origine:
             self.activities.record(
@@ -279,33 +280,6 @@ class WorkUnitService:
                 a=nuovo_stato,
             )
         return self.transition(work_unit_id, nuovo_stato, actor, motivo)
-
-    def link_approval(
-        self, work_unit_id: UUID, approval_id: UUID, actor: Actor, motivo: str
-    ) -> WorkUnitRead:
-        """Links an approval without naming a target `stato`: on a day sitting in
-        `'lavorato_senza_approvazione'` this is exactly what the automatic recovery
-        reads (spec §5) -- the trigger itself flips `stato` back to `'lavorato'`."""
-        actor.require_write("link_approval")
-        work_unit = self.repo.get(work_unit_id)
-        if work_unit is None:
-            raise NotFound(WORK_UNIT_ENTITY, work_unit_id)
-        approval = self.session.get(Approval, approval_id)
-        if approval is None:
-            raise NotFound(APPROVAL_ENTITY, approval_id)
-        set_transition_context(self.session, actor, motivo)
-        work_unit.approval_id = approval_id
-        self.session.flush()
-        self.session.refresh(work_unit)  # see create()'s own comment
-        self.activities.record(
-            CONTRACT_ENTITY,
-            work_unit.contract_id,
-            "approval_linked",
-            actor,
-            {"giornata": work_unit.data.isoformat()},
-        )
-        self.session.commit()
-        return WorkUnitRead.model_validate(work_unit)
 
     def transitions_for(self, work_unit_id: UUID) -> list[WorkUnitTransitionRead]:
         return [
@@ -439,35 +413,35 @@ class ApprovalService:
         days = self._days_to_approve(data)
         document = self._proof(data, contract.customer_id, actor)
 
-        approval = self.repo.add(
-            Approval(
-                contract_id=data.contract_id,
-                canale=data.canale,
-                mittente=data.mittente,
-                ricevuto_il=data.ricevuto_il,
-                message_id=self._message_header(data),
-                document_id=document.id,
-                estratto=data.estratto,
-                origine={"kind": "manuale"},
-            )
-        )
         # A fixed reason: who sent the approval and when are on the approval, which is the
         # evidence, and an address does not belong in a log nobody can edit.
         set_transition_context(self.session, actor, "Approvazione registrata")
-        for day in days:
-            day.approval_id = approval.id
-            if day.stato == "proposto":
-                day.stato = "approvato"
-        try:
-            self.session.flush()
-        except IntegrityError as exc:
-            # The days were read under a lock below, so this is a move the database refused
-            # that the checks above could not see (a trigger edge): the whole recording goes.
-            self.session.rollback()
-            raise Conflict(
+        # The days were read under a lock above, so a refusal here is a move the database
+        # refused that the checks could not see (a trigger edge): the approval and the
+        # moves go together, in a savepoint, and nothing else the caller has pending.
+        with savepoint(
+            self.session,
+            lambda exc: Conflict(
                 APPROVAL_ENTITY,
                 "una delle giornate e' cambiata nel frattempo: riapri la pagina e riprova",
-            ) from exc
+            ),
+        ):
+            approval = self.repo.add(
+                Approval(
+                    contract_id=data.contract_id,
+                    canale=data.canale,
+                    mittente=data.mittente,
+                    ricevuto_il=data.ricevuto_il,
+                    message_id=self._message_header(data),
+                    document_id=document.id,
+                    estratto=data.estratto,
+                    origine={"kind": "manuale"},
+                )
+            )
+            for day in days:
+                day.approval_id = approval.id
+                if day.stato == "proposto":
+                    day.stato = "approvato"
         for day in days:
             self.session.refresh(day)
         self.session.refresh(approval)
@@ -494,7 +468,7 @@ class ApprovalService:
         for day_id in sorted(data.work_unit_ids):
             # Locked, in a fixed order: two recordings over the same day wait for each other
             # and the second then sees the first one's approval instead of overwriting it.
-            day = self.session.get(WorkUnit, day_id, with_for_update=True)
+            day = self.session.get(WorkUnit, day_id, with_for_update=True, populate_existing=True)
             if day is None or day.contract_id != data.contract_id:
                 raise NotFound(WORK_UNIT_ENTITY, day_id)
             if day.stato not in APPROVABLE_STATI or day.approval_id is not None:

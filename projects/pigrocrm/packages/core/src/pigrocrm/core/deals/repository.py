@@ -12,7 +12,7 @@ from pigrocrm.core.db import decode_cursor, escape_like, keyset_predicate, order
 from pigrocrm.core.deals.models import Deal
 from pigrocrm.core.deals.schemas import DEAL_SORTS, DealListQuery
 from pigrocrm.core.invoices.models import Invoice
-from pigrocrm.core.invoices.repository import invoiced_not_won_predicate
+from pigrocrm.core.invoices.receivables import invoiced_not_won_predicate
 from pigrocrm.core.money import percentage_of, round_money
 from pigrocrm.core.pipeline.models import PipelineStage
 from pigrocrm.core.timetracking.models import TimeEntry
@@ -36,6 +36,16 @@ class DealRepository:
         if deal.deleted_at is not None and not include_deleted:
             return None
         return deal
+
+    def get_many(self, deal_ids: Collection[UUID]) -> list[Deal]:
+        """The live deals among `deal_ids`, in one query. An id with no live deal is absent."""
+        if not deal_ids:
+            return []
+        return list(
+            self.session.execute(
+                select(Deal).where(Deal.id.in_(deal_ids), Deal.deleted_at.is_(None))
+            ).scalars()
+        )
 
     def customer_names(self, customer_ids: Collection[UUID]) -> dict[UUID, str]:
         """The `ragione_sociale` of each given customer, in one query.

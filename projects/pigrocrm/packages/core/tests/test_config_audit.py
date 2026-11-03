@@ -574,7 +574,7 @@ def test_a_token_is_not_issued_when_its_audit_entry_cannot_be(
         PatService(db_session).create("Mai emesso", actor)
     db_session.rollback()
 
-    assert PatService(db_session).list(actor) == []
+    assert PatService(db_session).list_own(actor) == []
 
 
 def test_a_user_is_not_created_when_its_audit_entry_cannot_be(

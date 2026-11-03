@@ -3,11 +3,12 @@ from uuid import UUID
 
 from pydantic import Field, TypeAdapter
 
-from pigrocrm.core.documents.schemas import DocumentFromTemplate, DocumentListQuery
+from pigrocrm.core.documents.schemas import DocumentFromTemplate, DocumentListQuery, OfferState
 from pigrocrm.core.documents.service import DocumentService
 from pigrocrm.core.templates.schemas import TemplateListQuery
 from pigrocrm.core.templates.service import TemplateService
 from pigrocrm_mcp.context import McpContext
+from pigrocrm_mcp.tools.params import literal_arg
 
 # A version number arrives as `int | str` (see `tools/params.py`'s note on why every
 # scalar tool parameter has to stay permissive at the SDK boundary) and is validated
@@ -44,7 +45,9 @@ def create_from_template(context: McpContext, data: dict[str, Any]) -> dict[str,
 
 
 def set_state(context: McpContext, document_id: str, stato: str) -> dict[str, Any]:
-    result = _documents(context).set_offer_state(UUID(document_id), stato, context.actor)  # type: ignore[arg-type]
+    result = _documents(context).set_offer_state(
+        UUID(document_id), literal_arg("stato", stato, OfferState), context.actor
+    )
     return result.model_dump(mode="json")
 
 

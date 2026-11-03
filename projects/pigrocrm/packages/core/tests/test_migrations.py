@@ -110,6 +110,10 @@ HAND_MAINTAINED_INDEXES = {
     # makes an accepted or revoked invitation block the address forever. Its declared
     # shape is asserted on `indexdef` text below.
     "uq_invitations_email_lower_open",
+    # PCORE-B-18, migration 0067: the Gmail roster's `lower(email) = :needle`, functional and
+    # partial at once, the two shapes `compare_metadata` does not look at.
+    "ix_people_email_lower",
+    "ix_customers_email_lower",
 }
 
 TRGM_INDEX_NAMES = frozenset(n for n in HAND_MAINTAINED_INDEXES if n.endswith("_trgm"))

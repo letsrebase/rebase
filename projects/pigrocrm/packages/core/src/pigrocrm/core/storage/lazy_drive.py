@@ -47,8 +47,9 @@ from pigrocrm.core.drive.errors import DriveConsentExpired, DriveCredentialRevok
 from pigrocrm.core.drive.models import GoogleDriveAccount
 from pigrocrm.core.drive.repository import DriveRepository
 from pigrocrm.core.drive.schemas import DRIVE_SCOPE_FILE
-from pigrocrm.core.drive.transport import HttpCall, user_transport_for
+from pigrocrm.core.drive.transport import user_transport_for
 from pigrocrm.core.gmail.tokens import GoogleTokenClient
+from pigrocrm.core.http import HttpCall
 from pigrocrm.core.storage.errors import StorageNotConfigured, StorageUnreachable
 from pigrocrm.core.storage.gdrive import GDriveStorage
 

@@ -21,8 +21,6 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from pigrocrm.core.db import Base, PrimaryKeyMixin, TimestampMixin
 
-ATTACHMENT_KINDS: tuple[str, ...] = ("fattura_pdf", "registro_pdf")
-
 
 class ContractEmailTemplate(Base, PrimaryKeyMixin, TimestampMixin):
     __tablename__ = "contract_email_templates"

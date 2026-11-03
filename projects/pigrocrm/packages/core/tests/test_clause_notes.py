@@ -5,13 +5,15 @@ from uuid import uuid4
 
 import pydantic
 import pytest
+from fakes.customer_fixtures import make_customer
 from sqlalchemy.orm import Session
-from test_contracts_service import _create_payload, _customer
+from test_contracts_service import _create_payload
 
 from pigrocrm.core.activities.service import ActivityService
 from pigrocrm.core.actor import Actor
+from pigrocrm.core.contracts.clause_note_service import ClauseNoteService
 from pigrocrm.core.contracts.schemas import ClauseNoteCreate, ClauseNoteUpdate
-from pigrocrm.core.contracts.service import ClauseNoteService, ContractService
+from pigrocrm.core.contracts.service import ContractService
 from pigrocrm.core.errors import NotFound, PermissionDenied
 
 ADMIN = Actor(id=None, type="system", role="admin")
@@ -27,7 +29,9 @@ RINNOVO = ClauseNoteCreate(
 
 
 def _contract_id(db_session: Session):  # type: ignore[no-untyped-def]
-    return ContractService(db_session).create(_create_payload(_customer(db_session).id), ADMIN).id
+    return (
+        ContractService(db_session).create(_create_payload(make_customer(db_session).id), ADMIN).id
+    )
 
 
 def test_a_note_on_the_renewal_clause_is_read_with_the_contract(db_session: Session) -> None:

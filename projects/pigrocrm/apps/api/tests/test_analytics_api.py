@@ -20,17 +20,17 @@ from aziende_helpers import azienda_url
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
-from pigrocrm.core.clock import oggi_in_italia
 from pigrocrm.core.contracts.models import Contract
 from pigrocrm.core.customers.models import Customer
+from pigrocrm.core.db.clock import today_local
 from pigrocrm.core.invoices.models import Invoice
 from pigrocrm.core.work_units.models import WorkUnit
 
-# Never a literal year: `_check_issue_date` refuses a `data_emissione` outside the
+# Never a literal year: `check_issue_date` refuses a `data_emissione` outside the
 # current year, so a hard-coded 2026 would be a suite that starts failing on the first
 # of January. The window below is the whole of the current year, which always contains
 # both today's hours and today's issued invoices.
-OGGI = oggi_in_italia()
+OGGI = today_local()
 ANNO = OGGI.year
 DA = OGGI.replace(month=1, day=1).isoformat()
 A = OGGI.replace(month=12, day=31).isoformat()
@@ -832,7 +832,9 @@ def test_the_year_routes_answer_for_one_azienda_and_the_csv_is_a_spreadsheet_dow
     file = logged_in.get("/api/analytics/year/csv", params={"anno": ANNO})
     assert file.status_code == 200, file.text
     assert file.headers["content-type"] == "text/csv; charset=utf-8"
-    assert file.headers["content-disposition"].startswith(f'attachment; filename="registro-{ANNO}-')
+    assert file.headers["content-disposition"].startswith(
+        f"attachment; filename*=UTF-8''registro-{ANNO}-"
+    )
     assert file.content.startswith(b"\xef\xbb\xbf")
     assert "1.200,50" in file.content.decode("utf-8")
 

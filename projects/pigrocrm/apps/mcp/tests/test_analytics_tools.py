@@ -19,7 +19,7 @@ from mcp import Client
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.actor import Actor
-from pigrocrm.core.clock import oggi_in_italia
+from pigrocrm.core.db.clock import today_local
 from pigrocrm.core.fiscal.schemas import FiscalProfileUpsert
 from pigrocrm.core.fiscal.service import FiscalProfileService
 from pigrocrm.core.timetracking.schemas import TimeEntryCreate
@@ -29,7 +29,7 @@ ADMIN = Actor(id=None, type="mcp", role="admin")
 
 # Never a literal year: a window written as 2026 is a suite that starts failing on the
 # first of January (task 4B-8's own ruling).
-OGGI = oggi_in_italia()
+OGGI = today_local()
 DA = OGGI.replace(month=1, day=1).isoformat()
 A = OGGI.replace(month=12, day=31).isoformat()
 

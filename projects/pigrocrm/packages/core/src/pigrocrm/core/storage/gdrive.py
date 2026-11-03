@@ -54,15 +54,11 @@ from pigrocrm.core.drive.query import (
     upload_create_url,
     upload_media_url,
 )
-from pigrocrm.core.drive.transport import (
-    DriveTransport,
-    HttpCall,
-    ServiceAccountTokens,
-    SignAssertion,
-    SleepFn,
-)
+from pigrocrm.core.drive.transport import DriveTransport, ServiceAccountTokens, SignAssertion
 from pigrocrm.core.errors import Conflict, NotFound
+from pigrocrm.core.http import HttpCall, SleepFn
 from pigrocrm.core.storage.base import validate_storage_key
+from pigrocrm.core.storage.errors import STORAGE_ENTITY
 
 # Where a Drive URL comes from: `drive/query.py`, and nowhere else. This module used
 # to hold the two hosts and its own `q` escaper, which meant "only one place can build
@@ -168,7 +164,11 @@ class GDriveStorage:
             content_type="application/json",
         )
         converged = self._find_folder(parent_id, name)
-        assert converged is not None  # our own create just landed, if nothing else
+        if converged is None:
+            raise Conflict(
+                STORAGE_ENTITY,
+                "la cartella appena creata su Google Drive non risulta ancora: riprova",
+            )
         return converged
 
     def _ensure_folder_chain(self, segments: list[str]) -> str:
@@ -264,16 +264,19 @@ class GDriveStorage:
         validated = validate_storage_key(key)
         file_id = self._find_file_by_key(validated)
         if file_id is None:
-            raise NotFound("document_blob", key)
+            raise NotFound(STORAGE_ENTITY, key)
         url = file_media_url(file_id)
         try:
             return self._transport.bytes("GET", url, what=_WHAT_DOWNLOAD)
         except Conflict as failed:
-            if failed.details.get("what") == _WHAT_DOWNLOAD and failed.details.get("status") == 404:
+            if (
+                failed.details.get("what") == _WHAT_DOWNLOAD
+                and failed.details.get("upstream_status") == 404
+            ):
                 # Found a moment ago by `_find_file_by_key`, gone now: a concurrent
                 # delete, not a bug in the query. Either way, "no such document" is the
                 # honest answer to give this caller.
-                raise NotFound("document_blob", key) from failed
+                raise NotFound(STORAGE_ENTITY, key) from failed
             # A 404 from anywhere else in this call -- the token endpoint, notably --
             # is not a missing document and must not be reported as one.
             raise
@@ -341,7 +344,7 @@ class GDriveStorage:
                 raise
             raise RuntimeError(
                 "PIGROCRM_GDRIVE_ROOT_FOLDER_ID non e' raggiungibile dal service "
-                f"account (HTTP {failed.details.get('status')}). Verificare che la "
+                f"account (HTTP {failed.details.get('upstream_status')}). Verificare che la "
                 "cartella esista e sia stata condivisa con l'indirizzo email del "
                 "service account, direttamente o tramite uno Shared Drive."
             ) from failed

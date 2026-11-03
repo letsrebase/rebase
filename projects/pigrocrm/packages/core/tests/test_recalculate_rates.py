@@ -77,6 +77,41 @@ def test_it_rewrites_the_interval_and_records_one_activity_per_entry(
     assert service.get(outside.id, READER).tariffa_applicata == Decimal("80.000000")
 
 
+def test_an_entry_with_a_rate_written_on_it_keeps_that_rate(
+    db_session: Session, seeded_deal_id: UUID, seeded_user_id: UUID
+) -> None:
+    """A `manuale` rate is a decision (an explicit zero is "free work on purpose"): the
+    recalculation re-resolves the entries whose rate came from a level, not that one."""
+    admin = Actor(id=seeded_user_id, type="user", role="admin")
+    deal = db_session.get(Deal, seeded_deal_id)
+    deal.tariffa_oraria = Decimal("80.000000")
+    db_session.flush()
+    service = TimeEntryService(db_session)
+    free = service.create(
+        TimeEntryCreate(
+            deal_id=seeded_deal_id,
+            user_id=seeded_user_id,
+            data=date(2026, 3, 2),
+            ore=Decimal("2.00"),
+            descrizione="Omaggio",
+            tariffa_applicata=Decimal("0.000000"),
+        ),
+        WRITER,
+    )
+    resolved = _log(service, seeded_deal_id, seeded_user_id, 3)
+
+    deal.tariffa_oraria = Decimal("180.000000")
+    db_session.flush()
+    touched = service.recalculate_rates(
+        seeded_deal_id, RecalculateRatesRequest(da=date(2026, 3, 1), a=date(2026, 3, 10)), admin
+    )
+
+    assert touched == 1
+    kept = service.get(free.id, READER)
+    assert (kept.tariffa_applicata, kept.tariffa_origine) == (Decimal("0.000000"), "manuale")
+    assert service.get(resolved.id, READER).tariffa_applicata == Decimal("180.000000")
+
+
 def test_a_billed_entry_in_the_interval_refuses_the_whole_call_and_changes_nothing(
     db_session: Session,
     seeded_deal_id: UUID,

@@ -15,11 +15,11 @@ from uuid import uuid4
 
 from mcp import Client
 
-from pigrocrm.core.clock import oggi_in_italia
+from pigrocrm.core.db.clock import today_local
 
 # Derived, never a literal: a suite with `2026-09` in it is a suite with an expiry date
 # on it (see `packages/core/tests/periodo_fiscale.py`).
-OGGI = oggi_in_italia()
+OGGI = today_local()
 MESE = OGGI.strftime("%Y-%m")
 PRIMO = OGGI.replace(day=1)
 ULTIMO = OGGI.replace(day=calendar.monthrange(OGGI.year, OGGI.month)[1])

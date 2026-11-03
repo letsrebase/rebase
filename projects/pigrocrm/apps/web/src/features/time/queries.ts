@@ -168,7 +168,7 @@ export function useDeleteTimeEntry() {
  * The PDF deliberately has no URL of its own here -- see `useRenderTimeReportPdf`.
  */
 export function timeReportXlsxUrl(dealId: string, mese: string): string {
-  const query = new URLSearchParams({ mese, formato: 'xlsx' })
+  const query = new URLSearchParams({ mese })
   return `/api/deals/${dealId}/time-report?${query.toString()}`
 }
 
@@ -177,12 +177,12 @@ export function timeReportXlsxUrl(dealId: string, mese: string): string {
  *
  * The two formats answer differently on purpose. The XLSX is a working copy: the
  * endpoint streams the bytes with a `Content-Disposition`, so an anchor is exactly
- * right. The PDF is an *artefact* -- `render_pdf` archives it as a `document`, and the
- * endpoint answers `201` with that document's JSON, because slice 2's rule is that
- * archived bytes are fetched from the document download endpoint and nowhere else.
+ * right. The PDF is an *artefact* -- `render_pdf` archives it as a `document`, so it is a
+ * `POST` (a GET must not create anything) that answers `201` with that document's JSON,
+ * because slice 2's rule is that archived bytes are fetched from the document download
+ * endpoint and nowhere else.
  *
- * Pointing an anchor at it therefore navigated the browser to a page of JSON. Two
- * steps, not one: render (and archive), then download the archived document through
+ * Two steps, not one: render (and archive), then download the archived document through
  * the one path that carries authorisation on either storage backend.
  */
 export function useRenderTimeReportPdf() {
@@ -190,14 +190,11 @@ export function useRenderTimeReportPdf() {
   return useMutation({
     mutationFn: async (variables: { dealId: string; mese: string }) => {
       const document = await unwrap(
-        api.GET('/api/deals/{deal_id}/time-report', {
-          params: {
-            path: { deal_id: variables.dealId },
-            query: { mese: variables.mese, formato: 'pdf' },
-          },
+        api.POST('/api/deals/{deal_id}/time-report/pdf', {
+          params: { path: { deal_id: variables.dealId }, query: { mese: variables.mese } },
         }),
       )
-      await downloadDocument((document as { id: string }).id)
+      await downloadDocument(document.id)
       return document
     },
     // The render archived a new document version, so the deal's Documenti tab is stale

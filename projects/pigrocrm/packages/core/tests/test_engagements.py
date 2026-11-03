@@ -23,6 +23,7 @@ from uuid import UUID, uuid4
 
 import pytest
 from fakes.notes import notes_of, texts
+from pydantic import ValidationError
 from sqlalchemy import Engine, create_engine, func, inspect, select, text, update
 from sqlalchemy.orm import Session
 from sqlalchemy.pool import NullPool
@@ -258,6 +259,15 @@ def test_engagements_package_imports_and_exports_nothing() -> None:
     tree = ast.parse(Path(engagements_package.__file__).read_text())
     assert [n for n in ast.walk(tree) if isinstance(n, ast.Import | ast.ImportFrom)] == []
     assert [n for n in tree.body if isinstance(n, ast.Assign | ast.AnnAssign)] == []
+
+
+@pytest.mark.parametrize("part", ["freelancer", "lettera", "rebase"])
+def test_a_field_the_door_does_not_know_is_refused_inside_every_part(part: str) -> None:
+    """The hub's payload has exactly these fields: a misspelt or new one is a 422 naming
+    it, never silently dropped."""
+    with pytest.raises(ValidationError) as refused:
+        _upsert(**{part: {"sorpresa": "x"}})
+    assert [error["loc"] for error in refused.value.errors()] == [(part, "sorpresa")]
 
 
 def test_registry_has_the_engagements_table(db_engine: Engine) -> None:

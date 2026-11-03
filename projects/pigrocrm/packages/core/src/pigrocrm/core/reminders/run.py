@@ -48,9 +48,9 @@ from pigrocrm.core.reminders.jobs import REMINDER_PASS_JOB
 from pigrocrm.core.reminders.push import PushSender
 from pigrocrm.core.slack.client import SlackClient
 
-# The name `pigrocrm reminders` gives the root installation, which is no registry space:
-# `cli.ROOT_LABEL`, held equal by `test_cli_reminders.py`. A channel whose credentials are
-# per space is handed `None` for it, not this word.
+# The name the commands give the root installation, which is no registry space: the one
+# definition, imported by the CLI and its tests. A channel whose credentials are per space
+# is handed `None` for it, not this word.
 ROOT_LABEL = "root"
 # `pg_try_advisory_lock(int, int)`: a namespace of this project's own, as
 # `gmail/repository.py` and `customers/repository.py` do, and one key for this pass.
@@ -153,6 +153,8 @@ class ReminderRun:
                 session,
                 self.settings,
                 open_reminders,
+                directory=evaluation.directory,
+                preferences=evaluation.preferences,
                 newly_listed={identity for _, identity in due},
                 today=today,
                 now=now,

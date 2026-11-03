@@ -46,12 +46,11 @@ due date is what the receivables page lists, whatever its age.
 """
 
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta
+from datetime import date, timedelta
 from typing import Final
 from uuid import UUID
-from zoneinfo import ZoneInfo
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import Date, cast, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -178,7 +177,7 @@ class AutomationPass:
         if not self._enabled(rule, config):
             return RuleReport(rule, True, 0, 0)
         candidates = self._candidates(rule, config, today)
-        already = self._already_open(rule)
+        already = self._already_open(rule, {c.subject_id for c in candidates})
         active = self._active_users({c.owner_id for c in candidates if c.owner_id is not None})
         opened = skipped = 0
         for candidate in candidates:
@@ -214,9 +213,11 @@ class AutomationPass:
             case "fattura_scaduta":
                 return self._fatture_scadute(today)
 
-    def _already_open(self, rule: AttivitaRule) -> set[UUID]:
-        """The subjects with an open, live attivita of this rule: the reading half of the
-        idempotency, which the index backs."""
+    def _already_open(self, rule: AttivitaRule, subjects: set[UUID]) -> set[UUID]:
+        """Which of these subjects have an open, live attivita of this rule: the reading
+        half of the idempotency, which the index backs."""
+        if not subjects:
+            return set()
         subject = func.coalesce(
             Attivita.customer_id, Attivita.person_id, Attivita.deal_id, Attivita.invoice_id
         )
@@ -226,6 +227,7 @@ class AutomationPass:
                     Attivita.regola == rule,
                     Attivita.stato == "aperta",
                     Attivita.deleted_at.is_(None),
+                    subject.in_(subjects),
                 )
             )
         )
@@ -328,22 +330,27 @@ class AutomationPass:
 
         «Since when» is the latest stage change on the deal's timeline, a person's or an
         automation's, and the deal's creation when it never moved. Not `updated_at`: a deal
-        somebody keeps editing and never advances is the case the rule is for."""
-        zone = ZoneInfo(self.settings.timezone)
-        moved = {
-            entity_id: last
-            for entity_id, last in self.session.execute(
-                select(Activity.entity_id, func.max(Activity.occurred_at))
-                .where(Activity.entity_type == "deal", Activity.kind.in_(_STAGE_KINDS))
-                .group_by(Activity.entity_id)
+        somebody keeps editing and never advances is the case the rule is for. The day is the
+        installation's, and the threshold is applied in the query: only the stalled deals
+        come back."""
+        moved = (
+            select(func.max(Activity.occurred_at))
+            .where(
+                Activity.entity_type == "deal",
+                Activity.entity_id == Deal.id,
+                Activity.kind.in_(_STAGE_KINDS),
             )
-        }
+            .scalar_subquery()
+        )
+        since_day = cast(
+            func.timezone(self.settings.timezone, func.coalesce(moved, Deal.created_at)), Date
+        )
         rows = self.session.execute(
             select(
                 Deal.id,
                 Deal.nome,
                 func.coalesce(Deal.owner_id, Customer.owner_id),
-                Deal.created_at,
+                since_day,
             )
             .join(PipelineStage, PipelineStage.id == Deal.pipeline_stage_id)
             .join(Customer, Customer.id == Deal.customer_id)
@@ -351,25 +358,20 @@ class AutomationPass:
                 Deal.deleted_at.is_(None),
                 PipelineStage.tipo == "open",
                 Customer.deleted_at.is_(None),
+                since_day <= today - timedelta(days=soglia),
             )
             .order_by(Deal.created_at, Deal.id)
         ).all()
-        found: list[_Candidate] = []
-        for deal_id, nome, owner_id, created_at in rows:
-            since: datetime = moved.get(deal_id) or created_at
-            days = (today - since.astimezone(zone).date()).days
-            if days < soglia:
-                continue
-            found.append(
-                _Candidate(
-                    "deal_id",
-                    deal_id,
-                    _titolo(f"Il deal {nome} è fermo da {days} giorni"),
-                    today,
-                    owner_id,
-                )
+        return [
+            _Candidate(
+                "deal_id",
+                deal_id,
+                _titolo(f"Il deal {nome} è fermo da {(today - since).days} giorni"),
+                today,
+                owner_id,
             )
-        return found
+            for deal_id, nome, owner_id, since in rows
+        ]
 
     def _fatture_scadute(self, today: date) -> list[_Candidate]:
         """Issued invoices nobody has paid, strictly past their due date: the receivables

@@ -3,7 +3,7 @@ flag and the rows (REB-633, spec 2026-10-03 §1.11)."""
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import Literal, cast, get_args
 from uuid import UUID
 
 from sqlalchemy import select
@@ -13,6 +13,16 @@ from pigrocrm.core.actor import Actor, ActorType, Role
 from pigrocrm.core.auth.models import User, UserLegalEntity
 from pigrocrm.core.emitter.models import LegalEntity
 from pigrocrm.core.errors import ValidationFailed
+
+
+def as_role(value: str) -> Role:
+    """The `Role` a `ruolo` column holds: the column is a plain string, and a value outside
+    the literal means a row nobody should have written, which is refused here rather than
+    carried into an `Actor` that would refuse it later with a pydantic error."""
+    for role in get_args(Role):
+        if value == role:
+            return cast(Role, role)
+    raise ValueError(f"unknown role {value!r} on a user row")
 
 
 def scope_of(user: User) -> tuple[UUID, ...] | None:
@@ -27,8 +37,7 @@ def actor_for(user: User, kind: Literal["user", "mcp", "system"] = "user") -> Ac
     behalf runs as: role and scope both read off the row, so no caller builds an
     `Actor` for a user by hand and forgets the second."""
     actor_type: ActorType = kind
-    role: Role = user.ruolo  # type: ignore[assignment]
-    return Actor(id=user.id, type=actor_type, role=role, aziende=scope_of(user))
+    return Actor(id=user.id, type=actor_type, role=as_role(user.ruolo), aziende=scope_of(user))
 
 
 def check_scope(session: Session, entity: str, aziende: list[UUID] | None) -> list[UUID] | None:

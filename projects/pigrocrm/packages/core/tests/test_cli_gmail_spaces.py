@@ -33,15 +33,17 @@ from sqlalchemy.engine import make_url
 from sqlalchemy.orm import Session
 
 import pigrocrm.core.cli as cli
+import pigrocrm.core.cli.gmail as gmail_cli
 from pigrocrm.core.auth.models import User
 from pigrocrm.core.config import Settings
+from pigrocrm.core.crypto import seal
 from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.db import session_factory
 from pigrocrm.core.db.sidecar import create_database_if_missing, drop_database
-from pigrocrm.core.gmail.crypto import seal
 from pigrocrm.core.gmail.models import GoogleAccount
 from pigrocrm.core.gmail.schemas import REQUESTED_SCOPES
 from pigrocrm.core.gmail.transport import GmailTransport
+from pigrocrm.core.reminders.run import ROOT_LABEL
 from pigrocrm.core.tenants import TenantService, TenantSignup, ensure_tenants_database
 from pigrocrm.core.tenants.database import tenant_database_name, tenant_database_url
 from pigrocrm.core.tenants.google import space_token_key
@@ -134,7 +136,7 @@ def cron(settings: Settings, monkeypatch: pytest.MonkeyPatch) -> FakeGmail:
     fake = FakeGmail()
     monkeypatch.setattr(cli, "get_settings", lambda: settings)
     monkeypatch.setattr(
-        cli, "GmailTransport", lambda: GmailTransport(http=fake, sleep=lambda _: None)
+        gmail_cli, "GmailTransport", lambda: GmailTransport(http=fake, sleep=lambda _: None)
     )
     return fake
 
@@ -234,7 +236,8 @@ def _refresh_tokens(fake: FakeGmail) -> set[str]:
 
 
 def _line(label: str, slug: str | None) -> str:
-    return f"gmail-sync {label} {MAILBOXES[slug][0]}: "
+    # The account id follows the label, never the address (B-16).
+    return f"gmail-sync {label} "
 
 
 def _run(*args: str) -> int:
@@ -259,7 +262,7 @@ def test_one_run_synchronises_the_root_and_every_space_one_line_each(
     assert captured.err == ""
     lines = captured.out.strip().splitlines()
     assert len(lines) == 3
-    assert _line(cli.ROOT_LABEL, None) in lines[0]
+    assert _line(ROOT_LABEL, None) in lines[0]
     assert _line(ONE, ONE) in lines[1]
     assert _line(TWO, TWO) in lines[2]
     assert all("messaggi nuovi" in line for line in lines)
@@ -348,7 +351,7 @@ def test_a_space_whose_schema_lags_is_skipped_on_its_own_line(
     skipped = (
         f"gmail-sync {ONE}: saltato (ProgrammingError)"
         if where == "space"
-        else f"{_line(ONE, ONE)}saltato (ProgrammingError)"
+        else f"{_line(ONE, ONE)}"
     )
     assert skipped in captured.err
     # The frames follow the line in both places, and they name the read that failed:
@@ -371,7 +374,7 @@ def test_a_space_whose_database_is_gone_does_not_take_the_others_with_it(
     """The digest's own test, for the same contract: `tenant_database_url` is patched on
     the module the command resolves it from, so the space's row names a database that
     was never created, and this file's own `_engine` still reaches the real ones."""
-    import pigrocrm.core.tenants.database as tenants_database
+    import pigrocrm.core.cli.spaces_walk as tenants_database
 
     _connect(settings, ONE)
     _connect(settings, TWO)
@@ -402,13 +405,12 @@ def test_an_unreachable_registry_still_synchronises_the_root(
 ) -> None:
     """The root is not in the registry, so a registry that does not answer is one line
     and the root's mailbox is synchronised all the same, as the digest still sends it."""
-    import pigrocrm.core.tenants as tenants
 
     def unreachable(_settings: Settings) -> Engine:
         raise RuntimeError("postgres://user:hunter2@elsewhere/pigrocrm_tenants")
 
     _connect(settings, None)
-    monkeypatch.setattr(tenants, "ensure_tenants_database", unreachable)
+    monkeypatch.setattr("pigrocrm.core.cli.spaces_walk.ensure_tenants_database", unreachable)
 
     assert _run() == 1
 
@@ -417,7 +419,7 @@ def test_an_unreachable_registry_still_synchronises_the_root(
         "gmail-sync: registro degli spazi non raggiungibile (RuntimeError)"
     )
     assert "hunter2" not in captured.err
-    assert _line(cli.ROOT_LABEL, None) in captured.out
+    assert _line(ROOT_LABEL, None) in captured.out
 
 
 def test_email_names_one_mailbox_wherever_it_is(
@@ -449,15 +451,14 @@ def test_no_mailbox_is_not_claimed_while_a_space_could_not_be_read(
     """«nessuna casella Google collegata» is a claim about every installation, and a run
     that could not read the registry, or one space, cannot make it: the mailbox may be
     in the part it did not read. Its own line has said what went wrong already."""
-    import pigrocrm.core.tenants as tenants
-    import pigrocrm.core.tenants.database as tenants_database
+    import pigrocrm.core.cli.spaces_walk as tenants_database
 
     if unread == "registry":
 
         def unreachable(_settings: Settings) -> Engine:
             raise RuntimeError("the registry does not answer")
 
-        monkeypatch.setattr(tenants, "ensure_tenants_database", unreachable)
+        monkeypatch.setattr("pigrocrm.core.cli.spaces_walk.ensure_tenants_database", unreachable)
     else:
         real = tenants_database.tenant_database_url
         monkeypatch.setattr(
@@ -486,7 +487,7 @@ def test_an_unmatched_email_says_the_match_may_be_incomplete(
 ) -> None:
     """The same claim, narrowed to one address: with a space unread, «non è una casella
     collegata» would be a guess. The line names what was read and says a space was not."""
-    import pigrocrm.core.tenants.database as tenants_database
+    import pigrocrm.core.cli.spaces_walk as tenants_database
 
     _connect(settings, TWO)
     real = tenants_database.tenant_database_url
@@ -504,7 +505,7 @@ def test_an_unmatched_email_says_the_match_may_be_incomplete(
     captured = capsys.readouterr()
     last = captured.err.strip().splitlines()[-1]
     assert "nobody@example.it" in last
-    assert MAILBOXES[TWO][0] in last
+    assert "1 collegate" in last
     assert "non è stato letto" in last
     assert "non è una casella collegata" not in last
     assert _watermark(settings, TWO) is None

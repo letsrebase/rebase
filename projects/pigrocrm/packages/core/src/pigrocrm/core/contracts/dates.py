@@ -48,7 +48,8 @@ def renewal_deadline(contract: Contract) -> date | None:
         return None
     # `ck_contracts_preavviso_rinnovo_required` guarantees this whenever
     # `tipo_rinnovo <> 'nessuno'` -- the check above already ruled that out.
-    assert contract.preavviso_rinnovo_giorni is not None
+    if contract.preavviso_rinnovo_giorni is None:
+        raise ValueError(f"contract {contract.id} renews but states no renewal notice")
     return contract.fine - timedelta(days=contract.preavviso_rinnovo_giorni)
 
 

@@ -20,8 +20,8 @@ from sqlalchemy.orm import Session
 
 from pigrocrm.core.activities.service import ActivityService
 from pigrocrm.core.actor import Actor
+from pigrocrm.core.crypto import unseal
 from pigrocrm.core.errors import Conflict, PermissionDenied, ScopedAdmin
-from pigrocrm.core.gmail.crypto import unseal
 from pigrocrm.core.gmail.models import GoogleOAuthState
 from pigrocrm.core.slack.errors import SlackRefused, SlackTokenRevoked
 from pigrocrm.core.slack.matching import RETRY_UNMATCHED_AFTER
@@ -62,6 +62,26 @@ def test_start_sends_the_admin_to_slacks_authorize_page_with_the_bot_scopes(
     ).scalar_one()
     assert row.purpose == "slack"
     assert row.user_id == admin.id
+
+
+def test_starting_the_install_prunes_the_expired_states(db_session: Session) -> None:
+    """The registry is tidied by whoever starts a consent: a space with Slack and no Gmail
+    never runs the Gmail sync, which is what used to prune it."""
+    admin = make_user(db_session)
+    db_session.add(
+        GoogleOAuthState(
+            jti="scaduto",
+            code_verifier="",
+            user_id=admin.id,
+            expires_at=datetime.now(UTC) - timedelta(minutes=10),
+            purpose="slack",
+        )
+    )
+    db_session.flush()
+
+    url = _service(db_session, FakeSlack()).start(actor_of(admin))
+
+    assert db_session.execute(select(GoogleOAuthState.jti)).scalars().all() == [_state_of(url)]
 
 
 def test_a_collaboratore_cannot_start_and_an_unconfigured_install_refuses(

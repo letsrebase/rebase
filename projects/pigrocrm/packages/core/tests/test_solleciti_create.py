@@ -35,9 +35,9 @@ from sqlalchemy.orm import Session
 
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.auth.models import User
-from pigrocrm.core.clock import oggi_in_italia
 from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.db import session_factory
+from pigrocrm.core.db.clock import today_local
 from pigrocrm.core.documents.models import Document, DocumentVersion
 from pigrocrm.core.emitter.models import LegalEntity
 from pigrocrm.core.emitter.repository import LegalEntityRepository
@@ -60,7 +60,7 @@ def _service(session: Session) -> SollecitiService:
 
 
 def _days_ago(days: int) -> date:
-    return oggi_in_italia() - timedelta(days=days)
+    return today_local() - timedelta(days=days)
 
 
 def _profiles(session: Session, *, iban: str | None = IBAN) -> None:

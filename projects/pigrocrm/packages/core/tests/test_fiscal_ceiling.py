@@ -11,11 +11,10 @@ export, is `test_invoice_rivalsa_line.py`.
 
 from datetime import date
 from decimal import Decimal
-from uuid import uuid4
 
+from fakes.customer_fixtures import make_customer
 from sqlalchemy.orm import Session
 
-from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.fiscal.ceiling import (
     evaluate_ceiling,
     evaluate_pack,
@@ -35,13 +34,6 @@ assert FUORIUSCITA_CEILING.id == "soglia_fuoriuscita_immediata"
 ANNO = 2024
 
 
-def _customer(session: Session) -> Customer:
-    customer = Customer(ragione_sociale=f"Cliente {uuid4().hex[:8]}")
-    session.add(customer)
-    session.flush()
-    return customer
-
-
 def _invoice(
     session: Session,
     *,
@@ -56,7 +48,7 @@ def _invoice(
     the forfettario already carries (`fiscal/regime.py::_Forfettario`)."""
     imponibile = sum((prezzo for _, prezzo in lines), start=Decimal("0.00"))
     invoice = Invoice(
-        customer_id=_customer(session).id,
+        customer_id=make_customer(session).id,
         tipo="fattura",
         stato="emessa",
         anno=anno,
@@ -160,6 +152,25 @@ def test_paid_revenue_falls_back_to_data_emissione_when_data_incasso_is_unset(
         data_incasso=None,
     )
     assert paid_revenue_for_calendar_year(db_session, ANNO) == Decimal("300.00")
+
+
+def test_the_calendar_year_is_a_half_open_range_on_the_collection_date(
+    db_session: Session,
+) -> None:
+    """The first and the last day of the year count, the day either side does not, and
+    the year is read off `data_incasso`, not off the invoice's own `anno`."""
+    for numero, collected in enumerate(
+        (date(ANNO - 1, 12, 31), date(ANNO, 1, 1), date(ANNO, 12, 31), date(ANNO + 1, 1, 1)),
+        start=1,
+    ):
+        _invoice(
+            db_session,
+            numero=numero,
+            anno=ANNO,
+            lines=[("Consulenza", Decimal("100.00"))],
+            data_incasso=collected,
+        )
+    assert paid_revenue_for_calendar_year(db_session, ANNO) == Decimal("200.00")
 
 
 def test_evaluate_pack_evaluates_both_ceilings_off_one_paid_revenue_figure(

@@ -16,9 +16,9 @@ from sqlalchemy import Engine, text
 
 from pigrocrm.core.activities.service import ActivityService
 from pigrocrm.core.actor import Actor
-from pigrocrm.core.clock import oggi_in_italia
 from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.db import session_factory
+from pigrocrm.core.db.clock import today_local
 from pigrocrm.core.emitter.schemas import LegalEntityUpsert
 from pigrocrm.core.emitter.service import LegalEntityService
 from pigrocrm.core.fiscal.schemas import FiscalProfileUpsert
@@ -30,10 +30,10 @@ from pigrocrm.core.storage.local import LocalFileStorage
 ADMIN = Actor(id=None, type="system", role="admin")
 EMISSIONS = 20
 FAILURES = 10
-# `oggi_in_italia()`, not `date.today()`: this must be the same "today" `issue()`
-# itself computes (see `clock.py`), or this file's own assertions would drift from
+# `today_local()`, not `date.today()`: this must be the same "today" `issue()`
+# itself computes (see `db/clock.py`), or this file's own assertions would drift from
 # the service's output on a host that is not running in Europe/Rome.
-ANNO = oggi_in_italia().year
+ANNO = today_local().year
 
 
 @pytest.fixture

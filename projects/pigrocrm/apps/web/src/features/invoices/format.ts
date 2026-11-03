@@ -142,7 +142,7 @@ const FACTOR_TO_CENTS = 1_000_000
  *
  * It is a *preview*, and says so on screen. The authoritative imponibile is the one
  * `InvoiceService` computes and stores: it works at the price's full six decimals and
- * applies the regime's own rules (`_computed_lines`/`_apply_totals`), where this rounds
+ * applies the regime's own rules (`compute_lines`/`apply_totals`), where this rounds
  * the price to the cent and knows nothing about discounts or VAT. A row priced beyond
  * two decimals can therefore differ from the stored figure by a cent, which is the
  * right trade for a number that exists only to tell the owner they have typed 300 € and

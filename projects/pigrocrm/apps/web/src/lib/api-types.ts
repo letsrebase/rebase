@@ -536,18 +536,37 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Time Report
-         * @description Two recipients, two needs (§2.1): the PDF gets attached to the invoice, the XLSX
-         *     gets filtered by whoever checks it. `formato` is a `Literal`, so an unsupported
-         *     value is a 422 rather than a branch nobody wrote.
-         *
-         *     The PDF is archived as a `document` and this returns its id, matching the slice 2
-         *     rule that the bytes are fetched from the document download endpoint; the XLSX is
-         *     streamed, because it is a working copy and not an artefact.
+         * Time Report Xlsx
+         * @description The XLSX of the month's hours, streamed: it is a working copy that whoever checks
+         *     it filters, not an artefact, so nothing is archived and a GET is safe. The PDF is
+         *     `POST /time-report/pdf`, which archives a document (§2.1).
          */
-        get: operations["time_report_api_deals__deal_id__time_report_get"];
+        get: operations["time_report_xlsx_api_deals__deal_id__time_report_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/deals/{deal_id}/time-report/pdf": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Render Time Report Pdf
+         * @description The month's hours as a PDF, archived as a `document` of the deal, which this
+         *     returns: the bytes are fetched from the document download endpoint, like every other
+         *     archived file, and the PDF gets attached to the invoice. A POST because it creates a
+         *     document -- every call archives a new version, never overwriting an earlier one.
+         */
+        post: operations["render_time_report_pdf_api_deals__deal_id__time_report_pdf_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -625,8 +644,7 @@ export interface paths {
          *     somebody is redoing, while hours on an *issued* invoice come back as a 409 naming the
          *     document -- one does not invoice the same work twice.
          *
-         *     `storage` is passed rather than left to the service's own settings fallback: this is
-         *     the one method in `AnalyticsService` that constructs an `InvoiceService`, whose
+         *     `storage` is passed rather than left to the service's own settings fallback: the
          *     backend is the same process-wide one every other document route resolves through
          *     `StorageDep`.
          */
@@ -722,9 +740,7 @@ export interface paths {
         };
         /**
          * Timeline
-         * @description Administrators only, matching exactly who may change a definition. A rename and
-         *     an archive are separate kinds here, so "it is called something else now" is never
-         *     confused with "it is gone from every form".
+         * @description Administrators only, matching exactly who may change a definition. A rename and an archive are separate kinds here, so "it is called something else now" is never confused with "it is gone from every form".
          */
         get: operations["timeline_api_field_definitions__field_id__timeline_get"];
         put?: never;
@@ -805,9 +821,7 @@ export interface paths {
         };
         /**
          * Timeline
-         * @description Administrators only, matching who may change a stage. Deliberately still
-         *     answerable after the stage is gone: `delete` is the one hard DELETE in the domain,
-         *     and the entry it leaves is the only remaining record that the stage existed.
+         * @description Administrators only, matching who may change a stage. Deliberately still answerable after the stage is gone: `delete` is the one hard DELETE in the domain, and the entry it leaves is the only remaining record that the stage existed.
          */
         get: operations["timeline_api_pipeline_stages__stage_id__timeline_get"];
         put?: never;
@@ -993,17 +1007,9 @@ export interface paths {
         };
         /**
          * Timeline
-         * @description The account's whole story: created, renamed, promoted, deactivated -- and every
-         *     personal access token issued, first used, revoked, or still being presented after
-         *     revocation, which `PatService` records against the owning user rather than against
-         *     a per-token entity nobody would think to open.
+         * @description The account's whole story: created, renamed, promoted, deactivated -- and every personal access token issued, first used, revoked, or still being presented after revocation, which `PatService` records against the owning user rather than against a per-token entity nobody would think to open.
          *
-         *     Readable by the owner as well as by an administrator, unlike every other endpoint
-         *     on this router. An administrator is the only one who can *change* an account, but
-         *     the owner is the one who needs to see that a token they thought was dead is still
-         *     being tried -- refusing them that would make the alarm useless to the only person
-         *     who can act on it. Anyone else needs to be an administrator: who holds which
-         *     tokens on which account is not a collaborator's business.
+         *     Readable by the owner as well as by an administrator, unlike every other endpoint on this router. An administrator is the only one who can *change* an account, but the owner is the one who needs to see that a token they thought was dead is still being tried -- refusing them that would make the alarm useless to the only person who can act on it. Anyone else needs to be an administrator: who holds which tokens on which account is not a collaborator's business.
          */
         get: operations["timeline_api_users__user_id__timeline_get"];
         put?: never;
@@ -1242,7 +1248,8 @@ export interface paths {
         /**
          * Upload Version
          * @description `file.content_type` is a client-supplied string and is validated against
-         *     `ALLOWED_CONTENT_TYPES` inside the service, never trusted here.
+         *     `ALLOWED_CONTENT_TYPES` inside the service, never trusted here. The role is checked
+         *     before the body is read (`uploads.py`); the service checks it again.
          */
         post: operations["upload_version_api_documents__document_id__versions_post"];
         delete?: never;
@@ -1279,11 +1286,6 @@ export interface paths {
          * Download
          * @description The download always goes through the API: it is the only place authorisation
          *     exists, on both storage backends (spec 5).
-         *
-         *     The filename is percent-encoded into `filename*` (RFC 5987) rather than
-         *     interpolated into `filename=`. The service already slugified it, so nothing
-         *     dangerous should reach here -- encoding it anyway means a future change to that
-         *     slug cannot turn a document title into a response header.
          */
         get: operations["download_api_documents__document_id__download_get"];
         put?: never;
@@ -2528,6 +2530,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/gmail/oauth/callback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Finish Oauth */
+        get: operations["finish_oauth_api_gmail_oauth_callback_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/gmail/account": {
         parameters: {
             query?: never;
@@ -2570,23 +2589,6 @@ export interface paths {
         };
         /** Start Oauth */
         get: operations["start_oauth_api_gmail_oauth_start_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/gmail/oauth/callback": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Finish Oauth */
-        get: operations["finish_oauth_api_gmail_oauth_callback_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -2691,6 +2693,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/drive/oauth/callback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Finish Oauth */
+        get: operations["finish_oauth_api_drive_oauth_callback_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/drive/account": {
         parameters: {
             query?: never;
@@ -2746,23 +2765,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/drive/oauth/callback": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Finish Oauth */
-        get: operations["finish_oauth_api_drive_oauth_callback_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/drive/account/roots": {
         parameters: {
             query?: never;
@@ -2784,6 +2786,23 @@ export interface paths {
          *     that state, and the route must not add a gate the service deliberately omits.
          */
         patch: operations["update_roots_api_drive_account_roots_patch"];
+        trace?: never;
+    };
+    "/api/slack/oauth/callback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Finish Oauth */
+        get: operations["finish_oauth_api_slack_oauth_callback_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/api/slack/account": {
@@ -2837,23 +2856,6 @@ export interface paths {
         };
         /** Start Oauth */
         get: operations["start_oauth_api_slack_oauth_start_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/slack/oauth/callback": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Finish Oauth */
-        get: operations["finish_oauth_api_slack_oauth_callback_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -3235,9 +3237,8 @@ export interface paths {
          * Runs
          * @description A read of `activities` by `kind`, never a new table (§9.4).
          *
-         *     Bounded like every other list in the project. `actor` is unused beyond
-         *     authentication, which `ActorDep` has already performed -- the runs are the same
-         *     timeline entries every role can already read on the entity itself.
+         *     Bounded like every other list in the project. No role gate beyond authentication: the
+         *     runs are the same timeline entries every role can already read on the entity itself.
          */
         get: operations["runs_api_automation_runs_get"];
         put?: never;
@@ -3300,7 +3301,10 @@ export interface paths {
          *     the first click proves the address, opens the durable session and revokes what came
          *     before (`MagicLinkService.enter`). Without a sender or a public origin the space is
          *     created all the same, and the login page's own link does the rest. Throttled per
-         *     client like the member question: a `CREATE DATABASE` per anonymous POST.
+         *     client like the member question: a `CREATE DATABASE` per anonymous POST. Behind that,
+         *     a global rate, a cap on signups in flight at once and a cap on the registry's size
+         *     answer 429 or 503 with a sentence; the welcome mail is throttled per recipient and
+         *     simply not sent past it.
          *
          *     The one exception to "the signup proves nothing" (REB-677): a browser that holds a
          *     live `pigrocrm_identity` cookie for the very address the signup carries has already
@@ -3327,13 +3331,14 @@ export interface paths {
         put?: never;
         /**
          * Member
-         * @description Whether an address belongs to a rebase community member, and how many spaces
-         *     it already owns here (ORB-173). No auth, like the signup itself: the person has no
+         * @description Whether an address belongs to a rebase community member, and whether it already
+         *     owns a space here (ORB-173). No auth, like the signup itself: the person has no
          *     account yet, so the route is throttled per client instead. The hub is asked with
          *     `PIGROCRM_REGISTRY_TOKEN` at `PIGROCRM_HUB_URL` and given five seconds; unreachable,
          *     unconfigured or refusing, the answer is `membro: false` and the signup goes on.
-         *     `spazi` comes from this installation's own registry and answers even when the hub
-         *     does not.
+         *     `has_spaces` comes from this installation's own registry and answers even when the
+         *     hub does not. The hub's names for the address are never returned: nobody has proven
+         *     the address yet.
          */
         post: operations["member_api_tenants_member_post"];
         delete?: never;
@@ -3453,7 +3458,7 @@ export interface paths {
         /**
          * Enter
          * @description Opens the space `slug` with no second proof -- the identity cookie already is
-         *     one (§3). `deps._tenant_session_factory`, called directly rather than through a
+         *     one (§3). `deps.space_session_factory`, called directly rather than through a
          *     request's own prefix, already answers `NotFound` (-> 404) for a slug nobody
          *     registered, the same way a stranger's cookie meets a refusal on a space it does
          *     not belong to (`tenancy.cookie_path`'s own docstring); a slug that exists but has
@@ -4093,7 +4098,9 @@ export interface paths {
         };
         /**
          * Template Variables
-         * @description I nomi che un modello può usare come `{{nome}}`.
+         * @description I nomi che un modello può usare come `{{nome}}`. The path names the contract the page
+         *     asks from; the names are the same for every contract, and the router's `get_actor`
+         *     dependency is what authenticates.
          */
         get: operations["template_variables_api_contracts__contract_id__email_template_variables_get"];
         put?: never;
@@ -4263,8 +4270,7 @@ export interface paths {
         };
         /**
          * Timeline
-         * @description La cronologia della proposta: depositata, poi accettata o rifiutata. Il motivo di
-         *     un rifiuto sta solo qui, nel payload della riga `rejected`.
+         * @description La cronologia della proposta: depositata, poi accettata o rifiutata. Il motivo di un rifiuto sta solo qui, nel payload della riga `rejected`.
          */
         get: operations["timeline_api_proposals__proposal_id__timeline_get"];
         put?: never;
@@ -4448,7 +4454,8 @@ export interface paths {
          * List Reminders
          * @description I promemoria di chi chiede, ricalcolati adesso dai dati: i più gravi per primi.
          *     Quelli già chiusi o rimandati ci sono, con il loro `status`; sparisce solo ciò di cui
-         *     la causa è risolta.
+         *     la causa è risolta. `limit` taglia la coda, cioè i meno gravi: il servizio li valuta
+         *     tutti, ma la risposta non cresce con loro.
          */
         get: operations["list_reminders_api_reminders_get"];
         put?: never;
@@ -4703,7 +4710,9 @@ export interface paths {
         /**
          * List Notes
          * @description Le note di un deal, di un cliente o di una persona, la più recente per prima. Ognuna
-         *     dice chi l'ha scritta, quando e da dove, e se chi chiede può modificarla.
+         *     dice chi l'ha scritta, quando e da dove, e se chi chiede può modificarla. Un thread è
+         *     una manciata di osservazioni: `limit` è un tetto contro una lettura senza fine, e il
+         *     suo valore predefinito è il massimo, perché mezzo thread vale meno di uno intero.
          */
         get: operations["list_notes_api__collection___entity_id__notes_get"];
         put?: never;
@@ -5334,21 +5343,6 @@ export interface components {
              */
             raggruppa_per_mese: boolean;
         };
-        /** Body_put_firma_api_aziende__azienda_id__firma_put */
-        Body_put_firma_api_aziende__azienda_id__firma_put: {
-            /** File */
-            file: string;
-        };
-        /** Body_put_logo_api_aziende__azienda_id__logo_put */
-        Body_put_logo_api_aziende__azienda_id__logo_put: {
-            /** File */
-            file: string;
-        };
-        /** Body_upload_version_api_documents__document_id__versions_post */
-        Body_upload_version_api_documents__document_id__versions_post: {
-            /** File */
-            file: string;
-        };
         /** BudgetPage */
         BudgetPage: {
             /** Items */
@@ -5879,7 +5873,7 @@ export interface components {
          * ContractConcentrationCap
          * @description REB-352 §1.5's contract-anchored concentration cap: one engagement's own
          *     share of total invoiced revenue over the anniversary year containing `as_of`,
-         *     read the same way `annual_revenue`/`_revenue_filter` already define revenue --
+         *     read the same way `annual_revenue`/`revenue_filter` already define revenue --
          *     mastro's `percentage_share` measure, on its `cash_received_contract_year` basis
          *     (`ceiling.ts:55-75, 197-233`), anchored to `Contract.inizio` instead of a
          *     ledger row.
@@ -9638,19 +9632,16 @@ export interface components {
         /**
          * MemberAnswer
          * @description What the signup learns about an address before the person has an account: whether
-         *     the rebase hub knows them as a community member, their two names if so, and how
-         *     many spaces the registry already holds in that name. A count, not the slugs: the
-         *     address is not proven yet, and which spaces are whose is the mail's to tell.
+         *     the rebase hub knows them as a community member, and whether the registry already
+         *     holds a space in that name. Two booleans and nothing else: the address is not proven
+         *     yet, so no names, no count and no slugs; which spaces are whose is the mail's to
+         *     tell.
          */
         MemberAnswer: {
             /** Membro */
             membro: boolean;
-            /** Nome */
-            nome: string | null;
-            /** Cognome */
-            cognome: string | null;
-            /** Spazi */
-            spazi: number;
+            /** Has Spaces */
+            has_spaces: boolean;
         };
         /**
          * MemberQuestion
@@ -11766,11 +11757,6 @@ export interface components {
              */
             links_created: number;
             /**
-             * States Pruned
-             * @default 0
-             */
-            states_pruned: number;
-            /**
              * Reconciled
              * @default 0
              */
@@ -13262,6 +13248,19 @@ export interface operations {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
+            /** @description Troppe richieste da questo indirizzo nell'ultimo minuto (il bucket è per client, non per rotta): il client deve attendere `Retry-After` secondi prima di riprovare. */
+            429: {
+                headers: {
+                    /** @description Secondi da attendere prima di riprovare. */
+                    "Retry-After"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        detail: string;
+                    };
+                };
+            };
         };
     };
     peek_invite_api_auth_invite_get: {
@@ -13819,6 +13818,19 @@ export interface operations {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
+            /** @description Troppe richieste da questo indirizzo nell'ultimo minuto (il bucket è per client, non per rotta): il client deve attendere `Retry-After` secondi prima di riprovare. */
+            429: {
+                headers: {
+                    /** @description Secondi da attendere prima di riprovare. */
+                    "Retry-After"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        detail: string;
+                    };
+                };
+            };
         };
     };
     me_api_auth_me_get: {
@@ -14084,17 +14096,17 @@ export interface operations {
     list_customers_api_customers_get: {
         parameters: {
             query?: {
-                search?: string | null;
-                stato?: string | null;
-                /** @description Solo le righe di questa azienda; omesso, tutte */
-                azienda_id?: string | null;
                 /** @description Filtro sui campi personalizzati (JSONB), ripetibile per più chiavi: ?custom=settore:IT&custom=priorita:alta restituisce solo le righe che soddisfano entrambe (stessa semantica di contenimento JSONB usata dal service). Ogni valore è confrontato come stringa esatta; un valore senza il separatore ':' vale come chiave con valore vuoto, non genera un errore. Chiama GET /api/schema/{entity_type} per conoscere le chiavi disponibili. */
                 custom?: string[] | null;
+                search?: string | null;
                 limit?: number;
                 cursor?: string | null;
                 /** @description created_at | updated_at | ragione_sociale */
                 sort?: string | null;
                 dir?: "asc" | "desc";
+                stato?: string | null;
+                /** @description Solo le righe di questa azienda; omesso, tutte */
+                azienda_id?: string | null;
             };
             header?: never;
             path?: never;
@@ -15177,15 +15189,15 @@ export interface operations {
     list_people_api_people_get: {
         parameters: {
             query?: {
-                search?: string | null;
-                customer_id?: string | null;
                 /** @description Filtro sui campi personalizzati (JSONB), ripetibile per più chiavi: ?custom=settore:IT&custom=priorita:alta restituisce solo le righe che soddisfano entrambe (stessa semantica di contenimento JSONB usata dal service). Ogni valore è confrontato come stringa esatta; un valore senza il separatore ':' vale come chiave con valore vuoto, non genera un errore. Chiama GET /api/schema/{entity_type} per conoscere le chiavi disponibili. */
                 custom?: string[] | null;
+                search?: string | null;
                 limit?: number;
                 cursor?: string | null;
                 /** @description created_at | updated_at | cognome */
                 sort?: string | null;
                 dir?: "asc" | "desc";
+                customer_id?: string | null;
             };
             header?: never;
             path?: never;
@@ -16024,20 +16036,20 @@ export interface operations {
     list_deals_api_deals_get: {
         parameters: {
             query?: {
-                search?: string | null;
-                customer_id?: string | null;
-                stage_id?: string | null;
-                /** @description Solo le righe di questa azienda; omesso, tutte */
-                azienda_id?: string | null;
                 /** @description Filtro sui campi personalizzati (JSONB), ripetibile per più chiavi: ?custom=settore:IT&custom=priorita:alta restituisce solo le righe che soddisfano entrambe (stessa semantica di contenimento JSONB usata dal service). Ogni valore è confrontato come stringa esatta; un valore senza il separatore ':' vale come chiave con valore vuoto, non genera un errore. Chiama GET /api/schema/{entity_type} per conoscere le chiavi disponibili. */
                 custom?: string[] | null;
-                fatturato_non_vinto?: boolean;
-                da_fatturare?: boolean;
+                search?: string | null;
                 limit?: number;
                 cursor?: string | null;
                 /** @description created_at | updated_at | nome */
                 sort?: string | null;
                 dir?: "asc" | "desc";
+                customer_id?: string | null;
+                stage_id?: string | null;
+                /** @description Solo le righe di questa azienda; omesso, tutte */
+                azienda_id?: string | null;
+                fatturato_non_vinto?: boolean;
+                da_fatturare?: boolean;
             };
             header?: never;
             path?: never;
@@ -16999,10 +17011,10 @@ export interface operations {
     deal_time_entries_api_deals__deal_id__time_entries_get: {
         parameters: {
             query?: {
-                da?: string | null;
-                a?: string | null;
                 limit?: number;
                 cursor?: string | null;
+                da?: string | null;
+                a?: string | null;
             };
             header?: never;
             path: {
@@ -17604,12 +17616,11 @@ export interface operations {
             };
         };
     };
-    time_report_api_deals__deal_id__time_report_get: {
+    time_report_xlsx_api_deals__deal_id__time_report_get: {
         parameters: {
             query: {
                 /** @description Periodo nella forma AAAA-MM */
                 mese: string;
-                formato?: "pdf" | "xlsx";
             };
             header?: never;
             path: {
@@ -17626,6 +17637,128 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    render_time_report_pdf_api_deals__deal_id__time_report_pdf_post: {
+        parameters: {
+            query: {
+                /** @description Periodo nella forma AAAA-MM */
+                mese: string;
+            };
+            header?: never;
+            path: {
+                deal_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentRead"];
                 };
             };
             /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
@@ -21682,6 +21815,12 @@ export interface operations {
     list_documents_api_documents_get: {
         parameters: {
             query?: {
+                search?: string | null;
+                limit?: number;
+                cursor?: string | null;
+                /** @description created_at | updated_at | titolo */
+                sort?: string | null;
+                dir?: "asc" | "desc";
                 customer_id?: string | null;
                 deal_id?: string | null;
                 contract_id?: string | null;
@@ -21689,13 +21828,7 @@ export interface operations {
                 azienda_id?: string | null;
                 tipo?: ("offerta" | "contratto" | "verbale" | "documento" | "fattura" | "fattura_xml" | "proforma" | "rapporto_ore") | null;
                 stato?: ("bozza" | "inviata" | "accettata" | "rifiutata") | null;
-                search?: string | null;
                 solo_deal_non_vinto?: boolean;
-                limit?: number;
-                cursor?: string | null;
-                /** @description created_at | updated_at | titolo */
-                sort?: string | null;
-                dir?: "asc" | "desc";
             };
             header?: never;
             path?: never;
@@ -22784,7 +22917,13 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "multipart/form-data": components["schemas"]["Body_upload_version_api_documents__document_id__versions_post"];
+                "multipart/form-data": {
+                    /**
+                     * Format: binary
+                     * @description The new version's file.
+                     */
+                    file: string;
+                };
             };
         };
         responses: {
@@ -23383,10 +23522,10 @@ export interface operations {
         parameters: {
             query?: {
                 search?: string | null;
-                tipo?: ("offerta" | "contratto" | "verbale" | "documento" | "rapporto_ore" | "email" | "sollecito") | null;
-                include_inactive?: boolean;
                 limit?: number;
                 cursor?: string | null;
+                tipo?: ("offerta" | "contratto" | "verbale" | "documento" | "rapporto_ore" | "email" | "sollecito") | null;
+                include_inactive?: boolean;
             };
             header?: never;
             path?: never;
@@ -24348,6 +24487,8 @@ export interface operations {
     list_invoices_api_invoices_get: {
         parameters: {
             query?: {
+                limit?: number;
+                cursor?: string | null;
                 customer_id?: string | null;
                 deal_id?: string | null;
                 /** @description Solo le righe di questa azienda; omesso, tutte */
@@ -24359,8 +24500,6 @@ export interface operations {
                 scadute?: boolean;
                 origine_proforma_id?: string | null;
                 escludi_consumate?: boolean;
-                limit?: number;
-                cursor?: string | null;
             };
             header?: never;
             path?: never;
@@ -27153,6 +27292,10 @@ export interface operations {
     list_time_entries_api_time_entries_get: {
         parameters: {
             query?: {
+                /** @description Filtro sui campi personalizzati (JSONB), ripetibile per più chiavi: ?custom=settore:IT&custom=priorita:alta restituisce solo le righe che soddisfano entrambe (stessa semantica di contenimento JSONB usata dal service). Ogni valore è confrontato come stringa esatta; un valore senza il separatore ':' vale come chiave con valore vuoto, non genera un errore. Chiama GET /api/schema/{entity_type} per conoscere le chiavi disponibili. */
+                custom?: string[] | null;
+                limit?: number;
+                cursor?: string | null;
                 deal_id?: string | null;
                 /** @description Solo le ore sui deal di questa azienda; omesso, tutte */
                 azienda_id?: string | null;
@@ -27164,10 +27307,6 @@ export interface operations {
                 fatturabile?: boolean | null;
                 /** @description true = già su una riga di fattura; false = da fatturare */
                 fatturato?: boolean | null;
-                /** @description Filtro sui campi personalizzati (JSONB), ripetibile per più chiavi: ?custom=settore:IT&custom=priorita:alta restituisce solo le righe che soddisfano entrambe (stessa semantica di contenimento JSONB usata dal service). Ogni valore è confrontato come stringa esatta; un valore senza il separatore ':' vale come chiave con valore vuoto, non genera un errore. Chiama GET /api/schema/{entity_type} per conoscere le chiavi disponibili. */
-                custom?: string[] | null;
-                limit?: number;
-                cursor?: string | null;
             };
             header?: never;
             path?: never;
@@ -28480,6 +28619,10 @@ export interface operations {
     list_costs_api_costs_get: {
         parameters: {
             query?: {
+                /** @description Filtro sui campi personalizzati (JSONB), ripetibile per più chiavi: ?custom=settore:IT&custom=priorita:alta restituisce solo le righe che soddisfano entrambe (stessa semantica di contenimento JSONB usata dal service). Ogni valore è confrontato come stringa esatta; un valore senza il separatore ':' vale come chiave con valore vuoto, non genera un errore. Chiama GET /api/schema/{entity_type} per conoscere le chiavi disponibili. */
+                custom?: string[] | null;
+                limit?: number;
+                cursor?: string | null;
                 deal_id?: string | null;
                 /** @description Solo i costi di questa azienda; omesso, tutti, i generali compresi */
                 azienda_id?: string | null;
@@ -28488,10 +28631,6 @@ export interface operations {
                 category_id?: string | null;
                 da?: string | null;
                 a?: string | null;
-                /** @description Filtro sui campi personalizzati (JSONB), ripetibile per più chiavi: ?custom=settore:IT&custom=priorita:alta restituisce solo le righe che soddisfano entrambe (stessa semantica di contenimento JSONB usata dal service). Ogni valore è confrontato come stringa esatta; un valore senza il separatore ':' vale come chiave con valore vuoto, non genera un errore. Chiama GET /api/schema/{entity_type} per conoscere le chiavi disponibili. */
-                custom?: string[] | null;
-                limit?: number;
-                cursor?: string | null;
             };
             header?: never;
             path?: never;
@@ -30412,13 +30551,13 @@ export interface operations {
     budget_vs_actual_api_analytics_budget_get: {
         parameters: {
             query: {
+                limit?: number;
+                cursor?: string | null;
                 /** @description Inizio del periodo, YYYY-MM-DD */
                 from: string;
                 /** @description Fine del periodo, YYYY-MM-DD */
                 to: string;
                 customer_id?: string | null;
-                limit?: number;
-                cursor?: string | null;
             };
             header?: never;
             path?: never;
@@ -32723,7 +32862,13 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "multipart/form-data": components["schemas"]["Body_put_logo_api_aziende__azienda_id__logo_put"];
+                "multipart/form-data": {
+                    /**
+                     * Format: binary
+                     * @description A PNG or an SVG under 1 MiB.
+                     */
+                    file: string;
+                };
             };
         };
         responses: {
@@ -33084,7 +33229,13 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "multipart/form-data": components["schemas"]["Body_put_firma_api_aziende__azienda_id__firma_put"];
+                "multipart/form-data": {
+                    /**
+                     * Format: binary
+                     * @description A PNG under 1 MiB.
+                     */
+                    file: string;
+                };
             };
         };
         responses: {
@@ -33214,6 +33365,127 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["LegalEntityRead"];
+                };
+            };
+            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    finish_oauth_api_gmail_oauth_callback_get: {
+        parameters: {
+            query?: {
+                code?: string | null;
+                state?: string | null;
+                error?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
             /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
@@ -33673,127 +33945,6 @@ export interface operations {
     start_oauth_api_gmail_oauth_start_get: {
         parameters: {
             query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": {
-                        /** Type */
-                        type: string;
-                        /** Title */
-                        title: string;
-                        /** Status */
-                        status: number;
-                        /** Detail */
-                        detail: string;
-                        /** Code */
-                        code: string;
-                        /** Instance */
-                        instance: string;
-                    } & {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": {
-                        /** Type */
-                        type: string;
-                        /** Title */
-                        title: string;
-                        /** Status */
-                        status: number;
-                        /** Detail */
-                        detail: string;
-                        /** Code */
-                        code: string;
-                        /** Instance */
-                        instance: string;
-                    } & {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": {
-                        /** Type */
-                        type: string;
-                        /** Title */
-                        title: string;
-                        /** Status */
-                        status: number;
-                        /** Detail */
-                        detail: string;
-                        /** Code */
-                        code: string;
-                        /** Instance */
-                        instance: string;
-                    } & {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": {
-                        /** Type */
-                        type: string;
-                        /** Title */
-                        title: string;
-                        /** Status */
-                        status: number;
-                        /** Detail */
-                        detail: string;
-                        /** Code */
-                        code: string;
-                        /** Instance */
-                        instance: string;
-                    } & {
-                        [key: string]: unknown;
-                    };
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    finish_oauth_api_gmail_oauth_callback_get: {
-        parameters: {
-            query?: {
-                code?: string | null;
-                state?: string | null;
-                error?: string | null;
-            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -34507,6 +34658,127 @@ export interface operations {
             };
         };
     };
+    finish_oauth_api_drive_oauth_callback_get: {
+        parameters: {
+            query?: {
+                code?: string | null;
+                state?: string | null;
+                error?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     read_account_api_drive_account_get: {
         parameters: {
             query?: never;
@@ -34856,18 +35128,18 @@ export interface operations {
             };
         };
     };
-    finish_oauth_api_drive_oauth_callback_get: {
+    update_roots_api_drive_account_roots_patch: {
         parameters: {
-            query?: {
-                code?: string | null;
-                state?: string | null;
-                error?: string | null;
-            };
+            query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DriveRootsUpdate"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {
@@ -34875,7 +35147,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["GoogleDriveAccountRead"];
                 };
             };
             /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
@@ -34977,18 +35249,18 @@ export interface operations {
             };
         };
     };
-    update_roots_api_drive_account_roots_patch: {
+    finish_oauth_api_slack_oauth_callback_get: {
         parameters: {
-            query?: never;
+            query?: {
+                code?: string | null;
+                state?: string | null;
+                error?: string | null;
+            };
             header?: never;
             path?: never;
             cookie?: never;
         };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["DriveRootsUpdate"];
-            };
-        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {
@@ -34996,7 +35268,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["GoogleDriveAccountRead"];
+                    "application/json": unknown;
                 };
             };
             /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
@@ -35450,127 +35722,6 @@ export interface operations {
     start_oauth_api_slack_oauth_start_get: {
         parameters: {
             query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": {
-                        /** Type */
-                        type: string;
-                        /** Title */
-                        title: string;
-                        /** Status */
-                        status: number;
-                        /** Detail */
-                        detail: string;
-                        /** Code */
-                        code: string;
-                        /** Instance */
-                        instance: string;
-                    } & {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": {
-                        /** Type */
-                        type: string;
-                        /** Title */
-                        title: string;
-                        /** Status */
-                        status: number;
-                        /** Detail */
-                        detail: string;
-                        /** Code */
-                        code: string;
-                        /** Instance */
-                        instance: string;
-                    } & {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": {
-                        /** Type */
-                        type: string;
-                        /** Title */
-                        title: string;
-                        /** Status */
-                        status: number;
-                        /** Detail */
-                        detail: string;
-                        /** Code */
-                        code: string;
-                        /** Instance */
-                        instance: string;
-                    } & {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": {
-                        /** Type */
-                        type: string;
-                        /** Title */
-                        title: string;
-                        /** Status */
-                        status: number;
-                        /** Detail */
-                        detail: string;
-                        /** Code */
-                        code: string;
-                        /** Instance */
-                        instance: string;
-                    } & {
-                        [key: string]: unknown;
-                    };
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    finish_oauth_api_slack_oauth_callback_get: {
-        parameters: {
-            query?: {
-                code?: string | null;
-                state?: string | null;
-                error?: string | null;
-            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -38678,6 +38829,30 @@ export interface operations {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
+            /** @description Troppe richieste da questo indirizzo nell'ultimo minuto (il bucket è per client, non per rotta): il client deve attendere `Retry-After` secondi prima di riprovare. */
+            429: {
+                headers: {
+                    /** @description Secondi da attendere prima di riprovare. */
+                    "Retry-After"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        detail: string;
+                    };
+                };
+            };
+            /** @description Il servizio non può creare uno spazio adesso: troppe creazioni in corso (`Retry-After` secondi) oppure il numero massimo di spazi è raggiunto. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        detail: string;
+                    };
+                };
+            };
         };
     };
     member_api_tenants_member_post: {
@@ -39445,6 +39620,19 @@ export interface operations {
                         [key: string]: unknown;
                     };
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Troppe richieste da questo indirizzo nell'ultimo minuto (il bucket è per client, non per rotta): il client deve attendere `Retry-After` secondi prima di riprovare. */
+            429: {
+                headers: {
+                    /** @description Secondi da attendere prima di riprovare. */
+                    "Retry-After"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        detail: string;
+                    };
                 };
             };
         };
@@ -41262,15 +41450,15 @@ export interface operations {
     list_contracts_api_contracts_get: {
         parameters: {
             query?: {
-                customer_id?: string | null;
-                stato?: string | null;
-                /** @description Solo le righe di questa azienda; omesso, tutte */
-                azienda_id?: string | null;
                 limit?: number;
                 cursor?: string | null;
                 /** @description created_at | updated_at | titolo */
                 sort?: string | null;
                 dir?: "asc" | "desc";
+                customer_id?: string | null;
+                stato?: string | null;
+                /** @description Solo le righe di questa azienda; omesso, tutte */
+                azienda_id?: string | null;
             };
             header?: never;
             path?: never;
@@ -46766,7 +46954,9 @@ export interface operations {
     };
     list_reminders_api_reminders_get: {
         parameters: {
-            query?: never;
+            query?: {
+                limit?: number;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -48313,7 +48503,9 @@ export interface operations {
     };
     list_notes_api__collection___entity_id__notes_get: {
         parameters: {
-            query?: never;
+            query?: {
+                limit?: number;
+            };
             header?: never;
             path: {
                 collection: "deals" | "customers" | "people";

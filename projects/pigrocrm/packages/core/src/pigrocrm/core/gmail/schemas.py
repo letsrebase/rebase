@@ -73,7 +73,6 @@ class SyncReport(BaseModel):
     messages_stored: int = 0
     messages_skipped: int = 0
     links_created: int = 0
-    states_pruned: int = 0
     # How many sends of unknown outcome this cycle settled, in either direction. A
     # number and not a list of drafts, for the same reason as everything else here: a
     # draft id would be the first thing in this model that names somebody's unsent
@@ -242,6 +241,15 @@ SUBJECT_MAX_LENGTH = 998
 # 256 KB inbound body limit, and for the same reason -- a limit that fires on ordinary
 # work teaches people to route around the product.
 BODY_MAX_LENGTH = 100_000
+# One person, one agent or one token can address a draft, and therefore a send through the
+# titolare's own Gmail, to as many people as the request lists. The caps are the
+# schemas' (each list) and `EmailDraftService`'s (To and Cc together): a Gmail message
+# has no business with more than a few dozen recipients, and an unbounded list is a mass
+# mailing under the titolare's name and quota.
+MAX_RECIPIENTS = 50
+# The weight of the attachments is capped too (`gmail_attachment_max_bytes`); this bounds
+# the *number*, which is what costs a database read and a storage read each.
+MAX_ATTACHMENTS = 20
 
 # Five states, and none of them is a synonym for another. `incerto` is the whole of spec
 # 6.3(b): the send neither succeeded nor failed, and the interface says «esito da
@@ -267,22 +275,30 @@ class EmailDraftCreate(BaseModel):
 
     entity_type: Literal["customer", "person", "deal"]
     entity_id: UUID
-    to_addresses: list[Annotated[SafeStr, Field(max_length=EMAIL_ADDRESS_MAX_LENGTH)]]
-    cc_addresses: list[Annotated[SafeStr, Field(max_length=EMAIL_ADDRESS_MAX_LENGTH)]] = []
+    to_addresses: list[Annotated[SafeStr, Field(max_length=EMAIL_ADDRESS_MAX_LENGTH)]] = Field(
+        max_length=MAX_RECIPIENTS
+    )
+    cc_addresses: list[Annotated[SafeStr, Field(max_length=EMAIL_ADDRESS_MAX_LENGTH)]] = Field(
+        default=[], max_length=MAX_RECIPIENTS
+    )
     subject: SafeStr = Field(max_length=SUBJECT_MAX_LENGTH)
     body_markdown: SafeStr = Field(max_length=BODY_MAX_LENGTH)
-    attachment_version_ids: list[UUID] = []
+    attachment_version_ids: list[UUID] = Field(default=[], max_length=MAX_ATTACHMENTS)
     in_reply_to_message_id: UUID | None = None
 
 
 class EmailDraftUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    to_addresses: list[Annotated[SafeStr, Field(max_length=EMAIL_ADDRESS_MAX_LENGTH)]] | None = None
-    cc_addresses: list[Annotated[SafeStr, Field(max_length=EMAIL_ADDRESS_MAX_LENGTH)]] | None = None
+    to_addresses: list[Annotated[SafeStr, Field(max_length=EMAIL_ADDRESS_MAX_LENGTH)]] | None = (
+        Field(default=None, max_length=MAX_RECIPIENTS)
+    )
+    cc_addresses: list[Annotated[SafeStr, Field(max_length=EMAIL_ADDRESS_MAX_LENGTH)]] | None = (
+        Field(default=None, max_length=MAX_RECIPIENTS)
+    )
     subject: SafeStr | None = Field(default=None, max_length=SUBJECT_MAX_LENGTH)
     body_markdown: SafeStr | None = Field(default=None, max_length=BODY_MAX_LENGTH)
-    attachment_version_ids: list[UUID] | None = None
+    attachment_version_ids: list[UUID] | None = Field(default=None, max_length=MAX_ATTACHMENTS)
 
 
 class EmailDraftSend(BaseModel):

@@ -28,7 +28,6 @@ from pigrocrm.core.invoices.import_classification import classify_parsed_invoice
 from pigrocrm.core.invoices.import_dedup import check_invoice_duplicate
 from pigrocrm.core.invoices.import_direction import (
     classify_direction,
-    classify_invoice_direction,
     match_azienda,
 )
 from pigrocrm.core.invoices.import_schemas import ParsedInvoiceParty
@@ -141,19 +140,19 @@ def test_only_an_azienda_with_an_identifier_counts_as_configured() -> None:
     assert match_azienda(fornitore, [bare, configured]) is configured
 
 
-# --- classify_invoice_direction: the same check against a real parsed document ----
+# --- classify_direction: the same check against a real parsed document's supplier ---
 
 
 def test_the_fixtures_own_issuer_classifies_as_outgoing_against_her_own_profile() -> None:
     [invoice] = parse(_fixture(CONSULENZA))
     emitter = _emitter(partita_iva="01234567890", codice_fiscale="BNCCHR85M41H501Z")
-    assert classify_invoice_direction(invoice, [emitter]) == "outgoing"
+    assert classify_direction(invoice.fornitore, [emitter]) == "outgoing"
 
 
 def test_the_same_document_is_incoming_against_a_different_accounts_profile() -> None:
     [invoice] = parse(_fixture(CONSULENZA))
     emitter = _emitter(partita_iva="09876543210", codice_fiscale="RSSMRA80A01H501U")
-    assert classify_invoice_direction(invoice, [emitter]) == "incoming"
+    assert classify_direction(invoice.fornitore, [emitter]) == "incoming"
 
 
 # --- check_invoice_duplicate: the hash comparison, including the NULL-hash rule ---

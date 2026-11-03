@@ -34,11 +34,11 @@ SEVERITIES: tuple[Severity, ...] = ("warning", "serious", "critical")
 # reminder seen at rank 2 is not seen again at 1 or 2, and is at 3.
 SEVERITY_RANK: Mapping[Severity, int] = {"warning": 1, "serious": 2, "critical": 3}
 
-Channel = Literal["in_app", "push", "slack", "email"]
-CHANNELS: tuple[Channel, ...] = ("in_app", "push", "slack", "email")
+ChannelName = Literal["in_app", "push", "slack", "email"]
+CHANNELS: tuple[ChannelName, ...] = ("in_app", "push", "slack", "email")
 # The channels a person can switch. In-app is the source of truth and every other channel
 # is a copy of it (spec §6.1), so it is always on and never a setting.
-SWITCHABLE_CHANNELS: tuple[Channel, ...] = ("push", "slack", "email")
+SWITCHABLE_CHANNELS: tuple[ChannelName, ...] = ("push", "slack", "email")
 
 EmailMode = Literal["immediate", "summary"]
 EMAIL_MODES: tuple[EmailMode, ...] = ("immediate", "summary")

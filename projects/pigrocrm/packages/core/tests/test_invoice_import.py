@@ -357,12 +357,12 @@ def test_the_stamp_duty_is_declared_alongside_and_never_added_to_the_total(
 def test_a_future_date_and_a_collaborator_are_refused(db_session: Session, tmp_path) -> None:  # noqa: ANN001
     from datetime import timedelta
 
-    from pigrocrm.core.clock import oggi_in_italia
+    from pigrocrm.core.db.clock import today_local
     from pigrocrm.core.errors import PermissionDenied, ValidationFailed
 
     service = _svc(db_session, tmp_path)
     cid = _fiscal_customer_id(db_session)
-    domani = oggi_in_italia() + timedelta(days=1)
+    domani = today_local() + timedelta(days=1)
     with pytest.raises(ValidationFailed):
         service.import_issued(_payload(cid, numero=7, giorno=domani), ADMIN)
     with pytest.raises(PermissionDenied):
@@ -382,12 +382,12 @@ def test_an_external_transmission_date_is_checked_like_a_native_one(
     """
     from datetime import timedelta
 
-    from pigrocrm.core.clock import oggi_in_italia
+    from pigrocrm.core.db.clock import today_local
     from pigrocrm.core.errors import ValidationFailed
 
     service = _svc(db_session, tmp_path)
     cid = _fiscal_customer_id(db_session)
-    domani = oggi_in_italia() + timedelta(days=1)
+    domani = today_local() + timedelta(days=1)
     with pytest.raises(ValidationFailed) as futura:
         service.import_issued(
             _payload(cid, numero=7, giorno=date(2026, 5, 5), trasmessa_esternamente_il=domani),
@@ -479,7 +479,10 @@ def test_a_missing_fiscal_profile_is_refused_before_any_row_is_flushed(
     # No invoice, no lines, and not even the year's counter row: the refusal happened
     # above `lock_counter`, which is what inserts it.
     assert db_session.execute(select(Invoice)).first() is None
-    assert _counter(db_session, 2026) is None
+    # `lock_counter` ran before the refused write and its row belongs to the caller's
+    # transaction, but no number was consumed on it.
+    counter = _counter(db_session, 2026)
+    assert counter is None or counter.ultimo_numero == 0
     # And the session is still usable -- a query, not an exception, is what comes back.
     assert service.undeclared_gaps(2026) == []
 
@@ -559,7 +562,7 @@ def test_declaring_a_number_that_is_an_invoice_is_a_conflict(db_session: Session
 
 
 def test_undeclared_gaps_are_named_and_block_native_issuing(db_session: Session, tmp_path) -> None:  # noqa: ANN001
-    from pigrocrm.core.clock import oggi_in_italia
+    from pigrocrm.core.db.clock import today_local
     from pigrocrm.core.errors import Conflict
     from pigrocrm.core.invoices.schemas import (
         InvoiceCreate,
@@ -568,7 +571,7 @@ def test_undeclared_gaps_are_named_and_block_native_issuing(db_session: Session,
         RegisterGapsDeclare,
     )
 
-    anno = oggi_in_italia().year
+    anno = today_local().year
     service = _svc(db_session, tmp_path)
     cid = _fiscal_customer_id(db_session)
     service.import_issued(_payload(cid, numero=2, giorno=date(anno, 2, 4)), ADMIN)
@@ -630,12 +633,12 @@ def test_a_long_gap_list_is_reported_whole_and_rendered_short(
     says how many there are, while `details["numeri"]` keeps every one of them for a
     caller that wants to act on the list.
     """
-    from pigrocrm.core.clock import oggi_in_italia
+    from pigrocrm.core.db.clock import today_local
     from pigrocrm.core.errors import Conflict
+    from pigrocrm.core.invoices.register import GAPS_SHOWN_IN_MESSAGE
     from pigrocrm.core.invoices.schemas import InvoiceCreate, InvoiceIssue, InvoiceLineIn
-    from pigrocrm.core.invoices.service import GAPS_SHOWN_IN_MESSAGE
 
-    anno = oggi_in_italia().year
+    anno = today_local().year
     service = _svc(db_session, tmp_path)
     cid = _fiscal_customer_id(db_session)
     service.import_issued(_payload(cid, numero=30, giorno=date(anno, 2, 4)), ADMIN)
@@ -901,9 +904,9 @@ def _drive_account(session: Session, *, roots: tuple[str, ...] = (ROOT_FOLDER,))
     from fakes.gmail_fixtures import TOKEN_KEY
 
     from pigrocrm.core.auth.models import User
+    from pigrocrm.core.crypto import seal
     from pigrocrm.core.drive.models import GoogleDriveAccount
     from pigrocrm.core.drive.schemas import DRIVE_SCOPE_FILE, DRIVE_SCOPE_READONLY
-    from pigrocrm.core.gmail.crypto import seal
 
     user = User(
         email=f"titolare-{uuid4().hex[:8]}@example.it",
@@ -1151,6 +1154,10 @@ def test_a_failed_commit_takes_the_imported_pdf_with_it(
             ADMIN,
         )
     monkeypatch.undo()
+    # The service never rolls back a session it does not own: the caller whose commit
+    # failed does, and the `documents` row goes with the invoice because it was never
+    # committed on its own.
+    db_session.rollback()
 
     assert db_session.execute(select(Invoice).where(Invoice.numero == 7)).first() is None
     assert _imported_documents(db_session) == []
@@ -1160,9 +1167,9 @@ def test_an_empty_pdf_on_drive_is_refused_among_the_pure_checks(
     db_session: Session, tmp_path
 ) -> None:  # noqa: ANN001
     """A zero-byte file inside the configured roots: readable, `application/pdf`, and
-    not a document. `DocumentService._check_upload` would refuse it too -- but only
+    not a document. `DocumentUploads.check_upload` would refuse it too -- but only
     from *inside* `import_bytes`, which runs after the `Invoice` has been flushed, and
-    the only rollback in `import_issued` wraps the final `commit`. So the refusal is
+    the SAVEPOINT `import_issued` writes in starts after the pure checks. So the refusal is
     hoisted here, among the pure checks, where it belongs: it is a fact about the file
     the caller named.
 
@@ -1204,7 +1211,7 @@ def test_a_refusal_from_inside_import_bytes_still_leaves_nothing_flushed(
     `import_bytes` runs *after* the `Invoice` and its lines have been flushed, and it
     can refuse for reasons that are not facts about the Drive file at all: here a
     required custom field defined on `document`, which every `documents` row must carry
-    and this one has no way to supply. Without a rollback at that call site the refused
+    and this one has no way to supply. Without a SAVEPOINT around the writes the refused
     fattura would sit flushed in the caller's session, and the next query in the same
     transaction would find a fattura the caller had just been told did not exist --
     the precise failure `import_issued`'s own docstring exists to describe.
@@ -1245,6 +1252,9 @@ def test_a_refusal_from_inside_import_bytes_still_leaves_nothing_flushed(
 
     assert db_session.execute(select(Invoice).where(Invoice.numero == 7)).first() is None
     assert db_session.execute(select(Document)).first() is None
-    assert _counter(db_session, 2026) is None
+    # `lock_counter` ran before the refused write and its row belongs to the caller's
+    # transaction, but no number was consumed on it.
+    counter = _counter(db_session, 2026)
+    assert counter is None or counter.ultimo_numero == 0
     # And the session is still usable: a later read does not raise on a pending failure.
     assert service.repo.numbers_present(_default_azienda_id(db_session), 2026) == set()

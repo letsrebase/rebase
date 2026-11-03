@@ -32,13 +32,14 @@ from test_text import minimal_pdf  # noqa: E402
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.auth.models import User
 from pigrocrm.core.config import Settings
+from pigrocrm.core.crypto import seal
 from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.documents.models import Document
-from pigrocrm.core.gmail.crypto import seal
 from pigrocrm.core.gmail.models import GmailMessage, GoogleAccount
 from pigrocrm.core.gmail.schemas import REQUESTED_SCOPES
 from pigrocrm.core.gmail.transport import GmailTransport
 from pigrocrm.core.storage import LocalFileStorage
+from pigrocrm_mcp.provenance import PROVENIENZA_TESTO_LIBERO
 from pigrocrm_mcp.server import build_server
 from pigrocrm_mcp.tools import privileged
 
@@ -416,6 +417,7 @@ async def test_the_proposals_answer_the_domains_the_owner_wrote_to_and_store_not
 
     payload = _payload(result)
     proposals = payload["result"] if isinstance(payload, dict) else payload
+    assert all(proposal["provenienza"] == PROVENIENZA_TESTO_LIBERO for proposal in proposals)
     assert [proposal["dominio"] for proposal in proposals] == ["acme.it"]
     assert proposals[0]["persone"][0]["nome"] == "Marco Bianchi"
     assert mcp_session.scalar(select(func.count()).select_from(GmailMessage)) == messages_before

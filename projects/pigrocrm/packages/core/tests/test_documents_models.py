@@ -1,6 +1,7 @@
 from uuid import uuid4
 
 import pytest
+from fakes.customer_fixtures import make_customer
 from sqlalchemy import inspect
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -11,13 +12,6 @@ from pigrocrm.core.documents.models import Document, DocumentVersion
 from pigrocrm.core.emitter.models import LegalEntity
 from pigrocrm.core.schema_registry import ENTITY_TYPES, native_fields
 from pigrocrm.core.templates.models import Template
-
-
-def _customer(db_session: Session) -> Customer:
-    customer = Customer(ragione_sociale="ACME")
-    db_session.add(customer)
-    db_session.flush()
-    return customer
 
 
 def _contract(db_session: Session, customer: Customer) -> Contract:
@@ -36,7 +30,7 @@ def _contract(db_session: Session, customer: Customer) -> Contract:
 
 
 def test_a_document_belongs_to_a_customer(db_session: Session) -> None:
-    customer = _customer(db_session)
+    customer = make_customer(db_session)
     document = Document(customer_id=customer.id, tipo="offerta", titolo="Offerta 1", stato="bozza")
     db_session.add(document)
     db_session.flush()
@@ -51,7 +45,7 @@ def test_a_document_with_neither_customer_nor_deal_is_refused(db_session: Sessio
 
 
 def test_a_document_with_both_customer_and_deal_is_refused(db_session: Session) -> None:
-    customer = _customer(db_session)
+    customer = make_customer(db_session)
     db_session.add(
         Document(customer_id=customer.id, deal_id=uuid4(), tipo="documento", titolo="Doppio")
     )
@@ -62,7 +56,7 @@ def test_a_document_with_both_customer_and_deal_is_refused(db_session: Session) 
 def test_a_document_can_belong_to_a_contract(db_session: Session) -> None:
     """REB-358 §11: the three-way widening's own third branch -- a contract's
     signed original, discoverable from the contract itself."""
-    customer = _customer(db_session)
+    customer = make_customer(db_session)
     contract = _contract(db_session, customer)
     document = Document(contract_id=contract.id, tipo="contratto", titolo="Contratto firmato")
     db_session.add(document)
@@ -72,7 +66,7 @@ def test_a_document_can_belong_to_a_contract(db_session: Session) -> None:
 
 
 def test_a_document_with_customer_and_contract_is_refused(db_session: Session) -> None:
-    customer = _customer(db_session)
+    customer = make_customer(db_session)
     contract = _contract(db_session, customer)
     db_session.add(
         Document(
@@ -84,7 +78,7 @@ def test_a_document_with_customer_and_contract_is_refused(db_session: Session) -
 
 
 def test_a_document_with_all_three_owners_is_refused(db_session: Session) -> None:
-    customer = _customer(db_session)
+    customer = make_customer(db_session)
     contract = _contract(db_session, customer)
     db_session.add(
         Document(
@@ -100,7 +94,7 @@ def test_a_document_with_all_three_owners_is_refused(db_session: Session) -> Non
 
 
 def test_two_versions_cannot_share_a_number(db_session: Session) -> None:
-    customer = _customer(db_session)
+    customer = make_customer(db_session)
     document = Document(customer_id=customer.id, tipo="offerta", titolo="O")
     db_session.add(document)
     db_session.flush()

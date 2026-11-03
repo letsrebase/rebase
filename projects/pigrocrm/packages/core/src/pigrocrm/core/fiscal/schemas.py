@@ -83,12 +83,11 @@ PAESI_UE = frozenset(
 DEFAULT_SOGLIA_BOLLO = Decimal("77.47")
 DEFAULT_IMPORTO_BOLLO = Decimal("2.00")
 
-# §4.5. The three constants that used to live nel gestionale precedente's `App.jsx` --
-# `FORFETTARIO_PROFITABILITY_RATE = 0.67`, `FORFETTARIO_SUBSTITUTE_TAX_RATE = 0.05`,
-# `FORFETTARIO_INPS_RATE = 0.2607` -- expressed as percentages, which is how their owner
-# reads and types them. Defaults rather than constants for the same reason the bollo
-# values above are: the ATECO coefficient depends on the activity code, and the INPS
-# gestione separata rate is re-set by the Legge di Bilancio most years.
+# §4.5. The estimate's three rates (profitability 0.67, substitute tax 0.05, INPS 0.2607),
+# expressed as percentages, which is how their owner reads and types them. Defaults
+# rather than constants for the same reason the bollo values above are: the ATECO
+# coefficient depends on the activity code, and the INPS gestione separata rate is
+# re-set by the Legge di Bilancio most years.
 DEFAULT_COEFFICIENTE_REDDITIVITA = Decimal("67.00")
 DEFAULT_ALIQUOTA_IMPOSTA_SOSTITUTIVA = Decimal("5.00")
 DEFAULT_ALIQUOTA_INPS = Decimal("26.07")

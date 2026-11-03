@@ -19,6 +19,7 @@ first when the identity's email has an active row in the root's `users`, entered
 with the root's own jar at `path=/` (decision 2026-09-09, `tenancy.cookie_path`).
 """
 
+from concurrent.futures import ThreadPoolExecutor
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
@@ -26,6 +27,7 @@ from pydantic import BaseModel
 from sqlalchemy import create_engine
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
+from sqlalchemy.pool import NullPool
 
 from pigrocrm.core.auth.invitations import InvitationService
 from pigrocrm.core.auth.refresh_service import RefreshTokenService
@@ -44,20 +46,27 @@ from pigrocrm_api.deps import (
     REFRESH_COOKIE,
     SettingsDep,
     TenantsRegistryDep,
-    _get_session_factory,
-    _tenant_session_factory,
+    space_session_factory,
 )
 from pigrocrm_api.errors import PROBLEM_RESPONSES
-from pigrocrm_api.sessions import set_session_cookie
+from pigrocrm_api.ratelimit import (
+    IDENTITY_ENTER_REQUESTS_PER_MINUTE,
+    TOO_MANY_REQUESTS_RESPONSE,
+    log_unauthorized,
+    spend_one,
+)
+from pigrocrm_api.sessions import set_session_cookies
 from pigrocrm_api.tenancy import first_cookie, is_root_name
 
 router = APIRouter(prefix="/api/identity", tags=["identity"], responses=PROBLEM_RESPONSES)
 
-# The scan below opens one connection per tenant, unlike a single-space open -- a
-# network partition to one space's database must not hold the whole chooser response
-# hostage for however long libpq's own default connect timeout is. Short and fixed,
-# per design §7 decision B1's own "a short, fixed per-connection timeout."
+# The scan below opens one connection per tenant: a network partition to one space's
+# database must not hold the whole chooser response hostage for libpq's default connect
+# timeout (design §7 decision B1's "a short, fixed per-connection timeout"). The probes
+# run on a few threads at once, so the chooser costs about spaces / workers connections'
+# worth of latency and not the sum.
 SPACE_SCAN_CONNECT_TIMEOUT_SECONDS = 2
+SPACE_SCAN_WORKERS = 8
 
 # What the invitation door answers for every way there is of having none (REB-678): said
 # once, in the invitee's language, and never with the address or the slug in it.
@@ -96,6 +105,7 @@ def _get_identity_email(
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Nessuna identità provata")
     email = proven_email(request, registry, settings)
     if email is None:
+        log_unauthorized(request, "identity")
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Sessione scaduta")
     return email
 
@@ -135,12 +145,16 @@ def _space_entry_for(settings: Settings, slug: str, email: str) -> IdentitySpace
     else the invitation it holds there (REB-678), else nothing, which is also what a
     deactivated row or a space this bounded connection could not reach at all answers --
     caught and skipped exactly like `_space_link` (`routers/auth.py`)'s own "must not
-    turn the request into a 500 for the one address that owns it," widened with a
-    connect timeout because this runs once per tenant rather than once per request
-    (design §7 decision B1)."""
+    turn the request into a 500 for the one address that owns it."
+
+    An engine of its own, not the space's pooled one, on purpose: the pooled engine has no
+    connect timeout, and a scan that went through it would leave one idle connection per
+    space open for good, which a few hundred spaces would turn into Postgres's
+    `max_connections`. `NullPool` closes each connection with the probe."""
     engine = create_engine(
         tenant_database_url(settings, tenant_database_name(slug)),
         future=True,
+        poolclass=NullPool,
         connect_args={"connect_timeout": SPACE_SCAN_CONNECT_TIMEOUT_SECONDS},
     )
     try:
@@ -169,11 +183,11 @@ def _root_role_for(settings: Settings, email: str) -> str | None:
     in the root's own `users`, a deactivated one, or a root whose database cannot be
     reached right now -- skipped like a space the scan cannot open, never a 500. The
     session comes from the root's own pooled engine, the one `deps` holds for every
-    unprefixed request, so no engine is built for it; it has no connect timeout of
-    its own either, unlike `_space_entry_for`, because that pool is the process's own
-    root connection, pre-pinged, not one more remote database per row."""
+    unprefixed request; it has no connect timeout of its own, unlike `_space_entry_for`,
+    because that pool is the process's own root connection, pre-pinged, not one more
+    remote database per row."""
     try:
-        with _get_session_factory(settings)() as root:
+        with space_session_factory(None, settings)() as root:
             user = UserRepository(root).get_by_email(email)
             return user.ruolo if user is not None and user.attivo else None
     except SQLAlchemyError:
@@ -201,12 +215,15 @@ def spaces(
         root_role = _root_role_for(settings, email)
         if root_role is not None:
             result.append(IdentitySpace(slug=settings.root_slug, ruolo=root_role))
-    slugs = [tenant.slug for tenant in TenantService(registry, settings).list()]
+    slugs = [
+        tenant.slug
+        for tenant in TenantService(registry, settings).list()
+        if not is_root_name(settings.root_slug, tenant.slug)
+    ]
+    with ThreadPoolExecutor(max_workers=SPACE_SCAN_WORKERS) as pool:
+        entries = list(pool.map(lambda slug: _space_entry_for(settings, slug, email), slugs))
     invitations: list[IdentitySpace] = []
-    for slug in slugs:
-        if is_root_name(settings.root_slug, slug):
-            continue
-        entry = _space_entry_for(settings, slug, email)
+    for entry in entries:
         if entry is not None:
             # Spaces first, in the order they were always listed; the invitations after
             # them, so a row that is not a seat yet never sits above one that is.
@@ -214,12 +231,16 @@ def spaces(
     return [*result, *invitations]
 
 
-@router.post("/enter/{slug}", response_model=UserRead)
+@router.post("/enter/{slug}", response_model=UserRead, responses={429: TOO_MANY_REQUESTS_RESPONSE})
 def enter(
-    slug: str, response: Response, email: IdentityEmailDep, settings: SettingsDep
+    slug: str,
+    request: Request,
+    response: Response,
+    email: IdentityEmailDep,
+    settings: SettingsDep,
 ) -> UserRead:
     """Opens the space `slug` with no second proof -- the identity cookie already is
-    one (§3). `deps._tenant_session_factory`, called directly rather than through a
+    one (§3). `deps.space_session_factory`, called directly rather than through a
     request's own prefix, already answers `NotFound` (-> 404) for a slug nobody
     registered, the same way a stranger's cookie meets a refusal on a space it does
     not belong to (`tenancy.cookie_path`'s own docstring); a slug that exists but has
@@ -235,31 +256,23 @@ def enter(
     name, and only `/` serves both), with the stale pair a browser may still hold at
     `/<root_slug>/` cleared the way `login` clears it, so it cannot shadow the fresh
     one on every request under the alias."""
+    spend_one(request, scope="identity_enter", per_minute=IDENTITY_ENTER_REQUESTS_PER_MINUTE)
     is_root = is_root_name(settings.root_slug, slug)
-    factory = _get_session_factory(settings) if is_root else _tenant_session_factory(slug, settings)
-    with factory() as space:
+    with space_session_factory(None if is_root else slug, settings)() as space:
         user = UserRepository(space).get_by_email(email)
         if user is None or not user.attivo:
             raise NotFound("user", email)
-        path = "/" if is_root else f"/{slug}/"
         if is_root:
             response.delete_cookie(ACCESS_COOKIE, path=f"/{slug}/")
             response.delete_cookie(REFRESH_COOKIE, path=f"/{slug}/")
-        set_session_cookie(
+        set_session_cookies(
             response,
-            ACCESS_COOKIE,
-            issue_access_token(user.id, user.ruolo, settings),
-            settings.access_token_minutes * 60,
-            secure=settings.cookie_secure,
-            path=path,
-        )
-        set_session_cookie(
-            response,
-            REFRESH_COOKIE,
-            RefreshTokenService(space).issue(user.id, settings),
-            settings.refresh_token_days * 86400,
-            secure=settings.cookie_secure,
-            path=path,
+            settings,
+            path="/" if is_root else f"/{slug}/",
+            access=issue_access_token(
+                user.id, user.ruolo, settings, space=None if is_root else slug
+            ),
+            refresh=RefreshTokenService(space).issue(user.id, settings),
         )
         return UserRead.model_validate(user)
 
@@ -277,7 +290,7 @@ def open_invitation(slug: str, email: IdentityEmailDep, settings: SettingsDep) -
     try:
         if is_root_name(settings.root_slug, slug):
             raise NotFound("invitation", slug)
-        with _tenant_session_factory(slug, settings)() as space:
+        with space_session_factory(slug, settings)() as space:
             raw = InvitationService(space).open_for(email)
     except NotFound as exc:
         raise HTTPException(status.HTTP_404_NOT_FOUND, NO_INVITATION) from exc

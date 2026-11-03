@@ -23,6 +23,7 @@ from pigrocrm.core.timetracking.models import CostCategory
 from pigrocrm_mcp.tools.changes import report
 
 ADMIN = Actor(id=None, type="mcp", role="admin")
+SETUP = Actor(id=None, type="system", role="admin")  # seeding a pipeline is not an agent's
 
 REFUSAL = "nessun campo da modificare"
 
@@ -177,7 +178,7 @@ async def test_clearing_a_customer_field_is_reported_with_the_value_it_held(
 async def test_clearing_a_deal_field_is_reported_with_the_value_it_held(
     server, mcp_session: Session, field: str
 ) -> None:
-    PipelineService(mcp_session).seed_defaults(ADMIN)
+    PipelineService(mcp_session).seed_defaults(SETUP)
     async with Client(server) as client:
         customer = await _customer(client)
         deal = await _deal(client, customer["id"])
@@ -195,7 +196,7 @@ async def test_clearing_a_deal_field_is_reported_with_the_value_it_held(
 async def test_a_value_that_is_not_new_is_not_reported_as_changed(
     server, mcp_session: Session
 ) -> None:
-    PipelineService(mcp_session).seed_defaults(ADMIN)
+    PipelineService(mcp_session).seed_defaults(SETUP)
     async with Client(server) as client:
         customer = await _customer(client)
         deal = await _deal(client, customer["id"])
@@ -357,7 +358,7 @@ async def test_the_same_amount_written_with_another_scale_is_not_a_change(
 ) -> None:
     """The database answers `1000.00` and the update just set `1000`: one amount, and the
     agent that resends it must not be told it changed something."""
-    PipelineService(mcp_session).seed_defaults(ADMIN)
+    PipelineService(mcp_session).seed_defaults(SETUP)
     async with Client(server) as client:
         customer = await _customer(client)
         deal = await _deal(client, customer["id"])

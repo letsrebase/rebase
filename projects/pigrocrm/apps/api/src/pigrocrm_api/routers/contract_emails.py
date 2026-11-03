@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from fastapi import APIRouter, status
+from fastapi import APIRouter, Depends, status
 
 from pigrocrm.core.contract_emails.schemas import (
     ContractEmailPrepare,
@@ -13,15 +13,22 @@ from pigrocrm.core.contract_emails.schemas import (
 )
 from pigrocrm.core.contract_emails.service import ContractEmailService, variables
 from pigrocrm.core.gmail.schemas import EmailDraftRead
-from pigrocrm_api.deps import ActorDep, SessionDep, SettingsDep, StorageDep
+from pigrocrm_api.deps import ActorDep, SessionDep, SettingsDep, StorageDep, get_actor
 from pigrocrm_api.errors import PROBLEM_RESPONSES
 
-router = APIRouter(prefix="/api/contracts", tags=["contract-emails"], responses=PROBLEM_RESPONSES)
+router = APIRouter(
+    prefix="/api/contracts",
+    tags=["contract-emails"],
+    responses=PROBLEM_RESPONSES,
+    dependencies=[Depends(get_actor)],
+)
 
 
 @router.get("/{contract_id}/email-template-variables", response_model=list[ContractEmailVariable])
-def template_variables(contract_id: UUID, actor: ActorDep) -> list[ContractEmailVariable]:
-    """I nomi che un modello può usare come `{{nome}}`."""
+def template_variables(contract_id: UUID) -> list[ContractEmailVariable]:  # noqa: ARG001
+    """I nomi che un modello può usare come `{{nome}}`. The path names the contract the page
+    asks from; the names are the same for every contract, and the router's `get_actor`
+    dependency is what authenticates."""
     return variables()
 
 

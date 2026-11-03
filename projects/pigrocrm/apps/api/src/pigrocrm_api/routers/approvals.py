@@ -1,11 +1,16 @@
-from fastapi import APIRouter, status
+from fastapi import APIRouter, Depends, status
 
 from pigrocrm.core.work_units.schemas import ApprovalRecord, ApprovalRecorded
 from pigrocrm.core.work_units.service import ApprovalService
-from pigrocrm_api.deps import ActorDep, SessionDep, StorageDep
+from pigrocrm_api.deps import ActorDep, SessionDep, StorageDep, get_actor
 from pigrocrm_api.errors import PROBLEM_RESPONSES
 
-router = APIRouter(prefix="/api/approvals", tags=["giornate"], responses=PROBLEM_RESPONSES)
+router = APIRouter(
+    prefix="/api/approvals",
+    tags=["giornate"],
+    responses=PROBLEM_RESPONSES,
+    dependencies=[Depends(get_actor)],
+)
 
 
 @router.post("", response_model=ApprovalRecorded, status_code=status.HTTP_201_CREATED)

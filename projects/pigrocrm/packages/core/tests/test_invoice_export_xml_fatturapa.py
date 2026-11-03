@@ -7,9 +7,10 @@ would actually hold.
 
 import hashlib
 from pathlib import Path
-from uuid import UUID, uuid4
+from uuid import UUID
 
 import pytest
+from fakes.customer_fixtures import make_customer_with_address
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.actor import Actor
@@ -58,26 +59,10 @@ def _svc(session: Session, storage: LocalFileStorage) -> InvoiceService:
     return InvoiceService(session, storage)
 
 
-def _customer(session: Session, **overrides: object) -> Customer:
-    base: dict[str, object] = {
-        "ragione_sociale": f"Cliente {uuid4()}",
-        "indirizzo": "Piazza dei Modelli 4",
-        "cap": "00187",
-        "comune": "Roma",
-        "provincia": "RM",
-        "nazione": "IT",
-    }
-    base.update(overrides)
-    customer = Customer(**base)
-    session.add(customer)
-    session.flush()
-    return customer
-
-
 def _document(
     session: Session, storage: LocalFileStorage, content: bytes, *, owner: Customer | None = None
 ) -> UUID:
-    owner = owner if owner is not None else _customer(session)
+    owner = owner if owner is not None else make_customer_with_address(session)
     service = DocumentService(session, storage)
     document = service.create(
         DocumentCreate(customer_id=owner.id, titolo="Fattura ricevuta"), ADMIN
@@ -104,7 +89,7 @@ def test_export_xml_serves_the_original_file_for_a_single_invoice_fatturapa_row(
 ) -> None:
     service = _svc(db_session, local_storage)
     content = _fixture(CONSULENZA)
-    customer = _customer(db_session, partita_iva=CLIENTE_PIVA)
+    customer = make_customer_with_address(db_session, partita_iva=CLIENTE_PIVA)
     document_id = _document(db_session, local_storage, content, owner=customer)
     invoice = _confirm_single(service, document_id, customer_id=customer.id)
     expected_digest = hashlib.sha256(content).hexdigest()
@@ -133,7 +118,7 @@ def test_export_xml_is_idempotent_and_never_writes_a_second_version(
 ) -> None:
     service = _svc(db_session, local_storage)
     content = _fixture(CONSULENZA)
-    customer = _customer(db_session, partita_iva=CLIENTE_PIVA)
+    customer = make_customer_with_address(db_session, partita_iva=CLIENTE_PIVA)
     document_id = _document(db_session, local_storage, content, owner=customer)
     invoice = _confirm_single(service, document_id, customer_id=customer.id)
 
@@ -154,7 +139,7 @@ def test_export_xml_refuses_a_batch_sourced_fatturapa_row_exactly_as_before(
     way regardless of batch size -- still has nothing on file to serve back."""
     service = _svc(db_session, local_storage)
     content = _fixture(LOTTO)
-    customer = _customer(db_session, partita_iva=CLIENTE_PIVA)
+    customer = make_customer_with_address(db_session, partita_iva=CLIENTE_PIVA)
     document_id = _document(db_session, local_storage, content, owner=customer)
     rows = service.confirm_import(document_id, ADMIN, customer_id=customer.id)
     assert len(rows) == 2
@@ -179,7 +164,7 @@ def test_export_xml_still_refuses_an_esterno_row_exactly_as_before(
     from decimal import Decimal
 
     service = _svc(db_session, local_storage)
-    customer = _customer(db_session)
+    customer = make_customer_with_address(db_session)
     row = Invoice(
         customer_id=customer.id,
         tipo="fattura",
@@ -210,7 +195,7 @@ def test_export_xml_refuses_a_fatturapa_row_whose_stored_file_no_longer_matches_
     regenerate from and repair with, unlike the native path's own `_store_artifact`."""
     service = _svc(db_session, local_storage)
     content = _fixture(CONSULENZA)
-    customer = _customer(db_session, partita_iva=CLIENTE_PIVA)
+    customer = make_customer_with_address(db_session, partita_iva=CLIENTE_PIVA)
     document_id = _document(db_session, local_storage, content, owner=customer)
     invoice = _confirm_single(service, document_id, customer_id=customer.id)
 

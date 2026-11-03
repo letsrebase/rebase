@@ -400,7 +400,7 @@ def test_identity_logout_is_idempotent_with_a_garbage_cookie(spaces_client: Test
 def test_the_identity_cookie_mint_never_fails_a_login_when_the_registry_is_unreachable(
     spaces_client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    import pigrocrm_api.routers.auth as auth_module
+    import pigrocrm_api.sessions as sessions_module
 
     _sign_up_and_verify(spaces_client)
     collaborator = spaces_client.post(
@@ -422,7 +422,7 @@ def test_the_identity_cookie_mint_never_fails_a_login_when_the_registry_is_unrea
         def upsert_and_issue(self, email: str) -> str | None:
             raise SQLAlchemyError("registro non raggiungibile")
 
-    monkeypatch.setattr(auth_module, "IdentityService", _BrokenIdentityService)
+    monkeypatch.setattr(sessions_module, "IdentityService", _BrokenIdentityService)
 
     response = spaces_client.post(
         f"/{SLUG}/api/auth/login", json={"email": "c@identita.it", "password": "lunghissima1"}
@@ -539,6 +539,22 @@ def test_enter_requires_a_live_identity_cookie(spaces_client: TestClient) -> Non
 def test_enter_answers_404_for_a_slug_nobody_registered(spaces_client: TestClient) -> None:
     _sign_up_and_verify(spaces_client)
     assert spaces_client.post("/api/identity/enter/questo-spazio-non-esiste").status_code == 404
+
+
+def test_enter_is_throttled_per_client(
+    spaces_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A live identity can try slugs, but not at line rate: past the budget the answer is
+    a 429 with a `Retry-After`. The budget is pinned small so a slow machine's refill
+    cannot make the count flaky."""
+    budget = 3
+    monkeypatch.setattr("pigrocrm_api.routers.identity.IDENTITY_ENTER_REQUESTS_PER_MINUTE", budget)
+    _sign_up_and_verify(spaces_client)
+    for _ in range(budget):
+        assert spaces_client.post("/api/identity/enter/questo-spazio-non-esiste").status_code == 404
+    refused = spaces_client.post("/api/identity/enter/questo-spazio-non-esiste")
+    assert refused.status_code == 429, refused.text
+    assert refused.headers["Retry-After"] == "60"
 
 
 def test_enter_answers_404_for_a_space_with_no_row_for_this_email_and_creates_none(

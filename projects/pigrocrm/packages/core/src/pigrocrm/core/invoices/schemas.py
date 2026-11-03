@@ -37,24 +37,9 @@ InvoiceStato = Literal["bozza", "emessa", "annullata", "confermata", "consumata"
 StatoPagamento = Literal["da_incassare", "incassato"]
 ArtifactKind = Literal["pdf", "xml"]
 
-# Two state machines share one column, so the legal pairs are declared once here and
-# enforced as a table `CHECK` in the migration. A convention in the service would
-# leave `stato = 'consumata'` reachable on a `fattura` from any other write path.
-ALLOWED_STATI: dict[str, frozenset[str]] = {
-    "fattura": frozenset({"bozza", "emessa", "annullata"}),
-    "proforma": frozenset({"bozza", "confermata", "consumata"}),
-}
-
-# Transitions, as a table rather than a chain of `if`s -- the same shape
-# `documents/service.py::OFFER_TRANSITIONS` already uses, and read by the UI to decide
-# which buttons exist. `emessa`, `annullata` and `consumata` are terminal.
-STATO_TRANSITIONS: dict[str, frozenset[str]] = {
-    "bozza": frozenset({"emessa", "confermata"}),
-    "confermata": frozenset({"consumata"}),
-    "emessa": frozenset({"annullata"}),
-    "annullata": frozenset(),
-    "consumata": frozenset(),
-}
+# Two state machines share one column: the legal `(tipo, stato)` pairs are the table
+# `CHECK` `ck_invoices_tipo_stato` (`invoices/models.py`), so `stato = 'consumata'` is not
+# reachable on a `fattura` from any write path.
 
 SNAPSHOT_VERSIONE = 1
 TIPO_DOCUMENTO = "TD01"

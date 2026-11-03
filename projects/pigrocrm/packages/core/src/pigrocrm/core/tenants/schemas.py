@@ -9,7 +9,9 @@ from pigrocrm.core.validation import SafeStr
 
 # Lowercase, 3 to 32 characters, letters, digits and hyphens, never a hyphen at either
 # end. Doubles as a Postgres identifier after `-` -> `_`, and as a URL segment as is.
-SLUG_PATTERN = re.compile(r"^[a-z0-9](?:[a-z0-9-]{1,30}[a-z0-9])$")
+# Unanchored on purpose: always `fullmatch`, because `$` accepts a trailing newline and a
+# slug `abc\n` would then name a database no request can route to (B-03).
+SLUG_PATTERN = re.compile(r"[a-z0-9](?:[a-z0-9-]{1,30}[a-z0-9])")
 SLUG_MIN = 3
 SLUG_MAX = 32
 
@@ -53,7 +55,7 @@ def validate_slug(slug: str) -> str | None:
         return f"il nome deve avere almeno {SLUG_MIN} caratteri"
     if len(slug) > SLUG_MAX:
         return f"il nome può avere al massimo {SLUG_MAX} caratteri"
-    if not SLUG_PATTERN.match(slug):
+    if not SLUG_PATTERN.fullmatch(slug):
         return "solo lettere minuscole, cifre e trattini, senza trattini all'inizio o alla fine"
     if slug in RESERVED_SLUGS:
         return "questo nome è riservato"

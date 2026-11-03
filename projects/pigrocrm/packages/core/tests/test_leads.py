@@ -377,20 +377,29 @@ def test_an_explicit_deal_is_linked_with_an_activity_and_nothing_is_created(door
         assert (_count(space, Customer), _count(space, Person), _count(space, Deal)) == counts
         deal = space.get(Deal, deal_id)
         assert deal is not None
-        # The deal's own note is left as it was; only the reference is added.
-        assert texts(space, "deal", deal_id) == ["Trattativa in corso con Rossi."]
+        # The deal's own note is left as it was; the request's sentence is added to the
+        # thread after it (written by rebase), and the reference with it.
+        assert texts(space, "deal", deal_id) == [
+            "Trattativa in corso con Rossi.",
+            "Richiesta dell'azienda: cerca uno sviluppatore backend.",
+        ]
         assert deal.rebase_refs == [lead_marker(request_id)]
         linked = space.scalars(select(Activity).where(Activity.kind == KIND_LINKED)).all()
         assert [(a.entity_type, a.entity_id, a.actor_type) for a in linked] == [
             ("deal", deal_id, "rebase")
         ]
         assert linked[0].payload["richiesta"] == str(request_id)
+        # The prospect's free text lives in the thread only: editing or deleting the note
+        # leaves no copy in the append-only timeline.
+        assert "nota" not in linked[0].payload
+        assert "cerca uno sviluppatore" not in str(linked[0].payload)
 
     # A retry of the link finds the marker and records nothing more.
     again = door.service().file(request_id, _body(deal_id=str(deal_id)))
     assert again.creato is False and again.deal_id == deal_id
     with _space(door) as space:
         assert len(space.scalars(select(Activity).where(Activity.kind == KIND_LINKED)).all()) == 1
+        assert len(texts(space, "deal", deal_id)) == 2, "the note is not added twice"
     # And the request without the deal id finds the same deal by its marker.
     plain = door.service().file(request_id, _body())
     assert plain.creato is False and plain.deal_id == deal_id

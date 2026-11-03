@@ -45,7 +45,7 @@ FIELD = "corpo_markdown"
 #   verbatim_inline -- any other inline code span, the span form of `verbatim_fence`.
 #   url             -- ](...) , a Markdown link or image destination.
 #
-# `verbatim_fence`/`verbatim_inline` exist for fix round 1, items 2-3: Pandoc does not
+# `verbatim_fence`/`verbatim_inline` exist because Pandoc does not
 # markdown-escape-process the content of a code span or a fenced/indented code block
 # at all (a backslash there is not consumed as an escape the way it is everywhere
 # else -- confirmed live: escape_markdown's output inside a plain ```python fence
@@ -139,7 +139,7 @@ _SEGMENT_RE = re.compile(
 
 _TOKEN_RE = re.compile(r"\{\{(?P<body>.*?)\}\}", re.DOTALL)
 
-# Fix round 1, item 2: a placeholder that is the *entire* content of a Typst
+# A placeholder that is the *entire* content of a Typst
 # string-literal function argument -- `#link("{{u}}")`, `#text("{{n}}")`, the
 # reviewer's own two examples -- needs escape_typst_string (escaping.py), not
 # escape_typst: the latter is correct for markup position, but a Typst string
@@ -279,7 +279,7 @@ class _Frame:
 # Pandoc's own lazy-continuation handling absorbs it either way. Pandoc copies a
 # raw block through to the Typst writer verbatim, line for line, so this survives
 # into the intermediate .typ file -- which is what lets a later stage
-# (render/diagnostics.py, not built yet) turn a Typst compiler error at
+# (render/diagnostics.py) turn a Typst compiler error at
 # "intermediate.typ:57" into "riga 12 del template" by arithmetic rather than by
 # guessing. `//` is a Typst line comment: the marker produces no output of its own.
 #
@@ -306,7 +306,7 @@ def _resume_marker(text: str, tag_line: int) -> str:
     block-structural token (`#if`/`#each` opening, `else`, or a `/if`/`/each`
     close) consumed at template line `tag_line`, inside a typst fence.
 
-    Fix round 1, item 1: the fence-open marker alone gives a diagnostics mapper a
+    The fence-open marker alone gives a diagnostics mapper a
     single anchor plus "count newlines from here" -- which is exactly wrong the
     moment a branch is skipped (its lines vanish from the render but the template
     still had them) or a loop body repeats (its lines multiply). Re-anchoring here,
@@ -342,86 +342,90 @@ def parse_template(source: str) -> tuple[Node, ...]:
     stack: list[_Frame] = [root]
 
     for seg in segment(source):
-        if seg.context == "verbatim":
-            # Deliberately "do not substitute at all", not "substitute unescaped":
-            # this segment's text is exactly what a plain code span or fenced code
-            # block contains, backticks included, and *nothing* escapes it before
-            # Pandoc reads it -- Pandoc's own reader does not run markdown-escape
-            # processing inside verbatim content, only this parser's segmentation
-            # decides the boundary. A raw customer value could itself contain the
-            # same backtick run that delimits the span, which would end it early and
-            # spill whatever follows back into interpreted Markdown or Typst -- the
-            # exact class of boundary break this module exists to prevent, not
-            # reproduce with a narrower excuse. Treating the whole segment as one
-            # opaque TextNode means a `{{placeholder}}` written inside a code
-            # example stays literal in the rendered document (visible, not deleted,
-            # not substituted) -- confusing if an author did not mean to do that, but
-            # never a value landing where it can break the surrounding delimiter.
-            if seg.text:
-                stack[-1].emit(TextNode(seg.text))
-            continue
-        text = seg.text
-        # Computed here, not in the renderer: counting newlines *within* a single
-        # TextNode's own string, with no visibility into how many lines came before
-        # it in the wider document, is wrong for any fence that is not the first
-        # thing in the template -- this segment's `seg.line` is already the true
-        # line, carried all the way from `segment()`'s own full-document scan.
-        marked = seg.context == "typst" and "\n" in text
-        if marked:
-            text = _insert_typst_line_marker(text, seg.line + 1)
-        # Re-armed after every block-structural token consumed inside a typst
-        # segment (see `_resume_marker`); `None` means "nothing to re-anchor",
-        # i.e. either no block token has fired yet in this segment, or the most
-        # recent one was already applied to the text that followed it.
-        pending_resume_line: int | None = None
-        cursor = 0
-        for match in _TOKEN_RE.finditer(text):
-            if match.start() > cursor:
-                gap = text[cursor : match.start()]
-                if pending_resume_line is not None:
-                    gap = _resume_marker(gap, pending_resume_line)
-                    pending_resume_line = None
-                stack[-1].emit(TextNode(gap))
-            # The marker inserts one whole extra line before every placeholder that
-            # can occur in this segment -- never on the fence's own opening line,
-            # since the grammar requires a literal newline right after the
-            # attribute brace, leaving no room for a placeholder there -- so it must
-            # be subtracted back out to report the template's own line, not the
-            # marker-shifted one.
-            line = seg.line + text.count("\n", 0, match.start()) - (1 if marked else 0)
-            # `.strip(" \t")`, never a bare `.strip()`: a bare strip removes a
-            # trailing "\n" along with the spaces, which is exactly the P.IVA-shaped
-            # mistake `_PATH_RE`'s own `fullmatch` comment warns about, just moved one
-            # call earlier -- `{{a\n}}` would reach `_parse_path` already reduced to
-            # the valid path "a", the newline discarded before `fullmatch` ever saw
-            # it. Stripping only horizontal whitespace keeps `{{ cliente.nome }}`
-            # ergonomic for whoever writes templates while leaving an embedded
-            # newline in place for the checks below to reject.
-            body = match.group("body").strip(" \t")
-            # Fix round 1, item 2: a placeholder that is the entire content of a
-            # Typst string-literal argument -- `#link("{{u}}")` -- gets the
-            # narrower "typst_string" context instead of "typst" (markup). See
-            # `_is_typst_string_literal_argument`'s own comment for what this
-            # does and does not catch, and why.
-            effective_context = seg.context
-            if seg.context == "typst" and _is_typst_string_literal_argument(
-                text, match.start(), match.end()
-            ):
-                effective_context = "typst_string"
-            is_structural = _consume_token(stack, body, line, effective_context)
-            if seg.context == "typst" and is_structural:
-                pending_resume_line = line
-            cursor = match.end()
-        if cursor < len(text):
-            tail = text[cursor:]
-            if pending_resume_line is not None:
-                tail = _resume_marker(tail, pending_resume_line)
-            stack[-1].emit(TextNode(tail))
+        _parse_segment(stack, seg)
 
     if len(stack) > 1:
         open_frame = stack[-1]
         _fail(open_frame.line, f"blocco {{{{#{open_frame.kind}}}}} non chiuso")
     return tuple(root.children)
+
+
+def _parse_segment(stack: list[_Frame], seg: Segment) -> None:
+    """One segment of the template, emitted into the frame on top of `stack`."""
+    if seg.context == "verbatim":
+        # Deliberately "do not substitute at all", not "substitute unescaped":
+        # this segment's text is exactly what a plain code span or fenced code
+        # block contains, backticks included, and *nothing* escapes it before
+        # Pandoc reads it -- Pandoc's own reader does not run markdown-escape
+        # processing inside verbatim content, only this parser's segmentation
+        # decides the boundary. A raw customer value could itself contain the
+        # same backtick run that delimits the span, which would end it early and
+        # spill whatever follows back into interpreted Markdown or Typst -- the
+        # exact class of boundary break this module exists to prevent, not
+        # reproduce with a narrower excuse. Treating the whole segment as one
+        # opaque TextNode means a `{{placeholder}}` written inside a code
+        # example stays literal in the rendered document (visible, not deleted,
+        # not substituted) -- confusing if an author did not mean to do that, but
+        # never a value landing where it can break the surrounding delimiter.
+        if seg.text:
+            stack[-1].emit(TextNode(seg.text))
+        return
+    text = seg.text
+    # Computed here, not in the renderer: counting newlines *within* a single
+    # TextNode's own string, with no visibility into how many lines came before
+    # it in the wider document, is wrong for any fence that is not the first
+    # thing in the template -- this segment's `seg.line` is already the true
+    # line, carried all the way from `segment()`'s own full-document scan.
+    marked = seg.context == "typst" and "\n" in text
+    if marked:
+        text = _insert_typst_line_marker(text, seg.line + 1)
+    # Re-armed after every block-structural token consumed inside a typst
+    # segment (see `_resume_marker`); `None` means "nothing to re-anchor",
+    # i.e. either no block token has fired yet in this segment, or the most
+    # recent one was already applied to the text that followed it.
+    pending_resume_line: int | None = None
+    cursor = 0
+    for match in _TOKEN_RE.finditer(text):
+        if match.start() > cursor:
+            gap = text[cursor : match.start()]
+            if pending_resume_line is not None:
+                gap = _resume_marker(gap, pending_resume_line)
+                pending_resume_line = None
+            stack[-1].emit(TextNode(gap))
+        # The marker inserts one whole extra line before every placeholder that
+        # can occur in this segment -- never on the fence's own opening line,
+        # since the grammar requires a literal newline right after the
+        # attribute brace, leaving no room for a placeholder there -- so it must
+        # be subtracted back out to report the template's own line, not the
+        # marker-shifted one.
+        line = seg.line + text.count("\n", 0, match.start()) - (1 if marked else 0)
+        # `.strip(" \t")`, never a bare `.strip()`: a bare strip removes a
+        # trailing "\n" along with the spaces, which is exactly the P.IVA-shaped
+        # mistake `_PATH_RE`'s own `fullmatch` comment warns about, just moved one
+        # call earlier -- `{{a\n}}` would reach `_parse_path` already reduced to
+        # the valid path "a", the newline discarded before `fullmatch` ever saw
+        # it. Stripping only horizontal whitespace keeps `{{ cliente.nome }}`
+        # ergonomic for whoever writes templates while leaving an embedded
+        # newline in place for the checks below to reject.
+        body = match.group("body").strip(" \t")
+        # A placeholder that is the entire content of a Typst string-literal
+        # argument -- `#link("{{u}}")` -- gets the narrower "typst_string" context
+        # instead of "typst" (markup). See `_is_typst_string_literal_argument`'s own
+        # comment for what this does and does not catch, and why.
+        effective_context = seg.context
+        if seg.context == "typst" and _is_typst_string_literal_argument(
+            text, match.start(), match.end()
+        ):
+            effective_context = "typst_string"
+        is_structural = _consume_token(stack, body, line, effective_context)
+        if seg.context == "typst" and is_structural:
+            pending_resume_line = line
+        cursor = match.end()
+    if cursor < len(text):
+        tail = text[cursor:]
+        if pending_resume_line is not None:
+            tail = _resume_marker(tail, pending_resume_line)
+        stack[-1].emit(TextNode(tail))
 
 
 def _consume_token(stack: list[_Frame], body: str, line: int, context: RenderContext) -> bool:

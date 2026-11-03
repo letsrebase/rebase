@@ -22,10 +22,8 @@ class Deal(Base, PrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
     caller does not supply one, so no deal is ever without a stage.
 
     Both foreign key column names are load-bearing beyond this module:
-    `CustomerRepository.count_active_deals` and `PipelineRepository.
-    count_deals_in_stage` already query this table by name through `Base.metadata`
-    (Tasks 10 and 9, written before this table existed) and raise `RuntimeError` if
-    they find it without exactly these column names.
+    `CustomerRepository.count_active_deals` and `PipelineRepository.count_deals_in_stage`
+    name them as columns of a bare `deals` table, which a rename would break at run time.
 
     `ore_preventivate`/`valore_preventivato` are written now but not read until the
     slice 4 estimate-vs-actual report -- costs nothing today, and backfilling a
@@ -84,7 +82,7 @@ class Deal(Base, PrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
     valore_previsto: Mapped[Decimal | None] = mapped_column(Numeric(12, 2), default=None)
     probabilita: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     data_chiusura_prevista: Mapped[date | None] = mapped_column(Date, default=None)
-    owner_id: Mapped[UUID | None] = mapped_column(ForeignKey("users.id"), default=None)
+    owner_id: Mapped[UUID | None] = mapped_column(ForeignKey("users.id"), default=None, index=True)
     # The references a request or a match of rebase's engagements door left on this deal
     # (`rebase:request=<uuid>`, `rebase:match=<uuid>`): the keys a retry finds the deal
     # again by (`DealRepository.find_by_rebase_ref`). They were the last line of the free

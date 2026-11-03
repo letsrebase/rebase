@@ -30,7 +30,7 @@ from pigrocrm.core.auth.service import UserService
 from pigrocrm.core.config import Settings, get_settings
 from pigrocrm.core.mail import MailState, RecordingSender
 from pigrocrm_api.ratelimit import REQUESTS_PER_MINUTE
-from pigrocrm_api.routers.auth import get_sender
+from pigrocrm_api.sessions import get_sender
 
 PUBLIC_URL = "https://pigro.test"
 INVITED = "nuova@pigro.it"

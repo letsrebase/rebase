@@ -9,7 +9,7 @@ Three things the previous system got wrong and this module exists to get right:
 3. It could not tell `invalid_grant` from a transient failure, so a revoked token and
    a flaky network produced the same screen and the same wrong reaction.
 
-Only the refresh token is persisted, and only encrypted (`gmail/crypto.py`). An access
+Only the refresh token is persisted, and only encrypted (`core/crypto.py`). An access
 token is valid for an hour; persisting it would add a second secret to protect for no
 gain.
 
@@ -125,7 +125,7 @@ class GoogleTokenClient:
         # Monotonic, not wall clock: an NTP step backwards must not extend a token's
         # apparent life, and a step forwards must not expire every cached token at
         # once. This is the one clock in this codebase that is deliberately not
-        # `clock.oggi_in_italia()` -- a token's remaining life is a duration, not a
+        # `clock.today_local()` -- a token's remaining life is a duration, not a
         # date, and no timezone or calendar is involved in measuring it.
         self._clock = clock
         self._cache: dict[UUID, _CachedToken] = {}

@@ -11,8 +11,7 @@ from pigrocrm_mcp.context import McpContext
 from pigrocrm_mcp.tools import (
     work_units,
 )
-from pigrocrm_mcp.tools.invoices import parse_legal_entity_id
-from pigrocrm_mcp.tools.params import IsoDateStr
+from pigrocrm_mcp.tools.params import IsoDateStr, parse_legal_entity_id
 
 
 def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> None:
@@ -20,7 +19,7 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
     #
     # An agent reads days and proposes them; it never records or moves one. The four
     # writes are refused to an agent credential, over REST as well
-    # (`AGENT_FORBIDDEN_ACTIONS`, `test_mcp_surface_coverage.py`).
+    # (`FULL_ACCESS_ACTIONS`, `test_mcp_surface_coverage.py`).
 
     @mcp.tool(annotations=READ_ONLY)
     @guard

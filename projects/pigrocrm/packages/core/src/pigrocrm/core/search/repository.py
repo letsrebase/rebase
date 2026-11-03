@@ -11,25 +11,27 @@ the browser: composing "nome cognome" client-side is business logic in the front
 the whole point of the two-adapter architecture is that an MCP agent sees the same label a
 human does.
 
-The floor is applied by repeating the score expression in `WHERE`, not by wrapping the
-query in a subquery. Postgres cannot reference a select alias in `WHERE`, and the extra
-evaluation costs nothing: `matches_any` has already narrowed the row set through the
-trigram index, which is the only place a plan could go wrong.
+Every field of a row is scored **once**, in a subquery (`_matches`): `matches_any` narrows
+the rows there through the trigram index, the subquery's `OFFSET 0` keeps Postgres from
+folding it back into the outer query, where the score would be evaluated again for the
+floor, for the order and for the column that names the best field, and the floor, the
+order and the page are applied outside it over the computed columns.
 
-The count and the hits are two queries over **one** predicate, written once in
-`_predicate` and used by both. A card and its drill-through are the same calculation
+The count and the hits are two queries over **one** set of matches, built once in
+`_matches` and used by both. A card and its drill-through are the same calculation
 (Global Constraints); two hand-copied `where` clauses are how they stop being one.
 """
 
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
+from dataclasses import dataclass
 from decimal import Decimal
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import ColumnElement, Select, func, literal, select
-from sqlalchemy.orm import Session
+from sqlalchemy import ColumnElement, Select, Subquery, func, literal, select
+from sqlalchemy.orm import Session, aliased
 
 from pigrocrm.core.attivita.models import Attivita
 from pigrocrm.core.customers.models import Customer
@@ -53,9 +55,10 @@ from pigrocrm.core.search.scoring import (
     WEIGHT_EMAIL,
     WEIGHT_IDENTIFYING,
     ScoredField,
-    best_field,
+    combine_scores,
+    field_scores,
     matches_any,
-    row_score,
+    pick_field,
 )
 
 # Spec §8.1's searched surface, one tuple per entity. Declaration order is load-bearing
@@ -106,35 +109,52 @@ def _own(model: Any, azienda_id: UUID | None) -> Scope:
     return () if azienda_id is None else (model.azienda_id == azienda_id,)
 
 
+@dataclass(frozen=True)
+class _Matches:
+    """The rows one search finds. `rows` is the entity's columns with one score column per
+    field, `punteggio` the row's score over them and `keep` the floor."""
+
+    rows: Subquery
+    scores: Sequence[ColumnElement[Decimal]]
+    punteggio: ColumnElement[Decimal]
+
+    @property
+    def keep(self) -> ColumnElement[bool]:
+        return self.punteggio >= SCORE_FLOOR
+
+
 class SearchRepository:
     def __init__(self, session: Session) -> None:
         self.session = session
 
     # -- shared plumbing -------------------------------------------------------
 
-    def _predicate(
+    def _matches(
         self,
         model: _Model,
         fields: Sequence[ScoredField],
         term: str,
         scope: Scope = (),
-    ) -> tuple[ColumnElement[bool], ...]:
-        """What a search result *is*, written once.
+    ) -> _Matches:
+        """What a search result *is*, written once, with every field scored once.
 
         Three clauses, and each is load-bearing. `deleted_at IS NULL` because a soft
         delete is a delete as far as a reader is concerned. `matches_any` because it is
         the indexable half -- the one the nine partial trigram indexes serve. The floor
-        because the tail of a trigram match is noise, and a palette that shows noise
-        teaches the user to ignore the palette.
+        (`_Matches.keep`, applied by the caller) because the tail of a trigram match is
+        noise, and a palette that shows noise teaches the user to ignore the palette.
         """
         # `scope` is the azienda's own clause when a search is narrowed to one (REB-623):
-        # a fourth clause on the same predicate, so the page and the count agree on it.
-        return (
-            model.deleted_at.is_(None),
-            matches_any(fields, term),
-            row_score(fields, term) >= SCORE_FLOOR,
-            *scope,
+        # a clause of the same set of matches, so the page and the count agree on it.
+        rows = (
+            select(model, *field_scores(fields, term))
+            .where(model.deleted_at.is_(None), matches_any(fields, term), *scope)
+            # The fence: a subquery with an `OFFSET` is not pulled up into its parent.
+            .offset(0)
+            .subquery("matched")
         )
+        scores = [rows.c[f"score_{field.name}"] for field in fields]
+        return _Matches(rows, scores, combine_scores(scores))
 
     def _count(
         self, model: _Model, fields: Sequence[ScoredField], term: str, scope: Scope = ()
@@ -145,10 +165,11 @@ class SearchRepository:
         once it has 201 rows, so the cost is bounded no matter how many rows match, and
         the answer is exact whenever exactness is what is being shown.
         """
+        matches = self._matches(model, fields, term, scope)
         inner = (
             select(literal(1))
-            .select_from(model)
-            .where(*self._predicate(model, fields, term, scope))
+            .select_from(matches.rows)
+            .where(matches.keep)
             .limit(COUNT_CEILING + 1)
             .subquery()
         )
@@ -172,13 +193,15 @@ class SearchRepository:
         checks twenty runs for a byte-identical response. The second key is §8.5's own --
         at equal score, what was touched most recently is more likely what is wanted.
         """
+        matches = self._matches(model, fields, term, scope)
+        found = aliased(model, matches.rows)
         return (
-            select(model, row_score(fields, term), best_field(fields, term))
-            .where(*self._predicate(model, fields, term, scope))
+            select(found, matches.punteggio, pick_field(fields, matches.scores))
+            .where(matches.keep)
             .order_by(
-                row_score(fields, term).desc(),
-                model.updated_at.desc(),
-                model.id.desc(),
+                matches.punteggio.desc(),
+                found.updated_at.desc(),
+                found.id.desc(),
             )
             .limit(limit)
         )

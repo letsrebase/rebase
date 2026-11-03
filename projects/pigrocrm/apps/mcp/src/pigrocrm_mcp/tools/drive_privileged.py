@@ -97,7 +97,7 @@ DriveDocumentTipo = Literal["offerta", "contratto", "fattura", "documento"]
 # reaches `import_bytes` as the `text/plain` its export produces.
 #
 # Checked on the metadata, before `read_bytes`, and that ordering is the whole point.
-# `_check_upload` would refuse the same file a moment later, but only after a 900 MB
+# `DocumentUploads.check_upload` would refuse the same file a moment later, but only after a 900 MB
 # `.mov` had been pulled through this process and buffered whole in memory
 # (`DriveTransport` reads a response in one `read()`) -- the titolare's bandwidth and
 # Drive quota spent to reach a refusal that was decidable from one `files.get`. The

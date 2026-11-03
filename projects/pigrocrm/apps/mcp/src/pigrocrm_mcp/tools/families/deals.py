@@ -13,13 +13,13 @@ from pigrocrm_mcp.context import McpContext
 from pigrocrm_mcp.tools import (
     deals,
 )
-from pigrocrm_mcp.tools.invoices import parse_legal_entity_id
 from pigrocrm_mcp.tools.params import (
     BoundedLimit,
     DealChanges,
     IsoDateStr,
     OptionalMoney,
     OptionalProbabilita,
+    parse_legal_entity_id,
 )
 
 

@@ -26,9 +26,7 @@ type Availability =
 /** What the hub and the registry said about the address typed at step 1. */
 interface Member {
   membro: boolean
-  nome: string | null
-  cognome: string | null
-  spazi: number
+  has_spaces: boolean
 }
 
 const TERMINI = 'https://letsrebase.com/terms'
@@ -88,11 +86,6 @@ export function SignupPage({ go = (url) => window.location.assign(url) }: { go?:
   // PR #425). Irrelevant outside the fast path -- `canCreate` below only consults it
   // while `fastPathActive` is true.
   const [memberSettled, setMemberSettled] = useState(false)
-  // Whether `nome` carries anything the person (or this page) put there, read fresh by
-  // the fast path's background lookup below -- unlike `nome === ''`, which a one-time
-  // mount effect would see through the closure it was created with (empty, always),
-  // never what is on screen once the request actually answers.
-  const nomeTouched = useRef(false)
   // Set once the person explicitly leaves the fast path (`backToEmail`), including
   // while its background lookup is still in flight. Two flags, not one: `left` is
   // read during render (below), which a ref may never be (`react-hooks/refs`);
@@ -167,17 +160,14 @@ export function SignupPage({ go = (url) => window.location.assign(url) }: { go?:
 
   // The name proposes the address until the person edits the address by hand.
   function onNomeChange(value: string) {
-    nomeTouched.current = value !== ''
     setNome(value)
     if (!slugTouched) setSlug(slugify(value))
   }
 
-  // The fast path skips straight to the name step, but the hub's answer (the
-  // proposed name, the `membro` flag the create call sends) still matters: fetched
-  // here in the background rather than blocking the form on it. `nomeTouched` is
-  // read fresh at resolution time so a name the person already started typing is
-  // never clobbered by a slow answer landing after them, and `memberSettled` keeps
-  // the create button off until this settles one way or the other.
+  // The fast path skips straight to the name step, but the hub's answer (the `membro`
+  // flag the create call sends) still matters: fetched here in the background rather
+  // than blocking the form on it, and `memberSettled` keeps the create button off until
+  // this settles one way or the other.
   useEffect(() => {
     if (!fastPathActive || !handoffEmail) return
     const address = handoffEmail
@@ -186,13 +176,9 @@ export function SignupPage({ go = (url) => window.location.assign(url) }: { go?:
       .then(({ data }) => {
         if (!data || fastPathCancelled.current) return
         setMember(data)
-        if (nomeTouched.current) return
-        const proposed = [data.nome, data.cognome].filter(Boolean).join(' ')
-        if (proposed) onNomeChange(proposed)
       })
       .catch(() => {})
       .finally(() => setMemberSettled(true))
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- onNomeChange is a plain function redefined every render; this must fire only when the fast path (re)activates or the lookup's own email changes, not on every render
   }, [fastPathActive, handoffEmail])
 
   async function onEmailNext(event: FormEvent) {
@@ -204,11 +190,7 @@ export function SignupPage({ go = (url) => window.location.assign(url) }: { go?:
       const answer = await unwrap(api.POST('/api/tenants/member', { body: { email: address } }))
       setEmail(address)
       setMember(answer)
-      // The member's name proposes the space's name, whichever screen comes next: whoever
-      // owns a space and still wants another finds it written too.
-      const proposed = [answer.nome, answer.cognome].filter(Boolean).join(' ')
-      if (proposed && nome === '') onNomeChange(proposed)
-      setScreen(answer.spazi > 0 ? 'owner' : 'name')
+      setScreen(answer.has_spaces ? 'owner' : 'name')
     } catch (caught) {
       setError(toProblem(caught).detail)
     } finally {
@@ -294,10 +276,10 @@ export function SignupPage({ go = (url) => window.location.assign(url) }: { go?:
                 ? '1 di 2. Un PigroCRM tutto tuo, con i tuoi dati in un database separato.'
                 : fastPathActive
                   ? member?.membro
-                    ? `Sei dei nostri${member.nome ? `: ciao ${member.nome}` : ''}.`
+                    ? 'Sei dei nostri.'
                     : 'Come si chiama il nuovo spazio?'
                   : member?.membro
-                    ? `2 di 2. Sei dei nostri${member.nome ? `: ciao ${member.nome}` : ''}.`
+                    ? '2 di 2. Sei dei nostri.'
                     : '2 di 2. Come si chiama il tuo spazio?'}
           </CardDescription>
         </CardHeader>

@@ -176,7 +176,7 @@ def test_export_of_a_non_google_doc_is_refused_with_400() -> None:
     with pytest.raises(Conflict) as excinfo:
         transport.bytes("GET", _export_url(ids["a_pdf"]), what="export a.pdf")
 
-    assert excinfo.value.details["status"] == 400
+    assert excinfo.value.details["upstream_status"] == 400
 
 
 def test_a_contains_clause_is_refused_outright() -> None:
@@ -201,4 +201,4 @@ def test_unknown_id_is_404() -> None:
     with pytest.raises(Conflict) as excinfo:
         transport.json("GET", _metadata_url("does-not-exist"), what="get missing file")
 
-    assert excinfo.value.details["status"] == 404
+    assert excinfo.value.details["upstream_status"] == 404

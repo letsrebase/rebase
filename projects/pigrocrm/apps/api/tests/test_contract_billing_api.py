@@ -149,7 +149,7 @@ def test_the_register_json_csv_and_pdf_agree_on_the_month(
     assert csv.status_code == 200, csv.text
     assert csv.headers["content-type"].startswith("text/csv")
     assert (
-        'filename="registro-giornate-2026-10-01-2026-10-31.csv"'
+        "filename*=UTF-8''registro-giornate-2026-10-01-2026-10-31.csv"
         in csv.headers["content-disposition"]
     )
     assert csv.content.startswith(b"\xef\xbb\xbf")

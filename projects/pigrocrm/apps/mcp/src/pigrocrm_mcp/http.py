@@ -41,7 +41,7 @@ from starlette.types import ASGIApp
 
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.auth.pat_service import PAT_PREFIX, PatService
-from pigrocrm.core.config import Settings, get_settings
+from pigrocrm.core.config import Settings, get_settings, require_production_secrets
 from pigrocrm.core.errors import DomainError, ValidationFailed
 from pigrocrm.core.storage import DocumentStorage, LocalFileStorage, storage_from_settings
 from pigrocrm.core.tenants import (
@@ -75,19 +75,21 @@ logger = logging.getLogger(__name__)
 @dataclass
 class _SpaceApp:
     app: ASGIApp
-    overrides: dict[str, str]
+    # The settings this server was built from: the registry hands out the very same object
+    # while the space's rows are unchanged, so `is` asks whether the tools are stale.
+    settings: Settings
     stop: anyio.Event
 
 
 @dataclass(frozen=True)
 class _Authenticated:
     actor: Actor
-    overrides: dict[str, str]
     settings: Settings
 
 
 class McpHttpApp:
     def __init__(self, settings: Settings, *, overrides_ttl: float = OVERRIDES_TTL_SECONDS) -> None:
+        require_production_secrets(settings)
         self._settings = settings
         self._registry = SpaceRegistry(settings, overrides_ttl=overrides_ttl)
         self._spaces: dict[str, _SpaceApp] = {}
@@ -202,8 +204,12 @@ class McpHttpApp:
             space = await self._space_app(slug, auth)
         except DomainError as exc:
             if exc.code == "not_found":
+                # No slug in the line: it is whatever the caller typed.
+                logger.warning("MCP request refused: unknown space")
                 await _json(send, 404, {"detail": SPACE_NOT_FOUND})
             elif exc.code == "validation_failed":
+                # The space is a registered one here. Never the token, never the header.
+                logger.warning("MCP bearer refused, space=%s", slug or _ROOT)
                 await _json(send, 401, {"detail": INVALID_TOKEN}, {"www-authenticate": "Bearer"})
             else:
                 # Never the token: the log line carries the exception, never the header.
@@ -235,27 +241,26 @@ class McpHttpApp:
             # `PatService.resolve` raises, so the caller has one branch.
             raise ValidationFailed("token", "token", INVALID_TOKEN)
         with factory() as session:
-            overrides = self._registry.overrides(slug, session)
             settings = self._registry.effective_settings(slug, session)
             actor = PatService(session, settings=settings).resolve(raw_token)
-            session.commit()  # `resolve` stamps last_used_at
-        return _Authenticated(actor=actor, overrides=overrides, settings=settings)
+            session.commit()  # `resolve` may stamp last_used_at
+        return _Authenticated(actor=actor, settings=settings)
 
     async def _space_app(self, slug: str | None, auth: _Authenticated) -> _SpaceApp:
         key = slug or _ROOT
         current = self._spaces.get(key)
-        if current is not None and current.overrides == auth.overrides:
+        if current is not None and current.settings is auth.settings:
             return current
         async with self._build_lock:
             current = self._spaces.get(key)
-            if current is not None and current.overrides == auth.overrides:
+            if current is not None and current.settings is auth.settings:
                 return current
             if current is not None:
                 # Forgotten *before* it is stopped, and that order is the whole point:
                 # the settings changed, so this server's tool list is stale, but the
                 # build that replaces it can fail (a bad override is exactly what this
                 # path exists for). Left in the dictionary it would be handed to every
-                # later request with these overrides, each one a 500 from a session
+                # later request with these settings, each one a 500 from a session
                 # manager that has stopped. Forgotten, a failed rebuild costs one
                 # request and the next one builds again.
                 self._spaces.pop(key, None)
@@ -273,7 +278,7 @@ class McpHttpApp:
     async def _build(self, slug: str | None, auth: _Authenticated) -> _SpaceApp:
         if self._task_group is None:
             raise RuntimeError("McpHttpApp is not running: enter its lifespan first")
-        provider = ScopedSessionProvider(self._registry.session_factory(slug))
+        provider = ScopedSessionProvider(lambda: self._registry.session_factory(slug))
         storage = _storage_for(slug, auth.settings, provider)
         server = build_server(
             provider,
@@ -305,7 +310,7 @@ class McpHttpApp:
         # that hangs forever holding `_build_lock` -- every later build behind it. anyio
         # re-raises a pre-start failure here instead, and the caller answers with it.
         await self._task_group.start(serve)
-        return _SpaceApp(app=starlette, overrides=auth.overrides, stop=stop)
+        return _SpaceApp(app=starlette, settings=auth.settings, stop=stop)
 
 
 def _storage_for(

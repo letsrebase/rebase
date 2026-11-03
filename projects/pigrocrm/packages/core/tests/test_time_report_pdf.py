@@ -159,7 +159,7 @@ def test_the_pdf_renders_and_contains_the_hostile_description_verbatim(
     produced PDF. The assertion is on the round trip, because the whole point is that
     the value reaches the page as the literal text somebody typed."""
     # The brief's own sample for this test omitted the emitter profile the render
-    # pipeline requires (`DocumentService._template_scope` calls
+    # pipeline requires (`DocumentTemplating.template_scope` calls
     # `LegalEntityService.as_template_values`, which raises `NotFound` with no
     # singleton row) -- every other slice-2 PDF test sets one up
     # (`test_documents_from_template.py`'s `setup` fixture); this one needs it too.
@@ -202,7 +202,7 @@ def test_the_compilation_date_is_italys_own_day_not_the_processs(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """`oggi` is the date printed at the head of the timesheet the client receives next
-    to the invoice, so it is a date in the issuer's calendar -- `clock.py`'s rule, and
+    to the invoice, so it is a date in the issuer's calendar -- `db/clock.py`'s rule, and
     the same rule `_italian_date` already states for every row.
 
     Frozen at 00:30 on 1 January in Rome, which a process running in UTC (the API image

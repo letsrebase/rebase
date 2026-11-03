@@ -38,6 +38,8 @@ GIORNI_PAGAMENTO_MAX = 365
 
 
 class CustomerCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     ragione_sociale: SafeStr = Field(max_length=RAGIONE_SOCIALE_MAX_LENGTH)
     # No `max_length` here, unlike every other fiscal field below: the service's
     # `_check_fiscal` already requires an exact `^\d{11}$` match on every create and

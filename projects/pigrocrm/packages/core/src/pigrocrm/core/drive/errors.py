@@ -24,6 +24,7 @@ build one, so there is no path by which a caller could attach a secret to it.
 from uuid import UUID
 
 from pigrocrm.core.errors import Conflict
+from pigrocrm.core.http import UpstreamUnavailable
 
 DRIVE_ENTITY = "google_drive_account"
 _RECONNECT = "ricollega Drive da Impostazioni → Drive"
@@ -76,20 +77,12 @@ class DriveConsentExpired(Conflict):
         )
 
 
-def drive_unavailable(status: int) -> Conflict:
-    """Transient, after every retry was spent -- the Drive twin of `GmailUnavailable`,
-    and distinct from `DriveCredentialRevoked` precisely because the reaction differs:
-    wait and try again, versus re-consent.
+class DriveUnavailable(UpstreamUnavailable):
+    """Transient, after every retry was spent -- the Drive twin of `GmailUnavailable`, and
+    distinct from `DriveCredentialRevoked` precisely because the reaction differs: wait and
+    try again, versus re-consent. Both call sites (the token refresh in
+    `drive/transport.py` and the code exchange in `drive/oauth.py`) raise it, and the
+    sentence is `UpstreamUnavailable`'s, the same as Gmail's and Slack's."""
 
-    Deliberately a plain `Conflict` under the entity `google_drive` and not a class of
-    its own. Nothing needs to *match* on it -- there is no recovery a caller performs
-    for an outage beyond reporting it -- while both call sites (the token refresh in
-    `drive/transport.py` and the code exchange in `drive/oauth.py`) need the same
-    sentence, and a sentence duplicated in two modules is a sentence that will
-    eventually differ in one of them.
-    """
-    return Conflict(
-        "google_drive",
-        f"Google Drive non ha risposto correttamente (codice {status}). Riprova più tardi",
-        status=status,
-    )
+    def __init__(self, status: int) -> None:
+        super().__init__("google_drive", "Google Drive", status)

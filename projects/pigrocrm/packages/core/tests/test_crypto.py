@@ -1,8 +1,11 @@
+import base64
+
 import pytest
 
 from pigrocrm.core.config import Settings
+from pigrocrm.core.crypto import decode_aes256_key, seal, unseal
 from pigrocrm.core.errors import Conflict
-from pigrocrm.core.gmail.crypto import seal, unseal
+from pigrocrm.core.google.credential import open_refresh_token
 
 KEY = b"k" * 32
 OTHER_KEY = b"j" * 32
@@ -31,9 +34,42 @@ def test_two_seals_of_the_same_token_differ() -> None:
 
 def test_the_wrong_key_is_refused_not_garbled() -> None:
     ciphertext, nonce = seal(TOKEN, KEY)
-    with pytest.raises(Conflict) as caught:
+    with pytest.raises(Conflict):
         unseal(ciphertext, nonce, OTHER_KEY)
+
+
+def test_a_google_refresh_token_that_cannot_be_opened_names_the_google_key() -> None:
+    """`unseal`'s refusal is generic because Slack and the space settings share it; the
+    Google callers get the sentence that tells the operator which variable to check."""
+    ciphertext, nonce = seal(TOKEN, KEY)
+    settings = Settings(
+        jwt_secret="x" * 32,
+        google_token_key=base64.b64encode(OTHER_KEY).decode(),
+        _env_file=None,  # type: ignore[call-arg]
+    )
+    with pytest.raises(Conflict) as caught:
+        open_refresh_token(ciphertext, nonce, settings)
     assert "PIGROCRM_GOOGLE_TOKEN_KEY" in caught.value.message
+
+
+def test_a_google_refresh_token_opens_with_the_configured_key() -> None:
+    ciphertext, nonce = seal(TOKEN, KEY)
+    settings = Settings(
+        jwt_secret="x" * 32,
+        google_token_key=base64.b64encode(KEY).decode(),
+        _env_file=None,  # type: ignore[call-arg]
+    )
+    assert open_refresh_token(ciphertext, nonce, settings) == TOKEN
+
+
+def test_a_key_variable_must_hold_thirty_two_bytes_of_base64() -> None:
+    assert decode_aes256_key(base64.b64encode(KEY).decode(), "SOME_KEY") == KEY
+    for bad in ["", "not-base64!!", base64.b64encode(b"short").decode()]:
+        with pytest.raises(ValueError, match="SOME_KEY") as caught:
+            decode_aes256_key(bad, "SOME_KEY")
+        # The message names the variable and never the value, the cause included.
+        if bad:
+            assert bad not in str(caught.value) + repr(caught.value.__cause__)
 
 
 def test_a_tampered_ciphertext_is_refused() -> None:

@@ -10,9 +10,8 @@ import re
 from uuid import UUID
 
 from pigrocrm.core.errors import ValidationFailed
+from pigrocrm.core.invoices.constants import ENTITY
 from pigrocrm.core.invoices.schemas import MAX_NUMERO
-
-ENTITY = "invoice"
 
 _BASE36_DIGITS = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 _PROGRESSIVO_WIDTH = 5

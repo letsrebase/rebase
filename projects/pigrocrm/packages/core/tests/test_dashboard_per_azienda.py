@@ -24,6 +24,7 @@ from uuid import UUID
 
 import pytest
 from fakes.azienda_fixtures import committed_default_azienda, remove_azienda
+from orologio import fissa_oggi
 from sqlalchemy import Engine, delete, func, select
 from sqlalchemy.orm import Session
 
@@ -55,6 +56,13 @@ ADMIN = Actor(id=None, type="system", role="admin")
 READONLY = Actor(id=uuid7(), type="user", role="readonly")
 _PREFIX = "DUEAZ"
 OGGI = today_local()
+
+
+@pytest.fixture(autouse=True)
+def _pinned_today(monkeypatch: pytest.MonkeyPatch) -> None:
+    fissa_oggi(monkeypatch, OGGI)
+
+
 ANNO = OGGI.year
 # One day of the year every invoice is dated and paid on: inside `ANNO` for the yearly
 # sums, whichever month the suite runs in.

@@ -1,4 +1,3 @@
-import calendar
 from datetime import date, timedelta
 from decimal import Decimal
 from uuid import UUID
@@ -7,7 +6,9 @@ from sqlalchemy import ColumnElement, Select, distinct, func, select
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.dashboard.schemas import DayHours, WeekHours
+from pigrocrm.core.db.clock import month_bounds
 from pigrocrm.core.deals.models import Deal
+from pigrocrm.core.errors import ValidationFailed
 from pigrocrm.core.money import ZERO_HOURS, round_hours, sum_hours
 from pigrocrm.core.pipeline.models import PipelineStage
 from pigrocrm.core.timetracking.models import Cost, TimeEntry
@@ -45,14 +46,6 @@ def won_with_unbilled_hours_predicate() -> tuple[ColumnElement[bool], ...]:
         Deal.deleted_at.is_(None),
         PipelineStage.tipo == "won",
     )
-
-
-def month_bounds(anno: int, mese: int) -> tuple[date, date]:
-    """First and last calendar day of a month, inclusive. Used by the report and by
-    every monthly aggregate, so the boundary arithmetic exists once: `calendar.
-    monthrange` rather than `date(anno, mese + 1, 1) - timedelta(days=1)`, which
-    raises for December."""
-    return date(anno, mese, 1), date(anno, mese, calendar.monthrange(anno, mese)[1])
 
 
 class TimeEntryRepository:
@@ -227,11 +220,18 @@ class TimeEntryRepository:
             stmt = stmt.where(TimeEntry.custom_fields.contains(query.custom))
         if query.cursor is not None:
             anchor = self.session.get(TimeEntry, query.cursor)
-            if anchor is not None:
-                stmt = stmt.where(
-                    (TimeEntry.data < anchor.data)
-                    | ((TimeEntry.data == anchor.data) & (TimeEntry.id < anchor.id))
+            if anchor is None:
+                # Page 1 again would let a client following `next_cursor` loop forever.
+                raise ValidationFailed(
+                    "time_entry",
+                    "cursor",
+                    "cursore sconosciuto",
+                    expected="il cursore di una pagina",
                 )
+            stmt = stmt.where(
+                (TimeEntry.data < anchor.data)
+                | ((TimeEntry.data == anchor.data) & (TimeEntry.id < anchor.id))
+            )
         return list(
             self.session.execute(
                 stmt.order_by(TimeEntry.data.desc(), TimeEntry.id.desc()).limit(query.limit + 1)
@@ -286,10 +286,13 @@ class CostRepository:
             stmt = stmt.where(Cost.custom_fields.contains(query.custom))
         if query.cursor is not None:
             anchor = self.session.get(Cost, query.cursor)
-            if anchor is not None:
-                stmt = stmt.where(
-                    (Cost.data < anchor.data) | ((Cost.data == anchor.data) & (Cost.id < anchor.id))
+            if anchor is None:
+                raise ValidationFailed(
+                    "cost", "cursor", "cursore sconosciuto", expected="il cursore di una pagina"
                 )
+            stmt = stmt.where(
+                (Cost.data < anchor.data) | ((Cost.data == anchor.data) & (Cost.id < anchor.id))
+            )
         return list(
             self.session.execute(
                 stmt.order_by(Cost.data.desc(), Cost.id.desc()).limit(query.limit + 1)

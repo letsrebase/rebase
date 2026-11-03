@@ -1,14 +1,19 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Depends, Query
 
 from pigrocrm.core.calendario.schemas import MESE_PATTERN, CalendarMonth
 from pigrocrm.core.calendario.service import CalendarService
-from pigrocrm_api.deps import ActorDep, SessionDep
+from pigrocrm_api.deps import ActorDep, SessionDep, get_actor
 from pigrocrm_api.errors import PROBLEM_RESPONSES
 
-router = APIRouter(prefix="/api/calendar", tags=["calendario"], responses=PROBLEM_RESPONSES)
+router = APIRouter(
+    prefix="/api/calendar",
+    tags=["calendario"],
+    responses=PROBLEM_RESPONSES,
+    dependencies=[Depends(get_actor)],
+)
 
 
 @router.get("", response_model=CalendarMonth)

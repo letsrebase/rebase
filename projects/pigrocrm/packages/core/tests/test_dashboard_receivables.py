@@ -32,7 +32,7 @@ from pigrocrm.core.db import session_factory, today_local
 from pigrocrm.core.db.base import uuid7
 from pigrocrm.core.gmail.models import PaymentReminder
 from pigrocrm.core.invoices.models import Invoice
-from pigrocrm.core.invoices.repository import FASCE_SCADENZIARIO
+from pigrocrm.core.invoices.receivables import FASCE_SCADENZIARIO
 
 READONLY = Actor(id=uuid7(), type="user", role="readonly")
 _PREFIX = "SCAD"

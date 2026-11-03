@@ -103,6 +103,22 @@ class TenantService:
             or 0
         )
 
+    def slugs_for_owner(self, email: str) -> list[str]:
+        """The slugs of the spaces that address opened, newest first. A filtered query, so
+        a lookup by address never loads the whole registry. `owner_email` is stored
+        lowercased by `provision`."""
+        return list(
+            self.session.scalars(
+                select(Tenant.slug)
+                .where(Tenant.owner_email == email.strip().lower())
+                .order_by(Tenant.created_at.desc(), Tenant.id.desc())
+            )
+        )
+
+    def count(self) -> int:
+        """How many spaces the registry holds, for the signup's global ceiling."""
+        return self.session.scalar(select(func.count()).select_from(Tenant)) or 0
+
     def list(self) -> list[TenantRead]:
         """Every space, newest first: what the registry knows, which is who opened it and
         when, never what is inside it (ORB-142)."""
@@ -183,12 +199,9 @@ class TenantService:
                     ensure_defaults(space, nome=data.nome.strip() or data.slug)
             finally:
                 engine.dispose()
-        except ValidationFailed:
-            # A domain rule refused something about the admin: nothing about the space
-            # is wrong, only the input, and the person will retry. Leave nothing behind.
-            self._undo(tenant, url)
-            raise
         except Exception:
+            # Whatever failed after the row -- a refusal of the admin's input, which the
+            # person will retry, or the space itself -- leaves nothing behind.
             self._undo(tenant, url)
             raise
         return TenantRead.model_validate(tenant)

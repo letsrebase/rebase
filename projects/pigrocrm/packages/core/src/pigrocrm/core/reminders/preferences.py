@@ -23,6 +23,7 @@ from __future__ import annotations
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from datetime import time
+from functools import cached_property
 from typing import Any
 from uuid import UUID
 
@@ -38,7 +39,7 @@ from pigrocrm.core.reminders.catalogue import (
     REMINDER_TYPES,
     SEVERITY_RANK,
     SWITCHABLE_CHANNELS,
-    Channel,
+    ChannelName,
     EmailMode,
     Ladder,
     ReminderType,
@@ -75,7 +76,7 @@ class EffectiveSettings:
 
     type: str
     enabled: bool
-    channels: tuple[Channel, ...]
+    channels: tuple[ChannelName, ...]
     ladder: Ladder
     urgent_from: Severity
     email_mode: EmailMode | None
@@ -96,6 +97,13 @@ class EffectiveGeneral:
     quiet_hours: QuietHours
     summary_hour: int
 
+    @cached_property
+    def _window(self) -> tuple[time, time]:
+        """The quiet window's two clock times, parsed on first use and not on every
+        question: a pass asks it for every reminder, and `push` for every half hour of a
+        weekend."""
+        return time.fromisoformat(self.quiet_hours.start), time.fromisoformat(self.quiet_hours.end)
+
     def quiet_at(self, local_day: int, local_time: time) -> bool:
         """Whether `local_time` on a weekday (`0` Monday .. `6` Sunday), in the
         installation's zone, is inside the quiet window (spec §6.3). The window crosses
@@ -106,7 +114,7 @@ class EffectiveGeneral:
             return False
         if quiet.weekend and local_day >= 5:
             return True
-        start, end = time.fromisoformat(quiet.start), time.fromisoformat(quiet.end)
+        start, end = self._window
         if start == end:
             return False
         if start < end:
@@ -116,11 +124,13 @@ class EffectiveGeneral:
 
 class ReminderSettings:
     """Every preference row of a space, read once: a pass resolves hundreds of
-    reminders for a handful of people and must not ask the database for each."""
+    reminders for a handful of people and must not ask the database for each, nor resolve
+    one person's settings twice (`for_user` keeps what it resolved)."""
 
     def __init__(self, rows: Iterable[ReminderPreference]) -> None:
         self._space: dict[str | None, ReminderPreference] = {}
         self._users: dict[UUID, dict[str | None, ReminderPreference]] = {}
+        self._resolved: dict[UUID, UserSettings] = {}
         for row in rows:
             if row.user_id is None:
                 self._space[row.type] = row
@@ -138,7 +148,12 @@ class ReminderSettings:
         return row is None or row.enabled is None or row.enabled
 
     def for_user(self, user_id: UUID) -> UserSettings:
-        return UserSettings(self._space, self._users.get(user_id, {}))
+        resolved = self._resolved.get(user_id)
+        if resolved is None:
+            resolved = self._resolved[user_id] = UserSettings(
+                self._space, self._users.get(user_id, {})
+            )
+        return resolved
 
     def space(self) -> UserSettings:
         """The settings as the space's defaults leave them, for a caller with no person
@@ -167,6 +182,8 @@ class UserSettings:
     ) -> None:
         self._space = space
         self._user = user
+        self._types: dict[str, EffectiveSettings] = {}
+        self._general: EffectiveGeneral | None = None
 
     def _pick(self, type_key: str | None, column: str) -> Any:
         for layer in (self._user, self._space):
@@ -176,7 +193,15 @@ class UserSettings:
         return None
 
     def type(self, kind: ReminderType | str) -> EffectiveSettings:
+        """The settings of one type, resolved once and kept: callers read it and do not
+        change it."""
         key = kind if isinstance(kind, str) else kind.key
+        resolved = self._types.get(key)
+        if resolved is None:
+            resolved = self._types[key] = self._resolve_type(key)
+        return resolved
+
+    def _resolve_type(self, key: str) -> EffectiveSettings:
         reminder_type = get_type(key)
         space_row = self._space.get(key)
         user_row = self._user.get(key)
@@ -199,14 +224,16 @@ class UserSettings:
         )
 
     def general(self) -> EffectiveGeneral:
-        quiet = self._pick(None, "quiet_hours")
-        hour = self._pick(None, "summary_hour")
-        return EffectiveGeneral(
-            quiet_hours=QuietHours.model_validate(quiet)
-            if quiet is not None
-            else DEFAULT_QUIET_HOURS,
-            summary_hour=hour if hour is not None else DEFAULT_SUMMARY_HOUR,
-        )
+        if self._general is None:
+            quiet = self._pick(None, "quiet_hours")
+            hour = self._pick(None, "summary_hour")
+            self._general = EffectiveGeneral(
+                quiet_hours=QuietHours.model_validate(quiet)
+                if quiet is not None
+                else DEFAULT_QUIET_HOURS,
+                summary_hour=hour if hour is not None else DEFAULT_SUMMARY_HOUR,
+            )
+        return self._general
 
 
 def type_read(kind: ReminderType) -> ReminderTypeRead:

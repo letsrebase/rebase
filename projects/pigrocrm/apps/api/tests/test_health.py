@@ -11,7 +11,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.auth.models import User
-from pigrocrm.core.gmail.crypto import seal
+from pigrocrm.core.crypto import seal
 from pigrocrm.core.gmail.models import GoogleAccount
 
 

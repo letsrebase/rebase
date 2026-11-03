@@ -345,7 +345,7 @@ class ConcentrationFigures(BaseModel):
 class ContractConcentrationCap(BaseModel):
     """REB-352 §1.5's contract-anchored concentration cap: one engagement's own
     share of total invoiced revenue over the anniversary year containing `as_of`,
-    read the same way `annual_revenue`/`_revenue_filter` already define revenue --
+    read the same way `annual_revenue`/`revenue_filter` already define revenue --
     mastro's `percentage_share` measure, on its `cash_received_contract_year` basis
     (`ceiling.ts:55-75, 197-233`), anchored to `Contract.inizio` instead of a
     ledger row.

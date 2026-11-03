@@ -46,11 +46,11 @@ from sqlalchemy import Engine, delete, select
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.actor import Actor
-from pigrocrm.core.clock import oggi_in_italia
 from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.customers.schemas import CustomerListQuery
 from pigrocrm.core.customers.service import CustomerService
 from pigrocrm.core.db import SortDirection, session_factory
+from pigrocrm.core.db.clock import today_local
 from pigrocrm.core.deals.models import Deal
 from pigrocrm.core.deals.schemas import DealListQuery
 from pigrocrm.core.deals.service import DealService
@@ -110,7 +110,7 @@ _UPDATED_DAYS: tuple[int, ...] = (2, 2, 5, 0, 9, 5, 0, 2, 9)
 
 # Derived from the Italian clock, never `datetime.now()`: no literal year appears in a
 # test in this repository. The time of day is arbitrary; only the differences matter.
-_ANCHOR = datetime.combine(oggi_in_italia(), time(12, 0), tzinfo=UTC)
+_ANCHOR = datetime.combine(today_local(), time(12, 0), tzinfo=UTC)
 
 _ROWS = len(_TEXT_VALUES)
 

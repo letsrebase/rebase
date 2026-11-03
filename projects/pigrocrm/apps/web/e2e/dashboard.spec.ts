@@ -39,7 +39,7 @@ import { ensureSpaceHasWork, loginAsAdmin, seedCycleFixture, seedDealWithRate } 
 /**
  * Today, from the browser host's own calendar parts.
  *
- * Never a literal date and never a literal year: `InvoiceService._check_issue_date` refuses
+ * Never a literal date and never a literal year: `invoices.checks.check_issue_date` refuses
  * anything outside the current one, and a hard-coded `2026` is a spec that starts failing on
  * the first of January. Never `toISOString().slice(0, 10)` either — that projects through
  * UTC, so anywhere behind it the date loses a day and on 31 December it loses a year, which

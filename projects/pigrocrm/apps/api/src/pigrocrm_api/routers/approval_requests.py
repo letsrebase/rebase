@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from fastapi import APIRouter, status
+from fastapi import APIRouter, Depends, status
 
 from pigrocrm.core.work_units.approval_request import (
     ApprovalRequestCompose,
@@ -9,13 +9,14 @@ from pigrocrm.core.work_units.approval_request import (
     ApprovalRequestPrepared,
     ApprovalRequestService,
 )
-from pigrocrm_api.deps import ActorDep, SessionDep, SettingsDep
+from pigrocrm_api.deps import ActorDep, SessionDep, SettingsDep, get_actor
 from pigrocrm_api.errors import PROBLEM_RESPONSES
 
 router = APIRouter(
     prefix="/api/contracts/{contract_id}/approval-request",
     tags=["giornate"],
     responses=PROBLEM_RESPONSES,
+    dependencies=[Depends(get_actor)],
 )
 
 

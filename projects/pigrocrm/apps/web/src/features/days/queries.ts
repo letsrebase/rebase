@@ -231,9 +231,11 @@ export async function downloadDisputeBundle(workUnitId: string): Promise<void> {
   const anchor = document.createElement('a')
   anchor.href = url
   // A blob: URL carries no Content-Disposition, so the server's own file name is read from the
-  // header and set here; the server builds it from the date and an id prefix, ASCII only.
-  anchor.download =
-    /filename="([^"]+)"/.exec(response.headers.get('Content-Disposition') ?? '')?.[1] ?? ''
+  // header (RFC 5987 `filename*`, percent-encoded) and set here.
+  const encodedName = /filename\*=UTF-8''([^;]+)/.exec(
+    response.headers.get('Content-Disposition') ?? '',
+  )?.[1]
+  anchor.download = encodedName === undefined ? '' : decodeURIComponent(encodedName)
   // Snyk Code javascript/DOMXSS here is a false positive: the href is a blob: URL made just
   // above, never a script URL.
   document.body.appendChild(anchor)

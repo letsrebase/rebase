@@ -351,18 +351,38 @@ def test_a_non_integer_giorni_termini_pagamento_is_rejected_as_fatturapa_format_
         parse(xml)
 
 
-def test_a_non_finite_decimal_is_rejected_as_fatturapa_format_error_not_a_pydantic_error() -> None:
-    """`Decimal("NaN")`/`Decimal("Infinity")` parse without raising `InvalidOperation`;
-    without an explicit finiteness check, only Pydantic's own `finite_number`
-    validator would catch this, as a `pydantic_core.ValidationError` rather than
-    this module's own exception."""
+@pytest.mark.parametrize(
+    "malformed",
+    ["NaN", "Infinity", "1E999999999", "1e3", "1_000", "\u0661\u0662.00", "", ".5", "1,5"],
+)
+def test_a_malformed_decimal_is_rejected_as_fatturapa_format_error(malformed: str) -> None:
+    """`Decimal()` accepts `NaN`, an exponent form, underscores and non-ASCII digits;
+    `1E999999999` then raises `InvalidOperation` out of `quantize`, a bare 500 for a
+    caller that only handles `FatturaPaFormatError`. The lexical form is checked first."""
     riga = (
         "<DettaglioLinee><Descrizione>Consulenza</Descrizione>"
-        "<PrezzoUnitario>NaN</PrezzoUnitario><PrezzoTotale>100.00</PrezzoTotale>"
+        f"<PrezzoUnitario>{malformed}</PrezzoUnitario><PrezzoTotale>100.00</PrezzoTotale>"
         "<AliquotaIVA>22.00</AliquotaIVA></DettaglioLinee>"
     )
-    with pytest.raises(FatturaPaFormatError, match="not a finite decimal"):
+    with pytest.raises(FatturaPaFormatError):
         parse(_fattura_xml(righe=riga))
+
+
+@pytest.mark.parametrize("malformed", ["1_0", "\u0663\u0660", "1E2", "99999999999"])
+def test_a_malformed_giorni_termini_pagamento_is_rejected_as_fatturapa_format_error(
+    malformed: str,
+) -> None:
+    xml = _fattura_xml(
+        dati_pagamento=(
+            "<DatiPagamento><CondizioniPagamento>TP02</CondizioniPagamento>"
+            "<DettaglioPagamento><ModalitaPagamento>MP05</ModalitaPagamento>"
+            "<DataRiferimentoTerminiPagamento>2026-03-15</DataRiferimentoTerminiPagamento>"
+            f"<GiorniTerminiPagamento>{malformed}</GiorniTerminiPagamento>"
+            "<ImportoPagamento>122.00</ImportoPagamento></DettaglioPagamento></DatiPagamento>"
+        )
+    )
+    with pytest.raises(FatturaPaFormatError):
+        parse(xml)
 
 
 def test_an_instalment_with_neither_explicit_nor_computable_relative_terms_is_rejected() -> None:
