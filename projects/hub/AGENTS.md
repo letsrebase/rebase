@@ -1339,7 +1339,7 @@ repeated, because they write data or send mail.
   `campaigns-1`, `cards-1`), nothing else on that host. The compose flags for the preview
   are in § "The team builder".
 - **Become admin.** `ssh pigrocrm docker exec rebase-preview-api-1 uv run --no-sync
-  rebase setrole --email <address> --role admin --nome <nome> --cognome <cognome>`.
+  rebase setrole --email <address> --role admin --name <first name> --last-name <last name>`.
   `--name` and `--last-name` are required when the address has no row yet (without them it
   prompts on a tty and fails in `docker exec`, and `UserService.set_role` rejects empty
   names); `--role member` demotes.

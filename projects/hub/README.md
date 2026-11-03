@@ -109,7 +109,7 @@ compose file: the deploy passes `--env-file` explicitly and never rsyncs one.
 The first administrator, once the stack is up:
 
 ```
-docker compose -p rebase exec api uv run --no-sync rebase setrole --email you@example.com --role admin --nome Nome --cognome Cognome
+docker compose -p rebase exec api uv run --no-sync rebase setrole --email you@example.com --role admin --name Jane --last-name Doe
 ```
 
 Creates the `users` row if none exists yet and sends the same magic link everyone
@@ -121,7 +121,7 @@ The MCP server answers admins only (REB-213). Each admin mints personal tokens f
 «Agenti» in the admin area, or the operator does it for them:
 
 ```
-docker compose -p rebase exec api uv run --no-sync rebase createtoken --email you@example.com --nome "Claude Code"
+docker compose -p rebase exec api uv run --no-sync rebase createtoken --email you@example.com --name "Claude Code"
 ```
 
 The value is printed once and only its hash is kept. A client presents it as a bearer

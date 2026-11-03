@@ -455,26 +455,26 @@
               let
                 # A minimal document the sweep has work on (REB-403, Greptile's review
                 # of the first cut): one user, one freelancer, one framework agreement
-                # `inviato` with an envelope, every NOT NULL column filled, every check
+                # `sent` with an envelope, every NOT NULL column filled, every check
                 # constraint satisfied (`ck_contract_documents_envelope_item` wants
-                # `documenso_item_id` set alongside `documenso_id`; `kind = 'quadro'`
-                # wants `match_id`/`numero` both null). Verified by hand first against a
+                # `documenso_item_id` set alongside `documenso_id`; `kind = 'framework'`
+                # wants `match_id`/`number` both null). Verified by hand first against a
                 # throwaway Postgres with the same migrations (see the report).
                 sweepFixtureSql = pkgs.writeText "rebase-hub-sweep-fixture.sql" ''
                   WITH u AS (
-                    INSERT INTO users (id, email, nome, cognome, role, attivo)
+                    INSERT INTO users (id, email, first_name, last_name, role, active)
                     VALUES (gen_random_uuid(), 'sweep-test@example.com', 'Test', 'Sweep', 'member', true)
                     RETURNING id
                   ), f AS (
-                    INSERT INTO freelancers (id, user_id, links, stato, compilata_da)
-                    SELECT gen_random_uuid(), u.id, '[]'::jsonb, 'nuovo', 'persona' FROM u
+                    INSERT INTO freelancers (id, user_id, links, status, filled_by)
+                    SELECT gen_random_uuid(), u.id, '[]'::jsonb, 'new', 'person' FROM u
                     RETURNING id
                   )
                   INSERT INTO contract_documents
-                    (id, kind, freelancer_id, text_version, testo_bozza, data, pdf, stato,
+                    (id, kind, freelancer_id, text_version, draft_text, data, pdf, status,
                      documenso_id, documenso_item_id, created_by)
-                  SELECT gen_random_uuid(), 'quadro', f.id, '1.0', false, '{}'::jsonb,
-                         '\x255044462d312e34'::bytea, 'inviato',
+                  SELECT gen_random_uuid(), 'framework', f.id, '1.0', false, '{}'::jsonb,
+                         '\x255044462d312e34'::bytea, 'sent',
                          'env_test_sweep', 'item_test_sweep', u.id
                   FROM f, u;
                 '';
