@@ -54,13 +54,13 @@ def test_to_follow_up_is_to_list_draft_with_the_same_action_and_mail(clean: Sess
     parent = sent_to(clean, clock, "ada@studio.it")
     service = CampaignService(clean, SETTINGS, clock=clock)
     follow = service.follow_up(parent.id, admin(clean).id)
-    assert (follow.source, follow.segue_id, follow.status) == ("list", parent.id, "draft")
+    assert (follow.source, follow.follows_id, follow.status) == ("list", parent.id, "draft")
     assert (follow.action, follow.subject, follow.text) == (
         parent.action,
         parent.subject,
         parent.text,
     )
-    assert follow.nome == f"{parent.nome} · riscrivi" and follow.slug != parent.slug
+    assert follow.name == f"{parent.name} · riscrivi" and follow.slug != parent.slug
 
 
 def test_only_a_sent_campaign_with_someone_waiting_is_followed_up(clean: Session) -> None:  # noqa: F811  (fixture)

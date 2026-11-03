@@ -689,7 +689,7 @@ export interface paths {
          * @description `talents` (REB-282): every freelancer card and every bare sign-up as one list,
          *     `status` «lead» for the bare ones -- the read model «Developer e CTO» and
          *     «Iscrizioni» read as two overlapping lists, merged. Additive beside both: neither
-         *     changes here. REB-285 adds `q` (nome/cognome/email/posizione, trigram-ordered),
+         *     changes here. REB-285 adds `q` (first_name/last_name/email/job_title, trigram-ordered),
          *     `cursor`, and every filter after `status`. `origin` is the channel a row shows
          *     (`form`, `wizard`, `admin`) and `origin_page` the marketing page the person
          *     started from (REB-798; the page filter was `origin` before).
@@ -1310,10 +1310,10 @@ export interface paths {
         /**
          * Match Report
          * @description «Consuntivo» (REB-499): the hours on the match's deal, asked of the CRM now and
-         *     stored nowhere, by default over the whole engagement (`da` the letter's start, `a`
+         *     stored nowhere, by default over the whole engagement (`from` the letter's start, `to`
          *     today). 409 with where the link stands for a match not `linked`, and for a deal
          *     the CRM says was deleted in the space, which files the match `rejected` (spec
-         *     § 3.10); 422 naming `da` for a period that ends before it starts, 502 with the
+         *     § 3.10); 422 naming `from` for a period that ends before it starts, 502 with the
          *     seam's sentence when the CRM does not answer with a report, 503 without the token.
          */
         get: operations["match_report_api_hub_matches__match_id__report_get"];
@@ -2011,7 +2011,7 @@ export interface paths {
         };
         /**
          * List Tokens
-         * @description REB-313 adds `q` (by the token's own `nome`, trigram-ordered once searching) and
+         * @description REB-313 adds `q` (by the token's own `name`, trigram-ordered once searching) and
          *     `cursor` beside the newest-first order this list already had.
          */
         get: operations["list_tokens_api_hub_tokens_get"];
@@ -2136,8 +2136,8 @@ export interface paths {
         put?: never;
         /**
          * Answer Availability
-         * @description «Conferma» on `/hub/team/answer`: `{esito: "si" | "no"}` once recorded, and
-         *     `{esito: "invalid"}` for a token unknown, spent or expired, never saying which.
+         * @description «Conferma» on `/hub/team/answer`: `{outcome: "yes" | "no"}` once recorded, and
+         *     `{outcome: "invalid"}` for a token unknown, spent or expired, never saying which.
          */
         post: operations["answer_availability_api_hub_team_availability_post"];
         delete?: never;
@@ -2431,8 +2431,8 @@ export interface components {
              *     * a field override or clear (`field_changes`): `changed`, `before`, `after`;
              *     * `vetted`: `vetted`; a note or status entry: `source`, `text`, `note_id`;
              *     * `pigro_link`: `outcome`, `error`; `anon_cv_downloaded`: `reused`;
-             *     * a merge (REB-800): `into_freelancer_id`/`from_freelancer_id`, `moved`, `lasciati`,
-             *       `cv`, `card_from_regenerate`, and `rimesse` on the undo;
+             *     * a merge (REB-800): `into_freelancer_id`/`from_freelancer_id`, `moved`, `left_behind`,
+             *       `cv`, `card_to_regenerate`, and `put_back` on the undo;
              *     * the AI audit (REB-861): `provider`, `model`, `source`, `action`, `task`, and for a
              *       card regeneration its start (`limit`, `queued`, `batch`, `batch_id`) and its end
              *       (`start_action_id`, the counts, `cost_eur`, `failures`, `stop_reason`, ...).
@@ -2472,16 +2472,18 @@ export interface components {
                 moved?: {
                     [key: string]: number | string[];
                 };
-                /** Left */
-                left?: number;
-                /** Rimesse */
-                rimesse?: {
+                /** Left Behind */
+                left_behind?: {
+                    [key: string]: number;
+                };
+                /** Put Back */
+                put_back?: {
                     [key: string]: number;
                 };
                 /** Cv */
                 cv?: string;
-                /** Card From Regenerate */
-                card_from_regenerate?: boolean;
+                /** Card To Regenerate */
+                card_to_regenerate?: boolean;
                 /** Action Id */
                 action_id?: string;
                 /** Provider */
@@ -2524,6 +2526,8 @@ export interface components {
                 stopped?: boolean;
                 /** Stop Reason */
                 stop_reason?: string;
+                /** Left */
+                left?: number;
                 /** Batch Status */
                 batch_status?: string;
             } & {
@@ -2560,8 +2564,8 @@ export interface components {
             id: string;
             /** Email */
             email: string;
-            /** Nome */
-            nome: string;
+            /** First Name */
+            first_name: string;
             /** Active */
             active: boolean;
             /**
@@ -2592,8 +2596,8 @@ export interface components {
              * Format: uuid
              */
             id: string;
-            /** Nome */
-            nome: string;
+            /** Name */
+            name: string;
             /** Prefix */
             prefix: string;
             /**
@@ -2639,8 +2643,8 @@ export interface components {
         AudienceRowRead: {
             /** Email */
             email: string;
-            /** Nome */
-            nome: string | null;
+            /** Name */
+            name: string | null;
             /**
              * Kind
              * @enum {string}
@@ -2662,16 +2666,16 @@ export interface components {
         };
         /** Body_apply_api_hub_freelancers_post */
         Body_apply_api_hub_freelancers_post: {
-            /** Nome */
-            nome: string;
+            /** First Name */
+            first_name: string;
             /** Last Name */
             last_name: string;
             /** Email */
             email: string;
             /** Daily Rate */
             daily_rate: string;
-            /** Posizione */
-            posizione: string;
+            /** Job Title */
+            job_title: string;
             /** Remote */
             remote: string;
             /** Cv */
@@ -2712,10 +2716,10 @@ export interface components {
              */
             recipients: number;
             /**
-             * In Coda
+             * Queued
              * @default 0
              */
-            in_coda: number;
+            queued: number;
             /**
              * Sent
              * @default 0
@@ -2768,8 +2772,8 @@ export interface components {
         };
         /** CampaignDraft */
         CampaignDraft: {
-            /** Nome */
-            nome: string;
+            /** Name */
+            name: string;
             /**
              * Source
              * @enum {string}
@@ -2821,8 +2825,8 @@ export interface components {
              * Format: uuid
              */
             id: string;
-            /** Nome */
-            nome: string;
+            /** Name */
+            name: string;
             /** Slug */
             slug: string;
             /**
@@ -2834,8 +2838,8 @@ export interface components {
             journey_status: string | null;
             /** Filters */
             filters: (components["schemas"]["TalentsFilters-Output"] | components["schemas"]["CompaniesFilters-Output"]) | null;
-            /** Segue Id */
-            segue_id: string | null;
+            /** Follows Id */
+            follows_id: string | null;
             /** Subject */
             subject: string;
             /** Text */
@@ -2888,8 +2892,8 @@ export interface components {
         };
         /** CampaignPatch */
         CampaignPatch: {
-            /** Nome */
-            nome?: string | null;
+            /** Name */
+            name?: string | null;
             /** Source */
             source?: ("status" | "filters") | null;
             /** Journey Status */
@@ -2916,8 +2920,8 @@ export interface components {
              * Format: uuid
              */
             id: string;
-            /** Nome */
-            nome: string;
+            /** Name */
+            name: string;
             /** Slug */
             slug: string;
             /**
@@ -2929,8 +2933,8 @@ export interface components {
             journey_status: string | null;
             /** Filters */
             filters: (components["schemas"]["TalentsFilters-Output"] | components["schemas"]["CompaniesFilters-Output"]) | null;
-            /** Segue Id */
-            segue_id: string | null;
+            /** Follows Id */
+            follows_id: string | null;
             /** Subject */
             subject: string;
             /** Text */
@@ -3009,8 +3013,8 @@ export interface components {
          *     builder.
          */
         CardPersonRead: {
-            /** Nome */
-            nome: string | null;
+            /** First Name */
+            first_name: string | null;
             /** Last Name */
             last_name: string | null;
             /** Email */
@@ -3031,7 +3035,7 @@ export interface components {
          * @description What a card was written from and by what, for the admin only (REB-839): never part
          *     of `Card`, of a public page, of the cloud or of the talent list.
          *
-         *     `sources` is what the model *said* supported each field, kept only for sources that
+         *     `field_sources` is what the model *said* supported each field, kept only for sources that
          *     existed (`verify_sources`): the page shows it as «secondo il modello». `{}` and
          *     `prompt_version` 1 for a card written before provenance existed. `sources` is what is
          *     stored now, with its read times; `source_hashes` what the card was written from;
@@ -3044,10 +3048,14 @@ export interface components {
             prompt_version: number;
             /** Provider */
             provider: string | null;
-            /** Sources */
-            sources: components["schemas"]["SourceProvenance"][];
+            /** Field Sources */
+            field_sources: {
+                [key: string]: string[];
+            };
             /** Conflicts */
             conflicts: components["schemas"]["ConflictRead"][];
+            /** Sources */
+            sources: components["schemas"]["SourceProvenance"][];
             /** Source Hashes */
             source_hashes: {
                 [key: string]: string;
@@ -3132,8 +3140,8 @@ export interface components {
              * Format: uuid
              */
             freelancer_id: string;
-            /** Nome */
-            nome: string;
+            /** First Name */
+            first_name: string;
             /** Last Name */
             last_name: string;
             /** Linkedin Url */
@@ -3146,8 +3154,8 @@ export interface components {
             /** Mode */
             mode: ("remote" | "hybrid" | "on_site") | null;
             band: components["schemas"]["Band"] | null;
-            /** Ha Cv */
-            ha_cv: boolean;
+            /** Has Cv */
+            has_cv: boolean;
         };
         /**
          * CompaniesFilters
@@ -3365,8 +3373,8 @@ export interface components {
          *     field here; `onsite_days` stays nullable, like on `Freelancer`.
          */
         CompanyOverride: {
-            /** Nome */
-            nome?: string | null;
+            /** First Name */
+            first_name?: string | null;
             /** Last Name */
             last_name?: string | null;
             /** Linkedin Url */
@@ -3508,8 +3516,10 @@ export interface components {
         /**
          * ConflictRead
          * @description A disagreement the code found while writing a card (`card_draft.conflicts`):
-         *     `different_experience_years`, the hub's completed engagements add up to more years than the card's
-         *     `experience_years_card` (the CV's dates) by more than a year; `discarded_experience_years`, the model gave
+         *     `different_experience_years`, the hub's completed engagements add up to more years than the
+         *     card's
+         *     `experience_years_card` (the CV's dates) by more than a year; `discarded_experience_years`, the
+         *     model gave
          *     `experience_years_card` years on the strength of sources that date no profession (GitHub, a
          *     page) and the code dropped it. `experience_years_hub` is the hub's completed months in whole
          *     years, `None` when the hub had no say.
@@ -3537,13 +3547,18 @@ export interface components {
              * Format: uuid
              */
             id: string;
-            /** Kind */
-            kind: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "framework" | "letter";
             /**
              * Regime
              * @enum {string}
              */
-            regime: "partita_iva" | "occasional";
+            regime: "vat_registered" | "occasional";
+            /** Label */
+            label: string;
             /**
              * Freelancer Id
              * Format: uuid
@@ -3607,8 +3622,8 @@ export interface components {
              * Format: uuid
              */
             id: string;
-            /** Nome */
-            nome: string;
+            /** Name */
+            name: string;
             /** Prefix */
             prefix: string;
             /**
@@ -3678,7 +3693,7 @@ export interface components {
             survivor: components["schemas"]["PersonRead"];
             absorbed: components["schemas"]["PersonRead"];
             /** Signals */
-            signals: ("linkedin" | "nome" | "phone")[];
+            signals: ("linkedin" | "first_name" | "phone")[];
             /** Mergeable */
             mergeable: boolean;
         };
@@ -3811,8 +3826,8 @@ export interface components {
              * Format: uuid
              */
             id: string;
-            /** Nome */
-            nome: string;
+            /** First Name */
+            first_name: string;
             /** Last Name */
             last_name: string;
             /** Email */
@@ -3829,8 +3844,8 @@ export interface components {
             cv_size: number | null;
             /** Daily Rate */
             daily_rate: string | null;
-            /** Posizione */
-            posizione: string | null;
+            /** Job Title */
+            job_title: string | null;
             /** Remote */
             remote: ("remote" | "hybrid" | "on_site") | null;
             /** Links */
@@ -3841,10 +3856,10 @@ export interface components {
              */
             status: "new" | "contacted" | "active" | "discarded";
             /**
-             * Compilata Da
+             * Filled By
              * @enum {string}
              */
-            compilata_da: "person" | "admin";
+            filled_by: "person" | "admin";
             /**
              * Logins
              * @default 0
@@ -3911,14 +3926,14 @@ export interface components {
          *     a card written from research with no source is a card nobody can check.
          */
         FreelancerDraft: {
-            /** Nome */
-            nome: string;
+            /** First Name */
+            first_name: string;
             /** Last Name */
             last_name: string;
             /** Linkedin Url */
             linkedin_url?: string | null;
-            /** Posizione */
-            posizione?: string | null;
+            /** Job Title */
+            job_title?: string | null;
             /** Daily Rate */
             daily_rate?: number | string | null;
             /** Remote */
@@ -3966,24 +3981,24 @@ export interface components {
          *     payload must never carry, so it is not part of this schema at all.
          */
         FreelancerOverride: {
-            /** Nome */
-            nome?: string | null;
+            /** First Name */
+            first_name?: string | null;
             /** Last Name */
             last_name?: string | null;
             /** Linkedin Url */
             linkedin_url?: string | null;
             /** Daily Rate */
             daily_rate?: number | string | null;
-            /** Posizione */
-            posizione?: string | null;
+            /** Job Title */
+            job_title?: string | null;
             /** Remote */
             remote?: ("remote" | "hybrid" | "on_site") | null;
             /** Links */
             links?: string[] | null;
             /** Status */
             status?: ("new" | "contacted" | "active" | "discarded") | null;
-            /** Compilata Da */
-            compilata_da?: ("person" | "admin") | null;
+            /** Filled By */
+            filled_by?: ("person" | "admin") | null;
             /** Seniority Admin */
             seniority_admin?: ("junior" | "mid" | "senior" | "lead") | null;
             /** Experience Years Admin */
@@ -4003,8 +4018,8 @@ export interface components {
              * Format: uuid
              */
             id: string;
-            /** Nome */
-            nome: string;
+            /** First Name */
+            first_name: string;
             /** Last Name */
             last_name: string;
             /** Email */
@@ -4021,8 +4036,8 @@ export interface components {
             cv_size: number | null;
             /** Daily Rate */
             daily_rate: string | null;
-            /** Posizione */
-            posizione: string | null;
+            /** Job Title */
+            job_title: string | null;
             /** Remote */
             remote: ("remote" | "hybrid" | "on_site") | null;
             /** Links */
@@ -4033,10 +4048,10 @@ export interface components {
              */
             status: "new" | "contacted" | "active" | "discarded";
             /**
-             * Compilata Da
+             * Filled By
              * @enum {string}
              */
-            compilata_da: "person" | "admin";
+            filled_by: "person" | "admin";
             /**
              * Logins
              * @default 0
@@ -4105,8 +4120,8 @@ export interface components {
             user_id: string;
             /** Freelancer Id */
             freelancer_id: string | null;
-            /** Nome */
-            nome: string;
+            /** First Name */
+            first_name: string;
             /** Last Name */
             last_name: string;
             /** Email */
@@ -4163,8 +4178,8 @@ export interface components {
             acceptance: string | null;
             /** Start Date */
             start_date: string | null;
-            /** Data Fine */
-            data_fine: string | null;
+            /** End Date */
+            end_date: string | null;
             /** Commitment */
             commitment: string | null;
             /** Review Period */
@@ -4235,8 +4250,8 @@ export interface components {
              * Format: date
              */
             start_date: string;
-            /** Data Fine */
-            data_fine?: string | null;
+            /** End Date */
+            end_date?: string | null;
             /** Commitment */
             commitment?: string | null;
             /** Review Period */
@@ -4322,8 +4337,8 @@ export interface components {
              * Format: uuid
              */
             user_id: string;
-            /** Nome */
-            nome: string;
+            /** First Name */
+            first_name: string;
             /** Last Name */
             last_name: string;
             /** Email */
@@ -4392,7 +4407,7 @@ export interface components {
              * Regime
              * @enum {string}
              */
-            regime: "partita_iva" | "occasional";
+            regime: "vat_registered" | "occasional";
         };
         /**
          * MatchCreate
@@ -4415,10 +4430,10 @@ export interface components {
             company_id: string;
             /**
              * Regime
-             * @default partita_iva
+             * @default vat_registered
              * @enum {string}
              */
-            regime: "partita_iva" | "occasional";
+            regime: "vat_registered" | "occasional";
             customer: components["schemas"]["CustomerDate"];
             letter: components["schemas"]["LetterFields"];
             /** Expected Days */
@@ -4534,7 +4549,7 @@ export interface components {
              * Regime
              * @enum {string}
              */
-            regime: "partita_iva" | "occasional";
+            regime: "vat_registered" | "occasional";
             active_framework: components["schemas"]["ContractDocumentRead"] | null;
             /** Required Framework */
             required_framework: boolean;
@@ -4634,7 +4649,7 @@ export interface components {
          * @description One referred side of a match, as the admin's «Match» list reads it (REB-609).
          *     `status` is a reward's own state once one exists for this referral and its letter
          *     belongs to this match (`to_confirm`, `confirmed`, `paid`, with the real `rate`
-         *     and `amount`); `previsto` while no reward exists yet, with the projection the current
+         *     and `amount`); `expected` while no reward exists yet, with the projection the current
          *     rate and the match's own numbers give (`amount` is `None` when there is nothing to
          *     project: no base, a cancelled match, one whose letter is already out of the
          *     running); `already_accrued` when the referral already paid on another match, since a
@@ -4662,7 +4677,7 @@ export interface components {
              * Status
              * @enum {string}
              */
-            status: "to_verify" | "previsto" | "already_accrued" | "to_confirm" | "confirmed" | "paid";
+            status: "to_verify" | "expected" | "already_accrued" | "to_confirm" | "confirmed" | "paid";
             /** Reward Id */
             reward_id: string | null;
         };
@@ -4730,8 +4745,8 @@ export interface components {
              * Format: uuid
              */
             id: string;
-            /** Nome */
-            nome: string;
+            /** First Name */
+            first_name: string;
             /** Last Name */
             last_name: string;
             /** Email */
@@ -4763,8 +4778,8 @@ export interface components {
             cv_size: number | null;
             /** Daily Rate */
             daily_rate: string | null;
-            /** Posizione */
-            posizione: string | null;
+            /** Job Title */
+            job_title: string | null;
             /** Remote */
             remote: ("remote" | "hybrid" | "on_site") | null;
             /** Links */
@@ -4796,13 +4811,18 @@ export interface components {
              * Format: uuid
              */
             id: string;
-            /** Kind */
-            kind: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "framework" | "letter";
             /**
              * Regime
              * @enum {string}
              */
-            regime: "partita_iva" | "occasional";
+            regime: "vat_registered" | "occasional";
+            /** Label */
+            label: string;
             /** Number */
             number: string | null;
             /**
@@ -4814,8 +4834,8 @@ export interface components {
             customer: string | null;
             /** Start */
             start: string | null;
-            /** Fine */
-            fine: string | null;
+            /** End */
+            end: string | null;
             /** Sent At */
             sent_at: string | null;
             /** Signed At */
@@ -4860,8 +4880,8 @@ export interface components {
         MemberLookup: {
             /** Member */
             member: boolean;
-            /** Nome */
-            nome: string | null;
+            /** First Name */
+            first_name: string | null;
             /** Last Name */
             last_name: string | null;
         };
@@ -4906,8 +4926,8 @@ export interface components {
              * @enum {string}
              */
             kind: "freelancer" | "company";
-            /** Nome */
-            nome: string;
+            /** First Name */
+            first_name: string;
             /**
              * Created At
              * Format: date-time
@@ -4964,16 +4984,16 @@ export interface components {
          *     (it is the identity the link proved) and never the admin's fields.
          */
         MemberUpdate: {
-            /** Nome */
-            nome: string;
+            /** First Name */
+            first_name: string;
             /** Last Name */
             last_name: string;
             /** Linkedin Url */
             linkedin_url?: string | null;
             /** Daily Rate */
             daily_rate: number | string;
-            /** Posizione */
-            posizione: string;
+            /** Job Title */
+            job_title: string;
             /**
              * Remote
              * @enum {string}
@@ -5006,17 +5026,17 @@ export interface components {
             moved: {
                 [key: string]: number;
             };
-            /** Left */
-            left: {
+            /** Left Behind */
+            left_behind: {
                 [key: string]: number;
             };
             /**
              * Cv
              * @enum {string}
              */
-            cv: "nessuno" | "invariato" | "assorbita" | "ripristinato";
-            /** Card From Regenerate */
-            card_from_regenerate: boolean;
+            cv: "none" | "kept" | "absorbed" | "restored";
+            /** Card To Regenerate */
+            card_to_regenerate: boolean;
         };
         /**
          * MergeRequest
@@ -5100,7 +5120,7 @@ export interface components {
              * Field
              * @enum {string}
              */
-            field: "nome" | "last_name" | "email" | "phone" | "linkedin_url";
+            field: "first_name" | "last_name" | "email" | "phone" | "linkedin_url";
             /** Cv */
             cv: string;
             /** Profile */
@@ -5121,8 +5141,8 @@ export interface components {
              * Format: uuid
              */
             user_id: string;
-            /** Nome */
-            nome: string;
+            /** First Name */
+            first_name: string;
             /** Last Name */
             last_name: string;
             /** Email */
@@ -5134,8 +5154,8 @@ export interface components {
             created_at: string;
             /** Cv Uploaded At */
             cv_uploaded_at: string | null;
-            /** Ha Cv */
-            ha_cv: boolean;
+            /** Has Cv */
+            has_cv: boolean;
         };
         /**
          * PigroMember
@@ -5147,8 +5167,8 @@ export interface components {
              * Format: uuid
              */
             id: string;
-            /** Nome */
-            nome: string;
+            /** First Name */
+            first_name: string;
             /** Last Name */
             last_name: string;
         };
@@ -5217,8 +5237,8 @@ export interface components {
              * Format: email
              */
             email: string;
-            /** Nome */
-            nome?: string | null;
+            /** First Name */
+            first_name?: string | null;
             /** Last Name */
             last_name?: string | null;
         };
@@ -5261,8 +5281,8 @@ export interface components {
             id: string;
             /** Email */
             email: string;
-            /** Nome */
-            nome: string | null;
+            /** Name */
+            name: string | null;
             /**
              * Kind
              * @enum {string}
@@ -5272,7 +5292,7 @@ export interface components {
              * Status
              * @enum {string}
              */
-            status: "in_coda" | "sent" | "skipped" | "failed";
+            status: "queued" | "sent" | "skipped" | "failed";
             /** Reason */
             reason: string | null;
             /** Sent At */
@@ -5417,7 +5437,7 @@ export interface components {
             /** Verified At */
             verified_at: string | null;
             /** Verified Via */
-            verified_via: ("accesso" | "letter" | "storico") | null;
+            verified_via: ("login" | "letter" | "history") | null;
             /** Note */
             note: string | null;
             /**
@@ -5511,10 +5531,10 @@ export interface components {
          */
         ReportDay: {
             /**
-             * Data
+             * Date
              * Format: date
              */
-            data: string;
+            date: string;
             /** Hours */
             hours: string;
             /** Descriptions */
@@ -5539,16 +5559,16 @@ export interface components {
         };
         /**
          * ReportInvoice
-         * @description An invoice these hours sit on, with how many of them: «12/2026», or «senza
-         *     numero» for one not numbered yet.
+         * @description An invoice these hours sit on, with how many of them: «12/2026», or
+         *     «senza numero» for one not numbered yet.
          */
         ReportInvoice: {
             /** Number */
             number: string;
             /** Kind */
             kind: string;
-            /** Data */
-            data: string | null;
+            /** Date */
+            date: string | null;
             /** Status */
             status: string;
             /** Payment Status */
@@ -5571,28 +5591,28 @@ export interface components {
             /** Week */
             week: string;
             /**
-             * Da
+             * From Date
              * Format: date
              */
-            da: string;
+            from_date: string;
             /**
-             * A
+             * To Date
              * Format: date
              */
-            a: string;
+            to_date: string;
             /** Hours */
             hours: string;
         };
         /**
          * ScheduleRequest
-         * @description `day` and `ora` are Europe/Rome wall-clock time, both or neither; neither is
-         *     «Invia adesso». `esclusi` are the addresses the admin unticked on step 1.
+         * @description `day` and `at_time` are Europe/Rome wall-clock time, both or neither; neither is
+         *     «Invia adesso». `excluded` are the addresses the admin unticked on step 1.
          */
         ScheduleRequest: {
             /** Day */
             day?: string | null;
-            /** Ora */
-            ora?: string | null;
+            /** At Time */
+            at_time?: string | null;
             /**
              * Excluded
              * @default []
@@ -5635,8 +5655,8 @@ export interface components {
              * Format: email
              */
             email: string;
-            /** Nome */
-            nome: string;
+            /** First Name */
+            first_name: string;
             /** Last Name */
             last_name: string;
             /** Linkedin Url */
@@ -5678,8 +5698,8 @@ export interface components {
              * Format: date-time
              */
             created_at: string;
-            /** Nome */
-            nome: string | null;
+            /** First Name */
+            first_name: string | null;
             /** Last Name */
             last_name: string | null;
             /** Linkedin Url */
@@ -5817,8 +5837,8 @@ export interface components {
              * Format: uuid
              */
             freelancer_id: string;
-            /** Nome */
-            nome: string;
+            /** First Name */
+            first_name: string;
             /**
              * Reason
              * @enum {string}
@@ -5944,7 +5964,7 @@ export interface components {
          *     ones `FreelancerRead` carries; a bare sign-up has neither, so both stay `None` for
          *     a `lead` row.
          *
-         *     `posizione` is the card's own, and `role`, `seniority`, `experience_years`, `skills`,
+         *     `job_title` is the card's own, and `role`, `seniority`, `experience_years`, `skills`,
          *     `industries`, `languages`, `location` and `profile_summary` are read off Claude's anonymous card
          *     (REB-778, REB-798), so an agent matching a request reads what a person does from the
          *     list itself rather than one profile at a time; `band` is the client's price band
@@ -5959,8 +5979,8 @@ export interface components {
              * Format: uuid
              */
             id: string;
-            /** Nome */
-            nome: string | null;
+            /** First Name */
+            first_name: string | null;
             /** Last Name */
             last_name: string | null;
             /** Email */
@@ -5995,8 +6015,8 @@ export interface components {
              * @default false
              */
             has_anonymous_card: boolean;
-            /** Posizione */
-            posizione: string | null;
+            /** Job Title */
+            job_title: string | null;
             /** Role */
             role: string | null;
             /** Seniority */
@@ -6026,9 +6046,8 @@ export interface components {
          * TalentsFilters
          * @description The Talenti list's own filters (`GET /api/hub/talent`, `talents.py:191`), stored
          *     on the campaign and replayed through `TalentsService` when the list is shown and when
-         *     a mail is about to leave. `origin` is the marketing page the person started from
-         *     (`home`, `pigrocrm`), stored under that key since before the list named it
-         *     `origin_page` (REB-798); `audience._from_talents` translates it on replay.
+         *     a mail is about to leave. `origin_page` is the marketing page the person started from
+         *     (`home`, `pigrocrm`).
          */
         "TalentsFilters-Input": {
             /**
@@ -6040,16 +6059,16 @@ export interface components {
             status?: string | null;
             /** Q */
             q?: string | null;
-            /** Posizione */
-            posizione?: string | null;
+            /** Job Title */
+            job_title?: string | null;
             /** Remote */
             remote?: string | null;
             /** Min Rate */
             min_rate?: number | string | null;
             /** Max Rate */
             max_rate?: number | string | null;
-            /** Origin */
-            origin?: string | null;
+            /** Origin Page */
+            origin_page?: string | null;
             /** Utm Source */
             utm_source?: string | null;
             /** Has Cv */
@@ -6065,9 +6084,8 @@ export interface components {
          * TalentsFilters
          * @description The Talenti list's own filters (`GET /api/hub/talent`, `talents.py:191`), stored
          *     on the campaign and replayed through `TalentsService` when the list is shown and when
-         *     a mail is about to leave. `origin` is the marketing page the person started from
-         *     (`home`, `pigrocrm`), stored under that key since before the list named it
-         *     `origin_page` (REB-798); `audience._from_talents` translates it on replay.
+         *     a mail is about to leave. `origin_page` is the marketing page the person started from
+         *     (`home`, `pigrocrm`).
          */
         "TalentsFilters-Output": {
             /**
@@ -6079,16 +6097,16 @@ export interface components {
             status: string | null;
             /** Q */
             q: string | null;
-            /** Posizione */
-            posizione: string | null;
+            /** Job Title */
+            job_title: string | null;
             /** Remote */
             remote: string | null;
             /** Min Rate */
             min_rate: string | null;
             /** Max Rate */
             max_rate: string | null;
-            /** Origin */
-            origin: string | null;
+            /** Origin Page */
+            origin_page: string | null;
             /** Utm Source */
             utm_source: string | null;
             /** Has Cv */
@@ -6151,7 +6169,7 @@ export interface components {
              * Answer
              * @enum {string}
              */
-            answer: "si" | "no";
+            answer: "yes" | "no";
         };
         /**
          * TeamAvailabilityOutcome
@@ -6162,7 +6180,7 @@ export interface components {
              * Outcome
              * @enum {string}
              */
-            outcome: "si" | "no" | "invalid";
+            outcome: "yes" | "no" | "invalid";
         };
         /**
          * TeamEconomics
@@ -6177,22 +6195,22 @@ export interface components {
         };
         /**
          * TeamMemberRead
-         * @description One person of a proposed team (§ 3.3): `posizione` is their index in this
+         * @description One person of a proposed team (§ 3.3): `position` is their index in this
          *     proposal (1, 2, 3), the only handle the public read gives; `freelancer_id` is
          *     `None` there, so a visitor cannot follow a talent across proposals, and so is the
-         *     card's `location`, which only the engine and the admin read. `nome` and `last_name` are
+         *     card's `location`, which only the engine and the admin read. `first_name` and `last_name` are
          *     the person's, for the cloud and the admin, which show who each member is (§ 4.2);
          *     `None` on the public read, like the id. `mode` is `Freelancer.remote` and
          *     `band` the band of their current rate, both read when the proposal is, the way
          *     the card is shown everywhere (§ 2.1).
          */
         TeamMemberRead: {
-            /** Posizione */
-            posizione: number;
+            /** Position */
+            position: number;
             /** Freelancer Id */
             freelancer_id: string | null;
-            /** Nome */
-            nome: string | null;
+            /** First Name */
+            first_name: string | null;
             /** Last Name */
             last_name: string | null;
             /** Role */
@@ -6213,10 +6231,10 @@ export interface components {
          *     when the visitor did not write it).
          */
         TeamPlace: {
-            /** Locale */
-            locale: boolean;
-            /** Dove */
-            dove: string | null;
+            /** On Site */
+            on_site: boolean;
+            /** Place */
+            place: string | null;
         };
         /**
          * TeamProposalCreate
@@ -6300,14 +6318,14 @@ export interface components {
          * TeamProposalListMember
          * @description One person a listed proposal held (REB-607): their index in the proposal, the
          *     role it proposed them for, and who they are, so the admin can open their profile
-         *     from the list. `nome` and `last_name` are read when the list is, and are `None` for
+         *     from the list. `first_name` and `last_name` are read when the list is, and are `None` for
          *     a talent removed with «Elimina» since, whose admin page no longer opens: the row
          *     keeps them all by id, since the list is about what was proposed and not about who
          *     is still in the catalogue.
          */
         TeamProposalListMember: {
-            /** Posizione */
-            posizione: number;
+            /** Position */
+            position: number;
             /**
              * Freelancer Id
              * Format: uuid
@@ -6315,8 +6333,8 @@ export interface components {
             freelancer_id: string;
             /** Role */
             role: string;
-            /** Nome */
-            nome: string | null;
+            /** First Name */
+            first_name: string | null;
             /** Last Name */
             last_name: string | null;
         };
@@ -6405,7 +6423,7 @@ export interface components {
         };
         /**
          * TeamRequestListItem
-         * @description One row of «Richieste team»: who, from where, when, where it stands, and «N sì su
+         * @description One row of «Richieste team»: who, from where, when, where it stands, and «N yes out of
          *     M» from the talents' answers.
          */
         TeamRequestListItem: {
@@ -6435,8 +6453,8 @@ export interface components {
             contacted_at: string | null;
             /** Total Talents */
             total_talents: number;
-            /** Self Talents */
-            self_talents: number;
+            /** Yes Talents */
+            yes_talents: number;
         };
         /**
          * TeamRequestNote
@@ -6530,8 +6548,8 @@ export interface components {
              * Format: uuid
              */
             freelancer_id: string;
-            /** Nome */
-            nome: string;
+            /** First Name */
+            first_name: string;
             /** Last Name */
             last_name: string;
             /** Role */
@@ -6542,7 +6560,7 @@ export interface components {
             /** Mail Sent At */
             mail_sent_at: string | null;
             /** Answer */
-            answer: ("si" | "no") | null;
+            answer: ("yes" | "no") | null;
             /** Answered At */
             answered_at: string | null;
             /** Contactable */
@@ -6585,10 +6603,10 @@ export interface components {
         /** TokenCreate */
         TokenCreate: {
             /**
-             * Nome
+             * Name
              * @default Claude Code
              */
-            nome: string;
+            name: string;
             /** Expires At */
             expires_at?: string | null;
         };
@@ -7867,7 +7885,7 @@ export interface operations {
                 status?: string | null;
                 q?: string | null;
                 cursor?: string | null;
-                posizione?: string | null;
+                job_title?: string | null;
                 remote?: string | null;
                 min_rate?: number | string | null;
                 max_rate?: number | string | null;
@@ -9029,8 +9047,8 @@ export interface operations {
     match_report_api_hub_matches__match_id__report_get: {
         parameters: {
             query?: {
-                da?: string | null;
-                a?: string | null;
+                from?: string | null;
+                to?: string | null;
             };
             header?: never;
             path: {

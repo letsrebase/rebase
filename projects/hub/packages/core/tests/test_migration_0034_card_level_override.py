@@ -1,4 +1,5 @@
-"""0034 (REB-799): `freelancers.seniority_admin` and `experience_years_admin`, nullable, pinned to the
+"""0034 (REB-799): `freelancers.seniority_admin` and `experience_years_admin`, nullable, pinned to
+the
 card's own words and to 0..60; a retried deploy lands on the same schema, and the
 downgrade drops them."""
 

@@ -47,7 +47,7 @@ class MatchFact:
     role: str
     months: int
     outcome: Outcome
-    dal: str  # "YYYY-MM"
+    since: str  # "YYYY-MM"
 
 
 @dataclass(frozen=True)
@@ -74,12 +74,13 @@ class HubFacts:
             lines.append(f"Seniority stabilita da un admin: {self.seniority_admin} (dato certo)")
         if self.experience_years_admin is not None:
             lines.append(
-                f"Anni di esperienza stabiliti da un admin: {self.experience_years_admin} (dato certo)"
+                "Anni di esperienza stabiliti da un admin: "
+                f"{self.experience_years_admin} (dato certo)"
             )
         if self.matches:
             lines.append("Incarichi svolti tramite la hub (ruolo, inizio, durata, esito):")
             lines.extend(
-                f"- {m.role}, dal {m.dal}, {_months(m.months)}, {m.outcome}" for m in self.matches
+                f"- {m.role}, dal {m.since}, {_months(m.months)}, {m.outcome}" for m in self.matches
             )
         if self.completed_months:
             lines.append(f"Mesi di incarichi completati: {self.completed_months}")
@@ -95,12 +96,13 @@ class HubFacts:
         return "\n".join(
             [
                 f"seniority={self.seniority_admin}",
-                f"anni={self.experience_years_admin}",
+                f"experience_years={self.experience_years_admin}",
                 *(
-                    f"{m.dal}|{m.role}|{m.outcome}|{'' if m.outcome == 'in_progress' else m.months}"
+                    f"{m.since}|{m.role}|{m.outcome}|"
+                    f"{'' if m.outcome == 'in_progress' else m.months}"
                     for m in self.matches
                 ),
-                f"completati={self.completed_months}",
+                f"completed_months={self.completed_months}",
             ]
         )
 
@@ -242,7 +244,7 @@ def _facts_of(
                 ),
                 months=_span_months((end - start).days + 1),
                 outcome=outcome,
-                dal=f"{start:%Y-%m}",
+                since=f"{start:%Y-%m}",
             )
         )
         if outcome == "completed":

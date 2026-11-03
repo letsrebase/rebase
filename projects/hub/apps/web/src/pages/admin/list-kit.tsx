@@ -75,7 +75,7 @@ export function StateFilter({
   states: readonly string[]
   value: string | undefined
   onChange: (value: string | undefined) => void
-  /** Talenti and Aziende share `STATE_LABELS`; a list over a different vocabulary
+  /** The talent and company lists share `STATE_LABELS`; a list over a different vocabulary
    *  (REB-413's own Match states) passes its own. */
   labels?: Record<string, string>
 }) {
@@ -83,7 +83,7 @@ export function StateFilter({
     <div className="flex flex-wrap gap-1.5" role="group" aria-label="Filtra per stato">
       {[undefined, ...states].map((state) => (
         <Button
-          key={state ?? 'tutti'}
+          key={state ?? 'all'}
           type="button"
           size="sm"
           variant={value === state ? 'default' : 'outline'}

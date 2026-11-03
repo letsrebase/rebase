@@ -7,7 +7,7 @@ import { AdminCampaigns } from './Campaigns'
 
 const ITEM = {
   id: 'c1',
-  nome: 'Manca il CV',
+  name: 'Manca il CV',
   slug: 'c-2026-09-25-manca-il-cv',
   source: 'status',
   journey_status: 'missing_cv',
@@ -26,7 +26,7 @@ const ITEM = {
   stalled_at: null,
   stalled_reason: null,
   ready: true,
-  counts: { recipients: 11, in_coda: 0, sent: 8, skipped: 1, failed: 2, delivered: 8, bounced: 0, clicked: 4, income: 3, actions: 2 },
+  counts: { recipients: 11, queued: 0, sent: 8, skipped: 1, failed: 2, delivered: 8, bounced: 0, clicked: 4, income: 3, actions: 2 },
 }
 
 function mount() {
@@ -86,7 +86,7 @@ describe('«Campagne» since REB-524', () => {
   })
 
   it('deletes a draft from its row after a second click, and offers it on no other row', async () => {
-    const draft = { ...ITEM, id: 'c2', nome: 'Bozza vecchia', status: 'draft', scheduled_for: null, sent_at: null }
+    const draft = { ...ITEM, id: 'c2', name: 'Bozza vecchia', status: 'draft', scheduled_for: null, sent_at: null }
     let items: unknown[] = [ITEM, draft]
     const fetch = vi.spyOn(globalThis, 'fetch').mockImplementation(async (_input, init) => {
       if (init?.method === 'DELETE') {

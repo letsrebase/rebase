@@ -144,6 +144,7 @@ def create_app() -> FastAPI:
     app.include_router(members.router)
     app.include_router(referral_rates.router)
     app.include_router(campaigns.public)
+    app.include_router(campaigns.legacy_public)
     app.include_router(campaigns.router)
     app.include_router(pigro.router)
     app.include_router(resend.router)

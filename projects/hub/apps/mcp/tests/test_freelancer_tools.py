@@ -35,11 +35,11 @@ async def test_the_admin_tools_read_and_move_a_candidate_without_the_cv(
     try:
         row, _ = FreelancerService(session).apply(
             FreelancerCreate(
-                nome="Ada",
+                first_name="Ada",
                 last_name="Lovelace",
                 email="ada@studio.it",
                 daily_rate=Decimal("450"),
-                posizione="Backend developer",
+                job_title="Backend developer",
                 remote="remote",
             ),
             PDF,
@@ -161,15 +161,15 @@ async def test_a_card_is_written_from_a_signup_with_its_sources_in_the_thread(
                 "create_freelancer_from_signup",
                 {
                     "signup_id": signup_id,
-                    "nome": "Ada",
+                    "first_name": "Ada",
                     "last_name": "Lovelace",
-                    "posizione": "Backend developer",
+                    "job_title": "Backend developer",
                     "sources": ["https://www.linkedin.com/in/ada"],
                 },
             )
         )
         assert created["email"] == "ada@studio.it"
-        assert created["compilata_da"] == "admin" and created["complete"] is False
+        assert created["filled_by"] == "admin" and created["complete"] is False
         assert created["cv_filename"] is None and created["daily_rate"] is None
         assert (created["note"][0]["author"], created["note"][0]["source"]) == (
             "Ivan Sala",
@@ -185,7 +185,7 @@ async def test_a_card_is_written_from_a_signup_with_its_sources_in_the_thread(
 
         refused = await client.call_tool(
             "create_freelancer_from_signup",
-            {"signup_id": signup_id, "nome": "Ada", "last_name": "Lovelace", "sources": []},
+            {"signup_id": signup_id, "first_name": "Ada", "last_name": "Lovelace", "sources": []},
         )
         assert refused.is_error
     _wipe(factory)
@@ -203,7 +203,7 @@ async def test_a_card_from_a_signup_reads_its_rate_with_italian_thousands(
         signup_id = lead_rows["items"][0]["id"]
         draft = {
             "signup_id": signup_id,
-            "nome": "Ada",
+            "first_name": "Ada",
             "last_name": "Lovelace",
             "sources": ["https://www.linkedin.com/in/ada"],
         }
@@ -231,9 +231,7 @@ async def test_get_freelancer_carries_the_cvs_contacts_and_no_other_tool_does(
     )
     session = factory()
     try:
-        session.execute(
-            text("UPDATE users SET telefono = '02 5550199' WHERE email = 'ada@studio.it'")
-        )
+        session.execute(text("UPDATE users SET phone = '02 5550199' WHERE email = 'ada@studio.it'"))
         session.commit()
     finally:
         session.close()
@@ -243,24 +241,24 @@ async def test_get_freelancer_carries_the_cvs_contacts_and_no_other_tool_does(
         before = _payload(
             await client.call_tool("get_freelancer", {"freelancer_id": freelancer_id})
         )
-        assert before["contatti_cv"] is None and before["differenze_cv"] == []
+        assert before["cv_contacts"] is None and before["cv_differences"] == []
         assert before["phone"] == "02 5550199"
 
         await client.call_tool("regenerate_freelancer_card", {"freelancer_id": freelancer_id})
         read = _payload(await client.call_tool("get_freelancer", {"freelancer_id": freelancer_id}))
-        assert read["contatti_cv"]["email"] == "ada.lovelace@example.org"
-        assert read["contatti_cv"]["phone"] == "+39 333 123 4567"
-        assert read["contatti_cv"]["companies"] == ["Initech Labs"]
-        assert [d["field"] for d in read["differenze_cv"]] == ["email", "phone"]
+        assert read["cv_contacts"]["email"] == "ada.lovelace@example.org"
+        assert read["cv_contacts"]["phone"] == "+39 333 123 4567"
+        assert read["cv_contacts"]["companies"] == ["Initech Labs"]
+        assert [d["field"] for d in read["cv_differences"]] == ["email", "phone"]
 
         others = [
             await client.call_tool("get_freelancer_card", {"freelancer_id": freelancer_id}),
-            await client.call_tool("list_talents", {"fields": ["tutti"]}),
+            await client.call_tool("list_talents", {"fields": ["all"]}),
             await client.call_tool("get_talent", {"talent_id": freelancer_id}),
         ]
         for other in others:
             body = json.dumps(_payload(other))
-            for secret in ("ada.lovelace@example.org", "333 123 4567", "Initech", "contatti_cv"):
+            for secret in ("ada.lovelace@example.org", "333 123 4567", "Initech", "cv_contacts"):
                 assert secret not in body, secret
     _wipe(factory)
 
@@ -271,7 +269,7 @@ async def test_set_freelancer_vetted_toggles_and_a_repeat_keeps_the_first_date(
     freelancer_id = _seed_freelancer(factory)
     _seed_admin(factory)
     async with Client(build_server(factory, lambda: IVAN)) as client:
-        before = _payload(await client.call_tool("list_talents", {"fields": ["tutti"]}))["items"][0]
+        before = _payload(await client.call_tool("list_talents", {"fields": ["all"]}))["items"][0]
         assert before["vetted_at"] is None and before["has_anonymous_card"] is False
         card = _payload(await client.call_tool("get_talent", {"talent_id": freelancer_id}))
         assert card["vetted_at"] is None and card["has_anonymous_card"] is False
@@ -291,7 +289,7 @@ async def test_set_freelancer_vetted_toggles_and_a_repeat_keeps_the_first_date(
         )
         assert again["vetted_at"] == first
 
-        listed = _payload(await client.call_tool("list_talents", {"fields": ["tutti"]}))
+        listed = _payload(await client.call_tool("list_talents", {"fields": ["all"]}))
         assert listed["items"][0]["vetted_at"] == first
 
         off = _payload(

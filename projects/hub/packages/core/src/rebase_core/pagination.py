@@ -8,7 +8,7 @@ encoding, same row-value keyset predicate -- reimplemented natively here because
 every list this package paginates sorts by exactly one of two things, `created_at` (a
 `datetime`, never null once a row exists) or a trigram similarity score (a `float`,
 never null either -- `search.similarity_score` `coalesce`s it). A search term is
-always best-match first; REB-285's Talenti and Aziende have no bare listing order
+always best-match first; REB-285's Talents and Companies have no bare listing order
 beside that, so both ever needed was descending. REB-313's admin list keeps reading
 oldest first with no term (ORB-123, a history), so `keyset_predicate` takes a
 `descending` flag beside the one sort key a request carries -- `SortSpec` itself still

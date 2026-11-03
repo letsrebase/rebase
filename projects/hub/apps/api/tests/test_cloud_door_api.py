@@ -21,7 +21,7 @@ ADMIN_EMAIL = "ivan@rebase.it"
 
 @pytest.fixture
 def admin(api_session: Session) -> Iterator[None]:
-    api_session.add(User(email=ADMIN_EMAIL, nome="Ivan", last_name="Sala", role="admin"))
+    api_session.add(User(email=ADMIN_EMAIL, first_name="Ivan", last_name="Sala", role="admin"))
     api_session.commit()
     yield
     api_session.rollback()
@@ -45,7 +45,7 @@ def _login(client: TestClient, sender: RecordingSender, email: str = ADMIN_EMAIL
     """Signs `email` in; the speed bump on the public routes is reset first, since one
     test here signs in four times beside a wizard's request."""
     assert client.post("/api/hub/auth/link", json={"email": email}).status_code == 202
-    match = re.search(r"/entra\?t=([A-Za-z0-9_-]+)", sender.sent[-1].text)
+    match = re.search(r"/verify\?t=([A-Za-z0-9_-]+)", sender.sent[-1].text)
     assert match
     assert client.post("/api/hub/auth/enter", json={"token": match.group(1)}).status_code == 200
 
@@ -54,11 +54,11 @@ def _apply(client: TestClient, email: str = "ada@studio.it") -> str:
     response = client.post(
         "/api/hub/freelancers",
         data={
-            "nome": "Ada",
+            "first_name": "Ada",
             "last_name": "Lovelace",
             "email": email,
             "daily_rate": "450",
-            "posizione": "Backend developer",
+            "job_title": "Backend developer",
             "remote": "remote",
         },
         files={"cv": ("Ada CV.pdf", PDF, "application/pdf")},

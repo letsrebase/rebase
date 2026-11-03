@@ -265,7 +265,7 @@ def test_a_result_for_a_card_whose_inputs_changed_is_dropped_and_paid_for(
     _start(clean_hub, call)
     # The position is an input of the card: the answer was written for another one.
     clean_hub.execute(
-        text("UPDATE freelancers SET posizione = 'Data engineer' WHERE id = :id"),
+        text("UPDATE freelancers SET job_title = 'Data engineer' WHERE id = :id"),
         {"id": people[0]},
     )
     clean_hub.commit()

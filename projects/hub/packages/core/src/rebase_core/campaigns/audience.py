@@ -139,7 +139,7 @@ def waiting_rows(session: Session, parent: Campaign) -> list[CampaignRecipient]:
         before = before or {}
         requests = before.get("requests", {})
         if not isinstance(requests, dict) or not all(isinstance(key, str) for key in requests):
-            _log.error("waiting row %s left out: richieste is not a string-keyed dict", row.id)
+            _log.error("waiting row %s left out: requests is not a string-keyed dict", row.id)
             continue
         try:
             parsed_keys = tuple(UUID(key) for key in requests)
@@ -159,7 +159,7 @@ def waiting_rows(session: Session, parent: Campaign) -> list[CampaignRecipient]:
             if parent.action == "request_updated":
                 for was in requests.values():
                     if datetime.fromisoformat(was).tzinfo is None:
-                        raise ValueError("richieste value has no timezone")
+                        raise ValueError("requests value has no timezone")
             if row.sent_at is None and datetime.fromisoformat(before["t"]).tzinfo is None:
                 raise ValueError("prima['t'] has no timezone")
         except (TypeError, ValueError, KeyError) as exc:
@@ -194,13 +194,13 @@ def waiting_rows(session: Session, parent: Campaign) -> list[CampaignRecipient]:
 def _not_done(session: Session, campaign: Campaign) -> list[Candidate]:
     """A `list` (spec § 4.3): whom the earlier campaign reached and who has not done its
     action, mapped from `waiting_rows`, each row's own snapshot links carried over."""
-    parent = session.get(Campaign, campaign.segue_id) if campaign.segue_id else None
+    parent = session.get(Campaign, campaign.follows_id) if campaign.follows_id else None
     if parent is None:
         return []
     return [
         Candidate(
             email=row.email,
-            nome=row.nome,
+            name=row.name,
             kind=row.kind,
             user_id=row.user_id,
             freelancer_id=row.freelancer_id,
@@ -221,11 +221,6 @@ def _filtered(session: Session, raw: dict[str, Any]) -> list[Candidate]:
 
 
 def _from_talents(session: Session, params: dict[str, Any]) -> list[Candidate]:
-    # The stored filters call the marketing page `origin`, as they did before the list
-    # gave that name to the channel a row shows (REB-798); the list's own name for it is
-    # `origin_page`, and stored campaigns are replayed without a data migration.
-    if "origin" in params:
-        params["origin_page"] = params.pop("origin")
     service = TalentsService(session)
     rows: list[TalentRead] = []
     cursor: str | None = None
@@ -250,7 +245,7 @@ def _from_talents(session: Session, params: dict[str, Any]) -> list[Candidate]:
             found.append(
                 Candidate(
                     email=row.email.lower(),
-                    nome=display_name(row.nome),
+                    name=display_name(row.first_name),
                     kind="lead",
                     signup_id=row.id,
                 )
@@ -260,7 +255,7 @@ def _from_talents(session: Session, params: dict[str, Any]) -> list[Candidate]:
             found.append(
                 Candidate(
                     email=user.email.lower(),
-                    nome=display_name(user.nome),
+                    name=display_name(user.first_name),
                     kind="freelancer",
                     user_id=user.id,
                     freelancer_id=row.id,
@@ -291,9 +286,10 @@ def _from_companies(session: Session, params: dict[str, Any]) -> list[Candidate]
         known = by_email.get(email)
         by_email[email] = Candidate(
             email=email,
-            # `CompanyRead.contact_person` is `f"{user.nome} {user.cognome}"` (`companies.py`'s
+            # `CompanyRead.contact_person` is `f"{user.first_name} {user.cognome}"`
+            # (`companies.py`'s
             # `_to_read`), always «Nome Cognome»: the first token is the first name.
-            nome=display_name(row.contact_person.split(" ")[0] if row.contact_person else None),
+            name=display_name(row.contact_person.split(" ")[0] if row.contact_person else None),
             kind="company",
             user_id=owners.get(row.id),
             company_ids=(*(known.company_ids if known else ()), row.id),

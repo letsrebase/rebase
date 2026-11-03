@@ -63,9 +63,9 @@ export function AdminCompanies() {
         </div>
       </Header>
       <div className="grid gap-4 border-b px-6 py-4 sm:grid-cols-2 lg:grid-cols-4">
-        <FilterField label="Cerca" htmlFor="aziende-q">
+        <FilterField label="Cerca" htmlFor="companies-q">
           <Input
-            id="aziende-q"
+            id="companies-q"
             type="search"
             maxLength={200}
             placeholder="Azienda, referente, email, progetto…"
@@ -74,44 +74,44 @@ export function AdminCompanies() {
           />
         </FilterField>
         <AmountFilter
-          id="aziende-budget-min"
+          id="companies-budget-min"
           label="Budget min (€/giorno)"
           value={search.budget_min}
           onChange={(value) => setFilter('budget_min', value)}
         />
         <AmountFilter
-          id="aziende-budget-max"
+          id="companies-budget-max"
           label="Budget max (€/giorno)"
           value={search.budget_max}
           onChange={(value) => setFilter('budget_max', value)}
         />
-        <FilterField label="Periodo dal" htmlFor="aziende-periodo-da">
+        <FilterField label="Periodo dal" htmlFor="companies-period-from">
           <Input
-            id="aziende-periodo-da"
+            id="companies-period-from"
             type="date"
             value={search.period_from ?? ''}
             onChange={(event) => setFilter('period_from', event.target.value || undefined)}
           />
         </FilterField>
-        <FilterField label="Pagina di provenienza" htmlFor="aziende-origine">
+        <FilterField label="Pagina di provenienza" htmlFor="companies-origin">
           <Input
-            id="aziende-origine"
+            id="companies-origin"
             placeholder="home, pigrocrm…"
             value={search.origin ?? ''}
             onChange={(event) => setFilter('origin', event.target.value || undefined)}
           />
         </FilterField>
-        <FilterField label="Creata dal" htmlFor="aziende-creato-da">
+        <FilterField label="Creata dal" htmlFor="companies-created-from">
           <Input
-            id="aziende-creato-da"
+            id="companies-created-from"
             type="date"
             value={search.created_from ?? ''}
             onChange={(event) => setFilter('created_from', event.target.value || undefined)}
           />
         </FilterField>
-        <FilterField label="Creata al" htmlFor="aziende-creato-a">
+        <FilterField label="Creata al" htmlFor="companies-created-to">
           <Input
-            id="aziende-creato-a"
+            id="companies-created-to"
             type="date"
             value={search.created_to ?? ''}
             onChange={(event) => setFilter('created_to', event.target.value || undefined)}

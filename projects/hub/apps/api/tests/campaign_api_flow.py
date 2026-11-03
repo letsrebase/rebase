@@ -27,7 +27,7 @@ def recipient_rows(session: Session, addresses: dict[str, str]) -> None:
     """One campaign with one recipient per `token: address` pair."""
     campaign = Campaign(
         created_by=an_admin(session, last_name="Sala"),
-        nome="n",
+        name="n",
         slug="c-n",
         source="status",
         journey_status="missing_cv",

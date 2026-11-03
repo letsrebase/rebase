@@ -3,7 +3,7 @@ import { Input } from '@rebase/ui/input'
 import { Label } from '@rebase/ui/label'
 import { peopleLabel, scheduleLabel } from '@/lib/campaigns'
 
-export type When = 'adesso' | 'programma'
+export type When = 'now' | 'schedule'
 
 /** Invio (REB-526): the bar at the foot of the page, always in sight. One button that
  *  says what it will do, to how many and when; when it cannot, the sentence beside it
@@ -21,8 +21,8 @@ export function BarSend({
 }: {
   mode: When
   onMode: (mode: When) => void
-  when: { day: string; ora: string }
-  onWhen: (when: { day: string; ora: string }) => void
+  when: { day: string; time: string }
+  onWhen: (when: { day: string; time: string }) => void
   /** `null` until the list is in: the button then says no number rather than a zero. */
   will_receive: number | null
   /** Why the button is off, or `null` when it is on. */
@@ -32,11 +32,11 @@ export function BarSend({
   onSend: () => void
 }) {
   const people = will_receive === null ? null : peopleLabel(will_receive)
-  const moment = mode === 'programma' && when.day && when.ora ? scheduleLabel(when.day, when.ora) : null
-  const target = people === null ? '' : mode === 'programma' ? ` per ${people}` : ` a ${people}`
-  const label = `${mode === 'programma' ? 'Programma' : 'Invia'}${target}${moment ? `, ${moment}` : ''}`
+  const moment = mode === 'schedule' && when.day && when.time ? scheduleLabel(when.day, when.time) : null
+  const target = people === null ? '' : mode === 'schedule' ? ` per ${people}` : ` a ${people}`
+  const label = `${mode === 'schedule' ? 'Programma' : 'Invia'}${target}${moment ? `, ${moment}` : ''}`
   const hint =
-    mode === 'programma'
+    mode === 'schedule'
       ? 'Ora di Roma. Fino alla partenza puoi riportarla in bozza.'
       : 'Parte entro un minuto. Fino ad allora puoi riportarla in bozza.'
   return (
@@ -46,31 +46,31 @@ export function BarSend({
     >
       <div className="flex flex-wrap items-end gap-3">
         <div className="flex gap-2" role="group" aria-label="Quando parte">
-          <Button type="button" variant={mode === 'adesso' ? 'default' : 'outline'} aria-pressed={mode === 'adesso'} onClick={() => onMode('adesso')}>
+          <Button type="button" variant={mode === 'now' ? 'default' : 'outline'} aria-pressed={mode === 'now'} onClick={() => onMode('now')}>
             Adesso
           </Button>
           <Button
             type="button"
-            variant={mode === 'programma' ? 'default' : 'outline'}
-            aria-pressed={mode === 'programma'}
-            onClick={() => onMode('programma')}
+            variant={mode === 'schedule' ? 'default' : 'outline'}
+            aria-pressed={mode === 'schedule'}
+            onClick={() => onMode('schedule')}
           >
             Programma
           </Button>
         </div>
-        {mode === 'programma' && (
+        {mode === 'schedule' && (
           <>
             <div className="space-y-1">
-              <Label htmlFor="campagna-giorno" className="text-xs">
+              <Label htmlFor="campaign-day" className="text-xs">
                 Giorno
               </Label>
-              <Input id="campagna-giorno" type="date" value={when.day} onChange={(event) => onWhen({ ...when, day: event.target.value })} />
+              <Input id="campaign-day" type="date" value={when.day} onChange={(event) => onWhen({ ...when, day: event.target.value })} />
             </div>
             <div className="space-y-1">
-              <Label htmlFor="campagna-ora" className="text-xs">
+              <Label htmlFor="campaign-time" className="text-xs">
                 Ora
               </Label>
-              <Input id="campagna-ora" type="time" value={when.ora} onChange={(event) => onWhen({ ...when, ora: event.target.value })} />
+              <Input id="campaign-time" type="time" value={when.time} onChange={(event) => onWhen({ ...when, time: event.target.value })} />
             </div>
           </>
         )}

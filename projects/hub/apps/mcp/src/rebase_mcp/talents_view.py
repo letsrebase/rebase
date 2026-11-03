@@ -31,7 +31,7 @@ LIST_LIMIT_MAX = 200
 # `id`, `nome`, `last_name` and `status`. `seniority_uncertain` joins it when true (below).
 SHORT_FIELDS = (
     "id",
-    "nome",
+    "first_name",
     "last_name",
     "status",
     "role",
@@ -48,13 +48,13 @@ SHORT_FIELDS = (
 # whole.
 SHORT_SKILLS = 5
 SHORT_PROFILE_SUMMARY = 160
-ALL = "tutti"
+ALL = "all"
 ROW_FIELDS: tuple[str, ...] = tuple(TalentRead.model_fields)
 
 
 def row_fields(fields: Sequence[str] | None) -> tuple[str, ...] | None:
     """The fields a caller asked for, `None` for «the short row», `ROW_FIELDS` for
-    `tutti`. `id` always comes along, since it is what `get_talent` takes. An unknown
+    `all`. `id` always comes along, since it is what `get_talent` takes. An unknown
     name is refused with the names that exist, never silently dropped: a misspelt field
     would otherwise read as «nobody has it»."""
     if fields is None:

@@ -8,7 +8,7 @@ character at a time.
 
 TEAM_REQUEST_STATE_LABELS = {"new": "Nuova", "contacted": "Contattata", "closed": "Chiusa"}
 TEAM_ORIGIN_LABELS = {"public": "Pubblico", "cloud": "Cloud", "admin": "Admin"}
-TALENT_ANSWER_LABELS = {"si": "Sì", "no": "No"}
+TALENT_ANSWER_LABELS = {"yes": "Sì", "no": "No"}
 # A talent who has the availability mail and has not answered yet (REB-517); one who was
 # never mailed has no word at all, and the page shows the empty cell's dash.
 TALENT_WAITING_LABEL = "In attesa"

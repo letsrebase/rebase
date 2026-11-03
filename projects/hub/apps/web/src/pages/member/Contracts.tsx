@@ -49,7 +49,7 @@ function Framework({ framework }: { framework: MemberContract }) {
   return (
     <div className="space-y-3 border bg-card p-4 text-sm">
       <div className="flex flex-wrap items-center gap-2">
-        <p className="font-medium">{framework.kind}</p>
+        <p className="font-medium">{framework.label}</p>
         <Badge variant="pill">{memberDocumentStateLabel('framework', framework.status)}</Badge>
       </div>
       {framework.active && framework.signed_at && framework.renewal && framework.last_notice_day && (
@@ -88,14 +88,14 @@ function PreviousFrameworks({ frameworks }: { frameworks: MemberContract[] }) {
 
 function Letter({ letter }: { letter: MemberContract }) {
   const period = letter.start
-    ? letter.fine
-      ? `dal ${letter.start} al ${letter.fine}`
+    ? letter.end
+      ? `dal ${letter.start} al ${letter.end}`
       : `dal ${letter.start}`
     : null
   return (
     <li className="space-y-2 border bg-card p-4 text-sm">
       <div className="flex flex-wrap items-center gap-2">
-        <p className="font-medium">{`${letter.kind} n. ${letter.number}`}</p>
+        <p className="font-medium">{`${letter.label} n. ${letter.number}`}</p>
         <Badge variant="pill">{memberDocumentStateLabel('letter', letter.status)}</Badge>
       </div>
       <p className="text-muted-foreground">{[letter.customer, period].filter(Boolean).join(', ')}</p>
@@ -136,8 +136,8 @@ export function MemberContracts() {
       )
     : false
   return (
-    <section aria-labelledby="me-contratti" className="space-y-3">
-      <h2 id="me-contratti" className="text-lg font-semibold tracking-tight">
+    <section aria-labelledby="me-contracts" className="space-y-3">
+      <h2 id="me-contracts" className="text-lg font-semibold tracking-tight">
         Contratti
       </h2>
       {contracts.isError ? (

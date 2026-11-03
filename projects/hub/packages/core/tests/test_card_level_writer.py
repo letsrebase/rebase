@@ -55,8 +55,11 @@ def test_the_prompt_states_the_bands_the_parser_enforces() -> None:
     assert "counted only from roles the CV dates" in system
     assert "gaps between roles left out, not the span from the first start" in system
     assert "null, never a guess, when the CV dates no professional role at all" in system
-    assert "When anni is null, give seniority as your reading of the responsibility" in system
-    assert system.index("- anni:") < system.index("- seniority:")
+    assert (
+        "When experience_years is null, give seniority as your reading of the responsibility"
+        in system
+    )
+    assert system.index("- experience_years:") < system.index("- seniority:")
 
 
 def test_the_schema_lets_the_model_say_the_years_are_unknown() -> None:
@@ -72,7 +75,7 @@ def test_the_schema_lets_the_model_say_the_years_are_unknown() -> None:
 
 
 @pytest.mark.parametrize(
-    ("answer", "seniority", "experience_years", "incerta"),
+    ("answer", "seniority", "experience_years", "uncertain"),
     [
         # The audit's inconsistent cards, as the parser stores them now.
         ({"seniority": "lead", "experience_years": 3}, "mid", 3, False),
@@ -191,5 +194,5 @@ def test_a_year_alone_from_the_admin_leaves_an_undated_seniority_uncertain(
     ids=str,
 )
 def test_an_override_refuses_a_level_outside_the_cards_words(bad: dict[str, Any]) -> None:
-    with pytest.raises(ValueError, match="seniority_admin|anni_admin"):
+    with pytest.raises(ValueError, match="seniority_admin|experience_years_admin"):
         FreelancerOverride(**bad)

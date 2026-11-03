@@ -140,5 +140,5 @@ def test_the_web_offers_the_bands_the_core_places_a_price_in() -> None:
 def test_a_drifted_label_is_named_with_both_words() -> None:
     web = {**MATCH_STATE_LABELS, "draft": "Bozza"}
     assert _drift("MATCH_STATE_LABELS", web, MATCH_STATE_LABELS) == [
-        "MATCH_STATE_LABELS.bozza: web 'Bozza', core 'Da inviare'"
+        "MATCH_STATE_LABELS.draft: web 'Bozza', core 'Da inviare'"
     ]

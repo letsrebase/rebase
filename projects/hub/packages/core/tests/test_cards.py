@@ -83,7 +83,7 @@ def test_card_from_a_cv(clean_hub: Session) -> None:
     # persona of the answer (an empty one here), tied to the CV it was read from.
     assert (stored.prompt_version, stored.provider, stored.thinking_tokens) == (3, None, 0)
     assert stored.person == {
-        "nome": None,
+        "first_name": None,
         "last_name": None,
         "email": None,
         "phone": None,
@@ -177,7 +177,9 @@ def test_card_prompt_is_byte_identical_in_substance_to_before() -> None:
     (`card_prompt` of 1ccb4167, run on this CV). Version 2 (REB-839) keeps them for a
     person with the CV alone: the system text is version 1's up to the version line, the
     user turn is the same bytes, and the schema of `Card` is untouched. What version 2
-    adds is the version line and the description of the private answer, and nothing else."""
+    adds is the version line and the description of the private answer, and nothing else.
+    The hash was taken again when the schema's keys became English (`role`, `skills`, ...):
+    the prompt names them, and nothing else changed."""
     cv = CvText(
         filename="cv.pdf",
         pages=1,
@@ -190,7 +192,7 @@ def test_card_prompt_is_byte_identical_in_substance_to_before() -> None:
     version_1, line, added = request.system.partition("\n\nPrompt version: 3\n\n")
     assert line
     assert hashlib.sha256(version_1.encode()).hexdigest() == (
-        "7f1ec3a8ad6dc72b8151f2f9bb11e8a7dadbaf791f445b507d7e90f8b4095c2e"
+        "30c5bbf87dae08f79a44f08742d340888c2305e61eed450a73c40af90468e137"
     )
     assert added.startswith("The answer has four parts")
     assert "<source" not in request.system
@@ -206,7 +208,7 @@ def test_card_prompt_is_byte_identical_in_substance_to_before() -> None:
     ]
     schema = card_schema()
     assert hashlib.sha256(json.dumps(schema, sort_keys=True).encode()).hexdigest() == (
-        "e9e1dce905c296b18ee068b8ee49fff661fc1807eccdaee9504cd5e3aedcfa54"
+        "c3316bc6931793027340aeafd3c1e636604542992dd05345b71edc9752592038"
     )
     assert "description" not in schema
 
@@ -312,7 +314,7 @@ def test_scanned_cv_makes_no_call(clean_hub: Session) -> None:
         (card_response(stop_reason="max_tokens"), "max_tokens"),
         (card_response(text="Ecco la scheda: ruolo backend"), "shape"),
         (card_response({key: value for key, value in CARD.items() if key != "location"}), "shape"),
-        (card_response({**CARD, "nome": "Ada Lovelace"}), "shape"),
+        (card_response({**CARD, "first_name": "Ada Lovelace"}), "shape"),
         (card_response({**CARD, "seniority": "guru"}), "shape"),
         (card_response(["non", "una", "card"]), "shape"),  # type: ignore[arg-type]
         # The limits the seam strips from the schema are still `Card`'s.
@@ -331,17 +333,17 @@ def test_scanned_cv_makes_no_call(clean_hub: Session) -> None:
     ids=[
         "max_tokens",
         "not_json",
-        "missing_luogo",
+        "missing_location",
         "extra_key",
         "bad_seniority",
         "a_list",
-        "anni_61",
-        "21_competenze",
-        "sintesi_401",
+        "experience_years_61",
+        "21_skills",
+        "profile_summary_401",
         "surname",
-        "www_in_competenze",
-        "http_in_luogo",
-        "at_in_sintesi",
+        "www_in_skills",
+        "http_in_location",
+        "at_in_profile_summary",
     ],
 )
 def test_max_tokens_and_bad_json_are_errors(

@@ -323,7 +323,7 @@ def _talent(
     session: Session,
     last_name: str,
     *,
-    nome: str = "Ada",
+    first_name: str = "Ada",
     card: dict[str, Any] | None = None,
     remote: str | None = "remote",
     rate: Decimal | None = Decimal("450.00"),
@@ -339,7 +339,7 @@ def _talent(
     slug = last_name.lower()
     user = User(
         email=f"{slug}@studio.it",
-        nome=nome,
+        first_name=first_name,
         last_name=last_name,
         linkedin_url=f"https://www.linkedin.com/in/{slug}",
         phone="+39 333 1112233",
@@ -351,7 +351,7 @@ def _talent(
         remote=remote,
         daily_rate=rate,
         status=status,
-        posizione="Backend developer",
+        job_title="Backend developer",
         links=[f"https://{slug}.dev"],
         cv_bytes=PDF if cv else None,
         cv_filename=f"CV {last_name}.pdf" if cv else None,
@@ -393,10 +393,10 @@ def _cloud_proposal(
     row = TeamProposal(
         description="Rifacciamo il gestionale degli ordini, sei mesi, da remoto, in Python.",
         summary=SUMMARY,
-        location={"locale": False, "dove": None},
+        location={"on_site": False, "place": None},
         team=[
             {
-                "posizione": index,
+                "position": index,
                 "freelancer_id": str(freelancer_id),
                 "role": "Backend developer",
                 "reasoning": "Nove anni di API in Python.",
@@ -423,10 +423,10 @@ def _ids(service: CloudTalentService, **filters: Any) -> set[UUID]:
 
 
 def test_the_cloud_shows_every_visible_talent_by_name_vetted_first(talents: Session) -> None:
-    rossi = _talent(talents, "Rossi", nome="Mario")
-    bianchi = _talent(talents, "Bianchi", nome="Luca", vetted=True)
-    verdi = _talent(talents, "Verdi", nome="Anna", vetted=True)
-    abate = _talent(talents, "Abate", nome="Carla", remote=None, rate=None, cv=False)
+    rossi = _talent(talents, "Rossi", first_name="Mario")
+    bianchi = _talent(talents, "Bianchi", first_name="Luca", vetted=True)
+    verdi = _talent(talents, "Verdi", first_name="Anna", vetted=True)
+    abate = _talent(talents, "Abate", first_name="Carla", remote=None, rate=None, cv=False)
     # Outside `cloud_visible`: turned down, deleted, no card, a card retired, and a stored
     # card that is an object but not a card any more.
     _talent(talents, "Scartato", status="discarded")
@@ -443,7 +443,7 @@ def test_the_cloud_shows_every_visible_talent_by_name_vetted_first(talents: Sess
     assert [talent.freelancer_id for talent in listed.items] == [bianchi, verdi, abate, rossi]
     assert listed.capped is False
     first = listed.items[0]
-    assert (first.nome, first.last_name, first.vetted) == ("Luca", "Bianchi", True)
+    assert (first.first_name, first.last_name, first.vetted) == ("Luca", "Bianchi", True)
     assert first.linkedin_url == "https://www.linkedin.com/in/bianchi"
     assert first.links == ["https://bianchi.dev"]
     assert first.card.role == CARD["role"] and first.card.profile_summary == CARD["profile_summary"]
@@ -451,9 +451,9 @@ def test_the_cloud_shows_every_visible_talent_by_name_vetted_first(talents: Sess
     # The card's place is the engine's: the cloud shows the CV itself, not Claude's
     # reading of it.
     assert first.card.location is None
-    assert (first.mode, first.band, first.ha_cv) == ("remote", Band(min=500, max=650), True)
+    assert (first.mode, first.band, first.has_cv) == ("remote", Band(min=500, max=650), True)
     carla = listed.items[2]
-    assert (carla.vetted, carla.mode, carla.band, carla.ha_cv) == (False, None, None, False)
+    assert (carla.vetted, carla.mode, carla.band, carla.has_cv) == (False, None, None, False)
 
 
 def test_the_read_carries_no_rate_state_or_note(talents: Session) -> None:
@@ -623,7 +623,7 @@ def _insert_talents(
         {
             "id": uuid4(),
             "email": f"talento{n:03}@studio.it",
-            "nome": "Ada",
+            "first_name": "Ada",
             "last_name": f"Cognome{n:03}",
         }
         for n in numbers
@@ -635,7 +635,7 @@ def _insert_talents(
             "user_id": user["id"],
             "status": "new",
             "links": [],
-            "compilata_da": "person",
+            "filled_by": "person",
             "remote": "remote",
             "daily_rate": Decimal("450.00"),
             "vetted_at": NOW if n == vetted else None,
@@ -711,8 +711,8 @@ def test_a_card_whose_skills_are_not_a_list_leaves_the_skill_filter_working(
         broken = _talent(talents, last_name)
         talents.execute(
             text(
-                "UPDATE freelancer_cards SET card = jsonb_set(card, '{competenze}', "
-                "CAST(:competenze AS JSONB)) WHERE freelancer_id = :id"
+                "UPDATE freelancer_cards SET card = jsonb_set(card, '{skills}', "
+                "CAST(:skills AS JSONB)) WHERE freelancer_id = :id"
             ),
             {"skills": json.dumps(skills), "id": broken},
         )
@@ -785,7 +785,7 @@ def _open_cloud(session: Session, settings: Settings) -> tuple[UUID, UUID, UUID]
 
 
 def test_a_card_files_a_request_for_that_talent_alone(talents: Session, settings: Settings) -> None:
-    ada = _talent(talents, "Lovelace", nome="Ada", card={"role": "Data engineer"})
+    ada = _talent(talents, "Lovelace", first_name="Ada", card={"role": "Data engineer"})
     _, user_id, acme = _open_cloud(talents, settings)
     caller = CloudTalentService(talents).caller(user_id)
     assert caller is not None
@@ -848,7 +848,7 @@ def test_a_card_files_a_request_for_that_talent_alone(talents: Session, settings
 def test_the_builder_files_its_own_cloud_proposal_at_once(
     talents: Session, settings: Settings
 ) -> None:
-    ada = _talent(talents, "Lovelace", nome="Ada")
+    ada = _talent(talents, "Lovelace", first_name="Ada")
     admin_id, user_id, acme = _open_cloud(talents, settings)
     own = _cloud_proposal(talents, [ada], user_id=user_id)
     someone_elses = _cloud_proposal(talents, [ada], user_id=admin_id)

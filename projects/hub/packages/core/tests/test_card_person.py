@@ -43,7 +43,7 @@ def _person(**fields: Any) -> CardPerson:
 def test_the_person_is_cleaned_and_what_does_not_pass_is_dropped() -> None:
     read = clean_person(
         _person(
-            nome="  Ada \n",
+            first_name="  Ada \n",
             last_name="Lovelace",
             email=" Ada.Lovelace@Example.ORG ",
             phone="+39 333 123 4567",
@@ -62,7 +62,7 @@ def test_the_person_is_cleaned_and_what_does_not_pass_is_dropped() -> None:
     )
 
     assert read == CardPersonRead(
-        nome="Ada",
+        first_name="Ada",
         last_name="Lovelace",
         email="ada.lovelace@example.org",
         phone="+39 333 123 4567",
@@ -76,7 +76,7 @@ def test_the_person_is_cleaned_and_what_does_not_pass_is_dropped() -> None:
 def test_an_invalid_value_is_dropped_and_never_an_error() -> None:
     read = clean_person(
         _person(
-            nome="x" * 200,
+            first_name="x" * 200,
             email="ada at example dot org",
             phone="Tel. +39 333 1234567",
             linkedin_url="https://example.com/in/ada",
@@ -99,7 +99,7 @@ def test_the_links_kept_are_a_short_list() -> None:
 
 def test_the_differences_are_where_both_sides_say_something_else() -> None:
     person = CardPersonRead(
-        nome="ada",
+        first_name="ada",
         last_name="LOVELACE",
         email="Ada.Other@example.org",
         phone="333 1234567",
@@ -107,7 +107,7 @@ def test_the_differences_are_where_both_sides_say_something_else() -> None:
     )
     found = differences(
         person,
-        nome=" Ada ",
+        first_name=" Ada ",
         last_name="Lovelace",
         email="ada@studio.it",
         phone="+39 333 123 4567",
@@ -120,7 +120,12 @@ def test_the_differences_are_where_both_sides_say_something_else() -> None:
     assert [
         d.field
         for d in differences(
-            person, nome="Ada", last_name="Byron", email="", phone="02 5550199", linkedin_url=None
+            person,
+            first_name="Ada",
+            last_name="Byron",
+            email="",
+            phone="02 5550199",
+            linkedin_url=None,
         )
     ] == [
         "last_name",
@@ -129,7 +134,7 @@ def test_the_differences_are_where_both_sides_say_something_else() -> None:
     assert (
         differences(
             CardPersonRead(),
-            nome="Ada",
+            first_name="Ada",
             last_name="X",
             email="a@b.it",
             phone=None,
@@ -187,7 +192,7 @@ def test_a_card_that_carries_the_persons_phone_is_asked_again_then_failed(
     assert read.card is None and read.error is not None and "un recapito" in read.error
     assert len(llm.requests) == 2
     assert IDENTIFYING_AGAIN in llm.requests[1].messages[2].text
-    assert "Campi da correggere: sintesi." in llm.requests[1].messages[2].text
+    assert "Campi da correggere: profile_summary." in llm.requests[1].messages[2].text
     # The contacts are read all the same: the card was refused, not the persona.
     persona = stored_person(clean_hub, person)
     assert persona is not None and persona.phone == "+39 333 123 4567"
@@ -216,7 +221,7 @@ def test_the_admin_read_has_the_person_and_the_differences(clean_hub: Session) -
     admin = CardWriter(clean_hub, None).read_admin(person)
 
     assert admin.person == CardPersonRead(
-        nome="Ada",
+        first_name="Ada",
         last_name="Lovelace",
         email="ada.lovelace@example.org",
         phone="+39 333 123 4567",
@@ -237,7 +242,7 @@ def test_the_admin_read_has_the_person_and_the_differences(clean_hub: Session) -
 def test_to_card_without_to_person_reads_as_none(clean_hub: Session) -> None:
     person = apply_freelancer(clean_hub)
     CardWriter(clean_hub, RecordingCall([card_response()])).write(person)
-    clean_hub.execute(text("UPDATE freelancer_cards SET persona = NULL"))
+    clean_hub.execute(text("UPDATE freelancer_cards SET person = NULL"))
     clean_hub.commit()
 
     admin = CardWriter(clean_hub, None).read_admin(person)
@@ -269,12 +274,12 @@ def test_to_new_cvs_card_replaces_the_person(clean_hub: Session) -> None:
     person = apply_freelancer(clean_hub)
     _writer(clean_hub, RecordingCall([card_response(person=PERSON)])).write(person)
     MemberService(clean_hub).replace_cv(person, CV_2, "cv 2026.pdf", "application/pdf")
-    other = {**NO_PERSON, "nome": "Charles", "last_name": "Babbage"}
+    other = {**NO_PERSON, "first_name": "Charles", "last_name": "Babbage"}
 
     _writer(clean_hub, RecordingCall([card_response(person=other)])).write(person)
 
     persona = stored_person(clean_hub, person)
-    assert persona is not None and (persona.nome, persona.email) == ("Charles", None)
+    assert persona is not None and (persona.first_name, persona.email) == ("Charles", None)
 
 
 def test_to_person_read_from_another_cv_is_never_shown(clean_hub: Session) -> None:
@@ -286,7 +291,7 @@ def test_to_person_read_from_another_cv_is_never_shown(clean_hub: Session) -> No
     assert CardWriter(clean_hub, None).read_admin(person).person is not None
 
     clean_hub.execute(
-        text("UPDATE freelancer_cards SET persona = jsonb_set(persona, '{cv_sha256}', '\"x\"')")
+        text("UPDATE freelancer_cards SET person = jsonb_set(person, '{cv_sha256}', '\"x\"')")
     )
     clean_hub.commit()
 
@@ -322,7 +327,7 @@ def test_a_card_of_the_previous_prompt_waits_for_an_admin_and_is_never_written_b
 ) -> None:
     person = apply_freelancer(clean_hub)
     _writer(clean_hub, RecordingCall([card_response()])).write(person)
-    clean_hub.execute(text("UPDATE freelancer_cards SET prompt_version = 2, persona = NULL"))
+    clean_hub.execute(text("UPDATE freelancer_cards SET prompt_version = 2, person = NULL"))
     clean_hub.commit()
     silent = RecordingCall([])
 
@@ -340,7 +345,7 @@ def test_no_other_reader_of_a_card_carries_the_contacts(clean_hub: Session) -> N
         clean_hub, RecordingCall([card_response(person=PERSON, employers=["Initech Labs"])])
     ).write(person)
     clean_hub.execute(
-        text("UPDATE freelancers SET vetted_at = now(), stato = 'attivo' WHERE id = :f"),
+        text("UPDATE freelancers SET vetted_at = now(), status = 'active' WHERE id = :f"),
         {"f": person},
     )
     clean_hub.commit()

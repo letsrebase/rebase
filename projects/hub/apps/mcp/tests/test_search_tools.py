@@ -48,21 +48,21 @@ def clean(factory: sessionmaker[Session]) -> sessionmaker[Session]:
 
 def _card(
     factory: sessionmaker[Session],
-    nome: str,
+    first_name: str,
     last_name: str,
     email: str,
     rate: str,
-    posizione: str = "Backend developer",
+    job_title: str = "Backend developer",
 ) -> str:
     session = factory()
     try:
         row, _ = FreelancerService(session).apply(
             FreelancerCreate(
-                nome=nome,
+                first_name=first_name,
                 last_name=last_name,
                 email=email,
                 daily_rate=Decimal(rate),
-                posizione=posizione,
+                job_title=job_title,
                 remote="remote",
             ),
             PDF,
@@ -74,10 +74,12 @@ def _card(
         session.close()
 
 
-def _lead(factory: sessionmaker[Session], nome: str, last_name: str, email: str) -> None:
+def _lead(factory: sessionmaker[Session], first_name: str, last_name: str, email: str) -> None:
     session = factory()
     try:
-        SignupService(session).subscribe(SignupCreate(email=email, nome=nome, last_name=last_name))
+        SignupService(session).subscribe(
+            SignupCreate(email=email, first_name=first_name, last_name=last_name)
+        )
     finally:
         session.close()
 
@@ -264,6 +266,6 @@ async def test_the_tool_descriptions_stay_italian(clean: Any) -> None:
         assert not ENGLISH.findall(description), name
         assert len(ITALIAN.findall(description)) >= 3, name
     # The new surface is the one the card is about: it says what the cursor is for,
-    # and the removal pass left `list_companies` behind for `list_companies`.
+    # and the English tool names are the only ones left.
     assert "cursore" in listed["list_talents"] and "cursore" in listed["list_companies"]
-    assert "list_companies" not in listed and "get_talent" in listed
+    assert "list_aziende" not in listed and "get_talent" in listed

@@ -14,7 +14,7 @@ import { TeamBuilder } from '@/components/TeamBuilder'
 import { ANY, SEARCH_DEBOUNCE_MS, useDebounce } from '@/lib/adminList'
 import { ApiError, cloud, type Band, type CloudFilters, type CloudTalent } from '@/lib/api'
 import { DAY_BANDS, bandLabel } from '@/lib/bands'
-import { CLOUD_VETTED_LABEL, RemoteLabels, SENIORITY_LABELS, formatLevel } from '@/lib/format'
+import { CLOUD_VETTED_LABEL, REMOTE_LABELS, SENIORITY_LABELS, formatLevel } from '@/lib/format'
 import { keys } from '@/lib/query-keys'
 import { isHttpUrl } from '@/lib/url'
 
@@ -80,8 +80,8 @@ export function Cloud() {
   const ids = useId()
   const [choices, setChoices] = useState<Choices>(NO_CHOICE)
   const [skill, setSkill] = useState('')
-  const competenza = useDebounce(skill.trim(), SEARCH_DEBOUNCE_MS)
-  const filters = toFilters(choices, competenza)
+  const skillTerm = useDebounce(skill.trim(), SEARCH_DEBOUNCE_MS)
+  const filters = toFilters(choices, skillTerm)
   const talents = useQuery({
     queryKey: keys.cloudTalents(filters),
     queryFn: () => cloud.talents(filters),
@@ -175,9 +175,9 @@ export function Cloud() {
               </SelectContent>
             </Select>
           </Filter>
-          <Filter label="Competenza" id={`${ids}-competenza`}>
+          <Filter label="Competenza" id={`${ids}-skill`}>
             <Input
-              id={`${ids}-competenza`}
+              id={`${ids}-skill`}
               type="search"
               maxLength={100}
               placeholder="Python, Figma, SAP…"
@@ -192,7 +192,7 @@ export function Cloud() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value={ANY}>Tutte</SelectItem>
-                {Object.entries(RemoteLabels).map(([value, label]) => (
+                {Object.entries(REMOTE_LABELS).map(([value, label]) => (
                   <SelectItem key={value} value={value}>
                     {label}
                   </SelectItem>
@@ -287,7 +287,7 @@ function Closed({ message }: { message: string }) {
 function TalentCard({ talent }: { talent: CloudTalent }) {
   const [state, setState] = useState<'idle' | 'sending' | 'sent'>('idle')
   const { card } = talent
-  const name = `${talent.nome} ${talent.last_name}`
+  const name = `${talent.first_name} ${talent.last_name}`
   const links = talent.links
     .map((url) => ({ url, label: linkLabel(url) }))
     .filter((link): link is { url: string; label: string } => link.label !== null)
@@ -325,12 +325,12 @@ function TalentCard({ talent }: { talent: CloudTalent }) {
         <Badges label="Settori" items={card.industries} variant="secondary" />
         <Badges label="Lingue" items={card.languages} variant="secondary" />
         <p className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
-          {talent.mode && <span className="text-muted-foreground">{RemoteLabels[talent.mode]}</span>}
+          {talent.mode && <span className="text-muted-foreground">{REMOTE_LABELS[talent.mode]}</span>}
           <span className="font-medium">{talent.band ? bandLabel(talent.band) : 'Tariffa da definire'}</span>
         </p>
-        {(linkedin || links.length > 0 || talent.ha_cv) && (
+        {(linkedin || links.length > 0 || talent.has_cv) && (
           <ul aria-label={`Link di ${name}`} className="flex flex-wrap gap-x-4 gap-y-1 text-sm">
-            {talent.ha_cv && (
+            {talent.has_cv && (
               <li>
                 <a
                   href={cloud.cvUrl(talent.freelancer_id)}

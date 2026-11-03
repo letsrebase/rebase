@@ -20,8 +20,8 @@ def clean(hub_session: Session) -> Session:
     hub_session.commit()
 
 
-def _login(session: Session, email: str, nome: str, last_name: str = "Utente") -> Login:
-    user = User(email=email, nome=nome, last_name=last_name)
+def _login(session: Session, email: str, first_name: str, last_name: str = "Utente") -> Login:
+    user = User(email=email, first_name=first_name, last_name=last_name)
     session.add(user)
     session.flush()
     row = Login(user_id=user.id)

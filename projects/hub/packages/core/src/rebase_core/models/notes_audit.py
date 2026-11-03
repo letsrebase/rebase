@@ -38,9 +38,9 @@ class Note(Base, PrimaryKeyMixin):
 
     The text carries no date or author: `created_at`, `author` (the display name as it
     read when it was written), `author_id` and `source` say who and when and by which door,
-    and `modificata_*` who changed it last. An admin may edit or delete a note of their own
+    and `edited_*` who changed it last. An admin may edit or delete a note of their own
     kind (`NOTE_ADMIN_SOURCES`, or an old row with no source); the delete is soft
-    (`eliminata_*`), so the trail (`AdminAction` `note_*`) can still say what was there.
+    (`deleted_*`), so the trail (`AdminAction` `note_*`) can still say what was there.
 
     `entity_type` plus `entity_id` rather than two nullable foreign keys: the service
     checks the row exists before writing, and one table with one index is what a thread on
@@ -65,7 +65,7 @@ class Note(Base, PrimaryKeyMixin):
     __table_args__ = (
         Index("ix_notes_entity", "entity_type", "entity_id", "created_at"),
         CheckConstraint(
-            "fonte IS NULL OR fonte IN ('web', 'mcp', 'persona', 'sistema')", name="ck_notes_fonte"
+            "source IS NULL OR source IN ('web', 'mcp', 'person', 'system')", name="ck_notes_source"
         ),
     )
 
@@ -213,7 +213,7 @@ class AdminToken(Base, PrimaryKeyMixin, TimestampMixin):
     __tablename__ = "admin_tokens"
 
     user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
-    nome: Mapped[str] = mapped_column(String(NAME_MAX_LENGTH), nullable=False)
+    name: Mapped[str] = mapped_column(String(NAME_MAX_LENGTH), nullable=False)
     token_hash: Mapped[str] = mapped_column(
         String(ADMIN_SESSION_TOKEN_HASH_LENGTH), nullable=False, unique=True
     )
@@ -225,13 +225,13 @@ class AdminToken(Base, PrimaryKeyMixin, TimestampMixin):
     expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
 
     __table_args__ = (
-        # Trigram search (REB-313): Agenti's list matches a token by its own `nome`,
+        # Trigram search (REB-313): the agents' list matches a token by its own `name`,
         # the name the admin gave it -- there is no linked `users` row to search
-        # instead, unlike Talenti and Aziende.
+        # instead, unlike the talents and the companies.
         Index(
             "ix_admin_tokens_name_trgm",
-            "nome",
+            "name",
             postgresql_using="gin",
-            postgresql_ops={"nome": "gin_trgm_ops"},
+            postgresql_ops={"name": "gin_trgm_ops"},
         ),
     )

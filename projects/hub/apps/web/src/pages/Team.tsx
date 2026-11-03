@@ -16,13 +16,13 @@ const OPENING = 'Apro la proposta…'
 
 /** The public team builder, `/hub/team` (P-REB-43, spec § 3.1, § 4.3): no login, the
  *  wizards' chrome, the builder, and the beta box that points a company wanting the
- *  whole cloud at the company wizard, with `da=team-builder` as its origin. Since
+ *  whole cloud at the company wizard, with `from=team-builder` as its origin. Since
  *  REB-675 it also opens on a proposal made elsewhere: `?proposal=<id>`, the link the
  *  landing's hero gives under its minimal result, reads the proposal back and hands it
  *  to the builder as if just proposed; `?description=` only fills the box. */
 export function Team() {
   const search = useSearch({ strict: false }) as { proposal?: string; description?: string; people?: number }
-  const proposta = search.proposal
+  const proposalId = search.proposal
   // The read of `proposal`, keyed by it: a `null` proposal with `gone` is the API's
   // 404, without it a failure the next attempt may not repeat.
   const [opened, setOpened] = useState<{
@@ -33,25 +33,25 @@ export function Team() {
   const [attempt, setAttempt] = useState(0)
 
   useEffect(() => {
-    if (!proposta) return
+    if (!proposalId) return
     let current = true
-    team.get(proposta).then(
+    team.get(proposalId).then(
       (proposal) => {
-        if (current) setOpened({ id: proposta, proposal, gone: false })
+        if (current) setOpened({ id: proposalId, proposal, gone: false })
       },
       (error: unknown) => {
         if (!current) return
         const gone = error instanceof ApiError && error.status === 404
-        setOpened({ id: proposta, proposal: null, gone })
+        setOpened({ id: proposalId, proposal: null, gone })
       },
     )
     return () => {
       current = false
     }
-  }, [proposta, attempt])
+  }, [proposalId, attempt])
 
-  const read = proposta && opened?.id === proposta ? opened : null
-  const opening = Boolean(proposta) && read === null
+  const read = proposalId && opened?.id === proposalId ? opened : null
+  const opening = Boolean(proposalId) && read === null
   const proposal = read?.proposal ?? undefined
 
   return (
@@ -113,7 +113,7 @@ export function Team() {
           chiedi i talenti direttamente.
         </p>
         <Button asChild variant="outline">
-          <Link to="/companies" search={{ da: 'team-builder' }}>
+          <Link to="/companies" search={{ from: 'team-builder' }}>
             Chiedi l’accesso al talent cloud
           </Link>
         </Button>

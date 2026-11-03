@@ -15,7 +15,7 @@ const ADA = {
   owner_email: 'ada@studio.it',
   created_at: '2026-09-10T09:00:00Z',
   url: 'https://pigro.letsrebase.com/studio-ada/app/',
-  member: { id: 'f-1', nome: 'Ada', last_name: 'Lovelace' },
+  member: { id: 'f-1', first_name: 'Ada', last_name: 'Lovelace' },
 }
 const BOB = {
   slug: 'bob-dev',

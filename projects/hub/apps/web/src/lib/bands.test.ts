@@ -11,7 +11,7 @@ const DASH = '\u2013'
  *  `Band.label()` does, so an admin and a visitor read the same words. */
 describe('bandLabel', () => {
   it.each(CASES.bandLabel)('writes $band.min to $band.max per $unit as «$label»', ({ band, unit, label }) => {
-    expect(bandLabel(band, unit as 'day' | 'month')).toBe(label)
+    expect(bandLabel(band, unit === 'mese' ? 'month' : 'day')).toBe(label)
   })
 
   it('writes a band per day with its two bounds and an en dash', () => {

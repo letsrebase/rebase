@@ -19,9 +19,9 @@ def test_a_row_carries_the_position_and_what_the_anonymous_card_says(clean_hub: 
     """REB-778: an agent matching a request reads the role, the seniority, the years,
     the skills and the place from the list itself. A field of a card written by hand
     with the wrong type reads as missing rather than failing the whole list."""
-    ada = _apply(clean_hub, "ada@studio.it", posizione="Backend developer")
-    grace = _apply(clean_hub, "grace@studio.it", nome="Grace", last_name="Hopper")
-    _apply(clean_hub, "nocard@studio.it", nome="Nadia", last_name="Senza")
+    ada = _apply(clean_hub, "ada@studio.it", job_title="Backend developer")
+    grace = _apply(clean_hub, "grace@studio.it", first_name="Grace", last_name="Hopper")
+    _apply(clean_hub, "nocard@studio.it", first_name="Nadia", last_name="Senza")
     _signup(clean_hub, "lead@studio.it")
     _with_card(
         clean_hub,
@@ -43,7 +43,7 @@ def test_a_row_carries_the_position_and_what_the_anonymous_card_says(clean_hub: 
     for q in (None, "studio"):
         by_email = {item.email: item for item in TalentsService(clean_hub).list_recent(q=q).items}
         ada_row = by_email["ada@studio.it"]
-        assert ada_row.posizione == "Backend developer"
+        assert ada_row.job_title == "Backend developer"
         assert (ada_row.role, ada_row.seniority, ada_row.experience_years) == (
             "Data engineer",
             "senior",
@@ -61,23 +61,23 @@ def test_a_row_carries_the_position_and_what_the_anonymous_card_says(clean_hub: 
         assert grace_row.skills == []
         no_card = by_email["nocard@studio.it"]
         assert no_card.has_anonymous_card is False
-        assert no_card.posizione == "Backend developer" and no_card.skills == []
-        assert by_email["lead@studio.it"].posizione is None
+        assert no_card.job_title == "Backend developer" and no_card.skills == []
+        assert by_email["lead@studio.it"].job_title is None
 
 
 def test_skills_keeps_the_cards_that_name_every_term(clean_hub: Session) -> None:
     """Each term may sit in a skill, the role, the summary or the position, whatever the
     case; a card that names only some of them, a card whose skills are not a list, a
     card that is not a JSON object and every lead stay out, without failing the list."""
-    both_skills = _apply(clean_hub, "ada@studio.it", posizione="Backend developer")
-    spread = _apply(clean_hub, "bruno@studio.it", nome="Bruno", posizione="React developer")
-    in_the_role = _apply(clean_hub, "fabio@studio.it", nome="Fabio")
-    one_only = _apply(clean_hub, "cara@studio.it", nome="Cara")
-    not_a_list = _apply(clean_hub, "eva@studio.it", nome="Eva")
-    an_array = _apply(clean_hub, "gina@studio.it", nome="Gina")
-    a_string = _apply(clean_hub, "hugo@studio.it", nome="Hugo")
-    objects_inside = _apply(clean_hub, "ivo@studio.it", nome="Ivo")
-    _apply(clean_hub, "dario@studio.it", nome="Dario", posizione="SQL Server DBA")
+    both_skills = _apply(clean_hub, "ada@studio.it", job_title="Backend developer")
+    spread = _apply(clean_hub, "bruno@studio.it", first_name="Bruno", job_title="React developer")
+    in_the_role = _apply(clean_hub, "fabio@studio.it", first_name="Fabio")
+    one_only = _apply(clean_hub, "cara@studio.it", first_name="Cara")
+    not_a_list = _apply(clean_hub, "eva@studio.it", first_name="Eva")
+    an_array = _apply(clean_hub, "gina@studio.it", first_name="Gina")
+    a_string = _apply(clean_hub, "hugo@studio.it", first_name="Hugo")
+    objects_inside = _apply(clean_hub, "ivo@studio.it", first_name="Ivo")
+    _apply(clean_hub, "dario@studio.it", first_name="Dario", job_title="SQL Server DBA")
     _signup(clean_hub, "lead@studio.it")
     _with_card(clean_hub, both_skills, {"skills": ["SQL Server", "React"]})
     _with_card(
@@ -94,7 +94,7 @@ def test_skills_keeps_the_cards_that_name_every_term(clean_hub: Session) -> None
     _with_card(
         clean_hub,
         objects_inside,
-        {"role": {"nome": "SQL Server"}, "skills": [{"nome": "SQL Server"}, "React"]},
+        {"role": {"first_name": "SQL Server"}, "skills": [{"first_name": "SQL Server"}, "React"]},
     )
 
     talents = TalentsService(clean_hub)
@@ -121,10 +121,10 @@ def test_skills_keeps_the_cards_that_name_every_term(clean_hub: Session) -> None
 
 def test_location_matches_part_of_the_card_place(clean_hub: Session) -> None:
     monza = _apply(clean_hub, "ada@studio.it")
-    rome = _apply(clean_hub, "bruno@studio.it", nome="Bruno")
-    an_array = _apply(clean_hub, "cara@studio.it", nome="Cara")
-    an_object = _apply(clean_hub, "eva@studio.it", nome="Eva")
-    _apply(clean_hub, "dario@studio.it", nome="Dario")
+    rome = _apply(clean_hub, "bruno@studio.it", first_name="Bruno")
+    an_array = _apply(clean_hub, "cara@studio.it", first_name="Cara")
+    an_object = _apply(clean_hub, "eva@studio.it", first_name="Eva")
+    _apply(clean_hub, "dario@studio.it", first_name="Dario")
     _signup(clean_hub, "lead@studio.it")
     _with_card(clean_hub, monza, {"location": "Monza e Brianza"})
     _with_card(clean_hub, rome, {"location": "Roma"})
@@ -160,13 +160,16 @@ def test_the_admins_level_beats_the_cards_in_the_row_the_filters_and_the_ranking
     clean_hub: Session,
 ) -> None:
     """REB-799: an admin's seniority and years are what the row shows and what the
-    seniority and anni filters and the anni sort read, each on its own; a card with no
+    seniority and years filters and the years sort read, each on its own; a card with no
     dated years reads uncertain until an admin gives the seniority."""
     corrected = _profile(
         clean_hub, "fix@studio.it", rate="300", seniority="lead", experience_years=3
     )
     clean_hub.execute(
-        text("UPDATE freelancers SET seniority_admin = 'mid', anni_admin = 6 WHERE id = :id"),
+        text(
+            "UPDATE freelancers SET seniority_admin = 'mid', experience_years_admin = 6 "
+            "WHERE id = :id"
+        ),
         {"id": corrected},
     )
     _profile(clean_hub, "plain@studio.it", rate="300", seniority="senior", experience_years=9)
@@ -248,16 +251,16 @@ def test_industries_and_languages_need_every_term_in_some_element(clean_hub: Ses
 
 
 def test_card_tells_to_live_card_from_to_failed_one_and_from_none(clean_hub: Session) -> None:
-    live = _apply(clean_hub, "live@studio.it", nome="Live")
+    live = _apply(clean_hub, "live@studio.it", first_name="Live")
     _with_card(clean_hub, live, {"role": "Dev"})
-    failed = _apply(clean_hub, "failed@studio.it", nome="Failed")
+    failed = _apply(clean_hub, "failed@studio.it", first_name="Failed")
     clean_hub.add(FreelancerCard(freelancer_id=failed, error="no_text", error_cv_sha256="1" * 64))
-    outage = _apply(clean_hub, "outage@studio.it", nome="Outage")
+    outage = _apply(clean_hub, "outage@studio.it", first_name="Outage")
     clean_hub.add(
         FreelancerCard(freelancer_id=outage, card={"role": "Dev"}, cv_sha256="2" * 64, error="x")
     )
     clean_hub.commit()
-    _apply(clean_hub, "none@studio.it", nome="None")
+    _apply(clean_hub, "none@studio.it", first_name="None")
     talents = TalentsService(clean_hub)
     assert sorted(_emails(talents.list_recent(card="present"))) == [
         "live@studio.it",
@@ -265,7 +268,7 @@ def test_card_tells_to_live_card_from_to_failed_one_and_from_none(clean_hub: Ses
     ]
     assert _emails(talents.list_recent(card="failed")) == ["failed@studio.it"]
     assert _emails(talents.list_recent(card="absent")) == ["none@studio.it"]
-    with pytest.raises(ValidationFailed, match="presente, assente, fallita"):
+    with pytest.raises(ValidationFailed, match="present, absent, failed"):
         talents.list_recent(card="rotta")
 
 
@@ -321,7 +324,7 @@ def test_sort_recent_overrides_the_search_order_and_to_cursor_keeps_its_own_orde
         rate="200",
         seniority="mid",
         experience_years=2,
-        nome="Adalberto",
+        first_name="Adalberto",
     )
     talents = TalentsService(clean_hub)
     newest_first = talents.list_recent(q="ada", sort="recent")
@@ -334,7 +337,7 @@ def test_sort_recent_overrides_the_search_order_and_to_cursor_keeps_its_own_orde
     # `(value, id) > ...` would skip and repeat rows.
     with pytest.raises(ValidationFailed, match="altro ordinamento"):
         talents.list_recent(limit=1, sort="rate_desc", cursor=by_rate.next_cursor)
-    with pytest.raises(ValidationFailed, match="recenti, tariffa_asc"):
+    with pytest.raises(ValidationFailed, match="recent, rate_asc"):
         talents.list_recent(sort="a_caso")
 
 

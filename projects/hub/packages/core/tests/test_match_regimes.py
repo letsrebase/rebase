@@ -40,8 +40,8 @@ from rebase_core.regimes import Regime
 
 
 def test_an_occasional_document_downloads_under_its_own_texts_name(clean: Session) -> None:
-    """REB-687: `contratto-quadro-occasionale-v1.0.pdf`, never a second
-    `contratto-quadro-v1.0.pdf`."""
+    """REB-687: `framework-agreement-occasional-v1.0.pdf`, never a second
+    `framework-agreement-v1.0.pdf`."""
     admin_id, freelancer_id, _company_id = _setup(clean)
     framework = ContractDocument(
         kind="framework",
@@ -57,7 +57,7 @@ def test_an_occasional_document_downloads_under_its_own_texts_name(clean: Sessio
     clean.add(framework)
     clean.commit()
     assert _service(clean).reads.document_pdf(framework.id).filename == (
-        "contratto-quadro-occasionale-v1.0.pdf"
+        "framework-agreement-occasional-v1.0.pdf"
     )
 
 
@@ -69,24 +69,24 @@ def test_framework_lookups_and_states_are_per_regime(clean: Session) -> None:
     occasional = _framework(
         clean, freelancer_id, admin_id, status="sent", signed_at=None, regime="occasional"
     )
-    active = active_framework(clean, freelancer_id, "partita_iva")
+    active = active_framework(clean, freelancer_id, "vat_registered")
     assert active is not None and active.id == ordinary.id
     assert active_framework(clean, freelancer_id, "occasional") is None
     pending = pending_framework(clean, freelancer_id, "occasional")
     assert pending is not None and pending.id == occasional.id
-    assert pending_framework(clean, freelancer_id, "partita_iva") is None
+    assert pending_framework(clean, freelancer_id, "vat_registered") is None
     assert framework_states(clean, {freelancer_id}) == {
-        (freelancer_id, "partita_iva"): "signed",
+        (freelancer_id, "vat_registered"): "signed",
         (freelancer_id, "occasional"): "sent",
     }
     both = _documents(clean, freelancer_id, "framework")
-    assert (framework_state(both, "partita_iva"), framework_state(both, "occasional")) == (
+    assert (framework_state(both, "vat_registered"), framework_state(both, "occasional")) == (
         "signed",
         "sent",
     )
 
 
-def test_a_new_version_is_announced_against_the_quadros_own_text(
+def test_a_new_version_is_announced_against_the_frameworks_own_text(
     clean: Session, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Once one regime's text moves to a new version, only that regime's
@@ -94,11 +94,11 @@ def test_a_new_version_is_announced_against_the_quadros_own_text(
     admin_id, freelancer_id, _company_id = _setup(clean)
     _framework(clean, freelancer_id, admin_id, text_version="1.0")
     _framework(clean, freelancer_id, admin_id, text_version="1.0", regime="occasional")
-    versions = {"partita_iva": "1.1", "occasional": "1.0"}
+    versions = {"vat_registered": "1.1", "occasional": "1.0"}
     monkeypatch.setattr(match_reads_module, "current_framework_version", versions.__getitem__)
     frameworks = _service(clean).reads.for_freelancer(freelancer_id).frameworks
     assert {(framework.regime, framework.new_version) for framework in frameworks} == {
-        ("partita_iva", True),
+        ("vat_registered", True),
         ("occasional", False),
     }
 
@@ -107,28 +107,30 @@ def test_the_documents_of_an_ordinary_match_say_their_regime_and_type(clean: Ses
     admin_id, freelancer_id, company_id = _setup(clean)
     service = _service(clean)
     match = service.create(freelancer_id, _body(company_id), admin_id)
-    assert (match.letter.regime, match.letter.kind) == ("partita_iva", "Lettera di incarico")
-    assert {document.regime for document in _documents(clean, freelancer_id)} == {"partita_iva"}
+    assert (match.letter.regime, match.letter.label) == ("vat_registered", "Lettera di incarico")
+    assert {document.regime for document in _documents(clean, freelancer_id)} == {"vat_registered"}
     page = service.reads.for_freelancer(freelancer_id)
     assert page.framework is not None
-    assert (page.framework.regime, page.framework.kind) == ("partita_iva", "Contratto quadro")
+    assert (page.framework.regime, page.framework.label) == ("vat_registered", "Contratto quadro")
 
 
 def test_the_prefill_proposes_the_letter_type_from_the_tax_data(clean: Session) -> None:
     admin_id, freelancer_id, company_id = _admin(clean), _card(clean), _request(clean)
     service = _service(clean)
-    assert service.drafts.prefill(freelancer_id, company_id).regime == "partita_iva"  # none saved
+    assert (
+        service.drafts.prefill(freelancer_id, company_id).regime == "vat_registered"
+    )  # none saved
     _fiscal(clean, freelancer_id, admin_id)
-    assert service.drafts.prefill(freelancer_id, company_id).regime == "partita_iva"
+    assert service.drafts.prefill(freelancer_id, company_id).regime == "vat_registered"
     _fiscal(clean, freelancer_id, admin_id, vat_number=None)
     prefill = service.drafts.prefill(freelancer_id, company_id)
     assert (prefill.regime, prefill.required_framework) == ("occasional", True)
     proposed = service.drafts.proposal(freelancer_id, company_id, customer=CUSTOMER_REST)
     assert proposed.regime == "occasional"
     chosen = service.drafts.proposal(
-        freelancer_id, company_id, customer=CUSTOMER_REST, regime="partita_iva"
+        freelancer_id, company_id, customer=CUSTOMER_REST, regime="vat_registered"
     )
-    assert chosen.regime == "partita_iva"
+    assert chosen.regime == "vat_registered"
 
 
 @pytest.mark.parametrize("action", ["create", "check", "preview"])
@@ -169,7 +171,7 @@ def test_an_occasional_letter_for_to_vat_number_holder_is_allowed_and_warned(
         "occasionale parte da sola dopo la sua firma."
     )
     match = service.create(freelancer_id, _body(company_id, regime="occasional"), admin_id)
-    assert match.letter.kind == "Lettera di incarico occasionale"
+    assert match.letter.label == "Lettera di incarico occasionale"
 
 
 def test_an_occasional_match_writes_the_occasional_texts_and_prints_the_tax_code(
@@ -191,16 +193,18 @@ def test_an_occasional_match_writes_the_occasional_texts_and_prints_the_tax_code
         "occasional",
         "pending",
     )
-    (_, quadro_data), (_, letter_data) = renderer.calls
-    assert "professionista-piva" not in quadro_data
+    (_, framework_date), (_, letter_data) = renderer.calls
+    assert "professionista-piva" not in framework_date
     assert "professionista-piva" not in letter_data
     assert (
-        letter_data["professionista-cf"] == quadro_data["professionista-cf"] == ("LVLDAA85T50H501Z")
+        letter_data["professionista-cf"]
+        == framework_date["professionista-cf"]
+        == ("LVLDAA85T50H501Z")
     )
     for document, data in renderer.calls:
         asked = set(FIELD.findall(text_path(document).read_text(encoding="utf-8")))
         assert asked - {TERM} <= set(data), document
-    assert (match.letter.regime, match.letter.kind) == (
+    assert (match.letter.regime, match.letter.label) == (
         "occasional",
         "Lettera di incarico occasionale",
     )
@@ -256,7 +260,7 @@ def test_the_stale_framework_cleanup_leaves_the_other_regimes_frameworks_alone(
     service.create(freelancer_id, _body(company_id, regime="occasional"), admin_id)
     service.create(freelancer_id, _body(company_id, regime="occasional"), admin_id)
     assert [(d.regime, d.status) for d in _documents(clean, freelancer_id, "framework")] == [
-        ("partita_iva", "generated"),
+        ("vat_registered", "generated"),
         ("occasional", "cancelled"),
         ("occasional", "generated"),
     ]
@@ -270,8 +274,8 @@ def test_the_contracts_page_shows_one_framework_per_regime(clean: Session) -> No
     service.create(freelancer_id, _body(company_id, regime="occasional"), admin_id)
     page = service.reads.for_freelancer(freelancer_id)
     assert page.framework is not None and page.occasional_framework is not None
-    assert (page.framework.regime, page.framework.kind) == ("partita_iva", "Contratto quadro")
-    assert (page.occasional_framework.regime, page.occasional_framework.kind) == (
+    assert (page.framework.regime, page.framework.label) == ("vat_registered", "Contratto quadro")
+    assert (page.occasional_framework.regime, page.occasional_framework.label) == (
         "occasional",
         "Contratto quadro per prestazioni occasionali",
     )
@@ -322,8 +326,8 @@ def test_an_occasional_preview_renders_the_occasional_texts(clean: Session) -> N
         freelancer_id, _body(company_id, regime="occasional"), "framework"
     )
     assert (letter.filename, framework.filename) == (
-        "anteprima-lettera-di-incarico-occasionale.pdf",
-        "anteprima-contratto-quadro-occasionale.pdf",
+        "preview-engagement-letter-occasional.pdf",
+        "preview-framework-agreement-occasional.pdf",
     )
     assert [document for document, _ in renderer.calls] == [
         "engagement-letter-occasional",
@@ -332,8 +336,8 @@ def test_an_occasional_preview_renders_the_occasional_texts(clean: Session) -> N
 
 
 @pytest.mark.parametrize(
-    ("framework_regime", "partita_iva", "letter_regime"),
-    [("partita_iva", None, "occasional"), ("occasional", "01234567890", "partita_iva")],
+    ("framework_regime", "vat_number", "letter_regime"),
+    [("vat_registered", None, "occasional"), ("occasional", "01234567890", "vat_registered")],
 )
 def test_prefill_check_and_letter_preview_read_only_their_own_regimes_framework(
     clean: Session, framework_regime: Regime, vat_number: str | None, letter_regime: Regime

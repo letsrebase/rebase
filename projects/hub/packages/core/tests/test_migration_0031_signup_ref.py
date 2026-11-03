@@ -12,14 +12,15 @@ from rebase_core.db import Base
 from rebase_core.migrate import INI_PATH, head_revision, upgrade_to_head
 
 
-def _columns(connection) -> list[str]:  # type: ignore[no-untyped-def]
+def _columns(connection, name: str) -> list[str]:  # type: ignore[no-untyped-def]
     return [
         row[0]
         for row in connection.execute(
             text(
                 "SELECT column_name FROM information_schema.columns "
-                "WHERE table_name = 'signups' AND column_name = 'rif'"
-            )
+                "WHERE table_name = 'signups' AND column_name = :name"
+            ),
+            {"name": name},
         )
     ]
 
@@ -33,7 +34,7 @@ def test_migration_0031_adds_an_empty_column_and_runs_again() -> None:
         engine = create_engine(url, future=True)
         command.downgrade(config, "0030")
         with engine.begin() as connection:
-            assert _columns(connection) == []
+            assert _columns(connection, "rif") == []
             connection.execute(
                 text(
                     "INSERT INTO signups (id, email, nome, cognome, created_at) VALUES "
@@ -43,14 +44,15 @@ def test_migration_0031_adds_an_empty_column_and_runs_again() -> None:
         for _ in range(2):
             command.upgrade(config, "head")
             with engine.begin() as connection:
-                assert _columns(connection) == ["ref"]
-                row = connection.execute(text("SELECT email, nome, rif FROM signups")).one()
+                assert _columns(connection, "ref") == ["ref"]
+                row = connection.execute(text("SELECT email, first_name, ref FROM signups")).one()
                 assert tuple(row) == ("old@acme.it", "Old", None)
-                connection.execute(text("UPDATE signups SET rif = 'ABCDEFGH23'"))
+                connection.execute(text("UPDATE signups SET ref = 'ABCDEFGH23'"))
             command.downgrade(config, "0030")
             with engine.connect() as connection:
-                assert _columns(connection) == []
+                assert _columns(connection, "rif") == []
         command.upgrade(config, "head")
+        command.downgrade(config, "0030")
         with engine.begin() as connection:
             # The revision again over the column it already added.
             connection.execute(text("UPDATE alembic_version SET version_num = '0030'"))

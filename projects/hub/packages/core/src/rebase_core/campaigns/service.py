@@ -129,8 +129,8 @@ class CampaignService:
         # `(fonte = 'filtri') = (filtri IS NOT NULL)`.
         campaign = Campaign(
             created_by=admin_id,
-            nome=data.nome.strip(),
-            slug=self._unique_slug(f"c-{now:%Y-%m-%d}-{_slugify(data.nome)}"[:70]),
+            name=data.name.strip(),
+            slug=self._unique_slug(f"c-{now:%Y-%m-%d}-{_slugify(data.name)}"[:70]),
             source=data.source,
             journey_status=data.journey_status if data.source == "status" else None,
             filters=data.filters.model_dump(mode="json", exclude_none=True)
@@ -167,15 +167,15 @@ class CampaignService:
             ]
             if fixed:
                 raise ValidationFailed(ENTITY, fixed[0], LIST_IS_FIXED)
-        if data.nome is not None:
-            changes["nome"] = data.nome.strip()
-            if changes["nome"] != campaign.nome:
+        if data.name is not None:
+            changes["name"] = data.name.strip()
+            if changes["name"] != campaign.name:
                 # The slug is the button's `utm_campaign` and Resend's tag: it follows
                 # the name a draft will be sent with (a filtered campaign starts as
                 # «Campagna da filtri»), keeping the day it was created.
                 created = campaign.created_at.astimezone(UTC)
                 campaign.slug = self._unique_slug(
-                    f"c-{created:%Y-%m-%d}-{_slugify(changes['nome'])}"[:70],
+                    f"c-{created:%Y-%m-%d}-{_slugify(changes['name'])}"[:70],
                     exclude=campaign.id,
                 )
         for field, value in changes.items():
@@ -211,7 +211,7 @@ class CampaignService:
         lines = [
             AudienceRowRead(
                 email=r.candidate.email,
-                nome=r.candidate.nome,
+                name=r.candidate.name,
                 kind=r.candidate.kind,
                 excluded=r.excluded,
             )
@@ -350,13 +350,13 @@ class CampaignService:
             raise ValidationFailed(ENTITY, "text", EMPTY_MAIL)
         target = RenderTarget(
             email=admin.email,
-            nome=(admin.nome or "").split(" ")[0] or None,
+            name=(admin.first_name or "").split(" ")[0] or None,
             code=person_code(admin.email),
             token="test",
         )
         outcome = sender.send(
             render(campaign, target, self.settings, test=True),
-            idempotency_key=f"prova-{campaign.id}-{self.clock().isoformat()}",
+            idempotency_key=f"test-{campaign.id}-{self.clock().isoformat()}",
         )
         if outcome.outcome != "accepted":
             raise InvalidState(
@@ -384,7 +384,7 @@ class CampaignService:
         ]
         if not rows:
             raise ValidationFailed(
-                ENTITY, "esclusi", "La lista è vuota: nessuno riceverebbe la mail."
+                ENTITY, "excluded", "La lista è vuota: nessuno riceverebbe la mail."
             )
         for row in rows:
             c = row.candidate
@@ -392,7 +392,7 @@ class CampaignService:
                 CampaignRecipient(
                     campaign_id=campaign.id,
                     email=c.email,
-                    nome=c.nome,
+                    name=c.name,
                     kind=c.kind,
                     user_id=c.user_id,
                     freelancer_id=c.freelancer_id,
@@ -458,7 +458,7 @@ class CampaignService:
         self.session.execute(
             update(CampaignRecipient)
             .where(
-                CampaignRecipient.campaign_id == campaign.id, CampaignRecipient.status == "in_coda"
+                CampaignRecipient.campaign_id == campaign.id, CampaignRecipient.status == "queued"
             )
             .values(status="skipped", reason=REASON_CANCELLED)
         )
@@ -467,8 +467,8 @@ class CampaignService:
         return CampaignRead.model_validate(campaign)
 
     def follow_up(self, campaign_id: UUID, admin_id: UUID) -> CampaignRead:
-        """«Riscrivi a chi non ha fatto niente» (spec § 4.3): a `draft` with `fonte =
-        lista` that follows `campaign_id`, with the same action and a copy of its mail to
+        """«Riscrivi a chi non ha fatto niente» (spec § 4.3): a `draft` with `source =
+        list` that follows `campaign_id`, with the same action and a copy of its mail to
         rewrite. Its list is the sent rows with no action, read when shown and frozen
         when scheduled, like any other."""
         parent = self._require(campaign_id)
@@ -481,13 +481,13 @@ class CampaignService:
         if not waiting_rows(self.session, parent):
             raise InvalidState(NOTHING_TO_FOLLOW)
         now = self.clock()
-        nome = f"{parent.nome}{FOLLOW_UP_SUFFIX}"[:CAMPAIGN_NAME_MAX_LENGTH]
+        name = f"{parent.name}{FOLLOW_UP_SUFFIX}"[:CAMPAIGN_NAME_MAX_LENGTH]
         campaign = Campaign(
             created_by=admin_id,
-            nome=nome,
-            slug=self._unique_slug(f"c-{now:%Y-%m-%d}-{_slugify(nome)}"[:70]),
+            name=name,
+            slug=self._unique_slug(f"c-{now:%Y-%m-%d}-{_slugify(name)}"[:70]),
             source="list",
-            segue_id=parent.id,
+            follows_id=parent.id,
             subject=parent.subject,
             text=parent.text,
             button_text=parent.button_text,
@@ -502,17 +502,19 @@ class CampaignService:
         return CampaignRead.model_validate(campaign)
 
     def _when(self, data: ScheduleRequest, now: datetime) -> datetime:
-        if data.day is None and data.ora is None:
+        if data.day is None and data.at_time is None:
             return now
-        if data.day is None or data.ora is None:
+        if data.day is None or data.at_time is None:
             raise ValidationFailed(
-                ENTITY, "ora", "Serve giorno e ora, o nessuno dei due per inviare adesso."
+                ENTITY, "at_time", "Serve giorno e ora, o nessuno dei due per inviare adesso."
             )
-        wall = datetime.combine(data.day, data.ora)
+        wall = datetime.combine(data.day, data.at_time)
         local = wall.replace(tzinfo=ROME)  # fold=0: the first of an hour that happens twice
         if local.astimezone(UTC).astimezone(ROME).replace(tzinfo=None) != wall:
             raise ValidationFailed(
-                ENTITY, "ora", "Quest'ora non esiste il giorno del cambio d'ora: scegline un'altra."
+                ENTITY,
+                "at_time",
+                "Quest'ora non esiste il giorno del cambio d'ora: scegline un'altra.",
             )
         when = local.astimezone(UTC)
         if when < now - PAST_SLACK:
@@ -592,7 +594,7 @@ class CampaignService:
             select(
                 r.campaign_id,
                 func.count().label("recipients"),
-                func.count(case((r.status == "in_coda", 1))).label("in_coda"),
+                func.count(case((r.status == "queued", 1))).label("queued"),
                 func.count(case((r.status == "sent", 1))).label("sent"),
                 func.count(case((r.status == "skipped", 1))).label("skipped"),
                 func.count(case((r.status == "failed", 1))).label("failed"),
@@ -608,7 +610,7 @@ class CampaignService:
         return {
             row.campaign_id: CampaignCounts(
                 recipients=row.recipients,
-                in_coda=row.in_coda,
+                queued=row.queued,
                 sent=row.sent,
                 skipped=row.skipped,
                 failed=row.failed,

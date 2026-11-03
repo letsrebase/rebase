@@ -50,7 +50,7 @@ def admin(client: TestClient, api_session: Session) -> Iterator[None]:
         _env_file=None, signer_json=json.dumps(SIGNER), documenso_webhook_secret=SECRET
     )
     client.app.dependency_overrides[get_settings] = lambda: settings  # type: ignore[attr-defined]
-    api_session.add(User(email=ADMIN_EMAIL, nome="Ivan", last_name="", role="admin"))
+    api_session.add(User(email=ADMIN_EMAIL, first_name="Ivan", last_name="", role="admin"))
     api_session.commit()
     yield
     api_session.rollback()
@@ -179,11 +179,11 @@ def test_someone_elses_document_is_a_404_never_a_403(
     applied = client.post(
         "/api/hub/freelancers",
         data={
-            "nome": "Grace",
+            "first_name": "Grace",
             "last_name": "Hopper",
             "email": "grace@studio.it",
             "daily_rate": "500",
-            "posizione": "Backend developer",
+            "job_title": "Backend developer",
             "remote": "remote",
         },
         files={"cv": ("Grace CV.pdf", PDF, "application/pdf")},

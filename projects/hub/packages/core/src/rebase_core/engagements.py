@@ -200,7 +200,7 @@ class _Recipient(NamedTuple):
     """What the freelancer's mail needs, read under the first lock."""
 
     email: str
-    nome: str
+    first_name: str
     number: str
     company: str
 
@@ -245,7 +245,7 @@ class EngagementService:
         «Riprova» try again once the profile is complete."""
         if letter.status != "signed":
             raise InvalidState(LETTER_NOT_SIGNED, status=letter.status)
-        if not user.nome.strip() or not user.last_name.strip():
+        if not user.first_name.strip() or not user.last_name.strip():
             raise _NotAsked(PROFILE_WITHOUT_NAME)
         signer = merge_data(company_defaults(), signer_data(self.settings.signer_json))
         certified_email = _text(signer.get("rebase-pec"))
@@ -259,19 +259,23 @@ class EngagementService:
         headquarters = _text(signer.get("rebase-sede"))
         sdi = _text(signer.get("rebase-codice-destinatario"))
         return {
-            "freelancer": {"email": user.email, "nome": user.nome, "last_name": user.last_name},
+            "freelancer": {
+                "email": user.email,
+                "first_name": user.first_name,
+                "last_name": user.last_name,
+            },
             "letter": {
                 "number": letter.number,
-                "role": data.get("role"),
-                "company": company.company_name,
+                "role": data.get("ruolo"),
+                "company_name": company.company_name,
                 "start_date": start.isoformat(),
-                "data_fine": end.isoformat() if end is not None else None,
+                "end_date": end.isoformat() if end is not None else None,
                 "fee": str(fee.quantize(CENT)) if fee is not None else None,
                 "expected_days": match.expected_days,
             },
             "rebase": {
                 "legal_name": _text(signer.get("rebase-ragione-sociale")),
-                "partita_iva": normalise_vat(_text(signer.get("rebase-piva"))),
+                "vat_number": normalise_vat(_text(signer.get("rebase-piva"))),
                 "tax_code": (
                     tax_code
                     if tax_code is not None and len(tax_code) <= FISCAL_CODE_MAX_LENGTH
@@ -317,14 +321,13 @@ class EngagementService:
                 except _NotAsked as missing:
                     unasked = Outcome(ERROR, missing.sentence)
                 recipient = _Recipient(
-                    user.email, user.nome, letter.number or "", company.company_name
+                    user.email, user.first_name, letter.number or "", company.company_name
                 )
                 started = self.now()
                 match.pigro_attempted_at = started
         if waiting:
             _log.info(
-                "no REBASE_PIGRO_ENGAGEMENTS_TOKEN on this environment: match %s waits "
-                "as da_collegare",
+                "no REBASE_PIGRO_ENGAGEMENTS_TOKEN on this environment: match %s waits as to_link",
                 match_id,
             )
             return self.reads.get(match_id)
@@ -400,7 +403,9 @@ class EngagementService:
 
     # ---- the report --------------------------------------------------------------------
 
-    def report(self, match_id: UUID, da: date | None = None, a: date | None = None) -> MatchReport:
+    def report(
+        self, match_id: UUID, from_date: date | None = None, to_date: date | None = None
+    ) -> MatchReport:
         """The hours on the match's deal (spec § 3.5), by default over the whole
         engagement: from the letter's start (the printed one for a match older than
         migration 0021, the match's own creation day when the letter has none) to
@@ -431,20 +436,20 @@ class EngagementService:
         pigro_url, expected_days = match.pigro_url, match.expected_days
         freelancer_id = match.freelancer_id
         started = self.now()
-        a = a if a is not None else self.today()
-        start = da if da is not None else self._start(match)
+        to_date = to_date if to_date is not None else self.today()
+        start = from_date if from_date is not None else self._start(match)
         # Nothing the CRM is asked for keeps this transaction open while it answers.
         self.session.rollback()
-        if da is not None and da > a:
-            raise ValidationFailed(ENTITY, "da", "il periodo inizia dopo la sua fine")
-        # `da = min(start, a)`: a letter signed before its start would otherwise send a
-        # `da` after `a`, which the CRM refuses with a 422. It has no hours yet, so today
+        if from_date is not None and from_date > to_date:
+            raise ValidationFailed(ENTITY, "from", "il periodo inizia dopo la sua fine")
+        # `from = min(start, to)`: a letter signed before its start would otherwise send a
+        # `from` after `to`, which the CRM refuses with a 422. It has no hours yet, so today
         # alone is asked for and the report is empty, while a deal gone or a CRM down
         # still shows here as everywhere else.
         try:
             windows = [
                 self._window(match_id, first, last)
-                for first, last in report_windows(min(start, a), a)
+                for first, last in report_windows(min(start, to_date), to_date)
             ]
         except Gone as gone:
             self._refused(match_id, freelancer_id, gone.cause, started)
@@ -530,7 +535,7 @@ class EngagementService:
         )
 
     def _write(self, match: Match, outcome: Outcome[_Linked]) -> None:
-        write(match, outcome, state="pigro_status", error="pigro_errore", copy=self._copy_link)
+        write(match, outcome, state="pigro_status", error="pigro_error", copy=self._copy_link)
 
     def _copy_link(self, match: Match, linked: _Linked) -> None:
         match.pigro_slug = linked.slug
@@ -551,7 +556,7 @@ class EngagementService:
         refusal takes the claim back under the lock, for the next call to send."""
         mail = engagement_ready_mail(
             recipient.email,
-            nome=recipient.nome,
+            first_name=recipient.first_name,
             number=recipient.number,
             company=recipient.company,
             deal_url=deal_url,
@@ -564,11 +569,11 @@ class EngagementService:
             lock_freelancer(self.session, freelancer_id)
             lock_match(self.session, match_id).pigro_mail_sent_at = None
 
-    def _window(self, match_id: UUID, da: date, a: date) -> CrmReport:
-        """One `GET` of the report, `a - da` within the CRM's cap. A `409` is the deal
+    def _window(self, match_id: UUID, from_date: date, to_date: date) -> CrmReport:
+        """One `GET` of the report, `to_date - from_date` within the CRM's cap. A `409` is the deal
         deleted in the space (spec § 3.10): `report` files the match as refused with the
         CRM's own sentence, the one `link` would store."""
-        query = urlencode({"da": da.isoformat(), "a": a.isoformat()})
+        query = urlencode({"from": from_date.isoformat(), "to": to_date.isoformat()})
         return self.door.get(
             f"{self._path(match_id)}/report?{query}", CrmReport.model_validate_json, gone=(409,)
         )

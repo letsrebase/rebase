@@ -89,7 +89,7 @@ export function AdminPigro() {
                               params={{ id: space.member.id }}
                               className="font-medium hover:underline"
                             >
-                              {space.member.nome} {space.member.last_name}
+                              {space.member.first_name} {space.member.last_name}
                             </Link>
                             <p className="text-xs text-muted-foreground">{space.owner_email}</p>
                           </>

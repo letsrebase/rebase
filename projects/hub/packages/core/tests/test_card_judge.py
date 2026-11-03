@@ -48,7 +48,7 @@ def test_the_judge_reads_the_card_the_cv_and_the_date() -> None:
     assert message.role == "user"
     assert "Today: 2026-10-27" in message.text
     assert "Position on the profile: Backend developer" in message.text
-    assert '"ruolo": "Backend developer"' in message.text
+    assert '"role": "Backend developer"' in message.text
     assert "<cv>\nAda, backend 2017 - 2025\n</cv>" in message.text
     assert "Sources available" not in message.text
     assert request.output_model is CardJudgement
@@ -121,7 +121,7 @@ def test_the_answer_is_a_verdict_per_field_and_what_was_invented() -> None:
         (judge_response(stop_reason="refusal"), "refusal"),
         (judge_response(stop_reason="max_tokens"), "max_tokens"),
         (judge_response(text="not json"), "shape"),
-        (judge_response(text='{"ruolo": {"verdict": "maybe", "reason": "x"}}'), "shape"),
+        (judge_response(text='{"role": {"verdict": "maybe", "reason": "x"}}'), "shape"),
     ],
 )
 def test_an_answer_that_is_no_judgement_is_a_failure_of_its_kind(

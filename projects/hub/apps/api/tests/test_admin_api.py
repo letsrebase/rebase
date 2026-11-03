@@ -35,7 +35,7 @@ def sender(client: TestClient) -> Iterator[RecordingSender]:
 
 @pytest.fixture
 def admin(api_session: Session) -> Iterator[None]:
-    api_session.add(User(email=ADMIN_EMAIL, nome="Ivan", last_name="", role="admin"))
+    api_session.add(User(email=ADMIN_EMAIL, first_name="Ivan", last_name="", role="admin"))
     api_session.commit()
     yield
     api_session.rollback()
@@ -57,11 +57,11 @@ def _apply(client: TestClient, email: str = "ada@studio.it") -> None:
     response = client.post(
         "/api/hub/freelancers",
         data={
-            "nome": "Ada",
+            "first_name": "Ada",
             "last_name": "Lovelace",
             "email": email,
             "daily_rate": "450",
-            "posizione": "Backend developer",
+            "job_title": "Backend developer",
             "remote": "remote",
         },
         files={"cv": ("Ada CV.pdf", PDF, "application/pdf")},
@@ -90,7 +90,7 @@ def test_the_guide_page_counts_downloads_and_names_who_took_it(
     client: TestClient, admin: None, api_session: Session, sender: RecordingSender
 ) -> None:
     """ORB-156: zero of everything on an empty hub, then the numbers follow the rows.
-    Two people on file, three downloads by one of them: totale 3, membri 1 of 2, all
+    Two people on file, three downloads by one of them: total 3, members 1 of 2, all
     three in the last week, the latest first, each with the member's name."""
     _login(client, sender)
     empty = client.get("/api/hub/perks/guide")
@@ -121,7 +121,7 @@ def test_the_guide_page_counts_downloads_and_names_who_took_it(
     assert stats["last_7_days"] == 3
     assert len(stats["recent"]) == 3
     latest = stats["recent"][0]
-    assert (latest["nome"], latest["last_name"]) == ("Ada", "Lovelace")
+    assert (latest["first_name"], latest["last_name"]) == ("Ada", "Lovelace")
     assert latest["email"] == "ada@studio.it"
     assert latest["user_id"] == str(ada_user_id)
     assert people["ada@studio.it"] != str(ada_user_id)  # the freelancer id, not the user id
@@ -267,11 +267,11 @@ def test_talents_search_hits_to_partial_surname_and_an_email_domain_over_http(
     response = client.post(
         "/api/hub/freelancers",
         data={
-            "nome": "Bob",
+            "first_name": "Bob",
             "last_name": "Rossi",
             "email": "bob@rossilab.it",
             "daily_rate": "450",
-            "posizione": "Backend developer",
+            "job_title": "Backend developer",
             "remote": "remote",
         },
         files={"cv": ("Bob CV.pdf", PDF, "application/pdf")},
@@ -295,11 +295,11 @@ def test_talents_filters_are_wired_through_the_router(
         response = client.post(
             "/api/hub/freelancers",
             data={
-                "nome": "Worker",
+                "first_name": "Worker",
                 "last_name": "Bee",
                 "email": email,
                 "daily_rate": "450",
-                "posizione": "Backend developer",
+                "job_title": "Backend developer",
                 "remote": remote,
             },
             files={"cv": ("cv.pdf", PDF, "application/pdf")},
@@ -363,7 +363,7 @@ def test_admins_search_hits_a_partial_name(
     _login(client, sender)
     promoted = client.post(
         "/api/hub/admins/promote",
-        json={"email": "grace@rebase.it", "nome": "Grace", "last_name": "Hopper"},
+        json={"email": "grace@rebase.it", "first_name": "Grace", "last_name": "Hopper"},
     )
     assert promoted.status_code == 200, promoted.text
 
@@ -379,7 +379,7 @@ def test_admins_list_stays_oldest_first_with_no_term(
     ok(
         client.post(
             "/api/hub/admins/promote",
-            json={"email": "grace@rebase.it", "nome": "Grace", "last_name": "Hopper"},
+            json={"email": "grace@rebase.it", "first_name": "Grace", "last_name": "Hopper"},
         )
     )
     listed = client.get("/api/hub/admins").json()["items"]
@@ -422,7 +422,7 @@ MISSING = "00000000-0000-7000-8000-000000000000"
 
 def _login(client: TestClient, sender: RecordingSender, email: str = ADMIN_EMAIL) -> None:
     assert client.post("/api/hub/auth/link", json={"email": email}).status_code == 202
-    match = re.search(r"/entra\?t=([A-Za-z0-9_-]+)", sender.sent[-1].text)
+    match = re.search(r"/verify\?t=([A-Za-z0-9_-]+)", sender.sent[-1].text)
     assert match
     assert client.post("/api/hub/auth/enter", json={"token": match.group(1)}).status_code == 200
 
@@ -600,9 +600,11 @@ def test_a_note_on_a_missing_row_is_a_404_and_an_empty_one_a_422_naming_the_fiel
 
     _apply(client)
     freelancer_id = client.get("/api/hub/freelancers").json()["items"][0]["id"]
-    for text in ("", "   ", "x" * 4001):
-        refused = client.post(f"/api/hub/freelancers/{freelancer_id}/notes", json={"text": text})
-        assert refused.status_code == 422, text[:10]
+    for body_text in ("", "   ", "x" * 4001):
+        refused = client.post(
+            f"/api/hub/freelancers/{freelancer_id}/notes", json={"text": body_text}
+        )
+        assert refused.status_code == 422, body_text[:10]
         assert refused.json()["detail"][0]["loc"][-1] == "text"
     # The author is the session's, never the body's.
     forged = client.post(
@@ -700,7 +702,7 @@ def test_the_spaces_come_from_the_crm_with_the_token_and_name_the_member_who_own
     assert ada["owner_email"] == "ada@studio.it"
     assert ada["created_at"].startswith("2026-09-10")
     # Ada filled in the wizard, so her space names her and points at her card.
-    assert ada["member"]["nome"] == "Ada"
+    assert ada["member"]["first_name"] == "Ada"
     assert ada["member"]["last_name"] == "Lovelace"
     freelancer_id = ada["member"]["id"]
     assert client.get(f"/api/hub/freelancers/{freelancer_id}").json()["email"] == "ada@studio.it"
@@ -716,7 +718,7 @@ def test_a_member_is_matched_whatever_the_case_of_the_address(
     _apply(client, email="bob@example.org")
     items = client.get("/api/hub/pigro/instances").json()["items"]
     assert items[1]["owner_email"] == "Bob@Example.org"
-    assert items[1]["member"]["nome"] == "Ada"
+    assert items[1]["member"]["first_name"] == "Ada"
 
 
 def test_q_searches_the_slug_and_the_owner_address(
@@ -806,7 +808,7 @@ def test_the_detail_shows_the_origin_signups_own_utm(
         "/api/community/signups",
         json={
             "email": "ada@studio.it",
-            "nome": "Ada",
+            "first_name": "Ada",
             "last_name": "Lovelace",
             "utm": {"utm_source": "newsletter", "utm_medium": "email"},
         },
@@ -882,7 +884,8 @@ def test_the_detail_has_sensible_empty_values_with_none_of_the_four_sources(
 
 def _signup(client: TestClient, sender: RecordingSender, email: str = "ada@studio.it") -> str:
     response = client.post(
-        "/api/community/signups", json={"email": email, "nome": "Ada", "last_name": "Lovelace"}
+        "/api/community/signups",
+        json={"email": email, "first_name": "Ada", "last_name": "Lovelace"},
     )
     assert response.status_code in (200, 201), response.text
     _login(client, sender)
@@ -891,10 +894,10 @@ def _signup(client: TestClient, sender: RecordingSender, email: str = "ada@studi
 
 
 DRAFT = {
-    "nome": "Ada",
+    "first_name": "Ada",
     "last_name": "Lovelace",
     "linkedin_url": "https://www.linkedin.com/in/ada",
-    "posizione": "Backend developer",
+    "job_title": "Backend developer",
     "links": ["https://github.com/ada"],
     "sources": ["https://www.linkedin.com/in/ada"],
 }
@@ -917,7 +920,11 @@ def test_an_admin_reads_one_signup_as_the_row_the_talent_list_shows(
     assert found.status_code == 200, found.text
     body = found.json()
     assert body["id"] == signup_id
-    assert (body["nome"], body["last_name"], body["email"]) == ("Ada", "Lovelace", "ada@studio.it")
+    assert (body["first_name"], body["last_name"], body["email"]) == (
+        "Ada",
+        "Lovelace",
+        "ada@studio.it",
+    )
     assert (body["status"], body["origin"]) == ("lead", "form")
     assert client.get(f"/api/hub/signups/{MISSING}").status_code == 404
 
@@ -942,7 +949,7 @@ def test_an_admin_writes_an_incomplete_card_from_a_signup_and_the_list_points_at
     assert created.status_code == 201, created.text
     card = created.json()
     assert card["email"] == "ada@studio.it"
-    assert card["compilata_da"] == "admin" and card["complete"] is False
+    assert card["filled_by"] == "admin" and card["complete"] is False
     assert card["cv_filename"] is None and card["daily_rate"] is None
     assert card["note"][0]["author"] == "Ivan"
     assert "https://www.linkedin.com/in/ada" in card["note"][0]["text"]
@@ -984,11 +991,11 @@ def test_research_is_refused_on_a_card_the_person_filled(
 ) -> None:
     _apply(client)
     signup_id = _signup(client, sender)
-    body = {**DRAFT, "posizione": "CTO"}
+    body = {**DRAFT, "job_title": "CTO"}
     refused = client.post(f"/api/hub/signups/{signup_id}/card", json=body)
     assert refused.status_code == 422, refused.text
     assert refused.json()["detail"][0]["loc"][-1] == "email"
-    assert client.get("/api/hub/freelancers").json()["items"][0]["posizione"] == "Backend developer"
+    assert client.get("/api/hub/freelancers").json()["items"][0]["job_title"] == "Backend developer"
 
 
 # ---- the anonymous card (REB-510) ------------------------------------------------------
@@ -1000,11 +1007,11 @@ def _apply_with_text(client: TestClient) -> str:
     response = client.post(
         "/api/hub/freelancers",
         data={
-            "nome": "Ada",
+            "first_name": "Ada",
             "last_name": "Lovelace",
             "email": "ada@studio.it",
             "daily_rate": "450",
-            "posizione": "Backend developer",
+            "job_title": "Backend developer",
             "remote": "remote",
         },
         files={"cv": ("Ada CV.pdf", CV, "application/pdf")},
@@ -1047,7 +1054,7 @@ def test_an_admin_reads_and_regenerates_the_anonymous_card(
     # supported each field, and no source and no conflict for a CV alone. Neither the
     # talent list nor the cloud carries any of it.
     assert body["provenance"]["prompt_version"] == 3
-    assert body["provenance"]["sources"]["role"] == ["cv"]
+    assert body["provenance"]["field_sources"]["role"] == ["cv"]
     assert (body["provenance"]["sources"], body["provenance"]["conflicts"]) == ([], [])
     assert body["provenance"]["stale"] is None
     talents = client.get("/api/hub/talent").text
@@ -1067,7 +1074,7 @@ def test_an_admin_reads_and_regenerates_the_anonymous_card(
     [written] = _regenerations(client, freelancer_id)
     assert written["admin_name"]
     assert (written["payload"]["source"], written["payload"]["bulk"]) == ("web", False)
-    assert (written["payload"]["outcome"], written["payload"]["prompt_version"]) == ("scritta", 3)
+    assert (written["payload"]["outcome"], written["payload"]["prompt_version"]) == ("written", 3)
     assert "start_action_id" not in written["payload"]
 
     # A refusal keeps the card and says so; the next «Rigenera» ignores the failed hash.
@@ -1083,7 +1090,7 @@ def test_an_admin_reads_and_regenerates_the_anonymous_card(
         (a["payload"]["outcome"], a["payload"].get("reason"))
         for a in _regenerations(client, freelancer_id)
     ]
-    assert outcomes == [("scritta", None), ("non_scritta", "refusal"), ("scritta", None)]
+    assert outcomes == [("written", None), ("not_written", "refusal"), ("written", None)]
 
     assert client.get(f"/api/hub/freelancers/{MISSING}/card").status_code == 404
     assert client.post(f"/api/hub/freelancers/{MISSING}/card").status_code == 404
@@ -1105,7 +1112,7 @@ def test_the_named_card_is_the_admins_alone(
     body = client.get(f"/api/hub/freelancers/{freelancer_id}/card").json()
 
     assert body["person"] == {
-        "nome": "Ada",
+        "first_name": "Ada",
         "last_name": "Lovelace",
         "email": "ada.lovelace@example.org",
         "phone": "+39 333 123 4567",

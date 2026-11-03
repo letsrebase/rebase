@@ -4,7 +4,7 @@ import { TableCell, TableRow } from '@rebase/ui/table'
 import { WebLink } from '@/components/WebLink'
 import { admin, type Talent } from '@/lib/api'
 import { failureMessage } from '@/lib/adminList'
-import { RemoteLabels, formatDate } from '@/lib/format'
+import { REMOTE_LABELS, formatDate } from '@/lib/format'
 import { formatMoney } from '@rebase/ui/format'
 import { keys } from '@/lib/query-keys'
 import { isHttpUrl } from '@/lib/url'
@@ -13,7 +13,7 @@ import { StatePill, VettedPill } from '../list-kit'
 import { TalentMenu } from './TalentMenu'
 
 export function TalentRow({ item }: { item: Talent }) {
-  const name = [item.nome, item.last_name].filter(Boolean).join(' ')
+  const name = [item.first_name, item.last_name].filter(Boolean).join(' ')
   const to = item.status === 'lead' ? '/admin/talent/$id' : '/admin/freelance/$id'
   const client = useQueryClient()
   // «Segna come verificato» / «Togli la verifica» (REB-518): the list is read again, so
@@ -81,9 +81,9 @@ export function TalentRow({ item }: { item: Talent }) {
 }
 
 /** `TalentRead.remote` is `str | None`, not narrowed to `Remote` (REB-558 review): the
- *  database column allows any string, so a value outside `RemoteLabels`' three keys
+ *  database column allows any string, so a value outside `REMOTE_LABELS`' three keys
  *  reads «—» rather than rendering blank. */
 function remoteLabel(value: string | null): string {
   if (value === null) return '—'
-  return (RemoteLabels as Record<string, string>)[value] ?? '—'
+  return (REMOTE_LABELS as Record<string, string>)[value] ?? '—'
 }

@@ -292,17 +292,17 @@ describe('what the wizard reports to PostHog (ORB-185)', () => {
     // Under StrictMode the engine's step effect runs, is cleaned up and runs again on
     // mount: the guard against a second `wizard_started` is what this exercises.
     mount('/freelance?perk=guida&utm_source=linkedin', { strict: true })
-    const nome = await screen.findByLabelText('Nome')
+    const firstName = await screen.findByLabelText('Nome')
     expect(captured('wizard_started')).toEqual([{ kind: 'freelance', perk: 'guida' }])
     // Started first, then the first step on screen, with the same properties: a funnel
     // reads the two in this order and never ties on the timestamps.
     expect(vi.mocked(capture).mock.calls.slice(0, 2)).toEqual([
       ['wizard_started', { kind: 'freelance', perk: 'guida' }],
-      ['wizard_step', { kind: 'freelance', perk: 'guida', step: 0, steps: 8, screen: 'nome' }],
+      ['wizard_step', { kind: 'freelance', perk: 'guida', step: 0, steps: 8, screen: 'first_name' }],
     ])
 
     // Typing re-renders the page; the person did not start twice.
-    await user.type(nome, 'Ada')
+    await user.type(firstName, 'Ada')
     expect(captured('wizard_started')).toHaveLength(1)
   })
 
@@ -315,7 +315,7 @@ describe('what the wizard reports to PostHog (ORB-185)', () => {
     await user.click(screen.getByRole('button', { name: 'Indietro' }))
     expect(captured('wizard_step').map((p) => p?.step)).toEqual([0, 1, 2, 1])
     expect(captured('wizard_step').map((p) => p?.screen)).toEqual([
-      'nome',
+      'first_name',
       'email',
       'linkedin_url',
       'email',
@@ -324,7 +324,7 @@ describe('what the wizard reports to PostHog (ORB-185)', () => {
       kind: 'freelance',
       step: 0,
       steps: 8,
-      screen: 'nome',
+      screen: 'first_name',
     })
   })
 
@@ -391,7 +391,7 @@ describe('FreelancerWizard, the draft and the intro (REB-215)', () => {
     await user.type(screen.getByLabelText('Email'), 'ada@studio.it{Enter}')
     expect(loadDraft<FreelancerApplication>(FREELANCER_DRAFT_KEY)).toMatchObject({
       index: 2,
-      value: { nome: 'Ada', last_name: 'Lovelace', email: 'ada@studio.it' },
+      value: { first_name: 'Ada', last_name: 'Lovelace', email: 'ada@studio.it' },
     })
 
     // The next visit: the same question they were on, the answers still there.

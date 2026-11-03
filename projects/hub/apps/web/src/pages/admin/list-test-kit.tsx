@@ -18,7 +18,7 @@ import { AdminFreelancerDetail } from './freelancer/FreelancerDetail'
 import { AdminTalents } from './talent/TalentList'
 import { AdminTalentLead } from './talent/LeadForm'
 
-/** What the Talenti and Aziende page tests share: a mocked `fetch` routed by endpoint,
+/** What the talent and company page tests share: a mocked `fetch` routed by endpoint,
  *  the fixtures every one of them reads, and `mount`, which puts the admin routes in a
  *  memory router. */
 export function answer(status: number, body: unknown) {
@@ -42,21 +42,21 @@ export function routeFetch(handlers: Record<string, unknown>) {
  *  remote preference, and the attribution that says so. */
 export const INCOMPLETE = {
   id: 'f1',
-  nome: 'Ada',
+  first_name: 'Ada',
   last_name: 'Lovelace',
   email: 'ada@studio.it',
   linkedin_url: 'https://www.linkedin.com/in/ada',
   cv_filename: null,
   cv_size: null,
   daily_rate: null,
-  posizione: null,
+  job_title: null,
   remote: null,
   links: ['https://github.com/ada'],
   status: 'new',
   utm_source: 'linkedin',
   utm_campaign: null,
   created_at: '2026-09-10T10:00:00Z',
-  compilata_da: 'admin',
+  filled_by: 'admin',
   complete: false,
   note: [],
   logins: 0,
@@ -72,15 +72,15 @@ export const INCOMPLETE = {
 export const COMPLETE = {
   ...INCOMPLETE,
   id: 'f2',
-  nome: 'Grace',
+  first_name: 'Grace',
   last_name: 'Hopper',
   email: 'grace@studio.it',
   cv_filename: 'Grace CV.pdf',
   cv_size: 2048,
   daily_rate: '500.00',
-  posizione: 'CTO',
+  job_title: 'CTO',
   remote: 'remote',
-  compilata_da: 'person',
+  filled_by: 'person',
   complete: true,
   logins: 3,
   provenance: 'landing',
@@ -106,7 +106,7 @@ export function noCard(id: string) {
  *  the wizard the person filled in themselves. */
 export const CARD_TALENT = {
   id: 'f1',
-  nome: 'Ada',
+  first_name: 'Ada',
   last_name: 'Lovelace',
   email: 'ada@studio.it',
   linkedin_url: 'https://www.linkedin.com/in/ada',
@@ -125,7 +125,7 @@ export const CARD_TALENT = {
  *  no rate and no mode (REB-558). */
 export const LEAD_TALENT = {
   id: 's2',
-  nome: 'Bob',
+  first_name: 'Bob',
   last_name: 'Ross',
   email: 'bob@example.org',
   linkedin_url: 'https://www.linkedin.com/in/bob',
@@ -219,7 +219,7 @@ export function mount(path: string, duplicates: Record<string, unknown> | (() =>
     validateSearch: (search: Record<string, unknown>): TalentsFilters => ({
       status: strParam(search.status),
       q: strParam(search.q),
-      posizione: strParam(search.posizione),
+      job_title: strParam(search.job_title),
       remote:
         search.remote === 'remote' || search.remote === 'hybrid' || search.remote === 'on_site'
           ? (search.remote as Remote)
@@ -279,14 +279,14 @@ export function mount(path: string, duplicates: Record<string, unknown> | (() =>
     path: '/admin/companies/$id',
     component: AdminCompanyDetail,
   })
-  const duplicati = createRoute({
+  const duplicatesRoute = createRoute({
     getParentRoute: () => signedIn,
     path: '/admin/talent/duplicates',
     component: () => <p>duplicati</p>,
   })
   const router = createRouter({
     routeTree: root.addChildren([
-      signedIn.addChildren([talent, talentLead, freelanceDetail, contracts, newMatch, companies, companiesDetail, duplicati]),
+      signedIn.addChildren([talent, talentLead, freelanceDetail, contracts, newMatch, companies, companiesDetail, duplicatesRoute]),
     ]),
     history: createMemoryHistory({ initialEntries: [path] }),
     parseSearch,
@@ -310,7 +310,7 @@ export function cellUnder(row: HTMLElement, header: string): HTMLElement {
 }
 
 export const CV_PERSON = {
-  nome: 'Grace',
+  first_name: 'Grace',
   last_name: 'Hopper',
   email: 'grace.cv@example.org',
   phone: '+39 333 123 4567',
@@ -359,16 +359,16 @@ export const GRANT = {
 }
 
 /** Two live cards of one person (REB-800), as `GET /api/hub/talent/duplicati` reads them. */
-export function person(id: string, nome: string, last_name: string) {
+export function person(id: string, firstName: string, last_name: string) {
   return {
     freelancer_id: id,
     user_id: `u-${id}`,
-    nome,
+    first_name: firstName,
     last_name,
-    email: `${nome.toLowerCase()}@studio.it`,
+    email: `${firstName.toLowerCase()}@studio.it`,
     created_at: '2026-09-10T10:00:00Z',
     cv_uploaded_at: null,
-    ha_cv: false,
+    has_cv: false,
   }
 }
 export const LINKED_PAIR = {
@@ -377,7 +377,7 @@ export const LINKED_PAIR = {
   signals: ['linkedin'],
   mergeable: true,
 }
-export const NAME_PAIR = { ...LINKED_PAIR, survivor: person('f3', 'Alan', 'Turing'), signals: ['nome'], mergeable: false }
+export const NAME_PAIR = { ...LINKED_PAIR, survivor: person('f3', 'Alan', 'Turing'), signals: ['first_name'], mergeable: false }
 
 // The stub goes first: it was installed over the test's own spy, and putting back the
 // spy's value before the spy is restored would leave it in `fetch` for the next test.

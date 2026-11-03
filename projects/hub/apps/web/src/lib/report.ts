@@ -61,16 +61,16 @@ export function periodMonths(
   selected?: string,
 ): string[] {
   const current = today.slice(0, 7)
-  const from = start ?? days[0]?.data ?? today
+  const from = start ?? days[0]?.date ?? today
   const months = new Set(monthsBetween(from.slice(0, 7) < current ? from : today, today))
-  for (const day of days) months.add(day.data.slice(0, 7))
+  for (const day of days) months.add(day.date.slice(0, 7))
   if (selected !== undefined && selected !== ALL) months.add(selected)
   return [...months].sort().reverse()
 }
 
 /** The days of the period, in the report's own order. */
 export function sliceDays(days: readonly ReportDay[], period: string): ReportDay[] {
-  return period === ALL ? [...days] : days.filter((day) => day.data.startsWith(`${period}-`))
+  return period === ALL ? [...days] : days.filter((day) => day.date.startsWith(`${period}-`))
 }
 
 function hundredths(value: string): number {
@@ -104,8 +104,8 @@ export function isoWeek(value: string): Omit<ReportWeek, 'hours'> {
   const week = Math.floor((thursday - Date.UTC(year, 0, 1)) / DAY_MS / 7) + 1
   return {
     week: `${year}-W${String(week).padStart(2, '0')}`,
-    da: isoDate(monday),
-    a: isoDate(monday + 6 * DAY_MS),
+    from_date: isoDate(monday),
+    to_date: isoDate(monday + 6 * DAY_MS),
   }
 }
 
@@ -114,7 +114,7 @@ export function isoWeek(value: string): Omit<ReportWeek, 'hours'> {
 export function perWeek(days: readonly ReportDay[]): ReportWeek[] {
   const weeks = new Map<string, { week: Omit<ReportWeek, 'hours'>; hours: string[] }>()
   for (const day of days) {
-    const week = isoWeek(day.data)
+    const week = isoWeek(day.date)
     const seen = weeks.get(week.week) ?? { week, hours: [] }
     seen.hours.push(day.hours)
     weeks.set(week.week, seen)
@@ -128,7 +128,7 @@ export function perWeek(days: readonly ReportDay[]): ReportWeek[] {
 export function perMonth(days: readonly ReportDay[]): ReportMonth[] {
   const months = new Map<string, string[]>()
   for (const day of days) {
-    const month = day.data.slice(0, 7)
+    const month = day.date.slice(0, 7)
     months.set(month, [...(months.get(month) ?? []), day.hours])
   }
   return [...months.entries()]
@@ -180,8 +180,8 @@ function counted(value: string, one: string, many: string): string {
 export function progressLine(
   report: Pick<MatchReport, 'hours_total' | 'equivalent_days' | 'expected_days' | 'progress'>,
 ): string {
-  const done = `${counted(report.hours_total, 'ora', 'hours')}, ${counted(report.equivalent_days, 'day', 'days')}`
+  const done = `${counted(report.hours_total, 'ora', 'ore')}, ${counted(report.equivalent_days, 'giorno', 'giorni')}`
   if (!report.expected_days || report.progress === null) return done
-  const expected = report.expected_days === 1 ? 'expected' : 'expected'
+  const expected = report.expected_days === 1 ? 'previsto' : 'previsti'
   return `${done} su ${report.expected_days} ${expected} (${formatDecimal(report.progress)}%)`
 }

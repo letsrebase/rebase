@@ -95,10 +95,10 @@ function CompanyList({
   return (
     <>
       <div className="space-y-1.5">
-        <Label htmlFor="match-azienda-q">Cerca una richiesta</Label>
+        <Label htmlFor="match-company-q">Cerca una richiesta</Label>
         <Input
           ref={searchRef}
-          id="match-azienda-q"
+          id="match-company-q"
           type="search"
           maxLength={200}
           placeholder="Azienda, referente, email…"
@@ -144,8 +144,8 @@ function ChosenRequest({
   buttonRef: RefObject<HTMLButtonElement | null>
 }) {
   return (
-    <section aria-labelledby="match-richiesta" className="space-y-2">
-      <h2 id="match-richiesta" className="text-sm font-medium">
+    <section aria-labelledby="match-request" className="space-y-2">
+      <h2 id="match-request" className="text-sm font-medium">
         Richiesta
       </h2>
       <div className="flex flex-wrap items-center gap-3">
@@ -186,8 +186,8 @@ function CustomerSection({
     </div>
   )
   return (
-    <section aria-labelledby="match-cliente" className="space-y-2">
-      <h2 id="match-cliente" className="text-sm font-medium">
+    <section aria-labelledby="match-customer" className="space-y-2">
+      <h2 id="match-customer" className="text-sm font-medium">
         Cliente sulla lettera
       </h2>
       {editing ? (
@@ -211,7 +211,7 @@ function CustomerSection({
 }
 
 function TaxSection({
-  nome,
+  firstName,
   saved,
   draft,
   onChange,
@@ -219,7 +219,7 @@ function TaxSection({
   onEdit,
   failure,
 }: {
-  nome: string
+  firstName: string
   saved: FiscalData | null
   draft: FiscalDraft
   onChange: (draft: FiscalDraft) => void
@@ -230,9 +230,9 @@ function TaxSection({
   const open = !saved || editing
   const { fields, markOpening } = useFocusWhenOpened(open)
   return (
-    <section aria-labelledby="match-fiscale" className="space-y-2">
-      <h2 id="match-fiscale" className="text-sm font-medium">
-        {nome ? `Dati fiscali di ${nome}` : 'Dati fiscali del freelance'}
+    <section aria-labelledby="match-tax" className="space-y-2">
+      <h2 id="match-tax" className="text-sm font-medium">
+        {firstName ? `Dati fiscali di ${firstName}` : 'Dati fiscali del freelance'}
       </h2>
       {saved && !editing ? (
         <Summary
@@ -298,7 +298,7 @@ function KindLetter({
  *  names and the freelancer's tax data, both read from the prefill and asked only when
  *  missing or opened, and the letter's type. */
 export function WhoStep({
-  nome,
+  firstName,
   selected,
   onSelect,
   loaded,
@@ -318,7 +318,7 @@ export function WhoStep({
   pending,
   failure,
 }: {
-  nome: string
+  firstName: string
   selected: Company | null
   onSelect: (company: Company) => void
   /** The prefill of `selected` is in the forms below. */
@@ -389,7 +389,7 @@ export function WhoStep({
             failure={failure}
           />
           <TaxSection
-            nome={nome}
+            firstName={firstName}
             saved={savedFiscal}
             draft={fiscal}
             onChange={onFiscal}

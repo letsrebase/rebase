@@ -22,6 +22,7 @@ from rebase_core.errors import DocumensoFailed, InvalidState, SigningUnavailable
 from rebase_core.framework import is_active
 from rebase_core.mail_contracts import signing_cancelled_mail
 from rebase_core.match_rows import ENTITY, FRAMEWORK, lock_freelancer, lock_match, match_freelancer
+from rebase_core.match_words import STATE_WORDS
 from rebase_core.models import ContractDocument
 from rebase_core.signing_words import (
     CANCEL_REFUSED,
@@ -111,7 +112,7 @@ class SigningAdmin:
             if document.status not in ("generated", "sent"):
                 raise InvalidState(
                     f"Si annulla solo un contratto quadro non ancora firmato: questo è "
-                    f"{document.status}.",
+                    f"{STATE_WORDS[document.status]}.",
                     status=document.status,
                 )
             was_sent = document.status == "sent"
@@ -145,7 +146,8 @@ class SigningAdmin:
         try:
             if match.status != "awaiting_signature":
                 raise InvalidState(
-                    f"Si annulla solo un match in bozza o in firma: questo è {match.status}.",
+                    "Si annulla solo un match in bozza o in firma: questo è "
+                    f"{STATE_WORDS[match.status]}.",
                     status=match.status,
                 )
             letters = list(
@@ -219,7 +221,7 @@ class SigningAdmin:
             return
         user = self.service.owner(document.freelancer_id)
         mail = signing_cancelled_mail(
-            user.email, user.nome, document.kind, document.number, regime=document.regime
+            user.email, user.first_name, document.kind, document.number, regime=document.regime
         )
         if not self.service.sender.send(mail):
             _log.warning(

@@ -64,7 +64,7 @@ def campaigns_tick() -> int:
     print(
         f"{result.campaigns} campagne, {result.sent} inviate, "
         f"{result.skipped} saltate, {result.failed} fallite, "
-        f"{result.stampate} esiti registrati"
+        f"{result.stamped} esiti registrati"
     )
     return 0
 

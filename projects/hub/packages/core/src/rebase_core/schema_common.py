@@ -105,14 +105,14 @@ class Ack(ResponseModel):
 def card_is_complete(
     cv_size: int | None,
     daily_rate: Decimal | None,
-    posizione: str | None,
+    job_title: str | None,
     remote: str | None,
 ) -> bool:
     """The same four values `is_complete` reads, over the raw columns rather than a
     card object: CV, rate, position and remote option all there. Anything else that
     reads these four fields -- a campaign's journey state among them -- calls this
     instead of copying the check."""
-    return all(value is not None for value in (cv_size, daily_rate, posizione, remote))
+    return all(value is not None for value in (cv_size, daily_rate, job_title, remote))
 
 
 class CardFields(Protocol):
@@ -123,7 +123,7 @@ class CardFields(Protocol):
     @property
     def daily_rate(self) -> Decimal | None: ...
     @property
-    def posizione(self) -> str | None: ...
+    def job_title(self) -> str | None: ...
     @property
     def remote(self) -> str | None: ...
 
@@ -136,4 +136,4 @@ def is_complete(card: CardFields) -> bool:
 
     No longer "a card the wizard would have accepted": the wizard accepts one without a
     CV, and this stays the fuller bar, which is the point of having it."""
-    return card_is_complete(card.cv_size, card.daily_rate, card.posizione, card.remote)
+    return card_is_complete(card.cv_size, card.daily_rate, card.job_title, card.remote)

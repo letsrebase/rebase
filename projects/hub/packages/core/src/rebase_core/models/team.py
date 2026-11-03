@@ -31,7 +31,7 @@ TEAM_PROPOSAL_ORIGINS = ("public", "cloud", "admin")
 # or a description the schema refuses never reaches the engine.
 TEAM_PROPOSAL_ERRORS = ("llm_unavailable", "team_builder_busy")
 TEAM_REQUEST_ORIGINS = ("public", "cloud")
-TALENT_ANSWERS = ("si", "no")
+TALENT_ANSWERS = ("yes", "no")
 # An Anthropic model id, `claude-opus-5` today: short, but the SDK's own ids run longer
 # (`claude-opus-4-20250514`), so the width is generous the same way every other width in
 # this file is.
@@ -132,17 +132,15 @@ class TeamProposal(Base, PrimaryKeyMixin):
         Index(
             "ix_team_proposals_error_created_at",
             "created_at",
-            postgresql_where=text("errore IS NOT NULL"),
+            postgresql_where=text("error IS NOT NULL"),
         ),
+        CheckConstraint("origin IN ('public', 'cloud', 'admin')", name="ck_team_proposals_origin"),
         CheckConstraint(
-            "origine IN ('pubblico', 'cloud', 'admin')", name="ck_team_proposals_origin"
-        ),
-        CheckConstraint(
-            "persone IS NULL OR (persone >= 1 AND persone <= 10)",
+            "people IS NULL OR (people >= 1 AND people <= 10)",
             name="ck_team_proposals_people",
         ),
         CheckConstraint(
-            "errore IN ('llm_unavailable', 'team_builder_busy')",
+            "error IN ('llm_unavailable', 'team_builder_busy')",
             name="ck_team_proposals_error",
         ),
     )
@@ -186,10 +184,8 @@ class TeamRequest(Base, PrimaryKeyMixin, TimestampMixin):
             postgresql_where=text("proposal_id IS NOT NULL"),
         ),
         Index("ix_team_requests_status_created_at", "status", "created_at"),
-        CheckConstraint(
-            "stato IN ('nuova', 'contattata', 'chiusa')", name="ck_team_requests_status"
-        ),
-        CheckConstraint("origine IN ('pubblico', 'cloud')", name="ck_team_requests_origin"),
+        CheckConstraint("status IN ('new', 'contacted', 'closed')", name="ck_team_requests_status"),
+        CheckConstraint("origin IN ('public', 'cloud')", name="ck_team_requests_origin"),
     )
 
 
@@ -221,18 +217,19 @@ class TeamRequestTalent(Base, PrimaryKeyMixin):
             unique=True,
         ),
         Index("uq_team_request_talents_token_hash", "token_hash", unique=True),
-        CheckConstraint("risposta IN ('si', 'no')", name="ck_team_request_talents_answer"),
+        CheckConstraint("answer IN ('yes', 'no')", name="ck_team_request_talents_answer"),
     )
 
 
 class TalentCloudGrant(Base, PrimaryKeyMixin):
-    """A company's access to the private talent cloud (spec § 4.1): opened by «Apri il
-    talent cloud» on a company request's page, for the referente's own `user_id` and that
-    request's `company_id`, closed by «Revoca il talent cloud». One live grant per person
-    and company (`revoked_at IS NULL`, the partial unique index below, REB-518): a second
-    «Apri» on the same request answers the existing row rather than doubling it, and a
-    person behind two companies holds two grants, the cloud open while either is live
-    (`rebase_core.cloud`). `granted_by` and `revoked_by` are the admin who acted."""
+    """A company's access to the private talent cloud (spec § 4.1): opened by the
+    admin's «open the talent cloud» action on a company request's page, for the contact
+    person's own `user_id` and that request's `company_id`, closed by the revoke action.
+    One live grant per person and company (`revoked_at IS NULL`, the partial unique index
+    below, REB-518): a second «open» on the same request answers the existing row rather
+    than doubling it, and a person behind two companies holds two grants, the cloud open
+    while either is live (`rebase_core.cloud`). `granted_by` and `revoked_by` are the admin
+    who acted."""
 
     __tablename__ = "talent_cloud_grants"
 

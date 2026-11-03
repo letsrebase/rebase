@@ -92,10 +92,10 @@ describe('REB-355: override, delete/restore and the audit trail on the freelance
       if (url === '/api/hub/freelancers/f1/audit') return answer(200, [])
       if (url === '/api/hub/freelancers/f1/override' && init?.method === 'PATCH') {
         const body = JSON.parse(init.body as string)
-        expect(body.posizione).toBe('Staff engineer')
+        expect(body.job_title).toBe('Staff engineer')
         // The override response's own `note` is always `[]` (only `get` fills it):
         // a merge that took it verbatim would wipe the existing thread from view.
-        return answer(200, { ...withComment, posizione: 'Staff engineer', note: [] })
+        return answer(200, { ...withComment, job_title: 'Staff engineer', note: [] })
       }
       return answer(200, withComment)
     })
@@ -103,8 +103,8 @@ describe('REB-355: override, delete/restore and the audit trail on the freelance
     await screen.findByRole('heading', { name: 'Ada Lovelace' })
     await screen.findByText('Ha risposto alla call.')
     await userEvent.click(screen.getByRole('button', { name: 'Modifica scheda' }))
-    const posizione = await screen.findByLabelText('Posizione')
-    await userEvent.type(posizione, 'Staff engineer')
+    const jobTitle = await screen.findByLabelText('Posizione')
+    await userEvent.type(jobTitle, 'Staff engineer')
     await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
     await waitFor(() => expect(screen.getByText('Staff engineer')).toBeInTheDocument())
     expect(screen.getByText('Ha risposto alla call.')).toBeInTheDocument()

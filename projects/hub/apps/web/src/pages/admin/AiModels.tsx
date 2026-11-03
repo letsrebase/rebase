@@ -60,7 +60,7 @@ function useInvalidate() {
   return () => client.invalidateQueries({ queryKey: keys.aiConfig })
 }
 
-export function AdminModelsAi() {
+export function AdminAiModels() {
   const config = useQuery({ queryKey: keys.aiConfig, queryFn: () => admin.aiConfig() })
   return (
     <div>
@@ -85,8 +85,8 @@ function Sections({ config }: { config: AiConfig }) {
           {NO_SECRETS_KEY}
         </p>
       )}
-      <section aria-labelledby="ai-chiavi" className="border-b">
-        <h2 id="ai-chiavi" className="px-6 pt-6 text-lg font-semibold">
+      <section aria-labelledby="ai-keys" className="border-b">
+        <h2 id="ai-keys" className="px-6 pt-6 text-lg font-semibold">
           Chiavi
         </h2>
         <p className="px-6 pt-1 text-sm text-muted-foreground">
@@ -98,8 +98,8 @@ function Sections({ config }: { config: AiConfig }) {
           ))}
         </div>
       </section>
-      <section aria-labelledby="ai-fonti" className="border-b">
-        <h2 id="ai-fonti" className="px-6 pt-6 text-lg font-semibold">
+      <section aria-labelledby="ai-sources" className="border-b">
+        <h2 id="ai-sources" className="px-6 pt-6 text-lg font-semibold">
           Fonti
         </h2>
         <p className="px-6 pt-1 text-sm text-muted-foreground">
@@ -111,16 +111,16 @@ function Sections({ config }: { config: AiConfig }) {
           ))}
         </div>
       </section>
-      <section aria-labelledby="ai-aggiornare" className="border-b">
-        <h2 id="ai-aggiornare" className="px-6 pt-6 text-lg font-semibold">
+      <section aria-labelledby="ai-refresh" className="border-b">
+        <h2 id="ai-refresh" className="px-6 pt-6 text-lg font-semibold">
           Schede da aggiornare
         </h2>
         <StaleCards
           onStarted={() => setWatch({ at: Date.now() })}
         />
       </section>
-      <section aria-labelledby="ai-compiti" className="border-b">
-        <h2 id="ai-compiti" className="px-6 pt-6 text-lg font-semibold">
+      <section aria-labelledby="ai-tasks" className="border-b">
+        <h2 id="ai-tasks" className="px-6 pt-6 text-lg font-semibold">
           Compiti
         </h2>
         <div className="divide-y">
@@ -129,21 +129,21 @@ function Sections({ config }: { config: AiConfig }) {
           ))}
         </div>
       </section>
-      <section aria-labelledby="ai-prezzi" className="border-b">
-        <h2 id="ai-prezzi" className="px-6 pt-6 text-lg font-semibold">
+      <section aria-labelledby="ai-prices" className="border-b">
+        <h2 id="ai-prices" className="px-6 pt-6 text-lg font-semibold">
           Prezzi
         </h2>
         <Prices config={config} />
       </section>
-      <section aria-labelledby="ai-spesa" className="border-b">
-        <h2 id="ai-spesa" className="px-6 pt-6 text-lg font-semibold">
+      <section aria-labelledby="ai-spend" className="border-b">
+        <h2 id="ai-spend" className="px-6 pt-6 text-lg font-semibold">
           Spesa del mese
           <span className="ml-2 text-base font-normal text-muted-foreground">{config.spend.month}</span>
         </h2>
         <Spend config={config} />
       </section>
-      <section aria-labelledby="ai-registro">
-        <h2 id="ai-registro" className="px-6 pt-6 text-lg font-semibold">
+      <section aria-labelledby="ai-log">
+        <h2 id="ai-log" className="px-6 pt-6 text-lg font-semibold">
           Registro
         </h2>
         <p className="px-6 pb-3 pt-1 text-sm text-muted-foreground">
@@ -249,7 +249,7 @@ function StaleCards({ onStarted }: { onStarted: () => void }) {
   )
   const running = data.batch && (
     <p role="status" className="px-6 pt-4 text-sm">
-      Rigenerazione in corso col Batch API: {data.batch.count} {data.batch.count === 1 ? 'card' : 'schede'}
+      Rigenerazione in corso col Batch API: {data.batch.count} {data.batch.count === 1 ? 'scheda' : 'schede'}
       {data.batch.submitted_at ? ` inviate il ${formatDateTime(data.batch.submitted_at)}` : ' in invio'}, {data.batch.done}{' '}
       {data.batch.done === 1 ? 'applicata' : 'applicate'}. Di solito finisce entro un’ora: la pagina si aggiorna da sola.
     </p>
@@ -277,7 +277,7 @@ function StaleCards({ onStarted }: { onStarted: () => void }) {
       <div className="space-y-4 px-6 py-5">
         <div className="space-y-1 text-sm">
           <p>
-            <span className="font-medium">{data.count}</span> {data.count === 1 ? 'card' : 'schede'}
+            <span className="font-medium">{data.count}</span> {data.count === 1 ? 'scheda' : 'schede'}
             {reasons.length > 0 && (
               <span className="text-muted-foreground">
                 {' '}
@@ -294,7 +294,7 @@ function StaleCards({ onStarted }: { onStarted: () => void }) {
           {data.items.map((item) => (
             <li key={item.freelancer_id} className="flex flex-wrap gap-x-3">
               <Link to="/admin/freelance/$id" params={{ id: item.freelancer_id }} className="font-medium hover:underline">
-                {item.nome || 'Senza nome'}
+                {item.first_name || 'Senza nome'}
               </Link>
               <span className="text-muted-foreground">{REASON_LABELS[item.reason] ?? item.reason}</span>
               {item.generated_at && (
@@ -781,7 +781,7 @@ function registerLabel(entry: AiAuditAction): string {
       return 'Voto dato a una scheda del campione'
     case 'cards_regenerate': {
       const source = noteSourceLabel(p.source)
-      return `Rigenerazione avviata: ${plural(p.queued ?? 0, 'card', 'schede')}${source ? `, ${source}` : ''}${p.batch ? ', Batch API' : ''}`
+      return `Rigenerazione avviata: ${plural(p.queued ?? 0, 'scheda', 'schede')}${source ? `, ${source}` : ''}${p.batch ? ', Batch API' : ''}`
     }
     case 'cards_regenerated': {
       const stop: string[] = []

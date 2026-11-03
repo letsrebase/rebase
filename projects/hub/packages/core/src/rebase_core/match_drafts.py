@@ -3,8 +3,8 @@ documents as they would print (REB-387 phase 2, REB-476, REB-892).
 
 `MatchDrafts` reads and renders; it writes and numbers nothing. `prefill` is «Chi e per chi»
 and «Condizioni» as the hub can fill them; `proposal` is the prefill as a `MatchCreate`, with
-the fields an MCP tool was given laid over it; `preview` renders the PDFs «Controlla e
-invia», step 3 of «Crea match», opens; `check` says in sentences what saving would do, on
+the fields an MCP tool was given laid over it; `preview` renders the PDFs step 3 of
+«Crea match» («Controlla e invia») opens; `check` says in sentences what saving would do, on
 that same step, validated as `create` validates.
 """
 
@@ -23,6 +23,7 @@ from sqlalchemy.orm import Session
 from rebase_core.amounts import NotAnAmount, italian_amount
 from rebase_core.contract_schemas import (
     DAY_RATE,
+    DAY_RATE_UNIT,
     ContractPdf,
     CustomerDraft,
     LetterDraft,
@@ -142,7 +143,7 @@ class MatchDrafts:
             location=location_suggestion(company.remote, company.onsite_days),
             customer_contact=full_name(contact_person) or None,
             mode=DAY_RATE,
-            unit=DAY_RATE,
+            unit=DAY_RATE_UNIT,
             fee=freelancer.daily_rate,
             payment_days=days if isinstance(days, int) and not isinstance(days, bool) else None,
             month_end=month_end if isinstance(month_end, bool) else None,
@@ -218,12 +219,12 @@ class MatchDrafts:
             raise ValidationFailed(ENTITY, "document", "uno fra lettera e quadro")
         name = text_name(kind, data.regime)
         if kind == FRAMEWORK:
-            fields = self.documents.quadro_data(user, fiscal, today, data.regime)
+            fields = self.documents.framework_date(user, fiscal, today, data.regime)
         else:
             active = active_framework(self.session, freelancer.id, data.regime)
-            fields = self.documents.lettera_data(user, fiscal, data, None, active, today)
+            fields = self.documents.letter_date(user, fiscal, data, None, active, today)
         rendered = renderer.render(name, fields)
-        return ContractPdf(filename=f"anteprima-{name}.pdf", content=rendered.pdf)
+        return ContractPdf(filename=f"preview-{name}.pdf", content=rendered.pdf)
 
     def check(self, freelancer_id: UUID, payload: MatchCreate) -> MatchCheck:
         """What saving `payload` would do, in sentences: step 3 of «Crea match», and what

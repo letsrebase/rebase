@@ -61,7 +61,7 @@ def test_a_code_clash_retries_without_losing_the_callers_staged_work(
     )
     clean_referrals.commit()
     user_id = _member(clean_referrals, "second@community.it")
-    staged = User(email="staged@community.it", nome="Staged", last_name="Row", role="member")
+    staged = User(email="staged@community.it", first_name="Staged", last_name="Row", role="member")
     clean_referrals.add(staged)
     offered = iter([taken, "FRESHCODE2"])
     monkeypatch.setattr("rebase_core.referrals._generate_code", lambda: next(offered))
@@ -170,7 +170,7 @@ def test_the_referred_person_first_login_verifies_a_signup_referral(
     clean_referrals.commit()
 
     row = clean_referrals.scalar(select(Referral))
-    assert row is not None and (row.status, row.verified_via) == ("verified", "accesso")
+    assert row is not None and (row.status, row.verified_via) == ("verified", "login")
 
 
 def test_to_signup_without_ref_drafts_to_card_with_no_referral(clean_referrals: Session) -> None:

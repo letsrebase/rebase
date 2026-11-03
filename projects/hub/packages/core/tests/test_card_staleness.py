@@ -211,7 +211,7 @@ def test_wizard_edit_with_unchanged_cv_marks_the_card(clean_hub: Session) -> Non
     clean_hub.commit()
     assert CardWriter(clean_hub, None).stale_of(person) is None
 
-    row.posizione = "Data engineer"
+    row.job_title = "Data engineer"
     clean_hub.commit()
     assert CardWriter(clean_hub, None).stale_of(person) == "source"
 
@@ -229,7 +229,7 @@ def test_stale_cards_lists_oldest_first_with_the_estimate(clean_hub: Session) ->
     waiting = writer.stale_cards()
 
     assert [item.freelancer_id for item in waiting] == people[::-1]
-    assert waiting[0].nome == "Persona3 Cognome3"
+    assert waiting[0].first_name == "Persona3 Cognome3"
     assert writer.estimate_cost(len(waiting)) is None  # nothing recorded: not «free»
 
     def usage(cost: str | None, purpose: str = "run") -> AiUsage:
@@ -320,7 +320,7 @@ def test_a_person_turned_down_or_deleted_is_not_listed(clean_hub: Session) -> No
     kept, turned_down, gone = _cards(clean_hub)
     _backdate(clean_hub, 1)
     clean_hub.execute(
-        text("UPDATE freelancers SET stato = 'scartato' WHERE id = :id"), {"id": turned_down}
+        text("UPDATE freelancers SET status = 'discarded' WHERE id = :id"), {"id": turned_down}
     )
     clean_hub.execute(
         text("UPDATE freelancers SET deleted_at = now() WHERE id = :id"), {"id": gone}

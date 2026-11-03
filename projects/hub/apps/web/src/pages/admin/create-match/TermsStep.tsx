@@ -4,11 +4,11 @@ import { Label } from '@rebase/ui/label'
 import { Textarea } from '@rebase/ui/textarea'
 import type { Regime } from '@/lib/api'
 import {
-  ToBodyFields,
-  OtherTermsGroups,
-  LetterLabels,
-  LetterMultiline,
-  LetterRequired,
+  TO_BODY_FIELDS,
+  OTHER_TERMS_GROUPS,
+  LETTER_LABELS,
+  LETTER_MULTILINE,
+  LETTER_REQUIRED,
   feeHint,
   payModeOf,
   switchPayMode,
@@ -26,7 +26,7 @@ const PAY_MODES: readonly { mode: PayMode; label: string; per: string }[] = [
 
 type Invalid = (field: string) => true | undefined
 
-/** One text, date or number field of the letter, labelled as `LetterLabels` names it.
+/** One text, date or number field of the letter, labelled as `LETTER_LABELS` names it.
  *  No `min` or other constraint the browser checks: inside a closed «Altre condizioni»
  *  it would block «Avanti» with no bubble to see, and the server names a wrong value. */
 function LetterInput({
@@ -42,15 +42,15 @@ function LetterInput({
 }) {
   const inputId = `lettera-${field}`
   const set = (next: string) => onChange({ ...form, [field]: next })
-  const type = field === 'start_date' || field === 'data_fine' ? 'date' : field === 'notice_days' ? 'number' : 'text'
+  const type = field === 'start_date' || field === 'end_date' ? 'date' : field === 'notice_days' ? 'number' : 'text'
   return (
     <div className="space-y-1.5">
-      <Label htmlFor={inputId}>{LetterLabels[field]}</Label>
-      {LetterMultiline.has(field) ? (
+      <Label htmlFor={inputId}>{LETTER_LABELS[field]}</Label>
+      {LETTER_MULTILINE.has(field) ? (
         <Textarea
           id={inputId}
           rows={3}
-          required={LetterRequired.has(field)}
+          required={LETTER_REQUIRED.has(field)}
           value={form[field]}
           onChange={(event) => set(event.target.value)}
           aria-invalid={invalid(field)}
@@ -59,7 +59,7 @@ function LetterInput({
         <Input
           id={inputId}
           type={type}
-          required={LetterRequired.has(field)}
+          required={LETTER_REQUIRED.has(field)}
           value={form[field]}
           onChange={(event) => set(event.target.value)}
           aria-invalid={invalid(field)}
@@ -96,7 +96,7 @@ function Payment({
             <Label key={option.mode} className="font-normal">
               <input
                 type="radio"
-                name="lettera-pagamento"
+                name="letter-payment"
                 value={option.mode}
                 checked={mode === option.mode}
                 onChange={() => onChange(switchPayMode(form, option.mode, dayRate))}
@@ -108,28 +108,28 @@ function Payment({
         </div>
       </fieldset>
       <div className="space-y-1.5">
-        <Label htmlFor="lettera-compenso">{LetterLabels.fee}</Label>
+        <Label htmlFor="letter-fee">{LETTER_LABELS.fee}</Label>
         <div className="flex items-center gap-2">
           <Input
-            id="lettera-compenso"
+            id="letter-fee"
             inputMode="decimal"
             required
             className="max-w-40"
             value={form.fee}
             onChange={(event) => onChange({ ...form, fee: event.target.value })}
             aria-invalid={invalid('fee')}
-            aria-describedby="lettera-compenso-per lettera-compenso-iva"
+            aria-describedby="letter-fee-per letter-fee-vat"
           />
-          <span id="lettera-compenso-per" className="text-sm text-muted-foreground">
+          <span id="letter-fee-per" className="text-sm text-muted-foreground">
             {per}
           </span>
         </div>
-        <p id="lettera-compenso-iva" className="text-sm text-muted-foreground">
+        <p id="letter-fee-vat" className="text-sm text-muted-foreground">
           {feeHint(regime)}
         </p>
       </div>
       {mode === 'to_body' &&
-        ToBodyFields.map((field) => (
+        TO_BODY_FIELDS.map((field) => (
           <LetterInput key={field} field={field} form={form} onChange={onChange} invalid={invalid} />
         ))}
       <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
@@ -138,7 +138,7 @@ function Payment({
         <Label className="font-normal">
           <span>Pagamento a</span>
           <Input
-            id="lettera-giorni_pagamento"
+            id="letter-payment-days"
             type="number"
             min={0}
             required
@@ -151,12 +151,12 @@ function Payment({
         </Label>
         <div className="flex items-center gap-2">
           <Checkbox
-            id="lettera-fine_mese"
+            id="letter-month-end"
             checked={form.month_end}
             onCheckedChange={(checked) => onChange({ ...form, month_end: checked === true })}
           />
-          <Label htmlFor="lettera-fine_mese" className="font-normal">
-            {LetterLabels.month_end}
+          <Label htmlFor="letter-month-end" className="font-normal">
+            {LETTER_LABELS.month_end}
           </Label>
         </div>
       </div>
@@ -179,9 +179,9 @@ function ExpectedDays({
 }) {
   return (
     <div className="space-y-1.5">
-      <Label htmlFor="match-giorni_previsti">Giorni previsti</Label>
+      <Label htmlFor="match-expected-days">Giorni previsti</Label>
       <Input
-        id="match-giorni_previsti"
+        id="match-expected-days"
         type="number"
         inputMode="numeric"
         min={1}
@@ -190,9 +190,9 @@ function ExpectedDays({
         value={value}
         onChange={(event) => onChange(event.target.value)}
         aria-invalid={invalid('expected_days')}
-        aria-describedby="match-giorni_previsti-aiuto"
+        aria-describedby="match-expected-days-help"
       />
-      <p id="match-giorni_previsti-aiuto" className="text-sm text-muted-foreground">
+      <p id="match-expected-days-help" className="text-sm text-muted-foreground">
         Per il consuntivo: 8 ore al giorno. Il testo della lettera resta quello di «Impegno».
       </p>
     </div>
@@ -248,7 +248,7 @@ export function TermsStep({
       {input('activities')}
       <div className="grid gap-3 sm:grid-cols-2">
         {input('start_date')}
-        {input('data_fine')}
+        {input('end_date')}
       </div>
       {input('commitment')}
       {input('location')}
@@ -261,7 +261,7 @@ export function TermsStep({
       >
         <summary className="cursor-pointer px-4 py-3 text-sm font-medium">Altre condizioni (facoltative)</summary>
         <div className="space-y-6 border-t px-4 py-4">
-          {OtherTermsGroups.map((group) => (
+          {OTHER_TERMS_GROUPS.map((group) => (
             <fieldset key={group.title} className="space-y-3">
               <legend className="text-sm font-medium">{group.title}</legend>
               {group.fields.map(input)}

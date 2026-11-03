@@ -5,25 +5,25 @@ import { describe, expect, it, vi } from 'vitest'
 import { screensFromFields, Wizard, type Field } from './Wizard'
 
 interface Form {
-  nome: string
+  first_name: string
   email: string
 }
 
 const FIELDS: Field<Form>[] = [
   {
-    id: 'nome',
+    id: 'first_name',
     label: 'Come ti chiami?',
     render: ({ value, set, error, errorId }) => (
       <input
         aria-label="Nome"
         aria-invalid={!!error}
         aria-describedby={error ? errorId : undefined}
-        value={value.nome}
-        onChange={(e) => set({ nome: e.target.value })}
+        value={value.first_name}
+        onChange={(e) => set({ first_name: e.target.value })}
       />
     ),
-    validate: (v) => (v.nome.trim() ? null : 'Serve un nome.'),
-    summary: (v) => v.nome,
+    validate: (v) => (v.first_name.trim() ? null : 'Serve un nome.'),
+    summary: (v) => v.first_name,
   },
   {
     id: 'email',
@@ -50,7 +50,7 @@ function Harness({
   onSubmit: () => void
   submitError?: { message: string; field?: string } | null
 }) {
-  const [value, setValue] = useState<Form>({ nome: '', email: '' })
+  const [value, setValue] = useState<Form>({ first_name: '', email: '' })
   return (
     <Wizard
       title="Test"
@@ -151,12 +151,12 @@ describe('Wizard', () => {
 
     // The control remounts when a field turns invalid, so the element found before
     // the click is stale: re-query it.
-    const nome = screen.getByLabelText('Nome')
-    expect(nome).toHaveAttribute('aria-invalid', 'true')
+    const firstName = screen.getByLabelText('Nome')
+    expect(firstName).toHaveAttribute('aria-invalid', 'true')
     const alert = screen.getByRole('alert')
-    expect(nome.getAttribute('aria-describedby')).toBe(alert.id)
+    expect(firstName.getAttribute('aria-describedby')).toBe(alert.id)
 
-    await user.type(nome, 'Ada{Enter}')
+    await user.type(firstName, 'Ada{Enter}')
     expect(screen.getByRole('heading', { name: 'La tua email?' })).toBeInTheDocument()
   })
 
@@ -192,7 +192,7 @@ function Resumable({
   onIndexChange?: (index: number) => void
   intro?: React.ReactNode
 }) {
-  const [value, setValue] = useState<Form>({ nome: 'Ada', email: '' })
+  const [value, setValue] = useState<Form>({ first_name: 'Ada', email: '' })
   return (
     <Wizard
       title="Test"

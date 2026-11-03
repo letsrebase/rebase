@@ -41,7 +41,7 @@ function meFetch(profile: unknown, contracts: unknown = NO_CONTRACTS, referral: 
 
 const PROFILE = {
   id: 'f1',
-  nome: 'Ada',
+  first_name: 'Ada',
   last_name: 'Lovelace',
   email: 'ada@studio.it',
   linkedin_url: 'https://www.linkedin.com/in/ada',
@@ -53,7 +53,7 @@ const PROFILE = {
   cv_filename: 'Ada CV.pdf',
   cv_size: 2048,
   daily_rate: '450.00',
-  posizione: 'Backend developer',
+  job_title: 'Backend developer',
   remote: 'hybrid',
   links: ['https://github.com/ada'],
   complete: true,
@@ -68,7 +68,7 @@ const INCOMPLETE = {
   cv_filename: null,
   cv_size: null,
   daily_rate: null,
-  posizione: null,
+  job_title: null,
   remote: null,
   complete: false,
 }
@@ -78,7 +78,7 @@ const INCOMPLETE = {
 const CARDLESS_ADMIN = {
   ...PROFILE,
   id: 'a1',
-  nome: 'Ivan',
+  first_name: 'Ivan',
   last_name: 'Fiore',
   email: 'ivan@rebase.it',
   linkedin_url: null,
@@ -87,7 +87,7 @@ const CARDLESS_ADMIN = {
   cv_filename: null,
   cv_size: null,
   daily_rate: null,
-  posizione: null,
+  job_title: null,
   remote: null,
   links: [],
   complete: false,
@@ -100,7 +100,7 @@ const CARDLESS_ADMIN = {
 const NOBODY = {
   ...CARDLESS_ADMIN,
   id: 'n1',
-  nome: 'Nessuno',
+  first_name: 'Nessuno',
   last_name: 'Speciale',
   email: 'nessuno@example.it',
   role: 'member',
@@ -139,7 +139,7 @@ const NEWER_REQUEST = {
 const COMPANY_ONLY = {
   ...PROFILE,
   id: 'c1',
-  nome: 'Wile',
+  first_name: 'Wile',
   last_name: 'E.',
   email: 'wile@acme.it',
   linkedin_url: null,
@@ -148,7 +148,7 @@ const COMPANY_ONLY = {
   cv_filename: null,
   cv_size: null,
   daily_rate: null,
-  posizione: null,
+  job_title: null,
   remote: null,
   links: [],
   complete: false,
@@ -464,10 +464,10 @@ describe('/me, «Apri PigroCRM» (REB-602)', () => {
   })
 })
 
-describe('/me?negato=true (REB-279: AdminGuard bounces a signed-in non-admin here)', () => {
+describe('/me?denied=true (REB-279: AdminGuard bounces a signed-in non-admin here)', () => {
   it('shows a sentence instead of a blank screen or a raw refusal', async () => {
     meFetch(PROFILE)
-    mount('/me?negato=true')
+    mount('/me?denied=true')
     const notice = await screen.findByRole('status')
     expect(notice).toHaveTextContent('riservata a chi amministra')
   })

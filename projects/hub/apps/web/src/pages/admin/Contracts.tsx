@@ -14,7 +14,7 @@ import {
 import { admin, ApiError, matches, type ContractDocument, type Match, type Regime } from '@/lib/api'
 import {
   MATCHES_HEADING_ID,
-  FrameworkHeadingId,
+  FRAMEWORK_HEADING_ID,
   cancelDescription,
   closeDescription,
   matchHeadingId,
@@ -139,7 +139,7 @@ export function AdminContracts() {
   const [closing, setClosing] = useState<Match | null>(null)
   // The question on a framework agreement, and which one it is about (REB-687).
   const [confirmingFramework, setConfirmingFramework] = useState<{
-    action: 'cancel' | 'disdetta'
+    action: 'cancel' | 'notice'
     document: ContractDocument
   } | null>(null)
   // The control the last action started from, and, once its request left, the headings
@@ -165,7 +165,7 @@ export function AdminContracts() {
   }
   const starting = (section: Section, card: string) => {
     quiet()
-    landing.current = [card, sectionHeading(section), FrameworkHeadingId, MATCHES_HEADING_ID]
+    landing.current = [card, sectionHeading(section), FRAMEWORK_HEADING_ID, MATCHES_HEADING_ID]
     return {
       onError: (error: unknown) => {
         landing.current = []
@@ -228,7 +228,7 @@ export function AdminContracts() {
   const frameworks = [data.framework, data.occasional_framework].filter(
     (document): document is ContractDocument => document != null,
   )
-  const name = person.data ? `${person.data.nome} ${person.data.last_name}` : ''
+  const name = person.data ? `${person.data.first_name} ${person.data.last_name}` : ''
   const busy = actions.some((action) => action.isPending)
   const focusOnClose = () => focusBack(opener.current, landing.current)
   // The framework agreement a question is about, by its own type (REB-687).
@@ -261,7 +261,7 @@ export function AdminContracts() {
     record_notice: {
       label: `${ACTION_LABELS.record_notice} ${whatOf(document)}`,
       pendingLabel: `Registro la disdetta ${whatOf(document)}`,
-      run: from(() => setConfirmingFramework({ action: 'disdetta', document })),
+      run: from(() => setConfirmingFramework({ action: 'notice', document })),
       pending: runningFor(recordNotice, document.id),
     },
   })
@@ -393,7 +393,7 @@ export function AdminContracts() {
         onClose={() => setConfirmingFramework(null)}
       />
       <Confirm
-        open={confirmingFramework?.action === 'disdetta'}
+        open={confirmingFramework?.action === 'notice'}
         title="Registrare la disdetta?"
         description={`Da oggi ${frameworkObject} non è più attivo, e il prossimo match ne genera uno nuovo. Si registra quando il freelance o rebase ha dato disdetta, o uno dei due ha receduto.`}
         confirm={recordNotice.isPending ? 'Registro…' : 'Sì, registra la disdetta'}

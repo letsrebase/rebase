@@ -84,11 +84,11 @@ def _admin(session: Session) -> UUID:
 def _card(session: Session) -> UUID:
     row, _ = FreelancerService(session).apply(
         FreelancerCreate(
-            nome="Ada",
+            first_name="Ada",
             last_name="Lovelace",
             email="ada@studio.it",
             daily_rate=Decimal("450"),
-            posizione="Backend developer",
+            job_title="Backend developer",
             remote="remote",
         ),
         PDF,
@@ -151,7 +151,7 @@ def _setup_occasional(session: Session) -> tuple[UUID, UUID, UUID]:
 
 
 def _body(
-    company_id: UUID, *, expected_days: int | None = None, regime: Regime = "partita_iva"
+    company_id: UUID, *, expected_days: int | None = None, regime: Regime = "vat_registered"
 ) -> MatchCreate:
     return MatchCreate(
         company_id=company_id,
@@ -189,7 +189,7 @@ def _framework(
     signed_at: datetime | None = datetime(2026, 10, 1, 9, 0, tzinfo=UTC),
     notice_at: datetime | None = None,
     text_version: str = FRAMEWORK_VERSION,
-    regime: str = "partita_iva",
+    regime: str = "vat_registered",
 ) -> ContractDocument:
     """A framework agreement as phase 3 will leave one: only a signature makes these."""
     document = ContractDocument(
@@ -236,11 +236,11 @@ class _FakeOrig(Exception):
 # ---- the admin's «Match» list (REB-413) -------------------------------------------------
 def _second_card(session: Session, **change: object) -> UUID:
     payload: dict[str, object] = {
-        "nome": "Grace",
+        "first_name": "Grace",
         "last_name": "Hopper",
         "email": "grace@studio.it",
         "daily_rate": Decimal("500"),
-        "posizione": "Frontend developer",
+        "job_title": "Frontend developer",
         "remote": "remote",
     }
     payload.update(change)

@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Badge } from '@rebase/ui/badge'
 import { Button } from '@rebase/ui/button'
 import { ApiError, admin, type AdminAction, type ThreadKind } from '@/lib/api'
-import { formatDateTime, formatSmallEuro } from '@/lib/format'
+import { STATE_LABELS, formatDateTime, formatSmallEuro } from '@/lib/format'
 import { noteSourceLabel, regenerationReason } from '@/lib/notes'
 import { keys } from '@/lib/query-keys'
 
@@ -42,7 +42,7 @@ function mergeSummary(action: AdminAction): string | null {
   )
   const parts = [moved === 1 ? '1 riga spostata' : `${moved} righe spostate`]
   if (action.payload.cv === 'assorbita') parts.push('CV più recente passato alla scheda tenuta')
-  if (action.payload.card_from_regenerate) parts.push('scheda anonima da riscrivere')
+  if (action.payload.card_to_regenerate) parts.push('scheda anonima da riscrivere')
   return parts.join(' · ')
 }
 
@@ -52,7 +52,7 @@ function kindLabel(action: AdminAction): string {
   if (action.kind === 'vetted' && action.payload.vetted !== undefined) {
     return action.payload.vetted ? 'Segnato come verificato' : 'Verifica tolta'
   }
-  if (action.kind === 'card_regenerated' && action.payload.outcome === 'non_scritta') {
+  if (action.kind === 'card_regenerated' && action.payload.outcome === 'not_written') {
     return `Scheda non rigenerata: ${regenerationReason(action.payload.reason)}`
   }
   if (action.kind === 'anon_cv_downloaded' && action.payload.reused) return 'CV anonimo scaricato (già pronto)'
@@ -72,14 +72,14 @@ function regenerationDetail(action: AdminAction): string {
 }
 
 const FIELD_LABELS: Record<string, string> = {
-  nome: 'Nome',
+  first_name: 'Nome',
   last_name: 'Cognome',
   linkedin_url: 'LinkedIn',
   daily_rate: 'Tariffa a giornata',
-  posizione: 'Posizione',
+  job_title: 'Posizione',
   remote: 'Modalità',
   links: 'Link',
-  compilata_da: 'Compilata da',
+  filled_by: 'Compilata da',
   seniority_admin: 'Seniority (admin)',
   experience_years_admin: 'Anni (admin)',
   company_name: 'Azienda',
@@ -99,6 +99,14 @@ function fieldsOf(value: unknown): Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : {}
+}
+
+/** A state as the admin reads it, in the lowercase of a sentence (`contacted` is
+ *  «contattato»); a value with no label is shown as it came. */
+function stateWord(value: unknown): string {
+  if (value === null || value === undefined) return '—'
+  const raw = String(value)
+  return STATE_LABELS[raw]?.toLowerCase() ?? raw
 }
 
 function renderValue(value: unknown): string {
@@ -201,9 +209,9 @@ export function AuditTrail({
                 )}
                 {action.kind === 'status_changed' && (
                   <p>
-                    <span className="line-through">{String(action.payload.before ?? '—')}</span>
+                    <span className="line-through">{stateWord(action.payload.before)}</span>
                     {' → '}
-                    <span>{String(action.payload.after ?? '—')}</span>
+                    <span>{stateWord(action.payload.after)}</span>
                   </p>
                 )}
                 {fields.length > 0 && (

@@ -25,27 +25,27 @@ def provenance(
     that is recorded (`discarded_experience_years`). With no such source there is nothing but the CV
     and the hub to take them from. A hub that shows more real work than the card counts is
     recorded too (`conflicts`)."""
-    fonti = verify_sources(draft.sources.as_dict(), set(source_keys(sources, facts)))
+    field_sources = verify_sources(draft.sources.as_dict(), set(source_keys(sources, facts)))
     card = draft.card
     found: list[Conflict] = []
-    if card.experience_years is not None and sources.readable() and not dated_by(fonti):
+    if card.experience_years is not None and sources.readable() and not dated_by(field_sources):
         found.append(Conflict("discarded_experience_years", card.experience_years, None))
         card = card.model_copy(update={"experience_years": None})
-        fonti["experience_years"] = []
-    return card, fonti, [*found, *conflicts(card.experience_years, facts.completed_months)]
+        field_sources["experience_years"] = []
+    return card, field_sources, [*found, *conflicts(card.experience_years, facts.completed_months)]
 
 
 def sha(material: str) -> str:
     return hashlib.sha256(material.encode()).hexdigest()
 
 
-def hash_inputs(posizione: str | None, sources: SourceSet, facts: HubFacts) -> dict[str, str]:
+def hash_inputs(job_title: str | None, sources: SourceSet, facts: HubFacts) -> dict[str, str]:
     """The hash of every input a card is written from, beside the CV's: `wizard` is the
     position the person gave (the rate and the work mode are not read by the prompt, and
     are shown from the row), `hub` the hub's facts without what moves by itself, and each
     readable source its own (`SourceSet.hashes`). `hub` is absent when the hub has nothing
     to say, so the first fact that appears is a change."""
-    hashes = {"wizard": sha(posizione or ""), **sources.hashes()}
+    hashes = {"wizard": sha(job_title or ""), **sources.hashes()}
     if not facts.empty:
         hashes["hub"] = sha(facts.hash_material())
     return hashes

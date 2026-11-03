@@ -32,7 +32,8 @@ Claude was writing gets nothing stored for it; `FreelancerService.clear_cv` take
 same row lock (its `UPDATE`) before it deletes the card, so the two cannot interleave
 into a card for a CV that is gone.
 
-The card's `experience_years` is `None` when the CV dates no role, and its seniority is brought inside
+The card's `experience_years` is `None` when the CV dates no role, and its seniority is brought
+inside
 the year bands the prompt states (`card_level.banded`, REB-799). An admin's own seniority
 and years sit on `freelancers` (`seniority_admin`, `experience_years_admin`), so a regenerated or
 retired card never erases them, and `read` answers the card with them over it.
@@ -292,7 +293,7 @@ class CardWriter(CardStore, CardStaleness):
             provenance = CardProvenance(
                 prompt_version=stored.prompt_version or 1,
                 provider=stored.provider,
-                fonti=stored.fonti or {},
+                field_sources=stored.sources or {},
                 conflicts=[ConflictRead.model_validate(c) for c in stored.conflicts or []],
                 sources=[
                     SourceProvenance(
@@ -439,19 +440,19 @@ class CardWriter(CardStore, CardStaleness):
             return Composed(None, "no_text", "", "", 0, 0, 0)
         owner = self.session.get(User, row.user_id)
         last_name = owner.last_name if owner is not None else ""
-        nome = owner.nome if owner is not None else ""
+        first_name = owner.first_name if owner is not None else ""
         if prompt_version == 1:
             sources, facts = (
                 SourceSet([]),
                 HubFacts(seniority_admin=None, experience_years_admin=None),
             )
-            known = KnownIdentifiers.empty(last_name, nome)
-            request = card_prompt_v1(cv, row.posizione)
+            known = KnownIdentifiers.empty(last_name, first_name)
+            request = card_prompt_v1(cv, row.job_title)
         else:
             sources = self.source_service().current(freelancer_id)
             facts = hub_facts(self.session, freelancer_id)
-            known = known_identifiers(last_name, nome, row.links, sources, facts)
-            request = card_prompt(cv, row.posizione, sources, facts)
+            known = known_identifiers(last_name, first_name, row.links, sources, facts)
+            request = card_prompt(cv, row.job_title, sources, facts)
         cv_sha256 = self.cv_digest(freelancer_id) or ""
         return Prepared(
             # The person the call is about goes on its usage row, which is how a card's cost
@@ -460,7 +461,7 @@ class CardWriter(CardStore, CardStaleness):
             known=known,
             sources=sources,
             facts=facts,
-            hashes=hash_inputs(row.posizione, sources, facts),
+            hashes=hash_inputs(row.job_title, sources, facts),
             cv_sha256=cv_sha256,
         )
 
@@ -559,7 +560,7 @@ class CardWriter(CardStore, CardStaleness):
                     input_hashes=hashes,
                     person=person,
                 )
-        card, fonti, found = provenance(draft, sources, facts)
+        card, field_sources, found = provenance(draft, sources, facts)
         return Composed(
             banded(card),
             None,
@@ -568,7 +569,7 @@ class CardWriter(CardStore, CardStaleness):
             input_tokens,
             output_tokens,
             thinking_tokens,
-            sources=fonti,
+            sources=field_sources,
             conflicts=found,
             input_hashes=hashes,
             person=person,

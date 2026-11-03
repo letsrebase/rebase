@@ -94,7 +94,7 @@ def test_the_framework_prints_the_freelancer_and_rebases_signer_and_leaves_the_s
         assert asked - {TERM} <= set(data), document
     assert letter["professionista-piva"] == "01234567890"
     assert letter["cliente-ragione-sociale"] == "ACME S.r.l."
-    assert letter["fee"] == 450
+    assert letter["compenso"] == 450
 
 
 def test_with_an_active_framework_only_the_letter_is_written_and_it_cites_the_signature_date(
@@ -141,7 +141,7 @@ def test_an_unsent_framework_from_an_earlier_draft_is_replaced_not_duplicated(
     ]
     entries = AdminActionService(clean).timeline("match", second.id)
     created = next(a for a in entries if a.kind == "match_created")
-    assert created.payload["cancelled_frameworks"] == [str(stale.id)]
+    assert created.payload["frameworks_cancelled"] == [str(stale.id)]
 
 
 # ---- the idempotent id (REB-406) --------------------------------------------------------
@@ -409,7 +409,7 @@ def test_create_stores_the_letters_dates_and_fee(clean: Session) -> None:
             role="Backend developer",
             activities="Le API del prodotto.",
             start_date=date(2026, 10, 1),
-            data_fine=date(2027, 3, 31),
+            end_date=date(2027, 3, 31),
             mode="to_work_unit",
             fee=Decimal("450"),
             payment_days=30,
@@ -420,7 +420,7 @@ def test_create_stores_the_letters_dates_and_fee(clean: Session) -> None:
     match = service.create(freelancer_id, body, admin_id)
 
     assert match.letter_start_date == body.letter.start_date
-    assert match.letter_end_date == body.letter.data_fine
+    assert match.letter_end_date == body.letter.end_date
     assert match.letter_fee == body.letter.fee
 
 

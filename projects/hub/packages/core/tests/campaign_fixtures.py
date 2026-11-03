@@ -35,17 +35,17 @@ def person(
     session: Session,
     email: str,
     *,
-    nome: str = "Ada",
+    first_name: str = "Ada",
     cv: bool = True,
     rate: bool = True,
-    posizione: bool = True,
+    job_title: bool = True,
     remote: bool = True,
     deleted: bool = False,
     role: str = "member",
     logins: int = 0,
     status: str = "new",
 ) -> Freelancer:
-    user = User(email=email, nome=nome, last_name="Lovelace", role=role)
+    user = User(email=email, first_name=first_name, last_name="Lovelace", role=role)
     session.add(user)
     session.flush()
     card = Freelancer(
@@ -55,7 +55,7 @@ def person(
         cv_mime="application/pdf" if cv else None,
         cv_size=4 if cv else None,
         daily_rate=Decimal("450") if rate else None,
-        posizione="Backend developer" if posizione else None,
+        job_title="Backend developer" if job_title else None,
         remote="remote" if remote else None,
         links=[],
         status=status,
@@ -70,8 +70,8 @@ def person(
     return card
 
 
-def lead(session: Session, email: str, nome: str | None = "giulia") -> Signup:
-    row = Signup(email=email, nome=nome, last_name="Branda")
+def lead(session: Session, email: str, first_name: str | None = "giulia") -> Signup:
+    row = Signup(email=email, first_name=first_name, last_name="Branda")
     session.add(row)
     session.commit()
     return row
@@ -80,7 +80,7 @@ def lead(session: Session, email: str, nome: str | None = "giulia") -> Signup:
 def company(session: Session, email: str, *, status: str = "new", deleted: bool = False) -> Company:
     user = session.query(User).filter(User.email == email).one_or_none()
     if user is None:
-        user = User(email=email, nome="Ciro", last_name="Aurelio")
+        user = User(email=email, first_name="Ciro", last_name="Aurelio")
         session.add(user)
         session.flush()
     row = Company(
@@ -117,7 +117,7 @@ def campaign_row(session: Session, **fields: object) -> Campaign:
     """A campaign row written straight to the table, for the tests below the service."""
     values: dict[str, object] = {
         "created_by": admin(session).id,
-        "nome": "Prova",
+        "name": "Prova",
         "slug": f"c-prova-{session.query(Campaign).count()}",
         "source": "status",
         "journey_status": "missing_cv",
@@ -155,7 +155,7 @@ def as_admin(user: User) -> AdminRead:
 
 def draft(**fields: object) -> CampaignDraft:
     values: dict[str, object] = {
-        "nome": "Manca il CV",
+        "name": "Manca il CV",
         "source": "status",
         "journey_status": "missing_cv",
         "subject": "Manca solo il CV",

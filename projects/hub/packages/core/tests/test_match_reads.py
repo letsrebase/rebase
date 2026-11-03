@@ -109,7 +109,7 @@ def test_a_preview_renders_without_saving_numbering_or_replacing_anything(clean:
     letter = service.drafts.preview(freelancer_id, _body(company_id), "letter")
     assert letter.content.startswith(b"%PDF-")
     assert renderer.calls[-1][0] == "engagement-letter"
-    assert renderer.calls[-1][1]["number"] is None
+    assert renderer.calls[-1][1]["numero"] is None
     service.drafts.preview(freelancer_id, _body(company_id), "framework")
     assert renderer.calls[-1][0] == "framework-agreement"
     assert clean.scalar(select(func.count()).select_from(Match)) == 1
@@ -124,11 +124,11 @@ def test_a_document_downloads_as_its_own_pdf_and_a_missing_signed_copy_is_not_fo
     service = _service(clean)
     match = service.create(freelancer_id, _body(company_id), admin_id)
     pdf = service.reads.document_pdf(match.letter.id)
-    assert (pdf.filename, pdf.content[:5]) == ("lettera-di-incarico-2026-001.pdf", b"%PDF-")
+    assert (pdf.filename, pdf.content[:5]) == ("engagement-letter-2026-001.pdf", b"%PDF-")
     framework = _documents(clean, freelancer_id, "framework")[0]
     assert (
         service.reads.document_pdf(framework.id).filename
-        == f"contratto-quadro-v{FRAMEWORK_VERSION}.pdf"
+        == f"framework-agreement-v{FRAMEWORK_VERSION}.pdf"
     )
     with pytest.raises(NotFound):
         service.reads.document_pdf(match.letter.id, signed=True)
@@ -298,7 +298,7 @@ def test_the_match_list_shows_a_match_with_two_letters_once_with_its_current_let
 def test_the_match_list_row_carries_no_tax_field_and_no_budget() -> None:
     fields = set(MatchListItem.model_fields)
     assert not any("budget" in name for name in fields)
-    assert fields.isdisjoint({"tax_code", "partita_iva", "domicile", "certified_email"})
+    assert fields.isdisjoint({"tax_code", "vat_number", "domicile", "certified_email"})
 
 
 def test_the_contracts_page_says_what_each_document_is_doing(clean: Session) -> None:
@@ -389,7 +389,9 @@ def test_list_all_reads_frameworks_in_one_query(clean: Session) -> None:
     freelancers = [
         _card(clean),
         _second_card(clean),
-        _second_card(clean, nome="Katherine", last_name="Johnson", email="katherine@studio.it"),
+        _second_card(
+            clean, first_name="Katherine", last_name="Johnson", email="katherine@studio.it"
+        ),
     ]
     numbers: dict[UUID, str | None] = {}
     for freelancer_id in freelancers:

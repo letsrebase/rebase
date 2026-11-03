@@ -62,7 +62,7 @@ def admin(client: TestClient, api_session: Session) -> Iterator[None]:
         documenso_webhook_secret=SECRET,
     )
     client.app.dependency_overrides[get_settings] = lambda: settings  # type: ignore[attr-defined]
-    api_session.add(User(email=ADMIN_EMAIL, nome="Ivan", last_name="", role="admin"))
+    api_session.add(User(email=ADMIN_EMAIL, first_name="Ivan", last_name="", role="admin"))
     api_session.commit()
     yield
     api_session.rollback()

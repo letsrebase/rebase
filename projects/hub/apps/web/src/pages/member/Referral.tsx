@@ -16,7 +16,7 @@ const KIND_LABELS: Record<string, string> = { freelancer: 'Freelance', company: 
  *  detour through it into either wizard still carries the code -- the same persistence
  *  `da=`'s own UTM mechanism already gives a campaign (`resolveReferral`, `lib/utm.ts`). */
 function referralLink(code: string): string {
-  return `${window.location.origin}/hub/?rif=${encodeURIComponent(code)}`
+  return `${window.location.origin}/hub/?ref=${encodeURIComponent(code)}`
 }
 
 function CopyLinkButton({ link }: { link: string }) {
@@ -148,11 +148,11 @@ export function MemberReferral() {
             <ul className="divide-y border-t pt-3">
               {data.referred.map((item, index) => (
                 <li
-                  key={`${item.kind}-${item.nome}-${index}`}
+                  key={`${item.kind}-${item.first_name}-${index}`}
                   className="flex items-center justify-between gap-4 py-2 text-sm"
                 >
                   <div>
-                    <p className="font-medium">{item.nome}</p>
+                    <p className="font-medium">{item.first_name}</p>
                     <p className="text-xs text-muted-foreground">{KIND_LABELS[item.kind] ?? item.kind}</p>
                   </div>
                   <p className="text-xs text-muted-foreground">{formatDate(item.created_at)}</p>

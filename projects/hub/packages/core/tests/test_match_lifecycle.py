@@ -65,10 +65,10 @@ def test_a_document_is_not_found_once_its_freelancer_is_deleted(clean: Session) 
     letter = _service(clean).create(freelancer_id, _body(company_id), admin_id).letter
     assert require_live_document(clean, letter.id).id == letter.id
     missing = uuid4()
-    with pytest.raises(NotFound, match=f"documento {missing} non trovato"):
+    with pytest.raises(NotFound, match=f"document {missing} non trovato"):
         require_live_document(clean, missing)
     FreelancerService(clean).soft_delete(freelancer_id, admin_id)
-    with pytest.raises(NotFound, match=f"documento {letter.id} non trovato"):
+    with pytest.raises(NotFound, match=f"document {letter.id} non trovato"):
         require_live_document(clean, letter.id)
 
 

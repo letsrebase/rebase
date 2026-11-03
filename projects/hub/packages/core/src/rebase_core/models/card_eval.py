@@ -71,7 +71,8 @@ class CardEvalRun(Base, PrimaryKeyMixin):
 class CardEvalResult(Base):
     """What a run made of one person: the card it wrote (personal data, so the row goes
     with the run and with the person), what the rules found in it (`checks`: the years,
-    anonymity; `experience_years_ok` and `guard_clean` are their headline), what the judging call said
+    anonymity; `experience_years_ok` and `guard_clean` are their headline), what the judging call
+    said
     of each field against the sources
     (`judgement`), and the latency and cost of the generation and of the judging, each
     apart. `failure` is the kind of failure when no card came out (`cards.Failure`), and

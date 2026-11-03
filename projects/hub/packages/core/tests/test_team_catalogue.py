@@ -169,7 +169,9 @@ def test_proposal_prompt_is_byte_identical_in_substance_to_before() -> None:
     """REB-831 moved the proposal onto the provider-neutral request: the model still reads
     the same words, in the same blocks. Taken from the version before it (`proposal_prompt`
     of 1ccb4167, run on these inputs): the rules by their hash, the catalogue block, the
-    user turn on «Rigenera» with a number and a note, the empty catalogue, and the schema."""
+    user turn on «Rigenera» with a number and a note, the empty catalogue, and the schema.
+    The hash of the rules was taken again when the answer's keys and the catalogue's became
+    English: the rules name them, and nothing else changed."""
     member = UUID("00000000-0000-0000-0000-000000000001")
     previous = SimpleNamespace(
         summary="Un team di due", team=[{"freelancer_id": str(member), "role": "Backend"}]
@@ -184,19 +186,19 @@ def test_proposal_prompt_is_byte_identical_in_substance_to_before() -> None:
     )
 
     assert hashlib.sha256(request.system.encode()).hexdigest() == (
-        "0728091ef3a44d4e0491cb09dc830d018d6f140aa50d6fab2b87bfd790918924"
+        "3581d64f654f817515c01de0cc08ad81655f9e090ee023f7cd03fe8def7eacab"
     )
     assert request.system_cached == "The catalogue:\nt1: backend, senior"
     assert [(m.role, m.text) for m in request.messages] == [
         (
             "user",
-            "The project's description:\n<descrizione>\n" + description + "\n</descrizione>"
+            "The project's description:\n<description>\n" + description + "\n</description>"
             "\n\nThe visitor wants a team of exactly 3 people."
             "\n\nYou already proposed a team for this project, and the visitor asks for "
             "another one. Your previous proposal (people no longer in the catalogue are "
-            "left out):\n<proposta_precedente>\nriassunto: Un team di due\nteam:\n- t1: "
-            "Backend\n</proposta_precedente>"
-            "\n\nThe visitor's note:\n<nota>\ntogli il designer\n</nota>\nFollow the "
+            "left out):\n<previous_proposal>\nsummary: Un team di due\nteam:\n- t1: "
+            "Backend\n</previous_proposal>"
+            "\n\nThe visitor's note:\n<note>\ntogli il designer\n</note>\nFollow the "
             "note, and keep what it does not ask to change.",
         )
     ]
@@ -205,13 +207,13 @@ def test_proposal_prompt_is_byte_identical_in_substance_to_before() -> None:
     assert empty.messages == [
         LlmMessage(
             role="user",
-            text="The project's description:\n<descrizione>\n" + description + "\n</descrizione>",
+            text="The project's description:\n<description>\n" + description + "\n</description>",
         )
     ]
     schema = _parameters(request).output_object
     assert schema is not None
     assert hashlib.sha256(json.dumps(schema.json_schema, sort_keys=True).encode()).hexdigest() == (
-        "25135283e23511e59d89e9b22b365c693f67206a7fc6581bd569ef1d8a765409"
+        "46ffe63c8003d23bdfb32c0b531cde0460f16ef7dc1f3d496b5ee1c55d9ef7c8"
     )
 
 
@@ -245,7 +247,7 @@ def test_an_empty_catalogue_asks_nobody(clean_hub: Session) -> None:
 
     assert llm.requests == []
     assert (read.summary, read.team) == (NO_FIT_SENTENCE, [])
-    assert read.location.model_dump() == {"locale": False, "dove": None}
+    assert read.location.model_dump() == {"on_site": False, "place": None}
     assert read.economics.model_dump() == {"day": None, "month": None, "days_month": 22}
     # The row is written all the same, so «Rigenera» and a later read find it; it cost
     # nothing, and says so.

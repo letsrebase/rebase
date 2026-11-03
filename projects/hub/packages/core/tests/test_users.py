@@ -21,11 +21,11 @@ from rebase_core.users import VIA_LOGIN, VIA_WIZARD, UserService
 PDF = b"%PDF-1.7\n1 0 obj<<>>endobj\n%%EOF\n"
 
 GOOD = {
-    "nome": "Ada",
+    "first_name": "Ada",
     "last_name": "Lovelace",
     "linkedin_url": "https://www.linkedin.com/in/ada",
     "daily_rate": "450",
-    "posizione": "Backend developer",
+    "job_title": "Backend developer",
     "remote": "remote",
     "links": ["https://github.com/ada"],
 }
@@ -65,7 +65,7 @@ def _apply(session: Session, email: str = "ada@studio.it") -> UUID:
 
 
 def _token_from(mail_text: str) -> str:
-    match = re.search(r"/entra\?t=([A-Za-z0-9_-]+)", mail_text)
+    match = re.search(r"/verify\?t=([A-Za-z0-9_-]+)", mail_text)
     assert match, mail_text
     return match.group(1)
 
@@ -79,7 +79,7 @@ def test_get_or_create_makes_one_row_per_address_and_returns_it_after(
     row = users.get_or_create("Ada@Studio.it", "Ada", "Lovelace")
     assert row.email == "ada@studio.it" and row.role == "member"
     again = users.get_or_create("ada@studio.it", "Somebody", "Else")
-    assert again.id == row.id and again.nome == "Ada"  # unchanged, not overwritten
+    assert again.id == row.id and again.first_name == "Ada"  # unchanged, not overwritten
     matching = hub_session.scalars(select(User).where(User.email == "ada@studio.it")).all()
     assert len(matching) == 1
 
@@ -112,11 +112,11 @@ def test_two_company_requests_from_the_same_address_share_one_user(
     from rebase_core.companies import CompanyService
     from rebase_core.company_schemas import CompanyCreate
 
-    def _company(nome: str, last_name: str, phone: str) -> None:
+    def _company(first_name: str, last_name: str, phone: str) -> None:
         CompanyService(hub_session).request(
             CompanyCreate(
                 company_name="ACME",
-                contact_first_name=nome,
+                contact_first_name=first_name,
                 contact_last_name=last_name,
                 email="acme@example.it",
                 phone=phone,
@@ -134,7 +134,7 @@ def test_two_company_requests_from_the_same_address_share_one_user(
     _company("Road", "Runner", "+39 345 2222222")
     rows = hub_session.scalars(select(User).where(User.email == "acme@example.it")).all()
     assert len(rows) == 1
-    assert (rows[0].nome, rows[0].last_name, rows[0].phone) == (
+    assert (rows[0].first_name, rows[0].last_name, rows[0].phone) == (
         "Wile",
         "Coyote",
         "+39 345 1111111",
@@ -162,7 +162,7 @@ def test_a_link_is_written_only_for_an_address_that_exists(
     _apply(hub_session)
     mail = users.request_link("  ADA@studio.it ")
     assert mail is not None and mail.to == "ada@studio.it"
-    assert "http://localhost:5180/hub/entra?t=" in mail.text
+    assert "http://localhost:5180/hub/verify?t=" in mail.text
     row = hub_session.scalar(select(MagicLinkToken))
     assert row is not None and row.used_at is None
     assert row.token_hash != _token_from(mail.text) and len(row.token_hash) == 64

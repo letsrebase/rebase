@@ -15,14 +15,14 @@ from rebase_core.anonymous_cv.schema import (
 CV = AnonymousCv(
     language="it",
     title="Backend developer",
-    sommario="Sviluppatore con dieci anni di esperienza su sistemi distribuiti.",
-    esperienze=[
+    summary="Sviluppatore con dieci anni di esperienza su sistemi distribuiti.",
+    experience=[
         Experience(
             role="GRC Analyst",
             company="TIM S.p.A.",
             location="Messina, IT",
             period="2019 – oggi",
-            punti=[
+            points=[
                 Point(title="Audit (TIM S.p.A.)", text="Ha condotto audit ISO 27001."),
                 Point(title=None, text="Ha scritto le policy di sicurezza."),
             ],
@@ -32,19 +32,21 @@ CV = AnonymousCv(
             company="Acme S.r.l.",
             location="Roma, IT",
             period="2014 – 2019",
-            punti=[Point(title=None, text="Ha portato in produzione il servizio di fatturazione.")],
+            points=[
+                Point(title=None, text="Ha portato in produzione il servizio di fatturazione.")
+            ],
         ),
     ],
     skills=[Group(area="Linguaggi", entries=["Python", "Go"])],
-    formazione=[
+    education=[
         Title(
             title="Diploma di perito informatico",
-            istituto="I.I.S. Ettore Majorana",
+            institution="I.I.S. Ettore Majorana",
             location="Messina, IT",
             period="2009 – 2014",
         )
     ],
-    certificazioni=["CISA"],
+    certifications=["CISA"],
     languages=[
         Language(language="Italiano", level="Madrelingua"),
         Language(language="Inglese", level=None),
@@ -53,7 +55,7 @@ CV = AnonymousCv(
 )
 
 WHO = who_of(
-    nome="Mario",
+    first_name="Mario",
     last_name="Messina",
     emails=["mario.messina@proton.me"],
     phones=["+39 333 123 4567"],
@@ -71,57 +73,57 @@ def test_a_clean_cv_passes() -> None:
 
 def test_surname_in_a_bullet() -> None:
     cv = CV.model_copy(deep=True)
-    cv.esperienze[1].punti[0].text = "Ha lavorato con Messina su fatturazione."
-    assert identifying_fields(cv, WHO) == ["esperienze[1].punti[0].testo"]
+    cv.experience[1].points[0].text = "Ha lavorato con Messina su fatturazione."
+    assert identifying_fields(cv, WHO) == ["experience[1].points[0].text"]
 
 
 def test_surname_in_capitals_in_the_title() -> None:
-    cv = CV.model_copy(update={"titolo": "MARIO MESSINA – Backend developer"})
-    assert "titolo" in identifying_fields(cv, WHO)
+    cv = CV.model_copy(update={"title": "MARIO MESSINA – Backend developer"})
+    assert "title" in identifying_fields(cv, WHO)
 
 
 def test_surname_in_a_company() -> None:
     cv = CV.model_copy(deep=True)
-    cv.esperienze[0].company = "Messina Consulting S.r.l."
-    assert identifying_fields(cv, WHO) == ["esperienze[0].azienda"]
+    cv.experience[0].company = "Messina Consulting S.r.l."
+    assert identifying_fields(cv, WHO) == ["experience[0].company"]
 
 
 def test_lowercase_word_is_not_the_surname() -> None:
-    who = who_of(nome="Mario", last_name="Porta", emails=[], phones=[], links=[])
+    who = who_of(first_name="Mario", last_name="Porta", emails=[], phones=[], links=[])
     cv = CV.model_copy(deep=True)
-    cv.esperienze[1].punti[0].text = "Ha portato in produzione, porta in produzione."
+    cv.experience[1].points[0].text = "Ha portato in produzione, porta in produzione."
     assert identifying_fields(cv, who) == []
 
 
 def test_first_name_that_is_a_skill() -> None:
-    who = who_of(nome="Ada", last_name=None, emails=[], phones=[], links=[])
-    cv = CV.model_copy(update={"sommario": "Sviluppo in Ada"})
+    who = who_of(first_name="Ada", last_name=None, emails=[], phones=[], links=[])
+    cv = CV.model_copy(update={"summary": "Sviluppo in Ada"})
     cv.skills = [Group(area="Linguaggi", entries=["Ada"])]
     assert identifying_fields(cv, who) == []
-    other = CV.model_copy(update={"sommario": "Ada ha guidato il team"})
-    assert identifying_fields(other, who) == ["sommario"]
+    other = CV.model_copy(update={"summary": "Ada ha guidato il team"})
+    assert identifying_fields(other, who) == ["summary"]
 
 
 def test_first_name_is_not_read_in_a_place_or_a_school() -> None:
-    # «Roma» is a luogo and «Ettore» the school's name: neither is prose.
-    for nome in ("Roma", "Ettore"):
-        who = who_of(nome=nome, last_name=None, emails=[], phones=[], links=[])
+    # «Roma» is a location and «Ettore» the school's name: neither is prose.
+    for first_name in ("Roma", "Ettore"):
+        who = who_of(first_name=first_name, last_name=None, emails=[], phones=[], links=[])
         assert identifying_fields(CV, who) == []
-    prose = CV.model_copy(update={"sommario": "Ettore ha guidato il team"})
+    prose = CV.model_copy(update={"summary": "Ettore ha guidato il team"})
     assert identifying_fields(
-        prose, who_of(nome="Ettore", last_name=None, emails=[], phones=[], links=[])
-    ) == ["sommario"]
+        prose, who_of(first_name="Ettore", last_name=None, emails=[], phones=[], links=[])
+    ) == ["summary"]
 
 
 def test_phone_in_another_format() -> None:
     cv = CV.model_copy(deep=True)
-    cv.esperienze[0].punti[1].text = "chiamare 333 1234567"
-    assert identifying_fields(cv, WHO) == ["esperienze[0].punti[1].testo"]
+    cv.experience[0].points[1].text = "chiamare 333 1234567"
+    assert identifying_fields(cv, WHO) == ["experience[0].points[1].text"]
 
 
 def test_short_number_is_not_a_phone() -> None:
-    who = who_of(nome=None, last_name=None, emails=[], phones=["12345"], links=[])
-    cv = CV.model_copy(update={"sommario": "Ha seguito 12345 utenti."})
+    who = who_of(first_name=None, last_name=None, emails=[], phones=["12345"], links=[])
+    cv = CV.model_copy(update={"summary": "Ha seguito 12345 utenti."})
     assert identifying_fields(cv, who) == []
 
 
@@ -129,40 +131,44 @@ def test_email_handle_and_login() -> None:
     for word in ("mmessina", "mario.messina"):
         cv = CV.model_copy(deep=True)
         cv.other_sections[0].entries[0] = word
-        assert identifying_fields(cv, WHO) == ["altre_sezioni[0].voci[0]"]
+        assert identifying_fields(cv, WHO) == ["other_sections[0].entries[0]"]
 
 
 def test_any_url_or_at() -> None:
     for word in ("www.github.com/acme", "https://github.com/acme", "@acme"):
         cv = CV.model_copy(deep=True)
         cv.other_sections[0].entries[0] = word
-        assert identifying_fields(cv, WHO) == ["altre_sezioni[0].voci[0]"]
+        assert identifying_fields(cv, WHO) == ["other_sections[0].entries[0]"]
 
 
 def test_personal_domain_whole_host() -> None:
     cv = CV.model_copy(deep=True)
     cv.other_sections[0].entries[0] = "mariomessina.dev"
-    assert identifying_fields(cv, WHO) == ["altre_sezioni[0].voci[0]"]
+    assert identifying_fields(cv, WHO) == ["other_sections[0].entries[0]"]
 
 
 def test_an_employer_called_like_the_site_passes() -> None:
-    who = who_of(nome=None, last_name=None, emails=[], phones=[], links=["https://acme.io"])
+    who = who_of(first_name=None, last_name=None, emails=[], phones=[], links=["https://acme.io"])
     cv = CV.model_copy(deep=True)
-    cv.esperienze[1].company = "Acme S.r.l."
+    cv.experience[1].company = "Acme S.r.l."
     assert identifying_fields(cv, who) == []
 
 
 def test_merged_unites_without_repeating() -> None:
     other = who_of(
-        nome="Mario", last_name="Messina", emails=["MARIO.MESSINA@proton.me"], phones=[], links=[]
+        first_name="Mario",
+        last_name="Messina",
+        emails=["MARIO.MESSINA@proton.me"],
+        phones=[],
+        links=[],
     )
     merged = WHO.merged(other)
-    assert merged.nomi == ["Mario"] and merged.emails == ["mario.messina@proton.me"]
+    assert merged.first_names == ["Mario"] and merged.emails == ["mario.messina@proton.me"]
     assert isinstance(merged, Who) and merged.github_logins == ["mmessina"]
 
 
 def test_strings_paths_in_order() -> None:
-    assert [path for path, _ in strings(CV)][:3] == ["titolo", "sommario", "esperienze[0].ruolo"]
+    assert [path for path, _ in strings(CV)][:3] == ["title", "summary", "experience[0].role"]
 
 
 def _entry(value: str) -> AnonymousCv:
@@ -172,28 +178,28 @@ def _entry(value: str) -> AnonymousCv:
 
 
 def test_bare_profile_link() -> None:
-    who = who_of(nome=None, last_name=None, emails=[], phones=[], links=[])
+    who = who_of(first_name=None, last_name=None, emails=[], phones=[], links=[])
     for word in ("linkedin.com/in/someone-else", "github.com/acme", "Github.com/Acme"):
-        assert identifying_fields(_entry(word), who) == ["altre_sezioni[0].voci[0]"]
+        assert identifying_fields(_entry(word), who) == ["other_sections[0].entries[0]"]
     assert identifying_fields(_entry("GitHub Actions e LinkedIn"), who) == []
 
 
 def test_name_inside_a_slug() -> None:
-    who = who_of(nome="Alex", last_name="Fegatilli", emails=[], phones=[], links=[])
+    who = who_of(first_name="Alex", last_name="Fegatilli", emails=[], phones=[], links=[])
     for word in ("alex-fegatilli-fau50", "fegatilli.dev"):
-        assert identifying_fields(_entry(word), who) == ["altre_sezioni[0].voci[0]"]
+        assert identifying_fields(_entry(word), who) == ["other_sections[0].entries[0]"]
 
 
 def test_skills_with_dots_and_slashes_pass() -> None:
     cv = CV.model_copy(deep=True)
     cv.skills = []
-    cv.esperienze[1].punti[0].text = "migrato da Node.js/Express ad ASP.NET Core"
+    cv.experience[1].points[0].text = "migrato da Node.js/Express ad ASP.NET Core"
     assert identifying_fields(cv, WHO) == []
 
 
-def _who(nome: str | None = None, last_name: str | None = None, **kw: list[str]) -> Who:
+def _who(first_name: str | None = None, last_name: str | None = None, **kw: list[str]) -> Who:
     return who_of(
-        nome=nome,
+        first_name=first_name,
         last_name=last_name,
         emails=kw.get("emails", []),
         phones=[],
@@ -207,7 +213,7 @@ def _skill(value: str) -> AnonymousCv:
     return cv
 
 
-ENTRY = ["altre_sezioni[0].voci[0]"]
+ENTRY = ["other_sections[0].entries[0]"]
 
 
 def test_address_alone() -> None:
@@ -237,7 +243,7 @@ def test_slugs_are_caught() -> None:
 
 
 def test_ordinary_words_with_a_name_inside_pass() -> None:
-    for nome, last_name, text in (
+    for first_name, last_name, text in (
         ("Maria", "Rossi", "MySQL/MariaDB"),
         ("Tom", "Rossi", "Apache/Tomcat"),
         ("Ian", "Rossi", "Debian/Ubuntu"),
@@ -247,30 +253,30 @@ def test_ordinary_words_with_a_name_inside_pass() -> None:
         ("Mario", "Conti", "continuous-integration"),
         ("Mario", "Riva", "private-cloud"),
     ):
-        assert identifying_fields(_entry(text), _who(nome, last_name)) == []
+        assert identifying_fields(_entry(text), _who(first_name, last_name)) == []
 
 
 def test_name_in_a_link_respects_place_and_skills() -> None:
     cv = CV.model_copy(deep=True)
-    cv.esperienze[0].location = "Messina/Remoto"
+    cv.experience[0].location = "Messina/Remoto"
     assert identifying_fields(cv, _who("Mario", "Messina")) == []
     assert identifying_fields(_skill("Julia/Python"), _who("Julia", "Rossi")) == []
 
 
 def test_skill_called_like_the_person_is_a_leak() -> None:
     who = _who("Mario", "Messina")
-    assert identifying_fields(_skill("Mario Messina"), who) == ["competenze[0].voci[1]"]
-    cv = _skill("Messina").model_copy(update={"titolo": "Messina - Backend developer"})
-    assert identifying_fields(cv, _who(None, "Messina")) == ["titolo", "competenze[0].voci[1]"]
+    assert identifying_fields(_skill("Mario Messina"), who) == ["skills[0].entries[1]"]
+    cv = _skill("Messina").model_copy(update={"title": "Messina - Backend developer"})
+    assert identifying_fields(cv, _who(None, "Messina")) == ["title", "skills[0].entries[1]"]
 
 
 def test_compound_surname_words() -> None:
-    cv = CV.model_copy(update={"sommario": "Luca ha guidato il team"})
-    assert identifying_fields(cv, _who("Mario", "De Luca")) == ["sommario"]
+    cv = CV.model_copy(update={"summary": "Luca ha guidato il team"})
+    assert identifying_fields(cv, _who("Mario", "De Luca")) == ["summary"]
     cv = CV.model_copy(deep=True)
-    cv.esperienze[1].punti[0].text = "Ha lavorato con Bianchi."
+    cv.experience[1].points[0].text = "Ha lavorato con Bianchi."
     assert identifying_fields(cv, _who("Mario", "Rossi Bianchi")) == [
-        "esperienze[1].punti[0].testo"
+        "experience[1].points[0].text"
     ]
 
 
@@ -291,7 +297,7 @@ def test_handle_in_the_path_of_a_link() -> None:
 def test_employer_named_in_the_cv_is_not_the_persons_site() -> None:
     who = _who(links=["https://acme-labs.io"])
     cv = CV.model_copy(deep=True)
-    cv.esperienze[1].company = "Acme Labs S.r.l."
+    cv.experience[1].company = "Acme Labs S.r.l."
     assert identifying_fields(cv, who) == []
 
 
@@ -309,8 +315,8 @@ def test_more_profile_hosts() -> None:
 
 def test_identifier_in_a_bullet_title() -> None:
     cv = CV.model_copy(deep=True)
-    cv.esperienze[0].punti[0].title = "Audit per Messina"
-    assert identifying_fields(cv, WHO) == ["esperienze[0].punti[0].titolo"]
+    cv.experience[0].points[0].title = "Audit per Messina"
+    assert identifying_fields(cv, WHO) == ["experience[0].points[0].title"]
 
 
 def test_surname_is_not_read_in_a_language() -> None:
@@ -368,26 +374,26 @@ def test_italian_particles() -> None:
         ("Dell'Acqua", "server Dell PowerEdge"),
         ("Dell'Orto", "Dell EMC"),
     ):
-        cv = CV.model_copy(update={"sommario": text})
+        cv = CV.model_copy(update={"summary": text})
         assert identifying_fields(cv, _who("Mario", last_name)) == [], (last_name, text)
-    cv = CV.model_copy(update={"sommario": "Acqua e Lago"})
-    assert identifying_fields(cv, _who("Mario", "Dell'Acqua")) == ["sommario"]
+    cv = CV.model_copy(update={"summary": "Acqua e Lago"})
+    assert identifying_fields(cv, _who("Mario", "Dell'Acqua")) == ["summary"]
 
 
 def test_first_name_in_a_slug_outside_prose() -> None:
     cv = CV.model_copy(deep=True)
-    cv.certificazioni = ["Credly: alex-cloud.dev"]
-    assert identifying_fields(cv, _who("Alex", "Rossi")) == ["certificazioni[0]"]
+    cv.certifications = ["Credly: alex-cloud.dev"]
+    assert identifying_fields(cv, _who("Alex", "Rossi")) == ["certifications[0]"]
 
 
 def test_skill_is_blanked_unless_it_holds_the_surname_as_a_word() -> None:
-    cv = _skill("Julia").model_copy(update={"sommario": "Sviluppo in Julia e Python."})
+    cv = _skill("Julia").model_copy(update={"summary": "Sviluppo in Julia e Python."})
     assert identifying_fields(cv, _who("Julia", "Li")) == []
 
 
 def test_short_handles_keep_their_digits() -> None:
     cv = CV.model_copy(deep=True)
-    cv.formazione[0].istituto = "FAU Erlangen-Nürnberg"
+    cv.education[0].institution = "FAU Erlangen-Nürnberg"
     assert identifying_fields(cv, _who(links=["https://github.com/fau50"])) == []
     cv = _skill("Java")
     assert identifying_fields(cv, _who(links=["https://gitlab.com/java8"])) == []
@@ -395,7 +401,7 @@ def test_short_handles_keep_their_digits() -> None:
 
 def _cert(value: str) -> AnonymousCv:
     cv = CV.model_copy(deep=True)
-    cv.certificazioni = [value]
+    cv.certifications = [value]
     return cv
 
 
@@ -412,7 +418,7 @@ def test_every_profile_handle_is_read() -> None:
         ("https://www.facebook.com/people/Mario-Rossi/100012345", "Facebook mario-rossi"),
     ):
         who = _who(links=[link])
-        assert identifying_fields(_cert(text), who) == ["certificazioni[0]"], (link, text)
+        assert identifying_fields(_cert(text), who) == ["certifications[0]"], (link, text)
 
 
 def test_more_platforms_name_no_one() -> None:
@@ -431,13 +437,13 @@ def test_more_platforms_name_no_one() -> None:
 
 
 def test_hyphenated_names_outside_prose_pass() -> None:
-    for nome, text in (
+    for first_name, text in (
         ("Max", "Max-Planck-Institut"),
         ("Mercedes", "Mercedes-Benz Italia S.p.A."),
         ("Marie", "Marie-Curie fellowship"),
         ("Ada", "ADA-compliant"),
     ):
-        assert identifying_fields(_cert(text), _who(nome, "Rossi")) == [], text
+        assert identifying_fields(_cert(text), _who(first_name, "Rossi")) == [], text
 
 
 def test_name_run_without_a_link() -> None:
@@ -494,18 +500,18 @@ def test_google_is_skipped_only_as_the_domain() -> None:
 
 def test_an_underscore_slug_outside_prose() -> None:
     assert identifying_fields(_cert("Credly: alex_cloud"), _who("Alex", "Rossi")) == [
-        "certificazioni[0]"
+        "certifications[0]"
     ]
 
 
-# ---- tax identifiers (C2): a codice fiscale, a partita IVA or an IBAN names one person ----
+# ---- tax identifiers (C2): a tax code, a VAT number or an IBAN names one person ----
 
-NOBODY = who_of(nome=None, last_name=None, emails=[], phones=[], links=[])
+NOBODY = who_of(first_name=None, last_name=None, emails=[], phones=[], links=[])
 
 
 def _bullet(text: str) -> AnonymousCv:
     cv = CV.model_copy(deep=True)
-    cv.esperienze[1].punti[0].text = text
+    cv.experience[1].points[0].text = text
     return cv
 
 
@@ -519,36 +525,43 @@ def test_to_labelled_vat_number_is_refused() -> None:
         "CF 01234567890 (ditta individuale)",
         "codice fiscale: 01234567890",
     ):
-        assert identifying_fields(_bullet(text), NOBODY) == ["esperienze[1].punti[0].testo"], text
+        assert identifying_fields(_bullet(text), NOBODY) == ["experience[1].points[0].text"], text
 
 
 def test_to_tax_code_is_refused_anywhere() -> None:
     assert identifying_fields(_bullet("C.F. MSSMRA85M01F158K"), NOBODY) == [
-        "esperienze[1].punti[0].testo"
+        "experience[1].points[0].text"
     ]
     # Its shape alone, in any case, in a place too.
     cv = CV.model_copy(deep=True)
-    cv.esperienze[0].location = "Messina mssmra85m01f158k"
-    assert identifying_fields(cv, NOBODY) == ["esperienze[0].luogo"]
+    cv.experience[0].location = "Messina mssmra85m01f158k"
+    assert identifying_fields(cv, NOBODY) == ["experience[0].location"]
 
 
 def test_to_known_vat_number_is_refused_without_to_label() -> None:
-    who = who_of(nome=None, last_name=None, emails=[], phones=[], links=[], tax_ids=["01234567890"])
+    who = who_of(
+        first_name=None, last_name=None, emails=[], phones=[], links=[], tax_ids=["01234567890"]
+    )
     assert identifying_fields(_bullet("Rif. 012 3456 7890"), who) == [
-        "esperienze[1].punti[0].testo"
+        "experience[1].points[0].text"
     ]
     cv = CV.model_copy(deep=True)
-    cv.esperienze[0].location = "Messina 01234567890"
-    assert identifying_fields(cv, who) == ["esperienze[0].luogo"]
+    cv.experience[0].location = "Messina 01234567890"
+    assert identifying_fields(cv, who) == ["experience[0].location"]
 
 
 def test_to_known_tax_code_written_spaced_is_refused() -> None:
     who = who_of(
-        nome=None, last_name=None, emails=[], phones=[], links=[], tax_ids=["mss mra 85m01 f158k"]
+        first_name=None,
+        last_name=None,
+        emails=[],
+        phones=[],
+        links=[],
+        tax_ids=["mss mra 85m01 f158k"],
     )
     assert who.tax_ids == ["MSSMRA85M01F158K"]
     assert identifying_fields(_bullet("Codice MSS MRA 85M01 F158K"), who) == [
-        "esperienze[1].punti[0].testo"
+        "experience[1].points[0].text"
     ]
 
 
@@ -558,7 +571,9 @@ def test_words_about_to_vat_number_pass() -> None:
 
 
 def test_an_unlabelled_unknown_number_passes() -> None:
-    who = who_of(nome=None, last_name=None, emails=[], phones=[], links=[], tax_ids=["01234567890"])
+    who = who_of(
+        first_name=None, last_name=None, emails=[], phones=[], links=[], tax_ids=["01234567890"]
+    )
     assert identifying_fields(_bullet("Ordine di lavoro 98765432109 consegnato"), who) == []
 
 
@@ -568,15 +583,22 @@ def test_an_iban_is_refused() -> None:
         "Pagamenti su IT60 X054 2811 1010 0000 0123 456",
         "IBAN: DE89 3704 0044 0532 0130 00",
     ):
-        assert identifying_fields(_bullet(text), NOBODY) == ["esperienze[1].punti[0].testo"], text
+        assert identifying_fields(_bullet(text), NOBODY) == ["experience[1].points[0].text"], text
     # A code shaped like a foreign IBAN with no «IBAN» before it is a code.
     assert identifying_fields(_bullet("Progetto DE89 3704 0044 0532"), NOBODY) == []
 
 
 def test_tax_ids_are_merged_once() -> None:
-    one = who_of(nome=None, last_name=None, emails=[], phones=[], links=[], tax_ids=["01234567890"])
+    one = who_of(
+        first_name=None, last_name=None, emails=[], phones=[], links=[], tax_ids=["01234567890"]
+    )
     two = who_of(
-        nome=None, last_name=None, emails=[], phones=[], links=[], tax_ids=[" 01234567890", None]
+        first_name=None,
+        last_name=None,
+        emails=[],
+        phones=[],
+        links=[],
+        tax_ids=[" 01234567890", None],
     )
     assert one.merged(two).tax_ids == ["01234567890"]
 
@@ -598,11 +620,11 @@ def test_a_birth_statement_is_refused() -> None:
         "DOB 1985-03-03",
         "Luogo di nascita: Palermo",
     ):
-        assert identifying_fields(_bullet(text), NOBODY) == ["esperienze[1].punti[0].testo"], text
+        assert identifying_fields(_bullet(text), NOBODY) == ["experience[1].points[0].text"], text
     # In a place too.
     cv = CV.model_copy(deep=True)
-    cv.esperienze[0].location = "Messina (nato il 3/3/1985)"
-    assert identifying_fields(cv, NOBODY) == ["esperienze[0].luogo"]
+    cv.experience[0].location = "Messina (nato il 3/3/1985)"
+    assert identifying_fields(cv, NOBODY) == ["experience[0].location"]
 
 
 def test_words_about_being_born_pass() -> None:
@@ -626,10 +648,10 @@ def test_nato_the_alliance_is_not_a_birth_label() -> None:
     ):
         assert identifying_fields(_bullet(text), NOBODY) == [], text
     cv = CV.model_copy(deep=True)
-    cv.esperienze[0].location = "NATO in Brussels"
+    cv.experience[0].location = "NATO in Brussels"
     assert identifying_fields(cv, NOBODY) == []
     for text in ("Nato a Messina il 3 marzo 1985", "nata il 01/08/1985"):
-        assert identifying_fields(_bullet(text), NOBODY) == ["esperienze[1].punti[0].testo"], text
+        assert identifying_fields(_bullet(text), NOBODY) == ["experience[1].points[0].text"], text
 
 
 def test_a_birth_statement_in_capitals_or_after_a_comma_is_refused() -> None:
@@ -641,7 +663,7 @@ def test_a_birth_statement_in_capitals_or_after_a_comma_is_refused() -> None:
         "Ingegnere, nato nel 1985",
         "(nata nel 1990)",
     ):
-        assert identifying_fields(_bullet(text), NOBODY) == ["esperienze[1].punti[0].testo"], text
+        assert identifying_fields(_bullet(text), NOBODY) == ["experience[1].points[0].text"], text
 
 
 def test_birth_and_tax_leak_gaps_are_closed() -> None:
@@ -657,5 +679,5 @@ def test_birth_and_tax_leak_gaps_are_closed() -> None:
         "Italiana | Nato nel 1985",
         "MSSMRA85M01F15LK",
     ):
-        assert identifying_fields(_bullet(text), NOBODY) == ["esperienze[1].punti[0].testo"], text
+        assert identifying_fields(_bullet(text), NOBODY) == ["experience[1].points[0].text"], text
     assert identifying_fields(_bullet("Born and raised in a DevOps culture"), NOBODY) == []

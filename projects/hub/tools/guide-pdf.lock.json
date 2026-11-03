@@ -1,14 +1,14 @@
 {
-  "output": "projects/hub/packages/core/src/rebase_core/perks/rebase-guida-primi-passi-freelance.pdf",
+  "output": "projects/hub/packages/core/src/rebase_core/perks/rebase-guide-first-steps-freelance.pdf",
   "bytes": 49053,
   "pages": 6,
   "sha256": "c36a5bf88168d4ee96c5b612a687cd30f1860589d416cd4b914c31c4108d23be",
   "sources": {
-    "projects/hub/content/guida-primi-passi-freelance.md": "0c1ae1fc2a705bc4cfb7ca23f203fccc259143dd0d81611bcd15d1361324904f",
+    "projects/hub/content/guide-first-steps-freelance.md": "0c1ae1fc2a705bc4cfb7ca23f203fccc259143dd0d81611bcd15d1361324904f",
     "projects/hub/tools/guide.typ.template": "579d1dc224e4eb905e5d4a7af3a2007f2741a6933451ec3969f268254441c456",
     "shared/brand/palette.css": "7dabca57f946a4461df0c4541666b301042658ff8bd4dd9128ccd277fb44f423",
     "shared/brand/fonts/outfit-variable-latin.woff2": "6c18d579fd87c3776be068b762cbc83fde3acb543d49eabd3ade842eb987e887",
-    "projects/hub/tools/build_guide_pdf.py": "c49368f792d6a92280be991cf6c24e6d0c1949ac6dad8a96e8d1d198e7096170"
+    "projects/hub/tools/build_guide_pdf.py": "c82878f29e04ad124b35971d71e6eb2a9a1be0eafe68497382d2256645d00e8c"
   },
   "tools": {
     "pandoc": "3.8.2",

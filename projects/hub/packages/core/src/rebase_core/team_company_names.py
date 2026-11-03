@@ -28,7 +28,6 @@ _GENERIC_WORDS = frozenset(
         "agenzia",
         "associati",
         "company",
-        "company",
         "consulenza",
         "consulting",
         "cooperativa",

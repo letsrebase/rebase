@@ -107,7 +107,7 @@ const MERGED: AdminAction = {
     into_freelancer_id: 'f2',
     moved: { logins: ['l1', 'l2'], notes: ['c1'] },
     cv: 'assorbita',
-    card_from_regenerate: true,
+    card_to_regenerate: true,
   },
   created_at: '2026-10-02T09:00:00Z',
 }
@@ -116,7 +116,7 @@ const ABSORBED: AdminAction = {
   id: 'a9',
   entity_id: 'f2',
   kind: 'absorbed',
-  payload: { from_freelancer_id: 'f1', moved: { logins: 1 }, cv: 'invariato', card_from_regenerate: false },
+  payload: { from_freelancer_id: 'f1', moved: { logins: 1 }, cv: 'invariato', card_to_regenerate: false },
 }
 const UNMERGED: AdminAction = { ...MERGED, id: 'a10', kind: 'unmerged', payload: {} }
 
@@ -174,7 +174,7 @@ const CARD_NOT_REGENERATED: AdminAction = {
     bulk: false,
     prompt_version: 3,
     model: 'claude-opus-5',
-    outcome: 'non_scritta',
+    outcome: 'not_written',
     reason: 'source_identifying',
     cost_eur: '0.020000',
   },

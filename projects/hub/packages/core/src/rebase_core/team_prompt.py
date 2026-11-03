@@ -30,8 +30,8 @@ TASK = "team_proposal"
 # system prompt already tells what each field means. What they are, for a reader here:
 # `ProposalAnswer` is the whole answer, closed at every level (`extra="forbid"` writes
 # `additionalProperties: false`), every property required and none with a default;
-# `ProposedPlace` is what the description says about place (`locale` when it asks for
-# people on site, all or part of the week; `dove` the city or region it names);
+# `ProposedPlace` is what the description says about place (`on_site` when it asks for
+# people on site, all or part of the week; `place` the city or region it names);
 # `ProposedMember` is one person, whose `id` is a catalogue position (`t3`) checked
 # after validation rather than by the schema, since a wrong one drops the line and does
 # not fail the proposal.
@@ -40,8 +40,8 @@ TASK = "team_proposal"
 class ProposedPlace(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    locale: bool
-    dove: SafeStr | None = Field(max_length=120)
+    on_site: bool
+    place: SafeStr | None = Field(max_length=120)
 
 
 class ProposedMember(BaseModel):
@@ -73,17 +73,17 @@ propose.
 The catalogue has one line per freelancer, in JSON:
 - id: the freelancer's position in this catalogue ("t1", "t2", ...), the only way to \
 name a person in your answer;
-- ruolo, seniority (junior, mid, senior or lead), anni (years of experience, or null \
-when the CV dates none, in which case seniority_incerta is true and the seniority is \
-only a guess), competenze (skills), settori (industries), lingue (languages);
-- luogo: the city or region the person's CV names, or null when it names none;
-- modalita: how the person works: "remoto" (remote only), "ibrido" (partly on site), \
-"in_sede" (on site), or null when they have not said;
-- fascia: the band of the client's price per day, in euro, or null when it is not \
+- role, seniority (junior, mid, senior or lead), experience_years (years of \
+experience, or null when the CV dates none, in which case seniority_uncertain is true \
+and the seniority is only a guess), skills, industries, languages;
+- location: the city or region the person's CV names, or null when it names none;
+- mode: how the person works: "remote" (remote only), "hybrid" (partly on site), \
+"on_site" (on site), or null when they have not said;
+- band: the band of the client's price per day, in euro, or null when it is not \
 known yet.
 
 Answer in the JSON schema you are given:
-- riassunto: an anonymous summary of the project, two to four sentences: what is to \
+- summary: an anonymous summary of the project, two to four sentences: what is to \
 be done, for how long, with which technologies, and where when the description says \
 so. When the description asks for people on site and the people you propose do not \
 work on site there, say so here in one plain sentence, as the catalogue has it: that \
@@ -92,15 +92,16 @@ nobody with these skills works on site in the place named, so the person propose
 remotely). Name no place of a person: the only place here is the one the description \
 names. When nobody in the catalogue fits the skills, one sentence saying why, and an \
 empty team.
-- luogo: what the description says about place. locale is true when it asks for \
+- location: what the description says about place (not the catalogue's location). \
+on_site is true when it asks for \
 people on site, at the client's or the project's premises, for all or part of the \
-week, and false when the work can be remote or the description does not say; dove is \
+week, and false when the work can be remote or the description does not say; place is \
 the city or region the description names as where the client or the work is, as \
 written there, or null.
 - team: the people you propose, the most important role first. For each: id, from the \
-catalogue; ruolo, the person's role in this team, as a short title; motivazione, one \
+catalogue; role, the person's role in this team, as a short title; reasoning, one \
 or two sentences on why this person fits this role, from their skills, sectors and \
-experience; giorni_settimana, the days a week the project needs them, from 1 to 5, or \
+experience; week_days, the days a week the project needs them, from 1 to 5, or \
 null when the description does not say.
 
 Rules:
@@ -108,24 +109,24 @@ Rules:
 when the work needs more, never more than it needs. When the message carries the line \
 "The visitor wants a team of exactly N", that number is the size: propose exactly that \
 many, one role each, and fewer only when nobody else in the catalogue fits, saying so \
-in the riassunto. On a regeneration, a note that asks to add or remove someone wins \
+in the summary. On a regeneration, a note that asks to add or remove someone wins \
 over that number.
 - One role per person, and a person at most once in the team.
 - Choose on skills first: the technologies and the kind of work the description \
 names. Sectors, seniority and languages come after, to choose between people whose \
 skills fit.
-- Remote and local: when the description asks for people on site, set luogo.locale to \
-true and prefer people whose modalita is "ibrido" or "in_sede" and, when it names where \
-the client or the work is, whose luogo is there or nearby. Skills come first all the \
+- Remote and local: when the description asks for people on site, set location.on_site to \
+true and prefer people whose mode is "hybrid" or "on_site" and, when it names where \
+the client or the work is, whose catalogue location is there or nearby. Skills come first all the \
 same: when nobody who works on site fits the skills, propose the people who do fit, \
-whatever their modalita or luogo, and say in the riassunto that they work remotely, from \
-another city, or have not said how they work, as their modalita has it: a null modalita \
+whatever their mode or location, and say in the summary that they work remotely, from \
+another city, or have not said how they work, as their mode has it: a null mode \
 is unknown, never remote. A description that only names a place, without asking for \
 people on site, prefers people nearby and excludes nobody.
-- The riassunto names no company, product or person from the description: describe \
+- The summary names no company, product or person from the description: describe \
 them by their kind instead ("un'azienda di logistica", "un'app per le prenotazioni"), \
 and no place of a person from the catalogue.
-- A motivazione names no place.
+- A reasoning names no place.
 - Write every text in Italian, except the names of technologies and methods, which \
 stay as they are.
 - Use only what the catalogue says about a person: never invent a skill, a sector, a \
@@ -159,8 +160,8 @@ def _previous_turn(previous: TeamProposal, positions: Sequence[UUID]) -> str:
     return (
         "You already proposed a team for this project, and the visitor asks for another "
         "one. Your previous proposal (people no longer in the catalogue are left out):\n"
-        f"<proposta_precedente>\nriassunto: {previous.summary}\nteam:\n{listed}\n"
-        "</proposta_precedente>"
+        f"<previous_proposal>\nsummary: {previous.summary}\nteam:\n{listed}\n"
+        "</previous_proposal>"
     )
 
 
@@ -176,14 +177,14 @@ def proposal_prompt(
     visitor picked one, and, on «Rigenera», the previous summary, the previous team by
     its current `positions`, and the note. The answer: `ProposalAnswer`. The output
     ceiling is the `team_proposal` task's (`ai_tasks`, «Modelli AI»)."""
-    parts = [f"The project's description:\n<descrizione>\n{data.description}\n</descrizione>"]
+    parts = [f"The project's description:\n<description>\n{data.description}\n</description>"]
     if data.people is not None:
         parts.append(_size_line(data.people))
     if previous is not None:
         parts.append(_previous_turn(previous, positions))
     if data.note is not None:
         parts.append(
-            f"The visitor's note:\n<nota>\n{data.note}\n</nota>\n"
+            f"The visitor's note:\n<note>\n{data.note}\n</note>\n"
             "Follow the note, and keep what it does not ask to change."
         )
     elif previous is not None:

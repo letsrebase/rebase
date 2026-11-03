@@ -6,13 +6,13 @@ import { AdminAgents } from './Agents'
 
 const ACTIVE = {
   id: 't1',
-  nome: 'Claude Code',
+  name: 'Claude Code',
   prefix: 'reb_abcdefgh',
   created_at: '2026-09-15T10:00:00Z',
   last_used_at: null,
   revoked_at: null,
 }
-const REVOKED = { ...ACTIVE, id: 't0', nome: 'Vecchio', prefix: 'reb_00000000', revoked_at: '2026-09-14T10:00:00Z' }
+const REVOKED = { ...ACTIVE, id: 't0', name: 'Vecchio', prefix: 'reb_00000000', revoked_at: '2026-09-14T10:00:00Z' }
 
 function page(items: unknown[], next_cursor: string | null = null) {
   return { items, next_cursor }
@@ -66,7 +66,7 @@ describe('the Agenti page (REB-213)', () => {
     await screen.findByText('reb_abcdefgh…')
     const [createPath, createInit] = spy.mock.calls[1] ?? []
     expect(createPath).toBe('/api/hub/tokens')
-    expect(JSON.parse(String((createInit as RequestInit).body))).toEqual({ nome: 'Claude Code' })
+    expect(JSON.parse(String((createInit as RequestInit).body))).toEqual({ name: 'Claude Code' })
   })
 
   it('revokes a token and shows it revoked', async () => {

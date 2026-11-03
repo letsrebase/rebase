@@ -6,14 +6,14 @@ import { CompanyOverrideDialog, FreelancerOverrideDialog, RecordLifecycle } from
 
 const FREELANCER: Freelancer = {
   id: 'f1',
-  nome: 'Ada',
+  first_name: 'Ada',
   last_name: 'Lovelace',
   email: 'ada@studio.it',
   linkedin_url: 'https://www.linkedin.com/in/ada',
   cv_filename: 'cv.pdf',
   cv_size: 2048,
   daily_rate: '500.00',
-  posizione: 'CTO',
+  job_title: 'CTO',
   remote: 'remote',
   links: ['https://github.com/ada', 'https://ada.dev'],
   status: 'active',
@@ -28,7 +28,7 @@ const FREELANCER: Freelancer = {
   seniority_admin: null,
   experience_years_admin: null,
   created_at: '2026-09-10T10:00:00Z',
-  compilata_da: 'person',
+  filled_by: 'person',
   complete: true,
   note: [],
   logins: 3,
@@ -148,14 +148,14 @@ describe('FreelancerOverrideDialog', () => {
     mountFreelancer({ onSave })
     await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
     expect(onSave).toHaveBeenCalledWith({
-      nome: 'Ada',
+      first_name: 'Ada',
       last_name: 'Lovelace',
       linkedin_url: 'https://www.linkedin.com/in/ada',
       daily_rate: '500.00',
-      posizione: 'CTO',
+      job_title: 'CTO',
       remote: 'remote',
       links: ['https://github.com/ada', 'https://ada.dev'],
-      compilata_da: 'person',
+      filled_by: 'person',
     })
   })
 
@@ -168,7 +168,7 @@ describe('FreelancerOverrideDialog', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
     const sent = onSave.mock.calls[0]![0]
     expect(sent.linkedin_url).toBeNull()
-    expect(sent.posizione).toBeNull()
+    expect(sent.job_title).toBeNull()
     expect(sent.daily_rate).toBeNull()
   })
 
@@ -325,7 +325,7 @@ describe('CompanyOverrideDialog', () => {
     await userEvent.type(screen.getByLabelText('Cognome'), 'Bianchi')
     await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
     const sent = onSave.mock.calls[0]![0]
-    expect(sent.nome).toBe('Mario')
+    expect(sent.first_name).toBe('Mario')
     expect(sent.last_name).toBe('Bianchi')
     expect(sent.linkedin_url).toBeUndefined()
   })

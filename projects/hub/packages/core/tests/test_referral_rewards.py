@@ -46,7 +46,7 @@ from rebase_core.referrals import ReferralService, reward_base
 
 
 @pytest.mark.parametrize(
-    ("mode", "giorni", "expected"),
+    ("mode", "days", "expected"),
     [
         # A day rate, projected over the admin's own estimate.
         ("to_work_unit", 20, Decimal("7000")),
@@ -101,7 +101,7 @@ def test_a_referred_freelancer_and_a_referred_company_each_earn_a_reward_once(
     ).all()
     by_kind = {clean_referrals.get(Referral, r.referral_id).kind: r for r in rewards}  # type: ignore[union-attr]
     assert set(by_kind) == {"company", "freelancer"}
-    # Margin: (800 - 450) * 20 giorni previsti = 7000.
+    # Margin: (800 - 450) * 20 `giorni previsti` = 7000.
     assert by_kind["freelancer"].rate == Decimal("0.1000")
     assert by_kind["freelancer"].base_amount == Decimal("7000.00")
     assert by_kind["freelancer"].reward_amount == Decimal("700.00")
@@ -155,7 +155,7 @@ def test_the_first_login_after_the_referral_verifies_it_and_only_the_loggers_own
     _log_in(clean_referrals, "ada@studio.it")
 
     verified = _referral_of(clean_referrals, ada)
-    assert (verified.status, verified.verified_via) == ("verified", "accesso")
+    assert (verified.status, verified.verified_via) == ("verified", "login")
     assert verified.verified_at is not None and verified.verified_at >= verified.created_at
     assert _referral_of(clean_referrals, grace).status == "to_verify"
     assert _referral_of(clean_referrals, wile).status == "to_verify"
@@ -225,7 +225,7 @@ def test_to_squatted_company_earns_nothing_until_its_contact_person_logs_in_then
     _log_in(clean_referrals, "prospect@acme.it")
 
     (item,) = ReferralLedgerService(clean_referrals).list_rewards().items
-    assert item.referral_status == "verified" and item.verified_via == "accesso"
+    assert item.referral_status == "verified" and item.verified_via == "login"
     assert item.referrer_email == "accomplice@community.it"
     assert (item.status, item.base_amount, item.reward_amount) == (
         "to_confirm",
@@ -282,7 +282,7 @@ def test_a_login_after_the_signature_does_not_write_a_second_reward(
 
     assert len(clean_referrals.scalars(select(ReferralReward)).all()) == 2
     assert _referral_of(clean_referrals, freelancer_id).verified_via == "letter"
-    assert _referral_of(clean_referrals, company_id).verified_via == "accesso"
+    assert _referral_of(clean_referrals, company_id).verified_via == "login"
 
 
 def test_the_database_refuses_a_referral_half_verified(clean_referrals: Session) -> None:
@@ -290,10 +290,10 @@ def test_the_database_refuses_a_referral_half_verified(clean_referrals: Session)
     card_id = _card(clean_referrals, ref=code)
 
     for statement in (
-        "UPDATE referrals SET stato = 'verificato'",
+        "UPDATE referrals SET status = 'verified'",
         "UPDATE referrals SET verified_at = now()",
-        "UPDATE referrals SET stato = 'verificato', verified_at = now()",
-        "UPDATE referrals SET stato = 'verificato', verified_at = now(), verified_via = 'x'",
+        "UPDATE referrals SET status = 'verified', verified_at = now()",
+        "UPDATE referrals SET status = 'verified', verified_at = now(), verified_via = 'x'",
     ):
         with pytest.raises(IntegrityError):
             clean_referrals.execute(text(statement))

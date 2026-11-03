@@ -30,7 +30,9 @@ def _seed_admin(factory: sessionmaker[Session]) -> None:
     other tool only reads its `nome`. `record` writes `admin_id` for real, so this
     file alone needs the row the id names, with the same id."""
     session = factory()
-    session.add(User(id=IVAN.id, email=IVAN.email, nome=IVAN.nome, last_name="", role="admin"))
+    session.add(
+        User(id=IVAN.id, email=IVAN.email, first_name=IVAN.first_name, last_name="", role="admin")
+    )
     session.commit()
     session.close()
 
@@ -40,11 +42,11 @@ def _seed_freelancer(factory: sessionmaker[Session]) -> str:
     try:
         row, _ = FreelancerService(session).apply(
             FreelancerCreate(
-                nome="Ada",
+                first_name="Ada",
                 last_name="Lovelace",
                 email="ada@studio.it",
                 daily_rate=Decimal("450"),
-                posizione="Backend developer",
+                job_title="Backend developer",
                 remote="remote",
             ),
             PDF,
@@ -91,10 +93,10 @@ async def test_override_freelancer_writes_the_delta_and_leaves_untouched_fields_
         overridden = _payload(
             await client.call_tool(
                 "override_freelancer",
-                {"freelancer_id": freelancer_id, "posizione": "Tech lead"},
+                {"freelancer_id": freelancer_id, "job_title": "Tech lead"},
             )
         )
-        assert overridden["posizione"] == "Tech lead"
+        assert overridden["job_title"] == "Tech lead"
         assert overridden["daily_rate"] == "450.00"
 
         trail = _payload_list(
@@ -102,7 +104,7 @@ async def test_override_freelancer_writes_the_delta_and_leaves_untouched_fields_
         )
         assert len(trail) == 1
         assert trail[0]["kind"] == "overridden"
-        assert trail[0]["payload"]["before"] == {"posizione": "Backend developer"}
+        assert trail[0]["payload"]["before"] == {"job_title": "Backend developer"}
     _wipe(factory)
 
 
@@ -144,10 +146,10 @@ async def test_an_empty_string_clears_a_nullable_field_and_a_required_one_is_ref
     async with Client(build_server(factory, lambda: IVAN)) as client:
         cleared = _payload(
             await client.call_tool(
-                "override_freelancer", {"freelancer_id": freelancer_id, "posizione": ""}
+                "override_freelancer", {"freelancer_id": freelancer_id, "job_title": ""}
             )
         )
-        assert cleared["posizione"] is None
+        assert cleared["job_title"] is None
 
         refused = await client.call_tool(
             "override_freelancer", {"freelancer_id": freelancer_id, "status": ""}
@@ -206,7 +208,7 @@ async def test_revert_freelancer_action_reads_the_before_value_off_the_trail(
     _seed_admin(factory)
     async with Client(build_server(factory, lambda: IVAN)) as client:
         await client.call_tool(
-            "override_freelancer", {"freelancer_id": freelancer_id, "posizione": "Tech lead"}
+            "override_freelancer", {"freelancer_id": freelancer_id, "job_title": "Tech lead"}
         )
         trail = _payload_list(
             await client.call_tool("get_freelancer_audit", {"freelancer_id": freelancer_id})
@@ -219,7 +221,7 @@ async def test_revert_freelancer_action_reads_the_before_value_off_the_trail(
                 {"freelancer_id": freelancer_id, "action_id": action_id},
             )
         )
-        assert reverted["posizione"] == "Backend developer"
+        assert reverted["job_title"] == "Backend developer"
     _wipe(factory)
 
 
@@ -230,7 +232,9 @@ async def test_override_company_touches_the_row_and_the_contact_person_identity(
     _seed_admin(factory)
     async with Client(build_server(factory, lambda: IVAN)) as client:
         overridden = _payload(
-            await client.call_tool("override_company", {"company_id": company_id, "nome": "Coyote"})
+            await client.call_tool(
+                "override_company", {"company_id": company_id, "first_name": "Coyote"}
+            )
         )
         assert overridden["contact_person"].startswith("Coyote")
 
