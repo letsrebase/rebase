@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, unwrap } from '@/lib/api'
 import type { components } from '@/lib/api-types'
 import { queryKeys } from '@/lib/query'
@@ -18,17 +18,22 @@ export type ConvertDealBody = components['schemas']['ContractFromDeal']
  * The proposal, fetched when the dialog opens and never kept: `gcTime: 0` so the next open
  * reads the deal as it is then (a line edited, or a stage moved, in between) rather than
  * the answer of the last time. A refusal (a deal that is not won, with no lines, or
- * already converted) is the query's error, which the dialog prints.
+ * already converted) is the query's error, which the dialog prints. With `start`, the answer
+ * is for that start: the lines with no start of their own follow it, and so do the end and
+ * the cards, which the proposal for the earliest line start would have wrong.
  */
-export function useContractProposal(dealId: string, enabled: boolean) {
+export function useContractProposal(dealId: string, enabled: boolean, start?: string) {
   return useQuery({
     enabled,
     gcTime: 0,
-    queryKey: queryKeys.dealContractProposal(dealId),
+    // The previous start's answer stays on screen while the next one loads, so the end and
+    // the cards do not flash back to the first proposal between two keystrokes.
+    placeholderData: keepPreviousData,
+    queryKey: queryKeys.dealContractProposal(dealId, start),
     queryFn: () =>
       unwrap(
         api.GET('/api/deals/{deal_id}/contract-proposal', {
-          params: { path: { deal_id: dealId } },
+          params: { path: { deal_id: dealId }, ...(start === undefined ? {} : { query: { start } }) },
         }),
       ),
   })
@@ -74,11 +79,16 @@ const BODY_KEYS = [
   'termination_notice_days',
   'billing_cadence',
   'expense_policy',
+  'custom_fields',
 ] as const
 
-/** The request body: the eight fields a conversion takes, built by the contract form's own
- *  `toContractBody` so the two dialogs read a notice or an expense policy the same way. */
-export function toConvertBody(values: ContractFormValues): ConvertDealBody {
-  const full = toContractBody(values, undefined, () => false) as Record<string, unknown>
+/** The request body: the nine fields a conversion takes, built by the contract form's own
+ *  `toContractBody` so the two dialogs read a notice, an expense policy or a custom field the
+ *  same way. `isRenderedCustomKey` says which custom fields the dialog drew. */
+export function toConvertBody(
+  values: ContractFormValues,
+  isRenderedCustomKey: (key: string) => boolean = () => false,
+): ConvertDealBody {
+  const full = toContractBody(values, undefined, isRenderedCustomKey) as Record<string, unknown>
   return Object.fromEntries(BODY_KEYS.map((key) => [key, full[key]])) as unknown as ConvertDealBody
 }

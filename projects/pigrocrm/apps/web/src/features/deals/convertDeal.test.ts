@@ -28,7 +28,7 @@ describe('proposalToFormValues', () => {
 })
 
 describe('toConvertBody', () => {
-  it('sends exactly the eight fields a conversion takes, an empty end as null', () => {
+  it('sends exactly the nine fields a conversion takes, an empty end as null', () => {
     const body = toConvertBody(proposalToFormValues(PROPOSAL))
     expect(body).toEqual({
       title: 'Piattaforma',
@@ -39,7 +39,17 @@ describe('toConvertBody', () => {
       termination_notice_days: 30,
       billing_cadence: 'monthly',
       expense_policy: { kind: 'not_reimbursable' },
+      custom_fields: {},
     })
+  })
+
+  it('sends a custom field the dialog drew, and leaves out a blank one', () => {
+    const values = {
+      ...proposalToFormValues(PROPOSAL),
+      custom: { po_number: 'PO-7', extra: '' },
+    }
+    expect(toConvertBody(values, () => true).custom_fields).toEqual({ po_number: 'PO-7' })
+    expect(toConvertBody(values).custom_fields).toEqual({})
   })
 
   it('reads a notice and a capped expense policy as the contract form does', () => {

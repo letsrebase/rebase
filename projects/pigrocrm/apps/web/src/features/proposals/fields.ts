@@ -263,6 +263,10 @@ function contractGroups(fields: Record<string, unknown>): { title: string; group
   // A flat fee is not «per forfait»: the other units are, and read «/ mese».
   const cadence = unit === null ? '' : unit === 'flat' ? '(forfait)' : `/ ${RATE_UNIT_LABELS[unit] ?? unit}`
   const rateAmount = formatAmount(rate.amount, currency)
+  // The days or hours a day or hour card forecasts per delivery period, in its own unit.
+  const forecastQuantity = formatQuantity(rate.expected_quantity)
+  const forecast =
+    forecastQuantity === null ? null : `${forecastQuantity} ${rate.type === 'hourly' ? 'ore' : 'gg'}`
   return {
     title: text(contract.title) ?? 'Nuovo contratto',
     customerId: text(contract.customer_id),
@@ -299,6 +303,7 @@ function contractGroups(fields: Record<string, unknown>): { title: string; group
           row('Frazioni ammesse', fractions(rate.allowed_fractions)),
           row('Ore minime', formatQuantity(rate.minimum_hours)),
           row('Erogazione', PERIOD_LABELS[String(rate.delivery_period)] ?? text(rate.delivery_period)),
+          row('Quantità prevista', forecast),
         ),
       },
     ],

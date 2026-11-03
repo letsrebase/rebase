@@ -42,7 +42,9 @@ import {
   useConvertDeal,
   type ContractProposal,
 } from '@/features/deals/convertDeal'
+import { DynamicForm } from '@/components/DynamicForm'
 import { fieldErrorFrom, toProblem, type ProblemDetail } from '@/lib/api'
+import { useEntitySchema } from '@/lib/schema'
 
 interface Props {
   dealId: string
@@ -92,7 +94,7 @@ export function ConvertDealDialog({ dealId, open, onOpenChange }: Props) {
           <p className="text-sm text-destructive">{toProblem(proposal.error).detail}</p>
         )}
         {proposal.data && (
-          <ConvertForm dealId={dealId} proposal={proposal.data} onClose={() => onOpenChange(false)} />
+          <ConvertForm dealId={dealId} initial={proposal.data} onClose={() => onOpenChange(false)} />
         )}
       </DialogContent>
     </Dialog>
@@ -123,19 +125,39 @@ function CardsPreview({ cards }: { cards: ContractProposal['cards'] }) {
   )
 }
 
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/
+
 function ConvertForm({
   dealId,
-  proposal,
+  initial,
   onClose,
 }: {
   dealId: string
-  proposal: ContractProposal
+  initial: ContractProposal
   onClose: () => void
 }) {
   const navigate = useNavigate()
   const convert = useConvertDeal(dealId)
-  const [values, setValues] = useState<ContractFormValues>(() => proposalToFormValues(proposal))
+  const schema = useEntitySchema('contract')
+  const customFields = schema.data?.custom_fields ?? []
+  const isRenderedCustomKey = (key: string) => customFields.some((field) => field.key === key)
+  const [values, setValues] = useState<ContractFormValues>(() => proposalToFormValues(initial))
   const [problem, setProblem] = useState<ProblemDetail | null>(null)
+
+  // The lines with no start of their own follow the contract's, so moving the start moves the
+  // end and the cards the deal proposes: they are asked again for the new start, never
+  // worked out here. Until the answer arrives the form keeps the previous one.
+  const movedStart =
+    ISO_DATE.test(values.start) && values.start !== initial.start ? values.start : undefined
+  const refreshed = useContractProposal(dealId, movedStart !== undefined, movedStart)
+  const proposal = movedStart === undefined ? initial : (refreshed.data ?? initial)
+  // The end follows the answer, whenever a new one is shown, and is the person's own until then.
+  const [shown, setShown] = useState(proposal)
+  if (proposal !== shown) {
+    setShown(proposal)
+    setValues((previous) => ({ ...previous, end: proposal.end ?? '' }))
+  }
+  const refreshing = movedStart !== undefined && refreshed.isFetching
 
   function set<K extends keyof ContractFormValues>(key: K, value: ContractFormValues[K]) {
     setValues((previous) => ({ ...previous, [key]: value }))
@@ -143,7 +165,7 @@ function ConvertForm({
 
   function submit() {
     setProblem(null)
-    convert.mutate(toConvertBody(values), {
+    convert.mutate(toConvertBody(values, isRenderedCustomKey), {
       onSuccess: (contract) => {
         onClose()
         toast.success('Contratto creato')
@@ -158,8 +180,11 @@ function ConvertForm({
     fieldError?.field === key ? (
       <p className="text-sm text-destructive">{fieldError.message}</p>
     ) : null
+  const drawn =
+    fieldError !== null &&
+    (DRAWN_FIELDS.includes(fieldError.field) || isRenderedCustomKey(fieldError.field))
   const unattributed =
-    problem === null || (fieldError !== null && DRAWN_FIELDS.includes(fieldError.field))
+    problem === null || drawn
       ? null
       : fieldError === null
         ? problem.detail
@@ -192,6 +217,9 @@ function ConvertForm({
             Le righe senza una data propria partono da qui.
           </p>
           {errorOn('start')}
+          {refreshed.isError && movedStart !== undefined && (
+            <p className="text-sm text-destructive">{toProblem(refreshed.error).detail}</p>
+          )}
         </div>
         <div className="space-y-2">
           <Label htmlFor="convert-end">Fine</Label>
@@ -327,6 +355,16 @@ function ConvertForm({
         )}
       </div>
 
+      {customFields.length > 0 && (
+        <DynamicForm
+          fields={customFields}
+          values={values.custom}
+          onChange={(key, value) => set('custom', { ...values.custom, [key]: value })}
+          problem={fieldError !== null && isRenderedCustomKey(fieldError.field) ? problem : null}
+          mode="create"
+        />
+      )}
+
       <CardsPreview cards={proposal.cards} />
       <p className="text-xs text-muted-foreground">
         I termini di pagamento sono quelli del cliente. Dopo la conversione le righe di valore del
@@ -339,7 +377,7 @@ function ConvertForm({
         <Button variant="ghost" onClick={onClose}>
           Annulla
         </Button>
-        <Button onClick={submit} disabled={convert.isPending}>
+        <Button onClick={submit} disabled={convert.isPending || refreshing}>
           {convert.isPending ? 'Creazione…' : 'Crea contratto'}
         </Button>
       </DialogFooter>

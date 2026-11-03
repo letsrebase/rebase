@@ -62,6 +62,25 @@ function renderDialog(onOpenChange = vi.fn()) {
   return onOpenChange
 }
 
+/** The proposal for the first start, the one for a moved start, and the contract's schema. */
+function serve(custom: unknown[] = []) {
+  vi.mocked(api.GET).mockImplementation(((path: string, options?: { params?: { query?: { start?: string } } }) => {
+    if (path === '/api/schema/{entity_type}') {
+      return ok({ entity_type: 'contract', native_fields: [], custom_fields: custom })
+    }
+    const start = options?.params?.query?.start
+    if (start === '2026-09-15') {
+      return ok({
+        ...PROPOSAL,
+        start,
+        end: '2027-09-14',
+        cards: [{ ...PROPOSAL.cards[1], valid_from: start, valid_to: '2027-09-14', amount: '650.00' }],
+      })
+    }
+    return ok(PROPOSAL)
+  }) as never)
+}
+
 beforeEach(() => {
   navigate.mockReset()
   vi.mocked(api.GET).mockReset()
@@ -70,7 +89,7 @@ beforeEach(() => {
 
 describe('ConvertDealDialog', () => {
   it('opens on what the deal proposes and lists the cards that will be created', async () => {
-    vi.mocked(api.GET).mockImplementation((() => ok(PROPOSAL)) as never)
+    serve()
     renderDialog()
 
     expect(await screen.findByLabelText('Titolo')).toHaveValue('Piattaforma')
@@ -86,7 +105,7 @@ describe('ConvertDealDialog', () => {
   })
 
   it('creates the contract with the confirmed fields and moves to it', async () => {
-    vi.mocked(api.GET).mockImplementation((() => ok(PROPOSAL)) as never)
+    serve()
     vi.mocked(api.POST).mockImplementation((() => ok({ id: 'k1' }, 201)) as never)
     const onOpenChange = renderDialog()
 
@@ -107,6 +126,7 @@ describe('ConvertDealDialog', () => {
           termination_notice_days: 30,
           billing_cadence: 'monthly',
           expense_policy: { kind: 'not_reimbursable' },
+          custom_fields: {},
         },
       }),
     )
@@ -119,8 +139,51 @@ describe('ConvertDealDialog', () => {
     expect(onOpenChange).toHaveBeenCalledWith(false)
   })
 
+  it('asks again when the start moves and takes the end and the cards from the answer', async () => {
+    serve()
+    vi.mocked(api.POST).mockImplementation((() => ok({ id: 'k1' }, 201)) as never)
+    renderDialog()
+
+    const start = await screen.findByLabelText('Inizio')
+    await userEvent.type(screen.getByLabelText('Fine'), '2027-01-31')
+    await userEvent.clear(start)
+    await userEvent.type(start, '2026-09-15')
+
+    await vi.waitFor(() => expect(screen.getByLabelText('Fine')).toHaveValue('2027-09-14'))
+    expect(api.GET).toHaveBeenCalledWith(
+      '/api/deals/{deal_id}/contract-proposal',
+      expect.objectContaining({ params: { path: { deal_id: 'd1' }, query: { start: '2026-09-15' } } }),
+    )
+    expect(screen.queryByText('Una tantum')).not.toBeInTheDocument()
+    expect(screen.getByText(/650,00/)).toBeInTheDocument()
+
+    await userEvent.click(screen.getByRole('button', { name: 'Crea contratto' }))
+    expect(api.POST).toHaveBeenCalledWith(
+      '/api/deals/{deal_id}/contract',
+      expect.objectContaining({
+        body: expect.objectContaining({ start: '2026-09-15', end: '2027-09-14' }),
+      }),
+    )
+  })
+
+  it('draws the contract’s custom fields and sends what was typed', async () => {
+    serve([{ key: 'po_number', label: 'PO number', field_type: 'text', required: true, options: null }])
+    vi.mocked(api.POST).mockImplementation((() => ok({ id: 'k1' }, 201)) as never)
+    renderDialog()
+
+    await userEvent.type(await screen.findByLabelText(/PO number/), 'PO-7')
+    await userEvent.click(screen.getByRole('button', { name: 'Crea contratto' }))
+
+    expect(api.POST).toHaveBeenCalledWith(
+      '/api/deals/{deal_id}/contract',
+      expect.objectContaining({
+        body: expect.objectContaining({ custom_fields: { po_number: 'PO-7' } }),
+      }),
+    )
+  })
+
   it('shows a refusal under its field and stays open', async () => {
-    vi.mocked(api.GET).mockImplementation((() => ok(PROPOSAL)) as never)
+    serve()
     vi.mocked(api.POST).mockImplementation((() =>
       failed(
         {

@@ -6324,6 +6324,13 @@ export interface components {
             expense_policy: {
                 [key: string]: unknown;
             };
+            /**
+             * Custom Fields
+             * @default {}
+             */
+            custom_fields: {
+                [key: string]: unknown;
+            };
         };
         /**
          * ContractFromDealProposal
@@ -17123,7 +17130,10 @@ export interface operations {
     };
     contract_proposal_api_deals__deal_id__contract_proposal_get: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description The start the contract would be confirmed with. The lines with no start of their own follow it, and so do the end and the cards in the answer. */
+                start?: string | null;
+            };
             header?: never;
             path: {
                 deal_id: string;
