@@ -856,9 +856,30 @@ def _filters(value: Any, forward: bool) -> Any:
 _NOTE_ONLY = ("source", "text")
 
 
+# A merge entry keeps what the undo needs, under keys at any depth, and says what became of
+# the CV in words.
+MERGE_KEYS = {
+    "survivor_telefono_before": "survivor_phone_before",
+    "survivor_telefono_after": "survivor_phone_after",
+    "linkedin_sopravvissuto": "surviving_linkedin",
+}
+MERGE_CV = {
+    "nessuno": "none",
+    "invariato": "kept",
+    "assorbita": "absorbed",
+    "ripristinato": "restored",
+}
+
+
 def _payload(entity: str, kind: str, payload: Any, forward: bool) -> Any:
     if not isinstance(payload, dict):
         return payload
+    if kind in ("merged", "unmerged", "absorbed"):
+        merge_keys = MERGE_KEYS if forward else _invert(MERGE_KEYS)
+        payload = _deep(payload, merge_keys)
+        values = MERGE_CV if forward else _invert(MERGE_CV)
+        if isinstance(payload.get("cv"), str):
+            payload = {**payload, "cv": values.get(payload["cv"], payload["cv"])}
     keys = PAYLOAD_KEYS if forward else _invert(PAYLOAD_KEYS)
     fields = FIELD_KEYS if forward else _invert(FIELD_KEYS)
     outcomes = PAYLOAD_OUTCOMES if forward else _invert(PAYLOAD_OUTCOMES)
