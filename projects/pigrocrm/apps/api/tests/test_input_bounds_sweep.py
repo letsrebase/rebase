@@ -110,13 +110,13 @@ def test_a_nul_byte_inside_a_field_definitions_option_is_rejected_not_500(
     assert response.status_code == 422, response.text
 
 
-def test_a_nul_byte_in_a_new_users_nome_is_rejected_not_500(logged_in: TestClient) -> None:
+def test_a_nul_byte_in_a_new_users_name_is_rejected_not_500(logged_in: TestClient) -> None:
     body = {"email": "new@pigro.it", "password": "supersegreta1", "name": NUL}
     response = logged_in.post("/api/users", json=body)
     assert response.status_code == 422, response.text
 
 
-def test_a_nul_byte_in_a_tokens_nome_is_rejected_not_500(logged_in: TestClient) -> None:
+def test_a_nul_byte_in_a_tokens_name_is_rejected_not_500(logged_in: TestClient) -> None:
     response = logged_in.post("/api/tokens", json={"name": NUL})
     assert response.status_code == 422, response.text
 
@@ -152,7 +152,7 @@ def test_field_definition_position_far_beyond_the_bound_is_422_not_500(
 # --- Item 4 (CRITICAL): UserCreate.name had no max_length -------------------------
 
 
-def test_a_users_nome_over_the_column_width_is_422_not_500(logged_in: TestClient) -> None:
+def test_a_users_name_over_the_column_width_is_422_not_500(logged_in: TestClient) -> None:
     """Mirrors `users.name`'s column width (String(200), auth/models.py). Before
     this fix, an over-length value reached `flush()` as a raw, session-poisoning
     `sqlalchemy.exc.DataError` (`StringDataRightTruncation`)."""

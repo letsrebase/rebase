@@ -564,7 +564,7 @@ def test_last_page_has_no_cursor(db_session: Session) -> None:
 # schema over real HTTP; this exercises the same gap directly at the schema layer.
 
 
-def test_a_nul_byte_in_nome_is_rejected() -> None:
+def test_a_nul_byte_in_name_is_rejected() -> None:
     with pytest.raises(ValidationError):
         PersonCreate(first_name="Mario\x00Rossi")
 

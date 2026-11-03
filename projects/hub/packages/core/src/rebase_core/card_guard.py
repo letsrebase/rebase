@@ -227,7 +227,7 @@ class KnownIdentifiers:
     two names is empty when no source was read.
 
     What the card call itself read out of the CV (REB-855, `CardDraft.person`) joins them
-    for that one call: `cv_last_name` and `cv_nome` (the CV may spell the name another way
+    for that one call: `cv_last_name` and `cv_first_name` (the CV may spell the name another way
     than the account), `emails` (lower case) and `phones` (digits only), and the links'
     hostnames and GitHub account are added to the two above. The persona itself never
     goes through this guard: it is the named card, and it is not anonymous."""
@@ -239,7 +239,7 @@ class KnownIdentifiers:
     hostnames: list[str] = field(default_factory=list)
     employers: list[str] = field(default_factory=list)
     cv_last_name: str = ""
-    cv_nome: str = ""
+    cv_first_name: str = ""
     emails: list[str] = field(default_factory=list)
     phones: list[str] = field(default_factory=list)
 
@@ -332,7 +332,7 @@ def identifying(card: Card, known: KnownIdentifiers) -> list[str]:
 
     surnames = {name for name in (known.last_name.strip(), known.cv_last_name.strip()) if name}
     given: set[str] = set()
-    for first in (known.first_name.strip(), known.cv_nome.strip()):
+    for first in (known.first_name.strip(), known.cv_first_name.strip()):
         given |= {first, *(word for word in re.split(r"[\s\-]+", first) if len(word) >= 3)}
     given.discard("")
     emails = [email.strip().lower() for email in known.emails if email.strip()]

@@ -654,10 +654,10 @@ def test_a_token_sealed_for_one_space_does_not_open_in_another(db_session: Sessi
 
     admin = make_user(db_session)
     fake = FakeSlack()
-    uno = space_base_settings(slack_settings(), "studio-uno")
-    workspace = connect(db_session, fake, admin, uno)
+    first_space = space_base_settings(slack_settings(), "studio-uno")
+    workspace = connect(db_session, fake, admin, first_space)
 
-    assert bot_token(workspace, uno) == BOT_TOKEN
+    assert bot_token(workspace, first_space) == BOT_TOKEN
     with pytest.raises(Conflict, match="PIGROCRM_SLACK_TOKEN_KEY"):
         bot_token(workspace, space_base_settings(slack_settings(), "studio-due"))
 

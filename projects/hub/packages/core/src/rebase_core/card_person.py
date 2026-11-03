@@ -201,7 +201,7 @@ def with_person(
     return replace(
         known,
         cv_last_name=person.last_name or "",
-        cv_nome=person.first_name or "",
+        cv_first_name=person.first_name or "",
         emails=[email for email in {person.email, raw.email} if email and "@" in email],
         phones=[digits for digits in phones if digits],
         github_login=known.github_login or github_login_of(links),

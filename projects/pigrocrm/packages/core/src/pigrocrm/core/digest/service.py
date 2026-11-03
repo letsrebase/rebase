@@ -317,8 +317,8 @@ class DigestService:
         total_week, in_week = repo.open_in_the_window(
             assigned_to=user_id,
             limit=_TASK_SHOWN,
-            dal=today,
-            al=today + timedelta(days=DAYS_NEXT),
+            date_from=today,
+            date_to=today + timedelta(days=DAYS_NEXT),
         )
         return DigestTask(
             overdue=lines(overdue, delay=True),

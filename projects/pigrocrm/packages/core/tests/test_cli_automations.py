@@ -33,9 +33,9 @@ from pigrocrm.core.tenants import TenantService, TenantSignup, ensure_tenants_da
 from pigrocrm.core.tenants.database import tenant_database_name, tenant_database_url
 from pigrocrm.core.tenants.service import migrate_to_head
 
-UNO = "prova-automazioni-uno"
-DUE = "prova-automazioni-due"
-SPACES = (UNO, DUE)
+FIRST_SPACE = "prova-automazioni-uno"
+SECOND_SPACE = "prova-automazioni-due"
+SPACES = (FIRST_SPACE, SECOND_SPACE)
 ROOT_DB = "prova_automazioni_radice"
 
 
@@ -205,20 +205,20 @@ def test_a_failing_space_records_its_failure_the_others_their_success_and_a_reru
     original = AutomationPass.run
 
     def run(self, **kwargs):  # type: ignore[no-untyped-def]
-        if self.session.get_bind().url.database == tenant_database_name(UNO):
+        if self.session.get_bind().url.database == tenant_database_name(FIRST_SPACE):
             raise RuntimeError("postgresql://user:secret@host/db")
         return original(self, **kwargs)
 
     monkeypatch.setattr(AutomationPass, "run", run)
     assert cli.main(["automations"]) == 1
 
-    assert _clock(settings, UNO) == (False, "RuntimeError"), "the type, never the message"
-    assert _clock(settings, DUE) == (True, None)
+    assert _clock(settings, FIRST_SPACE) == (False, "RuntimeError"), "the type, never the message"
+    assert _clock(settings, SECOND_SPACE) == (True, None)
     assert "secret" not in capsys.readouterr().err
 
     monkeypatch.setattr(AutomationPass, "run", original)
     assert cli.main(["automations"]) == 0
-    assert _clock(settings, UNO) == (True, None)
+    assert _clock(settings, FIRST_SPACE) == (True, None)
 
 
 def test_a_clock_that_cannot_be_written_is_a_line_and_an_exit_status(
@@ -231,13 +231,15 @@ def test_a_clock_that_cannot_be_written_is_a_line_and_an_exit_status(
 
     monkeypatch.setattr(JobClock, "succeeded", refuse)
 
-    assert cli.main(["automations", "--slug", UNO]) == 1, "the ping should not say it is fine"
+    assert cli.main(["automations", "--slug", FIRST_SPACE]) == 1, (
+        "the ping should not say it is fine"
+    )
 
     captured = capsys.readouterr()
-    assert captured.err.splitlines() == [f"{UNO}: orologio non scritto (RuntimeError)"]
+    assert captured.err.splitlines() == [f"{FIRST_SPACE}: orologio non scritto (RuntimeError)"]
     assert "secret" not in captured.err
-    assert f"{UNO}: fattura_scaduta aperte 1" in captured.out, "the pass itself worked"
-    assert _clock(settings, UNO) is None
+    assert f"{FIRST_SPACE}: fattura_scaduta aperte 1" in captured.out, "the pass itself worked"
+    assert _clock(settings, FIRST_SPACE) is None
 
 
 def test_the_second_run_opens_nothing_new(
@@ -256,18 +258,18 @@ def test_the_second_run_opens_nothing_new(
 def test_a_rehearsal_says_what_it_would_open_and_writes_nothing(
     settings: Settings, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    assert cli.main(["automations", "--dry-run", "--slug", UNO]) == 0
+    assert cli.main(["automations", "--dry-run", "--slug", FIRST_SPACE]) == 0
 
     out = capsys.readouterr().out
-    assert f"{UNO}: fattura_scaduta aperte 1, già aperte 0 (prova)" in out
-    assert "root:" not in out and DUE not in out
-    assert _count(settings, UNO) == 0
+    assert f"{FIRST_SPACE}: fattura_scaduta aperte 1, già aperte 0 (prova)" in out
+    assert "root:" not in out and SECOND_SPACE not in out
+    assert _count(settings, FIRST_SPACE) == 0
 
 
 def test_a_switched_off_rule_is_reported_and_opens_nothing(
     settings: Settings, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    with _engine(_url(settings, UNO)) as engine, engine.begin() as connection:
+    with _engine(_url(settings, FIRST_SPACE)) as engine, engine.begin() as connection:
         connection.execute(
             text(
                 "insert into automation_config (id, a5_overdue_invoice) "
@@ -275,10 +277,10 @@ def test_a_switched_off_rule_is_reported_and_opens_nothing(
             )
         )
 
-    assert cli.main(["automations", "--slug", UNO]) == 0
+    assert cli.main(["automations", "--slug", FIRST_SPACE]) == 0
 
-    assert f"{UNO}: fattura_scaduta disattivata" in capsys.readouterr().out
-    assert _count(settings, UNO) == 0
+    assert f"{FIRST_SPACE}: fattura_scaduta disattivata" in capsys.readouterr().out
+    assert _count(settings, FIRST_SPACE) == 0
 
 
 def test_another_day_is_only_a_rehearsal(

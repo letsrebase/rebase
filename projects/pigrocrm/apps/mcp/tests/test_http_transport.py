@@ -390,10 +390,10 @@ async def test_a_domain_error_that_is_not_about_the_token_is_a_500_not_a_401(
     """
     _, client = served
 
-    def conflitto(*args: Any, **kwargs: Any) -> Any:
+    def conflict(*args: Any, **kwargs: Any) -> Any:
         raise Conflict("token", "qualcosa di inatteso")
 
-    monkeypatch.setattr(McpHttpApp, "_authenticate", conflitto)
+    monkeypatch.setattr(McpHttpApp, "_authenticate", conflict)
     response = await client.post(
         "/mcp", json=INITIALIZE, headers={**ACCEPT, **_bearer("pgc_qualsiasi")}
     )
@@ -500,10 +500,12 @@ async def test_a_space_token_opens_neither_the_root_nor_another_space(
     The root and the other space each resolve it on their own `personal_access_tokens`,
     where its hash is not, so both answer the same 401 as an invented token.
     """
-    uno = spaces["spazio-uno"][0]
+    first_space = spaces["spazio-uno"][0]
     _, client = served
     for path in ["/mcp", "/spazio-due/mcp"]:
-        response = await client.post(path, json=INITIALIZE, headers={**ACCEPT, **_bearer(uno)})
+        response = await client.post(
+            path, json=INITIALIZE, headers={**ACCEPT, **_bearer(first_space)}
+        )
         assert response.status_code == 401, path
         assert response.json() == {"detail": "Token non valido"}
 
@@ -513,21 +515,29 @@ async def test_two_spaces_do_not_see_each_other(
     served: tuple[McpHttpApp, httpx2.AsyncClient], spaces: dict[str, tuple[str, UUID]]
 ) -> None:
     app, _ = served
-    uno, due = spaces["spazio-uno"][0], spaces["spazio-due"][0]
+    first_space, second_space = spaces["spazio-uno"][0], spaces["spazio-due"][0]
     await _call_tool(
         app,
         "http://prova/spazio-uno/mcp",
-        uno,
+        first_space,
         "create_customer",
         {"legal_name": "Solo in uno"},
     )
-    found_in_uno = await _call_tool(
-        app, "http://prova/spazio-uno/mcp", uno, "search_customers", {"search": "Solo in uno"}
+    found_in_first = await _call_tool(
+        app,
+        "http://prova/spazio-uno/mcp",
+        first_space,
+        "search_customers",
+        {"search": "Solo in uno"},
     )
     found_in_due = await _call_tool(
-        app, "http://prova/spazio-due/mcp", due, "search_customers", {"search": "Solo in uno"}
+        app,
+        "http://prova/spazio-due/mcp",
+        second_space,
+        "search_customers",
+        {"search": "Solo in uno"},
     )
-    assert len(found_in_uno["items"]) == 1
+    assert len(found_in_first["items"]) == 1
     assert len(found_in_due["items"]) == 0
 
 

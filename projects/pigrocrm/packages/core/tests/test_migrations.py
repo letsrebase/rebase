@@ -1767,7 +1767,7 @@ def test_0058_repoints_an_ordinary_profile_at_its_own_pack_and_clears_the_forfet
         upgrade(config, "0057")
         engine: Engine = create_engine(url)
         with engine.begin() as connection:
-            for legal_entity, nome, regime, rate, stamp_duty, params in (
+            for legal_entity, profile_name, regime, rate, stamp_duty, params in (
                 (ordinary, "ordinaria", "RF01", "22.00", "true", ("67.00", "5.00", "26.07")),
                 (flat_rate, "forfettaria", "RF19", "0.00", "true", ("78.00", "5.00", "26.07")),
             ):
@@ -1779,7 +1779,7 @@ def test_0058_repoints_an_ordinary_profile_at_its_own_pack_and_clears_the_forfet
                         VALUES (:id, :nome, false, true, :nome, 'IT', now(), now())
                         """
                     ),
-                    {"id": legal_entity, "nome": nome},
+                    {"id": legal_entity, "nome": profile_name},
                 )
                 connection.execute(
                     text(
@@ -2050,7 +2050,7 @@ def _token_flags(url: str) -> dict[str, bool]:
     try:
         with engine.connect() as connection:
             rows = connection.execute(text("SELECT nome, full_access FROM personal_access_tokens"))
-            return {nome: flag for nome, flag in rows}
+            return {token_name: flag for token_name, flag in rows}
     finally:
         engine.dispose()
 

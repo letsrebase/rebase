@@ -29,7 +29,7 @@ const ACME = {
   yes_talents: 1,
 }
 
-const BIANCHI = {
+const SECOND_REQUEST = {
   ...ACME,
   id: 'r2',
   company: 'Bianchi Srl',
@@ -84,7 +84,7 @@ afterEach(() => vi.restoreAllMocks())
 describe('«Richieste team» (REB-514, spec § 3.5)', () => {
   it('lists each request with its company, origin, date, state and how many talents said yes', async () => {
     const spy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-      answer(200, { items: [ACME, BIANCHI], next_cursor: null }),
+      answer(200, { items: [ACME, SECOND_REQUEST], next_cursor: null }),
     )
     mount('/admin/team')
 
@@ -109,7 +109,7 @@ describe('«Richieste team» (REB-514, spec § 3.5)', () => {
     const spy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
       const url = new URL(String(input), 'http://test')
       return answer(200, {
-        items: url.searchParams.get('status') === 'contacted' ? [BIANCHI] : [ACME, BIANCHI],
+        items: url.searchParams.get('status') === 'contacted' ? [SECOND_REQUEST] : [ACME, SECOND_REQUEST],
         next_cursor: null,
       })
     })
@@ -132,7 +132,7 @@ describe('«Richieste team» (REB-514, spec § 3.5)', () => {
   })
 
   it('reads the state back out of a URL a link already carries', async () => {
-    const spy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(200, { items: [BIANCHI], next_cursor: null }))
+    const spy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(200, { items: [SECOND_REQUEST], next_cursor: null }))
     mount('/admin/team?status=closed')
     await screen.findByRole('link', { name: 'Bianchi Srl' })
     expect(spy).toHaveBeenCalledWith('/api/hub/team/requests?status=closed', expect.anything())
@@ -146,7 +146,7 @@ describe('«Richieste team» (REB-514, spec § 3.5)', () => {
       return answer(
         200,
         url.searchParams.get('cursor') === 'CURSOR1'
-          ? { items: [BIANCHI], next_cursor: null }
+          ? { items: [SECOND_REQUEST], next_cursor: null }
           : { items: [ACME], next_cursor: 'CURSOR1' },
       )
     })

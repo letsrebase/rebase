@@ -99,7 +99,7 @@ def is_italian_word(word: str) -> bool:
 def italian_words_in(name: str) -> list[str]:
     for noun in allowlist.PROPER_NOUNS:
         name = name.replace(noun, "x")
-    return [w for w in split_words(name) if is_italian_word(w)]
+    return [w for w in split_words(name) if is_italian_word(w) or w in vocabulary.IDENTIFIER_WORDS]
 
 
 def _fold(word: str) -> str:

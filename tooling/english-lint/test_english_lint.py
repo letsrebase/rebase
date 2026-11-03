@@ -48,6 +48,24 @@ class PythonRules(Tree):
         path = self.write("a/service.py", "def create_fattura(customer):\n    return customer\n")
         self.assertIn(("identifier", "fattura"), self.words(path))
 
+    def test_words_that_are_also_english_fail_only_as_identifier_words(self) -> None:
+        path = self.write(
+            "a/homographs.py",
+            "def total(riga, vista_of_it):\n    return riga\n\n\n"
+            "# A persona is a user archetype and a vista is a view in prose\n",
+        )
+        self.assertEqual(self.words(path), {("identifier", "riga"), ("identifier", "vista")})
+        self.assertEqual(
+            self.words(self.write("a/more.py", "nome = piccolo_tipi = persona = 1\n")),
+            {("identifier", w) for w in ("nome", "piccolo", "tipi", "persona")},
+        )
+
+    def test_a_planted_word_from_the_residue_sweep_fails(self) -> None:
+        path = self.write("a/residue.py", "def parse(plurale, esclusioni):\n    return plurale\n")
+        self.assertEqual(
+            self.words(path), {("identifier", "plurale"), ("identifier", "esclusioni")}
+        )
+
     def test_every_form_of_a_name_is_split(self) -> None:
         path = self.write(
             "a/names.py",

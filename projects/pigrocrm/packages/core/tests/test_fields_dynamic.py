@@ -41,28 +41,28 @@ def test_no_specs_produces_an_empty_but_valid_model() -> None:
 
 
 def test_the_model_name_mentions_the_entity() -> None:
-    model = build_custom_fields_model("customer", [spec("settore", "text")])
+    model = build_custom_fields_model("customer", [spec("sector", "text")])
     assert "Customer" in model.__name__
 
 
 def test_optional_fields_default_to_none() -> None:
-    model = build_custom_fields_model("customer", [spec("settore", "text")])
-    assert model().settore is None  # type: ignore[attr-defined]
+    model = build_custom_fields_model("customer", [spec("sector", "text")])
+    assert model().sector is None  # type: ignore[attr-defined]
 
 
 def test_required_fields_are_required() -> None:
-    model = build_custom_fields_model("customer", [spec("settore", "text", required=True)])
+    model = build_custom_fields_model("customer", [spec("sector", "text", required=True)])
     with pytest.raises(ValidationError):
         model()
 
 
 def test_json_schema_exposes_every_key_with_its_label_as_description() -> None:
     """This is what an agent reads to discover a field nobody hardcoded."""
-    specs = [spec("settore", "text"), spec("budget", "currency")]
+    specs = [spec("sector", "text"), spec("budget", "currency")]
     schema = build_custom_fields_model("customer", specs).model_json_schema()
 
-    assert set(schema["properties"]) == {"settore", "budget"}
-    assert schema["properties"]["settore"]["description"] == "Settore"
+    assert set(schema["properties"]) == {"sector", "budget"}
+    assert schema["properties"]["sector"]["description"] == "Sector"
 
 
 def test_select_becomes_an_enum_in_the_json_schema() -> None:
@@ -122,10 +122,10 @@ def test_describe_specs_returns_plain_serialisable_data() -> None:
 
 
 def test_two_entities_produce_independent_models() -> None:
-    a = build_custom_fields_model("customer", [spec("uno", "text")])
-    b = build_custom_fields_model("deal", [spec("due", "text")])
-    assert set(a.model_fields) == {"uno"}
-    assert set(b.model_fields) == {"due"}
+    a = build_custom_fields_model("customer", [spec("one", "text")])
+    b = build_custom_fields_model("deal", [spec("two", "text")])
+    assert set(a.model_fields) == {"one"}
+    assert set(b.model_fields) == {"two"}
 
 
 @pytest.mark.parametrize(

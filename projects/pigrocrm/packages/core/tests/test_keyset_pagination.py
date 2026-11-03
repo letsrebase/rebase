@@ -131,10 +131,10 @@ def _stamps(index: int) -> tuple[datetime, datetime]:
 
 def _seed_customers(session: Session, storage: LocalFileStorage) -> list[Seeded]:
     seeded: list[Seeded] = []
-    for index, nome in enumerate(_TEXT_VALUES):
+    for index, value in enumerate(_TEXT_VALUES):
         created, updated = _stamps(index)
         row = Customer(
-            legal_name=nome,
+            legal_name=value,
             country="IT",
             custom_fields={},
             created_at=created,
@@ -142,7 +142,7 @@ def _seed_customers(session: Session, storage: LocalFileStorage) -> list[Seeded]
         )
         session.add(row)
         session.flush()
-        seeded.append((row.id, {"legal_name": nome, "created_at": created, "updated_at": updated}))
+        seeded.append((row.id, {"legal_name": value, "created_at": created, "updated_at": updated}))
     return seeded
 
 
@@ -172,10 +172,10 @@ def _seed_deals(session: Session, storage: LocalFileStorage) -> list[Seeded]:
     session.flush()
 
     seeded: list[Seeded] = []
-    for index, nome in enumerate(_TEXT_VALUES):
+    for index, value in enumerate(_TEXT_VALUES):
         created, updated = _stamps(index)
         row = Deal(
-            name=nome,
+            name=value,
             customer_id=customer.id,
             pipeline_stage_id=stage.id,
             probability=10,
@@ -184,7 +184,7 @@ def _seed_deals(session: Session, storage: LocalFileStorage) -> list[Seeded]:
         )
         session.add(row)
         session.flush()
-        seeded.append((row.id, {"name": nome, "created_at": created, "updated_at": updated}))
+        seeded.append((row.id, {"name": value, "created_at": created, "updated_at": updated}))
     return seeded
 
 

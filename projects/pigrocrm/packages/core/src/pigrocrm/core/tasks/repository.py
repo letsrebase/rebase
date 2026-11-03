@@ -86,15 +86,15 @@ class TaskRepository:
         limit: int,
         include_unassigned: bool = False,
         before_of: date | None = None,
-        dal: date | None = None,
-        al: date | None = None,
+        date_from: date | None = None,
+        date_to: date | None = None,
         without_due_date: bool = False,
     ) -> tuple[int, list[Task]]:
         """The open, live commitments in one window of dates, and how many there are in all.
 
         One window per call and never a union: the Oggi panel (spec 2026-09-03 §5) is four
         lists, and the digest asks for two of them, so each is one predicate over the same
-        base. `before_of` is exclusive («due before that day»); `dal` and `al` are
+        base. `before_of` is exclusive («due before that day»); `date_from` and `date_to` are
         inclusive; `without_due_date` is the undated, which no date predicate can ask for
         because `NULL <= date` is not true. Only `open`: an overdue count that included a
         completed commitment would say somebody is late for something they did.
@@ -109,10 +109,10 @@ class TaskRepository:
             base.append(Task.due_date.is_(None))
         if before_of is not None:
             base.append(Task.due_date < before_of)
-        if dal is not None:
-            base.append(Task.due_date >= dal)
-        if al is not None:
-            base.append(Task.due_date <= al)
+        if date_from is not None:
+            base.append(Task.due_date >= date_from)
+        if date_to is not None:
+            base.append(Task.due_date <= date_to)
         total = self.session.scalar(select(func.count()).select_from(Task).where(*base)) or 0
         order = (
             (Task.created_at.desc(), Task.id.desc())

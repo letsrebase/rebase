@@ -174,12 +174,12 @@ def _stages(session: Session) -> tuple[UUID, UUID, UUID]:
         ("lost", "Perso", 5, 0, "lost"),
     )
     ids: list[UUID] = []
-    for code, nome, position, probability, type in wanted:
+    for code, stage_name, position, probability, type in wanted:
         existing = session.scalar(select(PipelineStage).where(PipelineStage.code == code))
         if existing is None:
             existing = PipelineStage(
                 code=code,
-                name=nome,
+                name=stage_name,
                 position=position,
                 default_probability=probability,
                 type=type,

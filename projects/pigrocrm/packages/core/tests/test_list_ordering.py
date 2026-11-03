@@ -181,25 +181,25 @@ def test_paging_over_a_tied_sort_column_returns_every_row_exactly_once(
     """
     service = CustomerService(db_session)
     ids = [_customer(service, name) for name in ("Rossi", "Rossi", "Bianchi", "Bianchi")]
-    rossi_first, rossi_second, bianchi_first, bianchi_second = ids
+    first_person_first, first_person_second, second_person_first, second_person_second = ids
 
     seen = _walk(service, "legal_name", direction, limit=1)
 
     if direction == "asc":
         assert seen == [
-            ("Bianchi", bianchi_first),
-            ("Bianchi", bianchi_second),
-            ("Rossi", rossi_first),
-            ("Rossi", rossi_second),
+            ("Bianchi", second_person_first),
+            ("Bianchi", second_person_second),
+            ("Rossi", first_person_first),
+            ("Rossi", first_person_second),
         ]
     else:
         # The tie-break follows the direction of travel, so the two Bianchi come back
         # newest-first too -- not ascending-by-id inside a descending scan.
         assert seen == [
-            ("Rossi", rossi_second),
-            ("Rossi", rossi_first),
-            ("Bianchi", bianchi_second),
-            ("Bianchi", bianchi_first),
+            ("Rossi", first_person_second),
+            ("Rossi", first_person_first),
+            ("Bianchi", second_person_second),
+            ("Bianchi", second_person_first),
         ]
 
 

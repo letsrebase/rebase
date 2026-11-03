@@ -78,7 +78,7 @@ Regimes: dict[str, str] = {
 # The word after the `TipoDocumento` code on the first line (`TD01 fattura`). The
 # product issues `TD01` and nothing else today (`invoices/models.py`); a code this table
 # does not know prints alone rather than as "fattura" by default.
-TIPI_DOCUMENT: dict[str, str] = {"TD01": "fattura"}
+SDI_DOCUMENT_TYPE_LABELS: dict[str, str] = {"TD01": "fattura"}
 
 # The words for FPR12's `ModalitaPagamentoType`, for the DETTAGLI column
 # (`MP05` in the first column, `Bonifico IBAN IT…` in the second). Same fallback rule.
@@ -269,7 +269,8 @@ def build_scope(export: InvoiceForExport, *, reference: str | None) -> dict[str,
                 "Fattura proforma"
                 if proforma
                 else _bars_space(
-                    export.sdi_document_type, TIPI_DOCUMENT.get(export.sdi_document_type, _EMPTY)
+                    export.sdi_document_type,
+                    SDI_DOCUMENT_TYPE_LABELS.get(export.sdi_document_type, _EMPTY),
                 )
             ),
             "numero": (
@@ -330,12 +331,12 @@ def _reference_order(export: InvoiceForExport) -> str:
     number = f"n. {export.purchase_order_number}"
     if export.purchase_order_date is not None:
         number = f"{number} del {format_data(export.purchase_order_date)}"
-    parti = [number]
+    parts = [number]
     if export.purchase_order_tender_code:
-        parti.append(f"CIG {export.purchase_order_tender_code}")
+        parts.append(f"CIG {export.purchase_order_tender_code}")
     if export.purchase_order_project_code:
-        parti.append(f"CUP {export.purchase_order_project_code}")
-    return ", ".join(parti)
+        parts.append(f"CUP {export.purchase_order_project_code}")
+    return ", ".join(parts)
 
 
 def _declaration_regime(export: InvoiceForExport) -> str:

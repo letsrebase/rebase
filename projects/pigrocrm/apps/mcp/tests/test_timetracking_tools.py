@@ -18,7 +18,7 @@ from pigrocrm_mcp.server import build_server
 ADMIN = Actor(id=None, type="mcp", role="admin")
 # The person's half. Setting up a fixture by taking a decision the product reserves to
 # a human needs a human actor, or the setup contradicts what the test then asserts.
-UMANO = Actor(id=None, type="user", role="admin")
+HUMAN_ACTOR = Actor(id=None, type="user", role="admin")
 
 
 async def test_log_time_writes_and_is_attributable_to_the_agent(
@@ -94,7 +94,7 @@ async def test_list_period_locks_shows_the_months_log_time_will_refuse(
     the operations `FULL_ACCESS_ACTIONS` refuses to any agent credential
     whatever its role, so an mcp actor here would be setting up the fixture by doing the
     very thing the test says an agent cannot do. It passed until that ban existed."""
-    PeriodLockService(mcp_session).close_period(PeriodLockCreate(year=2026, month=1), UMANO)
+    PeriodLockService(mcp_session).close_period(PeriodLockCreate(year=2026, month=1), HUMAN_ACTOR)
 
     async with Client(server) as client:
         listed = (await client.call_tool("list_period_locks", {})).structured_content

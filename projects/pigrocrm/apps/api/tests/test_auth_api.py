@@ -398,10 +398,10 @@ def test_update_me_is_401_when_the_session_outlives_the_row(
     that translation is what this endpoint is left holding.
     """
 
-    def sparito(self: UserService, actor: Actor, value: bool) -> None:
+    def vanished(self: UserService, actor: Actor, value: bool) -> None:
         raise NotFound("user", "sparito")
 
-    monkeypatch.setattr(UserService, "update_own_digest", sparito)
+    monkeypatch.setattr(UserService, "update_own_digest", vanished)
 
     response = logged_in.patch("/api/auth/me", json={"weekly_digest": False})
 
