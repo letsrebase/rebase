@@ -196,3 +196,52 @@ CRM with every point of its contact. That changes the payload's shape, so the `h
 - **Migration 0073 and a phone with no digit.** It is not dropped in silence: it becomes the
   note (`Telefono: <text>`) of the owner's primary email point when the owner has one, and
   otherwise is left out and named in the migration's log, one line per owner id.
+
+### Leads door (REB-945)
+
+- **`contact.contact_points` is optional and additive.** `LeadContactPerson` gains the list in
+  the shape of `ContactPointIn` (kind, value, label, note, is_primary; `id` and `position` are
+  refused like any unknown field), at most `MAX_CONTACT_POINTS`. `email`, `phone` and
+  `linkedin_url` stay as they were, and `email` is still the identity the door matches on and
+  the lock is taken on. An absent list is the payload of before.
+- **Flat fields stay primary.** A new person is born with the address, phone and profile as
+  today, then every extra point in the order sent. An extra point is never primary whatever it
+  says (`is_primary` is accepted and ignored): the primary of a kind is the flat value, and when
+  there is none (or it was left out) the list's own rule makes the first point of the kind
+  primary. An extra point that is the same value as a flat one (the hub sends its primary phone
+  both ways) is not written twice: the flat point takes its label and note, the last such point
+  winning. A point the point rules refuse, one that repeats a kind and compared key already in
+  the list, and any past the list's bound are left out, as the door already leaves out an
+  unreadable phone; the request is never refused for them.
+- **A known person gets only what they lack.** The person is found through `contact.email`
+  alone, never through the extra points. Since REB-942 that address is compared with every
+  email point a person has; after the review of 2026-11-04 the door prefers a live person whose
+  *primary* email it is and falls back to one who holds it as another point only when nobody has
+  it as primary (oldest first within each tier). The same order picks the person a retry names.
+  Their missing extra points are appended after their own, non-primary (a point is primary only
+  as the first of a kind they have none of), by `contact_points.service.add_points`: it locks the
+  person's row, reloads the list under the lock (so a point written since the call loaded the
+  person is not lost) and inserts only the new rows. The existing rows are not rewritten, so a
+  legacy value is not canonicalised as a side effect and every id stays. An `updated` entry
+  (`changed: ["contact_points"]`) goes on their timeline; nothing is changed or removed, and the
+  flat phone and profile are still not added to a known person. This applies to the person the door reuses with their customer and to the one
+  with no live customer that is attached to a new one. A call that links an explicit `deal_id`,
+  and a retry that finds the deal by its marker, write no point, as they write no person.
+- **Hub side.** `CrmLeadService.payload` sends every stored point of the contact (extra
+  emails, every phone including the primary one, LinkedIn points), with label, note and
+  `is_primary` as stored and the login address never among them; a point whose value or note is
+  past the CRM's bound or holds a NUL byte is left out, never cut. The hub's own rules are the
+  stricter ones, so in practice nothing is left out here.
+- **Release order.** The deployed CRM's door refuses unknown fields, so it answers 422 to the
+  hub's new payload; the hub files a 422 as `rejected`, which the sweep never asks again and only
+  an admin's «Riprova» does, so a request made in between waits for a person. `pigrocrm-v*` ships first, `hub-v*` right after; the new CRM accepts the
+  old payload.
+- **Residual exposure of extra emails (review of 2026-11-04).** An extra email that came from
+  the hub is unverified (the hub's own rule: it never decides who somebody is there), yet in the
+  CRM it persists as an ordinary email point. The primary-first rule keeps it from taking over a
+  request whose address somebody holds as primary, but with no primary holder a later request, or
+  Gmail mail from that address (the roster reads every email point), still matches the person who
+  has it. Not closed here; closing it would need a flag on the point.
+- **Every point of a hub user goes to the CRM (review of 2026-11-04).** When somebody files a
+  company request, all their stored points go with it, personal labels and notes included: the
+  hub has no private flag (§6), so nothing is held back.

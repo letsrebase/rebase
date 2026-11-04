@@ -13,6 +13,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
+from pigrocrm.core.contact_points.schemas import MAX_CONTACT_POINTS, ContactPointIn
 from pigrocrm.core.deals.schemas import MAX_VALUE_LINES, DealValueLineIn
 from pigrocrm.core.notes.schemas import NOTE_MAX_LENGTH
 from pigrocrm.core.validation import SafeStr
@@ -157,7 +158,11 @@ LEAD_DEAL_NAME_MAX_LENGTH = 255
 
 
 class LeadContactPerson(BaseModel):
-    """The company's contact person, as the wizard collected them."""
+    """The company's contact person, as the wizard collected them. `email` is the identity the
+    door matches on (the hub's login address) and `phone` and `linkedin_url` are the primary
+    ones, all as before. `contact_points` is every other way to reach them, in the shape of
+    `ContactPointIn`: optional, and a point the CRM's rules refuse is left out of what is
+    written, never the reason the request is refused."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -166,6 +171,7 @@ class LeadContactPerson(BaseModel):
     email: EmailStr
     phone: SafeStr | None = Field(default=None, max_length=LEAD_PHONE_MAX_LENGTH)
     linkedin_url: SafeStr | None = Field(default=None, max_length=LEAD_LINKEDIN_MAX_LENGTH)
+    contact_points: list[ContactPointIn] | None = Field(default=None, max_length=MAX_CONTACT_POINTS)
 
 
 class LeadDeal(BaseModel):

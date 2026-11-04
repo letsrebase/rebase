@@ -9471,7 +9471,11 @@ export interface components {
         };
         /**
          * LeadContactPerson
-         * @description The company's contact person, as the wizard collected them.
+         * @description The company's contact person, as the wizard collected them. `email` is the identity the
+         *     door matches on (the hub's login address) and `phone` and `linkedin_url` are the primary
+         *     ones, all as before. `contact_points` is every other way to reach them, in the shape of
+         *     `ContactPointIn`: optional, and a point the CRM's rules refuse is left out of what is
+         *     written, never the reason the request is refused.
          */
         LeadContactPerson: {
             /** First Name */
@@ -9487,6 +9491,8 @@ export interface components {
             phone?: string | null;
             /** Linkedin Url */
             linkedin_url?: string | null;
+            /** Contact Points */
+            contact_points?: components["schemas"]["ContactPointIn"][] | null;
         };
         /**
          * LeadDeal
