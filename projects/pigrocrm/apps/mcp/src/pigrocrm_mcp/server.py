@@ -70,7 +70,9 @@ A person's or a customer's emails, phones and LinkedIn profiles are their `conta
 objects `{kind: email|phone|linkedin, value, label: work|personal|billing|other, note,
 is_primary}`: a write sends the whole list, which replaces the stored one, with one primary per
 kind (the first of a kind when none is flagged). `email`, `phone` and `linkedin` in a reply are
-the primary of each kind, and the CRM's mail goes to the primary email.
+the primary of each kind, and the CRM's mail goes to the primary email. The searches
+(`search_customers`, `search_people`, `search_everything`) find an owner by any of its points,
+a phone in any form, and a `search_everything` hit's `field` is the kind that matched.
 """
 
 

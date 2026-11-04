@@ -489,9 +489,10 @@ def register(
         @guard
         def discover_gmail_correspondents(customer_id: UUID) -> dict[str, Any]:
             """Who, at a customer's domain, wrote or received mail from the connected mailbox,
-            with name, message count and last date. The domain comes from the customer record.
-            `already_in_directory` says which addresses already exist. It saves nothing. To be used
-            before `list_gmail_messages`. It spends the owner's Gmail quota.
+            with name, message count and last date. The domain comes from the customer record
+            (website, else a company email). `already_in_directory` says which addresses already
+            exist. It saves nothing. To be used before `list_gmail_messages`. It spends the
+            owner's Gmail quota.
             """
             transport = GmailTransport()
             service = GmailSyncService(

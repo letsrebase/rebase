@@ -425,7 +425,11 @@ class GmailSyncService:
         customer = self.session.get(Customer, customer_id)
         if customer is None or customer.deleted_at is not None:
             raise NotFound("customer", customer_id)
-        domain = customer_domain(website=customer.website, email=customer.email)
+        domain = customer_domain(
+            website=customer.website,
+            email=customer.email,
+            other_emails=email_addresses(customer),
+        )
         if domain is None:
             raise Conflict(
                 "gmail_discovery",

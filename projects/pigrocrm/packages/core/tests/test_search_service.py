@@ -26,6 +26,9 @@ from fakes.contacts import points
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.actor import Actor
+from pigrocrm.core.contact_points.models import ContactPoint
+from pigrocrm.core.contact_points.schemas import ContactPointIn
+from pigrocrm.core.contact_points.service import prepare
 from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.db.base import uuid7
 from pigrocrm.core.deals.models import Deal
@@ -358,3 +361,72 @@ def test_search_service_exposes_exactly_one_public_method() -> None:
         if not name.startswith("_") and member.__qualname__.startswith("SearchService.")
     }
     assert public == {"search_everything"}
+
+
+def _customer_with_two_phones(session: Session) -> Customer:
+    """A customer whose second phone, the one nobody reads on the card, is the one searched."""
+    owned = [
+        ContactPoint(
+            kind=point.kind,
+            value=point.value,
+            normalized=point.normalized,
+            label=point.label,
+            note=point.note,
+            is_primary=point.is_primary,
+            position=position,
+        )
+        for position, point in enumerate(
+            prepare(
+                "customer",
+                [
+                    ContactPointIn(kind="phone", value="+39 02 1234567"),
+                    ContactPointIn(kind="phone", value="+39 388 871 3657", label="other"),
+                    ContactPointIn(kind="linkedin", value="https://www.linkedin.com/company/acme"),
+                ],
+            )
+        )
+    ]
+    row = Customer(legal_name="Telefono Srl", contact_points=owned, country="IT", custom_fields={})
+    session.add(row)
+    session.flush()
+    return row
+
+
+def test_a_phone_is_found_in_any_form_and_the_hit_says_phone(db_session: Session) -> None:
+    """The people and customer lists find a number as digits, with or without the country
+    code and the separators; the palette answers the same, and names the point that matched
+    (it used to call every contact point `email`)."""
+    customer = _customer_with_two_phones(db_session)
+    db_session.add(
+        Person(
+            first_name="Ada",
+            last_name="Byron",
+            contact_points=points(email="ada@acme.it", phone="+39 388 449 6965"),
+            custom_fields={},
+        )
+    )
+    db_session.flush()
+
+    for term in ("3888713657", "+393888713657", "388-871-3657", "388 871 3657", "+39 388 871 3657"):
+        group = _search(db_session, term)["customer"]
+        assert [hit.id for hit in group.hits] == [customer.id], term
+        assert group.hits[0].field == "phone", term
+    people = _search(db_session, "3884496965")["person"]
+    assert [hit.label for hit in people.hits] == ["Ada Byron"]
+    assert people.hits[0].field == "phone"
+
+
+def test_a_hit_names_the_kind_of_the_contact_point_that_matched(db_session: Session) -> None:
+    _customer_with_two_phones(db_session)
+    db_session.add(
+        Person(
+            first_name="Ada",
+            last_name="Byron",
+            contact_points=points(email="ada.unique@acme.it"),
+            custom_fields={},
+        )
+    )
+    db_session.flush()
+
+    assert _search(db_session, "ada.unique@acme")["person"].hits[0].field == "email"
+    assert _search(db_session, "linkedin.com/company/acme")["customer"].hits[0].field == "linkedin"

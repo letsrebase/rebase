@@ -188,9 +188,9 @@ def render_person(context: McpContext, person_id: UUID) -> str:
         f"# {person.first_name} {person.last_name or ''}".strip(),
         "",
         f"- Role: {person.role or '—'}",
-        f"- Email: {person.email or '—'}",
-        f"- Phone: {person.phone or '—'}",
-        f"- LinkedIn: {person.linkedin or '—'}",
+        f"- Primary email: {person.email or '—'}",
+        f"- Primary phone: {person.phone or '—'}",
+        f"- Primary LinkedIn: {person.linkedin or '—'}",
     ]
     if person.customer_id:
         customer = CustomerService(context.session).get(person.customer_id, context.actor)

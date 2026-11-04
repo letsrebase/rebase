@@ -245,3 +245,29 @@ CRM with every point of its contact. That changes the payload's shape, so the `h
 - **Every point of a hub user goes to the CRM (review of 2026-11-04).** When somebody files a
   company request, all their stored points go with it, personal labels and notes included: the
   hub has no private flag (§6), so nothing is held back.
+
+### MCP (REB-948)
+
+- **Hub `create_company` and `create_freelancer_from_signup` take `contact_points`.** The list is
+  *added* to the person's own (never a replace, unlike `override_*`): a point they already have
+  is left as it is, a new one is never primary on its own (`is_primary` is accepted and ignored,
+  as at the leads door), and a company request's flat `phone` stays the primary number. The admin
+  API's `POST /companies` and the draft route take the same field, so the web types changed.
+  A refused point (another person's login or extra address) is refused before the contact or the
+  request is written. The CRM receives the points with the request through the payload that
+  already sent every stored point.
+- **Hub searches read the points.** `list_talents` and `list_companies` `q` match a person's extra
+  points as well as the login address: any point's text, or a phone by its digits.
+- **`search_everything` matches phones by digits and names the kind.** Its contact field was one
+  text over every point and reported `email` for any hit. It is now three fields named after the
+  kind (`email`, `phone`, `linkedin`); the phone one also matches through `owners_matching`, the
+  same rule the people and customer lists use (a `kind` argument narrows it), and such a hit scores
+  like a prefix match. The web command palette shares this and changes with it.
+- **Discovery reads every email of the customer.** `discover_gmail_correspondents` and the
+  add-as-person check took the domain from the customer's primary email only; they now take the
+  first company (non-webmail) address among all its email points when the website gives none.
+- **Correct by design, unchanged.** Sent mail still goes to the primary email alone (contract
+  mail, payment reminders; `preview_contract_email` suggests each person's primary), `draft_email`
+  takes explicit recipients, a campaign writes to the login address, the customer resource's
+  contact lines show each person's primary email (the full list is `person://<id>`), and
+  `list_talents` rows stay short (the login `email` only; `get_talent` carries `contact_points`).

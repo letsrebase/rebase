@@ -299,12 +299,14 @@ PHONE_SEARCH_MIN_DIGITS = 3
 
 
 def owners_matching(
-    owner_column: InstrumentedAttribute[UUID | None], term: str
+    owner_column: InstrumentedAttribute[UUID | None], term: str, kind: str | None = None
 ) -> Select[UUID | None]:
     """The ids of the owners (`ContactPoint.person_id` or `.customer_id`) that have a point
     matching a search term: what was typed in any point, case-insensitively, or, when the
     term reads as a phone number, a phone whose digits contain the term's digits (so
-    `02 1234` finds `+39 02-1234567`). `term` is the caller's, already lowercased or not."""
+    `02 1234` finds `+39 02-1234567`). `term` is the caller's, already lowercased or not.
+    `kind` narrows it to the points of one kind (`phone`, say) when the caller needs to say
+    which kind answered."""
     like = f"%{escape_like(term.lower())}%"
     conditions: list[ColumnElement[bool]] = [
         ContactPoint.value.ilike(like, escape="\\"),
@@ -315,4 +317,7 @@ def owners_matching(
         conditions.append(
             and_(ContactPoint.kind == "phone", ContactPoint.normalized.like(f"%{digits}%"))
         )
-    return select(owner_column).where(or_(*conditions))
+    found = or_(*conditions)
+    if kind is not None:
+        found = and_(ContactPoint.kind == kind, found)
+    return select(owner_column).where(found)

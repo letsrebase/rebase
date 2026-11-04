@@ -46,11 +46,11 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
         term: str, limit: SearchLimit = PER_CLASS_LIMIT, legal_entity_id: str | None = None
     ) -> dict[str, Any]:
         """Search the whole CRM in one call: customers (company name, VAT number, tax code,
-        email), people (first name, last name, email), deals (name), documents (title), invoices
-        (description, number) and tasks (title and notes, closed ones too). It also accepts a
-        fragment in the middle of a word («34567» finds the VAT number 01234567890). An invoice
-        number is written «2026/7», «7/2026» or «007»: it finds that invoice; without a year, in
-        every year.
+        contact points), people (first name, last name, contact points), deals (name),
+        documents (title), invoices (description, number) and tasks (title and notes, closed
+        ones too). It also accepts a fragment in the middle of a word («34567» finds the VAT
+        number 01234567890). An invoice number is written «2026/7», «7/2026» or «007»: it finds
+        that invoice; without a year, in every year.
 
         At least 3 characters are required. It returns up to `limit` results per class and the real
         count; if `total_is_minimum` is true the count is a minimum and the rest is in the

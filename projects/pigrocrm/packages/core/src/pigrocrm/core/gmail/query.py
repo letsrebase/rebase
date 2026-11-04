@@ -206,15 +206,23 @@ def discovery_query(domain: str) -> str:
     return build_domain_clause(domain)
 
 
-def customer_domain(*, website: str | None, email: str | None) -> str | None:
+def customer_domain(
+    *, website: str | None, email: str | None, other_emails: Sequence[str] = ()
+) -> str | None:
     """The domain a customer's correspondents share, read from the record and never
-    typed by the caller: the website first, the customer's own email second.
+    typed by the caller: the website first, the customer's own email second, then the rest
+    of its email points (`other_emails`, a customer keeps several: the primary may be a
+    webmail address while another is the company's).
 
     `None` when there is nothing to derive from, or when what there is names a webmail
     provider -- an answer of "nobody in particular" is worse than no answer, because it
     looks like one.
     """
-    for candidate in (_website_host(website), _email_domain(email)):
+    for candidate in (
+        _website_host(website),
+        _email_domain(email),
+        *(_email_domain(address) for address in other_emails),
+    ):
         if candidate and candidate not in WEBMAIL_DOMAINS and _SAFE_DOMAIN.fullmatch(candidate):
             return candidate
     return None

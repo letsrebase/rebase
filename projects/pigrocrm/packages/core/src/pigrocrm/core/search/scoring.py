@@ -51,7 +51,7 @@ make the `*_trgm` indexes unusable by the `ILIKE` this module emits (spec §8.2)
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from decimal import Decimal
 from typing import Any
@@ -100,6 +100,10 @@ class ScoredField:
     # error at every declaration site in task A8's repository.
     column: InstrumentedAttribute[Any] | ColumnElement[Any]
     weight: Decimal
+    # A second way the field matches, as a predicate on the term: what the text of the column
+    # cannot say. A phone typed as digits finds `+39 388 871 3657`, which `ILIKE` over the
+    # number as written would not. A row it finds scores like a prefix match on the field.
+    also: Callable[[str], ColumnElement[bool]] | None = None
 
 
 def _like_prefix(term: str) -> str:
@@ -126,6 +130,11 @@ def field_score(field: ScoredField, term: str) -> ColumnElement[Decimal]:
             (
                 func.lower(column).like(_like_prefix(term), escape="\\"),
                 literal(SCORE_PREFIX, type_=_NUMERIC),
+            ),
+            *(
+                [(field.also(term), literal(SCORE_PREFIX, type_=_NUMERIC))]
+                if field.also is not None
+                else []
             ),
             # `word_similarity(term, column)`, in that argument order: the first
             # argument is the needle whose trigrams are matched against an extent of
@@ -203,4 +212,7 @@ def matches_any(fields: Sequence[ScoredField], term: str) -> ColumnElement[bool]
     expression.
     """
     pattern = _like_anywhere(term)
-    return or_(*(field.column.ilike(pattern, escape="\\") for field in fields))
+    return or_(
+        *(field.column.ilike(pattern, escape="\\") for field in fields),
+        *(field.also(term) for field in fields if field.also is not None),
+    )

@@ -90,6 +90,18 @@ def test_a_webmail_domain_is_not_a_customer_domain(email: str) -> None:
     assert customer_domain(website=None, email=email) is None
 
 
+def test_a_company_address_among_the_other_emails_gives_the_domain() -> None:
+    assert (
+        customer_domain(
+            website=None,
+            email="ceo@gmail.com",
+            other_emails=["ceo@gmail.com", "ceo@outlook.com", "info@example.com"],
+        )
+        == "example.com"
+    )
+    assert customer_domain(website=None, email="ceo@gmail.com", other_emails=["x@yahoo.it"]) is None
+
+
 def test_nothing_to_derive_from_is_none_not_an_error() -> None:
     assert customer_domain(website=None, email=None) is None
     assert customer_domain(website="", email="") is None
