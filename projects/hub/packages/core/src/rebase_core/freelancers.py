@@ -77,12 +77,6 @@ ALREADY_HAS_CARD_BY_LINKEDIN_NOTE = (
     "Risulta già una scheda su rebase con questo profilo LinkedIn: la trovi e la modifichi "
     "dalla tua area, accedendo con questo indirizzo."
 )
-# The same, for a form that typed an extra address of somebody who has a card (REB-943): the
-# mail goes to the address they sign in with, never to the one typed, and says so.
-ALREADY_HAS_CARD_BY_OTHER_ADDRESS_NOTE = (
-    "Risulta già una scheda su rebase con questo indirizzo tra i recapiti: la trovi e la "
-    "modifichi dalla tua area, accedendo con questo indirizzo."
-)
 # What an admin drafting a card is told when its LinkedIn is already on a card (REB-800).
 LINKEDIN_HAS_CARD = (
     "Esiste già una scheda con questo profilo LinkedIn: aprila, oppure unisci le due schede."
@@ -296,7 +290,7 @@ class FreelancerService:
         if row is None:
             utm = {column: getattr(signup, column) for column in UTM_COLUMNS}
             users = UserService(self.session)
-            holder, owner = users.by_linkedin(data.linkedin_url), users.person_at(email)
+            holder, owner = users.by_linkedin(data.linkedin_url), users.person(email)
             if holder is not None and (owner is None or holder.id != owner.id):
                 raise ValidationFailed(ENTITY, "linkedin_url", LINKEDIN_HAS_CARD)
             user = UserService(self.session).get_or_create(
@@ -688,12 +682,11 @@ class FreelancerService:
 
     def _find(self, email: str, linkedin_url: str | None = None) -> Freelancer | None:
         """The card of whoever this submission is about (REB-800): the person who answers to
-        the address (a login address, merged away or not, or an extra one, REB-943), else
-        the person who holds the LinkedIn profile.
+        the address, merged away or not, else the person who holds the LinkedIn profile.
         Of the two, whoever has a card: an address that exists with no card yet does not
         hide a profile that is on one. `None` when neither has a card."""
         users = UserService(self.session)
-        for person in (users.person_at(email), users.by_linkedin(linkedin_url)):
+        for person in (users.person(email), users.by_linkedin(linkedin_url)):
             if person is None:
                 continue
             card = self.session.scalar(select(Freelancer).where(Freelancer.user_id == person.id))

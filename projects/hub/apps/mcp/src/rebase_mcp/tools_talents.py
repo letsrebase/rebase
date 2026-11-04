@@ -6,14 +6,14 @@ from uuid import UUID
 
 from mcp.server import MCPServer
 from mcp.types import CallToolResult
-from sqlalchemy import func, or_, select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from rebase_core.duplicates import duplicate_list
 from rebase_core.errors import NotFound
 from rebase_core.freelancers import FreelancerService
 from rebase_core.merge import PersonMergeService
-from rebase_core.models import Freelancer, Signup, User, UserContactPoint
+from rebase_core.models import Freelancer, Signup, User
 from rebase_core.talents import TalentsService, signup_read
 from rebase_mcp.talents_view import LIST_LIMIT_DEFAULT as TALENTS_LIMIT_DEFAULT
 from rebase_mcp.talents_view import LIST_LIMIT_MAX as TALENTS_LIMIT_MAX
@@ -226,21 +226,10 @@ def register(mcp: MCPServer, deps: Deps) -> None:
                 raise NotFound("talento", key)
             # A sign-up whose address gained a card since the list was read is the
             # card's person: answer the card, which is what «Talenti» shows for them.
-            address = signup.email.lower()
             holder = session.execute(
                 select(Freelancer.id)
                 .join(User, User.id == Freelancer.user_id)
-                .where(
-                    or_(
-                        func.lower(User.email) == address,
-                        User.id.in_(
-                            select(UserContactPoint.user_id).where(
-                                UserContactPoint.kind == "email",
-                                func.lower(UserContactPoint.value) == address,
-                            )
-                        ),
-                    )
-                )
+                .where(func.lower(User.email) == signup.email.lower())
             ).first()
             if holder is not None:
                 return _freelancer_talent(session, holder[0])

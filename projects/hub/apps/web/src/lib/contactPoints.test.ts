@@ -3,6 +3,7 @@ import type { ContactPoint } from './api'
 import {
   allValid,
   blankDraft,
+  contactsChanged,
   draftsFrom,
   extraPoints,
   loginPoint,
@@ -50,7 +51,7 @@ describe('the contact points of a person', () => {
 
   it.each([
     ['email', 'non-un-indirizzo', 'Serve un indirizzo email valido.'],
-    ['phone', '12 34', 'Serve un numero di telefono, di almeno 6 cifre.'],
+    ['phone', '12 34', 'Serve un numero di telefono, di almeno 6 cifre e al massimo 40 caratteri.'],
     ['linkedin', 'https://example.com/in/ada', 'Serve l’indirizzo di un profilo LinkedIn.'],
   ] as const)('says what is wrong with a %s typed as «%s»', (kind, value, problem) => {
     expect(problemOf({ ...blankDraft(kind), value })).toBe(problem)
@@ -70,5 +71,16 @@ describe('the contact points of a person', () => {
     expect(pointSuffix(PHONE)).toBe(' (personale: solo WhatsApp)')
     expect(pointSuffix({ ...PHONE, label: 'billing', note: null })).toBe(' (amministrazione)')
     expect(pointSuffix(LOGIN)).toBe('')
+  })
+
+  it('knows whether the list differs from the stored one, a blank row aside', () => {
+    expect(contactsChanged(draftsFrom([LOGIN, PHONE]), [LOGIN, PHONE])).toBe(false)
+    expect(contactsChanged([...draftsFrom([LOGIN, PHONE]), blankDraft()], [LOGIN, PHONE])).toBe(false)
+    expect(contactsChanged([], [LOGIN, PHONE])).toBe(true)
+  })
+
+  it('takes a number with a note after it, and refuses one over forty characters', () => {
+    expect(problemOf({ ...blankDraft('phone'), value: '345-1234567 int. 2' })).toBeNull()
+    expect(problemOf({ ...blankDraft('phone'), value: `3451234567${' '.repeat(31)}x` })).not.toBeNull()
   })
 })

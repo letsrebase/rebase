@@ -120,35 +120,29 @@ class UserService:
             select(User).where(func.lower(User.linkedin_url) == key, User.merged_into_id.is_(None))
         )
 
-    def by_extra_email(self, email: str) -> User | None:
-        """The row that holds this address as an extra contact point (REB-943), merged or
-        not. Never a login: a login link is asked for `by_email` only."""
-        return ContactPointService(self.session).owner_of_email(email)
-
-    def person_at(self, email: str) -> User | None:
-        """The person an address belongs to, as a form is about them: the one whose login
-        address it is, else the one who keeps it as an extra address, each followed through
-        a merge. `person` is the login's own question and does not read the extra ones."""
-        found = self.person(email)
-        if found is not None:
-            return found
-        holder = self.by_extra_email(email)
-        return self.survivor(holder) if holder is not None else None
-
     def find_person(self, email: str, linkedin_url: str | None = None) -> User | None:
-        """Who this submission is about: the person who answers to the address (their
-        login address or an extra one, REB-943), else the one who holds the LinkedIn profile
-        **and has a card** (REB-800). Identity is both,
+        """Who this submission is about: the person who answers to the address, else the
+        one who holds the LinkedIn profile **and has a card** (REB-800). Identity is both,
         so a second address with the same profile is the same person, never a second row.
         A holder with no card (a company's contact, an admin) is not who a freelancer
         form is about: typing their profile attaches nothing to them."""
-        found = self.person_at(email)
+        found = self.person(email)
         if found is not None:
             return found
         holder = self.by_linkedin(linkedin_url)
         if holder is not None and self.has_card(holder):
             return holder
         return None
+
+    def _refuse_extra_address(self, row: User | None, email: str) -> None:
+        """A new login is never somebody else's extra address (REB-943): that person keeps it
+        as a way to reach them, and a role or a link would go to a stranger."""
+        if row is None and ContactPointService(self.session).owner_of_email(email) is not None:
+            raise ValidationFailed(
+                ENTITY,
+                "email",
+                f"«{email.strip().lower()}» è già tra i recapiti di un'altra persona",
+            )
 
     @staticmethod
     def _refuse_merged(row: User | None) -> None:
@@ -292,6 +286,7 @@ class UserService:
         changes nothing and records nothing."""
         row = self.by_email(email)
         self._refuse_merged(row)
+        self._refuse_extra_address(row, email)
         created = row is None
         was = None if row is None else row.role
         if row is None:
@@ -353,6 +348,7 @@ class UserService:
             raise ValidationFailed(ENTITY, "role", f"uno fra {', '.join(USER_ROLES)}")
         row = self.by_email(email)
         self._refuse_merged(row)
+        self._refuse_extra_address(row, email)
         created = row is None
         if row is None:
             first_name, last_name = first_name.strip(), last_name.strip()

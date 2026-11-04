@@ -389,12 +389,12 @@ kind through the generated `value_key`, one owner per address).
 - **An address is one person's.** An extra address that is another person's login address or extra
   address is refused with a sentence that names it (`ValidationFailed`, 422 over the API, a `ToolError`
   over the MCP). The login addresses of people merged into this one are this person's own.
-- **`find_person` reads the extra addresses** (`UserService.person_at`, which `find_person`, the wizard's
-  `_find`, `draft_from_signup`, `MemberService.lookup` and the public sign-up's mail all use): a sign-up
-  with somebody's extra address is that person, the mail goes to the address on file with
-  `ALREADY_HAS_CARD_BY_OTHER_ADDRESS_NOTE`, and the extra address is never a way in. A sign-up row with a
-  card's extra address is no lead (`card_rows.card_emails`). `person` and `by_email` stay the login's own
-  question.
+- **Extra addresses never decide who somebody is.** They are unverified, so `find_person`,
+  `get_or_create`, the wizards, the admin's draft and `MemberService.lookup` read login addresses
+  only. A sign-up or request under somebody's extra address makes its own person, and
+  `duplicates` flags the pair with the signal `email` (`to_review`, never mergeable on its own;
+  `duplicate_possible_of` on a Talenti row): the admin merges with the usual flow. An extra
+  address is never a way in, and `promote`/`set_role` refuse to create a login under one.
 - **`phone` is the primary phone point**: `User.phone` is a read-only property over the `contact_points`
   relationship (`viewonly`, lazy; the two admin lists load it with `selectinload`), so `FreelancerRead`,
   `CompanyRead`, `MeRead`, the CRM payload (`crm_link`, whose shape does not change), the cloud caller and

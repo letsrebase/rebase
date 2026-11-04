@@ -14,7 +14,7 @@ from uuid import UUID
 
 from sqlalchemy import Subquery, func, select
 
-from rebase_core.models import Freelancer, User, UserContactPoint
+from rebase_core.models import Freelancer, User
 
 
 def card_emails() -> Subquery:
@@ -22,20 +22,12 @@ def card_emails() -> Subquery:
     lives on the linked `users` row since REB-281, so this is the one place that joins the
     two. A bare sign-up is one whose address is not among these, and a card deleted by an
     admin still says «this person is not a lead to chase». Outer-join it on
-    `func.lower(Signup.email)` and keep the rows where `.c.email` is null.
-
-    The extra addresses of a card's person are among them (REB-943): a sign-up with one is
-    that person under another address, not a lead. An address is held by one person at most,
-    so no address is listed twice and the outer join never doubles a sign-up."""
-    logins = select(func.lower(User.email).label("email")).join(
-        Freelancer, Freelancer.user_id == User.id
+    `func.lower(Signup.email)` and keep the rows where `.c.email` is null."""
+    return (
+        select(func.lower(User.email).label("email"))
+        .join(Freelancer, Freelancer.user_id == User.id)
+        .subquery()
     )
-    extras = (
-        select(func.lower(UserContactPoint.value).label("email"))
-        .join(Freelancer, Freelancer.user_id == UserContactPoint.user_id)
-        .where(UserContactPoint.kind == "email")
-    )
-    return logins.union_all(extras).subquery()
 
 
 class CardRowFields(TypedDict):

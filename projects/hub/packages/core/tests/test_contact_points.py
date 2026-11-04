@@ -27,6 +27,7 @@ from rebase_core.campaigns.service import CampaignService
 from rebase_core.companies import CompanyService
 from rebase_core.company_schemas import CompanyCreate, CompanyOverride
 from rebase_core.contact_points import ContactPointInput, ContactPointService
+from rebase_core.duplicates import duplicates_of, find_duplicates
 from rebase_core.errors import ValidationFailed
 from rebase_core.freelancer_schemas import FreelancerCreate, FreelancerOverride
 from rebase_core.freelancers import FreelancerService
@@ -171,31 +172,43 @@ def test_the_database_holds_an_address_to_one_person_even_without_the_service(
     clean.rollback()
 
 
-def test_a_signup_with_somebodys_extra_address_is_that_person_not_a_new_one(
+def test_a_sign_up_with_somebodys_extra_address_is_a_new_person_flagged_as_a_possible_duplicate(
     clean: Session,  # noqa: F811  (fixture)
 ) -> None:
+    """Extra addresses are unverified: they never decide who a sign-up is, so it makes its
+    own person, and the pair is flagged for an admin, who merges with the usual flow."""
     ada = apply_freelancer(clean, "ada@studio.it")
     _override(clean, ada, _point("email", "ada.casa@gmail.com", "personal"))
-    users_before = clean.scalar(select(User.id).where(User.email == "ada.casa@gmail.com"))
-    assert users_before is None
 
-    service = FreelancerService(clean)
-    read, created = service.apply(
+    read, created = FreelancerService(clean).apply(
         FreelancerCreate(
-            first_name="Ada",
-            last_name="Lovelace",
+            first_name="Giulia",
+            last_name="Rossi",
             email="Ada.Casa@gmail.com",
             daily_rate="450",
             job_title="Backend developer",
             remote="remote",
         )  # type: ignore[arg-type]
     )
-    assert created is False and read.id == ada
-    assert clean.scalar(select(User.id).where(User.email == "ada.casa@gmail.com")) is None
-    assert len(clean.scalars(select(Freelancer.id)).all()) == 1
 
-    found = UserService(clean).find_person("ada.casa@gmail.com")
-    assert found is not None and found.email == "ada@studio.it"
+    assert created is True and read.id != ada
+    assert len(clean.scalars(select(Freelancer.id)).all()) == 2
+    newcomer = UserService(clean).find_person("ada.casa@gmail.com")
+    assert newcomer is not None and newcomer.email == "ada.casa@gmail.com"
+    report = find_duplicates(clean)
+    assert report.mergeable == []
+    [pair] = report.to_review
+    assert pair.signals == ("email",)
+    assert {pair.survivor.freelancer_id, pair.absorbed.freelancer_id} == {ada, read.id}
+    assert duplicates_of(clean, [read.id]) == {read.id: [ada]}
+    # The holder can still save their list: the address they keep is not asked again.
+    kept = _override(
+        clean,
+        ada,
+        _point("email", "ada.casa@gmail.com", "personal"),
+        _point("phone", "+39 333 123 4567"),
+    )
+    assert kept.phone == "+39 333 123 4567"
 
 
 def test_an_extra_address_never_logs_in(clean: Session) -> None:  # noqa: F811  (fixture)
@@ -205,17 +218,6 @@ def test_an_extra_address_never_logs_in(clean: Session) -> None:  # noqa: F811  
     assert users.request_link("ada.casa@gmail.com") is None
     mail = users.request_link("ada@studio.it")
     assert mail is not None and mail.to == "ada@studio.it"
-
-
-def test_a_lead_with_a_cards_extra_address_is_no_lead(clean: Session) -> None:  # noqa: F811  (fixture)
-    from campaign_fixtures import lead
-
-    ada = apply_freelancer(clean, "ada@studio.it")
-    _override(clean, ada, _point("email", "ada.casa@gmail.com", "personal"))
-    lead(clean, "ada.casa@gmail.com")
-    lead(clean, "giulia@studio.it")
-    _leads, total = FreelancerService(clean)._leads(50)
-    assert [item.email for item in _leads] == ["giulia@studio.it"] and total == 1
 
 
 def test_a_campaign_still_writes_to_the_login_address(clean: Session) -> None:  # noqa: F811  (fixture)
@@ -307,8 +309,8 @@ def test_a_merge_carries_the_points_and_the_login_address_and_the_undo_puts_them
     assert absorbed.contact_points == []
     # The merged-away address still answers for the survivor, and so do the points that came.
     users = UserService(clean)
-    assert users.person_at("ada.vecchia@studio.it") == survivor
-    assert users.person_at("ADA.casa@gmail.com") == survivor
+    assert users.person("ada.vecchia@studio.it") == survivor
+    assert users.person("ADA.casa@gmail.com") is None  # an extra address is not who anyone is
     assert ContactPointService(clean).present(survivor)[0].value == "ada@studio.it"
 
     back = PersonMergeService(clean).undo(done.action_id, admin_id)
@@ -342,6 +344,10 @@ def test_an_override_cannot_clear_the_list_with_null_and_an_empty_list_clears_it
         ("email", "not-an-address"),
         ("phone", "12"),
         ("phone", "chiamami"),
+        ("phone", "3" * 41),
+        ("email", "Foo <login@x.it>"),
+        ("email", "<login@x.it>"),
+        ("email", "login@x.it>"),
         ("linkedin", "https://example.com/in/ada"),
     ],
 )
@@ -357,3 +363,59 @@ def test_a_note_is_bounded_and_a_linkedin_profile_is_stored_canonical() -> None:
         kind="linkedin", value="linkedin.com/in/Ada-Lovelace/?utm=1", label="other"
     )
     assert point.value == "https://www.linkedin.com/in/ada-lovelace"
+
+
+@pytest.mark.parametrize("value", ["+39 345 1234567 (ufficio)", "345-1234567 int. 2"])
+def test_a_phone_stored_before_the_list_existed_still_saves(value: str) -> None:
+    assert ContactPointInput(kind="phone", value=value, label="work").value == value
+
+
+def test_an_address_with_a_display_name_cannot_hide_somebodys_login(
+    clean: Session,  # noqa: F811  (fixture)
+) -> None:
+    apply_freelancer(clean, "login@x.it")
+    ada = apply_freelancer(clean, "ada@studio.it")
+    with pytest.raises(ValueError, match="senza nome"):
+        _override(clean, ada, _point("email", "Foo <login@x.it>"))
+    assert _user(clean, ada).contact_points == []
+
+
+def test_a_role_or_a_new_login_never_goes_to_somebodys_extra_address(
+    clean: Session,  # noqa: F811  (fixture)
+) -> None:
+    ada = apply_freelancer(clean, "ada@studio.it")
+    _override(clean, ada, _point("email", "ada.casa@gmail.com", "personal"))
+    users = UserService(clean)
+    with pytest.raises(ValidationFailed, match=r"«ada.casa@gmail.com».*tra i recapiti"):
+        users.promote("Ada.Casa@gmail.com", "Ada", "Casa", admin_id=an_admin(clean))
+    with pytest.raises(ValidationFailed, match=r"«ada.casa@gmail.com».*tra i recapiti"):
+        users.set_role("ada.casa@gmail.com", "admin", "Ada", "Casa")
+    assert clean.scalar(select(User.id).where(User.email == "ada.casa@gmail.com")) is None
+
+
+def test_an_undone_merge_leaves_the_survivor_a_primary_phone(
+    clean: Session,  # noqa: F811  (fixture)
+) -> None:
+    admin_id = an_admin(clean)
+    ada = apply_freelancer(clean, "ada@studio.it")
+    old = apply_freelancer(clean, "ada.vecchia@studio.it", first_name="Ada")
+    _override(clean, old, _point("phone", "+39 333 222 2222"))
+    done = PersonMergeService(clean).merge(ada, old, admin_id)
+    # The phone that came is the survivor's primary; they add another one after the merge.
+    survivor = _user(clean, ada)
+    _override(
+        clean,
+        ada,
+        *[
+            {"kind": p.kind, "value": p.value, "label": p.label, "is_primary": p.is_primary}
+            for p in survivor.contact_points
+            if p.kind == "phone"
+        ],
+        _point("phone", "+39 333 444 4444"),
+    )
+
+    PersonMergeService(clean).undo(done.action_id, admin_id)
+
+    clean.expire_all()
+    assert _user(clean, ada).phone == "+39 333 444 4444"
+    assert _user(clean, old).phone == "+39 333 222 2222"

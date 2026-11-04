@@ -217,9 +217,11 @@ def test_an_address_that_is_somebody_elses_is_refused_and_named(
     assert ok(client.get("/api/hub/me")).json()["contact_points"][1:] == []
 
 
-def test_a_sign_up_with_an_extra_address_is_the_person_who_holds_it(
+def test_a_sign_up_with_an_extra_address_makes_its_own_person_and_never_logs_in_the_holder(
     client: TestClient, admin: None, sender: RecordingSender, api_session: Session
 ) -> None:
+    """Extra addresses are unverified: the sign-up is its own person (a duplicate an admin
+    sees in the duplicates list), and the holder's account is never opened by it."""
     _apply(client, "ada@studio.it")
     _login(client, sender, "ada@studio.it")
     ok(
@@ -230,19 +232,18 @@ def test_a_sign_up_with_an_extra_address_is_the_person_who_holds_it(
     )
     sender.sent.clear()
 
-    _apply(client, "Ada.Casa@gmail.com")
+    _apply(client, "Ada.Casa@gmail.com", first_name="Giulia")
 
     api_session.expire_all()
-    assert (
-        api_session.scalar(select(func.count()).select_from(User).where(User.role == "member")) == 1
+    members = api_session.scalar(
+        select(func.count()).select_from(User).where(User.role == "member")
     )
-    # The mail goes to the address on file, never to the one typed, and the extra address
-    # is not a way in.
-    assert [mail.to for mail in sender.sent] == ["ada@studio.it"]
-    assert (
-        client.post("/api/hub/auth/link", json={"email": "ada.casa@gmail.com"}).status_code == 202
-    )
-    assert [mail.to for mail in sender.sent] == ["ada@studio.it"]
+    assert members == 2
+    assert sender.sent == []
+    _login(client, sender, "ada.casa@gmail.com")
+    me = ok(client.get("/api/hub/me")).json()
+    assert me["first_name"] == "Giulia" and me["email"] == "ada.casa@gmail.com"
+    assert [p["value"] for p in me["contact_points"]] == ["ada.casa@gmail.com"]
 
 
 def test_an_admins_change_of_contact_points_is_in_the_trail_and_can_be_put_back(

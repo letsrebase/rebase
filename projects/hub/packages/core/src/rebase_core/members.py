@@ -386,9 +386,8 @@ class MemberService:
 
     def _by_email(self, email: str) -> tuple[Freelancer, User] | None:
         """The live card of the person who answers to this address, an address merged
-        away (REB-800) answering for the person it was merged into, and an extra one
-        (REB-943) for the person who keeps it."""
-        person = UserService(self.session).person_at(email)
+        away (REB-800) answering for the person it was merged into."""
+        person = UserService(self.session).person(email)
         if person is None:
             return None
         return self.session.execute(

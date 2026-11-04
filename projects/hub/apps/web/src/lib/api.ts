@@ -368,7 +368,7 @@ export type TalentList = Schemas['TalentList']
 
 /** Why two cards look like one person (REB-800): the same LinkedIn profile, the same name
  *  or the same telephone number. Only the first is a reason to merge. */
-export type DuplicateSignal = 'linkedin' | 'first_name' | 'phone'
+export type DuplicateSignal = 'linkedin' | 'first_name' | 'phone' | 'email'
 
 export type DuplicatePerson = Schemas['PersonRead']
 export type DuplicatePair = Schemas['DuplicatePairRead']

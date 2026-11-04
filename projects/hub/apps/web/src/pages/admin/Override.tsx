@@ -17,7 +17,7 @@ import { Textarea } from '@rebase/ui/textarea'
 import { ContactPointsEditor } from '@/components/ContactPointsEditor'
 import { AMOUNT_PROBLEM, acceptedAmount, sentAmount } from '@/lib/amount'
 import type { Company, CompanyOverride, Freelancer, FreelancerOverride, Remote } from '@/lib/api'
-import { allValid, draftsFrom, toWrite, type PointDraft } from '@/lib/contactPoints'
+import { allValid, contactsChanged, draftsFrom, toWrite, type PointDraft } from '@/lib/contactPoints'
 import { REMOTE_LABELS, formatDate } from '@/lib/format'
 
 // A `Select` needs a non-empty string; `remote` is the one override field that is both
@@ -82,9 +82,11 @@ export function FreelancerOverrideDialog({
     if (open) setDraft(draftFromFreelancer(freelancer))
   }
 
+  const contactsEdited = contactsChanged(draft.contacts, freelancer.contact_points)
+
   function submit(event: FormEvent) {
     event.preventDefault()
-    onSave({
+    const payload: FreelancerOverride = {
       first_name: draft.first_name.trim(),
       last_name: draft.last_name.trim(),
       linkedin_url: draft.linkedinUrl.trim() || null,
@@ -96,8 +98,9 @@ export function FreelancerOverrideDialog({
         .map((link) => link.trim())
         .filter(Boolean),
       filled_by: draft.filledBy,
-      contact_points: toWrite(draft.contacts),
-    })
+    }
+    if (contactsEdited) payload.contact_points = toWrite(draft.contacts)
+    onSave(payload)
   }
 
   // Blank is allowed here: it clears the rate.
@@ -106,7 +109,7 @@ export function FreelancerOverrideDialog({
     draft.first_name.trim() !== '' &&
     draft.last_name.trim() !== '' &&
     !rateProblem &&
-    allValid(draft.contacts)
+    (!contactsEdited || allValid(draft.contacts))
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -321,6 +324,8 @@ export function CompanyOverrideDialog({
     if (open) setDraft(draftFromCompany(company))
   }
 
+  const contactsEdited = contactsChanged(draft.contacts, company.contact_points)
+
   function submit(event: FormEvent) {
     event.preventDefault()
     const payload: CompanyOverride = {
@@ -333,8 +338,8 @@ export function CompanyOverrideDialog({
       remote: draft.remote,
       onsite_days: draft.remote === 'hybrid' ? Number(draft.onsiteDays) : null,
       headcount: Number(draft.headcount),
-      contact_points: toWrite(draft.contacts),
     }
+    if (contactsEdited) payload.contact_points = toWrite(draft.contacts)
     if (draft.contactFirstName.trim()) payload.first_name = draft.contactFirstName.trim()
     if (draft.contactLastName.trim()) payload.last_name = draft.contactLastName.trim()
     if (draft.clearContactPersonLinkedin) payload.linkedin_url = null
@@ -353,7 +358,7 @@ export function CompanyOverrideDialog({
     draft.dailyBudget.trim() !== '' &&
     draft.headcount.trim() !== '' &&
     (draft.remote !== 'hybrid' || draft.onsiteDays.trim() !== '') &&
-    allValid(draft.contacts)
+    (!contactsEdited || allValid(draft.contacts))
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>

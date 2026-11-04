@@ -3787,14 +3787,14 @@ export interface components {
         /**
          * DuplicatePairRead
          * @description `survivor` is the default of the merge (the newest CV); `signals` says why the two
-         *     look alike (`linkedin`, `nome`, `phone`), and `mergeable` that the profile is the same,
-         *     the only signal that is a reason to merge rather than to look.
+         *     look alike (`linkedin`, `first_name`, `phone`, `email`), and `mergeable` that the profile is
+         *     the same, the only signal that is a reason to merge rather than to look.
          */
         DuplicatePairRead: {
             survivor: components["schemas"]["PersonRead"];
             absorbed: components["schemas"]["PersonRead"];
             /** Signals */
-            signals: ("linkedin" | "first_name" | "phone")[];
+            signals: ("linkedin" | "first_name" | "phone" | "email")[];
             /** Mergeable */
             mergeable: boolean;
         };

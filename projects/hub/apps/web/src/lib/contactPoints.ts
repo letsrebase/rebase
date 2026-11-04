@@ -23,6 +23,7 @@ export const CONTACT_LABEL_NAMES: Record<ContactLabel, string> = {
 }
 export const CONTACT_NOTE_MAX = 200
 const PHONE_MIN_DIGITS = 6
+const PHONE_MAX = 40
 
 /** A point while it is edited: every value is a string, and `key` is what React keeps a row
  *  by (a new row has no `id` yet, and the list is replaced on save). */
@@ -91,8 +92,8 @@ export function problemOf(draft: PointDraft): string | null {
   if (draft.kind === 'email' && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) {
     return 'Serve un indirizzo email valido.'
   }
-  if (draft.kind === 'phone' && value.replace(/\D/g, '').length < PHONE_MIN_DIGITS) {
-    return `Serve un numero di telefono, di almeno ${PHONE_MIN_DIGITS} cifre.`
+  if (draft.kind === 'phone' && (value.replace(/\D/g, '').length < PHONE_MIN_DIGITS || value.length > PHONE_MAX)) {
+    return `Serve un numero di telefono, di almeno ${PHONE_MIN_DIGITS} cifre e al massimo ${PHONE_MAX} caratteri.`
   }
   if (draft.kind === 'linkedin' && !/linkedin\.com/i.test(value)) {
     return 'Serve l’indirizzo di un profilo LinkedIn.'
@@ -113,4 +114,11 @@ export function pointSuffix(point: ContactPoint): string {
   if (point.id === null) return ''
   const label = CONTACT_LABEL_NAMES[point.label]
   return point.note ? ` (${label}: ${point.note})` : ` (${label})`
+}
+
+/** Whether the list the person or the admin sees differs from the one stored: what a dialog
+ *  compares before it sends the contacts at all, so saving a name never rewrites the list and
+ *  a value stored before the list existed never blocks it. */
+export function contactsChanged(drafts: readonly PointDraft[], stored: readonly ContactPoint[]): boolean {
+  return JSON.stringify(toWrite(drafts)) !== JSON.stringify(toWrite(draftsFrom(stored)))
 }

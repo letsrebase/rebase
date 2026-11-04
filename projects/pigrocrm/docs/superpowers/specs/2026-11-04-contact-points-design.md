@@ -132,6 +132,25 @@ CRM with every point of its contact. That changes the payload's shape, so the `h
 - **A merge carries the points.** The absorbed person's points go to the survivor (their
   primary phone arrives as a secondary one when the survivor has a primary) together with their
   login address as an extra email; the undo puts back what the survivor has not changed since.
-- **The sign-up lists leave out a card's extra addresses.** `card_rows.card_emails` (the anti-join
-  every lead list and campaign audience uses) also lists the extra addresses of people with a card,
-  so a sign-up with one is no lead.
+- **Extra addresses never decide who somebody is (decision of Main, 2026-11-04).** §4 has
+  `find_person` read the extra addresses, so a sign-up with one is recognised as the holder. An
+  extra address is unverified, though: anybody could type it into a form to be taken for its
+  holder. So `find_person`, `get_or_create`, the freelancer and company wizards, the admin's draft
+  and `MemberService.lookup` read login addresses only, as before. A sign-up or request under
+  somebody's extra address makes its own person, and the pair is flagged: `find_duplicates` and
+  `duplicates_of` carry a new signal, `email` (one person's login is another's extra address), which
+  only flags (`to_review`, never `mergeable`, so `rebase talent-duplicates --apply` leaves it
+  alone) and shows as `duplicate_possible_of`; the admin merges with the usual flow. The card
+  lists and the lead anti-join (`card_emails`) are unchanged. The flag covers people with a
+  freelancer card; a company contact with no card is not in that list.
+- **An address typed is the bare address.** An email point is validated as exactly an address
+  (no display name, no angle brackets) and stored as typed, trimmed, so what is compared is what
+  is stored.
+- **A phone is anything with six digits.** A value stored before the list existed
+  (`+39 345 1234567 (ufficio)`) must still save: a phone is trimmed, at most 40 characters, at
+  least 6 digits, anything else allowed; `value_key` is its digits. The admin dialogs send the
+  contacts only when the list changed.
+- **A role or a login never goes to an extra address.** `UserService.promote` and `set_role` refuse
+  to create a user under somebody's extra address, naming it. An address a person already keeps is
+  not asked again when they save their list, so a sign-up that took it as its login does not stop
+  them.

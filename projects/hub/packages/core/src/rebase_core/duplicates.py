@@ -49,7 +49,11 @@ from rebase_core.vocabulary import enum_of
 LINKEDIN = "linkedin"
 FIRST_NAME = "first_name"
 PHONE = "phone"
-SIGNALS = (LINKEDIN, FIRST_NAME, PHONE)
+# One person's login address is another's extra address (REB-943). Extra addresses are not
+# verified, so they never decide who somebody is: a sign-up under one makes its own person,
+# and this flags the pair for an admin to look at, like a name or a number.
+EMAIL = "email"
+SIGNALS = (LINKEDIN, FIRST_NAME, PHONE, EMAIL)
 DuplicateSignal = Annotated[str, Field(json_schema_extra=enum_of(SIGNALS))]
 # Cards a Talenti row names as «may be this person»: a common name is shared by many, and a
 # row is read by an agent that pays for every id.
@@ -170,6 +174,15 @@ def _primary_phone() -> ColumnElement[str | None]:
     )
 
 
+def _extra_emails() -> ColumnElement[list[str] | None]:
+    """The person's extra addresses in lower case, `NULL` for none."""
+    return (
+        select(func.array_agg(func.lower(UserContactPoint.value)))
+        .where(UserContactPoint.user_id == User.id, UserContactPoint.kind == "email")
+        .scalar_subquery()
+    )
+
+
 def _live_people() -> Select[*tuple[Any, ...]]:
     """The identity columns of the live cards (a card of a person merged away is no longer
     one), oldest first: the one read `find_duplicates` and `duplicates_of` share."""
@@ -186,6 +199,7 @@ def _live_people() -> Select[*tuple[Any, ...]]:
             User.role,
             User.linkedin_url,
             _primary_phone().label("phone"),
+            _extra_emails().label("extra_emails"),
         )
         .join(User, User.id == Freelancer.user_id)
         .where(Freelancer.deleted_at.is_(None), User.merged_into_id.is_(None))
@@ -200,6 +214,7 @@ def _pairs_among(rows: Sequence[Row[Any]]) -> list[DuplicatePair]:
     by_linkedin: dict[str, list[Person]] = defaultdict(list)
     by_name: dict[str, list[Person]] = defaultdict(list)
     by_phone: dict[str, list[Person]] = defaultdict(list)
+    by_email: dict[str, list[Person]] = defaultdict(list)
     for row in rows:
         person = Person(
             user_id=row.user_id,
@@ -219,10 +234,13 @@ def _pairs_among(rows: Sequence[Row[Any]]) -> list[DuplicatePair]:
             by_name[name].append(person)
         if (phone := _phone_key(row.phone)) is not None:
             by_phone[phone].append(person)
+        for address in (row.email.lower(), *(row.extra_emails or ())):
+            by_email[address].append(person)
     found: dict[frozenset[UUID], set[str]] = defaultdict(set)
     _pairs(by_linkedin, LINKEDIN, found)
     _pairs(by_name, FIRST_NAME, found)
     _pairs(by_phone, PHONE, found)
+    _pairs(by_email, EMAIL, found)
     order = SIGNALS
     pairs: list[DuplicatePair] = []
     for ids, signals in found.items():
@@ -381,6 +399,19 @@ def _neighbours(session: Session, page: Sequence[Row[Any]]) -> list[Row[Any]]:
             else:
                 non_ascii_number = True
     matches: list[ColumnElement[bool]] = []
+    addresses = {
+        address for row in page for address in (row.email.lower(), *(row.extra_emails or ()))
+    }
+    if addresses:
+        matches.append(func.lower(User.email).in_(addresses))
+        matches.append(
+            User.id.in_(
+                select(UserContactPoint.user_id).where(
+                    UserContactPoint.kind == "email",
+                    func.lower(UserContactPoint.value).in_(addresses),
+                )
+            )
+        )
     if profiles:
         matches.append(func.lower(User.linkedin_url).in_(profiles))
     if names:
@@ -445,8 +476,8 @@ class PersonRead(ResponseModel):
 
 class DuplicatePairRead(ResponseModel):
     """`survivor` is the default of the merge (the newest CV); `signals` says why the two
-    look alike (`linkedin`, `nome`, `phone`), and `mergeable` that the profile is the same,
-    the only signal that is a reason to merge rather than to look."""
+    look alike (`linkedin`, `first_name`, `phone`, `email`), and `mergeable` that the profile is
+    the same, the only signal that is a reason to merge rather than to look."""
 
     survivor: PersonRead
     absorbed: PersonRead
@@ -496,6 +527,7 @@ __all__ = [
     "LINKEDIN",
     "FIRST_NAME",
     "PHONE",
+    "EMAIL",
     "UNIQUE_INDEXES",
     "DuplicateListRead",
     "DuplicatePair",

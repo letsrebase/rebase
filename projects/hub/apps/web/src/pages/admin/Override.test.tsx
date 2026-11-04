@@ -179,7 +179,6 @@ describe('FreelancerOverrideDialog', () => {
       remote: 'remote',
       links: ['https://github.com/ada', 'https://ada.dev'],
       filled_by: 'person',
-      contact_points: [],
     })
   })
 
@@ -343,10 +342,22 @@ describe('CompanyOverrideDialog', () => {
       remote: 'remote',
       onsite_days: null,
       headcount: 2,
-      contact_points: [
-        { kind: 'phone', value: '+39 345 1234567', label: 'work', note: null, is_primary: true },
-      ],
     })
+  })
+
+  it('does not send the contacts, nor stop saving, while the list is the stored one (REB-944)', async () => {
+    const onSave = vi.fn<(data: CompanyOverride) => void>()
+    const legacy = {
+      ...COMPANY,
+      contact_points: [
+        COMPANY.contact_points[0]!,
+        { ...COMPANY.contact_points[1]!, value: 'int. 12' },
+      ],
+    }
+    mountCompany({ onSave, company: legacy })
+    expect(screen.getByRole('button', { name: 'Salva' })).toBeEnabled()
+    await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
+    expect(onSave.mock.calls[0]![0]).not.toHaveProperty('contact_points')
   })
 
   it('edits the contact’s labelled phone and note, and takes a point off', async () => {

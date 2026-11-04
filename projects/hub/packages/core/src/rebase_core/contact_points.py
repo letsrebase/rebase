@@ -48,8 +48,6 @@ ENTITY = "contact_points"
 CONTACT_POINTS_MAX = 20
 PHONE_MIN_DIGITS = 6
 _EMAIL: TypeAdapter[str] = TypeAdapter(EmailStr)
-# A phone as it is written: an optional plus, digits and the separators.
-_PHONE = re.compile(r"\+?[\d\s().\-/]+")
 
 LOGIN_IS_NOT_A_POINT = (
     "l'indirizzo con cui la persona accede è già mostrato come principale: non va nell'elenco"
@@ -103,17 +101,19 @@ def _clean_value(kind: str, value: str) -> str:
     if kind == "email":
         trimmed = clean_text(value, what="un indirizzo")
         try:
-            _EMAIL.validate_python(trimmed)
+            bare = _EMAIL.validate_python(trimmed)
         except ValueError as exc:
             raise ValueError("serve un indirizzo email valido") from exc
+        # Only the address itself: `EmailStr` also reads «Nome <a@b.it>» and answers the bare
+        # address, and what is compared and stored must be what was validated.
+        if bare.lower() != trimmed.lower():
+            raise ValueError("serve solo l'indirizzo, senza nome né parentesi")
         return trimmed
     if kind == "phone":
+        # Whatever was stored before this list existed must still save: any characters, a
+        # note after the number included, as long as there are enough digits to compare.
         trimmed = clean_text(value, what="un numero")
-        if (
-            len(trimmed) > PHONE_MAX_LENGTH
-            or not _PHONE.fullmatch(trimmed)
-            or len(phone_key(trimmed)) < PHONE_MIN_DIGITS
-        ):
+        if len(trimmed) > PHONE_MAX_LENGTH or len(phone_key(trimmed)) < PHONE_MIN_DIGITS:
             raise ValueError(
                 f"serve un numero di telefono, di almeno {PHONE_MIN_DIGITS} cifre "
                 f"e al massimo {PHONE_MAX_LENGTH} caratteri"
@@ -211,6 +211,10 @@ class ContactPointService:
         address is never primary (the login is). Refused with a sentence that names the
         value: two primaries of one kind, the same value twice, an address that is another
         person's login or extra address."""
+        # One writer at a time for this person: two saves of the same list racing would
+        # otherwise meet on the unique indexes and read as «taken by somebody else».
+        self.session.execute(select(User.id).where(User.id == user.id).with_for_update())
+        self.session.expire(user, ["contact_points"])
         wanted = self._checked(user, points)
         stored = list(user.contact_points)
         if wanted == snapshot(stored):
@@ -352,7 +356,18 @@ class ContactPointService:
         self.session.flush()
         self.session.expire(survivor, ["contact_points"])
         self.session.expire(absorbed, ["contact_points"])
+        # A primary the survivor lost to the points that went back is made again, so a kind
+        # with points is never left without one.
+        for person in (survivor, absorbed):
+            self._ensure_primaries(person)
         return left
+
+    def _ensure_primaries(self, user: User) -> None:
+        for kind in ("phone", "linkedin"):
+            of_kind = [point for point in user.contact_points if point.kind == kind]
+            if of_kind and not any(point.is_primary for point in of_kind):
+                of_kind[0].is_primary = True
+        self.session.flush()
 
     # ---- checks -----------------------------------------------------------------------
 
@@ -389,7 +404,16 @@ class ContactPointService:
                 raise ValidationFailed(
                     ENTITY, "contact_points", f"più di un recapito principale di tipo {kind}"
                 )
-        self._refuse_taken_addresses(user, [p.value for p in kept if p.kind == "email"])
+        # An address the person already keeps is not asked again: a sign-up under it may have
+        # made another person its login since (an admin settles that with a merge), and that
+        # must not stop them saving the rest of their list.
+        kept_already = {
+            email_key(point.value) for point in user.contact_points if point.kind == "email"
+        }
+        self._refuse_taken_addresses(
+            user,
+            [p.value for p in kept if p.kind == "email" and email_key(p.value) not in kept_already],
+        )
         wanted: list[dict[str, Any]] = []
         firsts: set[str] = set()
         for point in kept:
