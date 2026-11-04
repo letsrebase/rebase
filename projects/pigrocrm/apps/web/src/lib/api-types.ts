@@ -5768,6 +5768,65 @@ export interface components {
             undeclared_gaps?: number[] | null;
         };
         /**
+         * ContactPointIn
+         * @description One contact point as written. A write sends the whole list, which replaces the stored
+         *     one. At most one point per kind is `is_primary`; when a kind has points and none is
+         *     flagged, the first of that kind becomes the primary. The primary email is the address the
+         *     CRM's mail goes to.
+         */
+        ContactPointIn: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "email" | "phone" | "linkedin";
+            /** Value */
+            value: string;
+            /**
+             * Label
+             * @default work
+             * @enum {string}
+             */
+            label: "work" | "personal" | "billing" | "other";
+            /** Note */
+            note?: string | null;
+            /**
+             * Is Primary
+             * @default false
+             */
+            is_primary: boolean;
+        };
+        /** ContactPointRead */
+        ContactPointRead: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "email" | "phone" | "linkedin";
+            /** Value */
+            value: string;
+            /**
+             * Label
+             * @default work
+             * @enum {string}
+             */
+            label: "work" | "personal" | "billing" | "other";
+            /** Note */
+            note?: string | null;
+            /**
+             * Is Primary
+             * @default false
+             */
+            is_primary: boolean;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Position */
+            position: number;
+        };
+        /**
          * ContractCapSimulation
          * @description REB-761: the «ci sta?» simulator's answer for one contract's cap. The customer's
          *     share of the legal entity's invoiced revenue over the contract's own anniversary year
@@ -6813,10 +6872,11 @@ export interface components {
             legal_entity_id?: string | null;
             /** Owner Id */
             owner_id?: string | null;
-            /** Email */
-            email?: string | null;
-            /** Phone */
-            phone?: string | null;
+            /**
+             * Contact Points
+             * @description The customer's contact points (email, phone, linkedin), each with a label and an optional note. On an update the list replaces the stored one. At most one point per kind is primary (the first of a kind is when none is flagged). The PEC address stays in certified_email.
+             */
+            contact_points?: components["schemas"]["ContactPointIn"][];
             /** Website */
             website?: string | null;
             /** Status */
@@ -6896,6 +6956,8 @@ export interface components {
             email: string | null;
             /** Phone */
             phone: string | null;
+            /** Contact Points */
+            contact_points: components["schemas"]["ContactPointRead"][];
             /** Website */
             website: string | null;
             /** Status */
@@ -6945,10 +7007,11 @@ export interface components {
             legal_entity_id?: string | null;
             /** Owner Id */
             owner_id?: string | null;
-            /** Email */
-            email?: string | null;
-            /** Phone */
-            phone?: string | null;
+            /**
+             * Contact Points
+             * @description The customer's contact points (email, phone, linkedin), each with a label and an optional note. On an update the list replaces the stored one. At most one point per kind is primary (the first of a kind is when none is flagged). The PEC address stays in certified_email.
+             */
+            contact_points?: components["schemas"]["ContactPointIn"][] | null;
             /** Website */
             website?: string | null;
             /** Status */
@@ -10451,14 +10514,13 @@ export interface components {
             first_name: string;
             /** Last Name */
             last_name?: string | null;
-            /** Email */
-            email?: string | null;
-            /** Phone */
-            phone?: string | null;
             /** Role */
             role?: string | null;
-            /** Linkedin */
-            linkedin?: string | null;
+            /**
+             * Contact Points
+             * @description The person's contact points (email, phone, linkedin), each with a label and an optional note. On an update the list replaces the stored one. At most one point per kind is primary (the first of a kind is when none is flagged); the primary email is the address the CRM's mail goes to.
+             */
+            contact_points?: components["schemas"]["ContactPointIn"][];
             /** Note */
             note?: string | null;
             /** Customer Id */
@@ -10506,10 +10568,12 @@ export interface components {
             email: string | null;
             /** Phone */
             phone: string | null;
-            /** Role */
-            role: string | null;
             /** Linkedin */
             linkedin: string | null;
+            /** Role */
+            role: string | null;
+            /** Contact Points */
+            contact_points: components["schemas"]["ContactPointRead"][];
             /** Customer Id */
             customer_id: string | null;
             /** Customer Legal Name */
@@ -10535,14 +10599,13 @@ export interface components {
             first_name?: string | null;
             /** Last Name */
             last_name?: string | null;
-            /** Email */
-            email?: string | null;
-            /** Phone */
-            phone?: string | null;
             /** Role */
             role?: string | null;
-            /** Linkedin */
-            linkedin?: string | null;
+            /**
+             * Contact Points
+             * @description The person's contact points (email, phone, linkedin), each with a label and an optional note. On an update the list replaces the stored one. At most one point per kind is primary (the first of a kind is when none is flagged); the primary email is the address the CRM's mail goes to.
+             */
+            contact_points?: components["schemas"]["ContactPointIn"][] | null;
             /** Customer Id */
             customer_id?: string | null;
             /** Custom Fields */

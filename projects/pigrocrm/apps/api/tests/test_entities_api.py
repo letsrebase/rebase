@@ -13,7 +13,10 @@ def test_full_customer_lifecycle_over_http(logged_in: TestClient) -> None:
 
     assert logged_in.get(f"/api/customers/{customer_id}").json()["legal_name"] == "ACME Srl"
 
-    updated = logged_in.patch(f"/api/customers/{customer_id}", json={"phone": "0212345"})
+    updated = logged_in.patch(
+        f"/api/customers/{customer_id}",
+        json={"contact_points": [{"kind": "phone", "value": "0212345"}]},
+    )
     assert updated.json()["phone"] == "0212345"
 
     assert logged_in.delete(f"/api/customers/{customer_id}").status_code == 204
@@ -147,7 +150,10 @@ def test_a_deal_carries_the_name_of_its_customer(logged_in: TestClient) -> None:
 
 def test_timeline_endpoint_reports_what_happened(logged_in: TestClient) -> None:
     customer_id = logged_in.post("/api/customers", json={"legal_name": "ACME"}).json()["id"]
-    logged_in.patch(f"/api/customers/{customer_id}", json={"phone": "02"})
+    logged_in.patch(
+        f"/api/customers/{customer_id}",
+        json={"contact_points": [{"kind": "phone", "value": "0212"}]},
+    )
 
     timeline = logged_in.get(f"/api/customers/{customer_id}/timeline").json()
     assert {entry["kind"] for entry in timeline} == {"created", "updated"}
@@ -157,7 +163,10 @@ def test_timeline_endpoint_reports_what_happened(logged_in: TestClient) -> None:
 def test_timeline_endpoint_respects_a_bounded_limit(logged_in: TestClient) -> None:
     customer_id = logged_in.post("/api/customers", json={"legal_name": "ACME"}).json()["id"]
     for index in range(5):
-        logged_in.patch(f"/api/customers/{customer_id}", json={"phone": f"0{index}"})
+        logged_in.patch(
+            f"/api/customers/{customer_id}",
+            json={"contact_points": [{"kind": "phone", "value": f"021{index}"}]},
+        )
 
     limited = logged_in.get(f"/api/customers/{customer_id}/timeline", params={"limit": 2})
     assert len(limited.json()) == 2
@@ -315,3 +324,138 @@ def test_list_deals_filters_by_a_custom_query_param(logged_in: TestClient) -> No
 
     page = logged_in.get("/api/deals", params={"custom": "source:referral"}).json()
     assert [d["name"] for d in page["items"]] == ["A"]
+
+
+# --- contact points (REB-941) ------------------------------------------------------------
+
+
+def test_a_person_with_two_emails_and_a_labelled_phone_is_read_back_and_found_by_either(
+    logged_in: TestClient,
+) -> None:
+    created = logged_in.post(
+        "/api/people",
+        json={
+            "first_name": "Ada",
+            "last_name": "Byron",
+            "contact_points": [
+                {"kind": "email", "value": "ada@acme.it", "label": "work"},
+                {"kind": "email", "value": "Ada.Private@gmail.com", "label": "personal"},
+                {
+                    "kind": "phone",
+                    "value": "+39 02 1234567",
+                    "label": "billing",
+                    "note": "centralino",
+                },
+            ],
+        },
+    )
+    assert created.status_code == 201, created.text
+    body = created.json()
+    assert body["email"] == "ada@acme.it"  # the first of its kind is the primary
+    assert body["phone"] == "+39 02 1234567"
+    assert body["linkedin"] is None
+    assert [
+        (p["kind"], p["value"], p["label"], p["note"], p["is_primary"], p["position"])
+        for p in body["contact_points"]
+    ] == [
+        ("email", "ada@acme.it", "work", None, True, 0),
+        ("email", "Ada.Private@gmail.com", "personal", None, False, 1),
+        ("phone", "+39 02 1234567", "billing", "centralino", True, 2),
+    ]
+    assert all(p["id"] for p in body["contact_points"])
+
+    read = logged_in.get(f"/api/people/{body['id']}").json()
+    assert read["email"] == "ada@acme.it"
+    for term in ("ada.private@gmail", "ada@acme.it", "0212345"):
+        found = logged_in.get("/api/people", params={"search": term}).json()["items"]
+        assert [p["id"] for p in found] == [body["id"]], term
+
+
+def test_the_list_replaces_and_a_flagged_point_becomes_the_primary(logged_in: TestClient) -> None:
+    person = logged_in.post(
+        "/api/people",
+        json={"first_name": "Ada", "contact_points": [{"kind": "email", "value": "a@acme.it"}]},
+    ).json()
+
+    updated = logged_in.patch(
+        f"/api/people/{person['id']}",
+        json={
+            "contact_points": [
+                {"kind": "email", "value": "a@acme.it"},
+                {"kind": "email", "value": "b@acme.it", "is_primary": True},
+            ]
+        },
+    ).json()
+
+    assert updated["email"] == "b@acme.it"
+    assert [p["value"] for p in updated["contact_points"]] == ["a@acme.it", "b@acme.it"]
+    cleared = logged_in.patch(f"/api/people/{person['id']}", json={"contact_points": []}).json()
+    assert cleared["contact_points"] == [] and cleared["email"] is None
+
+
+def test_the_old_flat_fields_are_refused_on_write(logged_in: TestClient) -> None:
+    person = logged_in.post("/api/people", json={"first_name": "Ada"}).json()
+    customer = logged_in.post("/api/customers", json={"legal_name": "ACME"}).json()
+
+    assert (
+        logged_in.post("/api/people", json={"first_name": "X", "email": "x@x.it"}).status_code
+        == 422
+    )
+    assert (
+        logged_in.patch(f"/api/people/{person['id']}", json={"phone": "0212345"}).status_code == 422
+    )
+    assert (
+        logged_in.post("/api/customers", json={"legal_name": "X", "email": "x@x.it"}).status_code
+        == 422
+    )
+    assert (
+        logged_in.patch(f"/api/customers/{customer['id']}", json={"email": "x@x.it"}).status_code
+        == 422
+    )
+
+
+def test_a_refused_list_is_a_422_that_names_the_point(logged_in: TestClient) -> None:
+    for points, field in (
+        ([{"kind": "email", "value": "not-an-email"}], "contact_points[0]"),
+        (
+            [{"kind": "email", "value": "a@x.it"}, {"kind": "email", "value": "A@x.it"}],
+            "contact_points[1]",
+        ),
+        (
+            [
+                {"kind": "phone", "value": "0212345", "is_primary": True},
+                {"kind": "phone", "value": "0212346", "is_primary": True},
+            ],
+            "contact_points[1]",
+        ),
+    ):
+        response = logged_in.post(
+            "/api/people", json={"first_name": "Ada", "contact_points": points}
+        )
+        assert response.status_code == 422, response.text
+        assert response.json()["field"] == field
+
+
+def test_a_customer_takes_contact_points_and_is_found_by_any(logged_in: TestClient) -> None:
+    created = logged_in.post(
+        "/api/customers",
+        json={
+            "legal_name": "ACME Srl",
+            "certified_email": "acme@pec.it",
+            "contact_points": [
+                {"kind": "email", "value": "info@acme.it", "label": "billing"},
+                {"kind": "phone", "value": "+39 02 7654321"},
+                {"kind": "email", "value": "ordini@acme.it"},
+            ],
+        },
+    )
+    assert created.status_code == 201, created.text
+    body = created.json()
+    assert (body["email"], body["phone"], body["certified_email"]) == (
+        "info@acme.it",
+        "+39 02 7654321",
+        "acme@pec.it",
+    )
+    for term in ("ordini@acme", "76543"):
+        found = logged_in.get("/api/customers", params={"search": term}).json()["items"]
+        assert [c["id"] for c in found] == [body["id"]], term

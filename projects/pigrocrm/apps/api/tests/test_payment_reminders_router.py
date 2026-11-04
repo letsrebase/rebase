@@ -76,7 +76,7 @@ def customer(logged_in: TestClient) -> dict[str, Any]:
             "legal_name": "Acme S.r.l.",
             "vat_number": "12345678901",
             "sdi_code": "ABCDEFG",
-            "email": "ada@acme.it",
+            "contact_points": [{"kind": "email", "value": "ada@acme.it"}],
             "address": "Corso Italia 5",
             "postal_code": "00100",
             "city": "Roma",

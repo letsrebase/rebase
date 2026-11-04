@@ -37,6 +37,7 @@ from typing import Any
 from uuid import UUID, uuid4
 
 import pytest
+from fakes.contacts import points
 from mcp import Client
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -136,7 +137,7 @@ def customer(mcp_session: Session) -> Customer:
     surface that *validates* the entity against the right table, so it needs a row that
     exists.
     """
-    row = Customer(legal_name="Acme S.r.l.", email=CLIENT)
+    row = Customer(legal_name="Acme S.r.l.", contact_points=points(email=CLIENT))
     mcp_session.add(row)
     mcp_session.flush()
     return row

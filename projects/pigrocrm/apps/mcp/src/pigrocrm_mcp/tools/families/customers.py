@@ -13,7 +13,12 @@ from pigrocrm_mcp.tools import (
     customers,
     invoices,
 )
-from pigrocrm_mcp.tools.params import BoundedLimit, CustomerChanges, parse_legal_entity_id
+from pigrocrm_mcp.tools.params import (
+    BoundedLimit,
+    CustomerChanges,
+    OptionalContactPoints,
+    parse_legal_entity_id,
+)
 
 
 def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> None:
@@ -31,8 +36,7 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
         postal_code: str | None = None,
         city: str | None = None,
         province: str | None = None,
-        email: str | None = None,
-        phone: str | None = None,
+        contact_points: OptionalContactPoints = None,
         note: str | None = None,
         payment_days: int | None = None,
         payment_end_of_month: bool = False,
@@ -54,6 +58,8 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
         `country`: ISO 3166-1 alpha-2 (`IT` if omitted). `legal_entity_id`: the company that
         invoices them (`list_legal_entities`); if omitted, the one from `suggest_legal_entity`.
 
+        `contact_points`: see the server instructions; the PEC stays in `certified_email`.
+
         `note` is the customer's first note (without date or author: the CRM signs it).
         """
         return customers.create(
@@ -68,8 +74,7 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
                 "postal_code": postal_code,
                 "city": city,
                 "province": province,
-                "email": email,
-                "phone": phone,
+                "contact_points": contact_points or [],
                 "note": note,
                 "payment_days": payment_days,
                 "payment_end_of_month": payment_end_of_month,
@@ -122,8 +127,8 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
         # `validate_arguments` where the message is not ours.
         dir: str = "asc",
     ) -> dict[str, Any]:
-        """Search customers by legal name, VAT number, tax code or email. `sort`: `created_at`,
-        `updated_at`, `legal_name`. `legal_entity_id` filters by company.
+        """Search customers by legal name, VAT number, tax code or any email or phone. `sort`:
+        `created_at`, `updated_at`, `legal_name`. `legal_entity_id` filters by company.
         """
         return customers.search(
             context,

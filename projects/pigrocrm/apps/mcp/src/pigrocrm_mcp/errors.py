@@ -95,12 +95,25 @@ def _parameters_of(schema: Mapping[str, Any]) -> str:
 
 # Arguments a tool used to take and no longer does, with what to send instead: a misspelling
 # guess cannot find `value_lines` from `expected_value`.
+PERSON_FLAT = ("email", "phone", "linkedin")
+CUSTOMER_FLAT = ("email", "phone")
 REMOVED_ARGUMENTS: dict[tuple[str, str], str] = {
     ("create_deal", "expected_value"): (
         "the deal's value is the total of its `value_lines`: send `value_lines` (a list of "
         "lines with `unit`, `delivery_period`, `unit_price`; `preview_deal_value` shows the "
         "total they give), never `expected_value`"
     ),
+    **{
+        (tool, name): (
+            f"{who} are its `contact_points`: send a list of `{{kind, value, label, note, "
+            f"is_primary}}`, never `{name}` (the first of a kind is its primary)"
+        )
+        for tool, who, names in (
+            ("create_person", "a person's emails, phones and LinkedIn profiles", PERSON_FLAT),
+            ("create_customer", "a customer's emails and phones", CUSTOMER_FLAT),
+        )
+        for name in names
+    },
 }
 
 

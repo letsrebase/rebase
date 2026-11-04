@@ -23,6 +23,7 @@ import pytest
 # no package of their own. Reached by path rather than duplicated: a second fake would be
 # a second place for the two to disagree about what Gmail does.
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "packages" / "core" / "tests"))
+from fakes.contacts import points  # noqa: E402
 from fakes.fake_gmail import FakeGmail, FakeMessage  # noqa: E402
 from mcp import Client
 from sqlalchemy import func, select
@@ -142,6 +143,8 @@ def _example(session: Session, **overrides: object) -> Customer:
         "website": "https://www.example.com/",
     }
     fields.update(overrides)
+    if "email" in fields:
+        fields["contact_points"] = points(email=str(fields.pop("email")))
     customer = Customer(**fields)
     session.add(customer)
     session.flush()

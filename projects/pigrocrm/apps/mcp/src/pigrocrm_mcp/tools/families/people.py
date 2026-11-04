@@ -13,7 +13,7 @@ from pigrocrm_mcp.context import McpContext
 from pigrocrm_mcp.tools import (
     people,
 )
-from pigrocrm_mcp.tools.params import BoundedLimit, PersonChanges
+from pigrocrm_mcp.tools.params import BoundedLimit, OptionalContactPoints, PersonChanges
 
 
 def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> None:
@@ -24,26 +24,23 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
     def create_person(
         first_name: str,
         last_name: str | None = None,
-        email: str | None = None,
-        phone: str | None = None,
         role: str | None = None,
-        linkedin: str | None = None,
+        contact_points: OptionalContactPoints = None,
         note: str | None = None,
         customer_id: str | None = None,
         custom_fields: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Create a person. `customer_id` is optional: a contact may not have a
         customer yet. `note` is the first note (no date or author: the CRM signs it).
+        `contact_points`: emails, phones and LinkedIn profiles (see the server instructions).
         """
         return people.create(
             context,
             {
                 "first_name": first_name,
                 "last_name": last_name,
-                "email": email,
-                "phone": phone,
                 "role": role,
-                "linkedin": linkedin,
+                "contact_points": contact_points or [],
                 "note": note,
                 "customer_id": UUID(customer_id) if customer_id else None,
                 "custom_fields": custom_fields or {},
@@ -78,9 +75,8 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
         # `str`, not a Literal -- see `search_customers`.
         dir: str = "asc",
     ) -> dict[str, Any]:
-        """Search people by first name, last name or email, optionally within a customer. `sort`:
-        `created_at`,
-        `updated_at`, `last_name`.
+        """Search people by first name, last name or any email, phone or profile, optionally
+        within a customer. `sort`: `created_at`, `updated_at`, `last_name`.
         """
         return people.search(
             context,

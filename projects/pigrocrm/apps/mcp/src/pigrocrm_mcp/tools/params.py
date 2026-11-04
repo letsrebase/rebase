@@ -62,6 +62,31 @@ def self_contained(schema: dict[str, Any]) -> dict[str, Any]:
     return resolved
 
 
+# A person's or a customer's contact points, whole: a list of objects, whose members
+# `INSTRUCTIONS` describes (the listing is paid for in bytes) and the service validates with
+# `ContactPointIn`.
+OptionalContactPoints = Annotated[
+    list[dict[str, Any]] | None,
+    WithJsonSchema(
+        {
+            "anyOf": [{"type": "array", "items": {"type": "object"}}, {"type": "null"}],
+            "default": None,
+        }
+    ),
+]
+
+
+def _contact_changes_schema(schema: dict[str, Any]) -> dict[str, Any]:
+    """A person's or a customer's `*Update` schema with the contact points as plain objects
+    and no `$defs`, which would not resolve under the tool's own root: the listing is paid for
+    in bytes, and `INSTRUCTIONS` says what a point holds and that the list replaces."""
+    contact_points = schema["properties"]["contact_points"]
+    contact_points["anyOf"] = [{"type": "array", "items": {"type": "object"}}, {"type": "null"}]
+    contact_points.pop("description", None)
+    schema.pop("$defs", None)
+    return schema
+
+
 def _deal_changes_schema() -> dict[str, Any]:
     """`DealUpdate`'s schema with the lines left as plain objects: `create_deal` spells out a
     line once, and the listing is paid for in bytes."""
@@ -77,8 +102,12 @@ def _deal_changes_schema() -> dict[str, Any]:
 # listing, so an agent sees the field names (`update_task` included, with the two
 # `*_da_rimuovere` flags that clear a field). The model is built inside the call, in
 # `tools/<family>.py`.
-CustomerChanges = Annotated[dict[str, Any], WithJsonSchema(CustomerUpdate.model_json_schema())]
-PersonChanges = Annotated[dict[str, Any], WithJsonSchema(PersonUpdate.model_json_schema())]
+CustomerChanges = Annotated[
+    dict[str, Any], WithJsonSchema(_contact_changes_schema(CustomerUpdate.model_json_schema()))
+]
+PersonChanges = Annotated[
+    dict[str, Any], WithJsonSchema(_contact_changes_schema(PersonUpdate.model_json_schema()))
+]
 DealChanges = Annotated[dict[str, Any], WithJsonSchema(_deal_changes_schema())]
 ContractChanges = Annotated[dict[str, Any], WithJsonSchema(ContractUpdate.model_json_schema())]
 RateCardChanges = Annotated[dict[str, Any], WithJsonSchema(RateCardUpdate.model_json_schema())]

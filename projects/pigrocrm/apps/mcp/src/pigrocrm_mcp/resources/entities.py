@@ -1,7 +1,9 @@
+from collections.abc import Sequence
 from uuid import UUID
 
 from pigrocrm.core.activities.service import ActivityService
 from pigrocrm.core.analytics.service import AnalyticsService
+from pigrocrm.core.contact_points.schemas import ContactPointRead
 from pigrocrm.core.customers.schemas import CustomerRead
 from pigrocrm.core.customers.service import CustomerService
 from pigrocrm.core.deals.schemas import DealListQuery, DealRead, DealValueLineRead
@@ -116,6 +118,19 @@ def _address_line(customer: CustomerRead) -> str:
     return ", ".join(segments) if segments else "—"
 
 
+def _contact_point_lines(points: Sequence[ContactPointRead], *, heading: str) -> list[str]:
+    """Every contact point with its label, note and primary marker; nothing when there are
+    none. The primary email is the address the CRM's mail goes to."""
+    if not points:
+        return []
+    lines = ["", f"## {heading}", ""]
+    for point in points:
+        marker = " (primary)" if point.is_primary else ""
+        note = f" — {point.note}" if point.note else ""
+        lines.append(f"- {point.kind}: {point.value} [{point.label}]{marker}{note}")
+    return lines
+
+
 def _provenance_line() -> str:
     """First line of every card: the names, notes and custom fields below were written by
     somebody else (a person, or an agent that was reading a mail)."""
@@ -152,6 +167,7 @@ def render_customer(context: McpContext, customer_id: UUID) -> str:
         f"- {p.first_name} {p.last_name or ''} — {p.role or 'role not given'} — {p.email or '—'}"
         for p in people.items
     ] or ["_No contacts._"]
+    lines += _contact_point_lines(customer.contact_points, heading="Customer contact points")
     lines += ["", "## Deal", ""]
     lines += [
         f"- {d.name} — expected value {_or_dash(d.expected_value)}{_figures(d)}"
@@ -176,6 +192,7 @@ def render_person(context: McpContext, person_id: UUID) -> str:
         f"- Phone: {person.phone or '—'}",
         f"- LinkedIn: {person.linkedin or '—'}",
     ]
+    lines += _contact_point_lines(person.contact_points, heading="Contact points")
     if person.customer_id:
         customer = CustomerService(context.session).get(person.customer_id, context.actor)
         lines.append(f"- Customer: {customer.legal_name} (`customer://{customer.id}`)")

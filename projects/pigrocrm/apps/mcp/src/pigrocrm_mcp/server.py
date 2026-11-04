@@ -66,6 +66,11 @@ one `day`/`hour` line is in force on a date. Upfront 20000 plus 500 a month open
 `one_off_value` and `monthly_recurring_value`; `preview_deal_value` computes them unsaved.
 A won deal with lines becomes a contract with `convert_deal_to_contract` (see
 `preview_deal_contract`), once; the deal then answers `contract_id` and its lines are locked.
+A person's or a customer's emails, phones and LinkedIn profiles are their `contact_points`,
+objects `{kind: email|phone|linkedin, value, label: work|personal|billing|other, note,
+is_primary}`: a write sends the whole list, which replaces the stored one, with one primary per
+kind (the first of a kind when none is flagged). `email`, `phone` and `linkedin` in a reply are
+the primary of each kind, and the CRM's mail goes to the primary email.
 """
 
 
