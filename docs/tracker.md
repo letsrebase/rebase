@@ -74,7 +74,10 @@ archived there is unarchived (`issueUnarchive`). Archive in a batch that leaves 
 (on 2026-10-20: the 30 oldest, from 255 to 225), and say on the card that needed the room
 which issues went. The first pass of that day archived by a date cut-off instead and took
 cards of open projects with it; they were restored the same day, which is why the rule
-says oldest first and current never.
+says oldest first and current never. The Linear MCP server has no archive tool:
+archive with the `issueArchive(id:)` mutation on `https://api.linear.app/graphql`,
+authenticated by your own personal API key (Linear, Settings, Security & access), one
+call per issue. A full board is a reason to archive, never a reason to stop filing.
 
 Every project always carries a lead, whoever it is. A project created without a
 lead is incomplete. Adding both of us as members used to be required too
