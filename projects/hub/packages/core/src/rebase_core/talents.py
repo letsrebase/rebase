@@ -68,7 +68,7 @@ from sqlalchemy.orm import Session, aliased, defer
 from rebase_core.bands import Band, band_for
 from rebase_core.card_level import level
 from rebase_core.card_rows import card_emails, card_row_fields
-from rebase_core.contact_points import has_point_matching
+from rebase_core.contact_points import has_point_matching, point_match_score
 from rebase_core.duplicates import duplicates_of
 from rebase_core.errors import NotFound, ValidationFailed
 from rebase_core.freelancers import LEAD_STATE
@@ -664,10 +664,10 @@ class TalentsService:
             elif order.ranked_by == "experience_years":
                 sort_col = _card_experience_years()
             elif sort_spec.key == "score":
-                # A person found by one of their extra points ranks like an exact address.
+                # An extra point that is the term ranks like an exact address; one that only
+                # contains it, below a name or address that equals it.
                 sort_col = func.greatest(
-                    similarity_score(_CARD_SEARCH_COLUMNS, term),
-                    case((has_point_matching(User.id, term), 1.0), else_=0.0),
+                    similarity_score(_CARD_SEARCH_COLUMNS, term), point_match_score(User.id, term)
                 )
             else:
                 sort_col = Freelancer.created_at

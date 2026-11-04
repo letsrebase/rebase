@@ -293,6 +293,26 @@ def email_addresses(owner: Person | Customer) -> list[str]:
     return [point.normalized for point in points]
 
 
+# The labels whose emails say where a company is. A billing address is often an accountant's
+# or a shared invoicing mailbox, a personal one is somebody's own: neither names the company.
+COMPANY_EMAIL_LABELS = ("work", "other")
+
+
+def company_email_addresses(owner: Person | Customer) -> list[str]:
+    """The emails of an owner that may name its company's domain, lowercased: the primary
+    first (whatever its label), then the others labelled `work` or `other`, in position order.
+    What reads a domain off a record (`customer_domain`) asks this, not `email_addresses`."""
+    points = sorted(
+        (
+            point
+            for point in owner.contact_points
+            if point.kind == "email" and (point.is_primary or point.label in COMPANY_EMAIL_LABELS)
+        ),
+        key=lambda point: (not point.is_primary, point.position),
+    )
+    return [point.normalized for point in points]
+
+
 # A search term that reads as a phone number: digits with the separators people type.
 _PHONE_TERM = re.compile(r"[\d\s+().\-/]+")
 PHONE_SEARCH_MIN_DIGITS = 3
@@ -320,4 +340,4 @@ def owners_matching(
     found = or_(*conditions)
     if kind is not None:
         found = and_(ContactPoint.kind == kind, found)
-    return select(owner_column).where(found)
+    return select(owner_column).where(owner_column.is_not(None), found)

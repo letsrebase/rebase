@@ -212,7 +212,9 @@ def customer_domain(
     """The domain a customer's correspondents share, read from the record and never
     typed by the caller: the website first, the customer's own email second, then the rest
     of its email points (`other_emails`, a customer keeps several: the primary may be a
-    webmail address while another is the company's).
+    webmail address while another is the company's). The caller passes the ones that may
+    name a company (`company_email_addresses`: the primary, then `work` and `other`), never
+    a billing or personal address.
 
     `None` when there is nothing to derive from, or when what there is names a webmail
     provider -- an answer of "nobody in particular" is worse than no answer, because it

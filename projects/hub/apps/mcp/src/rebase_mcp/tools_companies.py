@@ -337,6 +337,8 @@ def register(mcp: MCPServer, deps: Deps) -> None:
         except PydanticValidationError as exc:
             raise field_refusal(exc) from None
 
+        # A refusal of the contact's points is said first: it spends no model call.
+        deps.call(lambda s: CompanyService(s).check_admin_create(data))
         crm_on = (
             deps.crm_leads is not None
             and deps.settings is not None

@@ -417,13 +417,18 @@ kind through the generated `value_key`, one owner per address).
   (`is_primary` is accepted and ignored; the first phone or profile becomes primary when there is none, and
   for a request the flat `phone` stays the primary number), and the whole list goes through `replace`, so
   every rule of a write applies. `check_added` runs before anything is written, so a refused point (another
-  person's login or extra address) leaves no contact and no request behind. The CRM gets the points with the
+  person's login or extra address) leaves no contact and no request behind; the check counts the flat `phone`
+  the same write stores, so the cap and the duplicates cannot pass it and fail after. The trail keeps what
+  was added: `contact_points_added` in the `company_created` entry (only the new points), and for a draft an
+  `overridden` entry with the lists before and after plus a line in its note. The CRM gets the points with the
   request, as for any stored point.
 - **Search reads the points (REB-948).** `q` of the admin Talenti and Aziende lists, and so of the MCP
   `list_talents` and `list_companies`, also matches a person's extra points
   (`contact_points.has_point_matching`): the text of any point, or a phone by its digits (at least three, the
   CRM's rule). There is no trigram index on `user_contact_points.value`: the table is small and the match is
-  a correlated `EXISTS`. A person found only through a point ranks like an exact address. The sign-up leads
+  a correlated `EXISTS`. A person whose point is the term (same text, or a phone with the same digits) ranks like an exact
+  address (1.0); one whose point only contains it ranks at 0.5 (`point_match_score`), below a name or address
+  that equals the term. The sign-up leads
   have no user, so their search is unchanged.
 - **The CRM gets them (REB-945).** `crm_link.py` sends the contact's stored points as
   `contact.contact_points` on the leads door payload, never the login address (that is `contact.email`),

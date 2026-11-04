@@ -463,6 +463,23 @@ async def test_a_card_from_a_signup_takes_the_public_contact_points_and_adds_on_
             ("phone", "+44 20 7946 0958", "work"),
             ("linkedin", "https://www.linkedin.com/in/ada", "work"),
         ]
+        trail = _payload(
+            await client.call_tool(
+                "get_freelancer_audit", {"freelancer_id": created["id"], "limit": 10}
+            )
+        )["result"]
+        # One `overridden` entry per research that added something, with the list before and
+        # after (a revert puts the earlier one back): the first adds two, the second one.
+        added = [
+            [p["value"] for p in entry["payload"]["after"]["contact_points"]]
+            for entry in reversed([e for e in trail if e["kind"] == "overridden"])
+        ]
+        assert len(added) == 2
+        assert added[0] == ["ada@lovelace.example", "+44 20 7946 0958"]
+        assert added[1][-1] == "https://www.linkedin.com/in/ada"
+        notes = " ".join(n["text"] for n in rewritten["note"])
+        assert "Recapiti aggiunti: email ada@lovelace.example, telefono +44 20 7946 0958" in notes
+        assert "Recapiti aggiunti: LinkedIn https://www.linkedin.com/in/ada" in notes
     _wipe(factory)
 
 

@@ -253,19 +253,24 @@ CRM with every point of its contact. That changes the payload's shape, so the `h
   is left as it is, a new one is never primary on its own (`is_primary` is accepted and ignored,
   as at the leads door), and a company request's flat `phone` stays the primary number. The admin
   API's `POST /companies` and the draft route take the same field, so the web types changed.
-  A refused point (another person's login or extra address) is refused before the contact or the
-  request is written. The CRM receives the points with the request through the payload that
+  A refused point (another person's login or extra address, or a list past the cap counting the
+  flat `phone`) is refused before the contact or the request is written, and before the MCP
+  tool spends a model call. What was added is in the trail (`contact_points_added` on
+  `company_created`; an `overridden` entry and a note line for a draft). The CRM receives the points with the request through the payload that
   already sent every stored point.
 - **Hub searches read the points.** `list_talents` and `list_companies` `q` match a person's extra
-  points as well as the login address: any point's text, or a phone by its digits.
+  points as well as the login address: any point's text, or a phone by its digits. A point equal
+  to the term ranks at 1.0, one that only contains it at 0.5.
 - **`search_everything` matches phones by digits and names the kind.** Its contact field was one
   text over every point and reported `email` for any hit. It is now three fields named after the
   kind (`email`, `phone`, `linkedin`); the phone one also matches through `owners_matching`, the
   same rule the people and customer lists use (a `kind` argument narrows it), and such a hit scores
   like a prefix match. The web command palette shares this and changes with it.
-- **Discovery reads every email of the customer.** `discover_gmail_correspondents` and the
+- **Discovery reads the company emails of the customer.** `discover_gmail_correspondents` and the
   add-as-person check took the domain from the customer's primary email only; they now take the
-  first company (non-webmail) address among all its email points when the website gives none.
+  first non-webmail address among the primary and the points labelled `work` or `other` (in
+  position order) when the website gives none. A `billing` or `personal` address never gives the
+  domain: an accountant's invoicing mailbox is not the customer's company.
 - **Correct by design, unchanged.** Sent mail still goes to the primary email alone (contract
   mail, payment reminders; `preview_contract_email` suggests each person's primary), `draft_email`
   takes explicit recipients, a campaign writes to the login address, the customer resource's

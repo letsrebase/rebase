@@ -9,7 +9,7 @@ from pigrocrm.core.activities.service import ActivityService
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.auth.repository import UserRepository
 from pigrocrm.core.contact_points.schemas import ContactPointIn
-from pigrocrm.core.contact_points.service import email_addresses, prepare, write_points
+from pigrocrm.core.contact_points.service import company_email_addresses, prepare, write_points
 from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.customers.repository import CustomerRepository
 from pigrocrm.core.customers.schemas import (
@@ -332,7 +332,7 @@ class CustomerService:
         domain = customer_domain(
             website=customer.website,
             email=customer.email,
-            other_emails=email_addresses(customer),
+            other_emails=company_email_addresses(customer),
         )
         if domain is None:
             raise Conflict(
