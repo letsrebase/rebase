@@ -23,12 +23,12 @@ from rebase_core.company_schemas import CompanyCreate, CompanyFields
 from rebase_core.config import Settings
 from rebase_core.contact_points import ContactPointInput, ContactPointService
 from rebase_core.crm_lead import LeadDraftOut
-from rebase_core.crm_link import CrmLeadService, link_after_response
+from rebase_core.crm_link import CrmLeadService, contact_point_payload, link_after_response
 from rebase_core.errors import InvalidState, LlmCapReached, NotFound
 from rebase_core.llm import LlmCall, LlmRequest, LlmResponse, RecordingCall
 from rebase_core.match_words import HTTPS_ONLY
 from rebase_core.members import MemberService
-from rebase_core.models import AdminAction, Company, User
+from rebase_core.models import AdminAction, Company, User, UserContactPoint
 from rebase_core.pigro_door import CAUSE_TIMEOUT
 
 NOW = datetime(2026, 11, 2, 9, 0, tzinfo=UTC)
@@ -183,6 +183,15 @@ def test_a_linked_request_keeps_the_deal_and_sends_the_body_of_the_spec(clean: S
         "email": "mario@acme.it",
         "phone": "+39 333 1234567",
         "linkedin_url": None,
+        "contact_points": [
+            {
+                "kind": "phone",
+                "value": "+39 333 1234567",
+                "label": "work",
+                "note": None,
+                "is_primary": True,
+            }
+        ],
     }
     deal = body["deal"]
     assert set(deal) == {"name", "value_lines", "expected_close_date", "notes"}
@@ -210,11 +219,18 @@ def test_a_linked_request_keeps_the_deal_and_sends_the_body_of_the_spec(clean: S
     assert row.crm_error is None and row.crm_attempted_at == NOW
 
 
-def test_the_contact_the_crm_gets_is_the_login_address_and_the_primary_phone(
+def _point(
+    kind: str, value: str, label: str, *, note: str | None = None, primary: bool = False
+) -> dict[str, Any]:
+    return {"kind": kind, "value": value, "label": label, "note": note, "is_primary": primary}
+
+
+def test_the_contact_the_crm_gets_is_the_login_address_the_primary_phone_and_every_point(
     clean: Session,
 ) -> None:
-    """REB-943: the leads door payload does not change. Extra points are not sent yet: the
-    CRM gets the login address and the primary phone point, however many the contact has."""
+    """REB-943, REB-945: `email` is the login address and `phone` the primary phone point,
+    as before; `contact_points` is every stored point (extra emails, every phone, LinkedIn
+    points), never the login address."""
     company = _create(clean, project="Un gestionale.")
     contact = clean.get(User, company.user_id)
     assert contact is not None
@@ -223,7 +239,16 @@ def test_the_contact_the_crm_gets_is_the_login_address_and_the_primary_phone(
         [
             ContactPointInput(kind="email", value="mario.casa@gmail.com", label="personal"),
             ContactPointInput(kind="phone", value="+39 333 1234567", label="work"),
-            ContactPointInput(kind="phone", value="02 5550199", label="billing", is_primary=True),
+            ContactPointInput(
+                kind="phone",
+                value="02 5550199",
+                label="billing",
+                note="centralino",
+                is_primary=True,
+            ),
+            ContactPointInput(
+                kind="linkedin", value="https://www.linkedin.com/in/mario-rossi", label="work"
+            ),
         ],
     )
     clean.commit()
@@ -237,7 +262,51 @@ def test_the_contact_the_crm_gets_is_the_login_address_and_the_primary_phone(
         "email": "mario@acme.it",
         "phone": "02 5550199",
         "linkedin_url": None,
+        "contact_points": [
+            _point("email", "mario.casa@gmail.com", "personal"),
+            _point("phone", "+39 333 1234567", "work"),
+            _point("phone", "02 5550199", "billing", note="centralino", primary=True),
+            _point("linkedin", "https://www.linkedin.com/in/mario-rossi", "work", primary=True),
+        ],
     }
+
+
+def test_a_point_the_crm_would_refuse_is_left_out_and_never_cut() -> None:
+    """The columns hold what the CRM's schema takes, so this is the guard a value from
+    outside them (or a wider column one day) meets: left out whole, never shortened."""
+
+    def point(value: str, note: str | None = None) -> UserContactPoint:
+        return UserContactPoint(
+            kind="email", value=value, label="work", note=note, is_primary=False
+        )
+
+    kept = point("ok@acme.it", "centralino")
+    sent = contact_point_payload(
+        [
+            point("m" * 330 + "@acme.it"),
+            point("nul\x00@acme.it"),
+            point("note@acme.it", "x" * 201),
+            point("nulnote@acme.it", "a\x00b"),
+            point("   "),
+            kept,
+        ]
+    )
+
+    assert sent == [_point("email", "ok@acme.it", "work", note="centralino")]
+    assert len(contact_point_payload([point(f"p{n}@acme.it") for n in range(40)])) == 30
+
+
+def test_a_contact_with_no_points_sends_an_empty_list(clean: Session) -> None:
+    company = _create(clean)
+    contact = clean.get(User, company.user_id)
+    assert contact is not None
+    ContactPointService(clean).replace(contact, [])
+    clean.commit()
+    http = RecordedPigro([OK])
+
+    _service(clean, http, RecordingCall([_draft_response(**DRAFT)])).link(company.id)
+
+    assert _body(http)["contact"]["contact_points"] == []
 
 
 def test_the_model_sees_the_four_fields_and_never_the_company_or_the_contact_person(

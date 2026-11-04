@@ -12,7 +12,11 @@ The deal is built in code. The AI (`rebase_core.crm_lead`) gives a bounded draft
 and kept in `crm_draft`, so a CRM that is down for a day is retried every sweep without
 spending the task's cap again; a call that cannot answer files the request with no draft
 (the AI improves a filing, it never blocks one). Every value is cut or dropped to the CRM's
-limits before it leaves, so a long value never becomes a permanent 422.
+limits before it leaves, so a long value never becomes a permanent 422. The contact goes with
+its login address (`email`), its primary phone and LinkedIn profile, and every stored contact
+point (`contact_points`, REB-945): a point the CRM would refuse is left out, never cut. The CRM
+must accept `contact.contact_points` before the hub sends it (its door refuses unknown fields),
+so `pigrocrm-v*` ships before `hub-v*`.
 
 Who runs it: a `BackgroundTasks` job right after the response (`link_after_response`), on
 every path that writes a request; `link_pending`, the recovery round of `rebase
@@ -24,7 +28,7 @@ linked changes nothing in the CRM, and a soft-deleted one is not linked.
 """
 
 import logging
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from decimal import ROUND_HALF_UP, Decimal
@@ -45,7 +49,13 @@ from rebase_core.framework import rome_today
 from rebase_core.http import HttpCall
 from rebase_core.llm import LlmCall
 from rebase_core.match_words import ERROR, HTTPS_ONLY, LINKED, TO_LINK
-from rebase_core.models import Company, User
+from rebase_core.models import (
+    CONTACT_NOTE_MAX_LENGTH,
+    CONTACT_VALUE_MAX_LENGTH,
+    Company,
+    User,
+    UserContactPoint,
+)
 from rebase_core.pigro_door import (
     Outcome,
     PigroDoor,
@@ -71,6 +81,9 @@ COMPANY_MAX = 255
 PERSON_NAME_MAX = 120
 PHONE_MAX = 40
 LINKEDIN_MAX = 255
+# `ContactPointIn` and `LeadContactPerson.contact_points`: a point's value and note are the
+# hub's own bounds (`UserContactPoint`) and the list is capped at `MAX_CONTACT_POINTS`.
+CONTACT_POINTS_MAX = 30
 DEAL_NAME_MAX = 255
 # A line's price is Numeric(12, 2) and its quantity Numeric(8, 2) in the CRM, and a line's total
 # (and so the deal's) must fit Numeric(12, 2): ten integer digits at most.
@@ -93,6 +106,37 @@ def _cut(value: str | None, limit: int) -> str | None:
         return None
     text = value.strip()
     return text[:limit].rstrip() or None
+
+
+def contact_point_payload(points: Sequence[UserContactPoint]) -> list[dict[str, Any]]:
+    """The contact's stored points in the shape the door takes (`kind`, `value`, `label`,
+    `note`, `is_primary`; no id, no position), the login address left out: it is the door's
+    `email`. A point the CRM would refuse, a value or note past its bound or with a NUL byte,
+    is left out and never cut, and so is whatever is past the list's bound. What the CRM's
+    own rules refuse (an address that is not one, a number with too few digits) the door
+    leaves out itself, so the request is never refused for a point."""
+    sent: list[dict[str, Any]] = []
+    for point in points:
+        value = point.value.strip()
+        note = (point.note or "").strip() or None
+        if (
+            not value
+            or len(value) > CONTACT_VALUE_MAX_LENGTH
+            or (note is not None and len(note) > CONTACT_NOTE_MAX_LENGTH)
+            or "\x00" in value
+            or (note is not None and "\x00" in note)
+        ):
+            continue
+        sent.append(
+            {
+                "kind": point.kind,
+                "value": value,
+                "label": point.label,
+                "note": note,
+                "is_primary": point.is_primary,
+            }
+        )
+    return sent[:CONTACT_POINTS_MAX]
 
 
 class _Lead(BaseModel):
@@ -132,6 +176,8 @@ class _Sent(NamedTuple):
     email: str
     phone: str | None
     linkedin_url: str | None
+    # The person's stored points, the login address not among them (REB-945).
+    contact_points: list[dict[str, Any]]
     draft: dict[str, Any] | None
     status: str | None
     # The CRM deal an admin named when opening the request (REB-870), kept on the row so a
@@ -203,6 +249,7 @@ class CrmLeadService:
                 "email": sent.email,
                 "phone": _cut(sent.phone, PHONE_MAX),
                 "linkedin_url": _cut(sent.linkedin_url, LINKEDIN_MAX),
+                "contact_points": sent.contact_points,
             },
             "deal": deal,
             "deal_id": str(deal_id) if deal_id is not None else None,
@@ -449,6 +496,7 @@ class CrmLeadService:
                 email=user.email,
                 phone=user.phone,
                 linkedin_url=user.linkedin_url,
+                contact_points=contact_point_payload(user.contact_points),
                 draft=row.crm_draft,
                 status=row.crm_status,
                 deal_id=row.crm_deal_id if row.crm_status != LINKED else None,

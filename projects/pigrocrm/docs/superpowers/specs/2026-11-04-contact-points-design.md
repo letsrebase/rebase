@@ -196,3 +196,38 @@ CRM with every point of its contact. That changes the payload's shape, so the `h
 - **Migration 0073 and a phone with no digit.** It is not dropped in silence: it becomes the
   note (`Telefono: <text>`) of the owner's primary email point when the owner has one, and
   otherwise is left out and named in the migration's log, one line per owner id.
+
+### Leads door (REB-945)
+
+- **`contact.contact_points` is optional and additive.** `LeadContactPerson` gains the list in
+  the shape of `ContactPointIn` (kind, value, label, note, is_primary; `id` and `position` are
+  refused like any unknown field), at most `MAX_CONTACT_POINTS`. `email`, `phone` and
+  `linkedin_url` stay as they were, and `email` is still the identity the door matches on and
+  the lock is taken on. An absent list is the payload of before.
+- **Flat fields stay primary.** A new person is born with the address, phone and profile as
+  today, then every extra point in the order sent. An extra point is never primary whatever it
+  says (`is_primary` is accepted and ignored): the primary of a kind is the flat value, and when
+  there is none (or it was left out) the list's own rule makes the first point of the kind
+  primary. An extra point that is the same value as a flat one (the hub sends its primary phone
+  both ways) is not written twice: the flat point takes its label and note, the last such point
+  winning. A point the point rules refuse, one that repeats a kind and compared key already in
+  the list, and any past the list's bound are left out, as the door already leaves out an
+  unreadable phone; the request is never refused for them.
+- **A known person gets only what they lack.** Matching does not change: the person is found
+  through `contact.email` alone, which (since REB-942) is compared with every email point they
+  have, never through the extra points. Their missing extra points are appended after their own,
+  non-primary, through `write_points` (so the rows are rewritten with new ids, same values,
+  labels, notes and primaries), with an `updated` entry (`changed: ["contact_points"]`) on their
+  timeline; nothing is changed or removed, and the flat phone and profile are still not added to
+  a known person. This applies to the person the door reuses with their customer and to the one
+  with no live customer that is attached to a new one. A call that links an explicit `deal_id`,
+  and a retry that finds the deal by its marker, write no point, as they write no person.
+- **Hub side.** `CrmLeadService.payload` sends every stored point of the contact (extra
+  emails, every phone including the primary one, LinkedIn points), with label, note and
+  `is_primary` as stored and the login address never among them; a point whose value or note is
+  past the CRM's bound or holds a NUL byte is left out, never cut. The hub's own rules are the
+  stricter ones, so in practice nothing is left out here.
+- **Release order.** The deployed CRM's door refuses unknown fields, so it answers 422 to the
+  hub's new payload; the hub files a 422 as `rejected`, which the sweep never asks again and only
+  an admin's «Riprova» does, so a request made in between waits for a person. `pigrocrm-v*` ships first, `hub-v*` right after; the new CRM accepts the
+  old payload.
