@@ -203,7 +203,11 @@ export function CustomerForm({
   }
 
   const drafts = draftsOf(values)
-  const pointRows = pointErrors(drafts, problem, checked)
+  const initialDrafts = isCreate ? undefined : draftsOf(initial)
+  // The list is checked and sent only when it differs from the one the form opened with: a
+  // record whose stored values predate the rules must still save everything else.
+  const pointsEdited = pointsForRequest(drafts, initialDrafts) !== undefined
+  const pointRows = pointErrors(drafts, problem, checked && pointsEdited, initialDrafts)
 
   /** True for a key the active schema currently renders as a custom-field control.
    *
@@ -226,7 +230,7 @@ export function CustomerForm({
   }
 
   function submit() {
-    if (!pointsAreSendable(drafts)) {
+    if (pointsEdited && !pointsAreSendable(drafts, initialDrafts)) {
       setChecked(true)
       return
     }
@@ -264,7 +268,7 @@ export function CustomerForm({
 
     // The whole list or nothing: a new customer sends it when it has points, an edit only
     // when it changed (an omitted list leaves the stored one, `[]` clears it).
-    const contactPoints = pointsForRequest(drafts, isCreate ? undefined : draftsOf(initial))
+    const contactPoints = pointsForRequest(drafts, initialDrafts)
     if (contactPoints !== undefined) body.contact_points = contactPoints
 
     onSubmit(body)

@@ -213,9 +213,13 @@ export function newEmailAddresses(
 
 // -- Validation, as far as the browser can say it before the request ---------------------
 
-const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/
-const PHONE_MIN_DIGITS = 3
-const PHONE_MAX_DIGITS = 20
+// A bare address: no whitespace and none of `<>,;"()` (a display name or a list of addresses is
+// not one), as the server checks it.
+const EMAIL_RE = /^[^@\s<>,;"()]+@[^@\s<>,;"()]+\.[^@\s<>,;"()]+$/
+const PHONE_MIN_DIGITS = 6
+const PHONE_MAX_LENGTH = 40
+// A bare LinkedIn handle (`ada-lovelace`), which the server turns into the profile address.
+const LINKEDIN_HANDLE_RE = /^[\w-]+$/
 
 function emailKey(value: string): string {
   return value.trim().toLowerCase()
@@ -229,6 +233,7 @@ function phoneKey(value: string): string {
 /** The host and path of a LinkedIn address, or `null` when the value is not one. */
 function linkedinKey(value: string): string | null {
   const trimmed = value.trim()
+  if (LINKEDIN_HANDLE_RE.test(trimmed)) return `linkedin.com/in/${trimmed.toLowerCase()}`
   let url: URL
   try {
     url = new URL(/^[a-z][a-z0-9+-]*:/i.test(trimmed) ? trimmed : `https://${trimmed}`)
@@ -251,9 +256,12 @@ function valueProblem(point: ContactPointDraft): string | null {
   }
   if (point.kind === 'phone') {
     const digits = value.replace(/\D/g, '').length
-    return digits >= PHONE_MIN_DIGITS && digits <= PHONE_MAX_DIGITS
+    if (value.length > PHONE_MAX_LENGTH) {
+      return `Numero di telefono troppo lungo (al massimo ${PHONE_MAX_LENGTH} caratteri)`
+    }
+    return digits >= PHONE_MIN_DIGITS
       ? null
-      : 'Numero di telefono non valido (da 3 a 20 cifre)'
+      : `Numero di telefono non valido (almeno ${PHONE_MIN_DIGITS} cifre)`
   }
   return linkedinKey(value) === null
     ? 'Serve l’indirizzo di un profilo su linkedin.com'
@@ -272,12 +280,20 @@ function comparisonKey(point: ContactPointDraft): string {
  * its kind says, and a value already above it in the list (same kind, same address, same
  * digits). A blank row is not checked: it is dropped on submit.
  */
-export function validatePoints(drafts: readonly ContactPointDraft[]): Record<string, string> {
+export function validatePoints(
+  drafts: readonly ContactPointDraft[],
+  initial?: readonly ContactPointDraft[],
+): Record<string, string> {
   const problems: Record<string, string> = {}
   const seen = new Set<string>()
+  // A value the record already had is never refused for its shape: what was stored before the
+  // rules existed must save again as it is (the server accepts it the same way).
+  const stored = new Set(
+    (initial ?? []).filter(isSendable).map((point) => `${point.kind}|${comparisonKey(point)}`),
+  )
   for (const point of drafts) {
     if (!isSendable(point)) continue
-    const invalid = valueProblem(point)
+    const invalid = stored.has(`${point.kind}|${comparisonKey(point)}`) ? null : valueProblem(point)
     if (invalid !== null) {
       problems[point.key] = invalid
       continue
@@ -325,6 +341,7 @@ export function pointErrors(
   drafts: readonly ContactPointDraft[],
   problem: ProblemDetail | null | undefined,
   checked: boolean,
+  initial?: readonly ContactPointDraft[],
 ): ContactPointErrors {
   const rows: Record<string, string> = {}
   let list: string | null = null
@@ -334,7 +351,7 @@ export function pointErrors(
     else rows[refused.key] = refused.message
   }
   if (checked) {
-    Object.assign(rows, validatePoints(drafts))
+    Object.assign(rows, validatePoints(drafts, initial))
     if (drafts.filter(isSendable).length > MAX_CONTACT_POINTS) {
       list = `Al massimo ${MAX_CONTACT_POINTS} recapiti`
     }
@@ -343,9 +360,12 @@ export function pointErrors(
 }
 
 /** True when the browser's own checks pass: the form may send. */
-export function pointsAreSendable(drafts: readonly ContactPointDraft[]): boolean {
+export function pointsAreSendable(
+  drafts: readonly ContactPointDraft[],
+  initial?: readonly ContactPointDraft[],
+): boolean {
   return (
-    Object.keys(validatePoints(drafts)).length === 0 &&
+    Object.keys(validatePoints(drafts, initial)).length === 0 &&
     drafts.filter(isSendable).length <= MAX_CONTACT_POINTS
   )
 }

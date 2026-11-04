@@ -8,6 +8,7 @@ import {
   newEmailAddresses,
   pointErrors,
   pointHref,
+  pointsAreSendable,
   pointsForRequest,
   pointsToBody,
   pointsToDrafts,
@@ -166,13 +167,42 @@ describe('the browser’s own checks', () => {
     })
   })
 
-  it('refuse a phone with fewer than three or more than twenty digits', () => {
+  it('refuse a phone with fewer than six digits or more than forty characters, whatever else it holds', () => {
     const problems = validatePoints([
-      draft('short', 'phone', '12'),
-      draft('long', 'phone', '1234567890123456789012'),
+      draft('short', 'phone', '12345'),
+      draft('long', 'phone', `1234567 ${'x'.repeat(40)}`),
       draft('ok', 'phone', '+39 02 1234567'),
+      draft('office', 'phone', '+39 345 1234567 (ufficio)'),
+      draft('ext', 'phone', '345-1234567 int. 2'),
     ])
     expect(Object.keys(problems)).toEqual(['short', 'long'])
+  })
+
+  it('refuse a display name or a list where an address is expected', () => {
+    const problems = validatePoints([
+      draft('angle', 'email', '<a@b.it>'),
+      draft('named', 'email', 'Name<a@b.it>'),
+      draft('two', 'email', 'a@b.it, c@d.it'),
+      draft('ok', 'email', 'a@b.it'),
+    ])
+    expect(Object.keys(problems)).toEqual(['angle', 'named', 'two'])
+  })
+
+  it('take a bare LinkedIn handle', () => {
+    expect(validatePoints([draft('a', 'linkedin', 'ada-lovelace')])).toEqual({})
+  })
+
+  it('never refuse for its shape a value the record already had', () => {
+    const stored = [
+      draft('1', 'email', 'ada(at)acme', true),
+      draft('2', 'phone', 'int. 2', true),
+      draft('3', 'linkedin', 'Ada on LinkedIn', true),
+    ]
+    const edited = [...stored, draft('4', 'email', 'new@acme.it')]
+    expect(validatePoints(edited, stored)).toEqual({})
+    // The same values are refused as soon as they are new.
+    expect(Object.keys(validatePoints(stored))).toEqual(['1', '2', '3'])
+    expect(pointsAreSendable(edited, stored)).toBe(true)
   })
 
   it('refuse a LinkedIn value that is not on linkedin.com, and take the forms the server takes', () => {

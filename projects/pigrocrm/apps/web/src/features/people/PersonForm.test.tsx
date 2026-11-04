@@ -534,6 +534,55 @@ describe('PersonForm', () => {
       expect(submitted(onSubmit)).not.toHaveProperty('contact_points')
     })
 
+    it('saves the rest of a record whose stored points would not pass today’s rules', async () => {
+      const onSubmit = vi.fn()
+      const legacy = [
+        { id: 'l1', kind: 'email', value: 'ada(at)acme', label: 'work', note: null, is_primary: true, position: 0 },
+        { id: 'l2', kind: 'phone', value: 'int. 2', label: 'work', note: null, is_primary: true, position: 1 },
+      ] as Person['contact_points']
+      renderWithClient(
+        <PersonForm
+          title="Modifica persona"
+          open
+          onOpenChange={vi.fn()}
+          customFields={[]}
+          initial={personToFormValues({ ...BASE_PERSON, contact_points: legacy })}
+          onSubmit={onSubmit}
+        />,
+      )
+
+      await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
+
+      expect(onSubmit).toHaveBeenCalledTimes(1)
+      expect(submitted(onSubmit)).not.toHaveProperty('contact_points')
+    })
+
+    it('keeps a stored value that fails today’s rules when another point is added', async () => {
+      const onSubmit = vi.fn()
+      const legacy = [
+        { id: 'l1', kind: 'email', value: 'ada(at)acme', label: 'work', note: null, is_primary: true, position: 0 },
+      ] as Person['contact_points']
+      renderWithClient(
+        <PersonForm
+          title="Modifica persona"
+          open
+          onOpenChange={vi.fn()}
+          customFields={[]}
+          initial={personToFormValues({ ...BASE_PERSON, contact_points: legacy })}
+          onSubmit={onSubmit}
+        />,
+      )
+
+      await userEvent.click(screen.getByRole('button', { name: 'Aggiungi recapito' }))
+      await userEvent.type(screen.getByLabelText('Valore recapito 2'), 'ada@acme.it')
+      await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
+
+      expect(submitted(onSubmit).contact_points).toEqual([
+        { kind: 'email', value: 'ada(at)acme', label: 'work', note: null, is_primary: true },
+        { kind: 'email', value: 'ada@acme.it', label: 'work', note: null, is_primary: false },
+      ])
+    })
+
     it('sends the whole list in the order it was put in once a point moved', async () => {
       const onSubmit = vi.fn()
       renderWithClient(
