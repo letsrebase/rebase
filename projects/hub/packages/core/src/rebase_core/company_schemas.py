@@ -106,9 +106,13 @@ class CompanyCreate(CompanyFields):
 class CompanyAdminCreate(CompanyCreate):
     """What an admin opens a request with, on the contact's behalf (REB-870): the
     wizard's fields, validated the same way, plus the CRM deal the company already has,
-    when it has one. With it the CRM links that deal and creates nothing."""
+    when it has one. With it the CRM links that deal and creates nothing. `contact_points`
+    are the contact's extra addresses, numbers and profiles."""
 
     deal_id: UUID | None = None
+    # Extra ways to reach the contact (REB-948), added to what they already keep: see
+    # `ContactPointService.add`. `phone` stays their primary number.
+    contact_points: list[ContactPointInput] = Field(default_factory=list)
 
 
 class CompanyUpdate(CompanyFields):

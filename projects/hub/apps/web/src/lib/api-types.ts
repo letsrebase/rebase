@@ -3238,7 +3238,8 @@ export interface components {
          * CompanyAdminCreate
          * @description What an admin opens a request with, on the contact's behalf (REB-870): the
          *     wizard's fields, validated the same way, plus the CRM deal the company already has,
-         *     when it has one. With it the CRM links that deal and creates nothing.
+         *     when it has one. With it the CRM links that deal and creates nothing. `contact_points`
+         *     are the contact's extra addresses, numbers and profiles.
          */
         CompanyAdminCreate: {
             /** Project */
@@ -3283,6 +3284,8 @@ export interface components {
             ref?: string | null;
             /** Deal Id */
             deal_id?: string | null;
+            /** Contact Points */
+            contact_points?: components["schemas"]["ContactPointInput"][];
         };
         /**
          * CompanyCreate
@@ -4045,6 +4048,8 @@ export interface components {
             links?: string[];
             /** Sources */
             sources: string[];
+            /** Contact Points */
+            contact_points?: components["schemas"]["ContactPointInput"][];
         };
         /**
          * FreelancerList

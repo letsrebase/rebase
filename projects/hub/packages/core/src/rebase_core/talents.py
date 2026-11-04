@@ -68,6 +68,7 @@ from sqlalchemy.orm import Session, aliased, defer
 from rebase_core.bands import Band, band_for
 from rebase_core.card_level import level
 from rebase_core.card_rows import card_emails, card_row_fields
+from rebase_core.contact_points import has_point_matching
 from rebase_core.duplicates import duplicates_of
 from rebase_core.errors import NotFound, ValidationFailed
 from rebase_core.freelancers import LEAD_STATE
@@ -419,6 +420,10 @@ class _Filters:
         return not self.card_only and self.has_cv is not True
 
 
+# What a search term is read against on a card, besides the person's extra contact points.
+_CARD_SEARCH_COLUMNS = (User.first_name, User.last_name, User.email, Freelancer.job_title)
+
+
 def _card_stmt(f: _Filters, *, counting: bool = False) -> Select[Freelancer, User]:
     """Every freelancer card, `status` left for the caller to filter separately -- this
     statement backs both the listing and `_counts`' per-state `GROUP BY`, and the
@@ -429,8 +434,9 @@ def _card_stmt(f: _Filters, *, counting: bool = False) -> Select[Freelancer, Use
         stmt = stmt.join(User, User.id == Freelancer.user_id)
     stmt = stmt.where(Freelancer.deleted_at.is_(None))
     if f.q:
-        search_cols = (User.first_name, User.last_name, User.email, Freelancer.job_title)
-        stmt = stmt.where(matches_any(search_cols, f.q))
+        stmt = stmt.where(
+            or_(matches_any(_CARD_SEARCH_COLUMNS, f.q), has_point_matching(User.id, f.q))
+        )
     if f.job_title:
         stmt = stmt.where(Freelancer.job_title.ilike(f"%{escape_like(f.job_title)}%"))
     if f.remote is not None:
@@ -658,8 +664,11 @@ class TalentsService:
             elif order.ranked_by == "experience_years":
                 sort_col = _card_experience_years()
             elif sort_spec.key == "score":
-                search_cols = (User.first_name, User.last_name, User.email, Freelancer.job_title)
-                sort_col = similarity_score(search_cols, term)
+                # A person found by one of their extra points ranks like an exact address.
+                sort_col = func.greatest(
+                    similarity_score(_CARD_SEARCH_COLUMNS, term),
+                    case((has_point_matching(User.id, term), 1.0), else_=0.0),
+                )
             else:
                 sort_col = Freelancer.created_at
             if sort_spec.key != "created_at":

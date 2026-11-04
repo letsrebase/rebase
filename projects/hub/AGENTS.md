@@ -410,6 +410,21 @@ kind through the generated `value_key`, one owner per address).
   (`MemberService.update_contact_points`), which leaves a note of the person's own. The web editor is
   `components/ContactPointsEditor.tsx`, used by both override dialogs and by «I tuoi recapiti»
   (`pages/member/Contacts.tsx`).
+- **Adding points at creation (REB-948).** `create_company` (`CompanyAdminCreate.contact_points`, so the admin
+  API takes it too) and `create_freelancer_from_signup` (`FreelancerDraft.contact_points`) take a list that
+  `ContactPointService.add` merges into what the person already keeps: their own points stay, a point they
+  already have (same kind, same compared value) is left as it is, a new one is never primary on its own
+  (`is_primary` is accepted and ignored; the first phone or profile becomes primary when there is none, and
+  for a request the flat `phone` stays the primary number), and the whole list goes through `replace`, so
+  every rule of a write applies. `check_added` runs before anything is written, so a refused point (another
+  person's login or extra address) leaves no contact and no request behind. The CRM gets the points with the
+  request, as for any stored point.
+- **Search reads the points (REB-948).** `q` of the admin Talenti and Aziende lists, and so of the MCP
+  `list_talents` and `list_companies`, also matches a person's extra points
+  (`contact_points.has_point_matching`): the text of any point, or a phone by its digits (at least three, the
+  CRM's rule). There is no trigram index on `user_contact_points.value`: the table is small and the match is
+  a correlated `EXISTS`. A person found only through a point ranks like an exact address. The sign-up leads
+  have no user, so their search is unchanged.
 - **Not here yet.** The leads door payload to the CRM is unchanged (`contact.phone` is the primary phone
   point); a later milestone adds `contact.contact_points`.
 

@@ -277,8 +277,10 @@ class FreelancerService:
         area. One row per address still: a second research on a card the admin wrote
         replaces the researched fields and leaves `status`, the notes and the CV alone; a
         research on a card the person filled (`compilata_da == "persona"`) is refused,
-        because their own words win. One note in the thread, written by `admin_id` through
-        `source`, names the sources, so whoever reads the card can check where it came from."""
+        because their own words win. `contact_points` found publicly are added to the person's
+        list, never replacing it (`ContactPointService.add`). One note in the thread, written
+        by `admin_id` through `source`, names the sources, so whoever reads the card can check
+        where it came from."""
         signup = self.session.get(Signup, signup_id)
         if signup is None:
             raise NotFound("signup", signup_id)
@@ -287,15 +289,17 @@ class FreelancerService:
         if row is not None and row.filled_by == "person":
             raise ValidationFailed(ENTITY, "email", "la persona ha già compilato la sua scheda")
         created = row is None
+        points = ContactPointService(self.session)
         if row is None:
             utm = {column: getattr(signup, column) for column in UTM_COLUMNS}
             users = UserService(self.session)
             holder, owner = users.by_linkedin(data.linkedin_url), users.person(email)
             if holder is not None and (owner is None or holder.id != owner.id):
                 raise ValidationFailed(ENTITY, "linkedin_url", LINKEDIN_HAS_CARD)
-            user = UserService(self.session).get_or_create(
-                email, data.first_name, data.last_name, data.linkedin_url
-            )
+            # What the extra points would break is said before the person is written.
+            points.check_added(owner or User(email=email), data.contact_points)
+            user = users.get_or_create(email, data.first_name, data.last_name, data.linkedin_url)
+            points.add(user, data.contact_points)
             row = Freelancer(user_id=user.id, **utm)
             self.session.add(row)
         else:
@@ -303,12 +307,14 @@ class FreelancerService:
             # been corrected, so the linked `users` row follows it too, in this commit.
             existing_user = self.session.get(User, row.user_id)
             if existing_user is not None:
+                points.check_added(existing_user, data.contact_points)
                 UserService(self.session).require_free_linkedin(existing_user.id, data.linkedin_url)
                 existing_user.first_name, existing_user.last_name, existing_user.linkedin_url = (
                     data.first_name,
                     data.last_name,
                     data.linkedin_url,
                 )
+                points.add(existing_user, data.contact_points)
         row.job_title = data.job_title
         row.daily_rate = data.daily_rate
         row.remote = data.remote

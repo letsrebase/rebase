@@ -37,6 +37,7 @@ def register(mcp: MCPServer, deps: Deps) -> None:
         daily_rate: str | None = None,
         remote: str | None = None,
         links: list[str] | None = None,
+        contact_points: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
         """Creates (or rewrites) the freelancer card of a signup with what can be found
         publicly about that person: first and last name required, then the LinkedIn profile,
@@ -45,7 +46,19 @@ def register(mcp: MCPServer, deps: Deps) -> None:
         along with the CV: the person fills them in from their own area. `sources` are the
         https addresses the information comes from, from one to ten, and they are saved as a
         note in the card's thread, signed by the admin behind the token. A card the person
-        has already filled in is not touched: the tool refuses."""
+        has already filled in is not touched: the tool refuses.
+        `contact_points` are the person's public ways to reach them, found at the same
+        sources: a list of objects `{"kind": "email"|"phone"|"linkedin", "value": str,
+        "label": "work"|"personal"|"billing"|"other", "note": str|null (at most 200
+        characters)}`. They are added to what the person already keeps, never replacing it (a
+        point they already have is left as it is), and none is primary on its own: the first
+        phone and the first profile become the primary one when there is none. The sign-up's
+        address stays the login and the primary email; an extra address is unverified, never
+        receives mail and never decides who somebody is. An address that is another person's
+        login or extra address is refused with its name, and nothing is written. The card
+        comes back with `contact_points`, the login address first."""
+        # The points are validated by the model, which turns each dict into a point.
+        extra: dict[str, Any] = {"contact_points": contact_points or []}
         draft = FreelancerDraft(
             first_name=first_name,
             last_name=last_name,
@@ -55,6 +68,7 @@ def register(mcp: MCPServer, deps: Deps) -> None:
             remote=as_remote(remote),
             links=links or [],
             sources=sources,
+            **extra,
         )
         # `draft_from_signup` returns through `get()`, which now answers a
         # `FreelancerDetail` for the admin HTTP route (REB-284); this tool keeps the

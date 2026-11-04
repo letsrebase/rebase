@@ -212,3 +212,207 @@ async def test_create_company_without_the_crm_waits_as_to_link(
         assert made["crm_status"] == "to_link"
     finally:
         _wipe(factory)
+
+
+_POINTS = [
+    {"kind": "email", "value": "maria.verdi@gmail.com", "label": "personal"},
+    {"kind": "phone", "value": "+39 02 7654321", "label": "billing", "note": "ufficio"},
+    {"kind": "linkedin", "value": "linkedin.com/in/maria-verdi", "label": "work"},
+]
+
+
+def _read(point: dict[str, Any]) -> tuple[str, str, str, str | None, bool]:
+    return (point["kind"], point["value"], point["label"], point["note"], point["is_primary"])
+
+
+async def test_create_company_stores_the_contact_points_and_sends_them_to_the_crm(
+    factory: sessionmaker[Session],
+) -> None:
+    """REB-948: the extra points go on the contact at creation, validated by the one service,
+    and the CRM gets them with the request (the login address stays the door's `email`)."""
+    from fakes_pigro import DEAL, DEAL_URL, TOKEN, RecordedPigro
+
+    _wipe(factory)
+    _seed_admin(factory)
+    known = str(UUID(int=77))
+    body = {
+        "customer_id": str(UUID(int=7)),
+        "person_id": None,
+        "deal_id": str(DEAL),
+        "deal_url": DEAL_URL,
+        "creato": False,
+    }
+    fake = RecordedPigro([(200, json.dumps(body).encode())])
+    try:
+        async with Client(_crm_server(factory, fake, TOKEN)) as client:
+            made = _payload(
+                await client.call_tool(
+                    "create_company",
+                    {**_COMPANY_ARGS, "deal_id": known, "contact_points": _POINTS},
+                )
+            )
+            again = _payload(await client.call_tool("get_company", {"company_id": made["id"]}))
+        # The login address first, then the phone the request carried (primary), then the
+        # extras in the order sent: an address never primary, the first profile primary.
+        assert [_read(p) for p in made["contact_points"]] == [
+            ("email", "maria@studiorossi.it", "work", None, True),
+            ("phone", "+39 345 1234567", "work", None, True),
+            ("email", "maria.verdi@gmail.com", "personal", None, False),
+            ("phone", "+39 02 7654321", "billing", "ufficio", False),
+            ("linkedin", "https://www.linkedin.com/in/maria-verdi", "work", None, True),
+        ]
+        assert again["contact_points"] == made["contact_points"]
+        sent = json.loads(fake.calls[0][3])["contact"]
+        assert sent["email"] == "maria@studiorossi.it"
+        assert [
+            (p["kind"], p["value"], p["label"], p["note"], p["is_primary"])
+            for p in sent["contact_points"]
+        ] == [
+            ("phone", "+39 345 1234567", "work", None, True),
+            ("email", "maria.verdi@gmail.com", "personal", None, False),
+            ("phone", "+39 02 7654321", "billing", "ufficio", False),
+            ("linkedin", "https://www.linkedin.com/in/maria-verdi", "work", None, True),
+        ]
+    finally:
+        _wipe(factory)
+
+
+async def test_create_company_adds_points_to_a_contact_already_on_file(
+    factory: sessionmaker[Session],
+) -> None:
+    """A contact found by email keeps their own points: the new ones are added, a point they
+    already have is left as it is, and a new one is never primary on its own."""
+    _wipe(factory)
+    _seed_admin(factory)
+    try:
+        async with Client(build_server(factory, lambda: IVAN)) as client:
+            first = _payload(
+                await client.call_tool(
+                    "create_company", {**_COMPANY_ARGS, "contact_points": _POINTS[:2]}
+                )
+            )
+            second = _payload(
+                await client.call_tool(
+                    "create_company",
+                    {
+                        **_COMPANY_ARGS,
+                        "project": "Un secondo progetto.",
+                        "contact_points": [
+                            {
+                                "kind": "phone",
+                                "value": "+39 02 7654321",
+                                "label": "other",
+                                "note": "diverso",
+                            },
+                            {
+                                "kind": "phone",
+                                "value": "+39 333 0000000",
+                                "label": "personal",
+                                "is_primary": True,
+                            },
+                            _POINTS[2],
+                        ],
+                    },
+                )
+            )
+        assert first["id"] != second["id"]
+        assert [_read(p) for p in second["contact_points"]] == [
+            ("email", "maria@studiorossi.it", "work", None, True),
+            ("phone", "+39 345 1234567", "work", None, True),
+            ("email", "maria.verdi@gmail.com", "personal", None, False),
+            ("phone", "+39 02 7654321", "billing", "ufficio", False),
+            ("phone", "+39 333 0000000", "personal", None, False),
+            ("linkedin", "https://www.linkedin.com/in/maria-verdi", "work", None, True),
+        ]
+    finally:
+        _wipe(factory)
+
+
+async def test_create_company_refuses_a_point_that_is_another_persons_login_and_writes_nothing(
+    factory: sessionmaker[Session],
+) -> None:
+    from rebase_core.models import Company, User
+
+    _wipe(factory)
+    _seed_admin(factory)
+    _seed_company(factory)  # wile@acme.it is somebody's login address
+    try:
+        async with Client(build_server(factory, lambda: IVAN)) as client:
+            refused = await client.call_tool(
+                "create_company",
+                {
+                    **_COMPANY_ARGS,
+                    "contact_points": [
+                        {"kind": "email", "value": "Wile@acme.it", "label": "work"},
+                    ],
+                },
+            )
+            login = await client.call_tool(
+                "create_company",
+                {
+                    **_COMPANY_ARGS,
+                    "contact_points": [
+                        {"kind": "email", "value": "maria@studiorossi.it", "label": "work"},
+                    ],
+                },
+            )
+            malformed = await client.call_tool(
+                "create_company",
+                {
+                    **_COMPANY_ARGS,
+                    "contact_points": [{"kind": "email", "value": "non-un-indirizzo"}],
+                },
+            )
+        assert refused.is_error
+        assert "wile@acme.it" in refused.content[0].text
+        assert "un'altra persona" in refused.content[0].text
+        assert login.is_error  # the contact's own login is not an extra point
+        assert malformed.is_error
+        session = factory()
+        try:
+            assert session.query(Company).count() == 1  # only the seeded one
+            emails = {u.email for u in session.query(User)}
+            assert "maria@studiorossi.it" not in emails
+        finally:
+            session.close()
+    finally:
+        _wipe(factory)
+
+
+async def test_list_companies_q_finds_a_company_by_an_extra_email_a_phone_or_a_profile(
+    factory: sessionmaker[Session],
+) -> None:
+    from rebase_core.contact_points import ContactPointInput, ContactPointService
+    from rebase_core.models import User
+
+    _wipe(factory)
+    company_id = _seed_company(factory)
+    session = factory()
+    try:
+        user = session.query(User).filter_by(email="wile@acme.it").one()
+        ContactPointService(session).replace(
+            user,
+            [
+                ContactPointInput(kind="email", value="coyote@desert.example", label="personal"),
+                ContactPointInput(kind="phone", value="+39 388 871 3657", label="other"),
+                ContactPointInput(kind="linkedin", value="linkedin.com/in/wile-e", label="work"),
+            ],
+        )
+        session.commit()
+    finally:
+        session.close()
+    try:
+        async with Client(build_server(factory, lambda: IVAN)) as client:
+            for term in (
+                "coyote@desert",
+                "3888713657",
+                "+39 388 871 3657",
+                "388-871-3657",
+                "wile-e",
+            ):
+                found = _payload(await client.call_tool("list_companies", {"q": term}))
+                assert [row["id"] for row in found["items"]] == [company_id], term
+            none = _payload(await client.call_tool("list_companies", {"q": "3880000000"}))
+            assert none["items"] == []
+    finally:
+        _wipe(factory)

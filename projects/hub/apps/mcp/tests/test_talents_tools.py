@@ -478,3 +478,50 @@ async def test_get_talent_answers_to_card_with_the_detail_and_to_lead_with_the_r
         assert missing.is_error
         assert "talento" in missing.content[0].text and "non trovato" in missing.content[0].text
     _wipe(factory)
+
+
+async def test_list_talents_q_finds_a_person_by_an_extra_email_a_phone_or_a_profile(
+    factory: sessionmaker[Session],
+) -> None:
+    """REB-948: `q` reads the contact points as well as the login address, a phone by its
+    digits like the CRM's search, and an exact extra address ranks first."""
+    from rebase_core.contact_points import ContactPointInput, ContactPointService
+
+    ada = _card(factory, "ada@studio.it", first_name="Ada")
+    _card(factory, "grace@studio.it", first_name="Grace")
+    session = factory()
+    try:
+        user = session.query(User).filter_by(email="ada@studio.it").one()
+        ContactPointService(session).replace(
+            user,
+            [
+                ContactPointInput(kind="email", value="Ada.Private@gmail.com", label="personal"),
+                ContactPointInput(kind="phone", value="+39 388 871 3657", label="other"),
+                ContactPointInput(kind="linkedin", value="linkedin.com/in/ada-l", label="work"),
+            ],
+        )
+        session.commit()
+    finally:
+        session.close()
+    async with _server(factory) as client:
+        for term in (
+            "ada.private@gmail",
+            "3888713657",
+            "+393888713657",
+            "388-871-3657",
+            "388 871 3657",
+            "ada-l",
+        ):
+            found = _payload(await client.call_tool("list_talents", {"q": term}))
+            assert [row["id"] for row in found["items"]] == [ada], term
+        none = _payload(await client.call_tool("list_talents", {"q": "3880000000"}))
+        assert none["items"] == []
+        # The row is short; the detail carries every way to reach the person.
+        detail = _payload(await client.call_tool("get_talent", {"talent_id": ada}))
+        assert detail["phone"] == "+39 388 871 3657"
+        assert [(p["kind"], p["value"]) for p in detail["contact_points"]] == [
+            ("email", "ada@studio.it"),
+            ("email", "Ada.Private@gmail.com"),
+            ("phone", "+39 388 871 3657"),
+            ("linkedin", "https://www.linkedin.com/in/ada-l"),
+        ]
