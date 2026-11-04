@@ -131,8 +131,15 @@ def test_the_same_digits_with_and_without_the_plus_are_two_numbers() -> None:
     [
         ("email", "non-una-email"),
         ("email", "  "),
-        ("phone", "12"),
+        ("email", "<a@b.it>"),
+        ("email", "Name<a@b.it>"),
+        ("email", "Name <a@b.it>"),
+        ("email", "a@b.it, c@d.it"),
+        ("email", "a@b.it;c@d.it"),
+        ("email", '"a"@b.it'),
+        ("phone", "12345"),
         ("phone", "abc"),
+        ("phone", "1234567 " + "x" * 40),
         ("linkedin", "https://example.com/in/ada"),
     ],
 )
@@ -140,6 +147,63 @@ def test_a_value_that_is_not_what_its_kind_says_is_refused(kind: str, value: str
     with pytest.raises(ValidationFailed) as exc:
         prepare("person", [_point(kind, value)])
     assert exc.value.details["field"] == "contact_points[0]"
+
+
+@pytest.mark.parametrize(
+    "value", ["+39 345 1234567 (ufficio)", "345-1234567 int. 2", "02 1234567", "123456"]
+)
+def test_a_phone_is_whatever_is_written_with_enough_digits(value: str) -> None:
+    [stored] = prepare("person", [_point("phone", value)])
+
+    assert stored.value == value
+    assert stored.normalized == phone_key(value)
+
+
+def test_a_bare_linkedin_handle_is_the_profile() -> None:
+    [stored] = prepare("person", [_point("linkedin", "Ada-Lovelace")])
+
+    assert stored.value == "https://www.linkedin.com/in/ada-lovelace"
+
+
+def test_a_stored_value_is_accepted_as_it_is_where_the_rules_would_refuse_it() -> None:
+    """What was stored before the rules, or by a looser version of them, saves again
+    unchanged and beside something new; the same text as a new value is refused."""
+    stored = [
+        _row("email", "ada(at)acme", "ada(at)acme"),
+        _row("phone", "int. 2", "2"),
+        _row("linkedin", "Ada on LinkedIn", "ada on linkedin"),
+    ]
+    sent = [
+        _point("email", "ada(at)acme"),
+        _point("phone", "int. 2"),
+        _point("linkedin", "Ada on LinkedIn"),
+        _point("email", "new@acme.it"),
+    ]
+
+    prepared = prepare("person", sent, stored)
+
+    assert [p.value for p in prepared] == [
+        "ada(at)acme",
+        "int. 2",
+        "Ada on LinkedIn",
+        "new@acme.it",
+    ]
+    with pytest.raises(ValidationFailed):
+        prepare("person", sent[:3])
+    # A different broken value is still refused: only what the owner already had passes.
+    with pytest.raises(ValidationFailed):
+        prepare("person", [_point("email", "ada(at)other")], stored)
+
+
+def _row(kind: str, value: str, normalized: str) -> ContactPoint:
+    return ContactPoint(
+        kind=kind,
+        value=value,
+        normalized=normalized,
+        label="work",
+        is_primary=True,
+        position=0,
+    )
 
 
 def test_a_linkedin_profile_is_stored_the_way_the_hub_stores_it() -> None:

@@ -8,6 +8,7 @@ a deal's value lines do. What a lookup compares is `normalized`, never `value`.
 from __future__ import annotations
 
 import re
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Literal
@@ -16,7 +17,7 @@ from uuid import UUID
 from sqlalchemy import ColumnElement, Select, and_, delete, or_, select
 from sqlalchemy.orm import InstrumentedAttribute, Session
 
-from pigrocrm.core.contact_points.linkedin import normalise_linkedin
+from pigrocrm.core.contact_points.linkedin import LINKEDIN_PROFILE, normalise_linkedin
 from pigrocrm.core.contact_points.models import ContactPoint
 from pigrocrm.core.contact_points.schemas import MAX_CONTACT_POINTS, ContactPointIn
 from pigrocrm.core.db import escape_like
@@ -30,9 +31,15 @@ if TYPE_CHECKING:
 
 FIELD = "contact_points"
 # `.fullmatch()`, not `.match()`: a `$`-anchored pattern accepts a trailing newline.
-EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
-PHONE_MIN_DIGITS = 3
-PHONE_MAX_DIGITS = 20
+# A bare address: no whitespace and none of `<>,;"()`, so `Name <a@b.it>` and `a@b.it, c@d.it`
+# are not one.
+EMAIL_RE = re.compile(r'^[^@\s<>,;"()]+@[^@\s<>,;"()]+\.[^@\s<>,;"()]+$')
+# A phone is whatever a person writes (`+39 345 1234567 (ufficio)`, `345-1234567 int. 2`): what
+# it must hold is enough digits to be a number, and fit its column.
+PHONE_MIN_DIGITS = 6
+PHONE_MAX_LENGTH = 40
+# A LinkedIn value that is only a handle, which means `linkedin.com/in/<handle>`.
+LINKEDIN_HANDLE_RE = re.compile(r"[\w-]+")
 
 
 @dataclass(frozen=True)
@@ -69,13 +76,18 @@ def _normalise(entity: str, index: int, point: ContactPointIn) -> tuple[str, str
         return value, email_key(value)
     if point.kind == "phone":
         digits = len(re.sub(r"\D", "", value))
-        if not PHONE_MIN_DIGITS <= digits <= PHONE_MAX_DIGITS:
+        if digits < PHONE_MIN_DIGITS or len(value) > PHONE_MAX_LENGTH:
             raise ValidationFailed(
-                entity, where, "numero di telefono non valido", expected="+39 02 1234567"
+                entity,
+                where,
+                "numero di telefono non valido",
+                expected=f"da {PHONE_MIN_DIGITS} cifre, {PHONE_MAX_LENGTH} caratteri al massimo",
             )
         return value, phone_key(value)
     try:
-        canonical = normalise_linkedin(value)
+        canonical = normalise_linkedin(
+            LINKEDIN_PROFILE + value.lower() if LINKEDIN_HANDLE_RE.fullmatch(value) else value
+        )
     except ValueError as error:
         raise ValidationFailed(
             entity, where, str(error), expected="https://www.linkedin.com/in/nome"
@@ -83,12 +95,28 @@ def _normalise(entity: str, index: int, point: ContactPointIn) -> tuple[str, str
     return canonical, canonical.lower()
 
 
-def prepare(entity: str, points: list[ContactPointIn]) -> list[PreparedPoint]:
+def _loose_key(point: ContactPointIn) -> tuple[str, str]:
+    """What a value is compared by with no rule applied: the key a stored point of this kind
+    has, however its value was written before the rules existed."""
+    value = point.value.strip()
+    if point.kind == "phone":
+        return point.kind, phone_key(value)
+    return point.kind, value.lower()
+
+
+def prepare(
+    entity: str, points: list[ContactPointIn], stored: Sequence[ContactPoint] = ()
+) -> list[PreparedPoint]:
     """Validates a whole list and answers it as it will be stored, in order.
 
     Refused: a value that is not what its kind says, the same value twice (same kind and
     same normalised value), two primaries of one kind. A kind that has points and no
     primary gets its first point as the primary.
+
+    `stored` is the owner's list as it is now. A point that is the same value as one of those
+    (same kind, same compared key) is accepted as it is even where today's rules would refuse
+    it, so that a list read back and sent unchanged always saves: what was stored before the
+    rules (or by a looser version of them) is not the caller's to fix to save something else.
     """
     if len(points) > MAX_CONTACT_POINTS:
         raise ValidationFailed(
@@ -97,7 +125,15 @@ def prepare(entity: str, points: list[ContactPointIn]) -> list[PreparedPoint]:
             f"al massimo {MAX_CONTACT_POINTS} recapiti",
             expected="una lista più corta",
         )
-    normalised = [_normalise(entity, index, point) for index, point in enumerate(points)]
+    already = {(row.kind, row.normalized) for row in stored}
+    normalised: list[tuple[str, str]] = []
+    for index, point in enumerate(points):
+        try:
+            normalised.append(_normalise(entity, index, point))
+        except ValidationFailed:
+            if _loose_key(point) not in already:
+                raise
+            normalised.append((point.value.strip(), _loose_key(point)[1]))
     seen: set[tuple[str, str]] = set()
     primaries: dict[str, int] = {}
     for index, (point, (_, key)) in enumerate(zip(points, normalised, strict=True)):
@@ -144,7 +180,7 @@ def write_points(session: Session, owner: Person | Customer, points: list[Contac
     """
     is_person = owner.__tablename__ == "people"
     entity = "person" if is_person else "customer"
-    prepared = prepare(entity, points)
+    prepared = prepare(entity, points, owner.contact_points)
     stored = [
         (row.kind, row.value, row.label, row.note, row.is_primary) for row in owner.contact_points
     ]

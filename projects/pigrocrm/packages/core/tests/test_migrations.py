@@ -2,6 +2,7 @@ from datetime import date
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
+from uuid import UUID
 
 import pytest
 from alembic.autogenerate import compare_metadata
@@ -2849,3 +2850,105 @@ def test_0073_turns_the_five_columns_into_primary_work_points_and_downgrade_rest
             "ix_customers_email_lower",
             "ix_customers_email_trgm",
         }
+
+
+def test_0073_carries_legacy_free_text_and_an_owner_holding_it_saves_unchanged(
+    pigrocrm_postgres: Any, capfd: pytest.CaptureFixture[str]
+) -> None:
+    """REB-940 over free text the old columns allowed. It is carried over as typed (nothing is
+    validated by the migration); a phone with no digit becomes the note of its owner's email
+    point, or, with no email to carry it, is named in the log with the owner's id; and an owner
+    that holds such values saves, with the list read back, unchanged and with something else
+    added: what predates the rules is never the reason a save is refused."""
+    from sqlalchemy.orm import Session
+
+    from pigrocrm.core.actor import Actor
+    from pigrocrm.core.contact_points.schemas import ContactPointIn
+    from pigrocrm.core.people.schemas import PersonUpdate
+    from pigrocrm.core.people.service import PersonService
+
+    entity = "00000000-0000-7000-8000-0000000000e1"
+    customer = "00000000-0000-7000-8000-0000000000c1"
+    legacy = "00000000-0000-7000-8000-0000000000b1"
+    noted = "00000000-0000-7000-8000-0000000000b2"
+    orphan = "00000000-0000-7000-8000-0000000000b3"
+    with pigrocrm_postgres.fresh_container() as container:
+        url = container.get_connection_url()
+        config = _alembic_config(url)
+        upgrade(config, "0072")
+        engine: Engine = create_engine(url)
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    "INSERT INTO legal_entities (id, name, legal_name, country) "
+                    f"VALUES ('{entity}', 'E', 'E srl', 'IT')"
+                )
+            )
+            connection.execute(
+                text(
+                    "INSERT INTO customers (id, legal_name, country, legal_entity_id, "
+                    "custom_fields) VALUES (:id, 'C', 'IT', :entity, '{}')"
+                ),
+                {"id": customer, "entity": entity},
+            )
+            for person, email, phone, linkedin in (
+                (legacy, "ada(at)acme", "tel. 02 123 45 (ufficio)", "Ada Lovelace on LinkedIn"),
+                (noted, "noted@acme.it", "n/a", None),
+                (orphan, None, "chiedere in portineria", None),
+            ):
+                connection.execute(
+                    text(
+                        "INSERT INTO people (id, first_name, customer_id, email, phone, "
+                        "linkedin, custom_fields) VALUES (:id, :name, :customer, :email, "
+                        ":phone, :linkedin, '{}')"
+                    ),
+                    {
+                        "id": person,
+                        "name": f"P{person[-2:]}",
+                        "customer": customer,
+                        "email": email,
+                        "phone": phone,
+                        "linkedin": linkedin,
+                    },
+                )
+        engine.dispose()
+
+        capfd.readouterr()
+        upgrade(config, "0073")
+        # Alembic's own logging setup replaces the logger's handlers, so the line is read where
+        # it is written: the console.
+        seen = capfd.readouterr().err.splitlines()
+        lines = [m for m in seen if "legacy phone" in m]
+        assert len(lines) == 1 and orphan in lines[0] and "chiedere in portineria" in lines[0]
+
+        engine = create_engine(url)
+        with Session(engine) as session:
+            service = PersonService(session)
+            actor = Actor(id=None, type="system", role="admin")
+            before = service.get(UUID(legacy), actor)
+            assert [(p.kind, p.value) for p in before.contact_points] == [
+                ("email", "ada(at)acme"),
+                ("phone", "tel. 02 123 45 (ufficio)"),
+                ("linkedin", "Ada Lovelace on LinkedIn"),
+            ]
+            assert service.get(UUID(noted), actor).contact_points[0].note == "Telefono: n/a"
+            assert service.get(UUID(orphan), actor).contact_points == []
+
+            sent = [
+                ContactPointIn.model_validate(p.model_dump(exclude={"id", "position"}))
+                for p in before.contact_points
+            ]
+            # Unchanged: saves, and writes nothing.
+            unchanged = service.update(UUID(legacy), PersonUpdate(contact_points=sent), actor)
+            assert [p.id for p in unchanged.contact_points] == [p.id for p in before.contact_points]
+            # With a new point beside them: saves, and the legacy values stay as they were.
+            sent.append(ContactPointIn(kind="email", value="ada@acme.it"))
+            grown = service.update(UUID(legacy), PersonUpdate(contact_points=sent), actor)
+            assert [(p.kind, p.value) for p in grown.contact_points] == [
+                ("email", "ada(at)acme"),
+                ("phone", "tel. 02 123 45 (ufficio)"),
+                ("linkedin", "Ada Lovelace on LinkedIn"),
+                ("email", "ada@acme.it"),
+            ]
+            assert grown.email == "ada(at)acme"
+        engine.dispose()

@@ -134,3 +134,18 @@ CRM with every point of its contact. That changes the payload's shape, so the `h
   seek: its tables are small, and the field is still reported as `email`.
 - **A change to the list bumps the owner's `updated_at`**, since the owner row itself does
   not change and the lists sorted by «recently touched» would miss it.
+- **The people and customer list searches left the trigram BitmapOr too.** `owners_matching`
+  answers them with a `value`/`normalized` `ILIKE` over `contact_points` joined back as an
+  `IN`, so the four-way OR of one table's trigram indexes is now a semi-join; acceptable at a
+  space's size, and both `contact_points` trigram indexes serve it.
+- **Legacy values never block a save (review of 2026-11-04).** A point that is the same value
+  (same kind, same compared key) as one the owner already has is accepted as it is, even where
+  the rules would refuse it as a new value, so a list read back and sent unchanged always
+  saves (`prepare(..., stored)`); the web forms also send and check `contact_points` only
+  when the list changed. The rules are what the old columns held: a phone is trimmed, at most
+  40 characters, at least 6 digits, any other characters, compared on its digits (a leading `+`
+  kept); an email is a bare address (none of `<>,;"()` or whitespace); a bare LinkedIn handle
+  becomes `https://www.linkedin.com/in/<handle>`.
+- **Migration 0073 and a phone with no digit.** It is not dropped in silence: it becomes the
+  note (`Telefono: <text>`) of the owner's primary email point when the owner has one, and
+  otherwise is left out and named in the migration's log, one line per owner id.

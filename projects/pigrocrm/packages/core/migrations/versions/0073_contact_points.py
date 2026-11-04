@@ -20,16 +20,23 @@ every child table does (0048, 0068, 0070); `statements()` is what the test templ
 after `create_all`.
 
 Existing data: every non-blank value of the five columns becomes a primary point labelled
-`work` (a phone with no digit is not a phone and is not carried over), email first, then phone,
-then LinkedIn. The lowercase and trigram indexes on `email` move to `contact_points`.
+`work`, email first, then phone, then LinkedIn. A phone with no digit is not a phone, and is not
+dropped in silence: it becomes the note of the owner's email point (`Telefono: <text>`) when
+the owner has one, and otherwise is left out and named in the migration's log, one line per
+owner id (`legacy phone with no digit not carried over`). Nothing else is validated: a value
+that today's rules would refuse is carried over as it is. The lowercase and trigram indexes on
+`email` move to `contact_points`.
 `downgrade` restores the five columns, their indexes and the primary values; the points beyond
 the first of a kind, labels and notes are lost with the table.
 """
 
+import logging
 from collections.abc import Sequence
 
 import sqlalchemy as sa
 from alembic import op
+
+log = logging.getLogger("alembic.runtime.migration")
 
 revision: str = "0073"
 down_revision: str | Sequence[str] | None = "0072"
@@ -78,6 +85,34 @@ def _backfill(owner: str, table: str, kinds: Sequence[tuple[str, str, str]]) -> 
         "row_number() OVER (PARTITION BY owner_id ORDER BY weight) - 1 "
         f"FROM ({parts}) AS found"
     )
+
+
+def _carry_digitless_phones(owner: str, table: str) -> None:
+    """A phone with no digit goes to its owner's email point as a note, or into the log."""
+    owner_column = f"{owner}_id"
+    digitless = (
+        "btrim(coalesce(t.phone, '')) <> '' AND regexp_replace(t.phone, '\\D', '', 'g') = ''"
+    )
+    op.execute(
+        f"UPDATE {TABLE} p SET note = left('Telefono: ' || btrim(t.phone), 200) "
+        f"FROM {table} t WHERE p.{owner_column} = t.id AND p.kind = 'email' AND p.is_primary "
+        f"AND {digitless}"
+    )
+    left_out = (
+        op.get_bind()
+        .execute(
+            sa.text(
+                f"SELECT t.id, btrim(t.phone) FROM {table} t WHERE {digitless} "
+                f"AND NOT EXISTS (SELECT 1 FROM {TABLE} p "
+                f"WHERE p.{owner_column} = t.id AND p.kind = 'email')"
+            )
+        )
+        .all()
+    )
+    for owner_id, phone in left_out:
+        log.info(
+            "0073: legacy phone with no digit not carried over: %s %s, %r", owner, owner_id, phone
+        )
 
 
 def upgrade() -> None:
@@ -168,6 +203,8 @@ def upgrade() -> None:
             ("phone", "phone", PHONE_KEY.format(c="phone")),
         ),
     )
+    _carry_digitless_phones("person", "people")
+    _carry_digitless_phones("customer", "customers")
     for statement in statements():
         op.execute(statement)
 

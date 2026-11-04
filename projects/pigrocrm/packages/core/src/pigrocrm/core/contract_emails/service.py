@@ -20,6 +20,7 @@ from sqlalchemy.orm import Session
 from pigrocrm.core.activities.service import ActivityService
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.config import Settings
+from pigrocrm.core.contact_points.service import email_key
 from pigrocrm.core.contract_emails.models import ContractEmailTemplate
 from pigrocrm.core.contract_emails.schemas import (
     ContractEmailAttachment,
@@ -265,7 +266,12 @@ class ContractEmailService:
         found = [e for person in people if (e := person.email)]
         if customer is not None and customer.email:
             found.append(customer.email)
-        return list(dict.fromkeys(found))
+        # One of each address, in the first spelling it was met in: `Ada@Acme.it` and
+        # `ada@acme.it` are the same recipient.
+        unique: dict[str, str] = {}
+        for address in found:
+            unique.setdefault(email_key(address), address)
+        return list(unique.values())
 
     def preview(
         self, contract_id: UUID, template_id: UUID, invoice_id: UUID, actor: Actor
