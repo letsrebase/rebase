@@ -41,6 +41,7 @@ This file is the single mapping from the Italian word to the English identifier.
 |---|---|---|
 | cliente | customer | Who is billed |
 | persona / persone | person / people | A contact |
+| recapito | contact_point | One way to reach a person, a customer or a hub user: kind (email, phone, linkedin), value, label (lavoro, personale, amministrazione, altro → work, personal, billing, other), note, primary flag |
 | deal | deal | Already English |
 | spazio | space | A tenant |
 | utente | user | A member of a space |
