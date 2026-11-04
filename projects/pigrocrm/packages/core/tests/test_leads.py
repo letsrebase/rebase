@@ -26,7 +26,7 @@ import pigrocrm.core.engagements.leads as leads_module
 from pigrocrm.core.activities.models import Activity
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.config import Settings
-from pigrocrm.core.contact_points.schemas import ContactPointIn
+from pigrocrm.core.contact_points.schemas import MAX_CONTACT_POINTS, ContactPointIn
 from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.customers.schemas import CustomerCreate
 from pigrocrm.core.customers.service import CustomerService
@@ -317,6 +317,239 @@ def test_a_phone_or_profile_the_crm_cannot_read_does_not_refuse_the_request(door
         person = space.get(Person, answer.person_id)
         assert person is not None
         assert [(p.kind, p.value) for p in person.contact_points] == [("email", MARIA)]
+
+
+def _points(space: Session, person_id: UUID | None) -> list[tuple[str, str, bool]]:
+    person = space.get(Person, person_id)
+    assert person is not None
+    return [(p.kind, p.value, p.is_primary) for p in person.contact_points]
+
+
+def test_a_new_person_is_born_with_every_extra_point_of_the_contact(door: Door) -> None:
+    """REB-945: two emails and a phone besides the flat fields: the flat ones stay primary,
+    a point already sent flat, one the rules refuse and an extra's own primary flag are
+    left out or ignored."""
+    answer = door.service().file(
+        uuid4(),
+        _body(
+            contact={
+                "contact_points": [
+                    {"kind": "email", "value": "m.rossi@acme.it", "label": "personal"},
+                    {"kind": "email", "value": MARIA.upper()},
+                    {"kind": "phone", "value": "+39 345 1234567", "note": "WhatsApp"},
+                    {"kind": "phone", "value": "+39 02-1234567"},
+                    {"kind": "phone", "value": "call me"},
+                    {"kind": "email", "value": "not an address"},
+                    {"kind": "linkedin", "value": "https://example.com/maria"},
+                ]
+            }
+        ),
+    )
+
+    with _space(door) as space:
+        assert _points(space, answer.person_id) == [
+            ("email", MARIA, True),
+            ("phone", "+39 02 1234567", True),
+            ("linkedin", "https://www.linkedin.com/in/maria-rossi", True),
+            ("email", "m.rossi@acme.it", False),
+            ("phone", "+39 345 1234567", False),
+        ]
+        person = space.get(Person, answer.person_id)
+        assert person is not None
+        assert person.contact_points[3].label == "personal"
+        assert person.contact_points[4].note == "WhatsApp"
+
+
+def test_a_flat_value_repeated_in_the_list_takes_its_label_and_note(door: Door) -> None:
+    """The hub sends its primary phone flat and in the list with the label it has there."""
+    answer = door.service().file(
+        uuid4(),
+        _body(
+            contact={
+                "contact_points": [
+                    {
+                        "kind": "phone",
+                        "value": "02 1234567",
+                        "label": "billing",
+                        "note": "centralino",
+                    },
+                    {"kind": "phone", "value": "+39 02-1234567", "label": "billing", "note": "x"},
+                ]
+            }
+        ),
+    )
+
+    with _space(door) as space:
+        person = space.get(Person, answer.person_id)
+        assert person is not None
+        phones = [p for p in person.contact_points if p.kind == "phone"]
+        # `+39 02 1234567` and `02 1234567` are two numbers (a leading `+` is kept in the key).
+        assert [(p.value, p.label, p.note, p.is_primary) for p in phones] == [
+            ("+39 02 1234567", "billing", "x", True),
+            ("02 1234567", "billing", "centralino", False),
+        ]
+
+
+def test_two_emails_and_a_phone_make_a_person_with_all_three(door: Door) -> None:
+    answer = door.service().file(
+        uuid4(),
+        _body(
+            contact={
+                "phone": None,
+                "linkedin_url": None,
+                "contact_points": [
+                    {"kind": "email", "value": "m.rossi@acme.it"},
+                    {"kind": "phone", "value": "+39 345 1234567"},
+                ],
+            }
+        ),
+    )
+
+    with _space(door) as space:
+        assert _points(space, answer.person_id) == [
+            ("email", MARIA, True),
+            ("email", "m.rossi@acme.it", False),
+            ("phone", "+39 345 1234567", True),
+        ]
+
+
+def test_an_extra_point_is_primary_when_the_flat_value_of_its_kind_is_absent(door: Door) -> None:
+    answer = door.service().file(
+        uuid4(),
+        _body(
+            contact={
+                "phone": None,
+                "contact_points": [{"kind": "phone", "value": "+39 345 1234567"}],
+            }
+        ),
+    )
+
+    with _space(door) as space:
+        assert ("phone", "+39 345 1234567", True) in _points(space, answer.person_id)
+
+
+def test_extra_points_past_the_bound_are_left_out(door: Door) -> None:
+    extras = [{"kind": "email", "value": f"m{n}@acme.it"} for n in range(MAX_CONTACT_POINTS)]
+    answer = door.service().file(uuid4(), _body(contact={"contact_points": extras}))
+
+    with _space(door) as space:
+        points = _points(space, answer.person_id)
+        assert len(points) == MAX_CONTACT_POINTS
+        assert points[:3] == [
+            ("email", MARIA, True),
+            ("phone", "+39 02 1234567", True),
+            ("linkedin", "https://www.linkedin.com/in/maria-rossi", True),
+        ]
+
+
+def test_an_unknown_field_in_a_contact_point_is_refused() -> None:
+    with pytest.raises(ValueError):
+        _body(contact={"contact_points": [{"kind": "email", "value": "a@b.it", "position": 1}]})
+    with pytest.raises(ValueError):
+        _body(contact={"contact_points": [{"kind": "fax", "value": "123456"}]})
+
+
+def test_a_known_person_gets_the_missing_extra_points_and_keeps_their_primary(
+    door: Door,
+) -> None:
+    with _space(door) as space:
+        customer_id = _customer(space)
+        person_id = _person(space, MARIA, customer_id)
+        PersonService(space).update(
+            person_id,
+            PersonUpdate(
+                contact_points=[
+                    ContactPointIn(kind="email", value=MARIA),
+                    ContactPointIn(kind="email", value="m.rossi@acme.it", label="personal"),
+                    ContactPointIn(kind="phone", value="+39 02 7654321", label="billing"),
+                ]
+            ),
+            Actor.system(),
+        )
+
+    answer = door.service().file(
+        uuid4(),
+        _body(
+            contact={
+                "phone": "+39 345 0000000",
+                "contact_points": [
+                    {"kind": "email", "value": "M.Rossi@acme.it"},
+                    {"kind": "email", "value": "maria@studio-rossi.it", "is_primary": True},
+                    {"kind": "phone", "value": "+39 345 1234567"},
+                    {"kind": "phone", "value": "+39 02-7654321", "label": "work"},
+                ],
+            }
+        ),
+    )
+
+    assert answer.person_id == person_id
+    with _space(door) as space:
+        assert _count(space, Person) == 1
+        assert _points(space, person_id) == [
+            ("email", MARIA, True),
+            ("email", "m.rossi@acme.it", False),
+            ("phone", "+39 02 7654321", True),
+            ("email", "maria@studio-rossi.it", False),
+            ("phone", "+39 345 1234567", False),
+        ]
+        person = space.get(Person, person_id)
+        assert person is not None
+        assert person.contact_points[1].label == "personal"
+        assert person.contact_points[2].label == "billing"
+        kinds = space.scalars(select(Activity.kind).where(Activity.entity_id == person_id)).all()
+        assert kinds.count("updated") == 2
+
+
+def test_a_known_person_with_nothing_new_is_left_alone(door: Door) -> None:
+    with _space(door) as space:
+        person_id = _person(space, MARIA, _customer(space))
+        before = space.get(Person, person_id)
+        assert before is not None
+        updated_at = before.updated_at
+
+    door.service().file(
+        uuid4(),
+        _body(contact={"contact_points": [{"kind": "email", "value": MARIA.upper()}]}),
+    )
+
+    with _space(door) as space:
+        person = space.get(Person, person_id)
+        assert person is not None and person.updated_at == updated_at
+        assert _points(space, person_id) == [("email", MARIA, True)]
+
+
+def test_a_person_with_no_customer_gets_the_extra_points_too(door: Door) -> None:
+    with _space(door) as space:
+        person_id = _person(space, MARIA, None)
+
+    door.service().file(
+        uuid4(),
+        _body(contact={"contact_points": [{"kind": "email", "value": "m.rossi@acme.it"}]}),
+    )
+
+    with _space(door) as space:
+        assert _points(space, person_id) == [
+            ("email", MARIA, True),
+            ("email", "m.rossi@acme.it", False),
+        ]
+
+
+def test_an_explicit_deal_link_adds_no_points(door: Door) -> None:
+    with _space(door) as space:
+        customer_id = _customer(space)
+        person_id = _person(space, MARIA, customer_id)
+        deal_id = _deal(space, customer_id)
+
+    door.service().file(
+        uuid4(),
+        _body(
+            deal_id=str(deal_id),
+            contact={"contact_points": [{"kind": "email", "value": "m.rossi@acme.it"}]},
+        ),
+    )
+
+    with _space(door) as space:
+        assert _points(space, person_id) == [("email", MARIA, True)]
 
 
 def test_a_lead_with_no_lines_files_a_deal_with_no_value(door: Door) -> None:

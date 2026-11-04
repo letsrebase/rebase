@@ -175,6 +175,38 @@ def test_two_puts_leave_one_customer_one_person_and_one_deal(
     assert _counts(container_settings) == (1, 1, 1)
 
 
+def test_the_contacts_extra_points_reach_the_new_person_and_a_refused_one_does_not_refuse(
+    lead_client: TestClient, container_settings: Settings
+) -> None:
+    """REB-945: `contact.contact_points` is accepted next to the flat fields; a point the
+    CRM's rules refuse is left out, and a body without the field is the body of before."""
+    contact = {
+        "first_name": "Maria",
+        "last_name": "Rossi",
+        "email": MARIA,
+        "phone": "+39 02 1234567",
+        "contact_points": [
+            {"kind": "email", "value": "m.rossi@acme.it", "label": "personal", "note": None},
+            {"kind": "phone", "value": "+39 345 1234567", "label": "work", "is_primary": False},
+            {"kind": "phone", "value": "12"},
+        ],
+    }
+    created = lead_client.put(
+        f"/api/rebase/leads/{uuid4()}", json=_body(contact=contact), headers=_bearer()
+    )
+    assert created.status_code == 201, created.text
+
+    with _space(container_settings) as space:
+        person = space.get(Person, created.json()["person_id"])
+        assert person is not None
+        assert [(p.kind, p.value, p.is_primary) for p in person.contact_points] == [
+            ("email", MARIA, True),
+            ("phone", "+39 02 1234567", True),
+            ("email", "m.rossi@acme.it", False),
+            ("phone", "+39 345 1234567", False),
+        ]
+
+
 def test_another_request_of_the_same_person_is_a_second_deal(
     lead_client: TestClient, container_settings: Settings
 ) -> None:
@@ -212,6 +244,10 @@ def test_an_explicit_deal_is_linked_and_a_missing_one_is_422(
         {"contact": {"first_name": "Maria", "email": "non-un-indirizzo"}},
         {"company": ""},
         {"extra": "sorpresa"},
+        {"contact": {"contact_points": [{"kind": "email", "value": "a@b.it", "position": 1}]}},
+        {"contact": {"contact_points": [{"kind": "fax", "value": "0212345678"}]}},
+        {"contact": {"contact_points": [{"kind": "email", "value": "a" * 321}]}},
+        {"contact": {"contact_points": [{"kind": "email", "value": "a@b.it", "id": str(uuid4())}]}},
         {"deal": {"name": "x" * 256}},
         {
             "deal": {
