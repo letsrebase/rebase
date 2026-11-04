@@ -478,3 +478,100 @@ async def test_get_talent_answers_to_card_with_the_detail_and_to_lead_with_the_r
         assert missing.is_error
         assert "talento" in missing.content[0].text and "non trovato" in missing.content[0].text
     _wipe(factory)
+
+
+def _points(factory: sessionmaker[Session], email: str, *points: tuple[str, str, str]) -> None:
+    """The extra points of the person who logs in as `email`, `(kind, value, label)`."""
+    from rebase_core.contact_points import ContactPointInput, ContactPointService
+
+    session = factory()
+    try:
+        user = session.query(User).filter_by(email=email).one()
+        ContactPointService(session).replace(
+            user,
+            [ContactPointInput(kind=k, value=v, label=label) for k, v, label in points],  # type: ignore[arg-type]
+        )
+        session.commit()
+    finally:
+        session.close()
+
+
+async def test_list_talents_q_finds_a_person_by_an_extra_email_a_phone_or_a_profile(
+    factory: sessionmaker[Session],
+) -> None:
+    """REB-948: `q` reads the contact points as well as the login address, a phone by its
+    digits like the CRM's search."""
+    ada = _card(factory, "ada@studio.it", first_name="Ada")
+    _card(factory, "grace@studio.it", first_name="Grace")
+    _points(
+        factory,
+        "ada@studio.it",
+        ("email", "Ada.Private@gmail.com", "personal"),
+        ("phone", "+39 388 871 3657", "other"),
+        ("linkedin", "linkedin.com/in/ada-l", "work"),
+    )
+    async with _server(factory) as client:
+        for term in (
+            "ada.private@gmail",
+            "3888713657",
+            "+393888713657",
+            "388-871-3657",
+            "388 871 3657",
+            "ada-l",
+        ):
+            found = _payload(await client.call_tool("list_talents", {"q": term}))
+            assert [row["id"] for row in found["items"]] == [ada], term
+        none = _payload(await client.call_tool("list_talents", {"q": "3880000000"}))
+        assert none["items"] == []
+        # The row is short; the detail carries every way to reach the person.
+        detail = _payload(await client.call_tool("get_talent", {"talent_id": ada}))
+        assert detail["phone"] == "+39 388 871 3657"
+        assert [(p["kind"], p["value"]) for p in detail["contact_points"]] == [
+            ("email", "ada@studio.it"),
+            ("email", "Ada.Private@gmail.com"),
+            ("phone", "+39 388 871 3657"),
+            ("linkedin", "https://www.linkedin.com/in/ada-l"),
+        ]
+
+
+async def test_list_talents_q_ranks_a_point_that_is_the_term_above_one_that_contains_it(
+    factory: sessionmaker[Session],
+) -> None:
+    """A point equal to the term ranks like an exact address; one that only contains it ranks
+    below, and below a name that equals the term, so `in` does not float everybody with a
+    LinkedIn address to the top."""
+    exact = _card(factory, "ada@studio.it", first_name="Ada")
+    contains = _card(factory, "linus@studio.it", first_name="Linus")
+    phone = _card(factory, "rafa@studio.it", first_name="Rafa")
+    _points(factory, "ada@studio.it", ("email", "ada.private@gmail.com", "personal"))
+    _points(factory, "linus@studio.it", ("email", "xada.private@gmail.com", "personal"))
+    _points(factory, "rafa@studio.it", ("phone", "+39 388 871 3657", "other"))
+    _card(factory, "nadal@studio.it", first_name="Nadal")
+    _points(factory, "nadal@studio.it", ("linkedin", "linkedin.com/in/nadal", "work"))
+    async with _server(factory) as client:
+
+        async def order(term: str) -> list[str]:
+            found = _payload(await client.call_tool("list_talents", {"q": term}))
+            return [row["id"] for row in found["items"]]
+
+        assert await order("ada.private@gmail.com") == [exact, contains]
+        # Same digits is equal, whatever the separators; fewer digits only contains.
+        assert (await order("+39 388 871 3657"))[0] == phone
+        # A name that equals the term beats a point that contains it.
+        by_name = await order("ada")
+        assert by_name[0] == exact and by_name.index(contains) > 0
+
+
+async def test_a_deleted_freelancer_is_not_found_through_a_contact_point(
+    factory: sessionmaker[Session],
+) -> None:
+    ada = _card(factory, "ada@studio.it", first_name="Ada")
+    _points(factory, "ada@studio.it", ("phone", "+39 388 871 3657", "other"))
+    _seed_admin(factory)
+    async with _server(factory) as client:
+        found = _payload(await client.call_tool("list_talents", {"q": "3888713657"}))
+        assert [row["id"] for row in found["items"]] == [ada]
+        deleted = await client.call_tool("delete_freelancer", {"freelancer_id": ada})
+        assert not deleted.is_error, deleted.content[0].text
+        gone = _payload(await client.call_tool("list_talents", {"q": "3888713657"}))
+        assert gone["items"] == []

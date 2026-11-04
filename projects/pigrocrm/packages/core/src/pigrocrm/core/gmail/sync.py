@@ -47,7 +47,7 @@ from sqlalchemy.orm import Session
 from pigrocrm.core.activities.service import ActivityService
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.config import Settings, require_gmail_configured
-from pigrocrm.core.contact_points.service import email_addresses
+from pigrocrm.core.contact_points.service import company_email_addresses, email_addresses
 from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.customers.schemas import LEGAL_NAME_MAX_LENGTH
 from pigrocrm.core.errors import Conflict, NotFound, ValidationFailed
@@ -425,7 +425,11 @@ class GmailSyncService:
         customer = self.session.get(Customer, customer_id)
         if customer is None or customer.deleted_at is not None:
             raise NotFound("customer", customer_id)
-        domain = customer_domain(website=customer.website, email=customer.email)
+        domain = customer_domain(
+            website=customer.website,
+            email=customer.email,
+            other_emails=company_email_addresses(customer),
+        )
         if domain is None:
             raise Conflict(
                 "gmail_discovery",

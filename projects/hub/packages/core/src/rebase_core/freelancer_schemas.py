@@ -111,6 +111,8 @@ class FreelancerDraft(BaseModel):
     remote: Remote | None = None
     links: list[SafeStr] = Field(default_factory=list, max_length=LINKS_MAX)
     sources: list[SafeStr] = Field(min_length=1, max_length=SOURCES_MAX)
+    # Public emails, numbers and profiles of the person (REB-948), added to their list.
+    contact_points: list[ContactPointInput] = Field(default_factory=list)
 
     @field_validator("first_name", "last_name", mode="after")
     @classmethod

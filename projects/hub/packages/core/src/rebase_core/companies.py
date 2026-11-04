@@ -1,11 +1,12 @@
 """Companies: a project that needs people, and what an admin does with the request."""
 
+from collections.abc import Sequence
 from datetime import date, datetime
 from decimal import Decimal
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import Select, func, select
+from sqlalchemy import Select, func, or_, select
 from sqlalchemy.orm import Session, selectinload
 
 from rebase_core.admin_schemas import StatusChange
@@ -27,7 +28,13 @@ from rebase_core.company_schemas import (
     CompanyOverride,
     CompanyRead,
 )
-from rebase_core.contact_points import ContactPointService
+from rebase_core.contact_points import (
+    ContactPointInput,
+    ContactPointService,
+    PointsAdded,
+    has_point_matching,
+    point_match_score,
+)
 from rebase_core.crm_words import TO_LINK, crm_state_sentence
 from rebase_core.errors import NotFound, ValidationFailed
 from rebase_core.models import COMPANY_STATES, Company, User
@@ -108,7 +115,7 @@ def _list_stmt(
     stmt = select(Company, User).join(User, User.id == Company.user_id)
     stmt = stmt.where(Company.deleted_at.is_(None))
     if q:
-        stmt = stmt.where(matches_any(_SEARCH_COLUMNS, q))
+        stmt = stmt.where(or_(matches_any(_SEARCH_COLUMNS, q), has_point_matching(User.id, q)))
     if budget_min is not None:
         stmt = stmt.where(Company.daily_budget >= budget_min)
     if budget_max is not None:
@@ -143,11 +150,24 @@ class CompanyService:
         request before this one, checked before the new row is added (REB-380): a
         returning referente the thank-you page can point at the member area they may
         not know exists, mirroring `FreelancerService.apply`'s own `created` boolean."""
+        read, existing, _ = self._request(data, deal_id, ())
+        return read, existing
+
+    def _request(
+        self,
+        data: CompanyCreate,
+        deal_id: UUID | None,
+        contact_points: Sequence[ContactPointInput],
+    ) -> tuple[CompanyRead, bool, PointsAdded | None]:
+        """`request`, plus the extra contact points an admin gave (REB-948), added to the
+        contact's list in the same transaction as the row and never replacing what they
+        already keep. Answers what was added too, for the trail."""
         utm = data.utm.model_dump() if data.utm is not None and not data.utm.is_empty() else {}
         email = data.email.strip().lower()
         user = UserService(self.session).get_or_create(
             email, data.contact_first_name, data.contact_last_name, phone=data.phone
         )
+        added = ContactPointService(self.session).add(user, contact_points)
         requester_existing = (
             self.session.scalar(select(Company.id).where(Company.user_id == user.id).limit(1))
             is not None
@@ -180,7 +200,18 @@ class CompanyService:
         # attribution is ever made, from a first or a returning request alike.
         ReferralService(self.session).link_team_request(row.id, user, own_code=data.ref)
         self.session.commit()
-        return _to_read(row, user), requester_existing
+        return _to_read(row, user), requester_existing, added
+
+    def check_admin_create(self, data: CompanyAdminCreate) -> None:
+        """What `create_by_admin` would refuse about the contact's extra points, said before
+        anything is written (and before the MCP tool spends a model call), so a refusal leaves
+        nothing behind: no contact, no request. The flat `phone` is counted, since the same
+        write stores it as the contact's primary number when they have none."""
+        email = data.email.strip().lower()
+        known = UserService(self.session).person(email)
+        ContactPointService(self.session).check_added(
+            known or User(email=email), data.contact_points, phone=data.phone
+        )
 
     def create_by_admin(
         self, data: CompanyAdminCreate, admin_id: UUID, *, source: str
@@ -188,10 +219,13 @@ class CompanyService:
         """An admin opens the request on the referente's behalf (REB-870): the row the
         wizard writes, `to_link`, with the CRM deal when one is named. No mail goes to
         anybody; the trail records `company_created` with the admin, the door and the deal."""
-        read, _ = self.request(data, deal_id=data.deal_id)
-        payload: dict[str, str] = {"source": source}
+        self.check_admin_create(data)
+        read, _, added = self._request(data, data.deal_id, data.contact_points)
+        payload: dict[str, Any] = {"source": source}
         if data.deal_id is not None:
             payload["deal_id"] = str(data.deal_id)
+        if added is not None:
+            payload["contact_points_added"] = added.added
         AdminActionService(self.session).record(
             ENTITY, read.id, "company_created", admin_id, payload
         )
@@ -238,7 +272,9 @@ class CompanyService:
         sort_spec = SortSpec("score", "float") if term else SortSpec("created_at", "datetime")
         sort_column: Any
         if term:
-            score = similarity_score(_SEARCH_COLUMNS, term).label("score")
+            score = func.greatest(
+                similarity_score(_SEARCH_COLUMNS, term), point_match_score(User.id, term)
+            ).label("score")
             stmt = stmt.add_columns(score)
             sort_column = score
         else:

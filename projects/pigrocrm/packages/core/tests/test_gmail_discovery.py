@@ -90,6 +90,18 @@ def test_a_webmail_domain_is_not_a_customer_domain(email: str) -> None:
     assert customer_domain(website=None, email=email) is None
 
 
+def test_a_company_address_among_the_other_emails_gives_the_domain() -> None:
+    assert (
+        customer_domain(
+            website=None,
+            email="ceo@gmail.com",
+            other_emails=["ceo@gmail.com", "ceo@outlook.com", "info@example.com"],
+        )
+        == "example.com"
+    )
+    assert customer_domain(website=None, email="ceo@gmail.com", other_emails=["x@yahoo.it"]) is None
+
+
 def test_nothing_to_derive_from_is_none_not_an_error() -> None:
     assert customer_domain(website=None, email=None) is None
     assert customer_domain(website="", email="") is None
@@ -106,6 +118,9 @@ from sqlalchemy import func, select  # noqa: E402
 from sqlalchemy.orm import Session  # noqa: E402
 
 from pigrocrm.core.actor import Actor  # noqa: E402
+from pigrocrm.core.contact_points.models import ContactPoint  # noqa: E402
+from pigrocrm.core.contact_points.schemas import ContactPointIn  # noqa: E402
+from pigrocrm.core.contact_points.service import prepare  # noqa: E402
 from pigrocrm.core.customers.models import Customer  # noqa: E402
 from pigrocrm.core.errors import AgentForbidden, Conflict, NotFound  # noqa: E402
 from pigrocrm.core.gmail import sync as sync_module  # noqa: E402
@@ -349,3 +364,85 @@ def test_only_the_most_recent_conversations_are_read(
     # test claims the cap and not the order.
     assert report.threads_scanned == 2
     assert len(report.matching) == 2
+
+
+def _labelled_emails(*given: tuple[str, str]) -> list[ContactPoint]:
+    """Email points in the order given, `(address, label)`, the first one primary."""
+    return [
+        ContactPoint(
+            kind=point.kind,
+            value=point.value,
+            normalized=point.normalized,
+            label=point.label,
+            note=point.note,
+            is_primary=point.is_primary,
+            position=position,
+        )
+        for position, point in enumerate(
+            prepare(
+                "customer",
+                [ContactPointIn(kind="email", value=a, label=label) for a, label in given],  # type: ignore[arg-type]
+            )
+        )
+    ]
+
+
+def _with_emails(session: Session, *given: tuple[str, str]) -> Customer:
+    customer = Customer(
+        legal_name="Example Ltd", website=None, contact_points=_labelled_emails(*given)
+    )
+    session.add(customer)
+    session.flush()
+    return customer
+
+
+def test_discovery_reads_the_domain_of_an_extra_work_address(db_session: Session) -> None:
+    """The primary is a webmail address: the company's own address, kept as another work
+    point, still says where the company is."""
+    account = connected_account(db_session)
+    customer = _with_emails(db_session, ("ceo@gmail.com", "personal"), ("info@example.com", "work"))
+    fake = FakeGmail()
+    fake.messages["m1"] = _mail(1, frm="marco@example.com", to=MAILBOX, thread="t1")
+
+    report = sync_service(db_session, fake).discover(customer.id, actor=actor_for(account))
+
+    assert report.domain == "example.com"
+
+
+@pytest.mark.parametrize("label", ["billing", "personal"])
+def test_a_billing_or_personal_address_never_gives_the_domain(
+    db_session: Session, label: str
+) -> None:
+    """An accountant's invoicing mailbox is not the customer's domain."""
+    account = connected_account(db_session)
+    customer = _with_emails(
+        db_session, ("ceo@gmail.com", "personal"), ("fatture@studiocontabile.it", label)
+    )
+    with pytest.raises(Conflict):
+        sync_service(db_session, FakeGmail()).discover(customer.id, actor=actor_for(account))
+
+
+def test_a_person_is_added_from_mail_at_the_domain_of_an_extra_work_address(
+    db_session: Session,
+) -> None:
+    from pigrocrm.core.customers.schemas import PersonFromSuggestion
+    from pigrocrm.core.customers.service import CustomerService
+
+    account = connected_account(db_session)
+    customer = _with_emails(
+        db_session,
+        ("ceo@gmail.com", "personal"),
+        ("fatture@studiocontabile.it", "billing"),
+        ("info@example.com", "other"),
+    )
+    actor = actor_for(account)
+    service = CustomerService(db_session)
+
+    person = service.add_person_from_mail(
+        customer.id, PersonFromSuggestion(address="marco@example.com", name="Marco Bianchi"), actor
+    )
+    assert person.email == "marco@example.com"
+    with pytest.raises(ValidationFailed):
+        service.add_person_from_mail(
+            customer.id, PersonFromSuggestion(address="altri@studiocontabile.it"), actor
+        )

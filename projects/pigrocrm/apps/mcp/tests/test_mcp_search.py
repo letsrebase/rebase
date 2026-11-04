@@ -203,3 +203,46 @@ async def test_the_limit_argument_is_honoured(server: Any, mcp_session: Session)
     customers = _payload(result)["groups"][0]
     assert len(customers["hits"]) == 3
     assert customers["total"] == 12
+
+
+async def test_a_phone_typed_as_digits_finds_the_customer_and_the_hit_says_phone(
+    server: Any, mcp_session: Session
+) -> None:
+    """REB-948: the palette and the tool find a number in any form, like `search_customers`,
+    and `field` names the kind of the point that matched (it used to say `email`)."""
+    from pigrocrm.core.contact_points.models import ContactPoint
+    from pigrocrm.core.contact_points.schemas import ContactPointIn
+    from pigrocrm.core.contact_points.service import prepare
+
+    owned = [
+        ContactPoint(
+            kind=point.kind,
+            value=point.value,
+            normalized=point.normalized,
+            label=point.label,
+            note=point.note,
+            is_primary=point.is_primary,
+            position=position,
+        )
+        for position, point in enumerate(
+            prepare(
+                "customer",
+                [
+                    ContactPointIn(kind="phone", value="+39 02 1234567"),
+                    ContactPointIn(kind="phone", value="+39 388 871 3657", label="other"),
+                ],
+            )
+        )
+    ]
+    mcp_session.add(
+        Customer(legal_name="Numero Srl", country="IT", custom_fields={}, contact_points=owned)
+    )
+    mcp_session.flush()
+
+    async with Client(server) as client:
+        for term in ("3888713657", "+393888713657", "388-871-3657", "388 871 3657"):
+            customers = _payload(await client.call_tool("search_everything", {"term": term}))[
+                "groups"
+            ][0]
+            assert [hit["label"] for hit in customers["hits"]] == ["Numero Srl"], term
+            assert customers["hits"][0]["field"] == "phone", term

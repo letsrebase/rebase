@@ -285,3 +285,41 @@ def test_an_admins_change_of_contact_points_is_in_the_trail_and_can_be_put_back(
         client.patch(f"/api/hub/freelancers/{freelancer_id}/override", json={"contact_points": []})
     ).json()
     assert [p["value"] for p in cleared["contact_points"]] == ["ada@studio.it"]
+
+
+_COMPANY_BODY = {
+    "company_name": "Studio Verdi",
+    "contact_first_name": "Maria",
+    "contact_last_name": "Verdi",
+    "email": "maria@studioverdi.it",
+    "phone": "+39 345 1234567",
+    "requested_role": "Backend developer",
+    "project": "Un backend developer per tre mesi.",
+    "period_from": "2026-10-01",
+    "duration": "3 mesi",
+    "daily_budget": "500",
+    "remote": "remote",
+    "headcount": 1,
+}
+
+
+def test_the_public_wizard_takes_no_contact_points_and_the_admin_route_does(
+    client: TestClient, admin: None, sender: RecordingSender, api_session: Session
+) -> None:
+    """REB-948: `contact_points` is the admin's field. The wizard refuses it (the contact's
+    extra points are theirs to add from their own area), the admin route stores it."""
+    points = [_point("email", "maria.verdi@gmail.com", "personal")]
+    refused = client.post("/api/hub/companies", json={**_COMPANY_BODY, "contact_points": points})
+    assert refused.status_code == 422
+    assert api_session.scalar(select(func.count()).select_from(User)) == 1  # only the admin
+
+    _login(client, sender, ADMIN_EMAIL)
+    created = client.post(
+        "/api/hub/admin/companies", json={**_COMPANY_BODY, "contact_points": points}
+    )
+    assert created.status_code == 201, created.text
+    assert [(p["kind"], p["value"], p["is_primary"]) for p in created.json()["contact_points"]] == [
+        ("email", "maria@studioverdi.it", True),
+        ("phone", "+39 345 1234567", True),
+        ("email", "maria.verdi@gmail.com", False),
+    ]

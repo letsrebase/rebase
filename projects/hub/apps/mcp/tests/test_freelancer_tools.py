@@ -406,3 +406,114 @@ async def test_an_admin_adds_an_extra_email_over_the_mcp_and_reads_it_back(
         )
         assert [p["value"] for p in cleared["contact_points"]] == ["ada@studio.it"]
     _wipe(factory)
+
+
+async def test_a_card_from_a_signup_takes_the_public_contact_points_and_adds_on_a_rewrite(
+    factory: sessionmaker[Session],
+) -> None:
+    """REB-948: the points found at the sources land on the person's list, the sign-up's
+    address stays the primary email, and a second research adds without removing."""
+    _seed(factory, ["ada@studio.it"])
+    _seed_admin(factory)
+    async with Client(build_server(factory, lambda: IVAN)) as client:
+        signup_id = _payload(await client.call_tool("list_talents", {"status": "lead"}))["items"][
+            0
+        ]["id"]
+        args = {
+            "signup_id": signup_id,
+            "first_name": "Ada",
+            "last_name": "Lovelace",
+            "sources": ["https://www.linkedin.com/in/ada"],
+        }
+        created = _payload(
+            await client.call_tool(
+                "create_freelancer_from_signup",
+                {
+                    **args,
+                    "contact_points": [
+                        {"kind": "email", "value": "ada@lovelace.example", "label": "work"},
+                        {"kind": "phone", "value": "+44 20 7946 0958", "label": "work"},
+                    ],
+                },
+            )
+        )
+        assert [
+            (p["kind"], p["value"], p["is_primary"], p["id"] is None)
+            for p in created["contact_points"]
+        ] == [
+            ("email", "ada@studio.it", True, True),
+            ("email", "ada@lovelace.example", False, False),
+            ("phone", "+44 20 7946 0958", True, False),
+        ]
+        rewritten = _payload(
+            await client.call_tool(
+                "create_freelancer_from_signup",
+                {
+                    **args,
+                    "contact_points": [
+                        {"kind": "phone", "value": "+44 20 7946 0958", "label": "other"},
+                        {"kind": "linkedin", "value": "linkedin.com/in/ada", "label": "work"},
+                    ],
+                },
+            )
+        )
+        assert [(p["kind"], p["value"], p["label"]) for p in rewritten["contact_points"]] == [
+            ("email", "ada@studio.it", "work"),
+            ("email", "ada@lovelace.example", "work"),
+            ("phone", "+44 20 7946 0958", "work"),
+            ("linkedin", "https://www.linkedin.com/in/ada", "work"),
+        ]
+        trail = _payload(
+            await client.call_tool(
+                "get_freelancer_audit", {"freelancer_id": created["id"], "limit": 10}
+            )
+        )["result"]
+        # One `overridden` entry per research that added something, with the list before and
+        # after (a revert puts the earlier one back): the first adds two, the second one.
+        added = [
+            [p["value"] for p in entry["payload"]["after"]["contact_points"]]
+            for entry in reversed([e for e in trail if e["kind"] == "overridden"])
+        ]
+        assert len(added) == 2
+        assert added[0] == ["ada@lovelace.example", "+44 20 7946 0958"]
+        assert added[1][-1] == "https://www.linkedin.com/in/ada"
+        notes = " ".join(n["text"] for n in rewritten["note"])
+        assert "Recapiti aggiunti: email ada@lovelace.example, telefono +44 20 7946 0958" in notes
+        assert "Recapiti aggiunti: LinkedIn https://www.linkedin.com/in/ada" in notes
+    _wipe(factory)
+
+
+async def test_a_card_from_a_signup_refuses_a_point_that_is_another_persons_login(
+    factory: sessionmaker[Session],
+) -> None:
+    from rebase_core.models import Freelancer, User
+
+    _seed(factory, ["ada@studio.it"])
+    _seed_admin(factory)
+    session = factory()
+    session.add(User(email="grace@studio.it", first_name="Grace", last_name="Hopper"))
+    session.commit()
+    session.close()
+    async with Client(build_server(factory, lambda: IVAN)) as client:
+        ada = _payload(await client.call_tool("list_talents", {"status": "lead"}))["items"][0]["id"]
+        refused = await client.call_tool(
+            "create_freelancer_from_signup",
+            {
+                "signup_id": ada,
+                "first_name": "Ada",
+                "last_name": "Lovelace",
+                "sources": ["https://www.linkedin.com/in/ada"],
+                "contact_points": [
+                    {"kind": "email", "value": "Grace@studio.it", "label": "work"},
+                ],
+            },
+        )
+        assert refused.is_error
+        assert "grace@studio.it" in refused.content[0].text
+        assert "un'altra persona" in refused.content[0].text
+    session = factory()
+    try:
+        assert session.query(Freelancer).count() == 0  # nothing was written
+    finally:
+        session.close()
+    _wipe(factory)

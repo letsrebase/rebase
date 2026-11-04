@@ -99,11 +99,14 @@ def register(mcp: MCPServer, deps: Deps) -> None:
         those (with `id`), whole: `["email", "industries", "languages", "band"]`, with
         `skills` and `profile_summary` whole if you name them; `["all"]` gives the full row,
         with `email`, `linkedin_url`, `origin`, `utm_source`, `created_at`, `vetted_at`,
-        `has_anonymous_card`, `job_title`. Newest first, or most relevant first when `q`
-        narrows. A row's `id` goes to `get_talent`, which for a lead answers the row itself;
-        a lead's card is created with `create_freelancer_from_signup`.
+        `has_anonymous_card`, `job_title`; a row carries only the login `email`, the other ways
+        to reach the person (`phone`, `contact_points`) are in `get_talent`. Newest first, or
+        most relevant first when `q` narrows. A row's `id` goes to `get_talent`, which for a
+        lead answers the row itself; a lead's card is created with `create_freelancer_from_signup`.
 
-        Filters, all together: `q` searches first name, last name, email and position;
+        Filters, all together: `q` searches first name, last name, login email, position and
+        the person's extra contact points (an extra email, a phone in any form, a LinkedIn
+        profile);
         `skills` keeps the cards that name every given term (for example `["SQL Server",
         "React"]`) in the position or role, in the skills or in the summary of the anonymous
         card; `seniority` those with one of the given levels (`junior`, `mid`, `senior`,
@@ -209,9 +212,11 @@ def register(mcp: MCPServer, deps: Deps) -> None:
         screen (REB-284), the same one «Dettaglio talento» reads: the person's data with the
         status and the `note` thread, the sign-up attribution `signup_utm`, the latest logins
         and the latest downloads of the guide, and the Pigro space when the address has one.
-        `origin` is the list's (`wizard` or `admin`); the site page the person started from
-        (`home`, `pigrocrm`) is `origin_page`. For a sign-up without a card it answers the
-        bare row, `status` `lead`, from which the card is created with
+        `phone` is the primary phone point and `contact_points` every way to reach the person:
+        the login address first (primary email, no `id`), then the extra addresses, phones and
+        profiles with their label and note. `origin` is the list's (`wizard` or `admin`); the
+        site page the person started from (`home`, `pigrocrm`) is `origin_page`. For a sign-up
+        without a card it answers the bare row, `status` `lead`, from which the card is created with
         `create_freelancer_from_signup`; an id whose email now has a card answers the card,
         like the list. Every row with a card also carries `vetted_at` (REB-518, `None` if not
         verified) and `has_anonymous_card`, whether Claude has written one to propose in the
@@ -241,11 +246,12 @@ def register(mcp: MCPServer, deps: Deps) -> None:
     def list_duplicates() -> dict[str, Any]:
         """Who is on the list twice (REB-800): `mergeable` are the pairs of live cards with the
         same LinkedIn profile, which `merge_freelancers` can merge; `to_review` those that
-        share only the name or the phone, to look at before deciding, never merged on their
-        own; `signups` how many sign-ups repeat a profile (no card to merge: they stay out of
-        the lead lists). For each pair `survivor` is the card with the most recent CV, the one
-        that stays, and `absorbed` the one that goes into the other. Read-only, without
-        addresses."""
+        share only the name, the primary phone, or an address (one card's login address is the
+        other's extra address), to look at before deciding, never merged on their own; each
+        pair's `signals` say which; `signups` how many sign-ups repeat a profile (no card to
+        merge: they stay out of the lead lists). For each pair `survivor` is the card with the
+        most recent CV, the one that stays, and `absorbed` the one that goes into the other.
+        Read-only, without addresses."""
         return deps.call(lambda s: _without_addresses(duplicate_list(s).model_dump(mode="json")))
 
     @mcp.tool()

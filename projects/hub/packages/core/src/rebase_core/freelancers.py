@@ -21,7 +21,7 @@ from rebase_core.audit import (
 )
 from rebase_core.card_rows import card_emails, card_row_fields
 from rebase_core.config import Settings
-from rebase_core.contact_points import ContactPointService
+from rebase_core.contact_points import ContactPointService, PointsAdded
 from rebase_core.cv_text import CvText, extract_text
 from rebase_core.errors import InvalidState, NotFound, ValidationFailed
 from rebase_core.freelancer_schemas import (
@@ -277,8 +277,10 @@ class FreelancerService:
         area. One row per address still: a second research on a card the admin wrote
         replaces the researched fields and leaves `status`, the notes and the CV alone; a
         research on a card the person filled (`compilata_da == "persona"`) is refused,
-        because their own words win. One note in the thread, written by `admin_id` through
-        `source`, names the sources, so whoever reads the card can check where it came from."""
+        because their own words win. `contact_points` found publicly are added to the person's
+        list, never replacing it (`ContactPointService.add`). One note in the thread, written
+        by `admin_id` through `source`, names the sources, so whoever reads the card can check
+        where it came from."""
         signup = self.session.get(Signup, signup_id)
         if signup is None:
             raise NotFound("signup", signup_id)
@@ -287,15 +289,18 @@ class FreelancerService:
         if row is not None and row.filled_by == "person":
             raise ValidationFailed(ENTITY, "email", "la persona ha già compilato la sua scheda")
         created = row is None
+        points = ContactPointService(self.session)
+        added: PointsAdded | None = None
         if row is None:
             utm = {column: getattr(signup, column) for column in UTM_COLUMNS}
             users = UserService(self.session)
             holder, owner = users.by_linkedin(data.linkedin_url), users.person(email)
             if holder is not None and (owner is None or holder.id != owner.id):
                 raise ValidationFailed(ENTITY, "linkedin_url", LINKEDIN_HAS_CARD)
-            user = UserService(self.session).get_or_create(
-                email, data.first_name, data.last_name, data.linkedin_url
-            )
+            # What the extra points would break is said before the person is written.
+            points.check_added(owner or User(email=email), data.contact_points)
+            user = users.get_or_create(email, data.first_name, data.last_name, data.linkedin_url)
+            added = points.add(user, data.contact_points)
             row = Freelancer(user_id=user.id, **utm)
             self.session.add(row)
         else:
@@ -303,12 +308,14 @@ class FreelancerService:
             # been corrected, so the linked `users` row follows it too, in this commit.
             existing_user = self.session.get(User, row.user_id)
             if existing_user is not None:
+                points.check_added(existing_user, data.contact_points)
                 UserService(self.session).require_free_linkedin(existing_user.id, data.linkedin_url)
                 existing_user.first_name, existing_user.last_name, existing_user.linkedin_url = (
                     data.first_name,
                     data.last_name,
                     data.linkedin_url,
                 )
+                added = points.add(existing_user, data.contact_points)
         row.job_title = data.job_title
         row.daily_rate = data.daily_rate
         row.remote = data.remote
@@ -329,12 +336,26 @@ class FreelancerService:
             # drafts again on top of the winner's row.
             self.session.rollback()
             return self.draft_from_signup(signup_id, data, admin_id, source)
+        if added is not None:
+            # The points the research added, the way an override's trail keeps them: the
+            # lists before and after, so a revert puts the earlier one back.
+            AdminActionService(self.session).record(
+                ENTITY,
+                row.id,
+                "overridden",
+                admin_id,
+                field_changes({"contact_points": added.before}, {"contact_points": added.after}),
+            )
         sources = ", ".join(data.sources)
         text = (
             f"Scheda creata dall'iscrizione del {signup.created_at:%d/%m/%Y}. Fonti: {sources}"
             if created
             else f"Scheda aggiornata dalla ricerca. Fonti: {sources}"
         )
+        if added is not None:
+            names = {"email": "email", "phone": "telefono", "linkedin": "LinkedIn"}
+            listed = ", ".join(f"{names[p['kind']]} {p['value']}" for p in added.added)
+            text += f". Recapiti aggiunti: {listed}"
         NoteService(self.session).add(ENTITY, row.id, text, author_id=admin_id, source=source)
         return self.get(row.id)
 

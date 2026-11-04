@@ -62,10 +62,11 @@ def register(mcp: MCPServer, deps: Deps) -> None:
         created_to: str | None = None,
     ) -> dict[str, Any]:
         """The companies that described a project on the hub, like the «Aziende» screen:
-        each row carries company, contact person, email, project, start date and duration,
-        daily budget and status. Most recent first, or most relevant first when `q`
-        narrows the list.
-        `q` searches company name, contact person, email and project; `status` filters (`new`,
+        each row carries company, contact person, email, `phone`, `contact_points`, project,
+        start date and duration, daily budget and status. Most recent first, or most relevant
+        first when `q` narrows the list.
+        `q` searches company name, contact person, email (the contact's extra addresses,
+        phones and profiles too) and project; `status` filters (`new`,
         `contacted`, `in_progress`, `closed`) and `by_status` counts with every filter except
         `status`; `budget_min` and `budget_max` apply to the daily budget (a string: «500»,
         «450.50» or Italian style «1.500», «1.234,50»), `period_from` to the project start (ISO
@@ -290,20 +291,30 @@ def register(mcp: MCPServer, deps: Deps) -> None:
         headcount: int = 1,
         onsite_days: int | None = None,
         deal_id: str | None = None,
+        contact_points: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
         """Opens a company's request on behalf of the contact person, for a company met
         directly: the same fields and the same checks as the wizard (`period_from` as
         `YYYY-MM-DD`, `daily_budget` in euros per day, `remote` one of `remote`,
         `hybrid`, `on_site`; `onsite_days` only, and always, for hybrid). The contact person
         is found or created from the email. No email is sent, neither to the contact person
-        nor to rebase. Without `deal_id` it is a request like any other: the CRM records it
-        as a new customer and a new deal. With `deal_id` (the id of a deal the CRM already
-        has, or its address `.../app/deal/<id>`) the CRM links that deal and creates
-        nothing: neither a second customer nor a second deal. It returns the request as it
-        is, with `crm_status` (`linked`, or `rejected`/`error` with the CRM's sentence in
-        `crm_situation`, for example for a deal the CRM does not know) and `crm_deal_url`.
-        When the CRM is not configured on this environment the request is still opened and
-        stays `to_link`."""
+        nor to rebase. `email` is the contact's login address and primary email, and `phone`
+        their primary number. `contact_points` are their other ways to reach them: a list of
+        objects `{"kind": "email"|"phone"|"linkedin", "value": str,
+        "label": "work"|"personal"|"billing"|"other", "note": str|null (at most 200
+        characters)}`, stored on the contact at creation and sent to the CRM with the request.
+        When the contact is already on file their own points stay: the new ones are added, a
+        point they already have is left as it is, and none is primary on its own (the first
+        phone or profile becomes primary when there is none; an extra address is never
+        primary). An address that is another person's login or extra address is refused with
+        its name, before anything is written. Without `deal_id` it is a request like any
+        other: the CRM records it as a new customer and a new deal. With `deal_id` (the id of
+        a deal the CRM already has, or its address `.../app/deal/<id>`) the CRM links that deal
+        and creates nothing: neither a second customer nor a second deal. It returns the
+        request as it is, with `crm_status` (`linked`, or `rejected`/`error` with the CRM's
+        sentence in `crm_situation`, for example for a deal the CRM does not know) and
+        `crm_deal_url`. When the CRM is not configured on this environment the request is still
+        opened and stays `to_link`."""
         fields: dict[str, Any] = {
             "company_name": company_name,
             "contact_first_name": contact_first_name,
@@ -319,12 +330,15 @@ def register(mcp: MCPServer, deps: Deps) -> None:
             "headcount": headcount,
             "onsite_days": onsite_days,
             "deal_id": _deal_id(deal_id),
+            "contact_points": contact_points or [],
         }
         try:
             data = CompanyAdminCreate.model_validate(fields)
         except PydanticValidationError as exc:
             raise field_refusal(exc) from None
 
+        # A refusal of the contact's points is said first: it spends no model call.
+        deps.call(lambda s: CompanyService(s).check_admin_create(data))
         crm_on = (
             deps.crm_leads is not None
             and deps.settings is not None

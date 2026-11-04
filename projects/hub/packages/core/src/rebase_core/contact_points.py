@@ -22,11 +22,12 @@ rules in SQL.
 
 import re
 from collections.abc import Sequence
+from dataclasses import dataclass
 from typing import Any, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, TypeAdapter, model_validator
-from sqlalchemy import func, or_, select
+from sqlalchemy import ColumnElement, and_, case, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -40,6 +41,7 @@ from rebase_core.models import (
     UserContactPoint,
 )
 from rebase_core.schema_common import ResponseModel, clean_text
+from rebase_core.search import escape_like
 from rebase_core.validation import SafeStr
 from rebase_core.vocabulary import ContactKind, ContactLabel
 
@@ -48,6 +50,13 @@ ENTITY = "contact_points"
 CONTACT_POINTS_MAX = 20
 PHONE_MIN_DIGITS = 6
 _EMAIL: TypeAdapter[str] = TypeAdapter(EmailStr)
+# What reads as a phone number when typed in a search box, and how few digits of it are
+# enough to look for: the same two rules as the CRM's `owners_matching`.
+_PHONE_TERM = re.compile(r"[\d\s+().\-/]+")
+PHONE_SEARCH_MIN_DIGITS = 3
+# What a search ranks a person at when a point of theirs only contains the term: below a
+# name or an address that equals it, above the noise. An equal point ranks at 1.0.
+POINT_SUBSTRING_SCORE = 0.5
 
 LOGIN_IS_NOT_A_POINT = (
     "l'indirizzo con cui la persona accede è già mostrato come principale: non va nell'elenco"
@@ -140,6 +149,46 @@ class ContactPointRead(ResponseModel):
     position: int
 
 
+def _term_conditions(term: str) -> tuple[ColumnElement[bool], ColumnElement[bool]]:
+    """How a search `term` reads a point: `(contains, equals)`. `contains` is the text of the
+    point containing the term, case-insensitively, or, when the term reads as a phone number
+    (at least `PHONE_SEARCH_MIN_DIGITS` digits), a phone whose digits contain the term's.
+    `equals` is the same with equality: the whole value, or the same digits."""
+    text = term.strip().lower()
+    like = f"%{escape_like(text)}%"
+    contains: list[ColumnElement[bool]] = [
+        func.lower(UserContactPoint.value).like(like, escape="\\")
+    ]
+    equals: list[ColumnElement[bool]] = [func.lower(UserContactPoint.value) == text]
+    digits = phone_key(term)
+    if _PHONE_TERM.fullmatch(text) and len(digits) >= PHONE_SEARCH_MIN_DIGITS:
+        contains.append(
+            and_(UserContactPoint.kind == "phone", UserContactPoint.value_key.like(f"%{digits}%"))
+        )
+        equals.append(and_(UserContactPoint.kind == "phone", UserContactPoint.value_key == digits))
+    return or_(*contains), or_(*equals)
+
+
+def has_point_matching(user_id: ColumnElement[UUID] | Any, term: str) -> ColumnElement[bool]:
+    """Whether the person `user_id` keeps an extra point that a search `term` finds: what was
+    typed in any point's value, case-insensitively (an address, a number as written, a
+    profile), or, when the term reads as a phone number, a phone whose digits contain the
+    term's digits (`388 871` finds `+39 388-8713657`). The login address is not a point: the
+    caller searches `users.email` itself."""
+    contains, _ = _term_conditions(term)
+    return select(UserContactPoint.id).where(UserContactPoint.user_id == user_id, contains).exists()
+
+
+def point_match_score(user_id: ColumnElement[UUID] | Any, term: str) -> ColumnElement[float]:
+    """How well the person's extra points answer a search `term`, on the scale of the
+    trigram scores around it: 1.0 when a point is the term (an address or profile written
+    the same, a phone with the same digits), `POINT_SUBSTRING_SCORE` when one only contains
+    it, 0 otherwise. So `in` does not float everybody with a LinkedIn address to the top."""
+    _, equals = _term_conditions(term)
+    same = select(UserContactPoint.id).where(UserContactPoint.user_id == user_id, equals).exists()
+    return case((same, 1.0), (has_point_matching(user_id, term), POINT_SUBSTRING_SCORE), else_=0.0)
+
+
 def snapshot(points: Sequence[UserContactPoint]) -> list[dict[str, Any]]:
     """The stored points as an audit entry keeps them: what a write could send back."""
     return [
@@ -152,6 +201,16 @@ def snapshot(points: Sequence[UserContactPoint]) -> list[dict[str, Any]]:
         }
         for point in points
     ]
+
+
+@dataclass(frozen=True)
+class PointsAdded:
+    """What `ContactPointService.add` changed: the person's list before and after, as the
+    trail keeps them (`snapshot`), and the points that were new."""
+
+    before: list[dict[str, Any]]
+    after: list[dict[str, Any]]
+    added: list[dict[str, Any]]
 
 
 class ContactPointService:
@@ -244,6 +303,89 @@ class ContactPointService:
             ) from exc
         self.session.expire(user, ["contact_points"])
         return True
+
+    def add(self, user: User, points: Sequence[ContactPointInput]) -> PointsAdded | None:
+        """Adds `points` to what `user` already keeps, flushed and not committed, and answers
+        the lists before and after and the points that were new, or `None` when the stored
+        list did not change. For a request or a draft that names a person who may
+        already be on file (found by their login address): their own points stay, a point
+        they already have (same kind, same compared value) is left as it is, and a new one is
+        never primary on its own (`is_primary` is accepted and ignored, the way the CRM's
+        leads door treats an extra point): the first point of a kind with none primary becomes
+        it. The whole list then goes through `replace`, so every rule of a write applies and a
+        refusal names the value."""
+        if not points:
+            return None
+        self.session.execute(select(User.id).where(User.id == user.id).with_for_update())
+        self.session.expire(user, ["contact_points"])
+        before = snapshot(user.contact_points)
+        if not self.replace(user, self._merged(user, points)):
+            return None
+        after = snapshot(user.contact_points)
+        had = {(entry["kind"], point_key(entry["kind"], entry["value"])) for entry in before}
+        added = [
+            entry
+            for entry in after
+            if (entry["kind"], point_key(entry["kind"], entry["value"])) not in had
+        ]
+        return PointsAdded(before=before, after=after, added=added)
+
+    def check_added(
+        self, user: User, points: Sequence[ContactPointInput], *, phone: str | None = None
+    ) -> None:
+        """What `add` would refuse, said before anything is written. `user` may be a row not
+        in the session yet (an address nobody has used so far). `phone` is the number the same
+        request writes first as the person's primary one when they have none
+        (`add_primary_phone_if_missing`): it counts toward the cap and the duplicates."""
+        pending: list[ContactPointInput] = []
+        if phone is not None and user.phone is None:
+            pending.append(
+                ContactPointInput.model_construct(
+                    id=None,
+                    kind="phone",
+                    value=phone.strip(),
+                    label="work",
+                    note=None,
+                    is_primary=not any(
+                        p.kind == "phone" and p.is_primary for p in user.contact_points
+                    ),
+                    position=None,
+                )
+            )
+        if points:
+            self._checked(user, self._merged(user, points, pending))
+
+    @staticmethod
+    def _merged(
+        user: User,
+        points: Sequence[ContactPointInput],
+        pending: Sequence[ContactPointInput] = (),
+    ) -> list[ContactPointInput]:
+        """The person's stored list (then `pending`, points the same write stores first)
+        followed by the points they do not have yet. The stored ones are rebuilt as they are,
+        with no validation (a legacy value must still save)."""
+        login = email_key(user.email)
+        merged = [
+            ContactPointInput.model_construct(
+                id=None,
+                kind=p.kind,
+                value=p.value,
+                label=p.label,
+                note=p.note,
+                is_primary=p.is_primary,
+                position=None,
+            )
+            for p in user.contact_points
+        ]
+        merged.extend(pending)
+        have = {(p.kind, point_key(p.kind, p.value)) for p in merged}
+        for point in points:
+            if point.kind == "email" and point.is_primary and email_key(point.value) == login:
+                continue  # the list's own first entry, sent back
+            if (point.kind, point_key(point.kind, point.value)) in have:
+                continue
+            merged.append(point.model_copy(update={"is_primary": False}))
+        return merged
 
     def write_override(
         self, user: User, points: Sequence[ContactPointInput] | None

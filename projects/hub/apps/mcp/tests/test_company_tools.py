@@ -212,3 +212,339 @@ async def test_create_company_without_the_crm_waits_as_to_link(
         assert made["crm_status"] == "to_link"
     finally:
         _wipe(factory)
+
+
+_POINTS = [
+    {"kind": "email", "value": "maria.verdi@gmail.com", "label": "personal"},
+    {"kind": "phone", "value": "+39 02 7654321", "label": "billing", "note": "ufficio"},
+    {"kind": "linkedin", "value": "linkedin.com/in/maria-verdi", "label": "work"},
+]
+
+
+def _list(result: Any) -> list[dict[str, Any]]:
+    assert not result.is_error, result.content[0].text
+    return (
+        result.structured_content["result"]
+        if result.structured_content
+        else json.loads(result.content[0].text)
+    )
+
+
+def _read(point: dict[str, Any]) -> tuple[str, str, str, str | None, bool]:
+    return (point["kind"], point["value"], point["label"], point["note"], point["is_primary"])
+
+
+async def test_create_company_stores_the_contact_points_and_sends_them_to_the_crm(
+    factory: sessionmaker[Session],
+) -> None:
+    """REB-948: the extra points go on the contact at creation, validated by the one service,
+    and the CRM gets them with the request (the login address stays the door's `email`)."""
+    from fakes_pigro import DEAL, DEAL_URL, TOKEN, RecordedPigro
+
+    _wipe(factory)
+    _seed_admin(factory)
+    known = str(UUID(int=77))
+    body = {
+        "customer_id": str(UUID(int=7)),
+        "person_id": None,
+        "deal_id": str(DEAL),
+        "deal_url": DEAL_URL,
+        "creato": False,
+    }
+    fake = RecordedPigro([(200, json.dumps(body).encode())])
+    try:
+        async with Client(_crm_server(factory, fake, TOKEN)) as client:
+            made = _payload(
+                await client.call_tool(
+                    "create_company",
+                    {**_COMPANY_ARGS, "deal_id": known, "contact_points": _POINTS},
+                )
+            )
+            again = _payload(await client.call_tool("get_company", {"company_id": made["id"]}))
+        # The login address first, then the phone the request carried (primary), then the
+        # extras in the order sent: an address never primary, the first profile primary.
+        assert [_read(p) for p in made["contact_points"]] == [
+            ("email", "maria@studiorossi.it", "work", None, True),
+            ("phone", "+39 345 1234567", "work", None, True),
+            ("email", "maria.verdi@gmail.com", "personal", None, False),
+            ("phone", "+39 02 7654321", "billing", "ufficio", False),
+            ("linkedin", "https://www.linkedin.com/in/maria-verdi", "work", None, True),
+        ]
+        assert again["contact_points"] == made["contact_points"]
+        sent = json.loads(fake.calls[0][3])["contact"]
+        assert sent["email"] == "maria@studiorossi.it"
+        assert [
+            (p["kind"], p["value"], p["label"], p["note"], p["is_primary"])
+            for p in sent["contact_points"]
+        ] == [
+            ("phone", "+39 345 1234567", "work", None, True),
+            ("email", "maria.verdi@gmail.com", "personal", None, False),
+            ("phone", "+39 02 7654321", "billing", "ufficio", False),
+            ("linkedin", "https://www.linkedin.com/in/maria-verdi", "work", None, True),
+        ]
+    finally:
+        _wipe(factory)
+
+
+async def test_create_company_adds_points_to_a_contact_already_on_file(
+    factory: sessionmaker[Session],
+) -> None:
+    """A contact found by email keeps their own points: the new ones are added, a point they
+    already have is left as it is, and a new one is never primary on its own."""
+    _wipe(factory)
+    _seed_admin(factory)
+    try:
+        async with Client(build_server(factory, lambda: IVAN)) as client:
+            first = _payload(
+                await client.call_tool(
+                    "create_company", {**_COMPANY_ARGS, "contact_points": _POINTS[:2]}
+                )
+            )
+            second = _payload(
+                await client.call_tool(
+                    "create_company",
+                    {
+                        **_COMPANY_ARGS,
+                        "project": "Un secondo progetto.",
+                        "contact_points": [
+                            {
+                                "kind": "phone",
+                                "value": "+39 02 7654321",
+                                "label": "other",
+                                "note": "diverso",
+                            },
+                            {
+                                "kind": "phone",
+                                "value": "+39 333 0000000",
+                                "label": "personal",
+                                "is_primary": True,
+                            },
+                            _POINTS[2],
+                        ],
+                    },
+                )
+            )
+        assert first["id"] != second["id"]
+        async with Client(build_server(factory, lambda: IVAN)) as client:
+            trail = {
+                made["id"]: [
+                    entry["payload"]
+                    for entry in _list(
+                        await client.call_tool("get_company_audit", {"company_id": made["id"]})
+                    )
+                    if entry["kind"] == "company_created"
+                ]
+                for made in (first, second)
+            }
+        # The trail names the points the request added, and only those: the second request's
+        # duplicate phone was already there and the flat phone is not an extra point.
+        assert [(p["kind"], p["value"]) for p in trail[first["id"]][0]["contact_points_added"]] == [
+            ("email", "maria.verdi@gmail.com"),
+            ("phone", "+39 02 7654321"),
+        ]
+        assert [
+            (p["kind"], p["value"]) for p in trail[second["id"]][0]["contact_points_added"]
+        ] == [("phone", "+39 333 0000000"), ("linkedin", "https://www.linkedin.com/in/maria-verdi")]
+        assert [_read(p) for p in second["contact_points"]] == [
+            ("email", "maria@studiorossi.it", "work", None, True),
+            ("phone", "+39 345 1234567", "work", None, True),
+            ("email", "maria.verdi@gmail.com", "personal", None, False),
+            ("phone", "+39 02 7654321", "billing", "ufficio", False),
+            ("phone", "+39 333 0000000", "personal", None, False),
+            ("linkedin", "https://www.linkedin.com/in/maria-verdi", "work", None, True),
+        ]
+    finally:
+        _wipe(factory)
+
+
+async def test_create_company_refuses_a_point_that_is_another_persons_login_and_writes_nothing(
+    factory: sessionmaker[Session],
+) -> None:
+    from rebase_core.models import Company, User
+
+    _wipe(factory)
+    _seed_admin(factory)
+    _seed_company(factory)  # wile@acme.it is somebody's login address
+    try:
+        async with Client(build_server(factory, lambda: IVAN)) as client:
+            refused = await client.call_tool(
+                "create_company",
+                {
+                    **_COMPANY_ARGS,
+                    "contact_points": [
+                        {"kind": "email", "value": "Wile@acme.it", "label": "work"},
+                    ],
+                },
+            )
+            login = await client.call_tool(
+                "create_company",
+                {
+                    **_COMPANY_ARGS,
+                    "contact_points": [
+                        {"kind": "email", "value": "maria@studiorossi.it", "label": "work"},
+                    ],
+                },
+            )
+            malformed = await client.call_tool(
+                "create_company",
+                {
+                    **_COMPANY_ARGS,
+                    "contact_points": [{"kind": "email", "value": "non-un-indirizzo"}],
+                },
+            )
+        assert refused.is_error
+        assert "wile@acme.it" in refused.content[0].text
+        assert "un'altra persona" in refused.content[0].text
+        assert login.is_error  # the contact's own login is not an extra point
+        assert malformed.is_error
+        session = factory()
+        try:
+            assert session.query(Company).count() == 1  # only the seeded one
+            emails = {u.email for u in session.query(User)}
+            assert "maria@studiorossi.it" not in emails
+        finally:
+            session.close()
+    finally:
+        _wipe(factory)
+
+
+async def test_list_companies_q_finds_a_company_by_an_extra_email_a_phone_or_a_profile(
+    factory: sessionmaker[Session],
+) -> None:
+    from rebase_core.contact_points import ContactPointInput, ContactPointService
+    from rebase_core.models import User
+
+    _wipe(factory)
+    company_id = _seed_company(factory)
+    session = factory()
+    try:
+        user = session.query(User).filter_by(email="wile@acme.it").one()
+        ContactPointService(session).replace(
+            user,
+            [
+                ContactPointInput(kind="email", value="coyote@desert.example", label="personal"),
+                ContactPointInput(kind="phone", value="+39 388 871 3657", label="other"),
+                ContactPointInput(kind="linkedin", value="linkedin.com/in/wile-e", label="work"),
+            ],
+        )
+        session.commit()
+    finally:
+        session.close()
+    try:
+        async with Client(build_server(factory, lambda: IVAN)) as client:
+            for term in (
+                "coyote@desert",
+                "3888713657",
+                "+39 388 871 3657",
+                "388-871-3657",
+                "wile-e",
+            ):
+                found = _payload(await client.call_tool("list_companies", {"q": term}))
+                assert [row["id"] for row in found["items"]] == [company_id], term
+            none = _payload(await client.call_tool("list_companies", {"q": "3880000000"}))
+            assert none["items"] == []
+    finally:
+        _wipe(factory)
+
+
+async def test_create_company_refuses_a_list_past_the_cap_counting_the_flat_phone(
+    factory: sessionmaker[Session],
+) -> None:
+    """The cap and the duplicates are checked with the number the request itself stores as the
+    contact's primary phone, so a list that fits alone cannot pass the check and then fail
+    after the contact was committed."""
+    from rebase_core.contact_points import CONTACT_POINTS_MAX
+    from rebase_core.models import Company, User
+
+    _wipe(factory)
+    _seed_admin(factory)
+    full = [
+        {"kind": "phone", "value": f"+39 02 76543{n:02d}", "label": "other"}
+        for n in range(CONTACT_POINTS_MAX)
+    ]
+    try:
+        async with Client(build_server(factory, lambda: IVAN)) as client:
+            refused = await client.call_tool(
+                "create_company", {**_COMPANY_ARGS, "contact_points": full}
+            )
+            assert refused.is_error, "21 points with the flat phone"
+            assert str(CONTACT_POINTS_MAX) in refused.content[0].text
+            fits = await client.call_tool(
+                "create_company", {**_COMPANY_ARGS, "contact_points": full[:-1]}
+            )
+            assert not fits.is_error, fits.content[0].text
+        session = factory()
+        try:
+            assert session.query(Company).count() == 1
+            assert session.query(User).filter_by(email="maria@studiorossi.it").count() == 1
+        finally:
+            session.close()
+    finally:
+        _wipe(factory)
+
+
+async def test_a_refused_create_company_spends_no_model_call(
+    factory: sessionmaker[Session],
+) -> None:
+    from fakes_pigro import TOKEN, RecordedPigro
+
+    from rebase_core.config import Settings
+    from rebase_core.crm_link import CrmLeadService
+    from rebase_core.ratelimit import RateLimiter
+
+    _wipe(factory)
+    _seed_admin(factory)
+    _seed_company(factory)  # wile@acme.it is somebody's login
+    settings = Settings(  # type: ignore[call-arg]
+        _env_file=None, pigro_api_url="https://pigro.test", pigro_engagements_token=TOKEN
+    )
+    limiter = RateLimiter(1, 3600)
+    server = build_server(
+        factory,
+        lambda: IVAN,
+        settings=settings,
+        crm_leads=lambda session: CrmLeadService(session, settings, RecordedPigro([]), None),
+        model_calls=limiter,
+    )
+    try:
+        async with Client(server) as client:
+            refused = await client.call_tool(
+                "create_company",
+                {
+                    **_COMPANY_ARGS,
+                    "contact_points": [{"kind": "email", "value": "wile@acme.it", "label": "work"}],
+                },
+            )
+        assert refused.is_error
+        assert limiter.has_room(str(IVAN.id))  # the one call allowed is still there
+    finally:
+        _wipe(factory)
+
+
+async def test_a_deleted_company_is_not_found_through_its_contact_points(
+    factory: sessionmaker[Session],
+) -> None:
+    from rebase_core.contact_points import ContactPointInput, ContactPointService
+    from rebase_core.models import User
+
+    _wipe(factory)
+    _seed_admin(factory)
+    company_id = _seed_company(factory)
+    session = factory()
+    try:
+        user = session.query(User).filter_by(email="wile@acme.it").one()
+        ContactPointService(session).replace(
+            user, [ContactPointInput(kind="phone", value="+39 388 871 3657", label="other")]
+        )
+        session.commit()
+    finally:
+        session.close()
+    try:
+        async with Client(build_server(factory, lambda: IVAN)) as client:
+            found = _payload(await client.call_tool("list_companies", {"q": "3888713657"}))
+            assert [row["id"] for row in found["items"]] == [company_id]
+            _payload(await client.call_tool("delete_company", {"company_id": company_id}))
+            gone = _payload(await client.call_tool("list_companies", {"q": "3888713657"}))
+            assert gone["items"] == []
+    finally:
+        _wipe(factory)

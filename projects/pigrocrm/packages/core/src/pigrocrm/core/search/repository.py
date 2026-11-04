@@ -34,6 +34,7 @@ from sqlalchemy import ColumnElement, Select, Subquery, func, literal, select
 from sqlalchemy.orm import Session, aliased
 
 from pigrocrm.core.contact_points.models import ContactPoint
+from pigrocrm.core.contact_points.service import owners_matching
 from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.deals.models import Deal
 from pigrocrm.core.documents.models import Document
@@ -67,16 +68,34 @@ from pigrocrm.core.tasks.models import Task
 # Spec §8.1's searched surface, one tuple per entity. Declaration order is load-bearing
 # twice over: `best_field` resolves a tie to the earlier field, so the identifying column
 # comes first, and `matches_any` builds its `OR` in this order.
-def points_text(owner_id: Any, owner_column: Any) -> ColumnElement[str]:
-    """Every contact point of one owner as one string, what the `contacts` field of a search
-    is matched against: an address, a number or a profile on any of the owner's points finds
-    it. A correlated subquery rather than a column, since the points live in a table of their
-    own; the palette's tables are small and its `ILIKE` over it is a filter, not a seek."""
+def points_text(owner_id: Any, owner_column: Any, kind: str | None = None) -> ColumnElement[str]:
+    """The contact points of one owner as one string (of one `kind` when it is given), what a
+    contact field of a search is matched against: an address, a number or a profile on any of
+    the owner's points finds it. A correlated subquery rather than a column, since the points
+    live in a table of their own; the palette's tables are small and its `ILIKE` over it is a
+    filter, not a seek."""
+    found = select(func.string_agg(ContactPoint.value, literal(" "))).where(
+        owner_column == owner_id
+    )
+    if kind is not None:
+        found = found.where(ContactPoint.kind == kind)
+    return found.correlate_except(ContactPoint).scalar_subquery()
+
+
+def contact_fields(owner: Any, owner_column: Any) -> tuple[ScoredField, ...]:
+    """One field per kind of contact point, named as the kind (`email`, `phone`, `linkedin`),
+    so a hit says which point answered. A phone also matches by its digits, the way the
+    people and customer lists find it (`owners_matching`): `3888713657` finds
+    `+39 388 871 3657`."""
     return (
-        select(func.string_agg(ContactPoint.value, literal(" ")))
-        .where(owner_column == owner_id)
-        .correlate_except(ContactPoint)
-        .scalar_subquery()
+        ScoredField("email", points_text(owner.id, owner_column, "email"), WEIGHT_EMAIL),
+        ScoredField(
+            "phone",
+            points_text(owner.id, owner_column, "phone"),
+            WEIGHT_EMAIL,
+            also=lambda term: owner.id.in_(owners_matching(owner_column, term, "phone")),
+        ),
+        ScoredField("linkedin", points_text(owner.id, owner_column, "linkedin"), WEIGHT_EMAIL),
     )
 
 
@@ -84,12 +103,12 @@ CUSTOMER_FIELDS: tuple[ScoredField, ...] = (
     ScoredField("legal_name", Customer.legal_name, WEIGHT_IDENTIFYING),
     ScoredField("vat_number", Customer.vat_number, WEIGHT_CODE),
     ScoredField("tax_code", Customer.tax_code, WEIGHT_CODE),
-    ScoredField("email", points_text(Customer.id, ContactPoint.customer_id), WEIGHT_EMAIL),
+    *contact_fields(Customer, ContactPoint.customer_id),
 )
 PERSON_FIELDS: tuple[ScoredField, ...] = (
     ScoredField("last_name", Person.last_name, WEIGHT_IDENTIFYING),
     ScoredField("first_name", Person.first_name, WEIGHT_IDENTIFYING),
-    ScoredField("email", points_text(Person.id, ContactPoint.person_id), WEIGHT_EMAIL),
+    *contact_fields(Person, ContactPoint.person_id),
 )
 DEAL_FIELDS: tuple[ScoredField, ...] = (ScoredField("name", Deal.name, WEIGHT_IDENTIFYING),)
 DOCUMENT_FIELDS: tuple[ScoredField, ...] = (
