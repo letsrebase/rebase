@@ -52,6 +52,9 @@ async def test_a_person_with_two_emails_and_a_labelled_phone_is_read_back_and_fo
     ]
     for term, items in found.items():
         assert [p["id"] for p in items] == [created["id"]], term
+    # After the person's own lines (customer included) and before anything else.
+    assert resource.index("- Customer: not linked") < resource.index("## Contact points")
+    assert resource.index("## Contact points") < resource.index("## Timeline")
     assert "- email: Ada.Private@gmail.com [personal]" in resource
     assert "- email: ada@acme.it [work] (primary)" in resource
     assert "- phone: +39 02 1234567 [billing] (primary) — centralino" in resource
@@ -123,6 +126,21 @@ async def test_the_flat_arguments_are_refused_with_the_way_to_say_it_now(server)
             result = await client.call_tool(tool, arguments)
             assert result.is_error, (tool, arguments)
             assert "contact_points" in result.content[0].text
+
+
+async def test_the_flat_fields_of_a_change_get_the_same_hint(server) -> None:
+    async with Client(server) as client:
+        person = _payload(await client.call_tool("create_person", {"first_name": "Ada"}))
+        customer = _payload(await client.call_tool("create_customer", {"legal_name": "ACME"}))
+        for tool, key, entity_id, changes in (
+            ("update_person", "person_id", person["id"], {"email": "ada@acme.it"}),
+            ("update_person", "person_id", person["id"], {"linkedin": "ada"}),
+            ("update_customer", "customer_id", customer["id"], {"phone": "0212345"}),
+        ):
+            result = await client.call_tool(tool, {key: entity_id, "changes": changes})
+            assert result.is_error, (tool, changes)
+            text = result.content[0].text
+            assert "contact_points" in text and f"changes.{next(iter(changes))}" in text
 
 
 async def test_a_refused_point_names_its_position(server) -> None:

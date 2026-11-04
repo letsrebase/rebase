@@ -93,10 +93,10 @@ def _parameters_of(schema: Mapping[str, Any]) -> str:
     return "parameters " + "; ".join(parts) if parts else "no parameters"
 
 
-# Arguments a tool used to take and no longer does, with what to send instead: a misspelling
-# guess cannot find `value_lines` from `expected_value`.
 PERSON_FLAT = ("email", "phone", "linkedin")
 CUSTOMER_FLAT = ("email", "phone")
+# Arguments a tool used to take and no longer does, with what to send instead: a misspelling
+# guess cannot find `value_lines` from `expected_value`.
 REMOVED_ARGUMENTS: dict[tuple[str, str], str] = {
     ("create_deal", "expected_value"): (
         "the deal's value is the total of its `value_lines`: send `value_lines` (a list of "
@@ -110,11 +110,27 @@ REMOVED_ARGUMENTS: dict[tuple[str, str], str] = {
         )
         for tool, who, names in (
             ("create_person", "a person's emails, phones and LinkedIn profiles", PERSON_FLAT),
+            ("update_person", "a person's emails, phones and LinkedIn profiles", PERSON_FLAT),
             ("create_customer", "a customer's emails and phones", CUSTOMER_FLAT),
+            ("update_customer", "a customer's emails and phones", CUSTOMER_FLAT),
         )
         for name in names
     },
 }
+
+
+def refuse_removed_changes(tool: str, changes: Mapping[str, Any]) -> None:
+    """The `changes` of an `update_*` that names a field the tool no longer takes: refused
+    with what to send instead, as a removed parameter is, rather than as the schema's bare
+    «field not recognised»."""
+    for name in changes:
+        if (tool, name) in REMOVED_ARGUMENTS:
+            raise ValidationFailed(
+                "input",
+                f"changes.{name}",
+                f"field removed from `{tool}`",
+                expected=REMOVED_ARGUMENTS[(tool, name)],
+            )
 
 
 def unknown_argument_error(

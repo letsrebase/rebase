@@ -152,7 +152,7 @@ def test_timeline_endpoint_reports_what_happened(logged_in: TestClient) -> None:
     customer_id = logged_in.post("/api/customers", json={"legal_name": "ACME"}).json()["id"]
     logged_in.patch(
         f"/api/customers/{customer_id}",
-        json={"contact_points": [{"kind": "phone", "value": "0212"}]},
+        json={"contact_points": [{"kind": "phone", "value": "021234"}]},
     )
 
     timeline = logged_in.get(f"/api/customers/{customer_id}/timeline").json()
@@ -165,7 +165,7 @@ def test_timeline_endpoint_respects_a_bounded_limit(logged_in: TestClient) -> No
     for index in range(5):
         logged_in.patch(
             f"/api/customers/{customer_id}",
-            json={"contact_points": [{"kind": "phone", "value": f"021{index}"}]},
+            json={"contact_points": [{"kind": "phone", "value": f"02123{index}"}]},
         )
 
     limited = logged_in.get(f"/api/customers/{customer_id}/timeline", params={"limit": 2})

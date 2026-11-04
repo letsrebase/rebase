@@ -192,12 +192,12 @@ def render_person(context: McpContext, person_id: UUID) -> str:
         f"- Phone: {person.phone or '—'}",
         f"- LinkedIn: {person.linkedin or '—'}",
     ]
-    lines += _contact_point_lines(person.contact_points, heading="Contact points")
     if person.customer_id:
         customer = CustomerService(context.session).get(person.customer_id, context.actor)
         lines.append(f"- Customer: {customer.legal_name} (`customer://{customer.id}`)")
     else:
         lines.append("- Customer: not linked")
+    lines += _contact_point_lines(person.contact_points, heading="Contact points")
     lines += _custom_lines(person.custom_fields)
     lines += ["", "## Timeline", ""] + _timeline_lines(context, "person", person_id)
     lines += _note_lines(context, "person", person_id)

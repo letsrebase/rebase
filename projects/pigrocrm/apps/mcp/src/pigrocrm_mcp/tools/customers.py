@@ -4,6 +4,7 @@ from uuid import UUID
 from pigrocrm.core.customers.schemas import CustomerCreate, CustomerListQuery, CustomerUpdate
 from pigrocrm.core.customers.service import CustomerService
 from pigrocrm_mcp.context import McpContext
+from pigrocrm_mcp.errors import refuse_removed_changes
 from pigrocrm_mcp.tools import notes
 from pigrocrm_mcp.tools.changes import refuse_empty, report
 
@@ -17,6 +18,7 @@ def update(context: McpContext, customer_id: str, data: dict[str, Any]) -> dict[
     service = CustomerService(context.session)
     identifier = UUID(customer_id)
     notes.refuse_note_in_changes(data, "add_note")
+    refuse_removed_changes("update_customer", data)
     changes = CustomerUpdate(**data)
     refuse_empty(data)
     before = service.get(identifier, context.actor)
