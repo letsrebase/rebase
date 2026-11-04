@@ -11,6 +11,7 @@ import { toApplication, toCompanyApplication, useMe } from '@/lib/me'
 import { GUIDE } from '@/lib/perks'
 import { COMPANY_FIELDS } from '@/pages/CompanyWizard'
 import { FREELANCER_FIELDS } from '@/pages/FreelancerWizard'
+import { MemberContacts } from '@/pages/member/Contacts'
 import { MemberContracts } from '@/pages/member/Contracts'
 import { MemberReferral } from '@/pages/member/Referral'
 
@@ -115,7 +116,8 @@ function RequestCard({ request, position, total }: { request: MemberRequest; pos
  *
  *  One column at every viewport, one section per row (REB-641): the referral link, the
  *  feature to highlight (REB-610), opens the page; then the card, the requests, the role
- *  (a role row, only for a non-admin with neither a card nor a request), the perks,
+ *  (a role row, only for a non-admin with neither a card nor a request), «I tuoi recapiti»
+ *  (REB-944, for everyone: it is the person's own list, whatever they are here), the perks,
  *  and the contracts last. Under the name, the header holds one badge per role the person
  *  holds: freelancer (a card), company (a request), administrator (REB-601).
  *  It was two columns from `lg` between REB-602 and REB-641, the referral, the card and
@@ -307,6 +309,7 @@ export function Area() {
         {cardSection}
         {requestsSection}
         {roleSection}
+        <MemberContacts />
         {perksSection}
         {value && <MemberContracts />}
       </div>

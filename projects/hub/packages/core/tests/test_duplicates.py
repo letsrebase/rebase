@@ -39,7 +39,7 @@ from rebase_core.freelancers import LINKEDIN_HAS_CARD, FreelancerService
 from rebase_core.linkedin import linkedin_key
 from rebase_core.members import MemberService
 from rebase_core.merge import PersonMergeService
-from rebase_core.models import Freelancer, Signup, User
+from rebase_core.models import Freelancer, Signup, User, UserContactPoint
 from rebase_core.service import SignupService
 from rebase_core.signup_schemas import SignupCreate
 from rebase_core.talents import TalentsService
@@ -97,6 +97,7 @@ def _apply(session: Session, email: str, linkedin: str | None = ADA, **extra: An
 
 
 def _user(session: Session, email: str, **extra: Any) -> User:
+    phone = extra.pop("phone", None)
     row = User(
         email=email,
         first_name=extra.pop("first_name", "Marco"),
@@ -105,6 +106,13 @@ def _user(session: Session, email: str, **extra: Any) -> User:
     )
     session.add(row)
     session.flush()
+    if phone is not None:
+        session.add(
+            UserContactPoint(
+                user_id=row.id, kind="phone", value=phone, label="work", is_primary=True
+            )
+        )
+        session.flush()
     return row
 
 

@@ -22,6 +22,7 @@ from sqlalchemy.orm import Session
 from rebase_core.admin_tokens import AdminList, AdminRead
 from rebase_core.audit import AdminActionService
 from rebase_core.config import Settings
+from rebase_core.contact_points import ContactPointService
 from rebase_core.errors import InvalidState, NotFound, ValidationFailed
 from rebase_core.linkedin import linkedin_key
 from rebase_core.mail import Mail
@@ -133,6 +134,16 @@ class UserService:
             return holder
         return None
 
+    def _refuse_extra_address(self, row: User | None, email: str) -> None:
+        """A new login is never somebody else's extra address (REB-943): that person keeps it
+        as a way to reach them, and a role or a link would go to a stranger."""
+        if row is None and ContactPointService(self.session).owner_of_email(email) is not None:
+            raise ValidationFailed(
+                ENTITY,
+                "email",
+                f"«{email.strip().lower()}» è già tra i recapiti di un'altra persona",
+            )
+
     @staticmethod
     def _refuse_merged(row: User | None) -> None:
         """A role goes to a person, not to an address an admin merged into somebody."""
@@ -180,7 +191,7 @@ class UserService:
         row = self.find_person(email, linkedin_url)
         if row is not None:
             if phone is not None and row.phone is None:
-                row.phone = phone
+                ContactPointService(self.session).add_primary_phone_if_missing(row, phone)
             return row
         # A profile somebody else holds (a user with no card, see `find_person`) is not
         # written on a second row: the index would refuse it, and it is theirs.
@@ -190,10 +201,12 @@ class UserService:
             first_name=first_name,
             last_name=last_name,
             linkedin_url=None if taken else linkedin_url,
-            phone=phone,
         )
         self.session.add(row)
         try:
+            if phone is not None:
+                self.session.flush()
+                ContactPointService(self.session).add_primary_phone_if_missing(row, phone)
             self.session.commit()
         except IntegrityError as exc:
             # Two first applications racing: the index on the address, or since REB-800
@@ -273,6 +286,7 @@ class UserService:
         changes nothing and records nothing."""
         row = self.by_email(email)
         self._refuse_merged(row)
+        self._refuse_extra_address(row, email)
         created = row is None
         was = None if row is None else row.role
         if row is None:
@@ -334,6 +348,7 @@ class UserService:
             raise ValidationFailed(ENTITY, "role", f"uno fra {', '.join(USER_ROLES)}")
         row = self.by_email(email)
         self._refuse_merged(row)
+        self._refuse_extra_address(row, email)
         created = row is None
         if row is None:
             first_name, last_name = first_name.strip(), last_name.strip()

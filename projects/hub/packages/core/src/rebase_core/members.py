@@ -22,6 +22,7 @@ from sqlalchemy.orm import Session
 from rebase_core.audit import utcnow
 from rebase_core.cloud import TalentCloudService
 from rebase_core.company_schemas import CompanyFields, CompanyUpdate
+from rebase_core.contact_points import ContactPointInput, ContactPointService
 from rebase_core.crm_words import TO_LINK
 from rebase_core.errors import NotFound
 from rebase_core.freelancer_schemas import CvFile, MemberUpdate
@@ -171,6 +172,7 @@ class MemberService:
             email=user.email,
             linkedin_url=user.linkedin_url,
             phone=user.phone,
+            contact_points=ContactPointService.present(user),
             role=user.role,
             created_at=user.created_at,
             updated_at=user.updated_at,
@@ -240,6 +242,31 @@ class MemberService:
         else:
             self._note(user, row, "Scheda confermata dalla persona")
         return _to_profile(row, user)
+
+    def update_contact_points(self, user_id: UUID, points: list[ContactPointInput]) -> MeRead:
+        """The signed-in person replaces their own list of extra contact points (REB-943),
+        whatever they are here: a freelancer, a company's referente or both. The address
+        they sign in with is not part of it. A change leaves one note in the thread of
+        the card, and of the newest request, saying the contacts moved and never what they
+        are, so the admin knows without a value in the thread."""
+        user = self.session.get(User, user_id)
+        if user is None:
+            raise NotFound("user", user_id)
+        if ContactPointService(self.session).replace(user, points):
+            self.session.commit()
+            card = self.card_for_user(user_id)
+            if card is not None:
+                self._note(user, card, "Recapiti aggiornati dalla persona")
+            request = self.company_for_user(user_id)
+            if request is not None:
+                NoteService(self.session).add(
+                    COMPANY_ENTITY,
+                    request.id,
+                    "Recapiti aggiornati dal referente",
+                    author_id=user.id,
+                    source="person",
+                )
+        return self.me_read(user_id)
 
     def update_company(
         self, user_id: UUID, data: CompanyUpdate, company_id: UUID | None = None

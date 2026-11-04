@@ -14,8 +14,10 @@ import { Input } from '@rebase/ui/input'
 import { Label } from '@rebase/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@rebase/ui/select'
 import { Textarea } from '@rebase/ui/textarea'
+import { ContactPointsEditor } from '@/components/ContactPointsEditor'
 import { AMOUNT_PROBLEM, acceptedAmount, sentAmount } from '@/lib/amount'
 import type { Company, CompanyOverride, Freelancer, FreelancerOverride, Remote } from '@/lib/api'
+import { allValid, contactsChanged, draftsFrom, toWrite, type PointDraft } from '@/lib/contactPoints'
 import { REMOTE_LABELS, formatDate } from '@/lib/format'
 
 // A `Select` needs a non-empty string; `remote` is the one override field that is both
@@ -31,6 +33,7 @@ interface FreelancerOverrideDraft {
   remote: Remote | typeof UNSET
   links: string
   filledBy: 'person' | 'admin'
+  contacts: PointDraft[]
 }
 
 function draftFromFreelancer(f: Freelancer): FreelancerOverrideDraft {
@@ -43,6 +46,7 @@ function draftFromFreelancer(f: Freelancer): FreelancerOverrideDraft {
     remote: f.remote ?? UNSET,
     links: f.links.join('\n'),
     filledBy: f.filled_by,
+    contacts: draftsFrom(f.contact_points),
   }
 }
 
@@ -78,9 +82,11 @@ export function FreelancerOverrideDialog({
     if (open) setDraft(draftFromFreelancer(freelancer))
   }
 
+  const contactsEdited = contactsChanged(draft.contacts, freelancer.contact_points)
+
   function submit(event: FormEvent) {
     event.preventDefault()
-    onSave({
+    const payload: FreelancerOverride = {
       first_name: draft.first_name.trim(),
       last_name: draft.last_name.trim(),
       linkedin_url: draft.linkedinUrl.trim() || null,
@@ -92,16 +98,22 @@ export function FreelancerOverrideDialog({
         .map((link) => link.trim())
         .filter(Boolean),
       filled_by: draft.filledBy,
-    })
+    }
+    if (contactsEdited) payload.contact_points = toWrite(draft.contacts)
+    onSave(payload)
   }
 
   // Blank is allowed here: it clears the rate.
   const rateProblem = draft.dailyRate.trim() !== '' && !acceptedAmount(draft.dailyRate)
-  const valid = draft.first_name.trim() !== '' && draft.last_name.trim() !== '' && !rateProblem
+  const valid =
+    draft.first_name.trim() !== '' &&
+    draft.last_name.trim() !== '' &&
+    !rateProblem &&
+    (!contactsEdited || allValid(draft.contacts))
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[85vh] max-w-2xl overflow-y-auto">
+      <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>Modifica scheda</DialogTitle>
           <DialogDescription>
@@ -211,6 +223,15 @@ export function FreelancerOverrideDialog({
               </SelectContent>
             </Select>
           </div>
+          <fieldset className="space-y-3 border p-4">
+            <legend className="px-1 text-sm font-medium">Recapiti</legend>
+            <ContactPointsEditor
+              idPrefix="override-freelancer-contact"
+              login={freelancer.email}
+              drafts={draft.contacts}
+              onChange={(contacts) => setDraft({ ...draft, contacts })}
+            />
+          </fieldset>
           {error && (
             <p role="alert" className="text-sm text-destructive">
               {error}
@@ -244,6 +265,7 @@ interface CompanyOverrideDraft {
   contactLastName: string
   contactPersonLinkedin: string
   clearContactPersonLinkedin: boolean
+  contacts: PointDraft[]
 }
 
 function draftFromCompany(c: Company): CompanyOverrideDraft {
@@ -265,6 +287,7 @@ function draftFromCompany(c: Company): CompanyOverrideDraft {
     contactLastName: '',
     contactPersonLinkedin: '',
     clearContactPersonLinkedin: false,
+    contacts: draftsFrom(c.contact_points),
   }
 }
 
@@ -301,6 +324,8 @@ export function CompanyOverrideDialog({
     if (open) setDraft(draftFromCompany(company))
   }
 
+  const contactsEdited = contactsChanged(draft.contacts, company.contact_points)
+
   function submit(event: FormEvent) {
     event.preventDefault()
     const payload: CompanyOverride = {
@@ -314,6 +339,7 @@ export function CompanyOverrideDialog({
       onsite_days: draft.remote === 'hybrid' ? Number(draft.onsiteDays) : null,
       headcount: Number(draft.headcount),
     }
+    if (contactsEdited) payload.contact_points = toWrite(draft.contacts)
     if (draft.contactFirstName.trim()) payload.first_name = draft.contactFirstName.trim()
     if (draft.contactLastName.trim()) payload.last_name = draft.contactLastName.trim()
     if (draft.clearContactPersonLinkedin) payload.linkedin_url = null
@@ -331,11 +357,12 @@ export function CompanyOverrideDialog({
     draft.duration.trim() !== '' &&
     draft.dailyBudget.trim() !== '' &&
     draft.headcount.trim() !== '' &&
-    (draft.remote !== 'hybrid' || draft.onsiteDays.trim() !== '')
+    (draft.remote !== 'hybrid' || draft.onsiteDays.trim() !== '') &&
+    (!contactsEdited || allValid(draft.contacts))
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[85vh] max-w-2xl overflow-y-auto">
+      <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>Modifica richiesta</DialogTitle>
           <DialogDescription>
@@ -506,6 +533,15 @@ export function CompanyOverrideDialog({
                 Rimuovi il profilo LinkedIn del referente
               </Label>
             </div>
+          </fieldset>
+          <fieldset className="space-y-3 border p-4">
+            <legend className="px-1 text-sm font-medium">Recapiti del referente</legend>
+            <ContactPointsEditor
+              idPrefix="override-company-contact"
+              login={company.email}
+              drafts={draft.contacts}
+              onChange={(contacts) => setDraft({ ...draft, contacts })}
+            />
           </fieldset>
           {error && (
             <p role="alert" className="text-sm text-destructive">

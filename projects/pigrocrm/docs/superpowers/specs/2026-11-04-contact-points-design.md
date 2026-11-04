@@ -108,7 +108,54 @@ CRM with every point of its contact. That changes the payload's shape, so the `h
 - Whether a person may hide a point from the agents' MCP reads (a personal number, say).
   Not asked; nothing in this design hides anything.
 
-## 7. Deviations found while building (CRM, REB-940 to REB-942)
+## 7. Deviations found while building
+
+### Hub (REB-943, REB-944)
+
+- **The login address is shown as the primary email, and only that.** The design says the login
+  address is «shown as the primary email, read-only». Reads answer it as the first entry of
+  `contact_points`, without an `id`; a write leaves it out (and accepts the same list sent back
+  as it was read). `users.linkedin_url` is not presented as a point: a `linkedin` point is an
+  ordinary extra one, first of its kind primary, and nothing about it takes part in `find_person`.
+- **An extra address is never primary.** The design says «the first point of a kind is primary»;
+  for `email` the login address is the primary one, so a stored address is always non-primary and
+  a write that flags one primary is refused.
+- **A generated `value_key` column holds «same kind, same normalised value».** Alembic cannot
+  compare an expression index with a `CASE` in it against the model, so the comparison key (digits
+  of a phone, lower case of anything else) is a stored generated column and the unique index is on
+  `(user_id, kind, value_key)`. A second unique index, on `lower(value)` where `kind = 'email'`,
+  keeps an extra address to one person; that it is not another person's *login* address is the
+  service's check (`users.email` is in another table).
+- **Duplicates compare the primary phone only.** `find_duplicates` and `duplicates_of` flag two
+  people by their primary phone point, as they flagged `users.phone`; a second number, an agency's
+  shared one, never makes two people the same.
+- **A merge carries the points.** The absorbed person's points go to the survivor (their
+  primary phone arrives as a secondary one when the survivor has a primary) together with their
+  login address as an extra email; the undo puts back what the survivor has not changed since.
+- **Extra addresses never decide who somebody is (decided after the review of 2026-11-04).** §4 has
+  `find_person` read the extra addresses, so a sign-up with one is recognised as the holder. An
+  extra address is unverified, though: anybody could type it into a form to be taken for its
+  holder. So `find_person`, `get_or_create`, the freelancer and company wizards, the admin's draft
+  and `MemberService.lookup` read login addresses only, as before. A sign-up or request under
+  somebody's extra address makes its own person, and the pair is flagged: `find_duplicates` and
+  `duplicates_of` carry a new signal, `email` (one person's login is another's extra address), which
+  only flags (`to_review`, never `mergeable`, so `rebase talent-duplicates --apply` leaves it
+  alone) and shows as `duplicate_possible_of`; the admin merges with the usual flow. The card
+  lists and the lead anti-join (`card_emails`) are unchanged. The flag covers people with a
+  freelancer card; a company contact with no card is not in that list.
+- **An address typed is the bare address.** An email point is validated as exactly an address
+  (no display name, no angle brackets) and stored as typed, trimmed, so what is compared is what
+  is stored.
+- **A phone is anything with six digits.** A value stored before the list existed
+  (`+39 345 1234567 (ufficio)`) must still save: a phone is trimmed, at most 40 characters, at
+  least 6 digits, anything else allowed; `value_key` is its digits. The admin dialogs send the
+  contacts only when the list changed.
+- **A role or a login never goes to an extra address.** `UserService.promote` and `set_role` refuse
+  to create a user under somebody's extra address, naming it. An address a person already keeps is
+  not asked again when they save their list, so a sign-up that took it as its login does not stop
+  them.
+
+### CRM (REB-940 to REB-942)
 
 - **`normalized` column.** §2 lists no such column, but the unique index and every lookup
   need the compared form (lowercased address, digits of a phone with a leading `+` kept,

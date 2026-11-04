@@ -368,6 +368,51 @@ its `users` row points at the survivor (`merged_into_id`), and the `merged` entr
 every moved row so `--undo` can put it back. Production runbook, order of steps, the dump taken first
 and the undo: `docs/merge-duplicate-talents.md`.
 
+## Several ways to reach a person (REB-943, REB-944)
+
+Spec: `projects/pigrocrm/docs/superpowers/specs/2026-11-04-contact-points-design.md` § 4.
+`user_contact_points` (`UserContactPoint`, migration 0050) is owned by `users`, which is both a
+freelancer's and a company contact's record: `kind` (`email`, `phone`, `linkedin`), `value`, `label`
+(`work`, `personal`, `billing`, `other`), `note` (200 characters), `is_primary`, `position`.
+`rebase_core.contact_points` is the one writer (`ContactPointService.replace` takes the whole list,
+the way a deal's lines are replaced in the CRM) and the one place a value is checked and compared:
+an address by its lower case, a number by its ASCII digits, a profile by `linkedin.normalise_linkedin`.
+The unique indexes say the same in SQL (one primary per person and kind, one value per person and
+kind through the generated `value_key`, one owner per address).
+
+- **The login address is not a row.** `users.email` stays the identity, receives the magic link and is
+  what campaigns write to (`campaigns/service.py` freezes `candidate.email`, a `users.email`, and the
+  `request_link` path asks `by_email` only). Every read answers it first as the primary email, without
+  an `id` (`ContactPointService.present`); it is never in the list a write sends. Sending a list read
+  back as it is works: the entry that is the login address and primary is left out; any other point
+  equal to it is refused. A stored `email` point is always extra, never primary.
+- **An address is one person's.** An extra address that is another person's login address or extra
+  address is refused with a sentence that names it (`ValidationFailed`, 422 over the API, a `ToolError`
+  over the MCP). The login addresses of people merged into this one are this person's own.
+- **Extra addresses never decide who somebody is.** They are unverified, so `find_person`,
+  `get_or_create`, the wizards, the admin's draft and `MemberService.lookup` read login addresses
+  only. A sign-up or request under somebody's extra address makes its own person, and
+  `duplicates` flags the pair with the signal `email` (`to_review`, never mergeable on its own;
+  `duplicate_possible_of` on a Talenti row): the admin merges with the usual flow. An extra
+  address is never a way in, and `promote`/`set_role` refuse to create a login under one.
+- **`phone` is the primary phone point**: `User.phone` is a read-only property over the `contact_points`
+  relationship (`viewonly`, lazy; the two admin lists load it with `selectinload`), so `FreelancerRead`,
+  `CompanyRead`, `MeRead`, the CRM payload (`crm_link`, whose shape does not change), the cloud caller and
+  the CV comparison read what they always read. `duplicates` compares the primary phone only.
+- **A merge carries the points.** `ContactPointService.absorb` moves the absorbed person's points to the
+  survivor (a value the survivor has stays theirs, a primary they have is kept) and adds the absorbed
+  login address as an extra one; the undo puts back what is still there (`left_behind.contact_points`
+  counts what the survivor changed since).
+- **Who writes.** An admin: `contact_points` on `FreelancerOverride` and `CompanyOverride` (the contact is
+  the owner user), over the API (`PATCH .../override`) and the MCP (`override_freelancer`,
+  `override_company`); the delta is one `overridden` entry with the lists before and after, and a revert
+  sends them back. `null` is refused, `[]` clears. The person: `PUT /api/hub/me/contact-points`
+  (`MemberService.update_contact_points`), which leaves a note of the person's own. The web editor is
+  `components/ContactPointsEditor.tsx`, used by both override dialogs and by «I tuoi recapiti»
+  (`pages/member/Contacts.tsx`).
+- **Not here yet.** The leads door payload to the CRM is unchanged (`contact.phone` is the primary phone
+  point); a later milestone adds `contact.contact_points`.
+
 ## One thread of notes (REB-856)
 
 Everything said about a freelancer or a company is a row of `notes` (`rebase_core.notes`,
@@ -900,7 +945,7 @@ removed) takes it. Who reads it: `GET /api/hub/freelancers/{id}/card` (`Freelanc
 names and email without case or spacing, the phone by its digits, LinkedIn by its stored shape),
 which feeds «Scheda con i dati» and the «Telefono» and «Email nel CV» rows of the talent page;
 and MCP `get_freelancer` (`phone`, `cv_contacts`, `cv_differences`). `FreelancerRead.phone` is
-`users.phone`. **Nothing else reads it**: not `get_freelancer_card`, `list_talents`,
+the person's primary phone point (`users.phone` until migration 0050). **Nothing else reads the CV's contacts**: not `get_freelancer_card`, `list_talents`,
 `get_talent`, `cloud.py`, `team_builder.py`, the evaluation (`card_eval` compares the anonymous
 card only) or the member area (`test_card_person.py`, the cloud, admin API and MCP tests assert
 it). **Version 3 changes no card by itself**: every card of version 2 reads as stale (`prompt`)

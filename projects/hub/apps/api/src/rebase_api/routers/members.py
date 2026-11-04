@@ -68,6 +68,7 @@ from rebase_core.freelancer_schemas import MemberUpdate
 from rebase_core.mail import send_after_response
 from rebase_core.member_contracts import MemberContractService
 from rebase_core.member_schemas import (
+    ContactPointsUpdate,
     EnterRequest,
     LinkRequest,
     MemberLookup,
@@ -141,6 +142,17 @@ def update_me(me: MeDep, session: SessionDep, payload: MemberUpdate) -> MeRead:
     freelancer = service.require_card(me.id)
     service.update(freelancer.id, payload)
     return service.me_read(me.id)
+
+
+@router.put("/me/contact-points", response_model=MeRead)
+def replace_my_contact_points(
+    me: MeDep, session: SessionDep, payload: ContactPointsUpdate
+) -> MeRead:
+    """The caller's own list of extra contact points, replaced whole (REB-943): a phone,
+    a second address or a profile with its label and note, whether they are a freelancer,
+    a company's referente or both. The address they sign in with is read-only and not in
+    it. An address that is somebody else's is a 422 that names it."""
+    return MemberService(session).update_contact_points(me.id, payload.contact_points)
 
 
 @router.patch("/me/company", response_model=MeRead)

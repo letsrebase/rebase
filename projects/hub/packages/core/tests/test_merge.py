@@ -9,7 +9,7 @@ from typing import Any
 from uuid import UUID
 
 import pytest
-from sqlalchemy import Engine, select, text
+from sqlalchemy import Engine, delete, select, text
 from sqlalchemy.orm import Session
 
 from rebase_core.config import Settings
@@ -41,6 +41,7 @@ from rebase_core.models import (
     TeamRequest,
     TeamRequestTalent,
     User,
+    UserContactPoint,
     UserSession,
 )
 from rebase_core.users import UserService
@@ -94,12 +95,25 @@ def settings(hub_engine: Engine) -> Settings:
 
 
 def _user(session: Session, email: str, **extra: Any) -> User:
+    phone = extra.pop("phone", None)
     user = User(
         email=email, first_name=extra.pop("first_name", "Ada"), last_name="Lovelace", **extra
     )
     session.add(user)
     session.flush()
+    if phone is not None:
+        _phone(session, user, phone)
     return user
+
+
+def _phone(session: Session, user: User, number: str, *, primary: bool = True) -> UserContactPoint:
+    point = UserContactPoint(
+        user_id=user.id, kind="phone", value=number, label="work", is_primary=primary
+    )
+    session.add(point)
+    session.flush()
+    session.expire(user, ["contact_points"])
+    return point
 
 
 def _card(
@@ -787,20 +801,23 @@ def test_a_code_of_the_absorbed_person_credits_the_survivor(clean: Session) -> N
 
 def test_undo_keeps_what_the_survivor_changed_since_the_merge(clean: Session) -> None:
     a, b, a_user, b_user, admin = _pair(clean)
-    b_user.phone = "333"
+    _phone(clean, b_user, "333")
     b.job_title, a.job_title = "Backend", None
     clean.commit()
     service = PersonMergeService(clean)
     done = service.merge(a.id, b.id, admin.id)
-    # After the merge the survivor's own edits: a new phone number and a new position.
-    clean.get(User, a_user.id).phone = "444"  # type: ignore[union-attr]
+    # After the merge the survivor's own edits: the phone that arrived is replaced by a new
+    # one, and a new position.
+    clean.execute(delete(UserContactPoint).where(UserContactPoint.value == "333"))
+    _phone(clean, clean.get(User, a_user.id), "444")  # type: ignore[arg-type]
     clean.get(Freelancer, a.id).job_title = "Tech lead"  # type: ignore[union-attr]
     clean.commit()
     back = service.undo(done.action_id, admin.id)
     clean.expire_all()
     assert clean.get(User, a_user.id).phone == "444"  # type: ignore[union-attr]
+    assert clean.get(User, b_user.id).phone is None  # type: ignore[union-attr]
     assert clean.get(Freelancer, a.id).job_title == "Tech lead"  # type: ignore[union-attr]
-    assert back.left_behind == {"phone": 1, "fields": 1}
+    assert back.left_behind == {"contact_points": 1, "fields": 1}
 
 
 def test_undo_is_refused_once_the_survivor_was_itself_merged_away(clean: Session) -> None:

@@ -3,10 +3,12 @@ import { Link, useParams } from '@tanstack/react-router'
 import { ArrowLeft, Download } from 'lucide-react'
 import { useState } from 'react'
 import { Button } from '@rebase/ui/button'
+import { ContactPointsList } from '@/components/ContactPointsList'
 import { WebLink } from '@/components/WebLink'
 import { useFreelancerCard } from '@/hooks/use-freelancer-card'
 import { admin, type Freelancer, type FreelancerOverride, type Note } from '@/lib/api'
 import { failureMessage } from '@/lib/adminList'
+import { extraPoints } from '@/lib/contactPoints'
 import {
   FREELANCER_STATES,
   REMOTE_LABELS,
@@ -171,6 +173,11 @@ export function AdminFreelancerDetail() {
           <dl className="space-y-3 text-sm">
             <Row label="Email"><a className="underline underline-offset-2" href={`mailto:${f.email}`}>{f.email}</a></Row>
             <CvPhoneRows phone={f.phone ?? null} person={person} />
+            {extraPoints(f.contact_points).length > 0 && (
+              <Row label="Altri recapiti">
+                <ContactPointsList points={extraPoints(f.contact_points)} />
+              </Row>
+            )}
             <CvEmailRow email={f.email} person={person} />
             <CvCityRow person={person} />
             <Row label="Posizione">{f.job_title ?? '—'}</Row>

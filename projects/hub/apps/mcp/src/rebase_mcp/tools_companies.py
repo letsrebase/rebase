@@ -120,7 +120,10 @@ def register(mcp: MCPServer, deps: Deps) -> None:
         included. It also carries where the link to the rebase CRM stands: `crm_status`
         (`to_link`, `linked`, `error`, `rejected`; empty for a request created
         before the link existed), `crm_situation` with the CRM's sentence when it is not
-        linked, `crm_deal_url` with the deal's address and `crm_attempted_at`."""
+        linked, `crm_deal_url` with the deal's address and `crm_attempted_at`. `phone` is the
+        contact's primary phone point and `contact_points` every way to reach them: the login
+        address first (primary email, no `id`), then the extra addresses, phones and profiles
+        with their label and note."""
         return deps.run(lambda s: CompanyService(s).get(to_uuid(company_id, "company_id")))
 
     @mcp.tool()
@@ -171,6 +174,7 @@ def register(mcp: MCPServer, deps: Deps) -> None:
         onsite_days: str | None = None,
         headcount: str | None = None,
         status: str | None = None,
+        contact_points: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
         """Writes or clears any field of the request: the contact person's first and last
         name and LinkedIn profile (on the shared identity in `users`), company name,
@@ -180,9 +184,19 @@ def register(mcp: MCPServer, deps: Deps) -> None:
         was; an empty string clears only where allowed (LinkedIn, onsite days), elsewhere
         it is refused because the field cannot be left without a value.
         `onsite_days` must be given only, and always, when `remote` is `hybrid` --
-        refused otherwise, by the same database `CHECK`. Every real change is written to
-        the log of `get_company_audit`, with the value before and after; to undo it use
-        `revert_company_action`."""
+        refused otherwise, by the same database `CHECK`.
+        `contact_points` replaces the contact person's whole list of extra contact points (`[]`
+        clears it): a list of objects `{"kind": "email"|"phone"|"linkedin", "value": str,
+        "label": "work"|"personal"|"billing"|"other", "note": str|null (at most 200
+        characters), "is_primary": bool}`. The login address is shown first in every read as
+        the primary email, without an `id`, and is not part of the list: it stays the identity,
+        receives the sign-in link and is what campaigns write to, so an extra address is never
+        a login and never a recipient. An extra address is never primary; of the phones and
+        profiles, one is primary (the first, when none is flagged). An address that is another
+        person's login or extra address is refused with its name; the same value twice is
+        refused. `id` and `position` of a point read back are ignored on write. Every real
+        change is written to the log of `get_company_audit`, with the value before and after;
+        to undo it use `revert_company_action`."""
         kwargs: dict[str, Any] = {}
         if first_name is not None:
             kwargs["first_name"] = supplied_text(first_name)
@@ -212,6 +226,8 @@ def register(mcp: MCPServer, deps: Deps) -> None:
             kwargs["headcount"] = integer(headcount, "headcount")
         if status is not None:
             kwargs["status"] = supplied_text(status)
+        if contact_points is not None:
+            kwargs["contact_points"] = contact_points
         override = CompanyOverride(**kwargs)
         return deps.run(
             lambda s: CompanyService(s).override(

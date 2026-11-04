@@ -21,6 +21,7 @@ from sqlalchemy.orm import Session
 from rebase_core.companies import CompanyService
 from rebase_core.company_schemas import CompanyCreate, CompanyFields
 from rebase_core.config import Settings
+from rebase_core.contact_points import ContactPointInput, ContactPointService
 from rebase_core.crm_lead import LeadDraftOut
 from rebase_core.crm_link import CrmLeadService, link_after_response
 from rebase_core.errors import InvalidState, LlmCapReached, NotFound
@@ -207,6 +208,36 @@ def test_a_linked_request_keeps_the_deal_and_sends_the_body_of_the_spec(clean: S
     row = _row(clean, company.id)
     assert (row.crm_customer_id, row.crm_deal_id, row.crm_deal_url) == (CUSTOMER, DEAL, DEAL_URL)
     assert row.crm_error is None and row.crm_attempted_at == NOW
+
+
+def test_the_contact_the_crm_gets_is_the_login_address_and_the_primary_phone(
+    clean: Session,
+) -> None:
+    """REB-943: the leads door payload does not change. Extra points are not sent yet: the
+    CRM gets the login address and the primary phone point, however many the contact has."""
+    company = _create(clean, project="Un gestionale.")
+    contact = clean.get(User, company.user_id)
+    assert contact is not None
+    ContactPointService(clean).replace(
+        contact,
+        [
+            ContactPointInput(kind="email", value="mario.casa@gmail.com", label="personal"),
+            ContactPointInput(kind="phone", value="+39 333 1234567", label="work"),
+            ContactPointInput(kind="phone", value="02 5550199", label="billing", is_primary=True),
+        ],
+    )
+    clean.commit()
+    http = RecordedPigro([OK])
+
+    _service(clean, http, RecordingCall([_draft_response(**DRAFT)])).link(company.id)
+
+    assert _body(http)["contact"] == {
+        "first_name": "Mario",
+        "last_name": "Rossi",
+        "email": "mario@acme.it",
+        "phone": "02 5550199",
+        "linkedin_url": None,
+    }
 
 
 def test_the_model_sees_the_four_fields_and_never_the_company_or_the_contact_person(

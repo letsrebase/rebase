@@ -29,6 +29,7 @@ const SIGNAL_LABELS: Record<DuplicateSignal, string> = {
   linkedin: 'Stesso profilo LinkedIn',
   first_name: 'Stesso nome',
   phone: 'Stesso telefono',
+  email: 'Un indirizzo è tra i recapiti dell’altra scheda',
 }
 
 /** How a card is called on this page: the name, the address when it has none. */

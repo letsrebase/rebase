@@ -116,3 +116,30 @@ describe('the CV’s data in the profile card (REB-855)', () => {
     expect(screen.queryByText(/Dati dal CV non ancora letti/)).toBeNull()
   })
 })
+
+describe('the extra contact points on the profile card (REB-944)', () => {
+  const EXTRA = [
+    { id: 'p1', kind: 'email', value: 'grace.casa@gmail.com', label: 'personal', note: 'solo per le fatture', is_primary: false, position: 1 },
+    { id: 'p2', kind: 'phone', value: '02 5550199', label: 'billing', note: null, is_primary: true, position: 2 },
+  ]
+
+  it('lists them with their labels and notes in «Altri recapiti», never the sign-in address twice', async () => {
+    await mountDetail({ contact_points: EXTRA }, { person: null, differences: [] })
+    const row = await screen.findByText('Altri recapiti')
+    expect(row).toBeInTheDocument()
+    const extra = valueOf('Altri recapiti')
+    expect(within(extra).getByRole('link', { name: 'grace.casa@gmail.com' })).toHaveAttribute(
+      'href',
+      'mailto:grace.casa@gmail.com',
+    )
+    expect(extra).toHaveTextContent('(personale: solo per le fatture)')
+    expect(extra).toHaveTextContent('(amministrazione)')
+    expect(within(extra).queryByText('grace@studio.it')).toBeNull()
+  })
+
+  it('shows no such row for a person with only the sign-in address', async () => {
+    await mountDetail({}, { person: null, differences: [] })
+    await screen.findByRole('heading', { name: 'Grace Hopper' })
+    expect(screen.queryByText('Altri recapiti')).toBeNull()
+  })
+})
