@@ -213,6 +213,76 @@ def write_points(session: Session, owner: Person | Customer, points: list[Contac
     return True
 
 
+def lock_owner(session: Session, owner: Person | Customer) -> None:
+    """Locks the owner's row and reloads its list, so what the caller reads next is what
+    another writer left and no later writer can change it before this transaction ends."""
+    parent = type(owner)
+    # Read to the end: the rows (and their lists) are only refreshed as the result is consumed.
+    session.scalars(
+        select(parent)
+        .where(parent.id == owner.id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    ).one()
+
+
+def add_points(
+    session: Session, owner: Person | Customer, points: list[ContactPointIn]
+) -> list[ContactPoint]:
+    """Appends points to the owner's list, in the caller's transaction, and answers the rows
+    added. Unlike `write_points` it touches nothing the owner has: their rows keep their ids,
+    values (a legacy one included), labels, notes and primaries, and the new points go after
+    them in the order given.
+
+    The row is locked and the list reloaded first, so two callers adding to one owner take
+    turns. The new points are validated as a list of their own, and refused as `prepare`
+    refuses them, when one repeats a value the owner already has (same kind, same compared
+    key) or the list would pass `MAX_CONTACT_POINTS`. A point is primary only when it is the
+    first of its kind and the owner has none of that kind: `is_primary` on a point is ignored.
+    """
+    lock_owner(session, owner)
+    entity = "person" if owner.__tablename__ == "people" else "customer"
+    stored = owner.contact_points
+    if len(stored) + len(points) > MAX_CONTACT_POINTS:
+        raise ValidationFailed(
+            entity,
+            FIELD,
+            f"al massimo {MAX_CONTACT_POINTS} recapiti",
+            expected="una lista più corta",
+        )
+    prepared = prepare(entity, [point.model_copy(update={"is_primary": False}) for point in points])
+    have = {(row.kind, row.normalized) for row in stored}
+    for index, point in enumerate(prepared):
+        if (point.kind, point.normalized) in have:
+            raise ValidationFailed(entity, f"{FIELD}[{index}]", "questo recapito è già nell'elenco")
+    has_primary = {row.kind for row in stored if row.is_primary}
+    column = "person_id" if entity == "person" else "customer_id"
+    position = max((row.position for row in stored), default=-1) + 1
+    rows: list[ContactPoint] = []
+    for point in prepared:
+        primary = point.kind not in has_primary
+        has_primary.add(point.kind)
+        rows.append(
+            ContactPoint(
+                **{column: owner.id},
+                kind=point.kind,
+                value=point.value,
+                normalized=point.normalized,
+                label=point.label,
+                note=point.note,
+                is_primary=primary,
+                position=position,
+            )
+        )
+        position += 1
+    session.add_all(rows)
+    if rows:
+        owner.updated_at = datetime.now(UTC)
+        session.flush()
+        session.expire(owner, ["contact_points"])
+    return rows
+
+
 def email_addresses(owner: Person | Customer) -> list[str]:
     """Every email of an owner, lowercased, the primary first: what a lookup that reads mail
     (a backfill, the search for a reply) asks, where mail sent goes to the primary alone."""

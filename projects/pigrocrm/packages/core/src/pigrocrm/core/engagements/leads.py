@@ -13,7 +13,8 @@ Three rules decide what a call writes:
   `rebase_refs` and a retry finds it first (`DealRepository.find_by_rebase_ref`), so a
   second `PUT`, or one after a crash, writes nothing.
 - A customer is reused only through the referente's email: the oldest live person with
-  that address whose customer is live. Never by name: «Rossi» and «Rossi S.r.l.» are the
+  that address whose customer is live, one who has it as their primary email before one
+  who keeps it as another point. Never by name: «Rossi» and «Rossi S.r.l.» are the
   same company to a person and two strings to a query, and a wrong merge is worse than a
   duplicate a person archives.
 - The contact's extra points (`contact.contact_points`, REB-945) go to the person the call
@@ -43,7 +44,12 @@ from pigrocrm.core.actor import Actor
 from pigrocrm.core.config import Settings
 from pigrocrm.core.contact_points.models import ContactPoint
 from pigrocrm.core.contact_points.schemas import MAX_CONTACT_POINTS, ContactPointIn
-from pigrocrm.core.contact_points.service import email_key, prepare, write_points
+from pigrocrm.core.contact_points.service import (
+    add_points,
+    email_key,
+    lock_owner,
+    prepare,
+)
 from pigrocrm.core.customers.repository import CustomerRepository
 from pigrocrm.core.customers.schemas import CustomerCreate
 from pigrocrm.core.customers.service import CustomerService
@@ -283,6 +289,9 @@ class LeadService:
         actor = Actor.rebase()
         customers = CustomerRepository(space)
         people = self._people_with_email(space, email)
+        # Only the tier the address is primary in, when there is one: a person who keeps it as
+        # a second point is not the contact while somebody has it as theirs.
+        people = [p for p in people if self._holds_as_primary(p, email)] or people
         reused = next(
             (
                 person
@@ -364,45 +373,47 @@ class LeadService:
     @staticmethod
     def _add_points(space: Session, person: Person, data: LeadUpsert, actor: Actor) -> None:
         """The extra points of the request that a person already in the CRM does not have,
-        added after theirs. Nothing they have is changed or removed (their primary of each
-        kind stays), and the flat phone and profile are not added: only `contact_points`
-        is, as the door added nothing to a known person before it existed."""
+        added after theirs. Nothing they have is touched (`add_points` inserts only the new
+        rows, so a legacy value stays as it was and every id stays), the primary of each
+        kind stays, and the flat phone and profile are not added: only `contact_points` is,
+        as the door added nothing to a known person before it existed. The row is locked
+        and its list reloaded first, so what is missing is judged against what another
+        writer left."""
+        lock_owner(space, person)
         known = {(row.kind, row.normalized) for row in person.contact_points}
-        room = MAX_CONTACT_POINTS - len(person.contact_points)
-        extras = _new_extras(data, known, room)
-        if not extras:
-            return
-        kept = [
-            ContactPointIn(
-                kind=row.kind,  # type: ignore[arg-type]
-                value=row.value,
-                label=row.label,  # type: ignore[arg-type]
-                note=row.note,
-                is_primary=row.is_primary,
-            )
-            for row in person.contact_points
-        ]
-        if write_points(space, person, [*kept, *extras]):
+        extras = _new_extras(data, known, MAX_CONTACT_POINTS - len(person.contact_points))
+        if add_points(space, person, extras):
             ActivityService(space).record(
                 "person", person.id, "updated", actor, {"changed": ["contact_points"]}
             )
 
     @staticmethod
-    def _people_with_email(space: Session, email: str) -> list[Person]:
+    def _holds_as_primary(person: Person, email: str) -> bool:
+        key = email_key(email)
+        return any(
+            point.kind == "email" and point.is_primary and point.normalized == key
+            for point in person.contact_points
+        )
+
+    @classmethod
+    def _people_with_email(cls, space: Session, email: str) -> list[Person]:
         """The live people with this address among any of their email points,
-        case-insensitively (an address is not unique), oldest first."""
+        case-insensitively (an address is not unique), in two tiers: those whose primary
+        email it is, then those who hold it as another point, oldest first within each. The
+        address a request came with is the contact's, not a stranger's extra one."""
         owned = (
             select(ContactPoint.person_id)
             .where(ContactPoint.kind == "email", ContactPoint.normalized == email_key(email))
             .scalar_subquery()
         )
-        return list(
+        people = list(
             space.scalars(
                 select(Person)
                 .where(Person.deleted_at.is_(None), Person.id.in_(owned))
                 .order_by(Person.created_at, Person.id)
             )
         )
+        return sorted(people, key=lambda person: not cls._holds_as_primary(person, email))
 
     def _person_id(self, space: Session, email: str, customer_id: UUID) -> UUID | None:
         """The contact an answer names when the deal already exists: the oldest live

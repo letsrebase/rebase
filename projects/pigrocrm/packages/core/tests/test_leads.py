@@ -500,6 +500,151 @@ def test_a_known_person_gets_the_missing_extra_points_and_keeps_their_primary(
         assert kinds.count("updated") == 2
 
 
+def test_a_person_with_the_address_as_primary_is_preferred_to_one_who_has_it_as_a_second_point(
+    door: Door,
+) -> None:
+    """REB-945: A (older) keeps the address as a second point, B (newer) has it as primary:
+    the request is B's, B's customer is reused and A is left alone."""
+    with _space(door) as space:
+        customer_a = _customer(space, "Corp A S.r.l.")
+        a = _person(space, "a@corp-a.it", customer_a)
+        PersonService(space).update(
+            a,
+            PersonUpdate(
+                contact_points=[
+                    ContactPointIn(kind="email", value="a@corp-a.it"),
+                    ContactPointIn(kind="email", value=MARIA, label="personal"),
+                ]
+            ),
+            Actor.system(),
+        )
+        customer_b = _customer(space, "Corp B S.r.l.")
+        b = _person(space, MARIA, customer_b)
+
+    answer = door.service().file(
+        uuid4(),
+        _body(contact={"contact_points": [{"kind": "email", "value": "b2@corp-b.it"}]}),
+    )
+
+    assert (answer.customer_id, answer.person_id) == (customer_b, b)
+    with _space(door) as space:
+        assert _count(space, Customer) == 2 and _count(space, Person) == 2
+        assert _points(space, b)[-1] == ("email", "b2@corp-b.it", False)
+        assert [p[1] for p in _points(space, a)] == ["a@corp-a.it", MARIA]
+
+
+def test_with_no_primary_holder_a_person_who_has_it_as_a_second_point_is_still_reused(
+    door: Door,
+) -> None:
+    with _space(door) as space:
+        customer_id = _customer(space)
+        person_id = _person(space, "m.rossi@rossicostruzioni.it", customer_id)
+        PersonService(space).update(
+            person_id,
+            PersonUpdate(
+                contact_points=[
+                    ContactPointIn(kind="email", value="m.rossi@rossicostruzioni.it"),
+                    ContactPointIn(kind="email", value=MARIA, label="personal"),
+                ]
+            ),
+            Actor.system(),
+        )
+
+    answer = door.service().file(uuid4(), _body())
+
+    assert answer.person_id == person_id
+
+
+def test_adding_a_point_leaves_the_existing_ones_as_they_were(door: Door) -> None:
+    """A legacy value (a bare LinkedIn handle the rules would canonicalise) and every id stay."""
+    with _space(door) as space:
+        person_id = _person(space, MARIA, _customer(space))
+        space.execute(
+            text(
+                "INSERT INTO contact_points (id, person_id, kind, value, normalized, label, "
+                "is_primary, position) VALUES (gen_random_uuid(), :p, 'linkedin', "
+                "'linkedin.com/in/Maria-Legacy', 'linkedin.com/in/maria-legacy', 'work', "
+                "true, 1)"
+            ),
+            {"p": person_id},
+        )
+        space.commit()
+        before = {
+            row.id: (row.kind, row.value, row.normalized, row.label, row.is_primary, row.position)
+            for row in space.get(Person, person_id).contact_points  # type: ignore[union-attr]
+        }
+
+    door.service().file(
+        uuid4(),
+        _body(
+            contact={
+                "contact_points": [
+                    {"kind": "email", "value": "m.rossi@acme.it"},
+                    {"kind": "phone", "value": "+39 345 1234567"},
+                ]
+            }
+        ),
+    )
+
+    with _space(door) as space:
+        person = space.get(Person, person_id)
+        assert person is not None
+        after = {
+            row.id: (row.kind, row.value, row.normalized, row.label, row.is_primary, row.position)
+            for row in person.contact_points
+        }
+        assert {k: v for k, v in after.items() if k in before} == before
+        added = [row for row in person.contact_points if row.id not in before]
+        assert [(r.kind, r.value, r.is_primary, r.position) for r in added] == [
+            ("email", "m.rossi@acme.it", False, 2),
+            ("phone", "+39 345 1234567", True, 3),
+        ]
+
+
+def test_a_point_another_writer_added_after_the_person_was_loaded_is_not_lost(
+    door: Door,
+) -> None:
+    """The door loads the person, then adds to them: a point written in between (the person's
+    own edit, say) is seen under the row lock and kept, where a list built from the first
+    read would have deleted it."""
+    with _space(door) as space:
+        person_id = _person(space, MARIA, _customer(space))
+    service = door.service()
+    with _space(door) as stale, _space(door) as other:
+        person = stale.get(Person, person_id)
+        assert person is not None
+        assert len(person.contact_points) == 1
+        PersonService(other).update(
+            person_id,
+            PersonUpdate(
+                contact_points=[
+                    ContactPointIn(kind="email", value=MARIA),
+                    ContactPointIn(kind="email", value="own@acme.it", label="personal"),
+                ]
+            ),
+            Actor.system(),
+        )
+        data = _body(
+            contact={
+                "contact_points": [
+                    {"kind": "email", "value": "own@acme.it"},
+                    {"kind": "email", "value": "m.rossi@acme.it"},
+                ]
+            }
+        )
+        service._add_points(stale, person, data, Actor.rebase())
+        stale.commit()
+
+    with _space(door) as space:
+        assert [p[1] for p in _points(space, person_id)] == [
+            MARIA,
+            "own@acme.it",
+            "m.rossi@acme.it",
+        ]
+        person = space.get(Person, person_id)
+        assert person is not None and person.contact_points[1].label == "personal"
+
+
 def test_a_known_person_with_nothing_new_is_left_alone(door: Door) -> None:
     with _space(door) as space:
         person_id = _person(space, MARIA, _customer(space))

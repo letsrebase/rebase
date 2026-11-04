@@ -213,13 +213,18 @@ CRM with every point of its contact. That changes the payload's shape, so the `h
   winning. A point the point rules refuse, one that repeats a kind and compared key already in
   the list, and any past the list's bound are left out, as the door already leaves out an
   unreadable phone; the request is never refused for them.
-- **A known person gets only what they lack.** Matching does not change: the person is found
-  through `contact.email` alone, which (since REB-942) is compared with every email point they
-  have, never through the extra points. Their missing extra points are appended after their own,
-  non-primary, through `write_points` (so the rows are rewritten with new ids, same values,
-  labels, notes and primaries), with an `updated` entry (`changed: ["contact_points"]`) on their
-  timeline; nothing is changed or removed, and the flat phone and profile are still not added to
-  a known person. This applies to the person the door reuses with their customer and to the one
+- **A known person gets only what they lack.** The person is found through `contact.email`
+  alone, never through the extra points. Since REB-942 that address is compared with every
+  email point a person has; after the review of 2026-11-04 the door prefers a live person whose
+  *primary* email it is and falls back to one who holds it as another point only when nobody has
+  it as primary (oldest first within each tier). The same order picks the person a retry names.
+  Their missing extra points are appended after their own, non-primary (a point is primary only
+  as the first of a kind they have none of), by `contact_points.service.add_points`: it locks the
+  person's row, reloads the list under the lock (so a point written since the call loaded the
+  person is not lost) and inserts only the new rows. The existing rows are not rewritten, so a
+  legacy value is not canonicalised as a side effect and every id stays. An `updated` entry
+  (`changed: ["contact_points"]`) goes on their timeline; nothing is changed or removed, and the
+  flat phone and profile are still not added to a known person. This applies to the person the door reuses with their customer and to the one
   with no live customer that is attached to a new one. A call that links an explicit `deal_id`,
   and a retry that finds the deal by its marker, write no point, as they write no person.
 - **Hub side.** `CrmLeadService.payload` sends every stored point of the contact (extra
@@ -231,3 +236,12 @@ CRM with every point of its contact. That changes the payload's shape, so the `h
   hub's new payload; the hub files a 422 as `rejected`, which the sweep never asks again and only
   an admin's «Riprova» does, so a request made in between waits for a person. `pigrocrm-v*` ships first, `hub-v*` right after; the new CRM accepts the
   old payload.
+- **Residual exposure of extra emails (review of 2026-11-04).** An extra email that came from
+  the hub is unverified (the hub's own rule: it never decides who somebody is there), yet in the
+  CRM it persists as an ordinary email point. The primary-first rule keeps it from taking over a
+  request whose address somebody holds as primary, but with no primary holder a later request, or
+  Gmail mail from that address (the roster reads every email point), still matches the person who
+  has it. Not closed here; closing it would need a flag on the point.
+- **Every point of a hub user goes to the CRM (review of 2026-11-04).** When somebody files a
+  company request, all their stored points go with it, personal labels and notes included: the
+  hub has no private flag (§6), so nothing is held back.
