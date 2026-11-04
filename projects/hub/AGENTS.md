@@ -425,8 +425,9 @@ kind through the generated `value_key`, one owner per address).
   CRM's rule). There is no trigram index on `user_contact_points.value`: the table is small and the match is
   a correlated `EXISTS`. A person found only through a point ranks like an exact address. The sign-up leads
   have no user, so their search is unchanged.
-- **Not here yet.** The leads door payload to the CRM is unchanged (`contact.phone` is the primary phone
-  point); a later milestone adds `contact.contact_points`.
+- **The CRM gets them (REB-945).** `crm_link.py` sends the contact's stored points as
+  `contact.contact_points` on the leads door payload, never the login address (that is `contact.email`),
+  leaving out a point the CRM would refuse; `contact.phone` is still the primary phone point.
 
 ## One thread of notes (REB-856)
 
