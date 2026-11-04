@@ -8,6 +8,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, computed_field, field_validator
 
+from rebase_core.contact_points import ContactPointInput, ContactPointRead
 from rebase_core.linkedin import normalise_linkedin
 from rebase_core.login_schemas import GuideDownloadRead, LoginRead
 from rebase_core.models import JOB_TITLE_MAX_LENGTH, NAME_MAX_LENGTH
@@ -146,9 +147,12 @@ class FreelancerRead(ResponseModel):
     last_name: str
     email: str
     linkedin_url: str | None
-    # The phone on the person's account (`users.phone`, REB-855), `None` while they have
-    # given none; the admin's page shows the CV's beside it, from the card's persona.
+    # The primary phone point of the person (REB-855, REB-943), `None` while they have
+    # none; the admin's page shows the CV's beside it, from the card's persona.
     phone: str | None = None
+    # Every way to reach the person: the login address first, as the primary email without
+    # an `id`, then the points they or an admin added (`rebase_core.contact_points`).
+    contact_points: list[ContactPointRead] = Field(default_factory=list)
     # `None` on a card born from a signup that the person has not completed (ORB-155),
     # and on one whose owner skipped the wizard's optional CV step.
     cv_filename: str | None
@@ -240,6 +244,9 @@ class FreelancerOverride(BaseModel):
     # off, and the card's reading shows again.
     seniority_admin: Literal["junior", "mid", "senior", "lead"] | None = None
     experience_years_admin: int | None = Field(default=None, ge=0, le=60)
+    # The person's whole list of extra contact points, replacing the stored one; `[]` takes
+    # them all off, `null` is refused. The login address is not part of it.
+    contact_points: list[ContactPointInput] | None = None
 
     @field_validator("first_name", "last_name", "job_title", mode="after")
     @classmethod

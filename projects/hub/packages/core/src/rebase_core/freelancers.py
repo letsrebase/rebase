@@ -6,7 +6,7 @@ from uuid import UUID
 
 from sqlalchemy import Subquery, func, select
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from rebase_core.admin_schemas import StatusChange
 from rebase_core.audit import (
@@ -21,6 +21,7 @@ from rebase_core.audit import (
 )
 from rebase_core.card_rows import card_emails, card_row_fields
 from rebase_core.config import Settings
+from rebase_core.contact_points import ContactPointService
 from rebase_core.cv_text import CvText, extract_text
 from rebase_core.errors import InvalidState, NotFound, ValidationFailed
 from rebase_core.freelancer_schemas import (
@@ -76,6 +77,12 @@ ALREADY_HAS_CARD_BY_LINKEDIN_NOTE = (
     "Risulta già una scheda su rebase con questo profilo LinkedIn: la trovi e la modifichi "
     "dalla tua area, accedendo con questo indirizzo."
 )
+# The same, for a form that typed an extra address of somebody who has a card (REB-943): the
+# mail goes to the address they sign in with, never to the one typed, and says so.
+ALREADY_HAS_CARD_BY_OTHER_ADDRESS_NOTE = (
+    "Risulta già una scheda su rebase con questo indirizzo tra i recapiti: la trovi e la "
+    "modifichi dalla tua area, accedendo con questo indirizzo."
+)
 # What an admin drafting a card is told when its LinkedIn is already on a card (REB-800).
 LINKEDIN_HAS_CARD = (
     "Esiste già una scheda con questo profilo LinkedIn: aprila, oppure unisci le due schede."
@@ -120,6 +127,7 @@ def freelancer_read(row: Freelancer, user: User) -> FreelancerRead:
     return FreelancerRead(
         **card_row_fields(row, user),
         phone=user.phone,
+        contact_points=ContactPointService.present(user),
         cv_filename=row.cv_filename,
         cv_mime=row.cv_mime,
         cv_size=row.cv_size,
@@ -288,7 +296,7 @@ class FreelancerService:
         if row is None:
             utm = {column: getattr(signup, column) for column in UTM_COLUMNS}
             users = UserService(self.session)
-            holder, owner = users.by_linkedin(data.linkedin_url), users.person(email)
+            holder, owner = users.by_linkedin(data.linkedin_url), users.person_at(email)
             if holder is not None and (owner is None or holder.id != owner.id):
                 raise ValidationFailed(ENTITY, "linkedin_url", LINKEDIN_HAS_CARD)
             user = UserService(self.session).get_or_create(
@@ -351,6 +359,7 @@ class FreelancerService:
             .outerjoin(logins, logins.c.user_id == Freelancer.user_id)
             .outerjoin(signed, signed.c.email == func.lower(User.email))
             .where(Freelancer.deleted_at.is_(None))
+            .options(selectinload(User.contact_points))
         )
         count = select(func.count()).select_from(Freelancer).where(Freelancer.deleted_at.is_(None))
         if status is not None:
@@ -473,8 +482,9 @@ class FreelancerService:
         same as a self-edit through `MemberService.update` already does."""
         row = self._require(freelancer_id)
         user = self._owner(row)
-        changes = supplied_changes(data)
-        if not changes:
+        changes = supplied_changes(data, exclude={"contact_points"})
+        points_set = "contact_points" in data.model_fields_set
+        if not changes and not points_set:
             return freelancer_read(row, user)
         identity_changes = {k: v for k, v in changes.items() if k in _ADMIN_IDENTITY_FIELDS}
         row_changes = {k: v for k, v in changes.items() if k not in _ADMIN_IDENTITY_FIELDS}
@@ -498,6 +508,10 @@ class FreelancerService:
             **{field: getattr(user, field) for field in identity_changes},
             **{field: getattr(row, field) for field in row_changes},
         }
+        if points_set:
+            written = ContactPointService(self.session).write_override(user, data.contact_points)
+            if written is not None:
+                before["contact_points"], after["contact_points"] = written
         delta = field_changes(before, after)
         if delta:
             # The entry goes in the same transaction as the override (HCORE-09): an
@@ -674,11 +688,12 @@ class FreelancerService:
 
     def _find(self, email: str, linkedin_url: str | None = None) -> Freelancer | None:
         """The card of whoever this submission is about (REB-800): the person who answers to
-        the address, merged away or not, else the person who holds the LinkedIn profile.
+        the address (a login address, merged away or not, or an extra one, REB-943), else
+        the person who holds the LinkedIn profile.
         Of the two, whoever has a card: an address that exists with no card yet does not
         hide a profile that is on one. `None` when neither has a card."""
         users = UserService(self.session)
-        for person in (users.person(email), users.by_linkedin(linkedin_url)):
+        for person in (users.person_at(email), users.by_linkedin(linkedin_url)):
             if person is None:
                 continue
             card = self.session.scalar(select(Freelancer).where(Freelancer.user_id == person.id))

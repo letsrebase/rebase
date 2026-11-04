@@ -7,6 +7,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, computed_field
 
+from rebase_core.contact_points import CONTACT_POINTS_MAX, ContactPointInput, ContactPointRead
 from rebase_core.schema_common import ResponseModel, is_complete
 from rebase_core.signup_schemas import SignupUtm
 from rebase_core.vocabulary import RemoteOption, UserRole
@@ -40,6 +41,16 @@ class MemberProfile(BaseModel):
     @property
     def complete(self) -> bool:
         return is_complete(self)
+
+
+class ContactPointsUpdate(BaseModel):
+    """A person's own list of extra contact points, replacing the stored one (REB-943). The
+    address they sign in with is not in it: it is shown as the primary email and changes
+    nowhere in the member area."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    contact_points: list[ContactPointInput] = Field(max_length=CONTACT_POINTS_MAX)
 
 
 class MemberRequest(ResponseModel):
@@ -87,6 +98,9 @@ class MeRead(ResponseModel):
     email: str
     linkedin_url: str | None
     phone: str | None
+    # Every way to reach the person (REB-943): the address they sign in with first, as the
+    # primary email without an `id`, then the points they or an admin added.
+    contact_points: list[ContactPointRead] = Field(default_factory=list)
     role: UserRole
     created_at: datetime
     updated_at: datetime

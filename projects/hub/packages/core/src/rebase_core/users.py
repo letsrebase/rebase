@@ -22,6 +22,7 @@ from sqlalchemy.orm import Session
 from rebase_core.admin_tokens import AdminList, AdminRead
 from rebase_core.audit import AdminActionService
 from rebase_core.config import Settings
+from rebase_core.contact_points import ContactPointService
 from rebase_core.errors import InvalidState, NotFound, ValidationFailed
 from rebase_core.linkedin import linkedin_key
 from rebase_core.mail import Mail
@@ -119,13 +120,29 @@ class UserService:
             select(User).where(func.lower(User.linkedin_url) == key, User.merged_into_id.is_(None))
         )
 
+    def by_extra_email(self, email: str) -> User | None:
+        """The row that holds this address as an extra contact point (REB-943), merged or
+        not. Never a login: a login link is asked for `by_email` only."""
+        return ContactPointService(self.session).owner_of_email(email)
+
+    def person_at(self, email: str) -> User | None:
+        """The person an address belongs to, as a form is about them: the one whose login
+        address it is, else the one who keeps it as an extra address, each followed through
+        a merge. `person` is the login's own question and does not read the extra ones."""
+        found = self.person(email)
+        if found is not None:
+            return found
+        holder = self.by_extra_email(email)
+        return self.survivor(holder) if holder is not None else None
+
     def find_person(self, email: str, linkedin_url: str | None = None) -> User | None:
-        """Who this submission is about: the person who answers to the address, else the
-        one who holds the LinkedIn profile **and has a card** (REB-800). Identity is both,
+        """Who this submission is about: the person who answers to the address (their
+        login address or an extra one, REB-943), else the one who holds the LinkedIn profile
+        **and has a card** (REB-800). Identity is both,
         so a second address with the same profile is the same person, never a second row.
         A holder with no card (a company's contact, an admin) is not who a freelancer
         form is about: typing their profile attaches nothing to them."""
-        found = self.person(email)
+        found = self.person_at(email)
         if found is not None:
             return found
         holder = self.by_linkedin(linkedin_url)
@@ -180,7 +197,7 @@ class UserService:
         row = self.find_person(email, linkedin_url)
         if row is not None:
             if phone is not None and row.phone is None:
-                row.phone = phone
+                ContactPointService(self.session).add_primary_phone_if_missing(row, phone)
             return row
         # A profile somebody else holds (a user with no card, see `find_person`) is not
         # written on a second row: the index would refuse it, and it is theirs.
@@ -190,10 +207,12 @@ class UserService:
             first_name=first_name,
             last_name=last_name,
             linkedin_url=None if taken else linkedin_url,
-            phone=phone,
         )
         self.session.add(row)
         try:
+            if phone is not None:
+                self.session.flush()
+                ContactPointService(self.session).add_primary_phone_if_missing(row, phone)
             self.session.commit()
         except IntegrityError as exc:
             # Two first applications racing: the index on the address, or since REB-800

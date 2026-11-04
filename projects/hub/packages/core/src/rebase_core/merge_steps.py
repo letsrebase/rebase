@@ -13,6 +13,7 @@ from sqlalchemy import Text, cast, func, select, update
 from sqlalchemy.orm import Session
 
 from rebase_core.audit import coerce_stored_value, sanitize_payload
+from rebase_core.contact_points import ContactPointService
 from rebase_core.models import (
     ATTRIBUTION_COLUMNS,
     CampaignOptout,
@@ -174,12 +175,12 @@ class MergeSteps:
 
     def merge_identity(self, survivor: User, absorbed: User) -> dict[str, Any]:
         """The `users` rows: the absorbed address points at the survivor and gives up its
-        LinkedIn profile (one holder per profile), a missing profile or phone number on the
-        survivor is filled from it. Answers what the undo needs."""
+        LinkedIn profile (one holder per profile), a missing profile on the survivor is filled
+        from it, and its contact points (and its login address, as an extra one) go to the
+        survivor (`ContactPointService.absorb`). Answers what the undo needs."""
         undo: dict[str, Any] = {
             "survivor_linkedin_before": survivor.linkedin_url,
             "absorbed_linkedin_before": absorbed.linkedin_url,
-            "survivor_phone_before": survivor.phone,
             "aliases": [],
         }
         absorbed_profile = absorbed.linkedin_url
@@ -187,8 +188,7 @@ class MergeSteps:
         self.session.flush()
         if survivor.linkedin_url is None:
             survivor.linkedin_url = absorbed_profile
-        if survivor.phone is None:
-            survivor.phone = absorbed.phone
+        undo["contact_points"] = ContactPointService(self.session).absorb(survivor, absorbed)
         aliases = list(
             self.session.scalars(select(User.id).where(User.merged_into_id == absorbed.id))
         )
@@ -199,7 +199,6 @@ class MergeSteps:
         undo["aliases"] = [str(a) for a in aliases]
         absorbed.merged_into_id = survivor.id
         undo["survivor_linkedin_after"] = survivor.linkedin_url
-        undo["survivor_phone_after"] = survivor.phone
         return undo
 
     def retarget_proposals(self, source: UUID, target: UUID) -> list[str]:

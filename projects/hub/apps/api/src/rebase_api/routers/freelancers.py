@@ -54,6 +54,7 @@ from rebase_core.config import Settings
 from rebase_core.freelancer_schemas import FreelancerCreate
 from rebase_core.freelancers import (
     ALREADY_HAS_CARD_BY_LINKEDIN_NOTE,
+    ALREADY_HAS_CARD_BY_OTHER_ADDRESS_NOTE,
     ALREADY_HAS_CARD_NOTE,
     FreelancerService,
 )
@@ -201,6 +202,10 @@ def apply(
         typed = users.person(data.email)
         if typed is not None and typed.email.lower() == read.email.lower():
             mail = users.request_link(data.email, note=ALREADY_HAS_CARD_NOTE, via=VIA_WIZARD)
+        elif typed is None and users.by_extra_email(data.email) is not None:
+            mail = users.request_link(
+                read.email, note=ALREADY_HAS_CARD_BY_OTHER_ADDRESS_NOTE, via=VIA_WIZARD
+            )
         else:
             mail = users.request_link(
                 read.email, note=ALREADY_HAS_CARD_BY_LINKEDIN_NOTE, via=VIA_WIZARD

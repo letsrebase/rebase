@@ -41,6 +41,7 @@ from rebase_core.models import (
     TeamRequest,
     TeamRequestTalent,
     User,
+    UserContactPoint,
 )
 from rebase_core.team_requests import PROPOSAL_REFUSED, TeamRequestService
 from rebase_core.team_schemas import CloudTalentQuery, CloudTalentRead
@@ -342,10 +343,14 @@ def _talent(
         first_name=first_name,
         last_name=last_name,
         linkedin_url=f"https://www.linkedin.com/in/{slug}",
-        phone="+39 333 1112233",
     )
     session.add(user)
     session.flush()
+    session.add(
+        UserContactPoint(
+            user_id=user.id, kind="phone", value="+39 333 1112233", label="work", is_primary=True
+        )
+    )
     row = Freelancer(
         user_id=user.id,
         remote=remote,

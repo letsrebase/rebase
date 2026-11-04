@@ -50,6 +50,10 @@ from rebase_core.models.card_eval import (
     CardEvalRun,
 )
 from rebase_core.models.identity import (
+    CONTACT_KINDS,
+    CONTACT_LABELS,
+    CONTACT_NOTE_MAX_LENGTH,
+    CONTACT_VALUE_MAX_LENGTH,
     LATE_COLUMNS,
     NAME_MAX_LENGTH,
     PHONE_MAX_LENGTH,
@@ -59,6 +63,7 @@ from rebase_core.models.identity import (
     UTM_MAX_LENGTH,
     Signup,
     User,
+    UserContactPoint,
 )
 from rebase_core.models.matches import (
     CANCEL_REASON_MAX_LENGTH,
@@ -223,6 +228,10 @@ __all__ = [
     "ONSITE_DAYS_MAX",
     "ONSITE_DAYS_MIN",
     "GuideDownload",
+    "CONTACT_KINDS",
+    "CONTACT_LABELS",
+    "CONTACT_NOTE_MAX_LENGTH",
+    "CONTACT_VALUE_MAX_LENGTH",
     "LATE_COLUMNS",
     "LETTER_NUMBER_MAX_LENGTH",
     "LetterCounter",
@@ -274,6 +283,7 @@ __all__ = [
     "UTM_COLUMNS",
     "UTM_MAX_LENGTH",
     "User",
+    "UserContactPoint",
     "UserSession",
     "UtmMixin",
 ]

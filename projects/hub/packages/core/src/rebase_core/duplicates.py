@@ -42,7 +42,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import Session
 
 from rebase_core.linkedin import PROFILE_SQL_PREDICATE, linkedin_key
-from rebase_core.models import Freelancer, Signup, User
+from rebase_core.models import Freelancer, Signup, User, UserContactPoint
 from rebase_core.schema_common import ResponseModel
 from rebase_core.vocabulary import enum_of
 
@@ -155,6 +155,21 @@ def _pairs(
             found[frozenset((first.freelancer_id, second.freelancer_id))].add(signal)
 
 
+def _primary_phone() -> ColumnElement[str | None]:
+    """The person's primary phone point (REB-943), one value or null: the telephone number a
+    pair is flagged by. Their other numbers are not compared, so an agency's shared number
+    kept as a second one never makes two people the same."""
+    return (
+        select(UserContactPoint.value)
+        .where(
+            UserContactPoint.user_id == User.id,
+            UserContactPoint.kind == "phone",
+            UserContactPoint.is_primary,
+        )
+        .scalar_subquery()
+    )
+
+
 def _live_people() -> Select[*tuple[Any, ...]]:
     """The identity columns of the live cards (a card of a person merged away is no longer
     one), oldest first: the one read `find_duplicates` and `duplicates_of` share."""
@@ -170,7 +185,7 @@ def _live_people() -> Select[*tuple[Any, ...]]:
             User.last_name,
             User.role,
             User.linkedin_url,
-            User.phone,
+            _primary_phone().label("phone"),
         )
         .join(User, User.id == Freelancer.user_id)
         .where(Freelancer.deleted_at.is_(None), User.merged_into_id.is_(None))
@@ -377,13 +392,14 @@ def _neighbours(session: Session, page: Sequence[Row[Any]]) -> list[Row[Any]]:
             .concat(_ascii_word_sql(User.last_name))
         )
         matches.append(both.in_(sorted(names)))
-    digits_sql = _ascii_digits_sql(User.phone)
+    phone_sql = _primary_phone()
+    digits_sql = _ascii_digits_sql(phone_sql)
     if numbers:
         matches.append(digits_sql.in_(numbers))
     if non_ascii_number:
         # A number of digits outside ASCII (`\D` keeps those): nothing to match on but
         # having a telephone number that is not made of ASCII digits.
-        matches.append(and_(User.phone.is_not(None), digits_sql == ""))
+        matches.append(and_(phone_sql.is_not(None), digits_sql == ""))
     if not matches:
         return []
     return list(session.execute(_live_people().where(or_(*matches))).all())

@@ -214,6 +214,10 @@ _LEGACY_KEYS = {"notes": "comments"}
 LEFT_IN_PLACE: dict[str, str] = {
     "users.merged_into_id": "the pointer a merge writes, repointed by the merge itself",
     "freelancers.user_id": "the card stays on its own user row, soft-deleted",
+    "user_contact_points.user_id": (
+        "moved by the identity step with the absorbed login address (`ContactPointService."
+        "absorb`), where a collision with the survivor's own points is decided"
+    ),
     "freelancers.vetted_by": "an admin's name on a verification, never a talent's",
     "freelancer_cards.freelancer_id": "the CV's card, swapped with the CV, not moved",
     "freelancer_fiscal.updated_by": "the admin who saved it",

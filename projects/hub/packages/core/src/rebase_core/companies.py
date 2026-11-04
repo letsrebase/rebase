@@ -6,7 +6,7 @@ from typing import Any
 from uuid import UUID
 
 from sqlalchemy import Select, func, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from rebase_core.admin_schemas import StatusChange
 from rebase_core.audit import (
@@ -27,6 +27,7 @@ from rebase_core.company_schemas import (
     CompanyOverride,
     CompanyRead,
 )
+from rebase_core.contact_points import ContactPointService
 from rebase_core.crm_words import TO_LINK, crm_state_sentence
 from rebase_core.errors import NotFound, ValidationFailed
 from rebase_core.models import COMPANY_STATES, Company, User
@@ -63,6 +64,7 @@ def _to_read(row: Company, user: User) -> CompanyRead:
         contact_person=f"{user.first_name} {user.last_name}".strip(),
         email=user.email,
         phone=user.phone,
+        contact_points=ContactPointService.present(user),
         requested_role=row.requested_role,
         project=row.project,
         period_from=row.period_from,
@@ -245,7 +247,9 @@ class CompanyService:
             value, row_id = decode_cursor(sort_spec, cursor)
             stmt = stmt.where(keyset_predicate(sort_column, Company.id, value, row_id))
         rows = self.session.execute(
-            stmt.order_by(sort_column.desc(), Company.id.desc()).limit(limit + 1)
+            stmt.order_by(sort_column.desc(), Company.id.desc())
+            .limit(limit + 1)
+            .options(selectinload(User.contact_points))
         ).all()
 
         page_rows = rows[:limit]
@@ -301,8 +305,9 @@ class CompanyService:
         (`_ADMIN_IDENTITY_FIELDS`), and records the real delta as one `AdminAction`
         (REB-347), the same discipline `FreelancerService.override` keeps."""
         row, user = self._require(company_id)
-        changes = supplied_changes(data)
-        if not changes:
+        changes = supplied_changes(data, exclude={"contact_points"})
+        points_set = "contact_points" in data.model_fields_set
+        if not changes and not points_set:
             return _to_read(row, user)
         identity_changes = {k: v for k, v in changes.items() if k in _ADMIN_IDENTITY_FIELDS}
         row_changes = {k: v for k, v in changes.items() if k not in _ADMIN_IDENTITY_FIELDS}
@@ -336,6 +341,10 @@ class CompanyService:
             **{field: getattr(user, field) for field in identity_changes},
             **{field: getattr(row, field) for field in row_changes},
         }
+        if points_set:
+            written = ContactPointService(self.session).write_override(user, data.contact_points)
+            if written is not None:
+                before["contact_points"], after["contact_points"] = written
         delta = field_changes(before, after)
         if delta:
             # In the transaction of the override itself (HCORE-09).

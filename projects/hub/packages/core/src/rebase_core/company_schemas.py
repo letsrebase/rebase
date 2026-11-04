@@ -7,6 +7,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator, model_validator
 
+from rebase_core.contact_points import ContactPointInput, ContactPointRead
 from rebase_core.linkedin import normalise_linkedin
 from rebase_core.models import (
     COMPANY_MAX_LENGTH,
@@ -145,6 +146,9 @@ class CompanyRead(ResponseModel):
     contact_person: str
     email: str
     phone: str | None
+    # Every way to reach the contact (REB-943): the login address first, as the primary
+    # email without an `id`, then the points added. The contact is the request's owner user.
+    contact_points: list[ContactPointRead] = Field(default_factory=list)
     requested_role: str
     project: str
     period_from: date
@@ -220,6 +224,10 @@ class CompanyOverride(BaseModel):
     onsite_days: int | None = Field(default=None, ge=ONSITE_DAYS_MIN, le=ONSITE_DAYS_MAX)
     headcount: int | None = Field(default=None, ge=1)
     status: CompanyStatus | None = None
+    # The contact's whole list of extra contact points, replacing the stored one (the
+    # contact is the owner user, so it is the person's own list); `[]` takes them all off,
+    # `null` is refused. The login address is not part of it.
+    contact_points: list[ContactPointInput] | None = None
 
     @field_validator(
         "first_name", "last_name", "company_name", "duration", "requested_role", mode="after"
