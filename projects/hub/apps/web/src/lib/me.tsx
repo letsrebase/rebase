@@ -5,6 +5,7 @@ import {
   member,
   type CompanyRequest,
   type CompanyUpdate,
+  type ContactPointWrite,
   type FreelancerApplication,
   type Me,
   type MemberRequest,
@@ -57,6 +58,14 @@ export function useUpdateProfile() {
   const client = useQueryClient()
   return useMutation({
     mutationFn: (data: MemberUpdate) => member.update(data),
+    onSuccess: (me) => client.setQueryData(ME_KEY, me),
+  })
+}
+
+export function useUpdateContactPoints() {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: (points: ContactPointWrite[]) => member.updateContactPoints(points),
     onSuccess: (me) => client.setQueryData(ME_KEY, me),
   })
 }

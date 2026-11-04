@@ -40,6 +40,7 @@ from sqlalchemy import delete, select, update
 from sqlalchemy.orm import Session
 
 from rebase_core.audit import utcnow
+from rebase_core.contact_points import ContactPointService
 from rebase_core.errors import InvalidState, NotFound, ValidationFailed
 from rebase_core.merge_relations import (
     USER,
@@ -286,10 +287,14 @@ class PersonMergeService:
             left_behind["linkedin"] = 1
         a_user.linkedin_url = profile
         a_user.merged_into_id = None
-        if s_user.phone == user_undo["survivor_phone_after"]:
-            s_user.phone = user_undo["survivor_phone_before"]
-        elif s_user.phone != user_undo["survivor_phone_before"]:
-            left_behind["phone"] = 1
+        # A merge made before REB-943 carries no points: its phone was a column, which the
+        # migration turned into a point on both people, and nothing there is moved back.
+        if "contact_points" in user_undo:
+            changed = ContactPointService(self.session).put_back(
+                s_user, a_user, user_undo["contact_points"]
+            )
+            if changed:
+                left_behind["contact_points"] = changed
         for alias in user_undo["aliases"]:
             self.session.execute(
                 update(User).where(User.id == UUID(alias)).values(merged_into_id=a_user.id)

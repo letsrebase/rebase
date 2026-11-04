@@ -231,7 +231,13 @@ async def test_get_freelancer_carries_the_cvs_contacts_and_no_other_tool_does(
     )
     session = factory()
     try:
-        session.execute(text("UPDATE users SET phone = '02 5550199' WHERE email = 'ada@studio.it'"))
+        session.execute(
+            text(
+                "INSERT INTO user_contact_points (id, user_id, kind, value, label, is_primary) "
+                "SELECT gen_random_uuid(), id, 'phone', '02 5550199', 'work', true "
+                "FROM users WHERE email = 'ada@studio.it'"
+            )
+        )
         session.commit()
     finally:
         session.close()
@@ -299,3 +305,104 @@ async def test_set_freelancer_vetted_toggles_and_a_repeat_keeps_the_first_date(
         )
         assert off["vetted_at"] is None
     _wipe_team(factory)
+
+
+async def test_an_admin_adds_an_extra_email_over_the_mcp_and_reads_it_back(
+    factory: sessionmaker[Session],
+) -> None:
+    """REB-944: `override_freelancer` replaces the whole list of extra contact points, the
+    login address comes first on every read without an `id`, and an address that is another
+    person's is refused with its name."""
+    from rebase_core.freelancer_schemas import FreelancerCreate
+    from rebase_core.freelancers import FreelancerService
+
+    _seed_admin(factory)
+    ids: dict[str, str] = {}
+    session = factory()
+    try:
+        for name, email in (("Ada", "ada@studio.it"), ("Grace", "grace@studio.it")):
+            card, _ = FreelancerService(session).apply(
+                FreelancerCreate(
+                    first_name=name,
+                    last_name="Lovelace",
+                    email=email,
+                    daily_rate=Decimal("450"),
+                    job_title="Backend developer",
+                    remote="remote",
+                ),
+                PDF,
+                "cv.pdf",
+                "application/pdf",
+            )
+            ids[name] = str(card.id)
+    finally:
+        session.close()
+    ada, grace = ids["Ada"], ids["Grace"]
+    async with Client(build_server(factory, lambda: IVAN)) as client:
+        written = _payload(
+            await client.call_tool(
+                "override_freelancer",
+                {
+                    "freelancer_id": ada,
+                    "contact_points": [
+                        {
+                            "kind": "email",
+                            "value": "ada.casa@gmail.com",
+                            "label": "personal",
+                            "note": "solo per le fatture",
+                        },
+                        {"kind": "phone", "value": "+39 333 123 4567", "label": "work"},
+                    ],
+                },
+            )
+        )
+        assert written["phone"] == "+39 333 123 4567"
+        read = _payload(await client.call_tool("get_freelancer", {"freelancer_id": ada}))
+        assert [
+            (p["kind"], p["value"], p["label"], p["is_primary"]) for p in read["contact_points"]
+        ] == [
+            ("email", "ada@studio.it", "work", True),
+            ("email", "ada.casa@gmail.com", "personal", False),
+            ("phone", "+39 333 123 4567", "work", True),
+        ]
+        assert read["contact_points"][0]["id"] is None
+        assert read["contact_points"][1]["note"] == "solo per le fatture"
+        talent = _payload(await client.call_tool("get_talent", {"talent_id": ada}))
+        assert [p["value"] for p in talent["contact_points"]][:2] == [
+            "ada@studio.it",
+            "ada.casa@gmail.com",
+        ]
+
+        taken = await client.call_tool(
+            "override_freelancer",
+            {
+                "freelancer_id": grace,
+                "contact_points": [
+                    {"kind": "email", "value": "ADA.casa@gmail.com", "label": "other"}
+                ],
+            },
+        )
+        assert taken.is_error
+        assert "ada.casa@gmail.com" in taken.content[0].text  # type: ignore[union-attr]
+        assert "tra i recapiti di un'altra persona" in taken.content[0].text  # type: ignore[union-attr]
+
+        # The list read back can be sent as it is: the login entry is the list's own first
+        # line and is not stored.
+        again = _payload(
+            await client.call_tool(
+                "override_freelancer",
+                {"freelancer_id": ada, "contact_points": read["contact_points"]},
+            )
+        )
+        assert [p["value"] for p in again["contact_points"]] == [
+            "ada@studio.it",
+            "ada.casa@gmail.com",
+            "+39 333 123 4567",
+        ]
+        cleared = _payload(
+            await client.call_tool(
+                "override_freelancer", {"freelancer_id": ada, "contact_points": []}
+            )
+        )
+        assert [p["value"] for p in cleared["contact_points"]] == ["ada@studio.it"]
+    _wipe(factory)

@@ -1,8 +1,18 @@
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
-import type { Company, CompanyOverride, Freelancer, FreelancerOverride } from '@/lib/api'
+import type { Company, CompanyOverride, ContactPoint, Freelancer, FreelancerOverride } from '@/lib/api'
 import { CompanyOverrideDialog, FreelancerOverrideDialog, RecordLifecycle } from './Override'
+
+const LOGIN_ADA: ContactPoint = {
+  id: null,
+  kind: 'email',
+  value: 'ada@studio.it',
+  label: 'work',
+  note: null,
+  is_primary: true,
+  position: 0,
+}
 
 const FREELANCER: Freelancer = {
   id: 'f1',
@@ -25,6 +35,7 @@ const FREELANCER: Freelancer = {
   utm_term: null,
   utm_id: null,
   phone: null,
+  contact_points: [LOGIN_ADA],
   seniority_admin: null,
   experience_years_admin: null,
   created_at: '2026-09-10T10:00:00Z',
@@ -50,6 +61,18 @@ const COMPANY: Company = {
   contact_person: 'Mario Rossi',
   email: 'mario@rossi.it',
   phone: '+39 345 1234567',
+  contact_points: [
+    { id: null, kind: 'email', value: 'mario@rossi.it', label: 'work', note: null, is_primary: true, position: 0 },
+    {
+      id: 'p1',
+      kind: 'phone',
+      value: '+39 345 1234567',
+      label: 'work',
+      note: null,
+      is_primary: true,
+      position: 1,
+    },
+  ],
   requested_role: 'Backend developer',
   project: 'Piattaforma di prenotazione',
   period_from: '2026-10-01',
@@ -157,6 +180,30 @@ describe('FreelancerOverrideDialog', () => {
       links: ['https://github.com/ada', 'https://ada.dev'],
       filled_by: 'person',
     })
+  })
+
+  it('shows the sign-in address read only and sends the points added beside it', async () => {
+    const onSave = vi.fn<(data: FreelancerOverride) => void>()
+    mountFreelancer({ onSave })
+    expect(screen.getByText('ada@studio.it')).toBeInTheDocument()
+    expect(screen.queryByRole('textbox', { name: /Valore del recapito/ })).toBeNull()
+    await userEvent.click(screen.getByRole('button', { name: 'Aggiungi recapito' }))
+    await userEvent.type(screen.getByRole('textbox', { name: 'Valore del recapito 1' }), '+39 333 123 4567')
+    await userEvent.click(screen.getByRole('combobox', { name: 'Etichetta del recapito 1' }))
+    await userEvent.click(screen.getByRole('option', { name: 'personale' }))
+    await userEvent.type(screen.getByRole('textbox', { name: 'Nota del recapito 1' }), 'solo WhatsApp')
+    await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
+    expect(onSave.mock.calls[0]![0].contact_points).toEqual([
+      { kind: 'phone', value: '+39 333 123 4567', label: 'personal', note: 'solo WhatsApp', is_primary: false },
+    ])
+  })
+
+  it('does not save while a contact point is not what its kind says', async () => {
+    mountFreelancer()
+    await userEvent.click(screen.getByRole('button', { name: 'Aggiungi recapito' }))
+    await userEvent.type(screen.getByRole('textbox', { name: 'Valore del recapito 1' }), '12')
+    expect(screen.getByRole('alert')).toHaveTextContent('almeno 6 cifre')
+    expect(screen.getByRole('button', { name: 'Salva' })).toBeDisabled()
   })
 
   it('clears a nullable text field to null when the box is emptied', async () => {
@@ -296,6 +343,37 @@ describe('CompanyOverrideDialog', () => {
       onsite_days: null,
       headcount: 2,
     })
+  })
+
+  it('does not send the contacts, nor stop saving, while the list is the stored one (REB-944)', async () => {
+    const onSave = vi.fn<(data: CompanyOverride) => void>()
+    const legacy = {
+      ...COMPANY,
+      contact_points: [
+        COMPANY.contact_points[0]!,
+        { ...COMPANY.contact_points[1]!, value: 'int. 12' },
+      ],
+    }
+    mountCompany({ onSave, company: legacy })
+    expect(screen.getByRole('button', { name: 'Salva' })).toBeEnabled()
+    await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
+    expect(onSave.mock.calls[0]![0]).not.toHaveProperty('contact_points')
+  })
+
+  it('edits the contact’s labelled phone and note, and takes a point off', async () => {
+    const onSave = vi.fn<(data: CompanyOverride) => void>()
+    mountCompany({ onSave })
+    expect(screen.getByText('mario@rossi.it')).toBeInTheDocument()
+    await userEvent.type(screen.getByRole('textbox', { name: 'Nota del recapito 1' }), 'centralino')
+    await userEvent.click(screen.getByRole('combobox', { name: 'Etichetta del recapito 1' }))
+    await userEvent.click(screen.getByRole('option', { name: 'amministrazione' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
+    expect(onSave.mock.calls[0]![0].contact_points).toEqual([
+      { kind: 'phone', value: '+39 345 1234567', label: 'billing', note: 'centralino', is_primary: true },
+    ])
+    await userEvent.click(screen.getByRole('button', { name: 'Togli il recapito 1' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
+    expect(onSave.mock.calls[1]![0].contact_points).toEqual([])
   })
 
   it('clears giorni_presenza to null the moment remoto leaves ibrido', async () => {

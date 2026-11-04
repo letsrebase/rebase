@@ -16,7 +16,7 @@ from uuid import UUID
 
 import pytest
 from fakes_cards import CARD, card_response, text_pdf
-from sqlalchemy import text
+from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
 from rebase_core.card_writer import CardWriter
@@ -29,7 +29,7 @@ from rebase_core.llm import (
     RecordingCall,
     _parameters,
 )
-from rebase_core.models import FreelancerCard
+from rebase_core.models import FreelancerCard, User, UserContactPoint
 from rebase_core.sources import SourceService
 from rebase_core.team_schemas import Card
 
@@ -93,11 +93,17 @@ def apply_freelancer(
     service = FreelancerService(session)
     read, _ = service.apply(data) if cv is None else service.apply(data, cv, "cv.pdf", "")
     if phone is not None:
-        session.execute(
-            text("UPDATE users SET phone = :t WHERE email = :e"), {"t": phone, "e": email}
-        )
-        session.commit()
+        user_id = session.scalar(select(User.id).where(User.email == email))
+        give_phone(session, user_id, phone)
     return read.id
+
+
+def give_phone(session: Session, user_id: UUID | None, phone: str) -> None:
+    """The person's primary phone point, the way a request or an admin writes it."""
+    session.add(
+        UserContactPoint(user_id=user_id, kind="phone", value=phone, label="work", is_primary=True)
+    )
+    session.commit()
 
 
 def apply_numbered(session: Session, n: int = 1, links: list[str] | None = None) -> UUID:

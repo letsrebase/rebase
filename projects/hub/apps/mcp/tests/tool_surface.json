@@ -487,7 +487,7 @@
   }
  },
  "get_company": {
-  "description": "A company's request, by id, with `note`: the thread of the people who followed\nit, most recent first, each with `id`, author, date, `source` (`web`, `mcp`,\n`person`, `system`), last edit and `editable`. Deleted notes are not\nincluded. It also carries where the link to the rebase CRM stands: `crm_status`\n(`to_link`, `linked`, `error`, `rejected`; empty for a request created\nbefore the link existed), `crm_situation` with the CRM's sentence when it is not\nlinked, `crm_deal_url` with the deal's address and `crm_attempted_at`.",
+  "description": "A company's request, by id, with `note`: the thread of the people who followed\nit, most recent first, each with `id`, author, date, `source` (`web`, `mcp`,\n`person`, `system`), last edit and `editable`. Deleted notes are not\nincluded. It also carries where the link to the rebase CRM stands: `crm_status`\n(`to_link`, `linked`, `error`, `rejected`; empty for a request created\nbefore the link existed), `crm_situation` with the CRM's sentence when it is not\nlinked, `crm_deal_url` with the deal's address and `crm_attempted_at`. `phone` is the\ncontact's primary phone point and `contact_points` every way to reach them: the login\naddress first (primary email, no `id`), then the extra addresses, phones and profiles\nwith their label and note.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -524,7 +524,7 @@
   }
  },
  "get_freelancer": {
-  "description": "A freelancer, by id, with `note`: the thread of the people who followed them, most\nrecent first, each with `id`, author, date, `source` (`web`, `mcp`, `person`, `system`),\nlast edit and `editable`. Deleted notes are not included. `phone` is\nthe account's; `cv_contacts` is what the CV says about the person, read by\nClaude together with the anonymous card (first name, last name, email, phone, city,\nLinkedIn, other links, companies), `None` if the card has none yet (written before\nversion 3 of the prompt or without a CV) and `cv_differences` where the CV and the\nprofile say different things. This is personal data: for the admin only, never for\nanonymous cards, the cloud or the team builder.",
+  "description": "A freelancer, by id, with `note`: the thread of the people who followed them, most\nrecent first, each with `id`, author, date, `source` (`web`, `mcp`, `person`, `system`),\nlast edit and `editable`. Deleted notes are not included. `phone` is\nthe primary phone point and `contact_points` every way to reach the person: the login\naddress first (primary email, no `id`), then the extra addresses, phones and profiles\nwith their label and note; `cv_contacts` is what the CV says about the person, read by\nClaude together with the anonymous card (first name, last name, email, phone, city,\nLinkedIn, other links, companies), `None` if the card has none yet (written before\nversion 3 of the prompt or without a CV) and `cv_differences` where the CV and the\nprofile say different things. This is personal data: for the admin only, never for\nanonymous cards, the cloud or the team builder.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -1375,7 +1375,7 @@
   }
  },
  "override_company": {
-  "description": "Writes or clears any field of the request: the contact person's first and last\nname and LinkedIn profile (on the shared identity in `users`), company name,\nrequested role, project, start date, duration, daily budget, work mode, onsite days\nper week, number of people requested and status. Notes are not a field: they live in\nthe thread (`add_company_note`, `update_note`). Every omitted parameter stays as it\nwas; an empty string clears only where allowed (LinkedIn, onsite days), elsewhere\nit is refused because the field cannot be left without a value.\n`onsite_days` must be given only, and always, when `remote` is `hybrid` --\nrefused otherwise, by the same database `CHECK`. Every real change is written to\nthe log of `get_company_audit`, with the value before and after; to undo it use\n`revert_company_action`.",
+  "description": "Writes or clears any field of the request: the contact person's first and last\nname and LinkedIn profile (on the shared identity in `users`), company name,\nrequested role, project, start date, duration, daily budget, work mode, onsite days\nper week, number of people requested and status. Notes are not a field: they live in\nthe thread (`add_company_note`, `update_note`). Every omitted parameter stays as it\nwas; an empty string clears only where allowed (LinkedIn, onsite days), elsewhere\nit is refused because the field cannot be left without a value.\n`onsite_days` must be given only, and always, when `remote` is `hybrid` --\nrefused otherwise, by the same database `CHECK`.\n`contact_points` replaces the contact person's whole list of extra contact points (`[]`\nclears it): a list of objects `{\"kind\": \"email\"|\"phone\"|\"linkedin\", \"value\": str,\n\"label\": \"work\"|\"personal\"|\"billing\"|\"other\", \"note\": str|null (at most 200\ncharacters), \"is_primary\": bool}`. The login address is shown first in every read as\nthe primary email, without an `id`, and is not part of the list: it stays the identity,\nreceives the sign-in link and is what campaigns write to, so an extra address is never\na login and never a recipient. An extra address is never primary; of the phones and\nprofiles, one is primary (the first, when none is flagged). An address that is another\nperson's login or extra address is refused with its name; the same value twice is\nrefused. `id` and `position` of a point read back are ignored on write. Every real\nchange is written to the log of `get_company_audit`, with the value before and after;\nto undo it use `revert_company_action`.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -1538,6 +1538,22 @@
      ],
      "default": null,
      "title": "Status"
+    },
+    "contact_points": {
+     "anyOf": [
+      {
+       "items": {
+        "additionalProperties": true,
+        "type": "object"
+       },
+       "type": "array"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Contact Points"
     }
    },
    "required": [
@@ -1547,7 +1563,7 @@
   }
  },
  "override_freelancer": {
-  "description": "Writes or clears any field of the profile: first name,\nlast name and LinkedIn profile (on the shared identity in `users`), rate,\njob title, work mode, links, status and who filled in last\n(`person`/`admin`). Notes are not a field: they live in the thread (`add_freelancer_note`,\n`update_note`). Every omitted parameter stays as it was; an empty string clears\nthe field where allowed (rate, job title, LinkedIn, work\nmode), elsewhere it is refused because the field cannot be left without a value.\n`links` replaces the whole list, `[]` clears it. `seniority` (junior, mid,\nsenior or lead) and `experience_years` (0-60) correct the level the anonymous card\ndeclares: the admin's word wins over Claude's in every read\n(`list_talents`, `get_talent`, `get_freelancer_card`, the cloud, the team\nbuilder) and survives «Rigenera scheda»; the empty string removes it. Every\nreal change is written to the log of `get_freelancer_audit`, with the value\nbefore and after; to undo it use `revert_freelancer_action`.",
+  "description": "Writes or clears any field of the profile: first name,\nlast name and LinkedIn profile (on the shared identity in `users`), rate,\njob title, work mode, links, status and who filled in last\n(`person`/`admin`). Notes are not a field: they live in the thread (`add_freelancer_note`,\n`update_note`). Every omitted parameter stays as it was; an empty string clears\nthe field where allowed (rate, job title, LinkedIn, work\nmode), elsewhere it is refused because the field cannot be left without a value.\n`links` replaces the whole list, `[]` clears it. `seniority` (junior, mid,\nsenior or lead) and `experience_years` (0-60) correct the level the anonymous card\ndeclares: the admin's word wins over Claude's in every read\n(`list_talents`, `get_talent`, `get_freelancer_card`, the cloud, the team\nbuilder) and survives «Rigenera scheda»; the empty string removes it.\n`contact_points` replaces the person's whole list of extra contact points (`[]`\nclears it): a list of objects `{\"kind\": \"email\"|\"phone\"|\"linkedin\", \"value\": str,\n\"label\": \"work\"|\"personal\"|\"billing\"|\"other\", \"note\": str|null (at most 200\ncharacters), \"is_primary\": bool}`. The login address is shown first in every read as\nthe primary email, without an `id`, and is not part of the list: it stays the identity,\nreceives the sign-in link and is what campaigns write to, so an extra address is never\na login and never a recipient. An extra address is never primary; of the phones and\nprofiles, one is primary (the first, when none is flagged). An address that is another\nperson's login or extra address is refused with its name; the same value twice is\nrefused. `id` and `position` of a point read back are ignored on write.\nEvery real change is written to the log of `get_freelancer_audit`, with the value\nbefore and after; to undo it use `revert_freelancer_action`.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -1689,6 +1705,22 @@
      ],
      "default": null,
      "title": "Experience Years"
+    },
+    "contact_points": {
+     "anyOf": [
+      {
+       "items": {
+        "additionalProperties": true,
+        "type": "object"
+       },
+       "type": "array"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Contact Points"
     }
    },
    "required": [

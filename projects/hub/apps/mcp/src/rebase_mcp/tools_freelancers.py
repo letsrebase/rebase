@@ -74,7 +74,9 @@ def register(mcp: MCPServer, deps: Deps) -> None:
         """A freelancer, by id, with `note`: the thread of the people who followed them, most
         recent first, each with `id`, author, date, `source` (`web`, `mcp`, `person`, `system`),
         last edit and `editable`. Deleted notes are not included. `phone` is
-        the account's; `cv_contacts` is what the CV says about the person, read by
+        the primary phone point and `contact_points` every way to reach the person: the login
+        address first (primary email, no `id`), then the extra addresses, phones and profiles
+        with their label and note; `cv_contacts` is what the CV says about the person, read by
         Claude together with the anonymous card (first name, last name, email, phone, city,
         LinkedIn, other links, companies), `None` if the card has none yet (written before
         version 3 of the prompt or without a CV) and `cv_differences` where the CV and the
@@ -172,6 +174,7 @@ def register(mcp: MCPServer, deps: Deps) -> None:
         filled_by: str | None = None,
         seniority: str | None = None,
         experience_years: str | None = None,
+        contact_points: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
         """Writes or clears any field of the profile: first name,
         last name and LinkedIn profile (on the shared identity in `users`), rate,
@@ -184,8 +187,18 @@ def register(mcp: MCPServer, deps: Deps) -> None:
         senior or lead) and `experience_years` (0-60) correct the level the anonymous card
         declares: the admin's word wins over Claude's in every read
         (`list_talents`, `get_talent`, `get_freelancer_card`, the cloud, the team
-        builder) and survives «Rigenera scheda»; the empty string removes it. Every
-        real change is written to the log of `get_freelancer_audit`, with the value
+        builder) and survives «Rigenera scheda»; the empty string removes it.
+        `contact_points` replaces the person's whole list of extra contact points (`[]`
+        clears it): a list of objects `{"kind": "email"|"phone"|"linkedin", "value": str,
+        "label": "work"|"personal"|"billing"|"other", "note": str|null (at most 200
+        characters), "is_primary": bool}`. The login address is shown first in every read as
+        the primary email, without an `id`, and is not part of the list: it stays the identity,
+        receives the sign-in link and is what campaigns write to, so an extra address is never
+        a login and never a recipient. An extra address is never primary; of the phones and
+        profiles, one is primary (the first, when none is flagged). An address that is another
+        person's login or extra address is refused with its name; the same value twice is
+        refused. `id` and `position` of a point read back are ignored on write.
+        Every real change is written to the log of `get_freelancer_audit`, with the value
         before and after; to undo it use `revert_freelancer_action`."""
         kwargs: dict[str, Any] = {}
         if first_name is not None:
@@ -210,6 +223,8 @@ def register(mcp: MCPServer, deps: Deps) -> None:
             kwargs["seniority_admin"] = supplied_text(seniority)
         if experience_years is not None:
             kwargs["experience_years_admin"] = integer(experience_years, "experience_years")
+        if contact_points is not None:
+            kwargs["contact_points"] = contact_points
         override = FreelancerOverride(**kwargs)
         return deps.run(
             lambda s: FreelancerService(s).override(

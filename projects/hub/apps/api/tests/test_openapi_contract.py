@@ -15,6 +15,8 @@ from rebase_core.models import (
     CAMPAIGN_SOURCES,
     CARD_SENIORITIES,
     COMPANY_STATES,
+    CONTACT_KINDS,
+    CONTACT_LABELS,
     CONTRACT_KINDS,
     CONTRACT_STATES,
     FILLED_BY,
@@ -142,6 +144,8 @@ def _enum(prop: dict[str, Any]) -> list[str] | None:
         ("RecipientRead", "kind", RECIPIENT_KINDS),
         ("DuplicatePairRead", "signals", SIGNALS),
         ("MergeRead", "cv", CV_OUTCOMES),
+        ("ContactPointRead", "kind", CONTACT_KINDS),
+        ("ContactPointRead", "label", CONTACT_LABELS),
     ],
 )
 def test_a_closed_vocabulary_is_an_enum_of_its_constant(
