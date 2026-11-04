@@ -174,5 +174,15 @@ assignee: it is never evidence that the card is yours.
 ## The plan cap
 
 A Free workspace is capped at 250 issues that are not archived, Done ones included, and
-past the cap `save_issue` can refuse to file. Before filing several cards at once, count
-first; never delete an issue to make room (an archived one keeps its URL and comments).
+past the cap `save_issue` refuses to file (`You've exceeded the free issue limit`).
+Before filing several cards at once, count first; never delete an issue to make room
+(an archived one keeps its URL and comments).
+
+The cap does not block the work: when there is no room, make it. The tracker contract
+says which issues may go (when it has a rule, follow it to the letter); without one,
+archive closed issues of completed projects, oldest first, and never an issue whose
+project is still open. Then file the card and say on it which issues went. The Linear
+MCP server has no archive tool: archiving is the `issueArchive(id:)` mutation on
+`https://api.linear.app/graphql` with a personal API key in the `Authorization` header,
+one call per issue, and `issueUnarchive(id:)` undoes it. A logged-in browser is not
+needed for it.
