@@ -4,6 +4,11 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from pigrocrm.core.contact_points.schemas import (
+    MAX_CONTACT_POINTS,
+    ContactPointIn,
+    ContactPointRead,
+)
 from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.db import CURSOR_MAX_LENGTH, SortDirection, SortSpec, SortWhitelist
 from pigrocrm.core.notes.schemas import NOTE_MAX_LENGTH
@@ -29,12 +34,18 @@ CITY_MAX_LENGTH = 120
 PROVINCE_MAX_LENGTH = 2
 COUNTRY_MAX_LENGTH = 2
 EMAIL_MAX_LENGTH = 320
-PHONE_MAX_LENGTH = 40
 WEBSITE_MAX_LENGTH = 255
 STATUS_MAX_LENGTH = 40
 # The same bounds as the fiscal profile's `due_days` (REB-326).
 PAYMENT_DAYS_MIN = 0
 PAYMENT_DAYS_MAX = 365
+
+CONTACT_POINTS_DESCRIPTION = (
+    "The customer's contact points (email, phone, linkedin), each with a label and an optional "
+    "note. On an update the list replaces the stored one. At most one point per kind is "
+    "primary (the first of a kind is when none is flagged). The PEC address stays in "
+    "certified_email."
+)
 
 
 class CustomerCreate(BaseModel):
@@ -69,14 +80,9 @@ class CustomerCreate(BaseModel):
     # The owner (REB-773). Omitted, it is whoever creates the customer; naming someone
     # else is an admin's act, like changing it later.
     owner_id: UUID | None = None
-    # Plain `str`, not `EmailStr`: unlike `UserCreate.email`, nothing in this codebase
-    # validates a customer's email format today, and this fix wave does not add that.
-    # `SafeStr` still closes the NUL-byte gap that a plain `str` would otherwise leave
-    # open -- `EmailStr` happens to reject a NUL byte as a side effect of its own
-    # syntax check (verified against the installed email-validator), but this field has
-    # no such check to piggyback on.
-    email: SafeStr | None = Field(default=None, max_length=EMAIL_MAX_LENGTH)
-    phone: SafeStr | None = Field(default=None, max_length=PHONE_MAX_LENGTH)
+    contact_points: list[ContactPointIn] = Field(
+        default_factory=list, max_length=MAX_CONTACT_POINTS, description=CONTACT_POINTS_DESCRIPTION
+    )
     website: SafeStr | None = Field(default=None, max_length=WEBSITE_MAX_LENGTH)
     status: SafeStr | None = Field(default=None, max_length=STATUS_MAX_LENGTH)
     note: SafeStr | None = Field(default=None, max_length=NOTE_MAX_LENGTH)
@@ -109,8 +115,9 @@ class CustomerUpdate(BaseModel):
     legal_entity_id: UUID | None = None
     # An admin's change (REB-773); an explicit `null` leaves the customer with no owner.
     owner_id: UUID | None = None
-    email: SafeStr | None = Field(default=None, max_length=EMAIL_MAX_LENGTH)
-    phone: SafeStr | None = Field(default=None, max_length=PHONE_MAX_LENGTH)
+    contact_points: list[ContactPointIn] | None = Field(
+        default=None, max_length=MAX_CONTACT_POINTS, description=CONTACT_POINTS_DESCRIPTION
+    )
     website: SafeStr | None = Field(default=None, max_length=WEBSITE_MAX_LENGTH)
     status: SafeStr | None = Field(default=None, max_length=STATUS_MAX_LENGTH)
     payment_days: int | None = Field(default=None, ge=PAYMENT_DAYS_MIN, le=PAYMENT_DAYS_MAX)
@@ -134,8 +141,10 @@ class CustomerRead(BaseModel):
     city: str | None
     province: str | None
     country: str
+    # The primary point of each kind, derived and read only; a write sends `contact_points`.
     email: str | None
     phone: str | None
+    contact_points: list[ContactPointRead]
     website: str | None
     status: str | None
     payment_days: int | None

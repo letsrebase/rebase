@@ -15,6 +15,7 @@ from threading import Barrier
 from uuid import UUID, uuid4
 
 import pytest
+from fakes.contacts import points
 from fakes.customer_fixtures import make_customer
 from fakes.gmail_fixtures import actor_for, connected_account, gmail_settings
 from pydantic import ValidationError
@@ -247,7 +248,10 @@ def test_each_entity_type_is_checked_against_its_own_table(db_session: Session) 
     account = connected_account(db_session)
     customer = make_customer(db_session, email="info@acme.it")
     person = Person(
-        first_name="Ada", last_name="Rossi", email="ada@acme.it", customer_id=customer.id
+        first_name="Ada",
+        last_name="Rossi",
+        contact_points=points(email="ada@acme.it"),
+        customer_id=customer.id,
     )
     db_session.add(person)
     db_session.flush()
@@ -430,7 +434,7 @@ def test_list_returns_the_drafts_of_one_entity_and_filters_by_state(
 ) -> None:
     account = connected_account(db_session)
     customer = make_customer(db_session, email="info@acme.it")
-    other = Customer(legal_name="Beta", email="info@beta.it")
+    other = Customer(legal_name="Beta", contact_points=points(email="info@beta.it"))
     db_session.add(other)
     db_session.flush()
     service = _service(db_session)

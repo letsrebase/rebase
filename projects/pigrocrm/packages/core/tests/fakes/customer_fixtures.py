@@ -12,13 +12,18 @@ from uuid import uuid4
 
 from sqlalchemy.orm import Session
 
+from fakes.contacts import points
 from pigrocrm.core.customers.models import Customer
 
 
 def make_customer(session: Session, **overrides: object) -> Customer:
-    """A flushed `Customer`; `overrides` are the columns a test cares about."""
+    """A flushed `Customer`; `overrides` are the columns a test cares about, and `email` and
+    `phone` are its primary contact points."""
     values: dict[str, object] = {"legal_name": f"ACME {uuid4()}"}
     values.update(overrides)
+    contacts = {key: values.pop(key) for key in ("email", "phone") if key in values}
+    if contacts:
+        values["contact_points"] = points(**contacts)  # type: ignore[arg-type]
     customer = Customer(**values)
     session.add(customer)
     session.flush()

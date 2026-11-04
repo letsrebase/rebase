@@ -25,6 +25,7 @@ from collections.abc import Iterator
 from urllib.parse import parse_qs
 
 import pytest
+from fakes.contacts import points
 from fakes.fake_gmail import TOKEN_HOST, FakeGmail
 from fakes.gmail_fixtures import TOKEN_KEY, gmail_settings
 from fakes.legal_entity_fixtures import committed_default_legal_entity
@@ -189,7 +190,9 @@ def _connect(settings: Settings, slug: str | None, *, status: str = "active") ->
             # The legal entity the customer is billed by (REB-623): a root seeded by hand has
             # none until somebody writes it, as `createadmin` does on a real one.
             committed_default_legal_entity(session, name="Radice")
-            session.add(Customer(legal_name="CLI Acme", email="info@acme.it"))
+            session.add(
+                Customer(legal_name="CLI Acme", contact_points=points(email="info@acme.it"))
+            )
             session.commit()
     finally:
         engine.dispose()

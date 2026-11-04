@@ -12,6 +12,7 @@ from datetime import UTC, datetime, timedelta
 from urllib.parse import parse_qs, urlparse
 
 import pytest
+from fakes.contacts import points
 from fakes.fake_gmail import FakeGmail, FakeMessage
 from fakes.gmail_fixtures import MAILBOX, actor_for, connected_account, sync_service
 from sqlalchemy import Engine, func, select, text
@@ -185,11 +186,17 @@ def test_a_domain_already_filed_under_a_customer_is_not_proposed_again(
     rossi = Customer(legal_name="Studio Rossi")
     db_session.add(rossi)
     db_session.flush()
-    db_session.add(Person(first_name="Anna", email="anna@studio-rossi.it", customer_id=rossi.id))
+    db_session.add(
+        Person(
+            first_name="Anna",
+            contact_points=points(email="anna@studio-rossi.it"),
+            customer_id=rossi.id,
+        )
+    )
     db_session.flush()
     fake = _mailbox()
     fake.messages["m11"] = _mail(11, frm=OWN, to="luca@nuovo.it", thread="t10")
-    db_session.add(Person(first_name="Luca", email="Luca@Nuovo.it"))
+    db_session.add(Person(first_name="Luca", contact_points=points(email="Luca@Nuovo.it")))
     db_session.flush()
 
     proposals = sync_service(db_session, fake).suggest_customers(actor=actor_for(account))
@@ -374,7 +381,7 @@ def test_ticked_proposals_become_customers_and_people_in_one_go(db_session: Sess
 
     assert [customer.legal_name for customer in created] == ["Acme S.r.l.", "Studio Rossi"]
     assert [customer.website for customer in created] == ["acme.it", "studio-rossi.it"]
-    people = db_session.execute(select(Person).order_by(Person.email)).scalars().all()
+    people = sorted(db_session.execute(select(Person)).scalars().all(), key=lambda p: p.email or "")
     assert [(p.email, p.first_name, p.last_name, p.customer_id) for p in people] == [
         ("marco@acme.it", "Marco", "Bianchi", created[0].id),
         # No display name: the address stands in for it.
@@ -429,12 +436,12 @@ def test_a_person_outside_the_domain_or_a_webmail_domain_is_refused(db_session: 
 
 
 def test_a_person_already_in_the_address_book_is_left_where_it_is(db_session: Session) -> None:
-    db_session.add(Person(first_name="Marco", email="marco@acme.it"))
+    db_session.add(Person(first_name="Marco", contact_points=points(email="marco@acme.it")))
     db_session.flush()
 
     CustomerService(db_session).create_from_suggestions(_import(), ADMIN)
 
-    marcos = db_session.execute(select(Person).where(Person.email == "marco@acme.it")).all()
+    marcos = [p for p in db_session.execute(select(Person)).scalars() if p.email == "marco@acme.it"]
     assert len(marcos) == 1
 
 

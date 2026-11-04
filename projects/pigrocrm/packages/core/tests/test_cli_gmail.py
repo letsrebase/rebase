@@ -29,6 +29,7 @@ from urllib.parse import urlparse
 from uuid import UUID
 
 import pytest
+from fakes.contacts import points
 from fakes.fake_gmail import API_HOST, FakeGmail
 from fakes.gmail_fixtures import connected_account, gmail_settings
 from sqlalchemy import Engine, text
@@ -128,7 +129,7 @@ def _correspondent(engine: Engine) -> None:
     empty roster no request is issued at all, which is the right behaviour and the
     wrong starting point for a test about a request failing."""
     with session_factory(engine)() as session:
-        session.add(Customer(legal_name="CLI Acme", email="info@acme.it"))
+        session.add(Customer(legal_name="CLI Acme", contact_points=points(email="info@acme.it")))
         session.commit()
 
 

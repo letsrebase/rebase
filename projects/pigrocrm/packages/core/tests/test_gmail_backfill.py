@@ -22,6 +22,7 @@ from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 import pytest
+from fakes.contacts import points
 from fakes.fake_gmail import FakeGmail, FakeMessage, RecordedRequest
 from fakes.gmail_fixtures import MAILBOX, actor_for, connected_account, sync_service
 from sqlalchemy import Engine, select
@@ -94,10 +95,15 @@ def _stored(session: Session) -> set[str]:
 
 
 def _person_of_new_customer(session: Session, email: str) -> Person:
-    customer = Customer(legal_name=f"Acme {uuid4().hex[:6]}", email=None)
+    customer = Customer(legal_name=f"Acme {uuid4().hex[:6]}", contact_points=points(email=None))
     session.add(customer)
     session.flush()
-    person = Person(first_name="Ada", last_name="Byron", email=email, customer_id=customer.id)
+    person = Person(
+        first_name="Ada",
+        last_name="Byron",
+        contact_points=points(email=email),
+        customer_id=customer.id,
+    )
     session.add(person)
     session.flush()
     return person
@@ -140,7 +146,7 @@ def test_the_second_cycle_asks_only_from_the_watermark(db_session: Session) -> N
     """The backfill happens once. A cycle that re-derived "new" from the roster alone
     would re-read three months of mail every fifteen minutes, forever."""
     account = connected_account(db_session)
-    db_session.add(Customer(legal_name="Acme", email="info@acme.it"))
+    db_session.add(Customer(legal_name="Acme", contact_points=points(email="info@acme.it")))
     db_session.flush()
 
     fake = FakeGmail()
@@ -175,7 +181,7 @@ def test_an_address_added_later_is_backfilled_while_the_others_are_not(
     established correspondent must not be re-read over three months just because a
     colleague was added to the CRM this morning."""
     account = connected_account(db_session)
-    db_session.add(Customer(legal_name="Acme", email="info@acme.it"))
+    db_session.add(Customer(legal_name="Acme", contact_points=points(email="info@acme.it")))
     db_session.flush()
 
     fake = FakeGmail()
@@ -304,17 +310,22 @@ def test_a_customer_backfill_covers_the_people_who_work_there(db_session: Sessio
     the company record would silently miss every message from the person one actually
     writes to."""
     account = connected_account(db_session)
-    customer = Customer(legal_name="Acme", email="info@acme.it")
+    customer = Customer(legal_name="Acme", contact_points=points(email="info@acme.it"))
     db_session.add(customer)
     db_session.flush()
     db_session.add(
-        Person(first_name="Ada", last_name="Byron", email="ada@acme.it", customer_id=customer.id)
+        Person(
+            first_name="Ada",
+            last_name="Byron",
+            contact_points=points(email="ada@acme.it"),
+            customer_id=customer.id,
+        )
     )
     db_session.add(
         Person(
             first_name="Grace",
             last_name="Hopper",
-            email="grace@acme.it",
+            contact_points=points(email="grace@acme.it"),
             customer_id=customer.id,
             deleted_at=datetime.now(UTC),
         )
@@ -387,7 +398,7 @@ def test_backfill_on_an_entity_with_no_address_refuses_clearly(db_session: Sessi
     """Silence would be the worst answer: the user pressed a button, waited, and got a
     report of zero because there was never an address to look for."""
     account = connected_account(db_session)
-    customer = Customer(legal_name="Acme", email=None)
+    customer = Customer(legal_name="Acme", contact_points=points(email=None))
     db_session.add(customer)
     db_session.flush()
     with pytest.raises(Conflict, match="nessun indirizzo"):

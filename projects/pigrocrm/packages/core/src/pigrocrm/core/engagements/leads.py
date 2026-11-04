@@ -30,13 +30,16 @@ import logging
 from uuid import UUID
 
 from psycopg.errors import LockNotAvailable
-from sqlalchemy import Engine, func, select, text
+from sqlalchemy import Engine, select, text
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.activities.service import ActivityService
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.config import Settings
+from pigrocrm.core.contact_points.models import ContactPoint
+from pigrocrm.core.contact_points.schemas import ContactPointIn
+from pigrocrm.core.contact_points.service import email_key, prepare
 from pigrocrm.core.customers.repository import CustomerRepository
 from pigrocrm.core.customers.schemas import CustomerCreate
 from pigrocrm.core.customers.service import CustomerService
@@ -100,6 +103,27 @@ def lead_marker(request_id: UUID) -> str:
 
 def _same_name(typed: str, known: str) -> bool:
     return " ".join(typed.split()).casefold() == " ".join(known.split()).casefold()
+
+
+def _contact_points(email: str, data: LeadUpsert) -> list[ContactPointIn]:
+    """The points of the contact a new person is born with: the address the request came
+    with, which the door is keyed on, and the phone and the LinkedIn profile it carried, all
+    `work` and primary. The two optional ones were free text before points had a shape, and
+    a request is not refused for a number or a profile the CRM cannot read: such a value is
+    left out, as a blank one is."""
+    points = [ContactPointIn(kind="email", value=email)]
+    optional: list[ContactPointIn] = []
+    if data.contact.phone and data.contact.phone.strip():
+        optional.append(ContactPointIn(kind="phone", value=data.contact.phone))
+    if data.contact.linkedin_url and data.contact.linkedin_url.strip():
+        optional.append(ContactPointIn(kind="linkedin", value=data.contact.linkedin_url))
+    for point in optional:
+        try:
+            prepare("person", [point])
+        except ValidationFailed:
+            continue
+        points.append(point)
+    return points
 
 
 class LeadService:
@@ -257,9 +281,7 @@ class LeadService:
                         PersonCreate(
                             first_name=data.contact.first_name,
                             last_name=data.contact.last_name,
-                            email=email,
-                            phone=data.contact.phone,
-                            linkedin=data.contact.linkedin_url,
+                            contact_points=_contact_points(email, data),
                             customer_id=customer_id,
                         ),
                         actor,
@@ -292,12 +314,17 @@ class LeadService:
 
     @staticmethod
     def _people_with_email(space: Session, email: str) -> list[Person]:
-        """The live people with this address, case-insensitively (`people.email` is not
-        unique), oldest first."""
+        """The live people with this address among any of their email points,
+        case-insensitively (an address is not unique), oldest first."""
+        owned = (
+            select(ContactPoint.person_id)
+            .where(ContactPoint.kind == "email", ContactPoint.normalized == email_key(email))
+            .scalar_subquery()
+        )
         return list(
             space.scalars(
                 select(Person)
-                .where(Person.deleted_at.is_(None), func.lower(Person.email) == email)
+                .where(Person.deleted_at.is_(None), Person.id.in_(owned))
                 .order_by(Person.created_at, Person.id)
             )
         )

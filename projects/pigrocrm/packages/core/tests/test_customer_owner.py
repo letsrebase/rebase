@@ -13,6 +13,7 @@ from uuid import UUID, uuid4
 import pytest
 from alembic.command import downgrade, upgrade
 from alembic.config import Config
+from fakes.contacts import points_in
 from sqlalchemy import Engine, create_engine, text
 from sqlalchemy.orm import Session
 
@@ -118,7 +119,9 @@ def test_an_update_that_does_not_mention_the_owner_leaves_it_and_asks_nobody(
     service = CustomerService(db_session)
     created = service.create(CustomerCreate(legal_name="ACME Srl"), _actor(member))
 
-    renamed = service.update(created.id, CustomerUpdate(phone="02 1234567"), _actor(member))
+    renamed = service.update(
+        created.id, CustomerUpdate(contact_points=points_in(phone="02 1234567")), _actor(member)
+    )
     again = service.update(created.id, CustomerUpdate(owner_id=member.id), _actor(member))
 
     assert renamed.owner_id == member.id

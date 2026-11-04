@@ -54,10 +54,8 @@ HAND_MAINTAINED_INDEXES = {
     "ix_customers_legal_name_trgm",
     "ix_customers_vat_number_trgm",
     "ix_customers_tax_code_trgm",
-    "ix_customers_email_trgm",
     "ix_people_name_trgm",
     "ix_people_last_name_trgm",
-    "ix_people_email_trgm",
     "ix_deals_name_trgm",
     "ix_documents_title_trgm",
     # Slice 6, migration 0022. Residuo R9's other half: one `(column, id)` B-tree per
@@ -110,13 +108,26 @@ HAND_MAINTAINED_INDEXES = {
     # makes an accepted or revoked invitation block the address forever. Its declared
     # shape is asserted on `indexdef` text below.
     "uq_invitations_email_lower_open",
-    # PCORE-B-18, migration 0067: the Gmail roster's `lower(email) = :needle`, functional and
-    # partial at once, the two shapes `compare_metadata` does not look at.
-    "ix_people_email_lower",
-    "ix_customers_email_lower",
+    # REB-940, migration 0073: the contact points' partial unique indexes, which autogenerate
+    # does not compare (one point per owner, kind and value; one primary per owner and kind),
+    # and their two trigram indexes, which replace the people and customers email ones (and
+    # the lowercase ones of 0067 with them: the roster now looks `(kind, normalized)` up).
+    "uq_contact_points_person_value",
+    "uq_contact_points_customer_value",
+    "uq_contact_points_person_primary",
+    "uq_contact_points_customer_primary",
+    "ix_contact_points_value_trgm",
+    "ix_contact_points_normalized_trgm",
 }
 
-TRGM_INDEX_NAMES = frozenset(n for n in HAND_MAINTAINED_INDEXES if n.endswith("_trgm"))
+# The trigram indexes of the soft-deletable tables: partial on `deleted_at IS NULL`. The two of
+# `contact_points` have no such column and are checked on their own below.
+CONTACT_TRGM_INDEX_NAMES = frozenset(
+    {"ix_contact_points_value_trgm", "ix_contact_points_normalized_trgm"}
+)
+TRGM_INDEX_NAMES = frozenset(
+    n for n in HAND_MAINTAINED_INDEXES if n.endswith("_trgm") and n not in CONTACT_TRGM_INDEX_NAMES
+)
 
 
 def _alembic_config(url: str) -> Config:
@@ -456,11 +467,11 @@ def test_every_trigram_index_is_a_partial_gin_index_over_gin_trgm_ops(
         engine.dispose()
 
     indexes = {row.indexname: row.indexdef for row in rows}
-    # Twelve -- nine from migration 0021, `invoices.memo` from 0024 and the two of
-    # `attivita` from 0052 -- and the count is asserted: a set comprehension that silently
-    # matched nothing would make every assertion below vacuous, and §8.3 names the columns
-    # rather than "some".
-    assert len(TRGM_INDEX_NAMES) == 12
+    # Ten -- seven of migration 0021 (the two email ones moved to `contact_points` in 0073),
+    # `invoices.memo` from 0024 and the two of `tasks` from 0052 -- and the count is asserted:
+    # a set comprehension that silently matched nothing would make every assertion below
+    # vacuous, and §8.3 names the columns rather than "some".
+    assert len(TRGM_INDEX_NAMES) == 10
     for name in sorted(TRGM_INDEX_NAMES):
         definition = indexes[name]
         assert "USING gin" in definition, f"{name} is not a GIN index: {definition}"
@@ -472,6 +483,10 @@ def test_every_trigram_index_is_a_partial_gin_index_over_gin_trgm_ops(
             f"{name} wraps the column in lower(), which stops ILIKE on the raw column "
             f"from using it (spec §8.2): {definition}"
         )
+    for name in sorted(CONTACT_TRGM_INDEX_NAMES):
+        definition = indexes[name]
+        assert "USING gin" in definition and "gin_trgm_ops" in definition, definition
+        assert "lower(" not in definition, definition
 
 
 # (index name, the exact `USING btree (...)` body Postgres must report). Residuo R9's
@@ -2698,3 +2713,139 @@ def test_0070_refuses_a_line_the_service_would_refuse(pigrocrm_postgres: Any) ->
                 insert(*args)
         insert(1, "day", "one_off", "800", "5", "1")
         engine.dispose()
+
+
+def test_0073_turns_the_five_columns_into_primary_work_points_and_downgrade_restores_them(
+    pigrocrm_postgres: Any,
+) -> None:
+    """REB-940 over people and customers planted at 0072. Up, each non-blank value becomes one
+    primary `work` point (email, then phone, then LinkedIn, numbered from 0), compared in the
+    shape the service compares (lowercase address, digits of a number), a phone with no digit
+    is not carried over, the five columns and their indexes are gone and the table is forced and
+    policied. Down, the primary values are back in the columns, with their indexes."""
+    entity = "00000000-0000-7000-8000-0000000000e1"
+    customer = "00000000-0000-7000-8000-0000000000c1"
+    ada = "00000000-0000-7000-8000-0000000000a1"
+    blank = "00000000-0000-7000-8000-0000000000a2"
+    phone_only = "00000000-0000-7000-8000-0000000000a3"
+    with pigrocrm_postgres.fresh_container() as container:
+        url = container.get_connection_url()
+        config = _alembic_config(url)
+        upgrade(config, "0072")
+        engine: Engine = create_engine(url)
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    "INSERT INTO legal_entities (id, name, legal_name, country) "
+                    f"VALUES ('{entity}', 'E', 'E srl', 'IT')"
+                )
+            )
+            connection.execute(
+                text(
+                    "INSERT INTO customers (id, legal_name, country, legal_entity_id, email, "
+                    f"phone, custom_fields) VALUES ('{customer}', 'C', 'IT', '{entity}', "
+                    "' Info@Acme.IT ', '+39 02 7654321', '{}')"
+                )
+            )
+            for person, first, email, phone, linkedin in (
+                (ada, "Ada", " Ada@Acme.IT ", "+39 02-123 4567", "https://www.linkedin.com/in/ada"),
+                (blank, "Blank", "  ", "n/a", None),
+                (phone_only, "Phone", None, "0039 333 1234567", None),
+            ):
+                connection.execute(
+                    text(
+                        "INSERT INTO people (id, first_name, customer_id, email, phone, "
+                        "linkedin, custom_fields) VALUES (:id, :first, :customer, :email, "
+                        ":phone, :linkedin, '{}')"
+                    ),
+                    {
+                        "id": person,
+                        "first": first,
+                        "customer": customer,
+                        "email": email,
+                        "phone": phone,
+                        "linkedin": linkedin,
+                    },
+                )
+        engine.dispose()
+
+        upgrade(config, "0073")
+        engine = create_engine(url)
+        with engine.connect() as connection:
+            points = connection.execute(
+                text(
+                    "SELECT coalesce(person_id, customer_id)::text, kind, value, normalized, "
+                    "label, is_primary, position FROM contact_points "
+                    "ORDER BY 1, position"
+                )
+            ).all()
+            columns = set(
+                connection.execute(
+                    text(
+                        "SELECT table_name || '.' || column_name FROM information_schema.columns "
+                        "WHERE table_name IN ('people', 'customers') "
+                        "AND column_name IN ('email', 'phone', 'linkedin')"
+                    )
+                ).scalars()
+            )
+            indexes = set(
+                connection.execute(
+                    text(
+                        "SELECT indexname FROM pg_indexes "
+                        "WHERE tablename IN ('people', 'customers') "
+                        "AND indexname LIKE 'ix_%_email%'"
+                    )
+                ).scalars()
+            )
+        engine.dispose()
+        assert [tuple(row) for row in points] == [
+            (ada, "email", "Ada@Acme.IT", "ada@acme.it", "work", True, 0),
+            (ada, "phone", "+39 02-123 4567", "+39021234567", "work", True, 1),
+            (
+                ada,
+                "linkedin",
+                "https://www.linkedin.com/in/ada",
+                "https://www.linkedin.com/in/ada",
+                "work",
+                True,
+                2,
+            ),
+            (phone_only, "phone", "0039 333 1234567", "00393331234567", "work", True, 0),
+            (customer, "email", "Info@Acme.IT", "info@acme.it", "work", True, 0),
+            (customer, "phone", "+39 02 7654321", "+39027654321", "work", True, 1),
+        ]
+        assert columns == set() and indexes == set()
+        assert _table_shape(url, "contact_points") == (True, True, {"legal_entity_scope"})
+
+        downgrade(config, "0072")
+        assert _table_shape(url, "contact_points")[0] is False
+        engine = create_engine(url)
+        with engine.connect() as connection:
+            restored = connection.execute(
+                text("SELECT first_name, email, phone, linkedin FROM people ORDER BY first_name")
+            ).all()
+            customer_row = connection.execute(text("SELECT email, phone FROM customers")).one()
+            indexes = set(
+                connection.execute(
+                    text(
+                        "SELECT indexname FROM pg_indexes "
+                        "WHERE tablename IN ('people', 'customers') "
+                        "AND indexname LIKE 'ix_%_email%'"
+                    )
+                ).scalars()
+            )
+        engine.dispose()
+        assert [tuple(row) for row in restored] == [
+            ("Ada", "Ada@Acme.IT", "+39 02-123 4567", "https://www.linkedin.com/in/ada"),
+            ("Blank", None, None, None),
+            ("Phone", None, "0039 333 1234567", None),
+        ]
+        assert tuple(customer_row) == ("Info@Acme.IT", "+39 02 7654321")
+        assert indexes == {
+            "ix_people_email",
+            "ix_people_email_lower",
+            "ix_people_email_trgm",
+            "ix_customers_email",
+            "ix_customers_email_lower",
+            "ix_customers_email_trgm",
+        }

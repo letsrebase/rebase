@@ -114,11 +114,11 @@ _TEMPLATE = "pigrocrm_template"
 
 
 def _legal_entity_scope_statements() -> list[str]:
-    """`statements()` of revisions 0068 (REB-898) and 0070, loaded from the files: a revision is a
-    script in `versions/`, not a module on the path. It carries the final functions, the
-    policies, `ENABLE`/`FORCE` and the hardening of the definer functions, so the template
-    and production cannot disagree on a predicate; the earlier revisions' own versions of
-    them are replaced by it."""
+    """`statements()` of revisions 0068 (REB-898), 0070 and 0073, loaded from the files: a
+    revision is a script in `versions/`, not a module on the path. It carries the final
+    functions, the policies, `ENABLE`/`FORCE` and the hardening of the definer functions, so
+    the template and production cannot disagree on a predicate; the earlier revisions' own
+    versions of them are replaced by it."""
     import importlib.util
     from pathlib import Path
 
@@ -129,6 +129,7 @@ def _legal_entity_scope_statements() -> list[str]:
     for name, file in (
         ("pigrocrm_migration_0068", "0068_english_names.py"),
         ("pigrocrm_migration_0070", "0070_deal_value_lines.py"),
+        ("pigrocrm_migration_0073", "0073_contact_points.py"),
     ):
         spec = importlib.util.spec_from_file_location(name, versions / file)
         assert spec is not None and spec.loader is not None

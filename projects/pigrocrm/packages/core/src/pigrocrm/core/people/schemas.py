@@ -2,8 +2,13 @@ from datetime import datetime
 from typing import Any
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field
 
+from pigrocrm.core.contact_points.schemas import (
+    MAX_CONTACT_POINTS,
+    ContactPointIn,
+    ContactPointRead,
+)
 from pigrocrm.core.db import CURSOR_MAX_LENGTH, SortDirection, SortSpec, SortWhitelist
 from pigrocrm.core.notes.schemas import NOTE_MAX_LENGTH
 from pigrocrm.core.people.models import Person
@@ -20,39 +25,28 @@ from pigrocrm.core.validation import SafeStr
 # `notes` thread, not a column.
 NAME_MAX_LENGTH = 120
 LAST_NAME_MAX_LENGTH = 120
-EMAIL_MAX_LENGTH = 320
-PHONE_MAX_LENGTH = 40
 ROLE_MAX_LENGTH = 120
-LINKEDIN_MAX_LENGTH = 255
 
-
-def _normalise_email(value: str | None) -> str | None:
-    return value.strip().lower() if isinstance(value, str) else value
+CONTACT_POINTS_DESCRIPTION = (
+    "The person's contact points (email, phone, linkedin), each with a label and an optional "
+    "note. On an update the list replaces the stored one. At most one point per kind is "
+    "primary (the first of a kind is when none is flagged); the primary email is the "
+    "address the CRM's mail goes to."
+)
 
 
 class PersonCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     first_name: SafeStr = Field(max_length=NAME_MAX_LENGTH)
     last_name: SafeStr | None = Field(default=None, max_length=LAST_NAME_MAX_LENGTH)
-    # Plain `str`, not `EmailStr`: format is checked separately by the service's own
-    # `_check_email` regex below, not by the schema. `SafeStr` closes the NUL-byte gap
-    # that regex does not: `[^@\s]` matches a NUL byte just as readily as a letter.
-    email: SafeStr | None = Field(default=None, max_length=EMAIL_MAX_LENGTH)
-    phone: SafeStr | None = Field(default=None, max_length=PHONE_MAX_LENGTH)
     role: SafeStr | None = Field(default=None, max_length=ROLE_MAX_LENGTH)
-    linkedin: SafeStr | None = Field(default=None, max_length=LINKEDIN_MAX_LENGTH)
+    contact_points: list[ContactPointIn] = Field(
+        default_factory=list, max_length=MAX_CONTACT_POINTS, description=CONTACT_POINTS_DESCRIPTION
+    )
     note: SafeStr | None = Field(default=None, max_length=NOTE_MAX_LENGTH)
     customer_id: UUID | None = None
     custom_fields: dict[str, Any] = {}
-
-    @field_validator("email", mode="before")
-    @classmethod
-    def _email(cls, value: str | None) -> str | None:
-        # `mode="before"` runs ahead of both the `max_length` constraint above and
-        # SafeStr's own NUL check -- like `FieldDefinitionCreate.key`'s slugify
-        # validator (fields/schemas.py) -- so both apply to the normalised value, not
-        # to whatever raw string arrived. Stripping/lowering never removes a NUL byte,
-        # so SafeStr still catches one introduced anywhere in the original input.
-        return _normalise_email(value)
 
 
 class PersonUpdate(BaseModel):
@@ -60,10 +54,10 @@ class PersonUpdate(BaseModel):
 
     first_name: SafeStr | None = Field(default=None, max_length=NAME_MAX_LENGTH)
     last_name: SafeStr | None = Field(default=None, max_length=LAST_NAME_MAX_LENGTH)
-    email: SafeStr | None = Field(default=None, max_length=EMAIL_MAX_LENGTH)
-    phone: SafeStr | None = Field(default=None, max_length=PHONE_MAX_LENGTH)
     role: SafeStr | None = Field(default=None, max_length=ROLE_MAX_LENGTH)
-    linkedin: SafeStr | None = Field(default=None, max_length=LINKEDIN_MAX_LENGTH)
+    contact_points: list[ContactPointIn] | None = Field(
+        default=None, max_length=MAX_CONTACT_POINTS, description=CONTACT_POINTS_DESCRIPTION
+    )
     customer_id: UUID | None = None
     custom_fields: dict[str, Any] | None = None
     # Detaching is its own explicit flag rather than an overloaded `customer_id=None`.
@@ -86,11 +80,6 @@ class PersonUpdate(BaseModel):
         ),
     )
 
-    @field_validator("email", mode="before")
-    @classmethod
-    def _email(cls, value: str | None) -> str | None:
-        return _normalise_email(value)
-
 
 class PersonRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -98,10 +87,12 @@ class PersonRead(BaseModel):
     id: UUID
     first_name: str
     last_name: str | None
+    # The primary point of each kind, derived and read only; a write sends `contact_points`.
     email: str | None
     phone: str | None
-    role: str | None
     linkedin: str | None
+    role: str | None
+    contact_points: list[ContactPointRead]
     customer_id: UUID | None
     # The person's "azienda di riferimento", denormalised onto the read shape: it is not
     # a column on `people` and never becomes one -- the name lives on `customers` and

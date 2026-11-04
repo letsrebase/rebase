@@ -7,6 +7,7 @@ from decimal import Decimal
 from uuid import UUID, uuid4
 
 import pytest
+from fakes.contacts import points
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.actor import Actor
@@ -87,7 +88,7 @@ def _setup(db_session: Session) -> Contract:
             customer_id=customer.id,
             first_name="Mario",
             last_name="Verdi",
-            email="mario@acme.example",
+            contact_points=points(email="mario@acme.example"),
         )
     )
     contract = Contract(

@@ -107,3 +107,30 @@ CRM with every point of its contact. That changes the payload's shape, so the `h
 
 - Whether a person may hide a point from the agents' MCP reads (a personal number, say).
   Not asked; nothing in this design hides anything.
+
+## 7. Deviations found while building (CRM, REB-940 to REB-942)
+
+- **`normalized` column.** §2 lists no such column, but the unique index and every lookup
+  need the compared form (lowercased address, digits of a phone with a leading `+` kept,
+  canonical LinkedIn profile) as data, not as a per-index expression. `contact_points` has
+  `normalized`, written only by `contact_points.service`; the roster, the leads door and the
+  searches read it, never `value`. Its indexes are `(kind, normalized)` and one trigram index
+  each on `value` and `normalized`; the two unique indexes and the one-primary-per-kind
+  indexes are partial on the owner column.
+- **Stored as typed.** A person's email used to be lowercased on write; the point keeps what
+  was typed (trimmed) and compares on `normalized`. A LinkedIn value is stored canonical, as
+  the hub stores it (`contact_points/linkedin.py` is a port of `rebase_core.linkedin`).
+- **Reading mail takes every address, sending takes the primary.** §3 says the sync backfill
+  uses each person's primary email. The backfill and the payment reminders' «did anybody
+  reply» search read mail, and a person may answer from their second address, so they look at
+  every email point of the customer and its people; contract mail and the reminders'
+  recipients (what is sent) use the primary alone.
+- **A customer's email is now format-checked** like a person's: it was free text before.
+- **The leads door** keeps accepting today's payload. The address is the identity and is
+  validated as before; a phone or a LinkedIn profile that the point rules refuse is left
+  out of the new person instead of refusing the request, as a blank one is.
+- **The command palette** (`search/repository.py`) matches the contact points of a person or
+  customer through one correlated aggregate of their values, a filter rather than an index
+  seek: its tables are small, and the field is still reported as `email`.
+- **A change to the list bumps the owner's `updated_at`**, since the owner row itself does
+  not change and the lists sorted by «recently touched» would miss it.

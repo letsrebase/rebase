@@ -22,6 +22,7 @@ from threading import Barrier
 from uuid import UUID
 
 import pytest
+from fakes.contacts import points
 from fakes.fake_gmail import FakeGmail
 from fakes.gmail_fixtures import (
     actor_for,
@@ -35,6 +36,7 @@ from sqlalchemy.orm import Session
 
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.auth.models import User
+from pigrocrm.core.contact_points.models import ContactPoint
 from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.db import session_factory
 from pigrocrm.core.db.clock import today_local
@@ -399,13 +401,71 @@ def test_it_goes_to_the_people_on_the_customer_when_there_is_no_generic_address(
     account = connected_account(db_session)
     _profiles(db_session)
     invoice = unpaid_invoice(db_session, due=_days_ago(30), email=None)
-    db_session.add(Person(customer_id=invoice.customer_id, first_name="Ada", email="Ada@Acme.IT"))
+    db_session.add(
+        Person(
+            customer_id=invoice.customer_id,
+            first_name="Ada",
+            contact_points=points(email="Ada@Acme.IT"),
+        )
+    )
     db_session.commit()
 
     read = _service(db_session).create_reminder(invoice.id, actor_for(account))
     draft = db_session.get(EmailDraft, read.email_draft_id)
     assert draft is not None
     assert draft.to_addresses == ["ada@acme.it"]
+
+
+def test_it_goes_to_the_primary_address_of_a_person_and_never_to_the_others(
+    db_session: Session,
+) -> None:
+    """A person with two addresses is written to at the primary one (REB-939): the second
+    is somewhere to be found, not somewhere to write."""
+    account = connected_account(db_session)
+    _profiles(db_session)
+    invoice = unpaid_invoice(db_session, due=_days_ago(30), email=None)
+    db_session.add(
+        Person(
+            customer_id=invoice.customer_id,
+            first_name="Ada",
+            contact_points=[
+                *points(email="ada@acme.it"),
+                ContactPoint(
+                    kind="email",
+                    value="Ada.Private@gmail.com",
+                    normalized="ada.private@gmail.com",
+                    label="personal",
+                    is_primary=False,
+                    position=1,
+                ),
+            ],
+        )
+    )
+    db_session.commit()
+
+    read = _service(db_session).create_reminder(invoice.id, actor_for(account))
+    draft = db_session.get(EmailDraft, read.email_draft_id)
+    assert draft is not None
+    assert draft.to_addresses == ["ada@acme.it"]
+
+
+def test_a_customers_primary_address_wins_over_its_people(db_session: Session) -> None:
+    account = connected_account(db_session)
+    _profiles(db_session)
+    invoice = unpaid_invoice(db_session, due=_days_ago(30), email="amministrazione@acme.it")
+    db_session.add(
+        Person(
+            customer_id=invoice.customer_id,
+            first_name="Ada",
+            contact_points=points(email="ada@acme.it"),
+        )
+    )
+    db_session.commit()
+
+    read = _service(db_session).create_reminder(invoice.id, actor_for(account))
+    draft = db_session.get(EmailDraft, read.email_draft_id)
+    assert draft is not None
+    assert draft.to_addresses == ["amministrazione@acme.it"]
 
 
 def test_a_customer_with_nowhere_to_write_is_refused_before_a_row_exists(

@@ -17,6 +17,7 @@ from typing import Any
 from uuid import UUID, uuid4
 
 import pytest
+from fakes.contacts import points_in
 from fakes.notes import texts
 from sqlalchemy import Engine, create_engine, func, select, text
 from sqlalchemy.orm import Session
@@ -25,6 +26,7 @@ import pigrocrm.core.engagements.leads as leads_module
 from pigrocrm.core.activities.models import Activity
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.config import Settings
+from pigrocrm.core.contact_points.schemas import ContactPointIn
 from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.customers.schemas import CustomerCreate
 from pigrocrm.core.customers.service import CustomerService
@@ -47,7 +49,7 @@ from pigrocrm.core.engagements.leads import (
 from pigrocrm.core.engagements.schemas import LeadRead, LeadUpsert
 from pigrocrm.core.errors import ValidationFailed
 from pigrocrm.core.people.models import Person
-from pigrocrm.core.people.schemas import PersonCreate
+from pigrocrm.core.people.schemas import PersonCreate, PersonUpdate
 from pigrocrm.core.people.service import PersonService
 from pigrocrm.core.tenants import (
     TenantService,
@@ -149,7 +151,10 @@ def _person(
         PersonService(space)
         .create(
             PersonCreate(
-                first_name=first_name, last_name="Rossi", email=email, customer_id=customer_id
+                first_name=first_name,
+                last_name="Rossi",
+                contact_points=points_in(email=email),
+                customer_id=customer_id,
             ),
             Actor.system(),
         )
@@ -255,6 +260,63 @@ def test_a_retry_with_other_lines_returns_the_deal_and_leaves_its_lines_alone(
         assert deal is not None and deal.expected_value == Decimal("24000.00")
         [stored] = space.scalars(select(DealValueLine).where(DealValueLine.deal_id == deal.id))
         assert stored.unit_price == Decimal("24000.00")
+
+
+def test_the_door_reuses_a_person_by_any_of_their_addresses(door: Door) -> None:
+    """REB-939: a request written with the address a person has as their second one finds
+    them and their customer, and files a second deal there instead of a second person."""
+    with _space(door) as space:
+        customer_id = _customer(space)
+        person_id = _person(space, "m.rossi@rossicostruzioni.it", customer_id)
+        PersonService(space).update(
+            person_id,
+            PersonUpdate(
+                contact_points=[
+                    ContactPointIn(kind="email", value="m.rossi@rossicostruzioni.it"),
+                    ContactPointIn(kind="email", value=MARIA.upper(), label="personal"),
+                ]
+            ),
+            Actor.system(),
+        )
+
+    answer = door.service().file(uuid4(), _body())
+
+    assert (answer.customer_id, answer.person_id) == (customer_id, person_id)
+    with _space(door) as space:
+        assert _count(space, Person) == 1
+        person = space.get(Person, person_id)
+        assert person is not None
+        # The existing person is left as they were: the door adds nothing to them.
+        assert person.email == "m.rossi@rossicostruzioni.it"
+        assert len(person.contact_points) == 2
+
+
+def test_a_new_person_is_born_with_the_lead_values_as_primary_work_points(door: Door) -> None:
+    answer = door.service().file(uuid4(), _body())
+
+    with _space(door) as space:
+        person = space.get(Person, answer.person_id)
+        assert person is not None
+        assert [
+            (p.kind, p.value, p.label, p.is_primary, p.position) for p in person.contact_points
+        ] == [
+            ("email", MARIA, "work", True, 0),
+            ("phone", "+39 02 1234567", "work", True, 1),
+            ("linkedin", "https://www.linkedin.com/in/maria-rossi", "work", True, 2),
+        ]
+
+
+def test_a_phone_or_profile_the_crm_cannot_read_does_not_refuse_the_request(door: Door) -> None:
+    """Both were free text before points had a shape: the door keeps accepting today's payload
+    and leaves the unreadable value out, as it leaves out a blank one."""
+    answer = door.service().file(
+        uuid4(), _body(contact={"phone": "call me", "linkedin_url": "https://example.com/maria"})
+    )
+
+    with _space(door) as space:
+        person = space.get(Person, answer.person_id)
+        assert person is not None
+        assert [(p.kind, p.value) for p in person.contact_points] == [("email", MARIA)]
 
 
 def test_a_lead_with_no_lines_files_a_deal_with_no_value(door: Door) -> None:

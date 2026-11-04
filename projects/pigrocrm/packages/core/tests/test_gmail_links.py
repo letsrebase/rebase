@@ -22,6 +22,7 @@ from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
 import pytest
+from fakes.contacts import points
 from fakes.fake_gmail import FakeGmail, FakeMessage
 from fakes.gmail_fixtures import MAILBOX, actor_for, connected_account, sync_service
 from sqlalchemy import select
@@ -29,6 +30,7 @@ from sqlalchemy.orm import Session
 
 from pigrocrm.core.activities.models import Activity
 from pigrocrm.core.actor import Actor
+from pigrocrm.core.contact_points.models import ContactPoint
 from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.deals.models import Deal
 from pigrocrm.core.errors import AgentForbidden
@@ -77,7 +79,7 @@ def _thread(fake: FakeGmail) -> None:
 
 
 def _acme(session: Session) -> Customer:
-    customer = Customer(legal_name="Acme", email=None)
+    customer = Customer(legal_name="Acme", contact_points=points(email=None))
     session.add(customer)
     session.flush()
     return customer
@@ -85,7 +87,10 @@ def _acme(session: Session) -> Customer:
 
 def _ada(session: Session, customer: Customer) -> Person:
     person = Person(
-        first_name="Ada", last_name="Byron", email="ada@acme.it", customer_id=customer.id
+        first_name="Ada",
+        last_name="Byron",
+        contact_points=points(email="ada@acme.it"),
+        customer_id=customer.id,
     )
     session.add(person)
     session.flush()
@@ -137,6 +142,46 @@ def test_an_email_appears_on_the_person_and_on_her_customer(
     # would pass just as well if the counter were never decremented for a refused
     # duplicate, which is the number this field exists to report.
     assert report.links_created == 6
+
+
+def test_an_email_from_the_second_address_of_a_person_lands_on_her_and_her_customer(
+    db_session: Session,
+) -> None:
+    """REB-939: the roster knows every email point, so mail from a personal address is filed
+    where mail from the primary one is, and the sync's `q` names it."""
+    account = connected_account(db_session)
+    customer = _acme(db_session)
+    person = _ada(db_session, customer)
+    db_session.add(
+        ContactPoint(
+            person_id=person.id,
+            kind="email",
+            value="Ada.Private@gmail.com",
+            normalized="ada.private@gmail.com",
+            label="personal",
+            is_primary=False,
+            position=1,
+        )
+    )
+    db_session.flush()
+
+    fake = FakeGmail()
+    fake.messages["m9"] = FakeMessage(
+        id="m9",
+        thread_id="t9",
+        headers={
+            "From": "Ada Private <ada.private@gmail.com>",
+            "To": MAILBOX,
+            "Subject": "Da casa",
+            "Message-ID": "<m9@gmail.com>",
+        },
+        body_text="corpo riservato nove",
+        internal_date_ms=_ms(1),
+    )
+    sync_service(db_session, fake).sync(actor_for(account))
+    db_session.commit()
+
+    assert _links_for(db_session, "m9") == {("person", person.id), ("customer", customer.id)}
 
 
 def test_a_sibling_message_from_a_stranger_is_stored_but_linked_through_the_thread(
@@ -396,7 +441,7 @@ def test_an_agent_credential_cannot_sync_the_mailbox(db_session: Session) -> Non
 
 
 def _ada_id(session: Session) -> UUID:
-    return session.execute(select(Person.id).where(Person.email == "ada@acme.it")).scalars().one()
+    return session.execute(select(Person.id).where(Person.first_name == "Ada")).scalars().one()
 
 
 def _row(

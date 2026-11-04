@@ -16,6 +16,7 @@ from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 
 import pytest
+from fakes.contacts import points
 from fakes.gmail_fixtures import actor_for, connected_account, gmail_settings
 from fakes.invoice_fixtures import unpaid_invoice
 from sqlalchemy.orm import Session
@@ -288,7 +289,11 @@ def test_a_reply_from_a_person_on_the_customer_counts_as_the_customer_replying(
     account = connected_account(db_session)
     invoice = unpaid_invoice(db_session, due=_days_ago(30))
     db_session.add(
-        Person(customer_id=invoice.customer_id, first_name="Ada", email="ada@acme.it"),
+        Person(
+            customer_id=invoice.customer_id,
+            first_name="Ada",
+            contact_points=points(email="ada@acme.it"),
+        ),
     )
     db_session.add(
         GmailMessage(

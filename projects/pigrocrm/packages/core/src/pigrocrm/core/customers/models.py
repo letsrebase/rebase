@@ -3,8 +3,9 @@ from uuid import UUID
 
 from sqlalchemy import Boolean, ForeignKey, Index, Integer, String, text
 from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
+from pigrocrm.core.contact_points.models import ContactPoint, primary_value
 from pigrocrm.core.db import Base, PrimaryKeyMixin, SoftDeleteMixin, TimestampMixin
 from pigrocrm.core.legal_entities.models import default_legal_entity_id
 
@@ -52,20 +53,6 @@ class Customer(Base, PrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
             "tax_code",
             postgresql_using="gin",
             postgresql_ops={"tax_code": "gin_trgm_ops"},
-            postgresql_where=text("deleted_at IS NULL"),
-        ),
-        # The Gmail roster resolves an address with `lower(email) = :needle`, which neither
-        # the plain email index nor the trigram one can serve (migration 0067).
-        Index(
-            "ix_customers_email_lower",
-            text("lower(email)"),
-            postgresql_where=text("deleted_at IS NULL"),
-        ),
-        Index(
-            "ix_customers_email_trgm",
-            "email",
-            postgresql_using="gin",
-            postgresql_ops={"email": "gin_trgm_ops"},
             postgresql_where=text("deleted_at IS NULL"),
         ),
         # Residuo R9. One `(column, id)` B-tree per key admitted by `CUSTOMER_SORTS`:
@@ -118,11 +105,6 @@ class Customer(Base, PrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
     city: Mapped[str | None] = mapped_column(String(120), default=None)
     province: Mapped[str | None] = mapped_column(String(2), default=None)
     country: Mapped[str] = mapped_column(String(2), nullable=False, default="IT")
-    # Indexed for the same reason people.email is: Gmail relevance resolution
-    # (gmail/roster.py) looks an address up in both tables on every message it
-    # considers, and an unindexed lookup there is a sequential scan per message.
-    email: Mapped[str | None] = mapped_column(String(320), default=None, index=True)
-    phone: Mapped[str | None] = mapped_column(String(40), default=None)
     website: Mapped[str | None] = mapped_column(String(255), default=None)
     status: Mapped[str | None] = mapped_column(String(40), default=None)
     # The payment terms agreed with this customer (REB-326): days after the invoice
@@ -137,3 +119,19 @@ class Customer(Base, PrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
         Boolean, nullable=False, default=False, server_default=text("false")
     )
     custom_fields: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
+    # The ways to reach this customer (REB-939): see `Person.contact_points`.
+    contact_points: Mapped[list[ContactPoint]] = relationship(
+        lazy="selectin",
+        cascade="save-update, merge",
+        passive_deletes=True,
+        order_by="ContactPoint.position",
+    )
+
+    @property
+    def email(self) -> str | None:
+        """The primary email, which is where the CRM's mail to this customer goes."""
+        return primary_value(self.contact_points, "email")
+
+    @property
+    def phone(self) -> str | None:
+        return primary_value(self.contact_points, "phone")

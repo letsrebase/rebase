@@ -28,6 +28,7 @@ from uuid import uuid4
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from fakes.contacts import points
 from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.invoices.models import Invoice
 
@@ -53,7 +54,9 @@ def unpaid_invoice(
     names an amount must name what was issued, never a sum recomputed at reminder time.
     """
     if customer is None:
-        customer = Customer(legal_name=f"Acme {uuid4().hex[:8]}", email=email)
+        customer = Customer(
+            legal_name=f"Acme {uuid4().hex[:8]}", contact_points=points(email=email)
+        )
         session.add(customer)
         session.flush()
 

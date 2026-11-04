@@ -47,6 +47,7 @@ from sqlalchemy.orm import Session
 from pigrocrm.core.activities.service import ActivityService
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.config import Settings, require_gmail_configured
+from pigrocrm.core.contact_points.service import email_addresses
 from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.customers.schemas import LEGAL_NAME_MAX_LENGTH
 from pigrocrm.core.errors import Conflict, NotFound, ValidationFailed
@@ -669,25 +670,18 @@ class GmailSyncService:
             person = self.session.get(Person, entity_id)
             if person is None or person.deleted_at is not None:
                 raise NotFound("person", entity_id)
-            return [person.email.strip().lower()] if person.email else []
+            return email_addresses(person)
         if entity_type == "customer":
             customer = self.session.get(Customer, entity_id)
             if customer is None or customer.deleted_at is not None:
                 raise NotFound("customer", entity_id)
-            addresses = [customer.email.strip().lower()] if customer.email else []
-            addresses.extend(
-                email.strip().lower()
-                for email in self.session.execute(
-                    select(Person.email).where(
-                        Person.customer_id == entity_id,
-                        Person.email.is_not(None),
-                        Person.deleted_at.is_(None),
-                    )
-                )
-                .scalars()
-                .all()
-                if email
-            )
+            addresses = email_addresses(customer)
+            for person in self.session.scalars(
+                select(Person)
+                .where(Person.customer_id == entity_id, Person.deleted_at.is_(None))
+                .order_by(Person.created_at, Person.id)
+            ):
+                addresses.extend(email_addresses(person))
             return list(dict.fromkeys(addresses))
         # A deal has no address of its own -- it borrows its customer's -- so the answer
         # names the two types that do rather than returning an empty list.

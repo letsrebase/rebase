@@ -3,8 +3,9 @@ from uuid import UUID
 
 from sqlalchemy import ForeignKey, Index, String, column, desc, nullslast, text
 from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
+from pigrocrm.core.contact_points.models import ContactPoint, primary_value
 from pigrocrm.core.db import Base, PrimaryKeyMixin, SoftDeleteMixin, TimestampMixin
 
 
@@ -44,20 +45,6 @@ class Person(Base, PrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
             postgresql_ops={"last_name": "gin_trgm_ops"},
             postgresql_where=text("deleted_at IS NULL"),
         ),
-        # The Gmail roster resolves an address with `lower(email) = :needle`, which neither
-        # the plain email index nor the trigram one can serve (migration 0067).
-        Index(
-            "ix_people_email_lower",
-            text("lower(email)"),
-            postgresql_where=text("deleted_at IS NULL"),
-        ),
-        Index(
-            "ix_people_email_trgm",
-            "email",
-            postgresql_using="gin",
-            postgresql_ops={"email": "gin_trgm_ops"},
-            postgresql_where=text("deleted_at IS NULL"),
-        ),
         # Residuo R9. See `customers/models.py` for why each admitted sort key costs a
         # `(column, id)` B-tree and why none of them is partial.
         Index("ix_people_created_at_id", "created_at", "id"),
@@ -88,8 +75,28 @@ class Person(Base, PrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
     )
     first_name: Mapped[str] = mapped_column(String(120), nullable=False)
     last_name: Mapped[str | None] = mapped_column(String(120), default=None)
-    email: Mapped[str | None] = mapped_column(String(320), default=None, index=True)
-    phone: Mapped[str | None] = mapped_column(String(40), default=None)
     role: Mapped[str | None] = mapped_column(String(120), default=None)
-    linkedin: Mapped[str | None] = mapped_column(String(255), default=None)
     custom_fields: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
+    # The ways to reach this person (REB-939), loaded with the row: one query per read of a
+    # list of people, never one per row. A row is born with its points through the cascade;
+    # after that `contact_points.service.write_points` replaces the list, which a
+    # `delete-orphan` cascade could not do without tripping the unique indexes.
+    contact_points: Mapped[list[ContactPoint]] = relationship(
+        lazy="selectin",
+        cascade="save-update, merge",
+        passive_deletes=True,
+        order_by="ContactPoint.position",
+    )
+
+    @property
+    def email(self) -> str | None:
+        """The primary email, which is where the CRM's mail to this person goes."""
+        return primary_value(self.contact_points, "email")
+
+    @property
+    def phone(self) -> str | None:
+        return primary_value(self.contact_points, "phone")
+
+    @property
+    def linkedin(self) -> str | None:
+        return primary_value(self.contact_points, "linkedin")

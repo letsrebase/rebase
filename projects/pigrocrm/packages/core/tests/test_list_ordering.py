@@ -25,6 +25,7 @@ paging test is parametrised over the direction for that reason.
 from uuid import UUID
 
 import pytest
+from fakes.contacts import points_in
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.actor import Actor
@@ -244,7 +245,7 @@ def test_sorting_by_updated_at_puts_the_most_recently_touched_row_first(
     _customer(service, "Beta")
     _customer(service, "Gamma")
 
-    service.update(oldest, CustomerUpdate(phone="toccato"), ADMIN)
+    service.update(oldest, CustomerUpdate(contact_points=points_in(phone="0212345")), ADMIN)
 
     newest_first = service.list(CustomerListQuery(sort="updated_at", dir="desc", limit=10), ADMIN)
     assert newest_first.items[0].id == oldest

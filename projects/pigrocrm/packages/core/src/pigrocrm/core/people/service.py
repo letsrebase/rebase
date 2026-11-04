@@ -1,15 +1,14 @@
-import re
 from datetime import UTC, datetime
-from typing import Any
 from uuid import UUID
 
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.activities.service import ActivityService
 from pigrocrm.core.actor import Actor
+from pigrocrm.core.contact_points.service import prepare, write_points
 from pigrocrm.core.customers.repository import CustomerRepository
 from pigrocrm.core.db import encode_cursor
-from pigrocrm.core.errors import Conflict, NotFound, ValidationFailed
+from pigrocrm.core.errors import Conflict, NotFound
 from pigrocrm.core.fields.custom import merge_custom
 from pigrocrm.core.fields.schemas import EntityType
 from pigrocrm.core.fields.service import FieldDefinitionService
@@ -31,32 +30,6 @@ from pigrocrm.core.schemas import reject_cleared_columns, supplied_changes
 # CustomerService.ENTITY exactly: passing a plain `str` into `specs_for` fails mypy
 # strict, which requires the narrower `Literal["customer", "person", "deal"]`.
 ENTITY: EntityType = "person"
-# `.fullmatch()`, not `.match()`, is load-bearing -- identical reasoning to
-# `VAT_NUMBER_RE` in customers/service.py: `.match()` with a `$`-anchored pattern
-# accepts a trailing "\n", because `$` matches just before a final newline, not only
-# at the true end of the string. "a@b.it\n" would pass `^...$` under `.match()` and
-# could reach `flush()` as a raw, session-poisoning `DataError` once combined with a
-# value long enough to exceed the `String(320)` column. This was the Critical finding
-# on Customers; `.fullmatch()` requires the entire string to be consumed, which has no
-# such exception.
-EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
-
-
-def _check_email(data: dict[str, Any]) -> None:
-    """Mutates `data` in place: an empty string is normalized to `None` before the
-    format check runs, exactly mirroring `_check_fiscal` in customers/service.py.
-    Without this, `if email` below is falsy on "", so an empty string skips the check
-    entirely and would be stored as "" -- a different thing from "not provided" that
-    would, for instance, wrongly satisfy a future "has an email" filter. Shared by
-    `create` and `update`, so the normalization applies equally to a brand-new row and
-    to a patch that clears the field with "".
-    """
-    if data.get("email") == "":
-        data["email"] = None
-
-    email = data.get("email")
-    if email and not EMAIL_RE.fullmatch(email):
-        raise ValidationFailed(ENTITY, "email", "indirizzo non valido", expected="nome@dominio.it")
 
 
 class PersonService:
@@ -118,13 +91,17 @@ class PersonService:
         payload = data.model_dump()
         # Not a column: the first note of the person, written below by the creating actor.
         first_note = payload.pop("note", None)
-        _check_email(payload)
+        # Not a column either: the points are written below, once the row has an id. Checked
+        # now so that a refusal leaves nothing in the session.
+        payload.pop("contact_points")
+        prepare(ENTITY, data.contact_points)
         self._check_customer(payload.get("customer_id"))
         payload["custom_fields"] = validate_custom_fields(
             ENTITY, self.fields.specs_for(ENTITY), payload.get("custom_fields") or {}
         )
 
         person = self.repo.add(Person(**payload))
+        write_points(self.session, person, data.contact_points)
         self.activities.record(
             ENTITY, person.id, "created", actor, {"first_name": person.first_name}
         )
@@ -149,9 +126,10 @@ class PersonService:
         # confused with the field itself being absent -- see `merge_custom`.
         # `customer_id` is excluded here too and handled below, alongside `detach`:
         # the two interact in a way a blind `model_dump` cannot express.
-        changes = supplied_changes(data, exclude={"custom_fields", "detach", "customer_id"})
+        changes = supplied_changes(
+            data, exclude={"custom_fields", "detach", "customer_id", "contact_points"}
+        )
         reject_cleared_columns(ENTITY, Person, changes)
-        _check_email(changes)
 
         # `detach` is an explicit, self-contained intention and wins outright over any
         # `customer_id` the caller also happens to send in the same payload -- checked
@@ -186,8 +164,14 @@ class PersonService:
             )
         for key, value in changes.items():
             setattr(person, key, value)
+        changed = sorted(changes)
+        # `null` leaves the list alone, as every omitted field is left: an empty list clears it.
+        if data.contact_points is not None and write_points(
+            self.session, person, data.contact_points
+        ):
+            changed = sorted([*changes, "contact_points"])
 
-        self.activities.record(ENTITY, person.id, "updated", actor, {"changed": sorted(changes)})
+        self.activities.record(ENTITY, person.id, "updated", actor, {"changed": changed})
         self.session.commit()
         return self._read(person)
 
