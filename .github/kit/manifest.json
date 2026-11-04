@@ -1,9 +1,9 @@
 {
   "kit": "letsrebase/rebase:tooling/workflow-kit",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "files": {
     ".agents/skills/linear-content/SKILL.md": "09af953e2fcce9329b7839df8dd7b3d54f96e5f6621026894f2e656bfcd1972b",
-    ".agents/skills/linear-ticket/SKILL.md": "3e19879221e9b1f6aa768ff8213dc97aefedf956e5c319312b22c1f6596173f6",
+    ".agents/skills/linear-ticket/SKILL.md": "5ff6a0bd889bb3f6cbcc055382a8cccae2ce17fc07cdb585b3a4ceb8ee36b811",
     ".agents/skills/pr-creation/SKILL.md": "c1d1b88668da274e0662f76667b9cffff54a3cbdb104bcf1e16e57241c0d56f0",
     ".github/PULL_REQUEST_TEMPLATE.md": "0beb1310fa6344563ba2b2b7a2576e565ca1ab574266b3fcaf304e4d94b634ab",
     ".github/kit/README.md": "8667eba92e5f1990dfde448ec6ad08e81b514ef70a0564e5d33884d2ef90e74a",
@@ -17,7 +17,7 @@
   "mirror": {
     "client-repo-onboarding/SKILL.md": "e7a9d02d7d9a42f968314d8cc32f798545b0fd0630b3d7d391dc1495abf4b63d",
     "linear-content/SKILL.md": "09af953e2fcce9329b7839df8dd7b3d54f96e5f6621026894f2e656bfcd1972b",
-    "linear-ticket/SKILL.md": "3e19879221e9b1f6aa768ff8213dc97aefedf956e5c319312b22c1f6596173f6",
+    "linear-ticket/SKILL.md": "5ff6a0bd889bb3f6cbcc055382a8cccae2ce17fc07cdb585b3a4ceb8ee36b811",
     "posthog-analytics/SKILL.md": "5548009ad72ed22fd6ecc305d1081ae8b29881fb80cfd2ff698f6dc65a10f4ed",
     "pr-creation/SKILL.md": "c1d1b88668da274e0662f76667b9cffff54a3cbdb104bcf1e16e57241c0d56f0",
     "social-content/SKILL.md": "bff5b03599dbd4a1afdcdd535f7762123d81ddbd3b779bce8069e11930957614",
