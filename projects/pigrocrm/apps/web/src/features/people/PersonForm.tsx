@@ -11,18 +11,28 @@ import {
 import { Label } from '@rebase/ui/label'
 import { CustomerPicker } from '@/features/customers/CustomerPicker'
 import { EmailSyncNotice } from '@/features/gmail/EmailSyncNotice'
+import { ContactPointsEditor } from '@/features/contact-points/ContactPointsEditor'
+import {
+  CONTACT_POINTS_KEY,
+  isPointProblem,
+  newEmailAddresses,
+  pointErrors,
+  pointsAreSendable,
+  pointsForRequest,
+  pointsToDrafts,
+  type ContactPointDraft,
+} from '@/features/contact-points/contactPoints'
 import type { ProblemDetail } from '@/lib/api'
 import { toFormValues, toRequestBody, type FormValues } from '@/lib/formValues'
 import type { FieldDefinition } from '@/lib/schema'
 import type { Person } from './queries'
 
+// Email, phone and LinkedIn are not fields: they are the person's contact points, drawn by
+// `ContactPointsEditor` and sent as `contact_points`.
 const NATIVE_FIELDS: FieldDefinition[] = [
   { key: 'first_name', label: 'Nome', type: 'text', required: true, options: [] },
   { key: 'last_name', label: 'Cognome', type: 'text', required: false, options: [] },
   { key: 'role', label: 'Ruolo', type: 'text', required: false, options: [] },
-  { key: 'email', label: 'Email', type: 'text', required: false, options: [] },
-  { key: 'phone', label: 'Telefono', type: 'text', required: false, options: [] },
-  { key: 'linkedin', label: 'LinkedIn', type: 'url', required: false, options: [] },
 ]
 
 /**
@@ -46,6 +56,8 @@ const FIRST_NOTE_FIELD: FieldDefinition = {
  * column on the wire and needs the exact same structural provenance as the other
  * seven, or it would leak into `custom` the same way an unfiltered flat bag would
  * leak an archived key into `native` (see `PersonFormValues` below).
+ * `contact_points` is not among them: the list is seeded by `personToFormValues` as
+ * drafts and drawn by its own editor.
  */
 const NATIVE_FIELD_KEYS = [...NATIVE_FIELDS.map((field) => field.key), 'customer_id']
 
@@ -63,7 +75,13 @@ const DEFAULT_CREATE_VALUES: PersonFormValues = { native: {}, custom: {} }
  * (`extra="forbid"`) refuses -- see `toFormValues`.
  */
 export function personToFormValues(person: Person): PersonFormValues {
-  return toFormValues(person, NATIVE_FIELD_KEYS)
+  const values = toFormValues(person, NATIVE_FIELD_KEYS)
+  values.native[CONTACT_POINTS_KEY] = pointsToDrafts(person.contact_points)
+  return values
+}
+
+function draftsOf(values: PersonFormValues | undefined): ContactPointDraft[] {
+  return (values?.native[CONTACT_POINTS_KEY] as ContactPointDraft[] | undefined) ?? []
 }
 
 interface Props {
@@ -96,9 +114,14 @@ export function PersonForm({
   // `useState(initial ?? {})` initializer would only ever run once and a second
   // "Nuova persona" would keep showing the first submission.
   const [wasOpen, setWasOpen] = useState(open)
+  // Whether Salva was pressed: from then on the editor shows the browser's own row checks.
+  const [checked, setChecked] = useState(false)
   if (open !== wasOpen) {
     setWasOpen(open)
-    if (open) setValues(initial ?? DEFAULT_CREATE_VALUES)
+    if (open) {
+      setValues(initial ?? DEFAULT_CREATE_VALUES)
+      setChecked(false)
+    }
   }
 
   /** True for a key the active schema currently renders as a custom-field
@@ -117,21 +140,23 @@ export function PersonForm({
     )
   }
 
-  // `values.native.email` and not the flattened bag handed to `DynamicForm`: email is a
-  // native column (`NATIVE_FIELDS`), and reading it out of the merged object would pick
-  // up a custom field somebody happened to key `email` instead.
-  const email = values.native.email
-  const emailIsNew =
-    typeof email === 'string' && email.trim() !== '' && email !== initial?.native.email
+  const drafts = draftsOf(values)
+  const errors = pointErrors(drafts, problem, checked)
+  // Only for an address that is new to this record: see the notice below.
+  const emailIsNew = newEmailAddresses(drafts, draftsOf(initial)).length > 0
 
   function submit() {
+    if (!pointsAreSendable(drafts)) {
+      setChecked(true)
+      return
+    }
     // `customer_id` cannot follow the plain-native-column rule: see the dedicated
     // handling below for why.
     const payload = toRequestBody(values, {
       fields: NATIVE_FIELDS,
       initial,
       isRenderedCustomKey,
-      skipNative: (key) => key === 'customer_id',
+      skipNative: (key) => key === 'customer_id' || key === CONTACT_POINTS_KEY,
     })
 
     // `customer_id` is a UUID column, not free text, and detaching it is not a
@@ -160,6 +185,11 @@ export function PersonForm({
     }
     // else: no customer before, none now -- nothing to say, same as any other
     // untouched native field.
+
+    // The whole list or nothing: a new person sends it when it has points, an edit only
+    // when it changed (an omitted list leaves the stored one, `[]` clears it).
+    const contactPoints = pointsForRequest(drafts, initial === undefined ? undefined : draftsOf(initial))
+    if (contactPoints !== undefined) payload.contact_points = contactPoints
 
     onSubmit(payload)
   }
@@ -196,11 +226,23 @@ export function PersonForm({
           // reaches `submit` still knows which namespace each value came from.
           values={{ ...values.native, ...values.custom }}
           onChange={change}
-          problem={problem}
+          // The list's own sentences are drawn under its rows, not as a second banner here.
+          problem={isPointProblem(problem) ? null : problem}
           // `initial`'s absence is what "Nuova persona" means; deriving `mode`
           // from it is what keeps the two from ever disagreeing. See
           // `DynamicForm`'s own docstring on this required prop.
           mode={initial === undefined ? 'create' : 'edit'}
+        />
+
+        <ContactPointsEditor
+          points={drafts}
+          onChange={(points) =>
+            setValues((previous) => ({
+              ...previous,
+              native: { ...previous.native, [CONTACT_POINTS_KEY]: points },
+            }))
+          }
+          errors={errors}
         />
 
         {/* Only for an address that is actually new to the CRM. An email already on

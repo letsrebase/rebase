@@ -42,6 +42,7 @@ const BASE_PERSON: Person = {
   first_name: 'Mario',
   last_name: 'Rossi',
   email: null,
+  contact_points: [],
   phone: null,
   role: null,
   linkedin: null,
@@ -202,7 +203,7 @@ describe('PersonForm', () => {
       />,
     )
 
-    await userEvent.type(screen.getByLabelText('Telefono'), '02123456')
+    await userEvent.type(screen.getByLabelText('Ruolo'), 'Fondatore')
     await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
 
     const payload = submitted(onSubmit)
@@ -210,7 +211,7 @@ describe('PersonForm', () => {
     expect(payload).toEqual({
       first_name: 'Mario',
       last_name: 'Rossi',
-      phone: '02123456',
+      role: 'Fondatore',
       custom_fields: {},
     })
   })
@@ -219,7 +220,7 @@ describe('PersonForm', () => {
     const onSubmit = vi.fn()
     const initial = personToFormValues({
       ...BASE_PERSON,
-      phone: '02123456',
+      role: 'Fondatore',
       custom_fields: { seniority: 'Senior' },
     })
     renderWithClient(
@@ -233,7 +234,7 @@ describe('PersonForm', () => {
       />,
     )
 
-    await userEvent.clear(screen.getByLabelText('Telefono'))
+    await userEvent.clear(screen.getByLabelText('Ruolo'))
     await userEvent.click(screen.getByRole('combobox'))
     await userEvent.click(screen.getByRole('option', { name: 'Nessuna selezione' }))
     await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
@@ -241,7 +242,7 @@ describe('PersonForm', () => {
     expect(submitted(onSubmit)).toEqual({
       first_name: 'Mario',
       last_name: 'Rossi',
-      phone: '',
+      role: '',
       custom_fields: { seniority: null },
     })
   })
@@ -380,6 +381,10 @@ describe('PersonForm', () => {
   describe('the Gmail sync notice', () => {
     const NOTICE = /le conversazioni con questo indirizzo compariranno al prossimo sync/i
 
+    const ADA = [
+      { id: 'cp1', kind: 'email', value: 'ada@acme.it', label: 'work', note: null, is_primary: true, position: 0 },
+    ] as Person['contact_points']
+
     it('tells the user when a newly added address will start showing conversations', async () => {
       mockGmail(true)
       renderWithClient(
@@ -393,7 +398,8 @@ describe('PersonForm', () => {
       )
 
       expect(screen.queryByText(NOTICE)).not.toBeInTheDocument()
-      await userEvent.type(screen.getByLabelText('Email'), 'ada@acme.it')
+      await userEvent.click(screen.getByRole('button', { name: 'Aggiungi recapito' }))
+      await userEvent.type(screen.getByLabelText('Valore recapito 1'), 'ada@acme.it')
       expect(await screen.findByText(NOTICE)).toBeInTheDocument()
     })
 
@@ -415,7 +421,8 @@ describe('PersonForm', () => {
         />,
       )
 
-      await userEvent.type(screen.getByLabelText('Email'), 'ada@acme.it')
+      await userEvent.click(screen.getByRole('button', { name: 'Aggiungi recapito' }))
+      await userEvent.type(screen.getByLabelText('Valore recapito 1'), 'ada@acme.it')
       expect(screen.queryByText(NOTICE)).not.toBeInTheDocument()
     })
 
@@ -432,7 +439,7 @@ describe('PersonForm', () => {
           open
           onOpenChange={vi.fn()}
           customFields={[]}
-          initial={personToFormValues({ ...BASE_PERSON, email: 'ada@acme.it' })}
+          initial={personToFormValues({ ...BASE_PERSON, contact_points: ADA })}
           onSubmit={vi.fn()}
         />,
       )
@@ -449,13 +456,165 @@ describe('PersonForm', () => {
           open
           onOpenChange={vi.fn()}
           customFields={[]}
-          initial={personToFormValues({ ...BASE_PERSON, email: 'ada@acme.it' })}
+          initial={personToFormValues({ ...BASE_PERSON, contact_points: ADA })}
           onSubmit={vi.fn()}
         />,
       )
 
-      await userEvent.type(await screen.findByLabelText('Email'), '.uk')
+      await userEvent.type(await screen.findByLabelText('Valore recapito 1'), '.uk')
       expect(await screen.findByText(NOTICE)).toBeInTheDocument()
+    })
+
+    it('does not announce a phone number or a second address that is already known', async () => {
+      mockGmail(true)
+      renderWithClient(
+        <PersonForm
+          title="Modifica persona"
+          open
+          onOpenChange={vi.fn()}
+          customFields={[]}
+          initial={personToFormValues({ ...BASE_PERSON, contact_points: ADA })}
+          onSubmit={vi.fn()}
+        />,
+      )
+
+      await userEvent.click(screen.getByRole('button', { name: 'Aggiungi recapito' }))
+      await userEvent.click(screen.getByLabelText('Tipo recapito 2'))
+      await userEvent.click(await screen.findByRole('option', { name: 'Telefono' }))
+      await userEvent.type(screen.getByLabelText('Valore recapito 2'), '02123456')
+      expect(screen.queryByText(NOTICE)).not.toBeInTheDocument()
+    })
+  })
+
+  describe('the contact points', () => {
+    const STORED = [
+      { id: 'cp1', kind: 'email', value: 'ada@acme.it', label: 'work', note: null, is_primary: true, position: 0 },
+      { id: 'cp2', kind: 'phone', value: '+39 02 123456', label: 'personal', note: 'WhatsApp', is_primary: true, position: 1 },
+      { id: 'cp3', kind: 'linkedin', value: 'https://www.linkedin.com/in/ada', label: 'work', note: null, is_primary: true, position: 2 },
+    ] as Person['contact_points']
+    const WITH_POINTS: Person = { ...BASE_PERSON, contact_points: STORED }
+
+    it('sends the list typed on a new person, with no id, no position and no flat fields', async () => {
+      const onSubmit = vi.fn()
+      renderWithClient(
+        <PersonForm title="Nuova persona" open onOpenChange={vi.fn()} customFields={[]} onSubmit={onSubmit} />,
+      )
+
+      await userEvent.type(screen.getByLabelText(/^Nome/), 'Ada')
+      await userEvent.click(screen.getByRole('button', { name: 'Aggiungi recapito' }))
+      await userEvent.type(screen.getByLabelText('Valore recapito 1'), 'ada@acme.it')
+      await userEvent.click(screen.getByRole('button', { name: 'Aggiungi recapito' }))
+      await userEvent.type(screen.getByLabelText('Valore recapito 2'), 'ada@home.it')
+      await userEvent.click(screen.getByLabelText('Principale recapito 2'))
+      await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
+
+      const payload = submitted(onSubmit)
+      expect(payload.contact_points).toEqual([
+        { kind: 'email', value: 'ada@acme.it', label: 'work', note: null, is_primary: false },
+        { kind: 'email', value: 'ada@home.it', label: 'work', note: null, is_primary: true },
+      ])
+      for (const old of ['email', 'phone', 'linkedin']) expect(payload).not.toHaveProperty(old)
+    })
+
+    it('says nothing about the list when it was left alone on an edit', async () => {
+      const onSubmit = vi.fn()
+      renderWithClient(
+        <PersonForm
+          title="Modifica persona"
+          open
+          onOpenChange={vi.fn()}
+          customFields={[]}
+          initial={personToFormValues(WITH_POINTS)}
+          onSubmit={onSubmit}
+        />,
+      )
+
+      await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
+
+      expect(submitted(onSubmit)).not.toHaveProperty('contact_points')
+    })
+
+    it('sends the whole list in the order it was put in once a point moved', async () => {
+      const onSubmit = vi.fn()
+      renderWithClient(
+        <PersonForm
+          title="Modifica persona"
+          open
+          onOpenChange={vi.fn()}
+          customFields={[]}
+          initial={personToFormValues(WITH_POINTS)}
+          onSubmit={onSubmit}
+        />,
+      )
+
+      await userEvent.click(screen.getByRole('button', { name: 'Sposta su recapito 3' }))
+      await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
+
+      const sent = submitted(onSubmit).contact_points as { kind: string; is_primary: boolean }[]
+      expect(sent.map((point) => point.kind)).toEqual(['email', 'linkedin', 'phone'])
+      expect(sent.every((point) => point.is_primary)).toBe(true)
+      expect(sent[2]).toEqual({
+        kind: 'phone',
+        value: '+39 02 123456',
+        label: 'personal',
+        note: 'WhatsApp',
+        is_primary: true,
+      })
+    })
+
+    it('drops a blank row instead of sending or refusing it', async () => {
+      const onSubmit = vi.fn()
+      renderWithClient(
+        <PersonForm title="Nuova persona" open onOpenChange={vi.fn()} customFields={[]} onSubmit={onSubmit} />,
+      )
+
+      await userEvent.type(screen.getByLabelText(/^Nome/), 'Ada')
+      await userEvent.click(screen.getByRole('button', { name: 'Aggiungi recapito' }))
+      await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
+
+      expect(submitted(onSubmit)).not.toHaveProperty('contact_points')
+    })
+
+    it('refuses the same address twice and says so on the second row', async () => {
+      const onSubmit = vi.fn()
+      renderWithClient(
+        <PersonForm title="Nuova persona" open onOpenChange={vi.fn()} customFields={[]} onSubmit={onSubmit} />,
+      )
+
+      await userEvent.click(screen.getByRole('button', { name: 'Aggiungi recapito' }))
+      await userEvent.type(screen.getByLabelText('Valore recapito 1'), 'ada@acme.it')
+      await userEvent.click(screen.getByRole('button', { name: 'Aggiungi recapito' }))
+      await userEvent.type(screen.getByLabelText('Valore recapito 2'), 'ADA@acme.it')
+      await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
+
+      expect(onSubmit).not.toHaveBeenCalled()
+      expect(screen.getByRole('group', { name: 'Recapito 2' })).toHaveTextContent('già nell’elenco')
+    })
+
+    it('puts the server sentence on the row it names, counting only the rows that were sent', async () => {
+      renderWithClient(
+        <PersonForm
+          title="Modifica persona"
+          open
+          onOpenChange={vi.fn()}
+          customFields={[]}
+          initial={personToFormValues(WITH_POINTS)}
+          problem={{
+            type: 'about:blank',
+            title: 'Dati non validi',
+            status: 422,
+            code: 'validation_failed',
+            detail: 'person.contact_points[2]: serve l’indirizzo di un profilo su linkedin.com',
+            field: 'contact_points[2]',
+            reason: 'serve l’indirizzo di un profilo su linkedin.com',
+          }}
+          onSubmit={vi.fn()}
+        />,
+      )
+
+      const alerts = screen.getAllByRole('alert')
+      expect(alerts).toHaveLength(1)
+      expect(screen.getByRole('group', { name: 'Recapito 3' })).toContainElement(alerts[0] as HTMLElement)
     })
   })
 })

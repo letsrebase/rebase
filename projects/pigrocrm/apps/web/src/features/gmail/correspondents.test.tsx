@@ -30,7 +30,7 @@ describe('the addresses a customer page found', () => {
     await waitFor(() => expect(client.getQueryData(correspondentKeys.customer('c1'))).toBeUndefined())
   })
 
-  it('are dropped when the customer\'s website or email changes, and kept for any other edit', async () => {
+  it('are dropped when the customer\'s website or contact points change, and kept for any other edit', async () => {
     vi.mocked(api.PATCH).mockResolvedValue({
       data: { id: 'c1' },
       response: new Response(null, { status: 200 }),
@@ -47,6 +47,10 @@ describe('the addresses a customer page found', () => {
     expect(client.getQueryData(correspondentKeys.customer('c1'))).toBeDefined()
 
     result.current.mutate({ website: 'acme.com' })
+    await waitFor(() => expect(client.getQueryData(correspondentKeys.customer('c1'))).toBeUndefined())
+
+    client.setQueryData(correspondentKeys.customer('c1'), { domain: 'acme.com', matching: [] })
+    result.current.mutate({ contact_points: [] })
     await waitFor(() => expect(client.getQueryData(correspondentKeys.customer('c1'))).toBeUndefined())
   })
 })

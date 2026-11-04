@@ -11,6 +11,7 @@ import { Button } from '@rebase/ui/button'
 import { Card, CardContent } from '@rebase/ui/card'
 import { Skeleton } from '@rebase/ui/skeleton'
 import { EconomicsTab } from '@/features/analytics/EconomicsTab'
+import { ContactPointsList } from '@/features/contact-points/ContactPointsList'
 import { CustomerForm, customerToFormValues } from '@/features/customers/CustomerForm'
 import { displayNative } from '@/features/customers/columns'
 import { useCustomerOwners } from '@/features/customers/owner'
@@ -249,8 +250,7 @@ export function CustomerDetail() {
             <Card>
               <CardContent className="pt-6">
                 <h2 className="mb-3 font-semibold">Contatti</h2>
-                <Row label="Email" value={displayNative(customer.email)} />
-                <Row label="Telefono" value={displayNative(customer.phone)} />
+                <ContactPointsList points={customer.contact_points} />
                 <Row label="Sito web" value={displayNative(customer.website)} />
                 <Row label="Responsabile" value={owners.nameOf(customer.owner_id) ?? EMPTY} />
               </CardContent>

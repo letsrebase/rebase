@@ -12,7 +12,7 @@ import { Skeleton } from '@rebase/ui/skeleton'
 import { useCustomer } from '@/features/customers/queries'
 import { EmailTab } from '@/features/gmail/EmailTab'
 import { useGmailConfigured } from '@/features/gmail/queries'
-import { displayNative } from '@/features/people/columns'
+import { ContactPointsList } from '@/features/contact-points/ContactPointsList'
 import { NotesSection } from '@/features/notes/NotesSection'
 import { PersonForm, personToFormValues } from '@/features/people/PersonForm'
 import { useDeletePerson, usePerson, useUpdatePerson } from '@/features/people/queries'
@@ -143,9 +143,7 @@ export function PersonDetail() {
             <Card>
               <CardContent className="pt-6">
                 <h2 className="mb-3 font-semibold">Contatti</h2>
-                <Row label="Email" value={displayNative(person.email)} />
-                <Row label="Telefono" value={displayNative(person.phone)} />
-                <Row label="LinkedIn" value={displayNative(person.linkedin)} />
+                <ContactPointsList points={person.contact_points} />
               </CardContent>
             </Card>
 

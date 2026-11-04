@@ -33,6 +33,7 @@ const BASE_CUSTOMER: Customer = {
   country: 'IT',
   email: null,
   phone: null,
+  contact_points: [],
   website: null,
   status: null,
   payment_days: null,
@@ -171,7 +172,7 @@ describe('CustomerForm', () => {
 
   /**
    * The defect the create-side seeding introduced, reproduced live before this fix:
-   * a record with `custom_fields: {}` was edited to change only Telefono, and the
+   * a record with `custom_fields: {}` was edited to change only Comune, and the
    * save persisted `vip: false` -- a value the user never chose, written as a side
    * effect of touching an unrelated field. Untouched native columns are never
    * rewritten; an untouched checkbox must not be either. The meaning is carried by
@@ -190,7 +191,7 @@ describe('CustomerForm', () => {
       />,
     )
 
-    await userEvent.type(screen.getByLabelText('Telefono'), '02123456')
+    await userEvent.type(screen.getByLabelText('Comune'), 'Milano')
     await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
 
     const payload = submitted(onSubmit)
@@ -198,7 +199,7 @@ describe('CustomerForm', () => {
     expect(payload).toEqual({
       legal_name: 'ACME Srl',
       country: 'IT',
-      phone: '02123456',
+      city: 'Milano',
       // A stored native value, like the two above it: sent as it is, not backfilled.
       payment_end_of_month: false,
       custom_fields: {},
@@ -251,7 +252,7 @@ describe('CustomerForm', () => {
     const onSubmit = vi.fn()
     const initial = customerToFormValues({
       ...BASE_CUSTOMER,
-      phone: '02123456',
+      city: 'Milano',
       custom_fields: { 'settore': 'PMI' },
     })
     renderWithClient(
@@ -265,7 +266,7 @@ describe('CustomerForm', () => {
       />,
     )
 
-    await userEvent.clear(screen.getByLabelText('Telefono'))
+    await userEvent.clear(screen.getByLabelText('Comune'))
     await userEvent.click(screen.getByRole('combobox'))
     await userEvent.click(screen.getByRole('option', { name: 'Nessuna selezione' }))
     await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
@@ -273,7 +274,7 @@ describe('CustomerForm', () => {
     expect(submitted(onSubmit)).toEqual({
       legal_name: 'ACME Srl',
       country: 'IT',
-      phone: '',
+      city: '',
       payment_end_of_month: false,
       custom_fields: { 'settore': null },
     })
@@ -573,5 +574,134 @@ describe('the «Responsabile» picker (REB-773)', () => {
     await userEvent.click(await screen.findByRole('option', { name: 'Nessuno' }))
     await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
     expect(submitted(onSubmit).owner_id).toBeNull()
+  })
+})
+
+describe('the contact points of a customer', () => {
+  const STORED = [
+    { id: 'cp1', kind: 'email', value: 'info@acme.it', label: 'work', note: null, is_primary: true, position: 0 },
+    { id: 'cp2', kind: 'phone', value: '02 123456', label: 'billing', note: 'centralino', is_primary: true, position: 1 },
+  ] as Customer['contact_points']
+  const WITH_POINTS: Customer = { ...BASE_CUSTOMER, contact_points: STORED }
+
+  it('sends the list typed on a new customer, with no id, no position and no flat email or phone', async () => {
+    const onSubmit = vi.fn()
+    renderWithClient(
+      <CustomerForm title="Nuovo cliente" open onOpenChange={vi.fn()} customFields={[]} onSubmit={onSubmit} />,
+    )
+
+    await userEvent.type(screen.getByLabelText(/Ragione sociale/), 'ACME Srl')
+    await userEvent.click(screen.getByRole('button', { name: 'Aggiungi recapito' }))
+    await userEvent.type(screen.getByLabelText('Valore recapito 1'), ' info@acme.it ')
+    await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
+
+    const payload = submitted(onSubmit)
+    expect(payload.contact_points).toEqual([
+      { kind: 'email', value: 'info@acme.it', label: 'work', note: null, is_primary: true },
+    ])
+    expect(payload).not.toHaveProperty('email')
+    expect(payload).not.toHaveProperty('phone')
+  })
+
+  it('says nothing about the list when it was left alone on an edit', async () => {
+    const onSubmit = vi.fn()
+    renderWithClient(
+      <CustomerForm
+        title="Modifica cliente"
+        open
+        onOpenChange={vi.fn()}
+        customFields={[]}
+        initial={customerToFormValues(WITH_POINTS)}
+        onSubmit={onSubmit}
+      />,
+    )
+
+    expect(screen.getByLabelText('Valore recapito 1')).toHaveValue('info@acme.it')
+    await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
+
+    expect(submitted(onSubmit)).not.toHaveProperty('contact_points')
+  })
+
+  it('sends the whole list, without id or position, once a point changed', async () => {
+    const onSubmit = vi.fn()
+    renderWithClient(
+      <CustomerForm
+        title="Modifica cliente"
+        open
+        onOpenChange={vi.fn()}
+        customFields={[]}
+        initial={customerToFormValues(WITH_POINTS)}
+        onSubmit={onSubmit}
+      />,
+    )
+
+    await userEvent.type(screen.getByLabelText('Nota recapito 1'), 'solo ordini')
+    await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
+
+    expect(submitted(onSubmit).contact_points).toEqual([
+      { kind: 'email', value: 'info@acme.it', label: 'work', note: 'solo ordini', is_primary: true },
+      { kind: 'phone', value: '02 123456', label: 'billing', note: 'centralino', is_primary: true },
+    ])
+  })
+
+  it('clears the stored list with an empty one when every point is removed', async () => {
+    const onSubmit = vi.fn()
+    renderWithClient(
+      <CustomerForm
+        title="Modifica cliente"
+        open
+        onOpenChange={vi.fn()}
+        customFields={[]}
+        initial={customerToFormValues(WITH_POINTS)}
+        onSubmit={onSubmit}
+      />,
+    )
+
+    await userEvent.click(screen.getByRole('button', { name: 'Rimuovi recapito 2' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Rimuovi recapito 1' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
+
+    expect(submitted(onSubmit).contact_points).toEqual([])
+  })
+
+  it('refuses to send a bad address and says so under its row', async () => {
+    const onSubmit = vi.fn()
+    renderWithClient(
+      <CustomerForm title="Nuovo cliente" open onOpenChange={vi.fn()} customFields={[]} onSubmit={onSubmit} />,
+    )
+
+    await userEvent.click(screen.getByRole('button', { name: 'Aggiungi recapito' }))
+    await userEvent.type(screen.getByLabelText('Valore recapito 1'), 'non-una-email')
+    await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
+
+    expect(onSubmit).not.toHaveBeenCalled()
+    expect(screen.getByRole('alert')).toHaveTextContent('Indirizzo email non valido')
+  })
+
+  it('puts the server sentence on the row it names, not in a banner', () => {
+    renderWithClient(
+      <CustomerForm
+        title="Modifica cliente"
+        open
+        onOpenChange={vi.fn()}
+        customFields={[]}
+        initial={customerToFormValues(WITH_POINTS)}
+        problem={{
+          type: 'about:blank',
+          title: 'Dati non validi',
+          status: 422,
+          code: 'validation_failed',
+          detail: 'customer.contact_points[1]: numero di telefono non valido',
+          field: 'contact_points[1]',
+          reason: 'numero di telefono non valido',
+        }}
+        onSubmit={vi.fn()}
+      />,
+    )
+
+    const alerts = screen.getAllByRole('alert')
+    expect(alerts).toHaveLength(1)
+    expect(alerts[0]).toHaveTextContent('numero di telefono non valido')
+    expect(screen.getByRole('group', { name: 'Recapito 2' })).toContainElement(alerts[0] as HTMLElement)
   })
 })

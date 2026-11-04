@@ -29,6 +29,7 @@ const BASE_PERSON: Person = {
   phone: null,
   role: null,
   linkedin: null,
+  contact_points: [],
   customer_id: null,
   customer_legal_name: null,
   custom_fields: {},

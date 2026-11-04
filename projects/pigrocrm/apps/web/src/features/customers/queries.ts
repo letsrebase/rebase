@@ -138,9 +138,10 @@ export function useUpdateCustomer(customerId: string) {
       void queryClient.invalidateQueries({ queryKey: queryKeys.customer(customerId) })
       void queryClient.invalidateQueries({ queryKey: queryKeys.customers() })
       void queryClient.invalidateQueries({ queryKey: queryKeys.timeline('customer', customerId) })
-      // The addresses the mailbox found are for the domain read from these two fields
-      // (REB-766): a corrected website or email makes that answer the old domain's.
-      if ('website' in body || 'email' in body) {
+      // The addresses the mailbox found are for the domain read from the website and the
+      // primary email (REB-766): a corrected website or a changed list of contact points
+      // makes that answer the old domain's.
+      if ('website' in body || 'contact_points' in body) {
         queryClient.removeQueries({ queryKey: correspondentKeys.customer(customerId) })
       }
     },

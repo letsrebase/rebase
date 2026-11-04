@@ -72,8 +72,16 @@ beforeEach(() => {
 const CUSTOMER = {
   id: 'c1',
   legal_name: 'ACME Srl',
+  contact_points: [],
   custom_fields: {},
 } as never
+
+const POINTS = [
+  { id: 'k1', kind: 'email', value: 'info@acme.it', label: 'work', note: null, is_primary: true, position: 0 },
+  { id: 'k2', kind: 'email', value: 'fatture@acme.it', label: 'billing', note: 'solo fatture', is_primary: false, position: 1 },
+  { id: 'k3', kind: 'phone', value: '+39 02 1234-567', label: 'work', note: 'centralino', is_primary: true, position: 2 },
+  { id: 'k4', kind: 'linkedin', value: 'https://www.linkedin.com/company/acme', label: 'other', note: null, is_primary: true, position: 3 },
+]
 
 const NOTE = {
   id: 'n1',
@@ -171,6 +179,41 @@ describe('CustomerDetail', () => {
       }) as never)
       renderWithClient(<CustomerDetail />)
       expect(await screen.findByText('Marco')).toBeInTheDocument()
+    })
+  })
+
+  /** REB-942: every way to reach the customer, each as a link of its kind. */
+  describe('the contact points', () => {
+    it('lists every point with its label, note and primary marker, in the order they are kept', async () => {
+      mockCustomerFetch(ok({ ...(CUSTOMER as object), contact_points: POINTS }))
+      renderWithClient(<CustomerDetail />)
+
+      const main = await screen.findByRole('link', { name: 'info@acme.it' })
+      expect(main).toHaveAttribute('href', 'mailto:info@acme.it')
+      expect(screen.getByRole('link', { name: 'fatture@acme.it' })).toHaveAttribute(
+        'href',
+        'mailto:fatture@acme.it',
+      )
+      const phone = screen.getByRole('link', { name: '+39 02 1234-567' })
+      expect(phone).toHaveAttribute('href', 'tel:+39021234567')
+
+      const profile = screen.getByRole('link', { name: 'https://www.linkedin.com/company/acme' })
+      expect(profile).toHaveAttribute('target', '_blank')
+      expect(profile).toHaveAttribute('rel', 'noopener noreferrer')
+
+      const rows = screen.getAllByTestId('contact-point')
+      expect(rows).toHaveLength(4)
+      expect(rows[1]).toHaveTextContent('amministrazione')
+      expect(rows[1]).toHaveTextContent('solo fatture')
+      expect(rows[1]).not.toHaveTextContent('Principale')
+      expect(rows[0]).toHaveTextContent('Principale')
+      expect(rows[2]).toHaveTextContent('centralino')
+    })
+
+    it('says so when the customer has none', async () => {
+      mockCustomerFetch(ok(CUSTOMER))
+      renderWithClient(<CustomerDetail />)
+      expect(await screen.findByText('Nessun recapito.')).toBeInTheDocument()
     })
   })
 
