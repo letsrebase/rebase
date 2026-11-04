@@ -42,6 +42,7 @@ export const PAYLOAD_KEY_LABELS: Record<string, string> = {
   completed_at: 'Completata il',
   confidence: 'Confidenza',
   confidence_reason: 'Motivo confidenza',
+  contact_points: 'Recapiti',
   contract: 'Contratto',
   cost_after: 'Costo dopo',
   cost_before: 'Costo prima',

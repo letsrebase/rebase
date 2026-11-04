@@ -68,25 +68,25 @@ test("a custom field's whole life: appears everywhere with no restart, and a cle
   ])
   await expect(page.getByRole('columnheader', { name: 'Referente' })).toBeVisible()
 
-  // The create-form input, native (Telefono) and custom (Referente) side by side.
+  // The create-form input, native (Codice SDI) and custom (Referente) side by side.
   const name = `Whole Life ${Date.now()}`
   await page.getByRole('button', { name: /nuovo cliente/i }).click()
   const createDialog = page.getByRole('dialog')
   await createDialog.getByLabel('Ragione sociale').fill(name)
-  await createDialog.getByLabel('Telefono').fill('0212345678')
+  await createDialog.getByLabel('Codice SDI').fill('ABC1234')
   await createDialog.getByLabel('Referente').fill('Giulia Bianchi')
   await createDialog.getByRole('button', { name: 'Salva' }).click()
   await expect(page.getByText(name)).toBeVisible()
 
   // The detail row, holding both values just set.
   await page.getByText(name).click()
-  await expect(detailValueFor(page, 'Telefono')).toHaveText('0212345678')
+  await expect(detailValueFor(page, 'Codice SDI')).toHaveText('ABC1234')
   await expect(detailValueFor(page, 'Referente')).toHaveText('Giulia Bianchi')
 
   // Clear both...
   await page.getByRole('button', { name: 'Modifica' }).click()
   const editDialog = page.getByRole('dialog')
-  await editDialog.getByLabel('Telefono').fill('')
+  await editDialog.getByLabel('Codice SDI').fill('')
   await editDialog.getByLabel('Referente').fill('')
   await editDialog.getByRole('button', { name: 'Salva' }).click()
   await expect(editDialog).toBeHidden()
@@ -95,7 +95,7 @@ test("a custom field's whole life: appears everywhere with no restart, and a cle
   // ship either spelling wrong (or the two swapped) and the old value is
   // still sitting in the database after this reload.
   await page.reload()
-  await expect(detailValueFor(page, 'Telefono')).toHaveText('—')
+  await expect(detailValueFor(page, 'Codice SDI')).toHaveText('—')
   await expect(detailValueFor(page, 'Referente')).toHaveText('—')
 })
 

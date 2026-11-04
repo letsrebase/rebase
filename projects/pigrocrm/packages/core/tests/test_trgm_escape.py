@@ -87,6 +87,7 @@ from corpus import SMALL, build_corpus
 from sqlalchemy import ColumnElement, or_, select, text
 from sqlalchemy.orm import InstrumentedAttribute, Session
 
+from pigrocrm.core.contact_points.models import ContactPoint
 from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.db import escape_like
 from pigrocrm.core.deals.models import Deal
@@ -100,12 +101,14 @@ TRGM_INDEXES = (
     "ix_customers_legal_name_trgm",
     "ix_customers_vat_number_trgm",
     "ix_customers_tax_code_trgm",
-    "ix_customers_email_trgm",
     "ix_people_name_trgm",
     "ix_people_last_name_trgm",
-    "ix_people_email_trgm",
     "ix_deals_name_trgm",
     "ix_documents_title_trgm",
+    # REB-940: the email ones moved to the contact points, which every search reads for an
+    # address, a number or a profile of a person or a customer.
+    "ix_contact_points_value_trgm",
+    "ix_contact_points_normalized_trgm",
 )
 
 # A term that matches nothing, used throughout: what is being measured is whether the
@@ -120,21 +123,26 @@ _NEEDLE = "zzqqxxww"
 _SEARCHED: tuple[tuple[str, tuple[InstrumentedAttribute[Any], ...], tuple[str, ...]], ...] = (
     (
         "customers",
-        (Customer.legal_name, Customer.vat_number, Customer.email, Customer.tax_code),
+        (Customer.legal_name, Customer.vat_number, Customer.tax_code),
         (
             "ix_customers_legal_name_trgm",
             "ix_customers_vat_number_trgm",
-            "ix_customers_email_trgm",
             "ix_customers_tax_code_trgm",
         ),
     ),
     (
         "people",
-        (Person.first_name, Person.last_name, Person.email),
-        ("ix_people_name_trgm", "ix_people_last_name_trgm", "ix_people_email_trgm"),
+        (Person.first_name, Person.last_name),
+        ("ix_people_name_trgm", "ix_people_last_name_trgm"),
     ),
     ("deals", (Deal.name,), ("ix_deals_name_trgm",)),
     ("documents", (Document.title,), ("ix_documents_title_trgm",)),
+    # The two columns the people and customers searches read through `owners_matching`.
+    (
+        "contact_points",
+        (ContactPoint.value, ContactPoint.normalized),
+        ("ix_contact_points_value_trgm", "ix_contact_points_normalized_trgm"),
+    ),
 )
 
 _SIBLINGS: dict[str, tuple[str, ...]] = {
@@ -165,12 +173,21 @@ def _isolated_plan(session: Session, index_name: str, predicate: str, table: str
     try:
         for sibling in _SIBLINGS[index_name]:
             session.execute(text(f"DROP INDEX {sibling}"))
-        # The `lower(email)` partial indexes of migration 0067 are one more way to enumerate
-        # the live rows (`WHERE deleted_at IS NULL`), exactly like a sibling trigram index.
-        session.execute(text(f"DROP INDEX IF EXISTS ix_{table}_email_lower"))
+        if table == "contact_points":
+            # No `deleted_at`, and every other index of the table (its foreign keys, its
+            # unique ones, `(kind, normalized)`) is one more way to enumerate its rows.
+            for other in session.scalars(
+                text(
+                    "SELECT indexname FROM pg_indexes WHERE tablename = 'contact_points' "
+                    "AND indexname NOT LIKE '%_pkey' AND indexname <> :name"
+                ),
+                {"name": index_name},
+            ).all():
+                session.execute(text(f"DROP INDEX {other}"))
         session.execute(text("SET LOCAL enable_seqscan = off"))
+        live = "deleted_at IS NULL AND " if table != "contact_points" else ""
         rows = session.execute(
-            text(f"EXPLAIN SELECT id FROM {table} WHERE deleted_at IS NULL AND {predicate}")
+            text(f"EXPLAIN SELECT id FROM {table} WHERE {live}{predicate}")
         ).all()
         return "\n".join(str(row[0]) for row in rows)
     finally:
@@ -178,7 +195,7 @@ def _isolated_plan(session: Session, index_name: str, predicate: str, table: str
         savepoint.rollback()
 
 
-def test_the_trigram_extension_and_the_nine_indexes_exist(db_session: Session) -> None:
+def test_the_trigram_extension_and_its_indexes_exist(db_session: Session) -> None:
     installed = db_session.scalar(
         text("SELECT count(*) FROM pg_extension WHERE extname = 'pg_trgm'")
     )

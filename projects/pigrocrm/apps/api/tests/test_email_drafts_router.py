@@ -28,6 +28,7 @@ from typing import Any
 from uuid import uuid4
 
 import pytest
+from fakes.contacts import points
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
@@ -68,7 +69,7 @@ def gmail_ready(client: TestClient) -> Iterator[TestClient]:
 
 @pytest.fixture
 def customer_id(api_session: Session) -> str:
-    customer = Customer(legal_name="Acme S.r.l.", email="ada@acme.it")
+    customer = Customer(legal_name="Acme S.r.l.", contact_points=points(email="ada@acme.it"))
     api_session.add(customer)
     api_session.flush()
     return str(customer.id)

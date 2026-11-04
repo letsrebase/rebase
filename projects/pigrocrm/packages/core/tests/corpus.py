@@ -33,6 +33,7 @@ from uuid import UUID
 from sqlalchemy import insert, select
 from sqlalchemy.orm import Session
 
+from pigrocrm.core.contact_points.models import ContactPoint
 from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.db.base import uuid7
 from pigrocrm.core.deals.models import Deal
@@ -190,12 +191,26 @@ def _stages(session: Session) -> tuple[UUID, UUID, UUID]:
     return ids[0], ids[1], ids[2]
 
 
+def _email_point(owner: str, owner_id: object, address: str) -> dict[str, object]:
+    return {
+        "id": uuid7(),
+        owner: owner_id,
+        "kind": "email",
+        "value": address,
+        "normalized": address.lower(),
+        "label": "work",
+        "is_primary": True,
+        "position": 0,
+    }
+
+
 def build_corpus(session: Session, scale: CorpusScale, *, seed: int = 20260821) -> CorpusIds:
     rng = random.Random(seed)
     stage_open, stage_won, stage_lost = _stages(session)
 
     customer_ids: list[UUID] = []
     customer_rows: list[dict[str, object]] = []
+    customer_emails: list[str] = []
     for index in range(scale.customers):
         cid = uuid7()
         customer_ids.append(cid)
@@ -206,6 +221,8 @@ def build_corpus(session: Session, scale: CorpusScale, *, seed: int = 20260821) 
                 f"{rng.choice(_SURNAMES)} {rng.choice(_SECTORS)} {rng.choice(_LEGAL_FORMS)} {index}"
             )
             vat_number = str(_GENERATED_VAT_NUMBER_BASE + index)
+        # Drawn here, where the column's own value was, so the corpus keeps its random sequence.
+        customer_emails.append(f"info{index}@{rng.choice(_SECTORS).lower()}.example")
         customer_rows.append(
             {
                 "id": cid,
@@ -213,13 +230,17 @@ def build_corpus(session: Session, scale: CorpusScale, *, seed: int = 20260821) 
                 "vat_number": vat_number,
                 # Exactly 16 characters, which is what `tax_code` is sized for.
                 "tax_code": f"CF{index:014d}",
-                "email": f"info{index}@{rng.choice(_SECTORS).lower()}.example",
                 "country": "IT",
                 "status": rng.choice(("active", "prospect", None)),
                 "custom_fields": {},
             }
         )
     session.execute(insert(Customer), customer_rows)
+    # The address every generated customer and person has is its primary email point.
+    contact_rows: list[dict[str, object]] = [
+        _email_point("customer_id", row["id"], address)
+        for row, address in zip(customer_rows, customer_emails, strict=True)
+    ]
 
     person_rows: list[dict[str, object]] = []
     for index in range(scale.people):
@@ -232,11 +253,15 @@ def build_corpus(session: Session, scale: CorpusScale, *, seed: int = 20260821) 
                 "customer_id": customer_ids[index % len(customer_ids)],
                 "first_name": rng.choice(_FIRST_NAMES),
                 "last_name": last_name,
-                "email": f"persona{index}@example.it",
                 "custom_fields": {},
             }
         )
     session.execute(insert(Person), person_rows)
+    contact_rows.extend(
+        _email_point("person_id", row["id"], f"persona{index}@example.it")
+        for index, row in enumerate(person_rows)
+    )
+    session.execute(insert(ContactPoint), contact_rows)
 
     deal_ids: list[UUID] = []
     deal_rows: list[dict[str, object]] = []

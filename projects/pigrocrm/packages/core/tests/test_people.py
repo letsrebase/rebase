@@ -2,28 +2,28 @@ from typing import Any
 from uuid import uuid4
 
 import pytest
+from fakes.contacts import points_in
 from pydantic import ValidationError
 from sqlalchemy import event
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.actor import Actor
+from pigrocrm.core.contact_points.schemas import ContactPointIn
 from pigrocrm.core.customers.schemas import CustomerCreate
 from pigrocrm.core.customers.service import CustomerService
 from pigrocrm.core.errors import Conflict, NotFound, PermissionDenied, ValidationFailed
 from pigrocrm.core.fields.schemas import FieldDefinitionCreate
 from pigrocrm.core.fields.service import FieldDefinitionService
+from pigrocrm.core.people.models import Person
 from pigrocrm.core.people.schemas import (
-    EMAIL_MAX_LENGTH,
     LAST_NAME_MAX_LENGTH,
-    LINKEDIN_MAX_LENGTH,
     NAME_MAX_LENGTH,
-    PHONE_MAX_LENGTH,
     ROLE_MAX_LENGTH,
     PersonCreate,
     PersonListQuery,
     PersonUpdate,
 )
-from pigrocrm.core.people.service import PersonService, _check_email
+from pigrocrm.core.people.service import PersonService
 
 ADMIN = Actor(id=None, type="system", role="admin")
 COLLAB = Actor(id=None, type="user", role="collaborator")
@@ -68,52 +68,51 @@ def test_reattaching_to_a_missing_customer_is_rejected(db_session: Session) -> N
 def test_invalid_email_is_rejected(db_session: Session) -> None:
     with pytest.raises(ValidationFailed) as exc:
         PersonService(db_session).create(
-            PersonCreate(first_name="Mario", email="non-una-email"), ADMIN
+            PersonCreate(first_name="Mario", contact_points=points_in(email="non-una-email")), ADMIN
         )
-    assert exc.value.details["field"] == "email"
+    assert exc.value.details["field"] == "contact_points[0]"
 
 
-def test_email_with_a_trailing_newline_is_rejected() -> None:
-    r"""`^[^@\s]+@[^@\s]+\.[^@\s]+$` checked with `.match()` accepts a trailing
-    "\n": `$` matches just before a final newline, not only at the true end of the
-    string, so "a@b.it\n" would pass the check and could reach `flush()` as a raw,
-    session-poisoning `DataError` once combined with a value long enough to exceed
-    the `String(320)` column. This was the Critical finding on Customers
-    (`vat_number`, checked the same way) -- the fifth time this project has hit the
-    class of bug -- and `.fullmatch()`, which requires the entire string to be
-    consumed, is what closes it.
-
-    Exercises `_check_email` directly rather than through `PersonService.create`:
-    `PersonCreate`'s own `_normalise_email` validator (schemas.py) strips leading and
-    trailing whitespace -- including a trailing newline -- before `_check_email` ever
-    runs, which is exactly why a literal `PersonCreate(email="a@b.it\n")` cannot
-    observe the difference end to end (verified separately: the stripped value is
-    "a@b.it", and `.match()`/`.fullmatch()` agree on that). `vat_number` has no such
-    normalisation in front of `_check_fiscal`, which is why Customer's own regression
-    test could stay end-to-end. `_check_email` is still the function `create()` and
-    `update()` actually call, and it must reject the raw value on its own terms --
-    its own contract does not depend on every caller stripping first.
-    """
-    payload: dict[str, Any] = {"email": "a@b.it\n"}
+def test_an_email_with_something_after_a_newline_is_rejected(db_session: Session) -> None:
+    r"""`^[^@\s]+@[^@\s]+\.[^@\s]+$` checked with `.match()` accepts a trailing "\n": `$`
+    matches just before a final newline, so a value could pass the check and reach `flush()`
+    as a raw, session-poisoning `DataError` once long enough to exceed the column. The
+    service strips the value first and checks it with `.fullmatch()`: a newline inside it is
+    refused, and the trailing one of a pasted address is simply trimmed."""
+    service = PersonService(db_session)
     with pytest.raises(ValidationFailed) as exc:
-        _check_email(payload)
-    assert exc.value.details["field"] == "email"
-
-
-def test_email_is_normalised_to_lowercase(db_session: Session) -> None:
-    person = PersonService(db_session).create(
-        PersonCreate(first_name="Mario", email="  Mario@ACME.IT "), ADMIN
+        service.create(
+            PersonCreate(first_name="Mario", contact_points=points_in(email="a@b.it\nBcc: x@y.it")),
+            ADMIN,
+        )
+    assert exc.value.details["field"] == "contact_points[0]"
+    person = service.create(
+        PersonCreate(first_name="Mario", contact_points=points_in(email="a@b.it\n")), ADMIN
     )
-    assert person.email == "mario@acme.it"
+    assert person.email == "a@b.it"
 
 
-def test_empty_string_email_is_normalized_to_none(db_session: Session) -> None:
-    """An empty string is falsy, so a bare `if email` would skip the format check
-    entirely and let "" reach storage as an empty string -- a different thing from
-    "not provided", mirroring the identical fix on Customer's `vat_number`/
-    `sdi_code` (`_check_fiscal` in customers/service.py)."""
-    person = PersonService(db_session).create(PersonCreate(first_name="Mario", email=""), ADMIN)
-    assert person.email is None
+def test_an_email_is_stored_as_typed_and_compared_in_lowercase(db_session: Session) -> None:
+    person = PersonService(db_session).create(
+        PersonCreate(first_name="Mario", contact_points=points_in(email="  Mario@ACME.IT ")), ADMIN
+    )
+    assert person.email == "Mario@ACME.IT"
+    row = db_session.get(Person, person.id)
+    assert row is not None
+    assert [point.normalized for point in row.contact_points] == ["mario@acme.it"]
+
+
+def test_a_blank_contact_point_is_refused_not_stored_as_an_empty_string(
+    db_session: Session,
+) -> None:
+    with pytest.raises(ValidationFailed) as exc:
+        PersonService(db_session).create(
+            PersonCreate(
+                first_name="Mario", contact_points=[ContactPointIn(kind="email", value="  ")]
+            ),
+            ADMIN,
+        )
+    assert exc.value.details["field"] == "contact_points[0]"
 
 
 @pytest.mark.parametrize(
@@ -121,10 +120,7 @@ def test_empty_string_email_is_normalized_to_none(db_session: Session) -> None:
     [
         ("first_name", NAME_MAX_LENGTH),
         ("last_name", LAST_NAME_MAX_LENGTH),
-        ("email", EMAIL_MAX_LENGTH),
-        ("phone", PHONE_MAX_LENGTH),
         ("role", ROLE_MAX_LENGTH),
-        ("linkedin", LINKEDIN_MAX_LENGTH),
     ],
 )
 def test_string_fields_are_bounded_to_their_column_width_on_create(field: str, limit: int) -> None:
@@ -144,10 +140,7 @@ def test_string_fields_are_bounded_to_their_column_width_on_create(field: str, l
     [
         ("first_name", NAME_MAX_LENGTH),
         ("last_name", LAST_NAME_MAX_LENGTH),
-        ("email", EMAIL_MAX_LENGTH),
-        ("phone", PHONE_MAX_LENGTH),
         ("role", ROLE_MAX_LENGTH),
-        ("linkedin", LINKEDIN_MAX_LENGTH),
     ],
 )
 def test_string_fields_are_bounded_to_their_column_width_on_update(field: str, limit: int) -> None:
@@ -466,7 +459,12 @@ def test_list_can_be_filtered_by_customer(db_session: Session) -> None:
 
 def test_search_matches_name_surname_and_email(db_session: Session) -> None:
     service = PersonService(db_session)
-    service.create(PersonCreate(first_name="Mario", last_name="Rossi", email="mr@acme.it"), ADMIN)
+    service.create(
+        PersonCreate(
+            first_name="Mario", last_name="Rossi", contact_points=points_in(email="mr@acme.it")
+        ),
+        ADMIN,
+    )
     service.create(PersonCreate(first_name="Luigi", last_name="Verdi"), ADMIN)
 
     assert len(service.list(PersonListQuery(search="rossi"), ADMIN).items) == 1
@@ -569,12 +567,13 @@ def test_a_nul_byte_in_name_is_rejected() -> None:
         PersonCreate(first_name="Mario\x00Rossi")
 
 
-def test_a_nul_byte_introduced_after_email_normalisation_is_still_caught() -> None:
-    """`_normalise_email`'s `mode="before"` validator strips/lowers ahead of
-    SafeStr's own check -- neither operation removes a NUL byte, so one anywhere in
-    the original input must still be caught after normalisation runs."""
+def test_a_nul_byte_in_a_contact_point_is_rejected() -> None:
+    """The value reaches `flush()` as a query parameter, and a NUL byte there is a raw
+    `ValueError` out of the driver: `SafeStr` stops it at the schema."""
     with pytest.raises(ValidationError):
-        PersonCreate(first_name="Mario", email="  Mario\x00@Example.COM  ")
+        PersonCreate(
+            first_name="Mario", contact_points=points_in(email="  Mario\x00@Example.COM  ")
+        )
 
 
 # --- Final review item 8 (IMPORTANT): restore() must not undo the invariant -----

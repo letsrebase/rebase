@@ -98,7 +98,7 @@ class ScoredField:
     # `Any` as the attribute's own type parameter: the searched columns are `str` and
     # `str | None` across five entities, and pinning either here would make the other an
     # error at every declaration site in task A8's repository.
-    column: InstrumentedAttribute[Any]
+    column: InstrumentedAttribute[Any] | ColumnElement[Any]
     weight: Decimal
 
 

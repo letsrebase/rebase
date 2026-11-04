@@ -1,6 +1,7 @@
 from datetime import UTC, datetime
 from uuid import UUID
 
+from fakes.contacts import points
 from sqlalchemy import event, inspect
 from sqlalchemy.orm import Session
 
@@ -15,7 +16,7 @@ def _resolve(session: Session, address: str) -> tuple[EntityRef, ...]:
 
 
 def _customer(session: Session, *, legal_name: str, email: str | None) -> Customer:
-    customer = Customer(legal_name=legal_name, email=email)
+    customer = Customer(legal_name=legal_name, contact_points=points(email=email))
     session.add(customer)
     session.flush()
     return customer
@@ -24,12 +25,22 @@ def _customer(session: Session, *, legal_name: str, email: str | None) -> Custom
 def test_roster_collects_both_tables_lowercased_and_deduplicated(db_session: Session) -> None:
     customer = _customer(db_session, legal_name="Acme", email="Info@Acme.IT")
     db_session.add(
-        Person(first_name="Ada", last_name="Byron", email="ada@acme.it", customer_id=customer.id)
+        Person(
+            first_name="Ada",
+            last_name="Byron",
+            contact_points=points(email="ada@acme.it"),
+            customer_id=customer.id,
+        )
     )
     # The same address on a person and on a customer is one address, not two: a `q`
     # that repeats a clause wastes the length budget the 20-address batch depends on.
     db_session.add(
-        Person(first_name="Bob", last_name="Rossi", email="info@acme.it", customer_id=customer.id)
+        Person(
+            first_name="Bob",
+            last_name="Rossi",
+            contact_points=points(email="info@acme.it"),
+            customer_id=customer.id,
+        )
     )
     db_session.flush()
 
@@ -45,7 +56,7 @@ def test_roster_ignores_soft_deleted_and_null_addresses(db_session: Session) -> 
         Person(
             first_name="Via",
             last_name="Via",
-            email="via@example.it",
+            contact_points=points(email="via@example.it"),
             customer_id=kept.id,
             deleted_at=datetime.now(UTC),
         )
@@ -60,7 +71,10 @@ def test_resolving_returns_every_entity_the_address_touches(
 ) -> None:
     customer = _customer(db_session, legal_name="Acme", email="info@acme.it")
     person = Person(
-        first_name="Ada", last_name="Byron", email="ada@acme.it", customer_id=customer.id
+        first_name="Ada",
+        last_name="Byron",
+        contact_points=points(email="ada@acme.it"),
+        customer_id=customer.id,
     )
     db_session.add(person)
     db_session.flush()
@@ -90,7 +104,7 @@ def test_resolving_ignores_soft_deleted_entities(
     dead_person = Person(
         first_name="Ex",
         last_name="Collega",
-        email="shared@acme.it",
+        contact_points=points(email="shared@acme.it"),
         customer_id=live_customer.id,
         deleted_at=datetime.now(UTC),
     )
@@ -119,7 +133,10 @@ def test_resolving_does_not_reach_a_deleted_customer_through_a_live_person(
     dead_customer = _customer(db_session, legal_name="Archiviata", email=None)
     dead_customer.deleted_at = datetime.now(UTC)
     person = Person(
-        first_name="Ada", last_name="Byron", email="ada@acme.it", customer_id=dead_customer.id
+        first_name="Ada",
+        last_name="Byron",
+        contact_points=points(email="ada@acme.it"),
+        customer_id=dead_customer.id,
     )
     db_session.add(person)
     db_session.flush()
@@ -152,15 +169,14 @@ def test_resolving_of_a_blank_address_touches_nothing(db_session: Session) -> No
     assert _resolve(db_session, "   ") == ()
 
 
-def test_customers_email_is_indexed_like_people_email(db_session: Session) -> None:
-    """people.email has had an index since slice 1; customers.email has not, and the
-    relevance resolution queries both on every message. Same query shape, same cost,
-    so the same index."""
+def test_an_address_is_looked_up_on_an_index(db_session: Session) -> None:
+    """The relevance resolution queries every email point of both tables on every message, so
+    the pair it filters on, `(kind, normalized)`, is indexed: the one B-tree both owners share."""
     columns = {
         tuple(index["column_names"])
-        for index in inspect(db_session.get_bind()).get_indexes("customers")
+        for index in inspect(db_session.get_bind()).get_indexes("contact_points")
     }
-    assert ("email",) in columns
+    assert ("kind", "normalized") in columns
 
 
 def _statements(session: Session) -> list[str]:
@@ -185,7 +201,12 @@ def test_resolving_many_addresses_costs_a_fixed_number_of_queries(
         Deal(name="Rinnovo", customer_id=customer.id, pipeline_stage_id=seeded_open_stage_id)
     )
     people = [
-        Person(first_name=f"P{i}", last_name="X", email=f"p{i}@acme.it", customer_id=customer.id)
+        Person(
+            first_name=f"P{i}",
+            last_name="X",
+            contact_points=points(email=f"p{i}@acme.it"),
+            customer_id=customer.id,
+        )
         for i in range(30)
     ]
     db_session.add_all(people)
@@ -214,7 +235,12 @@ def test_resolving_nothing_runs_no_query(db_session: Session) -> None:
 def test_known_among_answers_only_for_the_candidates_it_is_given(db_session: Session) -> None:
     customer = _customer(db_session, legal_name="Acme", email="Info@Acme.it")
     db_session.add(
-        Person(first_name="Ada", last_name="B", email="ada@acme.it", customer_id=customer.id)
+        Person(
+            first_name="Ada",
+            last_name="B",
+            contact_points=points(email="ada@acme.it"),
+            customer_id=customer.id,
+        )
     )
     gone = _customer(db_session, legal_name="Gone", email="gone@acme.it")
     gone.deleted_at = datetime.now(UTC)
@@ -236,12 +262,24 @@ def test_domains_taken_are_the_domains_the_crm_files_under_a_customer(
     acme = _customer(db_session, legal_name="Acme", email="info@acme.it")
     acme.website = "https://www.acme.com/chi-siamo"
     db_session.add(
-        Person(first_name="Ada", last_name="B", email="ada@studio-rossi.it", customer_id=acme.id)
+        Person(
+            first_name="Ada",
+            last_name="B",
+            contact_points=points(email="ada@studio-rossi.it"),
+            customer_id=acme.id,
+        )
     )
     db_session.add(
-        Person(first_name="Bob", last_name="B", email="bob@gmail.com", customer_id=acme.id)
+        Person(
+            first_name="Bob",
+            last_name="B",
+            contact_points=points(email="bob@gmail.com"),
+            customer_id=acme.id,
+        )
     )
-    orphan = Person(first_name="Zed", last_name="Z", email="zed@senza-cliente.it")
+    orphan = Person(
+        first_name="Zed", last_name="Z", contact_points=points(email="zed@senza-cliente.it")
+    )
     db_session.add(orphan)
     gone = _customer(db_session, legal_name="Gone", email="gone@archiviata.it")
     gone.deleted_at = datetime.now(UTC)

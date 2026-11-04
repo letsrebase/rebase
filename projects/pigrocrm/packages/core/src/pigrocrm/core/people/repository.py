@@ -4,6 +4,8 @@ from uuid import UUID
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
+from pigrocrm.core.contact_points.models import ContactPoint
+from pigrocrm.core.contact_points.service import owners_matching
 from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.db import decode_cursor, escape_like, keyset_predicate, order_by
 from pigrocrm.core.people.models import Person
@@ -69,7 +71,7 @@ class PersonRepository:
                 or_(
                     Person.first_name.ilike(like, escape="\\"),
                     Person.last_name.ilike(like, escape="\\"),
-                    Person.email.ilike(like, escape="\\"),
+                    Person.id.in_(owners_matching(ContactPoint.person_id, query.search)),
                 )
             )
         if query.customer_id:

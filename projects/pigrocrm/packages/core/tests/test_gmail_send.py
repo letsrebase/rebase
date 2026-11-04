@@ -20,6 +20,7 @@ from typing import Any
 from uuid import UUID, uuid4
 
 import pytest
+from fakes.contacts import points
 from fakes.customer_fixtures import make_customer
 from fakes.fake_gmail import FakeGmail
 from fakes.gmail_fixtures import (
@@ -266,7 +267,10 @@ def test_the_sent_message_is_filed_against_the_people_it_actually_concerns(
     account = connected_account(db_session)
     customer = make_customer(db_session, email="info@acme.it")
     person = Person(
-        customer_id=customer.id, first_name="Ada", last_name="Rossi", email="ada@acme.it"
+        customer_id=customer.id,
+        first_name="Ada",
+        last_name="Rossi",
+        contact_points=points(email="ada@acme.it"),
     )
     db_session.add(person)
     db_session.flush()

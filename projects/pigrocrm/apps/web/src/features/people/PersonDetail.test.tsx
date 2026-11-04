@@ -94,7 +94,7 @@ describe('PersonDetail', () => {
     mockGet.mockImplementation(
       ((path: string) =>
         path === '/api/people/{person_id}'
-          ? ok({ id: 'p1', first_name: 'Giulia', last_name: 'Rossi', custom_fields: {} })
+          ? ok({ id: 'p1', first_name: 'Giulia', last_name: 'Rossi', contact_points: [], custom_fields: {} })
           : path === '/api/{collection}/{entity_id}/notes'
             ? ok([NOTE])
             : ok({ items: [] })) as never,
@@ -105,5 +105,59 @@ describe('PersonDetail', () => {
       params: { path: { collection: 'people', entity_id: 'p1' } },
     })
     expect(screen.queryByLabelText('Nuova nota')).not.toBeInTheDocument()
+  })
+
+  /** The overview also draws the notes thread, which is a bare array and not a page. */
+  function mockPersonWithNotes(person: object) {
+    mockGet.mockImplementation(
+      ((path: string) =>
+        path === '/api/people/{person_id}'
+          ? ok(person)
+          : path === '/api/{collection}/{entity_id}/notes'
+            ? ok([])
+            : ok({ items: [] })) as never,
+    )
+  }
+  it('shows every contact point with its label, note and primary marker, as a link to act on', async () => {
+    const points = [
+      { id: 'k1', kind: 'email', value: 'giulia@acme.it', label: 'work', note: null, is_primary: true, position: 0 },
+      { id: 'k2', kind: 'email', value: 'giulia@casa.it', label: 'personal', note: null, is_primary: false, position: 1 },
+      { id: 'k3', kind: 'phone', value: '+39 333 123-4567', label: 'personal', note: 'solo WhatsApp', is_primary: true, position: 2 },
+      { id: 'k4', kind: 'linkedin', value: 'https://www.linkedin.com/in/giulia', label: 'work', note: null, is_primary: true, position: 3 },
+    ]
+    mockPersonWithNotes({
+      id: 'p1',
+      first_name: 'Giulia',
+      last_name: 'Rossi',
+      contact_points: points,
+      custom_fields: {},
+    })
+    renderWithClient(<PersonDetail />)
+
+    const work = await screen.findByRole('link', { name: 'giulia@acme.it' })
+    expect(work).toHaveAttribute('href', 'mailto:giulia@acme.it')
+    expect(screen.getByRole('link', { name: 'giulia@casa.it' })).toHaveAttribute('href', 'mailto:giulia@casa.it')
+
+    const phone = screen.getByRole('link', { name: '+39 333 123-4567' })
+    expect(phone).toHaveAttribute('href', 'tel:+393331234567')
+    expect(screen.getByText('solo WhatsApp')).toBeInTheDocument()
+
+    const profile = screen.getByRole('link', { name: 'https://www.linkedin.com/in/giulia' })
+    expect(profile).toHaveAttribute('href', 'https://www.linkedin.com/in/giulia')
+    expect(profile).toHaveAttribute('target', '_blank')
+    expect(profile).toHaveAttribute('rel', 'noopener noreferrer')
+    expect(work).not.toHaveAttribute('target')
+
+    // One marker per kind that has points: the work address, the number and the profile.
+    expect(screen.getAllByText('Principale')).toHaveLength(3)
+    expect(screen.getAllByText('personale')).toHaveLength(2)
+    expect(work.closest('li')).toHaveTextContent('Principale')
+    expect(screen.getByRole('link', { name: 'giulia@casa.it' }).closest('li')).not.toHaveTextContent('Principale')
+  })
+
+  it('says so when the person has no contact point', async () => {
+    mockPersonWithNotes({ id: 'p1', first_name: 'Giulia', last_name: 'Rossi', contact_points: [], custom_fields: {} })
+    renderWithClient(<PersonDetail />)
+    expect(await screen.findByText('Nessun recapito.')).toBeInTheDocument()
   })
 })

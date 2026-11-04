@@ -24,6 +24,7 @@ Two distinctions are load-bearing and are asserted here one by one:
 from datetime import UTC, datetime, timedelta
 
 import pytest
+from fakes.contacts import points
 from fakes.fake_gmail import FakeGmail
 from fakes.gmail_fixtures import (
     REFRESH_TOKEN,
@@ -54,7 +55,7 @@ def _service(session: Session, *, unverified: bool = False) -> GoogleAccountServ
 
 def _with_a_correspondent(session: Session) -> None:
     """A non-empty roster, so a cycle actually reaches the token refresh."""
-    session.add(Customer(legal_name="Acme", email="info@acme.it"))
+    session.add(Customer(legal_name="Acme", contact_points=points(email="info@acme.it")))
     session.flush()
 
 

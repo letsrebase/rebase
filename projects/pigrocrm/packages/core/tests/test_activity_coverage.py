@@ -34,6 +34,7 @@ from pathlib import Path
 from uuid import UUID, uuid4
 
 import pytest
+from fakes.contacts import points_in
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -324,7 +325,9 @@ def _customer(session: Session, actor: Actor, ctx: dict[str, UUID]) -> tuple[str
 
 def _customer_update(session: Session, actor: Actor, ctx: dict[str, UUID]) -> tuple[str, UUID]:
     _customer(session, actor, ctx)
-    CustomerService(session).update(ctx["customer"], CustomerUpdate(phone="02 1234567"), actor)
+    CustomerService(session).update(
+        ctx["customer"], CustomerUpdate(contact_points=points_in(phone="02 1234567")), actor
+    )
     return "customer", ctx["customer"]
 
 

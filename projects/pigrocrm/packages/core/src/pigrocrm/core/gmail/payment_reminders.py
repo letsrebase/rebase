@@ -34,6 +34,7 @@ from sqlalchemy.orm import Session
 from pigrocrm.core.activities.service import ActivityService
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.config import Settings
+from pigrocrm.core.contact_points.service import email_addresses
 from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.db.clock import today_local
 from pigrocrm.core.errors import Conflict, NotFound
@@ -465,14 +466,21 @@ class PaymentRemindersService:
         return iban
 
     def _recipients(self, customer: Customer) -> list[str]:
-        """The customer's own address if it has one; otherwise every live person on it.
+        """The customer's primary address if it has one; otherwise the primary address of
+        every live person on it.
 
         An invoice reminder goes to whoever pays, and on a small company that is often a
-        named person rather than a generic mailbox.
+        named person rather than a generic mailbox. Mail sent goes to the primary alone: a
+        second address is somewhere to be found, not somewhere to write.
         """
         if customer.email:
             return [customer.email.strip().lower()]
-        return self._addresses_of(customer)
+        people = self.session.scalars(
+            select(Person)
+            .where(Person.customer_id == customer.id, Person.deleted_at.is_(None))
+            .order_by(Person.created_at, Person.id)
+        )
+        return list(dict.fromkeys(address.strip().lower() for p in people if (address := p.email)))
 
     def _thread_of(self, invoice: Invoice, actor: Actor) -> UUID | None:
         """The covering email this invoice already went out on, if there is one."""
@@ -581,26 +589,21 @@ class PaymentRemindersService:
         return reply.internal_date.date() if reply is not None else None
 
     def _addresses_of(self, customer: Customer) -> list[str]:
-        """The customer's own address plus every live person on it.
+        """Every address of the customer and of every live person on it.
 
-        Both, and not just the first: on a small company the person who answers is rarely
-        the generic address on the customer row, so reading only `customers.email` would
-        report "nobody replied" about a conversation that is already open.
+        All of them, and not just the primary: on a small company the person who answers is
+        rarely the generic address on the customer row, and may answer from another of their
+        own, so reading only the primary would report "nobody replied" about a conversation
+        that is already open.
         """
-        addresses = [customer.email.lower()] if customer.email else []
-        addresses.extend(
-            address.lower()
-            for address in self.session.execute(
-                select(Person.email).where(
-                    Person.customer_id == customer.id,
-                    Person.email.is_not(None),
-                    Person.deleted_at.is_(None),
-                )
-            )
-            .scalars()
-            .all()
-            if address
+        addresses = email_addresses(customer)
+        people = self.session.scalars(
+            select(Person)
+            .where(Person.customer_id == customer.id, Person.deleted_at.is_(None))
+            .order_by(Person.created_at, Person.id)
         )
+        for person in people:
+            addresses.extend(email_addresses(person))
         return list(dict.fromkeys(addresses))
 
 

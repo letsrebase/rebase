@@ -3,6 +3,8 @@ from uuid import UUID
 from sqlalchemy import column, func, or_, select, table, text
 from sqlalchemy.orm import Session
 
+from pigrocrm.core.contact_points.models import ContactPoint
+from pigrocrm.core.contact_points.service import owners_matching
 from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.customers.schemas import CUSTOMER_SORTS, CustomerListQuery
 from pigrocrm.core.db import decode_cursor, escape_like, keyset_predicate, order_by
@@ -110,7 +112,7 @@ class CustomerRepository:
                 or_(
                     Customer.legal_name.ilike(like, escape="\\"),
                     Customer.vat_number.ilike(like, escape="\\"),
-                    Customer.email.ilike(like, escape="\\"),
+                    Customer.id.in_(owners_matching(ContactPoint.customer_id, query.search)),
                     Customer.tax_code.ilike(like, escape="\\"),
                 )
             )

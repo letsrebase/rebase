@@ -9,6 +9,7 @@ from decimal import Decimal
 from uuid import uuid4
 
 import pytest
+from fakes.contacts import points
 from fakes.gmail_fixtures import gmail_settings
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -34,7 +35,9 @@ AGENT = Actor(id=uuid4(), type="mcp", role="admin")
 
 
 def _contract(session: Session) -> Contract:
-    customer = Customer(legal_name=f"ACME {uuid4()}", email="amministrazione@acme.example")
+    customer = Customer(
+        legal_name=f"ACME {uuid4()}", contact_points=points(email="amministrazione@acme.example")
+    )
     session.add(customer)
     session.flush()
     contract = Contract(

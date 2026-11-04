@@ -22,6 +22,7 @@ import pytest
 # an `__init__.py`, so a relative import has no parent package to resolve against. See
 # `test_corpus.py`, which is the shipped precedent.
 from corpus import KNOWN_LEGAL_NAME, KNOWN_VAT_NUMBER, SMALL, build_corpus
+from fakes.contacts import points
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.actor import Actor
@@ -254,7 +255,7 @@ def test_people_are_found_by_first_name_by_surname_and_by_email(
         Person(
             first_name="Ludovica",
             last_name="Ferraresi",
-            email="lf@studio.example",
+            contact_points=points(email="lf@studio.example"),
             custom_fields={},
         )
     )

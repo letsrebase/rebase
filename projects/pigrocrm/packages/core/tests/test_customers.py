@@ -1,4 +1,5 @@
 import pytest
+from fakes.contacts import points_in
 from pydantic import ValidationError
 from sqlalchemy.orm import Session
 
@@ -365,14 +366,14 @@ def test_update_records_only_the_changed_fields(db_session: Session) -> None:
 
     service = CustomerService(db_session)
     customer = service.create(CustomerCreate(legal_name="ACME"), ADMIN)
-    service.update(customer.id, CustomerUpdate(phone="0212345"), ADMIN)
+    service.update(customer.id, CustomerUpdate(contact_points=points_in(phone="0212345")), ADMIN)
 
     updates = [
         e
         for e in ActivityService(db_session).timeline("customer", customer.id)
         if e.kind == "updated"
     ]
-    assert updates[0].payload["changed"] == ["phone"]
+    assert updates[0].payload["changed"] == ["contact_points"]
 
 
 def test_readonly_cannot_write_but_can_read(db_session: Session) -> None:
@@ -419,7 +420,11 @@ def test_restore_on_a_customer_that_was_never_deleted_does_not_log_a_restored_en
 def test_search_matches_name_vat_and_email(db_session: Session) -> None:
     service = CustomerService(db_session)
     service.create(
-        CustomerCreate(legal_name="ACME Srl", vat_number="12345678901", email="a@acme.it"),
+        CustomerCreate(
+            legal_name="ACME Srl",
+            vat_number="12345678901",
+            contact_points=points_in(email="a@acme.it"),
+        ),
         ADMIN,
     )
     service.create(CustomerCreate(legal_name="Beta Spa"), ADMIN)

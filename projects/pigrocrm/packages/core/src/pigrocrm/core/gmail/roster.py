@@ -13,12 +13,12 @@ cycle, which is exactly the failure mode spec 4 exists to prevent.
 
 from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Any
 from uuid import UUID
 
-from sqlalchemy import ColumnElement, func, or_, select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
+from pigrocrm.core.contact_points.models import ContactPoint
 from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.db import escape_like
 from pigrocrm.core.deals.models import Deal
@@ -42,51 +42,63 @@ class AddressRoster:
         self.session = session
 
     def known_addresses(self) -> tuple[str, ...]:
-        """Every non-null email on a live Person or Customer, lowercased, deduplicated
-        and sorted. Sorted because the batching in `gmail/query.py` must be stable: an
-        unstable order means two consecutive syncs issue different `q` strings for the
-        same data, and the request-inspecting test in B1-7 could then pass by luck."""
-        # `func.lower(...)` is untyped (`Function[Any]`), and a select of it is a select
-        # of unknown shape whose `scalars()` SQLAlchemy 2.1 cannot type: the annotation
-        # says what the function returns, and the union's rows are `str` from there.
-        # `str`, not `str | None`, although both columns are nullable: each `WHERE` below
-        # keeps only the rows that have an address, and the annotation goes with that filter.
-        person_email: ColumnElement[str] = func.lower(Person.email)
-        customer_email: ColumnElement[str] = func.lower(Customer.email)
-        people = select(person_email).where(Person.email.is_not(None), Person.deleted_at.is_(None))
-        customers = select(customer_email).where(
-            Customer.email.is_not(None), Customer.deleted_at.is_(None)
+        """Every email point of a live Person or Customer, lowercased, deduplicated and
+        sorted: the primary and every other address of each, so mail from a personal address
+        lands on the person too. Sorted because the batching in `gmail/query.py` must be
+        stable: an unstable order means two consecutive syncs issue different `q` strings for
+        the same data, and the request-inspecting test in B1-7 could then pass by luck."""
+        people = (
+            select(ContactPoint.normalized)
+            .join(Person, Person.id == ContactPoint.person_id)
+            .where(ContactPoint.kind == "email", Person.deleted_at.is_(None))
+        )
+        customers = (
+            select(ContactPoint.normalized)
+            .join(Customer, Customer.id == ContactPoint.customer_id)
+            .where(ContactPoint.kind == "email", Customer.deleted_at.is_(None))
         )
         rows = self.session.execute(people.union(customers)).scalars().all()
-        # `if address` drops the empty string as well as any NULL the union let past:
-        # a row saved with "" instead of NULL is not an address, and an empty clause in
-        # the Gmail `q` would match on nothing while still costing length budget.
+        # `if address` drops the empty string: a point saved with "" is not an address, and an
+        # empty clause in the Gmail `q` would match on nothing while still costing length budget.
         return tuple(sorted(address for address in rows if address))
 
     def known_among(self, addresses: Iterable[str]) -> frozenset[str]:
-        """Which of these candidate addresses are on a live Person or Customer, lowercased.
+        """Which of these candidate addresses are an email point of a live Person or
+        Customer, lowercased.
 
         What a caller that already holds its candidates asks, instead of loading the whole
         roster (`known_addresses`) to test a handful of them: the lookup is
-        `lower(email) IN (...)`, the expression the `ix_people_email_lower` and
-        `ix_customers_email_lower` indexes are built on."""
+        `normalized IN (...)` on `(kind, normalized)`, the pair `ix_contact_points_kind_normalized`
+        is built on."""
         needles = _needles(addresses)
         if not needles:
             return frozenset()
-        person_email: ColumnElement[str] = func.lower(Person.email)
-        customer_email: ColumnElement[str] = func.lower(Customer.email)
-        people = select(person_email).where(person_email.in_(needles), Person.deleted_at.is_(None))
-        customers = select(customer_email).where(
-            customer_email.in_(needles), Customer.deleted_at.is_(None)
+        people = (
+            select(ContactPoint.normalized)
+            .join(Person, Person.id == ContactPoint.person_id)
+            .where(
+                ContactPoint.kind == "email",
+                ContactPoint.normalized.in_(needles),
+                Person.deleted_at.is_(None),
+            )
+        )
+        customers = (
+            select(ContactPoint.normalized)
+            .join(Customer, Customer.id == ContactPoint.customer_id)
+            .where(
+                ContactPoint.kind == "email",
+                ContactPoint.normalized.in_(needles),
+                Customer.deleted_at.is_(None),
+            )
         )
         return frozenset(self.session.execute(people.union(customers)).scalars().all())
 
     def domains_taken(self, domains: Iterable[str]) -> frozenset[str]:
         """Which of these candidate domains the CRM already files under a customer: each
-        live customer's own (its website's and its non-webmail email's) and the address
-        domain of each live person attached to a live customer. What a customer proposal
-        (REB-223) must not offer again, and what an import of one refuses to duplicate.
-        Webmail domains never appear: they name nobody in particular.
+        live customer's own (its website's and any non-webmail email point's) and the address
+        domain of each email point of each live person attached to a live customer. What a
+        customer proposal (REB-223) must not offer again, and what an import of one refuses to
+        duplicate. Webmail domains never appear: they name nobody in particular.
 
         The database narrows to the rows that can name one of the candidates (a website
         or an email containing it) and Python applies the rule, so the whole of the
@@ -94,35 +106,48 @@ class AddressRoster:
         candidates = {domain.strip().lower() for domain in domains if domain and domain.strip()}
         if not candidates:
             return frozenset()
-        customer_hits = or_(
-            *(
-                clause
-                for domain in candidates
-                for clause in (
-                    Customer.website.ilike(f"%{escape_like(domain)}%", escape="\\"),
-                    Customer.email.ilike(f"%{escape_like(domain)}%", escape="\\"),
-                )
-            )
-        )
-        customers = self.session.execute(
-            select(Customer.website, Customer.email).where(
-                Customer.deleted_at.is_(None), customer_hits
-            )
-        ).all()
-        person_hits = or_(
-            *(Person.email.ilike(f"%@{escape_like(domain)}", escape="\\") for domain in candidates)
-        )
-        people = self.session.execute(
-            select(Person.email)
-            .join(Customer, Customer.id == Person.customer_id)
-            .where(
-                Person.email.is_not(None),
-                Person.deleted_at.is_(None),
+        websites = self.session.execute(
+            select(Customer.website).where(
                 Customer.deleted_at.is_(None),
-                person_hits,
+                or_(
+                    *(
+                        Customer.website.ilike(f"%{escape_like(domain)}%", escape="\\")
+                        for domain in candidates
+                    )
+                ),
             )
         ).scalars()
-        return _domains_of(customers, people) & candidates
+        customer_emails = self.session.execute(
+            select(ContactPoint.normalized)
+            .join(Customer, Customer.id == ContactPoint.customer_id)
+            .where(
+                ContactPoint.kind == "email",
+                Customer.deleted_at.is_(None),
+                or_(
+                    *(
+                        ContactPoint.normalized.like(f"%{escape_like(domain)}%", escape="\\")
+                        for domain in candidates
+                    )
+                ),
+            )
+        ).scalars()
+        people_emails = self.session.execute(
+            select(ContactPoint.normalized)
+            .join(Person, Person.id == ContactPoint.person_id)
+            .join(Customer, Customer.id == Person.customer_id)
+            .where(
+                ContactPoint.kind == "email",
+                Person.deleted_at.is_(None),
+                Customer.deleted_at.is_(None),
+                or_(
+                    *(
+                        ContactPoint.normalized.like(f"%@{escape_like(domain)}", escape="\\")
+                        for domain in candidates
+                    )
+                ),
+            )
+        ).scalars()
+        return _domains_of(websites, customer_emails, people_emails) & candidates
 
     def resolve_many(self, addresses: Iterable[str]) -> dict[str, tuple[EntityRef, ...]]:
         """Every entity each of these addresses touches: the person, that person's
@@ -141,16 +166,22 @@ class AddressRoster:
             # itself against every row somebody saved with an empty string instead of NULL.
             return {}
 
-        person_email: ColumnElement[str] = func.lower(Person.email)
-        customer_email: ColumnElement[str] = func.lower(Customer.email)
         person_rows = self.session.execute(
-            select(person_email, Person.id, Person.customer_id).where(
-                person_email.in_(needles), Person.deleted_at.is_(None)
+            select(ContactPoint.normalized, Person.id, Person.customer_id)
+            .join(Person, Person.id == ContactPoint.person_id)
+            .where(
+                ContactPoint.kind == "email",
+                ContactPoint.normalized.in_(needles),
+                Person.deleted_at.is_(None),
             )
         ).all()
         direct_rows = self.session.execute(
-            select(customer_email, Customer.id).where(
-                customer_email.in_(needles), Customer.deleted_at.is_(None)
+            select(ContactPoint.normalized, Customer.id)
+            .join(Customer, Customer.id == ContactPoint.customer_id)
+            .where(
+                ContactPoint.kind == "email",
+                ContactPoint.normalized.in_(needles),
+                Customer.deleted_at.is_(None),
             )
         ).all()
         # A live person may point at a soft-deleted customer, so the customers reached
@@ -212,20 +243,24 @@ def _needles(addresses: Iterable[str]) -> list[str]:
     return sorted({key for address in addresses if (key := address_key(address))})
 
 
-def _domains_of(customers: Iterable[Any], people_emails: Iterable[str | None]) -> frozenset[str]:
-    """The domains a set of customer rows and of their people's addresses stand for."""
+def _domains_of(
+    websites: Iterable[str | None],
+    customer_emails: Iterable[str],
+    people_emails: Iterable[str],
+) -> frozenset[str]:
+    """The domains a set of customers' websites, customers' addresses and people's addresses
+    stand for."""
     domains: set[str] = set()
-    for website, email in customers:
-        # Both of them: a customer whose website is acme.com and whose email is at
-        # acme.it is at both, and proposing the other one would make a second Acme.
-        for domain in (
-            customer_domain(website=website, email=None),
-            customer_domain(website=None, email=email),
-        ):
-            if domain is not None:
-                domains.add(domain)
+    # Both a website and an address: a customer whose website is acme.com and whose email is
+    # at acme.it is at both, and proposing the other one would make a second Acme.
+    for website in websites:
+        if (domain := customer_domain(website=website, email=None)) is not None:
+            domains.add(domain)
+    for email in customer_emails:
+        if (domain := customer_domain(website=None, email=email)) is not None:
+            domains.add(domain)
     for email in people_emails:
-        domain = (email or "").strip().lower().rpartition("@")[2]
+        domain = email.strip().lower().rpartition("@")[2]
         if domain and not is_provider_domain(domain):
             domains.add(domain)
     return frozenset(domains)

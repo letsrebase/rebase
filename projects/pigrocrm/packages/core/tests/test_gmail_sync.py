@@ -20,6 +20,7 @@ from urllib.parse import parse_qs, urlparse
 from uuid import UUID, uuid4
 
 import pytest
+from fakes.contacts import points
 from fakes.fake_gmail import API_HOST, FakeGmail, FakeMessage, RecordedRequest
 from fakes.gmail_fixtures import (
     MAILBOX,
@@ -36,6 +37,7 @@ from sqlalchemy.orm import Session
 from pigrocrm.core.activities.models import Activity
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.auth.models import User
+from pigrocrm.core.contact_points.models import ContactPoint
 from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.db import session_factory
 from pigrocrm.core.errors import Conflict, PermissionDenied
@@ -99,7 +101,7 @@ def _noise(fake: FakeGmail, count: int) -> None:
 
 
 def _customer(session: Session, email: str, legal_name: str = "Acme") -> Customer:
-    customer = Customer(legal_name=legal_name, email=email)
+    customer = Customer(legal_name=legal_name, contact_points=points(email=email))
     session.add(customer)
     session.flush()
     return customer
@@ -123,7 +125,12 @@ def test_a_thousand_irrelevant_messages_and_two_known_addresses(db_session: Sess
     account = connected_account(db_session)
     customer = _customer(db_session, "info@acme.it")
     db_session.add(
-        Person(first_name="Ada", last_name="Byron", email="ada@acme.it", customer_id=customer.id)
+        Person(
+            first_name="Ada",
+            last_name="Byron",
+            contact_points=points(email="ada@acme.it"),
+            customer_id=customer.id,
+        )
     )
     db_session.flush()
 
@@ -153,7 +160,12 @@ def test_no_messages_list_is_ever_issued_without_an_address_filter(db_session: S
     account = connected_account(db_session)
     customer = _customer(db_session, "info@acme.it")
     db_session.add(
-        Person(first_name="Ada", last_name="Byron", email="ada@acme.it", customer_id=customer.id)
+        Person(
+            first_name="Ada",
+            last_name="Byron",
+            contact_points=points(email="ada@acme.it"),
+            customer_id=customer.id,
+        )
     )
     db_session.flush()
     known = set(AddressRoster(db_session).known_addresses())
@@ -563,7 +575,13 @@ def committed_account(db_engine: Engine) -> Iterator[tuple[UUID, UUID, str]]:
             # ON DELETE CASCADE, so deleting the user takes the whole tree with it
             # whatever state the test left it in.
             session.execute(delete(User).where(User.id == ids[0]))
-            session.execute(delete(Customer).where(Customer.email == address))
+            session.execute(
+                delete(Customer).where(
+                    Customer.id.in_(
+                        select(ContactPoint.customer_id).where(ContactPoint.normalized == address)
+                    )
+                )
+            )
             # `activities` deliberately has no foreign key to anything -- `entity_id`
             # addresses whichever table `entity_type` names -- so nothing cascades, and
             # the cycles these two tests really commit would leave their timeline

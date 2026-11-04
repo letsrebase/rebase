@@ -79,8 +79,8 @@ def test_empty_string_still_clears_a_text_column(db_session: Session, seeded_dea
     """Unchanged, and it must stay unchanged: plan 1B's form contract is built on it and
     every existing form sends `""` for a cleared native text field."""
     service = CustomerService(db_session)
-    customer = service.create(CustomerCreate(legal_name="ACME", phone="02 1234567"), WRITER)
-    assert service.update(customer.id, CustomerUpdate(phone=""), WRITER).phone == ""
+    customer = service.create(CustomerCreate(legal_name="ACME", city="Roma"), WRITER)
+    assert service.update(customer.id, CustomerUpdate(city=""), WRITER).city == ""
 
 
 def test_a_nullable_foreign_key_is_still_validated_when_supplied(

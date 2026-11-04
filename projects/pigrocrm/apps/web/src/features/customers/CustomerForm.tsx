@@ -20,6 +20,16 @@ import { fieldErrorFrom, type ProblemDetail } from '@/lib/api'
 import { useLegalEntity, useLegalEntityProposal } from '@/lib/legalEntity'
 import { isBlank, toFormValues, toRequestBody, type FormValues } from '@/lib/formValues'
 import type { FieldDefinition } from '@/lib/schema'
+import { ContactPointsEditor } from '@/features/contact-points/ContactPointsEditor'
+import {
+  CONTACT_POINTS_KEY,
+  isPointProblem,
+  pointErrors,
+  pointsAreSendable,
+  pointsForRequest,
+  pointsToDrafts,
+  type ContactPointDraft,
+} from '@/features/contact-points/contactPoints'
 import type { Customer } from './queries'
 
 const NATIVE_FIELDS: FieldDefinition[] = [
@@ -37,8 +47,6 @@ const NATIVE_FIELDS: FieldDefinition[] = [
   // guessed options would let the UI reject a value the backend, and an MCP agent
   // writing through the same service, both accept without complaint.
   { key: 'country', label: 'Nazione', type: 'text', required: false, options: [] },
-  { key: 'email', label: 'Email', type: 'text', required: false, options: [] },
-  { key: 'phone', label: 'Telefono', type: 'text', required: false, options: [] },
   { key: 'website', label: 'Sito web', type: 'url', required: false, options: [] },
   { key: 'status', label: 'Stato', type: 'text', required: false, options: [] },
   // The payment terms (REB-326): what `InvoiceService.issue` computes every due date
@@ -99,7 +107,13 @@ const DEFAULT_CREATE_VALUES: CustomerFormValues = { native: { country: 'IT' }, c
  * 422 on every edit: only `SEEDED_KEYS` are seeded -- see `toFormValues`.
  */
 export function customerToFormValues(customer: Customer): CustomerFormValues {
-  return toFormValues(customer, SEEDED_KEYS)
+  const values = toFormValues(customer, SEEDED_KEYS)
+  values.native[CONTACT_POINTS_KEY] = pointsToDrafts(customer.contact_points)
+  return values
+}
+
+function draftsOf(values: CustomerFormValues | undefined): ContactPointDraft[] {
+  return (values?.native[CONTACT_POINTS_KEY] as ContactPointDraft[] | undefined) ?? []
 }
 
 interface Props {
@@ -178,10 +192,22 @@ export function CustomerForm({
   // effect would re-fire on every keystroke and wipe out whatever the user just
   // typed.
   const [wasOpen, setWasOpen] = useState(open)
+  // Whether Salva was pressed: from then on the editor shows the browser's own row checks.
+  const [checked, setChecked] = useState(false)
   if (open !== wasOpen) {
     setWasOpen(open)
-    if (open) setValues(initial ?? DEFAULT_CREATE_VALUES)
+    if (open) {
+      setValues(initial ?? DEFAULT_CREATE_VALUES)
+      setChecked(false)
+    }
   }
+
+  const drafts = draftsOf(values)
+  const initialDrafts = isCreate ? undefined : draftsOf(initial)
+  // The list is checked and sent only when it differs from the one the form opened with: a
+  // record whose stored values predate the rules must still save everything else.
+  const pointsEdited = pointsForRequest(drafts, initialDrafts) !== undefined
+  const pointRows = pointErrors(drafts, problem, checked && pointsEdited, initialDrafts)
 
   /** True for a key the active schema currently renders as a custom-field control.
    *
@@ -204,6 +230,10 @@ export function CustomerForm({
   }
 
   function submit() {
+    if (pointsEdited && !pointsAreSendable(drafts, initialDrafts)) {
+      setChecked(true)
+      return
+    }
     // `legal_entity_id` and `owner_id` are decided below from what their pickers show, not
     // from the seeded value: re-sending an unchanged id would be refused the day that
     // legal entity is deactivated.
@@ -211,7 +241,8 @@ export function CustomerForm({
       fields: NATIVE_FIELDS,
       initial,
       isRenderedCustomKey,
-      skipNative: (key) => key === 'legal_entity_id' || key === 'owner_id',
+      skipNative: (key) =>
+        key === 'legal_entity_id' || key === 'owner_id' || key === CONTACT_POINTS_KEY,
       // A number control hands back its text (`DynamicFieldRenderer` reads
       // `event.target.value`); the column is an integer and `CustomerUpdate` is typed
       // `int | None`, so the digits are sent as the number they are.
@@ -234,6 +265,11 @@ export function CustomerForm({
     if (owners !== undefined && chosenOwner !== undefined && chosenOwner !== initial?.native.owner_id) {
       body.owner_id = chosenOwner
     }
+
+    // The whole list or nothing: a new customer sends it when it has points, an edit only
+    // when it changed (an omitted list leaves the stored one, `[]` clears it).
+    const contactPoints = pointsForRequest(drafts, initialDrafts)
+    if (contactPoints !== undefined) body.contact_points = contactPoints
 
     onSubmit(body)
   }
@@ -263,7 +299,7 @@ export function CustomerForm({
           // Withheld when the server blamed `legal_entity_id`: that key has no control inside
           // `DynamicForm`, so it would render the message a second time as a raw banner
           // next to the line shown under the picker below.
-          problem={legalEntityRefused ? null : problem}
+          problem={legalEntityRefused || isPointProblem(problem) ? null : problem}
           // `initial` is not a prefill, it *is* the record being edited
           // (`customerToFormValues(customer)`, from the detail route); its absence is
           // what "Nuovo cliente" means, and the list route passes none. Deriving the
@@ -275,6 +311,17 @@ export function CustomerForm({
           // omitted rather than sent as `false`, which `renderFieldValue` already
           // reads as "No" anyway -- benign in the one direction it can be wrong.
           mode={isCreate ? 'create' : 'edit'}
+        />
+
+        <ContactPointsEditor
+          points={drafts}
+          onChange={(points) =>
+            setValues((previous) => ({
+              ...previous,
+              native: { ...previous.native, [CONTACT_POINTS_KEY]: points },
+            }))
+          }
+          errors={pointRows}
         />
 
         {showLegalEntityPicker ? (

@@ -23,11 +23,14 @@ directly -- it never fetches a score at all, it asks Postgres to sort by it and 
 from collections.abc import Sequence
 from decimal import Decimal
 
+from fakes.contacts import points
 from sqlalchemy import select
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import Session
 
+from pigrocrm.core.contact_points.models import ContactPoint
 from pigrocrm.core.customers.models import Customer
+from pigrocrm.core.search.repository import points_text
 from pigrocrm.core.search.scoring import (
     SCORE_EXACT,
     SCORE_FLOOR,
@@ -44,12 +47,15 @@ from pigrocrm.core.search.scoring import (
 )
 
 _NAME = ScoredField(name="legal_name", column=Customer.legal_name, weight=WEIGHT_IDENTIFYING)
-_EMAIL = ScoredField(name="email", column=Customer.email, weight=WEIGHT_EMAIL)
+_CONTACTS = points_text(Customer.id, ContactPoint.customer_id)
+_EMAIL = ScoredField(name="email", column=_CONTACTS, weight=WEIGHT_EMAIL)
 _FIELDS = (_NAME, _EMAIL)
 
 
 def _add(session: Session, legal_name: str, email: str | None = None) -> Customer:
-    row = Customer(legal_name=legal_name, email=email, country="IT", custom_fields={})
+    row = Customer(
+        legal_name=legal_name, contact_points=points(email=email), country="IT", custom_fields={}
+    )
     session.add(row)
     session.flush()
     return row
@@ -126,7 +132,7 @@ def test_best_field_resolves_a_tie_to_the_earlier_field(db_session: Session) -> 
     first."""
     equal_weight = (
         _NAME,
-        ScoredField(name="email", column=Customer.email, weight=WEIGHT_IDENTIFYING),
+        ScoredField(name="email", column=_CONTACTS, weight=WEIGHT_IDENTIFYING),
     )
     row = _add(db_session, "Vulcano Srl", email="vulcano@example.it")
 

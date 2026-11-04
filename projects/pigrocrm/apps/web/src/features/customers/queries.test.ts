@@ -36,6 +36,7 @@ const BASE_CUSTOMER: Customer = {
   country: 'IT',
   email: null,
   phone: null,
+  contact_points: [],
   website: null,
   status: null,
   payment_days: null,

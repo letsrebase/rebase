@@ -49,8 +49,6 @@ CUSTOMER_STRING_FIELDS = [
     "city",
     "province",
     "country",
-    "email",
-    "phone",
     "website",
     "status",
     "note",
@@ -65,7 +63,7 @@ def test_a_nul_byte_in_any_customer_field_is_rejected_not_500(logged_in: TestCli
 
 
 # Every plain `str`/`str | None` field on PersonCreate (people/schemas.py).
-PERSON_STRING_FIELDS = ["first_name", "last_name", "email", "phone", "role", "linkedin", "note"]
+PERSON_STRING_FIELDS = ["first_name", "last_name", "role", "note"]
 
 
 def test_a_nul_byte_in_any_person_field_is_rejected_not_500(logged_in: TestClient) -> None:
@@ -73,6 +71,18 @@ def test_a_nul_byte_in_any_person_field_is_rejected_not_500(logged_in: TestClien
         body = {"first_name": "Mario", field: NUL}
         response = logged_in.post("/api/people", json=body)
         assert response.status_code == 422, f"{field}: {response.status_code} {response.text}"
+
+
+def test_a_nul_byte_in_a_contact_point_is_rejected_not_500(logged_in: TestClient) -> None:
+    point = {"kind": "email", "value": f"a{NUL}@x.it", "note": "ok"}
+    for field in ("value", "note"):
+        broken = {**point, field: f"x{NUL}"}
+        for route, body in (
+            ("/api/people", {"first_name": "Mario", "contact_points": [broken]}),
+            ("/api/customers", {"legal_name": "ACME", "contact_points": [broken]}),
+        ):
+            response = logged_in.post(route, json=body)
+            assert response.status_code == 422, f"{route} {field}: {response.text}"
 
 
 # Every plain `str`/`str | None` field on DealCreate (deals/schemas.py). `name` is

@@ -8,6 +8,8 @@ from sqlalchemy.orm import Session
 from pigrocrm.core.activities.service import ActivityService
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.auth.repository import UserRepository
+from pigrocrm.core.contact_points.schemas import ContactPointIn
+from pigrocrm.core.contact_points.service import prepare, write_points
 from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.customers.repository import CustomerRepository
 from pigrocrm.core.customers.schemas import (
@@ -170,6 +172,10 @@ class CustomerService:
         payload = data.model_dump()
         # Not a column: the first note of the customer, written below by the creating actor.
         first_note = payload.pop("note", None)
+        # Not a column either: the points are written below, once the row has an id. Checked
+        # now so that a refusal leaves nothing in the session.
+        payload.pop("contact_points")
+        prepare(ENTITY, data.contact_points)
         _check_fiscal(payload, payload.get("country") or "IT")
         payload["custom_fields"] = validate_custom_fields(
             ENTITY, self.fields.specs_for(ENTITY), payload.get("custom_fields") or {}
@@ -180,6 +186,7 @@ class CustomerService:
         payload["owner_id"] = self._owner_for(payload.get("owner_id"), actor, creating=True)
 
         customer = self.repo.add(Customer(**payload))
+        write_points(self.session, customer, data.contact_points)
         self.activities.record(
             ENTITY, customer.id, "created", actor, {"legal_name": customer.legal_name}
         )
@@ -287,7 +294,7 @@ class CustomerService:
                         PersonCreate(
                             first_name=first_name,
                             last_name=last_name,
-                            email=address,
+                            contact_points=[ContactPointIn(kind="email", value=address)],
                             customer_id=customer.id,
                         ),
                         actor,
@@ -346,7 +353,7 @@ class CustomerService:
                 PersonCreate(
                     first_name=first_name,
                     last_name=last_name,
-                    email=address,
+                    contact_points=[ContactPointIn(kind="email", value=address)],
                     customer_id=customer.id,
                 ),
                 actor,
@@ -368,7 +375,7 @@ class CustomerService:
         # must see a caller-supplied `None` *inside* the dict (e.g. {"settore": None},
         # meaning "remove this key") exactly as given, with no risk of it being
         # confused with the field itself being absent -- see `merge_custom`.
-        changes = supplied_changes(data, exclude={"custom_fields"})
+        changes = supplied_changes(data, exclude={"custom_fields", "contact_points"})
         reject_cleared_columns(ENTITY, Customer, changes)
         # The country after this patch, not merely the one it mentions.
         _check_fiscal(changes, changes.get("country") or customer.country)
@@ -387,8 +394,14 @@ class CustomerService:
             )
         for key, value in changes.items():
             setattr(customer, key, value)
+        changed = sorted(changes)
+        # `null` leaves the list alone, as every omitted field is left: an empty list clears it.
+        if data.contact_points is not None and write_points(
+            self.session, customer, data.contact_points
+        ):
+            changed = sorted([*changes, "contact_points"])
 
-        self.activities.record(ENTITY, customer.id, "updated", actor, {"changed": sorted(changes)})
+        self.activities.record(ENTITY, customer.id, "updated", actor, {"changed": changed})
         self.session.commit()
         return CustomerRead.model_validate(customer)
 

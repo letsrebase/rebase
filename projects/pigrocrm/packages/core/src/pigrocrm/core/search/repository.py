@@ -33,6 +33,7 @@ from uuid import UUID
 from sqlalchemy import ColumnElement, Select, Subquery, func, literal, select
 from sqlalchemy.orm import Session, aliased
 
+from pigrocrm.core.contact_points.models import ContactPoint
 from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.deals.models import Deal
 from pigrocrm.core.documents.models import Document
@@ -62,19 +63,33 @@ from pigrocrm.core.search.scoring import (
 )
 from pigrocrm.core.tasks.models import Task
 
+
 # Spec §8.1's searched surface, one tuple per entity. Declaration order is load-bearing
 # twice over: `best_field` resolves a tie to the earlier field, so the identifying column
 # comes first, and `matches_any` builds its `OR` in this order.
+def points_text(owner_id: Any, owner_column: Any) -> ColumnElement[str]:
+    """Every contact point of one owner as one string, what the `contacts` field of a search
+    is matched against: an address, a number or a profile on any of the owner's points finds
+    it. A correlated subquery rather than a column, since the points live in a table of their
+    own; the palette's tables are small and its `ILIKE` over it is a filter, not a seek."""
+    return (
+        select(func.string_agg(ContactPoint.value, literal(" ")))
+        .where(owner_column == owner_id)
+        .correlate_except(ContactPoint)
+        .scalar_subquery()
+    )
+
+
 CUSTOMER_FIELDS: tuple[ScoredField, ...] = (
     ScoredField("legal_name", Customer.legal_name, WEIGHT_IDENTIFYING),
     ScoredField("vat_number", Customer.vat_number, WEIGHT_CODE),
     ScoredField("tax_code", Customer.tax_code, WEIGHT_CODE),
-    ScoredField("email", Customer.email, WEIGHT_EMAIL),
+    ScoredField("email", points_text(Customer.id, ContactPoint.customer_id), WEIGHT_EMAIL),
 )
 PERSON_FIELDS: tuple[ScoredField, ...] = (
     ScoredField("last_name", Person.last_name, WEIGHT_IDENTIFYING),
     ScoredField("first_name", Person.first_name, WEIGHT_IDENTIFYING),
-    ScoredField("email", Person.email, WEIGHT_EMAIL),
+    ScoredField("email", points_text(Person.id, ContactPoint.person_id), WEIGHT_EMAIL),
 )
 DEAL_FIELDS: tuple[ScoredField, ...] = (ScoredField("name", Deal.name, WEIGHT_IDENTIFYING),)
 DOCUMENT_FIELDS: tuple[ScoredField, ...] = (

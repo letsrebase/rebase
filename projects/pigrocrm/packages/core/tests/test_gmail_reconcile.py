@@ -25,6 +25,7 @@ from typing import Any
 from uuid import UUID, uuid4
 
 import pytest
+from fakes.contacts import points
 from fakes.customer_fixtures import make_customer
 from fakes.fake_gmail import FakeGmail
 from fakes.gmail_fixtures import (
@@ -379,7 +380,10 @@ def test_a_gmail_that_rewrote_our_message_id_still_does_not_report_a_delivered_m
     # something to paper over here.
     db_session.add(
         Person(
-            customer_id=draft.entity_id, first_name="Ada", last_name="Rossi", email="ada@acme.it"
+            customer_id=draft.entity_id,
+            first_name="Ada",
+            last_name="Rossi",
+            contact_points=points(email="ada@acme.it"),
         )
     )
     db_session.commit()

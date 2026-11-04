@@ -30,6 +30,7 @@ from sqlalchemy.orm import Session
 from pigrocrm.core.activities.models import Activity
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.auth.models import User
+from pigrocrm.core.contact_points.models import ContactPoint
 from pigrocrm.core.contracts.models import Contract
 from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.customers.repository import CustomerRepository
@@ -77,6 +78,7 @@ POLICIED = {
     "customers",
     "deals",
     "deal_value_lines",
+    "contact_points",
     "contracts",
     "documents",
     "invoices",
@@ -170,6 +172,31 @@ def world(db_engine: Engine) -> Iterator[World]:
                 first_name=f"{_PREFIX} {tag} contatto", customer_id=customer.id, custom_fields={}
             )
             session.add(person)
+            # One point on the person and one on the customer: the table's policy reaches a
+            # legal entity through whichever parent the row has.
+            session.flush()
+            session.add_all(
+                [
+                    ContactPoint(
+                        person_id=person.id,
+                        kind="email",
+                        value=f"{tag}@scope.example",
+                        normalized=f"{tag}@scope.example",
+                        label="work",
+                        is_primary=True,
+                        position=0,
+                    ),
+                    ContactPoint(
+                        customer_id=customer.id,
+                        kind="phone",
+                        value="0212345",
+                        normalized="0212345",
+                        label="work",
+                        is_primary=True,
+                        position=0,
+                    ),
+                ]
+            )
             deal = Deal(
                 name=f"{_PREFIX} {tag} deal",
                 customer_id=customer.id,
@@ -351,6 +378,7 @@ def world(db_engine: Engine) -> Iterator[World]:
                 "people": 1,
                 "deals": 1,
                 "deal_value_lines": 1,
+                "contact_points": 2,
                 "contracts": 1,
                 "documents": 1,
                 "notes": 3,
@@ -472,6 +500,7 @@ def test_a_raw_select_on_every_policied_table_agrees_with_the_lists(world: World
     with _scoped(world, world.studio, world.foreign) as session:
         assert _count(session, "customers") == 2
         assert _count(session, "deal_value_lines") == 2
+        assert _count(session, "contact_points") == 4
         assert _count(session, "notes") == 6
         assert _count(session, "invoices") == 3
         assert _count(session, "costs") == 2  # the shared one is still «all»'s alone
@@ -1163,6 +1192,7 @@ def test_every_table_that_reaches_an_legal_entity_carries_the_policy(db_engine: 
 FAST_PATH = {
     "people",
     "deal_value_lines",
+    "contact_points",
     "time_entries",
     "time_timers",
     "invoice_lines",

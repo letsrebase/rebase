@@ -99,6 +99,7 @@ def test_nothing_to_derive_from_is_none_not_an_error() -> None:
 
 from datetime import UTC, datetime, timedelta  # noqa: E402
 
+from fakes.contacts import points  # noqa: E402
 from fakes.fake_gmail import FakeGmail, FakeMessage  # noqa: E402
 from fakes.gmail_fixtures import MAILBOX, actor_for, connected_account, sync_service  # noqa: E402
 from sqlalchemy import func, select  # noqa: E402
@@ -138,6 +139,8 @@ def _example(session: Session, **overrides: object) -> Customer:
         "website": "https://www.example.com/",
     }
     fields.update(overrides)
+    if "email" in fields:
+        fields["contact_points"] = points(email=str(fields.pop("email")))
     customer = Customer(**fields)
     session.add(customer)
     session.flush()
@@ -260,7 +263,13 @@ def test_addresses_already_in_the_crm_are_marked_as_known(db_session: Session) -
 
     account = connected_account(db_session)
     customer = _example(db_session)
-    db_session.add(Person(first_name="Marco", email="Marco@Example.com", customer_id=customer.id))
+    db_session.add(
+        Person(
+            first_name="Marco",
+            contact_points=points(email="Marco@Example.com"),
+            customer_id=customer.id,
+        )
+    )
     db_session.flush()
     fake = FakeGmail()
     fake.messages["m1"] = _mail(1, frm="marco@example.com", to=MAILBOX, thread="t1")

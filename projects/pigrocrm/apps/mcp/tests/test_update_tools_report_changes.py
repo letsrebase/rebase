@@ -127,8 +127,10 @@ async def _customer(client: Client) -> dict[str, Any]:
         {
             "legal_name": "ACME Srl",
             "certified_email": "acme@pec.example.test",
-            "phone": "0212345678",
-            "email": "info@acme.example.test",
+            "contact_points": [
+                {"kind": "phone", "value": "0212345678"},
+                {"kind": "email", "value": "info@acme.example.test"},
+            ],
         },
     )
 
@@ -151,7 +153,7 @@ async def _deal(client: Client, customer_id: str) -> dict[str, Any]:
     )
 
 
-@pytest.mark.parametrize("field", ["certified_email", "phone", "email"])
+@pytest.mark.parametrize("field", ["certified_email"])
 async def test_clearing_a_customer_field_is_reported_with_the_value_it_held(
     server, field: str
 ) -> None:
@@ -167,6 +169,20 @@ async def test_clearing_a_customer_field_is_reported_with_the_value_it_held(
     assert result[field] is None
     assert result["changed"] == [field]
     assert result["cleared"] == {field: was}
+
+
+async def test_clearing_the_contact_points_reports_the_derived_fields_it_emptied(server) -> None:
+    async with Client(server) as client:
+        customer = await _customer(client)
+        result = await _create(
+            client,
+            "update_customer",
+            {"customer_id": customer["id"], "changes": {"contact_points": []}},
+        )
+
+    assert result["contact_points"] == []
+    assert result["changed"] == ["contact_points", "email", "phone"]
+    assert result["cleared"] == {"email": "info@acme.example.test", "phone": "0212345678"}
 
 
 @pytest.mark.parametrize(

@@ -4,6 +4,7 @@ from uuid import UUID
 from pigrocrm.core.people.schemas import PersonCreate, PersonListQuery, PersonUpdate
 from pigrocrm.core.people.service import PersonService
 from pigrocrm_mcp.context import McpContext
+from pigrocrm_mcp.errors import refuse_removed_changes
 from pigrocrm_mcp.tools import notes
 from pigrocrm_mcp.tools.changes import refuse_empty, report
 
@@ -20,6 +21,7 @@ def update(context: McpContext, person_id: str, data: dict[str, Any]) -> dict[st
     service = PersonService(context.session)
     identifier = UUID(person_id)
     notes.refuse_note_in_changes(data, "add_note")
+    refuse_removed_changes("update_person", data)
     changes = PersonUpdate(**data)
     refuse_empty(data)
     before = service.get(identifier, context.actor)

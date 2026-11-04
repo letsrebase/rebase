@@ -132,7 +132,7 @@ CRM with every point of its contact. That changes the payload's shape, so the `h
 - **A merge carries the points.** The absorbed person's points go to the survivor (their
   primary phone arrives as a secondary one when the survivor has a primary) together with their
   login address as an extra email; the undo puts back what the survivor has not changed since.
-- **Extra addresses never decide who somebody is (decision of Main, 2026-11-04).** §4 has
+- **Extra addresses never decide who somebody is (decided after the review of 2026-11-04).** §4 has
   `find_person` read the extra addresses, so a sign-up with one is recognised as the holder. An
   extra address is unverified, though: anybody could type it into a form to be taken for its
   holder. So `find_person`, `get_or_create`, the freelancer and company wizards, the admin's draft
@@ -154,3 +154,45 @@ CRM with every point of its contact. That changes the payload's shape, so the `h
   to create a user under somebody's extra address, naming it. An address a person already keeps is
   not asked again when they save their list, so a sign-up that took it as its login does not stop
   them.
+
+### CRM (REB-940 to REB-942)
+
+- **`normalized` column.** §2 lists no such column, but the unique index and every lookup
+  need the compared form (lowercased address, digits of a phone with a leading `+` kept,
+  canonical LinkedIn profile) as data, not as a per-index expression. `contact_points` has
+  `normalized`, written only by `contact_points.service`; the roster, the leads door and the
+  searches read it, never `value`. Its indexes are `(kind, normalized)` and one trigram index
+  each on `value` and `normalized`; the two unique indexes and the one-primary-per-kind
+  indexes are partial on the owner column.
+- **Stored as typed.** A person's email used to be lowercased on write; the point keeps what
+  was typed (trimmed) and compares on `normalized`. A LinkedIn value is stored canonical, as
+  the hub stores it (`contact_points/linkedin.py` is a port of `rebase_core.linkedin`).
+- **Reading mail takes every address, sending takes the primary.** §3 says the sync backfill
+  uses each person's primary email. The backfill and the payment reminders' «did anybody
+  reply» search read mail, and a person may answer from their second address, so they look at
+  every email point of the customer and its people; contract mail and the reminders'
+  recipients (what is sent) use the primary alone.
+- **A customer's email is now format-checked** like a person's: it was free text before.
+- **The leads door** keeps accepting today's payload. The address is the identity and is
+  validated as before; a phone or a LinkedIn profile that the point rules refuse is left
+  out of the new person instead of refusing the request, as a blank one is.
+- **The command palette** (`search/repository.py`) matches the contact points of a person or
+  customer through one correlated aggregate of their values, a filter rather than an index
+  seek: its tables are small, and the field is still reported as `email`.
+- **A change to the list bumps the owner's `updated_at`**, since the owner row itself does
+  not change and the lists sorted by «recently touched» would miss it.
+- **The people and customer list searches left the trigram BitmapOr too.** `owners_matching`
+  answers them with a `value`/`normalized` `ILIKE` over `contact_points` joined back as an
+  `IN`, so the four-way OR of one table's trigram indexes is now a semi-join; acceptable at a
+  space's size, and both `contact_points` trigram indexes serve it.
+- **Legacy values never block a save (review of 2026-11-04).** A point that is the same value
+  (same kind, same compared key) as one the owner already has is accepted as it is, even where
+  the rules would refuse it as a new value, so a list read back and sent unchanged always
+  saves (`prepare(..., stored)`); the web forms also send and check `contact_points` only
+  when the list changed. The rules are what the old columns held: a phone is trimmed, at most
+  40 characters, at least 6 digits, any other characters, compared on its digits (a leading `+`
+  kept); an email is a bare address (none of `<>,;"()` or whitespace); a bare LinkedIn handle
+  becomes `https://www.linkedin.com/in/<handle>`.
+- **Migration 0073 and a phone with no digit.** It is not dropped in silence: it becomes the
+  note (`Telefono: <text>`) of the owner's primary email point when the owner has one, and
+  otherwise is left out and named in the migration's log, one line per owner id.

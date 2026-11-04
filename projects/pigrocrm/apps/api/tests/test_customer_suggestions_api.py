@@ -159,7 +159,7 @@ def test_ticked_proposals_are_created_with_their_people(
     assert response.status_code == 201, response.text
     created = response.json()
     assert [row["legal_name"] for row in created] == ["Acme S.r.l.", "Studio Rossi"]
-    person = api_session.execute(select(Person).where(Person.email == "marco@acme.it")).scalar_one()
+    person = api_session.execute(select(Person).where(Person.first_name == "Marco")).scalar_one()
     assert (person.first_name, person.last_name) == ("Marco", "Bianchi")
     assert str(person.customer_id) == created[0]["id"]
 

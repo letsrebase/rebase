@@ -7,10 +7,13 @@ from decimal import Decimal
 from uuid import UUID, uuid4
 
 import pytest
+from fakes.contacts import points
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.config import Settings
+from pigrocrm.core.contact_points.models import ContactPoint
 from pigrocrm.core.contract_emails.schemas import (
     AttachmentKind,
     ContractEmailTemplateCreate,
@@ -87,7 +90,7 @@ def _setup(db_session: Session) -> Contract:
             customer_id=customer.id,
             first_name="Mario",
             last_name="Verdi",
-            email="mario@acme.example",
+            contact_points=points(email="mario@acme.example"),
         )
     )
     contract = Contract(
@@ -216,6 +219,42 @@ def test_the_preview_renders_the_invoices_own_figures_and_suggests_the_customers
     assert preview.to_suggested == ["mario@acme.example"]
     assert [date_to.type for date_to in preview.attachments] == ["invoice_pdf", "register_pdf"]
     assert (preview.date_from, preview.date_to) == (date(2026, 10, 7), date(2026, 10, 8))
+
+
+def test_the_suggested_recipients_are_each_persons_primary_address_once(
+    db_session: Session, local_storage: LocalFileStorage
+) -> None:
+    """A second address of Mario is not suggested, and a colleague's address that is Mario's
+    in another case is the same recipient, kept in the spelling it was first met in."""
+    contract = _setup(db_session)
+    template_id = _template(db_session, contract)
+    invoice_id = _issued_invoice(db_session, local_storage, contract)
+    mario = db_session.scalars(
+        select(Person).where(Person.customer_id == contract.customer_id)
+    ).one()
+    db_session.add(
+        ContactPoint(
+            person_id=mario.id,
+            kind="email",
+            value="mario.casa@gmail.com",
+            normalized="mario.casa@gmail.com",
+            label="personal",
+            is_primary=False,
+            position=1,
+        )
+    )
+    db_session.add(
+        Person(
+            customer_id=contract.customer_id,
+            first_name="Maria",
+            contact_points=points(email="Mario@Acme.example"),
+        )
+    )
+    db_session.flush()
+
+    preview = ContractEmailService(db_session).preview(contract.id, template_id, invoice_id, ADMIN)
+
+    assert preview.to_suggested == ["mario@acme.example"]
 
 
 def test_a_draft_invoice_is_not_sent(db_session: Session, local_storage: LocalFileStorage) -> None:
