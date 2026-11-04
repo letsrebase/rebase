@@ -353,6 +353,11 @@ export type AdminAction = Schemas['AdminActionRead']
 
 export type FreelancerOverride = Schemas['FreelancerOverride']
 export type CompanyOverride = Schemas['CompanyOverride']
+/** A point of a person's contact list as a page reads it (REB-944): the sign-in address is
+ *  the entry with no `id`. */
+export type ContactPoint = Schemas['ContactPointRead']
+/** A point as the list a write sends holds it. */
+export type ContactPointWrite = Schemas['ContactPointInput']
 export type LoginStats = Schemas['LoginStats']
 /** `freelancer_id` is what the page links each download by; the API's `GuideDownloadRead`
  *  has no such field yet (HubBackend adds it, `null` for a company contact), so until the
@@ -1172,6 +1177,10 @@ export const member = {
   enter: (token: string) => unwrap(client.POST('/api/hub/auth/enter', { body: { token } }), reading<Me>()),
   me: () => unwrap(client.GET('/api/hub/me'), reading<Me>()),
   update: (body: MemberUpdate) => unwrap(client.PATCH('/api/hub/me', { body }), reading<Me>()),
+  /** The caller's whole list of extra contact points, replaced (REB-944). The sign-in address
+   *  is not in it. */
+  updateContactPoints: (contactPoints: ContactPointWrite[]) =>
+    unwrap(client.PUT('/api/hub/me/contact-points', { body: { contact_points: contactPoints } }), reading<Me>()),
   /** One of the caller's own requests by its id (REB-602): the edit page always names the
    *  request it shows, so a new request filed in another tab never changes which one it
    *  saves. The id-less `PATCH /me/company` stays on the API for older links and is not

@@ -1,7 +1,7 @@
 import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { COMPANY_A, answer, mount, resetMocks, routeFetch } from '../list-test-kit'
+import { COMPANY_A, answer, mount, resetMocks, routeFetch, valueOf } from '../list-test-kit'
 
 afterEach(resetMocks)
 
@@ -52,6 +52,24 @@ describe('the company detail', () => {
     expect(screen.getByText('Ibrido · 3 giorni a settimana in sede')).toBeInTheDocument()
     expect(screen.getByText(/\+39 345 1234567/)).toBeInTheDocument()
     expect(screen.getByText('2')).toBeInTheDocument()
+  })
+
+  it('lists the contact’s extra points with their labels in «Altri recapiti»', async () => {
+    routeFetch({
+      'GET /api/hub/companies/c1': {
+        ...COMPANY_A,
+        contact_points: [
+          { id: null, kind: 'email', value: 'mario@rossi.it', label: 'work', note: null, is_primary: true, position: 0 },
+          { id: 'p1', kind: 'phone', value: '+39 02 5550199', label: 'billing', note: 'centralino', is_primary: false, position: 1 },
+        ],
+      },
+      'GET /api/hub/companies/c1/audit': [],
+    })
+    mount('/admin/companies/c1')
+    await screen.findByRole('heading', { name: 'Rossi Studio' })
+    const row = valueOf('Altri recapiti')
+    expect(within(row).getByRole('link', { name: '+39 02 5550199' })).toHaveAttribute('href', 'tel:+39025550199')
+    expect(row).toHaveTextContent('(amministrazione: centralino)')
   })
 
   it('overrides a field through "Modifica richiesta" and shows the new value', async () => {

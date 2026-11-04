@@ -46,6 +46,7 @@ const PROFILE = {
   email: 'ada@studio.it',
   linkedin_url: 'https://www.linkedin.com/in/ada',
   phone: null,
+  contact_points: [],
   role: 'member',
   created_at: '2026-09-10T10:00:00Z',
   updated_at: '2026-09-10T10:00:00Z',
@@ -405,16 +406,17 @@ describe('/me, a company request (REB-314: reads `ha_azienda` independently of `
 
 describe('/me, one column in a fixed order (REB-641), the referral panel first (REB-610)', () => {
   const PERKS = ['PigroCRM è tuo, gratis', 'I primi passi da freelance']
+  const CONTACTS = 'I tuoi recapiti'
   const cases: [string, unknown, string[]][] = [
-    ['a card only', PROFILE, ['La tua scheda', ...PERKS, 'Contratti']],
-    ['a company only', COMPANY_ONLY, ['La tua richiesta']],
-    ['a company with two requests', COMPANY_TWO_REQUESTS, ['Le tue richieste']],
-    ['a card and a company', BOTH, ['La tua scheda', 'La tua richiesta', ...PERKS, 'Contratti']],
-    ['a card-less admin', CARDLESS_ADMIN, PERKS],
-    ['a plain member with nothing else', NOBODY, []],
+    ['a card only', PROFILE, ['La tua scheda', CONTACTS, ...PERKS, 'Contratti']],
+    ['a company only', COMPANY_ONLY, ['La tua richiesta', CONTACTS]],
+    ['a company with two requests', COMPANY_TWO_REQUESTS, ['Le tue richieste', CONTACTS]],
+    ['a card and a company', BOTH, ['La tua scheda', 'La tua richiesta', CONTACTS, ...PERKS, 'Contratti']],
+    ['a card-less admin', CARDLESS_ADMIN, [CONTACTS, ...PERKS]],
+    ['a plain member with nothing else', NOBODY, [CONTACTS]],
   ]
 
-  it.each(cases)('reads referral, card, requests, perks, contracts for %s', async (_name, profile, after) => {
+  it.each(cases)('reads referral, card, requests, contacts, perks, contracts for %s', async (_name, profile, after) => {
     meFetch(profile)
     mount()
     await screen.findByRole('heading', { level: 1 })
@@ -429,25 +431,34 @@ describe('/me, one column in a fixed order (REB-641), the referral panel first (
     mount()
     await screen.findByText('Nessuna segnalazione ancora.')
     const rows = Array.from(stack().children) as HTMLElement[]
-    // Five sections, one per row: referral, card, request, perks, contracts.
-    expect(rows.map((row) => row.tagName)).toEqual(['SECTION', 'SECTION', 'SECTION', 'SECTION', 'SECTION'])
+    // Six sections, one per row: referral, card, request, contacts, perks, contracts.
+    expect(rows.map((row) => row.tagName)).toEqual([
+      'SECTION',
+      'SECTION',
+      'SECTION',
+      'SECTION',
+      'SECTION',
+      'SECTION',
+    ])
     expect(rows[0]).toContainElement(screen.getByRole('heading', { name: 'Il tuo link di segnalazione' }))
-    expect(rows[4]).toContainElement(screen.getByRole('heading', { name: 'Contratti' }))
+    expect(rows[3]).toContainElement(screen.getByRole('heading', { name: 'I tuoi recapiti' }))
+    expect(rows[5]).toContainElement(screen.getByRole('heading', { name: 'Contratti' }))
     // The perks are two boxes in one section, stacked at every viewport: no column
     // class and no responsive variant on the section or on the stack.
     const perks = screen.getByLabelText('I tuoi vantaggi')
-    expect(perks).toBe(rows[3])
+    expect(perks).toBe(rows[4])
     expect(perks.className).not.toMatch(/grid-cols-|\b(sm|md|lg|xl|2xl):/)
     expect(stack().className).not.toMatch(/grid-cols-|\b(sm|md|lg|xl|2xl):/)
   })
 
-  it('shows the «Chi sei» fallback in the requests\' place, and nothing after it', async () => {
+  it('shows the «Chi sei» fallback in the requests\' place, and only the contacts after it', async () => {
     meFetch(NOBODY)
     mount()
     await screen.findByText('Nessuna segnalazione ancora.')
     const rows = Array.from(stack().children) as HTMLElement[]
-    expect(rows).toHaveLength(2)
+    expect(rows).toHaveLength(3)
     expect(rows[1]).toBe(screen.getByLabelText('Chi sei'))
+    expect(rows[2]).toContainElement(screen.getByRole('heading', { name: 'I tuoi recapiti' }))
   })
 })
 

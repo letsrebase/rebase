@@ -70,6 +70,10 @@ NOT_ADMIN: dict[Route, tuple[str, str]] = {
     ("PATCH", "/api/hub/me/company"): (MEMBER, "edits the member's own company request"),
     ("PATCH", "/api/hub/me/company/{company_id}"): (MEMBER, "edits one of their requests"),
     ("PUT", "/api/hub/me/cv"): (MEMBER, "replaces the member's own CV"),
+    ("PUT", "/api/hub/me/contact-points"): (
+        MEMBER,
+        "replaces the member's own list of extra contact points",
+    ),
     ("GET", "/api/hub/me/cv"): (MEMBER, "the member's own CV, never another's"),
     ("GET", "/api/hub/me/guide"): (MEMBER, "the guide download"),
     ("GET", "/api/hub/me/contracts"): (MEMBER, "the member's own contracts"),

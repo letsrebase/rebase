@@ -15,7 +15,7 @@ from uuid import UUID, uuid4
 import pytest
 from fakes_cards import CARD, MODEL
 from fastapi.testclient import TestClient
-from sqlalchemy import select, text, update
+from sqlalchemy import delete, select, text, update
 from sqlalchemy.orm import Session
 
 from rebase_api.deps import get_clock, get_team_llm
@@ -34,6 +34,7 @@ from rebase_core.models import (
     TeamRequest,
     TeamRequestTalent,
     User,
+    UserContactPoint,
 )
 from rebase_core.team_prompt import ProposalAnswer
 from rebase_core.team_requests import CLOUD_CLOSED_FOR_PROPOSAL
@@ -150,11 +151,14 @@ def _talent(
     vetted: bool = False,
 ) -> UUID:
     slug = last_name.lower()
-    user = User(
-        email=f"{slug}@studio.it", first_name="Ada", last_name=last_name, phone="+39 333 9998877"
-    )
+    user = User(email=f"{slug}@studio.it", first_name="Ada", last_name=last_name)
     session.add(user)
     session.flush()
+    session.add(
+        UserContactPoint(
+            user_id=user.id, kind="phone", value="+39 333 9998877", label="work", is_primary=True
+        )
+    )
     row = Freelancer(
         user_id=user.id,
         remote="remote",
@@ -545,7 +549,8 @@ def test_request_files_one_talent_for_the_grants_company_and_mails_rebase(
     # A referente with no phone on file is asked for none: the request has none.
     contact_person = cloud.get(User, user_id)
     assert contact_person is not None
-    contact_person.phone = None
+    cloud.execute(delete(UserContactPoint).where(UserContactPoint.user_id == user_id))
+    cloud.expire(contact_person, ["contact_points"])
     cloud.commit()
     again = client.post("/api/hub/me/cloud/requests", json={"freelancer_id": str(ada)})
     assert again.status_code == 201

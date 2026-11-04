@@ -3,8 +3,10 @@ import { Link, useParams } from '@tanstack/react-router'
 import { ArrowLeft } from 'lucide-react'
 import { useState } from 'react'
 import { Button } from '@rebase/ui/button'
+import { ContactPointsList } from '@/components/ContactPointsList'
 import { admin, type Company, type CompanyOverride, type Note, type TalentCloudGrant } from '@/lib/api'
 import { failureMessage } from '@/lib/adminList'
+import { extraPoints } from '@/lib/contactPoints'
 import { COMPANY_STATES, REMOTE_LABELS, TEAM_BUILDER_ORIGIN, formatDate } from '@/lib/format'
 import { formatMoney } from '@rebase/ui/format'
 import { keys } from '@/lib/query-keys'
@@ -129,6 +131,11 @@ export function AdminCompanyDetail() {
             {c.contact_person} · <a className="underline underline-offset-2" href={`mailto:${c.email}`}>{c.email}</a>
             {c.phone ? ` · ${c.phone}` : ''}
           </Row>
+          {extraPoints(c.contact_points).length > 0 && (
+            <Row label="Altri recapiti">
+              <ContactPointsList points={extraPoints(c.contact_points)} />
+            </Row>
+          )}
           <Row label="Figura richiesta">{c.requested_role}</Row>
           <Row label="Progetto"><p className="whitespace-pre-wrap">{c.project}</p></Row>
           <Row label="Periodo">dal {formatDate(c.period_from)}, {c.duration}</Row>

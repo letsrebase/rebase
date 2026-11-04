@@ -1526,6 +1526,29 @@ export interface paths {
         patch: operations["update_me_api_hub_me_patch"];
         trace?: never;
     };
+    "/api/hub/me/contact-points": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Replace My Contact Points
+         * @description The caller's own list of extra contact points, replaced whole (REB-943): a phone,
+         *     a second address or a profile with its label and note, whether they are a freelancer,
+         *     a company's referente or both. The address they sign in with is read-only and not in
+         *     it. An address that is somebody else's is a 422 that names it.
+         */
+        put: operations["replace_my_contact_points_api_hub_me_contact_points_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/hub/me/company": {
         parameters: {
             query?: never;
@@ -3399,6 +3422,8 @@ export interface components {
             headcount?: number | null;
             /** Status */
             status?: ("new" | "contacted" | "in_progress" | "closed") | null;
+            /** Contact Points */
+            contact_points?: components["schemas"]["ContactPointInput"][] | null;
         };
         /** CompanyRead */
         CompanyRead: {
@@ -3415,6 +3440,8 @@ export interface components {
             email: string;
             /** Phone */
             phone: string | null;
+            /** Contact Points */
+            contact_points: components["schemas"]["ContactPointRead"][];
             /** Requested Role */
             requested_role: string;
             /** Project */
@@ -3534,6 +3561,80 @@ export interface components {
             experience_years_card: number | null;
             /** Experience Years Hub */
             experience_years_hub: number | null;
+        };
+        /**
+         * ContactPointInput
+         * @description One point of the list a write sends. `id` and `position` are what a read answers and
+         *     are accepted only so a list read can be sent back as it is: the id is not used (the
+         *     list is replaced) and the position is the order of the list.
+         */
+        ContactPointInput: {
+            /**
+             * Id
+             * @description Read only: ignored on write.
+             */
+            id?: string | null;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "email" | "phone" | "linkedin";
+            /** Value */
+            value: string;
+            /**
+             * Label
+             * @enum {string}
+             */
+            label: "work" | "personal" | "billing" | "other";
+            /** Note */
+            note?: string | null;
+            /**
+             * Is Primary
+             * @default false
+             */
+            is_primary: boolean;
+            /**
+             * Position
+             * @description Read only: the list's own order.
+             */
+            position?: number | null;
+        };
+        /**
+         * ContactPointRead
+         * @description One point as a page reads it. The first entry of a person's list is the login
+         *     address, without an `id`: it is the primary email and cannot be edited from the list.
+         */
+        ContactPointRead: {
+            /** Id */
+            id: string | null;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "email" | "phone" | "linkedin";
+            /** Value */
+            value: string;
+            /**
+             * Label
+             * @enum {string}
+             */
+            label: "work" | "personal" | "billing" | "other";
+            /** Note */
+            note: string | null;
+            /** Is Primary */
+            is_primary: boolean;
+            /** Position */
+            position: number;
+        };
+        /**
+         * ContactPointsUpdate
+         * @description A person's own list of extra contact points, replacing the stored one (REB-943). The
+         *     address they sign in with is not in it: it is shown as the primary email and changes
+         *     nowhere in the member area.
+         */
+        ContactPointsUpdate: {
+            /** Contact Points */
+            contact_points: components["schemas"]["ContactPointInput"][];
         };
         /**
          * ContractDocumentRead
@@ -3836,6 +3937,8 @@ export interface components {
             linkedin_url: string | null;
             /** Phone */
             phone: string | null;
+            /** Contact Points */
+            contact_points: components["schemas"]["ContactPointRead"][];
             /** Cv Filename */
             cv_filename: string | null;
             /** Cv Mime */
@@ -4003,6 +4106,8 @@ export interface components {
             seniority_admin?: ("junior" | "mid" | "senior" | "lead") | null;
             /** Experience Years Admin */
             experience_years_admin?: number | null;
+            /** Contact Points */
+            contact_points?: components["schemas"]["ContactPointInput"][] | null;
         };
         /**
          * FreelancerRead
@@ -4028,6 +4133,8 @@ export interface components {
             linkedin_url: string | null;
             /** Phone */
             phone: string | null;
+            /** Contact Points */
+            contact_points: components["schemas"]["ContactPointRead"][];
             /** Cv Filename */
             cv_filename: string | null;
             /** Cv Mime */
@@ -4755,6 +4862,8 @@ export interface components {
             linkedin_url: string | null;
             /** Phone */
             phone: string | null;
+            /** Contact Points */
+            contact_points: components["schemas"]["ContactPointRead"][];
             /**
              * Role
              * @enum {string}
@@ -9397,6 +9506,39 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["MemberUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MeRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    replace_my_contact_points_api_hub_me_contact_points_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ContactPointsUpdate"];
             };
         };
         responses: {
