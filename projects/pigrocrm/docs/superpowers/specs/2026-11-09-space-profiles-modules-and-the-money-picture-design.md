@@ -213,6 +213,12 @@ The register as of today, from the conversation:
 | FPA12 format, 6-character IPA code and deferred IVA for a public body | to verify | |
 | Exempt thresholds for travel allowances, traceable payment of reimbursements | to verify | |
 | ACI tables for mileage | to verify | |
+| Payroll withholdings and contributions paid by F24 on the 16th of the following month | to verify | |
+| Months of the 13th and 14th payments, by collective agreement | to verify | |
+| TFR accrual and its payment rules (end of employment, advances, pension funds) | to verify | |
+| TFM accrual and its deductibility conditions (a written deed of earlier date) | to verify | |
+| INAIL yearly settlement and its dates | to verify | |
+| IRPEF withholding and «gestione separata» treatment of a director's fee | to verify | |
 | CBI Globe as the Italian access to banking APIs | to verify | |
 | Qonto and Revolut Business CSV export formats | to verify | |
 | Banco BPM business banking export format (it may be «YouBusiness Web», not «YouWeb») | to verify | |
