@@ -17,8 +17,9 @@ def register(
     @mcp.tool(annotations=READ_ONLY)
     @guard
     def describe_space() -> dict[str, Any]:
-        """The space's profile (`solo`, `company`, `null` until chosen) and its modules: each
-        one's `enabled`, `requires` and `records`. A module that is off has no tools: this
+        """The space's profile (`solo`, `company`, `null` until chosen), its `onboarding`
+        (`pending`, `skipped`, `done`) and its modules: each one's `enabled`, `requires` and
+        `records`. A module that is off has no tools: this
         says why.
         """
         return SpaceModulesService(context.session, settings).describe().model_dump(mode="json")

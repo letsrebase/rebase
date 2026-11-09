@@ -22,10 +22,12 @@ from pigrocrm.core.modules.registry import (
     MODULE_KEYS,
     MODULES,
     MODULES_BY_KEY,
+    ONBOARDING_SKIPPED_KEY,
     PROFILE_KEY,
     ModuleKey,
     Profile,
     enabled_modules,
+    onboarding_state,
     profile_default,
     setting_key,
     stored_switch,
@@ -43,6 +45,7 @@ from pigrocrm.core.timetracking.models import Cost, TimeEntry
 
 SET_PROFILE = "set_space_profile"
 SET_MODULES = "set_space_modules"
+SKIP_ONBOARDING = "skip_space_onboarding"
 
 # What each module holds that a person would miss: the live rows of its own tables. `taxes`
 # keeps nothing of its own (the estimate is computed from invoices, and the fiscal profile
@@ -112,7 +115,11 @@ class SpaceModulesService:
                     records=records,
                 )
             )
-        return SpaceModulesRead(profile=effective.space_profile, modules=modules)
+        return SpaceModulesRead(
+            profile=effective.space_profile,
+            onboarding=onboarding_state(effective.space_profile, effective.onboarding_skipped),
+            modules=modules,
+        )
 
     def set_profile(self, data: SpaceProfileSet, actor: Actor) -> SpaceProfileProposal:
         """Without `confirm`: the modules the profile would switch, nothing written. With
@@ -140,7 +147,11 @@ class SpaceModulesService:
             if (module.key in now_on) != proposed[module.key]
         ]
         if data.confirm:
-            values: dict[str, str | None] = {PROFILE_KEY: data.profile}
+            # Choosing a profile ends the onboarding for good, whether or not it was skipped.
+            values: dict[str, str | None] = {
+                PROFILE_KEY: data.profile,
+                ONBOARDING_SKIPPED_KEY: None,
+            }
             values.update({setting_key(key): _bit(value) for key, value in proposed.items()})
             self._write(values, actor)
         return SpaceProfileProposal(
@@ -183,6 +194,16 @@ class SpaceModulesService:
         values.update({setting_key(key): _bit(on) for key, on in wanted.items()})
         self._write(values, actor)
         return sorted(values)
+
+    def skip_onboarding(self, actor: Actor) -> SpaceModulesRead:
+        """«Decido dopo» on the first step (B3): nothing about the modules changes, every one
+        stays on, and the onboarding moves to «Primi passi» instead of covering the screen
+        at the next login. A space that already has a profile has nothing to skip."""
+        actor.require_unscoped_admin(SKIP_ONBOARDING)
+        self.settings.lock()
+        if self.settings.effective().space_profile is None:
+            self._write({ONBOARDING_SKIPPED_KEY: _bit(True)}, actor)
+        return self.describe()
 
     def set_modules(self, data: SpaceModulesSet, actor: Actor) -> SpaceModulesRead:
         """Switches the named modules. A module that holds records is switched off only when

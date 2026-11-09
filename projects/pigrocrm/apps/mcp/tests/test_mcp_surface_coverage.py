@@ -659,6 +659,9 @@ _CONFIGURATION: dict[Method, str] = {
         "`set_space_profile` is a tool, in `tools/privileged.py` (an administrator's token with "
         "`full_access`: the sweep does not read that module, `test_module_guard.py` does)"
     ),
+    ("SpaceModulesService", "skip_onboarding"): (
+        "`skip_space_onboarding`, privileged as `set_space_profile` is"
+    ),
     ("SpaceModulesService", "set_modules"): (
         "`set_space_modules`, privileged as `set_space_profile` is"
     ),

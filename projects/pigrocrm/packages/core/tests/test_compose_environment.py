@@ -81,6 +81,7 @@ NOT_FORWARDED: dict[str, str] = {
     # The space's profile and module switches (spec 2026-11-09): a space decides them in
     # its own database through two admin actions, never an installation's environment.
     "space_profile": "decided per space by `set_space_profile`, never by the environment",
+    "onboarding_skipped": "decided per space by `skip_space_onboarding`, never by the environment",
     "module_deals": "decided per space by `set_space_modules`, never by the environment",
     "module_contracts": "decided per space by `set_space_modules`, never by the environment",
     "module_time": "decided per space by `set_space_modules`, never by the environment",

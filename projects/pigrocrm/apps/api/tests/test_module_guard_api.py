@@ -399,6 +399,49 @@ def test_the_generic_settings_page_cannot_write_the_profile_or_a_module(
 # -- who may write ----------------------------------------------------------------------
 
 
+# -- the onboarding (spec 2026-11-09, B3, REB-957) ---------------------------------------
+
+
+def test_the_onboarding_is_pending_until_skipped_and_done_once_a_profile_is_chosen(
+    logged_in: TestClient,
+) -> None:
+    assert logged_in.get("/api/settings/modules").json()["onboarding"] == "pending"
+
+    skipped = logged_in.post("/api/settings/modules/onboarding/skip")
+    assert skipped.status_code == 200, skipped.text
+    body = skipped.json()
+    assert body["onboarding"] == "skipped" and body["profile"] is None
+    # Skipping chooses nothing: every module stays on and no switch is written.
+    assert all(m["enabled"] and m["stored"] is None for m in body["modules"])
+    assert logged_in.get("/api/settings/modules").json()["onboarding"] == "skipped"
+
+    chosen = logged_in.put(
+        "/api/settings/modules/profile", json={"profile": "company", "confirm": True}
+    )
+    assert chosen.status_code == 200, chosen.text
+    assert chosen.json()["state"]["onboarding"] == "done"
+    # A later skip changes nothing once there is a profile.
+    again = logged_in.post("/api/settings/modules/onboarding/skip")
+    assert again.json()["onboarding"] == "done" and again.json()["profile"] == "company"
+
+
+def test_a_collaborator_cannot_skip_the_onboarding(collaborator_client: TestClient) -> None:
+    refused = collaborator_client.post("/api/settings/modules/onboarding/skip")
+
+    assert refused.status_code == 403 and refused.json()["code"] == "permission_denied"
+
+
+def test_the_onboarding_is_skipped_by_a_full_access_token_and_not_by_one_without(
+    logged_in: TestClient,
+) -> None:
+    closed = _agent(logged_in, full_access=False)
+    opened = _agent(logged_in, full_access=True)
+    assert closed.post("/api/settings/modules/onboarding/skip").status_code == 403
+    assert logged_in.get("/api/settings/modules").json()["onboarding"] == "pending"
+    assert opened.post("/api/settings/modules/onboarding/skip").status_code == 200
+    assert logged_in.get("/api/settings/modules").json()["onboarding"] == "skipped"
+
+
 def test_a_collaborator_cannot_write_modules_or_the_profile(
     collaborator_client: TestClient,
 ) -> None:

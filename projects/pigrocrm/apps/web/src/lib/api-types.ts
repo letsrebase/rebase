@@ -3691,6 +3691,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/settings/modules/onboarding/skip": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Skip Onboarding
+         * @description «Decido dopo» on the first step of the onboarding: every module stays on, nothing
+         *     is chosen, and the onboarding waits in «Primi passi» (`onboarding` answers `skipped`).
+         *     A space that already has a profile is left as it is.
+         */
+        post: operations["skip_onboarding_api_settings_modules_onboarding_skip_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/activities": {
         parameters: {
             query?: never;
@@ -12522,6 +12544,12 @@ export interface components {
              * @description `solo`, `company`, or `null` until chosen
              */
             profile: ("solo" | "company") | null;
+            /**
+             * Onboarding
+             * @description `pending` until the profile is chosen or the first step is skipped, `skipped` after «Decido dopo», `done` once there is a profile
+             * @enum {string}
+             */
+            onboarding: "pending" | "skipped" | "done";
             /** Modules */
             modules: components["schemas"]["ModuleRead"][];
         };
@@ -41893,6 +41921,123 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SpaceProfileProposal"];
+                };
+            };
+            /** @description Permission denied: the actor does not have the required role. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The requested resource does not exist or was removed. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The request conflicts with the current state of the resource. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    skip_onboarding_api_settings_modules_onboarding_skip_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SpaceModulesRead"];
                 };
             };
             /** @description Permission denied: the actor does not have the required role. */

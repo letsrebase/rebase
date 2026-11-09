@@ -167,6 +167,19 @@ def register(
             .model_dump(mode="json")
         )
 
+    @mcp.tool(annotations=DESTRUCTIVE)
+    @guard
+    def skip_space_onboarding() -> dict[str, Any]:
+        """Answers «Decido dopo» to the space's onboarding: every module stays on, nothing
+        is chosen and `describe_space` reports `onboarding: "skipped"`. Does nothing once the
+        space has a profile.
+        """
+        return (
+            SpaceModulesService(context.session, settings)
+            .skip_onboarding(context.actor)
+            .model_dump(mode="json")
+        )
+
     # ---- fiscal acts ---------------------------------------------------------------
 
     @mcp.tool(annotations=DESTRUCTIVE)

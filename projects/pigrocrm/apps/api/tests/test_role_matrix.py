@@ -605,6 +605,7 @@ ROWS: list[Row] = [
     # --- the space's profile and modules (spec 2026-11-09, B1): an admin's act ----------
     Row("PUT", "/api/settings/modules", admin_only=True, body={}),
     Row("PUT", "/api/settings/modules/profile", admin_only=True, body={"profile": "solo"}),
+    Row("POST", "/api/settings/modules/onboarding/skip", admin_only=True),
     # --- templates: configuration, admin on every mutation (templates/service.py) -----
     Row(
         "POST",

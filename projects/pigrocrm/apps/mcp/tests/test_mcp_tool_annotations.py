@@ -56,7 +56,9 @@ SURFACES: dict[str, dict[str, Any]] = {
 # every token's surface, the settlement takes the item's amount, its date and the account's own
 # figures, and the list its five filters.
 DEFAULT_BUDGET_BYTES = 98_200
-FULL_ACCESS_BUDGET_BYTES = 111_600
+# REB-957: 111.9 KB, up from 111.6 KB, for `skip_space_onboarding` (a full-access
+# administrator's), measured at 111,786 bytes; `describe_space`'s `onboarding` fits the default.
+FULL_ACCESS_BUDGET_BYTES = 111_900
 
 # A name starting with one of these reads. The tools that read without such a name are
 # listed, so adding one is a decision somebody wrote down.

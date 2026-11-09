@@ -145,6 +145,7 @@ CORE_TOOLS = frozenset(
         "describe_space",
         "set_space_profile",
         "set_space_modules",
+        "skip_space_onboarding",
         "issue_invoice",
         "annul_invoice",
         "mark_invoice_transmitted",
@@ -298,8 +299,9 @@ async def test_every_token_reads_the_space_and_only_a_full_access_one_is_shown_t
     )
 
     assert "describe_space" in plain and "describe_space" in collaborator
-    assert not plain & {"set_space_profile", "set_space_modules"}
-    assert {"set_space_profile", "set_space_modules"} <= full
+    shape = {"set_space_profile", "set_space_modules", "skip_space_onboarding"}
+    assert not plain & shape
+    assert shape <= full
 
 
 async def test_describe_space_says_what_is_on_and_what_holds_data(
@@ -329,6 +331,27 @@ async def test_set_space_modules_by_an_admin_token_switches_and_a_collaborators_
         assert not switched.is_error, switched.content
         described = (await client.call_tool("describe_space", {})).structured_content or {}
     assert {m["key"]: m["enabled"] for m in described["modules"]}["costs"] is False
+
+
+async def test_skip_space_onboarding_marks_it_skipped_and_is_a_no_op_once_there_is_a_profile(
+    mcp_session: Session, tmp_path: Path
+) -> None:
+    settings = _settings(**OPEN)
+    admin = _server(mcp_session, tmp_path, settings, full_access=True)
+    collaborator = _server(mcp_session, tmp_path, settings, role="collaborator", full_access=True)
+
+    async with Client(collaborator) as client:
+        assert (await client.call_tool("skip_space_onboarding", {})).is_error
+    async with Client(admin) as client:
+        before = (await client.call_tool("describe_space", {})).structured_content or {}
+        skipped = (await client.call_tool("skip_space_onboarding", {})).structured_content or {}
+        await client.call_tool("set_space_profile", {"profile": "company", "confirm": True})
+        after = (await client.call_tool("skip_space_onboarding", {})).structured_content or {}
+
+    assert before["onboarding"] == "pending"
+    assert skipped["onboarding"] == "skipped" and skipped["profile"] is None
+    assert all(m["enabled"] for m in skipped["modules"])
+    assert after["onboarding"] == "done" and after["profile"] == "company"
 
 
 async def test_set_space_profile_answers_the_diff_and_applies_nothing_without_confirmation(

@@ -16,8 +16,12 @@ import { useAuth } from '@/lib/auth'
 import { useModules } from '@/lib/modules'
 import { queryKeys } from '@/lib/query'
 
-export type StepId = 'tax' | 'customer' | 'work' | 'document'
-export type StepTarget = '/app/settings/legal-entities' | '/app/customers' | '/app/deal'
+export type StepId = 'onboarding' | 'tax' | 'customer' | 'work' | 'document'
+export type StepTarget =
+  | '/app/onboarding'
+  | '/app/settings/legal-entities'
+  | '/app/customers'
+  | '/app/deal'
 
 export interface FirstStep {
   id: StepId
@@ -203,6 +207,7 @@ export function useFirstSteps(): FirstStepsState {
   const { user } = useAuth()
   const userId = user?.id ?? ''
   const isAdmin = user?.role === 'admin'
+  const modules = useModules()
   const token = useQuery({
     queryKey: [...queryKeys.tokens(userId), 'first-steps'],
     queryFn: hasToken,
@@ -261,7 +266,25 @@ export function useFirstSteps(): FirstStepsState {
   ]
   // «Il primo deal, o le prime ore» and «La prima offerta» send the person to the Deal
   // pages: with `deals` off (REB-953) there is no such page to send them to.
-  const list = dealsOn ? everyStep : everyStep.filter((s) => s.id !== 'work' && s.id !== 'document')
+  const dealSteps = dealsOn ? everyStep : everyStep.filter((s) => s.id !== 'work' && s.id !== 'document')
+  // An administrator who answered «Decido dopo» to the onboarding (spec 2026-11-09, B3,
+  // REB-957) finds it here as the first item until the space has a profile; it is not
+  // stored anywhere but in the space's own settings, like the rest of this list is read.
+  const list: FirstStep[] =
+    modules.onboarding === 'skipped'
+      ? [
+          {
+            id: 'onboarding',
+            title: 'Come lavora il tuo spazio',
+            hint: 'Da solo o come azienda: lo spazio mostra solo i moduli che ti servono.',
+            to: '/app/onboarding',
+            screen: 'Le tre domande',
+            canDo: isAdmin && !Array.isArray(user?.legal_entities),
+            done: false,
+          },
+          ...dealSteps,
+        ]
+      : dealSteps
   const doneCount = list.filter((s) => s.done).length
   return {
     loading,

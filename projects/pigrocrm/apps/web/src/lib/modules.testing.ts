@@ -14,10 +14,12 @@ const KEYS = Object.keys(MODULE_LABELS) as ModuleKey[]
 export function spaceModules(
   off: readonly ModuleKey[] = [],
   profile: SpaceProfile | null = null,
+  onboarding: SpaceModules['onboarding'] = 'done',
 ): SpaceModules {
   const dealsOff = off.includes('deals')
   return {
     profile,
+    onboarding,
     modules: KEYS.map((key) => {
       const requires: ModuleKey[] = key === 'time' ? ['deals'] : []
       return {

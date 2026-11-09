@@ -71,6 +71,7 @@ from pigrocrm.core.legal_entities.schemas import LegalEntityUpsert
 from pigrocrm.core.legal_entities.service import LegalEntityService
 from pigrocrm.core.fiscal.schemas import FiscalProfileUpsert
 from pigrocrm.core.fiscal.service import FiscalProfileService
+from pigrocrm.core.modules.service import SpaceModulesService
 from pigrocrm.core.pipeline.service import PipelineService
 from pigrocrm.core.templates.service import TemplateService
 from pigrocrm.core.timetracking.categories import CostCategoryService
@@ -133,6 +134,11 @@ with session_factory(engine)() as session:
         FiscalProfileUpsert(regime_code="RF19"),
         Actor.system(),
     )
+    # The onboarding (REB-957) covers the screen of an administrator whose space has no
+    # profile, which would stand in front of every spec below. The space answers «Decido
+    # dopo» here, as a person would: every module stays on and `onboarding.spec.ts` finds
+    # the questions waiting in «Primi passi».
+    SpaceModulesService(session, get_settings()).skip_onboarding(Actor.system())
 print("seed complete")
 PY
 

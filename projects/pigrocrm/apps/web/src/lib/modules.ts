@@ -21,6 +21,7 @@ export type ModuleKey = components['schemas']['ModuleRead']['key']
 export type ModuleRead = components['schemas']['ModuleRead']
 export type SpaceModules = components['schemas']['SpaceModulesRead']
 export type SpaceProfile = NonNullable<SpaceModules['profile']>
+export type OnboardingState = SpaceModules['onboarding']
 
 /**
  * The module names as a person reads them, for the sentence a guard shows before the
@@ -95,6 +96,9 @@ export interface ModuleAccess {
   /** The first read is still on its way: a guard that would turn a page away waits for
    *  it, and a read that failed is not "loading" but "not known" (everything on). */
   loading: boolean
+  /** Where the space is in the onboarding (B3): `null` while the answer is not known, which
+   *  is also what a read that failed says, so nothing covers the screen on a guess. */
+  onboarding: OnboardingState | null
 }
 
 /** The access a space with this answer has. `undefined` is "not known": all on. */
@@ -111,6 +115,7 @@ export function moduleAccess(data: SpaceModules | undefined, loading = false): M
     label: (key) => data?.modules.find((module) => module.key === key)?.label ?? MODULE_LABELS[key],
     profile: data?.profile ?? null,
     loading,
+    onboarding: data?.onboarding ?? null,
   }
 }
 

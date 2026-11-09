@@ -24,6 +24,16 @@ Profile = Literal["solo", "company"]
 
 PROFILES: tuple[Profile, ...] = ("solo", "company")
 
+# Where a space is in the onboarding (B3): `pending` until the profile is chosen or the first
+# step is skipped, `skipped` after «Decido dopo», `done` once there is a profile.
+OnboardingState = Literal["pending", "skipped", "done"]
+
+
+def onboarding_state(profile: Profile | None, skipped: bool | None) -> OnboardingState:
+    if profile is not None:
+        return "done"
+    return "skipped" if skipped else "pending"
+
 
 @dataclass(frozen=True)
 class Module:
@@ -78,6 +88,9 @@ MODULES_BY_KEY: Mapping[str, Module] = {module.key: module for module in MODULES
 MODULE_KEYS: tuple[ModuleKey, ...] = tuple(module.key for module in MODULES)
 
 PROFILE_KEY = "space_profile"
+# Set by `skip_space_onboarding` when an admin answers «Decido dopo» on the first step: the
+# onboarding then stays in «Primi passi» instead of covering the screen at every login (B3).
+ONBOARDING_SKIPPED_KEY = "onboarding_skipped"
 
 
 def setting_key(module: str) -> str:
@@ -87,11 +100,12 @@ def setting_key(module: str) -> str:
 
 MODULE_SETTING_KEYS: tuple[str, ...] = tuple(setting_key(key) for key in MODULE_KEYS)
 # What only the two actions write: never `SpaceSettingsUpdate` (`space_settings/schemas.py`).
-SHAPE_KEYS: tuple[str, ...] = (PROFILE_KEY, *MODULE_SETTING_KEYS)
+SHAPE_KEYS: tuple[str, ...] = (PROFILE_KEY, ONBOARDING_SKIPPED_KEY, *MODULE_SETTING_KEYS)
 
 
 class _Shaped(Protocol):
     space_profile: Profile | None
+    onboarding_skipped: bool | None
     module_deals: bool | None
     module_contracts: bool | None
     module_time: bool | None

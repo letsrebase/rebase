@@ -159,3 +159,37 @@ describe('with modules off', () => {
     expect(result.current.steps.map((step) => step.id)).toEqual(['tax', 'customer', 'work', 'document'])
   })
 })
+
+/** REB-957: an administrator who answered «Decido dopo» finds the onboarding first. */
+describe('with the onboarding skipped', () => {
+  function answerOnboarding(onboarding: 'pending' | 'skipped' | 'done') {
+    vi.mocked(api.GET).mockImplementation(((path: string) =>
+      path === '/api/settings/modules'
+        ? ok(spaceModules([], null, onboarding))
+        : ok({ items: [], next_cursor: null })) as never)
+  }
+
+  it('lists the onboarding as the first step, undone and for the admin', async () => {
+    answerOnboarding('skipped')
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const { result } = renderHook(() => useFirstSteps(), { wrapper: wrapper(client) })
+    await waitFor(() => expect(result.current.loading).toBe(false))
+
+    const [first] = result.current.steps
+    expect(first).toMatchObject({ id: 'onboarding', to: '/app/onboarding', canDo: true, done: false })
+    expect(result.current.steps.map((step) => step.id).slice(1)).toEqual([
+      'tax',
+      'customer',
+      'work',
+      'document',
+    ])
+  })
+
+  it.each(['pending', 'done'] as const)('does not list it while the onboarding is %s', async (state) => {
+    answerOnboarding(state)
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const { result } = renderHook(() => useFirstSteps(), { wrapper: wrapper(client) })
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    expect(result.current.steps.map((step) => step.id)).not.toContain('onboarding')
+  })
+})

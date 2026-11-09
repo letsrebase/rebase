@@ -100,6 +100,7 @@ FORBIDDEN = (
     # `full_access`, and no other.
     "set_space_profile",
     "set_space_modules",
+    "skip_space_onboarding",
     # The first that is not fiscal: asking Gmail who at a customer's
     # domain the owner has corresponded with. Not irreversible -- it stores nothing --
     # but it spends the owner's Gmail quota under the owner's OAuth consent, which is

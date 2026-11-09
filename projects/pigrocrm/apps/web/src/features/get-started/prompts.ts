@@ -13,6 +13,8 @@ export const INTRO_PROMPT =
   'Ciao! Sei collegato al mio spazio PigroCRM. Presentati in due righe, dimmi cosa vedi nello spazio (clienti, deal, ore, documenti, il profilo fiscale) e cosa puoi fare per me. Poi proponimi i primi tre passi per partire, nell’ordine giusto, e aspetta il mio ok prima di fare qualsiasi modifica.'
 
 export const STEP_PROMPTS: Record<StepId, string> = {
+  onboarding:
+    'Dimmi come è fatto il mio spazio PigroCRM (describe_space) e poi chiedimi se lavoro da solo con partita IVA o come azienda. In base alla risposta mostrami cosa cambierebbe per ogni modulo, con quanti record contiene, e aspetta il mio ok prima di impostare il profilo.',
   tax:
     'Imposta su PigroCRM i miei dati fiscali, sia l’emittente sia il profilo fiscale. Emittente: ragione sociale «…», partita IVA «…», codice fiscale «…», indirizzo «via …, CAP, città (provincia)», PEC «…», codice SDI «…», email «…», telefono «…». Profilo fiscale: regime «forfettario» (codice «RF19»), coefficiente di redditività «78» %, imposta sostitutiva «5» %, contributi INPS «26,07» %, pagamento con «bonifico» a «30» giorni, IBAN «IT…». Prima di salvare mostrami il riepilogo completo di entrambi e chiedimi conferma. Se un dato manca, lascialo vuoto e dimmelo: non inventare niente.',
   customer:

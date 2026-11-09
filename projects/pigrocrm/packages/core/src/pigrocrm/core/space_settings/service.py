@@ -38,7 +38,7 @@ VERSION_KEY = "_version"
 # carries a version is compared against a settled state.
 VERSION_LOCK = 0xC0F6
 
-_BOOLS = {"google_app_unverified", "mcp_full_access", *MODULE_SETTING_KEYS}
+_BOOLS = {"google_app_unverified", "mcp_full_access", "onboarding_skipped", *MODULE_SETTING_KEYS}
 _INTS = {
     "payment_reminders_grace_days",
     "payment_reminders_min_interval_days",

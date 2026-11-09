@@ -5,6 +5,7 @@ import { GmailBanner } from '@/components/GmailBanner'
 import { ModuleGate } from '@/components/ModuleGate'
 import { Button } from '@rebase/ui/button'
 import { Loader } from '@rebase/ui/loader'
+import { OnboardingGate } from '@/features/onboarding/OnboardingGate'
 import { useAuth } from '@/lib/auth'
 import { PUBLIC_APP_ROUTES } from '@/lib/tenant'
 
@@ -62,6 +63,7 @@ function AppLayout() {
   if (!user) return null
 
   return (
+    <OnboardingGate>
     <AppShell>
       {/* Outside the <Outlet />, so it survives every navigation within the shell
           rather than being remounted (and re-announced) per page -- and inside this
@@ -74,6 +76,7 @@ function AppLayout() {
         <Outlet />
       </ModuleGate>
     </AppShell>
+    </OnboardingGate>
   )
 }
 
