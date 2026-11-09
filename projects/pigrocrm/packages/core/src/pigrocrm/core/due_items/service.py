@@ -53,11 +53,13 @@ from pigrocrm.core.errors import (
     PermissionDenied,
     ValidationFailed,
 )
+from pigrocrm.core.invoices.models import Invoice
 from pigrocrm.core.legal_entities.models import LegalEntity
 
 ENTITY = "due_item"
 SETTLEMENT_ENTITY = "due_item_settlement"
 ZERO = Decimal("0.00")
+SALES_INVOICE = "sales_invoice"
 
 
 def _is_fiscal(item: DueItem) -> bool:
@@ -240,6 +242,154 @@ class DueItemService:
         self._follow(item)
         return self._read(item)
 
+    # ---- the issued invoices (§ 1.1): the writer's half, for the invoice's own service ----
+
+    def open_for_invoice(
+        self, invoice: Invoice, *, paid_on: dt.date | None, actor: Actor
+    ) -> DueItem | None:
+        """The due item of an issued invoice, created once and left alone after that: the
+        amount is the invoice's receivable, the date is its frozen `due_date`, and an invoice
+        that arrives already collected (an import, a row of the previous release) is settled
+        in full on `paid_on`. Answers `None` for an invoice with nothing to collect. Flushes
+        and never commits: the caller's transaction is the invoice's."""
+        existing = self.repo.by_source(SALES_INVOICE, invoice.id)
+        if existing is not None:
+            return existing
+        if invoice.total == 0:
+            return None
+        item = self.repo.add(
+            DueItem(
+                legal_entity_id=invoice.legal_entity_id,
+                direction="in",
+                state="expected",
+                counterparty_type="organization",
+                # Not `_require_organization_of`: a contract's days are billed under the
+                # contract's own legal entity, which a customer moved since no longer shares,
+                # and the invoice must still get its item.
+                organization_id=invoice.customer_id,
+                amount=invoice.total,
+                currency=invoice.currency,
+                source_kind=SALES_INVOICE,
+                source_id=invoice.id,
+                own_date=invoice.due_date,
+                due_date=invoice.due_date,
+            )
+        )
+        if paid_on is not None:
+            self._add_settlement(item, item.amount, paid_on, actor)
+            item.state = "settled"
+            self.session.flush()
+        self._project(item)
+        return item
+
+    def reconcile_invoice(self, invoice: Invoice) -> DueItem | None:
+        """`open_for_invoice` for an invoice the previous release wrote: its own columns say
+        whether it was collected, and an invoice marked paid with no date is settled on its
+        issue date, the fallback every reader had for it."""
+        paid_on = None
+        if invoice.payment_status == "paid":
+            paid_on = invoice.payment_date or invoice.issue_date
+        return self.open_for_invoice(invoice, paid_on=paid_on, actor=Actor.system())
+
+    def record_invoice_payment(
+        self, invoice: Invoice, *, paid: bool, paid_on: dt.date | None, actor: Actor
+    ) -> None:
+        """`set_invoice_payment_state`'s write: «paid on `paid_on`» settles what remains on
+        that date (a payment already partly made keeps its history), «unpaid» reverses every
+        live settlement. Then the invoice's two columns are projected from the item. The
+        caller has locked the invoice and commits."""
+        item = self.open_for_invoice(invoice, paid_on=None, actor=actor)
+        if item is None:
+            # Nothing to collect: the columns are all there is, and this is still their
+            # only writer.
+            invoice.payment_status = "paid" if paid else "unpaid"
+            invoice.payment_date = paid_on if paid else None
+            return
+        item = self._locked_item(item.id)
+        if item.state == "dropped":
+            raise Conflict(
+                ENTITY, "la scadenza di questa fattura e' stata scartata", id=str(item.id)
+            )
+        if paid:
+            assert paid_on is not None
+            self._settle_invoice_item(item, paid_on, actor)
+        else:
+            for settlement in self.repo.live_settlements(item.id):
+                self._reverse(settlement, "incasso annullato", actor)
+            item.state = "expected"
+        self.session.flush()
+        self._follow(item)
+        self._project(item)
+
+    def drop_for_invoice(self, invoice_id: UUID) -> None:
+        """An annulled invoice owes nothing. The payments recorded against it stay, as cash
+        facts; the item reads `dropped`. Idempotent, and a no-op for an invoice with no item."""
+        item = self.repo.by_source(SALES_INVOICE, invoice_id)
+        if item is None or item.state == "dropped":
+            return
+        item = self._locked_item(item.id)
+        item.state = "dropped"
+        item.dropped_reason = "fattura annullata"
+        self.session.flush()
+        self._follow(item)
+
+    def _settle_invoice_item(self, item: DueItem, paid_on: dt.date, actor: Actor) -> None:
+        remaining = item.amount - self.repo.totals(item.id).settled
+        if remaining != ZERO:
+            self._add_settlement(item, remaining, paid_on, actor)
+        else:
+            # Already collected in full: only the date can differ, and the settlements of
+            # the last day move to the new one.
+            last = self.repo.totals(item.id).last_settled_on
+            if last == paid_on:
+                return
+            moved = [row for row in self.repo.live_settlements(item.id) if row.settled_on == last]
+            for settlement in moved:
+                self._reverse(settlement, "data dell'incasso corretta", actor)
+            self._add_settlement(item, sum((row.amount for row in moved), ZERO), paid_on, actor)
+        item.state = "settled"
+
+    def _add_settlement(
+        self, item: DueItem, amount: Decimal, settled_on: dt.date, actor: Actor
+    ) -> DueItemSettlement:
+        settlement = self.repo.add_settlement(
+            DueItemSettlement(
+                due_item_id=item.id,
+                legal_entity_id=item.legal_entity_id,
+                amount=amount,
+                settled_on=settled_on,
+                recorded_by_id=actor.id,
+                recorded_by_type=actor.type,
+            )
+        )
+        if actor.type != "system":
+            self._record("due_item_settled", item, settlement, actor)
+        return settlement
+
+    def _reverse(self, settlement: DueItemSettlement, reason: str, actor: Actor) -> None:
+        settlement.reversed_at = _now()
+        settlement.reversed_by_id = actor.id
+        settlement.reversed_by_type = actor.type
+        settlement.reversal_reason = reason
+        item = self.repo.get(settlement.due_item_id)
+        if item is not None and actor.type != "system":
+            self._record("due_item_settlement_reversed", item, settlement, actor)
+
+    def _project(self, item: DueItem) -> None:
+        """The invoice's `payment_status` and `payment_date`, projected from its item: `paid`
+        when nothing remains, dated by the latest live settlement. This is the only place that
+        writes the two columns of an issued invoice (§ 1.1). A dropped item (an annulled
+        invoice) leaves them as they were."""
+        if item.source_kind != SALES_INVOICE or item.source_id is None or item.state == "dropped":
+            return
+        invoice = self.session.get(Invoice, item.source_id)
+        if invoice is None:
+            return
+        paid = item.state == "settled"
+        invoice.payment_status = "paid" if paid else "unpaid"
+        invoice.payment_date = self.repo.totals(item.id).last_settled_on if paid else None
+        self.session.flush()
+
     # ---- the surface's half: an actor, a commit -------------------------------------------
 
     def settle(self, item_id: UUID, data: SettlementCreate, actor: Actor) -> DueItemDetail:
@@ -303,6 +453,7 @@ class DueItemService:
             item.state = "settled"
         self.session.flush()
         self._follow(item)
+        self._project(item)
         self._record("due_item_settled", item, settlement, actor)
         self.session.commit()
         return self._detail(item)
@@ -331,6 +482,7 @@ class DueItemService:
             item.state = "expected"
         self.session.flush()
         self._follow(item)
+        self._project(item)
         self._record("due_item_settlement_reversed", item, settlement, actor)
         self.session.commit()
         return self._detail(item)
@@ -378,6 +530,15 @@ class DueItemService:
         self.activities.record("legal_entity", item.legal_entity_id, kind, actor, payload)
 
     def _locked(self, item_id: UUID) -> DueItem:
+        """The item under its lock, the invoice's own row first when it is a sales item: the
+        invoice's door locks the invoice and then the item, and this door must queue the
+        same way."""
+        peek = self.repo.get(item_id)
+        if peek is not None and peek.source_kind == SALES_INVOICE and peek.source_id is not None:
+            self.repo.lock_invoice(peek.source_id)
+        return self._locked_item(item_id)
+
+    def _locked_item(self, item_id: UUID) -> DueItem:
         item = self.repo.get_locked(item_id)
         if item is None:
             raise NotFound(ENTITY, item_id)

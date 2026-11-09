@@ -9,16 +9,18 @@ MCP exclusion list at exactly four names, so a new public method on `InvoiceServ
 force either a new tool or an edit to another slice's declared list.
 """
 
-from collections.abc import Collection
+from collections.abc import Collection, Sequence
 from datetime import date, timedelta
 from decimal import Decimal
 from typing import cast
 from uuid import UUID
 
-from sqlalchemy import ColumnElement, case, delete, distinct, func, select, text
+from sqlalchemy import ColumnElement, Row, case, delete, distinct, func, select, text
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.deals.models import Deal
+from pigrocrm.core.due_items.models import DueItem, DueItemSettlement
+from pigrocrm.core.due_items.sales import join_sales_item, remaining_amount
 from pigrocrm.core.gmail.models import PaymentReminder
 from pigrocrm.core.invoices.models import (
     PROFORMA_SEQUENCE_NAME,
@@ -32,8 +34,10 @@ from pigrocrm.core.invoices.receivables import (
     BANDS_RECEIVABLES,
     BandRow,
     MonthRow,
+    OpenReceivable,
     OrganizationRow,
     OverdueRow,
+    Payment,
     _issued_filter,
     _legal_entity_filter,
     _overdue_predicate,
@@ -44,6 +48,16 @@ from pigrocrm.core.invoices.schemas import InvoiceListQuery
 from pigrocrm.core.money import round_money, share
 from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.pipeline.models import PipelineStage
+
+
+def _open_receivables(
+    rows: Sequence[Row[Invoice, Decimal, date | None]],
+) -> list[OpenReceivable]:
+    """The statements behind it all `WHERE` a due date, so it is never `None` here."""
+    return [
+        OpenReceivable(invoice, Decimal(remaining), cast(date, due))
+        for invoice, remaining, due in rows
+    ]
 
 
 class InvoiceRepository:
@@ -282,10 +296,12 @@ class InvoiceRepository:
     # --- slice 6's dashboard aggregates ------------------------------------------
 
     def sum_unpaid(self, legal_entity_id: UUID | None = None) -> Decimal:
-        """`Σ totale` over issued, unpaid, non-deleted invoices.
+        """What is still owed on issued, non-deleted invoices: `Σ` of their due items'
+        remaining amounts (spec 2026-11-09, § 1.1), so a partly paid invoice counts for what
+        is left and the six buckets, which read the same rows, add up to this figure.
 
-        **`total`, not `taxable_amount`, and that is not an inconsistency with the revenue
-        figure.** Revenue is `Σ imponibile` (slice 4 §7.1, and this slice introduces no
+        **The gross amount, not `taxable_amount`, and that is not an inconsistency with the
+        revenue figure.** Revenue is `Σ imponibile` (slice 4 §7.1, and this slice introduces no
         third meaning); a receivable is what must arrive in the bank, which includes VAT --
         money collected on the State's behalf. Under the flat-rate regime regime the two
         coincide and the difference is unobservable, which is exactly why it is written
@@ -298,7 +314,7 @@ class InvoiceRepository:
         while every other money field reaches it as `"0.00"`.
         """
         total = self.session.execute(
-            select(func.coalesce(func.sum(Invoice.total), 0)).where(
+            join_sales_item(select(func.coalesce(func.sum(remaining_amount()), 0))).where(
                 *_receivable_filter(), *_legal_entity_filter(legal_entity_id)
             )
         ).scalar_one()
@@ -312,7 +328,7 @@ class InvoiceRepository:
         the containment is structural rather than a property somebody has to remember.
         """
         total = self.session.execute(
-            select(func.coalesce(func.sum(Invoice.total), 0)).where(
+            join_sales_item(select(func.coalesce(func.sum(remaining_amount()), 0))).where(
                 *_overdue_predicate(), *_legal_entity_filter(legal_entity_id)
             )
         ).scalar_one()
@@ -358,28 +374,30 @@ class InvoiceRepository:
         )
         return list(self.session.execute(stmt).scalars())
 
-    def list_paid_in_period(self, date_from: date, date_to: date) -> list[Invoice]:
-        """Issued, collected invoices whose `payment_date` falls in the window, in payment
-        order: the rows behind «Incassate questa settimana» (spec 2026-09-16 §3.1, §3.2).
+    def list_paid_in_period(self, date_from: date, date_to: date) -> list[Payment]:
+        """The payments received in the window, one row per settlement, in settlement order:
+        the rows behind «Incassate questa settimana» (spec 2026-09-16 §3.1, §3.2).
 
-        Attributed to `payment_date`, not `issue_date` -- an invoice issued weeks ago
-        and paid this week belongs here and not in `list_issued_in_period`, which is the
-        whole reason the report carries the two sections separately.
+        Attributed to the settlement's own date and amount (spec 2026-11-09, § 1.1), not to
+        the invoice's `payment_date` and `total` -- an invoice issued weeks ago and paid this
+        week belongs here and not in `list_issued_in_period`, which is the whole reason the
+        report carries the two sections separately, and an invoice paid in two instalments is
+        two lines, each for what arrived.
         """
-        stmt = (
-            select(Invoice)
+        rows = self.session.execute(
+            join_sales_item(select(Invoice, DueItemSettlement.amount, DueItemSettlement.settled_on))
+            .join(DueItemSettlement, DueItemSettlement.due_item_id == DueItem.id)
             .where(
                 *_issued_filter(),
-                Invoice.payment_status == "paid",
-                Invoice.payment_date.is_not(None),
-                Invoice.payment_date >= date_from,
-                Invoice.payment_date <= date_to,
+                DueItemSettlement.reversed_at.is_(None),
+                DueItemSettlement.settled_on >= date_from,
+                DueItemSettlement.settled_on <= date_to,
             )
-            .order_by(Invoice.payment_date)
-        )
-        return list(self.session.execute(stmt).scalars())
+            .order_by(DueItemSettlement.settled_on, Invoice.number, DueItemSettlement.id)
+        ).all()
+        return [Payment(invoice, Decimal(amount), on) for invoice, amount, on in rows]
 
-    def list_overdue(self, today: date) -> list[Invoice]:
+    def list_overdue(self, today: date) -> list[OpenReceivable]:
         """Receivables due on or before `today`, worst first: the «scadute» half of §3.1's
         «Da incassare» (spec 2026-09-16).
 
@@ -405,17 +423,17 @@ class InvoiceRepository:
         the list in and the order `list_in_due_date` beside it already answers in.
         """
         stmt = (
-            select(Invoice)
+            join_sales_item(select(Invoice, remaining_amount(), DueItem.due_date))
             .where(
                 *_receivable_filter(),
-                Invoice.due_date.is_not(None),
-                Invoice.due_date <= today,
+                DueItem.due_date.is_not(None),
+                DueItem.due_date <= today,
             )
-            .order_by(Invoice.due_date, Invoice.number)
+            .order_by(DueItem.due_date, Invoice.number)
         )
-        return list(self.session.execute(stmt).scalars())
+        return _open_receivables(self.session.execute(stmt).all())
 
-    def list_in_due_date(self, date_from: date, date_to: date) -> list[Invoice]:
+    def list_in_due_date(self, date_from: date, date_to: date) -> list[OpenReceivable]:
         """Receivables due within the window, soonest first: the «in scadenza nei prossimi
         sette giorni» half of §3.1's «Da incassare» section, once the caller passes that
         window instead of the register's whole horizon.
@@ -426,16 +444,16 @@ class InvoiceRepository:
         `count_overdue_not_paid` instead, which this method leaves untouched.
         """
         stmt = (
-            select(Invoice)
+            join_sales_item(select(Invoice, remaining_amount(), DueItem.due_date))
             .where(
                 *_receivable_filter(),
-                Invoice.due_date.is_not(None),
-                Invoice.due_date >= date_from,
-                Invoice.due_date <= date_to,
+                DueItem.due_date.is_not(None),
+                DueItem.due_date >= date_from,
+                DueItem.due_date <= date_to,
             )
-            .order_by(Invoice.due_date)
+            .order_by(DueItem.due_date, Invoice.number)
         )
-        return list(self.session.execute(stmt).scalars())
+        return _open_receivables(self.session.execute(stmt).all())
 
     def sum_issued_in_period(self, date_from: date, date_to: date) -> Decimal:
         """`Σ totale` over `list_issued_in_period`'s own predicate: the total the weekly
@@ -494,7 +512,7 @@ class InvoiceRepository:
         """
         return int(
             self.session.execute(
-                select(func.count(Invoice.id)).where(
+                join_sales_item(select(func.count(Invoice.id))).where(
                     *_overdue_predicate(), *_legal_entity_filter(legal_entity_id)
                 )
             ).scalar_one()
@@ -521,9 +539,9 @@ class InvoiceRepository:
         """
         return list(
             self.session.execute(
-                select(Invoice)
+                join_sales_item(select(Invoice))
                 .where(*_receivable_filter(), Invoice.customer_id == customer_id)
-                .order_by(Invoice.due_date.asc().nulls_last(), Invoice.id.asc())
+                .order_by(DueItem.due_date.asc().nulls_last(), Invoice.id.asc())
                 .limit(limit)
             ).scalars()
         )
@@ -545,15 +563,17 @@ class InvoiceRepository:
             "da_61_a_90": (today + timedelta(days=61), today + timedelta(days=90)),
         }
         band = case(
-            (Invoice.due_date.is_(None), "without_due_date"),
-            (Invoice.due_date < today, "expired"),
-            (Invoice.due_date <= bounds["entro_30"][1], "entro_30"),
-            (Invoice.due_date <= bounds["da_31_a_60"][1], "da_31_a_60"),
-            (Invoice.due_date <= bounds["da_61_a_90"][1], "da_61_a_90"),
+            (DueItem.due_date.is_(None), "without_due_date"),
+            (DueItem.due_date < today, "expired"),
+            (DueItem.due_date <= bounds["entro_30"][1], "entro_30"),
+            (DueItem.due_date <= bounds["da_31_a_60"][1], "da_31_a_60"),
+            (DueItem.due_date <= bounds["da_61_a_90"][1], "da_61_a_90"),
             else_="oltre_90",
         ).label("fascia")
         rows = self.session.execute(
-            select(band, func.coalesce(func.sum(Invoice.total), 0), func.count(Invoice.id))
+            join_sales_item(
+                select(band, func.coalesce(func.sum(remaining_amount()), 0), func.count(Invoice.id))
+            )
             .where(*_receivable_filter(), *_legal_entity_filter(legal_entity_id))
             .group_by(band)
         ).all()
@@ -575,13 +595,17 @@ class InvoiceRepository:
         economic charts' reading). Rows without a due date are not here: they are the sixth
         bucket of `ageing_receivables`, and a month cannot hold a date that does not exist.
         """
-        month = func.date_trunc("month", Invoice.due_date).label("month")
+        month = func.date_trunc("month", DueItem.due_date).label("month")
         rows = self.session.execute(
-            select(month, func.coalesce(func.sum(Invoice.total), 0), func.count(Invoice.id))
+            join_sales_item(
+                select(
+                    month, func.coalesce(func.sum(remaining_amount()), 0), func.count(Invoice.id)
+                )
+            )
             .where(
                 *_receivable_filter(),
                 *_legal_entity_filter(legal_entity_id),
-                Invoice.due_date.is_not(None),
+                DueItem.due_date.is_not(None),
             )
             .group_by(month)
             .order_by(month)
@@ -605,11 +629,15 @@ class InvoiceRepository:
         `unpaid_for_customer` reading turned around, over the same predicate. `today`
         splits the overdue share the way `_overdue_predicate` does, strictly before."""
         expired = func.coalesce(
-            func.sum(case((Invoice.due_date < today, Invoice.total), else_=0)), 0
+            func.sum(case((DueItem.due_date < today, remaining_amount()), else_=0)), 0
         )
-        total = func.coalesce(func.sum(Invoice.total), 0)
+        total = func.coalesce(func.sum(remaining_amount()), 0)
         rows = self.session.execute(
-            select(Organization.id, Organization.legal_name, total, func.count(Invoice.id), expired)
+            join_sales_item(
+                select(
+                    Organization.id, Organization.legal_name, total, func.count(Invoice.id), expired
+                )
+            )
             .join(Organization, Organization.id == Invoice.customer_id)
             .where(*_receivable_filter(), *_legal_entity_filter(legal_entity_id))
             .group_by(Organization.id, Organization.legal_name)
@@ -649,20 +677,29 @@ class InvoiceRepository:
             .scalar_subquery()
         )
         rows = self.session.execute(
-            select(Invoice, Organization.legal_name, sent, last_sent)
+            join_sales_item(
+                select(
+                    Invoice,
+                    Organization.legal_name,
+                    sent,
+                    last_sent,
+                    remaining_amount(),
+                    DueItem.due_date,
+                )
+            )
             .join(Organization, Organization.id == Invoice.customer_id)
             .where(
                 *_receivable_filter(),
                 *_legal_entity_filter(legal_entity_id),
-                Invoice.due_date.is_not(None),
-                Invoice.due_date < today,
+                DueItem.due_date.is_not(None),
+                DueItem.due_date < today,
             )
-            .order_by(Invoice.due_date, Invoice.number)
+            .order_by(DueItem.due_date, Invoice.number)
             .limit(limit)
         ).all()
         out: list[OverdueRow] = []
-        for invoice, customer, count, last in rows:
-            due_date = cast(date, invoice.due_date)
+        for invoice, customer, count, last, remaining, item_due_date in rows:
+            due_date = cast(date, item_due_date)
             out.append(
                 OverdueRow(
                     invoice_id=invoice.id,
@@ -671,7 +708,7 @@ class InvoiceRepository:
                     customer=customer,
                     due_date=due_date,
                     days_of_delay=(today - due_date).days,
-                    amount=round_money(Decimal(invoice.total)),
+                    amount=round_money(Decimal(remaining)),
                     sent_payment_reminders=int(count or 0),
                     last_payment_reminder_at=last.date() if last is not None else None,
                 )
@@ -737,13 +774,13 @@ class InvoiceRepository:
         if query.year:
             stmt = stmt.where(Invoice.year == query.year)
         if query.payment_status == "unpaid":
-            # «Da incassare» is the dashboard's word, so it is the dashboard's predicate
-            # (`_receivable_filter`, §5.2): an issued invoice nobody has paid. A plain
-            # equality on the column listed every draft and every proforma as unpaid,
-            # since a row is born `unpaid` (REB-325). `paid` below stays an
-            # equality: `set_payment_state` refuses any row that is not an issued fattura
-            # and the table's check constraint agrees, so the two spellings coincide.
-            stmt = stmt.where(*_receivable_filter())
+            # «Da incassare» is the dashboard's word: an issued invoice nobody has paid. A
+            # plain equality on the column listed every draft and every proforma as unpaid,
+            # since a row is born `unpaid` (REB-325). The filter reads the projected column
+            # (spec 2026-11-09, § 1.1); `paid` below stays an equality: `set_payment_state`
+            # refuses any row that is not an issued fattura and the table's check constraint
+            # agrees, so the two spellings coincide.
+            stmt = stmt.where(*_issued_filter(), Invoice.payment_status == "unpaid")
         elif query.payment_status:
             stmt = stmt.where(Invoice.payment_status == query.payment_status)
         if query.origin_proforma_id:
@@ -757,7 +794,7 @@ class InvoiceRepository:
             # the statement built above, never a replacement for it: a drill-through that
             # silently dropped the caller's own `status` or `customer_id` would be answering
             # a different question from the one asked.
-            stmt = stmt.where(*_overdue_predicate())
+            stmt = join_sales_item(stmt).where(*_overdue_predicate())
         if query.cursor:
             stmt = stmt.where(Invoice.id < query.cursor)
         # Keyset pagination on a UUIDv7 id: ordered by creation, stable under inserts.

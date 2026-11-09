@@ -543,11 +543,11 @@ def test_the_week_reads_split_issued_collected_and_due(
     repo = InvoiceRepository(db_session)
     week = (date(2026, 9, 7), date(2026, 9, 13))
     assert [i.total for i in repo.list_issued_in_period(*week)] == [Decimal("1000.00")]
-    assert [i.total for i in repo.list_paid_in_period(*week)] == [Decimal("1000.00")]
-    assert [i.total for i in repo.list_in_due_date(date(2026, 9, 7), date(2026, 9, 14))] == [
+    assert [p.amount for p in repo.list_paid_in_period(*week)] == [Decimal("1000.00")]
+    assert [i.remaining for i in repo.list_in_due_date(date(2026, 9, 7), date(2026, 9, 14))] == [
         Decimal("500.00")
     ]
-    assert [i.total for i in repo.list_overdue(date(2026, 9, 12))] == [Decimal("500.00")]
+    assert [i.remaining for i in repo.list_overdue(date(2026, 9, 12))] == [Decimal("500.00")]
     assert repo.list_overdue(date(2026, 9, 11)) == []
     assert repo.sum_issued_in_period(*week) == Decimal("1000.00")
     assert repo.sum_issued_in_period(date(2026, 9, 1), date(2026, 9, 30)) == Decimal("1800.00")

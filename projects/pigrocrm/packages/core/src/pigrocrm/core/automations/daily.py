@@ -72,6 +72,8 @@ from pigrocrm.core.db import today_local
 from pigrocrm.core.db.scope import bind_scope
 from pigrocrm.core.deals.models import Deal
 from pigrocrm.core.documents.models import Document
+from pigrocrm.core.due_items.models import DueItem
+from pigrocrm.core.due_items.sales import join_sales_item, still_owed
 from pigrocrm.core.invoices.models import Invoice
 from pigrocrm.core.invoices.naming import number_complete
 from pigrocrm.core.modules import enabled_modules
@@ -385,12 +387,14 @@ class AutomationPass:
         page's «scaduto», and the reminder `invoice_overdue`'s cause. Assigned to the owner
         of the invoice's deal, or of its customer when it has no deal."""
         rows = self.session.execute(
-            select(
-                Invoice.id,
-                Invoice.year,
-                Invoice.number,
-                Organization.legal_name,
-                func.coalesce(Deal.owner_id, Organization.owner_id),
+            join_sales_item(
+                select(
+                    Invoice.id,
+                    Invoice.year,
+                    Invoice.number,
+                    Organization.legal_name,
+                    func.coalesce(Deal.owner_id, Organization.owner_id),
+                )
             )
             .join(Organization, Organization.id == Invoice.customer_id)
             .outerjoin(Deal, Deal.id == Invoice.deal_id)
@@ -398,12 +402,12 @@ class AutomationPass:
                 Invoice.deleted_at.is_(None),
                 Invoice.type == "invoice",
                 Invoice.status == "issued",
-                Invoice.payment_status == "unpaid",
-                Invoice.due_date.is_not(None),
-                Invoice.due_date < today,
+                still_owed(),
+                DueItem.due_date.is_not(None),
+                DueItem.due_date < today,
                 Organization.deleted_at.is_(None),
             )
-            .order_by(Invoice.due_date, Invoice.id)
+            .order_by(DueItem.due_date, Invoice.id)
         ).all()
         found: list[_Candidate] = []
         for invoice_id, year, number, customer, owner_id in rows:

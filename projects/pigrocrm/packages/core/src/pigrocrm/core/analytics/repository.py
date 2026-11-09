@@ -31,6 +31,8 @@ from pigrocrm.core.analytics.filters import (
 from pigrocrm.core.analytics.schemas import CashBase, RevenueBase
 from pigrocrm.core.contracts.models import RATE_CARD_DAY_HOUR_TYPES, Contract, RateCard
 from pigrocrm.core.deals.models import Deal
+from pigrocrm.core.due_items.models import DueItem, DueItemSettlement
+from pigrocrm.core.due_items.sales import join_sales_item, remaining_amount, still_owed
 from pigrocrm.core.invoices.models import Invoice, InvoiceLine
 from pigrocrm.core.legal_entities.models import LegalEntity
 from pigrocrm.core.money import ZERO_MONEY, line_value, round_money, share, sum_hours, sum_money
@@ -452,10 +454,28 @@ class AnalyticsRepository:
     def monthly_paid(
         self, year: int, base: CashBase = "accrual", legal_entity_id: UUID | None = None
     ) -> dict[int, Decimal]:
-        """`Σ totale` of revenue invoices paid, per month of `year` -- money in the bank,
-        so `total`, as `sum_unpaid` reasons. By the accrual period the invoice
-        declares, or under `collection` by `payment_date`, where an invoice marked paid with
-        no date falls back to its issue date rather than vanishing."""
+        """What was paid on revenue invoices, per month of `year` -- money in the bank, so
+        gross, as `sum_unpaid` reasons.
+
+        Under `collection`, each settlement's own amount by its own date (spec 2026-11-09,
+        due items, § 1.1): an invoice paid in instalments is in each month for what arrived
+        in it, and one paid across 31 December is in each year for its share. Under `accrual`,
+        a paid invoice's total by the accrual period it declares, the invoice being the unit
+        there."""
+        if base == "collection":
+            month = func.extract("month", DueItemSettlement.settled_on)
+            rows = self.session.execute(
+                join_sales_item(select(month, func.sum(DueItemSettlement.amount)))
+                .join(DueItemSettlement, DueItemSettlement.due_item_id == DueItem.id)
+                .where(
+                    *revenue_filter(),
+                    *invoice_legal_entity(legal_entity_id),
+                    DueItemSettlement.reversed_at.is_(None),
+                    *in_year(DueItemSettlement.settled_on, year),
+                )
+                .group_by(month)
+            ).all()
+            return {int(m): round_money(Decimal(total)) for m, total in rows}
         when = cash_date(base, func.coalesce(Invoice.payment_date, Invoice.issue_date))
         month = func.extract("month", when)
         rows = self.session.execute(
@@ -473,9 +493,24 @@ class AnalyticsRepository:
     def monthly_unpaid(
         self, year: int, base: CashBase = "accrual", legal_entity_id: UUID | None = None
     ) -> dict[int, Decimal]:
-        """`Σ totale` of revenue invoices still unpaid, per month. By the accrual period
-        the invoice declares, or under `collection` by the month it falls due (issue date
-        when no due date was set): the month the money is expected."""
+        """What is still owed on revenue invoices, per month. Under `collection`, each due
+        item's remaining amount by the month it falls due (issue date when no due date was
+        set): the month the money is expected, and the part of a partly paid invoice that is
+        left. Under `accrual`, an unpaid invoice's total by the accrual period it declares."""
+        if base == "collection":
+            due = func.coalesce(DueItem.due_date, Invoice.issue_date)
+            month = func.extract("month", due)
+            rows = self.session.execute(
+                join_sales_item(select(month, func.sum(remaining_amount())))
+                .where(
+                    *revenue_filter(),
+                    *invoice_legal_entity(legal_entity_id),
+                    still_owed(),
+                    *in_year(due, year),
+                )
+                .group_by(month)
+            ).all()
+            return {int(m): round_money(Decimal(total)) for m, total in rows}
         when = cash_date(base, func.coalesce(Invoice.due_date, Invoice.issue_date))
         month = func.extract("month", when)
         rows = self.session.execute(

@@ -13,6 +13,7 @@ from pigrocrm.core.config import Settings
 from pigrocrm.core.db import create_engine_from_settings, session_factory
 from pigrocrm.core.db.role import ensure_application_role
 from pigrocrm.core.db.scope import bind_scope
+from pigrocrm.core.due_items.reconcile import reconcile_sales_invoices
 from pigrocrm.core.engagements.models import RebaseEngagement
 from pigrocrm.core.identity.models import Identity
 from pigrocrm.core.identity.service import IdentityService
@@ -98,6 +99,7 @@ def ensure_space_defaults(settings: Settings) -> int:
         return 1
     _furnish_registry(settings)
     _profile_root(settings)
+    _reconcile_root(settings)
     return 0
 
 
@@ -130,6 +132,7 @@ def _furnish_registry(settings: Settings) -> None:
             else:
                 print(f"{slug}: schema migrated from {before or 'zero'} to {after}")
             _ensure_profile(engine, slug, settings, _inferred_profile(settings, slug, hub_opened))
+            _reconcile_due_items(engine, slug)
             try:
                 with session_factory(engine)() as space:
                     bind_scope(space, Actor.system())
@@ -204,6 +207,32 @@ def _ensure_profile(
         print(f"{label}: profile {profile} inferred ({reason})")
     else:
         print(f"{label}: profile already set, left as it is")
+
+
+def _reconcile_due_items(engine: Engine, label: str) -> None:
+    """One installation's due-item step, on its owner engine: every issued invoice written by
+    the previous release gets its due item (spec 2026-11-09, due items, § 1.1). Idempotent,
+    never raises, says what it did."""
+    try:
+        with session_factory(engine)() as space:
+            bind_scope(space, Actor.system())
+            created = reconcile_sales_invoices(space)
+    except Exception as exc:  # noqa: BLE001 - one space must not stop the others
+        print(f"{label}: due items not reconciled ({type(exc).__name__})", file=sys.stderr)
+        return
+    if created:
+        print(f"{label}: due items created for {created} invoices")
+    else:
+        print(f"{label}: due items already in place")
+
+
+def _reconcile_root(settings: Settings) -> None:
+    """The root installation, which no registry row names and `ensure_defaults` never reaches."""
+    try:
+        with space_engine(settings.owner_database_url) as engine:
+            _reconcile_due_items(engine, ROOT_LABEL)
+    except Exception as exc:  # noqa: BLE001 - the boot must not stop here
+        print(f"{ROOT_LABEL}: due items not reconciled ({type(exc).__name__})", file=sys.stderr)
 
 
 def _profile_root(settings: Settings) -> None:

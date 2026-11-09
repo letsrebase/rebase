@@ -54,6 +54,7 @@ from sqlalchemy import ColumnElement, exists, func, or_, select
 from pigrocrm.core.contracts.models import RATE_CARD_DAY_HOUR_TYPES, Contract, RateCard
 from pigrocrm.core.contracts.projection import RECURRING_FEE_TYPE
 from pigrocrm.core.db.clock import month_bounds
+from pigrocrm.core.due_items.sales import join_sales_item, still_owed
 from pigrocrm.core.invoices.models import Invoice, InvoiceLine
 from pigrocrm.core.invoices.naming import number_complete
 from pigrocrm.core.mail import day_short
@@ -456,19 +457,21 @@ def detect_days_unlinked(ctx: DetectorContext) -> list[Detection]:
         .exists()
     )
     rows = ctx.session.execute(
-        select(
-            Invoice.id,
-            Invoice.year,
-            Invoice.number,
-            Invoice.legal_entity_id,
-            Invoice.customer_id,
-            Invoice.issue_date,
+        join_sales_item(
+            select(
+                Invoice.id,
+                Invoice.year,
+                Invoice.number,
+                Invoice.legal_entity_id,
+                Invoice.customer_id,
+                Invoice.issue_date,
+            )
         )
         .where(
             Invoice.deleted_at.is_(None),
             Invoice.type == "invoice",
             Invoice.status == "issued",
-            Invoice.payment_status == "unpaid",
+            still_owed(),
             Invoice.issue_date.is_not(None),
             Invoice.issue_date <= ctx.today - timedelta(days=max(ctx.bound(UNLINKED), 0)),
             Invoice.issue_date >= ctx.today - timedelta(days=UNLINKED_LOOKBACK_DAYS),

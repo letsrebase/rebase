@@ -14,6 +14,8 @@ from sqlalchemy import ColumnElement
 
 from pigrocrm.core.db import today_local
 from pigrocrm.core.deals.models import Deal
+from pigrocrm.core.due_items.models import DueItem
+from pigrocrm.core.due_items.sales import still_owed
 from pigrocrm.core.invoices.models import Invoice
 from pigrocrm.core.pipeline.models import PipelineStage
 
@@ -43,10 +45,13 @@ def _legal_entity_filter(legal_entity_id: UUID | None) -> tuple[ColumnElement[bo
 
 
 def _receivable_filter() -> tuple[ColumnElement[bool], ...]:
-    """An issued invoice nobody has paid. The base of both "Da incassare" and "Scaduto",
-    which is what makes the second a subset of the first rather than a figure of its own
-    (§5.2)."""
-    return (*_issued_filter(), Invoice.payment_status == "unpaid")
+    """An issued invoice whose due item still has something to collect. The base of both
+    "Da incassare" and "Scaduto", which is what makes the second a subset of the first
+    rather than a figure of its own (§5.2). A statement that uses it joins the invoice to
+    its due item with `join_sales_item`: the amount is the item's remaining amount
+    (`remaining_amount`) and the date is its `due_date`, so a partly paid invoice counts for
+    what is left and the card and the buckets read one query shape (spec 2026-11-09, § 1.1)."""
+    return (*_issued_filter(), still_owed())
 
 
 def _overdue_predicate() -> tuple[ColumnElement[bool], ...]:
@@ -64,8 +69,8 @@ def _overdue_predicate() -> tuple[ColumnElement[bool], ...]:
     """
     return (
         *_receivable_filter(),
-        Invoice.due_date.is_not(None),
-        Invoice.due_date < today_local(),
+        DueItem.due_date.is_not(None),
+        DueItem.due_date < today_local(),
     )
 
 
@@ -97,6 +102,25 @@ class MonthRow(NamedTuple):
     amount: Decimal
     number: int
     share: float
+
+
+class OpenReceivable(NamedTuple):
+    """An issued invoice with what is still owed on it and when it falls due: the due item's
+    remaining amount and date, which the invoice's frozen `total` is not for a partly paid
+    one."""
+
+    invoice: Invoice
+    remaining: Decimal
+    due_date: date
+
+
+class Payment(NamedTuple):
+    """One payment received against an issued invoice: the settlement's amount on the day it
+    was made, so an invoice paid in instalments is as many rows as there were payments."""
+
+    invoice: Invoice
+    amount: Decimal
+    settled_on: date
 
 
 class OrganizationRow(NamedTuple):
