@@ -99,7 +99,17 @@ def get_item(item_id: UUID, session: SessionDep, actor: ActorDep) -> InboxItemRe
     return InboxService(session).get(item_id, actor)
 
 
-@router.get("/items/{item_id}/file", response_class=Response)
+# The 200 names a body, since a response with none types every test that spies on `api.GET`
+# against a union that no mock of a JSON answer fits (REB-971).
+_FILE_RESPONSE: dict[int | str, dict[str, Any]] = {
+    200: {
+        "description": "The file, as it was uploaded",
+        "content": {"application/octet-stream": {"schema": {"type": "string", "format": "binary"}}},
+    }
+}
+
+
+@router.get("/items/{item_id}/file", response_class=Response, responses=_FILE_RESPONSE)
 def download_item(
     item_id: UUID, session: SessionDep, storage: StorageDep, actor: ActorDep
 ) -> Response:
