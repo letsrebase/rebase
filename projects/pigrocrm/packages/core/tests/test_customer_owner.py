@@ -199,7 +199,7 @@ def _check_backfill(migration_engine: Engine, config: Config) -> None:
         for name, customer_id in organizations.items():
             connection.execute(
                 text(
-                    "INSERT INTO organizations (id, azienda_id, ragione_sociale, nazione, "
+                    "INSERT INTO customers (id, azienda_id, ragione_sociale, nazione, "
                     "pagamento_fine_mese, custom_fields) "
                     "VALUES (:id, :azienda, :nome, 'IT', false, '{}')"
                 ),
@@ -216,7 +216,7 @@ def _check_backfill(migration_engine: Engine, config: Config) -> None:
                 {
                     "id": uuid4(),
                     "azienda": legal_entity,
-                    "organization": organizations[customer],
+                    "customer": organizations[customer],
                     "stage": ids[stage],
                     "owner": users[owner] if owner else None,
                     "created": created,
@@ -236,7 +236,7 @@ def _check_backfill(migration_engine: Engine, config: Config) -> None:
     with migration_engine.connect() as connection:
         owners: dict[str, UUID | None] = {
             name: connection.execute(
-                text("SELECT owner_id FROM organizations WHERE id = :id"), {"id": customer_id}
+                text("SELECT owner_id FROM customers WHERE id = :id"), {"id": customer_id}
             ).scalar()
             for name, customer_id in organizations.items()
         }
@@ -252,7 +252,7 @@ def _check_backfill(migration_engine: Engine, config: Config) -> None:
         columns = connection.execute(
             text(
                 "SELECT column_name FROM information_schema.columns "
-                "WHERE table_name = 'organizations' AND column_name = 'owner_id'"
+                "WHERE table_name = 'customers' AND column_name = 'owner_id'"
             )
         ).all()
     assert columns == []
