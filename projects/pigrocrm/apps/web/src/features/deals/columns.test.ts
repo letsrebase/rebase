@@ -73,12 +73,21 @@ describe('buildDealColumns', () => {
     expect(cellValue(value!, { ...BASE_DEAL, expected_value: null })).toBe('—')
   })
 
-  it('adds the monthly figure beside the total, and only when it is not zero', () => {
+  it('shows the fee alone, the one-off alone, or both, never the total beside the fee', () => {
     const [, value] = buildDealColumns([])
-    const mixed = { ...BASE_DEAL, expected_value: '26000.00', monthly_recurring_value: '500.00' }
-    expect(cellValue(value!, mixed)).toBe(`26.000,00${NBSP}€ + 500,00${NBSP}€/mese`)
-    expect(cellValue(value!, { ...mixed, monthly_recurring_value: '0.00' })).toBe(`26.000,00${NBSP}€`)
-    expect(cellValue(value!, { ...mixed, monthly_recurring_value: null })).toBe(`26.000,00${NBSP}€`)
+    const lines = { ...BASE_DEAL, expected_value: '26000.00', one_off_value: '20000.00', monthly_recurring_value: '500.00' }
+    expect(cellValue(value!, lines)).toBe(`20.000,00${NBSP}€ + 500,00${NBSP}€/mese`)
+    expect(cellValue(value!, { ...lines, expected_value: '6000.00', one_off_value: '0.00' })).toBe(
+      `500,00${NBSP}€/mese`,
+    )
+    expect(cellValue(value!, { ...lines, one_off_value: null })).toBe(`500,00${NBSP}€/mese`)
+    expect(cellValue(value!, { ...lines, monthly_recurring_value: '0.00' })).toBe(`20.000,00${NBSP}€`)
+    expect(cellValue(value!, { ...lines, monthly_recurring_value: null })).toBe(`20.000,00${NBSP}€`)
+  })
+
+  it('falls back to the total for a deal with no lines', () => {
+    const [, value] = buildDealColumns([])
+    expect(cellValue(value!, { ...BASE_DEAL, expected_value: '2500.00' })).toBe(`2.500,00${NBSP}€`)
   })
 
   it('renders a present valore_previsto with Italian currency formatting', () => {

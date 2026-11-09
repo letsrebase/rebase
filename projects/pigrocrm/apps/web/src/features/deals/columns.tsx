@@ -45,15 +45,25 @@ export function formatMoney(value: string | null): string {
 }
 
 /**
- * The deal's value as a list or a card shows it: the total, and `+ 500 € /mese` beside it
- * when the deal has a monthly recurring figure. Zero is compared as scaled integer cents,
- * never as a float, and the server's figures are only formatted here, never combined.
+ * The deal's value as a list or a card shows it, from its two parts rather than from the
+ * total (`expected_value` counts an open-ended fee at 12 months, so printing it beside the
+ * fee shows the fee twice): only the fee when there is no one-off, `20.000 € + 500 €/mese`
+ * when there are both, the one-off alone when nothing recurs, and `expected_value` only for
+ * a deal with no lines at all. Zero is compared as scaled integer cents, never as a float,
+ * and the server's figures are only formatted here, never combined.
  */
-export function formatDealValue(deal: Pick<Deal, 'expected_value' | 'monthly_recurring_value'>): string {
-  const total = formatMoney(deal.expected_value)
+export function formatDealValue(
+  deal: Pick<Deal, 'expected_value' | 'one_off_value' | 'monthly_recurring_value'>,
+): string {
+  const isZero = (value: string) => scaledFromDecimalString(value, MONEY_SCALE) === 0
+  const oneOff = deal.one_off_value
   const monthly = deal.monthly_recurring_value
-  if (monthly == null || scaledFromDecimalString(monthly, MONEY_SCALE) === 0) return total
-  return `${total} + ${formatEuro(monthly)}/mese`
+  const hasOneOff = oneOff != null && !isZero(oneOff)
+  if (monthly != null && !isZero(monthly)) {
+    const fee = `${formatEuro(monthly)}/mese`
+    return hasOneOff ? `${formatEuro(oneOff)} + ${fee}` : fee
+  }
+  return formatMoney(oneOff ?? deal.expected_value)
 }
 
 /** Same reasoning as `formatMoney`, for the one native column that is a plain
