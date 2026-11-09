@@ -302,10 +302,10 @@ def test_a_zip_kept_as_nested_does_not_swallow_the_same_zip_sent_loose(
 def test_two_people_uploading_the_same_file_each_have_an_item_of_their_own(
     db_session: Session, inbox: InboxUploads
 ) -> None:
-    uno = Actor(id=_user(db_session, "collaborator"), type="user", role="collaborator")
-    due = Actor(id=_user(db_session, "collaborator"), type="user", role="collaborator")
-    first = inbox.upload([("a.pdf", PDF)], uno).items[0]
-    second = inbox.upload([("a.pdf", PDF)], due).items[0]
+    first_user = Actor(id=_user(db_session, "collaborator"), type="user", role="collaborator")
+    second_user = Actor(id=_user(db_session, "collaborator"), type="user", role="collaborator")
+    first = inbox.upload([("a.pdf", PDF)], first_user).items[0]
+    second = inbox.upload([("a.pdf", PDF)], second_user).items[0]
     assert second.state == "new" and second.duplicate_of_id is None and second.has_file
     assert first.id != second.id
     # An unscoped administrator sees both, and the next upload of theirs is a duplicate of the
