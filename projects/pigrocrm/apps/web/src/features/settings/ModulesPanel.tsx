@@ -36,12 +36,14 @@ function recordsOf(module: Pick<ModuleRead, 'records'>): string {
 /** A switch the person asked for, waiting for the confirmation that lists what it moves. */
 interface Pending {
   to: 'on' | 'off'
-  /** The module asked for first, then the ones that follow it. */
+  /** The module the person asked for. */
+  asked: ModuleRead
+  /** It first, then the ones that follow it. */
   modules: ModuleRead[]
 }
 
 /**
- * Impostazioni, Spazio e persone, Moduli (REB-954, spec 2026-11-09 B1 and B2): the space's
+ * Settings, Space and people, Modules (REB-954, spec 2026-11-09 B1 and B2): the space's
  * profile and one switch per module. Admin only, like the rest of the space group; the
  * two writes are the service's own admin checks and this page only asks.
  *
@@ -132,7 +134,7 @@ export function ModulesPanel() {
       if (needs.length === 0) {
         switchModules.mutate({ on: [module.key] })
       } else {
-        setPending({ to: 'on', modules: [module, ...needs] })
+        setPending({ to: 'on', asked: module, modules: [module, ...needs] })
       }
       return
     }
@@ -140,7 +142,7 @@ export function ModulesPanel() {
     if (dependants.length === 0 && !module.holds_data) {
       switchModules.mutate({ off: [module.key] })
     } else {
-      setPending({ to: 'off', modules: [module, ...dependants] })
+      setPending({ to: 'off', asked: module, modules: [module, ...dependants] })
     }
   }
 
@@ -247,15 +249,15 @@ export function ModulesPanel() {
               <DialogHeader>
                 <DialogTitle>
                   {pending.to === 'off'
-                    ? `Spegnere ${pending.modules[0].label}?`
-                    : `Accendere ${pending.modules[0].label}?`}
+                    ? `Spegnere ${pending.asked.label}?`
+                    : `Accendere ${pending.asked.label}?`}
                 </DialogTitle>
                 <DialogDescription>
                   {pending.to === 'off'
                     ? pending.modules.length > 1
-                      ? `${pending.modules[0].label} serve ad altri moduli accesi: si spengono insieme.`
+                      ? `${pending.asked.label} serve ad altri moduli accesi: si spengono insieme.`
                       : KEPT + '.'
-                    : `${pending.modules[0].label} ha bisogno di altri moduli: si accendono insieme.`}
+                    : `${pending.asked.label} ha bisogno di altri moduli: si accendono insieme.`}
                 </DialogDescription>
               </DialogHeader>
               <ul className="space-y-1 text-sm" aria-label="Moduli coinvolti">
