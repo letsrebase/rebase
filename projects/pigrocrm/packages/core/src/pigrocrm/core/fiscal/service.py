@@ -90,7 +90,7 @@ class FiscalProfileService:
         checks nothing.
         """
         actor.require_admin("update_fiscal_profile")
-        payload = data.model_dump(exclude={"updated_at"})
+        payload = data.stored_fields()
         self.check(payload)
         legal_entity = self.legal_entities.resolve(legal_entity_id)
 
@@ -112,6 +112,8 @@ class FiscalProfileService:
                 sent=data.updated_at,
                 current=None if profile is None else profile.updated_at,
             )
+        if profile is not None and profile.pack_id != payload["pack_id"]:
+            self._freeze_estimates(actor, legal_entity.id)
         try:
             if profile is None:
                 profile = self.repo.add(FiscalProfile(**payload, legal_entity_id=legal_entity.id))
@@ -130,6 +132,16 @@ class FiscalProfileService:
             self.session.rollback()
             raise Conflict(ENTITY, "il profilo fiscale esiste gia'") from exc
         return FiscalProfileRead.model_validate(profile)
+
+    def _freeze_estimates(self, actor: Actor, legal_entity_id: UUID) -> None:
+        """Before a legal entity leaves its pack, keep the estimate the pack computes for
+        every year the legal entity issued in (REB-974), so those years keep their figures
+        after the move: the profile is one row and holds the new pack's parameters from then
+        on. The analytics service is imported here, not at module level, because it imports
+        this one."""
+        from pigrocrm.core.analytics.service import AnalyticsService
+
+        AnalyticsService(self.session).freeze_fiscal_estimates(actor, legal_entity_id)
 
     @staticmethod
     def check(payload: dict[str, Any]) -> None:
@@ -197,6 +209,14 @@ class FiscalProfileService:
                         f"{whose} non ha i parametri del forfettario",
                         expected="nessun valore",
                     )
+            stated = [key for key in ("inps_category", "isa") if payload.get(key) is not None]
+            if abroad and stated:
+                raise ValidationFailed(
+                    ENTITY,
+                    stated[0],
+                    "un'azienda estera non ha una categoria INPS né l'ISA",
+                    expected="nessun valore",
+                )
         if payload["default_vat_rate"] != ZERO and payload.get("default_vat_nature"):
             raise ValidationFailed(
                 ENTITY,

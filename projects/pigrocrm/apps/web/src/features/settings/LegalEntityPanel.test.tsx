@@ -42,6 +42,8 @@ const LEGAL_ENTITY: LegalEntityRecord = {
   signature_key: null,
   email_signature: null,
   tax_regime: 'RF19',
+  fiscal_year_end_month: 12,
+  fiscal_year_end_day: 31,
   created_at: '2026-08-20T09:00:00Z',
   updated_at: '2026-08-20T09:00:00Z',
 }

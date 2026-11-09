@@ -200,9 +200,12 @@ The register as of today, from the conversation:
 | Company dates: balance and first advance on the last day of the sixth month after the fiscal year end (or of the month after a late approval of the financial statements); second advance in the eleventh month | verified | same |
 | Forecast (previsionale) advance method exists | verified | same |
 | Conditions of the forecast method; interest and penalties on a shortfall | to verify | |
+| Income-tax dates: the day of the month (30 June for the balance and the first advance, 30 November for the second) | to verify | |
+| Advances of the flat-rate regime's substitute tax: dates, split and thresholds | to verify | |
 | Instalment rule and interest for an srl | to verify | |
 | 5% substitute rate on start-up conditions, 15% otherwise; profitability coefficients | to verify | |
 | Flat-rate contribution base: whether INPS contributions are deducted before the substitute tax | to verify | |
+| The flat-rate regime exists from 1 January 2015 (L. 190/2014, art. 1, commi 54-89) and the income estimate's arithmetic is the same in every year | to verify | |
 | «Gestione separata» and «artigiani e commercianti» rates, minimums and quarterly dates | to verify | |
 | IRPEF brackets, regional and municipal surcharges; IRES and IRAP rates; IRAP region rules | to verify | |
 | Annual chamber of commerce fee | to verify | |

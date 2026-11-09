@@ -21,6 +21,9 @@ from pigrocrm.core.validation import SafeStr
 # the API and MCP accept. A `Literal` and not a free string, so a typo is refused by
 # the schema instead of reaching `resolve_pack`'s `KeyError` at the first emission.
 PackId = Literal["it-flat-rate", "it-standard", "non-it"]
+InpsCategory = Literal["gestione_separata", "artigiani_commercianti"]
+# The profile keys a save that does not name them leaves as they are (`stored_fields`).
+KEPT_WHEN_OMITTED = ("inps_category", "isa")
 assert set(get_args(PackId)) == {PACK_IT_FLAT_RATE, PACK_IT_STANDARD, PACK_NON_IT}  # noqa: S101
 
 # `RF01`..`RF19`, the codes FPR12's own `RegimeFiscaleType` enumerates. `.fullmatch`
@@ -183,6 +186,10 @@ class FiscalProfileUpsert(BaseModel):
             ("social_security_rate", None),
         ):
             data.setdefault(key, value)
+        if pack_id == PACK_NON_IT:
+            # A company abroad has no Italian INPS category and no ISA.
+            data.setdefault("inps_category", None)
+            data.setdefault("isa", None)
         return data
 
     # Optional in the schema and required by the service on an Italian pack
@@ -236,6 +243,12 @@ class FiscalProfileUpsert(BaseModel):
         ge=RATE_MIN,
         le=RATE_MAX,
     )
+    # REB-974, taxes design § 1: the taxpayer's other parameters. `None` is «not stated»,
+    # never a default: a figure that needs one gives no figure. The category's values are
+    # the design's; its rates, minimums and dates are TO VERIFY (A5). The ISA flag decides
+    # 50/50 or 40/60 income tax advances (A5, verified).
+    inps_category: InpsCategory | None = None
+    isa: bool | None = None
     # The version check of REB-622 (spec 2026-10-03 §11): the `updated_at` read off
     # `FiscalProfileRead`, never a column the service assigns. A save whose value is
     # not the row's is refused with `StaleRow` (409). Sent as `null` it is the version
@@ -249,6 +262,18 @@ class FiscalProfileUpsert(BaseModel):
             "409 `stale_row`. Omitted, no check."
         ),
     )
+
+    def stored_fields(self) -> dict[str, Any]:
+        """The columns a save writes: the body without its version, and without the two
+        taxpayer parameters of REB-974 (`inps_category`, `isa`) when the caller did not name
+        them. The rest of the profile is a whole-row replacement, so a key left out goes
+        back to its default; these two have no default worth restoring and no field in the
+        web form yet, so a save that does not mention them leaves what the row holds."""
+        payload = self.model_dump(exclude={"updated_at"})
+        for key in KEPT_WHEN_OMITTED:
+            if key not in self.model_fields_set:
+                del payload[key]
+        return payload
 
 
 class FiscalProfileRead(BaseModel):
@@ -276,6 +301,8 @@ class FiscalProfileRead(BaseModel):
     # each pack ships.
     pack_id: str
     pack_version: str
+    inps_category: str | None
+    isa: bool | None
     created_at: datetime
     updated_at: datetime
 

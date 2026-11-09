@@ -258,6 +258,15 @@ class FiscalEstimate(BaseModel):
     # Substitute tax plus contributions: the one figure a person actually has to set
     # aside. Computed here, once, so no screen adds the two lines up on its own.
     due_total: Decimal | None = None
+    # REB-974: what the figures were computed with. The pack the legal entity's profile
+    # pointed at, its version and the year its law entry starts (`None` when the pack has no
+    # law for the year, and then every figure above is `None`).
+    pack_id: str | None = None
+    pack_version: str | None = None
+    law_from_year: int | None = None
+    # `True` when these are the figures frozen when the year was computed, served because
+    # the legal entity's pack no longer carries the estimate: the year keeps what it was.
+    frozen: bool = False
 
 
 class CashMonth(BaseModel):
