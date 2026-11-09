@@ -46,10 +46,15 @@ const FREES_THE_DATE = new Set(['revoked', 'rejected'])
 export function DayForm({
   initialContractId,
   initialDate,
+  onRecorded,
 }: {
   initialContractId?: string
   initialDate?: string
+  /** Given, the form is drawn inside another surface (the phone's quick add, REB-959): no
+   *  page header, and a recorded day calls this instead of navigating to its page. */
+  onRecorded?: (day: { id: string }) => void
 }) {
+  const embedded = onRecorded !== undefined
   const navigate = useNavigate()
   const canWrite = useCanWrite()
   const contracts = useDayContractOptions(initialContractId)
@@ -82,8 +87,8 @@ export function DayForm({
   if (!canWrite) {
     return (
       <>
-        <PageHeader icon={CalendarPlus} title="Registra una giornata" />
-        <p className="px-8 py-6 text-sm text-muted-foreground">
+        {embedded ? null : <PageHeader icon={CalendarPlus} title="Registra una giornata" />}
+        <p className={embedded ? 'text-sm text-muted-foreground' : 'px-8 py-6 text-sm text-muted-foreground'}>
           Con il tuo ruolo puoi leggere le giornate ma non registrarne.
         </p>
       </>
@@ -108,7 +113,8 @@ export function DayForm({
       {
         onSuccess: (day) => {
           toast.success('Giornata registrata')
-          void navigate({ to: '/app/days/$workUnitId', params: { workUnitId: day.id } })
+          if (onRecorded !== undefined) onRecorded(day)
+          else void navigate({ to: '/app/days/$workUnitId', params: { workUnitId: day.id } })
         },
       },
     )
@@ -116,12 +122,18 @@ export function DayForm({
 
   return (
     <>
-      <PageHeader
-        icon={CalendarPlus}
-        title="Registra una giornata"
-        description="Una giornata lavorata su un contratto: intera o mezza, con quello che hai fatto."
-      />
-      <form onSubmit={submit} className="max-w-xl space-y-6 px-4 py-6 sm:px-8" noValidate>
+      {embedded ? null : (
+        <PageHeader
+          icon={CalendarPlus}
+          title="Registra una giornata"
+          description="Una giornata lavorata su un contratto: intera o mezza, con quello che hai fatto."
+        />
+      )}
+      <form
+        onSubmit={submit}
+        className={cn('space-y-6', !embedded && 'max-w-xl px-4 py-6 sm:px-8')}
+        noValidate
+      >
         {contracts.isError ? <QueryErrorBanner error={contracts.error} /> : null}
 
         <div className="space-y-2">

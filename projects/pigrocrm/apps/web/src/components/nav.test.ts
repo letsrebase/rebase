@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { moduleAccess } from '@/lib/modules'
 import { spaceModules } from '@/lib/modules.testing'
 import type { ModuleKey } from '@/lib/modules'
-import { visibleSections } from './nav'
+import { phoneMoreItems, phoneThirdPlace, visibleSections } from './nav'
 
 /** The labels the sidebar draws for a space whose modules in `off` are switched off. */
 function labels(off: readonly ModuleKey[]) {
@@ -57,5 +57,45 @@ describe('visibleSections (REB-953)', () => {
     const sections = visibleSections(moduleAccess(spaceModules(['deals', 'contracts'])))
     expect(sections.map((section) => section.id)).toEqual(['da-fare', 'vendite', 'amministrazione'])
     expect(sections[2]?.items.map((item) => item.label)).toEqual(['Fatture'])
+  })
+})
+
+describe('the phone bar (REB-959)', () => {
+  const third = (off: readonly ModuleKey[], profile: 'solo' | 'company' | null) =>
+    phoneThirdPlace(moduleAccess(spaceModules(off, profile)))?.label ?? null
+
+  it('puts «Giornate» third for a solo space and «Deal» for a company', () => {
+    expect(third([], 'solo')).toBe('Giornate')
+    expect(third([], 'company')).toBe('Deal')
+    expect(third([], null)).toBe('Deal')
+  })
+
+  it('falls to the other place when the first is off, and to none when both are', () => {
+    expect(third(['contracts'], 'solo')).toBe('Deal')
+    expect(third(['deals'], 'company')).toBe('Giornate')
+    expect(third(['deals', 'contracts'], 'solo')).toBeNull()
+  })
+
+  it('lists in «Altro» what the bar does not draw, and nothing of an off module', () => {
+    const more = (off: readonly ModuleKey[], profile: 'solo' | 'company' | null) =>
+      phoneMoreItems(moduleAccess(spaceModules(off, profile))).map((item) => item.label)
+    expect(more([], 'solo')).toEqual([
+      'Calendario',
+      'Avvisi',
+      'Proposte',
+      'Clienti',
+      'Persone',
+      'Deal',
+      'Fatture',
+      'Ore',
+    ])
+    expect(more(['deals', 'time'], 'company')).toEqual([
+      'Calendario',
+      'Avvisi',
+      'Proposte',
+      'Clienti',
+      'Persone',
+      'Fatture',
+    ])
   })
 })
