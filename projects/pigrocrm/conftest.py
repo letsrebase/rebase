@@ -114,8 +114,8 @@ _TEMPLATE = "pigrocrm_template"
 
 
 def _legal_entity_scope_statements() -> list[str]:
-    """`statements()` of revisions 0068 (REB-898), 0070, 0073 and 0074, loaded from the files: a
-    revision is a script in `versions/`, not a module on the path. It carries the final
+    """`statements()` of revisions 0068 (REB-898), 0070, 0073, 0074 and 0075, loaded from the
+    files: a revision is a script in `versions/`, not a module on the path. It carries the final
     functions, the policies, `ENABLE`/`FORCE` and the hardening of the definer functions, so
     the template and production cannot disagree on a predicate; the earlier revisions' own
     versions of them are replaced by it."""

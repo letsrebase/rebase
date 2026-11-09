@@ -2954,10 +2954,10 @@ def test_0073_carries_legacy_free_text_and_an_owner_holding_it_saves_unchanged(
         engine.dispose()
 
 
-def test_0074_gives_every_legal_entity_31_december_adds_the_policied_table_and_downgrade_undoes_it(
+def test_0075_gives_every_legal_entity_31_december_adds_the_policied_table_and_downgrade_undoes_it(
     pigrocrm_postgres: Any,
 ) -> None:
-    """REB-974 over a legal entity and its profile planted at 0073. Up, the entity reads 12 and
+    """REB-974 over a legal entity and its profile planted at 0074. Up, the entity reads 12 and
     31 from the column default, the profile has no INPS category and no ISA, `fiscal_estimates`
     exists, forced and policied, and the two check constraints refuse a category that is not
     one of the two and a 30 February. Down, the table and the five columns are gone."""
@@ -2965,7 +2965,7 @@ def test_0074_gives_every_legal_entity_31_december_adds_the_policied_table_and_d
     with pigrocrm_postgres.fresh_container() as container:
         url = container.get_connection_url()
         config = _alembic_config(url)
-        upgrade(config, "0073")
+        upgrade(config, "0074")
         engine: Engine = create_engine(url)
         with engine.begin() as connection:
             connection.execute(
@@ -2984,7 +2984,7 @@ def test_0074_gives_every_legal_entity_31_december_adds_the_policied_table_and_d
             )
         engine.dispose()
 
-        upgrade(config, "0074")
+        upgrade(config, "0075")
         engine = create_engine(url)
         with engine.connect() as connection:
             year_end = connection.execute(
@@ -3010,7 +3010,7 @@ def test_0074_gives_every_legal_entity_31_december_adds_the_policied_table_and_d
             )
         engine.dispose()
 
-        downgrade(config, "0073")
+        downgrade(config, "0074")
         assert _table_shape(url, "fiscal_estimates")[0] is False
         engine = create_engine(url)
         with engine.connect() as connection:
