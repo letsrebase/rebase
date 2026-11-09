@@ -3375,7 +3375,8 @@ export interface paths {
         /**
          * Signup
          * @description Creates the space: a registry row, a migrated database, its first admin, its
-         *     defaults. 409 when the name is taken, 422 when it is malformed or reserved.
+         *     defaults. 409 when the name is taken, 422 when it is malformed or reserved, or when
+         *     neither the body nor the hub gives the founder's name (`first_name`).
          *
          *     Registering is entering (spec 2026-09-12 §6.4), for as long as an address nobody has
          *     proven deserves: the response carries the space's *access* cookie, at the space's
@@ -10140,15 +10141,17 @@ export interface components {
          * MemberAnswer
          * @description What the signup learns about an address before the person has an account: whether
          *     the rebase hub knows them as a community member, and whether the registry already
-         *     holds a space in that name. Two booleans and nothing else: the address is not proven
-         *     yet, so no names, no count and no slugs; which spaces are whose is the mail's to
-         *     tell.
+         *     holds a space in that name, and whether the hub has a name for the person. Three
+         *     booleans and nothing else: the address is not proven yet, so no names, no count and
+         *     no slugs; which spaces are whose is the mail's to tell.
          */
         MemberAnswer: {
             /** Member */
             member: boolean;
             /** Has Spaces */
             has_spaces: boolean;
+            /** Known Name */
+            known_name: boolean;
         };
         /**
          * MemberQuestion
@@ -13131,6 +13134,10 @@ export interface components {
              * @default false
              */
             member: boolean;
+            /** First Name */
+            first_name?: string | null;
+            /** Last Name */
+            last_name?: string | null;
         };
         /** TimeEntryCreate */
         TimeEntryCreate: {

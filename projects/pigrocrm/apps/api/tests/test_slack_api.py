@@ -375,7 +375,8 @@ def test_a_space_connects_slack_through_the_root_callback(api_engine: Engine) ->
     settings = _root_settings(api_engine)
     with _serving(settings, fake) as client:
         created = client.post(
-            "/api/tenants/", json={"slug": SLUG, "name": "Ada", "email": "ada@studio.it"}
+            "/api/tenants/",
+            json={"slug": SLUG, "name": "Ada", "first_name": "Ada", "email": "ada@studio.it"},
         )
         assert created.status_code == 201, created.text
         assert client.get(f"/{SLUG}/api/slack/account").json()["configured"] is True
@@ -427,7 +428,10 @@ def test_a_state_carried_to_a_space_that_never_issued_it_lands_no_token(
     fake = FakeSlack()
     settings = _root_settings(api_engine)
     with _serving(settings, fake) as client:
-        client.post("/api/tenants/", json={"slug": SLUG, "name": "Ada", "email": "ada@studio.it"})
+        client.post(
+            "/api/tenants/",
+            json={"slug": SLUG, "name": "Ada", "first_name": "Ada", "email": "ada@studio.it"},
+        )
         state = parse_qs(
             urlparse(
                 client.get(f"/{SLUG}/api/slack/oauth/start", follow_redirects=False).headers[

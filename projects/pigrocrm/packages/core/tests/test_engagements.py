@@ -155,7 +155,7 @@ def _provision(door: Door, slug: str, email: str = ADA) -> UUID:
     """A space opened at the signup, before the door ever saw the address."""
     with session_factory(door.registry)() as registry:
         tenant = TenantService(registry, door.settings).provision(
-            TenantSignup(slug=slug, name="Ada Lovelace", email=email)
+            TenantSignup(first_name="Ada", slug=slug, name="Ada Lovelace", email=email)
         )
     return tenant.id
 

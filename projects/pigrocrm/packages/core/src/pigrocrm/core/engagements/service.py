@@ -545,6 +545,8 @@ class EngagementService:
                         name=name,
                         email=email,
                         member=True,
+                        first_name=freelancer.first_name,
+                        last_name=freelancer.last_name,
                     )
                 )
             except Conflict as exc:

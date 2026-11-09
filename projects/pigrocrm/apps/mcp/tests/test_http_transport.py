@@ -449,7 +449,7 @@ def spaces(http_settings: Settings) -> Iterator[dict[str, tuple[str, UUID]]]:
         with session_factory(registry)() as session:
             for slug in SPACES:
                 TenantService(session, http_settings).provision(
-                    TenantSignup(slug=slug, name="Ada", email=f"ada@{slug}.it")
+                    TenantSignup(first_name="Ada", slug=slug, name="Ada", email=f"ada@{slug}.it")
                 )
         for slug in SPACES:
             tokens[slug] = _space_token(http_settings, slug)

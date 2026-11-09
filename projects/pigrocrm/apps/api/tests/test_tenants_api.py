@@ -40,6 +40,8 @@ REGISTRY_TOKEN = "un-token-lungo-solo-per-questa-suite"
 SIGNUP = {
     "slug": SLUG,
     "name": "Ada Lovelace",
+    "first_name": "Ada",
+    "last_name": "Lovelace",
     "email": "ada@studio.it",
 }
 
@@ -380,13 +382,13 @@ def test_the_signup_learns_whether_an_address_is_a_member_and_owns_a_space_and_n
 
     before = spaces_client.post("/api/tenants/member", json={"email": "Ada@Studio.it"})
     assert before.status_code == 200, before.text
-    assert before.json() == {"member": True, "has_spaces": False}
+    assert before.json() == {"member": True, "has_spaces": False, "known_name": True}
     assert asked == ["ada@studio.it"]
 
     created = spaces_client.post("/api/tenants/", json=SIGNUP)
     assert created.status_code == 201, created.text
     after = spaces_client.post("/api/tenants/member", json={"email": SIGNUP["email"]})
-    assert after.json() == {"member": True, "has_spaces": True}
+    assert after.json() == {"member": True, "has_spaces": True, "known_name": True}
     assert SLUG not in after.text
     # Somebody else's address owns nothing here, whatever the hub says about them.
     other = spaces_client.post("/api/tenants/member", json={"email": "bob@studio.it"})
@@ -403,7 +405,7 @@ def test_an_unreachable_hub_still_answers_and_says_not_a_member(
     with _serving(with_hub) as client:
         answer = client.post("/api/tenants/member", json={"email": "ada@studio.it"})
         assert answer.status_code == 200, answer.text
-        assert answer.json() == {"member": False, "has_spaces": False}
+        assert answer.json() == {"member": False, "has_spaces": False, "known_name": False}
 
 
 def test_a_malformed_or_missing_address_is_a_422_and_the_query_string_is_not_read(
@@ -507,6 +509,75 @@ def test_signing_up_without_a_sender_still_creates_the_space(spaces_client: Test
     created = spaces_client.post("/api/tenants/", json={**WIZARD_SIGNUP, "member": True})
     assert created.status_code == 201, created.text
     assert spaces_client.get(f"/{SLUG}/api/auth/me").status_code == 200
+
+
+def _hub_knows(monkeypatch: pytest.MonkeyPatch, lookup: MemberLookup) -> None:
+    monkeypatch.setattr(
+        "pigrocrm_api.routers.tenants.lookup_member", lambda settings, email: lookup
+    )
+
+
+def _founder_name(client: TestClient) -> str:
+    """The founder as the pickers list them: the name on the space's own user list."""
+    me = client.get(f"/{SLUG}/api/auth/me")
+    assert me.status_code == 200, me.text
+    listed = client.get(f"/{SLUG}/api/users")
+    assert listed.status_code == 200, listed.text
+    names = [row["name"] for row in listed.json() if row["email"] == "ada@studio.it"]
+    assert len(names) == 1
+    return names[0]
+
+
+def test_the_founder_is_named_after_the_person_the_hub_knows_not_after_the_space(
+    spaces_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """REB-822: the space is «Rossi Studio», the person is Ada Lovelace, and the pickers
+    list the person."""
+    _hub_knows(monkeypatch, MemberLookup(member=True, first_name="Ada", last_name="Lovelace"))
+    body = {"slug": SLUG, "name": "Rossi Studio", "email": "ada@studio.it", "member": True}
+    created = spaces_client.post("/api/tenants/", json=body)
+    assert created.status_code == 201, created.text
+    assert _founder_name(spaces_client) == "Ada Lovelace"
+
+
+def test_a_name_typed_in_the_wizard_wins_over_the_hub_and_the_space_name(
+    spaces_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _hub_knows(monkeypatch, MemberLookup(member=True, first_name="Augusta", last_name="Byron"))
+    body = {
+        "slug": SLUG,
+        "name": "Rossi Studio",
+        "email": "ada@studio.it",
+        "first_name": " Ada ",
+        "last_name": "Lovelace",
+    }
+    assert spaces_client.post("/api/tenants/", json=body).status_code == 201
+    assert _founder_name(spaces_client) == "Ada Lovelace"
+
+
+def test_an_address_nobody_knows_is_asked_for_its_name_and_no_space_is_created(
+    spaces_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _hub_knows(monkeypatch, MemberLookup(member=False))
+    body = {"slug": SLUG, "name": "Rossi Studio", "email": "ada@studio.it"}
+    refused = spaces_client.post("/api/tenants/", json=body)
+    assert refused.status_code == 422, refused.text
+    assert refused.json()["field"] == "first_name"
+    # Nothing was left behind: the name is still free and the same body plus a name works.
+    assert spaces_client.get(f"/api/tenants/{SLUG}/available").json()["available"] is True
+    assert (
+        spaces_client.post("/api/tenants/", json={**body, "first_name": "Ada"}).status_code == 201
+    )
+    assert _founder_name(spaces_client) == "Ada"
+
+
+def test_a_hub_that_knows_the_person_but_not_the_last_name_names_the_founder_by_the_first(
+    spaces_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _hub_knows(monkeypatch, MemberLookup(member=True, first_name="Ada"))
+    body = {"slug": SLUG, "name": "Rossi Studio", "email": "ada@studio.it"}
+    assert spaces_client.post("/api/tenants/", json=body).status_code == 201
+    assert _founder_name(spaces_client) == "Ada"
 
 
 def test_the_signup_refuses_past_the_ceiling_on_spaces(container_settings: Settings) -> None:

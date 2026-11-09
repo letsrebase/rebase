@@ -27,6 +27,8 @@ type Availability =
 interface Member {
   member: boolean
   has_spaces: boolean
+  /** The hub also holds the person's name, so the wizard does not ask for it (REB-822). */
+  known_name: boolean
 }
 
 const TERMINI = 'https://letsrebase.com/terms'
@@ -73,6 +75,10 @@ export function SignupPage({ go = (url) => window.location.assign(url) }: { go?:
   const [member, setMember] = useState<Member | null>(null)
   const [linkSent, setLinkSent] = useState(false)
   const [name, setName] = useState('')
+  // The person's own name, asked only when the hub has none for this address (REB-822):
+  // the space's name is never the founder's.
+  const [firstName, setFirstName] = useState('')
+  const [lastName, setLastName] = useState('')
   const [slug, setSlug] = useState('')
   const [slugTouched, setSlugTouched] = useState(false)
   const [editingSlug, setEditingSlug] = useState(false)
@@ -218,14 +224,27 @@ export function SignupPage({ go = (url) => window.location.assign(url) }: { go?:
     try {
       const tenant = await unwrap(
         api.POST('/api/tenants/', {
-          body: { slug, name: name.trim(), email, member: member?.member ?? false },
+          body: {
+            slug,
+            name: name.trim(),
+            email,
+            member: member?.member ?? false,
+            ...(asksName ? { first_name: firstName.trim(), last_name: lastName.trim() || null } : {}),
+          },
         }),
       )
       // The 201 set the space's cookies: a different basepath is a different application
       // instance, so this is a navigation, not a router push.
       go(`/${tenant.slug}/app/`)
     } catch (caught) {
-      setError(toProblem(caught).detail)
+      const problem = toProblem(caught)
+      if (problem.field === 'first_name') {
+        // The hub knew the name when the address was asked and does not now: ask for it.
+        setMember({ member: member?.member ?? false, has_spaces: member?.has_spaces ?? false, known_name: false })
+        setError('Non siamo riusciti a ricavare il tuo nome: scrivilo qui sotto.')
+      } else {
+        setError(problem.detail)
+      }
       setBusy(false)
     }
   }
@@ -242,7 +261,15 @@ export function SignupPage({ go = (url) => window.location.assign(url) }: { go?:
   // Outside the fast path `memberSettled` never matters (`!fastPathActive` alone
   // clears the gate): the ordinary flow already awaits the member lookup before the
   // name screen ever shows.
-  const canCreate = !busy && (isFree || failed) && name.trim() !== '' && (memberSettled || !fastPathActive)
+  // Ask for the person when the hub has no name for the address; a still-unknown answer
+  // (the fast path's lookup in flight or failed) asks too, so a name is never missing.
+  const asksName = !member?.known_name
+  const canCreate =
+    !busy &&
+    (isFree || failed) &&
+    name.trim() !== '' &&
+    (!asksName || firstName.trim() !== '') &&
+    (memberSettled || !fastPathActive)
 
   const hasSpaces = screen === 'owner'
 
@@ -254,6 +281,8 @@ export function SignupPage({ go = (url) => window.location.assign(url) }: { go?:
     setLinkSent(false)
     setError(null)
     setName('')
+    setFirstName('')
+    setLastName('')
     setSlug('')
     setSlugTouched(false)
     setEditingSlug(false)
@@ -348,11 +377,37 @@ export function SignupPage({ go = (url) => window.location.assign(url) }: { go?:
             </form>
           ) : (
             <form onSubmit={onCreate} className="space-y-4" noValidate>
+              {asksName && (
+                <div className="space-y-2">
+                  <Label htmlFor="first-name">Come ti chiami?</Label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <Input
+                      id="first-name"
+                      placeholder="Nome"
+                      autoComplete="given-name"
+                      required
+                      value={firstName}
+                      onChange={(event) => setFirstName(event.target.value)}
+                    />
+                    <Input
+                      id="last-name"
+                      aria-label="Cognome"
+                      placeholder="Cognome"
+                      autoComplete="family-name"
+                      value={lastName}
+                      onChange={(event) => setLastName(event.target.value)}
+                    />
+                  </div>
+                  <p className="text-muted-foreground text-sm">
+                    È il nome con cui compari nello spazio, accanto a chi ci lavora con te.
+                  </p>
+                </div>
+              )}
               <div className="space-y-2">
                 <Label htmlFor="name">Come si chiama il tuo spazio?</Label>
                 <Input
                   id="name"
-                  autoComplete="name"
+                  autoComplete="organization"
                   required
                   value={name}
                   onChange={(event) => onNameChange(event.target.value)}

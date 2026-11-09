@@ -127,12 +127,15 @@ class MemberQuestion(BaseModel):
 class MemberAnswer(BaseModel):
     """What the signup learns about an address before the person has an account: whether
     the rebase hub knows them as a community member, and whether the registry already
-    holds a space in that name. Two booleans and nothing else: the address is not proven
-    yet, so no names, no count and no slugs; which spaces are whose is the mail's to
-    tell."""
+    holds a space in that name, and whether the hub has a name for the person. Three
+    booleans and nothing else: the address is not proven yet, so no names, no count and
+    no slugs; which spaces are whose is the mail's to tell."""
 
     member: bool
     has_spaces: bool
+    # Whether the hub also knows the person's name, so the wizard need not ask for it
+    # (REB-822). A boolean like the others: the name itself is never returned.
+    known_name: bool
 
 
 # With the other public signup routes: no account exists yet when this is asked.
@@ -154,6 +157,7 @@ def member(
     return MemberAnswer(
         member=found.member,
         has_spaces=TenantService(registry, settings).count_for_owner(address) > 0,
+        known_name=bool((found.first_name or "").strip()),
     )
 
 
@@ -192,7 +196,8 @@ def signup(
     sender: SenderDep,
 ) -> TenantRead:
     """Creates the space: a registry row, a migrated database, its first admin, its
-    defaults. 409 when the name is taken, 422 when it is malformed or reserved.
+    defaults. 409 when the name is taken, 422 when it is malformed or reserved, or when
+    neither the body nor the hub gives the founder's name (`first_name`).
 
     Registering is entering (spec 2026-09-12 §6.4), for as long as an address nobody has
     proven deserves: the response carries the space's *access* cookie, at the space's
@@ -218,6 +223,15 @@ def signup(
     spaces = TenantService(registry, settings)
     if spaces.count() >= settings.max_spaces:
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, SIGNUP_CLOSED)
+    if not (data.first_name or "").strip():
+        # The founder is a person, not the space (REB-822): what the person did not type is
+        # what the hub knows about the address. Never trusted beyond naming the account,
+        # and when the hub knows nothing `provision` refuses with a 422 on `first_name`,
+        # which the wizard answers by asking.
+        found = lookup_member(settings, str(data.email))
+        data = data.model_copy(
+            update={"first_name": found.first_name, "last_name": found.last_name}
+        )
     # The global bucket guards the expensive part (the database and its migrations): a name
     # `provision` refuses at the registry row (taken or reserved: 409, 422) costs nothing
     # and goes straight there without spending it.
