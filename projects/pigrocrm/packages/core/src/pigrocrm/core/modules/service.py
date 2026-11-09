@@ -167,8 +167,9 @@ class SpaceModulesService:
             return []
         stored = self.settings.effective()
         values: dict[str, str | None] = {PROFILE_KEY: profile}
+        counts = self._counts()
         wanted = {
-            key: key in keep_on or profile_default(profile, key) or self._records(key) > 0
+            key: key in keep_on or profile_default(profile, key) or counts.get(key, 0) > 0
             for key in MODULE_KEYS
             if stored_switch(stored, key) is None
         }
