@@ -33,6 +33,7 @@ and it is the price of the property this page exists for.
 
 from __future__ import annotations
 
+from collections.abc import Set as AbstractSet
 from datetime import datetime
 from functools import cached_property
 from uuid import UUID
@@ -121,6 +122,13 @@ _EXPIRED_LINK = "/app/invoices?overdue=true"
 _CONCENTRATION_LINK = "/app?tab=economic"
 _CUSTOMERS_SHOWN = 10
 _OVERDUE_SHOWN = 50
+
+
+# The modules a signal of the operational dashboard reads; a signal with no row is the core's.
+_SIGNAL_MODULES: dict[str, tuple[str, ...]] = {
+    "invoiced_unwon": ("deals",),
+    "won_to_invoice": ("deals", "time"),
+}
 
 
 class DashboardService:
@@ -298,7 +306,10 @@ class DashboardService:
         return self._activities.recent(_RECENT_ACTIVITIES_FILTERED, _BUSINESS_ENTITIES)
 
     def get_operational_dashboard(
-        self, actor: Actor, legal_entity_id: UUID | None = None
+        self,
+        actor: Actor,
+        legal_entity_id: UUID | None = None,
+        modules: AbstractSet[str] | None = None,
     ) -> OperationalDashboard:
         """§6. **No period parameter**, deliberately: the current week and a backlog are the
         two things that make no sense in the past, so there is nothing here to get wrong --
@@ -351,7 +362,7 @@ class DashboardService:
         date_from, date_to = current_week()
         year = today_local().year
         calculated_at = self._open_snapshot()
-        return OperationalDashboard(
+        board = OperationalDashboard(
             calculated_at=calculated_at,
             legal_entity_id=legal_entity_id,
             week=self._entries.week_hours(date_from, date_to, legal_entity_id),
@@ -386,6 +397,15 @@ class DashboardService:
             ],
             recent_activity=serve_activities(self.session, self._recent_feed(actor)),
         )
+        if modules is not None:
+            # `modules` is what the space has on (`None`: everything): a signal about a module
+            # that is off would link to a page that answers 404 (spec 2026-11-09, A2).
+            board.signals = [
+                signal
+                for signal in board.signals
+                if set(_SIGNAL_MODULES.get(signal.code, ())) <= modules
+            ]
+        return board
 
     def get_receivables_dashboard(
         self, actor: Actor, legal_entity_id: UUID | None = None

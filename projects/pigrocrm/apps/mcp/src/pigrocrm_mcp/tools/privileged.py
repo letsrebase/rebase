@@ -66,6 +66,9 @@ from pigrocrm.core.invoices.schemas import (
     RegisterGapsDeclare,
 )
 from pigrocrm.core.invoices.service import InvoiceService
+from pigrocrm.core.modules import ModuleKey, Profile
+from pigrocrm.core.modules.schemas import SpaceModulesSet, SpaceProfileSet
+from pigrocrm.core.modules.service import SpaceModulesService
 from pigrocrm.core.timetracking.billing import TimeBilling
 from pigrocrm.core.timetracking.categories import CostCategoryService
 from pigrocrm.core.timetracking.locks import PeriodLockService
@@ -115,6 +118,54 @@ def register(
     """Registered only when `mcp_full_access` is on — see `server.py`. `settings` is
     read for one more condition: the Gmail tool below exists only when there is a
     mailbox to ask, exactly as `tools/gmail.py` does."""
+
+    # ---- the space's shape ---------------------------------------------------------
+
+    @mcp.tool(annotations=DESTRUCTIVE)
+    @guard
+    def set_space_profile(
+        profile: Profile,
+        confirm: bool = False,
+        modules: dict[ModuleKey, bool] | None = None,
+    ) -> dict[str, Any]:
+        """Changes the space's profile, which decides the modules on by default: what the
+        whole team sees.
+
+        Without `confirm` it **changes nothing** and answers `changes`, the modules it would
+        switch with their records: show them to the person, then call again with
+        `confirm: true`. `modules` edits the defaults (`{"deals": true}`). Records are never
+        touched.
+        """
+        return (
+            SpaceModulesService(context.session, settings)
+            .set_profile(
+                SpaceProfileSet(profile=profile, confirm=confirm, modules=modules or {}),
+                context.actor,
+            )
+            .model_dump(mode="json")
+        )
+
+    @mcp.tool(annotations=DESTRUCTIVE)
+    @guard
+    def set_space_modules(
+        on: list[ModuleKey] | None = None,
+        off: list[ModuleKey] | None = None,
+        confirm_off: list[ModuleKey] | None = None,
+    ) -> dict[str, Any]:
+        """Switches modules on or off for the whole space; a module that is off loses its
+        tools and screens within seconds and keeps its records. `time` needs `deals`.
+
+        A module that holds records (`describe_space`) is switched off only if `confirm_off`
+        names it too: ask the person first.
+        """
+        return (
+            SpaceModulesService(context.session, settings)
+            .set_modules(
+                SpaceModulesSet(on=on or [], off=off or [], confirm_off=confirm_off or []),
+                context.actor,
+            )
+            .model_dump(mode="json")
+        )
 
     # ---- fiscal acts ---------------------------------------------------------------
 

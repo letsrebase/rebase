@@ -22,7 +22,14 @@ from pigrocrm.core.documents.schemas import (
 from pigrocrm.core.documents.service import DocumentService
 from pigrocrm.core.documents.uploads import ADD_VERSION_ACTION
 from pigrocrm.core.validation import SafeStr
-from pigrocrm_api.deps import ActorDep, SessionDep, SettingsDep, StorageDep, get_actor
+from pigrocrm_api.deps import (
+    ActorDep,
+    SessionDep,
+    SettingsDep,
+    StorageDep,
+    get_actor,
+    module_guard,
+)
 from pigrocrm_api.downloads import attachment_response
 from pigrocrm_api.errors import PROBLEM_RESPONSES
 from pigrocrm_api.query_params import (
@@ -144,7 +151,11 @@ def restore(
     return DocumentService(session, storage, settings).restore(document_id, actor)
 
 
-@router.post("/{document_id}/status", response_model=DocumentRead)
+@router.post(
+    "/{document_id}/status",
+    response_model=DocumentRead,
+    dependencies=[module_guard("deals")],
+)
 def set_offer_state(
     document_id: UUID,
     body: OfferStateBody,

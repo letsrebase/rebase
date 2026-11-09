@@ -1,7 +1,7 @@
 import threading
 from collections.abc import Iterator
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session, sessionmaker
@@ -15,6 +15,7 @@ from pigrocrm.core.auth.tokens import ROOT_AUDIENCE, decode_token
 from pigrocrm.core.config import Settings, get_settings
 from pigrocrm.core.db.scope import bind_scope
 from pigrocrm.core.errors import DomainError
+from pigrocrm.core.modules import ModuleKey, require_modules
 from pigrocrm.core.storage import DocumentStorage, LocalFileStorage, storage_from_settings
 from pigrocrm.core.tenants import SpaceRegistry, space_base_settings
 from pigrocrm_api.ratelimit import (
@@ -364,3 +365,18 @@ SnapshotSessionDep = Annotated[Session, Depends(get_snapshot_session)]
 
 
 ActorDep = Annotated[Actor, Depends(get_actor)]
+
+
+def module_guard(*needed: ModuleKey) -> Any:
+    """The one guard a route of a module carries (spec 2026-11-09, A2 and B2): a router
+    lists it beside `get_actor`, a route that spans modules lists the ones it needs, and a
+    route whose modules are not all on answers 404 with the sentence naming the first that
+    is off. It reads the settings every request already reads, so a switch reaches it
+    within `OVERRIDES_TTL_SECONDS` and no handler asks the question itself. Listed after
+    `get_actor`, so a caller with no credential still gets 401 and learns nothing about
+    which modules the space has on."""
+
+    def check(settings: SettingsDep) -> None:
+        require_modules(settings, *needed)
+
+    return Depends(check)

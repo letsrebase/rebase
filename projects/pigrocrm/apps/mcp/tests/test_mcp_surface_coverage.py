@@ -632,6 +632,21 @@ _CONFIGURATION: dict[Method, str] = {
         "ogni richiesta, prima che esista un actor"
     ),
     ("SpaceSettingsService", "effective"): "come `overrides`, gia' applicate a `Settings`",
+    ("SpaceSettingsService", "write_shape"): (
+        "the one writer of the profile and module rows (spec 2026-11-09, B1), called only by "
+        "`SpaceModulesService`; it does no authorisation of its own and has no tool"
+    ),
+    ("SpaceSettingsService", "lock"): (
+        "the advisory lock a settings write takes, called by `SpaceModulesService` before it "
+        "reads the state it changes; no authorisation, no data, no tool"
+    ),
+    ("SpaceModulesService", "set_profile"): (
+        "`set_space_profile` is a tool, in `tools/privileged.py` (an administrator's token with "
+        "`full_access`: the sweep does not read that module, `test_module_guard.py` does)"
+    ),
+    ("SpaceModulesService", "set_modules"): (
+        "`set_space_modules`, privileged as `set_space_profile` is"
+    ),
     ("SpaceSettingsService", "version"): (
         "an internal read (REB-622): the newest override row's `updated_at`, which `read` "
         "answers and `update` checks a save against; no actor, and nothing an agent would "

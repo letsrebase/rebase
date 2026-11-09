@@ -3,6 +3,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, status
 
+from pigrocrm.core.modules import require_modules
 from pigrocrm.core.notes.schemas import (
     NoteCreate,
     NoteEntityType,
@@ -11,7 +12,7 @@ from pigrocrm.core.notes.schemas import (
     NoteUpdate,
 )
 from pigrocrm.core.notes.service import NoteService
-from pigrocrm_api.deps import ActorDep, SessionDep, get_actor
+from pigrocrm_api.deps import ActorDep, SessionDep, SettingsDep, get_actor
 from pigrocrm_api.errors import PROBLEM_RESPONSES
 from pigrocrm_api.query_params import PAGE_LIMIT_MAX
 
@@ -32,7 +33,18 @@ ENTITY_TYPES: dict[str, NoteEntityType] = {
 }
 
 
-@router.get("/{collection}/{entity_id}/notes", response_model=list[NoteRead])
+def _collection_module(collection: Collection, settings: SettingsDep) -> None:
+    """A deal's thread belongs to `deals` (spec 2026-11-09, A2): with the module off its
+    notes answer 404 like the rest of the deal. The customer's and the person's are the core's."""
+    if collection == "deals":
+        require_modules(settings, "deals")
+
+
+@router.get(
+    "/{collection}/{entity_id}/notes",
+    response_model=list[NoteRead],
+    dependencies=[Depends(_collection_module)],
+)
 def list_notes(
     collection: Collection,
     entity_id: UUID,
@@ -53,6 +65,7 @@ def list_notes(
     "/{collection}/{entity_id}/notes",
     response_model=NoteRead,
     status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(_collection_module)],
 )
 def add_note(
     collection: Collection,

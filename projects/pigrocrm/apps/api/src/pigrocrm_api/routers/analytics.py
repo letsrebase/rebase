@@ -32,7 +32,7 @@ from pigrocrm.core.analytics.schemas import (
     YearOverview,
 )
 from pigrocrm.core.analytics.service import AnalyticsService
-from pigrocrm_api.deps import ActorDep, SessionDep, get_actor
+from pigrocrm_api.deps import ActorDep, SessionDep, get_actor, module_guard
 from pigrocrm_api.downloads import attachment_response
 from pigrocrm_api.errors import PROBLEM_RESPONSES
 from pigrocrm_api.query_params import KeysetParams
@@ -115,7 +115,7 @@ class BudgetParams(KeysetParams):
     customer_id: UUID | None = None
 
 
-@router.get("/budget", response_model=BudgetPage)
+@router.get("/budget", response_model=BudgetPage, dependencies=[module_guard("deals", "time")])
 def budget_vs_actual(
     session: SessionDep, actor: ActorDep, params: Annotated[BudgetParams, Query()]
 ) -> BudgetPage:
@@ -154,7 +154,7 @@ def economic_overview(
     return AnalyticsService(session).economic_overview(year, actor, base, legal_entity_id)
 
 
-@router.get("/fiscal", response_model=FiscalEstimate)
+@router.get("/fiscal", response_model=FiscalEstimate, dependencies=[module_guard("taxes")])
 def fiscal_estimate(
     session: SessionDep,
     actor: ActorDep,
@@ -169,7 +169,7 @@ def fiscal_estimate(
     )
 
 
-@router.get("/backlog", response_model=UnbilledBacklog)
+@router.get("/backlog", response_model=UnbilledBacklog, dependencies=[module_guard("time")])
 def backlog(session: SessionDep, actor: ActorDep) -> UnbilledBacklog:
     """No period parameter, deliberately: see `AnalyticsService.unbilled_backlog`.
 
@@ -180,7 +180,7 @@ def backlog(session: SessionDep, actor: ActorDep) -> UnbilledBacklog:
     return AnalyticsService(session).unbilled_backlog(actor)
 
 
-@router.get("/ceilings", response_model=CeilingHeadroom)
+@router.get("/ceilings", response_model=CeilingHeadroom, dependencies=[module_guard("taxes")])
 def ceiling_headroom(
     session: SessionDep,
     actor: ActorDep,
@@ -195,7 +195,11 @@ def ceiling_headroom(
     return AnalyticsService(session).ceiling_headroom(year, actor, legal_entity_id)
 
 
-@router.get("/ceilings/simulate", response_model=CeilingSimulation)
+@router.get(
+    "/ceilings/simulate",
+    response_model=CeilingSimulation,
+    dependencies=[module_guard("taxes", "deals")],
+)
 def simulate_ceiling(
     session: SessionDep,
     actor: ActorDep,
@@ -249,7 +253,7 @@ def simulate_ceiling(
     )
 
 
-@router.get("/days", response_model=DaysAnalysis)
+@router.get("/days", response_model=DaysAnalysis, dependencies=[module_guard("contracts")])
 def days_analysis(
     session: SessionDep,
     actor: ActorDep,
@@ -268,7 +272,7 @@ def days_analysis(
     return AnalyticsService(session).days_analysis(actor, date_from, date_to, legal_entity_id)
 
 
-@router.get("/year", response_model=YearOverview)
+@router.get("/year", response_model=YearOverview, dependencies=[module_guard("taxes")])
 def year_overview(
     session: SessionDep,
     actor: ActorDep,
@@ -286,6 +290,7 @@ def year_overview(
     "/year/csv",
     response_class=Response,
     responses={200: {"content": {"text/csv": {}}, "description": "The year as CSV"}},
+    dependencies=[module_guard("taxes")],
 )
 def year_csv(
     session: SessionDep,

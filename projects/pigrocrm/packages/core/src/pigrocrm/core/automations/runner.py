@@ -50,12 +50,15 @@ from pigrocrm.core.automations.schemas import (
     AutomationRule,
     AutomationSkipReason,
 )
+from pigrocrm.core.config import get_settings
 from pigrocrm.core.deals.models import Deal
 from pigrocrm.core.deals.repository import DealRepository
 from pigrocrm.core.deals.service import DealService
 from pigrocrm.core.documents.models import Document
+from pigrocrm.core.modules import enabled_modules
 from pigrocrm.core.pipeline.repository import PipelineRepository
 from pigrocrm.core.pipeline.schemas import PipelineStageRead
+from pigrocrm.core.space_settings.service import SpaceSettingsService
 
 _DEAL_ENTITY = "deal"
 # A1 fires on this transition and no other; A2 on this one. Declared as data rather than
@@ -118,6 +121,14 @@ class AutomationRunner:
             # Not an offer, or an offer attached to a customer rather than a deal. Nothing
             # was supposed to happen, so nothing is recorded: a `non_eseguita` entry here
             # would fill the log with non-events.
+            return
+
+        # The rules move a deal: with the module off there is no pipeline to move it in, and
+        # nothing is recorded, as for any other non-event. The deal and the offer stay as they
+        # are (spec 2026-11-09, A2). Only the shape keys are read, which no environment decides.
+        if "deals" not in enabled_modules(
+            SpaceSettingsService(self.session, get_settings()).effective()
+        ):
             return
 
         deal = self.deals.get(document.deal_id)

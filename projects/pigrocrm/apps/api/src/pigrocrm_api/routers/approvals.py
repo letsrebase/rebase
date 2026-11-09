@@ -2,14 +2,14 @@ from fastapi import APIRouter, Depends, status
 
 from pigrocrm.core.work_units.schemas import ApprovalRecord, ApprovalRecorded
 from pigrocrm.core.work_units.service import ApprovalService
-from pigrocrm_api.deps import ActorDep, SessionDep, StorageDep, get_actor
+from pigrocrm_api.deps import ActorDep, SessionDep, StorageDep, get_actor, module_guard
 from pigrocrm_api.errors import PROBLEM_RESPONSES
 
 router = APIRouter(
     prefix="/api/approvals",
     tags=["work_units"],
     responses=PROBLEM_RESPONSES,
-    dependencies=[Depends(get_actor)],
+    dependencies=[Depends(get_actor), module_guard("contracts")],
 )
 
 

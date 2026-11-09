@@ -78,6 +78,14 @@ NOT_FORWARDED: dict[str, str] = {
     # reasoning as the three `payment_reminders_*` thresholds just above -- and, like them,
     # reachable per space through `space_settings` instead.
     "preferred_concentration_threshold": "quota preferita di un cliente: scelta del praticante",
+    # The space's profile and module switches (spec 2026-11-09): a space decides them in
+    # its own database through two admin actions, never an installation's environment.
+    "space_profile": "decided per space by `set_space_profile`, never by the environment",
+    "module_deals": "decided per space by `set_space_modules`, never by the environment",
+    "module_contracts": "decided per space by `set_space_modules`, never by the environment",
+    "module_time": "decided per space by `set_space_modules`, never by the environment",
+    "module_costs": "decided per space by `set_space_modules`, never by the environment",
+    "module_taxes": "decided per space by `set_space_modules`, never by the environment",
     # Computed per space by `space_base_settings` while the root lends its Google client
     # (REB-394), empty for the root: never an installation's choice.
     "google_callback_base_url": "calcolato da space_base_settings, mai dall'ambiente",

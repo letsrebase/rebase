@@ -13,7 +13,7 @@ from pigrocrm.core.timetracking.schemas import (
     CostRead,
     CostUpdate,
 )
-from pigrocrm_api.deps import ActorDep, SessionDep, get_actor
+from pigrocrm_api.deps import ActorDep, SessionDep, get_actor, module_guard
 from pigrocrm_api.errors import PROBLEM_RESPONSES
 from pigrocrm_api.query_params import CustomParams, KeysetParams
 
@@ -21,7 +21,7 @@ router = APIRouter(
     prefix="/api/costs",
     tags=["costs"],
     responses=PROBLEM_RESPONSES,
-    dependencies=[Depends(get_actor)],
+    dependencies=[Depends(get_actor), module_guard("costs")],
 )
 
 

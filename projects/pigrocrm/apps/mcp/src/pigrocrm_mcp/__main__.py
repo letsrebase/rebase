@@ -5,6 +5,8 @@ from pigrocrm.core.auth.pat_service import PatService
 from pigrocrm.core.config import get_settings
 from pigrocrm.core.db import create_engine_from_settings, session_factory
 from pigrocrm.core.errors import DomainError
+from pigrocrm.core.modules import SHAPE_KEYS
+from pigrocrm.core.space_settings import SpaceSettingsService
 from pigrocrm_mcp import analytics
 from pigrocrm_mcp.context import ScopedSessionProvider, TokenActorProvider
 from pigrocrm_mcp.server import build_server
@@ -43,7 +45,16 @@ def main() -> int:
     # adapter schedules captures on the server's loop, and `run` returning tears that
     # loop down. Without a key there is no client and `shutdown` does nothing.
     try:
-        build_server(provider, TokenActorProvider(provider, token)).run("stdio")
+        # The profile and module rows over the environment, and nothing else of the space's
+        # settings (the ceiling stays the environment's here, as it was): read once, because
+        # the server a process builds is fixed, so a module switched after this point reaches
+        # stdio at the next start. The HTTP transport rebuilds on a change (`http.py`).
+        with provider.scope() as bootstrap:
+            effective = SpaceSettingsService(bootstrap, get_settings()).effective()
+        settings = get_settings().model_copy(
+            update={key: getattr(effective, key) for key in SHAPE_KEYS}
+        )
+        build_server(provider, TokenActorProvider(provider, token), settings=settings).run("stdio")
     finally:
         analytics.shutdown()
     return 0

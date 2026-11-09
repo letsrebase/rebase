@@ -143,8 +143,15 @@ def render_customer(context: McpContext, customer_id: UUID) -> str:
         PersonListQuery(customer_id=customer_id, limit=50), context.actor
     )
 
-    deals = DealService(context.session).list(
-        DealListQuery(customer_id=customer_id, limit=50), context.actor
+    # A core page that points into a module the space switched off leaves that part out
+    # (spec 2026-11-09, A2); `None` is every module.
+    show_deals = context.modules is None or "deals" in context.modules
+    deals = (
+        DealService(context.session).list(
+            DealListQuery(customer_id=customer_id, limit=50), context.actor
+        )
+        if show_deals
+        else None
     )
 
     lines = [
@@ -168,12 +175,13 @@ def render_customer(context: McpContext, customer_id: UUID) -> str:
         for p in people.items
     ] or ["_No contacts._"]
     lines += _contact_point_lines(customer.contact_points, heading="Customer contact points")
-    lines += ["", "## Deal", ""]
-    lines += [
-        f"- {d.name} — expected value {_or_dash(d.expected_value)}{_figures(d)}"
-        f" — probability {d.probability}%"
-        for d in deals.items
-    ] or ["_No deals._"]
+    if deals is not None:
+        lines += ["", "## Deal", ""]
+        lines += [
+            f"- {d.name} — expected value {_or_dash(d.expected_value)}{_figures(d)}"
+            f" — probability {d.probability}%"
+            for d in deals.items
+        ] or ["_No deals._"]
     lines += _custom_lines(customer.custom_fields)
     lines += ["", "## Timeline", ""] + _timeline_lines(context, "customer", customer_id)
     lines += _note_lines(context, "customer", customer_id)

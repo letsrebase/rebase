@@ -13,14 +13,14 @@ from pigrocrm.core.contract_emails.schemas import (
 )
 from pigrocrm.core.contract_emails.service import ContractEmailService, variables
 from pigrocrm.core.gmail.schemas import EmailDraftRead
-from pigrocrm_api.deps import ActorDep, SessionDep, SettingsDep, StorageDep, get_actor
+from pigrocrm_api.deps import ActorDep, SessionDep, SettingsDep, StorageDep, get_actor, module_guard
 from pigrocrm_api.errors import PROBLEM_RESPONSES
 
 router = APIRouter(
     prefix="/api/contracts",
     tags=["contract-emails"],
     responses=PROBLEM_RESPONSES,
-    dependencies=[Depends(get_actor)],
+    dependencies=[Depends(get_actor), module_guard("contracts")],
 )
 
 

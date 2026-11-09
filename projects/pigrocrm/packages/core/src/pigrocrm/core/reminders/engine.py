@@ -34,6 +34,7 @@ from sqlalchemy.orm import Session
 from pigrocrm.core.automations.schemas import RULE_COVERED_BY_REMINDER
 from pigrocrm.core.config import Settings
 from pigrocrm.core.db.clock import today_local
+from pigrocrm.core.modules import enabled_modules
 from pigrocrm.core.reminders.catalogue import reminder_key, severity_for
 from pigrocrm.core.reminders.detect import DetectorContext, Reminder
 from pigrocrm.core.reminders.detectors import DETECTORS
@@ -44,6 +45,7 @@ from pigrocrm.core.reminders.ledger import DeliveryIdentity, ReminderLedger
 from pigrocrm.core.reminders.preferences import ReminderSettings
 from pigrocrm.core.reminders.push_subscriptions import PushSubscription
 from pigrocrm.core.reminders.state import states_for
+from pigrocrm.core.space_settings.service import SpaceSettingsService
 from pigrocrm.core.tasks.models import Task
 
 logger = logging.getLogger(__name__)
@@ -120,8 +122,13 @@ class ReminderEngine:
         person = directory.people.get(only_for) if only_for is not None else None
         if only_for is not None and person is None:
             return Evaluation((), frozenset(), frozenset(), directory, preferences, evaluated_at)
+        # Read from the space's own rows, not from `self.settings`: a cron pass is handed the
+        # installation's settings, and a module's switch lives in the space's database.
+        modules_on = enabled_modules(SpaceSettingsService(self.session, self.settings).effective())
         for detector in DETECTORS:
             kind = detector.kind
+            if not set(detector.modules) <= modules_on:
+                continue
             if not preferences.space_enabled(kind) or not detector.applies(ctx):
                 continue
             if kind.audience == "admins" and person is not None and not person.admin:

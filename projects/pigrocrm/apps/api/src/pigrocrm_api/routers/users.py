@@ -19,7 +19,7 @@ from pigrocrm.core.config import Settings
 from pigrocrm.core.mail import Mail, invitation_mail
 from pigrocrm.core.timetracking.schemas import UserRatesUpdate
 from pigrocrm.core.timetracking.service import TimeEntryService
-from pigrocrm_api.deps import ActorDep, SessionDep, SettingsDep, get_actor
+from pigrocrm_api.deps import ActorDep, SessionDep, SettingsDep, get_actor, module_guard
 from pigrocrm_api.errors import PROBLEM_RESPONSES
 from pigrocrm_api.sessions import SenderDep, mail_origin
 from pigrocrm_api.tenancy import tenant_slug
@@ -186,7 +186,9 @@ def update(user_id: UUID, data: UserUpdate, session: SessionDep, actor: ActorDep
     return UserService(session).update(user_id, data, actor)
 
 
-@router.put("/{user_id}/rates", status_code=status.HTTP_204_NO_CONTENT)
+@router.put(
+    "/{user_id}/rates", status_code=status.HTTP_204_NO_CONTENT, dependencies=[module_guard("time")]
+)
 def set_user_rates(
     user_id: UUID, data: UserRatesUpdate, session: SessionDep, actor: ActorDep
 ) -> None:

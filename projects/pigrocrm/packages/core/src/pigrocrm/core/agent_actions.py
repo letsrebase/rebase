@@ -146,6 +146,11 @@ FULL_ACCESS_ACTIONS: frozenset[str] = frozenset(
         "bind_time_to_invoice",
         "bill_contract_days",
         "get_fiscal_estimate",
+        # The space's profile and which modules are on (spec 2026-11-09, B1): what the whole
+        # team sees changes. An administrator's token with `full_access`, nothing less; the
+        # generic `update_space_settings` stays person-only below.
+        "set_space_profile",
+        "set_space_modules",
         # The text that leaves in the owner's name, and the draft that carries an invoice
         # and its register (REB-753). Sending has no MCP counterpart by structure.
         "create_contract_email_template",
@@ -270,6 +275,8 @@ ACTION_LABELS: dict[str, str] = {
     "disconnect_slack": "scollegare Slack",
     "manage_slack": "gestire Slack",
     "convert_deal_to_contract": "trasformare un deal in contratto",
+    "set_space_profile": "cambiare il profilo dello spazio",
+    "set_space_modules": "accendere o spegnere i moduli dello spazio",
 }
 
 

@@ -69,7 +69,7 @@ def get_operational_dashboard(
     """
     return (
         DashboardService(context.session)
-        .get_operational_dashboard(context.actor, legal_entity_id)
+        .get_operational_dashboard(context.actor, legal_entity_id, modules=context.modules)
         .model_dump(mode="json")
     )
 

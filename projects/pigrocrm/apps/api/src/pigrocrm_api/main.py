@@ -51,6 +51,7 @@ from pigrocrm_api.routers import (
     schema,
     search,
     slack,
+    space_modules,
     space_settings,
     templates,
     tenants,
@@ -132,6 +133,9 @@ def create_app() -> FastAPI:
         identity,
         # Settings → Space: the settings a database decides for itself.
         space_settings,
+        # The profile and the module switches (spec 2026-11-09): routes of their own, so the
+        # generic settings page above cannot write them.
+        space_modules,
         # Slice 10 (2026-09-09): the commitments, and the month that reads them beside
         # the hours and the invoices falling due.
         activities,

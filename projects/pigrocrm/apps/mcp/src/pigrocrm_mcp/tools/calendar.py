@@ -105,7 +105,11 @@ def month(
     person's."""
     user_id = None if all else context.actor.id
     result = CalendarService(context.session).month(
-        month, context.actor, user_id=user_id, legal_entity_id=legal_entity_id
+        month,
+        context.actor,
+        user_id=user_id,
+        legal_entity_id=legal_entity_id,
+        modules=context.modules,
     )
     return result.model_dump(mode="json")
 

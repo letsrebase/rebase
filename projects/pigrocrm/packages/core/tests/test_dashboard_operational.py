@@ -357,7 +357,7 @@ def test_it_takes_no_period() -> None:
     scope, not a period: it narrows the same week and the same backlog to one legal entity's
     rows, and «tutte» leaves it out."""
     signature = inspect.signature(DashboardService.get_operational_dashboard)
-    assert list(signature.parameters) == ["self", "actor", "legal_entity_id"]
+    assert list(signature.parameters) == ["self", "actor", "legal_entity_id", "modules"]
     assert "date_from" not in signature.parameters
     assert "date_to" not in signature.parameters
 

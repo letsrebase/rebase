@@ -15,6 +15,7 @@ from pigrocrm.core.config import Settings, get_settings, gmail_configured, slack
 from pigrocrm.core.db.scope import bind_scope, is_policy_refusal
 from pigrocrm.core.errors import DomainError, OutOfScope
 from pigrocrm.core.fields.schemas import EntityType
+from pigrocrm.core.modules import enabled_modules
 from pigrocrm.core.storage import DocumentStorage, storage_from_settings
 from pigrocrm_mcp import analytics
 from pigrocrm_mcp.annotations import READ_ONLY
@@ -22,6 +23,7 @@ from pigrocrm_mcp.arguments import GuidedMCPServer
 from pigrocrm_mcp.context import ActorProvider, McpContext, SessionProvider
 from pigrocrm_mcp.errors import to_agent_message, to_domain_error
 from pigrocrm_mcp.listing import trim_tool_list
+from pigrocrm_mcp.modules import prune_off_modules
 from pigrocrm_mcp.prompts import register_prompts
 from pigrocrm_mcp.provenance import mark_free_text
 from pigrocrm_mcp.resources import entities
@@ -30,6 +32,7 @@ from pigrocrm_mcp.tools import gmail as gmail_tools
 from pigrocrm_mcp.tools import register_entity_tools
 from pigrocrm_mcp.tools import reminders as reminder_tools
 from pigrocrm_mcp.tools import slack as slack_tools
+from pigrocrm_mcp.tools import space_modules as space_modules_tools
 from pigrocrm_mcp.tools.schema import entity_schema
 
 INSTRUCTIONS = """PigroCRM: a CRM for Italian freelancers and small startups.
@@ -204,9 +207,10 @@ def _make_guards(context: McpContext, session_provider: SessionProvider) -> tupl
 
 
 def _register_core(
-    mcp: MCPServer, context: McpContext, guard: Guard, protocol_guard: Guard
+    mcp: MCPServer, context: McpContext, guard: Guard, protocol_guard: Guard, settings: Settings
 ) -> None:
-    """`describe_schema` and the three entity resources: on every installation."""
+    """`describe_schema` and the entity resources: on every installation, except the deal
+    resource of a space whose `deals` module is off."""
 
     @mcp.tool(annotations=READ_ONLY)
     @guard
@@ -228,11 +232,13 @@ def _register_core(
         """Full record of a person."""
         return entities.render_person(context, UUID(person_id))
 
-    @mcp.resource("deal://{deal_id}")
-    @protocol_guard
-    def deal_resource(deal_id: str) -> str:
-        """Full record of a deal, including pipeline stage and timeline."""
-        return entities.render_deal(context, UUID(deal_id))
+    if "deals" in enabled_modules(settings):
+
+        @mcp.resource("deal://{deal_id}")
+        @protocol_guard
+        def deal_resource(deal_id: str) -> str:
+            """Full record of a deal, including pipeline stage and timeline."""
+            return entities.render_deal(context, UUID(deal_id))
 
 
 def _register_google_and_slack(
@@ -276,19 +282,21 @@ def build_server(
         or storage_from_settings(
             resolved_settings, session_factory=getattr(session_provider, "new_session", None)
         ),
+        modules=enabled_modules(resolved_settings),
     )
     mcp = GuidedMCPServer(
         "PigroCRM", instructions=INSTRUCTIONS, middleware=middleware, actor_provider=actor_provider
     )
     guard, protocol_guard = _make_guards(context, session_provider)
 
-    _register_core(mcp, context, guard, protocol_guard)
+    _register_core(mcp, context, guard, protocol_guard, resolved_settings)
     register_entity_tools(mcp, context, guard)
     reminder_tools.register(mcp, context, guard, resolved_settings)
+    space_modules_tools.register(mcp, context, guard, resolved_settings)
     # A prompt reads the database as a tool does, so it takes the same guard body (three of
     # the four open a REPEATABLE READ snapshot, possible only on a session nothing has
     # touched: `ScopedSessionProvider` gives them one).
-    register_prompts(mcp, context, protocol_guard)
+    register_prompts(mcp, context, protocol_guard, resolved_settings)
     _register_google_and_slack(mcp, context, guard, resolved_settings)
 
     if resolved_settings.mcp_full_access:
@@ -308,6 +316,9 @@ def build_server(
 
                 drive_privileged_tools.register(mcp, context, guard, resolved_settings)
 
+    # Once every tool is registered: what a switched-off module owns is left out, so it is
+    # not listed and a call by name answers «Unknown tool» (spec 2026-11-09, A2).
+    prune_off_modules(mcp, resolved_settings)
     # After every tool is registered and before the analytics wrapper reads the schemas.
     trim_tool_list(mcp)
     analytics.install(mcp, resolved_settings, actor_provider, space=space)

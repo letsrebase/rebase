@@ -33,6 +33,9 @@ STATUS_BY_CODE: dict[str, int] = {
     # REB-292: about the state of the space's admins, not the caller (who is an admin).
     "last_active_admin": 409,
     "self_account_change": 409,
+    # A route of a module the space switched off (spec 2026-11-09, A2): the route does not
+    # exist for this space, so it answers like any address that is not there.
+    "module_off": 404,
     # REB-622: a settings save built on a row that changed since it was read; `updated_at`
     # in the document is the row's current version.
     "stale_row": 409,
@@ -52,6 +55,7 @@ TITLE_BY_CODE: dict[str, str] = {
     "invitation_used": "Invito già usato",
     "last_active_admin": "Amministratore insufficiente",
     "self_account_change": "Modifica non consentita sul proprio account",
+    "module_off": "Modulo spento",
     "stale_row": "Riga cambiata nel frattempo",
     "domain_error": "Errore di dominio",
 }

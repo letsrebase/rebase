@@ -96,6 +96,10 @@ FORBIDDEN = (
     "reopen_period",
     "bind_time_to_invoice",
     "get_fiscal_estimate",
+    # What the whole team sees (spec 2026-11-09, B1): an administrator's token with
+    # `full_access`, and no other.
+    "set_space_profile",
+    "set_space_modules",
     # The first that is not fiscal: asking Gmail who at a customer's
     # domain the owner has corresponded with. Not irreversible -- it stores nothing --
     # but it spends the owner's Gmail quota under the owner's OAuth consent, which is

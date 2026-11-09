@@ -29,6 +29,10 @@ class McpContext:
     session_provider: SessionProvider
     actor_provider: ActorProvider
     storage: DocumentStorage
+    # The modules the space has on, fixed when the server is built (it is rebuilt when the
+    # settings change): what a core tool that reads across modules leaves out. `None`:
+    # every module, the way a context built without settings (a test's) reads.
+    modules: frozenset[str] | None = None
 
     @property
     def session(self) -> Session:

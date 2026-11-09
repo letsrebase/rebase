@@ -34,7 +34,7 @@ from pigrocrm.core.contracts.schemas import (
 )
 from pigrocrm.core.contracts.service import ContractService
 from pigrocrm.core.validation import SafeStr
-from pigrocrm_api.deps import ActorDep, SessionDep, get_actor
+from pigrocrm_api.deps import ActorDep, SessionDep, get_actor, module_guard
 from pigrocrm_api.errors import PROBLEM_RESPONSES
 from pigrocrm_api.query_params import LEGAL_ENTITY_QUERY_DESCRIPTION, SortedParams, sort_field
 from pigrocrm_api.timeline import timeline_router
@@ -43,7 +43,7 @@ router = APIRouter(
     prefix="/api/contracts",
     tags=["contracts"],
     responses=PROBLEM_RESPONSES,
-    dependencies=[Depends(get_actor)],
+    dependencies=[Depends(get_actor), module_guard("contracts")],
 )
 
 

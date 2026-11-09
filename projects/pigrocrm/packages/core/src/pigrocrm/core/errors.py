@@ -133,6 +133,21 @@ class AgentForbidden(DomainError):
         )
 
 
+class ModuleOff(DomainError):
+    """A route that belongs to a module the space has switched off (spec 2026-11-09, A2).
+    The API answers 404 with this sentence, so a stale link explains itself; `module` in
+    the details is the machine key, the message names it as a person says it."""
+
+    code = "module_off"
+
+    def __init__(self, module: str, label: str) -> None:
+        super().__init__(
+            f"Il modulo {label} è spento: un amministratore può accenderlo in "
+            "Impostazioni → Moduli",
+            module=module,
+        )
+
+
 class StaleRow(DomainError):
     """A whole-row save built on a row that changed since it was read (REB-622, spec
     2026-10-03 §11). The caller sent the `updated_at` its draft was built on, the row's

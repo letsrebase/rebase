@@ -592,6 +592,9 @@ ROWS: list[Row] = [
     # --- space settings: admin on read *and* write (space_settings/service.py:78,:84) -
     Row("PUT", "/api/settings/space", admin_only=True, body={}),
     Row("GET", "/api/settings/space", admin_only=True),
+    # --- the space's profile and modules (spec 2026-11-09, B1): an admin's act ----------
+    Row("PUT", "/api/settings/modules", admin_only=True, body={}),
+    Row("PUT", "/api/settings/modules/profile", admin_only=True, body={"profile": "solo"}),
     # --- templates: configuration, admin on every mutation (templates/service.py) -----
     Row(
         "POST",
