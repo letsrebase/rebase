@@ -33,7 +33,7 @@ async def test_a_missing_parameter_names_it_and_lists_what_the_tool_takes(server
     assert result.is_error
     message = result.content[0].text
     _assert_guidance(message)
-    assert "customer_id" in message
+    assert "organization_id" in message
     assert "required field missing" in message
     assert "get_organization" in message
 
@@ -54,7 +54,7 @@ async def test_a_parameter_the_tool_does_not_have_is_refused_with_the_closest_na
     _assert_guidance(message)
     assert "parameter not recognized" in message
     assert "`id`" in message or "input.id" in message
-    assert "customer_id" in message
+    assert "organization_id" in message
 
 
 async def test_a_misspelt_search_parameter_is_no_longer_silently_ignored(server) -> None:
@@ -155,7 +155,7 @@ async def test_a_wrong_enum_value_lists_the_allowed_ones(server) -> None:
 
     message = result.content[0].text
     assert "non è uno dei valori ammessi" in message
-    assert "`customer`" in message
+    assert "`organization`" in message
 
 
 async def test_a_short_search_text_is_asked_for_in_italian(server) -> None:

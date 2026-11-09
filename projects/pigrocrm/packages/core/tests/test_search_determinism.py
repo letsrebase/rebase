@@ -301,7 +301,8 @@ def test_the_first_two_ordering_keys_really_do_tie(db_session: Session) -> None:
     ]
 
     assert len(keys) > 10, (
-        f"only {len(keys)} organizations matched, which is not enough rows for a tie to be meaningful"
+        f"only {len(keys)} organizations matched, which is not enough rows for a tie to be "
+        "meaningful"
     )
     first_two = Counter((row[0], row[1]) for row in keys)
     collisions = {pair: count for pair, count in first_two.items() if count > 1}

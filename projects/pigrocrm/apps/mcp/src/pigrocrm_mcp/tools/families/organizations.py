@@ -88,17 +88,17 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
     @mcp.tool(annotations=READ_ONLY)
     @guard
     def suggest_legal_entity(country: str | None = None) -> dict[str, Any]:
-        """The company that would invoice a new organization of `country` (ISO 3166-1 alpha-2, `IT` if
-        omitted): the same one `create_organization` picks without `legal_entity_id`. Ask for it to
-        show it to the person before creating.
+        """The company that would invoice a new organization of `country` (ISO 3166-1
+        alpha-2, `IT` if omitted): the same one `create_organization` picks without
+        `legal_entity_id`. Ask for it to show it to the person before creating.
         """
         return invoices.suggest_legal_entity(context, country)
 
     @mcp.tool(annotations=DESTRUCTIVE)
     @guard
     def update_organization(organization_id: str, changes: OrganizationChanges) -> dict[str, Any]:
-        """Update an organization. Only an administrator can change `owner_id` (from `list_members`);
-        `null` removes the owner.
+        """Update an organization. Only an administrator can change `owner_id` (from
+        `list_members`); `null` removes the owner.
         """
         return organizations.update(context, organization_id, changes)
 
@@ -157,7 +157,8 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
     @mcp.tool(annotations=ADDITIVE)
     @guard
     def archive_organization(organization_id: str) -> dict[str, str]:
-        """Archive an organization (reversible with `restore_organization`). Fails if it has active deals."""
+        """Archive an organization (reversible with `restore_organization`). Fails if it has
+        active deals."""
         return organizations.archive(context, organization_id)
 
     @mcp.tool(annotations=ADDITIVE)

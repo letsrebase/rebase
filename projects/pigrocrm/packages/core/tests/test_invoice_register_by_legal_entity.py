@@ -279,8 +279,9 @@ def test_an_import_may_take_to_number_the_other_legal_entity_already_issued(
 def test_an_import_refuses_to_customer_of_another_legal_entity_or_an_archived_one(
     service: InvoiceService, db_session: Session, customer_id: UUID
 ) -> None:
-    """REB-784: `import_issued` named for a legal entity takes only that legal entity's organizations,
-    the rule the FatturaPA confirmation already holds (REB-783); nothing is written."""
+    """REB-784: `import_issued` named for a legal entity takes only that legal entity's
+    organizations, the rule the FatturaPA confirmation already holds (REB-783); nothing is
+    written."""
     second = _second_legal_entity(db_session)
     own = _customer_of(db_session, second.id)
     archived = _customer_of(db_session, second.id)

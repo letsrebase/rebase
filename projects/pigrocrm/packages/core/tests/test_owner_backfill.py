@@ -306,9 +306,9 @@ def test_the_command_writes_nothing_without_apply(
     assert cli.main(argv) == 0
 
     out = capsys.readouterr().out
-    assert "root: customer «ACME Srl» -> Ada Lovelace" in out
+    assert "root: organization «ACME Srl» -> Ada Lovelace" in out
     assert "«Generico Srl» left without an owner: generic_account (created by rebase)" in out
-    assert "root: customer: 1 to assign, 1 left, 0 already owned" in out
+    assert "root: organization: 1 to assign, 1 left, 0 already owned" in out
     assert "dry run, nothing written" in out
     assert _owners(root.settings) == {"ACME Srl": None, "Generico Srl": None}
 
@@ -324,7 +324,7 @@ def test_the_command_applies_with_apply_and_a_second_run_has_nothing_left(
 
     assert cli.main(argv) == 0
     out = capsys.readouterr().out
-    assert "root: customer: 0 to assign, 1 left, 1 already owned" in out
+    assert "root: organization: 0 to assign, 1 left, 1 already owned" in out
     assert "written 0" in out
 
 

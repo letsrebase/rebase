@@ -1,4 +1,5 @@
-"""The one-off that gives a space's organizations and deals the owner their creation names (REB-797).
+"""The one-off that gives a space's organizations and deals the owner their creation names
+(REB-797).
 
 Organizations and deals created before owners existed (REB-773 for organizations, REB-780 for deals)
 carry none. The rule is the card's: a live record without an owner takes the user who
