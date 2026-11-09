@@ -1,12 +1,38 @@
 import { Outlet, createFileRoute, useLocation, useNavigate } from '@tanstack/react-router'
-import { useEffect } from 'react'
+import { useEffect, type ReactNode } from 'react'
 import { AppShell } from '@/components/AppShell'
 import { GmailBanner } from '@/components/GmailBanner'
 import { ModuleGate } from '@/components/ModuleGate'
 import { Button } from '@rebase/ui/button'
 import { Loader } from '@rebase/ui/loader'
-import { useAuth } from '@/lib/auth'
+import { Onboarding } from '@/features/onboarding/Onboarding'
+import { useAuth, useIsAdmin } from '@/lib/auth'
+import { useModules } from '@/lib/modules'
 import { PUBLIC_APP_ROUTES } from '@/lib/tenant'
+
+/**
+ * A new space's administrator is asked how the space works before anything else (spec
+ * 2026-11-09, B3, REB-957): a full screen, outside the shell. It covers the screen while the
+ * answer is `pending`, and when «Primi passi» sends the person back to it after a
+ * «Decido dopo». Nobody else sees it, and a read that failed is «not known», not «pending».
+ * Its own component so the modules are read only for a session that exists.
+ */
+function OnboardingGate({ children }: { children: ReactNode }) {
+  const isAdmin = useIsAdmin()
+  const modules = useModules()
+  const { pathname } = useLocation()
+  if (!isAdmin) return children
+  if (modules.loading) {
+    return (
+      <div className="flex min-h-full items-center justify-center p-8">
+        <Loader className="size-8" />
+      </div>
+    )
+  }
+  const revisiting = modules.onboarding === 'skipped' && pathname.replace(/\/+$/, '') === '/app/onboarding'
+  if (modules.onboarding === 'pending' || revisiting) return <Onboarding />
+  return children
+}
 
 function AppLayout() {
   const { user, isLoading, isError, retrySession } = useAuth()
@@ -62,6 +88,7 @@ function AppLayout() {
   if (!user) return null
 
   return (
+    <OnboardingGate>
     <AppShell>
       {/* Outside the <Outlet />, so it survives every navigation within the shell
           rather than being remounted (and re-announced) per page -- and inside this
@@ -74,6 +101,7 @@ function AppLayout() {
         <Outlet />
       </ModuleGate>
     </AppShell>
+    </OnboardingGate>
   )
 }
 

@@ -153,7 +153,11 @@ Jobs: `Detector.modules` for the reminders, `RULE_MODULES` for the automations, 
 sections. A core read that spans modules (search, the calendar, the customer card) takes
 `modules=` and leaves that part out. The profile and the switches are written only by
 `SpaceModulesService` (`set_space_profile`, `set_space_modules`: unscoped admin, and for a token
-`full_access`), never through `SpaceSettingsUpdate`. Switching off touches no record.
+`full_access`), never through `SpaceSettingsUpdate`. Switching off touches no record. The onboarding
+(REB-957) is the same two actions plus `skip_space_onboarding` («Decido dopo» on the first step:
+`describe_space` and `GET /api/settings/modules` answer `onboarding` as `pending`, `skipped` or
+`done`, and choosing a profile is what makes it `done`); the web gate is `OnboardingGate` in
+`routes/app.tsx`, and `e2e-setup.sh` answers it for the seeded space.
 
 **A due item is written by `DueItemService` and nothing else (REB-967).** `due_items` and
 `due_item_settlements` are core, never behind a module: an amount owed or to be received, in or
