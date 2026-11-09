@@ -25,6 +25,7 @@ LOTTO = (FIXTURES / "fpr-12-batch-due-invoices.xml").read_bytes()
 SIGNED = (FIXTURES / "fpr-12-march-consulting.xml.p7m").read_bytes()
 SIGNED_BASE64 = (FIXTURES / "fpr-12-march-consulting-base64.xml.p7m").read_bytes()
 
+BROKEN = b"\x30\x84\x00\x00\x00\x07garbage"
 PDF = b"%PDF-1.7\n1 0 obj\n<<>>\nendobj\n"
 PNG = b"\x89PNG\r\n\x1a\n" + b"\x00" * 16
 JPEG = b"\xff\xd8\xff\xe0" + b"\x00" * 16
@@ -146,6 +147,7 @@ def test_a_type_the_inbox_does_not_take_is_refused_by_its_extension(name: str) -
         ("movimenti.xlsx", _zip({"a.xml": b"<a/>"})),
         ("movimenti.xlsx", b"PK\x03\x04 not really a zip"),
         ("movimenti.csv", b"MZ\x00\x00\x00 binary"),
+        ("firmato.p7m", b"0 a text file whose first byte is the tag"),
     ],
     ids=_id,
 )
@@ -193,7 +195,7 @@ def test_a_counter_signed_file_is_opened_down_to_the_document() -> None:
     ("data", "reason"),
     [
         (PDF, "ne' DER ne' Base64"),
-        (b"\x30\x82garbage", "non si legge"),
+        (BROKEN, "non si legge"),
         (base64.b64encode(b"\x30\x03\x02\x01\x01"), "non si legge"),
     ],
     ids=_id,
@@ -248,11 +250,11 @@ def test_a_document_that_is_not_a_fatturapa_has_no_key() -> None:
 
 
 def test_an_unreadable_envelope_is_kept_as_other_with_the_reason() -> None:
-    reading = read_file("rotto.xml.p7m", "p7m", b"\x30\x82garbage")
+    reading = read_file("rotto.xml.p7m", "p7m", BROKEN)
     assert reading.kind == "other"
     assert reading.note is not None and "non si legge" in reading.note
     assert reading.discard_reason is None
-    assert reading.content_sha256 == sha256_of(b"\x30\x82garbage")
+    assert reading.content_sha256 == sha256_of(BROKEN)
 
 
 def test_the_sdi_metadata_files_and_receipts_are_discarded_with_a_reason() -> None:
@@ -266,3 +268,5 @@ def test_the_sdi_metadata_files_and_receipts_are_discarded_with_a_reason() -> No
     notice = b"<NotificaScarto/>"
     assert read_file("anything.xml", "xml", notice).discard_reason == RECEIPT_REASON
     assert read_file("fattura.xml", "xml", INVOICE).discard_reason is None
+    # A receipt that happens to carry the marker in its name is not an SdI file.
+    assert read_file("scontrino_MT_2.pdf", "pdf", PDF).discard_reason is None

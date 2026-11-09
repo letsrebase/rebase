@@ -29,23 +29,34 @@ class InboxRepository:
     def get(self, item_id: UUID) -> InboxItem | None:
         return self.session.get(InboxItem, item_id)
 
-    def find_original(self, content_sha256: str, natural_key: str | None) -> InboxItem | None:
-        """The item that already holds this document: the same content first, the same
-        natural key after it, the earliest when several would do. A duplicate is never an
-        original, so the answer is always the item the first copy became."""
+    def find_original(
+        self,
+        content_sha256: str,
+        natural_key: str | None,
+        visible: ColumnElement[bool] | None,
+        *,
+        archive: bool = False,
+    ) -> InboxItem | None:
+        """The item that already holds this document **among those the caller can see**: the
+        same content first, the same natural key after it, the earliest when several would do.
+        A duplicate is never an original, so the answer is always the item the first copy
+        became; an item the caller cannot see is not one to point at. A ZIP is only ever a
+        duplicate of another ZIP that was opened (`kind` `archive`): one kept and discarded
+        as nested inside another ZIP was never opened, and a person extracting it and sending
+        it loose means it to be."""
         matches = InboxItem.content_sha256 == content_sha256
         if natural_key is not None:
             matches = matches | (InboxItem.natural_key == natural_key)
-        stmt = (
-            select(InboxItem)
-            .where(InboxItem.state != "duplicate", matches)
-            .order_by(
-                case((InboxItem.content_sha256 == content_sha256, 0), else_=1),
-                InboxItem.created_at,
-                InboxItem.id,
-            )
-            .limit(1)
-        )
+        stmt = select(InboxItem).where(InboxItem.state != "duplicate", matches)
+        if visible is not None:
+            stmt = stmt.where(visible)
+        if archive:
+            stmt = stmt.where(InboxItem.kind == "archive")
+        stmt = stmt.order_by(
+            case((InboxItem.content_sha256 == content_sha256, 0), else_=1),
+            InboxItem.created_at,
+            InboxItem.id,
+        ).limit(1)
         return self.session.execute(stmt).scalars().first()
 
     # `list` stays the last method in this class: a later `def list(...)` would rebind

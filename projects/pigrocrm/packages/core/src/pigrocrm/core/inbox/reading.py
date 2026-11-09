@@ -118,7 +118,7 @@ def read_file(name: str, file_type: FileType, content: bytes) -> Reading:
         except P7mError as exc:
             return Reading(content_sha256=sha256_of(content), kind="other", note=str(exc))
     digest = sha256_of(document)
-    if SDI_METADATA_MARKER in basename(name).upper():
+    if file_type in ("xml", "p7m") and SDI_METADATA_MARKER in basename(name).upper():
         return Reading(content_sha256=digest, discard_reason=METADATA_REASON)
     if file_type in ("xml", "p7m"):
         root = _xml_root(document)

@@ -44,13 +44,33 @@ def _decode_base64(data: bytes) -> bytes | None:
         return None
 
 
+def _plausible_header(data: bytes) -> bool:
+    """A SEQUENCE tag followed by a length that accounts for the data: the indefinite form, or
+    a definite one that ends where the data does (a trailing line break or padding is
+    tolerated). `0` is the tag byte and also an ASCII digit, so the tag alone would take a text
+    file for an envelope."""
+    if len(data) < 2 or data[0] != _DER_SEQUENCE:
+        return False
+    first = data[1]
+    if first == 0x80:
+        return True
+    if first < 0x80:
+        end = 2 + first
+    else:
+        width = first & 0x7F
+        if not 1 <= width <= 4 or len(data) < 2 + width:
+            return False
+        end = 2 + width + int.from_bytes(data[2 : 2 + width])
+    return end <= len(data) and not data[end:].strip(b"\x00\r\n \t")
+
+
 def envelope_bytes(data: bytes) -> bytes | None:
     """`data` as the DER or BER of an envelope: itself when it starts like one, its Base64
     decoding when it is Base64 text of one, `None` when it is neither."""
-    if data[:1] == bytes([_DER_SEQUENCE]):
+    if _plausible_header(data):
         return data
     decoded = _decode_base64(data)
-    if decoded is not None and decoded[:1] == bytes([_DER_SEQUENCE]):
+    if decoded is not None and _plausible_header(decoded):
         return decoded
     return None
 

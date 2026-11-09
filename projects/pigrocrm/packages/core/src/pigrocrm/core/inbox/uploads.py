@@ -31,7 +31,7 @@ from pigrocrm.core.db import uuid7
 from pigrocrm.core.documents.naming import slugify_folder
 from pigrocrm.core.documents.schemas import SIZE_MAX
 from pigrocrm.core.errors import NotFound, ValidationFailed
-from pigrocrm.core.inbox.access import ENTITY, visible_item
+from pigrocrm.core.inbox.access import ENTITY, visible_item, visible_to
 from pigrocrm.core.inbox.filetypes import (
     ACCEPTED,
     ACCEPTED_DESCRIPTION,
@@ -70,6 +70,8 @@ class _Entry:
     file_type: FileType | None
     rejection: str | None = None
     """Why the inbox will not take it, for an entry of a ZIP. A loose file is refused before."""
+    reading: Reading | None = None
+    """What is read of it, once, before the dedup lock is taken."""
 
 
 @dataclass(slots=True)
@@ -77,6 +79,14 @@ class _Upload:
     entry: _Entry
     members: list[_Entry] | None = None
     """The entries, when `entry` is a ZIP."""
+
+
+def _read(entry: _Entry) -> _Entry:
+    if entry.file_type is None:
+        entry.reading = Reading(content_sha256=sha256_of(entry.content))
+    else:
+        entry.reading = read_file(entry.name, entry.file_type, entry.content)
+    return entry
 
 
 def _clean_name(name: str) -> str:
@@ -117,10 +127,10 @@ class InboxUploads:
             try:
                 file_type: FileType | None = detect_file_type(name, file.content)
             except UnsupportedFile as exc:
-                members.append(_Entry(name, file.content, None, str(exc)))
+                members.append(_read(_Entry(name, file.content, None, str(exc))))
                 continue
             rejection = _NESTED_ARCHIVE if file_type == "zip" else None
-            members.append(_Entry(name, file.content, file_type, rejection))
+            members.append(_read(_Entry(name, file.content, file_type, rejection)))
         return members
 
     def _prepare(self, files: Sequence[tuple[str, bytes]]) -> list[_Upload]:
@@ -135,6 +145,7 @@ class InboxUploads:
             )
         uploads: list[_Upload] = []
         total = 0
+        items = 0
         for raw_name, content in files:
             name = _clean_name(raw_name)
             if len(content) > SIZE_MAX:
@@ -149,8 +160,14 @@ class InboxUploads:
                     str(exc),
                     expected=f"un file {ACCEPTED_DESCRIPTION}, con il contenuto del suo tipo",
                 ) from exc
-            entry = _Entry(name, content, file_type)
+            entry = _read(_Entry(name, content, file_type))
             upload = _Upload(entry, self._expand(entry) if file_type == "zip" else None)
+            items += 1 if upload.members is None else 1 + len(upload.members)
+            if items > UPLOAD_MAX_FILES:
+                raise _refuse(
+                    f"i file, con quelli degli archivi, sono piu' di {UPLOAD_MAX_FILES}",
+                    expected=f"al massimo {UPLOAD_MAX_FILES} file per richiesta, archivi compresi",
+                )
             total += (
                 len(content)
                 if upload.members is None
@@ -193,7 +210,12 @@ class InboxUploads:
         reason: str | None = None,
     ) -> InboxItem:
         digest = sha256_of(entry.content)
-        original = self.repo.find_original(reading.content_sha256, reading.natural_key)
+        original = self.repo.find_original(
+            reading.content_sha256,
+            reading.natural_key,
+            visible_to(actor),
+            archive=kind == "archive",
+        )
         item = InboxItem(
             id=uuid7(),
             source="upload",
@@ -215,7 +237,8 @@ class InboxUploads:
             item.kind = None
             item.duplicate_of_id = original.id
             item.reason = self._duplicate_reason(original, reading)
-            keep_bytes = keep_bytes and digest != original.sha256
+            # The original's bytes are the same file's, unless it never kept any.
+            keep_bytes = keep_bytes and (digest != original.sha256 or original.storage_key is None)
         self.repo.add(item)
         if keep_bytes:
             self._put(item, entry, written)
@@ -224,10 +247,8 @@ class InboxUploads:
     def _file(
         self, entry: _Entry, actor: Actor, written: list[str], parent_id: UUID | None
     ) -> InboxItem:
-        if entry.file_type is None:
-            reading = Reading(content_sha256=sha256_of(entry.content))
-        else:
-            reading = read_file(entry.name, entry.file_type, entry.content)
+        reading = entry.reading
+        assert reading is not None
         discard = entry.rejection or reading.discard_reason
         if discard is not None:
             return self._write(

@@ -18,9 +18,8 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
     @mcp.tool(annotations=READ_ONLY)
     @guard
     def get_inbox_item(item_id: str) -> dict[str, Any]:
-        """Read an inbox item: file name, type, size, SHA-256, state, kind, why it is a duplicate or
-        discarded, the item it duplicates (`duplicate_of_id`) and the ZIP it came from
-        (`parent_id`). No file content.
+        """Read an inbox item: name, type, size, SHA-256, state, kind, reason, `duplicate_of_id`,
+        `parent_id` (its ZIP). No file content.
         """
         return inbox.get(context, item_id)
 
@@ -33,9 +32,8 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
         limit: BoundedLimit = 50,
         cursor: str | None = None,
     ) -> dict[str, Any]:
-        """List the files that arrived, newest first, with the `next_cursor` of the next page.
-        `state`: `new`, `proposed`, `filed`, `duplicate`, `discarded`; `parent_id`: the entries of
-        one ZIP. A person uploads files; this never does.
+        """List the files that arrived, newest first. `state`: `new`, `proposed`, `filed`,
+        `duplicate`, `discarded`; `parent_id`: the entries of one ZIP. A person uploads files.
         """
         return inbox.search(
             context,

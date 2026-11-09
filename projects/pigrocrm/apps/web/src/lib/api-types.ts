@@ -50633,7 +50633,7 @@ export interface operations {
         requestBody: {
             content: {
                 "multipart/form-data": {
-                    /** @description One part per file: XML, p7m, ZIP, PDF, PNG, JPEG, CSV, XLS, XLSX o CAMT.053. A ZIP is opened. */
+                    /** @description One part per file: XML, p7m, ZIP, PDF, PNG, JPEG, CSV, XLS, XLSX o CAMT.053. */
                     file: string[];
                 };
             };

@@ -25,6 +25,7 @@ FIXTURES = Path(__file__).resolve().parent / "fixtures" / "fatturapa"
 INVOICE = (FIXTURES / "fpr-12-march-consulting.xml").read_bytes()
 LOTTO = (FIXTURES / "fpr-12-batch-due-invoices.xml").read_bytes()
 SIGNED = (FIXTURES / "fpr-12-march-consulting.xml.p7m").read_bytes()
+BROKEN = b"\x30\x84\x00\x00\x00\x07garbage"
 PDF = b"%PDF-1.7\n1 0 obj\n<<>>\nendobj\n"
 PNG = b"\x89PNG\r\n\x1a\n" + b"\x00" * 16
 
@@ -161,7 +162,7 @@ def test_a_signed_copy_is_read_as_the_invoice_it_signs(inbox: InboxUploads, admi
 def test_a_p7m_whose_envelope_cannot_be_opened_is_kept_as_other_with_the_reason(
     inbox: InboxUploads, admin: Actor
 ) -> None:
-    item = inbox.upload([("rotto.xml.p7m", b"\x30\x82garbage")], admin).items[0]
+    item = inbox.upload([("rotto.xml.p7m", BROKEN)], admin).items[0]
     assert (item.state, item.kind) == ("new", "other")
     assert item.reason is not None and "non si legge" in item.reason
     assert item.has_file
@@ -285,6 +286,58 @@ def test_a_zip_that_cannot_be_read_is_refused(inbox: InboxUploads, admin: Actor)
 
 
 # ---- the automatic discards ------------------------------------------------------------------
+
+
+def test_a_zip_kept_as_nested_does_not_swallow_the_same_zip_sent_loose(
+    inbox: InboxUploads, admin: Actor
+) -> None:
+    inner = _zip({"a.xml": INVOICE})
+    inbox.upload([("outer.zip", _zip({"inner.zip": inner}))], admin)
+    loose = inbox.upload([("inner.zip", inner)], admin).items
+    assert (loose[0].kind, loose[0].state) == ("archive", "filed")
+    assert loose[1].state == "new"
+    assert loose[1].file_type == "xml"
+
+
+def test_two_people_uploading_the_same_file_each_have_an_item_of_their_own(
+    db_session: Session, inbox: InboxUploads
+) -> None:
+    uno = Actor(id=_user(db_session, "collaborator"), type="user", role="collaborator")
+    due = Actor(id=_user(db_session, "collaborator"), type="user", role="collaborator")
+    first = inbox.upload([("a.pdf", PDF)], uno).items[0]
+    second = inbox.upload([("a.pdf", PDF)], due).items[0]
+    assert second.state == "new" and second.duplicate_of_id is None and second.has_file
+    assert first.id != second.id
+    # An unscoped administrator sees both, and the next upload of theirs is a duplicate of the
+    # earliest.
+    admin = Actor(id=_user(db_session, "admin"), type="user", role="admin")
+    third = inbox.upload([("a.pdf", PDF)], admin).items[0]
+    assert (third.state, third.duplicate_of_id) == ("duplicate", first.id)
+
+
+def test_the_bytes_of_a_file_whose_twin_kept_none_are_kept(
+    inbox: InboxUploads, admin: Actor
+) -> None:
+    note = inbox.upload([("c.zip", _zip({"x.txt": b"a;b\n1;2\n"}))], admin).items[1]
+    assert (note.state, note.has_file) == ("discarded", False)
+    csv = inbox.upload([("x.csv", b"a;b\n1;2\n")], admin).items[0]
+    assert (csv.state, csv.has_file) == ("duplicate", True)
+
+
+def test_a_marker_in_the_name_of_a_pdf_is_not_an_sdi_file(
+    inbox: InboxUploads, admin: Actor
+) -> None:
+    assert inbox.upload([("scontrino_MT_2.pdf", PDF)], admin).items[0].state == "new"
+
+
+def test_a_request_whose_zips_hold_too_many_files_in_all_is_refused(
+    db_session: Session, inbox: InboxUploads, admin: Actor, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(uploads_module, "UPLOAD_MAX_FILES", 4)
+    archives = [(f"{n}.zip", _zip({"a.xml": b"<a/>", "b.xml": b"<b/>"})) for n in range(2)]
+    with pytest.raises(ValidationFailed, match="piu' di 4"):
+        inbox.upload(archives, admin)
+    assert _rows(db_session) == []
 
 
 def test_the_sdi_metadata_files_and_receipts_are_discarded_and_stay_as_items(
