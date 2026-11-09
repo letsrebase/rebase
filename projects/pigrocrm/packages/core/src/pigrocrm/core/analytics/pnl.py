@@ -49,6 +49,34 @@ def _totals(rows: list[tuple[Decimal, Decimal, Decimal]]) -> PnlTotals:
     )
 
 
+def _without_labour(totals: PnlTotals) -> PnlTotals:
+    margin = totals.revenue - totals.direct_costs
+    return totals.model_copy(
+        update={
+            "work_cost": None,
+            "gross_margin": margin,
+            "percentage_margin": percentage_of(margin, totals.revenue),
+        }
+    )
+
+
+def without_labour(report: PeriodPnl) -> PeriodPnl:
+    """The report of a space whose `time` module is off (spec 2026-11-09, A2): no labour
+    cost, no hours and no unbilled value, and a margin that is revenue less the direct
+    costs, so the figures left still add up. The one place that decides what time-less
+    looks like; every surface asks for it through `AnalyticsService.period_pnl`."""
+    return report.model_copy(
+        update={
+            "closed": _without_labour(report.closed),
+            "in_progress": _without_labour(report.in_progress),
+            "accrued_value": None,
+            "billable_uninvoiced_hours": None,
+            "hours_without_rate": None,
+            "written_entries_overdue": None,
+        }
+    )
+
+
 def deal_states(session: Session, deal_ids: Collection[UUID]) -> dict[UUID, DealState]:
     """`TimeEntryService.deal_summary(...).status` for many deals at once, in three
     statements instead of one summary (and its entries) per deal.

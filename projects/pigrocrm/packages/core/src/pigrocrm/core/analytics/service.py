@@ -1,4 +1,5 @@
 from collections.abc import Callable
+from collections.abc import Set as AbstractSet
 from datetime import UTC, date, datetime
 from decimal import Decimal
 from uuid import UUID
@@ -142,10 +143,14 @@ class AnalyticsService:
         """The P&L rows of one deal (`pnl.deal_pnl`)."""
         return pnl.deal_pnl(self.session, self.repo, deal_id, actor)
 
-    def period_pnl(self, query: PeriodPnlQuery, actor: Actor) -> PeriodPnl:
+    def period_pnl(
+        self, query: PeriodPnlQuery, actor: Actor, modules: AbstractSet[str] | None = None
+    ) -> PeriodPnl:
         """The P&L of a window in two columns, closed and in-progress deals
-        (`pnl.period_pnl`)."""
-        return pnl.period_pnl(self.session, self.repo, query)
+        (`pnl.period_pnl`). `modules` is what the space has on (`None`: everything): without
+        `time` the labour and the hours are left out (`pnl.without_labour`)."""
+        report = pnl.period_pnl(self.session, self.repo, query)
+        return report if modules is None or "time" in modules else pnl.without_labour(report)
 
     def unbilled_backlog(
         self, actor: Actor, legal_entity_id: UUID | None = None
@@ -456,6 +461,7 @@ class AnalyticsService:
         actor: Actor,
         base: CashBase = "accrual",
         legal_entity_id: UUID | None = None,
+        modules: AbstractSet[str] | None = None,
     ) -> EconomicOverview:
         """The economic tab of the dashboard, in one answer: the cash view for everyone,
         and for an admin with a fiscal profile the estimate on what was collected and on
@@ -486,11 +492,14 @@ class AnalyticsService:
         legal entity instead, because a flat-rate regime's coefficients and an SRL's arithmetic
         do not add. In «tutte» the concentration rows come per legal entity, each share of
         its own legal entity's revenue, and carry which.
+
+        `modules` is what the space has on (`None`: everything). Without `taxes` the fiscal
+        block is not computed at all and the answer carries the cash alone.
         """
         pension_fund = self.cash_overview(year, actor, base, legal_entity_id)
         tax = projected_tax = None
         net = projected_net = None
-        if actor.role == "admin":
+        if actor.role == "admin" and (modules is None or "taxes" in modules):
             try:
                 owner = LegalEntityService(self.session).single(legal_entity_id)
                 # Only a regime with an income estimate has one to show: an ordinary or a

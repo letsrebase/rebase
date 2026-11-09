@@ -377,3 +377,44 @@ def test_the_resolver_reads_a_stored_switch_over_the_profile_and_a_dependency_ov
     }
     # A hand-written row cannot make `time` live without `deals`.
     assert "time" not in enabled_modules(_settings(module_deals=False, module_time=True))
+
+
+# -- what a core tool leaves out of a module that is off ------------------------------------
+
+
+async def test_the_period_pnl_tool_carries_no_labour_or_hours_while_time_is_off(
+    mcp_session: Session, tmp_path: Path
+) -> None:
+    arguments = {"date_from": "2026-01-01", "date_to": "2026-01-31"}
+    hours = ("accrued_value", "billable_uninvoiced_hours", "hours_without_rate")
+
+    async with Client(_server(mcp_session, tmp_path, _settings())) as client:
+        on = (await client.call_tool("get_period_pnl", arguments)).structured_content or {}
+    assert on["closed"]["work_cost"] is not None
+    assert all(on[field] is not None for field in hours)
+
+    async with Client(_server(mcp_session, tmp_path, _settings(module_time=False))) as client:
+        off = (await client.call_tool("get_period_pnl", arguments)).structured_content or {}
+    assert off["closed"]["work_cost"] is None
+    assert off["in_progress"]["work_cost"] is None
+    assert all(off[field] is None for field in hours)
+
+
+async def test_the_reminder_catalogue_and_preferences_leave_out_a_module_that_is_off(
+    mcp_session: Session, tmp_path: Path
+) -> None:
+    async def listed(settings: Settings) -> tuple[set[str], set[str]]:
+        async with Client(_server(mcp_session, tmp_path, settings)) as client:
+            types = (await client.call_tool("list_reminder_types", {})).structured_content or {}
+            read = (await client.call_tool("get_reminder_preferences", {})).structured_content or {}
+        return (
+            {item["key"] for item in types["result"]},
+            {item["type"] for item in read["effective"]},
+        )
+
+    for names in await listed(_settings()):
+        assert {"deal_stale", "timer_running_long", "contract_expiring"} <= names
+
+    for names in await listed(_settings(module_deals=False, module_time=False)):
+        assert not names & {"deal_stale", "deal_past_close", "timer_running_long"}
+        assert {"task_due", "contract_expiring"} <= names

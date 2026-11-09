@@ -7,6 +7,7 @@ is a red test and not a silent type.
 """
 
 from collections.abc import Iterable
+from collections.abc import Set as AbstractSet
 from dataclasses import replace
 
 from pigrocrm.core.modules import ModuleKey
@@ -43,3 +44,15 @@ DETECTORS: tuple[Detector, ...] = (
     *_of(("taxes",), space_fiscal.DETECTORS),
     *space.DETECTORS,
 )
+
+
+def off_types(modules: AbstractSet[str] | None) -> frozenset[str]:
+    """The type keys a space with `modules` on does not have: the ones whose detector reads a
+    module that is off (`None`: everything is on). The engine skips those detectors, and the
+    catalogue and the preferences leave the same types out, so what a person can tune is what
+    can reach them."""
+    if modules is None:
+        return frozenset()
+    return frozenset(
+        detector.kind.key for detector in DETECTORS if not set(detector.modules) <= modules
+    )

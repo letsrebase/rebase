@@ -519,3 +519,30 @@ def test_cash_overview_excludes_a_marker_for_a_soft_deleted_contract(
     overview = AnalyticsService(db_session).cash_overview(TODAY_IN_ITALY.year, COLLABORATOR)
 
     assert not [m for m in overview.contractual_due_dates if m.contract_id == contract.id]
+
+
+def test_the_estimate_is_not_computed_while_taxes_is_off(
+    db_session: Session, issued_invoice_line_id: UUID
+) -> None:
+    from pigrocrm.core.fiscal.schemas import FiscalProfileUpsert
+    from pigrocrm.core.fiscal.service import FiscalProfileService
+
+    FiscalProfileService(db_session).upsert(
+        FiscalProfileUpsert(
+            regime_code="RF19",
+            profitability_coefficient=Decimal("67.00"),
+            substitute_tax_rate=Decimal("5.00"),
+            social_security_rate=Decimal("26.07"),
+        ),
+        ADMIN,
+    )
+    service = AnalyticsService(db_session)
+    every_module = frozenset({"deals", "contracts", "time", "costs", "taxes"})
+
+    on = service.economic_overview(TODAY.year, ADMIN, modules=every_module)
+    off = service.economic_overview(TODAY.year, ADMIN, modules=every_module - {"taxes"})
+
+    assert on.tax is not None and on.projected_net is not None
+    # The cash is the core's and is the same; the fiscal block and both nets are gone.
+    assert off.pension_fund == on.pension_fund
+    assert (off.tax, off.projected_tax, off.actual_net, off.projected_net) == (None,) * 4

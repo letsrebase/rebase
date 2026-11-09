@@ -251,7 +251,12 @@ class DashboardService:
             ),
         )
 
-    def get_economic_dashboard(self, query: PeriodQuery, actor: Actor) -> EconomicDashboard:
+    def get_economic_dashboard(
+        self,
+        query: PeriodQuery,
+        actor: Actor,
+        modules: AbstractSet[str] | None = None,
+    ) -> EconomicDashboard:
         """§5. Composition only: not one figure on this page is computed here.
 
         `period_pnl` is called with the same `actor` the caller supplied, so its own
@@ -276,6 +281,9 @@ class DashboardService:
         The period is resolved **before** the snapshot is opened, as on the commercial
         dashboard: a malformed period is the caller's mistake and should not cost a
         transaction.
+
+        `modules` is what the space has on (`None`: everything), handed to `period_pnl`: without
+        `time` the labour and the hours are `None` (spec 2026-11-09, A2).
         """
         period = query.resolve()
         calculated_at = self._open_snapshot()
@@ -292,6 +300,7 @@ class DashboardService:
                     legal_entity_id=legal_entity,
                 ),
                 actor,
+                modules,
             ),
             unpaid=self._invoices.sum_unpaid(legal_entity),
             expired=self._invoices.sum_expired(legal_entity),

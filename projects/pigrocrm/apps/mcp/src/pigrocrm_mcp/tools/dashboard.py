@@ -44,7 +44,7 @@ def get_economic_dashboard(context: McpContext, query: PeriodQuery) -> dict[str,
     """
     return (
         DashboardService(context.session)
-        .get_economic_dashboard(query, context.actor)
+        .get_economic_dashboard(query, context.actor, context.modules)
         .model_dump(mode="json")
     )
 

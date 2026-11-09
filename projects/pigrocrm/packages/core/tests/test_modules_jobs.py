@@ -135,3 +135,28 @@ def test_the_operational_dashboard_drops_the_signals_of_a_module_that_is_off(
     # Deals on but time off: the signal that needs both goes, the one about deals stays.
     assert "won_to_invoice" not in codes(frozenset({"deals"}))
     assert "invoiced_unwon" in codes(frozenset({"deals"}))
+
+
+def test_the_catalogue_and_the_preferences_list_only_the_types_a_space_can_receive(
+    db_session: Session,
+) -> None:
+    from pigrocrm.core.reminders.catalogue import REMINDER_TYPES
+    from pigrocrm.core.reminders.detectors import off_types
+    from pigrocrm.core.reminders.preferences import ReminderPreferenceService
+
+    actor = Actor(id=None, type="system", role="admin")
+    every_module = frozenset({"deals", "contracts", "time", "costs", "taxes"})
+    assert off_types(None) == off_types(every_module) == frozenset()
+
+    off = off_types(every_module - {"deals", "time", "taxes"})
+    assert {"deal_stale", "timer_running_long", "hours_unbilled", "ceiling_approaching"} <= off
+    assert not off & {"task_due", "invoice_overdue", "contract_expiring"}
+    assert off <= set(REMINDER_TYPES)
+
+    everything = ReminderPreferenceService(db_session)
+    scoped = ReminderPreferenceService(db_session, off)
+    assert [item.key for item in everything.catalogue()] == list(REMINDER_TYPES)
+    assert {item.key for item in scoped.catalogue()} == set(REMINDER_TYPES) - off
+    read = scoped.read(actor)
+    assert {item.key for item in read.types} == {item.type for item in read.effective}
+    assert not {item.type for item in read.effective} & off

@@ -32,7 +32,8 @@ from pigrocrm.core.analytics.schemas import (
     YearOverview,
 )
 from pigrocrm.core.analytics.service import AnalyticsService
-from pigrocrm_api.deps import ActorDep, SessionDep, get_actor, module_guard
+from pigrocrm.core.modules import enabled_modules
+from pigrocrm_api.deps import ActorDep, SessionDep, SettingsDep, get_actor, module_guard
 from pigrocrm_api.downloads import attachment_response
 from pigrocrm_api.errors import PROBLEM_RESPONSES
 from pigrocrm_api.query_params import KeysetParams
@@ -77,6 +78,7 @@ LegalEntityRequired = Annotated[
 def period_pnl(
     session: SessionDep,
     actor: ActorDep,
+    settings: SettingsDep,
     date_from: FromDate,
     date_to: ToDate,
     customer_id: Annotated[UUID | None, Query()] = None,
@@ -106,6 +108,7 @@ def period_pnl(
             legal_entity_id=legal_entity_id,
         ),
         actor,
+        enabled_modules(settings),
     )
 
 
@@ -129,6 +132,7 @@ def budget_vs_actual(
 def economic_overview(
     session: SessionDep,
     actor: ActorDep,
+    settings: SettingsDep,
     year: Annotated[int, Query(ge=2000, le=2200)],
     legal_entity_id: LegalEntityFilter = None,
     base: Annotated[
@@ -151,7 +155,9 @@ def economic_overview(
     between the two readings (ORB-133); the fiscal block stays on the money. In «tutte»
     on a space with several legal entities the fiscal block is empty and the page asks
     `/fiscal` once per legal entity (REB-630)."""
-    return AnalyticsService(session).economic_overview(year, actor, base, legal_entity_id)
+    return AnalyticsService(session).economic_overview(
+        year, actor, base, legal_entity_id, enabled_modules(settings)
+    )
 
 
 @router.get("/fiscal", response_model=FiscalEstimate, dependencies=[module_guard("taxes")])

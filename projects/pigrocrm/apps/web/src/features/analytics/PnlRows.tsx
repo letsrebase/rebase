@@ -105,7 +105,11 @@ function TotalsColumn({
       </div>
       <Row label="Ricavi" value={formatMoneyValue(totals.revenue)} hint={BASE_HINT[base]} />
       <Row label="Costi diretti" value={formatMoneyValue(totals.direct_costs)} />
-      <Row label="Costo del lavoro" value={formatMoneyValue(totals.work_cost)} />
+      {/* `null` is a space with the hours module off: no labour to show, and the margin
+          below is the revenue less the direct costs. */}
+      {totals.work_cost !== null && (
+        <Row label="Costo del lavoro" value={formatMoneyValue(totals.work_cost)} />
+      )}
       <Row label="Margine lordo" value={formatMoneyValue(totals.gross_margin)} />
       <Row label="Margine %" value={formatPercent(totals.percentage_margin)} />
     </div>

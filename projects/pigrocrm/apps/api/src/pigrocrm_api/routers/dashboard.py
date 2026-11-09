@@ -74,6 +74,7 @@ def commercial(
 def economic(
     session: SnapshotSessionDep,
     actor: ActorDep,
+    settings: SettingsDep,
     # The same both-or-neither period as `commercial`, resolved by the same
     # `PeriodQuery.resolve`: the route adds no validation of its own and must not lose the
     # one the service performs, because `field` is what the web client's `fieldErrorFrom`
@@ -83,7 +84,9 @@ def economic(
     legal_entity_id: LegalEntityQuery = None,
 ) -> EconomicDashboard:
     return DashboardService(session).get_economic_dashboard(
-        PeriodQuery(date_from=date_from, date_to=date_to, legal_entity_id=legal_entity_id), actor
+        PeriodQuery(date_from=date_from, date_to=date_to, legal_entity_id=legal_entity_id),
+        actor,
+        enabled_modules(settings),
     )
 
 

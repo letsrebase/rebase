@@ -275,12 +275,18 @@ SPACE_DEFAULTS_ID = UUID("00000000-0000-0000-0000-00000000e5ce")
 
 
 class ReminderPreferenceService:
-    def __init__(self, session: Session) -> None:
+    def __init__(self, session: Session, off: frozenset[str] = frozenset()) -> None:
+        """`off`: the type keys of modules the space has switched off (`detectors.off_types`),
+        which neither the catalogue nor the preferences list."""
         self.session = session
         self.activities = ActivityService(session)
+        self.off = off
+
+    def _listed(self) -> list[ReminderType]:
+        return [kind for kind in REMINDER_TYPES.values() if kind.key not in self.off]
 
     def catalogue(self) -> list[ReminderTypeRead]:
-        return [type_read(kind) for kind in REMINDER_TYPES.values()]
+        return [type_read(kind) for kind in self._listed()]
 
     def read(self, actor: Actor) -> ReminderPreferencesRead:
         """Both layers and what they resolve to for the person asking. Anyone may read
@@ -291,11 +297,15 @@ class ReminderPreferenceService:
         general = resolved.general()
         return ReminderPreferencesRead(
             types=self.catalogue(),
-            space=[_row_read(row, "space") for row in rows if row.user_id is None],
+            space=[
+                _row_read(row, "space")
+                for row in rows
+                if row.user_id is None and row.type not in self.off
+            ],
             mine=[
                 _row_read(row, "me")
                 for row in rows
-                if actor.id is not None and row.user_id == actor.id
+                if actor.id is not None and row.user_id == actor.id and row.type not in self.off
             ],
             effective=[
                 EffectiveReminderSettings(
@@ -306,7 +316,7 @@ class ReminderPreferenceService:
                     urgent_from=effective.urgent_from,
                     email_mode=effective.email_mode,
                 )
-                for kind in REMINDER_TYPES.values()
+                for kind in self._listed()
                 for effective in [resolved.type(kind)]
             ],
             general=EffectiveGeneralSettings(

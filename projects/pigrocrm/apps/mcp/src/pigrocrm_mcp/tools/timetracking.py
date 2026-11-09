@@ -235,7 +235,9 @@ def get_deal_pnl(context: McpContext, deal_id: str) -> dict[str, Any]:
 
 def get_period_pnl(context: McpContext, query: PeriodPnlQuery) -> dict[str, Any]:
     return (
-        AnalyticsService(context.session).period_pnl(query, context.actor).model_dump(mode="json")
+        AnalyticsService(context.session)
+        .period_pnl(query, context.actor, context.modules)
+        .model_dump(mode="json")
     )
 
 

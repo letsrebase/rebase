@@ -4603,7 +4603,8 @@ export interface paths {
         };
         /**
          * List Types
-         * @description The reminder types of this space, with the default thresholds.
+         * @description The reminder types of this space, with the default thresholds: not the ones of a
+         *     module the space has switched off.
          */
         get: operations["list_types_api_reminders_types_get"];
         put?: never;
@@ -10625,15 +10626,15 @@ export interface components {
             /** General Expenses */
             general_expenses: string;
             /** Accrued Value */
-            accrued_value: string;
+            accrued_value: string | null;
             /** Billable Uninvoiced Hours */
-            billable_uninvoiced_hours: string;
+            billable_uninvoiced_hours: string | null;
             /** Hours Without Rate */
-            hours_without_rate: number;
+            hours_without_rate: number | null;
             /** Closed Period */
             closed_period: boolean;
             /** Written Entries Overdue */
-            written_entries_overdue: number;
+            written_entries_overdue: number | null;
         };
         /** PersonCreate */
         PersonCreate: {
@@ -10835,7 +10836,7 @@ export interface components {
             /** Direct Costs */
             direct_costs: string;
             /** Work Cost */
-            work_cost: string;
+            work_cost: string | null;
             /** Gross Margin */
             gross_margin: string;
             /** Percentage Margin */

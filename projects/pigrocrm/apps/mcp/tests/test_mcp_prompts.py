@@ -43,6 +43,7 @@ from sqlalchemy.orm import sessionmaker
 from pigrocrm.core.activities.models import Activity
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.auth.models import User
+from pigrocrm.core.config import Settings
 from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.db import Base, session_factory, today_local
 from pigrocrm.core.deals.models import Deal
@@ -588,6 +589,30 @@ async def test_closing_month_on_an_empty_database_renders_to_null_margin_as_to_d
         await empty_server.get_prompt("month-close", {"year": _YEAR, "month": _MONTH})
     )
     assert "| Margin % | — | — |" in text_block
+
+
+async def test_closing_month_leaves_out_labour_and_hours_while_time_is_off(
+    prompt_corpus: Corpus, tmp_path: Path
+) -> None:
+    """Without the `time` module the prompt has no labour cost, no hours and no backlog to
+    report, so the lines are not printed and the closing advice does not name them."""
+    arguments = {"year": _YEAR, "month": 3}
+    on = _text_of(await prompt_corpus.server.get_prompt("month-close", arguments))
+    switched_off = build_server(
+        ScopedSessionProvider(prompt_corpus.factory),
+        lambda: ADMIN,
+        LocalFileStorage(tmp_path),
+        Settings(_env_file=None, module_time=False),  # type: ignore[call-arg]
+    )
+    off = _text_of(await switched_off.get_prompt("month-close", arguments))
+
+    for phrase in ("Labor cost", "Billable uninvoiced hours", "Backlog", "without a rate"):
+        assert phrase in on
+        assert phrase not in off
+    assert "written late" in on and "written late" not in off
+    assert "unbilled hours" in on and "unbilled hours" not in off
+    # What is not time's stays.
+    assert "| Gross margin |" in off and "Invoices issued in the period" in off
 
 
 # -- hours-to-log -----------------------------------------------------------

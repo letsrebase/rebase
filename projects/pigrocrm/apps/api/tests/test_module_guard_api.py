@@ -6,16 +6,22 @@ sentence naming it, and the records are as they were when it is on again), the t
 its diff before it applies anything) and the dependency between modules.
 """
 
+from collections.abc import Iterator
+from decimal import Decimal
 from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
+from legal_entities_helpers import legal_entity_url
+from sqlalchemy import Engine
 from sqlalchemy.orm import Session
+from test_analytics_api import PERIOD, YEAR, _log_hours, _seed_deal_and_user
 
 from pigrocrm.core.actor import Actor
+from pigrocrm.core.db import session_factory
 from pigrocrm.core.pipeline.service import PipelineService
 from pigrocrm.core.space_settings import SpaceSetting
-from pigrocrm_api.deps import invalidate_space_settings
+from pigrocrm_api.deps import get_snapshot_session, invalidate_space_settings
 
 SENTENCE = "Il modulo Deal è spento: un amministratore può accenderlo in Impostazioni → Moduli"
 
@@ -393,3 +399,122 @@ def test_the_offer_state_and_a_deals_notes_belong_to_the_deals_module(
     # A customer's own thread is the core's.
     customer = f"/api/customers/{deal['customer_id']}/notes"
     assert logged_in.get(customer).status_code == 200
+
+
+# -- what a core report leaves out of a module that is off ---------------------------------
+
+
+def test_the_economic_overview_carries_no_estimate_while_taxes_is_off(
+    logged_in: TestClient,
+) -> None:
+    profile = logged_in.put(
+        legal_entity_url(logged_in, "/fiscal-profile"),
+        json={
+            "regime_code": "RF19",
+            "profitability_coefficient": "67.00",
+            "substitute_tax_rate": "5.00",
+            "social_security_rate": "26.07",
+        },
+    )
+    assert profile.status_code == 200, profile.text
+    params = {"year": YEAR}
+    before = logged_in.get("/api/analytics/overview", params=params).json()
+    assert before["tax"] is not None and before["projected_tax"] is not None
+
+    assert _switch(logged_in, off=["taxes"]).status_code == 200
+    off = logged_in.get("/api/analytics/overview", params=params)
+
+    # The cash is the core's and stays; the fiscal block and the nets that follow are gone.
+    assert off.status_code == 200, off.text
+    body = off.json()
+    assert body["pension_fund"]["year"] == YEAR
+    assert (body["tax"], body["projected_tax"]) == (None, None)
+    assert (body["actual_net"], body["projected_net"]) == (None, None)
+
+    assert _switch(logged_in, on=["taxes"]).status_code == 200
+    assert logged_in.get("/api/analytics/overview", params=params).json()["tax"] is not None
+
+
+def test_the_period_reports_carry_no_labour_or_hours_while_time_is_off(
+    logged_in: TestClient, api_engine: Engine
+) -> None:
+    # The dashboard reads in a transaction of its own, so it gets its own session here.
+    factory = session_factory(api_engine)
+
+    def snapshot() -> Iterator[Session]:
+        with factory() as session:
+            yield session
+
+    logged_in.app.dependency_overrides[get_snapshot_session] = snapshot
+    try:
+        _the_period_reports(logged_in)
+    finally:
+        logged_in.app.dependency_overrides.pop(get_snapshot_session, None)
+
+
+def _the_period_reports(logged_in: TestClient) -> None:
+    deal_id, user_id = _seed_deal_and_user(logged_in)
+    _log_hours(logged_in, deal_id, user_id)
+    hours = ("accrued_value", "billable_uninvoiced_hours", "hours_without_rate")
+
+    def reports() -> list[dict[str, Any]]:
+        pnl = logged_in.get("/api/analytics/pnl", params=PERIOD)
+        economic = logged_in.get("/api/dashboard/economic", params=PERIOD)
+        assert (pnl.status_code, economic.status_code) == (200, 200), (pnl.text, economic.text)
+        return [pnl.json(), economic.json()["pnl"]]
+
+    first, second = reports()
+    assert first["in_progress"]["work_cost"] == "100.00"
+    assert all(
+        report["in_progress"]["work_cost"] is not None
+        and all(report[field] is not None for field in hours)
+        for report in (first, second)
+    )
+
+    assert _switch(logged_in, off=["time"], confirm_off=["time"]).status_code == 200
+    for report in reports():
+        for column in ("closed", "in_progress"):
+            totals = report[column]
+            assert totals["work_cost"] is None
+            # Without labour the margin is the revenue less the direct costs.
+            assert totals["gross_margin"] == str(
+                Decimal(totals["revenue"]) - Decimal(totals["direct_costs"])
+            )
+        assert all(report[field] is None for field in hours)
+        assert report["written_entries_overdue"] is None
+
+    assert _switch(logged_in, on=["time"]).status_code == 200
+    assert reports()[0]["in_progress"]["work_cost"] == "100.00"
+
+
+def test_the_reminder_types_and_preferences_leave_out_a_module_that_is_off(
+    logged_in: TestClient,
+) -> None:
+    def listed() -> tuple[set[str], set[str], set[str]]:
+        types = {item["key"] for item in logged_in.get("/api/reminders/types").json()}
+        read = logged_in.get("/api/reminders/preferences").json()
+        return (
+            types,
+            {item["key"] for item in read["types"]},
+            {item["type"] for item in read["effective"]},
+        )
+
+    assert logged_in.patch(
+        "/api/reminders/preferences/space/deal_stale", json={"enabled": False}
+    ).status_code in (200, 204)
+    for names in listed():
+        assert {"deal_stale", "timer_running_long", "task_due"} <= names
+
+    assert _switch(logged_in, off=["time", "deals"], confirm_off=["deals"]).status_code == 200
+    for names in listed():
+        assert "deal_stale" not in names and "timer_running_long" not in names
+        assert "task_due" in names
+    # The space's stored choice for a type that is off is not offered either, and stays.
+    assert all(
+        row["type"] != "deal_stale"
+        for row in logged_in.get("/api/reminders/preferences").json()["space"]
+    )
+
+    assert _switch(logged_in, on=["deals", "time"]).status_code == 200
+    for names in listed():
+        assert "deal_stale" in names
