@@ -16,12 +16,14 @@ tool is classified on purpose and not by omission.
 """
 
 from collections.abc import Mapping
+from collections.abc import Set as AbstractSet
+from typing import Any
 
 from mcp.server import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 
 from pigrocrm.core.config import Settings
-from pigrocrm.core.modules import ModuleKey, enabled_modules
+from pigrocrm.core.modules import ModuleKey, enabled_modules, require_in
 
 TOOL_MODULES: Mapping[str, tuple[ModuleKey, ...]] = {
     # deals: the pipeline, its stages and offers.
@@ -78,7 +80,6 @@ TOOL_MODULES: Mapping[str, tuple[ModuleKey, ...]] = {
     "discard_timer": ("time",),
     "get_deal_time_summary": ("time",),
     "describe_rates": ("time",),
-    "get_unbilled_backlog": ("time",),
     "update_user_rates": ("time",),
     "update_deal_rate": ("time",),
     "recalculate_rates": ("time",),
@@ -129,3 +130,48 @@ PROMPT_MODULES: Mapping[str, tuple[ModuleKey, ...]] = {
 
 def prompt_available(name: str, settings: Settings) -> bool:
     return set(PROMPT_MODULES.get(name, ())) <= enabled_modules(settings)
+
+
+# A core tool that takes the id of a record of a module, or names the kind of record it is
+# about: with that module off the reference is refused with the sentence the REST routes use
+# (`ModuleOff`), so an agent cannot write to or read the records of a module that is gone.
+# One table, checked by the guard every tool runs in (`server._make_guards`), not an `if` in
+# each tool; `test_module_guard.py` fails for a tool that takes such an id and is not here.
+ID_REFERENCES: Mapping[str, tuple[tuple[str, ModuleKey], ...]] = {
+    "add_note": (("deal_id", "deals"),),
+    "create_task": (("deal_id", "deals"),),
+    "list_tasks": (("deal_id", "deals"),),
+    "create_proforma": (("deal_id", "deals"),),
+    "list_invoices": (("deal_id", "deals"),),
+    "list_documents": (("deal_id", "deals"),),
+    "create_document_from_template": (("deal_id", "deals"),),
+}
+# Tools whose argument names the kind of record, mapped to that argument.
+KIND_REFERENCES: Mapping[str, str] = {
+    "get_timeline": "entity_type",
+    "list_gmail_messages": "entity_type",
+    "draft_email": "entity_type",
+}
+KIND_MODULES: Mapping[str, ModuleKey] = {
+    "deal": "deals",
+    "contract": "contracts",
+    "work_unit": "contracts",
+    "time_entry": "time",
+    "cost": "costs",
+}
+
+
+def refuse_off_references(
+    tool: str, arguments: Mapping[str, Any], modules: AbstractSet[str] | None
+) -> None:
+    """Raises `ModuleOff` when `tool` was handed a reference into a module that is off
+    (`None` for `modules`: everything is on)."""
+    if modules is None:
+        return
+    needed: list[ModuleKey] = [
+        module for param, module in ID_REFERENCES.get(tool, ()) if arguments.get(param)
+    ]
+    kind = arguments.get(KIND_REFERENCES.get(tool, ""))
+    if isinstance(kind, str) and kind in KIND_MODULES:
+        needed.append(KIND_MODULES[kind])
+    require_in(modules, *needed)

@@ -34,8 +34,9 @@ from sqlalchemy.orm import Session
 
 from pigrocrm.core.activities.repository import ActivityRepository
 from pigrocrm.core.actor import Actor
+from pigrocrm.core.analytics.service import AnalyticsService
 from pigrocrm.core.config import Settings
-from pigrocrm.core.dashboard.service import DashboardService
+from pigrocrm.core.dashboard.service import DashboardService, signals_for
 from pigrocrm.core.db import current_week, month_bounds, today_local
 from pigrocrm.core.deals.repository import DealRepository
 from pigrocrm.core.digest.schemas import (
@@ -141,10 +142,6 @@ def previous_week(settings: Settings) -> tuple[date, date]:
     return monday - timedelta(days=7), sunday - timedelta(days=7)
 
 
-# The operational signals that read the pipeline (`dashboard/service.py`).
-_SIGNALS_OF_DEALS = frozenset({"invoiced_unwon", "won_to_invoice"})
-
-
 class DigestService:
     def __init__(self, session: Session, settings: Settings) -> None:
         self.session = session
@@ -219,7 +216,8 @@ class DigestService:
         #    *current* one and would report the days since the report's own subject ended.
         # What a switched-off module owns is not reported (spec 2026-11-09, A2): its sections
         # come out empty, which the mail already drops. Read from the space's own rows, since a
-        # cron hands this job the installation's settings.
+        # cron hands this job the installation's settings; after the dashboard, which must be
+        # the first statement of the snapshot.
         modules_on = enabled_modules(SpaceSettingsService(self.session, self.settings).effective())
         deals_on = "deals" in modules_on
         time_on = "time" in modules_on
@@ -246,7 +244,9 @@ class DigestService:
         deal_moves = self._movements(deals, date_from, date_to) if deals_on else []
         offers = DocumentRepository(self.session).pending_offers(_OFFERS_SHOWN) if deals_on else []
 
-        backlog = operational.backlog
+        # The arrears again, for the modules this space has on: the dashboard's own figure
+        # counts both sources.
+        backlog = AnalyticsService(self.session).unbilled_backlog(actor, modules=modules_on)
         return WeeklyDigest(
             week=iso_week(date_from),
             date_from=date_from,
@@ -254,8 +254,8 @@ class DigestService:
             overdue=overdue,
             in_due_date=self._lines(in_due_date_rows, names, lambda row: row.due_date),
             won_to_invoice=won_to_invoice,
-            unbilled_hours=backlog.billable_uninvoiced_hours if time_on else Decimal("0"),
-            accrued_value=backlog.accrued_value if time_on else Decimal("0"),
+            unbilled_hours=backlog.billable_uninvoiced_hours or Decimal("0"),
+            accrued_value=backlog.accrued_value,
             issued=self._lines(issued_rows, names, lambda row: row.issue_date),
             total_month_current=invoices.sum_issued_in_period(month_from, month_to),
             total_month_previous=invoices.sum_issued_in_period(previous_from, previous_to),
@@ -291,10 +291,7 @@ class DigestService:
                     # string the renderer skips rather than a crash on Monday morning.
                     link=signal.link or "",
                 )
-                for signal in operational.signals
-                # A signal about a module that is off would link to a page that answers 404.
-                if signal.code not in _SIGNALS_OF_DEALS or deals_on
-                if signal.code != "won_to_invoice" or time_on
+                for signal in signals_for(operational.signals, modules_on)
                 # §3.1 section 7: the section exists only when at least one fired. A mail
                 # that reports three zeroes every week is a mail nobody opens.
                 if signal.count > 0

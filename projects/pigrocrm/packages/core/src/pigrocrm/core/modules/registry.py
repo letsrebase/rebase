@@ -13,6 +13,7 @@ A module that is not built is not listed here: `purchases`, `cash`, `collaborato
 """
 
 from collections.abc import Iterable, Mapping
+from collections.abc import Set as AbstractSet
 from dataclasses import dataclass
 from typing import Literal, Protocol
 
@@ -139,6 +140,12 @@ def missing_modules(settings: _Shaped, needed: Iterable[ModuleKey]) -> list[Modu
 
 def require_modules(settings: _Shaped, *needed: ModuleKey) -> None:
     """Raises `ModuleOff` naming the first of `needed` that is off."""
-    missing = missing_modules(settings, needed)
+    require_in(enabled_modules(settings), *needed)
+
+
+def require_in(on: AbstractSet[str], *needed: ModuleKey) -> None:
+    """The same, for a surface that already holds the set of modules that are on (the MCP
+    context fixes it when the server is built)."""
+    missing = [module for module in needed if module not in on]
     if missing:
         raise ModuleOff(missing[0], MODULES_BY_KEY[missing[0]].label)

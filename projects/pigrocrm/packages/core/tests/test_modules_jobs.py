@@ -3,7 +3,9 @@ of its types are not run, the automation rules and the weekly digest's sections 
 are skipped, and nothing is deleted: switched on again, the same pass raises them again."""
 
 from collections.abc import Iterator
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
+from typing import Any
+from uuid import uuid4
 
 import pytest
 from sqlalchemy import Engine, delete
@@ -13,6 +15,7 @@ from test_digest_build import SETTINGS as DIGEST_SETTINGS
 from test_digest_build import Corpus, _build, corpus, frozen_day  # noqa: F401
 from test_reminders_detectors import TODAY, World, world  # noqa: F401
 
+from pigrocrm.core.activities.models import Activity
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.dashboard.service import DashboardService
 from pigrocrm.core.db import session_factory
@@ -135,6 +138,57 @@ def test_the_operational_dashboard_drops_the_signals_of_a_module_that_is_off(
     # Deals on but time off: the signal that needs both goes, the one about deals stays.
     assert "won_to_invoice" not in codes(frozenset({"deals"}))
     assert "invoiced_unwon" in codes(frozenset({"deals"}))
+
+
+def test_the_operational_dashboard_leaves_out_what_a_module_that_is_off_owns(
+    db_engine: Engine,
+) -> None:
+    kind = "modules_jobs.feed_test"
+    with session_factory(db_engine)() as session:
+        for entity in ("deal", "time_entry", "contract", "customer"):
+            session.add(
+                Activity(
+                    entity_type=entity,
+                    entity_id=uuid4(),
+                    kind=kind,
+                    actor_id=None,
+                    actor_type="system",
+                    payload={},
+                    occurred_at=datetime.now(UTC),
+                )
+            )
+        session.commit()
+
+    def board(modules: frozenset[str] | None, role: str = "readonly") -> Any:
+        with session_factory(db_engine)() as session:
+            return DashboardService(session, DIGEST_SETTINGS).get_operational_dashboard(
+                Actor(id=None, type="user", role=role),  # type: ignore[arg-type]
+                modules=modules,
+            )
+
+    def mine(read: Any) -> set[str]:
+        return {a.entity_type for a in read.recent_activity if a.kind == kind}
+
+    try:
+        everything = frozenset({"deals", "contracts", "time", "costs", "taxes"})
+        on = board(everything)
+        assert on.week is not None and on.backlog.billable_uninvoiced_hours is not None
+        assert mine(on) == {"deal", "time_entry", "contract", "customer"}
+
+        off = board(everything - {"time", "deals"})
+        # Without `time` there is no week of hours and the arrears carry no hours.
+        assert off.week is None and off.backlog.billable_uninvoiced_hours is None
+        assert mine(off) == {"contract", "customer"}
+        # An administrator's feed is not the filtered one, and follows the modules too.
+        assert mine(board(everything - {"contracts"}, role="admin")) == {
+            "deal",
+            "time_entry",
+            "customer",
+        }
+    finally:
+        with session_factory(db_engine)() as session:
+            session.execute(delete(Activity).where(Activity.kind == kind))
+            session.commit()
 
 
 def test_the_catalogue_and_the_preferences_list_only_the_types_a_space_can_receive(

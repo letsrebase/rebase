@@ -524,8 +524,10 @@ def test_without_the_time_module_the_report_has_no_labour_and_no_hours(
     assert off.closed.percentage_margin == Decimal("90.00")
     assert off.in_progress.gross_margin == Decimal("-150.00")
     assert off.in_progress.percentage_margin is None
-    assert (off.accrued_value, off.billable_uninvoiced_hours) == (None, None)
-    assert (off.hours_without_rate, off.written_entries_overdue) == (None, None)
+    # The hours are `time`'s and go; the value and the rate-less count are what the approved
+    # contract days alone contribute (none here), and stay.
+    assert off.billable_uninvoiced_hours is None and off.written_entries_overdue is None
+    assert (off.accrued_value, off.hours_without_rate) == (Decimal("0.00"), 0)
     # What is not time's is untouched.
     assert (off.general_expenses, off.closed_period) == (on.general_expenses, on.closed_period)
     assert off.closed.revenue == on.closed.revenue and off.in_progress.deal == on.in_progress.deal

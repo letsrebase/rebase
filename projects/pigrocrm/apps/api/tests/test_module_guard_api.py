@@ -455,7 +455,7 @@ def test_the_period_reports_carry_no_labour_or_hours_while_time_is_off(
 def _the_period_reports(logged_in: TestClient) -> None:
     deal_id, user_id = _seed_deal_and_user(logged_in)
     _log_hours(logged_in, deal_id, user_id)
-    hours = ("accrued_value", "billable_uninvoiced_hours", "hours_without_rate")
+    hours = ("billable_uninvoiced_hours",)
 
     def reports() -> list[dict[str, Any]]:
         pnl = logged_in.get("/api/analytics/pnl", params=PERIOD)
@@ -518,3 +518,39 @@ def test_the_reminder_types_and_preferences_leave_out_a_module_that_is_off(
     assert _switch(logged_in, on=["deals", "time"]).status_code == 200
     for names in listed():
         assert "deal_stale" in names
+
+
+def test_the_backlog_splits_between_time_and_contracts_and_a_gmail_kind_follows_deals(
+    logged_in: TestClient,
+) -> None:
+    deal = _deal(logged_in)
+    assert logged_in.get("/api/analytics/backlog").json()["billable_uninvoiced_hours"] is not None
+
+    assert _switch(logged_in, off=["time", "deals"], confirm_off=["deals"]).status_code == 200
+    # `time` is off but the route is the core's: the approved contract days are still there.
+    backlog = logged_in.get("/api/analytics/backlog")
+    assert backlog.status_code == 200, backlog.text
+    assert backlog.json()["billable_uninvoiced_hours"] is None
+    assert backlog.json()["accrued_value"] == "0.00"
+
+    # The correspondence and the drafts of a deal are the deal's.
+    for path in ("/api/gmail/messages", "/api/email-drafts"):
+        refused = logged_in.get(path, params={"entity_type": "deal", "entity_id": deal["id"]})
+        assert refused.status_code == 404, (path, refused.text)
+        assert refused.json()["code"] == "module_off"
+    created = logged_in.post(
+        "/api/email-drafts",
+        json={
+            "entity_type": "deal",
+            "entity_id": deal["id"],
+            "to_addresses": ["a@example.test"],
+            "subject": "Ciao",
+            "body_markdown": "Ciao",
+        },
+    )
+    assert created.status_code == 404, created.text
+    ok = logged_in.get(
+        "/api/gmail/messages",
+        params={"entity_type": "customer", "entity_id": deal["customer_id"]},
+    )
+    assert ok.status_code != 404, ok.text

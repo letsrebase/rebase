@@ -10093,7 +10093,7 @@ export interface components {
             calculated_at: string;
             /** Legal Entity Id */
             legal_entity_id?: string | null;
-            week: components["schemas"]["WeekHours"];
+            week: components["schemas"]["WeekHours"] | null;
             backlog: components["schemas"]["UnbilledBacklog"];
             /** Signals */
             signals: components["schemas"]["Signal"][];
@@ -10626,11 +10626,11 @@ export interface components {
             /** General Expenses */
             general_expenses: string;
             /** Accrued Value */
-            accrued_value: string | null;
+            accrued_value: string;
             /** Billable Uninvoiced Hours */
             billable_uninvoiced_hours: string | null;
             /** Hours Without Rate */
-            hours_without_rate: number | null;
+            hours_without_rate: number;
             /** Closed Period */
             closed_period: boolean;
             /** Written Entries Overdue */
@@ -12805,7 +12805,7 @@ export interface components {
          */
         UnbilledBacklog: {
             /** Billable Uninvoiced Hours */
-            billable_uninvoiced_hours: string;
+            billable_uninvoiced_hours: string | null;
             /** Accrued Value */
             accrued_value: string;
             /** Entries Without Rate */

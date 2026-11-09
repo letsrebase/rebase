@@ -304,6 +304,47 @@ def test_work_units_and_time_entries_combine_in_the_same_figure(
     assert backlog.entries == 2
 
 
+def test_each_half_of_the_backlog_belongs_to_its_own_module(
+    db_session: Session, seeded_deal_id: UUID, seeded_user_id: UUID
+) -> None:
+    """Hours are `time`'s and approved contract days `contracts`': a solo space (time off)
+    still has its days, a space with contracts off still has its hours, and neither is
+    counted twice or dropped by the other being off."""
+    db_session.add(
+        TimeEntry(
+            deal_id=seeded_deal_id,
+            user_id=seeded_user_id,
+            date=date(2026, 3, 1),
+            hours=Decimal("10.00"),
+            description="Ore fatturabili",
+            billable=True,
+            applied_rate=Decimal("50.000000"),
+            rate_source="manual",
+            cost_source="absent",
+        )
+    )
+    db_session.flush()
+    contract = _contract(db_session)
+    _rate_card(db_session, contract)
+    _work_unit(db_session, contract, status="approved")
+    service = AnalyticsService(db_session)
+
+    no_time = service.unbilled_backlog(READONLY, modules=frozenset({"contracts"}))
+    assert no_time.billable_uninvoiced_hours is None
+    assert (no_time.accrued_value, no_time.entries) == (Decimal("500.00"), 1)
+
+    no_contracts = service.unbilled_backlog(READONLY, modules=frozenset({"deals", "time"}))
+    assert no_contracts.billable_uninvoiced_hours == Decimal("10.00")
+    assert (no_contracts.accrued_value, no_contracts.entries) == (Decimal("500.00"), 1)
+
+    neither = service.unbilled_backlog(READONLY, modules=frozenset())
+    assert (neither.billable_uninvoiced_hours, neither.accrued_value, neither.entries) == (
+        None,
+        Decimal("0.00"),
+        0,
+    )
+
+
 def test_customer_id_scopes_work_units_through_their_contract(db_session: Session) -> None:
     in_scope = _contract(db_session)
     out_of_scope = _contract(db_session)

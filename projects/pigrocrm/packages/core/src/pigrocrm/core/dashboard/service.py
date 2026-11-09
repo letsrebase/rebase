@@ -129,6 +129,19 @@ _SIGNAL_MODULES: dict[str, tuple[str, ...]] = {
     "invoiced_unwon": ("deals",),
     "won_to_invoice": ("deals", "time"),
 }
+# The activity rows of each module's records: an off module's history is not in the feed.
+_MODULE_ENTITIES: dict[str, frozenset[str]] = {
+    "deals": frozenset({"deal"}),
+    "contracts": frozenset({"contract", "contract_expense", "work_unit", "approval"}),
+    "time": frozenset({"time_entry"}),
+    "costs": frozenset({"cost"}),
+}
+
+
+def signals_for(signals: list[Signal], modules: AbstractSet[str]) -> list[Signal]:
+    """`modules` is what the space has on: a signal about a module that is off would link to
+    a page that answers 404 (spec 2026-11-09, A2)."""
+    return [s for s in signals if set(_SIGNAL_MODULES.get(s.code, ())) <= modules]
 
 
 class DashboardService:
@@ -309,10 +322,17 @@ class DashboardService:
             ),
         )
 
-    def _recent_feed(self, actor: Actor) -> list[Activity]:
+    def _recent_feed(self, actor: Actor, modules: AbstractSet[str] | None) -> list[Activity]:
+        off = (
+            frozenset().union(
+                *(rows for key, rows in _MODULE_ENTITIES.items() if key not in modules)
+            )
+            if modules is not None
+            else frozenset()
+        )
         if actor.type == "user" and actor.can_administer:
-            return self._activities.recent(_RECENT_ACTIVITIES)
-        return self._activities.recent(_RECENT_ACTIVITIES_FILTERED, _BUSINESS_ENTITIES)
+            return self._activities.recent(_RECENT_ACTIVITIES, None, off)
+        return self._activities.recent(_RECENT_ACTIVITIES_FILTERED, _BUSINESS_ENTITIES, off)
 
     def get_operational_dashboard(
         self,
@@ -374,8 +394,12 @@ class DashboardService:
         board = OperationalDashboard(
             calculated_at=calculated_at,
             legal_entity_id=legal_entity_id,
-            week=self._entries.week_hours(date_from, date_to, legal_entity_id),
-            backlog=self._analytics.unbilled_backlog(actor, legal_entity_id),
+            week=(
+                self._entries.week_hours(date_from, date_to, legal_entity_id)
+                if modules is None or "time" in modules
+                else None
+            ),
+            backlog=self._analytics.unbilled_backlog(actor, legal_entity_id, modules),
             signals=[
                 Signal(
                     code="invoiced_unwon",
@@ -404,16 +428,10 @@ class DashboardService:
                     link=_CONCENTRATION_LINK,
                 ),
             ],
-            recent_activity=serve_activities(self.session, self._recent_feed(actor)),
+            recent_activity=serve_activities(self.session, self._recent_feed(actor, modules)),
         )
         if modules is not None:
-            # `modules` is what the space has on (`None`: everything): a signal about a module
-            # that is off would link to a page that answers 404 (spec 2026-11-09, A2).
-            board.signals = [
-                signal
-                for signal in board.signals
-                if set(_SIGNAL_MODULES.get(signal.code, ())) <= modules
-            ]
+            board.signals = signals_for(board.signals, modules)
         return board
 
     def get_receivables_dashboard(

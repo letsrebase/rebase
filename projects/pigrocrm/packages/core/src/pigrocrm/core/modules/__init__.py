@@ -17,6 +17,7 @@ from pigrocrm.core.modules.registry import (
     missing_modules,
     module_enabled,
     profile_default,
+    require_in,
     require_modules,
     setting_key,
 )
@@ -36,6 +37,7 @@ __all__ = [
     "missing_modules",
     "module_enabled",
     "profile_default",
+    "require_in",
     "require_modules",
     "setting_key",
 ]

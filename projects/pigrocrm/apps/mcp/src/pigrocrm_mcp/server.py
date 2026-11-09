@@ -23,7 +23,7 @@ from pigrocrm_mcp.arguments import GuidedMCPServer
 from pigrocrm_mcp.context import ActorProvider, McpContext, SessionProvider
 from pigrocrm_mcp.errors import to_agent_message, to_domain_error
 from pigrocrm_mcp.listing import trim_tool_list
-from pigrocrm_mcp.modules import prune_off_modules
+from pigrocrm_mcp.modules import prune_off_modules, refuse_off_references
 from pigrocrm_mcp.prompts import register_prompts
 from pigrocrm_mcp.provenance import mark_free_text
 from pigrocrm_mcp.resources import entities
@@ -181,6 +181,8 @@ def _make_guards(context: McpContext, session_provider: SessionProvider) -> tupl
             with scope() if scope is not None else nullcontext():
                 try:
                     bind_scope(context.session, context.actor)
+                    if tool is not None:
+                        refuse_off_references(tool, kwargs, context.modules)
                     return mark_free_text(fn(*args, **kwargs), tool)
                 except DomainError as exc:
                     context.session.rollback()

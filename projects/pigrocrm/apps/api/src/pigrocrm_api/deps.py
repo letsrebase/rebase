@@ -1,9 +1,9 @@
 import threading
 from collections.abc import Iterator
 from pathlib import Path
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
-from fastapi import Depends, HTTPException, Request, status
+from fastapi import Depends, HTTPException, Query, Request, status
 from sqlalchemy.orm import Session, sessionmaker
 
 from pigrocrm.core.actor import Actor
@@ -365,6 +365,24 @@ SnapshotSessionDep = Annotated[Session, Depends(get_snapshot_session)]
 
 
 ActorDep = Annotated[Actor, Depends(get_actor)]
+
+
+def refuse_off_kind(settings: Settings, kind: str | None) -> None:
+    """A route that takes the kind of record it is about (`entity_type`) refuses the kind of a
+    module that is off with the same sentence the module's own routes answer."""
+    if kind == "deal":
+        require_modules(settings, "deals")
+
+
+def _off_entity_type(
+    settings: SettingsDep,
+    entity_type: Annotated[Literal["customer", "person", "deal"] | None, Query()] = None,
+) -> None:
+    refuse_off_kind(settings, entity_type)
+
+
+# For a route that reads `entity_type` from the query string.
+off_entity_type_guard: Any = Depends(_off_entity_type)
 
 
 def module_guard(*needed: ModuleKey) -> Any:

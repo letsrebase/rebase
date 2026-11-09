@@ -148,12 +148,15 @@ class AnalyticsService:
     ) -> PeriodPnl:
         """The P&L of a window in two columns, closed and in-progress deals
         (`pnl.period_pnl`). `modules` is what the space has on (`None`: everything): without
-        `time` the labour and the hours are left out (`pnl.without_labour`)."""
-        report = pnl.period_pnl(self.session, self.repo, query)
-        return report if modules is None or "time" in modules else pnl.without_labour(report)
+        `time` the labour and the hours are left out, and without `contracts` the approved
+        contract days (`pnl.period_pnl`)."""
+        return pnl.period_pnl(self.session, self.repo, query, modules)
 
     def unbilled_backlog(
-        self, actor: Actor, legal_entity_id: UUID | None = None
+        self,
+        actor: Actor,
+        legal_entity_id: UUID | None = None,
+        modules: AbstractSet[str] | None = None,
     ) -> UnbilledBacklog:
         """The arrears: billable hours not yet on the line of an issued invoice, with no
         period.
@@ -172,12 +175,18 @@ class AnalyticsService:
 
         It has an MCP tool (`get_unbilled_backlog`, §11.1), so slice 4 §11's exclusion list
         does not grow.
+
+        `modules` is what the space has on (`None`: everything). The hours are `time`'s and
+        the approved contract days `contracts`': each half is left out when its module is
+        off, and the hours are `None` without `time`.
         """
+        hours_on = modules is None or "time" in modules
+        days_on = modules is None or "contracts" in modules
         hours, value, without_rate, entries = self.repo.unbilled_backlog(
-            legal_entity_id=legal_entity_id
+            legal_entity_id=legal_entity_id, hours=hours_on, contract_days=days_on
         )
         return UnbilledBacklog(
-            billable_uninvoiced_hours=hours,
+            billable_uninvoiced_hours=hours if hours_on else None,
             accrued_value=value,
             entries_without_rate=without_rate,
             entries=entries,

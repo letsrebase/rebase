@@ -331,6 +331,9 @@ class AnalyticsRepository:
         date_to: date | None = None,
         customer_id: UUID | None = None,
         legal_entity_id: UUID | None = None,
+        *,
+        hours: bool = True,
+        contract_days: bool = True,
     ) -> tuple[Decimal, Decimal, int, int]:
         """`(ore, valore, voci_senza_tariffa, voci)` over billable work not yet invoiced.
 
@@ -357,6 +360,10 @@ class AnalyticsRepository:
         `tariffa_applicata IS NULL` rows are counted in `hours` and in `entries_without_rate`
         and contribute nothing to `valore`: a missing rate is not a rate of zero, and
         `line_value` is what refuses to conflate them.
+
+        The two sources belong to two modules (spec 2026-11-09, A2): `hours` is the
+        `time_entries` half, `contract_days` the approved `work_units`; a half that is off is
+        left out of every figure, so a space with `time` off still has its contract days.
 
         **REB-372: `work_units` narrows this figure's own contribution, it does not
         replace it.** `TimeEntry` has no state machine at all (REB-352 §1.2's own
@@ -394,9 +401,11 @@ class AnalyticsRepository:
         stmt = self._customer_scope(stmt, customer_id, TimeEntry.deal_id)
         stmt = self._legal_entity_scope(stmt, legal_entity_id, TimeEntry.deal_id)
 
-        rows = self.session.execute(stmt).all()
-        wu_value, wu_entries, wu_without_rate = self._committed_work_units_backlog(
-            date_from, date_to, customer_id, legal_entity_id
+        rows = self.session.execute(stmt).all() if hours else []
+        wu_value, wu_entries, wu_without_rate = (
+            self._committed_work_units_backlog(date_from, date_to, customer_id, legal_entity_id)
+            if contract_days
+            else (Decimal("0.00"), 0, 0)
         )
         return (
             sum_hours([hours for hours, _ in rows]),

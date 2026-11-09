@@ -606,9 +606,11 @@ async def test_closing_month_leaves_out_labour_and_hours_while_time_is_off(
     )
     off = _text_of(await switched_off.get_prompt("month-close", arguments))
 
-    for phrase in ("Labor cost", "Billable uninvoiced hours", "Backlog", "without a rate"):
+    for phrase in ("Labor cost", "Billable uninvoiced hours", "entries without a rate"):
         assert phrase in on
         assert phrase not in off
+    # What is left of the arrears is the approved contract days, still reported.
+    assert "Approved contract days not yet invoiced" in off
     assert "written late" in on and "written late" not in off
     assert "unbilled hours" in on and "unbilled hours" not in off
     # What is not time's stays.

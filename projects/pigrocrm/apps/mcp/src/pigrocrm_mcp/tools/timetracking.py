@@ -250,7 +250,11 @@ def get_budget_vs_actual(context: McpContext, query: BudgetQuery) -> dict[str, A
 
 
 def get_unbilled_backlog(context: McpContext) -> dict[str, Any]:
-    return AnalyticsService(context.session).unbilled_backlog(context.actor).model_dump(mode="json")
+    return (
+        AnalyticsService(context.session)
+        .unbilled_backlog(context.actor, modules=context.modules)
+        .model_dump(mode="json")
+    )
 
 
 def get_ceiling_headroom(

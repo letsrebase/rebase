@@ -83,6 +83,7 @@ CORE_TOOLS = frozenset(
         "get_economic_dashboard",
         "get_receivables_dashboard",
         "get_operational_dashboard",
+        "get_unbilled_backlog",
         "list_documents",
         "get_document",
         "get_document_versions",
@@ -386,7 +387,7 @@ async def test_the_period_pnl_tool_carries_no_labour_or_hours_while_time_is_off(
     mcp_session: Session, tmp_path: Path
 ) -> None:
     arguments = {"date_from": "2026-01-01", "date_to": "2026-01-31"}
-    hours = ("accrued_value", "billable_uninvoiced_hours", "hours_without_rate")
+    hours = ("billable_uninvoiced_hours",)
 
     async with Client(_server(mcp_session, tmp_path, _settings())) as client:
         on = (await client.call_tool("get_period_pnl", arguments)).structured_content or {}
@@ -418,3 +419,88 @@ async def test_the_reminder_catalogue_and_preferences_leave_out_a_module_that_is
     for names in await listed(_settings(module_deals=False, module_time=False)):
         assert not names & {"deal_stale", "deal_past_close", "timer_running_long"}
         assert {"task_due", "contract_expiring"} <= names
+
+
+# -- a core tool handed the id of a record of a module that is off --------------------------
+
+ABOUT_DEALS = "Il modulo Deal è spento"
+
+
+async def test_a_core_tool_refuses_a_deal_reference_while_deals_is_off_and_takes_it_when_on(
+    mcp_session: Session, tmp_path: Path
+) -> None:
+    PipelineService(mcp_session).seed_defaults(SETUP)
+    async with Client(_server(mcp_session, tmp_path, _settings())) as client:
+        customer = (
+            await client.call_tool("create_customer", {"legal_name": "ACME"})
+        ).structured_content
+        deal = (
+            await client.call_tool(
+                "create_deal", {"name": "Sito", "customer_id": (customer or {})["id"]}
+            )
+        ).structured_content
+    deal_id, customer_id = (deal or {})["id"], (customer or {})["id"]
+    calls: list[tuple[str, dict[str, Any]]] = [
+        ("add_note", {"text": "ciao", "deal_id": deal_id}),
+        ("create_task", {"title": "Chiama", "deal_id": deal_id}),
+        ("list_tasks", {"deal_id": deal_id}),
+        ("list_invoices", {"deal_id": deal_id}),
+        ("list_documents", {"deal_id": deal_id}),
+        ("get_timeline", {"entity_type": "deal", "entity_id": deal_id}),
+    ]
+
+    switched_off = _settings(module_deals=False, module_time=False)
+    async with Client(_server(mcp_session, tmp_path, switched_off)) as client:
+        for name, arguments in calls:
+            refused = await client.call_tool(name, arguments)
+            assert refused.is_error, name
+            assert ABOUT_DEALS in refused.content[0].text, name  # type: ignore[union-attr]
+        # The customer's own thread and timeline are the core's.
+        assert not (
+            await client.call_tool("add_note", {"text": "ciao", "customer_id": customer_id})
+        ).is_error
+        assert not (
+            await client.call_tool(
+                "get_timeline", {"entity_type": "customer", "entity_id": customer_id}
+            )
+        ).is_error
+
+    async with Client(_server(mcp_session, tmp_path, _settings())) as client:
+        for name, arguments in calls:
+            assert not (await client.call_tool(name, arguments)).is_error, name
+
+
+def test_the_gmail_tools_refuse_a_kind_of_a_module_that_is_off() -> None:
+    from pigrocrm.core.errors import ModuleOff
+    from pigrocrm_mcp.modules import refuse_off_references
+
+    on = frozenset(MODULE_KEYS) - {"deals", "time"}
+    for tool in ("list_gmail_messages", "draft_email", "get_timeline"):
+        with pytest.raises(ModuleOff, match=ABOUT_DEALS):
+            refuse_off_references(tool, {"entity_type": "deal"}, on)
+        refuse_off_references(tool, {"entity_type": "customer"}, on)
+        refuse_off_references(tool, {"entity_type": "deal"}, frozenset(MODULE_KEYS))
+        refuse_off_references(tool, {"entity_type": "deal"}, None)
+    with pytest.raises(ModuleOff, match="Contratti"):
+        refuse_off_references("get_timeline", {"entity_type": "contract"}, on - {"contracts"})
+
+
+async def test_every_tool_that_takes_a_deal_or_a_kind_is_classified(
+    mcp_session: Session, tmp_path: Path
+) -> None:
+    """A core tool with a `deal_id` argument, or one that names the kind of record, is in
+    `ID_REFERENCES` or `KIND_REFERENCES` -- unless its whole tool belongs to a module."""
+    from pigrocrm_mcp.modules import ID_REFERENCES, KIND_REFERENCES
+
+    server = _server(mcp_session, tmp_path, _settings(**OPEN), full_access=True)
+    unguarded = []
+    for tool in await server.list_tools():
+        if tool.name in TOOL_MODULES:
+            continue
+        properties = tool.input_schema.get("properties", {})
+        if "deal_id" in properties and tool.name not in ID_REFERENCES:
+            unguarded.append(tool.name)
+        if "entity_type" in properties and tool.name not in KIND_REFERENCES:
+            unguarded.append(tool.name)
+    # `describe_schema` only describes a record's fields; nothing is read or written.
+    assert set(unguarded) <= {"describe_schema"}, unguarded

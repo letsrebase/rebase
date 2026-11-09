@@ -27,7 +27,10 @@ class ActivityRepository:
         return list(self.session.execute(stmt).scalars())
 
     def recent(
-        self, limit: int = 50, entity_types: Collection[str] | None = None
+        self,
+        limit: int = 50,
+        entity_types: Collection[str] | None = None,
+        excluded_types: Collection[str] = (),
     ) -> list[Activity]:
         """The global activity feed of §6.1: newest first, across every entity.
 
@@ -48,6 +51,8 @@ class ActivityRepository:
         statement = select(Activity)
         if entity_types is not None:
             statement = statement.where(Activity.entity_type.in_(entity_types))
+        if excluded_types:
+            statement = statement.where(Activity.entity_type.not_in(excluded_types))
         return list(
             self.session.execute(
                 statement.order_by(Activity.occurred_at.desc(), Activity.id.desc()).limit(limit)

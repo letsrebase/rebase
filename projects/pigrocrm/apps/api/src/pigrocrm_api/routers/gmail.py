@@ -56,7 +56,7 @@ from pigrocrm.core.gmail.schemas import (
 )
 from pigrocrm.core.gmail.sync import SUGGEST_MAX_MONTHS, GmailSyncService
 from pigrocrm.core.gmail.transport import GmailTransport
-from pigrocrm_api.deps import ActorDep, SessionDep, SettingsDep, get_actor
+from pigrocrm_api.deps import ActorDep, SessionDep, SettingsDep, get_actor, off_entity_type_guard
 from pigrocrm_api.errors import PROBLEM_RESPONSES
 from pigrocrm_api.google_tokens import token_client
 from pigrocrm_api.oauth_callback import finish_consent
@@ -231,7 +231,9 @@ def discover_correspondents(
     return _sync(session, settings).discover(customer_id, actor=actor)
 
 
-@authenticated.get(_MESSAGES_PATH, response_model=list[GmailMessageRead])
+@authenticated.get(
+    _MESSAGES_PATH, response_model=list[GmailMessageRead], dependencies=[off_entity_type_guard]
+)
 def read_messages(
     session: SessionDep,
     actor: ActorDep,

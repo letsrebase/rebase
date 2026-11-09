@@ -175,15 +175,15 @@ def fiscal_estimate(
     )
 
 
-@router.get("/backlog", response_model=UnbilledBacklog, dependencies=[module_guard("time")])
-def backlog(session: SessionDep, actor: ActorDep) -> UnbilledBacklog:
+@router.get("/backlog", response_model=UnbilledBacklog)
+def backlog(session: SessionDep, actor: ActorDep, settings: SettingsDep) -> UnbilledBacklog:
     """No period parameter, deliberately: see `AnalyticsService.unbilled_backlog`.
 
     Placed beside the other analytics reads rather than under `/dashboard`, because the
     figure belongs to `AnalyticsService` and §3 forbids a dashboard module from owning
     one -- its euro value is a product of two columns.
     """
-    return AnalyticsService(session).unbilled_backlog(actor)
+    return AnalyticsService(session).unbilled_backlog(actor, modules=enabled_modules(settings))
 
 
 @router.get("/ceilings", response_model=CeilingHeadroom, dependencies=[module_guard("taxes")])

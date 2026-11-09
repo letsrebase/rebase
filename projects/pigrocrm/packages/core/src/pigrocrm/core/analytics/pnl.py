@@ -2,6 +2,7 @@
 `AnalyticsService.period_pnl`)."""
 
 from collections.abc import Collection
+from collections.abc import Set as AbstractSet
 from datetime import date
 from decimal import Decimal
 from typing import Literal
@@ -62,16 +63,16 @@ def _without_labour(totals: PnlTotals) -> PnlTotals:
 
 def without_labour(report: PeriodPnl) -> PeriodPnl:
     """The report of a space whose `time` module is off (spec 2026-11-09, A2): no labour
-    cost, no hours and no unbilled value, and a margin that is revenue less the direct
-    costs, so the figures left still add up. The one place that decides what time-less
-    looks like; every surface asks for it through `AnalyticsService.period_pnl`."""
+    cost, no hours and no late entries, and a margin that is revenue less the direct costs,
+    so the figures left still add up. The unbilled value and the rate-less count stay: they
+    are then the approved contract days' alone (`repo.unbilled_backlog`). The one place
+    that decides what time-less looks like; every surface asks for it through
+    `AnalyticsService.period_pnl`."""
     return report.model_copy(
         update={
             "closed": _without_labour(report.closed),
             "in_progress": _without_labour(report.in_progress),
-            "accrued_value": None,
             "billable_uninvoiced_hours": None,
-            "hours_without_rate": None,
             "written_entries_overdue": None,
         }
     )
@@ -167,7 +168,12 @@ def deal_pnl(session: Session, repo: AnalyticsRepository, deal_id: UUID, actor: 
     )
 
 
-def period_pnl(session: Session, repo: AnalyticsRepository, query: PeriodPnlQuery) -> PeriodPnl:
+def period_pnl(
+    session: Session,
+    repo: AnalyticsRepository,
+    query: PeriodPnlQuery,
+    modules: AbstractSet[str] | None = None,
+) -> PeriodPnl:
     """Aggregated over a date window, optionally scoped to one customer.
 
     Each quantity is attributed to the period by **its own** date: revenue by
@@ -184,7 +190,12 @@ def period_pnl(session: Session, repo: AnalyticsRepository, query: PeriodPnlQuer
     neither, and that changes every week for reasons which are not business
     performance. The reportable number is the first, and there is deliberately no
     combined field to read by mistake.
+
+    `modules` is what the space has on (`None`: everything). The hours half of the arrears
+    is `time`'s and the contract-day half `contracts`'; without `time` the report also has
+    no labour (`without_labour`).
     """
+    hours_on = modules is None or "time" in modules
     if query.date_to < query.date_from:
         raise ValidationFailed(
             ENTITY, "to", "intervallo invertito", expected="una data non anteriore a 'from'"
@@ -207,7 +218,12 @@ def period_pnl(session: Session, repo: AnalyticsRepository, query: PeriodPnlQuer
     # not one per screen. They are informative and enter no margin, which is why they
     # sit outside both `PnlTotals` columns rather than inside either.
     backlog_hours, value_backlog, without_rate, _ = repo.unbilled_backlog(
-        query.date_from, query.date_to, query.customer_id, legal_entity
+        query.date_from,
+        query.date_to,
+        query.customer_id,
+        legal_entity,
+        hours=hours_on,
+        contract_days=modules is None or "contracts" in modules,
     )
 
     deals = repo.deals_in_range(
@@ -238,7 +254,7 @@ def period_pnl(session: Session, repo: AnalyticsRepository, query: PeriodPnlQuer
         for year, month in months_between(query.date_from, query.date_to)
     )
 
-    return PeriodPnl(
+    report = PeriodPnl(
         date_from=query.date_from,
         date_to=query.date_to,
         customer_id=query.customer_id,
@@ -257,3 +273,4 @@ def period_pnl(session: Session, repo: AnalyticsRepository, query: PeriodPnlQuer
         # reader most needs to know about an open period (§6.4).
         written_entries_overdue=repo.late_entry_count(query.date_from, query.date_to, legal_entity),
     )
+    return report if hours_on else without_labour(report)

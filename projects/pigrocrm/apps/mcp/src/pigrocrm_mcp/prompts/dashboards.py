@@ -36,6 +36,8 @@ from pigrocrm.core.dashboard.schemas import PeriodQuery
 from pigrocrm.core.dashboard.service import DashboardService
 from pigrocrm.core.db import month_bounds
 from pigrocrm.core.deals.service import DealService
+from pigrocrm.core.errors import ModuleOff
+from pigrocrm.core.modules.registry import MODULES_BY_KEY
 from pigrocrm_mcp.context import McpContext
 
 # The caps. Each is the number of rows that is worth a place in the model's context window
@@ -209,17 +211,27 @@ def closing_month(context: McpContext, year: int, month: int) -> list[dict[str, 
         "## To settle before closing",
         "",
     ]
+    backlog = AnalyticsService(context.session).unbilled_backlog(
+        context.actor, modules=context.modules
+    )
     if hours_on:
-        backlog = AnalyticsService(context.session).unbilled_backlog(context.actor)
         lines += [
             f"- Billable uninvoiced hours **in the period**: "
             f"{pnl.billable_uninvoiced_hours} hours, accrued value "
-            f"{_euro(pnl.accrued_value or Decimal(0))}",
+            f"{_euro(pnl.accrued_value)}",
             f"- Entries without a rate in the period: {pnl.hours_without_rate}",
             f"- Backlog **in total** (no period): "
             f"{backlog.billable_uninvoiced_hours} hours, "
             f"{_euro(backlog.accrued_value)}, of which {backlog.entries_without_rate} entries "
             "without a rate",
+        ]
+    else:
+        # No hours without `time`; what is left of the arrears is the approved contract days.
+        lines += [
+            f"- Approved contract days not yet invoiced **in the period**: "
+            f"{_euro(pnl.accrued_value)}",
+            f"- Backlog **in total** (no period): {_euro(backlog.accrued_value)}, of which "
+            f"{backlog.entries_without_rate} days without a rate",
         ]
     lines += [
         f"- Invoices issued in the period: {economic.issued_invoices}",
@@ -233,7 +245,11 @@ def closing_month(context: McpContext, year: int, month: int) -> list[dict[str, 
         "",
         "Prepare the to-do list before closing this month. Flag only the deviations that "
         "matter: "
-        + ("unbilled hours, entries without a rate, " if hours_on else "")
+        + (
+            "unbilled hours, entries without a rate, "
+            if hours_on
+            else "approved days not invoiced, days without a rate, "
+        )
         + "overdue invoices. «To collect» is "
         "a receivable, not revenue: do not add it to revenue and do not use it to compute a "
         "margin. If the period is not closed"
@@ -257,8 +273,14 @@ def hours_to_log(context: McpContext, week: str | None = None) -> list[dict[str,
     knows which days have no *entry*, which is not the same statement as "these hours sum to
     zero", and re-deriving it from `days` would silently pick the second reading.
     """
-    board = DashboardService(context.session).get_operational_dashboard(context.actor)
+    board = DashboardService(context.session).get_operational_dashboard(
+        context.actor, modules=context.modules
+    )
     current = board.week
+    if (
+        current is None
+    ):  # `time` is off; the prompt is not registered then, a direct call lands here
+        raise ModuleOff("time", MODULES_BY_KEY["time"].label)
     if week is not None and week != current.date_from.isoformat():
         return [
             _user(
