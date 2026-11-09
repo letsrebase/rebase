@@ -185,7 +185,7 @@ def _ensure_profile(
 ) -> None:
     """One space's profile step, on its owner engine. Never raises, says what it did."""
     if inferred is None:
-        print(f"{label}: no profile inferred, the onboarding decides")
+        print(f"{label}: nothing inferred, the onboarding or the admin decides")
         return
     profile, reason = inferred
     slug = None if label == ROOT_LABEL else label

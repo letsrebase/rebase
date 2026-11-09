@@ -94,10 +94,9 @@ def _stored(db_engine: Engine, slug: str) -> dict[str, str]:
         engine.dispose()
 
 
-def _boot(settings: Settings, monkeypatch: pytest.MonkeyPatch) -> str:
+def _boot(settings: Settings, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(cli, "get_settings", lambda: settings)
     assert cli.main(["ensure-space-defaults"]) == 0
-    return ""
 
 
 def test_rebases_own_space_reads_company_with_every_module_on(
@@ -143,7 +142,7 @@ def test_a_space_the_door_only_found_and_a_plain_signup_get_no_profile(
     _boot(_settings(db_engine), monkeypatch)
     assert _stored(db_engine, "prova-reuse") == {}
     assert _stored(db_engine, "prova-signup") == {}
-    assert "prova-signup: no profile inferred" in capsys.readouterr().out
+    assert "prova-signup: nothing inferred" in capsys.readouterr().out
 
 
 def test_the_company_space_wins_over_a_match_that_also_opened_it(
