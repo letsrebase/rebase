@@ -12,7 +12,10 @@ type Entry = components['schemas']['ActivityRead']
 // `toProblem` stay the real implementation: what is under test here is Timeline's
 // own handling of what they produce (a resolved list, a thrown `ProblemDetail`),
 // not a reimplementation of either.
-const mockGet = vi.spyOn(api, 'GET')
+// Typed as a plain mock: `spyOn` types it against the union of every GET of the API, so what it
+// accepts changes with each route added (REB-971 added three), and this test is about the
+// timeline's handling of what the spy returns.
+const mockGet = vi.spyOn(api, 'GET') as unknown as ReturnType<typeof vi.fn>
 
 beforeEach(() => {
   mockGet.mockReset()

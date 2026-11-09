@@ -164,10 +164,11 @@ def create_app() -> FastAPI:
         push,
         # REB-764: what the cron commands last did in this space.
         scheduled_jobs,
+        # REB-971: the inbox of incoming documents, filled by upload. Before `notes`, which stays
+        # last: the web tests type their mock of `api.GET` against the last path of the API.
+        inbox,
         # REB-879: the signed, dated notes thread of a deal, a customer and a person.
         notes,
-        # REB-971: the inbox of incoming documents, filled by upload.
-        inbox,
     ):
         app.include_router(module.router)
 
