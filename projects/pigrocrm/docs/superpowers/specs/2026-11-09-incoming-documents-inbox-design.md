@@ -126,7 +126,9 @@ design left to the builder, and what a reader of `core/inbox/` would otherwise h
   `xl/`), CSV (no NUL byte, or a UTF-16 mark)). `camt053` is an XML told by its namespace. The
   type and the content type of a download come from the allowlist, never from the client.
 - **`.p7m`.** `p7m.py` reads it with `asn1crypto` (DER, BER with indefinite lengths, Base64 with
-  or without PEM armour, a counter-signed envelope up to four deep). The signature is **not
+  or without PEM armour, a counter-signed envelope up to four deep); a file named `.p7m` must
+  start like an envelope (a SEQUENCE whose length accounts for the file) or it is refused.
+  Names containing `_MT_` are discarded as SdI metadata only for XML and `.p7m` files. The signature is **not
   verified**: the XML inside is read either way. An envelope that cannot be opened is kept
   as kind `other` with the reason.
 - **Keys.** `content_sha256` is the hash of the document the file carries (the XML inside, for
@@ -136,12 +138,14 @@ design left to the builder, and what a reader of `core/inbox/` would otherwise h
   decides, and it names the same invoice. Neither is unique in the database, since a unique
   index would fail, with a 500, a person limited to some legal entities on the file of an item
   they cannot see; the service takes an advisory lock and looks the original up among what the
-  caller can see.
+  caller can see, so two people sending one file each have an item, and an unscoped administrator
+  sees both.
 - **ZIP.** Opened with `expand_uploads` per archive. The ZIP is the parent item with state
   `filed` and kind `archive` (it became its entries and nobody has anything left to do with it,
   so it is never «waiting»). An entry the inbox does not take, or whose bytes disagree with its
   extension, is a discarded item with its reason and no bytes; a ZIP inside a ZIP is kept and
-  discarded; a ZIP that is itself a duplicate is one duplicate and is not opened again. A loose
+  discarded; a ZIP that is itself a duplicate of an opened one is one duplicate and is not opened
+  again (the same ZIP sent loose after being nested is opened). A loose
   file is not held to the 10 MiB of an entry, only to `SIZE_MAX`.
 - **All or nothing.** A request, or a loose file, the inbox does not take is a 422 with the
   reason and nothing written; once the files are accepted they are written in one transaction.
