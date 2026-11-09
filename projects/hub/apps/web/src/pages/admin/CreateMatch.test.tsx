@@ -255,19 +255,22 @@ describe('«Crea match» in three steps (REB-476)', () => {
     })
   })
 
+  // The budget fixture is 777.77; match it whole (either decimal mark), since a bare
+  // 777 also turns up inside the random UUIDs a draft carries.
+  const BUDGET = /777[.,]77|budget/i
   it('never shows or sends the request’s budget', async () => {
     const spy = routes()
     mount()
     await pick(/Rossi Studio/)
-    expect(document.body.textContent).not.toMatch(/777|budget/i)
+    expect(document.body.textContent).not.toMatch(BUDGET)
     await userEvent.click(screen.getByRole('button', { name: 'Avanti' }))
     await screen.findByLabelText('Ruolo')
-    expect(document.body.innerHTML).not.toMatch(/777|budget/i)
+    expect(document.body.innerHTML).not.toMatch(BUDGET)
     await userEvent.click(screen.getByRole('button', { name: 'Avanti' }))
     await screen.findByRole('button', { name: 'Salva senza inviare' })
-    expect(document.body.innerHTML).not.toMatch(/777|budget/i)
+    expect(document.body.innerHTML).not.toMatch(BUDGET)
     const sent = spy.mock.calls.map(([, init]) => String(init?.body ?? '')).join('\n')
-    expect(sent).not.toMatch(/777|budget/i)
+    expect(sent).not.toMatch(BUDGET)
   })
 })
 
