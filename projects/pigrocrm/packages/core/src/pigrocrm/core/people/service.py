@@ -24,7 +24,7 @@ from pigrocrm.core.people.schemas import (
     PersonRead,
     PersonUpdate,
 )
-from pigrocrm.core.schemas import reject_cleared_columns, supplied_changes
+from pigrocrm.core.schemas import changed_keys, reject_cleared_columns, supplied_changes
 
 # Typed as the fields module's own EntityType (not a bare `str`), matching
 # OrganizationService.ENTITY exactly: passing a plain `str` into `specs_for` fails mypy
@@ -162,14 +162,14 @@ class PersonService:
             changes["custom_fields"] = merge_custom(
                 ENTITY, self.fields.specs_for(ENTITY), person.custom_fields, data.custom_fields
             )
+        changed = changed_keys(person, changes)
         for key, value in changes.items():
             setattr(person, key, value)
-        changed = sorted(changes)
         # `null` leaves the list alone, as every omitted field is left: an empty list clears it.
         if data.contact_points is not None and write_points(
             self.session, person, data.contact_points
         ):
-            changed = sorted([*changes, "contact_points"])
+            changed = sorted([*changed, "contact_points"])
 
         self.activities.record(ENTITY, person.id, "updated", actor, {"changed": changed})
         self.session.commit()

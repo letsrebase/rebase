@@ -676,6 +676,21 @@ def test_update_records_only_the_changed_fields(db_session: Session, customer_id
     assert updates[0].payload["changed"] == ["probability"]
 
 
+def test_update_names_the_field_that_changed_not_the_fields_it_was_sent(
+    db_session: Session, customer_id, stages
+) -> None:
+    from pigrocrm.core.activities.service import ActivityService
+
+    service = DealService(db_session)
+    deal = service.create(DealCreate(name="X", customer_id=customer_id), ADMIN)
+    service.update(deal.id, DealUpdate(name="X", probability=30), ADMIN)
+
+    updates = [
+        e for e in ActivityService(db_session).timeline("deal", deal.id) if e.kind == "updated"
+    ]
+    assert [e.payload["changed"] for e in updates] == [["probability"]]
+
+
 def test_a_new_deal_can_specify_an_explicit_stage(db_session: Session, customer_id, stages) -> None:
     deal = DealService(db_session).create(
         DealCreate(name="X", customer_id=customer_id, pipeline_stage_id=stages["Offerta"].id),

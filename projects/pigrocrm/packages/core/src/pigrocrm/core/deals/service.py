@@ -45,7 +45,7 @@ from pigrocrm.core.notes.writer import append_first_note
 from pigrocrm.core.organizations.repository import OrganizationRepository
 from pigrocrm.core.pipeline.schemas import PipelineStageRead
 from pigrocrm.core.pipeline.service import PipelineService
-from pigrocrm.core.schemas import reject_cleared_columns, supplied_changes
+from pigrocrm.core.schemas import changed_keys, reject_cleared_columns, supplied_changes
 
 # Typed as the fields module's own EntityType (not a bare `str`), matching
 # OrganizationService.ENTITY/PersonService.ENTITY exactly: passing a plain `str` into
@@ -504,12 +504,13 @@ class DealService:
             changes["custom_fields"] = merge_custom(
                 ENTITY, self.fields.specs_for(ENTITY), deal.custom_fields, data.custom_fields
             )
+        changed = changed_keys(deal, changes)
         for key, value in changes.items():
             setattr(deal, key, value)
         if lines_changed and new_lines is not None and summary is not None:
             stored = self._write_lines(deal, new_lines, summary)
 
-        changed = sorted([*changes, *(["value_lines"] if lines_changed else [])])
+        changed = sorted([*changed, *(["value_lines"] if lines_changed else [])])
         self.activities.record(ENTITY, deal.id, "updated", actor, {"changed": changed})
         self.session.commit()
         return self._detail(deal, stored)
