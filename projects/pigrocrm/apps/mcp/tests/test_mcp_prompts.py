@@ -471,7 +471,7 @@ async def test_the_arguments_are_inferred_from_the_signatures(mcp_server: Any) -
         "month": True,
     }
     assert {arg.name: arg.required for arg in by_name["organization-status"].arguments} == {
-        "customer_id": True
+        "organization_id": True
     }
     assert {arg.name: arg.required for arg in by_name["hours-to-log"].arguments} == {"week": False}
 
@@ -672,7 +672,7 @@ async def test_status_customer_embeds_the_existing_resource(
     """§10: the **only** prompt with a resource block, because it is the only one whose
     resource already exists. `organization://{id}` is slice 1 §8.4's."""
     rendered = await mcp_server.get_prompt(
-        "organization-status", {"customer_id": str(seeded_customer.id)}
+        "organization-status", {"organization_id": str(seeded_customer.id)}
     )
     assert _resource_uris(rendered) == [f"organization://{seeded_customer.id}"]
 
@@ -685,7 +685,7 @@ async def test_the_embedded_resource_carries_the_card_and_not_only_the_uri(
     follow the URI still has the card, so "the context arrives inside the prompt" holds
     without the model going to fetch anything."""
     rendered = await mcp_server.get_prompt(
-        "organization-status", {"customer_id": str(seeded_customer.id)}
+        "organization-status", {"organization_id": str(seeded_customer.id)}
     )
     card = _resource_text(rendered)
     assert f"# {_PREFIX} Cliente" in card
@@ -703,7 +703,7 @@ async def test_status_customer_does_not_repeat_the_deals_the_card_already_carrie
     notion of is money owed, so that is what the text block is.
     """
     rendered = await mcp_server.get_prompt(
-        "organization-status", {"customer_id": str(seeded_customer.id)}
+        "organization-status", {"organization_id": str(seeded_customer.id)}
     )
     assert prompt_corpus.open_deal_name not in _text_of(rendered)
     assert prompt_corpus.open_deal_name in _resource_text(rendered)
@@ -715,7 +715,9 @@ async def test_status_customer_lists_the_unpaid_invoices_with_their_deadline(
     """The one thing the card cannot say. Both rows, because the undated one is the branch
     that would otherwise print `None`."""
     text_block = _text_of(
-        await mcp_server.get_prompt("organization-status", {"customer_id": str(seeded_customer.id)})
+        await mcp_server.get_prompt(
+            "organization-status", {"organization_id": str(seeded_customer.id)}
+        )
     )
     assert f"- {_YEAR}/9001 — 4000,00 € (total incl. VAT), due {_YEAR}-03-31" in text_block
     assert f"- {_YEAR}/9002 — 750,00 € (total incl. VAT), due no due date" in text_block
@@ -739,7 +741,7 @@ async def test_status_customer_on_an_unknown_customer_reaches_the_assistant_as_t
 
     async with Client(mcp_server, mode=mode) as client:
         with pytest.raises(MCPError) as caught:
-            await client.get_prompt("organization-status", {"customer_id": str(unknown)})
+            await client.get_prompt("organization-status", {"organization_id": str(unknown)})
 
     assert caught.value.message == to_agent_message(NotFound("organization", unknown))
     assert caught.value.code == INVALID_PARAMS
@@ -754,14 +756,14 @@ async def test_a_conflict_inside_a_prompt_carries_the_application_code(
     (REB-451)."""
     refusal = Conflict("organization", "briefing già in preparazione")
 
-    def _refuse(context: Any, customer_id: str) -> list[dict[str, Any]]:
+    def _refuse(context: Any, organization_id: str) -> list[dict[str, Any]]:
         raise refusal
 
     monkeypatch.setattr(organization_prompts, "status_organization", _refuse)
 
     async with Client(mcp_server, mode=mode) as client:
         with pytest.raises(MCPError) as caught:
-            await client.get_prompt("organization-status", {"customer_id": str(uuid4())})
+            await client.get_prompt("organization-status", {"organization_id": str(uuid4())})
 
     assert caught.value.code == DOMAIN_REFUSAL
     assert caught.value.message == to_agent_message(refusal)
@@ -776,14 +778,14 @@ async def test_a_crash_inside_a_prompt_keeps_its_text_on_the_server(
     it is and the assistant reads the SDK's generic sentence, never the exception's text nor
     a domain rendering that would send it to correct an argument it got right."""
 
-    def _crash(context: Any, customer_id: str) -> list[dict[str, Any]]:
+    def _crash(context: Any, organization_id: str) -> list[dict[str, Any]]:
         raise KeyError("boom")
 
     monkeypatch.setattr(organization_prompts, "status_organization", _crash)
 
     async with Client(mcp_server, mode=mode) as client:
         with pytest.raises(MCPError) as caught:
-            await client.get_prompt("organization-status", {"customer_id": str(uuid4())})
+            await client.get_prompt("organization-status", {"organization_id": str(uuid4())})
 
     assert "boom" not in caught.value.message
     assert "Rivedi" not in caught.value.message
@@ -953,7 +955,7 @@ async def test_status_customer_does_not_grow_with_the_register(
     The embedded card is measured too, not only the text block: it is the larger half of this
     message, and a bound that ignored it would be a bound on the cheaper half.
     """
-    args = {"customer_id": str(seeded_customer.id)}
+    args = {"organization_id": str(seeded_customer.id)}
     inflate(0)
     first = await mcp_server.get_prompt("organization-status", args)
     before = len(_text_of(first)) + len(_resource_text(first))
@@ -971,7 +973,9 @@ async def test_status_customer_shows_the_postal_code_and_admits_the_rest(
 ) -> None:
     inflate(0)
     text_block = _text_of(
-        await mcp_server.get_prompt("organization-status", {"customer_id": str(seeded_customer.id)})
+        await mcp_server.get_prompt(
+            "organization-status", {"organization_id": str(seeded_customer.id)}
+        )
     )
     listed = [line for line in text_block.splitlines() if line.startswith("- ")]
     assert len(listed) == organization_prompts.UNPAID_INVOICES_SHOWN
@@ -994,7 +998,7 @@ async def test_no_prompt_contains_a_fiscal_field_by_name(
     By field name, not by intention, and over the raw messages rather than the text blocks:
     a fiscal figure smuggled into the embedded resource would be just as reachable.
     """
-    cases = [*_ALL_PROMPTS, ("organization-status", {"customer_id": str(seeded_customer.id)})]
+    cases = [*_ALL_PROMPTS, ("organization-status", {"organization_id": str(seeded_customer.id)})]
     for name, args in cases:
         rendered = await mcp_server.get_prompt(name, args)
         haystack = str(rendered.messages).lower()
@@ -1101,7 +1105,7 @@ async def test_status_customer_is_the_only_prompt_with_to_resource_block(
         assert _resource_uris(rendered) == [], name
 
     rendered = await mcp_server.get_prompt(
-        "organization-status", {"customer_id": str(seeded_customer.id)}
+        "organization-status", {"organization_id": str(seeded_customer.id)}
     )
     assert _resource_uris(rendered) == [f"organization://{seeded_customer.id}"]
 
@@ -1111,7 +1115,7 @@ async def test_no_prompt_introduces_a_new_resource_uri_scheme(
 ) -> None:
     """Criterion 10: the URIs the four embed are listed and checked for new ones. A resource
     is a surface, and adding one silently is adding a surface silently."""
-    cases = [*_ALL_PROMPTS, ("organization-status", {"customer_id": str(seeded_customer.id)})]
+    cases = [*_ALL_PROMPTS, ("organization-status", {"organization_id": str(seeded_customer.id)})]
     seen: set[str] = set()
     for name, args in cases:
         rendered = await mcp_server.get_prompt(name, args)
@@ -1131,7 +1135,7 @@ async def test_the_registered_resource_templates_are_still_exactly_three(
         str(template.uri_template) for template in await mcp_server.list_resource_templates()
     }
     assert templates == {
-        "organization://{customer_id}",
+        "organization://{organization_id}",
         "person://{person_id}",
         "deal://{deal_id}",
     }

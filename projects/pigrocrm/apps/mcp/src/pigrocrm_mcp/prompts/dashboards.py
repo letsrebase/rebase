@@ -11,7 +11,7 @@ whereas here the human picks it and can see what was attached.
 
 The context travels as **Markdown text inside the message**. It is a resource block only
 where the resource already exists, which in this slice means `organization://{id}` and therefore
-only `prompts/customer.py`. §11.1 adds no new resource, and inventing
+only `prompts/organization.py`. §11.1 adds no new resource, and inventing
 `dashboard://commercial?from=...` in order to have a URI to embed would be adding one without
 saying so.
 

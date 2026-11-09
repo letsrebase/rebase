@@ -22,7 +22,7 @@ This file is the single mapping from the Italian word to the English identifier.
 | azienda | `legal_entity` (PigroCRM), `company` (hub) | In PigroCRM an azienda is one of the user's own issuing businesses (class `LegalEntity`, table `emitter_profile`, join `user_aziende`). In the hub an azienda is a client company that asks for freelancers (class `Company`, table `companies`). The two never meet in one table; where the hub sends its company to the CRM (`/api/rebase/leads`) the key is `company`. |
 | emittente / emitter | `legal_entity` | The old name of the same concept as azienda in PigroCRM (`core/emitter`, `emitter_profile`, route `settings/issuer`). One English name, `legal_entity`, so nothing can be confused with `customer`. |
 | attivita | `tasks` (PigroCRM), `activities` (hub letters) | The user's to-do item (table `attivita`, `/api/activities`) becomes `tasks`. `activities` keeps meaning the append-only timeline (table and package `core/activities`, `ActivityRead`). In the hub contract letter, `attivita` is the free text of what the freelancer does, so `activities`. |
-| cliente | `customer` | Everywhere, including the hub fields that copy the client's details onto a match (`cliente_ragione_sociale` is `customer_legal_name`). |
+| cliente | `customer` | The role of who is billed, everywhere, including the hub fields that copy the client's details onto a match (`cliente_ragione_sociale` is `customer_legal_name`). The registry entry that holds a customer is an `organization` (see anagrafica below); the foreign keys keep the role's name (`deals.customer_id`, `invoices.customer_id`). |
 | nome | `name`, or `first_name` when the record also has `cognome` | People have `first_name` and `last_name`; everything else with a label has `name`. |
 | ruolo | `role` | A permission role on users (`admin`, `collaborator`, `readonly`) and a job role in letters. `people.ruolo` is also `role`. |
 | posizione | `position` (ordering index) or `job_title` (hub freelancer) | Pipeline stages and cost categories keep an ordering `position`; the hub freelancer's professional position is `job_title`. |
@@ -40,7 +40,7 @@ This file is the single mapping from the Italian word to the English identifier.
 | Italian | English | Meaning |
 |---|---|---|
 | cliente | customer | Who is billed |
-| anagrafica | organization | A registry entry (company or person-as-company) with roles `customer`, `supplier`, `freelancer`; replaces `customer` as the entity once the registry is merged (REB-961) |
+| anagrafica | organization | A registry entry (company or person-as-company) with roles `customer`, `supplier`, `freelancer`. Since REB-969 it is the entity: table `organizations`, class `Organization`, `OrganizationService`, `/api/organizations`, MCP `create_organization` and `organization://`, web `/app/organizations`; the roles themselves arrive with REB-970 |
 | fornitore | supplier (role) | An organisation we pay; a role of an `organization`, not a FatturaPA party |
 | persona / persone | person / people | A contact |
 | recapito | contact_point | One way to reach a person, a customer or a hub user: kind (email, phone, linkedin), value, label (lavoro, personale, amministrazione, altro → work, personal, billing, other), note, primary flag |
@@ -364,8 +364,8 @@ Entries are per project: `pigrocrm`, `hub`, `website`, `shared`.
 | `/api/tenants/{slug}/disponibile` | `/api/tenants/{slug}/available` | GET; REST path as served by FastAPI. |
 | `/app/avvisi` | `/app/reminders` | Browser path. Real page (not a redirect). Linked from nav, digests and bookmarks. |
 | `/app/calendario` | `/app/calendar` | Browser path. Redirect stub. |
-| `/app/clienti` | `/app/customers` | Browser path. Redirect stub. |
-| `/app/clienti/$customerId` | `/app/customers/$customerId` | Browser path. Redirect stub. |
+| `/app/clienti` | `/app/organizations` | Browser path. Redirect stub (it pointed at `/app/customers` until REB-969, which keeps its own stub). |
+| `/app/clienti/$customerId` | `/app/organizations/$organizationId` | Browser path. Redirect stub. |
 | `/app/deal/lista` | `/app/deal/list` | Browser path. Redirect stub. |
 | `/app/documenti/$documentId` | `/app/documents/$documentId` | Browser path. Redirect stub. |
 | `/app/entra` | `/app/verify` | Browser path. Redirect stub; magic-link emails sent earlier and nginx 301 at the edge (deploy/nginx/*pigro*.conf, spa.conf). |
@@ -549,7 +549,7 @@ Entries are per project: `pigrocrm`, `hub`, `website`, `shared`.
 | `revisione-pipeline` | `pipeline-review` | MCP prompt name (not a tool). Its arguments da/a/anno/mese/settimana become from/to/year/month/week. |
 | `set_promemoria_preference` | `set_reminder_preference` | MCP tool name. |
 | `snooze_promemoria` | `snooze_reminder` | MCP tool name. |
-| `stato-cliente` | `customer-status` | MCP prompt name (not a tool). Its arguments da/a/anno/mese/settimana become from/to/year/month/week. |
+| `stato-cliente` | `organization-status` | MCP prompt name (not a tool); `customer-status` until REB-969. Its arguments da/a/anno/mese/settimana become from/to/year/month/week. |
 | `update_attivita` | `update_task` | MCP tool name. |
 | `update_azienda` | `update_legal_entity` | MCP tool name. |
 

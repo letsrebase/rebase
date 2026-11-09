@@ -222,11 +222,11 @@ def _register_core(
         """
         return entity_schema(context, entity_type)
 
-    @mcp.resource("organization://{customer_id}")
+    @mcp.resource("organization://{organization_id}")
     @protocol_guard
-    def organization_resource(customer_id: str) -> str:
+    def organization_resource(organization_id: str) -> str:
         """Full record of a customer: tax data, contacts, deals and timeline."""
-        return entities.render_organization(context, UUID(customer_id))
+        return entities.render_organization(context, UUID(organization_id))
 
     @mcp.resource("person://{person_id}")
     @protocol_guard

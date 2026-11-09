@@ -695,7 +695,7 @@ class GmailSyncService:
             "gmail_backfill",
             "entity_type",
             "il backfill si esegue su una persona o su un cliente",
-            expected="person | customer",
+            expected="person | organization",
         )
 
     def _ingest(

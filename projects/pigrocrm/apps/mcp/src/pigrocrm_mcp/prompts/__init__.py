@@ -80,7 +80,7 @@ def register_prompts(
 
     @prompt("organization-status")
     @guard
-    def status_organization(customer_id: str) -> list[dict[str, Any]]:
+    def status_organization(organization_id: str) -> list[dict[str, Any]]:
         """The briefing before a phone call: unpaid invoices, and the customer's full record
         attached as a resource."""
-        return organization_prompts.status_organization(context, customer_id)
+        return organization_prompts.status_organization(context, organization_id)

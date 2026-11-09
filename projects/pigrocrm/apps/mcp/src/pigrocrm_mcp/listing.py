@@ -5,7 +5,7 @@ fifth of it on two things nobody reads:
 
   * `title`, which repeats the property name in Title Case (`"legal_name"` becomes
     `"Ragione Sociale"`) and the tool name again on the argument and output wrappers
-    (`"get_customerArguments"`, `"get_customerDictOutput"`);
+    (`"get_organizationArguments"`, `"get_organizationDictOutput"`);
   * `"default": null` on every optional property, which `required` already says: a property
     that is not required may be left out;
   * an `outputSchema` of `{"type": "object", "additionalProperties": true}`, which 120 tools
