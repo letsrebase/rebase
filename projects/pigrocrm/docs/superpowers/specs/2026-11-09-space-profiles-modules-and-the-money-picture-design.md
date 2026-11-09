@@ -446,7 +446,7 @@ order, because each uses the ones before it.
 ### C2. Incoming documents
 
 Several mailboxes per space, not only Gmail: generic IMAP beside Gmail, Microsoft 365 later.
-A mailbox belongs to a person or to the space and has a purpose (activities, billing);
+A mailbox belongs to a person or to the space and has a purpose (activities, billing; `billing` only on a space-owned mailbox);
 the purpose decides what PigroCRM looks for in it. Today a mailbox is one per user and
 Gmail only (`core/gmail/models.py:58`, `unique=True` on `user_id`). Manual upload of XML
 and PDF invoices and of bank statements. Everything follows A4. The SdI channel is designed

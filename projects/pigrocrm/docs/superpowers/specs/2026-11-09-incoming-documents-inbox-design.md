@@ -53,9 +53,9 @@ An **inbox item** is one file that arrived, before it becomes anything:
   inbox's own built from a slugified name (§ 2.1), so an item needs no customer, deal or
   contract as its owner (a `Document` must have exactly one, `documents/models.py:23`, and a
   supplier invoice has none of those);
-- where it came from: an upload by a person (who), a mailbox (which, the message id, the
-  sender, the subject, the date), a parent item it was unpacked from (a ZIP, a PEC envelope),
-  later the SdI;
+- where it came from: an upload by a person (who), a space mailbox (which, the message id, the
+  sender, the subject, the date; a personal mailbox is never a source, § 2.2), a parent item
+  it was unpacked from (a ZIP, a PEC envelope), later the SdI;
 - its SHA-256, and once read its **natural key** (§ 3.3);
 - its **legal entity**, once classified (§ 3.4);
 - its **kind**, decided by the classifier of § 3: sales invoice, supplier invoice, credit
@@ -74,9 +74,10 @@ What an item can be filed as depends on which modules are on (frame § A2): with
 off, a supplier invoice waits as an item and says which module would file it.
 
 **Visibility.** Before an item has a legal entity it is visible to admins without an entity
-scope and, if it came from a personal mailbox, to that mailbox's owner. After classification
-the usual entity scope applies (spec 2026-10-03 § 4). A space mailbox syncs as a system
-actor with all-entity scope, like the other jobs.
+scope and to the person who uploaded it (the uploader's view is a rule of this design). A child
+item takes its parent's uploader; an item from a space mailbox has none, so only those admins
+see it. After classification the usual entity scope applies (spec 2026-10-03 § 4). A space
+mailbox syncs as a system actor with all-entity scope, like the other jobs.
 
 ## 2. The roads in
 
@@ -120,9 +121,11 @@ Without it the default 1m answers 413.
 
 A **mailbox** is a connected account PigroCRM reads. A new `mailboxes` table holds it, with:
 
-- an **owner**: a person (their own mailbox, visible as to its items to them and, until an
-  item is classified, to no one else but unscoped admins, § 1) or the space (a shared address
-  such as fatture@ or a PEC, connected by an admin);
+- an **owner**: a person (their own mailbox, visible to them alone: it yields their synced
+  messages and the task proposals of § 4, which only they see, when they switch them on, and
+  never an inbox item, since
+  `billing` is not allowed on it) or the space (a shared address such as fatture@ or a PEC,
+  connected by an admin, and the only kind that sources items);
 - a **provider**: Gmail through Google OAuth, as today (`gmail/oauth.py`), or IMAP with host,
   port, user and password, which covers PEC, Aruba, generic hosting, and a Google Workspace
   box with an app password. Microsoft 365 OAuth is later, since Exchange Online refuses a
@@ -134,7 +137,8 @@ A **mailbox** is a connected account PigroCRM reads. A new `mailboxes` table hol
 | `correspondence` | the mail of addresses already in the address book, as Gmail sync does today (the old `activities` purpose, renamed: `activities` is the timeline package and a proposed item here is a `task`) | messages and links to customers, people and deals; with the owner's switch, task proposals from bodies (§ 4) | personal and space mailboxes |
 | `billing` | mail with an attachment of an accepted type (§ 2.1), from any sender | the attachments, as inbox items, with sender, subject and date; never the body | space-owned mailboxes only |
 
-The frame's C2 names `activities` and `billing`; the rename is the only change, and
+The frame's C2 names `activities` and `billing`; the rename and the restriction of `billing`
+to space-owned mailboxes are the only changes, and
 `statements` is C4's, since it needs bank accounts and their senders.
 
 **Gmail wrapped, not replaced.** A personal Gmail is the existing `google_accounts` row
@@ -193,8 +197,9 @@ in the same change, and an IMAP-only space must not read «not configured»
 deletes or marks mail on the server.
 
 **Disconnecting** a personal mailbox keeps what was received, and offers its owner the
-deletion of its unfiled items and their bytes, as today's offer does for messages
-(`gmail/oauth.py:48-76`).
+deletion of its synced messages, as today's offer does (`gmail/oauth.py:48-76`); it holds no
+inbox items and no attachment bytes. The items of a space mailbox belong to the space and
+stay when the mailbox is disconnected.
 
 ### 2.3 Intermediaries, the «Cassetto fiscale» and the SdI
 
@@ -275,8 +280,9 @@ invoice addressed to nobody the space knows is held, not certain.
 closed `ck_proposals_target_type` check and `ck_proposals_contract_id_required_unless_contract`
 are widened for the new target types; `ProposalService.create` and `.accept` dispatch
 explicitly per `target_type`, with no `else` routing to work units; an `owner_user_id`
-column carries visibility, so a personal-mailbox proposal is visible and notified to its
-owner only. «Proposte» (`/app/proposals`) stays the one place a proposal is accepted; an
+column carries visibility, so a task proposal from a personal mailbox is visible and
+notified to its owner only. Such a proposal has no source item or document: it carries neither
+`document_id` nor `inbox_item_id`, and the widened check allows that for its target type. «Proposte» (`/app/proposals`) stays the one place a proposal is accepted; an
 «In arrivo» item in state `proposed` links to its proposal.
 
 Before C3 and C4 ship, a supplier invoice or a statement is classified and waits in the
@@ -285,7 +291,7 @@ exist.
 
 ## 4. Tasks from personal mailboxes
 
-With the purpose `correspondence`, **only when the mailbox's owner switches it on**, a reader
+With the purpose `correspondence` on a personal mailbox, **only when its owner switches it on**, a reader
 of § 3.2 reads the bodies of threads already inside the address-filtered sync scope (never
 more than the address filter lets in) and proposes **tasks**: a to-do with a due date when a
 mail asks for something («mi mandi l'offerta entro venerdì»), and a done task on the customer
@@ -303,12 +309,12 @@ that setting already allows.
 Through the reminders catalogue (`reminders/catalogue.py`; detectors are grouped by file and
 registered in `reminders/detectors/__init__.py`):
 
-- **`proposal_pending`** is extended: its audience is the owner for a personal-mailbox
-  proposal, admins as today for the rest;
+- **`proposal_pending`** is extended: its audience is the owner for a task proposal from a
+  personal mailbox, admins as today for the rest;
 - **`connection_failing`** is extended to cover IMAP mailboxes (`failing` past its ladder,
   `auth_failed`), to the owner of a personal mailbox and to admins for a space one;
 - **`inbox_item_waiting`** is new: an item waiting for a person for more than N days
-  (default 3);
+  (default 3), to its uploader, or to the admins who see it when it has none;
 - a duplicate that disagrees with its original (same key, different amount).
 
 The statement that should have arrived and did not is C4's alert.
@@ -349,10 +355,13 @@ two duplicates, an XML after a PDF-derived record updating it, and a discarded h
 discarded; a sales XML routed to the issued review and not confirmed without a person, a
 supplier XML with one matching buyer certain and with none held; a PDF producing a proposal
 and nothing else, by either reader, and the model off by default; a personal mailbox's
-proposals visible and notified to its owner only; an IMAP mailbox that fails authentication
-showing `auth_failed` and keeping what it had; a host that resolves to a non-global address
-refused and a plaintext port refused; a token refused when connecting a mailbox; a personal
-mailbox's unclassified items invisible to a collaborator; an IMAP-only space not reading
+task proposals visible and notified to its owner only, not even to an admin; an IMAP mailbox
+that fails authentication showing `auth_failed` and keeping what it had; a host that resolves to a non-global address
+refused and a plaintext port refused; a token refused when connecting a mailbox; the purpose
+`billing` refused on a personal mailbox, which yields no inbox item even from a message with an
+accepted attachment; an unclassified item visible to its uploader and to an unscoped admin and
+invisible to a collaborator who did not upload it; a space mailbox's items kept when it is
+disconnected; an IMAP-only space not reading
 «not configured»; the existing Gmail tests unchanged.
 
 ## 8. Not in this design

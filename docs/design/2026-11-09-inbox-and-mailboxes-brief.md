@@ -84,7 +84,7 @@ phone. No bulk selection on the phone.
 | Error | `QueryErrorBanner`: what happened and «Riprova». No list under it. |
 | Many | 50 at a time with «Mostra altri (212 in tutto)», filters, a checkbox column and a bulk bar (desktop only). A ZIP of hundreds is flat rows, never a nested row. |
 | Duplicate | A copy never gets a row in «Da gestire»; it is a line «Arrivata anche via email, 03/11/2026, stesso file» on the original, and a row in «Scartati e doppioni» with its reason. A copy that disagrees (same key, other amount) is a red line on the original with «Confronta», and raises the reminder of design § 5. |
-| Owner-only | An item with no company yet shows its owner or uploader «Solo tu» with the reason in one line («Visibile a te e agli amministratori finché non ha un'azienda»); an admin reads «Visibile solo a te e agli amministratori» on the same line, without «Solo tu». Someone who may not see it sees neither the row nor the count. |
+| Owner-only | An item with no company yet shows its uploader «Solo tu» with the reason in one line («Visibile a te e agli amministratori finché non ha un'azienda»); an admin reads «Visibile solo a te e agli amministratori» on the same line, without «Solo tu». Someone who may not see it sees neither the row nor the count. |
 | Module off | The item waits and names the module that would file it («Per registrarla serve il modulo Acquisti. Resta qui finché non lo attivi.»); once the module exists, an admin gets the link «Apri Moduli» (frame B4), anyone else the sentence only. |
 | Module not built yet | Until the purchases and cash modules exist (C3, C4), a supplier invoice or a statement is classified and waits with its parsed fields shown and no filing action, and no sentence about a module to switch on (design § 3.5). |
 | Upload in flight | Each file is a row at once: `Loader` and «Lo leggo…» while it is read, a progress bar while it uploads, then it settles into its state. |
@@ -133,7 +133,7 @@ with «Prova» and «Collega» in a sticky bar.
 | Riprovo | Gold pill: «Non riesce a collegarsi dalle 11:30. Riprovo ogni 15 minuti.» Only the pill: no band. |
 | Serve te | Danger pill and the cause with the one action: «Il server non accetta la password dalle 08:15. Aggiornala per riprendere a leggere.» The band on every page (below) names it. What was already read stays. |
 | Scollegata | Muted pill. |
-| Disconnect | «Quello che è già arrivato resta. Da ora non leggo più questa casella.» with the option «Elimina anche i N documenti non ancora archiviati», as the Gmail disconnect does for messages. |
+| Disconnect | «Quello che è già arrivato resta. Da ora non leggo più questa casella.» A personal mailbox adds the option «Elimina anche i N messaggi sincronizzati», as the Gmail disconnect does today. A space mailbox offers no deletion: its documents belong to the space and stay (design § 2.2). |
 | Many | Sorted by need: `auth_failed`, then `failing`, then the rest by name; no paging under 25. |
 | Owner-only | A personal mailbox is listed only to its owner, admins included. |
 
@@ -171,7 +171,6 @@ back on any.
 - «In arrivo» sits in «Da fare» just before «Proposte» and needs an icon that is not the
   `Inbox` one «Proposte» uses.
 - Duplicates and discarded items share one tab, with the reason column.
-- The uploader sees their own unclassified item; design § 1 names no rule for an upload.
 - The status of an item maps to a tone: `new` muted, `proposed` gold, `filed` ink, `duplicate`
   muted, `discarded` muted; a refused file is `danger`. The build keeps it as a `Record` beside
   the labels, as `StatusPill` asks.
@@ -181,10 +180,10 @@ back on any.
   «Letto dal tuo agente». The per-file limits of a ZIP (design § 2.1) refuse with their own
   reason in the same red row.
 
-## Open: a contradiction in the design
+## Resolved: where an item can come from
 
-Design § 1 lets an item come from a personal mailbox, but § 2.2 allows the purpose `billing`
-(the only one that stores attachments) on space-owned mailboxes only, and `correspondence`
-stores none. This brief draws «Solo tu» on an item that has no company yet, whatever its road.
-The sentence of § 1 about a personal mailbox's items is to be fixed in the design by REB-960
-when the visibility code is written.
+Design § 1 once let an item come from a personal mailbox while § 2.2 allowed `billing`, the
+only purpose that stores attachments, on space-owned mailboxes only. REB-960 settled it: items
+come from uploads, space mailboxes and parents (a ZIP, a PEC envelope); a personal mailbox
+yields synced messages and owner-only task proposals, never an item. «Solo tu» on an item
+therefore means its uploader, and an admin reads the shared sentence.
