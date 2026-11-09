@@ -3025,3 +3025,61 @@ def test_0075_gives_every_legal_entity_31_december_adds_the_policied_table_and_d
             )
         engine.dispose()
         assert columns == set()
+
+
+def _due_items_shape(url: str) -> tuple[set[str], set[str], set[str]]:
+    """Which of the two due item tables exist, which of them carry a forced row-level
+    security, and which carry the `legal_entity_scope` policy."""
+    engine: Engine = create_engine(url)
+    try:
+        with engine.connect() as connection:
+            tables = {
+                row[0]
+                for row in connection.execute(
+                    text(
+                        "SELECT tablename FROM pg_tables WHERE schemaname = 'public' "
+                        "AND tablename IN ('due_items', 'due_item_settlements')"
+                    )
+                )
+            }
+            forced = {
+                row[0]
+                for row in connection.execute(
+                    text(
+                        "SELECT relname FROM pg_class WHERE relrowsecurity AND relforcerowsecurity "
+                        "AND relname IN ('due_items', 'due_item_settlements')"
+                    )
+                )
+            }
+            policies = {
+                row[0]
+                for row in connection.execute(
+                    text(
+                        "SELECT tablename FROM pg_policies WHERE policyname = 'legal_entity_scope' "
+                        "AND tablename IN ('due_items', 'due_item_settlements')"
+                    )
+                )
+            }
+    finally:
+        engine.dispose()
+    return tables, forced, policies
+
+
+def test_0076_creates_the_due_item_tables_under_the_scope_policy_and_downgrade_drops_them(
+    pigrocrm_postgres: Any,
+) -> None:
+    """REB-967: two new tables, both with the row-level policy every table that reaches a
+    legal entity carries, forced; nothing is backfilled, so both ways are a pure create and
+    drop."""
+    both = {"due_items", "due_item_settlements"}
+    with pigrocrm_postgres.fresh_container() as container:
+        url = container.get_connection_url()
+        config = _alembic_config(url)
+        upgrade(config, "0075")
+        assert _due_items_shape(url) == (set(), set(), set())
+        upgrade(config, "0076")
+        assert _due_items_shape(url) == (both, both, both)
+        downgrade(config, "0075")
+        assert _due_items_shape(url) == (set(), set(), set())
+        upgrade(config, "0076")
+        assert _due_items_shape(url)[0] == both
