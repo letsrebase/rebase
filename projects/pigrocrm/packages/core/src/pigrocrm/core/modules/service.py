@@ -7,6 +7,8 @@ unscoped admin's act and, for an agent, a full-access token's (`agent_actions.py
 change what the whole team sees. Neither touches a record: off hides, it never deletes.
 """
 
+from collections.abc import Collection
+
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -22,6 +24,7 @@ from pigrocrm.core.modules.registry import (
     MODULES_BY_KEY,
     PROFILE_KEY,
     ModuleKey,
+    Profile,
     enabled_modules,
     profile_default,
     setting_key,
@@ -147,6 +150,27 @@ class SpaceModulesService:
             changes=changes,
             state=self.describe(),
         )
+
+    def ensure_profile(
+        self, profile: Profile, actor: Actor, *, keep_on: Collection[ModuleKey] = ()
+    ) -> list[str]:
+        """Gives a space that has no profile `profile` and a row for every module that has
+        none (B2, B7): the profile's default, and on for `keep_on`. For the places that
+        decide a profile on the space's behalf, the boot (`ensure-space-defaults`) and the
+        engagements door, so there is no admin check and no confirmation. It never
+        overwrites: a space that already stores a profile is left whole, and a module row
+        that exists keeps its value. Answers the keys written, empty when it did nothing,
+        which is what makes a second call a no-op."""
+        self.settings.lock()
+        if self.settings.effective().space_profile is not None:
+            return []
+        stored = self.settings.effective()
+        values: dict[str, str | None] = {PROFILE_KEY: profile}
+        for key in MODULE_KEYS:
+            if stored_switch(stored, key) is None:
+                values[setting_key(key)] = _bit(key in keep_on or profile_default(profile, key))
+        self._write(values, actor)
+        return sorted(values)
 
     def set_modules(self, data: SpaceModulesSet, actor: Actor) -> SpaceModulesRead:
         """Switches the named modules. A module that holds records is switched off only when
