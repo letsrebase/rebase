@@ -519,6 +519,14 @@ ROWS: list[Row] = [
     Row("POST", "/api/invoices/{invoice_id}/confirm"),
     Row("PUT", "/api/invoices/{invoice_id}/lines", body={"lines": []}),
     Row("PATCH", "/api/invoices/{invoice_id}/payment", body={"payment_status": "unpaid"}),
+    # --- due items (REB-967): a payment recorded or undone is `require_write` before the
+    # item is looked up; what money going out and a fiscal source add comes after it ------
+    Row(
+        "POST",
+        "/api/due-items/{item_id}/settlements",
+        body={"amount": "10.00", "settled_on": "2026-01-05"},
+    ),
+    Row("POST", "/api/due-items/settlements/{settlement_id}/reverse", body={}),
     # --- invoices, fiscal half: `require_admin` -- every one of these consumes or
     # rewrites the gap-free register (spec 2026-08-20 slice 3 §4; the AGENT_FORBIDDEN
     # list in core/actor.py names the same five for agents).
@@ -1049,6 +1057,8 @@ AGENT_REACHABLE: frozenset[tuple[str, str]] = frozenset(
         ("POST", "/api/documents/{document_id}/versions"),
         ("POST", "/api/documents/{document_id}/versions/{number}/regenerate"),
         ("POST", "/api/documents/from-template"),
+        ("POST", "/api/due-items/{item_id}/settlements"),
+        ("POST", "/api/due-items/settlements/{settlement_id}/reverse"),
         ("POST", "/api/deals/{deal_id}/time-report/pdf"),
         ("POST", "/api/email-drafts"),
         ("POST", "/api/invoices"),

@@ -155,6 +155,23 @@ sections. A core read that spans modules (search, the calendar, the customer car
 `SpaceModulesService` (`set_space_profile`, `set_space_modules`: unscoped admin, and for a token
 `full_access`), never through `SpaceSettingsUpdate`. Switching off touches no record.
 
+**A due item is written by `DueItemService` and nothing else (REB-967).** `due_items` and
+`due_item_settlements` are core, never behind a module: an amount owed or to be received, in or
+out, with the payments against it. The service has two halves told apart by the signature. `create`,
+`drop`, `reschedule` and `attach_dependency` take no actor and never commit: the service that owns a source (an
+invoice, a purchase, a tax) calls them in its own transaction. `settle`, `reverse_settlement`, `get`
+and `list` take an actor and are what the routes and the four MCP tools call. A payment beyond what
+remains is refused, a part-paid item stays `expected`, a reversal stamps the settlement and never
+deletes it, and credits are negative items with negative payments. `due_date` is stored, written
+only by the service from the due rule (`rules.py`) and re-dated whenever the item it depends on
+settles, is reversed or is dropped; a dependency counts as settled only when settled in full. Who
+may settle depends on the record, not the tool: an incoming ordinary item is a collaborator's, an
+outgoing or fiscal one (`RESTRICTED_SOURCE_KINDS`) an administrator's and, for a token, `full_access`'s
+(`settle_outgoing_due_item`; `FULL_ACCESS_BY_THE_RECORD` in `test_mcp_invoice_ban.py`). A settlement
+and a dependent share the legal entity of their item by composite foreign key, so the policy of both
+tables is the plain `legal_entity_visible(legal_entity_id)`. A source kind is a string validated in
+code (`SOURCE_KINDS`), never a CHECK.
+
 **A router authenticates with `dependencies=[Depends(get_actor)]`, not per handler.** A
 handler that never names the actor is still behind it, and `test_routes_authenticate.py`
 asks every route of the OpenAPI document once with no credential. The open routes are the

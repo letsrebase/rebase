@@ -97,6 +97,14 @@ export const MIN_ROLE = {
   confirm_proforma: 'collaborator',
   delete_invoice: 'collaborator',
   set_payment_state: 'collaborator',
+  // Due items (REB-967): a client's payment recorded or undone is a collaborator's; money
+  // going out, and every item whose source is a tax, IVA, withholding or payroll, an
+  // administrator's. The service picks the row from the item, so a control on an outgoing
+  // item consults the second pair.
+  settle_due_item: 'collaborator',
+  reverse_settlement: 'collaborator',
+  settle_outgoing_due_item: 'admin',
+  reverse_outgoing_settlement: 'admin',
   produce_invoice_artifacts: 'collaborator',
   export_invoice_xml: 'collaborator',
   // The irreversible steps and the money parameters, admin-only in the service

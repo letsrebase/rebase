@@ -24,6 +24,7 @@ from pigrocrm.core.deals.models import Deal  # noqa: F401
 from pigrocrm.core.digest.models import Digest  # noqa: F401
 from pigrocrm.core.documents.models import Document, DocumentVersion  # noqa: F401
 from pigrocrm.core.drive.models import GoogleDriveAccount  # noqa: F401
+from pigrocrm.core.due_items.models import DueItem, DueItemSettlement  # noqa: F401
 from pigrocrm.core.fields.models import FieldDefinition  # noqa: F401
 from pigrocrm.core.fiscal.models import FiscalEstimateReading, FiscalProfile  # noqa: F401
 from pigrocrm.core.gmail.models import (  # noqa: F401

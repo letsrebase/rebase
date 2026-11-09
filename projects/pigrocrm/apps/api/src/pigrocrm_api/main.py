@@ -32,6 +32,7 @@ from pigrocrm_api.routers import (
     deals,
     documents,
     drive,
+    due_items,
     email_drafts,
     engagements,
     fields,
@@ -169,6 +170,8 @@ def create_app() -> FastAPI:
         inbox,
         # REB-879: the signed, dated notes thread of a deal, a customer and a person.
         notes,
+        # REB-967: the amounts that fall due and what settles them, core in every space.
+        due_items,
     ):
         app.include_router(module.router)
 

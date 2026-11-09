@@ -4984,6 +4984,88 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/due-items": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Due Items
+         * @description The amounts that fall due, in date order with the undated last.
+         */
+        get: operations["list_due_items_api_due_items_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/due-items/{item_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Due Item
+         * @description One due item with every settlement it ever had, reversed ones included.
+         */
+        get: operations["get_due_item_api_due_items__item_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/due-items/{item_id}/settlements": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Settle
+         * @description Records a payment against the item, partial or full. A client's payment is a
+         *     collaborator's; money going out, and every fiscal item, an administrator's.
+         */
+        post: operations["settle_api_due_items__item_id__settlements_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/due-items/settlements/{settlement_id}/reverse": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reverse Settlement
+         * @description Undoes a payment: the row stays, stamped, and the item reopens with what it frees.
+         *     The body, with the reason, is optional.
+         */
+        post: operations["reverse_settlement_api_due_items_settlements__settlement_id__reverse_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/rebase/leads/{request_id}": {
         parameters: {
             query?: never;
@@ -8032,6 +8114,178 @@ export interface components {
             due_date: string;
             /** Overdue */
             overdue: boolean;
+        };
+        /**
+         * DueItemDetail
+         * @description The item with every settlement it ever had, reversed ones included.
+         */
+        DueItemDetail: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Legal Entity Id
+             * Format: uuid
+             */
+            legal_entity_id: string;
+            /**
+             * Direction
+             * @enum {string}
+             */
+            direction: "in" | "out";
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "forecast" | "expected" | "settled" | "dropped";
+            /**
+             * Counterparty Type
+             * @enum {string}
+             */
+            counterparty_type: "organization" | "tax_office";
+            /** Organization Id */
+            organization_id: string | null;
+            /** Organization Name */
+            organization_name: string | null;
+            /** Tax */
+            tax: string | null;
+            /** Amount */
+            amount: string;
+            /** Currency */
+            currency: string;
+            /** Settled */
+            settled: string;
+            /** Remaining */
+            remaining: string;
+            /** Description */
+            description: string | null;
+            /** Source Kind */
+            source_kind: string;
+            /** Source Id */
+            source_id: string | null;
+            /** Source Rule */
+            source_rule: string | null;
+            /** Own Date */
+            own_date: string | null;
+            /** Due Date */
+            due_date: string | null;
+            /** Due Date Estimated */
+            due_date_estimated: boolean;
+            rule: components["schemas"]["DueRuleRead"];
+            /** Dropped Reason */
+            dropped_reason: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /** Settlements */
+            settlements: components["schemas"]["SettlementRead"][];
+        };
+        /** DueItemPage */
+        DueItemPage: {
+            /** Items */
+            items: components["schemas"]["DueItemRead"][];
+            /** Next Cursor */
+            next_cursor: string | null;
+        };
+        /**
+         * DueItemRead
+         * @description `amount` is in the document's currency. `settled` is what live settlements add up to
+         *     and `remaining` is what is still owed (zero once settled, and for a dropped item).
+         *     `due_date` is the date the schedule reads; `due_date_estimated` says it follows a
+         *     dependency that is not settled yet.
+         */
+        DueItemRead: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Legal Entity Id
+             * Format: uuid
+             */
+            legal_entity_id: string;
+            /**
+             * Direction
+             * @enum {string}
+             */
+            direction: "in" | "out";
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "forecast" | "expected" | "settled" | "dropped";
+            /**
+             * Counterparty Type
+             * @enum {string}
+             */
+            counterparty_type: "organization" | "tax_office";
+            /** Organization Id */
+            organization_id: string | null;
+            /** Organization Name */
+            organization_name: string | null;
+            /** Tax */
+            tax: string | null;
+            /** Amount */
+            amount: string;
+            /** Currency */
+            currency: string;
+            /** Settled */
+            settled: string;
+            /** Remaining */
+            remaining: string;
+            /** Description */
+            description: string | null;
+            /** Source Kind */
+            source_kind: string;
+            /** Source Id */
+            source_id: string | null;
+            /** Source Rule */
+            source_rule: string | null;
+            /** Own Date */
+            own_date: string | null;
+            /** Due Date */
+            due_date: string | null;
+            /** Due Date Estimated */
+            due_date_estimated: boolean;
+            rule: components["schemas"]["DueRuleRead"];
+            /** Dropped Reason */
+            dropped_reason: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /** DueRuleRead */
+        DueRuleRead: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "fixed" | "after_settlement" | "month_after_settlement_on_day" | "on_settlement";
+            /** Depends On Id */
+            depends_on_id: string | null;
+            /** Offset Days */
+            offset_days: number;
+            /** Day Of Month */
+            day_of_month: number | null;
+            /** Not After */
+            not_after: string | null;
         };
         /**
          * EconomicDashboard
@@ -12039,6 +12293,81 @@ export interface components {
             term: string;
             /** Groups */
             groups: components["schemas"]["SearchGroup"][];
+        };
+        /**
+         * SettlementCreate
+         * @description One payment against a due item. `amount` is in the item's currency and has the item's
+         *     sign; a payment in another currency says what left the account too.
+         */
+        SettlementCreate: {
+            /** Amount */
+            amount: number | string;
+            /**
+             * Settled On
+             * Format: date
+             */
+            settled_on: string;
+            /** Value Date */
+            value_date?: string | null;
+            /** Account Amount */
+            account_amount?: number | string | null;
+            /** Account Currency */
+            account_currency?: string | null;
+            /** Note */
+            note?: string | null;
+        };
+        /** SettlementRead */
+        SettlementRead: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Due Item Id
+             * Format: uuid
+             */
+            due_item_id: string;
+            /** Amount */
+            amount: string;
+            /** Account Amount */
+            account_amount: string | null;
+            /** Account Currency */
+            account_currency: string | null;
+            /**
+             * Settled On
+             * Format: date
+             */
+            settled_on: string;
+            /** Value Date */
+            value_date: string | null;
+            /** Note */
+            note: string | null;
+            /** Recorded By Id */
+            recorded_by_id: string | null;
+            /** Recorded By Type */
+            recorded_by_type: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Reversed At */
+            reversed_at: string | null;
+            /** Reversed By Id */
+            reversed_by_id: string | null;
+            /** Reversed By Type */
+            reversed_by_type: string | null;
+            /** Reversal Reason */
+            reversal_reason: string | null;
+        };
+        /**
+         * SettlementReversal
+         * @description Why a payment is undone, optionally.
+         */
+        SettlementReversal: {
+            /** Reason */
+            reason?: string | null;
         };
         /**
          * Signal
@@ -51046,6 +51375,504 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["NoteRevisionRead"][];
+                };
+            };
+            /** @description Permission denied: the actor does not have the required role. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The requested resource does not exist or was removed. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The request conflicts with the current state of the resource. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_due_items_api_due_items_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+                cursor?: string | null;
+                /** @description One state; omitted, the open items (forecast and expected) */
+                state?: ("forecast" | "expected" | "settled" | "dropped") | null;
+                direction?: ("in" | "out") | null;
+                /** @description Only this legal entity's rows; omitted, all of them */
+                legal_entity_id?: string | null;
+                /** @description Only this counterparty */
+                organization_id?: string | null;
+                /** @description Only this source kind. The fiscal kinds (tax, IVA, withholding, payroll) are an administrator's; without them they are left out of every page */
+                source_kind?: string | null;
+                /** @description Due on or after this day */
+                due_from?: string | null;
+                /** @description Due on or before this day */
+                due_to?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DueItemPage"];
+                };
+            };
+            /** @description Permission denied: the actor does not have the required role. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The requested resource does not exist or was removed. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The request conflicts with the current state of the resource. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_due_item_api_due_items__item_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                item_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DueItemDetail"];
+                };
+            };
+            /** @description Permission denied: the actor does not have the required role. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The requested resource does not exist or was removed. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The request conflicts with the current state of the resource. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    settle_api_due_items__item_id__settlements_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                item_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SettlementCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DueItemDetail"];
+                };
+            };
+            /** @description Permission denied: the actor does not have the required role. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The requested resource does not exist or was removed. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The request conflicts with the current state of the resource. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reverse_settlement_api_due_items_settlements__settlement_id__reverse_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                settlement_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["SettlementReversal"] | null;
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DueItemDetail"];
                 };
             };
             /** @description Permission denied: the actor does not have the required role. */
