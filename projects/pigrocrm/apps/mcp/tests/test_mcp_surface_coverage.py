@@ -194,6 +194,13 @@ _OUTSIDE_FROM_SIEVE: dict[Method, str] = {
 #    `render_pdf`, not an operation of its own.
 _INTERNE: dict[Method, str] = {
     (
+        "AnalyticsService",
+        "freeze_fiscal_estimates",
+    ): (
+        "REB-974: written by `FiscalProfileService.upsert` inside the profile change that moves "
+        "a legal entity to another pack, which `update_fiscal_profile` covers: not an operation"
+    ),
+    (
         "GmailOAuthService",
         "account_for_user",
     ): "hook of `GoogleConsentFlow`, called by the flow itself with no actor: not an operation",

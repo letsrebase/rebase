@@ -48,8 +48,10 @@ from pigrocrm.core.fiscal.ceiling import (
 )
 from pigrocrm.core.fiscal.pack import resolve_pack
 from pigrocrm.core.fiscal.repository import FiscalEstimateRepository
+from pigrocrm.core.fiscal.schemas import FiscalProfileRead
 from pigrocrm.core.fiscal.service import FiscalProfileService
 from pigrocrm.core.invoices.models import InvoiceLine
+from pigrocrm.core.legal_entities.models import LegalEntity
 from pigrocrm.core.legal_entities.service import LegalEntityService
 from pigrocrm.core.money import round_money, share
 
@@ -131,10 +133,10 @@ def _addition_over_period(terms: list[ValueTerm]) -> Callable[[date, date], Deci
 
 class AnalyticsService:
     """Reads only, with one exception: the facade over the figure modules of this package
-    (`pnl`, `budget`, `cash`, `year_overview`, `days`). `get_fiscal_estimate` keeps the
-    estimate it computes for a year on the legal entity's own revenue, so the year keeps its
-    figures when the legal entity moves to another pack (REB-974). The writer that binds
-    hours to a draft invoice lives in `timetracking.billing`.
+    (`pnl`, `budget`, `cash`, `year_overview`, `days`). `freeze_fiscal_estimates` keeps the
+    years' estimates just before a legal entity changes pack, so a year keeps its figures
+    after the move (REB-974). The writer that binds hours to a draft invoice lives in
+    `timetracking.billing`.
 
     Every figure is computed here and returned already summed. §6 forbids the frontend of
     this slice from computing any economic total at all -- the previous system's whole P&L lived in
@@ -624,18 +626,60 @@ class AnalyticsService:
         # which tells the user which screen to go to -- better than an estimate of zero
         # computed from three nulls, which reads as "you owe nothing".
         profile = FiscalProfileService(self.session).get(actor, legal_entity.id)
+        return self._estimate_year(year, legal_entity, profile, revenue)
+
+    def freeze_fiscal_estimates(self, actor: Actor, legal_entity_id: UUID) -> None:
+        """Keep, for every year the legal entity issued in, the estimate its pack computes
+        now (REB-974). `FiscalProfileService.upsert` calls it just before it moves the legal
+        entity to another pack, so a year computed under the pack being left keeps its
+        figures after the move; `get_fiscal_estimate` serves them for any year the new pack
+        does not compute. A year the pack being left has no law for is not kept. It never
+        commits: the profile change that follows is the transaction, and it takes the legal
+        entity's advisory lock first. No admin check of its own, for the same reason: its
+        only caller has made it.
+        """
+        legal_entity = LegalEntityService(self.session).resolve(legal_entity_id)
+        profile = FiscalProfileService(self.session).get(actor, legal_entity.id)
+        pack = resolve_pack(profile.pack_id, profile.pack_version)
+        readings = FiscalEstimateRepository(self.session)
+        for year in self.repo.revenue_years(legal_entity.id):
+            law = pack.law_for(year)
+            if law is None or not law.has_income_estimate:
+                continue
+            estimate = self._estimate_year(year, legal_entity, profile, None)
+            # The parameters are the profile's and the legal entity's fiscal year end, which
+            # the advances will date from.
+            readings.save(
+                legal_entity.id,
+                year,
+                pack_id=pack.id,
+                pack_version=pack.version,
+                law_from_year=law.from_year,
+                parameters={
+                    **profile.model_dump(mode="json", include=FROZEN_PARAMETERS),
+                    "fiscal_year_end_month": legal_entity.fiscal_year_end_month,
+                    "fiscal_year_end_day": legal_entity.fiscal_year_end_day,
+                },
+                figures=estimate.model_dump(mode="json"),
+            )
+
+    def _estimate_year(
+        self,
+        year: int,
+        legal_entity: LegalEntity,
+        profile: FiscalProfileRead,
+        revenue: Decimal | None,
+    ) -> FiscalEstimate:
+        """The estimate of `year` for one legal entity under the pack its profile points at.
+        When that pack no longer computes the year and the legal entity's own revenue is the
+        basis (no caller's «what if» `revenue`), the reading frozen when the legal entity
+        left the pack it was computed under is returned as it was."""
         pack = resolve_pack(profile.pack_id, profile.pack_version)
         law = pack.law_for(year)
-        has_estimate = law is not None and law.has_income_estimate
-        readings = FiscalEstimateRepository(self.session)
-        if revenue is None and not has_estimate:
-            # The pack the profile points at no longer computes this year (the legal entity
-            # moved on): a year computed earlier keeps the figures it had, with the pack and
-            # the parameters it used (REB-974).
-            frozen = readings.get(legal_entity.id, year)
+        if revenue is None and (law is None or not law.has_income_estimate):
+            frozen = FiscalEstimateRepository(self.session).get(legal_entity.id, year)
             if frozen is not None:
                 return FiscalEstimate.model_validate({**frozen.figures, "frozen": True})
-        keep = revenue is None and has_estimate
         if revenue is None:
             # Every issued invoice of the year, deal or no deal: the estimate is about
             # the person's income, and an invoice attached to no deal is still income.
@@ -643,7 +687,9 @@ class AnalyticsService:
             # decision): a social security surcharge line counts toward the ceiling in full but is
             # not
             # taxable income, so it never reaches the coefficiente base here even
-            # though `annual_revenue` sums it in full.
+            # though `annual_revenue` sums it in full. Whether the flat-rate basis is the
+            # money collected or invoiced, and whether the INPS surcharge lines come out of
+            # it, is TO VERIFY (A5 row «Flat-rate basis...», REB-975).
             revenue = taxable_revenue(
                 pack,
                 self.session,
@@ -651,7 +697,7 @@ class AnalyticsService:
                 self.repo.annual_revenue(year, legal_entity.id),
                 legal_entity.id,
             )
-        estimate = estimate_income(
+        return estimate_income(
             year=year,
             legal_entity_id=legal_entity.id,
             # `revenue` overrides the reduced figure above when the caller asks "what
@@ -669,21 +715,6 @@ class AnalyticsService:
                 "law_from_year": law.from_year if law is not None else None,
             }
         )
-        if keep and law is not None:
-            # The legal entity's own revenue under a pack that still computes the year: the
-            # reading is kept, and replaced by the next one while the regime lasts. A caller's
-            # «what if» revenue is never kept.
-            readings.save(
-                legal_entity.id,
-                year,
-                pack_id=pack.id,
-                pack_version=pack.version,
-                law_from_year=law.from_year,
-                parameters=profile.model_dump(mode="json", include=FROZEN_PARAMETERS),
-                figures=estimate.model_dump(mode="json"),
-            )
-            self.session.commit()
-        return estimate
 
 
 __all__ = ["AnalyticsService"]

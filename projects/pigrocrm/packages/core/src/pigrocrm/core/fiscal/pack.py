@@ -224,9 +224,11 @@ IT_FLAT_RATE_PACK = FiscalPack(
         ),
     ),
     charges=(SOCIAL_SECURITY_SURCHARGE_INPS,),
-    # The regime exists from 1 January 2015 (l. 190/2014, art. 1, commi 54-89, cited above)
-    # and the income estimate has always applied one arithmetic to every year, so one entry
-    # covers them all. Its contribution base is the formula `analytics/fiscal.py` carried
+    # The regime's start year and one arithmetic for every year are TO VERIFY (A5 row «The
+    # flat-rate regime exists from 1 January 2015...»): the estimate has always applied the
+    # same arithmetic to every year, so one entry from the regime's own first year keeps its
+    # figures as they were, and a year before it has no law and so no figure.
+    # Its contribution base is the formula `analytics/fiscal.py` carried
     # over from the previous system: TO VERIFY with the accountant (A5 row «Flat-rate
     # contribution base...», REB-975), as are the rest of the estimate's rows (the 5%/15%
     # substitute rate, the profitability coefficients, the INPS rates and their minimums,

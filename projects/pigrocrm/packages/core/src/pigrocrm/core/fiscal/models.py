@@ -140,10 +140,13 @@ class FiscalEstimateReading(Base, PrimaryKeyMixin, TimestampMixin):
     estimate, the taxpayer's parameters it read and the figures it produced, so a year
     computed under the flat-rate pack keeps its figures after the move.
 
-    Written whenever the year's estimate is computed on the legal entity's own revenue and
-    its pack still carries the estimate (`AnalyticsService.get_fiscal_estimate`), so it
-    follows the figures while the regime lasts and stops following them when it does not. A
-    «what if» with a revenue the caller supplies is never stored.
+    Written when the year's estimate is computed on the legal entity's own revenue and its
+    pack still carries the estimate (`AnalyticsService.get_fiscal_estimate`), so it follows
+    the figures while the regime lasts and stops following them when it does not; and by
+    `FiscalProfileService.upsert`, which keeps the previous and the current year just before
+    the legal entity changes pack, so a year nobody had opened is not lost by the move. A
+    «what if» with a revenue the caller supplies is never stored. `parameters` carries the
+    profile's own and the legal entity's fiscal year end.
 
     `parameters` and `figures` are JSON because they are copies of what `FiscalProfile` and
     `FiscalEstimate` held at that moment, read back whole and never queried by a field.

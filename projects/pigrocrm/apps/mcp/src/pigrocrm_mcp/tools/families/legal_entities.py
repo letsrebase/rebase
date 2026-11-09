@@ -76,8 +76,7 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
         a code from another pack is rejected), `profitability_coefficient`,
         `substitute_tax_rate` and `social_security_rate` as percentages (flat-rate only),
         `payment_method` (SdI code, `MP05` bank transfer), `due_days`, `iban`, VAT
-        and stamp duty parameters. `inps_category` (`gestione_separata` or
-        `artigiani_commercianti`) and `isa` (true or false) are left as they are when not sent.
+        and stamp duty parameters. `inps_category`, `isa`: kept when left out.
         """
         return invoices.update_fiscal_profile(context, data, legal_entity_id)
 
@@ -111,8 +110,7 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
         `tax_code`, `address`, `postal_code`, `city`, `province`, `country`, `certified_email`,
         `sdi_code` (7 characters), `phone`, `email`, `website`, `tax_regime` (footer text),
         `email_signature`, `logo_key`, `signature_key` (storage keys, not bytes),
-        `fiscal_year_end_month` and `fiscal_year_end_day` together (default 12 and 31; left out,
-        they keep what the row has). Ask for
+        `fiscal_year_end_month`/`_day` (default 12/31, kept when left out). Ask for
         confirmation on the summary; do not invent fiscal data. Admin only.
         """
         return invoices.update_legal_entity(context, data, legal_entity_id)

@@ -12,7 +12,7 @@ from itertools import product
 from uuid import UUID
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.actor import Actor
@@ -251,15 +251,22 @@ def test_a_year_computed_under_the_flat_rate_pack_keeps_its_figures_after_the_mo
 ) -> None:
     """The card's «Done when»: the figures of a year computed under the flat-rate pack are
     still there after the legal entity moves to the ordinary pack, with the pack and the
-    parameters they were computed with."""
+    parameters they were computed with, and the move keeps them whether or not anybody had
+    opened the year."""
     service = AnalyticsService(db_session)
     before = service.get_fiscal_estimate(YEAR, ADMIN)
     assert before.estimated_net_income is not None
+    assert db_session.execute(select(FiscalEstimateReading)).first() is None
 
     _move_to_ordinary_regime(db_session)
     after = service.get_fiscal_estimate(YEAR, ADMIN)
 
     assert _figures(after) == _figures(before)
+    expected = _estimate_before_reb_974(
+        Decimal("1583.83"), Decimal("67.00"), Decimal("5.00"), Decimal("26.07")
+    )
+    for name, value in expected.items():
+        assert getattr(after, name) == value, name
     assert after.frozen is True
     assert (after.pack_id, after.pack_version, after.law_from_year) == ("it-flat-rate", "1", 2015)
     reading = db_session.execute(select(FiscalEstimateReading)).scalar_one()
@@ -276,30 +283,42 @@ def test_a_year_computed_under_the_flat_rate_pack_keeps_its_figures_after_the_mo
         "social_security_rate": "26.07",
         "inps_category": None,
         "isa": None,
+        "fiscal_year_end_month": 12,
+        "fiscal_year_end_day": 31,
     }
 
 
-def test_a_year_never_computed_has_no_figure_under_the_ordinary_pack(
+def test_a_year_with_no_revenue_has_no_reading_and_no_figure_after_the_move(
     db_session: Session, deal_with_mixed_invoices: UUID
 ) -> None:
-    """Nothing was frozen for the year, and the ordinary pack computes no income estimate:
-    no figure, never a guess from today's profile."""
+    """The move keeps the years the legal entity issued in; any other year has nothing to
+    keep, and the ordinary pack computes no income estimate: no figure, never a guess from
+    today's profile."""
     _move_to_ordinary_regime(db_session)
-    estimate = AnalyticsService(db_session).get_fiscal_estimate(YEAR, ADMIN)
+    estimate = AnalyticsService(db_session).get_fiscal_estimate(YEAR - 2, ADMIN)
     assert estimate.frozen is False
     assert estimate.taxable_amount is None
     assert estimate.contributions is None
     assert estimate.estimated_net_income is None
     assert estimate.pack_id == "it-standard"
-    # The ordinary pack's own entry starts in 2026: it governs the year but has no estimate.
-    assert estimate.law_from_year == 2026
+    # The ordinary pack's own entry starts in 2026: before it, the pack has no law at all.
+    assert estimate.law_from_year == (2026 if YEAR - 2 >= 2026 else None)
 
 
-def test_the_next_estimate_replaces_the_frozen_figures_while_the_regime_lasts(
+def test_a_move_between_packs_that_both_compute_nothing_freezes_nothing(
     db_session: Session, deal_with_mixed_invoices: UUID
 ) -> None:
-    service = AnalyticsService(db_session)
-    service.get_fiscal_estimate(YEAR, ADMIN)
+    _move_to_ordinary_regime(db_session)
+    db_session.execute(delete(FiscalEstimateReading))
+    FiscalProfileService(db_session).upsert(
+        FiscalProfileUpsert(pack_id="non-it", default_vat_nature="N2.1"), ADMIN
+    )
+    assert db_session.execute(select(FiscalEstimateReading)).first() is None
+
+
+def test_a_save_that_keeps_the_pack_freezes_nothing(
+    db_session: Session, deal_with_mixed_invoices: UUID
+) -> None:
     FiscalProfileService(db_session).upsert(
         FiscalProfileUpsert(
             regime_code="RF19",
@@ -309,41 +328,34 @@ def test_the_next_estimate_replaces_the_frozen_figures_while_the_regime_lasts(
         ),
         ADMIN,
     )
-    service.get_fiscal_estimate(YEAR, ADMIN)
+    assert db_session.execute(select(FiscalEstimateReading)).first() is None
 
-    readings = db_session.execute(select(FiscalEstimateReading)).scalars().all()
-    assert len(readings) == 1
-    assert readings[0].figures["profitability_coefficient"] == "78.00"
-    assert readings[0].parameters["substitute_tax_rate"] == "15.00"
 
+def test_the_frozen_figures_are_the_ones_of_the_profile_when_the_entity_left(
+    db_session: Session, deal_with_mixed_invoices: UUID
+) -> None:
+    FiscalProfileService(db_session).upsert(
+        FiscalProfileUpsert(
+            regime_code="RF19",
+            profitability_coefficient=Decimal("78.00"),
+            substitute_tax_rate=Decimal("15.00"),
+            social_security_rate=Decimal("24.00"),
+        ),
+        ADMIN,
+    )
     _move_to_ordinary_regime(db_session)
-    frozen = service.get_fiscal_estimate(YEAR, ADMIN)
+    frozen = AnalyticsService(db_session).get_fiscal_estimate(YEAR, ADMIN)
     assert frozen.profitability_coefficient == Decimal("78.00")
     assert frozen.estimated_net_income == Decimal("1146.50")
 
 
-def test_a_what_if_revenue_is_never_kept(
+def test_a_what_if_revenue_never_reads_a_frozen_year(
     db_session: Session, deal_with_mixed_invoices: UUID
 ) -> None:
-    estimate = AnalyticsService(db_session).get_fiscal_estimate(
-        YEAR, ADMIN, revenue=Decimal("1000.00")
-    )
-    assert estimate.revenue == Decimal("1000.00")
-    assert db_session.execute(select(FiscalEstimateReading)).first() is None
     _move_to_ordinary_regime(db_session)
     again = AnalyticsService(db_session).get_fiscal_estimate(YEAR, ADMIN, revenue=Decimal("1000"))
+    assert again.revenue == Decimal("1000.00")
     assert again.frozen is False and again.taxable_amount is None
-
-
-def test_each_year_is_frozen_on_its_own(
-    db_session: Session, deal_with_mixed_invoices: UUID
-) -> None:
-    service = AnalyticsService(db_session)
-    service.get_fiscal_estimate(YEAR, ADMIN)
-    _move_to_ordinary_regime(db_session)
-    other = service.get_fiscal_estimate(YEAR - 1, ADMIN)
-    assert other.frozen is False
-    assert other.taxable_amount is None
 
 
 # --- the taxpayer's parameters on the profile, the year end on the legal entity ------

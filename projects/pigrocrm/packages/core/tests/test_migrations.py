@@ -2952,3 +2952,76 @@ def test_0073_carries_legacy_free_text_and_an_owner_holding_it_saves_unchanged(
             ]
             assert grown.email == "ada(at)acme"
         engine.dispose()
+
+
+def test_0074_gives_every_legal_entity_31_december_adds_the_policied_table_and_downgrade_undoes_it(
+    pigrocrm_postgres: Any,
+) -> None:
+    """REB-974 over a legal entity and its profile planted at 0073. Up, the entity reads 12 and
+    31 from the column default, the profile has no INPS category and no ISA, `fiscal_estimates`
+    exists, forced and policied, and the two check constraints refuse a category that is not
+    one of the two and a 30 February. Down, the table and the five columns are gone."""
+    entity = "00000000-0000-7000-8000-0000000000e1"
+    with pigrocrm_postgres.fresh_container() as container:
+        url = container.get_connection_url()
+        config = _alembic_config(url)
+        upgrade(config, "0073")
+        engine: Engine = create_engine(url)
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    "INSERT INTO legal_entities (id, name, legal_name, country) "
+                    f"VALUES ('{entity}', 'E', 'E srl', 'IT')"
+                )
+            )
+            connection.execute(
+                text(
+                    "INSERT INTO fiscal_profile (id, legal_entity_id, default_vat_rate, "
+                    "apply_stamp_duty, stamp_duty_threshold, stamp_duty_amount, payment_terms, "
+                    "payment_method, due_days) VALUES "
+                    f"(gen_random_uuid(), '{entity}', 0, true, 77.47, 2.00, 'TP02', 'MP05', 30)"
+                )
+            )
+        engine.dispose()
+
+        upgrade(config, "0074")
+        engine = create_engine(url)
+        with engine.connect() as connection:
+            year_end = connection.execute(
+                text("SELECT fiscal_year_end_month, fiscal_year_end_day FROM legal_entities")
+            ).one()
+            parameters = connection.execute(
+                text("SELECT inps_category, isa FROM fiscal_profile")
+            ).one()
+        assert tuple(year_end) == (12, 31)
+        assert tuple(parameters) == (None, None)
+        assert _table_shape(url, "fiscal_estimates") == (True, True, {"legal_entity_scope"})
+        for statement in (
+            "UPDATE fiscal_profile SET inps_category = 'cassa_forense'",
+            "UPDATE legal_entities SET fiscal_year_end_month = 2, fiscal_year_end_day = 30",
+        ):
+            with pytest.raises(IntegrityError), engine.begin() as connection:
+                connection.execute(text(statement))
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    "UPDATE legal_entities SET fiscal_year_end_month = 2, fiscal_year_end_day = 29"
+                )
+            )
+        engine.dispose()
+
+        downgrade(config, "0073")
+        assert _table_shape(url, "fiscal_estimates")[0] is False
+        engine = create_engine(url)
+        with engine.connect() as connection:
+            columns = set(
+                connection.execute(
+                    text(
+                        "SELECT table_name || '.' || column_name FROM information_schema.columns "
+                        "WHERE column_name IN ('inps_category', 'isa', "
+                        "'fiscal_year_end_month', 'fiscal_year_end_day')"
+                    )
+                ).scalars()
+            )
+        engine.dispose()
+        assert columns == set()

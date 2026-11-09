@@ -557,6 +557,18 @@ class AnalyticsRepository:
             )
         )
 
+    def revenue_years(self, legal_entity_id: UUID | None = None) -> list[int]:
+        """The years in which one legal entity has issued revenue, oldest first: the years
+        whose income estimate there is something to keep for (REB-974)."""
+        return list(
+            self.session.execute(
+                select(Invoice.year)
+                .where(*revenue_filter(), *invoice_legal_entity(legal_entity_id))
+                .distinct()
+                .order_by(Invoice.year)
+            ).scalars()
+        )
+
     def annual_revenue_by_legal_entity(
         self, year: int, legal_entity_id: UUID | None = None
     ) -> dict[UUID, Decimal]:

@@ -205,6 +205,7 @@ The register as of today, from the conversation:
 | Instalment rule and interest for an srl | to verify | |
 | 5% substitute rate on start-up conditions, 15% otherwise; profitability coefficients | to verify | |
 | Flat-rate contribution base: whether INPS contributions are deducted before the substitute tax | to verify | |
+| The flat-rate regime exists from 1 January 2015 (L. 190/2014, art. 1, commi 54-89) and the income estimate's arithmetic is the same in every year | to verify | |
 | «Gestione separata» and «artigiani e commercianti» rates, minimums and quarterly dates | to verify | |
 | IRPEF brackets, regional and municipal surcharges; IRES and IRAP rates; IRAP region rules | to verify | |
 | Annual chamber of commerce fee | to verify | |
