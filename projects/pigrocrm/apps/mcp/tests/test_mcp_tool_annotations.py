@@ -57,7 +57,7 @@ SURFACES: dict[str, dict[str, Any]] = {
 # figures, and the list its five filters.
 DEFAULT_BUDGET_BYTES = 98_200
 # REB-957: 111.9 KB, up from 111.6 KB, for `skip_space_onboarding` (a full-access
-# administrator's), measured at 111,786 bytes; `describe_space`'s `onboarding` fits the default budget.
+# administrator's), measured at 111,786 bytes; `describe_space`'s `onboarding` fits the default.
 FULL_ACCESS_BUDGET_BYTES = 111_900
 
 # A name starting with one of these reads. The tools that read without such a name are
