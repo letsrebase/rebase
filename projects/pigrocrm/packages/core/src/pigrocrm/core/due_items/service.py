@@ -19,10 +19,12 @@ reads the ordinary kinds, only an administrator the fiscal ones.
 
 import datetime as dt
 from decimal import Decimal
+from typing import Any
 from uuid import UUID
 
 from sqlalchemy.orm import Session
 
+from pigrocrm.core.activities.service import ActivityService
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.db import today_local
 from pigrocrm.core.due_items.models import (
@@ -90,6 +92,7 @@ class DueItemService:
     def __init__(self, session: Session) -> None:
         self.session = session
         self.repo = DueItemRepository(session)
+        self.activities = ActivityService(session)
 
     # ---- the writer's half: no actor, no commit -------------------------------------------
 
@@ -281,7 +284,7 @@ class DueItemService:
                 remaining=str(remaining),
                 amount=str(data.amount),
             )
-        self.repo.add_settlement(
+        settlement = self.repo.add_settlement(
             DueItemSettlement(
                 due_item_id=item.id,
                 legal_entity_id=item.legal_entity_id,
@@ -300,6 +303,7 @@ class DueItemService:
             item.state = "settled"
         self.session.flush()
         self._follow(item)
+        self._record("due_item_settled", item, settlement, actor)
         self.session.commit()
         return self._detail(item)
 
@@ -327,6 +331,7 @@ class DueItemService:
             item.state = "expected"
         self.session.flush()
         self._follow(item)
+        self._record("due_item_settlement_reversed", item, settlement, actor)
         self.session.commit()
         return self._detail(item)
 
@@ -355,6 +360,22 @@ class DueItemService:
         )
 
     # ---- internals ------------------------------------------------------------------------
+
+    def _record(
+        self, kind: str, item: DueItem, settlement: DueItemSettlement, actor: Actor
+    ) -> None:
+        """The timeline entry of the item's legal entity: who, when and through which door
+        (REB-781). Due items have no timeline of their own yet, so it hangs on the legal
+        entity, whose visibility the row policy already knows. The amount is left out of an
+        outgoing or fiscal item's entry: whoever reads the legal entity's timeline is not
+        necessarily who may read that payment."""
+        payload: dict[str, Any] = {
+            "due_item_id": str(item.id),
+            "settlement_id": str(settlement.id),
+        }
+        if item.direction == "in" and not _is_fiscal(item):
+            payload["amount"] = str(settlement.amount)
+        self.activities.record("legal_entity", item.legal_entity_id, kind, actor, payload)
 
     def _locked(self, item_id: UUID) -> DueItem:
         item = self.repo.get_locked(item_id)

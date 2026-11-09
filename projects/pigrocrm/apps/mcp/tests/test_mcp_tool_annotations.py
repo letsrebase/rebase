@@ -51,10 +51,10 @@ SURFACES: dict[str, dict[str, Any]] = {
 # REB-971: 95.5 KB and 109 KB, up from 94.5 KB and 108 KB, for `list_inbox_items` and
 # `get_inbox_item` (every token's): the list takes four filters and a cursor and says what an
 # item's state is, and neither can say less.
-# REB-967: 98.2 KB and 111.6 KB, up from 95.5 KB and 109 KB, after REB-971, for `list_due_items`, `get_due_item`,
-# `settle_due_item` and `reverse_settlement` (2.6 KB): the four are core and on every token's
-# surface, the settlement takes the item's amount, its date and the account's own figures, and
-# the list its five filters.
+# REB-967: 98.2 KB and 111.6 KB, up from 95.5 KB and 109 KB, for `list_due_items`,
+# `get_due_item`, `settle_due_item` and `reverse_settlement` (2.6 KB): the four are core and on
+# every token's surface, the settlement takes the item's amount, its date and the account's own
+# figures, and the list its five filters.
 DEFAULT_BUDGET_BYTES = 98_200
 FULL_ACCESS_BUDGET_BYTES = 111_600
 
