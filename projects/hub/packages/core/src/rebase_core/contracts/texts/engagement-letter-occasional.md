@@ -1,8 +1,8 @@
 ---
 title: Lettera di incarico occasionale
 subtitle: "n. {{numero}}, secondo il Contratto quadro per prestazioni occasionali firmato il {{data-contratto-quadro}}"
-version: "1.0"
-date: 12 ottobre 2026
+version: "1.1"
+date: 9 novembre 2026
 status: final
 ---
 
@@ -65,6 +65,21 @@ dalla tariffa giornaliera che il Collaboratore ha chiesto (articolo 5 del Contra
 quadro). Il Collaboratore invia il Rendiconto ed emette la ricevuta come dice
 l'articolo 6 del Contratto quadro; ritenuta d'acconto e contributi seguono gli articoli
 6.4 e 5.7.
+
+<!-- REB-979: the pay-on-collection clause was written on 2026-11-09 and awaits the overall legal review of the contracts. -->
+
+{{se giorni-incasso}}
+
+**Pagamento a incasso.** Il termine della riga «Pagamento» decorre dal pagamento del
+Cliente: rebase paga il Compenso quando sono passati i giorni indicati nella riga,
+contati dal giorno in cui il Cliente ha saldato rebase per lo stesso lavoro. Quel
+pagamento decide solo quando rebase paga, non se paga: se il Cliente paga in ritardo o
+non paga, rebase paga entro 60 giorni dal ricevimento della ricevuta e il rischio resta
+di rebase. Con questa Lettera le Parti convengono questo termine per questo Incarico; se
+il Contratto quadro firmato non lo prevede ancora, vale come eccezione all'articolo 7.2
+del Contratto quadro.
+
+{{fine se}}
 
 **Consuntivazione.** Il Collaboratore registra le ore lavorate per l'incarico in
 PigroCRM, nel progetto che rebase predispone nel suo spazio all'avvio dell'incarico, con

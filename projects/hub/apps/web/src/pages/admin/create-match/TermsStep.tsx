@@ -160,6 +160,30 @@ function Payment({
           </Label>
         </div>
       </div>
+      <div className="space-y-1.5">
+        {/* Optional (REB-979), inside its sentence like «Pagamento a … giorni». */}
+        <Label className="font-normal">
+          <span>A incasso, pagato</span>
+          <Input
+            id="letter-collection-days"
+            type="number"
+            inputMode="numeric"
+            min={1}
+            max={60}
+            className="w-20"
+            value={form.collection_days}
+            onChange={(event) => onChange({ ...form, collection_days: event.target.value })}
+            aria-invalid={invalid('collection_days')}
+            aria-describedby="letter-collection-days-help"
+          />
+          <span>giorni dopo che il cliente ha saldato rebase</span>
+        </Label>
+        <p id="letter-collection-days-help" className="text-sm text-muted-foreground">
+          Facoltativo, da 1 a 60. La lettera stampa questo termine al posto di «Pagamento a … giorni», che resta
+          da compilare, e dice che rebase paga entro 60 giorni dalla{' '}
+          {regime === 'occasional' ? 'ricevuta' : 'fattura'}, col rischio che resta di rebase.
+        </p>
+      </div>
     </>
   )
 }

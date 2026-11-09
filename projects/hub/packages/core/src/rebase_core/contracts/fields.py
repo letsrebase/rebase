@@ -1,8 +1,8 @@
 """A contract's fields and markers, and the two numbers a letter must not get wrong.
 
-Nothing here runs a binary, so all of it is tested in the hub's own pytest gate. Two
-markers are the reason a contract is not a plain pandoc call, and both are replaced in
-the Typst pandoc writes, after pandoc has escaped everything else:
+Nothing here runs a binary, so all of it is tested in the hub's own pytest gate. These
+markers are the reason a contract is not a plain pandoc call, and each is replaced in the
+Typst pandoc writes, after pandoc has escaped everything else (`IF_FILLED` is the third):
 
 - `{{key}}` is a field: a value from the data when it has one, otherwise a blank line
   labelled with the key, so the same file is both the template and the printable form.
@@ -38,6 +38,10 @@ TERM, DAYS, MONTH_END = "termine-pagamento", "giorni-pagamento", "fine-mese"
 # Article 3 of law 81/2017: no term past 60 days from the invoice. Counted from the end
 # of the month, a term can add up to 30 days to the invoice's date, so it may be 30 at most.
 DAYS_LIMIT, DAYS_LIMIT_MONTH_END = 60, 30
+# A letter may tie the term to the client's payment (REB-979): the freelancer is paid this
+# many days (1 to 60) after the client has paid the invoice that covers the same work, and
+# in any case within `DAYS_LIMIT` days from receiving the freelancer's invoice or receipt.
+COLLECTION = "giorni-incasso"
 
 MONTHS = (
     "gennaio",
@@ -140,8 +144,10 @@ def checked(data: dict[str, Value], *, receipt: bool = False) -> dict[str, Value
             f"{TERM} is written from {DAYS} and {MONTH_END}; give those two instead"
         )
     days, month_end = data.get(DAYS), data.get(MONTH_END, False)
+    paid_on = "ricevuta" if receipt else "fattura"
+    collected = collection_term(data.get(COLLECTION), paid_on)
     if days is None:
-        return data
+        return data if collected is None else {**data, TERM: collected}
     if isinstance(days, bool) or not isinstance(days, int):
         raise ContractFailed(f"{DAYS} must be a whole number of days, not {days!r}")
     if not isinstance(month_end, bool):
@@ -153,9 +159,28 @@ def checked(data: dict[str, Value], *, receipt: bool = False) -> dict[str, Value
             + (" when counted from the end of the month," if month_end else ",")
             + " or the letter breaks the 60 days of law 81/2017"
         )
-    paid_on = "ricevuta" if receipt else "fattura"
-    term = f"{days} giorni data {paid_on}" + (" fine mese" if month_end else "")
+    term = collected or f"{days} giorni data {paid_on}" + (" fine mese" if month_end else "")
     return {**data, TERM: term}
+
+
+def collection_term(days: Value, paid_on: str) -> str | None:
+    """The payment term of a letter that waits for the client, or None when it does not
+    (`giorni-incasso` unset). Refused outside 1 to 60: a longer wait could not keep the
+    60 days of law 81/2017 that the same sentence promises."""
+    if days is None:
+        return None
+    if isinstance(days, bool) or not isinstance(days, int):
+        raise ContractFailed(f"{COLLECTION} must be a whole number of days, not {days!r}")
+    if not 0 < days <= DAYS_LIMIT:
+        raise ContractFailed(
+            f"{COLLECTION} is {days}: from 1 to {DAYS_LIMIT}, or the letter breaks the 60 days"
+            " of law 81/2017"
+        )
+    unit = "giorno" if days == 1 else "giorni"
+    return (
+        f"{days} {unit} dopo che il Cliente ha saldato rebase per lo stesso lavoro, e in ogni"
+        f" caso entro {DAYS_LIMIT} giorni dal ricevimento della {paid_on}"
+    )
 
 
 def italian(number: Decimal, places: int) -> str:
@@ -211,12 +236,31 @@ def typst_string(text: str) -> str:
     return '"' + escaped.replace("\r", "").replace("\n", "\\n").replace("\t", " ") + '"'
 
 
+# `{{se key}}` and `{{fine se}}`, each on a line of its own, keep what stands between them
+# only when the data fill `key` (REB-979): the clause a letter prints only when it asks
+# for it. They are not field-shaped (a space), so no data file or test takes them for a
+# field; `survived` counts them across pandoc and a stray one is refused here.
+IF_FILLED = re.compile(r"\{\{se ([a-z0-9]+(?:-[a-z0-9]+)*)\}\}(.*?)\{\{fine se\}\}", re.S)
+
+
+def keep_if_filled(typst: str, data: Mapping[str, Value]) -> str:
+    def one(match: re.Match[str]) -> str:
+        value = data.get(match.group(1))
+        return match.group(2) if value is not None and value != "" else ""
+
+    kept = IF_FILLED.sub(one, typst)
+    if "{{se " in kept or "{{fine se}}" in kept:
+        raise ContractFailed("a `{{se key}}` or `{{fine se}}` marker has no partner")
+    return kept
+
+
 def fill(typst: str, data: Mapping[str, Value]) -> tuple[str, list[str]]:
     """Replace every field token; return the Typst and the fields left blank.
 
     Each call ends in a semicolon, which closes the embedded expression: without it a
     field followed by `(` or by `.word` would be read as a call or a field access.
     """
+    typst = keep_if_filled(typst, data)
     blank: list[str] = []
 
     def one(match: re.Match[str]) -> str:
@@ -241,11 +285,12 @@ def mark_proposals(typst: str, name: str, draft: bool) -> str:
 
 
 def survived(markdown: str, typst: str, name: str) -> None:
-    """Both markers rely on how pandoc's Typst writer escapes, which a pandoc release could
+    """The markers rely on how pandoc's Typst writer escapes, which a pandoc release could
     change. A field it escaped would print as `{{key}}` and an unescaped proposal as plain
     text, both without an error, so count them on either side of pandoc instead."""
     for marker, before, after in (
         ("fields", len(FIELD.findall(markdown)), len(FIELD.findall(typst))),
+        ("conditionals", len(IF_FILLED.findall(markdown)), len(IF_FILLED.findall(typst))),
         ("proposals", markdown.count("[["), typst.count(PROPOSAL_OPEN)),
     ):
         if after < before:

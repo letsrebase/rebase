@@ -173,6 +173,7 @@ export type LetterForm = Record<LetterTextKey, string> & {
   fee: string
   payment_days: string
   month_end: boolean
+  collection_days: string
   notice_days: string
 }
 export type LetterFieldKey = keyof LetterForm
@@ -188,6 +189,7 @@ export const LETTER_EMPTY: LetterForm = {
   fee: '',
   payment_days: '',
   month_end: false,
+  collection_days: '',
   notice_days: '',
 }
 
@@ -208,6 +210,7 @@ export function letterForm(draft: LetterDraft): LetterForm {
     fee: draft.fee === null ? '' : amountForm(draft.fee),
     payment_days: draft.payment_days === null ? '' : String(draft.payment_days),
     month_end: draft.month_end ?? false,
+    collection_days: draft.collection_days === null ? '' : String(draft.collection_days),
     notice_days: draft.notice_days === null ? '' : String(draft.notice_days),
   }
 }
@@ -224,6 +227,7 @@ export function toLetter(form: LetterForm): Letter {
     fee: sentAmount(form.fee),
     payment_days: Number(form.payment_days),
     month_end: form.month_end,
+    collection_days: form.collection_days.trim() ? Number(form.collection_days) : null,
     notice_days: form.notice_days.trim() ? Number(form.notice_days) : null,
   }
 }
@@ -242,8 +246,9 @@ export function expectedDaysToSend(text: string): number | null {
 
 /** The letter's fields as «Crea match» names them. The client's budget has no label
  *  here, because it has no field anywhere in this flow (spec § 1h). The page asks
- *  `mode` and `unit` as one choice, «Come si paga», and `payment_days` inside
- *  its sentence, «Pagamento a … giorni», so those three labels show nowhere on it. */
+ *  `mode` and `unit` as one choice, «Come si paga», `payment_days` inside its sentence,
+ *  «Pagamento a … giorni», and `collection_days` inside its own, «A incasso, pagato … giorni
+ *  dopo che il cliente ha saldato rebase», so those four labels show nowhere on it. */
 export const LETTER_LABELS: Record<LetterFieldKey, string> = {
   role: 'Ruolo',
   activities: 'Cosa farà',
@@ -264,6 +269,7 @@ export const LETTER_LABELS: Record<LetterFieldKey, string> = {
   expenses: 'Spese',
   payment_days: 'Giorni di pagamento',
   month_end: 'fine mese',
+  collection_days: 'Giorni dopo il pagamento del cliente',
   billing_deadlines: 'Scadenze di fatturazione',
   notice_days: 'Giorni di preavviso',
   personal_data: 'Tratta dati personali del cliente',
@@ -285,7 +291,17 @@ export const LETTER_GROUPS: readonly { title: string; fields: readonly LetterFie
   { title: 'Modalità di lavoro', fields: ['location', 'coordination', 'customer_contact', 'rebase_contact'] },
   {
     title: 'Condizioni economiche',
-    fields: ['mode', 'fee', 'unit', 'extra_work', 'expenses', 'payment_days', 'month_end', 'billing_deadlines'],
+    fields: [
+      'mode',
+      'fee',
+      'unit',
+      'extra_work',
+      'expenses',
+      'payment_days',
+      'month_end',
+      'collection_days',
+      'billing_deadlines',
+    ],
   },
   { title: 'Preavviso', fields: ['notice_days'] },
   {
@@ -373,6 +389,7 @@ export const TERMS_FIELDS: ReadonlySet<LetterFieldKey> = new Set<LetterFieldKey>
   'fee',
   'payment_days',
   'month_end',
+  'collection_days',
   ...TO_BODY_FIELDS,
 ])
 

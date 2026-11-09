@@ -1,8 +1,8 @@
 ---
 title: Lettera di incarico
 subtitle: "n. {{numero}}, secondo il Contratto quadro firmato il {{data-contratto-quadro}}"
-version: "1.1"
-date: 26 settembre 2026
+version: "1.2"
+date: 9 novembre 2026
 status: final
 ---
 
@@ -58,6 +58,21 @@ quadro). Il coordinamento qui sopra è stabilito di comune accordo ed è il solo
 Il Compenso è concordato a partire dalla tariffa giornaliera che il Professionista ha
 chiesto (articolo 5 del Contratto quadro). Il Professionista invia il Rendiconto e
 fattura a rebase come dice l'articolo 6 del Contratto quadro.
+
+<!-- REB-979: the pay-on-collection clause was written on 2026-11-09 and awaits the overall legal review of the contracts. -->
+
+{{se giorni-incasso}}
+
+**Pagamento a incasso.** Il termine della riga «Pagamento» decorre dal pagamento del
+Cliente: rebase paga il Compenso quando sono passati i giorni indicati nella riga,
+contati dal giorno in cui il Cliente ha saldato rebase per lo stesso lavoro. Quel
+pagamento decide solo quando rebase paga, non se paga: se il Cliente paga in ritardo o
+non paga, rebase paga entro 60 giorni dal ricevimento della fattura e il rischio resta
+di rebase. Con questa Lettera le Parti convengono questo termine per questo Incarico; se
+il Contratto quadro firmato non lo prevede ancora, vale come eccezione all'articolo 7.2
+del Contratto quadro.
+
+{{fine se}}
 
 **Consuntivazione.** Il Professionista registra le ore lavorate per l'incarico in
 PigroCRM, nel progetto che rebase predispone nel suo spazio all'avvio dell'incarico, con

@@ -241,12 +241,19 @@ The letter carries `payment_rule` (`fixed_term` or `on_collection`) and, for the
   When one client invoice covers several engagements, each freelancer item depends on that
   invoice's item. A partly paid client item counts as paid only when it is settled in full. With
   no client invoice yet, the item waits, and the backstop still dates it.
-- **The clause.** The letter text says which rule applies, and the clause for `on_collection`
-  does not exist in the templates yet: its wording is Lorenzo's and Ivan's, with a lawyer's
-  read, before any template gains it. The read must settle one conflict: the ordinary
-  framework agreement says the freelancer's payment does not depend on the client's (7.2),
-  while 7.1 lets a letter name another term. Existing framework agreements are not re-signed
-  for it; the rule applies to letters sent after.
+- **The clause.** It exists since 2026-11-09 (REB-979, Lorenzo's call, recorded in
+  `docs/design/DECISIONS.md`), and its wording awaits the overall legal review of the
+  contracts. In the hub it is the optional letter field `collection_days` (`giorni-incasso`,
+  1 to 60): set, the rule is `on_collection`, unset, `fixed_term`. The letter then prints
+  «N giorni dopo che il Cliente ha saldato rebase per lo stesso lavoro, e in ogni caso entro
+  60 giorni dal ricevimento della fattura» (the receipt, on the occasional letter) and a
+  paragraph «Pagamento a incasso» (`engagement-letter.md` and
+  `engagement-letter-occasional.md`). The framework agreements' 7.2, both at version 1.1, say
+  a letter may do this with the risk staying rebase's, which keeps the substance of the
+  conflict the read was to settle. A letter under an agreement signed before carries the
+  parties' consent itself, as an exception to 7.2, so no agreement is re-signed. One gap with
+  the formula above: the printed text names no fixed-term floor, so for such a letter C5
+  either drops the `max` half or the letter text gains it first.
 
 ### Withholding and net
 

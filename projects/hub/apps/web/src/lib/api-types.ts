@@ -4318,6 +4318,8 @@ export interface components {
             payment_days: number | null;
             /** Month End */
             month_end: boolean | null;
+            /** Collection Days */
+            collection_days: number | null;
             /** Billing Deadlines */
             billing_deadlines: string | null;
             /** Notice Days */
@@ -4393,6 +4395,8 @@ export interface components {
             payment_days: number;
             /** Month End */
             month_end: boolean;
+            /** Collection Days */
+            collection_days?: number | null;
             /** Billing Deadlines */
             billing_deadlines?: string | null;
             /** Notice Days */

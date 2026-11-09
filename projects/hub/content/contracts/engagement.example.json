@@ -25,6 +25,7 @@
   "lavoro-extra": "non previsto",
   "spese": "nessun rimborso previsto",
   "scadenze-fatturazione": "non previste, si fattura ogni mese sul Rendiconto",
+  "giorni-incasso": 15,
   "giorni-preavviso": 30,
   "esclusiva": "nessuna",
   "portfolio": "consentita",

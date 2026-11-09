@@ -91,6 +91,7 @@ TEMPLATE_KEYS: dict[str, str] = {
     "expenses": "spese",
     "payment_days": "giorni-pagamento",
     "month_end": "fine-mese",
+    "collection_days": "giorni-incasso",
     "billing_deadlines": "scadenze-fatturazione",
     "notice_days": "giorni-preavviso",
     "personal_data": "dati-personali",
@@ -284,6 +285,7 @@ class LetterDraft(ResponseModel):
     expenses: SafeStr | None = Field(default=None, max_length=LETTER_TEXT_MAX_LENGTH)
     payment_days: int | None = Field(default=None, ge=1, le=DAYS_LIMIT)
     month_end: bool | None = None
+    collection_days: int | None = Field(default=None, ge=1, le=DAYS_LIMIT)
     billing_deadlines: SafeStr | None = Field(default=None, max_length=LETTER_TEXT_MAX_LENGTH)
     notice_days: int | None = Field(default=None, ge=1, le=NOTICE_MAX_DAYS)
     personal_data: SafeStr | None = Field(default=None, max_length=LETTER_TEXT_MAX_LENGTH)

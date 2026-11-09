@@ -339,6 +339,41 @@ def test_an_end_date_before_the_start_names_end_date(
     assert detail["msg"] == "la fine prevista viene prima dell'inizio"
 
 
+@pytest.mark.parametrize("days", [0, 61])
+def test_collection_days_outside_one_to_sixty_name_collection_days(
+    client: TestClient, admin: None, sender: RecordingSender, renderer: FakeRenderer, days: int
+) -> None:
+    freelancer_id, company_id = ready(client, sender)
+    refused = client.post(
+        f"/api/hub/freelancers/{freelancer_id}/matches",
+        json={
+            "company_id": company_id,
+            "customer": CUSTOMER,
+            "letter": {**LETTER, "collection_days": days},
+        },
+    )
+    assert refused.status_code == 422
+    assert refused.json()["detail"][0]["loc"][-1] == "collection_days"
+    assert renderer.calls == []
+
+
+def test_a_letter_that_waits_for_the_client_reaches_the_renderer(
+    client: TestClient, admin: None, sender: RecordingSender, renderer: FakeRenderer
+) -> None:
+    freelancer_id, company_id = ready(client, sender)
+    created = client.post(
+        f"/api/hub/freelancers/{freelancer_id}/matches",
+        json={
+            "company_id": company_id,
+            "customer": CUSTOMER,
+            "letter": {**LETTER, "collection_days": 15},
+        },
+    )
+    assert created.status_code == 201, created.text
+    letters = [data for document, data in renderer.calls if document == "engagement-letter"]
+    assert letters[-1]["giorni-incasso"] == 15
+
+
 @pytest.mark.parametrize("mode", ["a giornata (non è a corpo)", "A giornata", "giornaliera", ""])
 def test_a_payment_mode_outside_the_two_choices_is_refused(
     client: TestClient, admin: None, sender: RecordingSender, renderer: FakeRenderer, mode: str

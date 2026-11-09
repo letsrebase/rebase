@@ -109,6 +109,7 @@ function prefill({
       fee,
       payment_days: 30,
       month_end: true,
+      collection_days: null,
       notice_days: null,
     },
     active_framework: null,
@@ -740,6 +741,8 @@ describe('step 2, «Condizioni»', () => {
     }
     expect(screen.getByLabelText(/^Pagamento a/)).toBeRequired()
     expect(screen.getByLabelText('Fine prevista (facoltativa)')).not.toBeRequired()
+    expect(screen.getByLabelText(/^A incasso, pagato/)).toHaveValue(null)
+    expect(screen.getByLabelText(/^A incasso, pagato/)).not.toBeRequired()
   })
 
   it('keeps «Altre condizioni» closed and opens it on a refusal naming one of its fields', async () => {
@@ -916,6 +919,23 @@ describe('step 2, «Condizioni»', () => {
       'contati da fine mese, i giorni di pagamento sono al massimo 30 (legge 81/2017)',
     )
     expect(screen.getByLabelText(/^Pagamento a/)).toHaveAttribute('aria-invalid', 'true')
+  })
+
+  it('sends the days to wait for the client with the letter, and names them when refused (REB-979)', async () => {
+    const spy = routes({
+      'POST /api/hub/freelancers/f1/matches/check': () =>
+        answer(422, {
+          detail: [{ loc: ['body', 'letter', 'collection_days'], msg: 'Input should be less than or equal to 60' }],
+        }),
+    })
+    mount()
+    await toTerms()
+    await userEvent.type(screen.getByLabelText(/^A incasso, pagato/), '15')
+    await userEvent.click(screen.getByRole('button', { name: 'Avanti' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('Input should be less than or equal to 60')
+    expect(screen.getByLabelText(/^A incasso, pagato/)).toHaveAttribute('aria-invalid', 'true')
+    const [body] = bodies(spy, 'POST', '/api/hub/freelancers/f1/matches/check')
+    expect(body.letter.collection_days).toBe(15)
   })
 
   it('drops a check that lands after the admin changed the conditions (Greptile 4092036036)', async () => {
@@ -1284,6 +1304,7 @@ describe('«Tipo di lettera» (REB-687)', () => {
     expect(screen.getByRole('radio', { name: 'Incarico con partita IVA' })).not.toBeChecked()
     await userEvent.click(screen.getByRole('button', { name: 'Avanti' }))
     expect(await screen.findByLabelText('Compenso (€)')).toHaveAccessibleDescription(/lordo, senza IVA/)
+    expect(screen.getByLabelText(/^A incasso, pagato/)).toHaveAccessibleDescription(/entro 60 giorni dalla ricevuta/)
     await userEvent.click(screen.getByRole('button', { name: 'Avanti' }))
     expect(await screen.findByRole('link', { name: 'Apri la lettera occasionale (PDF)' })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Apri il contratto quadro per prestazioni occasionali (PDF)' })).toBeInTheDocument()
