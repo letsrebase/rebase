@@ -152,7 +152,7 @@ class SpaceModulesService:
         )
 
     def ensure_profile(
-        self, profile: Profile, actor: Actor, *, keep_on: Collection[ModuleKey] = ()
+        self, profile: Profile, actor: Actor, *, keep_on: Collection[str] = ()
     ) -> list[str]:
         """Gives a space that has no profile `profile` and a row for every module that has
         none (B2, B7): the profile's default, and on for `keep_on`. For the places that
