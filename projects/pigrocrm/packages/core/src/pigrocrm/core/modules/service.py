@@ -155,7 +155,8 @@ class SpaceModulesService:
         self, profile: Profile, actor: Actor, *, keep_on: Collection[str] = ()
     ) -> list[str]:
         """Gives a space that has no profile `profile` and a row for every module that has
-        none (B2, B7): the profile's default, and on for `keep_on`. For the places that
+        none (B2, B7): the profile's default, and on for `keep_on` and for every module that holds
+        records, since a module with data is never switched off unconfirmed. For the places that
         decide a profile on the space's behalf, the boot (`ensure-space-defaults`) and the
         engagements door, so there is no admin check and no confirmation. It never
         overwrites: a space that already stores a profile is left whole, and a module row
@@ -166,9 +167,19 @@ class SpaceModulesService:
             return []
         stored = self.settings.effective()
         values: dict[str, str | None] = {PROFILE_KEY: profile}
-        for key in MODULE_KEYS:
-            if stored_switch(stored, key) is None:
-                values[setting_key(key)] = _bit(key in keep_on or profile_default(profile, key))
+        wanted = {
+            key: key in keep_on or profile_default(profile, key) or self._records(key) > 0
+            for key in MODULE_KEYS
+            if stored_switch(stored, key) is None
+        }
+        # A module with records never goes off without an admin's confirmation (B1) and
+        # there is no admin here, so what holds data stays on, and what it needs with it.
+        for module in reversed(MODULES):
+            if wanted.get(module.key):
+                for need in module.requires:
+                    if need in wanted:
+                        wanted[need] = True
+        values.update({setting_key(key): _bit(on) for key, on in wanted.items()})
         self._write(values, actor)
         return sorted(values)
 

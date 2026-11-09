@@ -304,3 +304,23 @@ def test_ensure_profile_on_a_session_writes_once(db_session: Session) -> None:
     assert first == sorted(["space_profile", *ALL_ON])
     assert service.ensure_profile("company", Actor.rebase()) == []
     assert service.describe().profile == "solo"
+
+
+def test_a_module_that_holds_records_stays_on_whatever_the_profile_says(
+    db_session: Session, time_entry_factory: object
+) -> None:
+    from datetime import date
+
+    time_entry_factory(date=date(2026, 3, 10))  # type: ignore[operator]
+    service = SpaceModulesService(db_session, Settings(_env_file=None))  # type: ignore[call-arg]
+    service.ensure_profile("solo", Actor.rebase())
+    state = {m.key: m.stored for m in service.describe().modules}
+    # Hours need their deal, which holds the entry's deal: both stay on under `solo`.
+    assert state["time"] is True and state["deals"] is True
+
+
+def test_the_same_space_without_entries_has_time_off(db_session: Session) -> None:
+    service = SpaceModulesService(db_session, Settings(_env_file=None))  # type: ignore[call-arg]
+    service.ensure_profile("solo", Actor.rebase(), keep_on=("deals",))
+    state = {m.key: m.stored for m in service.describe().modules}
+    assert state["time"] is False and state["deals"] is True
