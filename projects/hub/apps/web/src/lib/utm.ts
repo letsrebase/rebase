@@ -24,16 +24,6 @@ export const ORIGIN_STORAGE_KEY = 'rebase.from'
 export const PREVIOUS_ORIGIN_STORAGE_KEY = 'rebase.da'
 const ORIGIN_SHAPE = /^[a-z0-9-]{1,40}$/
 
-/** The keys below carried the platform's old name until REB-668. The landing may still
- *  write them (the website and the hub are released apart) and a tab opened before the
- *  rename holds them, so a read falls back to the old name when the new one is empty and
- *  moves the value across, and a write drops the old name. Remove them, `recall` and
- *  `remember`, and the matching lines in `projects/website/src/utm.js` and `consent.js`
- *  with REB-697. */
-export const LEGACY_ORIGIN_STORAGE_KEY = 'orbiters.da'
-export const LEGACY_UTM_STORAGE_KEY = 'orbiters.utm'
-export const LEGACY_REFERRAL_STORAGE_KEY = 'orbiters.rif'
-
 /** Where the landing (`projects/website/src/landing.js`) leaves the campaign for the
  *  tab, and where this app leaves what it read, so a detour through the chooser or a
  *  reload of the wizard without the query string still knows where the person came
@@ -59,35 +49,22 @@ function storage(): Storage | null {
 }
 
 /** A stored value under `key`, else the one under the name it had in the 2026-11 rename
- *  (`previousKey`, for 30 days), else the one it had before REB-668 (`legacyKey`); the
- *  one found is moved to `key` on the way out so the next read finds it where it now
- *  belongs. */
-function recall(key: string, previousKey: string | null, legacyKey: string): string | null {
+ *  (`previousKey`, for 30 days; see `legacy.ts`). */
+function recall(key: string, previousKey: string | null): string | null {
   const store = storage()
-  const current = previousKey ? readWithFallback(store, key, previousKey) : (store?.getItem(key) ?? null)
-  if (current) return current
-  const legacy = store?.getItem(legacyKey)
-  if (!legacy) return null
-  try {
-    store?.setItem(key, legacy)
-    store?.removeItem(legacyKey)
-  } catch {
-    /* refused: the value is still read, from where it is */
-  }
-  return legacy
+  return previousKey ? readWithFallback(store, key, previousKey) : (store?.getItem(key) ?? null)
 }
 
-/** Write `value` under `key` and drop the old names, so a tab holds one copy. */
-function remember(key: string, previousKey: string | null, legacyKey: string, value: string): void {
+/** Write `value` under `key` and drop the old name, so a tab holds one copy. */
+function remember(key: string, previousKey: string | null, value: string): void {
   const store = storage()
   store?.setItem(key, value)
   if (previousKey) store?.removeItem(previousKey)
-  store?.removeItem(legacyKey)
 }
 
 /** What the tab remembers, if anything readable. */
 export function recallUtm(): Utm {
-  const raw = recall(UTM_STORAGE_KEY, null, LEGACY_UTM_STORAGE_KEY)
+  const raw = recall(UTM_STORAGE_KEY, null)
   return raw ? readUtm(`?${raw}`) : {}
 }
 
@@ -95,7 +72,7 @@ export function recallUtm(): Utm {
 export function rememberUtm(utm: Utm): void {
   if (Object.keys(utm).length === 0) return
   try {
-    remember(UTM_STORAGE_KEY, null, LEGACY_UTM_STORAGE_KEY, new URLSearchParams(utm).toString())
+    remember(UTM_STORAGE_KEY, null, new URLSearchParams(utm).toString())
   } catch {
     /* refused: the URL still has it, or nothing does */
   }
@@ -126,13 +103,13 @@ export function resolveOrigin(search: string): string | null {
   const own = readOrigin(search)
   if (own) {
     try {
-      remember(ORIGIN_STORAGE_KEY, PREVIOUS_ORIGIN_STORAGE_KEY, LEGACY_ORIGIN_STORAGE_KEY, own)
+      remember(ORIGIN_STORAGE_KEY, PREVIOUS_ORIGIN_STORAGE_KEY, own)
     } catch {
       /* refused: the URL still has it */
     }
     return own
   }
-  const remembered = recall(ORIGIN_STORAGE_KEY, PREVIOUS_ORIGIN_STORAGE_KEY, LEGACY_ORIGIN_STORAGE_KEY) ?? ''
+  const remembered = recall(ORIGIN_STORAGE_KEY, PREVIOUS_ORIGIN_STORAGE_KEY) ?? ''
   return ORIGIN_SHAPE.test(remembered) ? remembered : null
 }
 
@@ -161,13 +138,13 @@ export function resolveReferral(search: string): string | null {
   const own = readReferral(search)
   if (own) {
     try {
-      remember(REFERRAL_STORAGE_KEY, PREVIOUS_REFERRAL_STORAGE_KEY, LEGACY_REFERRAL_STORAGE_KEY, own)
+      remember(REFERRAL_STORAGE_KEY, PREVIOUS_REFERRAL_STORAGE_KEY, own)
     } catch {
       /* refused: the URL still has it */
     }
     return own
   }
-  const remembered = recall(REFERRAL_STORAGE_KEY, PREVIOUS_REFERRAL_STORAGE_KEY, LEGACY_REFERRAL_STORAGE_KEY) ?? ''
+  const remembered = recall(REFERRAL_STORAGE_KEY, PREVIOUS_REFERRAL_STORAGE_KEY) ?? ''
   return REFERRAL_SHAPE.test(remembered) ? remembered : null
 }
 

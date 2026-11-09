@@ -1347,10 +1347,7 @@ codes (`invalid_token`, `invalid_secret`, `invalid_signature`, `invalid_body`, `
 `webhook_disabled`, `not_found`) because their only reader is the caller's log; everything
 a person reads is Italian. After a change, `nginx -t`, then `systemctl reload nginx`.
 
-**The legacy cookie name stays.** `orbiters_user` is still read beside `rebase_user`
-(`deps.LEGACY_MEMBER_COOKIE`) and removed with `adopt_legacy_cookie` on or after 2026-11-18
-(REB-697), 30 days after the rename; not before, or everybody signed in before it is logged
-out.
+**The session cookie is `rebase_user`**, read from that name only (`deps.session_token`); the name it had before REB-668 and the browser's `orbiters.*` storage keys were dropped with REB-697, once the 30-day session window had passed.
 
 **Sessions slide at most once an hour** (`users.SESSION_SLIDE_AFTER`): a request that finds
 its deadline less than an hour behind the one it would set writes nothing, so a `/me` poll

@@ -24,7 +24,6 @@ const revealGateJs = readFileSync(join(__dirname, 'public/assets/reveal-gate.js'
 const SDK_URL = 'https://bzrcdn.openai.com/sdk/oaiq.min.js'
 const POSTHOG_URL = `${POSTHOG_ASSET_HOST}/static/array.js`
 const KEY = 'rebase.consent'
-const LEGACY_KEY = 'orbiters.consent'
 
 type Consent = {
   start: () => void
@@ -301,16 +300,6 @@ describe('withdrawing consent', () => {
     expect(window.localStorage.getItem(KEY)).toBe('denied')
     expect(reload).toHaveBeenCalledTimes(1)
   })
-
-  it('withdraws an old yes too', () => {
-    window.localStorage.setItem(LEGACY_KEY, 'granted')
-    const reload = vi.fn()
-    stubLocation({ reload })
-    clickWithdraw()
-    expect(window.localStorage.getItem(KEY)).toBeNull()
-    expect(window.localStorage.getItem(LEGACY_KEY)).toBeNull()
-    expect(reload).toHaveBeenCalledTimes(1)
-  })
 })
 
 describe('where the trackers stay silent even after a yes', () => {
@@ -391,46 +380,6 @@ describe('once somebody refuses', () => {
     expect(notice()).toBeNull()
     expect(sdkScripts()).toHaveLength(0)
     expect(posthogScripts()).toHaveLength(0)
-  })
-})
-
-describe('a decision stored before the rename (REB-668)', () => {
-  // The key was `orbiters.consent` until REB-668. Somebody who answered then must not be
-  // asked again, and a refusal above all stays final: the notice coming back for a
-  // visitor who said no is the dark pattern the DENIED branch exists to rule out.
-  it('keeps an old yes: no notice, the SDK loads, the decision moves to the new key', () => {
-    window.localStorage.setItem(LEGACY_KEY, 'granted')
-    run()
-    expect(notice()).toBeNull()
-    expect(sdkScripts()).toHaveLength(1)
-    expect(window.localStorage.getItem(KEY)).toBe('granted')
-    expect(window.localStorage.getItem(LEGACY_KEY)).toBeNull()
-  })
-
-  it('keeps an old no: no notice, nothing loads, the decision moves to the new key', () => {
-    window.localStorage.setItem(LEGACY_KEY, 'denied')
-    run()
-    expect(notice()).toBeNull()
-    expect(sdkScripts()).toHaveLength(0)
-    expect(posthogScripts()).toHaveLength(0)
-    expect(window.localStorage.getItem(KEY)).toBe('denied')
-    expect(window.localStorage.getItem(LEGACY_KEY)).toBeNull()
-  })
-
-  it('prefers the new key when both are there', () => {
-    window.localStorage.setItem(KEY, 'denied')
-    window.localStorage.setItem(LEGACY_KEY, 'granted')
-    run()
-    expect(sdkScripts()).toHaveLength(0)
-    expect(notice()).toBeNull()
-  })
-
-  it('writes the new key and drops the old one when a decision is taken', () => {
-    const consent = run()
-    window.localStorage.setItem(LEGACY_KEY, 'denied')
-    consent.decide('granted')
-    expect(window.localStorage.getItem(KEY)).toBe('granted')
-    expect(window.localStorage.getItem(LEGACY_KEY)).toBeNull()
   })
 })
 

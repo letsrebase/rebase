@@ -8,9 +8,6 @@
  * (the website runs without a bundler); the website's `consent.test.ts` holds them equal.
  */
 export const CONSENT_STORAGE_KEY = 'rebase.consent'
-/** What the key was called until REB-668, read the same way `consent.js` reads it. Gone
- *  with REB-697. */
-const LEGACY_CONSENT_STORAGE_KEY = 'orbiters.consent'
 
 export type ConsentDecision = 'granted' | 'denied'
 
@@ -19,9 +16,7 @@ export type ConsentDecision = 'granted' | 'denied'
 export function consentDecision(): ConsentDecision | null {
   if (typeof window === 'undefined') return null
   try {
-    const stored =
-      window.localStorage.getItem(CONSENT_STORAGE_KEY) ??
-      window.localStorage.getItem(LEGACY_CONSENT_STORAGE_KEY)
+    const stored = window.localStorage.getItem(CONSENT_STORAGE_KEY)
     return stored === 'granted' || stored === 'denied' ? stored : null
   } catch {
     return null
