@@ -187,8 +187,9 @@ export function useCustomerPeople(customerId: string) {
   })
 }
 
-export function useCustomerDeals(customerId: string) {
+export function useCustomerDeals(customerId: string, enabled = true) {
   return useQuery({
+    enabled,
     queryKey: queryKeys.deals({ customer_id: customerId }),
     queryFn: () => unwrap(api.GET('/api/deals', { params: { query: { customer_id: customerId } } })),
   })

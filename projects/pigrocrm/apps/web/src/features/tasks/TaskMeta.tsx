@@ -1,7 +1,7 @@
 import { Link } from '@tanstack/react-router'
 import type { Task } from '@/features/calendar/queries'
 import { LINK_KIND_LABELS, linkOf, type LinkValue } from './links'
-import { useAssignees, useRecordLabel } from './queries'
+import { useAssignees, useRecordLabel, useVisibleLink } from './queries'
 
 /** The record a task hangs from, as a link to its own page. */
 export function RecordLink({ link }: { link: LinkValue }) {
@@ -54,7 +54,8 @@ export function TaskMeta({
 }) {
   const assignees = useAssignees()
   const name = assignees.nameOf(task.assigned_to)
-  const link = hideLink ? null : linkOf(task)
+  const linked = useVisibleLink(linkOf(task))
+  const link = hideLink ? null : linked
   if (name === null && link === null) return null
   return (
     <span className="flex flex-wrap items-center gap-x-3 text-xs text-muted-foreground">

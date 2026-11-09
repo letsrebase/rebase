@@ -1,6 +1,9 @@
-import { render, screen } from '@testing-library/react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { render as renderBare, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import type { ModuleKey } from '@/lib/modules'
+import { seedModules } from '@/lib/modules.testing'
 import { RecordDayShortcut } from './RecordDayShortcut'
 
 const navigate = vi.fn()
@@ -21,6 +24,14 @@ vi.mock('@tanstack/react-router', () => ({
 }))
 let canWrite = true
 vi.mock('@/lib/auth', () => ({ useCanWrite: () => canWrite }))
+
+/** The shortcut reads the space's modules (REB-953), so it is mounted in a query client;
+ *  with `modulesOff` given they are known, otherwise every module is on. */
+function render(ui: React.ReactElement, modulesOff?: readonly ModuleKey[]) {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  if (modulesOff !== undefined) seedModules(client, modulesOff)
+  return renderBare(<QueryClientProvider client={client}>{ui}</QueryClientProvider>)
+}
 
 beforeEach(() => {
   navigate.mockReset()
@@ -64,6 +75,14 @@ describe('the Home’s way into recording a day', () => {
     await user.keyboard('{Control>}n{/Control}')
     await user.keyboard('{Shift>}N{/Shift}')
     expect(navigate).not.toHaveBeenCalled()
+  })
+
+  it('does nothing with contracts off: there is no register to record the day in', async () => {
+    const user = userEvent.setup()
+    render(<RecordDayShortcut />, ['contracts'])
+    await user.keyboard('n')
+    expect(navigate).not.toHaveBeenCalled()
+    expect(screen.queryByRole('link')).not.toBeInTheDocument()
   })
 
   it('does nothing for a reader', async () => {

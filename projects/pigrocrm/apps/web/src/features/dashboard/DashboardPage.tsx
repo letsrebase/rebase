@@ -2,13 +2,15 @@ import { LayoutDashboard } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { PageHeader } from '@/components/PageHeader'
 import { Tabs, TabsList, TabsTrigger } from '@rebase/ui/tabs'
+import { Skeleton } from '@rebase/ui/skeleton'
+import { TAB_MODULES, useModules } from '@/lib/modules'
 import { CommercialTab } from './CommercialTab'
 import { DaFareBand } from './DaFareBand'
 import { DaysTab } from './DaysTab'
 import { EconomicTab } from './EconomicTab'
 import { PeriodPicker } from './PeriodPicker'
 import { ReceivablesTab } from './ReceivablesTab'
-import { DASHBOARD_TABS, type DashboardSearch } from './search'
+import { availableTabs, resolveTab, type DashboardSearch } from './search'
 import { YearTab } from './YearTab'
 
 /**
@@ -35,7 +37,14 @@ export function DashboardPage({
    *  card (REB-222), which belongs to the page and not to any one tab. */
   notice?: ReactNode
 }) {
-  const { tab, from, to, base } = search
+  const { from, to, base } = search
+  // The tabs of a module the space has switched off are not drawn, and a URL naming one
+  // opens the first tab that is (REB-953).
+  const modules = useModules()
+  const tab = resolveTab(search.tab, modules)
+  // A tab of a module is not mounted before the modules are known: it would ask the API for
+  // what a switched-off module refuses, for the length of one read.
+  const waiting = modules.loading && (TAB_MODULES[search.tab] ?? []).length > 0
 
   // The page owns its own intestazione since the 2026-09-08 revision: §4 draws the tabs
   // closed by their rule, and the period picker is the one control this screen puts top
@@ -58,7 +67,7 @@ export function DashboardPage({
         aboveTabs={<DaFareBand />}
         tabs={
           <TabsList variant="line">
-            {DASHBOARD_TABS.map((candidate) => (
+            {availableTabs(modules).map((candidate) => (
               <TabsTrigger key={candidate.id} value={candidate.id}>
                 {candidate.label}
               </TabsTrigger>
@@ -74,11 +83,12 @@ export function DashboardPage({
             pooled connections on the API side -- to draw one screen. §17's placeholders that
             stood here until 6C landed are gone: both dashboards exist now, so a paragraph
             explaining their absence would be the untrue thing on the page. */}
-        {tab === 'commercial' && <CommercialTab period={{ from, to }} />}
-        {tab === 'receivables' && <ReceivablesTab />}
-        {tab === 'year' && <YearTab period={{ from, to }} />}
-        {tab === 'work_units' && <DaysTab period={{ from, to }} />}
-        {tab === 'economic' && (
+        {waiting && <Skeleton className="h-64 w-full" />}
+        {!waiting && tab === 'commercial' && <CommercialTab period={{ from, to }} />}
+        {!waiting && tab === 'receivables' && <ReceivablesTab />}
+        {!waiting && tab === 'year' && <YearTab period={{ from, to }} />}
+        {!waiting && tab === 'work_units' && <DaysTab period={{ from, to }} />}
+        {!waiting && tab === 'economic' && (
           <EconomicTab
             period={{ from, to }}
             base={base}

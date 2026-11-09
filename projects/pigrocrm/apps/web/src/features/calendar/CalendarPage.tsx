@@ -7,6 +7,7 @@ import { Loader } from '@rebase/ui/loader'
 import { formatIsoDateItalian } from '@/lib/dates'
 import { formatItalianQuantity } from '@/lib/decimal'
 import { useCanWrite } from '@/lib/auth'
+import { useModules } from '@/lib/modules'
 import { cn } from '@rebase/ui/cn'
 import { TaskDialog } from '@/features/tasks/TaskDialog'
 import { TaskItem } from '@/features/tasks/TaskItem'
@@ -43,6 +44,8 @@ export function CalendarPage({
   const [openDay, setOpenDay] = useState<string | null>(null)
   const [creating, setCreating] = useState(false)
   const canWrite = useCanWrite()
+  // The month's hours are `time`'s: the total is not drawn with it off (REB-953).
+  const hoursOn = useModules().on('time')
 
   const weeks = useMemo(() => {
     const cells = monthCells(yearMonth)
@@ -161,12 +164,14 @@ export function CalendarPage({
               ))}
             </div>
 
-            <p className="text-sm text-muted-foreground">
-              Ore del mese:{' '}
-              <span className="font-medium text-foreground">
-                {formatItalianQuantity(month.data.total_hours)}
-              </span>
-            </p>
+            {hoursOn && (
+              <p className="text-sm text-muted-foreground">
+                Ore del mese:{' '}
+                <span className="font-medium text-foreground">
+                  {formatItalianQuantity(month.data.total_hours)}
+                </span>
+              </p>
+            )}
 
             {withoutDueDate.length > 0 && (
               <section aria-labelledby="no-due-date" className="space-y-2">

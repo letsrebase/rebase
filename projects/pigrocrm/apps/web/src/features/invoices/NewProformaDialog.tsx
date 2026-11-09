@@ -28,6 +28,7 @@ import { useDeal, useDeals } from '@/features/deals/queries'
 import { toProblem, type ProblemDetail } from '@/lib/api'
 import { useCan } from '@/lib/auth'
 import { useLegalEntity } from '@/lib/legalEntity'
+import { useModules } from '@/lib/modules'
 import { toIsoDate } from '@/lib/dates'
 import { AccrualPeriodFields } from './AccrualPeriodFields'
 import {
@@ -266,6 +267,8 @@ function NewProformaDialog({
   // customer's otherwise, the same rule `InvoiceService.create` applies. Read only from
   // the second legal entity on; on the fixed variants both reads are the page's own cache hits.
   const legal_entity = useLegalEntity()
+  // The deal to link is offered only while `deals` is on (REB-953).
+  const dealsOn = useModules().on('deals')
   const issuingCustomer = useCustomer(customerId, { enabled: legal_entity.several })
   const issuingDeal = useDeal(dealId, { enabled: legal_entity.several })
   const issuedBy = legal_entity.several
@@ -397,7 +400,7 @@ function NewProformaDialog({
             <FixedCustomerAndDeal dealId={dealId} />
           )}
 
-          {fixedDealId === undefined && customerId !== '' ? (
+          {fixedDealId === undefined && customerId !== '' && dealsOn ? (
             <DealPicker
               customerId={customerId}
               value={dealId}

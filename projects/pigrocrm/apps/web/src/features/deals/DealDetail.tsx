@@ -41,9 +41,11 @@ import { useGmailConfigured } from '@/features/gmail/queries'
 import { InvoicesTab } from '@/features/invoices/InvoicesTab'
 import { NewProformaButton } from '@/features/invoices/NewProformaDialog'
 import { NotesSection } from '@/features/notes/NotesSection'
+import { CostsPanel } from '@/features/costs/CostsPanel'
 import { TimeEntriesTab } from '@/features/time/TimeEntriesTab'
 import { toProblem, type ProblemDetail } from '@/lib/api'
 import { useCanWrite } from '@/lib/auth'
+import { useModules } from '@/lib/modules'
 import { useEntitySchema } from '@/lib/schema'
 
 function Row({ label, value }: { label: string; value: ReactNode }) {
@@ -213,6 +215,11 @@ export function DealDetail() {
   const move = useMoveDeal()
   // Shares the shell banner's cached health row -- see `useGmailConfigured`.
   const gmailConfigured = useGmailConfigured()
+  // The tabs of a module the space has switched off are not drawn (REB-953): the hours are
+  // `time`, a deal's costs `costs`, and its economics read both.
+  const modules = useModules()
+  const timeOn = modules.on('time')
+  const costsOn = modules.on('costs')
 
   if (isLoading) return <Skeleton className="m-8 h-96" />
   // See `routes/app/customers/$customerId.tsx`'s identical guard for the full
@@ -287,8 +294,9 @@ export function DealDetail() {
         entityId={dealId}
         documents={<DocumentsTab owner={{ dealId }} />}
         invoices={<InvoicesTab owner={{ dealId }} />}
-        hours={<TimeEntriesTab dealId={dealId} />}
-        economics={<EconomicsTab dealId={dealId} />}
+        hours={timeOn ? <TimeEntriesTab dealId={dealId} withCosts={costsOn} /> : undefined}
+        costs={!timeOn && costsOn ? <CostsPanel dealId={dealId} /> : undefined}
+        economics={timeOn && costsOn ? <EconomicsTab dealId={dealId} /> : undefined}
         tasks={<EntityTask link={{ kind: 'deal', id: dealId }} />}
         emails={gmailConfigured ? <EmailTab entityType="deal" entityId={dealId} /> : undefined}
         actions={

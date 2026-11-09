@@ -35,6 +35,7 @@ import { useCustomer } from '@/features/customers/queries'
 import { formatDate } from '@/features/invoices/format'
 import { toProblem } from '@/lib/api'
 import { useCan } from '@/lib/auth'
+import { useModules } from '@/lib/modules'
 
 const EMPTY = '—'
 
@@ -69,6 +70,7 @@ export function ContractDetail() {
   const [editing, setEditing] = useState(false)
   const contract = useContract(contractId)
   const customer = useCustomer(contract.data?.customer_id ?? '')
+  const modules = useModules()
 
   if (contract.isLoading) return <Skeleton className="m-8 h-96" />
   if (contract.isError) {
@@ -173,9 +175,13 @@ export function ContractDetail() {
                 requiresPriorApproval={row.requires_prior_approval}
               />
             </div>
-            <div className="lg:col-span-2">
-              <ExpensesSection contractId={row.id} currency={row.currency} />
-            </div>
+            {/* The expenses pick their category from the cost categories: a surface of the
+                contracts and of the costs, drawn only when both are on (REB-953). */}
+            {modules.on('costs') && (
+              <div className="lg:col-span-2">
+                <ExpensesSection contractId={row.id} currency={row.currency} />
+              </div>
+            )}
             <div className="lg:col-span-2">
               <DaysToInvoiceSection contractId={row.id} currency={row.currency} />
             </div>

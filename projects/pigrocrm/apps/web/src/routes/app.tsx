@@ -2,6 +2,7 @@ import { Outlet, createFileRoute, useLocation, useNavigate } from '@tanstack/rea
 import { useEffect } from 'react'
 import { AppShell } from '@/components/AppShell'
 import { GmailBanner } from '@/components/GmailBanner'
+import { ModuleGate } from '@/components/ModuleGate'
 import { Button } from '@rebase/ui/button'
 import { Loader } from '@rebase/ui/loader'
 import { useAuth } from '@/lib/auth'
@@ -68,7 +69,10 @@ function AppLayout() {
           unauthenticated visitor, who has no google_accounts row to have an opinion
           about and would collect a 401 on every load of the login screen. */}
       <GmailBanner />
-      <Outlet />
+      {/* The pages of a module the space has switched off are not drawn (REB-953). */}
+      <ModuleGate>
+        <Outlet />
+      </ModuleGate>
     </AppShell>
   )
 }

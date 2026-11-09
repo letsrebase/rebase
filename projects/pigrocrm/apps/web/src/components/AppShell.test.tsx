@@ -3,6 +3,8 @@ import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi, type Mock } from 'vitest'
 import { SETTINGS_GROUPS } from '@/features/settings/tabs'
+import { seedModules } from '@/lib/modules.testing'
+import type { ModuleKey } from '@/lib/modules'
 import { readAndClearRegisterHandoffEmail } from '@/lib/registerHandoff'
 import { LegalEntityContext, type LegalEntityRecord, type LegalEntityValue } from '@/lib/legalEntity'
 import { AppShell } from './AppShell'
@@ -94,8 +96,15 @@ const mockGo = vi.fn()
  * provider is part of the harness rather than of any one test. Its query is disabled
  * below three characters, so nothing here issues a request.
  */
-function renderShell(children: React.ReactNode = <div />, legal_entity?: LegalEntityValue) {
+function renderShell(
+  children: React.ReactNode = <div />,
+  legal_entity?: LegalEntityValue,
+  modulesOff?: readonly ModuleKey[],
+) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  // The space's modules (REB-953): seeded, so the sidebar has the answer on its first render
+  // and asks the API for nothing; absent, they are not known and every entry is drawn.
+  if (modulesOff !== undefined) seedModules(client, modulesOff)
   // A fresh element on every call: re-rendering the *same* element object is a React
   // bail-out, which would make `refresh()` (the stand-in for a navigation) do nothing.
   // Without `legal_entity` the shell runs on the context's default, a one-legal-entity space.
@@ -160,6 +169,36 @@ beforeEach(() => {
 })
 
 describe('AppShell', () => {
+  /** REB-953 (spec 2026-11-09 B4): an entry disappears when its module is off. */
+  it('draws no «Deal» with deals off, nor «Ore», which needs the deals', () => {
+    renderShell(<div />, undefined, ['deals'])
+    const links = sidebar().getAllByRole('link').map((link) => link.textContent)
+    expect(links).not.toContain('Deal')
+    expect(links).not.toContain('Ore')
+    expect(links).toContain('Giornate')
+    expect(links).toContain('Clienti')
+    // The captions stay while the section still has an entry.
+    expect(sidebar().getAllByRole('group').map((group) => group.getAttribute('aria-label'))).toEqual([
+      'Da fare',
+      'Vendite',
+      'Amministrazione',
+    ])
+  })
+
+  it('draws no «Giornate» with contracts off, and keeps «Deal» and «Ore»', () => {
+    renderShell(<div />, undefined, ['contracts'])
+    const links = sidebar().getAllByRole('link').map((link) => link.textContent)
+    expect(links).not.toContain('Giornate')
+    expect(links).toContain('Deal')
+    expect(links).toContain('Ore')
+  })
+
+  it('draws every entry again with the modules on', () => {
+    renderShell(<div />, undefined, [])
+    const links = sidebar().getAllByRole('link').map((link) => link.textContent)
+    expect(links).toEqual(expect.arrayContaining(['Deal', 'Ore', 'Giornate']))
+  })
+
   it('is exactly as tall as its parent, never as tall as the page', () => {
     const { container } = renderShell()
     const root = container.firstElementChild as HTMLElement

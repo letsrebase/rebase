@@ -7,15 +7,16 @@ import { cn } from '@rebase/ui/cn'
 import { useOverdueCount } from '@/features/tasks/queries'
 import { useUnreadCount } from '@/features/reminders/queries'
 import { useAuth } from '@/lib/auth'
+import { useModules } from '@/lib/modules'
 import { LegalEntitySelect } from './LegalEntitySelect'
 import {
   Agents,
   HOME,
-  SECTIONS,
   SETTINGS,
   SETTINGS_PATHS,
   isUnder,
   settingsSubItems,
+  visibleSections,
 } from './nav'
 import { NavGroup, SubItem } from './NavGroup'
 import { NavLeaf } from './NavLeaf'
@@ -55,6 +56,8 @@ export function Sidebar({
   // tasks are past their deadline, drawn beside «Attività» (REB-873: it sat beside «Oggi»
   // while that was an entry) and only when it is above zero.
   const overdue = useOverdueCount()
+  // An entry of a module the space has switched off is not drawn (REB-953).
+  const modules = useModules()
 
   // The «Impostazioni» sub-items this reader may see (REB-294): the same
   // `canSeeSettingsTab` the settings page filters its own tabs with, so sidebar and
@@ -163,7 +166,7 @@ export function Sidebar({
       >
         <div className="space-y-1">
           <NavLeaf {...HOME} rail={rail} />
-          {SECTIONS.map((section) => (
+          {visibleSections(modules).map((section) => (
             // A group named by its caption, not a control: nothing opens or closes, so the
             // caption is a plain line of text above its entries. In the rail it is a thin
             // separator, and the group keeps its name for a screen reader either way.

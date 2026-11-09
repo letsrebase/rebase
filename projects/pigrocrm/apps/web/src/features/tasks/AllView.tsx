@@ -25,7 +25,7 @@ import { TaskDialog } from './TaskDialog'
 import { RecordLink } from './TaskMeta'
 import { toFilters, type DueDate, type Status } from './filters'
 import { LINK_KIND_LABELS, linkOf, type LinkValue } from './links'
-import { useAssignees, useTaskPages, useRecordLabel } from './queries'
+import { useAssignees, useTaskPages, useRecordLabel, useVisibleLink } from './queries'
 import { RecordPicker } from './RecordPicker'
 
 const StatusLabels: Record<Status, string> = {
@@ -60,7 +60,7 @@ function AssigneeCell({ id }: { id: string | null }) {
 }
 
 function LinkCell({ task }: { task: Task }) {
-  const link = linkOf(task)
+  const link = useVisibleLink(linkOf(task))
   if (link === null) return <span className="text-muted-foreground">—</span>
   return (
     // The link goes to the record; the click must not also open the row's dialog.

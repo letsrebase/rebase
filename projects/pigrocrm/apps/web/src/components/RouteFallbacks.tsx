@@ -50,6 +50,24 @@ export function RouteNotFound() {
   )
 }
 
+/**
+ * The page a link into a switched-off module lands on (REB-953, spec 2026-11-09 A2): the
+ * sentence the API's own 404 carries, so a stale bookmark explains itself and says who can
+ * undo it. `module` is the module's name as a person reads it.
+ */
+export function ModuleOff({ module }: { module: string }) {
+  return (
+    <Fallback title="Modulo spento">
+      <p className="text-sm text-muted-foreground">
+        Il modulo {module} è spento: un amministratore può accenderlo in Impostazioni → Moduli
+      </p>
+      <Button asChild>
+        <a href={`${tenantPrefix}/app`}>Vai alla home</a>
+      </Button>
+    </Fallback>
+  )
+}
+
 export function RoutePending() {
   return (
     <div className="flex min-h-full items-center justify-center gap-2 p-8 text-sm text-muted-foreground">

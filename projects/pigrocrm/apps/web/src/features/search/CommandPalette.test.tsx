@@ -18,6 +18,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { CommandPalette } from './CommandPalette'
 import { SEARCH_DEBOUNCE_MS, type SearchResults } from './queries'
 import { api } from '@/lib/api'
+import type { ModuleKey } from '@/lib/modules'
+import { seedModules } from '@/lib/modules.testing'
 
 vi.mock('@/lib/api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/api')>()
@@ -67,10 +69,11 @@ function results(
 
 const onOpenChange = vi.fn()
 
-function renderPalette() {
+function renderPalette(modulesOff?: readonly ModuleKey[]) {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false, staleTime: 0 } },
   })
+  if (modulesOff !== undefined) seedModules(client, modulesOff)
   return render(
     <QueryClientProvider client={client}>
       <CommandPalette open onOpenChange={onOpenChange} />
@@ -96,6 +99,14 @@ beforeEach(() => {
   onOpenChange.mockReset()
 })
 
+/** The searches the palette sent: the palette also reads the space's modules (REB-953), and
+ *  that read is no search. */
+function searchCalls() {
+  return (vi.mocked(api.GET).mock.calls as unknown as [string, unknown][]).filter(
+    ([path]) => path === '/api/search',
+  )
+}
+
 describe('CommandPalette', () => {
   it('invites more typing below three characters and issues no request', async () => {
     renderPalette()
@@ -103,7 +114,7 @@ describe('CommandPalette', () => {
     await settle()
 
     expect(screen.getByText(/continua a scrivere/i)).toBeInTheDocument()
-    expect(api.GET).not.toHaveBeenCalled()
+    expect(searchCalls()).toHaveLength(0)
     expect(screen.queryByText(/nessun risultato/i)).not.toBeInTheDocument()
   })
 
@@ -113,7 +124,7 @@ describe('CommandPalette', () => {
     await type('rossi')
     await settle()
 
-    await waitFor(() => expect(api.GET).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(searchCalls()).toHaveLength(1))
     // Without the debounce this is three calls -- "ros", "ross", "rossi" -- and the
     // count alone would not say which term actually reached the server.
     expect(api.GET).toHaveBeenCalledWith('/api/search', {
@@ -222,6 +233,40 @@ describe('CommandPalette', () => {
     expect(await screen.findByText('Clienti · oltre 200')).toBeInTheDocument()
     expect(screen.queryByText('Clienti · 200')).not.toBeInTheDocument()
     expect(screen.getByRole('option', { name: /vedi tutti oltre 200/i })).toBeInTheDocument()
+  })
+
+  /** REB-953: the server leaves the deal group empty with deals off; a deal hit a cache from
+   *  before the switch still holds would open a page that is not there. */
+  describe('a deal hit', () => {
+    const withDeal = (): SearchResults => ({
+      term: 'rossi',
+      groups: results().groups.map((group) =>
+        group.entity === 'deal'
+          ? {
+              ...group,
+              total: 1,
+              hits: [
+                { entity: 'deal', id: 'd1', label: 'Rinnovo Rossi', subtitle: null, score: '0.5000', field: 'name' },
+              ],
+            }
+          : group,
+      ),
+    })
+
+    it('is drawn while deals is on', async () => {
+      vi.mocked(api.GET).mockResolvedValue(ok(withDeal()))
+      renderPalette([])
+      await type('rossi')
+      expect(await screen.findByText('Rinnovo Rossi')).toBeInTheDocument()
+    })
+
+    it('is not drawn with deals off', async () => {
+      vi.mocked(api.GET).mockResolvedValue(ok(withDeal()))
+      renderPalette(['deals'])
+      await type('rossi')
+      expect(await screen.findByText('Rossi Ingegneria Srl')).toBeInTheDocument()
+      expect(screen.queryByText('Rinnovo Rossi')).not.toBeInTheDocument()
+    })
   })
 
   it('says there is nothing, naming the term, when every group is empty', async () => {

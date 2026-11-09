@@ -3639,6 +3639,54 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/settings/modules": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read
+         * @description The profile and every module: whether it is on, what its switch and its default
+         *     are, and whether the space has records in it.
+         */
+        get: operations["read_api_settings_modules_get"];
+        /**
+         * Set Modules
+         * @description Switches the modules in `on` and `off`. A module that holds records goes off only
+         *     when it is named in `confirm_off`; its records stay and return with it.
+         */
+        put: operations["set_modules_api_settings_modules_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/settings/modules/profile": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Set Profile
+         * @description Without `confirm`: the modules the profile would switch on and off, and nothing is
+         *     written. With `confirm`: the profile and a switch for every module are stored. Records
+         *     are never touched.
+         */
+        put: operations["set_profile_api_settings_modules_profile_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/activities": {
         parameters: {
             query?: never;
@@ -9844,6 +9892,79 @@ export interface components {
             /** Name */
             name: string;
         };
+        /** ModuleChange */
+        ModuleChange: {
+            /**
+             * Module
+             * @enum {string}
+             */
+            module: "deals" | "contracts" | "time" | "costs" | "taxes";
+            /** Label */
+            label: string;
+            /**
+             * Was
+             * @description On or off in the space now
+             */
+            was: boolean;
+            /**
+             * Becomes
+             * @description On or off once the profile is applied
+             */
+            becomes: boolean;
+            /**
+             * Records
+             * @description Records the module holds: they stay when it goes off
+             */
+            records: number;
+        };
+        /** ModuleRead */
+        ModuleRead: {
+            /**
+             * Key
+             * @enum {string}
+             */
+            key: "deals" | "contracts" | "time" | "costs" | "taxes";
+            /**
+             * Label
+             * @description The module's name as a person reads it (Italian)
+             */
+            label: string;
+            /**
+             * Description
+             * @description What the module holds, in one line (Italian)
+             */
+            description: string;
+            /**
+             * Requires
+             * @description Modules that must be on for this one to be on: `time` needs `deals`
+             */
+            requires: ("deals" | "contracts" | "time" | "costs" | "taxes")[];
+            /**
+             * Enabled
+             * @description Whether the space has the module on right now
+             */
+            enabled: boolean;
+            /**
+             * Stored
+             * @description The switch the space wrote; `null` while it has none and the profile decides
+             */
+            stored: boolean | null;
+            /**
+             * Default
+             * @description What the space's profile switches it to, absent a switch
+             */
+            default: boolean;
+            /**
+             * Holds Data
+             * @description Whether the space has records in it: off never deletes
+             */
+            holds_data: boolean;
+            /**
+             * Records
+             * @description How many live records the module holds
+             */
+            records: number;
+        };
         /** MoveStageRequest */
         MoveStageRequest: {
             /**
@@ -11865,6 +11986,77 @@ export interface components {
              * @enum {string}
              */
             until: "tomorrow" | "next_monday" | "in_a_week" | "in_a_month";
+        };
+        /** SpaceModulesRead */
+        SpaceModulesRead: {
+            /**
+             * Profile
+             * @description `solo`, `company`, or `null` until chosen
+             */
+            profile: ("solo" | "company") | null;
+            /** Modules */
+            modules: components["schemas"]["ModuleRead"][];
+        };
+        /** SpaceModulesSet */
+        SpaceModulesSet: {
+            /**
+             * On
+             * @description Modules to switch on
+             */
+            on?: ("deals" | "contracts" | "time" | "costs" | "taxes")[];
+            /**
+             * Off
+             * @description Modules to switch off
+             */
+            off?: ("deals" | "contracts" | "time" | "costs" | "taxes")[];
+            /**
+             * Confirm Off
+             * @description The modules in `off` that hold records and that the caller agrees to switch off: one that holds data and is not named here is refused. Their data stays
+             */
+            confirm_off?: ("deals" | "contracts" | "time" | "costs" | "taxes")[];
+        };
+        /** SpaceProfileProposal */
+        SpaceProfileProposal: {
+            /**
+             * Profile
+             * @enum {string}
+             */
+            profile: "solo" | "company";
+            /** Previous Profile */
+            previous_profile: ("solo" | "company") | null;
+            /**
+             * Applied
+             * @description `true` once the profile and its modules are written
+             */
+            applied: boolean;
+            /**
+             * Changes
+             * @description Only the modules whose state changes
+             */
+            changes: components["schemas"]["ModuleChange"][];
+            /** @description The space as it is after this call: unchanged when `applied` is false */
+            state: components["schemas"]["SpaceModulesRead"];
+        };
+        /** SpaceProfileSet */
+        SpaceProfileSet: {
+            /**
+             * Profile
+             * @enum {string}
+             */
+            profile: "solo" | "company";
+            /**
+             * Confirm
+             * @description `false` (the default) answers the modules the profile would switch on and off and changes nothing; `true` applies exactly that list, with `modules` edits laid on top
+             * @default false
+             */
+            confirm: boolean;
+            /**
+             * Modules
+             * @description Edits to the profile's defaults: a module the admin keeps on (or off) whatever the profile says. Every module not named takes the profile's default
+             */
+            modules?: {
+                [key: string]: boolean;
+            };
         };
         /**
          * SpaceSettingsRead
@@ -40814,6 +41006,365 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SpaceSettingsRead"];
+                };
+            };
+            /** @description Permission denied: the actor does not have the required role. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The requested resource does not exist or was removed. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The request conflicts with the current state of the resource. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    read_api_settings_modules_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SpaceModulesRead"];
+                };
+            };
+            /** @description Permission denied: the actor does not have the required role. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The requested resource does not exist or was removed. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The request conflicts with the current state of the resource. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_modules_api_settings_modules_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SpaceModulesSet"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SpaceModulesRead"];
+                };
+            };
+            /** @description Permission denied: the actor does not have the required role. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The requested resource does not exist or was removed. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The request conflicts with the current state of the resource. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_profile_api_settings_modules_profile_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SpaceProfileSet"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SpaceProfileProposal"];
                 };
             };
             /** @description Permission denied: the actor does not have the required role. */

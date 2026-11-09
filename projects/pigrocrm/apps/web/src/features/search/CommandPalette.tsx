@@ -10,6 +10,7 @@ import {
   CommandList,
   CommandSeparator,
 } from '@/components/ui/command'
+import { useModules } from '@/lib/modules'
 import {
   ENTITY_LABELS,
   MIN_TERM_LENGTH,
@@ -49,6 +50,7 @@ export function CommandPalette({
   const [term, setTerm] = useState('')
   const navigate = useNavigate()
   const search = useGlobalSearch(term)
+  const modules = useModules()
 
   // Cmd/Ctrl+K from anywhere. Either modifier is accepted regardless of platform: a user
   // on a Mac keyboard plugged into Linux should not have to know which one this build
@@ -129,8 +131,10 @@ export function CommandPalette({
   }
 
   const tooShort = search.debounced.length < MIN_TERM_LENGTH
+  // The API leaves a switched-off module's group empty; a deal hit that a cache from before
+  // the switch still holds would open a page that is not there (REB-953), so it goes too.
   const groups: SearchGroup[] = (search.data?.groups ?? []).filter(
-    (group) => group.hits.length > 0,
+    (group) => group.hits.length > 0 && (group.entity !== 'deal' || modules.on('deals')),
   )
 
   /** "5 di 500" and "5 di 5" are different answers; «oltre» is how the ceiling is said. */
