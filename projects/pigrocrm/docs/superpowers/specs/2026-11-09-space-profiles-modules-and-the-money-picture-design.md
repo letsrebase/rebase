@@ -218,6 +218,9 @@ The register as of today, from the conversation:
 | Banco BPM business banking export format (it may be «YouBusiness Web», not «YouWeb») | to verify | |
 | CAMT.053 availability per bank | to verify | |
 | ECB reference rate as the source for converting balances | to verify | |
+| A freelancer is paid no later than 60 days from receipt of the invoice or receipt (law 81/2017 art. 3, as framework agreement 7.1 prints it); 30 days when counted from month end is the hub's own reading (`contracts/fields.py:35-40`) | to verify | the hub's framework text only |
+| INPS «gestione separata» share on occasional work above 5,000 euro a year, withheld by the payer (decree-law 269/2003 art. 44 c. 2, as clause 5.7 of the occasional framework prints it) | to verify | the hub's occasional framework text only |
+| Stamp duty of 2 euro on an occasional receipt above 77.47 euro (clause 6.3 of the occasional framework) | to verify | the hub's occasional framework text only |
 
 ### A6. Not the books
 
@@ -372,13 +375,16 @@ untouched except for the new «Moduli» section.
 ### B7. Existing spaces
 
 - rebase's own space, the one `PIGROCRM_LEADS_SPACE` names (the 2026-10-30 design):
-  `company`, every module of today on.
+  `company`, every module of today on. `collaborators` is not a module of today: the C5
+  release writes it on here (`ensure-space-defaults`), or B2 would read it as off.
 - Spaces the hub provisions for freelancers: the registry spaces whose
   `rebase_engagements` row has `space_created` true (`core/engagements/service.py`).
-  `solo`, with `deals` **kept on** until C5 changes what the engagements door writes there
-  (today a customer «rebase» and a deal), so nobody loses the deal their match created.
-  From this release the door writes `space_profile = solo` and `module_deals = on` when it
-  creates a space.
+  `solo`, with `deals` **kept on** where the space already holds the deal its match created
+  (today a customer «rebase» and a deal), so nobody loses it. From this release the door
+  writes `space_profile = solo` and `module_deals = on` when it creates a space; from the C5
+  release it writes `space_profile = solo` and `module_contracts = on` and a contract with a
+  rate card instead of a deal, and `module_deals` only for a space that already holds the old
+  deal.
 - Every other space: profile absent. Everything stays on and the admin sees the onboarding
   at the next login, with the confirmation of B3.
 - A new space from the signup: profile absent, onboarding on the first login.
@@ -443,17 +449,20 @@ An engagement with a freelancer as a CRM object: dates, days per week, rate, pro
 letter and its signature, the payment rule (fixed term or when the client pays, decision
 4), the freelancer's fiscal type deciding withholding and the net to pay (A5). Availability
 visible before contacting someone for another project. The hub keeps signup, the card, the
-CV and the member area. Open for that design: whether rebase's marketplace pieces (talent
-search, talent cloud, team requests, campaigns, referrals) move with it or stay in the hub
-admin, and what the engagements door writes in a freelancer's own space. It supersedes, in
-part, the `DECISIONS.md` row of 2026-10-30 that kept the supply side in the hub.
+CV and the member area, and also the marketplace pieces (talent search, talent cloud, team
+requests, campaigns, referrals); the engagements door writes a contract and a rate card in a
+freelancer's own space, not a deal. This is designed in
+`2026-11-09-collaborators-in-the-crm-design.md`, which supersedes, in part, the `DECISIONS.md`
+row of 2026-10-30 that kept the supply side in the hub.
 
 The hub's MCP tools for that side move with it: matches, contracts, signature, hours report
 and notices (today `create_match`, `preview_match`, `send_match_for_signature`,
 `resend_signing_mail`, `refresh_contract`, `cancel_contract`, `cancel_match`,
 `close_match`, `record_notice`, `list_matches`, `get_match`, `get_match_report`, and
-`set_freelancer_tax_data` if tax data moves) become PigroCRM tools under the
-`collaborators` module, and the hub's copies are removed in the same release (A8).
+`set_freelancer_tax_data`) become PigroCRM tools under the `collaborators` module, and the
+hub's copies are removed in the same release (A8). `link_match_to_pigro` is removed with no
+replacement, since the engagement lives in the CRM. `cancel_contract` and `record_notice` act
+on a document, so they return as `cancel_framework_agreement` and `record_framework_notice`.
 
 ### C6. Taxes
 
