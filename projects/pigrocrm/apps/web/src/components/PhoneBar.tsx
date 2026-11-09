@@ -61,7 +61,7 @@ export function PhoneBar({
     ...(third === null ? [] : [{ ...third, exact: false, badge: undefined }]),
   ] as const
   // The «+» sits in the middle of what is drawn: before the third place when there is one
-  // (Home, Attività, «+», Deal, Altro), after the two fixed ones when there is none.
+  // (Home, Tasks, «+», Deal, Altro), after the two fixed ones when there is none.
   const before = places.slice(0, 2)
   const after = places.slice(2)
 
