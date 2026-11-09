@@ -333,6 +333,14 @@ _INTERNE: dict[Method, str] = {
         "transizioni del work_unit che ne e' risultato"
     ),
     ("ApprovalService", "get"): "nessun actor: lettura interna dietro get_proposal",
+    # REB-967: the writer's half of `DueItemService`. The service that owns a source (an
+    # invoice, a purchase, a tax) calls these inside its own transaction after its own
+    # authorisation; none takes an actor or commits. Settling and undoing a payment, and the
+    # two reads, are the tools.
+    ("DueItemService", "create"): "the writer's half: the owner of a source writes its item",
+    ("DueItemService", "drop"): "the writer's half: a credit note or an ended contract drops it",
+    ("DueItemService", "attach_dependency"): "the writer's half: links a waiting item",
+    ("DueItemService", "reschedule"): "the writer's half: the owner of an outgoing item moves it",
 }
 
 

@@ -119,6 +119,13 @@ AGENT_ALLOWED_ACTIONS: frozenset[str] = frozenset(
         "read_scheduled_jobs",
         "read_slack_health",
         "set_reminder_defaults",
+        # Due items (spec 2026-11-09, due items, § 5): reading the ordinary kinds, and a
+        # client's payment recorded or undone, as `set_payment_state` is. The outgoing and
+        # fiscal halves are below.
+        "list_due_items",
+        "get_due_item",
+        "settle_due_item",
+        "reverse_settlement",
     }
 )
 
@@ -189,6 +196,12 @@ FULL_ACCESS_ACTIONS: frozenset[str] = frozenset(
         # MCP (design 2026-11-09, § 6), so no tool runs it. A token with `full_access` reaches
         # it over REST, for a script that feeds the inbox; a default token does not.
         "upload_inbox_file",
+        # Due items: money going out marked paid or unmarked, and every item whose source is
+        # a tax, IVA, withholding or payroll (the fiscal position, C3 and C6), whatever the
+        # direction. An administrator's token with `full_access`, nothing less.
+        "settle_outgoing_due_item",
+        "reverse_outgoing_settlement",
+        "read_fiscal_due_items",
     }
 )
 
@@ -282,6 +295,9 @@ ACTION_LABELS: dict[str, str] = {
     "set_space_profile": "cambiare il profilo dello spazio",
     "set_space_modules": "accendere o spegnere i moduli dello spazio",
     "upload_inbox_file": "caricare un documento in arrivo",
+    "settle_outgoing_due_item": "segnare come pagata una scadenza in uscita o fiscale",
+    "reverse_outgoing_settlement": "annullare il pagamento di una scadenza in uscita o fiscale",
+    "read_fiscal_due_items": "leggere le scadenze di imposte, IVA, ritenute e stipendi",
 }
 
 

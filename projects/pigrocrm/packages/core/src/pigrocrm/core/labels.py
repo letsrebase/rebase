@@ -228,6 +228,8 @@ ENTITY_NOUN: dict[str, tuple[str, str]] = {
     "document_blob": ("file del documento", "o"),
     "document_version": ("versione del documento", "a"),
     "drive_file": ("file di Drive", "o"),
+    "due_item": ("scadenza", "a"),
+    "due_item_settlement": ("pagamento della scadenza", "o"),
     "email_draft": ("bozza di email", "a"),
     "engagement": ("incarico", "o"),
     "field_definition": ("campo personalizzato", "o"),

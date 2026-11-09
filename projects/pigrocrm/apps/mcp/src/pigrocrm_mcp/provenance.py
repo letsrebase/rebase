@@ -91,6 +91,11 @@ FREE_TEXT_TOOLS: frozenset[str] = frozenset(
         "review_invoice_import",
         "confirm_invoice_import",
         "import_issued_invoice",
+        # Due items: the counterparty's name and a payment's note.
+        "list_due_items",
+        "get_due_item",
+        "settle_due_item",
+        "reverse_settlement",
         # Time, costs and to-dos: descriptions and notes.
         "log_time",
         "update_time_entry",

@@ -204,6 +204,22 @@ REST_ONLY_FORBIDDEN = frozenset(
     }
 )
 
+# The third term: `full_access` operations that **do** have a tool, and a tool every token is
+# shown. What a due item's settlement needs depends on the item, which only the service knows
+# (spec 2026-11-09, due items, § 5): a client's payment is any writing token's, money going
+# out and every tax, IVA, withholding or payroll item is a `full_access` administrator's. So
+# `settle_due_item`, `reverse_settlement`, `list_due_items` and `get_due_item` are registered
+# by default and the service refuses an outgoing or fiscal item to a token without the flag
+# (`apps/mcp/tests/test_due_items_tools.py`, `apps/api/tests/test_due_items_api.py`).
+# Hiding the tool would hide the incoming half too. The equality below still holds: these
+# are named here, with the tools that reach them, and `test_a_per_record_full_access_action
+# _is_reached_by_a_default_tool` asserts each tool is on the default surface.
+FULL_ACCESS_BY_THE_RECORD: dict[str, tuple[str, ...]] = {
+    "settle_outgoing_due_item": ("settle_due_item",),
+    "reverse_outgoing_settlement": ("reverse_settlement",),
+    "read_fiscal_due_items": ("list_due_items", "get_due_item"),
+}
+
 # The tools above that exist only on an installation where Google is configured as well:
 # on one without it there is no mailbox to ask and no credential to read Drive with, so
 # the switch alone does not make them appear.
@@ -667,7 +683,13 @@ def test_the_structural_ban_has_a_second_line_on_the_credential_itself() -> None
         "an operation with a banned tool is in AGENT_ALLOWED_ACTIONS: "
         f"{sorted(expected & AGENT_ALLOWED_ACTIONS)}"
     )
-    assert expected | REST_ONLY_FORBIDDEN == set(FULL_ACCESS_ACTIONS), (
+    assert not (set(FULL_ACCESS_BY_THE_RECORD) & expected), (
+        "an operation listed in FULL_ACCESS_BY_THE_RECORD has a banned tool: it is decided "
+        "per record, not by the tool's absence -- "
+        f"{sorted(set(FULL_ACCESS_BY_THE_RECORD) & expected)}"
+    )
+    by_the_record = set(FULL_ACCESS_BY_THE_RECORD)
+    assert expected | REST_ONLY_FORBIDDEN | by_the_record == set(FULL_ACCESS_ACTIONS), (
         "le due meta' del divieto sono divergenti: FORBIDDEN vieta il tool, "
         "FULL_ACCESS_ACTIONS vieta l'operazione a qualunque credenziale di tipo "
         "agente. Un name aggiunto a una sola delle due lascia proprio il buco che la "
@@ -677,10 +699,27 @@ def test_the_structural_ban_has_a_second_line_on_the_credential_itself() -> None
         "gioco in questa asserzione.\n"
         f"solo in FORBIDDEN: {sorted(expected - set(FULL_ACCESS_ACTIONS))}\n"
         "solo in FULL_ACCESS_ACTIONS: "
-        f"{sorted(set(FULL_ACCESS_ACTIONS) - expected - REST_ONLY_FORBIDDEN)}\n"
+        f"{sorted(set(FULL_ACCESS_ACTIONS) - expected - REST_ONLY_FORBIDDEN - by_the_record)}\n"
         "in REST_ONLY_FORBIDDEN ma non vietate: "
         f"{sorted(REST_ONLY_FORBIDDEN - set(FULL_ACCESS_ACTIONS))}"
     )
+
+
+async def test_a_per_record_full_access_action_is_reached_by_a_default_tool(
+    tmp_path: Path,
+) -> None:
+    """The third term of the union above is honest only while each of its tools is on the
+    default surface: an action decided per record that no default tool reaches would be a
+    ban with a name nobody can call."""
+    server = build_server(
+        lambda: None,  # type: ignore[arg-type, return-value]
+        lambda: Actor(id=None, type="mcp", role="admin"),
+        LocalFileStorage(tmp_path),
+        Settings(_env_file=None),  # type: ignore[call-arg]
+    )
+    default = {tool.name for tool in await server.list_tools()}
+    for action, tools in FULL_ACCESS_BY_THE_RECORD.items():
+        assert set(tools) <= default, (action, sorted(set(tools) - default))
 
 
 async def test_they_are_registered_exactly_when_the_installation_opted_in(

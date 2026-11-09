@@ -100,6 +100,11 @@ CORE_TOOLS = frozenset(
         "list_invoices",
         "list_invoice_register_gaps",
         "get_invoice",
+        # Due items are core, always on: an invoice needs them whatever the module state.
+        "list_due_items",
+        "get_due_item",
+        "settle_due_item",
+        "reverse_settlement",
         "create_proforma",
         "update_proforma",
         "replace_proforma_lines",

@@ -68,6 +68,8 @@ This file is the single mapping from the Italian word to the English identifier.
 | canone | recurring_fee | A fee paid every period: a `fixed_recurring` rate card, or a `flat` value line with a monthly or annual `delivery_period` |
 | consuntivo | actuals | What really happened |
 | scadenza | due_date | A deadline; invoice `data_scadenza` is also `due_date` |
+| scadenza (an amount owed or to be received) | due_item | One amount that falls due, in or out, with its counterparty, state and rule (`due_items`); its date is `due_date` |
+| pagamento registrato su una scadenza | settlement | A payment against a due item, possibly partial; reversed, never deleted (`due_item_settlements`) |
 | promemoria | reminder | A reminder raised by the CRM (also the UI "Avvisi") |
 | sollecito | payment_reminder | An overdue-invoice dunning mail |
 | registro | register | The invoice register; `buchi` are `gaps` |
