@@ -196,6 +196,21 @@ The register as of today, from the conversation:
 | Legal deadline of the 15th of the following month for TD17, TD18, TD19 | to verify | |
 | Intrastat for services | to verify | |
 | Periodic IVA settlement, LIPE, December IVA advance | to verify | |
+| Withholding paid to the tax office by the 16th of the month after the payment | to verify | |
+| A flat-rate buyer owes VAT on a reverse-charge purchase from abroad | to verify | |
+| ECB rate reference date for a foreign-currency document | to verify | |
+| TD16 integrates a domestic reverse-charge purchase | to verify | |
+| Quarterly settlement surcharge of 1% and the minimum below which a periodic payment is carried forward | to verify | |
+| Eligibility thresholds for quarterly settlement | to verify | |
+| Split payment exclusions: professionals whose fees are subject to withholding | to verify | |
+| Cash-basis IVA conditions: eligibility ceiling, one-year backstop, buyer-side deduction timing, invoice annotation | to verify | |
+| VAT on a retail receipt is not deductible without an invoice | to verify | |
+| 40% deductibility of VAT on a car's running costs | to verify | art. 19-bis1 DPR 633/72 |
+| Services to a business abroad are outside VAT, to a consumer abroad they may not be | to verify | art. 7-ter DPR 633/72 |
+| Reverse charge on a foreign supplier depends on the place of supply; TD17, TD18, TD19 by EU or extra-EU and goods or services | to verify | |
+| IVA period date: issue or operation date for sales, receipt and registration date for purchases | to verify | |
+| Numbering of integration documents TD16 to TD19 | to verify | |
+| FPA12 format, 6-character IPA code and deferred IVA for a public body | to verify | |
 | Exempt thresholds for travel allowances, traceable payment of reimbursements | to verify | |
 | ACI tables for mileage | to verify | |
 | CBI Globe as the Italian access to banking APIs | to verify | |

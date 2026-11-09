@@ -40,6 +40,8 @@ This file is the single mapping from the Italian word to the English identifier.
 | Italian | English | Meaning |
 |---|---|---|
 | cliente | customer | Who is billed |
+| anagrafica | organization | A registry entry (company or person-as-company) with roles `customer`, `supplier`, `freelancer`; replaces `customer` as the entity once the registry is merged (REB-961) |
+| fornitore | supplier (role) | An organisation we pay; a role of an `organization`, not a FatturaPA party |
 | persona / persone | person / people | A contact |
 | recapito | contact_point | One way to reach a person, a customer or a hub user: kind (email, phone, linkedin), value, label (lavoro, personale, amministrazione, altro → work, personal, billing, other), note, primary flag |
 | deal | deal | Already English |
@@ -118,7 +120,7 @@ The English identifier is the usual English rendering; the Italian term is kept 
 | acconto | advance | Advance invoice |
 | nota di credito | credit_note |  |
 | trasmissione | transmission | Delivery of the XML to the intermediary |
-| cedente/prestatore, cessionario/committente | supplier, buyer | FatturaPA roles; XML element names stay Italian |
+| cedente/prestatore, cessionario/committente | supplier, buyer | FatturaPA roles; XML element names stay Italian. `supplier` here is the issuer of any invoice, ours included (`ParsedInvoice.supplier`); it is not the `supplier` role of an organisation, which is who we pay |
 | ritardo / scaduta | overdue | Overdue invoice |
 | forfait | flat | Flat-fee rate unit |
 
