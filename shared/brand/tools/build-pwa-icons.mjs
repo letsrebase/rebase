@@ -1,5 +1,6 @@
 /**
- * Draws the icons an installed PigroCRM wears: the four-tile mark on the Paper ground,
+ * Draws the icons an installed PigroCRM wears: the four-tile mark, on the Paper ground for `any`
+ * and edge to edge for `maskable` and the touch icon,
  * written into `shared/brand/pwa/` (REB-731).
  *
  * Not part of any build, and run by hand: `pnpm --filter @rebase/brand build:pwa-icons`.
@@ -9,14 +10,15 @@
  *
  * Three kinds, because three platforms read an icon differently:
  *
- * - `icon-192.png`, `icon-512.png` (`purpose: any`): the mark at 64% of the square, for
- *   a launcher or a task switcher that shows the picture as it is.
- * - `icon-maskable-192.png`, `icon-maskable-512.png` (`purpose: maskable`): the same
- *   mark at 52%, so it stays inside the safe zone, the circle of 40% of the side that
- *   every Android launcher mask leaves visible. The ground runs to the edge because the
- *   launcher crops it to its own shape.
+ * - `icon-192.png`, `icon-512.png` (`purpose: any`): the mark at 64% of the square on the
+ *   Paper ground, for a launcher or a task switcher that shows the picture as it is.
+ * - `icon-maskable-192.png`, `icon-maskable-512.png` (`purpose: maskable`): the four tiles
+ *   edge to edge, no ground, so the launcher's mask (a circle on most Android phones) is
+ *   cut out of the tiles themselves and reads as four coloured quarters. Nothing in the
+ *   drawing needs the safe zone (the circle of 40% of the side every mask leaves visible)
+ *   because the tiles are flat colour: whatever the mask crops, the rest is still the mark.
  * - `apple-touch-icon.png`, 180px: iOS ignores the manifest's icons and rounds the
- *   corners itself, so this is the any-purpose drawing at the size it asks for, with no
+ *   corners itself, so this is the same full-bleed tiles at the size it asks for, with no
  *   transparency (iOS fills it black).
  *
  * The order of the tiles comes out of `mark.ts` and the colours out of `palette.css`,
@@ -53,9 +55,9 @@ const tiles = BRAND_TILES.map(
 const ICONS = [
   { file: 'icon-192.png', size: 192, share: 0.64 },
   { file: 'icon-512.png', size: 512, share: 0.64 },
-  { file: 'icon-maskable-192.png', size: 192, share: 0.52 },
-  { file: 'icon-maskable-512.png', size: 512, share: 0.52 },
-  { file: 'apple-touch-icon.png', size: 180, share: 0.64 },
+  { file: 'icon-maskable-192.png', size: 192, share: 1 },
+  { file: 'icon-maskable-512.png', size: 512, share: 1 },
+  { file: 'apple-touch-icon.png', size: 180, share: 1 },
 ]
 
 function markup({ size, share }) {
