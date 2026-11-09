@@ -18,7 +18,7 @@ from pypdf import PdfReader
 
 from rebase_core.cli import main
 from rebase_core.contracts import brand
-from rebase_core.contracts.fields import Value, read_layer
+from rebase_core.contracts.fields import ContractFailed, Value, read_layer
 from rebase_core.contracts.render import (
     A4_HEIGHT_PT,
     A4_WIDTH_PT,
@@ -197,10 +197,75 @@ def test_an_occasional_letter_marks_one_signature_and_prints_its_term_from_the_r
     """REB-687: the real render writes «data ricevuta», and a filled occasional letter
     leaves blank what the filled ordinary one does, the `codice fiscale` included in the
     example."""
-    data = _example()
+    data = {**_example(), "giorni-incasso": None}
     names = [blank.name for blank in signature_blanks("engagement-letter-occasional", data)]
     assert names.count("firma professionista") == 1
     assert names.count("data firma") == 1
     rendered = render("engagement-letter-occasional", data)
     assert set(rendered.blank) == LETTER_BLANKS
     assert "30giornidataricevutafinemese" in _words(rendered.pdf)
+
+
+def _flat(text: str) -> str:
+    """`_words` of a sentence, and without the hyphens Typst breaks a long word at."""
+    return re.sub(r"[\s-]+", "", unicodedata.normalize("NFKC", text))
+
+
+def _printed(pdf: bytes) -> str:
+    reader = PdfReader(BytesIO(pdf))
+    return _flat("".join(page.extract_text() or "" for page in reader.pages))
+
+
+@pytest.mark.parametrize(
+    ("document", "paper"),
+    [("engagement-letter", "fattura"), ("engagement-letter-occasional", "ricevuta")],
+)
+def test_a_letter_that_waits_for_the_client_prints_the_term_and_the_clause(
+    document: str, paper: str
+) -> None:
+    """REB-979: with `giorni-incasso` the term and the paragraph after the table are
+    printed, and the fixed term is not; without it the letter prints the fixed term and
+    none of the clause."""
+    fixed = _printed(render(document, {**_example(), "giorni-incasso": None}).pdf)
+    rendered = render(document, {**_example(), "giorni-incasso": 15})
+    waits = _printed(rendered.pdf)
+    assert set(rendered.blank) == LETTER_BLANKS
+    sentences = (
+        "15 giorni dopo che il Cliente ha saldato rebase per lo stesso lavoro",
+        f"e in ogni caso entro 60 giorni dal ricevimento della {paper}",
+        "Pagamento a incasso.",
+        "Quel pagamento decide solo quando rebase paga, non se paga",
+        "il rischio resta di rebase",
+        "vale come eccezione all\u2019articolo 7.2 del Contratto quadro",
+    )
+    for sentence in sentences:
+        assert _flat(sentence) in waits, sentence
+        assert _flat(sentence) not in fixed, sentence
+    assert _flat(f"30 giorni data {paper} fine mese") in fixed
+    assert _flat(f"30 giorni data {paper} fine mese") not in waits
+
+
+@pytest.mark.parametrize("days", [0, 61])
+def test_a_letter_with_collection_days_out_of_range_is_not_typeset(days: int) -> None:
+    with pytest.raises(ContractFailed, match="from 1 to 60"):
+        render("engagement-letter", {**_example(), "giorni-incasso": days})
+
+
+@pytest.mark.parametrize(
+    ("document", "paper"),
+    [("framework-agreement", "fattura"), ("framework-agreement-occasional", "ricevuta")],
+)
+def test_both_frameworks_say_a_letter_may_tie_the_term_to_the_clients_payment(
+    document: str, paper: str
+) -> None:
+    rendered = render(document, _example())
+    assert rendered.version == text_version(document) == "1.1"
+    printed = _printed(rendered.pdf)
+    for sentence in (
+        "il rischio è di rebase. La Lettera di incarico può però legare il termine di pagamento"
+        " a quello del Cliente",
+        "dopo che il Cliente ha saldato rebase per lo stesso lavoro",
+        f"rebase paga entro 60 giorni dal ricevimento della {paper} (articolo 7.1) e il rischio"
+        " resta di rebase",
+    ):
+        assert _flat(sentence) in printed, sentence

@@ -196,7 +196,10 @@ def register(mcp: MCPServer, deps: Deps) -> None:
         `customer_registered_office`; for the conditions the letter's fields, such as `role`,
         `activities`, `start_date` and `end_date` (`YYYY-MM-DD`), `commitment`, `location`,
         `fee` (excluding VAT in the VAT-registered letter, gross in the occasional one; also
-        in Italian format: «1.500», «1.234,50»), `unit`, `payment_days`, `month_end`. An
+        in Italian format: «1.500», «1.234,50»), `unit`, `payment_days`, `month_end`,
+        `collection_days` (optional, 1 to 60: pay that many days after the client has paid
+        the matching invoice, and in any case within 60 days of the freelancer's invoice or
+        receipt; it replaces the fixed term the letter prints). An
         omitted field stays as the hub proposes it, `null` clears it. The answer also
         includes `customer` and `terms` as they would be written. An unknown field, or a
         required one left empty, is refused by name. Read-only."""

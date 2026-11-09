@@ -22,7 +22,7 @@ from rebase_core.contract_schemas import (
     MemberContracts,
     SendReport,
 )
-from rebase_core.contracts.fields import DAYS, FIELD, MONTH_END, TERM
+from rebase_core.contracts.fields import COLLECTION, DAYS, FIELD, MONTH_END, TERM
 from rebase_core.contracts.render import text_path
 from rebase_core.regimes import text_name
 
@@ -87,6 +87,10 @@ def test_a_letter_turns_into_the_markdowns_own_keys_and_printable_values() -> No
     [
         {"payment_days": 45, "month_end": True},  # past 60 days from the invoice
         {"payment_days": 61, "month_end": False},
+        {"collection_days": 0},
+        {"collection_days": 61},
+        {"collection_days": -1},
+        {"collection_days": 10.5},
         {"fee": Decimal("0")},
         {"fee": Decimal("450.005")},
         {"role": "   "},
@@ -196,7 +200,25 @@ def test_the_form_covers_every_field_of_the_letter_and_the_hub_fills_the_rest(re
     letter = text_path(text_name("letter", regime)).read_text(encoding="utf-8")
     asked = set(FIELD.findall(letter))
     written = {TEMPLATE_KEYS[name] for name in LetterDraft.model_fields}
-    assert asked == (written - {DAYS, MONTH_END}) | LETTER_AUTO_FIELDS_BY_REGIME[regime] | {TERM}
+    # `giorni-incasso` is no blank on the page: it switches a clause on (REB-979).
+    assert asked == (written - {DAYS, MONTH_END, COLLECTION}) | (
+        LETTER_AUTO_FIELDS_BY_REGIME[regime] | {TERM}
+    )
+    assert f"{{{{se {COLLECTION}}}}}" in letter
+
+
+@pytest.mark.parametrize("days", [1, 10, 60])
+def test_a_letter_may_wait_for_the_client_from_one_to_sixty_days(days: int) -> None:
+    fields = LetterFields(**{**REQUIRED, "collection_days": days}).to_fields()  # type: ignore[arg-type]
+    assert fields[COLLECTION] == days
+    # The fixed term stays required and is written beside it.
+    assert fields[DAYS] == 30 and fields[MONTH_END] is True
+
+
+def test_a_letter_that_does_not_wait_for_the_client_carries_no_collection_days() -> None:
+    assert LetterFields(**REQUIRED).collection_days is None  # type: ignore[arg-type]
+    assert LetterFields(**REQUIRED).to_fields()[COLLECTION] is None  # type: ignore[arg-type]
+    assert LetterDraft().collection_days is None
 
 
 def test_nothing_in_the_flow_can_carry_the_client_budget() -> None:

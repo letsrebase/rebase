@@ -46,7 +46,7 @@ describe('the letter form (REB-387)', () => {
     const grouped = LETTER_GROUPS.flatMap((group) => group.fields)
     expect(new Set(grouped).size).toBe(grouped.length)
     expect(new Set(grouped)).toEqual(new Set(Object.keys(LETTER_LABELS)))
-    expect(grouped).toHaveLength(LETTER_TEXT_KEYS.length + 6)
+    expect(grouped).toHaveLength(LETTER_TEXT_KEYS.length + 7)
   })
 
   it('sends an empty box as null, a comma decimal with a dot, and numbers as numbers', () => {
@@ -67,8 +67,21 @@ describe('the letter form (REB-387)', () => {
     expect(letter.notice_days).toBeNull()
   })
 
-  it('reads a prefill with no fee as an empty box, not the word null', () => {
+  it('sends the days to wait for the client as a number, and an empty box as null (REB-979)', () => {
+    expect(toLetter({ ...LETTER_EMPTY, collection_days: ' 15 ' }).collection_days).toBe(15)
+    expect(toLetter(LETTER_EMPTY).collection_days).toBeNull()
+    expect(toLetter({ ...LETTER_EMPTY, collection_days: '  ' }).collection_days).toBeNull()
+  })
+
+  it('shows the days a prefill carries, and none when it carries none', () => {
     const keys = [...LETTER_TEXT_KEYS, 'start_date', 'end_date', 'fee', 'payment_days', 'month_end', 'notice_days']
+    const empty = Object.fromEntries(keys.map((key) => [key, null]))
+    expect(letterForm({ ...empty, collection_days: 15 } as unknown as LetterDraft).collection_days).toBe('15')
+    expect(letterForm({ ...empty, collection_days: null } as unknown as LetterDraft).collection_days).toBe('')
+  })
+
+  it('reads a prefill with no fee as an empty box, not the word null', () => {
+    const keys = [...LETTER_TEXT_KEYS, 'start_date', 'end_date', 'fee', 'payment_days', 'month_end', 'collection_days', 'notice_days']
     const draft = Object.fromEntries(keys.map((key) => [key, null])) as unknown as LetterDraft
     const form = letterForm(draft)
     expect(form.fee).toBe('')

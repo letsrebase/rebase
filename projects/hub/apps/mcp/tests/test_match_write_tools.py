@@ -316,6 +316,38 @@ async def test_preview_match_refuses_a_fee_pydantic_alone_would_misread(
     assert "terms.fee: non valido" in refused
 
 
+async def test_preview_and_create_match_take_the_days_to_wait_for_the_client(
+    world: World,
+) -> None:
+    """REB-979: `collection_days` is a letter field like `payment_days`: the sentences of
+    step 3 say it, the letter is written with it, and 61 is refused by name."""
+    async with Client(world.server()) as client:
+        body = await _call(
+            client,
+            "preview_match",
+            freelancer_id=world.freelancer_id,
+            company_id=world.company_id,
+            customer=CUSTOMER,
+            terms={"collection_days": 15},
+        )
+        refused = await _refused(
+            client,
+            "preview_match",
+            freelancer_id=world.freelancer_id,
+            company_id=world.company_id,
+            customer=CUSTOMER,
+            terms={"collection_days": 61},
+        )
+        created = await _create(client, world, customer=CUSTOMER, terms={"collection_days": 15})
+    assert body["recap"][-1].endswith(
+        "pagato 15 giorni dopo che il Cliente ha saldato rebase per lo stesso lavoro, e in ogni "
+        "caso entro 60 giorni dal ricevimento della fattura."
+    )
+    assert body["terms"]["collection_days"] == 15
+    assert "collection_days" in refused
+    assert world.document(created["letter"]["id"]).data["giorni-incasso"] == 15
+
+
 async def test_create_match_saves_the_draft_with_the_fields_given(world: World) -> None:
     async with Client(world.server()) as client:
         body = await _create(client, world, customer=CUSTOMER, terms={"role": "Staff engineer"})

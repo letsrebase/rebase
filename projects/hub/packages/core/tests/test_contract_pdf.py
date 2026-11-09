@@ -25,6 +25,7 @@ from build_contract_pdf import CONTRACTS, load_data
 from rebase_core.contracts import brand
 from rebase_core.contracts.fields import (
     FIELD,
+    IF_FILLED,
     ContractFailed,
     Value,
     checked,
@@ -93,6 +94,72 @@ def test_a_payment_term_past_the_law_stops_the_build(
 ) -> None:
     with pytest.raises(ContractFailed, match=complaint):
         checked(data)
+
+
+def test_a_term_that_waits_for_the_client_says_so_and_keeps_the_sixty_days() -> None:
+    """REB-979: `giorni-incasso` replaces the fixed term with the client's payment, and
+    the sentence still promises the 60 days of law 81/2017 from the invoice's receipt."""
+    data: dict[str, Value] = {"giorni-pagamento": 30, "fine-mese": True, "giorni-incasso": 10}
+    assert checked(data)["termine-pagamento"] == (
+        "10 giorni dopo che il Cliente ha saldato rebase per lo stesso lavoro, e in ogni caso"
+        " entro 60 giorni dal ricevimento della fattura"
+    )
+    # An occasional letter is paid on a ricevuta, so that is what the limit counts from.
+    assert checked(data, receipt=True)["termine-pagamento"].endswith(
+        "e in ogni caso entro 60 giorni dal ricevimento della ricevuta"
+    )
+    assert checked({**data, "giorni-incasso": 1})["termine-pagamento"].startswith("1 giorno dopo")
+    assert checked({"giorni-incasso": 60})["termine-pagamento"].startswith("60 giorni dopo")
+
+
+def test_a_term_with_no_collection_days_is_what_it_always_was() -> None:
+    fixed = checked({"giorni-pagamento": 30, "fine-mese": True})
+    assert checked({"giorni-pagamento": 30, "fine-mese": True, "giorni-incasso": None}) == {
+        **fixed,
+        "giorni-incasso": None,
+    }
+    assert fixed["termine-pagamento"] == "30 giorni data fattura fine mese"
+    assert "termine-pagamento" not in checked({"giorni-incasso": None})
+
+
+@pytest.mark.parametrize(
+    ("days", "complaint"),
+    [
+        (0, "from 1 to 60"),
+        (-5, "from 1 to 60"),
+        (61, "from 1 to 60"),
+        ("10", "whole number"),
+        (10.5, "whole number"),
+        (True, "whole number"),
+    ],
+)
+def test_collection_days_outside_one_to_sixty_stop_the_build(days: Value, complaint: str) -> None:
+    with pytest.raises(ContractFailed, match=complaint):
+        checked({"giorni-pagamento": 30, "giorni-incasso": days})
+    with pytest.raises(ContractFailed, match=complaint):
+        checked({"giorni-incasso": days})
+
+
+def test_a_clause_between_two_markers_is_kept_only_when_its_field_is_filled() -> None:
+    typst = "prima\n\n{{se giorni-incasso}}\n\nclausola\n\n{{fine se}}\n\ndopo"
+    assert "clausola" in fill(typst, {"giorni-incasso": 10})[0]
+    assert "clausola" not in fill(typst, {})[0]
+    assert "clausola" not in fill(typst, {"giorni-incasso": None})[0]
+    assert "clausola" not in fill(typst, {"giorni-incasso": ""})[0]
+    # Neither marker is a field, so neither is reported blank nor printed as a labelled line.
+    assert fill(typst, {})[1] == []
+    assert "{{" not in fill(typst, {"giorni-incasso": 10})[0]
+    with pytest.raises(ContractFailed, match="no partner"):
+        fill("{{se giorni-incasso}} aperta", {"giorni-incasso": 10})
+    with pytest.raises(ContractFailed, match="no partner"):
+        fill("chiusa {{fine se}}", {})
+
+
+def test_a_conditional_marker_pandoc_stopped_passing_through_stops_the_build() -> None:
+    markdown = "{{se giorni-incasso}}\n\nx\n\n{{fine se}}"
+    survived(markdown, markdown, "doc")
+    with pytest.raises(ContractFailed, match="1 conditionals"):
+        survived(markdown, "\\{\\{se giorni-incasso\\}\\}\n\nx\n\n\\{\\{fine se\\}\\}", "doc")
 
 
 @pytest.mark.parametrize("raw", ["Infinity", "-Infinity", "NaN", "1e400"])
@@ -205,6 +272,10 @@ def test_the_example_names_every_field_the_letter_asks_for(letter: str) -> None:
     # `termine-pagamento` is in no data file on purpose: the build writes it.
     known = set(checked({**company, **example}))
     assert asked - known - SIGNATURES == set()
+    # The clause markers are not fields, but the example sets what switches them on, so a
+    # filled build prints every paragraph a letter can carry (REB-979).
+    switches = {key for key, _ in IF_FILLED.findall((TEXTS / f"{letter}.md").read_text("utf-8"))}
+    assert switches == {"giorni-incasso"} and switches <= set(example)
 
 
 def test_the_example_is_fiction() -> None:
@@ -241,8 +312,8 @@ def test_an_occasional_text_prints_no_vat_number_no_vat_excluded_and_no_invoice(
     assert "Professionista" not in prose
     matter = front_matter(markdown, document)
     assert (matter["version"], matter["date"], matter["status"]) == (
-        "1.0",
-        "12 ottobre 2026",
+        "1.1",
+        "9 novembre 2026",
         "final",
     )
 

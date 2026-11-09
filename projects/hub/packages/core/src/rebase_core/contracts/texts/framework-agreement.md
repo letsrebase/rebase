@@ -1,8 +1,8 @@
 ---
 title: Contratto quadro
 subtitle: Le regole di ogni lavoro che un membro della community svolge tramite rebase
-version: "1.0"
-date: 24 settembre 2026
+version: "1.1"
+date: 9 novembre 2026
 status: final
 ---
 
@@ -180,8 +180,14 @@ indica nell'Area riservata il proprio regime fiscale e lo tiene aggiornato.
 la Lettera di incarico indichi un altro termine, e in ogni caso entro 60 giorni dal
 ricevimento della fattura, come prevede l'articolo 3 della legge 81/2017.
 
+<!-- REB-979: the sentence on a letter that waits for the client was written on 2026-11-09 and awaits the overall legal review of the contracts. -->
+
 7.2 Il pagamento al Professionista non dipende dal pagamento del Cliente: se il Cliente
-paga in ritardo o non paga, il rischio è di rebase.
+paga in ritardo o non paga, il rischio è di rebase. La Lettera di incarico può però
+legare il termine di pagamento a quello del Cliente, indicando che rebase paga un certo
+numero di giorni dopo che il Cliente ha saldato rebase per lo stesso lavoro: anche in quel
+caso rebase paga entro 60 giorni dal ricevimento della fattura (articolo 7.1) e il
+rischio resta di rebase.
 
 7.3 Sulle somme pagate in ritardo maturano gli interessi di mora previsti dal decreto
 legislativo 231/2002.

@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from datetime import date
 from typing import TYPE_CHECKING, Literal
 
-from rebase_core.contracts.fields import FEE, italian_date, rendered
+from rebase_core.contracts.fields import FEE, collection_term, italian_date, rendered
 from rebase_core.regimes import OCCASIONAL, VAT_REGISTERED
 
 if TYPE_CHECKING:
@@ -410,7 +410,12 @@ def check_sentences(
     # The fee exactly as the letter prints it, «450,00 €», so step 3 and the PDF agree.
     fee = rendered(FEE, letter.to_fields()[FEE])
     vat = GROSS_WITHOUT_VAT if occasional else VAT_EXCLUDED
-    recap.append(f"Compenso: {fee}{per}, {vat}, pagato a {letter.payment_days} giorni{month_end}.")
+    # A letter that waits for the client says so here in the words the PDF prints (REB-979).
+    collected = collection_term(letter.collection_days, "ricevuta" if occasional else "fattura")
+    paid = (
+        f"pagato {collected}" if collected else f"pagato a {letter.payment_days} giorni{month_end}"
+    )
+    recap.append(f"Compenso: {fee}{per}, {vat}, {paid}.")
     if occasional and has_vat_number:
         recap.append(HAS_VAT_NUMBER)
     if missing_tax_data:

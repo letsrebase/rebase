@@ -522,6 +522,7 @@ export type Letter = Record<LetterTextKey, string | null> & {
   fee: string
   payment_days: number
   month_end: boolean
+  collection_days: number | null
   notice_days: number | null
 }
 export type LetterDraft = Narrow<

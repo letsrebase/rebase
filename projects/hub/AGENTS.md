@@ -517,6 +517,16 @@ letter needs a saved partita IVA; the occasional texts never print one, and an o
 letter's payment term counts from the receipt. Design record:
 `docs/superpowers/specs/2026-10-12-prestazione-occasionale-design.md`.
 
+Since REB-979 a letter may pay «a incasso»: the optional `collection_days` (`giorni-incasso`,
+1 to 60) on `LetterDraft`, «Condizioni» and the MCP `terms`. `checked` then writes the
+payment term as that many days after the client has paid, and in any case within 60 days of
+receiving the invoice (the receipt, on the occasional letter), and the letters' «Pagamento a
+incasso» paragraph, between `{{se giorni-incasso}}` and `{{fine se}}`, prints; without the
+field a letter is what it was. Both framework agreements were raised to 1.1 for it; an
+agreement signed at 1.0 keeps its text (article 17.3), so the letter itself carries the
+consent. The wording awaits the overall legal review of the contracts
+(`docs/design/DECISIONS.md`, 2026-11-09).
+
 ## Contracts are signed on Documenso
 
 Since REB-387 phase 3 «Invia per la firma» sends a match's documents through Documenso

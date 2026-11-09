@@ -625,6 +625,32 @@ def test_the_check_with_an_active_framework_sends_the_letter_at_once() -> None:
     assert what_happens == "Il contratto quadro è già attivo: parte subito la lettera di incarico."
 
 
+@pytest.mark.parametrize(
+    ("regime", "vat", "paper"),
+    [
+        ("vat_registered", "IVA esclusa", "fattura"),
+        ("occasional", "lordi, senza IVA", "ricevuta"),
+    ],
+)
+def test_the_check_of_a_letter_that_waits_for_the_client_says_so_as_the_pdf_does(
+    regime: str, vat: str, paper: str
+) -> None:
+    """REB-979: step 3 prints the words the letter prints, not the fixed term it replaces."""
+    recap, _ = check_sentences(
+        "Ada Lovelace",
+        "ACME S.r.l.",
+        _letter_fields(collection_days=10),
+        "active",
+        missing_tax_data=False,
+        regime=regime,
+    )
+    assert recap[-1] == (
+        f"Compenso: 450,00 € a giornata, {vat}, pagato 10 giorni dopo che il Cliente ha saldato"
+        f" rebase per lo stesso lavoro, e in ogni caso entro 60 giorni dal ricevimento della"
+        f" {paper}."
+    )
+
+
 def test_the_check_prints_the_period_once_even_if_the_commitment_ends_with_one() -> None:
     recap, _ = check_sentences(
         "Ada Lovelace",
