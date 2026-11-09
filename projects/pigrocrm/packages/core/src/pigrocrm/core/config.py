@@ -193,6 +193,7 @@ class Settings(BaseSettings):
     # ask for cannot be bypassed from the generic settings page. `core/modules.py` reads
     # them: an absent switch is the profile's default, and with no profile, on.
     space_profile: Literal["solo", "company"] | None = None
+    onboarding_skipped: bool | None = None
     module_deals: bool | None = None
     module_contracts: bool | None = None
     module_time: bool | None = None

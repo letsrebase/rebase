@@ -145,6 +145,7 @@ CORE_TOOLS = frozenset(
         "describe_space",
         "set_space_profile",
         "set_space_modules",
+        "skip_space_onboarding",
         "issue_invoice",
         "annul_invoice",
         "mark_invoice_transmitted",
@@ -298,8 +299,9 @@ async def test_every_token_reads_the_space_and_only_a_full_access_one_is_shown_t
     )
 
     assert "describe_space" in plain and "describe_space" in collaborator
-    assert not plain & {"set_space_profile", "set_space_modules"}
-    assert {"set_space_profile", "set_space_modules"} <= full
+    shape = {"set_space_profile", "set_space_modules", "skip_space_onboarding"}
+    assert not plain & shape
+    assert shape <= full
 
 
 async def test_describe_space_says_what_is_on_and_what_holds_data(

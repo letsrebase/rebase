@@ -64,6 +64,22 @@ def set_profile(
     return result
 
 
+@router.post("/onboarding/skip", response_model=SpaceModulesRead)
+def skip_onboarding(
+    request: Request,
+    session: SessionDep,
+    actor: ActorDep,
+    base: BaseSettingsDep,
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> SpaceModulesRead:
+    """«Decido dopo» on the first step of the onboarding: every module stays on, nothing
+    is chosen, and the onboarding waits in «Primi passi» (`onboarding` answers `skipped`).
+    A space that already has a profile is left as it is."""
+    result = SpaceModulesService(session, base).skip_onboarding(actor)
+    invalidate_space_settings(tenant_slug(request), settings)
+    return result
+
+
 @router.put("", response_model=SpaceModulesRead)
 def set_modules(
     data: SpaceModulesSet,

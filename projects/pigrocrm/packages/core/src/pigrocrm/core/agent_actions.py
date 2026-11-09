@@ -158,6 +158,7 @@ FULL_ACCESS_ACTIONS: frozenset[str] = frozenset(
         # generic `update_space_settings` stays person-only below.
         "set_space_profile",
         "set_space_modules",
+        "skip_space_onboarding",
         # The text that leaves in the owner's name, and the draft that carries an invoice
         # and its register (REB-753). Sending has no MCP counterpart by structure.
         "create_contract_email_template",
@@ -298,6 +299,7 @@ ACTION_LABELS: dict[str, str] = {
     "settle_outgoing_due_item": "segnare come pagata una scadenza in uscita o fiscale",
     "reverse_outgoing_settlement": "annullare il pagamento di una scadenza in uscita o fiscale",
     "read_fiscal_due_items": "leggere le scadenze di imposte, IVA, ritenute e stipendi",
+    "skip_space_onboarding": "rimandare le domande su come lavora lo spazio",
 }
 
 

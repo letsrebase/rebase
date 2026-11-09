@@ -1,6 +1,6 @@
 from pydantic import BaseModel, ConfigDict, Field
 
-from pigrocrm.core.modules.registry import ModuleKey, Profile
+from pigrocrm.core.modules.registry import ModuleKey, OnboardingState, Profile
 
 
 class ModuleRead(BaseModel):
@@ -21,6 +21,12 @@ class ModuleRead(BaseModel):
 
 class SpaceModulesRead(BaseModel):
     profile: Profile | None = Field(description="`solo`, `company`, or `null` until chosen")
+    onboarding: OnboardingState = Field(
+        description=(
+            "`pending` until the profile is chosen or the first step is skipped, `skipped` after "
+            "«Decido dopo», `done` once there is a profile"
+        )
+    )
     modules: list[ModuleRead]
 
 
