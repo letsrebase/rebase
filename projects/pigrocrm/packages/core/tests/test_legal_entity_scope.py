@@ -74,6 +74,7 @@ TODAY = date(2026, 3, 10)
 POLICIED = {
     "legal_entities",
     "fiscal_profile",
+    "fiscal_estimates",
     "invoice_counters",
     "invoice_register_gaps",
     "customers",

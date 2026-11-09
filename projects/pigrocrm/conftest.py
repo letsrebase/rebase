@@ -131,6 +131,7 @@ def _legal_entity_scope_statements() -> list[str]:
         ("pigrocrm_migration_0070", "0070_deal_value_lines.py"),
         ("pigrocrm_migration_0073", "0073_contact_points.py"),
         ("pigrocrm_migration_0074", "0074_inbox_items.py"),
+        ("pigrocrm_migration_0075", "0075_tax_year_readings.py"),
     ):
         spec = importlib.util.spec_from_file_location(name, versions / file)
         assert spec is not None and spec.loader is not None

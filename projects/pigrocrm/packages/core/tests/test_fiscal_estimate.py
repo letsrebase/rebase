@@ -89,6 +89,7 @@ def test_the_arithmetic_matches_the_previous_systems_at_the_annual_level() -> No
         coefficient=Decimal("67.00"),
         rate_substitute=Decimal("5.00"),
         social_security_rate=Decimal("26.07"),
+        contribution_base="taxable_amount_net_of_substitute_tax",
     )
     assert estimate.taxable_amount == Decimal("67000.00")
     assert estimate.substitute_tax == Decimal("3350.00")
@@ -112,6 +113,7 @@ def test_the_rates_are_arguments_and_not_constants() -> None:
         coefficient=Decimal("78.00"),
         rate_substitute=Decimal("15.00"),
         social_security_rate=Decimal("24.00"),
+        contribution_base="taxable_amount_net_of_substitute_tax",
     )
     assert estimate.taxable_amount == Decimal("78000.00")
     assert estimate.substitute_tax == Decimal("11700.00")
@@ -135,6 +137,7 @@ def test_it_says_it_is_an_estimate_in_its_own_payload() -> None:
         coefficient=Decimal("67.00"),
         rate_substitute=Decimal("5.00"),
         social_security_rate=Decimal("26.07"),
+        contribution_base="taxable_amount_net_of_substitute_tax",
     )
     assert estimate.estimate is True
     # The three clauses that matter most, because each names a real reason the figure
@@ -159,6 +162,7 @@ def test_a_missing_coefficient_yields_null_not_a_guess() -> None:
         coefficient=None,
         rate_substitute=Decimal("5.00"),
         social_security_rate=Decimal("26.07"),
+        contribution_base="taxable_amount_net_of_substitute_tax",
     )
     assert estimate.taxable_amount is None
     assert estimate.substitute_tax is None
@@ -183,6 +187,7 @@ def test_only_the_lines_that_depend_on_the_missing_rate_go_null() -> None:
         coefficient=Decimal("67.00"),
         rate_substitute=Decimal("5.00"),
         social_security_rate=None,
+        contribution_base="taxable_amount_net_of_substitute_tax",
     )
     assert estimate.taxable_amount == Decimal("670.00")
     assert estimate.substitute_tax == Decimal("33.50")
@@ -200,6 +205,7 @@ def test_rounding_is_the_projects_own_half_up_at_every_step() -> None:
         coefficient=Decimal("67.00"),
         rate_substitute=Decimal("5.00"),
         social_security_rate=Decimal("26.07"),
+        contribution_base="taxable_amount_net_of_substitute_tax",
     )
     # 1.05 * 0.67 = 0.7035 -> 0.70 half-up. Banker's rounding would also give 0.70 here,
     # so the case below is the one that separates them.

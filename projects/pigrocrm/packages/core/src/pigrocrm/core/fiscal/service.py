@@ -90,7 +90,7 @@ class FiscalProfileService:
         checks nothing.
         """
         actor.require_admin("update_fiscal_profile")
-        payload = data.model_dump(exclude={"updated_at"})
+        payload = data.stored_fields()
         self.check(payload)
         legal_entity = self.legal_entities.resolve(legal_entity_id)
 
@@ -197,6 +197,14 @@ class FiscalProfileService:
                         f"{whose} non ha i parametri del forfettario",
                         expected="nessun valore",
                     )
+            stated = [key for key in ("inps_category", "isa") if payload.get(key) is not None]
+            if abroad and stated:
+                raise ValidationFailed(
+                    ENTITY,
+                    stated[0],
+                    "un'azienda estera non ha una categoria INPS né l'ISA",
+                    expected="nessun valore",
+                )
         if payload["default_vat_rate"] != ZERO and payload.get("default_vat_nature"):
             raise ValidationFailed(
                 ENTITY,

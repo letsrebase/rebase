@@ -1,7 +1,19 @@
 from decimal import Decimal
+from typing import Any
 from uuid import UUID
 
-from sqlalchemy import Boolean, ForeignKey, Integer, Numeric, String, Text, text
+from sqlalchemy import (
+    Boolean,
+    CheckConstraint,
+    ForeignKey,
+    Integer,
+    Numeric,
+    String,
+    Text,
+    UniqueConstraint,
+    text,
+)
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from pigrocrm.core.db import Base, PrimaryKeyMixin, TimestampMixin
@@ -21,7 +33,10 @@ class FiscalProfile(Base, PrimaryKeyMixin, TimestampMixin):
     regime changes on 1 January, but spec 6.2 forbids back-dating an invoice past the
     start of the current year, so no emission ever needs a previous period's
     parameters. A `valid_from`/`valid_to` pair would only answer a question the
-    per-invoice `snapshot` already answers, and answers better.
+    per-invoice `snapshot` already answers, and answers better. What an invoice never needed
+    but a tax year does (REB-974) is the regime of a past year: the law is keyed by year in
+    the pack (`fiscal/law.py`), and an income estimate freezes the pack and the parameters it
+    was computed with (`FiscalEstimateReading`), so the profile itself stays one row.
 
     One per legal entity is enforced by the database (REB-615, spec 2026-10-03 §1.2):
     `legal_entity_id` is `unique=True`, so a second insert for the same legal entity fails on
@@ -93,4 +108,57 @@ class FiscalProfile(Base, PrimaryKeyMixin, TimestampMixin):
     )
     pack_version: Mapped[str] = mapped_column(
         String(10), nullable=False, default="1", server_default=text("'1'")
+    )
+    # REB-974, taxes design § 1: the rest of the taxpayer's parameters, the ones that depend
+    # on the person and not on the law. Both nullable: «not stated» is not a no, and a figure
+    # that depends on one gives no figure rather than a guess. Neither reaches a number yet
+    # (the INPS category and the ISA flag are read by the advances and the contributions of
+    # the cards that follow); `fiscal_estimates` freezes them beside the ones that do.
+    # The category's values are named in the design; the fixed quarterly minimum of
+    # «artigiani e commercianti» and the rates are TO VERIFY (A5 row «Gestione separata and
+    # artigiani e commercianti rates, minimums and quarterly dates»). `isa` decides 50/50
+    # or 40/60 advances (A5, verified).
+    inps_category: Mapped[str | None] = mapped_column(String(30), default=None)
+    isa: Mapped[bool | None] = mapped_column(Boolean, default=None)
+
+    __table_args__ = (
+        CheckConstraint(
+            "inps_category IN ('gestione_separata', 'artigiani_commercianti')",
+            name="ck_fiscal_profile_inps_category",
+        ),
+    )
+
+
+class FiscalEstimateReading(Base, PrimaryKeyMixin, TimestampMixin):
+    """A year's income estimate as it was computed, frozen with what it used (REB-974, taxes
+    design § 1 and § 2). One row per legal entity and tax year.
+
+    The pack's law is keyed by tax year and the profile is not historicised, so the estimate
+    of a year is no longer reproducible once the entity changes pack on 1 January: the
+    profile then holds the ordinary regime's parameters and the flat-rate ones are gone. This
+    row is what stays. It stores the pack and version, the law year that governed the
+    estimate, the taxpayer's parameters it read and the figures it produced, so a year
+    computed under the flat-rate pack keeps its figures after the move.
+
+    Written whenever the year's estimate is computed on the legal entity's own revenue and
+    its pack still carries the estimate (`AnalyticsService.get_fiscal_estimate`), so it
+    follows the figures while the regime lasts and stops following them when it does not. A
+    «what if» with a revenue the caller supplies is never stored.
+
+    `parameters` and `figures` are JSON because they are copies of what `FiscalProfile` and
+    `FiscalEstimate` held at that moment, read back whole and never queried by a field.
+    """
+
+    __tablename__ = "fiscal_estimates"
+
+    legal_entity_id: Mapped[UUID] = mapped_column(ForeignKey("legal_entities.id"), nullable=False)
+    tax_year: Mapped[int] = mapped_column(Integer, nullable=False)
+    pack_id: Mapped[str] = mapped_column(String(40), nullable=False)
+    pack_version: Mapped[str] = mapped_column(String(10), nullable=False)
+    law_from_year: Mapped[int] = mapped_column(Integer, nullable=False)
+    parameters: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    figures: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("legal_entity_id", "tax_year", name="uq_fiscal_estimates_year"),
     )

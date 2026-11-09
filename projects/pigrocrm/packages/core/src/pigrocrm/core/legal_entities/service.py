@@ -39,6 +39,23 @@ VAT_NUMBER_RE = re.compile(r"\d{11}")
 VAT_NUMBER_MAX_LENGTH = VAT_NUMBER_WIDTH
 SDI_CODE_LENGTH = 7
 DEFAULT_LABEL = "default"
+# The days each month has in a year that has a February 29: a fiscal year end is a month and
+# a day, never a date, so the leap year is the permissive reading (the column's own check
+# constraint says the same).
+FISCAL_YEAR_END_DAYS = {
+    1: 31,
+    2: 29,
+    3: 31,
+    4: 30,
+    5: 31,
+    6: 30,
+    7: 31,
+    8: 31,
+    9: 30,
+    10: 31,
+    11: 30,
+    12: 31,
+}
 
 
 def _normalise_ids(data: dict[str, Any]) -> None:
@@ -94,8 +111,36 @@ def _check_fiscal(data: dict[str, Any]) -> None:
         raise ValidationFailed(
             ENTITY, "sdi_code", "deve essere di 7 caratteri", expected="7 caratteri"
         )
+    _check_fiscal_year_end(data)
     if not data.get("name"):
         data["name"] = data["legal_name"][:NAME_MAX_LENGTH]
+
+
+def _check_fiscal_year_end(data: dict[str, Any]) -> None:
+    """The fiscal year end is a pair, and a write that names neither leaves the row's own
+    (REB-974): both keys come out of the payload, so a whole-row replacement never resets a
+    company's year end to 31 December. Naming one without the other, or a day the month does
+    not have, is refused in words before the column's check constraint says it as a raw error."""
+    month = data.pop("fiscal_year_end_month", None)
+    day = data.pop("fiscal_year_end_day", None)
+    if month is None and day is None:
+        return
+    if month is None or day is None:
+        raise ValidationFailed(
+            ENTITY,
+            "fiscal_year_end_month" if month is None else "fiscal_year_end_day",
+            "la fine dell'esercizio si indica con il mese e il giorno insieme",
+            expected="mese e giorno, per esempio 12 e 31",
+        )
+    if day > FISCAL_YEAR_END_DAYS[month]:
+        raise ValidationFailed(
+            ENTITY,
+            "fiscal_year_end_day",
+            "il mese indicato non ha quel giorno",
+            expected=f"un giorno da 1 a {FISCAL_YEAR_END_DAYS[month]}",
+        )
+    data["fiscal_year_end_month"] = month
+    data["fiscal_year_end_day"] = day
 
 
 class LegalEntityService:
@@ -273,7 +318,7 @@ class LegalEntityService:
         _check_fiscal(payload)
         # The profile body is `FiscalProfileUpsert`, whose `updated_at` is a version and
         # not a column (REB-622); a row being created has none to check against.
-        profile_data = data.fiscal_profile.model_dump(exclude={"updated_at"})
+        profile_data = data.fiscal_profile.stored_fields()
         FiscalProfileService.check(profile_data)
         try:
             row = self.repo.add(

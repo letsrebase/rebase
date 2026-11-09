@@ -26,6 +26,12 @@ un-historicised shape -- read once by the ceiling service at evaluation time. A
 further pack is a new module and a new registry entry here, never a branch on
 `FiscalProfile.regime_code` inside the ceiling or social security surcharge logic (mastro's own
 invariant 1: no country-specific logic outside a jurisdiction pack).
+
+A pack also holds the tax law of its regime, keyed by tax year (`fiscal/law.py`,
+REB-974): `FiscalPack.laws`, each entry valid from a tax year, and `law_for(year)` is the one
+that governs a year, so a year computed under one pack keeps the rules it was computed with
+after the entity changes pack. The pointer stays un-historicised; what is frozen is each
+reading (`FiscalEstimateReading`), which stores the pack, its version and the law year it used.
 """
 
 from __future__ import annotations
@@ -33,6 +39,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from decimal import Decimal
 from typing import Final, Literal
+
+from pigrocrm.core.fiscal.law import IncomeTaxAdvanceLaw, MonthDay, TaxYearLaw
 
 # The pack ids, as literals so a schema can name them in a `Literal` type
 # (`fiscal/schemas.py::PackId`) and a profile cannot point at a pack that does not exist.
@@ -116,8 +124,8 @@ class StatutoryCharge:
 
 @dataclass(frozen=True)
 class FiscalPack:
-    """A jurisdiction pack: its ceilings and its statutory charges -- mastro's
-    `FiscalPack` (`pack.ts:297-350`), trimmed to the two sections this port needs.
+    """A jurisdiction pack: its ceilings, its statutory charges and its tax law -- mastro's
+    `FiscalPack` (`pack.ts:297-350`), trimmed to the sections this port needs.
     Never named by id inside the ceiling or social security surcharge logic (mastro's own `pack.ts`
     header: "nothing in this file may name a concrete pack") -- a caller resolves one
     by `id`/`version` through `resolve_pack` and passes the object on."""
@@ -126,10 +134,24 @@ class FiscalPack:
     version: str
     ceilings: tuple[Ceiling, ...]
     charges: tuple[StatutoryCharge, ...]
-    # Whether the pack's regime has the income estimate (`analytics/fiscal.py`): the
-    # flat-rate regime's coefficient, substitute tax and INPS. No other pack has one, and the
-    # economic overview draws no estimate for them instead of a card of zeros (REB-760).
-    estimate_income: bool = False
+    # The tax law of the regime, one entry per change, oldest first (`fiscal/law.py`). Empty
+    # for a regime with nothing computed (`non-it`): no figure, never a guess.
+    laws: tuple[TaxYearLaw, ...] = ()
+
+    def __post_init__(self) -> None:
+        years = [law.from_year for law in self.laws]
+        if years != sorted(set(years)):
+            raise ValueError(f"pack {self.id!r}: law entries must have increasing from_year")
+
+    def law_for(self, year: int) -> TaxYearLaw | None:
+        """The law that governs tax year `year`: the latest entry starting at or before it,
+        `None` when the pack has no law for that year yet."""
+        governing = None
+        for law in self.laws:
+            if law.from_year > year:
+                break
+            governing = law
+        return governing
 
     def charge(self, charge_id: str) -> StatutoryCharge:
         for charge in self.charges:
@@ -202,7 +224,15 @@ IT_FLAT_RATE_PACK = FiscalPack(
         ),
     ),
     charges=(SOCIAL_SECURITY_SURCHARGE_INPS,),
-    estimate_income=True,
+    # The regime exists from 1 January 2015 (l. 190/2014, art. 1, commi 54-89, cited above)
+    # and the income estimate has always applied one arithmetic to every year, so one entry
+    # covers them all. Its contribution base is the formula `analytics/fiscal.py` carried
+    # over from the previous system: TO VERIFY with the accountant (A5 row «Flat-rate
+    # contribution base...», REB-975), as are the rest of the estimate's rows (the 5%/15%
+    # substitute rate, the profitability coefficients, the INPS rates and their minimums,
+    # the cash basis of the revenue). No advance rule: the flat-rate regime's substitute tax
+    # advances are not in the register (A5 row added by REB-974, TO VERIFY).
+    laws=(TaxYearLaw(from_year=2015, contribution_base="taxable_amount_net_of_substitute_tax"),),
 )
 
 # A company established outside Italy (REB-619, spec 2026-10-03 §1.3): no ceiling,
@@ -222,7 +252,35 @@ NON_IT_PACK = FiscalPack(id=PACK_NON_IT, version="1", ceilings=(), charges=())
 # `applies_social_charge` election adds no line here
 # (`social_security_surcharge_line_for_contract`).
 # The regime strategy (`fiscal/regime.py::ORDINARY`) is selected by this pack's id.
-IT_STANDARD_PACK = FiscalPack(id=PACK_IT_STANDARD, version="1", ceilings=(), charges=())
+# The advance rules are the Agenzia page's of today, read in 2026 (A5, verified), so the
+# entry starts there: an earlier year has no law in this pack yet, and asks for none. No
+# income estimate: the ordinary regime's IRPEF brackets, regional and municipal surcharges
+# and INPS rates are TO VERIFY (A5), and a pack states no figure it cannot cite.
+IT_STANDARD_PACK = FiscalPack(
+    id=PACK_IT_STANDARD,
+    version="1",
+    ceilings=(),
+    charges=(),
+    laws=(
+        TaxYearLaw(
+            from_year=2026,
+            advances=IncomeTaxAdvanceLaw(
+                advance_percent_of_base=Decimal("100"),
+                first_advance_percent=Decimal("40"),
+                second_advance_percent=Decimal("60"),
+                first_advance_percent_isa=Decimal("50"),
+                second_advance_percent_isa=Decimal("50"),
+                no_advance_at_or_below=Decimal("51.65"),
+                single_november_payment_below=Decimal("257.52"),
+                deferral_surcharge_percent=Decimal("0.40"),
+                deferral_window_days=30,
+                instalments_until=MonthDay(month=12, day=16),
+                balance_and_first_advance_date=MonthDay(month=6, day=30),
+                second_advance_date=MonthDay(month=11, day=30),
+            ),
+        ),
+    ),
+)
 
 _PACKS: dict[tuple[str, str], FiscalPack] = {
     (IT_FLAT_RATE_PACK.id, IT_FLAT_RATE_PACK.version): IT_FLAT_RATE_PACK,
@@ -264,7 +322,10 @@ __all__ = [
     "CeilingBasis",
     "CeilingConsequence",
     "FiscalPack",
+    "IncomeTaxAdvanceLaw",
+    "MonthDay",
     "StatutoryCharge",
+    "TaxYearLaw",
     "known_charge_markers",
     "resolve_pack",
 ]

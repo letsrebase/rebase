@@ -1,7 +1,17 @@
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import Boolean, CheckConstraint, Index, String, Text, func, select, text
+from sqlalchemy import (
+    Boolean,
+    CheckConstraint,
+    Index,
+    SmallInteger,
+    String,
+    Text,
+    func,
+    select,
+    text,
+)
 from sqlalchemy.orm import Mapped, mapped_column
 
 from pigrocrm.core.db import Base, PrimaryKeyMixin, TimestampMixin
@@ -97,12 +107,32 @@ class LegalEntity(Base, PrimaryKeyMixin, TimestampMixin):
     # between two places. The previous system hardcoded all of it, twice, verbatim, in two builders.
     email_signature: Mapped[str | None] = mapped_column(Text, default=None)
     tax_regime: Mapped[str | None] = mapped_column(String(200), default=None)
+    # REB-974, taxes design § 1: the last day of the fiscal year, 31 December unless the
+    # company's statutes say otherwise. A legal entity's own fact and not the profile's: it
+    # is the entity's financial year, which the company dates follow (balance and first
+    # advance on the last day of the sixth month after it, A5 verified). Not nullable: a
+    # calendar year is the honest default for every row that exists. A February 29 is
+    # accepted; the constraint checks that the day exists in the month, never in a year.
+    fiscal_year_end_month: Mapped[int] = mapped_column(
+        SmallInteger, nullable=False, default=12, server_default=text("12")
+    )
+    fiscal_year_end_day: Mapped[int] = mapped_column(
+        SmallInteger, nullable=False, default=31, server_default=text("31")
+    )
 
     __table_args__ = (
         # The default is what every implicit read resolves to, so it is never a row that
         # was switched off: enforced here, not only in `set_default`/`deactivate`, because
         # the two can race each other across transactions.
         CheckConstraint("NOT (is_default AND NOT active)", name="ck_legal_entities_default_active"),
+        CheckConstraint(
+            "(fiscal_year_end_month IN (1, 3, 5, 7, 8, 10, 12)"
+            " AND fiscal_year_end_day BETWEEN 1 AND 31)"
+            " OR (fiscal_year_end_month IN (4, 6, 9, 11)"
+            " AND fiscal_year_end_day BETWEEN 1 AND 30)"
+            " OR (fiscal_year_end_month = 2 AND fiscal_year_end_day BETWEEN 1 AND 29)",
+            name="ck_legal_entities_fiscal_year_end",
+        ),
         Index(
             "uq_legal_entities_default",
             "is_default",

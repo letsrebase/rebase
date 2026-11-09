@@ -68,6 +68,12 @@ class LegalEntityFields(BaseModel):
     # clear them nor point them at somebody else's file. `update` leaves them as they are.
     email_signature: SafeStr | None = Field(default=None, max_length=EMAIL_SIGNATURE_MAX_LENGTH)
     tax_regime: SafeStr | None = Field(default=None, max_length=TAX_REGIME_MAX_LENGTH)
+    # REB-974: the last day of the fiscal year (31 December by default). Unlike the rest of the
+    # row they are not replaced by a write that leaves them out: the two are a pair, a write
+    # that names them sets both, and `null` or an omission keeps what the row holds (a new
+    # row takes 31 December). Nothing in the web app sends them yet.
+    fiscal_year_end_month: int | None = Field(default=None, ge=1, le=12)
+    fiscal_year_end_day: int | None = Field(default=None, ge=1, le=31)
 
 
 class LegalEntityUpsert(LegalEntityFields):
@@ -127,6 +133,8 @@ class LegalEntityRead(BaseModel):
     signature_key: str | None
     email_signature: str | None
     tax_regime: str | None
+    fiscal_year_end_month: int
+    fiscal_year_end_day: int
     created_at: datetime
     updated_at: datetime
 
@@ -143,5 +151,13 @@ class LegalEntityDeactivated(LegalEntityRead):
 # The fields `as_template_values` and the MCP `describe` leave out: identity, state and
 # timestamps are facts about the row, not about the business a template prints.
 TEMPLATE_EXCLUDED_FIELDS: frozenset[str] = frozenset(
-    {"id", "is_default", "active", "created_at", "updated_at"}
+    {
+        "id",
+        "is_default",
+        "active",
+        "fiscal_year_end_month",
+        "fiscal_year_end_day",
+        "created_at",
+        "updated_at",
+    }
 )

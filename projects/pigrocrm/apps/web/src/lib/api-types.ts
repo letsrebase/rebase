@@ -8550,6 +8550,17 @@ export interface components {
             estimated_net_income: string | null;
             /** Due Total */
             due_total?: string | null;
+            /** Pack Id */
+            pack_id?: string | null;
+            /** Pack Version */
+            pack_version?: string | null;
+            /** Law From Year */
+            law_from_year?: number | null;
+            /**
+             * Frozen
+             * @default false
+             */
+            frozen: boolean;
         };
         /** FiscalProfileRead */
         FiscalProfileRead: {
@@ -8590,6 +8601,10 @@ export interface components {
             pack_id: string;
             /** Pack Version */
             pack_version: string;
+            /** Inps Category */
+            inps_category: string | null;
+            /** Isa */
+            isa: boolean | null;
             /**
              * Created At
              * Format: date-time
@@ -8685,6 +8700,10 @@ export interface components {
              * @default 26.07
              */
             social_security_rate: number | string | null;
+            /** Inps Category */
+            inps_category?: ("gestione_separata" | "artigiani_commercianti") | null;
+            /** Isa */
+            isa?: boolean | null;
             /**
              * Updated At
              * @description The `updated_at` read on the profile this change starts from, `null` for a profile not yet saved: if someone else saved in the meantime, the request is rejected with 409 `stale_row`. Omitted, no check.
@@ -9806,6 +9825,10 @@ export interface components {
             email_signature?: string | null;
             /** Tax Regime */
             tax_regime?: string | null;
+            /** Fiscal Year End Month */
+            fiscal_year_end_month?: number | null;
+            /** Fiscal Year End Day */
+            fiscal_year_end_day?: number | null;
             fiscal_profile: components["schemas"]["FiscalProfileUpsert"];
         };
         /**
@@ -9861,6 +9884,10 @@ export interface components {
             email_signature: string | null;
             /** Tax Regime */
             tax_regime: string | null;
+            /** Fiscal Year End Month */
+            fiscal_year_end_month: number;
+            /** Fiscal Year End Day */
+            fiscal_year_end_day: number;
             /**
              * Created At
              * Format: date-time
@@ -9921,6 +9948,10 @@ export interface components {
             email_signature: string | null;
             /** Tax Regime */
             tax_regime: string | null;
+            /** Fiscal Year End Month */
+            fiscal_year_end_month: number;
+            /** Fiscal Year End Day */
+            fiscal_year_end_day: number;
             /**
              * Created At
              * Format: date-time
@@ -9978,6 +10009,10 @@ export interface components {
             email_signature?: string | null;
             /** Tax Regime */
             tax_regime?: string | null;
+            /** Fiscal Year End Month */
+            fiscal_year_end_month?: number | null;
+            /** Fiscal Year End Day */
+            fiscal_year_end_day?: number | null;
             /**
              * Updated At
              * @description The `updated_at` read on the row this change starts from: if someone else saved in the meantime, the request is rejected with 409 `stale_row`. Omitted, no check.
