@@ -3089,7 +3089,7 @@ def test_0076_creates_the_due_item_tables_under_the_scope_policy_and_downgrade_d
         assert _due_items_shape(url)[0] == both
 
 
-def _table_shape(url: str, names: set[str]) -> tuple[set[str], set[str], set[str]]:
+def _tables_shape(url: str, names: set[str]) -> tuple[set[str], set[str], set[str]]:
     """Which of `names` exist, which carry a forced row-level security, and which carry the
     `legal_entity_scope` policy."""
     engine: Engine = create_engine(url)
@@ -3139,10 +3139,10 @@ def test_0079_creates_the_staff_tables_under_the_scope_policy_and_downgrade_drop
         url = container.get_connection_url()
         config = _alembic_config(url)
         upgrade(config, "0078")
-        assert _table_shape(url, both) == (set(), set(), set())
+        assert _tables_shape(url, both) == (set(), set(), set())
         upgrade(config, "0079")
-        assert _table_shape(url, both) == (both, both, both)
+        assert _tables_shape(url, both) == (both, both, both)
         downgrade(config, "0078")
-        assert _table_shape(url, both) == (set(), set(), set())
+        assert _tables_shape(url, both) == (set(), set(), set())
         upgrade(config, "0079")
-        assert _table_shape(url, both)[0] == both
+        assert _tables_shape(url, both)[0] == both

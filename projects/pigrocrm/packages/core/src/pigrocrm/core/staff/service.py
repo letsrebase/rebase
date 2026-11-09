@@ -88,12 +88,14 @@ class StaffService:
         if data.user_id is not None:
             self._require_free_user(data.user_id, None)
         member = self.repo.add(StaffMember(**data.model_dump()))
+        # The timeline entry is on the legal entity, which every member reads: it says who
+        # did what and which person, never which field moved nor to what (no `changed`).
         self.activities.record(
             "legal_entity",
             member.legal_entity_id,
             "staff_member_created",
             actor,
-            {"staff_member_id": str(member.id), "kind": member.kind},
+            {"staff_member_id": str(member.id)},
         )
         self.session.commit()
         self.session.refresh(member)
@@ -132,7 +134,7 @@ class StaffService:
             member.legal_entity_id,
             "staff_member_updated",
             actor,
-            {"staff_member_id": str(member.id), "changed": sorted(changes)},
+            {"staff_member_id": str(member.id)},
         )
         self.session.commit()
         self.session.refresh(member)
@@ -172,9 +174,7 @@ class StaffService:
         else:
             found.pay_day = data.pay_day
             found.pay_month_offset = data.pay_month_offset
-        self.activities.record(
-            "legal_entity", legal_entity_id, "payroll_pay_day_set", actor, {"pay_day": data.pay_day}
-        )
+        self.activities.record("legal_entity", legal_entity_id, "payroll_pay_day_set", actor)
         self.session.commit()
         return PayDayRead(
             legal_entity_id=legal_entity_id,
