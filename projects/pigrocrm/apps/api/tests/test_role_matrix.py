@@ -560,6 +560,8 @@ ROWS: list[Row] = [
     ),
     Row("POST", "/api/invoices/import/upload/review", admin_only=True, multipart=True),
     Row("POST", "/api/invoices/import/upload/confirm", admin_only=True, multipart=True),
+    # --- the inbox's upload (REB-971): `require_write`; an agent needs `full_access` ------
+    Row("POST", "/api/inbox/upload", multipart=True),
     Row(
         "POST",
         "/api/invoices/register/{year}/gaps",

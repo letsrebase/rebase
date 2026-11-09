@@ -152,3 +152,10 @@ files = [
   # checked by nothing.
   "projects/hub/tools",
 ]
+
+# `asn1crypto` ships neither inline types nor stubs, and typeshed has none: the one module
+# that reads a `.p7m` (`pigrocrm/core/inbox/p7m.py`) treats it as `Any` and checks what it
+# gets back itself.
+[[tool.mypy.overrides]]
+module = ["asn1crypto", "asn1crypto.*"]
+ignore_missing_imports = true

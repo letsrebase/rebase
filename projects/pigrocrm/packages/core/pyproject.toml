@@ -48,6 +48,10 @@ dependencies = [
   # Pinned like every other entry here, and declared because
   # `test_architecture.py` builds core's import allowlist from this list.
   "pypdf==6.21.4",
+  # Opens the CMS envelope of a signed `.p7m` (REB-971): `cryptography` builds and verifies
+  # PKCS#7 but never hands back the signed content, and the SdI's envelopes are often BER
+  # with indefinite lengths, which this pure-Python reader parses. Used by `inbox/p7m.py`.
+  "asn1crypto==1.5.1",
   # The same pin as hub's `rebase-core`: the weekly digest's own PostHog event (REB-221).
   "posthog==7.60.1",
   # Web Push for the reminders (REB-738): the RFC 8291 payload encryption and the RFC 8292

@@ -46,6 +46,7 @@ from pigrocrm.core.documents.models import Document
 from pigrocrm.core.documents.repository import DocumentRepository
 from pigrocrm.core.documents.schemas import DocumentListQuery
 from pigrocrm.core.errors import NotFound
+from pigrocrm.core.inbox.models import InboxItem
 from pigrocrm.core.invoices.models import Invoice, InvoiceLine
 from pigrocrm.core.invoices.repository import InvoiceRepository
 from pigrocrm.core.invoices.schemas import InvoiceListQuery
@@ -105,6 +106,7 @@ POLICIED = {
     "email_drafts",
     "gmail_messages",
     "activities",
+    "inbox_items",
 }
 # Tables that reach a legal entity through a foreign key and carry no policy on purpose
 # (spec §4): the scope's own row, and the registry-side tables that do not live in a
@@ -241,6 +243,17 @@ def world(db_engine: Engine) -> Iterator[World]:
                     custom_fields={},
                 )
             )
+            # A classified inbox item (REB-971): its legal entity's alone.
+            session.add(
+                InboxItem(
+                    original_name=f"{_PREFIX} {tag}.pdf",
+                    file_type="pdf",
+                    size_bytes=1,
+                    sha256="0" * 64,
+                    content_sha256="0" * 64,
+                    legal_entity_id=legal_entity,
+                )
+            )
             session.add(
                 Document(
                     customer_id=customer.id,
@@ -366,6 +379,19 @@ def world(db_engine: Engine) -> Iterator[World]:
                 occurred_at=datetime.now(UTC),
             )
         )
+        # Two unclassified inbox items: one the operator uploaded, which is theirs whatever
+        # their scope, and one nobody did, which is an unscoped administrator's alone.
+        for owner, tag in ((user.id, "mio"), (None, "di nessuno")):
+            session.add(
+                InboxItem(
+                    original_name=f"{_PREFIX} {tag}.pdf",
+                    file_type="pdf",
+                    size_bytes=1,
+                    sha256="0" * 64,
+                    content_sha256="0" * 64,
+                    uploaded_by_id=owner,
+                )
+            )
         session.commit()
         ids = World(
             db_engine,
@@ -388,6 +414,7 @@ def world(db_engine: Engine) -> Iterator[World]:
                 "costs": 1,
                 "activities": 3,  # its customer's, its register's, and the space-level one
                 "legal_entities": 1,
+                "inbox_items": 2,  # its legal entity's, and the one the operator uploaded
             },
         )
     try:
@@ -419,6 +446,7 @@ def world(db_engine: Engine) -> Iterator[World]:
                     Activity.entity_id.in_(select(Deal.id).where(Deal.name.like(f"{_PREFIX} %"))),
                 )
             )
+            session.execute(delete(InboxItem).where(InboxItem.original_name.like(f"{_PREFIX} %")))
             session.execute(delete(Cost).where(Cost.description.like(f"{_PREFIX} %")))
             session.execute(delete(CostCategory).where(CostCategory.name.like(f"{_PREFIX} %")))
             session.execute(delete(InvoiceLine).where(InvoiceLine.invoice_id.in_(invoices)))
@@ -505,6 +533,7 @@ def test_a_raw_select_on_every_policied_table_agrees_with_the_lists(world: World
         assert _count(session, "invoices") == 3
         assert _count(session, "costs") == 2  # the shared one is still «all»'s alone
         assert _count(session, "activities") == 5
+        assert _count(session, "inbox_items") == 3  # both classified, and the operator's own
 
 
 def test_an_unscoped_actor_and_all_see_everything(world: World) -> None:
@@ -514,6 +543,7 @@ def test_an_unscoped_actor_and_all_see_everything(world: World) -> None:
         assert _count(session, "customers") == 2
         assert _count(session, "costs") == 3
         assert _count(session, "activities") == 5
+        assert _count(session, "inbox_items") == 4
 
 
 def test_a_session_with_nothing_bound_sees_nothing(world: World) -> None:
@@ -1190,6 +1220,7 @@ def test_every_table_that_reaches_an_legal_entity_carries_the_policy(db_engine: 
 # The tables whose policy reaches a legal entity through a parent row, as 0049 lists them: an
 # unscoped session answers «all» on the policy's first arm and calls no function.
 FAST_PATH = {
+    "inbox_items",  # not through a parent: its own legal entity and uploader, after the «all» arm
     "people",
     "deal_value_lines",
     "contact_points",
@@ -1269,3 +1300,38 @@ def test_the_through_the_parent_policies_put_the_all_fast_path_first(db_engine: 
             assert "scope_all() OR" not in body
         else:
             assert body.lstrip().startswith(f"SELECT {spelled_out}"), f"{name}: {body[:70]}"
+
+
+def test_a_scoped_member_reads_the_inbox_items_of_their_legal_entities_and_their_own_uploads(
+    world: World,
+) -> None:
+    """REB-971: `inbox_items` is policied on its own legal entity (set at classification) and
+    on its uploader, since an item has no legal entity until then. The service adds the rule
+    that an unclassified item is nobody else's; this is the scope under it, as the role."""
+    from pigrocrm.core.inbox.schemas import InboxListQuery
+    from pigrocrm.core.inbox.service import InboxService
+
+    actor = Actor(
+        id=world.user_id, type="user", role="collaborator", legal_entities=(world.foreign,)
+    )
+    with _scoped(world, world.foreign) as session:
+        names = sorted(
+            i.original_name
+            for i in InboxService(session).list(InboxListQuery(limit=50), actor).items
+        )
+        assert names == [f"{_PREFIX} estero.pdf", f"{_PREFIX} mio.pdf"]
+        # The other legal entity's item is not there, and cannot be written across the line.
+        with pytest.raises(DBAPIError) as refused:
+            session.execute(
+                text(
+                    "INSERT INTO inbox_items (id, source, original_name, size_bytes, sha256, "
+                    "content_sha256, state, legal_entity_id) "
+                    "VALUES (gen_random_uuid(), 'upload', 'x.pdf', 1, 'a', 'a', 'new', :studio)"
+                ),
+                {"studio": world.studio},
+            )
+        assert is_policy_refusal(refused.value)
+    with _scoped(world) as session:  # no legal entity left: only what they uploaded themselves
+        assert _count(session, "inbox_items") == 1
+    with session_factory(world.app)() as session:  # nothing bound: nothing
+        assert _count(session, "inbox_items") == 0

@@ -103,4 +103,19 @@ describe.each(Object.entries(configs))('%s', (_label, conf) => {
     if (!directive) throw new Error('unreachable: truthy assertion above already failed')
     expect(bodySizeBytes(directive[1] ?? '')).toBeGreaterThanOrEqual(SIZE_MAX_BYTES)
   })
+
+  it("raises the limit for the inbox's upload, bare and under a space's prefix (REB-971)", () => {
+    // The inbox takes one request of up to 100 MiB of files (`UPLOAD_MAX_TOTAL_BYTES`), and
+    // without its own location the upload would meet the 1m default and answer 413.
+    const blocks = [...conf.matchAll(/location [^\n]*api\/inbox\/upload[^\n]*\{([\s\S]*?)\n {4}\}/g)]
+    expect(blocks.length, 'no location matching api/inbox/upload').toBeGreaterThan(0)
+    for (const block of blocks) {
+      const directive = block[1]?.match(/^\s*client_max_body_size\s+(\S+);/m)
+      expect(directive, `no client_max_body_size in ${block[0].slice(0, 60)}`).toBeTruthy()
+      if (!directive) throw new Error('unreachable: truthy assertion above already failed')
+      expect(bodySizeBytes(directive[1] ?? '')).toBeGreaterThanOrEqual(SIZE_MAX_BYTES)
+    }
+    const prefixed = blocks.filter((block) => /a-z0-9/.test(block[0].split('\n')[0] ?? ''))
+    expect(prefixed.length, 'no slug-prefixed location for the inbox upload').toBeGreaterThan(0)
+  })
 })

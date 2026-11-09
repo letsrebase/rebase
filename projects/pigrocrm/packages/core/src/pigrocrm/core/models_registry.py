@@ -35,6 +35,7 @@ from pigrocrm.core.gmail.models import (  # noqa: F401
     GoogleOAuthState,
     PaymentReminder,
 )
+from pigrocrm.core.inbox.models import InboxItem  # noqa: F401
 from pigrocrm.core.invoices.models import (  # noqa: F401
     Invoice,
     InvoiceCounter,

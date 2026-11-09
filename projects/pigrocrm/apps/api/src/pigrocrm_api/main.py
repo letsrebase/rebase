@@ -37,6 +37,7 @@ from pigrocrm_api.routers import (
     fields,
     gmail,
     identity,
+    inbox,
     invoices,
     legal_entities,
     notes,
@@ -165,6 +166,8 @@ def create_app() -> FastAPI:
         scheduled_jobs,
         # REB-879: the signed, dated notes thread of a deal, a customer and a person.
         notes,
+        # REB-971: the inbox of incoming documents, filled by upload.
+        inbox,
     ):
         app.include_router(module.router)
 
