@@ -6,15 +6,25 @@ import { SlackPanel } from './SlackPanel'
 import type { SlackHealth, SlackMember } from './queries'
 import { api } from '@/lib/api'
 
+// The panel reads two things on `GET`: the account the tests script, and the history under it
+// (REB-828), kept apart so a test's own answer for the account never reaches the timeline.
+const reads = vi.hoisted(() => ({ account: vi.fn(), history: vi.fn() }))
+
 vi.mock('@/lib/api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/api')>()
   return {
     ...actual,
-    api: { GET: vi.fn(), POST: vi.fn(), PUT: vi.fn(), DELETE: vi.fn() },
+    api: {
+      GET: (path: string, ...rest: unknown[]) =>
+        path === '/api/slack/timeline' ? reads.history(path, ...rest) : reads.account(path, ...rest),
+      POST: vi.fn(),
+      PUT: vi.fn(),
+      DELETE: vi.fn(),
+    },
   }
 })
 
-const GET = vi.mocked(api.GET)
+const GET = reads.account
 const POST = vi.mocked(api.POST)
 const PUT = vi.mocked(api.PUT)
 const DELETE = vi.mocked(api.DELETE)
@@ -80,7 +90,8 @@ function rowOf(name: string) {
 }
 
 beforeEach(() => {
-  for (const method of [GET, POST, PUT, DELETE]) method.mockReset()
+  for (const method of [GET, POST, PUT, DELETE, reads.history]) method.mockReset()
+  reads.history.mockResolvedValue(ok([]))
 })
 
 describe('SlackPanel', () => {
@@ -114,6 +125,58 @@ describe('SlackPanel', () => {
 
     expect(await screen.findByText(/Il workspace Acme Test è stato scollegato il/)).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Collega Slack' })).toBeInTheDocument()
+  })
+
+  it('lists who changed the Slack settings and when, under the panel, in either state', async () => {
+    const entries = [
+      {
+        id: 'a2',
+        kind: 'slack.channel_set',
+        occurred_at: '2026-10-27T11:30:00Z',
+        actor_type: 'user',
+        actor_name: 'Mario Rossi',
+        payload: { channel: 'promemoria' },
+      },
+      {
+        id: 'a1',
+        kind: 'slack.workspace_connected',
+        occurred_at: '2026-10-27T09:00:00Z',
+        actor_type: 'user',
+        actor_name: 'Ada Bianchi',
+        payload: { team_id: 'T0TEST', team_name: 'Acme Test' },
+      },
+    ]
+    reads.history.mockResolvedValue(ok(entries))
+    GET.mockResolvedValue(ok(CONNECTED))
+    renderPanel()
+
+    const history = await screen.findByRole('region', { name: 'Storico delle modifiche' })
+    expect(await within(history).findByText('Canale Slack impostato')).toBeInTheDocument()
+    expect(within(history).getByText('Mario Rossi')).toBeInTheDocument()
+    expect(within(history).getByText('Ada Bianchi')).toBeInTheDocument()
+    expect(within(history).getByText('Workspace Slack collegato')).toBeInTheDocument()
+  })
+
+  it('shows the history of a disconnected workspace too, where the disconnect is the entry', async () => {
+    reads.history.mockResolvedValue(
+      ok([
+        {
+          id: 'a3',
+          kind: 'slack.workspace_disconnected',
+          occurred_at: '2026-10-27T10:00:00Z',
+          actor_type: 'user',
+          actor_name: 'Mario Rossi',
+          payload: { team_id: 'T0TEST', team_name: 'Acme Test' },
+        },
+      ]),
+    )
+    GET.mockResolvedValue(
+      ok({ ...NOT_CONNECTED, workspace: { ...WORKSPACE, status: 'disconnected' } }),
+    )
+    renderPanel()
+
+    const history = await screen.findByRole('region', { name: 'Storico delle modifiche' })
+    expect(await within(history).findByText('Mario Rossi')).toBeInTheDocument()
   })
 
   it('renders the error banner instead of an empty panel when the request failed', async () => {

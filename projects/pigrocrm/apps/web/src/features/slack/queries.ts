@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, unwrap } from '@/lib/api'
 import type { components } from '@/lib/api-types'
+import { SETTINGS_TIMELINE_ID, queryKeys } from '@/lib/query'
 import { tenantPrefix } from '@/lib/tenant'
 
 export type SlackHealth = components['schemas']['SlackHealth']
@@ -22,6 +23,9 @@ export const slackKeys = {
   mine: ['slack', 'mine'] as const,
   channels: ['slack', 'channels'] as const,
 }
+
+/** The history under the panel, which every write that records an activity refreshes. */
+const slackHistoryKey = queryKeys.timeline('slack', SETTINGS_TIMELINE_ID)
 
 /**
  * `GET /api/slack/account` answers 200 on an installation with no Slack app
@@ -64,6 +68,7 @@ function useHealthMutation<Variables>(mutate: (variables: Variables) => Promise<
     onSuccess: (health) => {
       queryClient.setQueryData(slackKeys.health, health)
       void queryClient.invalidateQueries({ queryKey: slackKeys.mine })
+      void queryClient.invalidateQueries({ queryKey: slackHistoryKey })
     },
     // A refusal can have changed the row: Slack saying the token is dead is committed as
     // `revoked` before the error leaves, and the page must show the reconnect and not an
@@ -110,6 +115,7 @@ export function useDisconnectSlack() {
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: slackKeys.health })
       void queryClient.invalidateQueries({ queryKey: slackKeys.mine })
+      void queryClient.invalidateQueries({ queryKey: slackHistoryKey })
     },
   })
 }

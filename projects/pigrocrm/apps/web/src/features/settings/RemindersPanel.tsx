@@ -1,4 +1,6 @@
 import { ReminderPreferences } from '@/features/reminders/ReminderPreferences'
+import { useReminderPreferences } from '@/features/reminders/preferencesQueries'
+import { SettingsHistory } from './SettingsHistory'
 
 /**
  * Promemoria (REB-735), the space's own: the defaults every person starts from, which each
@@ -7,6 +9,10 @@ import { ReminderPreferences } from '@/features/reminders/ReminderPreferences'
  * A type switched off here is raised for nobody, Reminders included.
  */
 export function RemindersPanel() {
+  const types = useReminderPreferences().data?.types
+  // A type is named in its history by the word the section above uses for it.
+  const typeLabel = (key: string) =>
+    key === 'general' ? 'Ore di silenzio e riepilogo' : types?.find((kind) => kind.key === key)?.label
   return (
     <div className="max-w-5xl space-y-6">
       <div>
@@ -17,6 +23,7 @@ export function RemindersPanel() {
         </p>
       </div>
       <ReminderPreferences scope="space" />
+      <SettingsHistory entityType="reminder_defaults" typeLabel={typeLabel} />
     </div>
   )
 }

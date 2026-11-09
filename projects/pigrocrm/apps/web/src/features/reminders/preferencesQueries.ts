@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, unwrap } from '@/lib/api'
-import { queryKeys } from '@/lib/query'
+import { SETTINGS_TIMELINE_ID, queryKeys } from '@/lib/query'
 import type { PreferenceWrite, Scope } from './preferences'
 
 /** Both layers of settings and what they resolve to for the caller: one read for the
@@ -24,6 +24,10 @@ function useRefreshAfterWrite() {
     Promise.all([
       queryClient.invalidateQueries({ queryKey: queryKeys.reminderPreferences }),
       queryClient.invalidateQueries({ queryKey: queryKeys.reminders }),
+      // The space's defaults record who changed them: the history under the section follows.
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.timeline('reminder_defaults', SETTINGS_TIMELINE_ID),
+      }),
     ])
 }
 

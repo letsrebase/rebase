@@ -114,7 +114,13 @@ export type EntityType =
  * `contract` was excluded at REB-358 for the identical reason and is back in since
  * REB-741, which added `GET /api/contracts/{id}/timeline` for the contract page.
  */
-export type TimelineEntityType = Exclude<EntityType, 'time_entry' | 'cost' | 'task'>
+export type TimelineEntityType =
+  | Exclude<EntityType, 'time_entry' | 'cost' | 'task'>
+  // The two settings that have a history but no row of their own to open (REB-828): the
+  // space's Slack connection and its reminder defaults. Read from `GET /api/slack/timeline`
+  // and `GET /api/reminders/defaults/timeline`, which take no id.
+  | 'slack'
+  | 'reminder_defaults'
 
 export interface EntitySchema {
   entity_type: string

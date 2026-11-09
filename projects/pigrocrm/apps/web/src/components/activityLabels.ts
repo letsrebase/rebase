@@ -59,6 +59,8 @@ const KIND_LABELS: Record<string, string> = {
   'slack.matches_rebuilt': 'Abbinamenti Slack rifatti',
   'slack.channel_set': 'Canale Slack impostato',
   'slack.channel_removed': 'Canale Slack tolto',
+  'slack.workspace_connected': 'Workspace Slack collegato',
+  'slack.workspace_disconnected': 'Workspace Slack scollegato',
   // A contract's days (REB-781): the day's own ledger keeps the transitions by id, and these
   // are the same moves with the member's name and the channel.
   day_created: 'Giornata registrata',
