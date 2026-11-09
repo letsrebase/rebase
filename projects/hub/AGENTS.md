@@ -207,13 +207,13 @@ and `languages` (every term, a substring of one element, like `skills`) and `car
 (`present`; `failed` when Claude recorded a failure and there is no live card;
 `absent` for neither); a value outside the allowed ones is an error, not an empty list.
 `sort` is `recent`, `rate_asc|desc` or `experience_years_asc|desc`: the cursor then carries
-that value and the id under the whole `sort` as its key (`SortSpec("tariffa_asc",
+that value and the id under the whole `sort` as its key (`SortSpec("rate_asc",
 "float")`, so a cursor cannot be replayed in the other direction), and a row with nothing to
 rank by (every lead, a card with no rate or no years) is left out of the list **and of
 `total`/`by_status`**, so the order stays one sorted query and not a merge with a
 nullable key. A cursor from another order or another `q` is refused. `experience_years` ranks and
 filters only a whole JSON number, the one the row shows.
-The tool answers a **short row** (`id`, `nome`, `last_name`, `status`, `role`, `seniority`,
+The tool answers a **short row** (`id`, `first_name`, `last_name`, `status`, `role`, `seniority`,
 `experience_years`, `daily_rate`, `location`, five `skills`, `profile_summary` cut to 160
 characters; empty keys left out) and no address. `fields` names the fields wanted, whole
 (`["email", "industries"]`), and `["all"]` is the whole `TalentRead` row. The page is
