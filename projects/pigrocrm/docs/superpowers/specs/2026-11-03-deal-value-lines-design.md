@@ -155,8 +155,9 @@ price, quantity, start and duration. The three figures under the list come from
 `one_off_value` and `monthly_recurring_value`. A new deal opens with one `flat`, `one_off`
 line, so a person who knows only the total types it as before. The deal detail shows each
 line and the three figures, with a hint under the total that an open-ended fee counts 12
-months. Lists and the kanban show the total, with `+ 500 €/mese` beside it when the
-monthly figure is not zero. The timeline labels (`payloadLabels.ts`) gain `value_lines`.
+months. Lists and the kanban show the fee alone (`500 €/mese`) when there is no one-off, the
+one-off plus the fee when there are both, the one-off alone when nothing recurs, and the
+total only for a deal with no lines (REB-950). The timeline labels (`payloadLabels.ts`) gain `value_lines`.
 «Nuova proforma» on a deal prefills the one-off value, or nothing when it is zero, instead
 of the total (`DealDetail.tsx:234`). These are edits inside existing surfaces and need no
 brief.
