@@ -504,3 +504,67 @@ async def test_every_tool_that_takes_a_deal_or_a_kind_is_classified(
             unguarded.append(tool.name)
     # `describe_schema` only describes a record's fields; nothing is read or written.
     assert set(unguarded) <= {"describe_schema"}, unguarded
+
+
+async def test_the_ceiling_simulator_is_taxes_and_takes_a_deal_or_contract_only_with_its_module(
+    mcp_session: Session, tmp_path: Path
+) -> None:
+    """The raw figures need `taxes` alone; `deal_id` and `contract_id` are references into
+    their modules, refused with the sentence naming the module only when the call carries
+    one (REB-978)."""
+    no_deals = _settings(module_deals=False, module_time=False)
+    async with Client(_server(mcp_session, tmp_path, no_deals)) as client:
+        assert "simulate_ceiling" in {tool.name for tool in (await client.list_tools()).tools}
+        deal = await client.call_tool(
+            "simulate_ceiling",
+            {"year": 2026, "deal_id": "00000000-0000-0000-0000-000000000001"},
+        )
+        assert deal.is_error
+        assert ABOUT_DEALS in deal.content[0].text  # type: ignore[union-attr]
+    no_contracts = _settings(module_contracts=False)
+    async with Client(_server(mcp_session, tmp_path, no_contracts)) as client:
+        cap = await client.call_tool(
+            "simulate_ceiling",
+            {
+                "year": 2026,
+                "budgeted_value": "1000.00",
+                "contract_id": "00000000-0000-0000-0000-000000000001",
+            },
+        )
+        assert cap.is_error
+        assert "Contratti" in cap.content[0].text  # type: ignore[union-attr]
+
+
+async def test_a_contracts_expense_tools_need_costs_as_well(
+    mcp_session: Session, tmp_path: Path
+) -> None:
+    expense_tools = {"create_contract_expense", "update_contract_expense", "list_contract_expenses"}
+    assert expense_tools <= await _names(_server(mcp_session, tmp_path, _settings()))
+    for off in ("module_costs", "module_contracts"):
+        names = await _names(_server(mcp_session, tmp_path, _settings(**{off: False})))
+        assert not expense_tools & names, off
+
+
+async def test_the_deal_resource_prints_no_economics_while_costs_is_off(
+    mcp_session: Session, tmp_path: Path
+) -> None:
+    PipelineService(mcp_session).seed_defaults(SETUP)
+    async with Client(_server(mcp_session, tmp_path, _settings())) as client:
+        customer = (
+            await client.call_tool("create_customer", {"legal_name": "ACME"})
+        ).structured_content
+        deal = (
+            await client.call_tool(
+                "create_deal", {"name": "Sito", "customer_id": (customer or {})["id"]}
+            )
+        ).structured_content
+        uri = f"deal://{(deal or {})['id']}"
+        on = (await client.read_resource(uri)).contents[0].text  # type: ignore[union-attr]
+    assert "Direct costs" in on
+    assert "## Hours" in on
+
+    async with Client(_server(mcp_session, tmp_path, _settings(module_costs=False))) as client:
+        off = (await client.read_resource(uri)).contents[0].text  # type: ignore[union-attr]
+    assert "Direct costs" not in off
+    assert "## Economics" not in off
+    assert "## Hours" in off

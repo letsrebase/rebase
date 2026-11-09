@@ -203,14 +203,101 @@ def test_a_module_with_records_is_switched_off_only_when_the_call_names_it(
 
 
 def test_a_module_cannot_be_on_while_one_it_needs_is_off(logged_in: TestClient) -> None:
-    refused = _switch(logged_in, off=["deals"])
-    assert refused.status_code == 422, refused.text
-    assert "richiede Deal" in refused.json()["detail"]
-
     assert _switch(logged_in, off=["time", "deals"]).status_code == 200
     refused_on = _switch(logged_in, on=["time"])
     assert refused_on.status_code == 422, refused_on.text
     assert _by_key(logged_in)["time"]["enabled"] is False
+
+
+def test_switching_a_module_off_lists_the_ones_that_need_it_and_goes_through_when_named(
+    logged_in: TestClient,
+) -> None:
+    """Spec A2: `deals` off with `time` on lists `time` in the same confirmation. The answer
+    names it, nothing is written, and the call that names both is the one that applies."""
+    refused = _switch(logged_in, off=["deals"])
+
+    assert refused.status_code == 409, refused.text
+    assert refused.json()["modules"] == ["time"]
+    assert "Ore" in refused.json()["detail"]
+    assert _by_key(logged_in)["deals"]["enabled"] is True
+    assert _by_key(logged_in)["time"]["enabled"] is True
+
+    applied = _switch(logged_in, off=["deals", "time"])
+    assert applied.status_code == 200, applied.text
+    assert {k: m["enabled"] for k, m in _by_key(logged_in).items()}["deals"] is False
+
+
+def test_describing_the_modules_counts_every_table_in_one_statement(
+    logged_in: TestClient, api_session: Session
+) -> None:
+    from sqlalchemy import event
+
+    from pigrocrm.core.config import get_settings
+    from pigrocrm.core.modules.service import SpaceModulesService
+
+    engine = api_session.get_bind()
+    selects: list[str] = []
+
+    def record(_c: Any, _cur: Any, statement: str, *_a: Any) -> None:
+        if statement.lstrip().upper().startswith("SELECT") and "count(" in statement.lower():
+            selects.append(statement)
+
+    event.listen(engine, "before_cursor_execute", record)
+    try:
+        SpaceModulesService(api_session, get_settings()).describe()
+    finally:
+        event.remove(engine, "before_cursor_execute", record)
+
+    assert len(selects) == 1
+
+
+def test_the_ceiling_simulator_needs_deals_only_for_a_saved_deal_and_contracts_for_a_cap(
+    logged_in: TestClient,
+) -> None:
+    assert _switch(logged_in, off=["time", "deals"]).status_code == 200
+    url = "/api/analytics/ceilings/simulate"
+    # The raw figures are taxes' alone: whatever else the answer is, it is not a module refusal.
+    raw = logged_in.get(url, params={"year": YEAR, "budgeted_value": "1000.00"})
+    assert raw.json().get("code") != "module_off", raw.text
+
+    saved = logged_in.get(
+        url, params={"year": YEAR, "deal_id": "00000000-0000-0000-0000-000000000001"}
+    )
+    assert saved.status_code == 404
+    assert saved.json()["code"] == "module_off"
+
+    assert _switch(logged_in, off=["contracts"]).status_code == 200
+    cap = logged_in.get(
+        url,
+        params={
+            "year": YEAR,
+            "budgeted_value": "1000.00",
+            "contract_id": "00000000-0000-0000-0000-000000000001",
+        },
+    )
+    assert cap.status_code == 404
+    assert cap.json()["code"] == "module_off"
+
+
+def test_a_contracts_expenses_and_proposals_need_the_contracts_module(
+    logged_in: TestClient,
+) -> None:
+    ghost = "00000000-0000-0000-0000-000000000001"
+    assert _switch(logged_in, off=["contracts"]).status_code == 200
+
+    accepted = logged_in.post(f"/api/proposals/{ghost}/accept", json={})
+    assert accepted.status_code == 404
+    assert accepted.json()["code"] == "module_off"
+    filed = logged_in.post("/api/proposals", json={})
+    assert filed.status_code == 404
+    assert filed.json()["code"] == "module_off"
+    # Reading and rejecting the queue stay: they touch nothing of the module's.
+    assert logged_in.get("/api/proposals").status_code == 200
+
+    assert _switch(logged_in, on=["contracts"], off=["costs"]).status_code == 200
+    expenses = logged_in.get(f"/api/contracts/{ghost}/expenses")
+    assert expenses.status_code == 404
+    assert expenses.json()["code"] == "module_off"
 
 
 def test_confirm_off_must_name_a_module_that_is_being_switched_off(logged_in: TestClient) -> None:

@@ -11,11 +11,13 @@ from pigrocrm.core.contract_expenses.service import ContractExpenseService
 from pigrocrm_api.deps import ActorDep, SessionDep, get_actor, module_guard
 from pigrocrm_api.errors import PROBLEM_RESPONSES
 
+# An expense is a contract's and takes its category from the cost categories, so it exists only
+# when both modules are on, the rule the web app already draws it by (spec A2, REB-978).
 router = APIRouter(
     prefix="/api/contracts",
     tags=["contract-expenses"],
     responses=PROBLEM_RESPONSES,
-    dependencies=[Depends(get_actor), module_guard("contracts")],
+    dependencies=[Depends(get_actor), module_guard("contracts", "costs")],
 )
 
 
