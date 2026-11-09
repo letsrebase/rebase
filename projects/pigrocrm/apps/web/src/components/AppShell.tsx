@@ -2,10 +2,14 @@ import { useRouterState } from '@tanstack/react-router'
 import { useState, type ReactNode } from 'react'
 import { CommandPalette } from '@/features/search/CommandPalette'
 import { useMediaQuery } from '@rebase/ui/use-media-query'
+import { PhoneBar, PHONE_BAR_HEIGHT } from './PhoneBar'
 import { Sidebar } from './Sidebar'
 
 /** Below this the sidebar is a rail whose expanded form is an overlay, not a column. */
 const DESKTOP = '(min-width: 1024px)'
+
+/** Below this there is no sidebar at all: the phone's bottom bar is the navigation (REB-959). */
+const PHONE = '(max-width: 639px)'
 
 /**
  * The shell of the app: a dark sidebar on the left, everything else the page, full
@@ -28,7 +32,11 @@ const DESKTOP = '(min-width: 1024px)'
  * (the «Analisi» section left on 2026-09-09; `GET /api/analytics/*` and the MCP tools are
  * untouched).
  *
- * Below `lg` the sidebar is the icon rail by default and its expanded form is an overlay
+ * On a phone (below 640px) there is no sidebar: the bottom bar with the quick add is the
+ * navigation (spec 2026-11-09 B6, REB-959), and what the sidebar kept at its foot, the
+ * search and the account, is in its «Altro». The desktop shell is untouched.
+ *
+ * Between 640px and `lg` the sidebar is the icon rail by default and its expanded form is an overlay
  * over the page, dismissed by a backdrop or by navigating: 272px of the 390px a phone has
  * would leave the content about 118px, which is not a layout. Above `lg` it is the column
  * beside the page, collapsible to the same rail as before; there the captions become thin
@@ -47,6 +55,7 @@ export function AppShell({
   // The breakpoint has to be read in JS and not only in CSS because the two are different
   // *structures*, not two widths of one.
   const isDesktop = useMediaQuery(DESKTOP)
+  const isPhone = useMediaQuery(PHONE)
   // Local, unpersisted UI state -- collapsing to an icon rail is a per-visit
   // convenience, not a setting worth a round trip or a storage key. Nothing about the
   // shape of the navigation is stored any more: the sections are always open
@@ -73,7 +82,7 @@ export function AppShell({
 
   return (
     <div className="flex h-full overflow-hidden">
-      {overlay && (
+      {!isPhone && overlay && (
         <>
           {/* A real button, not an `aria-hidden` div: dismissing an overlay is something a
               keyboard has to be able to do, and this is the control that does it. */}
@@ -88,13 +97,15 @@ export function AppShell({
           <div aria-hidden="true" className="w-[4.5rem] shrink-0" />
         </>
       )}
-      <Sidebar
-        rail={rail}
-        overlay={overlay}
-        onToggle={toggleSidebar}
-        onSearch={() => setSearchOpen(true)}
-        go={go}
-      />
+      {!isPhone && (
+        <Sidebar
+          rail={rail}
+          overlay={overlay}
+          onToggle={toggleSidebar}
+          onSearch={() => setSearchOpen(true)}
+          go={go}
+        />
+      )}
 
       {/* The page: white from the sidebar's edge to the window's, no inset frame and no
           border of its own. The 12px grid-ground margin and the `lg:border` were copied
@@ -115,7 +126,21 @@ export function AppShell({
           inflating `<html>`'s real height, which drags the sidebar into the document's
           own scroll. Confirmed live on the get-started page, whose four steps are long
           enough to expose it. */}
-      <main className="relative min-w-0 flex-1 overflow-y-auto bg-card">{children}</main>
+      <main
+        className="relative min-w-0 flex-1 overflow-y-auto bg-card"
+        // On a phone the fixed bar and the home indicator under it are kept clear, so the
+        // last row of a page is never behind either. One tree for every width, so a window
+        // resized across 640px does not remount the page and lose what is typed in it.
+        style={
+          isPhone
+            ? { paddingBottom: `calc(${PHONE_BAR_HEIGHT} + env(safe-area-inset-bottom))` }
+            : undefined
+        }
+      >
+        {children}
+      </main>
+
+      {isPhone && <PhoneBar onSearch={() => setSearchOpen(true)} go={go} />}
 
       <CommandPalette open={searchOpen} onOpenChange={setSearchOpen} />
     </div>

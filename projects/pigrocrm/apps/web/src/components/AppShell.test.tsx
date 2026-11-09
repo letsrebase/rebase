@@ -3,6 +3,7 @@ import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi, type Mock } from 'vitest'
 import { SETTINGS_GROUPS } from '@/features/settings/tabs'
+import { canWrite } from '@/lib/permissions'
 import { seedModules } from '@/lib/modules.testing'
 import type { ModuleKey } from '@/lib/modules'
 import { readAndClearRegisterHandoffEmail } from '@/lib/registerHandoff'
@@ -69,6 +70,7 @@ const mockAuth = vi.hoisted(() => ({ role: 'admin' as string, id: undefined as s
 vi.mock('@/lib/auth', () => ({
   useAuth: () => ({ user: { id: mockAuth.id, name: 'Mario', email: 'm@example.com', role: mockAuth.role }, logout: vi.fn() }),
   useIsAdmin: () => mockAuth.role === 'admin',
+  useCanWrite: () => canWrite(mockAuth.role as Parameters<typeof canWrite>[0]),
 }))
 
 vi.mock('@/lib/tenant', async (importOriginal) => {
@@ -100,11 +102,12 @@ function renderShell(
   children: React.ReactNode = <div />,
   legal_entity?: LegalEntityValue,
   modulesOff?: readonly ModuleKey[],
+  profile?: 'solo' | 'company',
 ) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   // The space's modules (REB-953): seeded, so the sidebar has the answer on its first render
   // and asks the API for nothing; absent, they are not known and every entry is drawn.
-  if (modulesOff !== undefined) seedModules(client, modulesOff)
+  if (modulesOff !== undefined) seedModules(client, modulesOff, profile)
   // A fresh element on every call: re-rendering the *same* element object is a React
   // bail-out, which would make `refresh()` (the stand-in for a navigation) do nothing.
   // Without `legal_entity` the shell runs on the context's default, a one-legal-entity space.
@@ -128,9 +131,9 @@ function renderShell(
  * default here because it is the layout most of these assertions are about; the two
  * below-`lg` tests set it themselves.
  */
-function setViewport(desktop: boolean) {
+function setViewport(desktop: boolean, phone = false) {
   window.matchMedia = ((query: string) => ({
-    matches: desktop && query.includes('min-width'),
+    matches: query.includes('max-width') ? phone : desktop && query.includes('min-width'),
     media: query,
     onchange: null,
     addEventListener: () => {},
@@ -1061,5 +1064,130 @@ describe('the azienda selector (REB-625)', () => {
     const nav = screen.getByRole('navigation', { name: 'Navigazione principale' })
     expect(search.compareDocumentPosition(label) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(label.compareDocumentPosition(nav) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+})
+
+
+/** REB-959 (spec 2026-11-09 B6): below 640px the bottom bar replaces the sidebar. */
+describe('AppShell on a phone', () => {
+  beforeEach(() => setViewport(false, true))
+
+  const bar = () => within(screen.getByRole('navigation', { name: 'Navigazione principale' }))
+  const labels = () => bar().getAllByRole('listitem').map((item) => item.textContent?.replace(/\d+ in ritardo$/, '').trim())
+
+  it('draws the bottom bar and no sidebar, with the «+» in the centre', () => {
+    renderShell(<div />, undefined, [], 'company')
+    expect(screen.queryByRole('button', { name: 'Espandi il menu' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Comprimi il menu' })).not.toBeInTheDocument()
+    expect(labels()).toEqual(['Home', 'Attività', '', 'Deal', 'Altro'])
+    expect(bar().getByRole('button', { name: 'Aggiungi' })).toBeInTheDocument()
+  })
+
+  it('puts «Giornate» third for a solo space', () => {
+    renderShell(<div />, undefined, [], 'solo')
+    expect(labels()).toEqual(['Home', 'Attività', '', 'Giornate', 'Altro'])
+  })
+
+  it('has four places with deals and contracts off, and shows neither', () => {
+    renderShell(<div />, undefined, ['deals', 'contracts'], 'company')
+    expect(labels()).toEqual(['Home', 'Attività', '', 'Altro'])
+  })
+
+  it('offers an activity and a note always, and a day and hours only with their modules on', async () => {
+    renderShell(<div />, undefined, [], 'company')
+    await userEvent.click(bar().getByRole('button', { name: 'Aggiungi' }))
+    const sheet = within(await screen.findByRole('dialog', { name: 'Aggiungi' }))
+    expect(sheet.getAllByRole('button').map((button) => button.textContent)).toEqual([
+      'AttivitàUna cosa da fare, con una scadenza',
+      'NotaSu un cliente, una persona o un deal',
+      'GiornataUn giorno lavorato su un contratto',
+      'OreOre lavorate su un deal',
+      'Chiudi',
+    ])
+  })
+
+  it('offers no hours with time off and no day with contracts off', async () => {
+    renderShell(<div />, undefined, ['deals', 'contracts'], 'company')
+    await userEvent.click(bar().getByRole('button', { name: 'Aggiungi' }))
+    const sheet = within(await screen.findByRole('dialog', { name: 'Aggiungi' }))
+    const names = sheet.getAllByRole('button').map((button) => button.textContent)
+    expect(names.some((name) => name?.startsWith('Giornata'))).toBe(false)
+    expect(names.some((name) => name?.startsWith('Ore'))).toBe(false)
+    expect(names.some((name) => name?.startsWith('Attività'))).toBe(true)
+  })
+
+  it('offers a day with time off alone, and no hours', async () => {
+    renderShell(<div />, undefined, ['time'], 'company')
+    await userEvent.click(bar().getByRole('button', { name: 'Aggiungi' }))
+    const names = within(await screen.findByRole('dialog', { name: 'Aggiungi' }))
+      .getAllByRole('button')
+      .map((button) => button.textContent)
+    expect(names.some((name) => name?.startsWith('Giornata'))).toBe(true)
+    expect(names.some((name) => name?.startsWith('Ore'))).toBe(false)
+  })
+
+  it('offers hours with contracts off alone, and no day; «Altro» has no «Giornate» either', async () => {
+    renderShell(<div />, undefined, ['contracts'], 'company')
+    await userEvent.click(bar().getByRole('button', { name: 'Aggiungi' }))
+    const sheet = within(await screen.findByRole('dialog', { name: 'Aggiungi' }))
+    const names = sheet.getAllByRole('button').map((button) => button.textContent)
+    expect(names.some((name) => name?.startsWith('Ore'))).toBe(true)
+    expect(names.some((name) => name?.startsWith('Giornata'))).toBe(false)
+    await userEvent.keyboard('{Escape}')
+    await userEvent.click(bar().getByRole('button', { name: 'Altro' }))
+    const links = within(await screen.findByRole('dialog', { name: 'Altro' }))
+      .getAllByRole('link')
+      .map((link) => link.textContent)
+    expect(links).toContain('Ore')
+    expect(links).not.toContain('Giornate')
+  })
+
+  it('does not name «deal» in the note entry with deals off', async () => {
+    renderShell(<div />, undefined, ['deals'], 'company')
+    await userEvent.click(bar().getByRole('button', { name: 'Aggiungi' }))
+    const sheet = within(await screen.findByRole('dialog', { name: 'Aggiungi' }))
+    expect(sheet.getByText('Su un cliente o una persona')).toBeInTheDocument()
+  })
+
+  it('closes «Altro» when the route changes under it', async () => {
+    const { refresh } = renderShell(<div />, undefined, [], 'company')
+    await userEvent.click(bar().getByRole('button', { name: 'Altro' }))
+    expect(await screen.findByRole('dialog', { name: 'Altro' })).toBeInTheDocument()
+    mockRoute.pathname = '/app/settings/profile'
+    refresh()
+    expect(screen.queryByRole('dialog', { name: 'Altro' })).not.toBeInTheDocument()
+  })
+
+  it('keeps the sidebar rail between 640px and lg: the bar is for phones only', () => {
+    setViewport(false, false)
+    renderShell(<div />, undefined, [], 'company')
+    expect(screen.queryByRole('button', { name: 'Aggiungi' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Espandi il menu' })).toBeInTheDocument()
+  })
+
+  it('opens the new activity form from «+» without leaving the page', async () => {
+    renderShell(<div />, undefined, [], 'company')
+    await userEvent.click(bar().getByRole('button', { name: 'Aggiungi' }))
+    await userEvent.click(await screen.findByRole('button', { name: /^Attività\s*Una cosa/ }))
+    expect(await screen.findByRole('heading', { name: 'Nuova attività' })).toBeInTheDocument()
+    expect(mockGo).not.toHaveBeenCalled()
+  })
+
+  it('lists in «Altro» the places the bar does not draw, never one of an off module', async () => {
+    renderShell(<div />, undefined, ['deals'], 'company')
+    await userEvent.click(bar().getByRole('button', { name: 'Altro' }))
+    const sheet = within(await screen.findByRole('dialog', { name: 'Altro' }))
+    const links = sheet.getAllByRole('link').map((link) => link.textContent)
+    expect(links).toEqual(
+      expect.arrayContaining(['Calendario', 'Clienti', 'Persone', 'Fatture', 'Agenti', 'Impostazioni']),
+    )
+    expect(links).not.toContain('Deal')
+    expect(links).not.toContain('Ore')
+  })
+
+  it('has no «+» for a role that cannot write', () => {
+    mockAuth.role = 'readonly'
+    renderShell(<div />, undefined, [], 'company')
+    expect(bar().queryByRole('button', { name: 'Aggiungi' })).not.toBeInTheDocument()
   })
 })

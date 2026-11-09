@@ -28,10 +28,16 @@ export function RecordPicker({
   id,
   value,
   onChange,
+  kinds = LINKABLE as readonly LinkKind[],
+  placeholder,
 }: {
   id: string
   value: LinkValue | null
   onChange: (next: LinkValue | null) => void
+  /** Narrows the four kinds, for a caller that can use only some (a note hangs from a
+   *  customer, a person or a deal, never from an invoice). */
+  kinds?: readonly LinkKind[]
+  placeholder?: string
 }) {
   const [term, setTerm] = useState('')
   const search = useGlobalSearch(term)
@@ -67,7 +73,9 @@ export function RecordPicker({
   }
 
   const hits = (search.data?.groups ?? []).flatMap((group) =>
-    isLinkable(group.entity) && (group.entity !== 'deal' || dealsOn) ? group.hits : [],
+    isLinkable(group.entity) && kinds.includes(group.entity) && (group.entity !== 'deal' || dealsOn)
+      ? group.hits
+      : [],
   )
   const tooShort = search.debounced.length < MIN_TERM_LENGTH
 
@@ -78,9 +86,10 @@ export function RecordPicker({
         aria-label="Cerca un record da collegare"
         value={term}
         placeholder={
-          dealsOn
+          placeholder ??
+          (dealsOn
             ? 'Cerca un cliente, una persona, un deal o una fattura…'
-            : 'Cerca un cliente, una persona o una fattura…'
+            : 'Cerca un cliente, una persona o una fattura…')
         }
         onChange={(event) => setTerm(event.target.value)}
       />

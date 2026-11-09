@@ -83,6 +83,31 @@ export function visibleSections(access: ModuleAccess) {
 }
 
 /**
+ * The phone's bar (spec 2026-11-09 B6, the approved `pigrocrm-phone-shell` brief, REB-959):
+ * «Home», «Attività», a third place, «+» in the centre and «Altro». The third place is the
+ * first switched-on of «Deal» and «Giornate», the profile deciding the order: a `solo` space
+ * works by the day, a `company` by the deal. With both off the bar has four places.
+ */
+const PHONE_DEALS = { to: '/app/deal', label: 'Deal', icon: Handshake } as const
+const PHONE_DAYS = { to: '/app/days', label: 'Giornate', icon: CalendarCheck } as const
+
+export function phoneThirdPlace(access: ModuleAccess): typeof PHONE_DEALS | typeof PHONE_DAYS | null {
+  const order = access.profile === 'solo' ? [PHONE_DAYS, PHONE_DEALS] : [PHONE_DEALS, PHONE_DAYS]
+  return order.find((place) => access.on(...modulesOfPath(place.to))) ?? null
+}
+
+/**
+ * What «Altro» lists: every place the space has on that the bar itself does not draw. The
+ * same `visibleSections` the sidebar reads, so a module that is off is gone from both.
+ */
+export function phoneMoreItems(access: ModuleAccess) {
+  const drawn = new Set<string>([HOME.to, '/app/activities', phoneThirdPlace(access)?.to ?? ''])
+  return visibleSections(access).flatMap((section) =>
+    section.items.filter((item) => !drawn.has(item.to)),
+  )
+}
+
+/**
  * «Agenti», at the foot with «Impostazioni» (REB-873): the personal access tokens and the
  * «Collega un agente» action that mints one. Not one of the settings sub-items: a token
  * belongs to whoever creates it, any role (`PatService` scopes by `actor.id`, not role), so
