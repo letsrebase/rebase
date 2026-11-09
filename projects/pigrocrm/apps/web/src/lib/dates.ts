@@ -44,6 +44,19 @@ function localDateFromIso(value: string): Date | null {
   return new Date(year, month - 1, day)
 }
 
+/**
+ * The calendar days from `from` to `to`, both `YYYY-MM-DD`, or `null` when either is not a
+ * date. Negative once `to` is behind `from`. Counted on UTC midnights of the two written
+ * dates, so a daylight-saving change between them cannot make a day 23 or 25 hours.
+ */
+export function daysBetweenIso(from: string, to: string): number | null {
+  const a = localDateFromIso(from)
+  const b = localDateFromIso(to)
+  if (a === null || b === null) return null
+  const day = 86_400_000
+  return Math.round((Date.UTC(b.getFullYear(), b.getMonth(), b.getDate()) - Date.UTC(a.getFullYear(), a.getMonth(), a.getDate())) / day)
+}
+
 /** Renders an ISO `YYYY-MM-DD` string as `gg/mm/aaaa`. */
 export function formatIsoDateItalian(value: string): string {
   const local = localDateFromIso(value)

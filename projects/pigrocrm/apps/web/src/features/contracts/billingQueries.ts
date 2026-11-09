@@ -19,12 +19,13 @@ export function monthBounds(month: string): { from: string; to: string } {
   return { from: `${month}-01`, to: `${month}-${String(last).padStart(2, '0')}` }
 }
 
-/** The ready days, all of them or those of one period (`da`/`a`, inclusive). */
-export function useBillableDays(contractId: string, period: { from?: string; to?: string } = {}) {
-  return useQuery({
+/** The ready days of one contract, as the options both `useBillableDays` and the solo Home's
+ *  `useQueries` run, so the two share one cache entry. Always asked again on mount: the days
+ *  are billed and the invoice numbered on other pages, and a cached answer would read
+ *  «Bozza» for an invoice issued a minute ago. */
+export function billableDaysOptions(contractId: string, period: { from?: string; to?: string } = {}) {
+  return {
     queryKey: queryKeys.contractBillableDays(contractId, period),
-    // Always asked again on mount: the days are billed and the invoice numbered on other
-    // pages, and a cached answer would read «Bozza» for an invoice issued a minute ago.
     staleTime: 0,
     queryFn: () =>
       unwrap(
@@ -32,7 +33,12 @@ export function useBillableDays(contractId: string, period: { from?: string; to?
           params: { path: { contract_id: contractId }, query: period },
         }),
       ),
-  })
+  }
+}
+
+/** The ready days, all of them or those of one period (`da`/`a`, inclusive). */
+export function useBillableDays(contractId: string, period: { from?: string; to?: string } = {}) {
+  return useQuery(billableDaysOptions(contractId, period))
 }
 
 /** The draft with the contract's ready days on it. What it moves is wider than the section

@@ -11,6 +11,7 @@ import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ReactNode } from 'react'
 import { api } from '@/lib/api'
+import { spaceModules } from '@/lib/modules.testing'
 import { queryKeys } from '@/lib/query'
 import type { HomeSearch } from '@/features/dashboard/search'
 import { HomePage } from './HomePage'
@@ -39,6 +40,15 @@ vi.mock('@tanstack/react-router', () => ({
 vi.mock('@/features/dashboard/DashboardPage', () => ({
   DashboardPage: ({ notice }: { notice?: ReactNode }) => (
     <div data-testid="dashboard">
+      <h1>Home</h1>
+      {notice}
+    </div>
+  ),
+}))
+
+vi.mock('@/features/dashboard/SoloHome', () => ({
+  SoloHome: ({ notice }: { notice?: ReactNode }) => (
+    <div data-testid="solo-home">
       <h1>Home</h1>
       {notice}
     </div>
@@ -124,6 +134,34 @@ describe('the Home', () => {
     expect(screen.getByText(/1 di 4 primi passi fatti/)).toBeInTheDocument()
     expect(screen.getByRole('link', { name: /Vai ai primi passi/ })).toHaveAttribute('href', '/app/get-started')
     expect(screen.queryByRole('heading', { name: 'Porta dentro il tuo lavoro' })).toBeNull()
+  })
+
+  it('opens a solo space on the solo Home, with the same notices above it', async () => {
+    answers({ '/api/customers': ONE('c1'), '/api/settings/modules': spaceModules([], 'solo') })
+    renderHome()
+    expect(await screen.findByTestId('solo-home')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Completa lo spazio' })).toBeInTheDocument()
+    expect(screen.queryByTestId('dashboard')).toBeNull()
+  })
+
+  it('opens a company space on the dashboard tabs', async () => {
+    answers({ '/api/customers': ONE('c1'), '/api/settings/modules': spaceModules([], 'company') })
+    renderHome()
+    expect(await screen.findByTestId('dashboard')).toBeInTheDocument()
+    expect(screen.queryByTestId('solo-home')).toBeNull()
+  })
+
+  it('opens a space with no profile yet on the dashboard tabs', async () => {
+    answers({ '/api/customers': ONE('c1'), '/api/settings/modules': spaceModules([], null) })
+    renderHome()
+    expect(await screen.findByTestId('dashboard')).toBeInTheDocument()
+    expect(screen.queryByTestId('solo-home')).toBeNull()
+  })
+
+  it('opens on the dashboard tabs when the modules cannot be read', async () => {
+    answers({ '/api/customers': ONE('c1') }, { '/api/settings/modules': 500 })
+    renderHome()
+    expect(await screen.findByTestId('dashboard')).toBeInTheDocument()
   })
 
   it.each([
