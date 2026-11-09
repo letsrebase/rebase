@@ -8,7 +8,15 @@ import { useOverdueCount } from '@/features/tasks/queries'
 import { useCanWrite } from '@/lib/auth'
 import { useModules } from '@/lib/modules'
 import { LegalEntitySelect } from './LegalEntitySelect'
-import { Agents, SETTINGS, SETTINGS_PATHS, phoneMoreItems, phoneThirdPlace, type LinkTo } from './nav'
+import {
+  Agents,
+  SETTINGS,
+  SETTINGS_PATHS,
+  isUnder,
+  phoneMoreItems,
+  phoneThirdPlace,
+  type LinkTo,
+} from './nav'
 import { ProfileMenu } from './ProfileMenu'
 import { QuickAdd } from './QuickAdd'
 import { FOCUS } from './sidebarStyles'
@@ -38,8 +46,14 @@ export function PhoneBar({
   const canWrite = useCanWrite()
   const overdue = useOverdueCount()
   const third = phoneThirdPlace(modules)
+  const { location } = useRouterState()
   const [quickOpen, setQuickOpen] = useState(false)
-  const [moreOpen, setMoreOpen] = useState(false)
+  // «Altro» is stored as *where* it was opened, as the sidebar's overlay is: a move made from
+  // inside it (the profile menu's links) closes it with no handler to remember, because the
+  // pathname it was opened at is no longer the current one.
+  const [moreAt, setMoreAt] = useState<string | null>(null)
+  const moreOpen = moreAt === location.pathname
+  const setMoreOpen = (open: boolean) => setMoreAt(open ? location.pathname : null)
 
   const places = [
     { to: '/app', label: 'Home', icon: LayoutDashboard, exact: true, badge: undefined },
@@ -83,6 +97,7 @@ export function PhoneBar({
             <button
               type="button"
               onClick={() => setMoreOpen(true)}
+              aria-haspopup="dialog"
               className={cn(PLACE, QUIET_PLACE, FOCUS)}
             >
               <Ellipsis className="size-5" aria-hidden="true" />
@@ -128,14 +143,14 @@ function Place({
       <Link
         to={to}
         activeOptions={{ exact, includeSearch: false }}
-        activeProps={{ 'aria-current': 'page', className: 'text-sidebar-accent-foreground font-medium' }}
+        activeProps={{ 'aria-current': 'page' }}
         className={cn(
           PLACE,
           QUIET_PLACE,
           FOCUS,
           // The active place carries the same Watermelon Strong tile as the sidebar's row,
-          // along the top edge here.
-          'before:absolute before:top-0 before:h-0.5 before:w-8 before:bg-transparent before:content-[""] data-[status=active]:before:bg-sidebar-primary',
+          // along the top edge here, and the sidebar's active text.
+          'before:absolute before:top-0 before:h-0.5 before:w-8 before:bg-transparent before:content-[""] data-[status=active]:font-medium data-[status=active]:text-sidebar-accent-foreground data-[status=active]:before:bg-sidebar-primary',
         )}
       >
         <Icon className="size-5" aria-hidden="true" />
@@ -189,7 +204,7 @@ function More({
             Tutto quello che questo spazio ha acceso.
           </SheetDescription>
         </SheetHeader>
-        <div className="px-3 pb-3">
+        <div role="search" aria-label="Ricerca globale" className="px-3 pb-3">
           <button
             type="button"
             onClick={onSearch}
@@ -211,7 +226,7 @@ function More({
                 to={to}
                 onClick={() => onOpenChange(false)}
                 aria-current={
-                  to === location.pathname || location.pathname.startsWith(`${to}/`)
+                  isUnder(location.pathname, to === SETTINGS_PATHS.profile ? SETTINGS.base : to)
                     ? 'page'
                     : undefined
                 }

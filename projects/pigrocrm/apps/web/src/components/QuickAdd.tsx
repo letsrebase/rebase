@@ -43,12 +43,22 @@ export function QuickAdd({
   const modules = useModules()
   const { location } = useRouterState()
   const [adding, setAdding] = useState<{ action: Action; at: string } | null>(null)
-  const action = adding !== null && adding.at === location.pathname ? adding.action : null
+  // A dialog does not outlive the page it was opened on: coming back to that path later
+  // (back, then forward) must not find an empty form waiting.
+  if (adding !== null && adding.at !== location.pathname) setAdding(null)
+  const action = adding?.action ?? null
   const close = () => setAdding(null)
 
   const entries: { action: Action; label: string; hint: string; icon: LucideIcon }[] = [
     { action: 'task', label: 'Attività', hint: 'Una cosa da fare, con una scadenza', icon: ListChecks },
-    { action: 'note', label: 'Nota', hint: 'Su un cliente, una persona o un deal', icon: StickyNote },
+    {
+      action: 'note',
+      label: 'Nota',
+      hint: modules.on('deals')
+        ? 'Su un cliente, una persona o un deal'
+        : 'Su un cliente o una persona',
+      icon: StickyNote,
+    },
     ...(modules.on('contracts')
       ? [{ action: 'day' as const, label: 'Giornata', hint: 'Un giorno lavorato su un contratto', icon: CalendarPlus }]
       : []),

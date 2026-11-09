@@ -80,26 +80,9 @@ export function AppShell({
       ? setCollapsed((value) => !value)
       : setOpenedAt(overlay ? null : location.pathname)
 
-  if (isPhone) {
-    return (
-      <div className="flex h-full overflow-hidden">
-        {/* Clear of the fixed bar and the home indicator under it, so the last row of a page
-            is never behind either. */}
-        <main
-          className="relative min-w-0 flex-1 overflow-y-auto bg-card"
-          style={{ paddingBottom: `calc(${PHONE_BAR_HEIGHT} + env(safe-area-inset-bottom))` }}
-        >
-          {children}
-        </main>
-        <PhoneBar onSearch={() => setSearchOpen(true)} go={go} />
-        <CommandPalette open={searchOpen} onOpenChange={setSearchOpen} />
-      </div>
-    )
-  }
-
   return (
     <div className="flex h-full overflow-hidden">
-      {overlay && (
+      {!isPhone && overlay && (
         <>
           {/* A real button, not an `aria-hidden` div: dismissing an overlay is something a
               keyboard has to be able to do, and this is the control that does it. */}
@@ -114,13 +97,15 @@ export function AppShell({
           <div aria-hidden="true" className="w-[4.5rem] shrink-0" />
         </>
       )}
-      <Sidebar
-        rail={rail}
-        overlay={overlay}
-        onToggle={toggleSidebar}
-        onSearch={() => setSearchOpen(true)}
-        go={go}
-      />
+      {!isPhone && (
+        <Sidebar
+          rail={rail}
+          overlay={overlay}
+          onToggle={toggleSidebar}
+          onSearch={() => setSearchOpen(true)}
+          go={go}
+        />
+      )}
 
       {/* The page: white from the sidebar's edge to the window's, no inset frame and no
           border of its own. The 12px grid-ground margin and the `lg:border` were copied
@@ -141,7 +126,21 @@ export function AppShell({
           inflating `<html>`'s real height, which drags the sidebar into the document's
           own scroll. Confirmed live on the get-started page, whose four steps are long
           enough to expose it. */}
-      <main className="relative min-w-0 flex-1 overflow-y-auto bg-card">{children}</main>
+      <main
+        className="relative min-w-0 flex-1 overflow-y-auto bg-card"
+        // On a phone the fixed bar and the home indicator under it are kept clear, so the
+        // last row of a page is never behind either. One tree for every width, so a window
+        // resized across 640px does not remount the page and lose what is typed in it.
+        style={
+          isPhone
+            ? { paddingBottom: `calc(${PHONE_BAR_HEIGHT} + env(safe-area-inset-bottom))` }
+            : undefined
+        }
+      >
+        {children}
+      </main>
+
+      {isPhone && <PhoneBar onSearch={() => setSearchOpen(true)} go={go} />}
 
       <CommandPalette open={searchOpen} onOpenChange={setSearchOpen} />
     </div>

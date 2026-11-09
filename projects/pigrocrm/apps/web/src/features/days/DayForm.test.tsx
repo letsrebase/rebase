@@ -72,6 +72,22 @@ describe('recording a day', () => {
     )
   })
 
+  it('drawn inside another surface, has no page header and reports the day instead of navigating', async () => {
+    serving()
+    vi.mocked(api.POST).mockResolvedValue(ok(row({ id: 'new-day' })) as never)
+    const onRecorded = vi.fn()
+    const user = userEvent.setup()
+    renderWithQuery(<DayForm initialDate="2026-03-02" onRecorded={onRecorded} />)
+
+    await screen.findByText('450,00 €')
+    expect(screen.queryByRole('heading', { name: 'Registra una giornata' })).not.toBeInTheDocument()
+    await user.type(screen.getByLabelText('Cosa hai fatto'), 'Revisione')
+    await user.click(screen.getByRole('button', { name: 'Registra giornata' }))
+
+    await waitFor(() => expect(onRecorded).toHaveBeenCalledWith(expect.objectContaining({ id: 'new-day' })))
+    expect(navigate).not.toHaveBeenCalled()
+  })
+
   it('cannot be saved without a task', async () => {
     serving()
     renderWithQuery(<DayForm initialDate="2026-03-02" />)

@@ -15,6 +15,7 @@ import { useAddNote } from '@/features/notes/queries'
 import { RecordPicker } from '@/features/tasks/RecordPicker'
 import type { LinkKind, LinkValue } from '@/features/tasks/links'
 import { toProblem } from '@/lib/api'
+import { useModules } from '@/lib/modules'
 
 /** The records a note hangs from: a note is never on an invoice. */
 const NOTE_KINDS: readonly LinkKind[] = ['customer', 'person', 'deal']
@@ -49,6 +50,7 @@ export function QuickNote({
 
 function NoteForm({ onClose }: { onClose: () => void }) {
   const [link, setLink] = useState<LinkValue | null>(null)
+  const dealsOn = useModules().on('deals')
   return (
     <div className="space-y-4">
       <div className="space-y-2">
@@ -58,7 +60,9 @@ function NoteForm({ onClose }: { onClose: () => void }) {
           value={link}
           onChange={setLink}
           kinds={NOTE_KINDS}
-          placeholder="Cerca un cliente, una persona o un deal…"
+          placeholder={
+            dealsOn ? 'Cerca un cliente, una persona o un deal…' : 'Cerca un cliente o una persona…'
+          }
         />
       </div>
       {link !== null && link.kind !== 'invoice' ? (

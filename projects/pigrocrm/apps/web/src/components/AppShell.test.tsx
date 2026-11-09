@@ -1116,6 +1116,55 @@ describe('AppShell on a phone', () => {
     expect(names.some((name) => name?.startsWith('Attività'))).toBe(true)
   })
 
+  it('offers a day with time off alone, and no hours', async () => {
+    renderShell(<div />, undefined, ['time'], 'company')
+    await userEvent.click(bar().getByRole('button', { name: 'Aggiungi' }))
+    const names = within(await screen.findByRole('dialog', { name: 'Aggiungi' }))
+      .getAllByRole('button')
+      .map((button) => button.textContent)
+    expect(names.some((name) => name?.startsWith('Giornata'))).toBe(true)
+    expect(names.some((name) => name?.startsWith('Ore'))).toBe(false)
+  })
+
+  it('offers hours with contracts off alone, and no day; «Altro» has no «Giornate» either', async () => {
+    renderShell(<div />, undefined, ['contracts'], 'company')
+    await userEvent.click(bar().getByRole('button', { name: 'Aggiungi' }))
+    const sheet = within(await screen.findByRole('dialog', { name: 'Aggiungi' }))
+    const names = sheet.getAllByRole('button').map((button) => button.textContent)
+    expect(names.some((name) => name?.startsWith('Ore'))).toBe(true)
+    expect(names.some((name) => name?.startsWith('Giornata'))).toBe(false)
+    await userEvent.keyboard('{Escape}')
+    await userEvent.click(bar().getByRole('button', { name: 'Altro' }))
+    const links = within(await screen.findByRole('dialog', { name: 'Altro' }))
+      .getAllByRole('link')
+      .map((link) => link.textContent)
+    expect(links).toContain('Ore')
+    expect(links).not.toContain('Giornate')
+  })
+
+  it('does not name «deal» in the note entry with deals off', async () => {
+    renderShell(<div />, undefined, ['deals'], 'company')
+    await userEvent.click(bar().getByRole('button', { name: 'Aggiungi' }))
+    const sheet = within(await screen.findByRole('dialog', { name: 'Aggiungi' }))
+    expect(sheet.getByText('Su un cliente o una persona')).toBeInTheDocument()
+  })
+
+  it('closes «Altro» when the route changes under it', async () => {
+    const { refresh } = renderShell(<div />, undefined, [], 'company')
+    await userEvent.click(bar().getByRole('button', { name: 'Altro' }))
+    expect(await screen.findByRole('dialog', { name: 'Altro' })).toBeInTheDocument()
+    mockRoute.pathname = '/app/settings/profile'
+    refresh()
+    expect(screen.queryByRole('dialog', { name: 'Altro' })).not.toBeInTheDocument()
+  })
+
+  it('keeps the sidebar rail between 640px and lg: the bar is for phones only', () => {
+    setViewport(false, false)
+    renderShell(<div />, undefined, [], 'company')
+    expect(screen.queryByRole('button', { name: 'Aggiungi' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Espandi il menu' })).toBeInTheDocument()
+  })
+
   it('opens the new activity form from «+» without leaving the page', async () => {
     renderShell(<div />, undefined, [], 'company')
     await userEvent.click(bar().getByRole('button', { name: 'Aggiungi' }))
