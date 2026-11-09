@@ -247,9 +247,13 @@ Part B is project 1 of the eight; Part C numbers the other seven C2 to C8.
 ### B1. The profile
 
 - A space setting `space_profile`: `solo`, `company`, or absent. Space settings are the
-  existing key and value table merged into `Settings` (`core/space_settings/service.py`):
-  the new keys are declared on `Settings` as `str | None` and `bool | None`, `None` meaning
-  absent, and registered in `OVERRIDABLE_KEYS` (`space_settings/schemas.py:9`).
+  existing key and value table merged into `Settings` (`core/space_settings/service.py`),
+  which drops any key not in `OVERRIDABLE_KEYS` (`service.py:94`, `:131`): the new keys
+  are declared on `Settings` as `str | None` and `bool | None`, `None` meaning absent, and
+  added to `OVERRIDABLE_KEYS` (`space_settings/schemas.py:9`), or they are silently
+  ignored. They are written only by `set_space_profile` and `set_space_modules`, never
+  through `SpaceSettingsUpdate` (`schemas.py:26`), so the generic settings page cannot
+  bypass the confirmation.
 - Changed only by an admin, from «Impostazioni → Spazio», at any time. Changing it shows the
   modules the new profile would switch on and off as a list the admin confirms or edits;
   nothing switches silently, and no data is touched.
@@ -371,8 +375,12 @@ The guard per surface for a module that is off (REST 404 with the sentence, MCP 
 listed and «Unknown tool» by name, nav entry gone, job skipped) and on again with its data;
 the defaults per profile and the precedence of an explicit setting over the default; the
 onboarding's three exits (completed, skipped, abandoned midway); the profile change
-proposing and applying a module diff; an agent reading the profile and refused when
-writing it; the migration of B7 on each kind of space.
+proposing and applying a module diff; every agent reading the profile; `set_space_profile`
+and `set_space_modules` refused for a token whose owner is not an admin or that lacks
+`full_access`, and accepted for one that has both; `set_space_profile` answering the diff
+and applying nothing without the confirmation; `set_space_modules` refusing to switch off a
+module with data that the call does not name; the generic `update_space_settings` still
+refused to every token; the migration of B7 on each kind of space.
 
 ### B9. Not in Part B
 
