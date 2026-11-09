@@ -192,6 +192,26 @@ The register as of today, from the conversation:
 | A flat-rate taxpayer is not a withholding agent, except on employees | verified | L. 190/2014, art. 1 c. 69 |
 | Income tax advance 100%, in 40%/60% (50%/50% under ISA), June and November | verified | Agenzia, «Imposte sui redditi (Irpef, Ires)» |
 | Balance and first advance payable in monthly instalments up to 16 December; November advance in one payment | verified | same |
+| IRPEF: no advance due at or below €51.65; a single November payment below €257.52 | verified | Agenzia, «Imposte sui redditi (Irpef, Ires)» |
+| IRES: the advance is split in two instalments only above €103 | verified | same |
+| The advance base is the declared tax net of deductions, credits, withholdings and excesses | verified | same |
+| 0.40% added for paying within 30 days after the deadline (deferral) | verified | same |
+| Income-tax dates are «salvo proroghe»: a year's dates can move by decree | verified | same |
+| Company dates: balance and first advance on the last day of the sixth month after the fiscal year end (or of the month after a late approval of the financial statements); second advance in the eleventh month | verified | same |
+| Forecast (previsionale) advance method exists | verified | same |
+| Conditions of the forecast method; interest and penalties on a shortfall | to verify | |
+| Instalment rule and interest for an srl | to verify | |
+| 5% substitute rate on start-up conditions, 15% otherwise; profitability coefficients | to verify | |
+| Flat-rate contribution base: whether INPS contributions are deducted before the substitute tax | to verify | |
+| «Gestione separata» and «artigiani e commercianti» rates, minimums and quarterly dates | to verify | |
+| IRPEF brackets, regional and municipal surcharges; IRES and IRAP rates; IRAP region rules | to verify | |
+| Annual chamber of commerce fee | to verify | |
+| Cash or accrual basis of the ordinary person's and the srl's income | to verify | |
+| Flat-rate basis: collected revenue minus the INPS surcharge lines (cash principle) | to verify | |
+| Year in which a withholding suffered counts as a credit | to verify | |
+| Legal treatment of a declared figure that changes an advance already settled | to verify | |
+| F24 tax codes per line | to verify | |
+| Filing date of the tax return | to verify | |
 | TD17, TD18, TD19 integrate foreign purchases through the SdI | verified | Agenzia, FatturaPA guide v1.10, April 2025 |
 | Legal deadline of the 15th of the following month for TD17, TD18, TD19 | to verify | |
 | Intrastat for services | to verify | |
