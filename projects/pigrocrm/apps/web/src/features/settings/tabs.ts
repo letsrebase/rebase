@@ -41,6 +41,8 @@ export const SETTINGS_GROUPS = [
     label: 'Spazio e persone',
     tabs: [
       { value: 'space', label: 'Spazio' },
+      // Which parts of the CRM the space uses, and its profile (REB-954): admin only.
+      { value: 'modules', label: 'Moduli' },
       { value: 'users', label: 'Utenti' },
     ],
   },

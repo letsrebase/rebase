@@ -100,6 +100,7 @@ export const SETTINGS_PATHS = {
   profile: '/app/settings/profile',
   notifications: '/app/settings/notifications',
   space: '/app/settings/space',
+  modules: '/app/settings/modules',
   fields: '/app/settings/fields',
   pipeline: '/app/settings/pipeline',
   templates: '/app/settings/templates',
