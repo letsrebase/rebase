@@ -333,6 +333,34 @@ def test_first_call_creates_space_customer_and_deal(door: Door) -> None:
     assert (row.customer_id, row.deal_id) == (answer.customer_id, answer.deal_id)
 
 
+def test_a_space_the_door_opens_is_solo_with_its_deal_on(door: Door) -> None:
+    from pigrocrm.core.modules.service import SpaceModulesService
+    from pigrocrm.core.tenants.registry import space_base_settings
+
+    door.service().ensure(uuid4(), _upsert())
+
+    with _space(door, "ada-lovelace") as space:
+        state = SpaceModulesService(
+            space, space_base_settings(door.settings, "ada-lovelace")
+        ).describe()
+    assert state.profile == "solo"
+    assert {m.key: (m.stored, m.enabled) for m in state.modules}["deals"] == (True, True)
+
+
+def test_a_space_the_freelancer_already_owned_gets_no_profile_from_the_door(door: Door) -> None:
+    from pigrocrm.core.modules.service import SpaceModulesService
+    from pigrocrm.core.tenants.registry import space_base_settings
+
+    _provision(door, "studio-ada")
+    door.service().ensure(uuid4(), _upsert())
+
+    with _space(door, "studio-ada") as space:
+        state = SpaceModulesService(
+            space, space_base_settings(door.settings, "studio-ada")
+        ).describe()
+    assert state.profile is None
+
+
 def test_second_call_answers_the_same_ids_and_creates_nothing(door: Door) -> None:
     match_id = uuid4()
     first = door.service().ensure(match_id, _upsert())

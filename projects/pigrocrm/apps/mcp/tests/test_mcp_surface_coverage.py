@@ -662,6 +662,11 @@ _CONFIGURATION: dict[Method, str] = {
     ("SpaceModulesService", "set_modules"): (
         "`set_space_modules`, privileged as `set_space_profile` is"
     ),
+    ("SpaceModulesService", "ensure_profile"): (
+        "the boot's and the engagements door's own write of a profile for a space that has none "
+        "(REB-955): it is no person's or agent's act, and an agent changes the profile with "
+        "`set_space_profile`"
+    ),
     ("SpaceSettingsService", "version"): (
         "an internal read (REB-622): the newest override row's `updated_at`, which `read` "
         "answers and `update` checks a save against; no actor, and nothing an agent would "

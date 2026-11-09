@@ -13,11 +13,19 @@ from pigrocrm.core.config import Settings
 from pigrocrm.core.db import create_engine_from_settings, session_factory
 from pigrocrm.core.db.role import ensure_application_role
 from pigrocrm.core.db.scope import bind_scope
+from pigrocrm.core.engagements.models import RebaseEngagement
 from pigrocrm.core.identity.models import Identity
 from pigrocrm.core.identity.service import IdentityService
+from pigrocrm.core.modules.registry import ModuleKey, Profile
+from pigrocrm.core.modules.service import SpaceModulesService
 from pigrocrm.core.reminders.run import ROOT_LABEL
 from pigrocrm.core.templates.service import TemplateService
-from pigrocrm.core.tenants import ensure_defaults, ensure_tenants_database
+from pigrocrm.core.tenants import (
+    Tenant,
+    ensure_defaults,
+    ensure_tenants_database,
+    space_base_settings,
+)
 from pigrocrm.core.tenants.database import tenant_database_url, tenant_owner_database_url
 from pigrocrm.core.tenants.service import migrate_to_head
 
@@ -67,7 +75,14 @@ def ensure_space_defaults(settings: Settings) -> int:
     is one line on stderr with the exception's type and never its text. The one failure
     that does answer 1 is the application role on the root, which cannot be created:
     uvicorn would start with a URL that cannot log in. The root installation is not in
-    the registry and is not touched."""
+    the registry: it is migrated by the CMD and visited here only for its profile.
+
+    A last step gives each space the profile it has no row for (spec 2026-11-09 B7, REB-955):
+    `company` for the one `PIGROCRM_LEADS_SPACE` names, wherever it lives (a registry
+    space or the root), `solo` with `deals` on for a space a hub match opened
+    (`rebase_engagements.space_created`), and nothing for the rest, who see the onboarding.
+    It writes only where no profile is stored and never touches a module row that exists,
+    so a second boot changes nothing, and it says per space what it decided."""
     # The application role first, on the root (REB-634, spec 2026-10-03 §4 «The role»):
     # the CMD has just migrated the root as the owner, and every request from here on
     # connects as the role `PIGROCRM_DATABASE_URL` names, which must exist and be
@@ -81,12 +96,19 @@ def ensure_space_defaults(settings: Settings) -> int:
         # The CMD chains on this exit code, so the container restarts and says why.
         print(f"{ROOT_LABEL}: application role not created ({type(exc).__name__})", file=sys.stderr)
         return 1
+    _furnish_registry(settings)
+    _profile_root(settings)
+    return 0
+
+
+def _furnish_registry(settings: Settings) -> None:
     walk = read_spaces(settings, include_root=False)
     if report_unreadable(walk):
-        return 0
+        return
     if not walk.targets:
         print("no space in the registry")
-        return 0
+        return
+    hub_opened = _hub_opened_slugs(settings)
     for target in walk.targets:
         slug, db_name = target.label, target.db_name
         assert db_name is not None  # a registry row, not the root
@@ -107,6 +129,7 @@ def ensure_space_defaults(settings: Settings) -> int:
                 print(f"{slug}: schema already at {after}")
             else:
                 print(f"{slug}: schema migrated from {before or 'zero'} to {after}")
+            _ensure_profile(engine, slug, settings, _inferred_profile(settings, slug, hub_opened))
             try:
                 with session_factory(engine)() as space:
                     bind_scope(space, Actor.system())
@@ -121,7 +144,82 @@ def ensure_space_defaults(settings: Settings) -> int:
             )
         else:
             print(f"{slug}: already in place")
-    return 0
+
+
+def _hub_opened_slugs(settings: Settings) -> set[str]:
+    """The registry spaces a hub match opened. An unreadable registry or table is one line
+    on stderr and an empty set: no space is then called `solo` on a guess."""
+    try:
+        registry = ensure_tenants_database(settings)
+        try:
+            with session_factory(registry)() as session:
+                return set(
+                    session.scalars(
+                        select(Tenant.slug)
+                        .join(RebaseEngagement, RebaseEngagement.tenant_id == Tenant.id)
+                        .where(RebaseEngagement.space_created.is_(True))
+                    )
+                )
+        finally:
+            registry.dispose()
+    except Exception as exc:  # noqa: BLE001 - the boot goes on without the profiles
+        print(f"engagements unreadable ({type(exc).__name__})", file=sys.stderr)
+        return set()
+
+
+def _inferred_profile(
+    settings: Settings, slug: str, hub_opened: set[str]
+) -> tuple[Profile, str] | None:
+    """The profile the frame design (B7) infers for a registry space and why, `None` for
+    a space that gets the onboarding."""
+    leads = settings.leads_space.strip()
+    if leads and slug == leads:
+        return "company", "rebase's own space"
+    if slug in hub_opened:
+        return "solo", "opened by a hub match"
+    return None
+
+
+def _ensure_profile(
+    engine: Engine, label: str, settings: Settings, inferred: tuple[Profile, str] | None
+) -> None:
+    """One space's profile step, on its owner engine. Never raises, says what it did."""
+    if inferred is None:
+        print(f"{label}: nothing inferred, the onboarding or the admin decides")
+        return
+    profile, reason = inferred
+    slug = None if label == ROOT_LABEL else label
+    # A hub match made a deal in the space, and nobody loses it (B7).
+    keeps: tuple[ModuleKey, ...] = ("deals",) if profile == "solo" else ()
+    try:
+        with session_factory(engine)() as space:
+            bind_scope(space, Actor.system())
+            written = SpaceModulesService(
+                space, space_base_settings(settings, slug)
+            ).ensure_profile(profile, Actor.system(), keep_on=keeps)
+    except Exception as exc:  # noqa: BLE001 - one space must not stop the others
+        print(f"{label}: profile not written ({type(exc).__name__})", file=sys.stderr)
+        return
+    if written:
+        print(f"{label}: profile {profile} inferred ({reason})")
+    else:
+        print(f"{label}: profile already set, left as it is")
+
+
+def _profile_root(settings: Settings) -> None:
+    """The root installation, which no registry row names: `company` when it is rebase's own
+    space, that is `PIGROCRM_LEADS_SPACE` is the root's own name."""
+    leads = settings.leads_space.strip()
+    inferred: tuple[Profile, str] | None = None
+    if leads and settings.root_slug and leads == settings.root_slug:
+        inferred = ("company", "rebase's own space")
+    if inferred is None:
+        return
+    try:
+        with space_engine(settings.owner_database_url) as engine:
+            _ensure_profile(engine, ROOT_LABEL, settings, inferred)
+    except Exception as exc:  # noqa: BLE001 - the boot must not stop here
+        print(f"{ROOT_LABEL}: profile not written ({type(exc).__name__})", file=sys.stderr)
 
 
 def rebuild_identity_index(settings: Settings) -> int:

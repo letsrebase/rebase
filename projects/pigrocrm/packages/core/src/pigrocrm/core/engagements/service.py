@@ -56,9 +56,11 @@ from pigrocrm.core.engagements.schemas import (
 from pigrocrm.core.errors import Conflict, NotFound, ValidationFailed
 from pigrocrm.core.invoices.models import Invoice, InvoiceLine
 from pigrocrm.core.mail import EmailSender
+from pigrocrm.core.modules.service import SpaceModulesService
 from pigrocrm.core.money import sum_hours
 from pigrocrm.core.tenants.database import tenant_database_name, tenant_database_url
 from pigrocrm.core.tenants.models import Tenant
+from pigrocrm.core.tenants.registry import space_base_settings
 from pigrocrm.core.tenants.schemas import SLUG_MAX, TenantSignup, slugify
 from pigrocrm.core.tenants.service import TenantService
 from pigrocrm.core.tenants.welcome import welcome
@@ -458,6 +460,12 @@ class EngagementService:
                     self._create_admin(space, data.freelancer, email)
                 customer_id, deal_id = self._customer_and_deal(space, match_id, data, email)
                 if row.space_created:
+                    # A freelancer's space is `solo` with the deal its match just made
+                    # kept on (spec 2026-11-09 B7). Written only where no profile is
+                    # stored, so a retry never undoes an admin's choice.
+                    SpaceModulesService(
+                        space, space_base_settings(self.settings, tenant.slug)
+                    ).ensure_profile("solo", Actor.rebase(), keep_on=("deals",))
                     # The welcome goes out with the call that completes the engagement,
                     # not with the one that opened the space: a call that stops on the
                     # way sends nothing, and the row tells its retry to send it. A call

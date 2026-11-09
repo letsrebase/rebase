@@ -228,7 +228,11 @@ meanwhile): it runs `alembic upgrade head`, which migrates the **root** database
 `pigrocrm ensure-space-defaults`, which brings every space in the registry to head with the same
 `migrate_to_head` provisioning uses (ORB-189: a space was migrated once, at creation, and
 `pigrocrm-v0.13.0` broke every space's login by shipping a migration they had never received),
-then gives it its default stages, templates and cost categories where a table is empty, and
+then gives it its default stages, templates and cost categories where a table is empty, then its
+profile where none is stored (REB-955, frame design B7: `company` for the space
+`PIGROCRM_LEADS_SPACE` names, the root included when `PIGROCRM_ROOT_SLUG` is that name; `solo`
+with `deals` on for a space whose `rebase_engagements` row has `space_created`; nothing for the
+rest, who get the onboarding; never over a stored profile or module row), and
 never fails the boot (spec 2026-09-12 §6.5). It also creates and grants `pigrocrm_app`, and, as
 root for the one command that needs it, hands the documents directory to the image's uid 10001
 before it drops to that user (`setpriv`), so the unprivileged `api` can write there with nothing
