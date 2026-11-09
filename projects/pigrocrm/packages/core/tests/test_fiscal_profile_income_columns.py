@@ -64,7 +64,9 @@ def test_there_is_exactly_one_fiscal_profile_table(db_engine: Engine) -> None:
     """Asserted so nobody later adds the second profile §4.5 rules out."""
     tables = set(inspect(db_engine).get_table_names())
     assert "fiscal_profile" in tables
-    assert not {t for t in tables if t != "fiscal_profile" and "fiscal" in t}
+    # `fiscal_estimates` (REB-974) holds frozen readings of a year's estimate, not a profile.
+    others = {t for t in tables if t not in {"fiscal_profile", "fiscal_estimates"}}
+    assert not {t for t in others if "fiscal" in t}
 
 
 def test_the_previous_systems_values_are_the_defaults(db_session: Session) -> None:
