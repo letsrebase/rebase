@@ -10499,30 +10499,15 @@ export interface components {
              * @default false
              */
             supplier_payment_end_of_month: boolean;
-            /**
-             * Roles
-             * @description What the organization is to us: any of customer, supplier, freelancer, at least one (a company that is both customer and supplier is one organization with both roles). On an update the list replaces the stored one.
-             */
+            /** Roles */
             roles?: string[];
-            /**
-             * Supplier Kind
-             * @description What a payment to it involves, one of company, professional, flat_rate, occasional, foreign: professional and occasional are withheld at 20% when the buyer is a withholding agent, flat_rate is not withheld, foreign also needs supplier_area and supplier_supplies.
-             */
+            /** Supplier Kind */
             supplier_kind?: string | null;
-            /**
-             * Supplier Area
-             * @description Where a foreign supplier is, one of eu, extra_eu.
-             */
+            /** Supplier Area */
             supplier_area?: string | null;
-            /**
-             * Supplier Supplies
-             * @description What a foreign supplier supplies, one of goods, services.
-             */
+            /** Supplier Supplies */
             supplier_supplies?: string | null;
-            /**
-             * Customer Kind
-             * @description What a sale to it involves, one of business, consumer, public_body. For a public_body, sdi_code is its 6-character IPA code.
-             */
+            /** Customer Kind */
             customer_kind?: string | null;
             /**
              * Is Withholding Agent
@@ -10679,30 +10664,15 @@ export interface components {
             supplier_payment_days?: number | null;
             /** Supplier Payment End Of Month */
             supplier_payment_end_of_month?: boolean | null;
-            /**
-             * Roles
-             * @description What the organization is to us: any of customer, supplier, freelancer, at least one (a company that is both customer and supplier is one organization with both roles). On an update the list replaces the stored one.
-             */
+            /** Roles */
             roles?: string[] | null;
-            /**
-             * Supplier Kind
-             * @description What a payment to it involves, one of company, professional, flat_rate, occasional, foreign: professional and occasional are withheld at 20% when the buyer is a withholding agent, flat_rate is not withheld, foreign also needs supplier_area and supplier_supplies.
-             */
+            /** Supplier Kind */
             supplier_kind?: string | null;
-            /**
-             * Supplier Area
-             * @description Where a foreign supplier is, one of eu, extra_eu.
-             */
+            /** Supplier Area */
             supplier_area?: string | null;
-            /**
-             * Supplier Supplies
-             * @description What a foreign supplier supplies, one of goods, services.
-             */
+            /** Supplier Supplies */
             supplier_supplies?: string | null;
-            /**
-             * Customer Kind
-             * @description What a sale to it involves, one of business, consumer, public_body. For a public_body, sdi_code is its 6-character IPA code.
-             */
+            /** Customer Kind */
             customer_kind?: string | null;
             /** Is Withholding Agent */
             is_withholding_agent?: boolean | null;
