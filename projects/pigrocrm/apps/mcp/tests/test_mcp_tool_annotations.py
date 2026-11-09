@@ -48,8 +48,11 @@ SURFACES: dict[str, dict[str, Any]] = {
 # REB-953: 94.5 KB and 108 KB, up from 94 KB and 106 KB, for `describe_space` (every token) and
 # `set_space_profile` and `set_space_modules` (a full-access administrator's): the three have
 # no shorter form, the first is how an agent learns why a module's tools are not there.
-DEFAULT_BUDGET_BYTES = 94_500
-FULL_ACCESS_BUDGET_BYTES = 108_000
+# REB-971: 95.5 KB and 109 KB, up from 94.5 KB and 108 KB, for `list_inbox_items` and
+# `get_inbox_item` (every token's): the list takes four filters and a cursor and says what an
+# item's state is, and neither can say less.
+DEFAULT_BUDGET_BYTES = 95_500
+FULL_ACCESS_BUDGET_BYTES = 109_000
 
 # A name starting with one of these reads. The tools that read without such a name are
 # listed, so adding one is a decision somebody wrote down.

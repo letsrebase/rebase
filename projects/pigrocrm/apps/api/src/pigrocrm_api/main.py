@@ -37,6 +37,7 @@ from pigrocrm_api.routers import (
     fields,
     gmail,
     identity,
+    inbox,
     invoices,
     legal_entities,
     notes,
@@ -163,6 +164,9 @@ def create_app() -> FastAPI:
         push,
         # REB-764: what the cron commands last did in this space.
         scheduled_jobs,
+        # REB-971: the inbox of incoming documents, filled by upload. Before `notes`, which stays
+        # last: the web tests type their mock of `api.GET` against the last path of the API.
+        inbox,
         # REB-879: the signed, dated notes thread of a deal, a customer and a person.
         notes,
     ):

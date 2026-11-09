@@ -197,6 +197,10 @@ REST_ONLY_FORBIDDEN = frozenset(
         "create_contract_email_template",
         "update_contract_email_template",
         "prepare_contract_email",
+        # REB-971: the inbox's upload. Bytes never travel over MCP (design 2026-11-09, § 6), so
+        # there is no tool; a token with `full_access` reaches it over REST for a script that
+        # feeds the inbox, and a default token does not.
+        "upload_inbox_file",
     }
 )
 

@@ -77,6 +77,8 @@ CORE_TOOLS = frozenset(
         "delete_note",
         "get_proposal",
         "list_proposals",
+        "get_inbox_item",
+        "list_inbox_items",
         "get_timeline",
         "search_everything",
         "describe_automations",

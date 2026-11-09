@@ -166,6 +166,16 @@ before any check. A list route declares one `*ListParams` model from `query_para
 (FastAPI takes a query model only as the route's single query parameter), and a file
 download goes through `downloads.attachment_response`.
 
+**A file that arrives goes through the inbox, and a route that takes a body needs its own nginx
+location (REB-971).** `core/inbox/` stores every uploaded file as an `inbox_items` row (`InboxUploads`,
+REST and web only: bytes never travel over MCP, so `InboxService`'s two reads are the only tools),
+deduplicated by `content_sha256` and `natural_key` under an advisory lock, a `.p7m` opened with
+`asn1crypto`, a ZIP kept as the parent of its entries. Nginx answers 413 to any body over 1 MiB
+unless the route has its own `location` with `client_max_body_size 105m` in all three of
+`deploy/nginx/spa.conf`, `pigro.letsrebase.conf` and `preview.pigro.letsrebase.conf` (the host
+files are applied by hand); `src/test/upload-body-size.test.ts` holds the documents and the
+inbox routes to it, so a fourth upload route adds its location and its case there.
+
 **`pg_trgm` is created by the migrations at API start-up.** On a managed Postgres
 where the user cannot create extensions, the deploy fails at boot with
 `permission denied to create extension "pg_trgm"`. That is the wanted behaviour: the

@@ -185,6 +185,10 @@ FULL_ACCESS_ACTIONS: frozenset[str] = frozenset(
         "transition_work_unit",
         "create_approval",
         "request_approval",
+        # The inbox's upload road (REB-971): bytes enter over the web and REST only, never over
+        # MCP (design 2026-11-09, § 6), so no tool runs it. A token with `full_access` reaches
+        # it over REST, for a script that feeds the inbox; a default token does not.
+        "upload_inbox_file",
     }
 )
 
@@ -277,6 +281,7 @@ ACTION_LABELS: dict[str, str] = {
     "convert_deal_to_contract": "trasformare un deal in contratto",
     "set_space_profile": "cambiare il profilo dello spazio",
     "set_space_modules": "accendere o spegnere i moduli dello spazio",
+    "upload_inbox_file": "caricare un documento in arrivo",
 }
 
 
