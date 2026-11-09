@@ -47,8 +47,8 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
     ) -> dict[str, Any]:
         """Create an organization.
 
-        `owner_id` is who is responsible for the organization and receives reminders about invoices
-        and contracts (id in `list_members`): if omitted, it is the creator; only an administrator
+        `owner_id` is who is responsible for it and receives reminders about invoices and
+        contracts (id in `list_members`): if omitted, the creator; only an administrator
         can name someone else, as with `update_organization`.
 
         `payment_days` and `payment_end_of_month` are the agreed terms («30 days invoice date
@@ -60,7 +60,7 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
 
         `contact_points`: see the server instructions; the PEC stays in `certified_email`.
 
-        `note` is the organization's first note (without date or author: the CRM signs it).
+        `note` is its first note (without date or author: the CRM signs it).
         """
         return organizations.create(
             context,
