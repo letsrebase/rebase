@@ -32,7 +32,7 @@ def _seed_pipeline(logged_in: TestClient) -> None:
 
 def _seed_deal_and_user(logged_in: TestClient) -> tuple[str, str]:
     _seed_pipeline(logged_in)
-    customer = logged_in.post("/api/customers", json={"legal_name": "ACME Srl"})
+    customer = logged_in.post("/api/organizations", json={"legal_name": "ACME Srl"})
     assert customer.status_code == 201, customer.text
     deal = logged_in.post(
         "/api/deals", json={"name": "Progetto", "customer_id": customer.json()["id"]}

@@ -15,18 +15,18 @@ from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.invoices.models import (
     PROFORMA_SEQUENCE_NAME,
     Invoice,
     InvoiceCounter,
     InvoiceLine,
 )
+from pigrocrm.core.organizations.models import Organization
 
 
 @pytest.fixture
 def customer_id(db_session: Session) -> UUID:
-    customer = Customer(legal_name="Acme S.r.l.", country="IT")
+    customer = Organization(legal_name="Acme S.r.l.", country="IT")
     db_session.add(customer)
     db_session.flush()
     return customer.id

@@ -30,7 +30,6 @@ from test_invoice_import_confirm import (
 )
 
 from pigrocrm.core.actor import Actor
-from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.documents.models import Document
 from pigrocrm.core.errors import PermissionDenied, ValidationFailed
 from pigrocrm.core.invoices import import_upload
@@ -41,6 +40,7 @@ from pigrocrm.core.invoices.import_upload import (
 )
 from pigrocrm.core.invoices.models import Invoice, InvoiceRegisterGap
 from pigrocrm.core.invoices.repository import InvoiceRepository
+from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.storage import LocalFileStorage
 
 COLLABORATOR = Actor(id=None, type="user", role="collaborator")
@@ -74,7 +74,7 @@ def _document_count(session: Session) -> int:
 
 
 def _customer_count(session: Session) -> int:
-    return int(session.execute(select(func.count()).select_from(Customer)).scalar_one())
+    return int(session.execute(select(func.count()).select_from(Organization)).scalar_one())
 
 
 def _items(files: dict[str, bytes]) -> Sequence[tuple[str, bytes]]:
@@ -187,14 +187,16 @@ def test_the_number_of_files_and_the_total_size_are_bounded(
 
 
 def test_decisions_are_json_keyed_by_party_and_anything_else_is_a_sentence() -> None:
-    parsed = parse_decisions(json.dumps({"customers": {"09876543210": {"create_customer": True}}}))
+    parsed = parse_decisions(
+        json.dumps({"organizations": {"09876543210": {"create_organization": True}}})
+    )
 
-    assert parsed == {"09876543210": UploadedPartyDecision(create_customer=True)}
+    assert parsed == {"09876543210": UploadedPartyDecision(create_organization=True)}
     assert parse_decisions("{}") == {}
     for bad in (
         "not json",
         json.dumps({"decisioni": {"abc": {}}}),
-        json.dumps({"customers": {"09876543210": {"x": 1}}}),
+        json.dumps({"organizations": {"09876543210": {"x": 1}}}),
     ):
         with pytest.raises(ValidationFailed):
             parse_decisions(bad)
@@ -208,7 +210,7 @@ def test_a_review_reads_every_verdict_and_writes_nothing(
 ) -> None:
     service = _svc(db_session, local_storage)
     known = make_customer_with_address(db_session, vat_number=CUSTOMER_VAT_NUMBER)
-    invoices, documents, customers = (
+    invoices, documents, organizations = (
         _invoice_count(db_session),
         _document_count(db_session),
         _customer_count(db_session),
@@ -224,7 +226,7 @@ def test_a_review_reads_every_verdict_and_writes_nothing(
     assert ready.invoice is not None and ready.invoice.number == "2026/6"
     assert unclaimed.outcome == "unclaimed" and unclaimed.invoice is None
     assert (_invoice_count(db_session), _document_count(db_session)) == (invoices, documents)
-    assert _customer_count(db_session) == customers
+    assert _customer_count(db_session) == organizations
 
 
 def test_a_review_tells_a_new_counterparty_from_an_invoice_already_on_the_register(
@@ -238,7 +240,7 @@ def test_a_review_tells_a_new_counterparty_from_an_invoice_already_on_the_regist
 
     service.confirm_upload(
         [("fattura.xml", content)],
-        {new.party_key or "": UploadedPartyDecision(create_customer=True)},
+        {new.party_key or "": UploadedPartyDecision(create_organization=True)},
         ADMIN,
     )
     [again] = service.review_upload([("fattura.xml", content)], ADMIN)
@@ -320,20 +322,20 @@ def test_a_new_counterparty_is_created_only_when_the_decision_for_its_customer_s
 ) -> None:
     service = _svc(db_session, local_storage)
     content = _fixture(CONSULTING)
-    customers, documents = _customer_count(db_session), _document_count(db_session)
+    organizations, documents = _customer_count(db_session), _document_count(db_session)
 
     [withheld] = service.confirm_upload([("fattura.xml", content)], {}, ADMIN)
     assert withheld.outcome == "needs_customer_confirmation"
     assert withheld.invoice is None
-    assert (_customer_count(db_session), _document_count(db_session)) == (customers, documents)
+    assert (_customer_count(db_session), _document_count(db_session)) == (organizations, documents)
 
     [created] = service.confirm_upload(
         [("fattura.xml", content)],
-        {"09876543210": UploadedPartyDecision(create_customer=True)},
+        {"09876543210": UploadedPartyDecision(create_organization=True)},
         ADMIN,
     )
     assert created.outcome == "imported"
-    assert _customer_count(db_session) == customers + 1
+    assert _customer_count(db_session) == organizations + 1
     assert created.invoice is not None and created.invoice.xml_document_id is not None
 
 
@@ -381,7 +383,7 @@ def test_a_lotto_is_written_per_invoice_and_archives_no_xml(
 
     rows = service.confirm_upload(
         [("lotto.xml", _fixture(LOTTO))],
-        {"09876543210": UploadedPartyDecision(create_customer=True)},
+        {"09876543210": UploadedPartyDecision(create_organization=True)},
         ADMIN,
     )
 
@@ -398,7 +400,7 @@ def test_a_refused_invoice_leaves_neither_its_customer_nor_its_xml(
         InvoiceRegisterGap(year=2026, number=6, reason="annullata prima della trasmissione")
     )
     content = _fixture(CONSULTING)
-    invoices, documents, customers = (
+    invoices, documents, organizations = (
         _invoice_count(db_session),
         _document_count(db_session),
         _customer_count(db_session),
@@ -406,7 +408,7 @@ def test_a_refused_invoice_leaves_neither_its_customer_nor_its_xml(
 
     [row] = service.confirm_upload(
         [("fattura.xml", content)],
-        {"09876543210": UploadedPartyDecision(create_customer=True)},
+        {"09876543210": UploadedPartyDecision(create_organization=True)},
         ADMIN,
     )
 
@@ -415,7 +417,7 @@ def test_a_refused_invoice_leaves_neither_its_customer_nor_its_xml(
         _invoice_count(db_session),
         _document_count(db_session),
         _customer_count(db_session),
-    ) == (invoices, documents, customers)
+    ) == (invoices, documents, organizations)
 
 
 def test_a_year_of_xml_in_a_zip_fills_the_register_with_no_gap_declared_by_hand(
@@ -426,7 +428,7 @@ def test_a_year_of_xml_in_a_zip_fills_the_register_with_no_gap_declared_by_hand(
 
     reviewed = service.review_upload(archive, ADMIN)
     assert [row.outcome for row in reviewed] == ["needs_customer_confirmation"] * 24
-    decisions = {"09876543210": UploadedPartyDecision(create_customer=True)}
+    decisions = {"09876543210": UploadedPartyDecision(create_organization=True)}
 
     confirmed = service.confirm_upload(archive, decisions, ADMIN)
 
@@ -450,7 +452,7 @@ def test_a_year_with_a_missing_number_reports_the_gap_it_leaves(
     files = _year(5)
     del files["IT01234567890_00003.xml"]
     archive = [("fatture.zip", _zip(files))]
-    decisions = {"09876543210": UploadedPartyDecision(create_customer=True)}
+    decisions = {"09876543210": UploadedPartyDecision(create_organization=True)}
 
     confirmed = service.confirm_upload(archive, decisions, ADMIN)
 
@@ -474,18 +476,18 @@ def test_a_foreign_counterparty_with_no_italian_tax_id_is_created_once_across_th
     archive = [("estero.zip", _zip(files))]
     [first, *_] = service.review_upload(archive, ADMIN)
     assert first.party_key == "estero:DE123456789"
-    customers = _customer_count(db_session)
+    organizations = _customer_count(db_session)
 
     confirmed = service.confirm_upload(
-        archive, {first.party_key or "": UploadedPartyDecision(create_customer=True)}, ADMIN
+        archive, {first.party_key or "": UploadedPartyDecision(create_organization=True)}, ADMIN
     )
 
     assert [row.outcome for row in confirmed] == ["imported"] * 3
     assert len({row.invoice.customer_id for row in confirmed if row.invoice}) == 1
-    assert _customer_count(db_session) == customers + 1
+    assert _customer_count(db_session) == organizations + 1
 
 
-def test_two_foreign_customers_with_one_name_and_different_vat_numbers_stay_two(
+def test_two_foreign_organizations_with_one_name_and_different_vat_numbers_stay_two(
     db_session: Session, local_storage: LocalFileStorage
 ) -> None:
     service = _svc(db_session, local_storage)
@@ -501,20 +503,20 @@ def test_two_foreign_customers_with_one_name_and_different_vat_numbers_stay_two(
     ]
     first, second = service.review_upload(files, ADMIN)
     assert (first.party_key, second.party_key) == ("estero:DE123456789", "estero:DE987654321")
-    customers = _customer_count(db_session)
+    organizations = _customer_count(db_session)
 
     confirmed = service.confirm_upload(
         files,
         {
-            first.party_key or "": UploadedPartyDecision(create_customer=True),
-            second.party_key or "": UploadedPartyDecision(create_customer=True),
+            first.party_key or "": UploadedPartyDecision(create_organization=True),
+            second.party_key or "": UploadedPartyDecision(create_organization=True),
         },
         ADMIN,
     )
 
     assert [row.outcome for row in confirmed] == ["imported"] * 2
     assert len({row.invoice.customer_id for row in confirmed if row.invoice}) == 2
-    assert _customer_count(db_session) == customers + 2
+    assert _customer_count(db_session) == organizations + 2
 
 
 def test_to_file_that_looks_like_to_invoice_and_does_not_parse_is_unclaimed_with_its_reason(
@@ -529,7 +531,7 @@ def test_to_file_that_looks_like_to_invoice_and_does_not_parse_is_unclaimed_with
     assert bad.reason is not None and "TD99" in bad.reason
 
     bad_confirmed, good_confirmed = service.confirm_upload(
-        files, {good.party_key or "": UploadedPartyDecision(create_customer=True)}, ADMIN
+        files, {good.party_key or "": UploadedPartyDecision(create_organization=True)}, ADMIN
     )
     assert (bad_confirmed.outcome, good_confirmed.outcome) == ("unclaimed", "imported")
     assert bad_confirmed.reason is not None and "TD99" in bad_confirmed.reason
@@ -549,8 +551,8 @@ def test_an_invoice_the_register_schema_refuses_is_a_conflict_and_does_not_stop_
     # `_svc` created, so a file after it could not be classified, which production's
     # committed legal entity never suffers.
     files = [("normale.xml", _year(2)["IT01234567890_00002.xml"]), ("lunga.xml", many.encode())]
-    create = {"09876543210": UploadedPartyDecision(create_customer=True)}
-    customers = _customer_count(db_session)
+    create = {"09876543210": UploadedPartyDecision(create_organization=True)}
+    organizations = _customer_count(db_session)
 
     normal, long = service.confirm_upload(files, create, ADMIN)
 
@@ -558,4 +560,4 @@ def test_an_invoice_the_register_schema_refuses_is_a_conflict_and_does_not_stop_
     assert long.invoice is None and normal.invoice is not None
     # The customer the long invoice would have shared is the one the first file created:
     # nothing extra was left behind by the refused one.
-    assert _customer_count(db_session) == customers + 1
+    assert _customer_count(db_session) == organizations + 1

@@ -21,10 +21,10 @@ AGENT = Actor(id=uuid4(), type="mcp", role="admin")
 def test_record_stores_who_did_what(db_session: Session) -> None:
     service = ActivityService(db_session)
     entity_id = uuid4()
-    service.record("customer", entity_id, "created", USER, {"legal_name": "ACME"})
+    service.record("organization", entity_id, "created", USER, {"legal_name": "ACME"})
     db_session.commit()
 
-    entries = service.timeline("customer", entity_id)
+    entries = service.timeline("organization", entity_id)
     assert len(entries) == 1
     assert entries[0].kind == "created"
     assert entries[0].payload == {"legal_name": "ACME"}
@@ -47,10 +47,10 @@ def test_timeline_is_newest_first_and_limited(db_session: Session) -> None:
     service = ActivityService(db_session)
     entity_id = uuid4()
     for index in range(5):
-        service.record("customer", entity_id, f"kind_{index}", USER)
+        service.record("organization", entity_id, f"kind_{index}", USER)
     db_session.commit()
 
-    entries = service.timeline("customer", entity_id, limit=3)
+    entries = service.timeline("organization", entity_id, limit=3)
     assert len(entries) == 3
     assert entries[0].kind == "kind_4"
 
@@ -58,11 +58,11 @@ def test_timeline_is_newest_first_and_limited(db_session: Session) -> None:
 def test_timeline_is_scoped_to_one_entity(db_session: Session) -> None:
     service = ActivityService(db_session)
     mine, theirs = uuid4(), uuid4()
-    service.record("customer", mine, "created", USER)
-    service.record("customer", theirs, "created", USER)
+    service.record("organization", mine, "created", USER)
+    service.record("organization", theirs, "created", USER)
     db_session.commit()
 
-    assert len(service.timeline("customer", mine)) == 1
+    assert len(service.timeline("organization", mine)) == 1
 
 
 def test_record_does_not_commit_so_it_joins_the_callers_transaction(db_session: Session) -> None:
@@ -70,10 +70,10 @@ def test_record_does_not_commit_so_it_joins_the_callers_transaction(db_session: 
     timeline entry for a change that never happened."""
     service = ActivityService(db_session)
     entity_id = uuid4()
-    service.record("customer", entity_id, "created", USER)
+    service.record("organization", entity_id, "created", USER)
     db_session.rollback()
 
-    assert service.timeline("customer", entity_id) == []
+    assert service.timeline("organization", entity_id) == []
 
 
 # --- Fix round 1 ------------------------------------------------------------------
@@ -85,7 +85,7 @@ def test_record_sanitizes_non_finite_floats(db_session: Session) -> None:
     service = ActivityService(db_session)
     entity_id = uuid4()
     service.record(
-        "customer",
+        "organization",
         entity_id,
         "created",
         USER,
@@ -93,7 +93,7 @@ def test_record_sanitizes_non_finite_floats(db_session: Session) -> None:
     )
     db_session.commit()
 
-    entry = service.timeline("customer", entity_id)[0]
+    entry = service.timeline("organization", entity_id)[0]
     assert entry.payload == {"a": "NaN", "b": "Infinity", "c": "-Infinity"}
 
 
@@ -101,20 +101,20 @@ def test_record_strips_null_bytes_from_strings(db_session: Session) -> None:
     """Postgres text storage cannot hold a NUL byte at all."""
     service = ActivityService(db_session)
     entity_id = uuid4()
-    service.record("customer", entity_id, "created", USER, {"note": "abc\x00def"})
+    service.record("organization", entity_id, "created", USER, {"note": "abc\x00def"})
     db_session.commit()
 
-    entry = service.timeline("customer", entity_id)[0]
+    entry = service.timeline("organization", entity_id)[0]
     assert entry.payload == {"note": "abcdef"}
 
 
 def test_record_truncates_long_strings(db_session: Session) -> None:
     service = ActivityService(db_session)
     entity_id = uuid4()
-    service.record("customer", entity_id, "created", USER, {"note": "x" * 3000})
+    service.record("organization", entity_id, "created", USER, {"note": "x" * 3000})
     db_session.commit()
 
-    saved = service.timeline("customer", entity_id)[0].payload["note"]
+    saved = service.timeline("organization", entity_id)[0].payload["note"]
     assert len(saved) == 2001
     assert saved.endswith("…")
 
@@ -129,7 +129,7 @@ def test_record_never_fails_on_a_value_json_has_no_encoder_for(db_session: Sessi
     service = ActivityService(db_session)
     entity_id = uuid4()
     service.record(
-        "customer",
+        "organization",
         entity_id,
         "created",
         USER,
@@ -143,7 +143,7 @@ def test_record_never_fails_on_a_value_json_has_no_encoder_for(db_session: Sessi
     )
     db_session.commit()
 
-    entry = service.timeline("customer", entity_id)[0]
+    entry = service.timeline("organization", entity_id)[0]
     assert entry.payload == {
         "total": "12.50",
         "type": "plain",
@@ -163,10 +163,10 @@ def test_record_caps_nesting_depth(db_session: Session) -> None:
 
     service = ActivityService(db_session)
     entity_id = uuid4()
-    service.record("customer", entity_id, "created", USER, nested)
+    service.record("organization", entity_id, "created", USER, nested)
     db_session.commit()
 
-    cursor: Any = service.timeline("customer", entity_id)[0].payload
+    cursor: Any = service.timeline("organization", entity_id)[0].payload
     for _ in range(10):
         assert isinstance(cursor, dict)
         cursor = cursor["next"]
@@ -196,13 +196,13 @@ def test_session_remains_usable_after_a_hostile_payload(db_session: Session) -> 
     change the activity was supposed to be auditing."""
     service = ActivityService(db_session)
     entity_id = uuid4()
-    service.record("customer", entity_id, "created", USER, {"x": float("nan")})
+    service.record("organization", entity_id, "created", USER, {"x": float("nan")})
 
     # The session must still accept further writes in the same transaction.
-    service.record("customer", entity_id, "updated", USER, {"y": 1})
+    service.record("organization", entity_id, "updated", USER, {"y": 1})
     db_session.commit()
 
-    assert len(service.timeline("customer", entity_id)) == 2
+    assert len(service.timeline("organization", entity_id)) == 2
 
 
 # --- Final review item 5 (CRITICAL): timeline's limit was unbounded, unlike REST --
@@ -220,7 +220,7 @@ def test_session_remains_usable_after_a_hostile_payload(db_session: Session) -> 
 def test_timeline_rejects_a_limit_below_one(db_session: Session) -> None:
     service = ActivityService(db_session)
     with pytest.raises(ValidationFailed) as exc:
-        service.timeline("customer", uuid4(), limit=0)
+        service.timeline("organization", uuid4(), limit=0)
     assert exc.value.details["field"] == "limit"
 
 
@@ -229,25 +229,25 @@ def test_timeline_rejects_a_negative_limit(db_session: Session) -> None:
     `psycopg.errors.InvalidRowCountInLimitClause` ('LIMIT must not be negative')."""
     service = ActivityService(db_session)
     with pytest.raises(ValidationFailed):
-        service.timeline("customer", uuid4(), limit=-1)
+        service.timeline("organization", uuid4(), limit=-1)
 
 
 def test_timeline_rejects_a_limit_above_two_hundred(db_session: Session) -> None:
     """Matches every REST timeline route's own `Query(ge=1, le=200)` exactly."""
     service = ActivityService(db_session)
     with pytest.raises(ValidationFailed) as exc:
-        service.timeline("customer", uuid4(), limit=201)
+        service.timeline("organization", uuid4(), limit=201)
     assert exc.value.details["expected"] == "1-200"
 
 
 def test_timeline_accepts_the_boundary_values(db_session: Session) -> None:
     service = ActivityService(db_session)
     entity_id = uuid4()
-    service.record("customer", entity_id, "created", USER)
+    service.record("organization", entity_id, "created", USER)
     db_session.commit()
 
-    assert service.timeline("customer", entity_id, limit=1) == service.timeline(
-        "customer", entity_id, limit=200
+    assert service.timeline("organization", entity_id, limit=1) == service.timeline(
+        "organization", entity_id, limit=200
     )
 
 
@@ -302,11 +302,11 @@ def test_recent_returns_the_newest_activities_across_every_entity(empty_feed: Se
     different answer from the one asserted.
     """
     _plant(empty_feed, "deal", 3, minute=3)
-    _plant(empty_feed, "customer", 102, minute=7)
+    _plant(empty_feed, "organization", 102, minute=7)
     _plant(empty_feed, "deal", 0, minute=0)
-    _plant(empty_feed, "customer", 100, minute=5)
+    _plant(empty_feed, "organization", 100, minute=5)
     _plant(empty_feed, "deal", 4, minute=4)
-    _plant(empty_feed, "customer", 101, minute=6)
+    _plant(empty_feed, "organization", 101, minute=6)
     _plant(empty_feed, "deal", 1, minute=1)
     _plant(empty_feed, "deal", 2, minute=2)
 
@@ -315,7 +315,7 @@ def test_recent_returns_the_newest_activities_across_every_entity(empty_feed: Se
     # Newest first, and both entity types present in the newest four -- the whole point of
     # a feed that is not a timeline.
     assert [row.payload["n"] for row in rows] == [102, 101, 100, 4]
-    assert {row.entity_type for row in rows} == {"customer", "deal"}
+    assert {row.entity_type for row in rows} == {"organization", "deal"}
 
 
 def test_recent_is_bounded_by_its_limit(empty_feed: Session) -> None:

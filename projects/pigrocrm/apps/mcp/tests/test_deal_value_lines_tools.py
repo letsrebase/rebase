@@ -21,7 +21,7 @@ def _payload(result: Any) -> dict[str, Any]:
 
 
 async def _customer(client: Client) -> str:
-    return _payload(await client.call_tool("create_customer", {"legal_name": "ACME"}))["id"]
+    return _payload(await client.call_tool("create_organization", {"legal_name": "ACME"}))["id"]
 
 
 async def test_an_upfront_and_an_open_ended_fee_answer_the_total_and_both_figures(
@@ -167,7 +167,7 @@ async def test_preview_deal_value_computes_without_saving(server, mcp_session: S
     assert deals["items"] == []
 
 
-@pytest.mark.parametrize("uri_kind", ["deal", "customer"])
+@pytest.mark.parametrize("uri_kind", ["deal", "organization"])
 async def test_the_resources_print_the_lines_and_the_figures(
     server, mcp_session: Session, uri_kind: str
 ) -> None:
@@ -184,7 +184,7 @@ async def test_the_resources_print_the_lines_and_the_figures(
                 },
             )
         )
-        uri = f"deal://{deal['id']}" if uri_kind == "deal" else f"customer://{customer_id}"
+        uri = f"deal://{deal['id']}" if uri_kind == "deal" else f"organization://{customer_id}"
         text = (await client.read_resource(uri)).contents[0].text
 
     assert "one-off 20000.00" in text or "One-off value: 20000.00" in text

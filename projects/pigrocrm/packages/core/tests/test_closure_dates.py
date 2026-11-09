@@ -24,13 +24,13 @@ from sqlalchemy.orm import Session
 import pigrocrm.core.deals.service as deals_service_module
 import pigrocrm.core.documents.service as documents_service_module
 from pigrocrm.core.actor import Actor
-from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.db import today_local
 from pigrocrm.core.deals.models import Deal
 from pigrocrm.core.deals.service import DealService
 from pigrocrm.core.documents.models import Document
 from pigrocrm.core.documents.schemas import DocumentCreate, DocumentRead
 from pigrocrm.core.documents.service import DocumentService
+from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.pipeline.schemas import PipelineStageRead
 from pigrocrm.core.pipeline.service import PipelineService
 from pigrocrm.core.storage import LocalFileStorage
@@ -59,7 +59,7 @@ def document_service(db_session: Session, tmp_path: Path) -> DocumentService:
 
 
 def _deal(db_session: Session, stage_id: object) -> Deal:
-    customer = Customer(legal_name="Cliente Srl", country="IT", custom_fields={})
+    customer = Organization(legal_name="Cliente Srl", country="IT", custom_fields={})
     db_session.add(customer)
     db_session.flush()
     deal = Deal(
@@ -75,7 +75,7 @@ def _deal(db_session: Session, stage_id: object) -> Deal:
 
 
 def _offer(service: DocumentService, db_session: Session) -> DocumentRead:
-    customer = Customer(legal_name="Cliente Offerta Srl", country="IT", custom_fields={})
+    customer = Organization(legal_name="Cliente Offerta Srl", country="IT", custom_fields={})
     db_session.add(customer)
     db_session.flush()
     return service.create(

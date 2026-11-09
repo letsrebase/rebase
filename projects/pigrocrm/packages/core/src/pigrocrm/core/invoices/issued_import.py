@@ -6,7 +6,6 @@ from uuid import UUID
 from sqlalchemy.exc import IntegrityError
 
 from pigrocrm.core.actor import Actor
-from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.db.clock import today_local
 from pigrocrm.core.db.transactions import savepoint
 from pigrocrm.core.errors import Conflict, ValidationFailed
@@ -32,6 +31,7 @@ from pigrocrm.core.invoices.schemas import (
 )
 from pigrocrm.core.invoices.snapshot import build_snapshot
 from pigrocrm.core.legal_entities.models import LegalEntity
+from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.text import PDF_MIME
 
 IMPORT_ACTION = "import_issued_invoice"
@@ -42,12 +42,12 @@ def check_import_customer(
 ) -> None:
     """The customer an imported invoice is attached to (REB-783, REB-784) has to be one
     it can be written for: on the legal entity whose register it lands on, and not archived.
-    `name` is the counterparty the message names. The dialog lists only such customers,
+    `name` is the counterparty the message names. The dialog lists only such organizations,
     but the server is the contract: without this an invoice would land on one legal entity's
     register for another's customer, a state `legal_entity_of_parent` derives away on every
     other path. It runs for the FatturaPA confirmation and for `import_issued` itself, so
     the hand-declared import is held to it too. An unknown id stays `NotFound`."""
-    customer = ctx.session.get(Customer, customer_id)
+    customer = ctx.session.get(Organization, customer_id)
     if customer is None:
         return
     if customer.deleted_at is not None:

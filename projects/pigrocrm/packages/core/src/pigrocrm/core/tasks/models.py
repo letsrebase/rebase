@@ -123,7 +123,7 @@ class Task(Base, PrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
         ),
         Index("ix_tasks_custom_fields", "custom_fields", postgresql_using="gin"),
         # Residuo R9: one `(column, id)` B-tree per admitted sort key -- see
-        # `customers/models.py` for why each one is needed and why none is partial.
+        # `organizations/models.py` for why each one is needed and why none is partial.
         Index("ix_tasks_created_at_id", "created_at", "id"),
         Index("ix_tasks_due_date_id", "due_date", "id"),
         # And the second index a nullable sort column costs, for the descending
@@ -167,7 +167,7 @@ class Task(Base, PrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
     completed_at: Mapped[date | None] = mapped_column(Date, default=None)
     # Null means «whoever opens the list», not «nobody» -- the spec's own words.
     assigned_to: Mapped[UUID | None] = mapped_column(ForeignKey("users.id"), default=None)
-    customer_id: Mapped[UUID | None] = mapped_column(ForeignKey("customers.id"), default=None)
+    customer_id: Mapped[UUID | None] = mapped_column(ForeignKey("organizations.id"), default=None)
     person_id: Mapped[UUID | None] = mapped_column(
         ForeignKey("people.id"), default=None, index=True
     )

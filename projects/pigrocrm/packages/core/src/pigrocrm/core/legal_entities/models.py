@@ -56,7 +56,7 @@ class LegalEntity(Base, PrimaryKeyMixin, TimestampMixin):
     a `singleton` unique column. The table keeps its name, `legal_entities`, on
     purpose (spec 2026-10-03 §10): the routes, this class and every word the product
     says use «azienda», while the storage, the error label and the timeline rows keep
-    the name they already carry. The fiscal columns mirror `customers` exactly rather
+    the name they already carry. The fiscal columns mirror `organizations` exactly rather
     than being free text, because FatturaPA is built on them (slice 3).
 
     What the row gained: `name`, the short name the selector shows («studio rossi»,

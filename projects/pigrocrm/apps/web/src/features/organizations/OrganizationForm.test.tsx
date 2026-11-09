@@ -4,8 +4,8 @@ import userEvent from '@testing-library/user-event'
 import type { ReactElement } from 'react'
 import { beforeEach, describe, expect, it, vi, type Mock } from 'vitest'
 import { LegalEntityContext, type LegalEntityRecord, type LegalEntityValue } from '@/lib/legalEntity'
-import { CustomerForm, customerToFormValues } from './CustomerForm'
-import type { Customer } from './queries'
+import { OrganizationForm, organizationToFormValues } from './OrganizationForm'
+import type { Organization } from './queries'
 import type { FieldDefinition } from '@/lib/schema'
 
 vi.mock('@/lib/api', async (importOriginal) => {
@@ -17,7 +17,7 @@ import { api } from '@/lib/api'
 
 const GET = api.GET as unknown as Mock
 
-const BASE_CUSTOMER: Customer = {
+const BASE_CUSTOMER: Organization = {
   id: 'c1',
   legal_entity_id: 'a-1',
   owner_id: null,
@@ -73,16 +73,16 @@ function renderWithClient(ui: ReactElement) {
   return render(<QueryClientProvider client={client}>{ui}</QueryClientProvider>)
 }
 
-describe('CustomerForm', () => {
+describe('OrganizationForm', () => {
   it('round-trips a value for a field the active schema still defines', async () => {
     const onSubmit = vi.fn()
     renderWithClient(
-      <CustomerForm
+      <OrganizationForm
         title="Modifica cliente"
         open
         onOpenChange={vi.fn()}
         customFields={[INDUSTRY]}
-        initial={customerToFormValues({ ...BASE_CUSTOMER, custom_fields: { 'settore': 'PMI' } })}
+        initial={organizationToFormValues({ ...BASE_CUSTOMER, custom_fields: { 'settore': 'PMI' } })}
         onSubmit={onSubmit}
       />,
     )
@@ -103,7 +103,7 @@ describe('CustomerForm', () => {
    * Save with nothing else changed. A flat form state has to re-derive "is this key
    * custom?" from the *active* schema, which no longer lists the archived key, so the
    * value was reclassified as a native column and sent as a top-level key --
-   * `CustomerUpdate` is `extra="forbid"`, so the PATCH came back 422
+   * `OrganizationUpdate` is `extra="forbid"`, so the PATCH came back 422
    * (`extra_forbidden`, confirmed against the running API) and the record was
    * uneditable from then on.
    *
@@ -116,14 +116,14 @@ describe('CustomerForm', () => {
   it('neither sends an archived field as a native column nor drops its stored value', async () => {
     const onSubmit = vi.fn()
     renderWithClient(
-      <CustomerForm
+      <OrganizationForm
         title="Modifica cliente"
         open
         onOpenChange={vi.fn()}
-        // The definition was archived: `GET /api/schema/customer` no longer lists it,
+        // The definition was archived: `GET /api/schema/organization` no longer lists it,
         // so nothing renders it -- but the record still carries the value.
         customFields={[]}
-        initial={customerToFormValues({ ...BASE_CUSTOMER, custom_fields: { 'settore': 'PMI' } })}
+        initial={organizationToFormValues({ ...BASE_CUSTOMER, custom_fields: { 'settore': 'PMI' } })}
         onSubmit={onSubmit}
       />,
     )
@@ -147,7 +147,7 @@ describe('CustomerForm', () => {
   it('sends an untouched checkbox as false on create, never as an absent key', async () => {
     const onSubmit = vi.fn()
     renderWithClient(
-      <CustomerForm
+      <OrganizationForm
         title="Nuovo cliente"
         open
         onOpenChange={vi.fn()}
@@ -181,12 +181,12 @@ describe('CustomerForm', () => {
   it('does not backfill an untouched checkbox on edit, whatever else changed', async () => {
     const onSubmit = vi.fn()
     renderWithClient(
-      <CustomerForm
+      <OrganizationForm
         title="Modifica cliente"
         open
         onOpenChange={vi.fn()}
         customFields={[VIP]}
-        initial={customerToFormValues(BASE_CUSTOMER)}
+        initial={organizationToFormValues(BASE_CUSTOMER)}
         onSubmit={onSubmit}
       />,
     )
@@ -209,12 +209,12 @@ describe('CustomerForm', () => {
   it('sends false for a checkbox the user actually turns off on edit', async () => {
     const onSubmit = vi.fn()
     renderWithClient(
-      <CustomerForm
+      <OrganizationForm
         title="Modifica cliente"
         open
         onOpenChange={vi.fn()}
         customFields={[VIP]}
-        initial={customerToFormValues({ ...BASE_CUSTOMER, custom_fields: { vip: true } })}
+        initial={organizationToFormValues({ ...BASE_CUSTOMER, custom_fields: { vip: true } })}
         onSubmit={onSubmit}
       />,
     )
@@ -231,12 +231,12 @@ describe('CustomerForm', () => {
   it('sends false for a checkbox toggled on and back off from absent on edit', async () => {
     const onSubmit = vi.fn()
     renderWithClient(
-      <CustomerForm
+      <OrganizationForm
         title="Modifica cliente"
         open
         onOpenChange={vi.fn()}
         customFields={[VIP]}
-        initial={customerToFormValues(BASE_CUSTOMER)}
+        initial={organizationToFormValues(BASE_CUSTOMER)}
         onSubmit={onSubmit}
       />,
     )
@@ -250,13 +250,13 @@ describe('CustomerForm', () => {
 
   it('clears a custom field the user emptied with null, and a native one with an empty string', async () => {
     const onSubmit = vi.fn()
-    const initial = customerToFormValues({
+    const initial = organizationToFormValues({
       ...BASE_CUSTOMER,
       city: 'Milano',
       custom_fields: { 'settore': 'PMI' },
     })
     renderWithClient(
-      <CustomerForm
+      <OrganizationForm
         title="Modifica cliente"
         open
         onOpenChange={vi.fn()}
@@ -319,7 +319,7 @@ describe('the «Azienda» picker (REB-626)', () => {
   it('shows the azienda the nation proposes, follows the nation, and sends what it shows', async () => {
     const onSubmit = vi.fn()
     renderWithLegalEntities(
-      <CustomerForm title="Nuovo cliente" open onOpenChange={() => {}} customFields={[]} onSubmit={onSubmit} />,
+      <OrganizationForm title="Nuovo cliente" open onOpenChange={() => {}} customFields={[]} onSubmit={onSubmit} />,
     )
     const picker = screen.getByRole('combobox', { name: 'Azienda' })
     await waitFor(() => expect(picker).toHaveTextContent('humancraft'))
@@ -338,7 +338,7 @@ describe('the «Azienda» picker (REB-626)', () => {
   it('keeps a hand-picked azienda whatever the nation says afterwards', async () => {
     const onSubmit = vi.fn()
     renderWithLegalEntities(
-      <CustomerForm title="Nuovo cliente" open onOpenChange={() => {}} customFields={[]} onSubmit={onSubmit} />,
+      <OrganizationForm title="Nuovo cliente" open onOpenChange={() => {}} customFields={[]} onSubmit={onSubmit} />,
     )
     const picker = screen.getByRole('combobox', { name: 'Azienda' })
     await waitFor(() => expect(picker).toHaveTextContent('humancraft'))
@@ -358,12 +358,12 @@ describe('the «Azienda» picker (REB-626)', () => {
   it('while editing shows the stored azienda, asks for no proposal, and sends it only when changed', async () => {
     const onSubmit = vi.fn()
     renderWithLegalEntities(
-      <CustomerForm
+      <OrganizationForm
         title="Modifica cliente"
         open
         onOpenChange={() => {}}
         customFields={[]}
-        initial={customerToFormValues(BASE_CUSTOMER)}
+        initial={organizationToFormValues(BASE_CUSTOMER)}
         onSubmit={onSubmit}
       />,
     )
@@ -383,7 +383,7 @@ describe('the «Azienda» picker (REB-626)', () => {
   it('is not drawn in a one-legal-entity space, and the body carries no azienda', async () => {
     const onSubmit = vi.fn()
     renderWithClient(
-      <CustomerForm title="Nuovo cliente" open onOpenChange={() => {}} customFields={[]} onSubmit={onSubmit} />,
+      <OrganizationForm title="Nuovo cliente" open onOpenChange={() => {}} customFields={[]} onSubmit={onSubmit} />,
     )
     expect(screen.queryByRole('combobox', { name: 'Azienda' })).not.toBeInTheDocument()
     await userEvent.type(screen.getByLabelText(/Ragione sociale/), 'Sola')
@@ -410,12 +410,12 @@ describe('a customer stranded on a deactivated azienda (REB-626, Greptile on PR 
     render(
       <QueryClientProvider client={client}>
         <LegalEntityContext value={ONE_LEFT}>
-          <CustomerForm
+          <OrganizationForm
             title="Modifica cliente"
             open
             onOpenChange={() => {}}
             customFields={[]}
-            initial={customerToFormValues({ ...BASE_CUSTOMER, legal_entity_id: 'a-gone' })}
+            initial={organizationToFormValues({ ...BASE_CUSTOMER, legal_entity_id: 'a-gone' })}
             onSubmit={onSubmit}
           />
         </LegalEntityContext>
@@ -435,12 +435,12 @@ describe('a customer stranded on a deactivated azienda (REB-626, Greptile on PR 
     render(
       <QueryClientProvider client={client}>
         <LegalEntityContext value={ONE_LEFT}>
-          <CustomerForm
+          <OrganizationForm
             title="Modifica cliente"
             open
             onOpenChange={() => {}}
             customFields={[]}
-            initial={customerToFormValues(BASE_CUSTOMER)}
+            initial={organizationToFormValues(BASE_CUSTOMER)}
             onSubmit={vi.fn()}
           />
         </LegalEntityContext>
@@ -475,12 +475,12 @@ describe('the picker beside a custom field that happens to be named azienda_id (
     render(
       <QueryClientProvider client={client}>
         <LegalEntityContext value={TWO}>
-          <CustomerForm
+          <OrganizationForm
             title="Modifica cliente"
             open
             onOpenChange={() => {}}
             customFields={[HOMONYM]}
-            initial={customerToFormValues(BASE_CUSTOMER)}
+            initial={organizationToFormValues(BASE_CUSTOMER)}
             onSubmit={onSubmit}
           />
         </LegalEntityContext>
@@ -506,12 +506,12 @@ describe('the «Responsabile» picker (REB-773)', () => {
   it('is not drawn without the people to choose from, and the body carries no owner', async () => {
     const onSubmit = vi.fn()
     renderWithClient(
-      <CustomerForm
+      <OrganizationForm
         title="Modifica cliente"
         open
         onOpenChange={() => {}}
         customFields={[]}
-        initial={customerToFormValues({ ...BASE_CUSTOMER, owner_id: 'u-1' })}
+        initial={organizationToFormValues({ ...BASE_CUSTOMER, owner_id: 'u-1' })}
         onSubmit={onSubmit}
       />,
     )
@@ -523,13 +523,13 @@ describe('the «Responsabile» picker (REB-773)', () => {
   it('shows the stored owner and sends nothing while it is unchanged', async () => {
     const onSubmit = vi.fn()
     renderWithClient(
-      <CustomerForm
+      <OrganizationForm
         title="Modifica cliente"
         open
         onOpenChange={() => {}}
         customFields={[]}
         owners={OWNERS}
-        initial={customerToFormValues({ ...BASE_CUSTOMER, owner_id: 'u-1' })}
+        initial={organizationToFormValues({ ...BASE_CUSTOMER, owner_id: 'u-1' })}
         onSubmit={onSubmit}
       />,
     )
@@ -541,13 +541,13 @@ describe('the «Responsabile» picker (REB-773)', () => {
   it('sends the person chosen instead', async () => {
     const onSubmit = vi.fn()
     renderWithClient(
-      <CustomerForm
+      <OrganizationForm
         title="Modifica cliente"
         open
         onOpenChange={() => {}}
         customFields={[]}
         owners={OWNERS}
-        initial={customerToFormValues({ ...BASE_CUSTOMER, owner_id: 'u-1' })}
+        initial={organizationToFormValues({ ...BASE_CUSTOMER, owner_id: 'u-1' })}
         onSubmit={onSubmit}
       />,
     )
@@ -560,13 +560,13 @@ describe('the «Responsabile» picker (REB-773)', () => {
   it('sends null for «Nessuno»', async () => {
     const onSubmit = vi.fn()
     renderWithClient(
-      <CustomerForm
+      <OrganizationForm
         title="Modifica cliente"
         open
         onOpenChange={() => {}}
         customFields={[]}
         owners={OWNERS}
-        initial={customerToFormValues({ ...BASE_CUSTOMER, owner_id: 'u-1' })}
+        initial={organizationToFormValues({ ...BASE_CUSTOMER, owner_id: 'u-1' })}
         onSubmit={onSubmit}
       />,
     )
@@ -581,13 +581,13 @@ describe('the contact points of a customer', () => {
   const STORED = [
     { id: 'cp1', kind: 'email', value: 'info@acme.it', label: 'work', note: null, is_primary: true, position: 0 },
     { id: 'cp2', kind: 'phone', value: '02 123456', label: 'billing', note: 'centralino', is_primary: true, position: 1 },
-  ] as Customer['contact_points']
-  const WITH_POINTS: Customer = { ...BASE_CUSTOMER, contact_points: STORED }
+  ] as Organization['contact_points']
+  const WITH_POINTS: Organization = { ...BASE_CUSTOMER, contact_points: STORED }
 
   it('sends the list typed on a new customer, with no id, no position and no flat email or phone', async () => {
     const onSubmit = vi.fn()
     renderWithClient(
-      <CustomerForm title="Nuovo cliente" open onOpenChange={vi.fn()} customFields={[]} onSubmit={onSubmit} />,
+      <OrganizationForm title="Nuovo cliente" open onOpenChange={vi.fn()} customFields={[]} onSubmit={onSubmit} />,
     )
 
     await userEvent.type(screen.getByLabelText(/Ragione sociale/), 'ACME Srl')
@@ -606,12 +606,12 @@ describe('the contact points of a customer', () => {
   it('says nothing about the list when it was left alone on an edit', async () => {
     const onSubmit = vi.fn()
     renderWithClient(
-      <CustomerForm
+      <OrganizationForm
         title="Modifica cliente"
         open
         onOpenChange={vi.fn()}
         customFields={[]}
-        initial={customerToFormValues(WITH_POINTS)}
+        initial={organizationToFormValues(WITH_POINTS)}
         onSubmit={onSubmit}
       />,
     )
@@ -625,12 +625,12 @@ describe('the contact points of a customer', () => {
   it('sends the whole list, without id or position, once a point changed', async () => {
     const onSubmit = vi.fn()
     renderWithClient(
-      <CustomerForm
+      <OrganizationForm
         title="Modifica cliente"
         open
         onOpenChange={vi.fn()}
         customFields={[]}
-        initial={customerToFormValues(WITH_POINTS)}
+        initial={organizationToFormValues(WITH_POINTS)}
         onSubmit={onSubmit}
       />,
     )
@@ -647,12 +647,12 @@ describe('the contact points of a customer', () => {
   it('clears the stored list with an empty one when every point is removed', async () => {
     const onSubmit = vi.fn()
     renderWithClient(
-      <CustomerForm
+      <OrganizationForm
         title="Modifica cliente"
         open
         onOpenChange={vi.fn()}
         customFields={[]}
-        initial={customerToFormValues(WITH_POINTS)}
+        initial={organizationToFormValues(WITH_POINTS)}
         onSubmit={onSubmit}
       />,
     )
@@ -667,7 +667,7 @@ describe('the contact points of a customer', () => {
   it('refuses to send a bad address and says so under its row', async () => {
     const onSubmit = vi.fn()
     renderWithClient(
-      <CustomerForm title="Nuovo cliente" open onOpenChange={vi.fn()} customFields={[]} onSubmit={onSubmit} />,
+      <OrganizationForm title="Nuovo cliente" open onOpenChange={vi.fn()} customFields={[]} onSubmit={onSubmit} />,
     )
 
     await userEvent.click(screen.getByRole('button', { name: 'Aggiungi recapito' }))
@@ -680,12 +680,12 @@ describe('the contact points of a customer', () => {
 
   it('puts the server sentence on the row it names, not in a banner', () => {
     renderWithClient(
-      <CustomerForm
+      <OrganizationForm
         title="Modifica cliente"
         open
         onOpenChange={vi.fn()}
         customFields={[]}
-        initial={customerToFormValues(WITH_POINTS)}
+        initial={organizationToFormValues(WITH_POINTS)}
         problem={{
           type: 'about:blank',
           title: 'Dati non validi',

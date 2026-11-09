@@ -11,14 +11,14 @@ from sqlalchemy.orm import Session
 from pigrocrm.core.activities.service import ActivityService
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.auth.models import User
-from pigrocrm.core.customers.schemas import CustomerCreate
-from pigrocrm.core.customers.service import CustomerService
 from pigrocrm.core.deals.schemas import DealCreate
 from pigrocrm.core.deals.service import DealService
 from pigrocrm.core.errors import NoteNotChangeable, NotFound, PermissionDenied
 from pigrocrm.core.notes.models import Note
 from pigrocrm.core.notes.schemas import NoteCreate, NoteUpdate
 from pigrocrm.core.notes.service import NoteService
+from pigrocrm.core.organizations.schemas import OrganizationCreate
+from pigrocrm.core.organizations.service import OrganizationService
 from pigrocrm.core.people.schemas import PersonCreate
 from pigrocrm.core.people.service import PersonService
 
@@ -39,7 +39,7 @@ def _actor(user: User, type_: str = "user") -> Actor:
 
 @pytest.fixture
 def customer_id(db_session: Session) -> UUID:
-    return CustomerService(db_session).create(CustomerCreate(legal_name="ACME"), SYSTEM).id
+    return OrganizationService(db_session).create(OrganizationCreate(legal_name="ACME"), SYSTEM).id
 
 
 @pytest.fixture
@@ -52,10 +52,10 @@ def records(db_session: Session, customer_id: UUID, seeded_open_stage_id: UUID) 
         SYSTEM,
     )
     person = PersonService(db_session).create(PersonCreate(first_name="Anna"), SYSTEM)
-    return {"customer": customer_id, "deal": deal.id, "person": person.id}
+    return {"organization": customer_id, "deal": deal.id, "person": person.id}
 
 
-@pytest.mark.parametrize("kind", ["customer", "deal", "person"])
+@pytest.mark.parametrize("kind", ["organization", "deal", "person"])
 def test_a_note_is_signed_dated_and_sourced_by_the_actor_not_the_caller(
     db_session: Session, records: dict[str, UUID], kind: str
 ) -> None:
@@ -87,7 +87,7 @@ def test_the_source_follows_the_actor_type(db_session: Session, records: dict[st
         "rebase": REBASE,
     }
     for source, actor in by.items():
-        note = service.add("customer", records["customer"], NoteCreate(text=source), actor)
+        note = service.add("organization", records["organization"], NoteCreate(text=source), actor)
         assert note.source == source
         # Only a member has a name and an id to sign with.
         assert (note.author_id is not None) == (source in {"web", "mcp"})
@@ -146,7 +146,7 @@ def test_the_thread_is_newest_first_without_the_deleted_and_can_be_capped(
     first = service.add("person", records["person"], NoteCreate(text="uno"), boss)
     service.add("person", records["person"], NoteCreate(text="due"), boss)
     service.add("person", records["person"], NoteCreate(text="tre"), boss)
-    service.add("customer", records["customer"], NoteCreate(text="di un altro"), boss)
+    service.add("organization", records["organization"], NoteCreate(text="di un altro"), boss)
 
     assert [n.text for n in service.list_for_entity("person", records["person"], boss)] == [
         "tre",
@@ -206,12 +206,12 @@ def test_somebody_else_cannot_change_a_note_unless_they_are_an_admin(
     boss = _member(db_session, "Capo", "admin")
     service = NoteService(db_session)
     note = service.add(
-        "customer", records["customer"], NoteCreate(text="Di Giulia"), _actor(giulia)
+        "organization", records["organization"], NoteCreate(text="Di Giulia"), _actor(giulia)
     )
 
     # The flag says it before the click.
-    [as_marco] = service.list_for_entity("customer", records["customer"], _actor(marco))
-    [as_boss] = service.list_for_entity("customer", records["customer"], _actor(boss))
+    [as_marco] = service.list_for_entity("organization", records["organization"], _actor(marco))
+    [as_boss] = service.list_for_entity("organization", records["organization"], _actor(boss))
     assert (as_marco.editable, as_boss.editable) == (False, True)
     with pytest.raises(NoteNotChangeable):
         service.update(note.id, NoteUpdate(text="Di Marco"), _actor(marco))
@@ -222,7 +222,7 @@ def test_somebody_else_cannot_change_a_note_unless_they_are_an_admin(
         "Corretta dal capo"
     )
     service.delete(note.id, _actor(boss))
-    assert service.list_for_entity("customer", records["customer"], _actor(boss)) == []
+    assert service.list_for_entity("organization", records["organization"], _actor(boss)) == []
 
 
 @pytest.mark.parametrize("writer", [SYSTEM, REBASE], ids=["system", "rebase"])
@@ -348,7 +348,7 @@ def test_the_first_note_on_creation_is_bounded_like_any_note() -> None:
     from pigrocrm.core.notes.schemas import NOTE_MAX_LENGTH
 
     for create in (
-        lambda note: CustomerCreate(legal_name="A", note=note),
+        lambda note: OrganizationCreate(legal_name="A", note=note),
         lambda note: PersonCreate(first_name="A", note=note),
         lambda note: DealCreate(name="A", customer_id=uuid4(), note=note),
     ):
@@ -363,12 +363,12 @@ def test_the_count_of_a_thread_ignores_deleted_notes_and_the_cap(
     boss = _actor(_member(db_session, "Capo", "admin"))
     service = NoteService(db_session)
     notes = [
-        service.add("customer", records["customer"], NoteCreate(text=str(n)), boss)
+        service.add("organization", records["organization"], NoteCreate(text=str(n)), boss)
         for n in range(4)
     ]
     service.delete(notes[0].id, boss)
-    assert service.count_for_entity("customer", records["customer"], boss) == 3
-    assert len(service.list_for_entity("customer", records["customer"], boss, limit=2)) == 2
+    assert service.count_for_entity("organization", records["organization"], boss) == 3
+    assert len(service.list_for_entity("organization", records["organization"], boss, limit=2)) == 2
 
 
 def test_a_note_on_creation_is_the_first_note_written_by_the_creating_actor(
@@ -376,8 +376,8 @@ def test_a_note_on_creation_is_the_first_note_written_by_the_creating_actor(
 ) -> None:
     giulia = _member(db_session, "Giulia Bianchi")
     actor = _actor(giulia, "mcp")
-    customer = CustomerService(db_session).create(
-        CustomerCreate(legal_name="Beta", note="Cliente da una mail."), actor
+    customer = OrganizationService(db_session).create(
+        OrganizationCreate(legal_name="Beta", note="Cliente da una mail."), actor
     )
     deal = DealService(db_session).create(
         DealCreate(
@@ -394,7 +394,7 @@ def test_a_note_on_creation_is_the_first_note_written_by_the_creating_actor(
     service = NoteService(db_session)
 
     for kind, record, text in (
-        ("customer", customer.id, "Cliente da una mail."),
+        ("organization", customer.id, "Cliente da una mail."),
         ("deal", deal.id, "Primo contatto."),
         ("person", person.id, "Referente."),
     ):
@@ -408,10 +408,10 @@ def test_a_note_on_creation_is_the_first_note_written_by_the_creating_actor(
 def test_an_absent_or_blank_note_on_creation_makes_no_note(
     db_session: Session, empty: str | None
 ) -> None:
-    customer = CustomerService(db_session).create(
-        CustomerCreate(legal_name="Gamma", note=empty), SYSTEM
+    customer = OrganizationService(db_session).create(
+        OrganizationCreate(legal_name="Gamma", note=empty), SYSTEM
     )
-    assert NoteService(db_session).list_for_entity("customer", customer.id, SYSTEM) == []
+    assert NoteService(db_session).list_for_entity("organization", customer.id, SYSTEM) == []
 
 
 def test_a_creation_that_fails_leaves_no_note(db_session: Session) -> None:
@@ -425,13 +425,13 @@ def test_a_creation_that_fails_leaves_no_note(db_session: Session) -> None:
 def test_the_read_schemas_of_the_three_records_carry_no_note_and_updates_refuse_one(
     db_session: Session, records: dict[str, UUID]
 ) -> None:
-    from pigrocrm.core.customers.schemas import CustomerRead, CustomerUpdate
     from pigrocrm.core.deals.schemas import DealRead, DealUpdate
+    from pigrocrm.core.organizations.schemas import OrganizationRead, OrganizationUpdate
     from pigrocrm.core.people.schemas import PersonRead, PersonUpdate
 
-    for read in (CustomerRead, DealRead, PersonRead):
+    for read in (OrganizationRead, DealRead, PersonRead):
         assert "note" not in read.model_fields
-    for update in (CustomerUpdate, DealUpdate, PersonUpdate):
+    for update in (OrganizationUpdate, DealUpdate, PersonUpdate):
         with pytest.raises(ValidationError):
             update.model_validate({"note": "x"})
 
@@ -439,6 +439,6 @@ def test_the_read_schemas_of_the_three_records_carry_no_note_and_updates_refuse_
 def test_the_note_is_not_a_native_field_any_more() -> None:
     from pigrocrm.core.schema_registry import native_fields
 
-    for kind in ("customer", "person", "deal"):
+    for kind in ("organization", "person", "deal"):
         assert "note" not in native_fields(kind)
     assert "note" in native_fields("task")

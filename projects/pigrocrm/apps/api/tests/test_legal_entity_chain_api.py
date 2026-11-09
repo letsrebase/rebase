@@ -43,7 +43,7 @@ def _second_legal_entity(session: Session, name: str = "rebase ltd", country: st
 
 
 def _customer(client: TestClient, name: str, **extra: Any) -> dict[str, Any]:
-    created = client.post("/api/customers", json={"legal_name": name, **extra})
+    created = client.post("/api/organizations", json={"legal_name": name, **extra})
     assert created.status_code == 201, created.text
     return dict(created.json())
 
@@ -105,15 +105,15 @@ def test_to_customer_gets_the_proposal_or_keeps_the_legal_entity_named(
     assert proposed["legal_entity_id"] == british
     named = _customer(logged_in, "Oltre Ltd", country="GB", legal_entity_id=default)
     assert named["legal_entity_id"] == default
-    read_back = logged_in.get(f"/api/customers/{named['id']}").json()
+    read_back = logged_in.get(f"/api/organizations/{named['id']}").json()
     assert read_back["legal_entity_id"] == default
 
-    moved = logged_in.patch(f"/api/customers/{named['id']}", json={"legal_entity_id": british})
+    moved = logged_in.patch(f"/api/organizations/{named['id']}", json={"legal_entity_id": british})
     assert moved.status_code == 200, moved.text
     assert moved.json()["legal_entity_id"] == british
 
     unknown = logged_in.post(
-        "/api/customers", json={"legal_name": "Nessuna", "legal_entity_id": str(uuid4())}
+        "/api/organizations", json={"legal_name": "Nessuna", "legal_entity_id": str(uuid4())}
     )
     assert unknown.status_code == 404, unknown.text
     assert unknown.json()["code"] == "not_found"
@@ -126,7 +126,7 @@ def test_an_inactive_legal_entity_is_refused_on_to_customer_naming_the_field(
     api_session.add(closed)
     api_session.flush()
     refused = logged_in.post(
-        "/api/customers", json={"legal_name": "X", "legal_entity_id": str(closed.id)}
+        "/api/organizations", json={"legal_name": "X", "legal_entity_id": str(closed.id)}
     )
     assert refused.status_code == 422, refused.text
     assert refused.json()["field"] == "legal_entity_id"
@@ -211,7 +211,7 @@ def test_every_list_route_narrows_to_one_legal_entity(
     assert shared.json()["legal_entity_id"] is None
 
     for path in (
-        "/api/customers",
+        "/api/organizations",
         "/api/deals",
         "/api/contracts",
         "/api/documents",
@@ -255,7 +255,7 @@ def test_the_openapi_document_declares_the_legal_entity_on_every_list_and_the_pr
 ) -> None:
     schema = logged_in.get("/openapi.json").json()
     for path in (
-        "/api/customers",
+        "/api/organizations",
         "/api/deals",
         "/api/contracts",
         "/api/documents",
@@ -268,5 +268,5 @@ def test_the_openapi_document_declares_the_legal_entity_on_every_list_and_the_pr
         names = {p["name"] for p in schema["paths"][path]["get"].get("parameters", [])}
         assert "legal_entity_id" in names, path
     assert "get" in schema["paths"]["/api/legal-entities/suggestion"]
-    for model in ("CustomerRead", "DealRead", "ContractRead", "DocumentRead", "CostRead"):
+    for model in ("OrganizationRead", "DealRead", "ContractRead", "DocumentRead", "CostRead"):
         assert "legal_entity_id" in schema["components"]["schemas"][model]["properties"], model

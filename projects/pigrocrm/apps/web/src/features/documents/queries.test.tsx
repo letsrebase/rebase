@@ -62,7 +62,7 @@ describe('useDocuments', () => {
 
 describe('useDocument', () => {
   it('never fires with an empty id', () => {
-    // B1: `useCustomer('')` once produced a 307 to the *list* endpoint with an
+    // B1: `useOrganization('')` once produced a 307 to the *list* endpoint with an
     // absolute URL that bypassed Vite's proxy entirely. Disabling the query is the
     // structural fix; this test is what keeps a refactor from undoing it.
     const { result } = renderHook(() => useDocument(''), { wrapper })

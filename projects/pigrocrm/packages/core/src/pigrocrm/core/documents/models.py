@@ -41,7 +41,7 @@ class Document(Base, PrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
     __tablename__ = "documents"
 
     customer_id: Mapped[UUID | None] = mapped_column(
-        ForeignKey("customers.id"), default=None, index=True
+        ForeignKey("organizations.id"), default=None, index=True
     )
     deal_id: Mapped[UUID | None] = mapped_column(ForeignKey("deals.id"), default=None, index=True)
     # REB-358 §11: a contract's own signed document (and any later addendum). Widens
@@ -86,7 +86,7 @@ class Document(Base, PrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
         ),
         Index("ix_documents_custom_fields", "custom_fields", postgresql_using="gin"),
         # The global search matches a document by its title -- see
-        # `Customer.__table_args__` for why the index is partial on `deleted_at IS NULL`
+        # `Organization.__table_args__` for why the index is partial on `deleted_at IS NULL`
         # with no `lower()` in the expression.
         Index(
             "ix_documents_title_trgm",
@@ -95,7 +95,7 @@ class Document(Base, PrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
             postgresql_ops={"title": "gin_trgm_ops"},
             postgresql_where=text("deleted_at IS NULL"),
         ),
-        # Residuo R9. See `customers/models.py` for why each admitted sort key costs a
+        # Residuo R9. See `organizations/models.py` for why each admitted sort key costs a
         # `(column, id)` B-tree and why none of them is partial.
         Index("ix_documents_created_at_id", "created_at", "id"),
         Index("ix_documents_updated_at_id", "updated_at", "id"),

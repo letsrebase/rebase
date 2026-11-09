@@ -96,7 +96,7 @@ class ContactPoint(Base, PrimaryKeyMixin):
         ForeignKey("people.id", ondelete="CASCADE"), default=None, index=True
     )
     customer_id: Mapped[UUID | None] = mapped_column(
-        ForeignKey("customers.id", ondelete="CASCADE"), default=None, index=True
+        ForeignKey("organizations.id", ondelete="CASCADE"), default=None, index=True
     )
     kind: Mapped[str] = mapped_column(String(10), nullable=False)
     value: Mapped[str] = mapped_column(String(VALUE_MAX_LENGTH), nullable=False)

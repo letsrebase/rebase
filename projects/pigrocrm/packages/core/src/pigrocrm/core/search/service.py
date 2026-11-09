@@ -63,7 +63,7 @@ class SearchService:
         return SearchResults(
             term=term,
             groups=[
-                self.repo.customers(term, limit, legal_entity),
+                self.repo.organizations(term, limit, legal_entity),
                 self.repo.people(term, limit, legal_entity),
                 self.repo.deals(term, limit, legal_entity)
                 if modules is None or "deals" in modules

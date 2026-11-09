@@ -27,7 +27,7 @@ function answering(byStatus: Record<string, unknown[]>, failing: string[] = []) 
       if (failing.includes(status)) return Promise.resolve(refused(500, { detail: 'Il database non risponde.', code: 'internal', title: 'x', status: 500, instance: '/' }))
       return Promise.resolve(ok({ items: byStatus[status] ?? [] }))
     }
-    if (path === '/api/customers/{customer_id}') {
+    if (path === '/api/organizations/{organization_id}') {
       return Promise.resolve(ok({ id: CUSTOMER_ID, legal_name: 'Studio Rossi & Associati' }))
     }
     if (path === '/api/contracts/{contract_id}') {

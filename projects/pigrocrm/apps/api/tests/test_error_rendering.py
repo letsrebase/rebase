@@ -79,7 +79,7 @@ def test_the_openapi_document_declares_both_shapes_a_422_can_actually_be() -> No
     assert "HTTPValidationError" in schemas, "the $ref below would point at nothing"
     assert "ValidationError" in schemas, "HTTPValidationError.detail[] itself $refs this"
 
-    op = schema["paths"]["/api/customers/{customer_id}"]["get"]
+    op = schema["paths"]["/api/organizations/{organization_id}"]["get"]
     content = op["responses"]["422"]["content"]
     assert set(content) == {"application/problem+json", "application/json"}
     assert content["application/json"]["schema"] == {

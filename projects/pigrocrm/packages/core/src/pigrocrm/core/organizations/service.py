@@ -10,19 +10,6 @@ from pigrocrm.core.actor import Actor
 from pigrocrm.core.auth.repository import UserRepository
 from pigrocrm.core.contact_points.schemas import ContactPointIn
 from pigrocrm.core.contact_points.service import company_email_addresses, prepare, write_points
-from pigrocrm.core.customers.models import Customer
-from pigrocrm.core.customers.repository import CustomerRepository
-from pigrocrm.core.customers.schemas import (
-    CUSTOMER_SORTS,
-    CustomerCreate,
-    CustomerFromSuggestion,
-    CustomerListQuery,
-    CustomerPage,
-    CustomerRead,
-    CustomersFromSuggestions,
-    CustomerUpdate,
-    PersonFromSuggestion,
-)
 from pigrocrm.core.db import encode_cursor
 from pigrocrm.core.errors import Conflict, DomainError, NotFound, ValidationFailed
 from pigrocrm.core.fields.custom import merge_custom
@@ -33,6 +20,19 @@ from pigrocrm.core.gmail.query import customer_domain
 from pigrocrm.core.gmail.roster import AddressRoster
 from pigrocrm.core.legal_entities.service import LegalEntityService
 from pigrocrm.core.notes.writer import append_first_note
+from pigrocrm.core.organizations.models import Organization
+from pigrocrm.core.organizations.repository import OrganizationRepository
+from pigrocrm.core.organizations.schemas import (
+    ORGANIZATION_SORTS,
+    OrganizationCreate,
+    OrganizationFromSuggestion,
+    OrganizationListQuery,
+    OrganizationPage,
+    OrganizationRead,
+    OrganizationsFromSuggestions,
+    OrganizationUpdate,
+    PersonFromSuggestion,
+)
 from pigrocrm.core.people.schemas import (
     LAST_NAME_MAX_LENGTH,
     NAME_MAX_LENGTH,
@@ -43,12 +43,12 @@ from pigrocrm.core.people.service import PersonService
 from pigrocrm.core.schemas import reject_cleared_columns, supplied_changes
 
 # Typed as the fields module's own EntityType (not a bare `str`) so that passing it
-# straight into `specs_for` type-checks under mypy strict -- a plain `ENTITY = "customer"`
+# straight into `specs_for` type-checks under mypy strict -- a plain `ENTITY = "organization"`
 # widens to `str` at the module level, which `specs_for(entity_type: EntityType)` then
 # rejects. Every other call site here (NotFound, ValidationFailed, Conflict,
 # ActivityService.record, validate_custom_fields) only asks for `str`, so the narrower
 # type costs nothing there.
-ENTITY: EntityType = "customer"
+ENTITY: EntityType = "organization"
 # `.fullmatch()`, not `.match()`, is load-bearing: `.match()` with a `$`-anchored
 # pattern accepts a trailing "\n" -- `$` matches just before a final newline, not only
 # at the true end of the string -- so "12345678901\n" (12 characters, one more than
@@ -75,7 +75,7 @@ def _check_fiscal(data: dict[str, Any], country: str) -> None:
         data["sdi_code"] = None
 
     vat_number = data.get("vat_number")
-    # The eleven-digit rule is Italian, so it is applied to Italian customers and to
+    # The eleven-digit rule is Italian, so it is applied to Italian organizations and to
     # nobody else. It used to apply to everyone, which made a foreign customer
     # unrepresentable: a UK company's VAT number ("123456789", nine digits, and GB VATs
     # are not always numeric at all) was refused, so the only way to record it was the
@@ -113,10 +113,10 @@ def _person_name(display: str, address: str) -> tuple[str, str | None]:
     return first[:NAME_MAX_LENGTH], rest.strip()[:LAST_NAME_MAX_LENGTH] or None
 
 
-class CustomerService:
+class OrganizationService:
     def __init__(self, session: Session) -> None:
         self.session = session
-        self.repo = CustomerRepository(session)
+        self.repo = OrganizationRepository(session)
         self.fields = FieldDefinitionService(session)
         self.activities = ActivityService(session)
         self.legal_entities = LegalEntityService(session)
@@ -153,7 +153,7 @@ class CustomerService:
             )
         return owner.id
 
-    def _insert(self, data: CustomerCreate, actor: Actor) -> Customer:
+    def _insert(self, data: OrganizationCreate, actor: Actor) -> Organization:
         """The write half of `create`, without the commit (design record
         `2026-09-23-mastro-invoice-import-onto-pigrocrm-design.md` §7 item 5):
         flushes the row and records its own "created" activity, on `self.session`,
@@ -161,14 +161,14 @@ class CustomerService:
 
         This is the shape mastro's own `confirmClientContractProposal` takes an
         optional `tx: DbExecutor` for instead of opening its own transaction --
-        `InvoiceService.confirm_import` is the caller that needs it: a `Customer`
+        `InvoiceService.confirm_import` is the caller that needs it: a `Organization`
         this method inserts must not outlive a register write that fails a moment
         later, so both have to land in one commit or neither does. `create` is
         `self.session` already; a caller sharing that same session (`InvoiceService`
-        composes its own `CustomerService(self.session)`) inserts the customer into
+        composes its own `OrganizationService(self.session)`) inserts the customer into
         the exact transaction its own write is about to join.
         """
-        actor.require_write("create_customer")
+        actor.require_write("create_organization")
         payload = data.model_dump()
         # Not a column: the first note of the customer, written below by the creating actor.
         first_note = payload.pop("note", None)
@@ -185,7 +185,7 @@ class CustomerService:
         )
         payload["owner_id"] = self._owner_for(payload.get("owner_id"), actor, creating=True)
 
-        customer = self.repo.add(Customer(**payload))
+        customer = self.repo.add(Organization(**payload))
         write_points(self.session, customer, data.contact_points)
         self.activities.record(
             ENTITY, customer.id, "created", actor, {"legal_name": customer.legal_name}
@@ -208,16 +208,16 @@ class CustomerService:
             )
         return legal_entity.id
 
-    def create(self, data: CustomerCreate, actor: Actor) -> CustomerRead:
+    def create(self, data: OrganizationCreate, actor: Actor) -> OrganizationRead:
         customer = self._insert(data, actor)
         self.session.commit()
-        return CustomerRead.model_validate(customer)
+        return OrganizationRead.model_validate(customer)
 
     def create_from_suggestions(
-        self, data: CustomersFromSuggestions, actor: Actor
-    ) -> list[CustomerRead]:
-        """The customers a person ticked among the proposals of the connected mailbox
-        (`GmailSyncService.suggest_customers`, spec 2026-09-16 §5, REB-223), with their
+        self, data: OrganizationsFromSuggestions, actor: Actor
+    ) -> list[OrganizationRead]:
+        """The organizations a person ticked among the proposals of the connected mailbox
+        (`GmailSyncService.suggest_organizations`, spec 2026-09-16 §5, REB-223), with their
         people, in one transaction: all of them or none.
 
         Each customer is created as «Nuovo cliente» creates one (`_insert`, its own
@@ -231,7 +231,7 @@ class CustomerService:
         spend the owner's quota again; it grants nothing «Nuovo cliente» and the «Persone»
         page do not already grant the same person.
         """
-        actor.require_write("create_customer")
+        actor.require_write("create_organization")
         # Before anything is read: a concurrent import of the same proposal waits here
         # and then sees what this one committed (`lock_imports`).
         self.repo.lock_imports()
@@ -240,21 +240,21 @@ class CustomerService:
         taken = set(
             roster.domains_taken(
                 domain
-                for choice in data.customers
+                for choice in data.organizations
                 if (domain := customer_domain(website=choice.domain, email=None))
             )
         )
         known = set(
             roster.known_among(
                 person.address.strip().lower()
-                for choice in data.customers
+                for choice in data.organizations
                 for person in choice.people
             )
         )
         # Everything is checked before anything is written, so a refusal names the
         # first thing wrong and leaves the session as it found it.
-        plan: list[tuple[str, CustomerFromSuggestion, list[tuple[str, str]]]] = []
-        for choice in data.customers:
+        plan: list[tuple[str, OrganizationFromSuggestion, list[tuple[str, str]]]] = []
+        for choice in data.organizations:
             domain = customer_domain(website=choice.domain, email=None)
             if domain is None or domain != choice.domain.strip().lower():
                 raise ValidationFailed(
@@ -282,11 +282,11 @@ class CustomerService:
             plan.append((domain, choice, people))
 
         persons = PersonService(self.session)
-        created: list[Customer] = []
+        created: list[Organization] = []
         try:
             for domain, choice, people in plan:
                 customer = self._insert(
-                    CustomerCreate(legal_name=choice.legal_name, website=domain), actor
+                    OrganizationCreate(legal_name=choice.legal_name, website=domain), actor
                 )
                 for address, display in people:
                     first_name, last_name = _person_name(display, address)
@@ -305,7 +305,7 @@ class CustomerService:
             self.session.rollback()
             raise
         self.session.commit()
-        return [CustomerRead.model_validate(customer) for customer in created]
+        return [OrganizationRead.model_validate(customer) for customer in created]
 
     def add_person_from_mail(
         self, customer_id: UUID, data: PersonFromSuggestion, actor: Actor
@@ -368,8 +368,8 @@ class CustomerService:
         self.session.commit()
         return persons._read(person)
 
-    def update(self, customer_id: UUID, data: CustomerUpdate, actor: Actor) -> CustomerRead:
-        actor.require_write("update_customer")
+    def update(self, customer_id: UUID, data: OrganizationUpdate, actor: Actor) -> OrganizationRead:
+        actor.require_write("update_organization")
         customer = self.repo.get(customer_id)
         if customer is None:
             raise NotFound(ENTITY, customer_id)
@@ -380,7 +380,7 @@ class CustomerService:
         # meaning "remove this key") exactly as given, with no risk of it being
         # confused with the field itself being absent -- see `merge_custom`.
         changes = supplied_changes(data, exclude={"custom_fields", "contact_points"})
-        reject_cleared_columns(ENTITY, Customer, changes)
+        reject_cleared_columns(ENTITY, Organization, changes)
         # The country after this patch, not merely the one it mentions.
         _check_fiscal(changes, changes.get("country") or customer.country)
         if changes.get("legal_entity_id") is not None:
@@ -407,18 +407,18 @@ class CustomerService:
 
         self.activities.record(ENTITY, customer.id, "updated", actor, {"changed": changed})
         self.session.commit()
-        return CustomerRead.model_validate(customer)
+        return OrganizationRead.model_validate(customer)
 
-    def get(self, customer_id: UUID, actor: Actor) -> CustomerRead:
+    def get(self, customer_id: UUID, actor: Actor) -> OrganizationRead:
         customer = self.repo.get(customer_id)
         if customer is None:
             raise NotFound(ENTITY, customer_id)
-        return CustomerRead.model_validate(customer)
+        return OrganizationRead.model_validate(customer)
 
     def soft_delete(self, customer_id: UUID, actor: Actor) -> None:
         """Sets deleted_at. No physical delete exists in this slice: a misread
         instruction from an agent must be reversible."""
-        actor.require_write("delete_customer")
+        actor.require_write("delete_organization")
         customer = self.repo.get(customer_id)
         if customer is None:
             raise NotFound(ENTITY, customer_id)
@@ -440,8 +440,8 @@ class CustomerService:
         self.activities.record(ENTITY, customer.id, "deleted", actor)
         self.session.commit()
 
-    def restore(self, customer_id: UUID, actor: Actor) -> CustomerRead:
-        actor.require_write("restore_customer")
+    def restore(self, customer_id: UUID, actor: Actor) -> OrganizationRead:
+        actor.require_write("restore_organization")
         customer = self.repo.get(customer_id, include_deleted=True)
         if customer is None:
             raise NotFound(ENTITY, customer_id)
@@ -453,7 +453,7 @@ class CustomerService:
         if was_deleted:
             self.activities.record(ENTITY, customer.id, "restored", actor)
         self.session.commit()
-        return CustomerRead.model_validate(customer)
+        return OrganizationRead.model_validate(customer)
 
     # `list` must stay the last method defined in this class -- an unconditional
     # project rule (see `FieldDefinitionService.specs_for`'s docstring and
@@ -463,7 +463,7 @@ class CustomerService:
     # `list` to this method instead of the builtin and fail at import time. No method
     # in this class has that shape today, but the rule does not have a "only when it
     # would currently break" exception -- this is the file People and Deals copy.
-    def list(self, query: CustomerListQuery, actor: Actor) -> CustomerPage:
+    def list(self, query: OrganizationListQuery, actor: Actor) -> OrganizationPage:
         rows = self.repo.list(query)
         has_more = len(rows) > query.limit
         items = rows[: query.limit]
@@ -472,13 +472,13 @@ class CustomerService:
         # `getattr(…, spec.key)` is safe precisely because `spec` came out of the
         # whitelist -- the key is one of three literals declared in this package, never
         # a caller-supplied string.
-        spec = CUSTOMER_SORTS.resolve(query.sort)
+        spec = ORGANIZATION_SORTS.resolve(query.sort)
         next_cursor = (
             encode_cursor(spec, getattr(items[-1], spec.key), items[-1].id)
             if has_more and items
             else None
         )
-        return CustomerPage(
-            items=[CustomerRead.model_validate(c) for c in items],
+        return OrganizationPage(
+            items=[OrganizationRead.model_validate(c) for c in items],
             next_cursor=next_cursor,
         )

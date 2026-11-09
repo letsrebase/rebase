@@ -34,11 +34,11 @@ from sqlalchemy import insert, select
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.contact_points.models import ContactPoint
-from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.db.base import uuid7
 from pigrocrm.core.deals.models import Deal
 from pigrocrm.core.documents.models import Document
 from pigrocrm.core.invoices.models import Invoice
+from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.people.models import Person
 from pigrocrm.core.pipeline.models import PipelineStage
 
@@ -115,31 +115,31 @@ _DEAL_WORDS = (
 )
 _DOC_WORDS = ("Offerta", "Contratto", "Verbale", "Relazione", "Preventivo", "Capitolato")
 
-# `customers.vat_number` is String(11) and the known customer already owns
+# `organizations.vat_number` is String(11) and the known customer already owns
 # "01234567890", so the generated ones start above it and can never collide with it
-# however large `scale.customers` grows -- 10_000_000_000 + 50_000 is still 11 digits.
+# however large `scale.organizations` grows -- 10_000_000_000 + 50_000 is still 11 digits.
 _GENERATED_VAT_NUMBER_BASE = 10_000_000_000
 
 
 @dataclass(frozen=True)
 class CorpusScale:
-    customers: int
+    organizations: int
     people: int
     deals: int
     documents: int
     invoices: int
 
 
-REFERENCE = CorpusScale(customers=500, people=800, deals=2000, documents=1000, invoices=5000)
+REFERENCE = CorpusScale(organizations=500, people=800, deals=2000, documents=1000, invoices=5000)
 # What a behaviour test builds (REB-597): a search that finds
 # a VAT fragment, ranks an exact match first or keeps its order byte-identical does the
-# same over 120 customers as over 500,
+# same over 120 organizations as over 500,
 # and a REFERENCE build is 3.5 to 5s on the runner with the nine trigram indexes maintained
-# on every insert. 120 customers so a term like «Ingegneria» still matches more than ten of
+# on every insert. 120 organizations so a term like «Ingegneria» still matches more than ten of
 # them, which the determinism tests need for their ties to be real, and every table above
 # the forty rows the reshuffle between runs rewrites. REFERENCE stays for the one test
 # whose expected numbers are the reference corpus's own: its row counts.
-SMALL = CorpusScale(customers=120, people=80, deals=200, documents=100, invoices=500)
+SMALL = CorpusScale(organizations=120, people=80, deals=200, documents=100, invoices=500)
 
 # Ten years of a register, whatever the scale. `(anno, numero)` is unique
 # (`uq_invoices_year_number`), so the two cannot be derived from the same modulus: the
@@ -211,7 +211,7 @@ def build_corpus(session: Session, scale: CorpusScale, *, seed: int = 20260821) 
     customer_ids: list[UUID] = []
     customer_rows: list[dict[str, object]] = []
     customer_emails: list[str] = []
-    for index in range(scale.customers):
+    for index in range(scale.organizations):
         cid = uuid7()
         customer_ids.append(cid)
         if index == 0:
@@ -235,7 +235,7 @@ def build_corpus(session: Session, scale: CorpusScale, *, seed: int = 20260821) 
                 "custom_fields": {},
             }
         )
-    session.execute(insert(Customer), customer_rows)
+    session.execute(insert(Organization), customer_rows)
     # The address every generated customer and person has is its primary email point.
     contact_rows: list[dict[str, object]] = [
         _email_point("customer_id", row["id"], address)

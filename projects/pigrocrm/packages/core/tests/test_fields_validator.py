@@ -16,37 +16,41 @@ def spec(key: str, field_type: str, **kw: Any) -> FieldSpec:
 
 
 def test_empty_specs_and_empty_values_produce_empty_result() -> None:
-    assert validate_custom_fields("customer", [], {}) == {}
+    assert validate_custom_fields("organization", [], {}) == {}
 
 
 def test_unknown_key_is_rejected_rather_than_silently_stored() -> None:
     """Silently accepting unknown keys turns JSONB into a junk drawer and hides typos
     from agents that guessed a field name."""
     with pytest.raises(ValidationFailed) as exc:
-        validate_custom_fields("customer", [spec("settore", "text")], {"setore": "IT"})
+        validate_custom_fields("organization", [spec("settore", "text")], {"setore": "IT"})
     assert exc.value.details["field"] == "setore"
     assert "settore" in exc.value.details["reason"]
 
 
 def test_missing_required_field_is_rejected() -> None:
     with pytest.raises(ValidationFailed) as exc:
-        validate_custom_fields("customer", [spec("settore", "text", required=True)], {})
+        validate_custom_fields("organization", [spec("settore", "text", required=True)], {})
     assert exc.value.details["field"] == "settore"
 
 
 def test_required_field_rejects_empty_string() -> None:
     with pytest.raises(ValidationFailed):
         validate_custom_fields(
-            "customer", [spec("settore", "text", required=True)], {"settore": "   "}
+            "organization", [spec("settore", "text", required=True)], {"settore": "   "}
         )
 
 
 def test_optional_field_accepts_none_and_is_dropped() -> None:
-    assert validate_custom_fields("customer", [spec("settore", "text")], {"settore": None}) == {}
+    assert (
+        validate_custom_fields("organization", [spec("settore", "text")], {"settore": None}) == {}
+    )
 
 
 def test_text_is_trimmed() -> None:
-    result = validate_custom_fields("customer", [spec("settore", "text")], {"settore": "  IT  "})
+    result = validate_custom_fields(
+        "organization", [spec("settore", "text")], {"settore": "  IT  "}
+    )
     assert result == {"settore": "IT"}
 
 

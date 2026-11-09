@@ -35,9 +35,6 @@ from pigrocrm.core.activities.models import Activity
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.auth.repository import UserRepository
 from pigrocrm.core.config import Settings
-from pigrocrm.core.customers.models import Customer
-from pigrocrm.core.customers.schemas import CustomerCreate
-from pigrocrm.core.customers.service import CustomerService
 from pigrocrm.core.db import session_factory, today_local
 from pigrocrm.core.db.sidecar import create_database_if_missing, drop_database
 from pigrocrm.core.deals.models import Deal
@@ -60,6 +57,9 @@ from pigrocrm.core.engagements.service import (
 from pigrocrm.core.errors import Conflict, NotFound, ValidationFailed
 from pigrocrm.core.invoices.models import Invoice, InvoiceLine
 from pigrocrm.core.mail import RecordingSender
+from pigrocrm.core.organizations.models import Organization
+from pigrocrm.core.organizations.schemas import OrganizationCreate
+from pigrocrm.core.organizations.service import OrganizationService
 from pigrocrm.core.pipeline.service import PipelineService
 from pigrocrm.core.tenants import (
     Tenant,
@@ -210,7 +210,7 @@ def _row(door: Door, match_id: UUID) -> RebaseEngagement | None:
         )
 
 
-def _count(space: Session, model: type[Customer] | type[Deal], *where: Any) -> int:
+def _count(space: Session, model: type[Organization] | type[Deal], *where: Any) -> int:
     return space.scalar(select(func.count()).select_from(model).where(*where)) or 0
 
 
@@ -292,7 +292,7 @@ def test_first_call_creates_space_customer_and_deal(door: Door) -> None:
     assert _owned(door) == ["ada-lovelace"]
 
     with _space(door, "ada-lovelace") as space:
-        customer = space.get(Customer, answer.customer_id)
+        customer = space.get(Organization, answer.customer_id)
         assert customer is not None
         assert customer.legal_name == "rebase S.r.l."
         assert customer.vat_number == "01234567890"
@@ -300,7 +300,7 @@ def test_first_call_creates_space_customer_and_deal(door: Door) -> None:
         assert customer.address == "Via Roma 1, 20121 Milano"
         assert customer.certified_email == "rebase@pec.it"
         assert customer.sdi_code == "M5UXCR1"
-        first = notes_of(space, "customer", customer.id)
+        first = notes_of(space, "organization", customer.id)
         assert [(n.text, n.source, n.author_id) for n in first] == [(CUSTOMER_NOTE, "rebase", None)]
 
         deal = space.get(Deal, answer.deal_id)
@@ -375,7 +375,7 @@ def test_second_call_answers_the_same_ids_and_creates_nothing(door: Door) -> Non
     assert second.deal_url == first.deal_url
     assert _owned(door) == ["ada-lovelace"]
     with _space(door, "ada-lovelace") as space:
-        assert _count(space, Customer) == 1
+        assert _count(space, Organization) == 1
         assert _count(space, Deal) == 1
 
     # A retry whose body changed since is answered the recorded ids too, and writes
@@ -393,14 +393,16 @@ def test_second_call_answers_the_same_ids_and_creates_nothing(door: Door) -> Non
         first.deal_id,
     )
     with _space(door, "ada-lovelace") as space:
-        assert _count(space, Customer) == 1 and _count(space, Deal) == 1
+        assert _count(space, Organization) == 1 and _count(space, Deal) == 1
         recorded = space.get(Deal, first.deal_id)
         assert recorded is not None
         assert (recorded.name, str(recorded.hourly_rate)) == (DEAL_NAME, "50.000000")
 
     # The row's ids are answered (spec § 2.3 step 2), not what the deal points at now.
     with _space(door, "ada-lovelace") as space:
-        other = CustomerService(space).create(CustomerCreate(legal_name="Altro"), Actor.system())
+        other = OrganizationService(space).create(
+            OrganizationCreate(legal_name="Altro"), Actor.system()
+        )
         space.execute(
             text("UPDATE deals SET customer_id = :c WHERE id = :d"),
             {"c": other.id, "d": first.deal_id},
@@ -525,7 +527,7 @@ def test_two_matches_one_email_share_one_space(door: Door) -> None:
     assert answers["1/2026"].customer_id == answers["2/2026"].customer_id
     assert answers["1/2026"].deal_id != answers["2/2026"].deal_id
     with _space(door, "ada-lovelace") as space:
-        assert _count(space, Customer) == 1
+        assert _count(space, Organization) == 1
         assert _count(space, Deal) == 2
     assert len(door.sender.sent) == 1
 
@@ -550,7 +552,7 @@ def test_two_addresses_at_once_open_two_spaces(door: Door) -> None:
     assert _owned(door, "grace@studio.it") == ["grace-hopper"]
     for slug in ("ada-lovelace", "grace-hopper"):
         with _space(door, slug) as space:
-            assert _count(space, Customer) == 1 and _count(space, Deal) == 1
+            assert _count(space, Organization) == 1 and _count(space, Deal) == 1
     assert sorted(mail.to for mail in door.sender.sent) == [ADA, "grace@studio.it"]
 
 
@@ -630,11 +632,11 @@ def test_half_written_row_is_completed(door: Door) -> None:
     assert answer.slug == "ada-seconda"
     assert answer.space_created is False and answer.created is True
     with _space(door, "ada-seconda") as space:
-        assert _count(space, Customer) == 1 and _count(space, Deal) == 1
+        assert _count(space, Organization) == 1 and _count(space, Deal) == 1
         deal = space.get(Deal, answer.deal_id)
         assert deal is not None and deal.customer_id == answer.customer_id
     with _space(door, "studio-ada") as space:
-        assert _count(space, Customer) == 0
+        assert _count(space, Organization) == 0
     row = _row(door, match_id)
     assert row is not None
     assert (row.tenant_id, row.customer_id, row.deal_id) == (
@@ -694,8 +696,8 @@ def test_retry_after_deal_created_but_unrecorded_reuses_it(door: Door) -> None:
     tenant_id = _provision(door, "ada-lovelace")
     match_id = uuid4()
     with _space(door, "ada-lovelace") as space:
-        customer = CustomerService(space).create(
-            CustomerCreate(legal_name="rebase S.r.l."), Actor.rebase()
+        customer = OrganizationService(space).create(
+            OrganizationCreate(legal_name="rebase S.r.l."), Actor.rebase()
         )
         deal = DealService(space).create(
             DealCreate(
@@ -715,7 +717,7 @@ def test_retry_after_deal_created_but_unrecorded_reuses_it(door: Door) -> None:
     assert (answer.customer_id, answer.deal_id) == (customer.id, deal.id)
     assert answer.created is True and answer.space_created is False
     with _space(door, "ada-lovelace") as space:
-        assert _count(space, Customer) == 1
+        assert _count(space, Organization) == 1
         assert _count(space, Deal) == 1
     row = _row(door, match_id)
     assert row is not None
@@ -740,8 +742,8 @@ def test_retry_finds_its_deal_under_a_customer_the_freelancer_edited(door: Door)
         registry.commit()
     with _space(door, "ada-lovelace") as space:
         space.execute(
-            update(Customer)
-            .where(Customer.id == first.customer_id)
+            update(Organization)
+            .where(Organization.id == first.customer_id)
             .values(legal_name="rebase (fornitore)", vat_number="09876543210")
         )
         space.commit()
@@ -751,7 +753,7 @@ def test_retry_finds_its_deal_under_a_customer_the_freelancer_edited(door: Door)
     assert (answer.customer_id, answer.deal_id) == (first.customer_id, first.deal_id)
     assert answer.created is True
     with _space(door, "ada-lovelace") as space:
-        assert _count(space, Customer) == 1
+        assert _count(space, Organization) == 1
         assert _count(space, Deal) == 1
 
 
@@ -761,8 +763,8 @@ def test_same_named_deal_without_marker_is_not_reused(door: Door) -> None:
     it is."""
     _provision(door, "ada-lovelace")
     with _space(door, "ada-lovelace") as space:
-        customer = CustomerService(space).create(
-            CustomerCreate(legal_name="rebase S.r.l.", vat_number="01234567890"),
+        customer = OrganizationService(space).create(
+            OrganizationCreate(legal_name="rebase S.r.l.", vat_number="01234567890"),
             Actor.system(),
         )
         theirs = DealService(space).create(
@@ -791,8 +793,8 @@ def test_a_vat_number_that_finds_nothing_falls_back_to_the_name(door: Door) -> N
 
     assert with_vat.customer_id == no_vat.customer_id
     with _space(door, "ada-lovelace") as space:
-        assert _count(space, Customer) == 1
-        customer = space.get(Customer, no_vat.customer_id)
+        assert _count(space, Organization) == 1
+        customer = space.get(Organization, no_vat.customer_id)
         assert customer is not None and customer.vat_number is None
 
 

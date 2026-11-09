@@ -109,7 +109,7 @@ NOT_ACTIVE = "Si collega a Pigro solo un match attivo."
 # has its own words for a match waiting on its signature.
 REPORT_NOT_ACTIVE = "Il match non è ancora attivo: nessun consuntivo da leggere."
 LETTER_NOT_SIGNED = "La lettera non è firmata."
-# The CRM's own customer rules (`CustomerService._check_fiscal`, the door's
+# The CRM's own customer rules (`OrganizationService._check_fiscal`, the door's
 # `EngagementRebase`), met before the call so a value the space would refuse never
 # leaves: an address of 255 characters at most, a recipient code of exactly seven, a tax
 # code of 16 at most, and a PEC that is an address by the rule of the CRM's `EmailStr`.

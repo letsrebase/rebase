@@ -24,7 +24,6 @@ from sqlalchemy.orm import Session
 
 from pigrocrm.core.activities.service import ActivityService
 from pigrocrm.core.auth.models import User
-from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.db import session_factory
 from pigrocrm.core.documents.models import Document, DocumentVersion
 from pigrocrm.core.errors import Conflict, NotFound, ValidationFailed
@@ -39,14 +38,15 @@ from pigrocrm.core.gmail.schemas import (
     EmailDraftListQuery,
     EmailDraftUpdate,
 )
+from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.people.models import Person
 
 BODY = "Gentile Ada,\n\nin allegato l'offerta."
 
 
-def _payload(customer: Customer, **overrides: object) -> EmailDraftCreate:
+def _payload(customer: Organization, **overrides: object) -> EmailDraftCreate:
     base: dict[str, object] = {
-        "entity_type": "customer",
+        "entity_type": "organization",
         "entity_id": customer.id,
         "to_addresses": ["ada@acme.it"],
         "subject": "Offerta",
@@ -111,7 +111,7 @@ def test_the_caller_cannot_choose_the_send_state_or_the_gmail_id(db_session: Ses
     for hostile in ("send_state", "sent_gmail_message_id", "message_id_header"):
         with pytest.raises(ValidationError):
             EmailDraftCreate(
-                entity_type="customer",
+                entity_type="organization",
                 entity_id=uuid4(),
                 to_addresses=["a@b.it"],
                 subject="x",
@@ -153,7 +153,7 @@ def test_a_draft_is_recorded_on_its_record_with_the_member_and_never_its_text(
     service.update(created.id, EmailDraftUpdate(body_markdown="Testo nuovo"), actor)
     service.delete(created.id, actor)
 
-    entries = {e.kind: e for e in ActivityService(db_session).timeline("customer", customer.id)}
+    entries = {e.kind: e for e in ActivityService(db_session).timeline("organization", customer.id)}
 
     assert set(entries) == {
         "gmail.draft_created",
@@ -330,7 +330,7 @@ def test_the_recipient_lists_are_capped_by_the_schema() -> None:
     ):
         with pytest.raises(ValidationError):
             EmailDraftCreate(
-                entity_type="customer",
+                entity_type="organization",
                 entity_id=uuid4(),
                 **{"to_addresses": ["a@b.it"], "subject": "x", "body_markdown": "y", field: value},
             )
@@ -367,7 +367,7 @@ def test_to_and_cc_together_may_not_pass_the_cap(db_session: Session) -> None:
 def test_an_over_long_subject_is_rejected_by_the_schema_not_by_postgres() -> None:
     with pytest.raises(ValidationError) as caught:
         EmailDraftCreate(
-            entity_type="customer",
+            entity_type="organization",
             entity_id=uuid4(),
             to_addresses=["a@b.it"],
             subject="x" * 999,
@@ -379,7 +379,7 @@ def test_an_over_long_subject_is_rejected_by_the_schema_not_by_postgres() -> Non
 def test_a_nul_byte_in_the_body_is_rejected_and_not_stripped() -> None:
     with pytest.raises(ValidationError):
         EmailDraftCreate(
-            entity_type="customer",
+            entity_type="organization",
             entity_id=uuid4(),
             to_addresses=["a@b.it"],
             subject="x",
@@ -390,7 +390,7 @@ def test_a_nul_byte_in_the_body_is_rejected_and_not_stripped() -> None:
 def test_an_over_long_address_is_rejected_by_the_schema() -> None:
     with pytest.raises(ValidationError):
         EmailDraftCreate(
-            entity_type="customer",
+            entity_type="organization",
             entity_id=uuid4(),
             to_addresses=["a" * 320 + "@b.it"],
             subject="x",
@@ -434,7 +434,7 @@ def test_list_returns_the_drafts_of_one_entity_and_filters_by_state(
 ) -> None:
     account = connected_account(db_session)
     customer = make_customer(db_session, email="info@acme.it")
-    other = Customer(legal_name="Beta", contact_points=points(email="info@beta.it"))
+    other = Organization(legal_name="Beta", contact_points=points(email="info@beta.it"))
     db_session.add(other)
     db_session.flush()
     service = _service(db_session)
@@ -446,13 +446,13 @@ def test_list_returns_the_drafts_of_one_entity_and_filters_by_state(
     db_session.flush()
 
     page = service.list(
-        EmailDraftListQuery(entity_type="customer", entity_id=customer.id), actor_for(account)
+        EmailDraftListQuery(entity_type="organization", entity_id=customer.id), actor_for(account)
     )
     assert page.total == 2
     assert {item.id for item in page.items} == {mine.id, sent.id}
 
     only_drafts = service.list(
-        EmailDraftListQuery(entity_type="customer", entity_id=customer.id, send_state="draft"),
+        EmailDraftListQuery(entity_type="organization", entity_id=customer.id, send_state="draft"),
         actor_for(account),
     )
     assert [item.id for item in only_drafts.items] == [mine.id]
@@ -463,14 +463,16 @@ def test_list_returns_the_drafts_of_one_entity_and_filters_by_state(
     service.repo_draft(uncertain.id).send_state = "uncertain"
     db_session.flush()
     unsent = service.list(
-        EmailDraftListQuery(entity_type="customer", entity_id=customer.id, unsent=True, limit=1),
+        EmailDraftListQuery(
+            entity_type="organization", entity_id=customer.id, unsent=True, limit=1
+        ),
         actor_for(account),
     )
     assert unsent.total == 2
     unsent_ids = {
         item.id
         for item in service.list(
-            EmailDraftListQuery(entity_type="customer", entity_id=customer.id, unsent=True),
+            EmailDraftListQuery(entity_type="organization", entity_id=customer.id, unsent=True),
             actor_for(account),
         ).items
     }
@@ -507,7 +509,7 @@ def test_every_read_names_the_attachments_the_send_will_carry(db_session: Sessio
         actor_for(account),
     )
     listed = service.list(
-        EmailDraftListQuery(entity_type="customer", entity_id=customer.id), actor_for(account)
+        EmailDraftListQuery(entity_type="organization", entity_id=customer.id), actor_for(account)
     ).items[0]
     read = service.get(created.id, actor_for(account))
 
@@ -541,7 +543,7 @@ def _cleanup(engine: Engine, *, draft_ids: list[UUID], customer_id: UUID, user_i
     with session_factory(engine)() as session:
         if draft_ids:
             session.execute(delete(EmailDraft).where(EmailDraft.id.in_(draft_ids)))
-        session.execute(delete(Customer).where(Customer.id == customer_id))
+        session.execute(delete(Organization).where(Organization.id == customer_id))
         session.execute(delete(User).where(User.id == user_id))
         session.commit()
 

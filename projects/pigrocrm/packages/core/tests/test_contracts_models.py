@@ -14,10 +14,10 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.contracts.models import Contract, RateCard, RenewalAssumption
-from pigrocrm.core.customers.models import Customer
+from pigrocrm.core.organizations.models import Organization
 
 
-def _contract(db_session: Session, customer: Customer, **overrides: object) -> Contract:
+def _contract(db_session: Session, customer: Organization, **overrides: object) -> Contract:
     payload: dict[str, object] = {
         "customer_id": customer.id,
         "title": "Consulenza CTO",
@@ -106,7 +106,7 @@ def test_payment_terms_the_other_half_set_is_also_refused(db_session: Session) -
         _contract(db_session, customer, payment_days=None, payment_end_of_month=True)
 
 
-def test_payment_terms_fully_null_inherits_the_customers_own_term(db_session: Session) -> None:
+def test_payment_terms_fully_null_inherits_the_organizations_own_term(db_session: Session) -> None:
     customer = make_customer(db_session)
     contract = _contract(db_session, customer)
     assert contract.payment_days is None

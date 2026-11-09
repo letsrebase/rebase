@@ -13,7 +13,7 @@ import { Card, CardContent } from '@rebase/ui/card'
 import { Skeleton } from '@rebase/ui/skeleton'
 import { formatItalianQuantity, MONEY_SCALE, scaledFromDecimalString } from '@/lib/decimal'
 import { EconomicsTab } from '@/features/analytics/EconomicsTab'
-import { useCustomer } from '@/features/customers/queries'
+import { useOrganization } from '@/features/organizations/queries'
 import { useLegalEntity } from '@/lib/legalEntity'
 import { useMemberDirectory } from '@/features/users/directory'
 import { ConvertDealButton, DealContractSection } from '@/features/deals/DealContract'
@@ -135,23 +135,23 @@ function ValueSection({ deal }: { deal: DealDetailData }) {
 }
 
 /**
- * Split into its own component so `useCustomer` is only ever mounted -- and
+ * Split into its own component so `useOrganization` is only ever mounted -- and
  * therefore only ever called -- with a real id. `deal.customer_id` is required
  * and non-null on every real `Deal` (`DealCreate`'s own docstring: "a deal
  * without a customer has no economic meaning"), but `deal` itself is `undefined`
  * for the render or two before `useDeal` resolves -- during which a naive
- * `useCustomer(deal?.customer_id ?? '')` at the top of `DealDetail` would call
- * `useCustomer('')`. `features/people`'s own `$personId.tsx` hit exactly this
- * danger first: `/api/customers/{customer_id}` with an empty path segment does
+ * `useOrganization(deal?.customer_id ?? '')` at the top of `DealDetail` would call
+ * `useOrganization('')`. `features/people`'s own `$personId.tsx` hit exactly this
+ * danger first: `/api/organizations/{organization_id}` with an empty path segment does
  * not match that route, Starlette's default trailing-slash redirect lands the
- * request on plain `/api/customers` instead -- the *list* endpoint, with an
+ * request on plain `/api/organizations` instead -- the *list* endpoint, with an
  * absolute URL that escapes the Vite dev proxy entirely -- and it still resolves
  * 200 with nothing to show for it. Mounting this only from inside the `if
  * (!deal) return ...` guard below, where `deal.customer_id` is guaranteed a real
- * id, is the same fix `LinkedCustomerRow` (people/$personId.tsx) already applies.
+ * id, is the same fix `LinkedOrganizationRow` (people/$personId.tsx) already applies.
  */
 function DealCustomerCard({ customerId }: { customerId: string }) {
-  const customer = useCustomer(customerId)
+  const customer = useOrganization(customerId)
   return (
     <Card>
       <CardContent className="pt-6">
@@ -161,8 +161,8 @@ function DealCustomerCard({ customerId }: { customerId: string }) {
           value={
             customer.data ? (
               <Link
-                to="/app/customers/$customerId"
-                params={{ customerId }}
+                to="/app/organizations/$organizationId"
+                params={{ organizationId: customerId }}
                 className="underline underline-offset-2"
               >
                 {customer.data.legal_name}
@@ -222,7 +222,7 @@ export function DealDetail() {
   const costsOn = modules.on('costs')
 
   if (isLoading) return <Skeleton className="m-8 h-96" />
-  // See `routes/app/customers/$customerId.tsx`'s identical guard for the full
+  // See `routes/app/organizations/$organizationId.tsx`'s identical guard for the full
   // reasoning: without this, a 500/502/dropped connection reads as "Deal non
   // trovato." exactly like a genuine 404 does, since both leave `deal` undefined
   // once loading ends. `toProblem(error).status` is the one place that is never
@@ -249,7 +249,7 @@ export function DealDetail() {
     // Soft delete or not, the UI itself offers no visible undo (restoring today
     // means calling `POST /api/deals/{id}/restore` directly, not a button here)
     // -- a plain confirm is a cheap guard against a misclick, not a client-side
-    // re-implementation of any server rule. Mirrors `CustomerDetail`/
+    // re-implementation of any server rule. Mirrors `OrganizationDetail`/
     // `PersonDetail`'s own `archive`.
     const confirmed = window.confirm(
       `Archiviare ${deal.name}? Il deal non comparirà più negli elenchi, ma i dati restano e l'operazione è reversibile.`,
@@ -385,8 +385,8 @@ export function DealDetail() {
                       label="Cliente"
                       value={
                         <Link
-                          to="/app/customers/$customerId"
-                          params={{ customerId: deal.customer_id }}
+                          to="/app/organizations/$organizationId"
+                          params={{ organizationId: deal.customer_id }}
                           className="underline underline-offset-2"
                         >
                           {deal.customer_legal_name ?? 'Apri il cliente'}

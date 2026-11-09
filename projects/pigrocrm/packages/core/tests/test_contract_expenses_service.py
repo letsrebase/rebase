@@ -15,9 +15,9 @@ from pigrocrm.core.actor import Actor
 from pigrocrm.core.contract_expenses.schemas import ContractExpenseCreate, ContractExpenseUpdate
 from pigrocrm.core.contract_expenses.service import ContractExpenseService
 from pigrocrm.core.contracts.models import Contract
-from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.documents.models import Document
 from pigrocrm.core.errors import NotFound, PermissionDenied, ValidationFailed
+from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.timetracking.models import CostCategory
 
 WRITER = Actor(id=uuid4(), type="user", role="collaborator")
@@ -25,7 +25,7 @@ READER = Actor(id=None, type="user", role="readonly")
 
 
 def _contract(db_session: Session, *, expense_policy: dict[str, object] | None = None) -> Contract:
-    customer = Customer(legal_name=f"ACME {uuid4()}")
+    customer = Organization(legal_name=f"ACME {uuid4()}")
     db_session.add(customer)
     db_session.flush()
     contract = Contract(

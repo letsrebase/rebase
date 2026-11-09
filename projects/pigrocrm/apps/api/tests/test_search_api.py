@@ -22,14 +22,14 @@ from fastapi.testclient import TestClient
 from sqlalchemy import insert
 from sqlalchemy.orm import Session
 
-from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.db.base import uuid7
+from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.search.schemas import COUNT_CEILING
 
 # Five, and the order is fixed: a palette whose sections move between keystrokes
 # cannot be driven with the keyboard. `invoice` is last, added by Task C12 with the
 # branch that finally makes `SearchEntity`'s fifth member true.
-_ENTITIES = ["customer", "person", "deal", "document", "invoice", "task"]
+_ENTITIES = ["organization", "person", "deal", "document", "invoice", "task"]
 
 
 def _search(client: TestClient, **params: Any) -> Any:
@@ -37,7 +37,7 @@ def _search(client: TestClient, **params: Any) -> Any:
 
 
 def test_a_search_returns_all_four_groups(logged_in: TestClient) -> None:
-    created = logged_in.post("/api/customers", json={"legal_name": "Vulcano Impianti Srl"})
+    created = logged_in.post("/api/organizations", json={"legal_name": "Vulcano Impianti Srl"})
     assert created.status_code == 201, created.text
 
     response = _search(logged_in, q="Vulcano")
@@ -79,7 +79,7 @@ def test_more_matches_than_the_ceiling_are_declared_as_a_minimum(
     would measure that instead.
     """
     api_session.execute(
-        insert(Customer),
+        insert(Organization),
         [
             {
                 "id": uuid7(),
@@ -109,7 +109,7 @@ def test_the_score_is_serialised_as_a_decimal_string_not_a_float(logged_in: Test
     identifying weight, at the four-place scale `SearchHit.score` declares, and a
     `Decimal` that had lost its trailing zeros would still be a string here.
     """
-    logged_in.post("/api/customers", json={"legal_name": "Vulcano Impianti Srl"})
+    logged_in.post("/api/organizations", json={"legal_name": "Vulcano Impianti Srl"})
 
     score = _search(logged_in, q="Vulcano").json()["groups"][0]["hits"][0]["score"]
 
@@ -157,7 +157,7 @@ def test_the_limit_is_honoured(logged_in: TestClient, api_session: Session) -> N
     of three, three hits and a `total` of twelve -- the limit pages the hits and does not
     touch the count."""
     api_session.execute(
-        insert(Customer),
+        insert(Organization),
         [
             {
                 "id": uuid7(),

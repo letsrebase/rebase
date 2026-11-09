@@ -54,7 +54,7 @@ def _draft(session: Session, account: GoogleAccount, **overrides: Any) -> EmailD
     customer = make_customer(session, email="info@acme.it")
     return draft_service(session).create(
         EmailDraftCreate(
-            entity_type="customer",
+            entity_type="organization",
             entity_id=customer.id,
             to_addresses=["ada@acme.it"],
             subject=SUBJECT,
@@ -439,7 +439,7 @@ def test_the_approximate_match_will_not_steal_a_message_another_draft_already_cl
     db_session.add(already_sent)
     claimant = draft_service(db_session).create(
         EmailDraftCreate(
-            entity_type="customer",
+            entity_type="organization",
             entity_id=customer.id,
             to_addresses=["ada@acme.it"],
             subject=SUBJECT,

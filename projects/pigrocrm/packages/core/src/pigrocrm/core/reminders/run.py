@@ -53,7 +53,7 @@ from pigrocrm.core.slack.client import SlackClient
 # is handed `None` for it, not this word.
 ROOT_LABEL = "root"
 # `pg_try_advisory_lock(int, int)`: a namespace of this project's own, as
-# `gmail/repository.py` and `customers/repository.py` do, and one key for this pass.
+# `gmail/repository.py` and `organizations/repository.py` do, and one key for this pass.
 REMINDERS_LOCK_NAMESPACE = 0x7093
 _PASS_LOCK_KEY = 1
 

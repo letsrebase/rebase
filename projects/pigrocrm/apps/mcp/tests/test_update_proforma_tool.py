@@ -14,8 +14,6 @@ from mcp import Client
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.actor import Actor
-from pigrocrm.core.customers.schemas import CustomerCreate
-from pigrocrm.core.customers.service import CustomerService
 from pigrocrm.core.db.clock import today_local
 from pigrocrm.core.fiscal.schemas import FiscalProfileUpsert
 from pigrocrm.core.fiscal.service import FiscalProfileService
@@ -23,6 +21,8 @@ from pigrocrm.core.invoices.schemas import InvoiceCreate, InvoiceIssue, InvoiceL
 from pigrocrm.core.invoices.service import InvoiceService
 from pigrocrm.core.legal_entities.schemas import LegalEntityUpsert
 from pigrocrm.core.legal_entities.service import LegalEntityService
+from pigrocrm.core.organizations.schemas import OrganizationCreate
+from pigrocrm.core.organizations.service import OrganizationService
 from pigrocrm.core.storage import LocalFileStorage
 
 LINE = {"description": "Consulenza", "quantity": "2", "unit_price": "100.00"}
@@ -43,8 +43,8 @@ def _customer(session: Session) -> str:
         ),
         Actor(id=None, type="mcp", role="admin"),
     )
-    customer = CustomerService(session).create(
-        CustomerCreate(
+    customer = OrganizationService(session).create(
+        OrganizationCreate(
             legal_name="Bozze S.r.l.",
             vat_number="12345678901",
             sdi_code="ABCDEFG",

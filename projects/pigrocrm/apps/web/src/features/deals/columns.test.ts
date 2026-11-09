@@ -14,7 +14,7 @@ const NBSP = '\u00a0'
 
 /**
  * Reads a native column's cell value the same way `DataTable` does internally --
- * through the column's own `accessorFn` -- mirroring `features/customers/
+ * through the column's own `accessorFn` -- mirroring `features/organizations/
  * queries.test.ts`/`features/people/columns.test.ts`'s identical helper.
  */
 function cellValue(column: ReturnType<typeof buildDealColumns>[number], deal: Deal) {

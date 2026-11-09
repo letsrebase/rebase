@@ -8,7 +8,7 @@
  * pressed while the list behind it is unfiltered is a page lying about what it shows.
  *
  * `api.GET` is spied on directly rather than `useInvoices` being mocked, mirroring
- * `customers/$customerId.test.tsx`: what is asserted is the query the page actually
+ * `organizations/$organizationId.test.tsx`: what is asserted is the query the page actually
  * sends.
  */
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
@@ -257,7 +257,7 @@ describe('the invoice list', () => {
     expect(within(filters).getByLabelText('Filtra per tipo')).toBeInTheDocument()
   })
 
-  /** The list is the one screen that mixes customers, so it is the one that says whose
+  /** The list is the one screen that mixes organizations, so it is the one that says whose
    *  invoice each row is (ORB-98). The tab inside a customer's page does not: see
    *  `InvoicesTab.test.tsx`. */
   it('says which customer each invoice belongs to', async () => {

@@ -123,6 +123,15 @@ def _legal_entity_scope_statements() -> list[str]:
     from pathlib import Path
 
     versions = Path(__file__).resolve().parent / "packages/core/migrations/versions"
+    # REB-969: those revisions speak of `customers`; the revision that renamed the table
+    # says the same statements in the new names through its `rewrite()`.
+    (renaming,) = versions.glob("*_organizations.py")
+    renaming_spec = importlib.util.spec_from_file_location(
+        "pigrocrm_migration_organizations", renaming
+    )
+    assert renaming_spec is not None and renaming_spec.loader is not None
+    renaming_module = importlib.util.module_from_spec(renaming_spec)
+    renaming_spec.loader.exec_module(renaming_module)
     out: list[str] = []
     # 0068 carries the final functions and policies; later revisions that add a table add
     # their own policy statements after it.
@@ -138,7 +147,7 @@ def _legal_entity_scope_statements() -> list[str]:
         assert spec is not None and spec.loader is not None
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
-        out.extend(module.statements())
+        out.extend(renaming_module.rewrite(statement) for statement in module.statements())
     return out
 
 

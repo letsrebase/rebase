@@ -14,9 +14,6 @@ from uuid import UUID
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.actor import Actor
-from pigrocrm.core.customers.models import Customer
-from pigrocrm.core.customers.repository import CustomerRepository
-from pigrocrm.core.customers.schemas import CustomerRead
 from pigrocrm.core.db.clock import today_local
 from pigrocrm.core.deals.models import Deal
 from pigrocrm.core.deals.repository import DealRepository
@@ -24,6 +21,9 @@ from pigrocrm.core.documents.schemas import DocumentFromTemplate, DocumentRead
 from pigrocrm.core.documents.service import DocumentService
 from pigrocrm.core.errors import NotFound, ValidationFailed
 from pigrocrm.core.money import sum_hours
+from pigrocrm.core.organizations.models import Organization
+from pigrocrm.core.organizations.repository import OrganizationRepository
+from pigrocrm.core.organizations.schemas import OrganizationRead
 from pigrocrm.core.storage import DocumentStorage
 from pigrocrm.core.templates.scope import CUSTOMER_KEYS, italian_keys
 from pigrocrm.core.templates.service import TemplateService
@@ -77,7 +77,7 @@ def _italian_date(day: date) -> str:
 
 
 def report_variables(
-    entries: list[TimeEntry], *, year: int, month: int, deal: Deal, customer: Customer | None
+    entries: list[TimeEntry], *, year: int, month: int, deal: Deal, customer: Organization | None
 ) -> dict[str, Any]:
     """Everything both formats need, computed once from already-fetched rows.
 
@@ -106,7 +106,7 @@ def report_variables(
         "deal": {"nome": deal.name},
         "cliente": (
             italian_keys(
-                CustomerRead.model_validate(customer).model_dump(mode="json"), CUSTOMER_KEYS
+                OrganizationRead.model_validate(customer).model_dump(mode="json"), CUSTOMER_KEYS
             )
             if customer
             else {}
@@ -138,7 +138,7 @@ class TimeReportService:
         self.storage = storage
         self.entries = TimeEntryRepository(session)
         self.deals = DealRepository(session)
-        self.customers = CustomerRepository(session)
+        self.organizations = OrganizationRepository(session)
         self.templates = TemplateService(session)
 
     def variables_for(self, deal_id: UUID, month: str, actor: Actor) -> dict[str, Any]:
@@ -149,7 +149,7 @@ class TimeReportService:
         deal = self.deals.get(deal_id)
         if deal is None:
             raise NotFound("deal", deal_id)
-        customer = self.customers.get(deal.customer_id)
+        customer = self.organizations.get(deal.customer_id)
         rows = self.entries.for_month(deal_id, year, number_month)
         return report_variables(rows, year=year, month=number_month, deal=deal, customer=customer)
 

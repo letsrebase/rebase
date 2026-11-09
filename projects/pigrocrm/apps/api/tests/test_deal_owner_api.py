@@ -21,7 +21,7 @@ def _me(client: TestClient) -> str:
 
 
 def _deal(client: TestClient) -> dict:
-    customer = client.post("/api/customers", json={"legal_name": "ACME Srl"})
+    customer = client.post("/api/organizations", json={"legal_name": "ACME Srl"})
     assert customer.status_code == 201, customer.text
     created = client.post("/api/deals", json={"name": "Sito", "customer_id": customer.json()["id"]})
     assert created.status_code == 201, created.text

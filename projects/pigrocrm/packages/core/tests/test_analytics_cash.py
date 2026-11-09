@@ -15,9 +15,9 @@ from tax_period import TODAY
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.analytics.service import AnalyticsService
 from pigrocrm.core.contracts.models import Contract
-from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.invoices.schemas import PaymentState
 from pigrocrm.core.invoices.service import InvoiceService
+from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.storage.local import LocalFileStorage
 from pigrocrm.core.timetracking.costs import CostService
 from pigrocrm.core.timetracking.schemas import CostCreate
@@ -400,7 +400,7 @@ def test_the_estimate_stays_on_the_money_whatever_the_charts_read_by(
 # --- REB-352 §1.6: contract-date markers on the cash calendar -----------------------
 
 
-def _contract(db_session: Session, customer: Customer, **overrides: object) -> Contract:
+def _contract(db_session: Session, customer: Organization, **overrides: object) -> Contract:
     payload: dict[str, object] = {
         "customer_id": customer.id,
         "title": "Consulenza CTO",

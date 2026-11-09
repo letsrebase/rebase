@@ -17,7 +17,6 @@ from sqlalchemy.orm import Session
 from pigrocrm.core.activities.service import ActivityService
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.contracts.models import Contract
-from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.documents.models import Document
 from pigrocrm.core.errors import (
     AgentForbidden,
@@ -26,6 +25,7 @@ from pigrocrm.core.errors import (
     PermissionDenied,
     ValidationFailed,
 )
+from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.work_units.models import Approval, WorkUnit
 from pigrocrm.core.work_units.schemas import ApprovalCreate, WorkUnitCreate, WorkUnitListQuery
 from pigrocrm.core.work_units.service import (
@@ -44,7 +44,7 @@ READER = Actor(id=None, type="user", role="readonly")
 
 
 def _contract(db_session: Session, *, requires_prior_approval: bool = False) -> Contract:
-    customer = Customer(legal_name=f"ACME {uuid4()}")
+    customer = Organization(legal_name=f"ACME {uuid4()}")
     db_session.add(customer)
     db_session.flush()
     contract = Contract(

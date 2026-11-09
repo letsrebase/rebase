@@ -386,7 +386,7 @@ class DueItemService:
     def _require_organization_of(self, organization_id: UUID, legal_entity_id: UUID) -> None:
         owner = self.repo.organization_legal_entity(organization_id)
         if owner is None:
-            raise NotFound("customer", organization_id)
+            raise NotFound("organization", organization_id)
         if owner != legal_entity_id:
             raise ValidationFailed(
                 ENTITY,

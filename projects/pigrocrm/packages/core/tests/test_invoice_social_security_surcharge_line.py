@@ -20,7 +20,6 @@ from lxml import etree
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.actor import Actor
-from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.fiscal.ceiling import social_security_surcharge_line_for_contract
 from pigrocrm.core.fiscal.pack import IT_FLAT_RATE_PACK, SOCIAL_SECURITY_SURCHARGE_INPS_CHARGE_ID
 from pigrocrm.core.fiscal.schemas import FiscalProfileUpsert
@@ -29,6 +28,7 @@ from pigrocrm.core.invoices.schemas import InvoiceCreate, InvoiceIssue, InvoiceL
 from pigrocrm.core.invoices.service import InvoiceService
 from pigrocrm.core.legal_entities.schemas import LegalEntityUpsert
 from pigrocrm.core.legal_entities.service import LegalEntityService
+from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.storage.local import LocalFileStorage
 
 ADMIN = Actor(id=None, type="system", role="admin")
@@ -61,7 +61,7 @@ def service(db_session: Session, storage: LocalFileStorage) -> InvoiceService:
 
 @pytest.fixture
 def customer_id(db_session: Session) -> UUID:
-    customer = Customer(
+    customer = Organization(
         legal_name="Acme S.r.l.",
         vat_number="12345678901",
         sdi_code="ABCDEFG",

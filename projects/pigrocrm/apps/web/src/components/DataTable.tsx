@@ -55,7 +55,7 @@ const features = tableFeatures({ columnMeta: {} as DataTableColumnMeta })
  * optional feature is registered, so `ColumnDef`'s feature-contributed options
  * (`enableSorting`, `filterFn`, ...) are not offered and cannot be set only to be
  * silently ignored. Exported so a caller can type its own `columns` array --
- * `ColumnDef<DataTableFeatures, Customer>[]` -- without reaching into
+ * `ColumnDef<DataTableFeatures, Organization>[]` -- without reaching into
  * `@tanstack/react-table` for `tableFeatures` itself, or for `stockFeatures` (the
  * all-features-at-once shortcut the library's own v9 migration guide flags as a
  * bundle-size regression outside of migrating pre-existing v8 code) just to
@@ -67,7 +67,7 @@ export type DataTableFeatures = typeof features
 // node_modules/.../@tanstack/table-core/dist/types/type-utils.d.ts) is what
 // `ColumnDef`'s own `TData` parameter requires -- an unconstrained `<T>` here
 // cannot be proven to satisfy it, since `T` could otherwise be instantiated with
-// a primitive. Every real row this table renders (Customer, Person, Deal, ...) is
+// a primitive. Every real row this table renders (Organization, Person, Deal, ...) is
 // already record-shaped, so this only makes an existing assumption explicit.
 interface DataTableProps<T extends RowData> {
   columns: ColumnDef<DataTableFeatures, T>[]
@@ -90,7 +90,7 @@ interface DataTableProps<T extends RowData> {
 const LOADING_ROW_COUNT = 5
 
 /**
- * One table for every list this product shows -- Customers, People, Deal today,
+ * One table for every list this product shows -- Organizations, People, Deal today,
  * whatever a later slice adds tomorrow.
  *
  * `isLoading`, "zero rows", and a failed request render as three deliberately
@@ -101,7 +101,7 @@ const LOADING_ROW_COUNT = 5
  * all). Collapsing any two of these into one state would let a slow network, or
  * a failed one, masquerade as "there is nothing here", which is a different
  * claim and not this component's to make on the caller's behalf -- confirmed as
- * a real, live defect on Customers/People/Deal alike before this fix: every
+ * a real, live defect on Organizations/People/Deal alike before this fix: every
  * column reading zero and "Nessun ..." is indistinguishable from a tenant that
  * genuinely has nothing, when the true state was "the request failed".
  *

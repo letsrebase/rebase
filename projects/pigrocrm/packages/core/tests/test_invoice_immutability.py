@@ -16,7 +16,6 @@ from sqlalchemy.orm import Session
 
 from pigrocrm.core.activities.service import ActivityService
 from pigrocrm.core.actor import Actor
-from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.db.clock import today_local
 from pigrocrm.core.errors import Conflict, ImmutableField, PermissionDenied, ValidationFailed
 from pigrocrm.core.fiscal.schemas import FiscalProfileUpsert
@@ -33,6 +32,7 @@ from pigrocrm.core.invoices.schemas import (
 from pigrocrm.core.invoices.service import InvoiceService
 from pigrocrm.core.legal_entities.schemas import LegalEntityUpsert
 from pigrocrm.core.legal_entities.service import LegalEntityService
+from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.storage.local import LocalFileStorage
 
 ADMIN = Actor(id=None, type="system", role="admin")
@@ -70,7 +70,7 @@ def service(db_session: Session, tmp_path) -> InvoiceService:  # type: ignore[no
 
 @pytest.fixture
 def customer_id(db_session: Session) -> UUID:
-    customer = Customer(
+    customer = Organization(
         legal_name="Acme S.r.l.",
         vat_number="12345678901",
         sdi_code="ABCDEFG",

@@ -17,7 +17,6 @@ from sqlalchemy.orm import Session
 
 from pigrocrm.core.activities.service import ActivityService
 from pigrocrm.core.actor import Actor
-from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.db.clock import today_local
 from pigrocrm.core.errors import (
     Conflict,
@@ -39,6 +38,7 @@ from pigrocrm.core.invoices.schemas import (
 from pigrocrm.core.invoices.service import InvoiceService
 from pigrocrm.core.legal_entities.schemas import LegalEntityUpsert
 from pigrocrm.core.legal_entities.service import LegalEntityService
+from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.storage.local import LocalFileStorage
 
 ADMIN = Actor(id=None, type="system", role="admin")
@@ -106,7 +106,7 @@ def _customer(db_session: Session, **overrides: object) -> UUID:
         "country": "IT",
     }
     payload.update(overrides)
-    customer = Customer(**payload)  # type: ignore[arg-type]
+    customer = Organization(**payload)  # type: ignore[arg-type]
     db_session.add(customer)
     db_session.flush()
     return customer.id
@@ -398,8 +398,8 @@ def test_a_foreign_customer_is_issued_rather_than_refused_by_name(
     service: InvoiceService, db_session: Session
 ) -> None:
     """Residual R12, closed. This test used to assert the opposite and was right to:
-    `customers.vat_number` accepted only eleven digits, so a foreign VAT could not even
-    be stored, and the slice declared foreign customers out of scope rather than issuing
+    `organizations.vat_number` accepted only eleven digits, so a foreign VAT could not even
+    be stored, and the slice declared foreign organizations out of scope rather than issuing
     a file the SdI would reject.
 
     All four of those layers are gone -- the Italian shape rule now applies only to an
@@ -430,7 +430,7 @@ def test_a_draft_whose_customer_changed_country_is_refused_before_the_number_is_
     is the remedy, and after it the same draft issues with `N2.1`."""
     customer_id = _customer(db_session)
     invoice_id = _draft(service, customer_id)
-    customer = db_session.get(Customer, customer_id)
+    customer = db_session.get(Organization, customer_id)
     assert customer is not None
     customer.country = "GB"
     customer.province = ""
@@ -497,7 +497,7 @@ def test_a_customer_who_moves_does_not_rewrite_an_issued_invoice(
     invoice_id = _draft(service, customer_id)
     service.issue(invoice_id, InvoiceIssue(), ADMIN)
     db_session.execute(
-        text("UPDATE customers SET city = 'Torino' WHERE id = :id"), {"id": customer_id}
+        text("UPDATE organizations SET city = 'Torino' WHERE id = :id"), {"id": customer_id}
     )
     stored = db_session.execute(
         text("SELECT snapshot FROM invoices WHERE id = :id"), {"id": invoice_id}

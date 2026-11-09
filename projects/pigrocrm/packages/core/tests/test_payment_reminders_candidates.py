@@ -22,12 +22,12 @@ from fakes.invoice_fixtures import unpaid_invoice
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.actor import Actor
-from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.db.clock import today_local
 from pigrocrm.core.gmail.models import GmailMessage, PaymentReminder
 from pigrocrm.core.gmail.payment_reminders import PaymentRemindersService
 from pigrocrm.core.gmail.send import EmailSendService
 from pigrocrm.core.gmail.transport import GmailTransport
+from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.people.models import Person
 
 
@@ -284,7 +284,7 @@ def test_a_reply_from_a_person_on_the_customer_counts_as_the_customer_replying(
     db_session: Session,
 ) -> None:
     """On a small company the person who answers is rarely the address on the customer
-    row. Reading only `customers.email` would report "nobody replied" about a
+    row. Reading only `organizations.email` would report "nobody replied" about a
     conversation that is already open."""
     account = connected_account(db_session)
     invoice = unpaid_invoice(db_session, due=_days_ago(30))
@@ -318,7 +318,7 @@ def test_another_mailbox_reply_is_not_this_installation_reply(db_session: Sessio
     account = connected_account(db_session)
     other = connected_account(db_session, email_address="altro@example.it")
     invoice = unpaid_invoice(db_session, due=_days_ago(30))
-    customer = db_session.get(Customer, invoice.customer_id)
+    customer = db_session.get(Organization, invoice.customer_id)
     assert customer is not None
     db_session.add(
         GmailMessage(
@@ -342,7 +342,7 @@ def test_an_outbound_message_to_the_client_is_not_a_reply(db_session: Session) -
     about as "already replied to" and sort the whole thing upside down."""
     account = connected_account(db_session)
     invoice = unpaid_invoice(db_session, due=_days_ago(30))
-    customer = db_session.get(Customer, invoice.customer_id)
+    customer = db_session.get(Organization, invoice.customer_id)
     assert customer is not None
     db_session.add(
         GmailMessage(

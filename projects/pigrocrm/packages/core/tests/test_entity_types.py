@@ -22,7 +22,7 @@ from pigrocrm.core.schema_registry import CREATE_MODELS, ENTITY_TYPES, native_fi
 WEB_SCHEMA = Path(__file__).resolve().parents[3] / "apps" / "web" / "src" / "lib" / "schema.ts"
 
 EXPECTED = (
-    "customer",
+    "organization",
     "person",
     "deal",
     "document",

@@ -21,20 +21,20 @@ otherwise would be asserting a shape the code does not produce.
 import pytest
 from fastapi.testclient import TestClient
 
-LIST_PATHS = ["/api/customers", "/api/people", "/api/deals", "/api/documents"]
+LIST_PATHS = ["/api/organizations", "/api/people", "/api/deals", "/api/documents"]
 
 
-def _create_customers(client: TestClient, *names: str) -> None:
+def _create_organizations(client: TestClient, *names: str) -> None:
     for name in names:
-        created = client.post("/api/customers", json={"legal_name": name})
+        created = client.post("/api/organizations", json={"legal_name": name})
         assert created.status_code == 201, created.text
 
 
 def test_sorting_by_the_identifying_column(logged_in: TestClient) -> None:
-    _create_customers(logged_in, "Gamma Srl", "Alfa Srl", "Beta Srl")
+    _create_organizations(logged_in, "Gamma Srl", "Alfa Srl", "Beta Srl")
 
     response = logged_in.get(
-        "/api/customers", params={"sort": "legal_name", "dir": "asc", "limit": 10}
+        "/api/organizations", params={"sort": "legal_name", "dir": "asc", "limit": 10}
     )
     assert response.status_code == 200, response.text
     assert [c["legal_name"] for c in response.json()["items"]] == [
@@ -44,7 +44,7 @@ def test_sorting_by_the_identifying_column(logged_in: TestClient) -> None:
     ]
 
     descending = logged_in.get(
-        "/api/customers", params={"sort": "legal_name", "dir": "desc", "limit": 10}
+        "/api/organizations", params={"sort": "legal_name", "dir": "desc", "limit": 10}
     )
     assert [c["legal_name"] for c in descending.json()["items"]] == [
         "Gamma Srl",
@@ -57,14 +57,14 @@ def test_next_cursor_is_a_string_the_client_can_echo_back(logged_in: TestClient)
     """The round trip, over real HTTP and through real query-string encoding: a cursor
     is base64url, which contains `-` and `_` and nothing that needs escaping, but this
     is the test that would fail if it ever grew a `+` or a `=`."""
-    _create_customers(logged_in, "Alfa Srl", "Beta Srl", "Gamma Srl")
+    _create_organizations(logged_in, "Alfa Srl", "Beta Srl", "Gamma Srl")
 
-    first = logged_in.get("/api/customers", params={"sort": "legal_name", "limit": 2})
+    first = logged_in.get("/api/organizations", params={"sort": "legal_name", "limit": 2})
     body = first.json()
     assert isinstance(body["next_cursor"], str)
 
     second = logged_in.get(
-        "/api/customers",
+        "/api/organizations",
         params={"sort": "legal_name", "limit": 2, "cursor": body["next_cursor"]},
     )
     assert second.status_code == 200, second.text
@@ -101,7 +101,7 @@ def test_the_default_direction_is_ascending_and_needs_no_parameter(
 
 
 def test_a_garbage_cursor_is_a_422_and_not_a_500(logged_in: TestClient) -> None:
-    response = logged_in.get("/api/customers", params={"cursor": "not-a-cursor"})
+    response = logged_in.get("/api/organizations", params={"cursor": "not-a-cursor"})
     assert response.status_code == 422, response.text
     assert response.json()["field"] == "cursor"
 
@@ -109,26 +109,26 @@ def test_a_garbage_cursor_is_a_422_and_not_a_500(logged_in: TestClient) -> None:
 def test_an_over_long_cursor_is_refused_before_it_is_decoded(logged_in: TestClient) -> None:
     """FastAPI's own `max_length` answers first, so nothing hands 5 000 characters to a
     base64 decoder. That is a bound on work done, not merely on values accepted."""
-    response = logged_in.get("/api/customers", params={"cursor": "x" * 5000})
+    response = logged_in.get("/api/organizations", params={"cursor": "x" * 5000})
     assert response.status_code == 422
 
 
 def test_a_cursor_produced_for_one_sort_is_refused_by_another(logged_in: TestClient) -> None:
     """Changing `sort` while replaying `next_cursor` would otherwise compare a company
     name against a timestamp and return an arbitrary page."""
-    _create_customers(logged_in, "Alfa Srl", "Beta Srl", "Gamma Srl")
-    first = logged_in.get("/api/customers", params={"sort": "legal_name", "limit": 2})
+    _create_organizations(logged_in, "Alfa Srl", "Beta Srl", "Gamma Srl")
+    first = logged_in.get("/api/organizations", params={"sort": "legal_name", "limit": 2})
     cursor = first.json()["next_cursor"]
 
     response = logged_in.get(
-        "/api/customers", params={"sort": "created_at", "limit": 2, "cursor": cursor}
+        "/api/organizations", params={"sort": "created_at", "limit": 2, "cursor": cursor}
     )
     assert response.status_code == 422, response.text
     assert response.json()["field"] == "cursor"
 
 
 def test_documents_accept_a_search_term_and_it_actually_filters(logged_in: TestClient) -> None:
-    customer_id = logged_in.post("/api/customers", json={"legal_name": "ACME"}).json()["id"]
+    customer_id = logged_in.post("/api/organizations", json={"legal_name": "ACME"}).json()["id"]
     for title in ("Offerta impianti", "Verbale riunione"):
         created = logged_in.post(
             "/api/documents",

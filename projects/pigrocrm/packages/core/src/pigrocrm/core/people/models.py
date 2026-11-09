@@ -10,17 +10,17 @@ from pigrocrm.core.db import Base, PrimaryKeyMixin, SoftDeleteMixin, TimestampMi
 
 
 class Person(Base, PrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
-    """A contact, who may or may not belong to a `Customer`.
+    """A contact, who may or may not belong to a `Organization`.
 
     `customer_id` is nullable on purpose: a contact can exist before anyone knows
     which company they work for. Forcing every person to have a customer at
-    creation time would produce phantom customers (e.g. "Freelance vari") just to
+    creation time would produce phantom organizations (e.g. "Freelance vari") just to
     hold the ones who do not yet have one. `PersonService` validates an explicit
-    `customer_id` against `customers` whenever one is supplied, and
+    `customer_id` against `organizations` whenever one is supplied, and
     `PersonUpdate.detach` is how the association is removed again -- see that field's
     own comment for why it survived A14 being closed.
 
-    `custom_fields` copies `Customer`'s own JSONB column and GIN index, for the same
+    `custom_fields` copies `Organization`'s own JSONB column and GIN index, for the same
     reason: `list()`'s containment filter (`custom_fields @> {...}`) must never fall
     back to a full table scan.
     """
@@ -29,7 +29,7 @@ class Person(Base, PrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
     __table_args__ = (
         Index("ix_people_custom_fields", "custom_fields", postgresql_using="gin"),
         # One trigram index per column `PersonRepository.list` ORs together -- see
-        # `Customer.__table_args__` for why all three are needed and why the index is
+        # `Organization.__table_args__` for why all three are needed and why the index is
         # partial on `deleted_at IS NULL` with no `lower()` in the expression.
         Index(
             "ix_people_name_trgm",
@@ -45,7 +45,7 @@ class Person(Base, PrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
             postgresql_ops={"last_name": "gin_trgm_ops"},
             postgresql_where=text("deleted_at IS NULL"),
         ),
-        # Residuo R9. See `customers/models.py` for why each admitted sort key costs a
+        # Residuo R9. See `organizations/models.py` for why each admitted sort key costs a
         # `(column, id)` B-tree and why none of them is partial.
         Index("ix_people_created_at_id", "created_at", "id"),
         Index("ix_people_updated_at_id", "updated_at", "id"),
@@ -71,7 +71,7 @@ class Person(Base, PrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
 
     # Nullable FK: see the class docstring above.
     customer_id: Mapped[UUID | None] = mapped_column(
-        ForeignKey("customers.id"), default=None, index=True
+        ForeignKey("organizations.id"), default=None, index=True
     )
     first_name: Mapped[str] = mapped_column(String(120), nullable=False)
     last_name: Mapped[str | None] = mapped_column(String(120), default=None)

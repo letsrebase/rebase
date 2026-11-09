@@ -15,8 +15,6 @@ from sqlalchemy.orm import Session
 from pigrocrm.core.activities.service import ActivityService
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.config import Settings, get_settings
-from pigrocrm.core.customers.models import Customer
-from pigrocrm.core.customers.service import CustomerService
 from pigrocrm.core.db.clock import today_local
 from pigrocrm.core.deals.models import Deal
 from pigrocrm.core.documents.service import DocumentService
@@ -35,6 +33,8 @@ from pigrocrm.core.invoices.repository import InvoiceRepository
 from pigrocrm.core.invoices.schemas import InvoiceRead
 from pigrocrm.core.legal_entities.models import LegalEntity
 from pigrocrm.core.legal_entities.service import LegalEntityService
+from pigrocrm.core.organizations.models import Organization
+from pigrocrm.core.organizations.service import OrganizationService
 from pigrocrm.core.storage.base import DocumentStorage
 
 
@@ -60,7 +60,7 @@ class InvoiceContext:
         # customer `confirm_import` creates for a brand-new counterparty lands in the
         # exact transaction the invoice write is about to commit, never a customer
         # committed on its own moments before a register failure.
-        self.customers = CustomerService(session)
+        self.organizations = OrganizationService(session)
         # The one seam of §3.5: `None` in production, where the reader is composed from
         # the actor's own stored Drive account. A test that wants an in-memory Drive
         # injects the factory instead of seeding an account row and a sealed token.
@@ -89,7 +89,7 @@ class InvoiceContext:
             raise NotFound(ENTITY, invoice_id)
         return invoice
 
-    def check_owner(self, customer_id: UUID, deal_id: UUID | None) -> Customer:
+    def check_owner(self, customer_id: UUID, deal_id: UUID | None) -> Organization:
         """A syntactically valid but unknown UUID becomes this project's own `NotFound`
         instead of a raw `ForeignKeyViolation` reaching the caller from `flush()`. The
         nullable `deal_id` is checked too whenever a value is supplied -- skipping a
@@ -97,9 +97,9 @@ class InvoiceContext:
 
         Returns the customer, because the regime needs its country to pick the `Natura`
         of every line (ORB-32) and the row has just been read anyway."""
-        customer = self.session.get(Customer, customer_id)
+        customer = self.session.get(Organization, customer_id)
         if customer is None:
-            raise NotFound("customer", customer_id)
+            raise NotFound("organization", customer_id)
         if deal_id is None:
             return customer
         deal = self.session.get(Deal, deal_id)
@@ -124,7 +124,7 @@ class InvoiceContext:
         profile = self.fiscal.snapshot(legal_entity_id)
         return resolve_regime(profile.regime_code, profile.pack_id), profile
 
-    def legal_entity_of_parent(self, customer: Customer, deal_id: UUID | None) -> UUID:
+    def legal_entity_of_parent(self, customer: Organization, deal_id: UUID | None) -> UUID:
         """The legal entity a new document is born under (REB-623, spec §1.7): the deal's
         when it hangs on one, the customer's otherwise. Copied now and kept, so a
         customer moved later leaves this document where it was issued. Refused when

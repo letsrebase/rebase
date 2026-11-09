@@ -32,9 +32,6 @@ from pigrocrm.core.actor import Actor
 from pigrocrm.core.auth.models import User
 from pigrocrm.core.contact_points.models import ContactPoint
 from pigrocrm.core.contracts.models import Contract
-from pigrocrm.core.customers.models import Customer
-from pigrocrm.core.customers.repository import CustomerRepository
-from pigrocrm.core.customers.schemas import CustomerListQuery
 from pigrocrm.core.db import Base, session_factory
 from pigrocrm.core.db.base import uuid7
 from pigrocrm.core.db.role import ensure_application_role
@@ -55,6 +52,9 @@ from pigrocrm.core.legal_entities.repository import LegalEntityRepository
 from pigrocrm.core.notes.models import Note, NoteRevision
 from pigrocrm.core.notes.schemas import NoteCreate, NoteUpdate
 from pigrocrm.core.notes.service import NoteService
+from pigrocrm.core.organizations.models import Organization
+from pigrocrm.core.organizations.repository import OrganizationRepository
+from pigrocrm.core.organizations.schemas import OrganizationListQuery
 from pigrocrm.core.people.models import Person
 from pigrocrm.core.people.repository import PersonRepository
 from pigrocrm.core.people.schemas import PersonListQuery
@@ -77,7 +77,7 @@ POLICIED = {
     "fiscal_estimates",
     "invoice_counters",
     "invoice_register_gaps",
-    "customers",
+    "organizations",
     "deals",
     "deal_value_lines",
     "contact_points",
@@ -128,7 +128,7 @@ class World(NamedTuple):
 
 
 def _require_empty(session: Session) -> None:
-    for model in (Invoice, TimeEntry, Deal, Cost, Customer, Person, Contract, Document):
+    for model in (Invoice, TimeEntry, Deal, Cost, Organization, Person, Contract, Document):
         leftovers = session.execute(select(func.count(model.id))).scalar_one()
         assert leftovers == 0, f"{leftovers} committed {model.__tablename__} row(s) already present"
 
@@ -165,7 +165,7 @@ def world(db_engine: Engine) -> Iterator[World]:
         session.flush()
 
         def seed(legal_entity: UUID, tag: str, n_invoices: int) -> None:
-            customer = Customer(
+            customer = Organization(
                 legal_name=f"{_PREFIX} {tag}",
                 country="IT",
                 custom_fields={},
@@ -224,7 +224,7 @@ def world(db_engine: Engine) -> Iterator[World]:
             )
             session.flush()
             # One note on each of the three records a thread hangs on, written by hand.
-            for kind, record in (("customer", customer), ("person", person), ("deal", deal)):
+            for kind, record in (("organization", customer), ("person", person), ("deal", deal)):
                 session.add(
                     Note(
                         entity_type=kind,
@@ -327,7 +327,7 @@ def world(db_engine: Engine) -> Iterator[World]:
             )
             session.add(
                 Activity(
-                    entity_type="customer",
+                    entity_type="organization",
                     entity_id=customer.id,
                     kind=f"{_PREFIX}.test",
                     actor_id=None,
@@ -403,7 +403,7 @@ def world(db_engine: Engine) -> Iterator[World]:
             foreign.id,
             user.id,
             {
-                "customers": 1,
+                "organizations": 1,
                 "people": 1,
                 "deals": 1,
                 "deal_value_lines": 1,
@@ -425,8 +425,10 @@ def world(db_engine: Engine) -> Iterator[World]:
     finally:
         ids.app.dispose()
         with factory() as session:
-            customers = select(Customer.id).where(Customer.legal_name.like(f"{_PREFIX} %"))
-            invoices = select(Invoice.id).where(Invoice.customer_id.in_(customers))
+            organizations = select(Organization.id).where(
+                Organization.legal_name.like(f"{_PREFIX} %")
+            )
+            invoices = select(Invoice.id).where(Invoice.customer_id.in_(organizations))
             session.execute(delete(Activity).where(Activity.kind == f"{_PREFIX}.test"))
             session.execute(
                 delete(TimeEntry).where(
@@ -453,7 +455,7 @@ def world(db_engine: Engine) -> Iterator[World]:
             session.execute(delete(Cost).where(Cost.description.like(f"{_PREFIX} %")))
             session.execute(delete(CostCategory).where(CostCategory.name.like(f"{_PREFIX} %")))
             session.execute(delete(InvoiceLine).where(InvoiceLine.invoice_id.in_(invoices)))
-            session.execute(delete(Invoice).where(Invoice.customer_id.in_(customers)))
+            session.execute(delete(Invoice).where(Invoice.customer_id.in_(organizations)))
             session.execute(delete(Document).where(Document.title.like(f"{_PREFIX} %")))
             session.execute(delete(Contract).where(Contract.title.like(f"{_PREFIX} %")))
             session.execute(
@@ -463,7 +465,9 @@ def world(db_engine: Engine) -> Iterator[World]:
             )
             session.execute(delete(Deal).where(Deal.name.like(f"{_PREFIX} %")))
             session.execute(delete(Person).where(Person.first_name.like(f"{_PREFIX} %")))
-            session.execute(delete(Customer).where(Customer.legal_name.like(f"{_PREFIX} %")))
+            session.execute(
+                delete(Organization).where(Organization.legal_name.like(f"{_PREFIX} %"))
+            )
             session.execute(delete(PipelineStage).where(PipelineStage.name.like(f"{_PREFIX} %")))
             session.execute(delete(User).where(User.name == f"{_PREFIX} operatore"))
             session.execute(delete(LegalEntity).where(LegalEntity.id == ids.foreign))
@@ -496,8 +500,8 @@ def _count(session: Session, table: str) -> int:
 
 def test_every_repository_list_answers_the_scope_s_rows_alone(world: World) -> None:
     with _scoped(world, world.foreign) as session:
-        customers = CustomerRepository(session).list(CustomerListQuery(limit=50))
-        assert [c.legal_name for c in customers] == [f"{_PREFIX} estero"]
+        organizations = OrganizationRepository(session).list(OrganizationListQuery(limit=50))
+        assert [c.legal_name for c in organizations] == [f"{_PREFIX} estero"]
         deals = DealRepository(session).list(DealListQuery(limit=50))
         assert [d.name for d in deals] == [f"{_PREFIX} estero deal"]
         # The lines of a deal out of sight are not readable by asking for its id.
@@ -529,7 +533,7 @@ def test_a_raw_select_on_every_policied_table_agrees_with_the_lists(world: World
             assert _count(session, table) == expected, table
     # Both legal entities in scope: everything but what belongs to neither.
     with _scoped(world, world.studio, world.foreign) as session:
-        assert _count(session, "customers") == 2
+        assert _count(session, "organizations") == 2
         assert _count(session, "deal_value_lines") == 2
         assert _count(session, "contact_points") == 4
         assert _count(session, "notes") == 6
@@ -543,7 +547,7 @@ def test_an_unscoped_actor_and_all_see_everything(world: World) -> None:
     session = session_factory(world.app)()
     bind_scope(session, Actor(id=world.user_id, type="user", role="collaborator"))
     with session:
-        assert _count(session, "customers") == 2
+        assert _count(session, "organizations") == 2
         assert _count(session, "costs") == 3
         assert _count(session, "activities") == 5
         assert _count(session, "inbox_items") == 4
@@ -562,7 +566,7 @@ def test_a_session_with_nothing_bound_sees_nothing(world: World) -> None:
 
 def test_to_scope_with_no_legal_entity_left_sees_nothing_either(world: World) -> None:
     with _scoped(world) as session:
-        assert _count(session, "customers") == 0
+        assert _count(session, "organizations") == 0
         assert _count(session, "activities") == 1  # the space-level row is everyone's
 
 
@@ -675,7 +679,7 @@ def test_a_reminder_s_draft_and_timeline_row_follow_the_invoice_not_the_moved_cu
     factory = session_factory(world.engine)
     with factory() as session:
         studio_customer = session.execute(
-            select(Customer.id).where(Customer.legal_entity_id == world.studio)
+            select(Organization.id).where(Organization.legal_entity_id == world.studio)
         ).scalar_one()
         foreign_invoice = session.execute(
             select(Invoice.id).where(Invoice.legal_entity_id == world.foreign)
@@ -685,7 +689,7 @@ def test_a_reminder_s_draft_and_timeline_row_follow_the_invoice_not_the_moved_cu
         session.add(reminder)
         session.flush()
         draft = EmailDraft(
-            entity_type="customer",
+            entity_type="organization",
             entity_id=studio_customer,
             message_id_header=f"<{_PREFIX}@example.test>",
             subject=f"{_PREFIX} sollecito",
@@ -695,7 +699,7 @@ def test_a_reminder_s_draft_and_timeline_row_follow_the_invoice_not_the_moved_cu
         session.add(draft)
         session.add(
             Activity(
-                entity_type="customer",
+                entity_type="organization",
                 entity_id=studio_customer,
                 kind=f"{_PREFIX}.sollecito",
                 actor_id=None,
@@ -731,7 +735,7 @@ def test_a_reminder_s_draft_and_timeline_row_follow_the_invoice_not_the_moved_cu
         session.flush()
         session.add(
             GmailMessageLink(
-                gmail_message_id=message.id, entity_type="customer", entity_id=studio_customer
+                gmail_message_id=message.id, entity_type="organization", entity_id=studio_customer
             )
         )
         draft.google_account_id = account.id
@@ -799,7 +803,7 @@ def test_an_artefact_rendered_after_the_customer_moved_stays_with_the_invoice(
         invoice = session.execute(
             select(Invoice).where(Invoice.legal_entity_id == world.foreign)
         ).scalar_one()
-        customer = session.get(Customer, invoice.customer_id)
+        customer = session.get(Organization, invoice.customer_id)
         assert customer is not None
         customer.legal_entity_id = world.studio  # the move, by hand: the rows under it stay
         session.commit()
@@ -860,7 +864,7 @@ def test_an_artefact_rendered_after_the_customer_moved_stays_with_the_invoice(
             for doc_id in (document_id, pdf_document_id):
                 if doc_id is not None:
                     session.execute(delete(Document).where(Document.id == doc_id))
-            customer = session.get(Customer, invoice.customer_id)
+            customer = session.get(Organization, invoice.customer_id)
             assert customer is not None
             customer.legal_entity_id = world.foreign
             session.commit()
@@ -879,7 +883,7 @@ def test_an_imported_original_takes_the_legal_entity_the_caller_names(
     factory = session_factory(world.engine)
     with factory() as session:
         studio_customer = session.execute(
-            select(Customer.id).where(Customer.legal_entity_id == world.studio)
+            select(Organization.id).where(Organization.legal_entity_id == world.studio)
         ).scalar_one()
         created = DocumentService(
             session,
@@ -1079,14 +1083,14 @@ def test_no_active_deal_ends_up_on_an_archived_customer_across_the_line(world: W
     with an active deal in another legal entity cannot be archived by a member of its own,
     and a deal cannot be restored under a customer archived in a legal entity the deal's
     member cannot see (CodeRabbit's ninth adversarial pass on PR #513)."""
-    from pigrocrm.core.customers.service import CustomerService
     from pigrocrm.core.deals.service import DealService
     from pigrocrm.core.errors import Conflict
+    from pigrocrm.core.organizations.service import OrganizationService
 
     factory = session_factory(world.engine)
     with factory() as session:
         studio_customer = session.execute(
-            select(Customer).where(Customer.legal_entity_id == world.studio)
+            select(Organization).where(Organization.legal_entity_id == world.studio)
         ).scalar_one()
         foreign_deal = session.execute(
             select(Deal).where(Deal.legal_entity_id == world.foreign)
@@ -1100,7 +1104,7 @@ def test_no_active_deal_ends_up_on_an_archived_customer_across_the_line(world: W
             id=world.user_id, type="user", role="collaborator", legal_entities=(world.studio,)
         )
         with _scoped(world, world.studio) as session, pytest.raises(Conflict) as refused:
-            CustomerService(session).soft_delete(customer_id, studio_actor)
+            OrganizationService(session).soft_delete(customer_id, studio_actor)
         # Refused on both deals, said with the one in sight: the other is another
         # legal entity's count.
         assert refused.value.details["active_deals"] == 1
@@ -1108,7 +1112,7 @@ def test_no_active_deal_ends_up_on_an_archived_customer_across_the_line(world: W
         # restore the deal as a member who cannot see the customer.
         with factory() as session:
             deal = session.get(Deal, deal_id)
-            customer = session.get(Customer, customer_id)
+            customer = session.get(Organization, customer_id)
             assert deal is not None and customer is not None
             deal.deleted_at = datetime.now(UTC)
             customer.deleted_at = datetime.now(UTC)
@@ -1121,7 +1125,7 @@ def test_no_active_deal_ends_up_on_an_archived_customer_across_the_line(world: W
     finally:
         with factory() as session:
             deal = session.get(Deal, deal_id)
-            customer = session.get(Customer, customer_id)
+            customer = session.get(Organization, customer_id)
             assert deal is not None and customer is not None
             deal.deleted_at = None
             deal.customer_id = original_customer
@@ -1137,11 +1141,11 @@ def test_no_active_deal_ends_up_on_an_archived_customer_across_the_line(world: W
 
 def test_an_insert_across_the_line_is_refused_by_the_policy(world: World) -> None:
     with _scoped(world, world.foreign) as session:
-        studio_customer = session.execute(text("SELECT count(*) FROM customers")).scalar_one()
+        studio_customer = session.execute(text("SELECT count(*) FROM organizations")).scalar_one()
         assert studio_customer == 1
         with pytest.raises(DBAPIError) as refused:
             session.add(
-                Customer(
+                Organization(
                     legal_name=f"{_PREFIX} intruso",
                     country="IT",
                     custom_fields={},
@@ -1157,7 +1161,9 @@ def test_an_insert_across_the_line_is_refused_by_the_policy(world: World) -> Non
     with session_factory(world.engine)() as session:
         assert (
             session.execute(
-                select(func.count(Customer.id)).where(Customer.legal_name == f"{_PREFIX} intruso")
+                select(func.count(Organization.id)).where(
+                    Organization.legal_name == f"{_PREFIX} intruso"
+                )
             ).scalar_one()
             == 0
         )
@@ -1166,11 +1172,11 @@ def test_an_insert_across_the_line_is_refused_by_the_policy(world: World) -> Non
 def test_the_scope_survives_a_commit_on_the_same_session(world: World) -> None:
     """`set_config(..., true)` dies with the transaction; the listener rebinds it."""
     with _scoped(world, world.foreign) as session:
-        assert _count(session, "customers") == 1
+        assert _count(session, "organizations") == 1
         session.commit()
-        assert _count(session, "customers") == 1
+        assert _count(session, "organizations") == 1
         session.rollback()
-        assert _count(session, "customers") == 1
+        assert _count(session, "organizations") == 1
 
 
 # --- the introspection ----------------------------------------------------------------
@@ -1252,7 +1258,7 @@ FAST_PATH = {
     "activities",
 }
 THROUGH_THE_PARENT = (
-    "customer_visible",
+    "organization_visible",
     "person_visible",
     "deal_visible",
     "invoice_visible",

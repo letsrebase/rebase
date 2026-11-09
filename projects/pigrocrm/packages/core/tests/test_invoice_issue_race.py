@@ -27,7 +27,6 @@ from sqlalchemy import Engine, select, text
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.actor import Actor
-from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.db import session_factory
 from pigrocrm.core.errors import Conflict
 from pigrocrm.core.fiscal.schemas import FiscalProfileUpsert
@@ -37,6 +36,7 @@ from pigrocrm.core.invoices.schemas import InvoiceCreate, InvoiceIssue, InvoiceL
 from pigrocrm.core.invoices.service import InvoiceService
 from pigrocrm.core.legal_entities.schemas import LegalEntityUpsert
 from pigrocrm.core.legal_entities.service import LegalEntityService
+from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.storage.local import LocalFileStorage
 
 HUMAN = Actor(id=None, type="user", role="admin")
@@ -61,8 +61,8 @@ def _configure(session: Session) -> None:
     FiscalProfileService(session).upsert(FiscalProfileUpsert(regime_code="RF19"), HUMAN)
 
 
-def _customer(session: Session) -> Customer:
-    customer = Customer(
+def _customer(session: Session) -> Organization:
+    customer = Organization(
         legal_name="Acme S.r.l.",
         vat_number="98765432109",
         sdi_code="ABCDEFG",
@@ -115,7 +115,7 @@ def _cleanup(factory, invoice_id: UUID | None, customer_id: UUID | None) -> None
         cleaner.execute(text("DELETE FROM legal_entities WHERE NOT is_default"))
         if customer_id is not None:
             cleaner.execute(
-                Customer.__table__.delete().where(Customer.__table__.c.id == customer_id)
+                Organization.__table__.delete().where(Organization.__table__.c.id == customer_id)
             )
         cleaner.commit()
 

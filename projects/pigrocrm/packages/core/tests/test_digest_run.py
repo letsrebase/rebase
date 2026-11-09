@@ -35,7 +35,6 @@ from sqlalchemy.orm import Session
 from pigrocrm.core.activities.models import Activity
 from pigrocrm.core.auth.models import User
 from pigrocrm.core.config import Settings
-from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.db import session_factory, today_local
 from pigrocrm.core.db.base import uuid7
 from pigrocrm.core.deals.models import Deal
@@ -46,6 +45,7 @@ from pigrocrm.core.digest.service import iso_week
 from pigrocrm.core.documents.models import Document
 from pigrocrm.core.invoices.models import Invoice
 from pigrocrm.core.mail import Mail, RecordingSender
+from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.pipeline.models import PipelineStage
 from pigrocrm.core.tasks.models import Task
 from pigrocrm.core.telemetry import DIGEST_SENT, Tracker
@@ -130,7 +130,7 @@ def _require_empty(session: Session) -> None:
     """The report has no scope narrower than the space, and neither has the recipient
     list: `list_all()` is every user there is. So a committed row left by another file
     changes what this one asserts, and a loud precondition beats an off-by-N."""
-    for model in (Invoice, TimeEntry, Deal, Document, Customer, User, Digest):
+    for model in (Invoice, TimeEntry, Deal, Document, Organization, User, Digest):
         leftovers = session.execute(select(func.count(model.id))).scalar_one()
         assert leftovers == 0, (
             f"{leftovers} committed {model.__tablename__} row(s) were already present; "
@@ -151,7 +151,7 @@ def corpus(db_engine: Engine) -> Iterator[Corpus]:
         open = PipelineStage(
             name=f"{_PREFIX} Aperto", position=0, default_probability=20, type="open"
         )
-        customer = Customer(legal_name=f"{_PREFIX} Cliente", country="IT", custom_fields={})
+        customer = Organization(legal_name=f"{_PREFIX} Cliente", country="IT", custom_fields={})
         session.add_all([open, customer])
         session.flush()
 
@@ -246,7 +246,9 @@ def _clean_up(factory: Any, iso: str, legal_entity_id: UUID | None = None) -> No
     of `_require_empty` is that nobody's leftovers are anybody else's business.
     """
     with factory() as session:
-        corpus_customers = select(Customer.id).where(Customer.legal_name.like(f"{_PREFIX} %"))
+        corpus_organizations = select(Organization.id).where(
+            Organization.legal_name.like(f"{_PREFIX} %")
+        )
         corpus_deals = select(Deal.id).where(Deal.name.like(f"{_PREFIX} %"))
         weeks = select(Digest.id).where(Digest.week == iso)
         session.execute(
@@ -255,9 +257,9 @@ def _clean_up(factory: Any, iso: str, legal_entity_id: UUID | None = None) -> No
         session.execute(delete(Activity).where(Activity.entity_id.in_(corpus_deals)))
         session.execute(delete(Digest).where(Digest.week == iso))
         session.execute(delete(TimeEntry).where(TimeEntry.deal_id.in_(corpus_deals)))
-        session.execute(delete(Invoice).where(Invoice.customer_id.in_(corpus_customers)))
+        session.execute(delete(Invoice).where(Invoice.customer_id.in_(corpus_organizations)))
         session.execute(delete(Deal).where(Deal.name.like(f"{_PREFIX} %")))
-        session.execute(delete(Customer).where(Customer.legal_name.like(f"{_PREFIX} %")))
+        session.execute(delete(Organization).where(Organization.legal_name.like(f"{_PREFIX} %")))
         session.execute(delete(PipelineStage).where(PipelineStage.name.like(f"{_PREFIX} %")))
         session.execute(delete(Task).where(Task.title.like(f"{_PREFIX} %")))
         session.execute(delete(User).where(User.name.like(f"{_PREFIX} %")))
@@ -907,7 +909,7 @@ def test_a_space_emptied_by_soft_deletion_hears_nothing(db_engine: Engine) -> No
         stage = PipelineStage(
             name=f"{_PREFIX} Fase", position=0, default_probability=10, type="open"
         )
-        customer = Customer(
+        customer = Organization(
             legal_name=f"{_PREFIX} Cancellato",
             country="IT",
             custom_fields={},
@@ -1149,7 +1151,7 @@ def test_a_scoped_recipient_gets_a_report_built_inside_their_scope(
 
     factory = session_factory(corpus.engine)
     with factory() as session:
-        legal_entity_id = session.execute(select(Customer.legal_entity_id)).scalars().first()
+        legal_entity_id = session.execute(select(Organization.legal_entity_id)).scalars().first()
         assert legal_entity_id is not None
         bruno = session.get(User, corpus.recipients[1])
         assert bruno is not None

@@ -1,7 +1,7 @@
 /**
  * Who wrote from this customer's domain, on its Email tab (REB-766). One press asks the
  * connected mailbox which addresses at the customer's domain it has exchanged mail with
- * (`GET /api/gmail/customers/{id}/correspondents`); each one that is not yet in the
+ * (`GET /api/gmail/organizations/{id}/correspondents`); each one that is not yet in the
  * address book is added to the customer as a person with one press, named from the mail
  * header the way the Clienti proposals name theirs. Nothing is written until that press.
  *
@@ -14,13 +14,13 @@ import { toast } from '@rebase/ui/sonner'
 import { toProblem } from '@/lib/api'
 import { useCan } from '@/lib/auth'
 import { formatInstant } from './instants'
-import { useAddCorrespondent, useCustomerCorrespondents } from './correspondents'
+import { useAddCorrespondent, useOrganizationCorrespondents } from './correspondents'
 
 function conversations(count: number): string {
   return count === 1 ? '1 conversazione' : `${count} conversazioni`
 }
 
-export function CustomerCorrespondents({
+export function OrganizationCorrespondents({
   customerId,
   domainSource,
 }: {
@@ -35,7 +35,7 @@ export function CustomerCorrespondents({
   const pressed = `${customerId}|${domainSource}`
   const [askedFor, setAskedFor] = useState<string | null>(null)
   const asked = askedFor === pressed
-  const found = useCustomerCorrespondents(customerId, asked)
+  const found = useOrganizationCorrespondents(customerId, asked)
   const adding = useAddCorrespondent(customerId)
 
   // A readonly person would get a refusal for a read that spends the owner's quota.

@@ -34,7 +34,6 @@ from pigrocrm.core.contracts.schemas import (
     ContractStateChange,
     ContractUpdate,
 )
-from pigrocrm.core.customers.repository import CustomerRepository
 from pigrocrm.core.db import encode_cursor
 from pigrocrm.core.errors import Conflict, NotFound, ValidationFailed
 from pigrocrm.core.fields.custom import merge_custom
@@ -42,6 +41,7 @@ from pigrocrm.core.fields.service import FieldDefinitionService
 from pigrocrm.core.fields.validator import validate_custom_fields
 from pigrocrm.core.labels import CONTRACT_STATUS, label
 from pigrocrm.core.legal_entities.service import LegalEntityService
+from pigrocrm.core.organizations.repository import OrganizationRepository
 from pigrocrm.core.schemas import reject_cleared_columns, supplied_changes
 
 # How many clause notes `ContractService.detail` carries, the latest ones.
@@ -52,7 +52,7 @@ class ContractService:
     def __init__(self, session: Session) -> None:
         self.session = session
         self.repo = ContractRepository(session)
-        self.customers = CustomerRepository(session)
+        self.organizations = OrganizationRepository(session)
         self.fields = FieldDefinitionService(session)
         self.activities = ActivityService(session)
         self.legal_entity = LegalEntityService(session)
@@ -60,7 +60,7 @@ class ContractService:
     def _validated_custom(self, values: dict[str, Any]) -> dict[str, Any]:
         """Used by `create` only: `values` is the *complete* desired set of custom
         fields for a brand-new row, so it is validated against every active
-        definition. Mirrors CustomerService._validated_custom/DealService.
+        definition. Mirrors OrganizationService._validated_custom/DealService.
         _validated_custom exactly."""
         return validate_custom_fields(ENTITY, self.fields.specs_for(ENTITY), values)
 
@@ -70,9 +70,9 @@ class ContractService:
         check_payment_terms_together(payload)
         check_renewal_notice(payload)
 
-        customer = self.customers.get(payload["customer_id"])
+        customer = self.organizations.get(payload["customer_id"])
         if customer is None:
-            raise NotFound("customer", payload["customer_id"])
+            raise NotFound("organization", payload["customer_id"])
         payload["custom_fields"] = self._validated_custom(payload.get("custom_fields") or {})
         # The customer's legal entity at this moment, kept from now on (REB-623, spec §1.7);
         # refused when deactivated.

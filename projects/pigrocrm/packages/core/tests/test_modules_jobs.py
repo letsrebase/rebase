@@ -145,7 +145,7 @@ def test_the_operational_dashboard_leaves_out_what_a_module_that_is_off_owns(
 ) -> None:
     kind = "modules_jobs.feed_test"
     with session_factory(db_engine)() as session:
-        for entity in ("deal", "time_entry", "contract", "customer"):
+        for entity in ("deal", "time_entry", "contract", "organization"):
             session.add(
                 Activity(
                     entity_type=entity,
@@ -173,17 +173,17 @@ def test_the_operational_dashboard_leaves_out_what_a_module_that_is_off_owns(
         everything = frozenset({"deals", "contracts", "time", "costs", "taxes"})
         on = board(everything)
         assert on.week is not None and on.backlog.billable_uninvoiced_hours is not None
-        assert mine(on) == {"deal", "time_entry", "contract", "customer"}
+        assert mine(on) == {"deal", "time_entry", "contract", "organization"}
 
         off = board(everything - {"time", "deals"})
         # Without `time` there is no week of hours and the arrears carry no hours.
         assert off.week is None and off.backlog.billable_uninvoiced_hours is None
-        assert mine(off) == {"contract", "customer"}
+        assert mine(off) == {"contract", "organization"}
         # An administrator's feed is not the filtered one, and follows the modules too.
         assert mine(board(everything - {"contracts"}, role="admin")) == {
             "deal",
             "time_entry",
-            "customer",
+            "organization",
         }
     finally:
         with session_factory(db_engine)() as session:

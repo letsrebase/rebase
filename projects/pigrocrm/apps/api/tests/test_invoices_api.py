@@ -88,7 +88,7 @@ def legal_entity(logged_in: TestClient) -> dict[str, Any]:
 @pytest.fixture
 def customer(logged_in: TestClient) -> dict[str, Any]:
     response = logged_in.post(
-        "/api/customers",
+        "/api/organizations",
         json={
             "legal_name": "Acme S.r.l.",
             "vat_number": "12345678901",
@@ -463,7 +463,7 @@ def test_a_refusal_names_the_field_in_the_problem_document(
     """Criterion 9: an RFC 9457 problem document with `entity` and `field` populated,
     which is what `fieldErrorFrom` in the web client reads."""
     customer = logged_in.post(
-        "/api/customers",
+        "/api/organizations",
         json={
             "legal_name": "Senza recapito",
             "country": "IT",

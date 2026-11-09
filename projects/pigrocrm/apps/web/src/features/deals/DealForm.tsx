@@ -16,7 +16,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@rebase/ui/select'
-import { CustomerPicker } from '@/features/customers/CustomerPicker'
+import { OrganizationPicker } from '@/features/organizations/OrganizationPicker'
 import type { ProblemDetail } from '@/lib/api'
 import { toFormValues, toRequestBody, type FormValues } from '@/lib/formValues'
 import type { FieldDefinition } from '@/lib/schema'
@@ -159,7 +159,7 @@ export function DealForm({
 }: Props) {
   const locked = contractId != null
   const [values, setValues] = useState<DealFormValues>(() => initial ?? createValues())
-  // `initial`'s absence is what "Nuovo deal" means, exactly like `CustomerForm`/
+  // `initial`'s absence is what "Nuovo deal" means, exactly like `OrganizationForm`/
   // `PersonForm` -- derived rather than a separate boolean prop, so the "show the
   // Cliente picker" decision and the "which DynamicForm mode" decision can never
   // disagree with each other or with what `initial` actually says.
@@ -168,7 +168,7 @@ export function DealForm({
   const chosenOwner = values.native.owner_id as string | null | undefined
   const shownOwner = chosenOwner === undefined && isCreate ? (defaultOwnerId ?? null) : chosenOwner
 
-  // Same "reset synchronously when `open` toggles" pattern as `CustomerForm`/
+  // Same "reset synchronously when `open` toggles" pattern as `OrganizationForm`/
   // `PersonForm`, for the identical reason: this component stays mounted across
   // dialog opens (`Dialog`'s own `open` prop toggles visibility, not this
   // component's mount state), so a plain `useState(initial ?? {})` initializer
@@ -278,7 +278,7 @@ export function DealForm({
                   logos/decorative accents, not small body text like this. */}
               <span className="ml-1 text-destructive">*</span>
             </Label>
-            <CustomerPicker
+            <OrganizationPicker
               id="deal-customer"
               value={(values.native.customer_id as string | null | undefined) ?? null}
               onChange={(customer) => change('customer_id', customer?.id ?? null)}

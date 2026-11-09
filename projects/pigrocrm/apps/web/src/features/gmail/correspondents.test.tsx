@@ -4,7 +4,7 @@ import type { ReactNode } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 import { correspondentKeys } from './correspondents'
 import { useDisconnectGmail } from './queries'
-import { useUpdateCustomer } from '@/features/customers/queries'
+import { useUpdateOrganization } from '@/features/organizations/queries'
 import { api } from '@/lib/api'
 
 vi.mock('@/lib/api', async (importOriginal) => {
@@ -40,7 +40,7 @@ describe('the addresses a customer page found', () => {
     const wrapper = ({ children }: { children: ReactNode }) => (
       <QueryClientProvider client={client}>{children}</QueryClientProvider>
     )
-    const { result } = renderHook(() => useUpdateCustomer('c1'), { wrapper })
+    const { result } = renderHook(() => useUpdateOrganization('c1'), { wrapper })
 
     result.current.mutate({ note: 'una nota' })
     await waitFor(() => expect(result.current.isSuccess).toBe(true))

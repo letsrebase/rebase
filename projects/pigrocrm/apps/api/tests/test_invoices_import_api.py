@@ -70,7 +70,7 @@ def legal_entity(logged_in: TestClient) -> dict[str, Any]:
 @pytest.fixture
 def customer(logged_in: TestClient) -> dict[str, Any]:
     response = logged_in.post(
-        "/api/customers",
+        "/api/organizations",
         json={
             "legal_name": "Acme S.r.l.",
             "vat_number": "12345678901",
@@ -227,7 +227,7 @@ def test_the_import_and_the_gaps_are_keyed_by_the_legal_entity_named(
     assert saved.status_code == 200, saved.text
 
     second_customer = logged_in.post(
-        "/api/customers",
+        "/api/organizations",
         json={"legal_name": "Acme Ltd", "country": "GB", "legal_entity_id": str(second.id)},
     ).json()
     refused = logged_in.post(

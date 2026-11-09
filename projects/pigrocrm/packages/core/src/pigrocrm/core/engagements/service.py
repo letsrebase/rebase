@@ -30,9 +30,6 @@ from pigrocrm.core.auth.repository import UserRepository
 from pigrocrm.core.auth.schemas import UserCreate
 from pigrocrm.core.auth.service import UserService
 from pigrocrm.core.config import Settings
-from pigrocrm.core.customers.repository import CustomerRepository
-from pigrocrm.core.customers.schemas import CustomerCreate
-from pigrocrm.core.customers.service import CustomerService
 from pigrocrm.core.db import session_factory, today_local
 from pigrocrm.core.db.scope import bind_scope
 from pigrocrm.core.deals.repository import DealRepository
@@ -58,6 +55,9 @@ from pigrocrm.core.invoices.models import Invoice, InvoiceLine
 from pigrocrm.core.mail import EmailSender
 from pigrocrm.core.modules.service import SpaceModulesService
 from pigrocrm.core.money import sum_hours
+from pigrocrm.core.organizations.repository import OrganizationRepository
+from pigrocrm.core.organizations.schemas import OrganizationCreate
+from pigrocrm.core.organizations.service import OrganizationService
 from pigrocrm.core.tenants.database import tenant_database_name, tenant_database_url
 from pigrocrm.core.tenants.models import Tenant
 from pigrocrm.core.tenants.registry import space_base_settings
@@ -220,7 +220,7 @@ class EngagementService:
         """The hours on the match's deal from `da` to `a`, both included (spec § 2.4):
         one row per time entry with the invoice its line belongs to, the CRM's own split
         of billed hours, and one row per invoice with the hours of this report on it.
-        Nothing else of the space: not its customers, not its other deals, not an
+        Nothing else of the space: not its organizations, not its other deals, not an
         invoice these hours do not sit on.
 
         `da` defaults to the day the deal was created and `a` to today, both in the
@@ -612,24 +612,24 @@ class EngagementService:
 
     def _customer(self, space: Session, data: EngagementUpsert) -> UUID:
         """Step 4: the customer «rebase», by VAT number when the body carries one, then
-        by its exact name among the live customers; created when neither finds it. The
+        by its exact name among the live organizations; created when neither finds it. The
         name is tried after a VAT number that finds nothing too: a space whose customer
         was created before the signer data had a VAT number keeps that one customer,
         rather than gain a second the day the number arrives. An existing one is left as
         it is: its fields are the freelancer's to edit."""
         rebase = data.rebase
-        customers = CustomerRepository(space)
+        organizations = OrganizationRepository(space)
         found = (
-            customers.match_by_fiscal_id(vat_number=rebase.vat_number, tax_code=None)
+            organizations.match_by_fiscal_id(vat_number=rebase.vat_number, tax_code=None)
             if rebase.vat_number is not None
             else None
         )
         if found is None:
-            found = customers.find_by_name(rebase.legal_name)
+            found = organizations.find_by_name(rebase.legal_name)
         if found is not None:
             return found.id
-        created = CustomerService(space).create(
-            CustomerCreate(
+        created = OrganizationService(space).create(
+            OrganizationCreate(
                 legal_name=rebase.legal_name,
                 vat_number=rebase.vat_number,
                 tax_code=rebase.tax_code,

@@ -51,7 +51,7 @@ def check_party_exportable(party: PartySnapshot, entity: str) -> None:
 
     The previous system guessed `address`, `postal_code`, `city` and `province` out of one free-text
     field with a regex over Italian street prefixes. They are four real columns on
-    `customers`; nothing is guessed, and a missing one refuses.
+    `organizations`; nothing is guessed, and a missing one refuses.
     """
     country = (party.country or "").strip().upper()
     if not COUNTRY_RE.fullmatch(country):
@@ -93,7 +93,7 @@ def check_party_exportable(party: PartySnapshot, entity: str) -> None:
 
     # The formats, and not merely the presence — checked *here* because this function's
     # whole reason for existing is that `InvoiceService.issue` calls it before consuming
-    # a register number. Presence alone was not enough: `customers.legal_name` is
+    # a register number. Presence alone was not enough: `organizations.legal_name` is
     # `String(255)` against FPR12's 80, `address` and `city` are `String(255)` and
     # `String(120)` against 60, and `postal_code` is `String(10)` where the schema wants exactly
     # five digits. So an ordinary customer — a long consortium name, a mistyped CAP —

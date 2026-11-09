@@ -25,11 +25,11 @@ from sqlalchemy.orm import Session
 
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.config import Settings
-from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.db import session_factory
 from pigrocrm.core.db.role import ensure_application_role
 from pigrocrm.core.invoices.models import Invoice
 from pigrocrm.core.legal_entities.models import LegalEntity
+from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.storage import LocalFileStorage
 from pigrocrm_mcp.server import build_server
 
@@ -49,7 +49,7 @@ class World(NamedTuple):
 
 
 def _customer_and_invoice(session: Session, legal_entity: UUID, tag: str) -> tuple[UUID, UUID]:
-    customer = Customer(
+    customer = Organization(
         legal_name=f"{_PREFIX} {tag}", country="IT", custom_fields={}, legal_entity_id=legal_entity
     )
     session.add(customer)
@@ -109,7 +109,7 @@ def world(mcp_engine: Engine) -> Iterator[World]:
         with factory() as session:
             session.execute(delete(Invoice).where(Invoice.id.in_([studio_invoice, ltd_invoice])))
             session.execute(
-                delete(Customer).where(Customer.id.in_([studio_customer, ltd_customer]))
+                delete(Organization).where(Organization.id.in_([studio_customer, ltd_customer]))
             )
             session.execute(delete(LegalEntity).where(LegalEntity.id == ltd.id))
             session.commit()

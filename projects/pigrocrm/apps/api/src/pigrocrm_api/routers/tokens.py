@@ -21,7 +21,7 @@ router = APIRouter(
 # back as a raw sqlalchemy.exc.DataError (StringDataRightTruncation) -- not a subclass
 # of IntegrityError, so no handler catches it, and it poisons the session. Same class
 # of gap every other Create schema in this codebase already closes (see e.g.
-# CustomerCreate.RAGIONE_SOCIALE_MAX_LENGTH). `PatService.create` takes a bare `nome:
+# OrganizationCreate.RAGIONE_SOCIALE_MAX_LENGTH). `PatService.create` takes a bare `nome:
 # str`, not a packages/core schema of its own (see pat_service.py), so this router's
 # own request model is the only Pydantic layer standing between a caller and
 # `personal_access_tokens.name` -- both the length bound and the SafeStr NUL guard

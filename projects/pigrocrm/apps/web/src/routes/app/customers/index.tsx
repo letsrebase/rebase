@@ -1,26 +1,14 @@
-import { createFileRoute } from '@tanstack/react-router'
-import { CustomersPage } from '@/features/customers/CustomersPage'
+import { createFileRoute, redirect } from '@tanstack/react-router'
 
-/**
- * The `?search=` term is an entry point, not a live mirror of the box. The palette's
- * «vedi tutti» links here carrying the term the user searched for, and `key` makes
- * arriving with a *different* term a remount, so the filter is seeded even when this
- * route is already open. Typing afterwards stays local: pushing every keystroke through
- * the router would make a controlled input wait on a navigation to echo the character
- * back, which is how a fast typist loses characters.
- */
-function CustomersRoute() {
-  const { search } = Route.useSearch()
-  return <CustomersPage key={search ?? ''} initialSearch={search ?? ''} />
-}
-
+// Old path support (REB-969), see `customers/$customerId.tsx`. The `?search=` term of a
+// palette link is carried over, and dropped when it is not a non-empty string, as the real
+// page does.
 export const Route = createFileRoute('/app/customers/')({
-  component: CustomersRoute,
-  // Declared so the palette can link here with a term (`navigate({ to, search })` is
-  // typed against this). An empty or non-string value is dropped rather than carried as
-  // `?search=`, so the URL never claims a filter that is not applied.
   validateSearch: (search: Record<string, unknown>): { search?: string } => ({
     search:
       typeof search.search === 'string' && search.search.length > 0 ? search.search : undefined,
   }),
+  beforeLoad: ({ search }) => {
+    throw redirect({ to: '/app/organizations', search })
+  },
 })

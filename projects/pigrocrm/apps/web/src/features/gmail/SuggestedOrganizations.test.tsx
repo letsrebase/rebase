@@ -1,5 +1,5 @@
 /**
- * The list of customers the connected mailbox proposes (REB-223), driven as a person
+ * The list of organizations the connected mailbox proposes (REB-223), driven as a person
  * drives it. The API is stubbed at `api.GET`/`api.POST`, answering `{ data | error,
  * response }` so `unwrap` does the throwing, as it does live.
  */
@@ -8,8 +8,8 @@ import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { api } from '@/lib/api'
-import { SuggestedCustomers } from './SuggestedCustomers'
-import type { SuggestedCustomer } from './suggestions'
+import { SuggestedOrganizations } from './SuggestedOrganizations'
+import type { SuggestedOrganization } from './suggestions'
 
 vi.mock('@/lib/api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/api')>()
@@ -19,7 +19,7 @@ vi.mock('@/lib/api', async (importOriginal) => {
 const toast = vi.hoisted(() => ({ success: vi.fn(), error: vi.fn() }))
 vi.mock('@rebase/ui/sonner', () => ({ toast }))
 
-const PROPOSALS: SuggestedCustomer[] = [
+const PROPOSALS: SuggestedOrganization[] = [
   {
     domain: 'acme.it',
     name: 'Acme',
@@ -55,7 +55,7 @@ function renderList(onImported = vi.fn()) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   render(
     <QueryClientProvider client={client}>
-      <SuggestedCustomers onImported={onImported} />
+      <SuggestedOrganizations onImported={onImported} />
     </QueryClientProvider>,
   )
   return onImported
@@ -68,7 +68,7 @@ beforeEach(() => {
   toast.error.mockReset()
 })
 
-describe('the proposed customers', () => {
+describe('the proposed organizations', () => {
   it('lists every proposal unticked, with what the mailbox knows of it', async () => {
     vi.mocked(api.GET).mockImplementation(() => ok(PROPOSALS))
     renderList()
@@ -82,7 +82,7 @@ describe('the proposed customers', () => {
     // Nothing is ticked at first, so nothing can be imported yet.
     expect(screen.getByRole('checkbox', { name: /Acme/ })).not.toBeChecked()
     expect(screen.getByRole('button', { name: 'Importa i clienti spuntati' })).toBeDisabled()
-    expect(api.GET).toHaveBeenCalledWith('/api/gmail/customer-suggestions')
+    expect(api.GET).toHaveBeenCalledWith('/api/gmail/organization-suggestions')
   })
 
   it('imports what was ticked, with the corrected name and the chosen people', async () => {
@@ -105,9 +105,9 @@ describe('the proposed customers', () => {
     await user.click(screen.getByRole('button', { name: 'Importa 1 cliente' }))
 
     await waitFor(() =>
-      expect(api.POST).toHaveBeenCalledWith('/api/customers/from-suggestions', {
+      expect(api.POST).toHaveBeenCalledWith('/api/organizations/from-suggestions', {
         body: {
-          customers: [
+          organizations: [
             {
               domain: 'acme.it',
               legal_name: 'Acme S.r.l.',

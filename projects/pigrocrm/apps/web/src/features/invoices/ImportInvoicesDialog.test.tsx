@@ -14,15 +14,15 @@ import { ImportInvoicesButton } from './ImportInvoicesDialog'
 const mockAuth = vi.hoisted(() => ({ may: true }))
 vi.mock('@/lib/auth', () => ({ useCan: () => mockAuth.may }))
 
-// The customer search of the picker (REB-777): `useCustomers` goes through `openapi-fetch`,
+// The customer search of the picker (REB-777): `useOrganizations` goes through `openapi-fetch`,
 // which hands `fetch` a `Request` and not a URL, so it is stood in for rather than routed
 // through the `fetch` seam the two multipart routes use. Like the server, it answers only
-// the customers of the azienda it is asked for. `undefined` is a search that could not be
+// the organizations of the azienda it is asked for. `undefined` is a search that could not be
 // read.
-const mockCustomers = vi.hoisted(() => ({ data: undefined as unknown }))
-vi.mock('@/features/customers/queries', () => ({
-  useCustomers: (params: { legal_entity_id?: string }) => {
-    const page = mockCustomers.data as { items: { legal_entity_id: string }[] } | undefined
+const mockOrganizations = vi.hoisted(() => ({ data: undefined as unknown }))
+vi.mock('@/features/organizations/queries', () => ({
+  useOrganizations: (params: { legal_entity_id?: string }) => {
+    const page = mockOrganizations.data as { items: { legal_entity_id: string }[] } | undefined
     return {
       data: page && {
         ...page,
@@ -33,7 +33,7 @@ vi.mock('@/features/customers/queries', () => ({
       isError: page === undefined,
     }
   },
-  useCustomer: () => ({ data: undefined }),
+  useOrganization: () => ({ data: undefined }),
 }))
 
 const REVIEW = '/api/invoices/import/upload/review'
@@ -52,7 +52,7 @@ function json(body: unknown, status = 200): Promise<Response> {
 
 beforeEach(() => {
   mockAuth.may = true
-  mockCustomers.data = undefined
+  mockOrganizations.data = undefined
   mockFetch.mockReset()
   vi.stubGlobal('fetch', mockFetch)
 })
@@ -88,8 +88,8 @@ function invoice(number: string, overrides: Record<string, unknown> = {}) {
   }
 }
 
-// The shape of `CustomerPage`. `az-1` is the azienda `reviewRow` writes its invoices on.
-const CUSTOMERS = {
+// The shape of `OrganizationPage`. `az-1` is the azienda `reviewRow` writes its invoices on.
+const ORGANIZATIONS = {
   items: [
     { id: 'cust-acme', legal_name: 'Acme Ltd', legal_entity_id: 'az-1' },
     { id: 'cust-rossi', legal_name: 'Rossi Consulting S.r.l.', legal_entity_id: 'az-1' },
@@ -208,7 +208,7 @@ describe('the import dialog', () => {
       return json({ lines: [row] })
     })
 
-    mockCustomers.data = CUSTOMERS
+    mockOrganizations.data = ORGANIZATIONS
     const user = await openAndPick([xml('a.xml')])
     const section = await screen.findByRole('region', { name: 'Clienti da creare' })
     await user.click(await within(section).findByRole('button', { name: 'Acme Ltd' }))
@@ -221,7 +221,7 @@ describe('the import dialog', () => {
     await screen.findByText('Importate')
     const confirm = mockFetch.mock.calls.find(([url]) => url === CONFIRM)
     expect(JSON.parse(formOf(confirm).get('decisions') as string)).toEqual({
-      customers: { '09876543210': { customer_id: 'cust-acme' } },
+      organizations: { '09876543210': { customer_id: 'cust-acme' } },
     })
   })
 
@@ -233,7 +233,7 @@ describe('the import dialog', () => {
       return json({ lines: [] })
     })
 
-    mockCustomers.data = CUSTOMERS
+    mockOrganizations.data = ORGANIZATIONS
     const user = await openAndPick([xml('a.xml')])
     const section = await screen.findByRole('region', { name: 'Clienti da creare' })
     await user.click(await within(section).findByRole('button', { name: 'Rossi Consulting S.r.l.' }))
@@ -243,12 +243,12 @@ describe('the import dialog', () => {
     await waitFor(() => expect(mockFetch.mock.calls.some(([url]) => url === CONFIRM)).toBe(true))
     const confirm = mockFetch.mock.calls.find(([url]) => url === CONFIRM)
     expect(JSON.parse(formOf(confirm).get('decisions') as string)).toEqual({
-      customers: { '09876543210': { create_customer: true } },
+      organizations: { '09876543210': { create_organization: true } },
     })
   })
 
-  it('offers only the customers of the azienda the invoice is written on', async () => {
-    mockCustomers.data = CUSTOMERS
+  it('offers only the organizations of the azienda the invoice is written on', async () => {
+    mockOrganizations.data = ORGANIZATIONS
     mockFetch.mockImplementation((url) =>
       url === REVIEW
         ? json({ lines: [reviewRow('a.xml', 'needs_customer_confirmation', '2026/1')] })
@@ -263,7 +263,7 @@ describe('the import dialog', () => {
   })
 
   it('does not let a customer be picked for a party whose invoices span two aziende', async () => {
-    mockCustomers.data = CUSTOMERS
+    mockOrganizations.data = ORGANIZATIONS
     mockFetch.mockImplementation((url) =>
       url === REVIEW
         ? json({
@@ -282,8 +282,8 @@ describe('the import dialog', () => {
     expect(within(section).getByText(/sono di più aziende/)).toBeInTheDocument()
   })
 
-  it('says the matches are partial when the customers do not fit in one page', async () => {
-    mockCustomers.data = { ...CUSTOMERS, next_cursor: 'abc' }
+  it('says the matches are partial when the organizations do not fit in one page', async () => {
+    mockOrganizations.data = { ...ORGANIZATIONS, next_cursor: 'abc' }
     mockFetch.mockImplementation((url) =>
       url === REVIEW
         ? json({ lines: [reviewRow('a.xml', 'needs_customer_confirmation', '2026/1')] })
@@ -295,8 +295,8 @@ describe('the import dialog', () => {
     expect(await screen.findByText(/Ci sono altri clienti: scrivi per restringere/)).toBeInTheDocument()
   })
 
-  it('keeps two customers of the same name apart, each with its own picker', async () => {
-    mockCustomers.data = CUSTOMERS
+  it('keeps two organizations of the same name apart, each with its own picker', async () => {
+    mockOrganizations.data = ORGANIZATIONS
     const twin = (file: string, key: string) => ({
       ...reviewRow(file, 'needs_customer_confirmation', file),
       party_key: key,
@@ -322,12 +322,12 @@ describe('the import dialog', () => {
     await waitFor(() => expect(mockFetch.mock.calls.some(([url]) => url === CONFIRM)).toBe(true))
     const confirm = mockFetch.mock.calls.find(([url]) => url === CONFIRM)
     expect(JSON.parse(formOf(confirm).get('decisions') as string)).toEqual({
-      customers: { 'estero:1': { create_customer: true }, 'estero:2': { customer_id: 'cust-acme' } },
+      organizations: { 'estero:1': { create_organization: true }, 'estero:2': { customer_id: 'cust-acme' } },
     })
   })
 
   it('does not offer a customer for one the person unticked', async () => {
-    mockCustomers.data = CUSTOMERS
+    mockOrganizations.data = ORGANIZATIONS
     mockFetch.mockImplementation((url) =>
       url === REVIEW
         ? json({ lines: [reviewRow('a.xml', 'needs_customer_confirmation', '2026/1')] })
@@ -358,7 +358,7 @@ describe('the import dialog', () => {
     await waitFor(() => expect(mockFetch.mock.calls.some(([url]) => url === CONFIRM)).toBe(true))
     const confirm = mockFetch.mock.calls.find(([url]) => url === CONFIRM)
     expect(JSON.parse(formOf(confirm).get('decisions') as string)).toEqual({
-      customers: { '09876543210': { create_customer: true } },
+      organizations: { '09876543210': { create_organization: true } },
     })
   })
 
@@ -385,7 +385,7 @@ describe('the import dialog', () => {
     const confirm = mockFetch.mock.calls.find(([url]) => url === CONFIRM)
     expect(formOf(confirm).getAll('file')).toHaveLength(1)
     expect(JSON.parse(formOf(confirm).get('decisions') as string)).toEqual({
-      customers: { '09876543210': { create_customer: true } },
+      organizations: { '09876543210': { create_organization: true } },
     })
     expect(screen.getByText('Registro 2026:')).toBeInTheDocument()
     expect(screen.getByText('Importate')).toBeInTheDocument()
@@ -530,13 +530,13 @@ describe('the import dialog', () => {
       .filter(([url]) => url === CONFIRM)
       .map((call) => JSON.parse(formOf(call).get('decisions') as string))
     expect(decisions).toEqual([
-      { customers: { '09876543210': { create_customer: true } } },
-      { customers: { '09876543210': { customer_id: 'customer-1' } } },
+      { organizations: { '09876543210': { create_organization: true } } },
+      { organizations: { '09876543210': { customer_id: 'customer-1' } } },
     ])
   })
 
   it('sends a picked customer in the first batch and what that batch attached in the next', async () => {
-    mockCustomers.data = CUSTOMERS
+    mockOrganizations.data = ORGANIZATIONS
     const files = Array.from({ length: 30 }, (_, i) => xml(`f${String(i).padStart(2, '0')}.xml`))
     mockFetch.mockImplementation((url, init) => {
       const names = (init?.body as FormData).getAll('file').map((f) => (f as File).name)
@@ -566,13 +566,13 @@ describe('the import dialog', () => {
       .filter(([url]) => url === CONFIRM)
       .map((call) => JSON.parse(formOf(call).get('decisions') as string))
     expect(decisions).toEqual([
-      { customers: { '09876543210': { customer_id: 'cust-acme' } } },
-      { customers: { '09876543210': { customer_id: 'cust-acme' } } },
+      { organizations: { '09876543210': { customer_id: 'cust-acme' } } },
+      { organizations: { '09876543210': { customer_id: 'cust-acme' } } },
     ])
   })
 
   it('forgets a pick when the person chooses other files', async () => {
-    mockCustomers.data = CUSTOMERS
+    mockOrganizations.data = ORGANIZATIONS
     mockFetch.mockImplementation((url) =>
       url === REVIEW
         ? json({ lines: [reviewRow('a.xml', 'needs_customer_confirmation', '2026/1')] })

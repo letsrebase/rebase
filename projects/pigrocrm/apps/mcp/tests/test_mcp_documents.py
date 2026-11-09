@@ -168,7 +168,7 @@ async def test_the_four_document_tools_the_audit_added_are_registered(server) ->
     audience yet", `DocumentService.regenerate` "is a decision for the person who
     saw it", `soft_delete`/`restore` "MCP does not archive documents". None of the
     four decides anything a person has not already decided, and the last two are the
-    archive/restore pair this surface already exposes for customers, deals, people,
+    archive/restore pair this surface already exposes for organizations, deals, people,
     costs and time entries."""
     async with Client(server) as client:
         names = {tool.name for tool in (await client.list_tools()).tools}
@@ -299,7 +299,7 @@ async def test_a_document_archived_by_an_agent_can_be_restored_by_one(
 ) -> None:
     """Both, or neither. An agent that could archive a document and not bring it back
     would leave its own mistake correctable only by a person with a browser -- the exact
-    asymmetry the audit found on customers, deals and people. The stored bytes are never
+    asymmetry the audit found on organizations, deals and people. The stored bytes are never
     touched by either half, so the restored document still has its PDF."""
     async with Client(server) as client:
         archived = await client.call_tool("archive_document", {"document_id": seeded_offer_id})

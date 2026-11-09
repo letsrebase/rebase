@@ -22,7 +22,7 @@ _PATHS: dict[str, Callable[[UUID], str]] = {
     # A task has no page of its own: the list opens it in a dialog.
     "task": lambda id_: f"/app/activities?open={id_}",
     "deal": lambda id_: f"/app/deal/{id_}",
-    "customer": lambda id_: f"/app/customers/{id_}",
+    "organization": lambda id_: f"/app/organizations/{id_}",
     "invoice": lambda id_: f"/app/invoices/{id_}",
     # A proforma is an invoice row of type `proforma`, opened by the same page.
     "proforma": lambda id_: f"/app/invoices/{id_}",

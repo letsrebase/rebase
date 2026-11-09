@@ -5,7 +5,7 @@ be logic the web app cannot reach, exactly the failure this architecture exists 
 Custom fields travel as a plain dict validated by the core validator; `describe_schema` says
 which keys are legal right now.
 
-`tools/<family>.py` (`customers.py`, `contracts.py`...) holds what a tool calls; the tool
+`tools/<family>.py` (`organizations.py`, `contracts.py`...) holds what a tool calls; the tool
 itself, its signature and its description, is `families/<family>.py`. The tools behind a
 switch (`privileged.py`, `drive_privileged.py`) and behind a configured integration
 (`gmail.py`, `drive.py`, `slack.py`) register from their own module, in `server.py`.

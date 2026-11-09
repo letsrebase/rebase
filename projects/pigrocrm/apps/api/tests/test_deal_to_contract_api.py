@@ -39,7 +39,7 @@ def _stages(api_session: Session) -> None:
 
 
 def _won_deal(client: TestClient, *lines: dict[str, object]) -> str:
-    customer = client.post("/api/customers", json={"legal_name": "ACME Srl"}).json()["id"]
+    customer = client.post("/api/organizations", json={"legal_name": "ACME Srl"}).json()["id"]
     deal = client.post(
         "/api/deals", json={"name": "Sito", "customer_id": customer, "value_lines": list(lines)}
     )
@@ -81,7 +81,9 @@ def test_the_proposal_then_the_conversion_then_the_lock(collaborator_client: Tes
 def test_a_deal_not_won_is_a_409_and_a_body_missing_the_end_is_a_422(
     collaborator_client: TestClient,
 ) -> None:
-    customer = collaborator_client.post("/api/customers", json={"legal_name": "ACME"}).json()["id"]
+    customer = collaborator_client.post("/api/organizations", json={"legal_name": "ACME"}).json()[
+        "id"
+    ]
     deal = collaborator_client.post(
         "/api/deals", json={"name": "Aperto", "customer_id": customer, "value_lines": [UPFRONT]}
     ).json()
@@ -105,7 +107,9 @@ def test_the_proposal_follows_a_start_the_person_moved_to(
         "quantity": "4.00",
         "duration_months": 12,
     }
-    customer = collaborator_client.post("/api/customers", json={"legal_name": "ACME"}).json()["id"]
+    customer = collaborator_client.post("/api/organizations", json={"legal_name": "ACME"}).json()[
+        "id"
+    ]
     deal = collaborator_client.post(
         "/api/deals",
         json={

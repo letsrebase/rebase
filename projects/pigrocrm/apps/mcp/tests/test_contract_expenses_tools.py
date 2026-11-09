@@ -11,14 +11,14 @@ from sqlalchemy.orm import Session
 
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.contracts.models import Contract
-from pigrocrm.core.customers.models import Customer
+from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.timetracking.models import CostCategory
 
 ADMIN = Actor(id=None, type="mcp", role="admin")
 
 
 def _contract_id(mcp_session: Session, *, expense_policy: dict[str, object]) -> str:
-    customer = Customer(legal_name="ACME Srl")
+    customer = Organization(legal_name="ACME Srl")
     mcp_session.add(customer)
     mcp_session.flush()
     contract = Contract(

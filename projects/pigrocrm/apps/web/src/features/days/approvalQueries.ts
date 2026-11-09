@@ -57,16 +57,16 @@ const MESSAGES_LIMIT = 200
  * recent email that approved the days; sorting what is left cannot bring it back. Only read
  * once a customer is known and the mailbox is connected.
  */
-export function useCustomerMessages(customerId: string | undefined, enabled: boolean) {
+export function useOrganizationMessages(customerId: string | undefined, enabled: boolean) {
   return useQuery({
     enabled: enabled && customerId !== undefined,
-    queryKey: [...gmailKeys.messages('customer', customerId ?? ''), 'proof'],
+    queryKey: [...gmailKeys.messages('organization', customerId ?? ''), 'proof'],
     queryFn: (): Promise<GmailMessage[]> =>
       unwrap(
         api.GET('/api/gmail/messages', {
           params: {
             query: {
-              entity_type: 'customer',
+              entity_type: 'organization',
               entity_id: customerId ?? '',
               limit: MESSAGES_LIMIT,
               order: 'recent',

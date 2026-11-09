@@ -1,32 +1,32 @@
-"""Customers: create, read, search, archive."""
+"""Organizations: create, read, search, archive."""
 
 from collections.abc import Callable
 from typing import Any, cast
 
 from mcp.server import MCPServer
 
-from pigrocrm.core.customers.schemas import CustomerListQuery
 from pigrocrm.core.db import SortDirection
+from pigrocrm.core.organizations.schemas import OrganizationListQuery
 from pigrocrm_mcp.annotations import ADDITIVE, DESTRUCTIVE, READ_ONLY
 from pigrocrm_mcp.context import McpContext
 from pigrocrm_mcp.tools import (
-    customers,
     invoices,
+    organizations,
 )
 from pigrocrm_mcp.tools.params import (
     BoundedLimit,
-    CustomerChanges,
     OptionalContactPoints,
+    OrganizationChanges,
     parse_legal_entity_id,
 )
 
 
 def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> None:
-    # ---- customers -------------------------------------------------------
+    # ---- organizations -------------------------------------------------------
 
     @mcp.tool(annotations=ADDITIVE)
     @guard
-    def create_customer(
+    def create_organization(
         legal_name: str,
         vat_number: str | None = None,
         tax_code: str | None = None,
@@ -45,11 +45,11 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
         legal_entity_id: str | None = None,
         owner_id: str | None = None,
     ) -> dict[str, Any]:
-        """Create a customer.
+        """Create an organization.
 
-        `owner_id` is who is responsible for the customer and receives reminders about invoices
+        `owner_id` is who is responsible for the organization and receives reminders about invoices
         and contracts (id in `list_members`): if omitted, it is the creator; only an administrator
-        can name someone else, as with `update_customer`.
+        can name someone else, as with `update_organization`.
 
         `payment_days` and `payment_end_of_month` are the agreed terms («30 days invoice date
         end of month» = `30` with `True`); `issue_invoice` computes the due date from them,
@@ -60,9 +60,9 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
 
         `contact_points`: see the server instructions; the PEC stays in `certified_email`.
 
-        `note` is the customer's first note (without date or author: the CRM signs it).
+        `note` is the organization's first note (without date or author: the CRM signs it).
         """
-        return customers.create(
+        return organizations.create(
             context,
             {
                 "legal_name": legal_name,
@@ -88,31 +88,31 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
     @mcp.tool(annotations=READ_ONLY)
     @guard
     def suggest_legal_entity(country: str | None = None) -> dict[str, Any]:
-        """The company that would invoice a new customer of `country` (ISO 3166-1 alpha-2, `IT` if
-        omitted): the same one `create_customer` picks without `legal_entity_id`. Ask for it to
+        """The company that would invoice a new organization of `country` (ISO 3166-1 alpha-2, `IT` if
+        omitted): the same one `create_organization` picks without `legal_entity_id`. Ask for it to
         show it to the person before creating.
         """
         return invoices.suggest_legal_entity(context, country)
 
     @mcp.tool(annotations=DESTRUCTIVE)
     @guard
-    def update_customer(customer_id: str, changes: CustomerChanges) -> dict[str, Any]:
-        """Update a customer. Only an administrator can change `owner_id` (from `list_members`);
+    def update_organization(organization_id: str, changes: OrganizationChanges) -> dict[str, Any]:
+        """Update an organization. Only an administrator can change `owner_id` (from `list_members`);
         `null` removes the owner.
         """
-        return customers.update(context, customer_id, changes)
+        return organizations.update(context, organization_id, changes)
 
     @mcp.tool(annotations=READ_ONLY)
     @guard
-    def get_customer(customer_id: str) -> dict[str, Any]:
-        """Read a customer, with the latest 50 notes (`note`, most recent first; `note_total`
-        counts them, all of them are in `customer://<id>`).
+    def get_organization(organization_id: str) -> dict[str, Any]:
+        """Read an organization, with the latest 50 notes (`note`, most recent first; `note_total`
+        counts them, all of them are in `organization://<id>`).
         """
-        return customers.get(context, customer_id)
+        return organizations.get(context, organization_id)
 
     @mcp.tool(annotations=READ_ONLY)
     @guard
-    def search_customers(
+    def search_organizations(
         search: str | None = None,
         status: str | None = None,
         custom: dict[str, Any] | None = None,
@@ -127,12 +127,12 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
         # `validate_arguments` where the message is not ours.
         dir: str = "asc",
     ) -> dict[str, Any]:
-        """Search customers by legal name, VAT number, tax code or any email or phone. `sort`:
+        """Search organizations by legal name, VAT number, tax code or any email or phone. `sort`:
         `created_at`, `updated_at`, `legal_name`. `legal_entity_id` filters by company.
         """
-        return customers.search(
+        return organizations.search(
             context,
-            CustomerListQuery(
+            OrganizationListQuery(
                 search=search,
                 status=status,
                 custom=custom,
@@ -156,12 +156,12 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
 
     @mcp.tool(annotations=ADDITIVE)
     @guard
-    def archive_customer(customer_id: str) -> dict[str, str]:
-        """Archive a customer (reversible with `restore_customer`). Fails if it has active deals."""
-        return customers.archive(context, customer_id)
+    def archive_organization(organization_id: str) -> dict[str, str]:
+        """Archive an organization (reversible with `restore_organization`). Fails if it has active deals."""
+        return organizations.archive(context, organization_id)
 
     @mcp.tool(annotations=ADDITIVE)
     @guard
-    def restore_customer(customer_id: str) -> dict[str, Any]:
-        """Restore an archived customer."""
-        return customers.restore(context, customer_id)
+    def restore_organization(organization_id: str) -> dict[str, Any]:
+        """Restore an archived organization."""
+        return organizations.restore(context, organization_id)

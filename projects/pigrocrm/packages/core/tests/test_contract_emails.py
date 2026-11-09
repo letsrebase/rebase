@@ -21,7 +21,6 @@ from pigrocrm.core.contract_emails.schemas import (
 )
 from pigrocrm.core.contract_emails.service import ContractEmailService
 from pigrocrm.core.contracts.models import Contract, RateCard
-from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.errors import (
     AgentForbidden,
     Conflict,
@@ -36,6 +35,7 @@ from pigrocrm.core.invoices.schemas import InvoiceIssue
 from pigrocrm.core.invoices.service import InvoiceService
 from pigrocrm.core.legal_entities.schemas import LegalEntityUpsert
 from pigrocrm.core.legal_entities.service import LegalEntityService
+from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.people.models import Person
 from pigrocrm.core.storage.local import LocalFileStorage
 from pigrocrm.core.work_units.invoicing import assemble_unbilled_work_units_into_new_invoice
@@ -73,7 +73,7 @@ def _setup(db_session: Session) -> Contract:
     assert legal_entity is not None
     if FiscalProfileRepository(db_session).get(legal_entity.id) is None:
         FiscalProfileService(db_session).upsert(FiscalProfileUpsert(regime_code="RF19"), ADMIN)
-    customer = Customer(
+    customer = Organization(
         legal_name=f"Acme {uuid4()} S.r.l.",
         vat_number="12345678901",
         sdi_code="ABCDEFG",
@@ -200,7 +200,7 @@ def test_a_reader_cannot_save_a_template(db_session: Session) -> None:
         )
 
 
-def test_the_preview_renders_the_invoices_own_figures_and_suggests_the_customers_people(
+def test_the_preview_renders_the_invoices_own_figures_and_suggests_the_organizations_people(
     db_session: Session, local_storage: LocalFileStorage
 ) -> None:
     contract = _setup(db_session)

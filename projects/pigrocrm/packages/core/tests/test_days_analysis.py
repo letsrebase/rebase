@@ -18,11 +18,11 @@ from conftest import _invoice_service
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.analytics.service import AnalyticsService
 from pigrocrm.core.contracts.models import Contract, RateCard
-from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.db import today_local
 from pigrocrm.core.errors import ValidationFailed
 from pigrocrm.core.invoices.models import InvoiceLine
 from pigrocrm.core.invoices.schemas import InvoiceIssue
+from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.storage.local import LocalFileStorage
 from pigrocrm.core.work_units.invoicing import assemble_unbilled_work_units_into_new_invoice
 from pigrocrm.core.work_units.models import WorkUnit
@@ -35,7 +35,7 @@ YEAR = 2026
 def _contract(
     session: Session, name: str = "Acme S.r.l.", *, requires_prior_approval: bool = False
 ) -> Contract:
-    customer = Customer(
+    customer = Organization(
         legal_name=f"{name} {uuid4().hex[:6]}",
         vat_number="01234567890",
         sdi_code="ABCDEFG",

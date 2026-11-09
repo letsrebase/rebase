@@ -15,7 +15,7 @@ async function createTextField(page: Page, label: string): Promise<void> {
 }
 
 /** The value cell immediately to the right of a `Row`'s own label
- *  (routes/app/customers/$customerId.tsx: `<span>{label}</span><span>{value}</span>`,
+ *  (routes/app/organizations/$organizationId.tsx: `<span>{label}</span><span>{value}</span>`,
  *  siblings inside one flex row) -- located relative to the label itself so it
  *  cannot be confused with an unrelated "0"/"Sì"/"No" elsewhere on a page that
  *  also shows a VAT number, a probability, or another field's own value. */
@@ -32,9 +32,9 @@ function detailValueFor(page: Page, label: string) {
  * actually reached the database, not just this render.
  *
  * Fix round 1: clears *both* halves of the contract side by side, not only the
- * custom one -- `CustomerForm.submit`'s own docstring is explicit that the two
+ * custom one -- `OrganizationForm.submit`'s own docstring is explicit that the two
  * spellings are not interchangeable (a native column clears on an explicit
- * `""`, since `CustomerUpdate.model_dump(exclude_none=True)` keeps an empty
+ * `""`, since `OrganizationUpdate.model_dump(exclude_none=True)` keeps an empty
  * string but silently drops an actual `None`; a custom field clears only on an
  * explicit `null` in `custom_fields`, since `""` there is `is_blank` and a
  * non-required field just quietly skips it). Getting either spelling wrong, or
@@ -47,9 +47,9 @@ test("a custom field's whole life: appears everywhere with no restart, and a cle
 }) => {
   await createTextField(page, 'Referente')
 
-  // The column, with no rebuild: buildCustomerColumns (features/customers/columns.tsx)
-  // reads it straight off GET /api/schema/customer, and `DataTable`'s own loading gate
-  // (components/DataTable.tsx) is `customers.isLoading` -- so the columnheader depends on
+  // The column, with no rebuild: buildOrganizationColumns (features/organizations/columns.tsx)
+  // reads it straight off GET /api/schema/organization, and `DataTable`'s own loading gate
+  // (components/DataTable.tsx) is `organizations.isLoading` -- so the columnheader depends on
   // both requests, not just one. `page.goto` here is a genuine hard reload: the whole SPA
   // bundle, the auth check, and both of those requests, all from scratch. Asserting
   // `toBeVisible()` right after `goto` bets the suite's fixed `expect.timeout` always
@@ -62,9 +62,9 @@ test("a custom field's whole life: appears everywhere with no restart, and a cle
   const isGet = (response: Response, path: string): boolean =>
     new URL(response.url()).pathname.endsWith(path) && response.request().method() === 'GET'
   await Promise.all([
-    page.goto('/app/customers'),
-    page.waitForResponse((response) => isGet(response, '/api/schema/customer')),
-    page.waitForResponse((response) => isGet(response, '/api/customers')),
+    page.goto('/app/organizations'),
+    page.waitForResponse((response) => isGet(response, '/api/schema/organization')),
+    page.waitForResponse((response) => isGet(response, '/api/organizations')),
   ])
   await expect(page.getByRole('columnheader', { name: 'Referente' })).toBeVisible()
 
@@ -104,9 +104,9 @@ test("a custom field's whole life: appears everywhere with no restart, and a cle
  * record still holds a value for it used to make that record permanently
  * uneditable (a flat form state re-derives "is this custom?" from the *active*
  * schema at submit time, which no longer lists the archived key -- see
- * `CustomerForm.tsx`'s own docstring on `CustomerFormValues` for the full
+ * `OrganizationForm.tsx`'s own docstring on `OrganizationFormValues` for the full
  * reproduction). The UI has no way left to show the archived value at all once
- * archived (`CustomerDetail`'s "Campi personalizzati" card only ever lists
+ * archived (`OrganizationDetail`'s "Campi personalizzati" card only ever lists
  * `schema.data?.custom_fields`), so the only honest way to check it survived is
  * the API itself.
  */
@@ -116,7 +116,7 @@ test('archiving a field a record still holds a value for does not lock that reco
   await createTextField(page, 'Codice interno')
 
   const name = `Archived Trap ${Date.now()}`
-  await page.goto('/app/customers')
+  await page.goto('/app/organizations')
   await page.getByRole('button', { name: /nuovo cliente/i }).click()
   const createDialog = page.getByRole('dialog')
   await createDialog.getByLabel('Ragione sociale').fill(name)
@@ -142,7 +142,7 @@ test('archiving a field a record still holds a value for does not lock that reco
 
   // The UI genuinely cannot show it any more -- this is exactly why the
   // assertions below go through the API instead.
-  await page.goto(`/app/customers/${customerId}`)
+  await page.goto(`/app/organizations/${customerId}`)
   await expect(page.getByText('Codice interno', { exact: true })).not.toBeVisible()
 
   // Edit the record, changing something unrelated. This must save cleanly --
@@ -160,7 +160,7 @@ test('archiving a field a record still holds a value for does not lock that reco
   // succeeding, the archived value would trivially "survive" (nothing happened
   // at all) while Comune would just as trivially still be unset -- checking only
   // the archived field would not tell a real fix apart from the original bug.
-  const response = await page.request.get(`/api/customers/${customerId}`)
+  const response = await page.request.get(`/api/organizations/${customerId}`)
   expect(response.ok()).toBe(true)
   const customer = await response.json()
   expect(customer.city).toBe('Milano')
@@ -178,7 +178,7 @@ test('archiving a field a record still holds a value for does not lock that reco
  */
 test('a numeric zero and a checkbox both read as real values, never as a dash', async ({ page }) => {
   const preexistingName = `Pre-esistente ${Date.now()}`
-  await page.goto('/app/customers')
+  await page.goto('/app/organizations')
   await page.getByRole('button', { name: /nuovo cliente/i }).click()
   await page.getByLabel('Ragione sociale').fill(preexistingName)
   await page.getByRole('button', { name: 'Salva' }).click()
@@ -204,14 +204,14 @@ test('a numeric zero and a checkbox both read as real values, never as a dash', 
 
   // The pre-existing customer never had an opinion on either field -- the
   // checkbox must still read "No", never a dash, and never "Sì" either.
-  await page.goto('/app/customers')
+  await page.goto('/app/organizations')
   await page.getByText(preexistingName).click()
   await expect(detailValueFor(page, 'Attivo campagna')).toHaveText('No')
 
   // A second, brand-new customer sets the numeric field to exactly 0 and
   // switches the checkbox on.
   const zeroName = `Valori Zero ${Date.now()}`
-  await page.goto('/app/customers')
+  await page.goto('/app/organizations')
   await page.getByRole('button', { name: /nuovo cliente/i }).click()
   const createDialog = page.getByRole('dialog')
   await createDialog.getByLabel('Ragione sociale').fill(zeroName)
@@ -227,7 +227,7 @@ test('a numeric zero and a checkbox both read as real values, never as a dash', 
   // And the same zero, scoped to this customer's own row, on the list column --
   // `!0` is `true` in JavaScript, which is exactly the trap that would render
   // this cell as blank/dash instead.
-  await page.goto('/app/customers')
+  await page.goto('/app/organizations')
   const zeroRow = page.getByRole('row').filter({ hasText: zeroName })
   await expect(zeroRow.getByRole('cell', { name: '0', exact: true })).toBeVisible()
 })

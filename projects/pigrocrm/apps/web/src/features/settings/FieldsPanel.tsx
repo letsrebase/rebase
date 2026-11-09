@@ -37,7 +37,7 @@ import {
 } from './queries'
 
 const ENTITIES: { value: EntityType; label: string }[] = [
-  { value: 'customer', label: 'Cliente' },
+  { value: 'organization', label: 'Cliente' },
   { value: 'person', label: 'Persona' },
   { value: 'deal', label: 'Deal' },
 ]
@@ -84,7 +84,7 @@ function unattributed(
 }
 
 export function FieldsPanel() {
-  const [entityType, setEntityType] = useState<EntityType>('customer')
+  const [entityType, setEntityType] = useState<EntityType>('organization')
   const [open, setOpen] = useState(false)
   const [key, setKey] = useState('')
   const [keyEdited, setKeyEdited] = useState(false)

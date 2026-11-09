@@ -12,7 +12,7 @@ from legal_entities_helpers import legal_entity_url
 
 
 def _contract(logged_in: TestClient, **overrides: Any) -> str:
-    customer = logged_in.post("/api/customers", json={"legal_name": "ACME Srl"})
+    customer = logged_in.post("/api/organizations", json={"legal_name": "ACME Srl"})
     assert customer.status_code == 201, customer.text
     body: dict[str, Any] = {
         "customer_id": customer.json()["id"],

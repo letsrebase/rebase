@@ -20,9 +20,9 @@ from pigrocrm.core.actor import Actor
 from pigrocrm.core.analytics.repository import AnalyticsRepository
 from pigrocrm.core.analytics.service import AnalyticsService
 from pigrocrm.core.contracts.models import Contract, RateCard
-from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.db.base import uuid7
 from pigrocrm.core.invoices.models import Invoice, InvoiceLine
+from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.timetracking.models import TimeEntry
 from pigrocrm.core.work_units.models import WorkUnit
 
@@ -30,7 +30,7 @@ READONLY = Actor(id=uuid7(), type="user", role="readonly")
 
 
 def _contract(db_session: Session, **overrides: object) -> Contract:
-    customer = Customer(legal_name=f"ACME {uuid4()}")
+    customer = Organization(legal_name=f"ACME {uuid4()}")
     db_session.add(customer)
     db_session.flush()
     payload: dict[str, object] = {

@@ -37,7 +37,7 @@ PAYLOAD_LABELS = WEB / "payloadLabels.ts"
 # `changed` names the keys of `field_changes`, the attributes an update touches; the columns
 # of these tables are what it can say. The system columns are never an edit.
 TIMELINE_TABLES = (
-    "customers",
+    "organizations",
     "people",
     "deals",
     "documents",

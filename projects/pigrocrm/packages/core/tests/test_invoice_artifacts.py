@@ -20,7 +20,6 @@ from sqlalchemy.orm import Session
 
 from pigrocrm.core.activities.service import ActivityService
 from pigrocrm.core.actor import Actor
-from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.documents.models import Document
 from pigrocrm.core.documents.schemas import DocumentCreate, DocumentListQuery
 from pigrocrm.core.documents.service import DocumentService
@@ -34,6 +33,7 @@ from pigrocrm.core.invoices.service import InvoiceService
 from pigrocrm.core.labels import INVOICE_TYPE, label
 from pigrocrm.core.legal_entities.schemas import LegalEntityUpsert
 from pigrocrm.core.legal_entities.service import LegalEntityService
+from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.storage.local import LocalFileStorage
 
 ADMIN = Actor(id=None, type="system", role="admin")
@@ -66,7 +66,7 @@ def service(db_session: Session, storage: LocalFileStorage) -> InvoiceService:
 
 @pytest.fixture
 def customer_id(db_session: Session) -> UUID:
-    customer = Customer(
+    customer = Organization(
         legal_name="Acme S.r.l.",
         vat_number="12345678901",
         sdi_code="ABCDEFG",
@@ -159,7 +159,7 @@ def test_producing_artifacts_twice_is_idempotent_for_an_issued_invoice(
 
 
 def _non_resident_customer(db_session: Session) -> UUID:
-    customer = Customer(
+    customer = Organization(
         legal_name="Example Ltd",
         vat_number="GB123456789",
         address="1 Old Street",

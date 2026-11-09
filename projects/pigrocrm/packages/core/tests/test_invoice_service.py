@@ -16,7 +16,6 @@ from sqlalchemy.orm import Session
 
 from pigrocrm.core.activities.service import ActivityService
 from pigrocrm.core.actor import Actor
-from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.deals.models import Deal
 from pigrocrm.core.errors import (
     Conflict,
@@ -41,6 +40,7 @@ from pigrocrm.core.invoices.schemas import (
     PaymentState,
 )
 from pigrocrm.core.invoices.service import InvoiceService
+from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.pipeline.service import PipelineService
 from pigrocrm.core.storage.local import LocalFileStorage
 
@@ -62,7 +62,7 @@ def service(db_session: Session, storage: LocalFileStorage) -> InvoiceService:
 
 @pytest.fixture
 def customer_id(db_session: Session) -> UUID:
-    customer = Customer(
+    customer = Organization(
         legal_name="Acme S.r.l.",
         vat_number="12345678901",
         sdi_code="ABCDEFG",
@@ -164,7 +164,7 @@ def test_the_regime_decides_the_line_vat_nature(service: InvoiceService, custome
 def _non_resident_customer(db_session: Session) -> UUID:
     """The shape of ORB-32: a British company, no SDI code, no PEC, a postcode that is
     not five digits and no province."""
-    customer = Customer(
+    customer = Organization(
         legal_name="Example Ltd",
         vat_number="GB123456789",
         address="1 Old Street",
@@ -203,7 +203,7 @@ def test_replacing_the_lines_reads_the_customer_s_country_again(
     its lines: that is the remedy for the proforma in ORB-32."""
     customer_id = _non_resident_customer(db_session)
     invoice = service.create(InvoiceCreate(customer_id=customer_id, lines=[_line()]), ADMIN)
-    customer = db_session.get(Customer, customer_id)
+    customer = db_session.get(Organization, customer_id)
     assert customer is not None
     customer.country = "IT"
     customer.province = "RM"
@@ -255,7 +255,7 @@ def test_a_deal_belonging_to_another_customer_is_refused(
     # stage id or the insert fails on the column, not on anything this test means to
     # exercise.
     stage = PipelineService(db_session).seed_defaults(ADMIN)[0]
-    other = Customer(legal_name="Altro", country="IT")
+    other = Organization(legal_name="Altro", country="IT")
     db_session.add(other)
     db_session.flush()
     deal = Deal(name="Progetto", customer_id=other.id, pipeline_stage_id=stage.id)
@@ -879,7 +879,7 @@ def test_a_proforma_date_is_editable_while_a_draft_and_never_cleared(
 
 
 def test_every_read_carries_the_customer_s_name(service: InvoiceService, customer_id: UUID) -> None:
-    """`InvoiceRead.customer_legal_name` is denormalised from `customers` at read
+    """`InvoiceRead.customer_legal_name` is denormalised from `organizations` at read
     time, exactly as `DealRead` does it (ORB-98): the list page has to say whose invoice
     a row is without a request per row. Every path that hands back an `InvoiceRead`
     carries it, so a mutation's answer and the next `get` agree on the same shape."""
@@ -901,7 +901,7 @@ def test_the_customer_name_costs_one_query_for_the_whole_page(
     """Counted, not reasoned about, for the same reason `test_deals.py` counts it: an N+1
     reintroduced by a later refactor is invisible to every other assertion here."""
     for index in range(3):
-        customer = Customer(legal_name=f"ACME {index}", country="IT")
+        customer = Organization(legal_name=f"ACME {index}", country="IT")
         db_session.add(customer)
         db_session.flush()
         service.create(InvoiceCreate(customer_id=customer.id), ADMIN)
@@ -1048,7 +1048,7 @@ def test_unpaid_for_customer_lists_the_issued_unpaid_rows_oldest_deadline_first(
     from pigrocrm.core.db.clock import today_local
 
     today = today_local()
-    customer = Customer(legal_name="Debitore S.r.l.")
+    customer = Organization(legal_name="Debitore S.r.l.")
     db_session.add(customer)
     db_session.flush()
     later = unpaid_invoice(db_session, due=today + timedelta(days=20), customer=customer)

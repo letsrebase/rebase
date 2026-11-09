@@ -4,7 +4,7 @@ import type { DataTableFeatures } from '@/components/DataTable'
 import { renderFieldValue } from '@/components/DynamicFieldRenderer'
 import type { LegalEntityRecord } from '@/lib/legalEntity'
 import type { FieldDefinition } from '@/lib/schema'
-import type { Customer } from './queries'
+import type { Organization } from './queries'
 
 const EMPTY = '—'
 
@@ -12,7 +12,7 @@ const EMPTY = '—'
  * `null` and `""` both mean "nothing here" for a native text column -- unlike a
  * dynamic field (`renderFieldValue`'s job, in DynamicFieldRenderer.tsx), a native
  * column has no field type that could make `0`/`false` a legitimate value to
- * preserve, so the wider check is safe here and `??` alone is not: `CustomerForm`'s
+ * preserve, so the wider check is safe here and `??` alone is not: `OrganizationForm`'s
  * own "clear a field" path sends an explicit `""` to clear a native *text* column
  * (`clearedNativeValue` in lib/schema.ts -- every column on this table is one), and
  * the cell then holds an empty string, not `null`. `??` alone would render that
@@ -32,7 +32,7 @@ export function displayNative(value: string | null): string {
  * from an earlier major version's docs. `DataTableFeatures` (DataTable.tsx's own
  * export) is the `TFeatures` every table in this product is instantiated with, so
  * this is the same type parameter `DataTable`'s own `columns` prop already requires
- * -- getting it right here is what lets `<DataTable columns={buildCustomerColumns(...)} />`
+ * -- getting it right here is what lets `<DataTable columns={buildOrganizationColumns(...)} />`
  * type-check at all.
  *
  * Native columns first, then one per custom field -- so a field defined at runtime
@@ -41,7 +41,7 @@ export function displayNative(value: string | null): string {
  * `useEntitySchema`/`describe_specs`), so there is nothing here to filter a second
  * time.
  */
-export interface CustomerColumnOptions {
+export interface OrganizationColumnOptions {
   /**
    * The legal entities to name in an «Azienda» column after the name (REB-625, spec 2026-10-03
    * §5 «Lists»). Given only under «Tutte le aziende» from the second legal entity on
@@ -51,12 +51,12 @@ export interface CustomerColumnOptions {
   legal_entities?: LegalEntityRecord[]
 }
 
-export function buildCustomerColumns(
+export function buildOrganizationColumns(
   customFields: FieldDefinition[],
-  options: CustomerColumnOptions = {},
-): ColumnDef<DataTableFeatures, Customer>[] {
+  options: OrganizationColumnOptions = {},
+): ColumnDef<DataTableFeatures, Organization>[] {
   const legalEntityName = new Map((options.legal_entities ?? []).map((a) => [a.id, a.name]))
-  const legal_entity: ColumnDef<DataTableFeatures, Customer>[] = options.legal_entities
+  const legal_entity: ColumnDef<DataTableFeatures, Organization>[] = options.legal_entities
     ? [
         {
           header: 'Azienda',
@@ -67,7 +67,7 @@ export function buildCustomerColumns(
         },
       ]
     : []
-  const native: ColumnDef<DataTableFeatures, Customer>[] = [
+  const native: ColumnDef<DataTableFeatures, Organization>[] = [
     {
       header: 'Ragione sociale',
       accessorKey: 'legal_name',
@@ -90,7 +90,7 @@ export function buildCustomerColumns(
   // otherwise be ambiguous: nothing today stops a custom field from being *named*
   // the same as a native column (FieldDefinitionService.create only checks for a
   // collision against other field definitions, not against native columns).
-  const custom: ColumnDef<DataTableFeatures, Customer>[] = customFields.map((field) => ({
+  const custom: ColumnDef<DataTableFeatures, Organization>[] = customFields.map((field) => ({
     header: field.label,
     id: `custom_${field.key}`,
     // `renderFieldValue`, not `value ?? EMPTY`: a custom field can be numeric,

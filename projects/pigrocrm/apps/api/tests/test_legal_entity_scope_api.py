@@ -33,7 +33,6 @@ from pigrocrm.core.auth.schemas import UserCreate, UserUpdate
 from pigrocrm.core.auth.service import UserService
 from pigrocrm.core.config import Settings, get_settings
 from pigrocrm.core.contracts.models import Contract
-from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.db import session_factory
 from pigrocrm.core.db.role import ensure_application_role
 from pigrocrm.core.deals.models import Deal
@@ -41,6 +40,7 @@ from pigrocrm.core.documents.models import Document
 from pigrocrm.core.invoices.models import Invoice, InvoiceLine
 from pigrocrm.core.legal_entities.models import LegalEntity
 from pigrocrm.core.mail import RecordingSender
+from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.pipeline.models import PipelineStage
 from pigrocrm.core.storage import LocalFileStorage
 from pigrocrm.core.timetracking.models import Cost, CostCategory
@@ -82,7 +82,7 @@ class ScopedWorld(NamedTuple):
 
 
 def _seed(session: Session, legal_entity: UUID, tag: str, stage: PipelineStage) -> Rows:
-    customer = Customer(
+    customer = Organization(
         legal_name=f"{_PREFIX} {tag}", country="IT", custom_fields={}, legal_entity_id=legal_entity
     )
     session.add(customer)
@@ -226,7 +226,7 @@ def world(api_engine: Engine) -> Iterator[ScopedWorld]:
                 session.execute(delete(Document).where(Document.id == rows.document))
                 session.execute(delete(Contract).where(Contract.id == rows.contract))
                 session.execute(delete(Deal).where(Deal.id == rows.deal))
-                session.execute(delete(Customer).where(Customer.id == rows.customer))
+                session.execute(delete(Organization).where(Organization.id == rows.customer))
             session.execute(delete(User).where(User.id.in_([admin.id, member.id])))
             session.execute(delete(PipelineStage).where(PipelineStage.id == stage.id))
             session.execute(delete(CostCategory).where(CostCategory.id == category.id))
@@ -284,7 +284,7 @@ def test_to_scoped_member_lists_their_legal_entity_s_rows_and_nobody_else_s(
     me = client.get("/api/auth/me")
     assert me.status_code == 200 and me.json()["legal_entities"] == [str(world.ltd)]
     ltd, studio = world.ltd_rows, world.studio_rows
-    assert _ids(client, "/api/customers") == {str(ltd.customer)}
+    assert _ids(client, "/api/organizations") == {str(ltd.customer)}
     assert _ids(client, "/api/deals") == {str(ltd.deal)}
     assert _ids(client, "/api/contracts") == {str(ltd.contract)}
     assert _ids(client, "/api/documents") == {str(ltd.document)}
@@ -292,7 +292,7 @@ def test_to_scoped_member_lists_their_legal_entity_s_rows_and_nobody_else_s(
     # The aziende themselves: the selector of a scoped member has one entry.
     assert {a["id"] for a in client.get("/api/legal-entities").json()} == {str(world.ltd)}
     # A row of the other azienda is not there, whatever its id is.
-    assert client.get(f"/api/customers/{studio.customer}").status_code == 404
+    assert client.get(f"/api/organizations/{studio.customer}").status_code == 404
     assert client.get(f"/api/invoices/{studio.invoice}").status_code == 404
     assert client.get(f"/api/legal-entities/{world.studio}").status_code == 404
 
@@ -329,7 +329,7 @@ def test_the_dashboards_sum_the_scope_alone(served: TestClient, world: ScopedWor
 def test_the_admin_who_sees_everything_still_does(served: TestClient, world: ScopedWorld) -> None:
     client = _login(served, ADMIN)
     assert client.get("/api/auth/me").json()["legal_entities"] is None
-    assert _ids(client, "/api/customers") == {
+    assert _ids(client, "/api/organizations") == {
         str(world.studio_rows.customer),
         str(world.ltd_rows.customer),
     }
@@ -353,7 +353,7 @@ def test_a_write_the_policy_refuses_is_a_404_and_never_a_500(
     missing row gets instead of the 500 it was."""
     client = _login(served, MEMBER)
     moved = client.patch(
-        f"/api/customers/{world.ltd_rows.customer}", json={"legal_entity_id": str(world.studio)}
+        f"/api/organizations/{world.ltd_rows.customer}", json={"legal_entity_id": str(world.studio)}
     )
     assert moved.status_code == 404, moved.text
     shared = client.post(
@@ -371,7 +371,7 @@ def test_a_write_the_policy_refuses_is_a_404_and_never_a_500(
     assert "aziende" in problem["detail"]
     # A later request on the same client is served, by a fresh session: the refusal
     # poisoned nothing.
-    assert _ids(client, "/api/customers") == {str(world.ltd_rows.customer)}
+    assert _ids(client, "/api/organizations") == {str(world.ltd_rows.customer)}
 
 
 def test_the_scope_is_set_and_cleared_over_the_api_and_the_next_request_sees_it(
@@ -382,12 +382,12 @@ def test_the_scope_is_set_and_cleared_over_the_api_and_the_next_request_sees_it(
     assert widened.status_code == 200, widened.text
     assert widened.json()["legal_entities"] is None
     member = _login(TestClient(served.app, base_url="https://testserver"), MEMBER)
-    assert len(_ids(member, "/api/customers")) == 2
+    assert len(_ids(member, "/api/organizations")) == 2
     narrowed = admin.patch(
         f"/api/users/{world.member_id}", json={"legal_entities": [str(world.ltd)]}
     )
     assert narrowed.status_code == 200 and narrowed.json()["legal_entities"] == [str(world.ltd)]
-    assert _ids(member, "/api/customers") == {str(world.ltd_rows.customer)}
+    assert _ids(member, "/api/organizations") == {str(world.ltd_rows.customer)}
     refused = admin.patch(f"/api/users/{world.member_id}", json={"legal_entities": []})
     assert refused.status_code == 422 and refused.json()["field"] == "legal_entities"
 
@@ -425,7 +425,7 @@ def test_accepting_a_scoped_invitation_through_the_role_opens_a_scoped_account(
     try:
         assert accepted.json()["legal_entities"] == [str(world.ltd)]
         assert served.get("/api/auth/me").json()["legal_entities"] == [str(world.ltd)]
-        assert _ids(served, "/api/customers") == {str(world.ltd_rows.customer)}
+        assert _ids(served, "/api/organizations") == {str(world.ltd_rows.customer)}
     finally:
         with session_factory(world.engine)() as session:
             new_id = session.execute(select(User.id).where(User.email == INVITED)).scalar_one()

@@ -25,7 +25,7 @@ LAST = TODAY.replace(day=calendar.monthrange(TODAY.year, TODAY.month)[1])
 
 
 def _customer(client: TestClient) -> str:
-    created = client.post("/api/customers", json={"legal_name": "ACME S.r.l."})
+    created = client.post("/api/organizations", json={"legal_name": "ACME S.r.l."})
     assert created.status_code == 201, created.text
     return str(created.json()["id"])
 

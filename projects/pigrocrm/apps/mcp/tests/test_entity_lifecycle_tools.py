@@ -21,27 +21,29 @@ async def test_archive_customer_is_reversible_and_blocks_on_active_deals(
 ) -> None:
     PipelineService(mcp_session).seed_defaults(SETUP)
     async with Client(server) as client:
-        customer = _payload(await client.call_tool("create_customer", {"legal_name": "ACME"}))
+        customer = _payload(await client.call_tool("create_organization", {"legal_name": "ACME"}))
         deal = _payload(
             await client.call_tool("create_deal", {"name": "X", "customer_id": customer["id"]})
         )
 
-        blocked = await client.call_tool("archive_customer", {"customer_id": customer["id"]})
+        blocked = await client.call_tool(
+            "archive_organization", {"organization_id": customer["id"]}
+        )
         assert blocked.is_error
 
         await client.call_tool("archive_deal", {"deal_id": deal["id"]})
-        ok = await client.call_tool("archive_customer", {"customer_id": customer["id"]})
+        ok = await client.call_tool("archive_organization", {"organization_id": customer["id"]})
         assert not ok.is_error
 
         # "Reversibile" in the tool's own description, now actually reversed. The three
         # archive tools promised it while no restore tool existed at all: an agent that
         # archived the wrong customer had no way back through MCP, although a person had
         # one over REST the whole time. `test_mcp_surface_coverage.py` is what found the
-        # asymmetry -- `CustomerService.restore`, `DealService.restore` and
+        # asymmetry -- `OrganizationService.restore`, `DealService.restore` and
         # `PersonService.restore` were the only `restore` methods with no tool, while
         # `restore_cost` and `restore_time_entry` have had one since slice 4.
         restored = _payload(
-            await client.call_tool("restore_customer", {"customer_id": customer["id"]})
+            await client.call_tool("restore_organization", {"organization_id": customer["id"]})
         )
         assert restored["id"] == customer["id"]
         deal_again = _payload(await client.call_tool("restore_deal", {"deal_id": deal["id"]}))
@@ -83,7 +85,7 @@ async def test_move_deal_to_a_won_stage_settles_probability_through_the_tool(
     unreachable. This proves that delegation survives the MCP boundary end to end."""
     PipelineService(mcp_session).seed_defaults(SETUP)
     async with Client(server) as client:
-        customer = _payload(await client.call_tool("create_customer", {"legal_name": "ACME"}))
+        customer = _payload(await client.call_tool("create_organization", {"legal_name": "ACME"}))
         deal = _payload(
             await client.call_tool(
                 "create_deal",
@@ -106,11 +108,11 @@ async def test_move_deal_to_a_won_stage_settles_probability_through_the_tool(
 
 async def test_update_customer_still_applies_a_valid_changes_payload(server) -> None:
     async with Client(server) as client:
-        customer = _payload(await client.call_tool("create_customer", {"legal_name": "ACME"}))
+        customer = _payload(await client.call_tool("create_organization", {"legal_name": "ACME"}))
         updated = _payload(
             await client.call_tool(
-                "update_customer",
-                {"customer_id": customer["id"], "changes": {"legal_name": "ACME Srl"}},
+                "update_organization",
+                {"organization_id": customer["id"], "changes": {"legal_name": "ACME Srl"}},
             )
         )
 
@@ -119,7 +121,7 @@ async def test_update_customer_still_applies_a_valid_changes_payload(server) -> 
 
 async def test_update_person_can_still_detach_via_changes(server) -> None:
     async with Client(server) as client:
-        customer = _payload(await client.call_tool("create_customer", {"legal_name": "ACME"}))
+        customer = _payload(await client.call_tool("create_organization", {"legal_name": "ACME"}))
         person = _payload(
             await client.call_tool(
                 "create_person", {"first_name": "Mario", "customer_id": customer["id"]}
@@ -139,7 +141,7 @@ async def test_update_deal_still_applies_a_valid_changes_payload(
 ) -> None:
     PipelineService(mcp_session).seed_defaults(SETUP)
     async with Client(server) as client:
-        customer = _payload(await client.call_tool("create_customer", {"legal_name": "ACME"}))
+        customer = _payload(await client.call_tool("create_organization", {"legal_name": "ACME"}))
         deal = _payload(
             await client.call_tool("create_deal", {"name": "X", "customer_id": customer["id"]})
         )
@@ -183,7 +185,7 @@ async def test_an_agent_sets_a_deals_owner_and_a_new_deal_defaults_to_its_creato
         assert str(gone.id) not in {m["id"] for m in members}
         assert set(members[0]) == {"id", "name", "role", "email"}
 
-        customer = _payload(await client.call_tool("create_customer", {"legal_name": "ACME"}))
+        customer = _payload(await client.call_tool("create_organization", {"legal_name": "ACME"}))
         named = _payload(
             await client.call_tool(
                 "create_deal",

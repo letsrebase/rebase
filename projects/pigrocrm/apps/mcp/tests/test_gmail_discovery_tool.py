@@ -34,11 +34,11 @@ from pigrocrm.core.actor import Actor
 from pigrocrm.core.auth.models import User
 from pigrocrm.core.config import Settings
 from pigrocrm.core.crypto import seal
-from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.documents.models import Document
 from pigrocrm.core.gmail.models import GmailMessage, GoogleAccount
 from pigrocrm.core.gmail.schemas import REQUESTED_SCOPES
 from pigrocrm.core.gmail.transport import GmailTransport
+from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.storage import LocalFileStorage
 from pigrocrm_mcp.provenance import PROVENANCE_TEXT_FREE
 from pigrocrm_mcp.server import build_server
@@ -137,7 +137,7 @@ def open_server(mcp_session: Session, owner: Actor, tmp_path: Path) -> Any:
     )
 
 
-def _example(session: Session, **overrides: object) -> Customer:
+def _example(session: Session, **overrides: object) -> Organization:
     fields: dict[str, object] = {
         "legal_name": "Example Ltd",
         "website": "https://www.example.com/",
@@ -145,7 +145,7 @@ def _example(session: Session, **overrides: object) -> Customer:
     fields.update(overrides)
     if "email" in fields:
         fields["contact_points"] = points(email=str(fields.pop("email")))
-    customer = Customer(**fields)
+    customer = Organization(**fields)
     session.add(customer)
     session.flush()
     return customer
@@ -375,7 +375,7 @@ async def test_a_filename_that_is_not_there_is_guidance_not_a_dump(
 
 # --- the customer proposals, the same door (REB-223) -------------------------------------
 
-SUGGEST = "suggest_customers_from_gmail"
+SUGGEST = "suggest_organizations_from_gmail"
 
 
 @pytest.mark.parametrize(
@@ -413,7 +413,7 @@ async def test_the_proposals_answer_the_domains_the_owner_wrote_to_and_store_not
     # one per xdist worker, and a file that ran earlier on the same worker may have
     # committed a customer of its own (test_log_time_concurrency.py seeds one).
     messages_before = mcp_session.scalar(select(func.count()).select_from(GmailMessage))
-    customers_before = mcp_session.scalar(select(func.count()).select_from(Customer))
+    organizations_before = mcp_session.scalar(select(func.count()).select_from(Organization))
 
     async with Client(open_server) as client:
         result = await client.call_tool(SUGGEST, {})
@@ -424,4 +424,6 @@ async def test_the_proposals_answer_the_domains_the_owner_wrote_to_and_store_not
     assert [proposal["domain"] for proposal in proposals] == ["acme.it"]
     assert proposals[0]["people"][0]["name"] == "Marco Bianchi"
     assert mcp_session.scalar(select(func.count()).select_from(GmailMessage)) == messages_before
-    assert mcp_session.scalar(select(func.count()).select_from(Customer)) == customers_before
+    assert (
+        mcp_session.scalar(select(func.count()).select_from(Organization)) == organizations_before
+    )

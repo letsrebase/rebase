@@ -22,7 +22,7 @@ export type RenewalAssumptionBody = components['schemas']['RenewalAssumptionUpse
 export type ContractProjection = components['schemas']['ContractProjectionRead']
 export type ContractConcentration = components['schemas']['ContractConcentrationCap']
 
-export function useCustomerContracts(customerId: string) {
+export function useOrganizationContracts(customerId: string) {
   return useQuery({
     queryKey: queryKeys.contracts({ customer_id: customerId }),
     // Every page, newest first: a customer has a handful of contracts over its life, and

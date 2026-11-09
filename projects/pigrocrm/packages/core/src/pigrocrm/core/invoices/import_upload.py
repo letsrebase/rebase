@@ -20,7 +20,7 @@ calls answer with. A file is named in the answer by its SHA-256 (two files with 
 name in two folders are two files, and two copies of the same bytes are one), and the
 one decision the page makes, whether to create a new customer, is per counterparty, named
 by the `party_key` the review gives: the same customer holds for every invoice of it in
-every file and every batch, and a `lotto` that bills two customers is two decisions.
+every file and every batch, and a `lotto` that bills two organizations is two decisions.
 """
 
 import hashlib
@@ -178,7 +178,7 @@ def party_key(party: ParsedInvoiceParty) -> str:
     matches on, so `IT01234567890` and `01234567890` are one party). A party the register
     cannot match by tax id, which is a foreign one in practice, is named by its
     identifier with the country as the document states it (`estero:DE123456789`), so two
-    foreign customers with one name stay two, and only a party with no identifier at all
+    foreign organizations with one name stay two, and only a party with no identifier at all
     falls back to its name. The server defines the key and the review hands it to the
     page: the page never computes one."""
     italian = normalise_fiscal_id(party.vat_number) or normalise_fiscal_id(party.tax_code)
@@ -252,18 +252,18 @@ class UploadedPartyDecision(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     customer_id: UUID | None = None
-    create_customer: bool = False
+    create_organization: bool = False
     skip: bool = False
 
 
 class UploadedInvoiceDecisions(BaseModel):
-    """`customers`: one decision per counterparty, keyed by the `party_key` the review
+    """`organizations`: one decision per counterparty, keyed by the `party_key` the review
     named, so it holds for every invoice of that customer in every file of every batch
-    of the import, a `lotto` with several customers included."""
+    of the import, a `lotto` with several organizations included."""
 
     model_config = ConfigDict(extra="forbid")
 
-    customers: dict[str, UploadedPartyDecision] = Field(default_factory=dict)
+    organizations: dict[str, UploadedPartyDecision] = Field(default_factory=dict)
 
 
 def parse_decisions(raw: str) -> dict[str, UploadedPartyDecision]:
@@ -276,6 +276,6 @@ def parse_decisions(raw: str) -> dict[str, UploadedPartyDecision]:
             ENTITY,
             "decisioni",
             "le decisioni non sono un JSON valido",
-            expected='{"clienti": {"<party_key>": {"create_customer": true}}}',
+            expected='{"clienti": {"<party_key>": {"create_organization": true}}}',
         ) from exc
-    return parsed.customers
+    return parsed.organizations

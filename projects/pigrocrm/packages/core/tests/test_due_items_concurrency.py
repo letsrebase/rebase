@@ -16,13 +16,13 @@ from fakes.legal_entity_fixtures import committed_default_legal_entity, remove_l
 from sqlalchemy import Engine, delete, func, select
 
 from pigrocrm.core.actor import Actor
-from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.db import session_factory
 from pigrocrm.core.due_items.models import DueItem, DueItemSettlement
 from pigrocrm.core.due_items.schemas import DueItemCreate, SettlementCreate
 from pigrocrm.core.due_items.service import DueItemService
 from pigrocrm.core.errors import Conflict
 from pigrocrm.core.legal_entities.repository import LegalEntityRepository
+from pigrocrm.core.organizations.models import Organization
 
 TAG = "DUERACE"
 ADMIN = Actor(id=uuid4(), type="user", role="admin")
@@ -84,6 +84,6 @@ def test_two_payments_for_the_same_remainder_land_once(db_engine: Engine) -> Non
                 delete(DueItemSettlement).where(DueItemSettlement.due_item_id == item_id)
             )
             cleanup.execute(delete(DueItem).where(DueItem.id == item_id))
-            cleanup.execute(delete(Customer).where(Customer.legal_name.like(f"{TAG} %")))
+            cleanup.execute(delete(Organization).where(Organization.legal_name.like(f"{TAG} %")))
             remove_legal_entity(cleanup, inserted)
             cleanup.commit()

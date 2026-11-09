@@ -72,7 +72,7 @@ _READS_WITH_ANOTHER_NAME = {
     "read_drive_file",
     "read_gmail_attachment",
     "discover_gmail_correspondents",
-    "suggest_customers_from_gmail",
+    "suggest_organizations_from_gmail",
 }
 # What cannot be taken back from the surface: a numbered invoice never leaves the register,
 # a discarded proforma is not restored, a recalculation rewrites hours already counted, an

@@ -12,19 +12,19 @@ import { Card, CardContent } from '@rebase/ui/card'
 import { Skeleton } from '@rebase/ui/skeleton'
 import { EconomicsTab } from '@/features/analytics/EconomicsTab'
 import { ContactPointsList } from '@/features/contact-points/ContactPointsList'
-import { CustomerForm, customerToFormValues } from '@/features/customers/CustomerForm'
-import { displayNative } from '@/features/customers/columns'
-import { useCustomerOwners } from '@/features/customers/owner'
+import { OrganizationForm, organizationToFormValues } from '@/features/organizations/OrganizationForm'
+import { displayNative } from '@/features/organizations/columns'
+import { useOrganizationOwners } from '@/features/organizations/owner'
 import {
-  useCustomer,
-  useCustomerDeals,
-  useCustomerPeople,
-  useDeleteCustomer,
-  useUpdateCustomer,
-  type Customer,
+  useOrganization,
+  useOrganizationDeals,
+  useOrganizationPeople,
+  useDeleteOrganization,
+  useUpdateOrganization,
+  type Organization,
   type RelatedDeal,
   type RelatedPerson,
-} from '@/features/customers/queries'
+} from '@/features/organizations/queries'
 import { formatDealValue } from '@/features/deals/columns'
 import { ContractsTab } from '@/features/contracts/ContractsTab'
 import { DocumentsTab } from '@/features/documents/DocumentsTab'
@@ -46,7 +46,7 @@ const EMPTY = '—'
  * profile's number applies at emission, and the row says so rather than printing a
  * dash, since a dash would read as "no terms" on a customer that does have a rule.
  */
-function paymentTerms(customer: Customer): string {
+function paymentTerms(customer: Organization): string {
   const endMonth = customer.payment_end_of_month ? ' fine mese' : ''
   if (customer.payment_days === null || customer.payment_days === undefined) {
     return `Dal profilo fiscale${endMonth ? `,${endMonth}` : ''}`
@@ -96,29 +96,29 @@ function LinkedList<T>({
   return <div>{items.map(renderItem)}</div>
 }
 
-export function CustomerDetail() {
-  const { customerId } = useParams({ from: '/app/customers/$customerId' })
+export function OrganizationDetail() {
+  const { organizationId: customerId } = useParams({ from: '/app/organizations/$organizationId' })
   const navigate = useNavigate()
   const canWrite = useCanWrite()
   const [editing, setEditing] = useState(false)
   const [problem, setProblem] = useState<ProblemDetail | null>(null)
 
-  const schema = useEntitySchema('customer')
-  const { data: customer, isLoading, isError, error } = useCustomer(customerId)
-  const update = useUpdateCustomer(customerId)
-  const remove = useDeleteCustomer()
-  const people = useCustomerPeople(customerId)
+  const schema = useEntitySchema('organization')
+  const { data: customer, isLoading, isError, error } = useOrganization(customerId)
+  const update = useUpdateOrganization(customerId)
+  const remove = useDeleteOrganization()
+  const people = useOrganizationPeople(customerId)
   // The deals and the contracts of a customer are parts of two modules: with one switched
   // off the part is not drawn and its read is not made (REB-953), not left to answer 404.
   const modules = useModules()
   const dealsOn = modules.on('deals')
   const contractsOn = modules.on('contracts')
-  const deals = useCustomerDeals(customerId, dealsOn && !modules.loading)
+  const deals = useOrganizationDeals(customerId, dealsOn && !modules.loading)
   // Not a request of its own: the shell banner already holds `gmailKeys.health`, so
   // this reads the same cache entry. See `useGmailConfigured` for why an installation
   // without Google gets no Email tab at all rather than a permanently empty one.
   const gmailConfigured = useGmailConfigured()
-  const owners = useCustomerOwners()
+  const owners = useOrganizationOwners()
 
   if (isLoading) return <Skeleton className="m-8 h-96" />
   // A failed fetch and a genuine 404 both leave `customer` undefined once loading
@@ -147,7 +147,7 @@ export function CustomerDetail() {
   function archive() {
     if (!customer) return
     // Soft delete or not, the UI itself offers no visible undo (restoring today
-    // means calling `POST /api/customers/{id}/restore` directly, not a button
+    // means calling `POST /api/organizations/{id}/restore` directly, not a button
     // here) -- a plain confirm is a cheap guard against a misclick, not a
     // client-side re-implementation of any server rule.
     const confirmed = window.confirm(
@@ -158,11 +158,11 @@ export function CustomerDetail() {
     remove.mutate(customerId, {
       onSuccess: () => {
         toast.success('Cliente archiviato')
-        void navigate({ to: '/app/customers' })
+        void navigate({ to: '/app/organizations' })
       },
       onError: (error) => {
         // A customer with active deals is refused with a 409 that names how many
-        // (`Conflict("customer", "...", active_deals=n)` -- see CustomerService.
+        // (`Conflict("organization", "...", active_deals=n)` -- see OrganizationService.
         // soft_delete). `toProblem(error).detail` alone is the fixed sentence
         // ("il cliente ha deal attivi: archivia prima i deal"); `active_deals` is
         // the count riding along as a separate structured field, not part of that
@@ -183,7 +183,7 @@ export function CustomerDetail() {
         icon={Building2}
         title={customer.legal_name}
         subtitle="Cliente"
-        entityType="customer"
+        entityType="organization"
         entityId={customerId}
         documents={<DocumentsTab owner={{ customerId }} />}
         invoices={
@@ -195,11 +195,11 @@ export function CustomerDetail() {
         }
         contracts={contractsOn ? <ContractsTab customerId={customerId} /> : undefined}
         economics={<EconomicsTab customerId={customerId} />}
-        tasks={<EntityTask link={{ kind: 'customer', id: customerId }} />}
+        tasks={<EntityTask link={{ kind: 'organization', id: customerId }} />}
         emails={
           gmailConfigured ? (
             <EmailTab
-              entityType="customer"
+              entityType="organization"
               entityId={customerId}
               domainSource={`${customer.website ?? ''}|${customer.email ?? ''}`}
             />
@@ -278,7 +278,7 @@ export function CustomerDetail() {
             )}
 
             <div className="lg:col-span-2">
-              <NotesSection entityType="customer" entityId={customerId} />
+              <NotesSection entityType="organization" entityId={customerId} />
             </div>
           </div>
         }
@@ -318,13 +318,13 @@ export function CustomerDetail() {
         }
       />
 
-      <CustomerForm
+      <OrganizationForm
         title="Modifica cliente"
         open={editing}
         onOpenChange={setEditing}
         customFields={custom}
         owners={owners.canChange ? owners.options : undefined}
-        initial={customerToFormValues(customer)}
+        initial={organizationToFormValues(customer)}
         problem={problem}
         busy={update.isPending}
         onSubmit={(values) => {

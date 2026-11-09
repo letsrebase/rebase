@@ -522,7 +522,9 @@ class ApprovalService:
         message = GmailRepository(self.session).message(message_id)
         if message is None:
             raise NotFound("gmail_message", message_id)
-        if not GmailRepository(self.session).message_linked_to(message.id, "customer", customer_id):
+        if not GmailRepository(self.session).message_linked_to(
+            message.id, "organization", customer_id
+        ):
             raise ValidationFailed(
                 APPROVAL_ENTITY,
                 "gmail_message_id",

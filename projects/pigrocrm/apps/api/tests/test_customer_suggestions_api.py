@@ -1,7 +1,7 @@
 """The two routes of the Gmail customer proposals, over real HTTP (REB-223).
 
-`GET /api/gmail/customer-suggestions` asks the connected mailbox, here the core suite's
-`FakeGmail` behind the router's own transport; `POST /api/customers/from-suggestions`
+`GET /api/gmail/organization-suggestions` asks the connected mailbox, here the core suite's
+`FakeGmail` behind the router's own transport; `POST /api/organizations/from-suggestions`
 creates what a person ticked, together or not at all.
 """
 
@@ -25,10 +25,10 @@ import pigrocrm_api.google_tokens as google_tokens  # noqa: E402
 import pigrocrm_api.routers.gmail as gmail_router  # noqa: E402
 from pigrocrm.core.config import Settings, get_settings  # noqa: E402
 from pigrocrm.core.crypto import seal  # noqa: E402
-from pigrocrm.core.customers.models import Customer  # noqa: E402
 from pigrocrm.core.gmail.models import GoogleAccount  # noqa: E402
 from pigrocrm.core.gmail.schemas import REQUESTED_SCOPES  # noqa: E402
 from pigrocrm.core.gmail.transport import GmailTransport  # noqa: E402
+from pigrocrm.core.organizations.models import Organization  # noqa: E402
 from pigrocrm.core.people.models import Person  # noqa: E402
 
 TOKEN_KEY = b"k" * 32
@@ -106,7 +106,7 @@ def test_the_proposals_answer_what_the_mailbox_wrote_to(
     _sent(google, 2, "marco@acme.it", days_ago=10)
     _sent(google, 3, "amico@gmail.com", days_ago=4)
 
-    response = logged_in.get("/api/gmail/customer-suggestions")
+    response = logged_in.get("/api/gmail/organization-suggestions")
 
     assert response.status_code == 200, response.text
     body = response.json()
@@ -123,10 +123,10 @@ def test_the_proposals_answer_what_the_mailbox_wrote_to(
 def test_the_proposals_answer_conflict_without_a_mailbox_or_a_client(
     logged_in: TestClient, gmail_ready: TestClient
 ) -> None:
-    response = logged_in.get("/api/gmail/customer-suggestions")
+    response = logged_in.get("/api/gmail/organization-suggestions")
     assert response.status_code == 409, response.text
     gmail_ready.app.dependency_overrides.pop(get_settings, None)  # type: ignore[attr-defined]
-    response = logged_in.get("/api/gmail/customer-suggestions")
+    response = logged_in.get("/api/gmail/organization-suggestions")
     assert response.status_code == 409, response.text
     assert "non è configurato" in response.json()["detail"]
 
@@ -135,7 +135,7 @@ def test_the_period_is_bounded_before_google_is_asked(
     logged_in: TestClient, gmail_ready: TestClient
 ) -> None:
     for months in (0, 25):
-        response = logged_in.get("/api/gmail/customer-suggestions", params={"months": months})
+        response = logged_in.get("/api/gmail/organization-suggestions", params={"months": months})
         assert response.status_code == 422, response.text
 
 
@@ -143,9 +143,9 @@ def test_ticked_proposals_are_created_with_their_people(
     logged_in: TestClient, api_session: Session
 ) -> None:
     response = logged_in.post(
-        "/api/customers/from-suggestions",
+        "/api/organizations/from-suggestions",
         json={
-            "customers": [
+            "organizations": [
                 {
                     "domain": "acme.it",
                     "legal_name": "Acme S.r.l.",
@@ -167,12 +167,12 @@ def test_ticked_proposals_are_created_with_their_people(
 def test_a_second_import_of_the_same_domain_is_a_conflict_and_creates_nothing(
     logged_in: TestClient, api_session: Session
 ) -> None:
-    api_session.add(Customer(legal_name="Acme", website="acme.it"))
+    api_session.add(Organization(legal_name="Acme", website="acme.it"))
     api_session.flush()
     response = logged_in.post(
-        "/api/customers/from-suggestions",
+        "/api/organizations/from-suggestions",
         json={
-            "customers": [
+            "organizations": [
                 {"domain": "nuovo.it", "legal_name": "Nuovo"},
                 {"domain": "acme.it", "legal_name": "Acme di nuovo"},
             ]
@@ -181,25 +181,29 @@ def test_a_second_import_of_the_same_domain_is_a_conflict_and_creates_nothing(
     assert response.status_code == 409, response.text
     assert "acme.it" in response.json()["detail"]
     assert (
-        api_session.execute(select(Customer).where(Customer.website == "nuovo.it")).first() is None
+        api_session.execute(select(Organization).where(Organization.website == "nuovo.it")).first()
+        is None
     )
 
 
 def test_an_empty_or_nameless_import_is_refused(logged_in: TestClient) -> None:
     assert (
-        logged_in.post("/api/customers/from-suggestions", json={"customers": []}).status_code == 422
+        logged_in.post(
+            "/api/organizations/from-suggestions", json={"organizations": []}
+        ).status_code
+        == 422
     )
-    blank = {"customers": [{"domain": "acme.it", "legal_name": "   "}]}
-    assert logged_in.post("/api/customers/from-suggestions", json=blank).status_code == 422
+    blank = {"organizations": [{"domain": "acme.it", "legal_name": "   "}]}
+    assert logged_in.post("/api/organizations/from-suggestions", json=blank).status_code == 422
 
 
 def test_a_readonly_person_can_neither_ask_nor_import(
     readonly_client: TestClient, gmail_ready: TestClient
 ) -> None:
     assert readonly_client is gmail_ready
-    assert readonly_client.get("/api/gmail/customer-suggestions").status_code == 403
+    assert readonly_client.get("/api/gmail/organization-suggestions").status_code == 403
     response = readonly_client.post(
-        "/api/customers/from-suggestions",
-        json={"customers": [{"domain": "acme.it", "legal_name": "Acme"}]},
+        "/api/organizations/from-suggestions",
+        json={"organizations": [{"domain": "acme.it", "legal_name": "Acme"}]},
     )
     assert response.status_code == 403

@@ -40,11 +40,11 @@ from mcp import Client
 from sqlalchemy import Engine, delete
 
 from pigrocrm.core.actor import Actor
-from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.dashboard.schemas import PeriodQuery
 from pigrocrm.core.dashboard.service import DashboardService
 from pigrocrm.core.db import month_bounds, session_factory, today_local
 from pigrocrm.core.deals.models import Deal
+from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.pipeline.models import PipelineStage
 from pigrocrm.core.storage import LocalFileStorage
 from pigrocrm_mcp.context import ScopedSessionProvider
@@ -75,7 +75,7 @@ def dashboard_server(mcp_engine: Engine, tmp_path: Path) -> Iterator[Any]:
             name=STAGE_WON, position=901, default_probability=100, type="won", code=None
         )
         session.add_all([open, won])
-        customer = Customer(legal_name=f"{_PREFIX} Cliente", country="IT", custom_fields={})
+        customer = Organization(legal_name=f"{_PREFIX} Cliente", country="IT", custom_fields={})
         session.add(customer)
         session.flush()
         session.add(
@@ -107,7 +107,9 @@ def dashboard_server(mcp_engine: Engine, tmp_path: Path) -> Iterator[Any]:
     finally:
         with factory() as session:
             session.execute(delete(Deal).where(Deal.name.like(f"{_PREFIX} %")))
-            session.execute(delete(Customer).where(Customer.legal_name.like(f"{_PREFIX} %")))
+            session.execute(
+                delete(Organization).where(Organization.legal_name.like(f"{_PREFIX} %"))
+            )
             session.execute(delete(PipelineStage).where(PipelineStage.name.like(f"{_PREFIX} %")))
             session.commit()
     # `automation_config` is deliberately left alone. `describe_automations` creates the
@@ -384,7 +386,9 @@ async def test_the_operational_feed_hides_account_events_from_an_agent_token(
             service.record("invitation", uuid4(), "created", ADMIN, {"email": marker}),
             service.record("user", uuid4(), "pat_created", ADMIN, {"token_id": f"{_PREFIX}-tok"}),
             service.record("digest", uuid4(), "digest.inviato", ADMIN, {"to": marker}),
-            service.record("customer", uuid4(), f"{_PREFIX}.updated", ADMIN, {"changed": ["note"]}),
+            service.record(
+                "organization", uuid4(), f"{_PREFIX}.updated", ADMIN, {"changed": ["note"]}
+            ),
         ]
         session.commit()
         ids = [row.id for row in rows]

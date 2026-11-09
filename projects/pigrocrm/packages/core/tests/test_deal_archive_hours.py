@@ -18,7 +18,7 @@ delete. Refusing the archive instead establishes one invariant, **no live time e
 off an archived deal**, and every aggregate over `time_entries` and every list beside it
 becomes consistent at once without either of them learning about `deals`.
 
-It is also the rule the sibling case already has: `CustomerService.soft_delete` refuses
+It is also the rule the sibling case already has: `OrganizationService.soft_delete` refuses
 while `count_active_deals` is non-zero, and `DealService.restore` closes the back door that
 would otherwise reintroduce the state from the other side. Both halves are mirrored here,
 and the second is tested, because an invariant with a back door is a comment.
@@ -34,10 +34,10 @@ from sqlalchemy.orm import Session
 
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.analytics.repository import AnalyticsRepository
-from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.deals.models import Deal
 from pigrocrm.core.deals.service import DealService
 from pigrocrm.core.errors import Conflict
+from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.pipeline.models import PipelineStage
 from pigrocrm.core.timetracking.repository import TimeEntryRepository
 from pigrocrm.core.timetracking.service import TimeEntryService
@@ -63,7 +63,7 @@ def won_stage_id(db_session: Session) -> UUID:
 
 @pytest.fixture
 def won_deal_id(db_session: Session, won_stage_id: UUID) -> UUID:
-    customer = Customer(legal_name=f"Cliente {uuid4()}")
+    customer = Organization(legal_name=f"Cliente {uuid4()}")
     db_session.add(customer)
     db_session.flush()
     deal = Deal(

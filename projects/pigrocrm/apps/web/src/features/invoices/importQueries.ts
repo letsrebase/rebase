@@ -48,7 +48,7 @@ export async function confirmImportFiles(
 }
 
 /**
- * What an import that wrote something makes stale: the lists of invoices, the customers
+ * What an import that wrote something makes stale: the lists of invoices, the organizations
  * it may have created and the documents it filed the XML under. Called once at the end,
  * not per batch, so the list behind the dialog does not reload under a person reading
  * the result.
@@ -62,7 +62,7 @@ export function useInvalidateAfterImport() {
     // `useInvoiceInvalidation`.
     void queryClient.invalidateQueries({ queryKey: queryKeys.yearOverviewAll })
     void queryClient.invalidateQueries({ queryKey: ['ceilings'] })
-    void queryClient.invalidateQueries({ queryKey: ['customers'] })
+    void queryClient.invalidateQueries({ queryKey: ['organizations'] })
     void queryClient.invalidateQueries({ queryKey: queryKeys.documents() })
   }
 }

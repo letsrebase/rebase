@@ -96,7 +96,7 @@ class _flat_rate:
                 f"il regime {self.code} non applica IVA, quindi l'aliquota deve essere zero",
                 expected="0.00",
             )
-        # Normalised the way `_buyer` reads it in `fatturapa/exporter.py`: `customers.country`
+        # Normalised the way `_buyer` reads it in `fatturapa/exporter.py`: `organizations.country`
         # is stored as typed, a lowercase `it` is still Italy, and an empty value is
         # Italy too -- the column's own default -- rather than a foreign customer.
         country = (country_customer or "").strip().upper() or "IT"

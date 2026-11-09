@@ -38,12 +38,12 @@ import pigrocrm.core.cli.gmail as gmail_cli
 from pigrocrm.core.auth.models import User
 from pigrocrm.core.config import Settings
 from pigrocrm.core.crypto import seal
-from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.db import session_factory
 from pigrocrm.core.db.sidecar import create_database_if_missing, drop_database
 from pigrocrm.core.gmail.models import GoogleAccount
 from pigrocrm.core.gmail.schemas import REQUESTED_SCOPES
 from pigrocrm.core.gmail.transport import GmailTransport
+from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.reminders.run import ROOT_LABEL
 from pigrocrm.core.tenants import TenantService, TenantSignup, ensure_tenants_database
 from pigrocrm.core.tenants.database import tenant_database_name, tenant_database_url
@@ -126,7 +126,7 @@ def _no_mailbox_left(settings: Settings, spaces: None) -> Iterator[None]:
                 connection.execute(text("delete from gmail_known_addresses"))
                 connection.execute(text("delete from google_accounts"))
                 connection.execute(text("delete from reminder_job_run"))
-                connection.execute(text("delete from customers where legal_name like 'CLI %'"))
+                connection.execute(text("delete from organizations where legal_name like 'CLI %'"))
         finally:
             engine.dispose()
 
@@ -191,7 +191,7 @@ def _connect(settings: Settings, slug: str | None, *, status: str = "active") ->
             # none until somebody writes it, as `createadmin` does on a real one.
             committed_default_legal_entity(session, name="Radice")
             session.add(
-                Customer(legal_name="CLI Acme", contact_points=points(email="info@acme.it"))
+                Organization(legal_name="CLI Acme", contact_points=points(email="info@acme.it"))
             )
             session.commit()
     finally:

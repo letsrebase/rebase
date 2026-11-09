@@ -10,7 +10,7 @@ from pigrocrm.core.db import Base, PrimaryKeyMixin, SoftDeleteMixin, TimestampMi
 from pigrocrm.core.legal_entities.models import default_legal_entity_id
 
 
-class Customer(Base, PrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
+class Organization(Base, PrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
     """The first full business entity. `People` and `Deals` copy this file's shape.
 
     Fiscal fields (`vat_number`, `tax_code`, `sdi_code`, `certified_email`) are first-class
@@ -20,11 +20,11 @@ class Customer(Base, PrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
     containment filter (`custom_fields @> {...}`) from ever needing a full table scan.
     """
 
-    __tablename__ = "customers"
+    __tablename__ = "organizations"
     __table_args__ = (
-        Index("ix_customers_custom_fields", "custom_fields", postgresql_using="gin"),
-        Index("ix_customers_legal_name", "legal_name"),
-        # Trigram indexes, one per column `CustomerRepository.list` ORs together. All
+        Index("ix_organizations_custom_fields", "custom_fields", postgresql_using="gin"),
+        Index("ix_organizations_legal_name", "legal_name"),
+        # Trigram indexes, one per column `OrganizationRepository.list` ORs together. All
         # four are needed, not just the name: a four-way OR is planned as a BitmapOr
         # over four bitmap index scans, and a single unindexed branch collapses the
         # whole thing back into one sequential scan.
@@ -35,27 +35,27 @@ class Customer(Base, PrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
         # case internally, and wrapping the column would make ILIKE on the raw column
         # unable to use the index (spec §8.2).
         Index(
-            "ix_customers_legal_name_trgm",
+            "ix_organizations_legal_name_trgm",
             "legal_name",
             postgresql_using="gin",
             postgresql_ops={"legal_name": "gin_trgm_ops"},
             postgresql_where=text("deleted_at IS NULL"),
         ),
         Index(
-            "ix_customers_vat_number_trgm",
+            "ix_organizations_vat_number_trgm",
             "vat_number",
             postgresql_using="gin",
             postgresql_ops={"vat_number": "gin_trgm_ops"},
             postgresql_where=text("deleted_at IS NULL"),
         ),
         Index(
-            "ix_customers_tax_code_trgm",
+            "ix_organizations_tax_code_trgm",
             "tax_code",
             postgresql_using="gin",
             postgresql_ops={"tax_code": "gin_trgm_ops"},
             postgresql_where=text("deleted_at IS NULL"),
         ),
-        # Residuo R9. One `(column, id)` B-tree per key admitted by `CUSTOMER_SORTS`:
+        # Residuo R9. One `(column, id)` B-tree per key admitted by `ORGANIZATION_SORTS`:
         # the ordering contract is `ORDER BY <col> <dir>, id <dir>`, and the tie-break
         # following the direction is what lets a single ascending index serve `desc` as a
         # backward scan. None of these is nullable, so none costs a second index -- and,
@@ -69,12 +69,12 @@ class Customer(Base, PrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
         # serve a predicate that always carries that clause, while an ordering has to
         # remain usable for any listing, including one that asks for the deleted rows.
         #
-        # `ix_customers_legal_name` (slice 1, single column) stays: it is still the
+        # `ix_organizations_legal_name` (slice 1, single column) stays: it is still the
         # cheaper index for an equality lookup, and dropping an index is a separate
         # decision from adding one.
-        Index("ix_customers_created_at_id", "created_at", "id"),
-        Index("ix_customers_updated_at_id", "updated_at", "id"),
-        Index("ix_customers_legal_name_id", "legal_name", "id"),
+        Index("ix_organizations_created_at_id", "created_at", "id"),
+        Index("ix_organizations_updated_at_id", "updated_at", "id"),
+        Index("ix_organizations_legal_name_id", "legal_name", "id"),
     )
 
     legal_name: Mapped[str] = mapped_column(String(255), nullable=False)

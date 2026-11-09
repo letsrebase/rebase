@@ -47,7 +47,7 @@ export const SETTINGS_GROUPS = [
     ],
   },
   {
-    id: 'customers-deals',
+    id: 'organizations-deals',
     label: 'Clienti e deal',
     tabs: [
       { value: 'fields', label: 'Campi' },

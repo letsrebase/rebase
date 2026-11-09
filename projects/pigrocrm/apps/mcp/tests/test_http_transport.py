@@ -31,12 +31,12 @@ from pigrocrm.core.auth.repository import UserRepository
 from pigrocrm.core.auth.schemas import UserCreate, UserUpdate
 from pigrocrm.core.auth.service import UserService
 from pigrocrm.core.config import Settings
-from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.db import session_factory
 from pigrocrm.core.db.sidecar import drop_database
 from pigrocrm.core.errors import Conflict
 from pigrocrm.core.fiscal.models import FiscalProfile
 from pigrocrm.core.legal_entities.models import LegalEntity
+from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.space_settings import SpaceSettingsService, SpaceSettingsUpdate
 from pigrocrm.core.tenants import TenantService, TenantSignup, ensure_tenants_database
 from pigrocrm.core.tenants.database import tenant_database_name, tenant_database_url
@@ -76,7 +76,7 @@ def root_token(mcp_engine: Engine) -> Iterator[tuple[str, UUID]]:
             # A customer the test's agent created is owned by the token's user (REB-773),
             # and a user a customer points at cannot go: the customer stays, ownerless.
             session.execute(
-                update(Customer).where(Customer.owner_id == user_id).values(owner_id=None)
+                update(Organization).where(Organization.owner_id == user_id).values(owner_id=None)
             )
             session.execute(delete(User).where(User.id == user_id))
             session.commit()
@@ -221,7 +221,7 @@ async def test_only_the_bare_mcp_path_is_served(
 ) -> None:
     raw, _ = root_token
     _, client = served
-    for path in ["/mcp/app", "/api/customers", "/", "/mcpx"]:
+    for path in ["/mcp/app", "/api/organizations", "/", "/mcpx"]:
         response = await client.post(path, json=INITIALIZE, headers={**ACCEPT, **_bearer(raw)})
         assert response.status_code == 404, path
         assert response.json() == {"detail": "non trovato"}
@@ -235,7 +235,7 @@ async def test_a_valid_pat_initialises_and_lists_the_tools(
     app, _ = served
     names = await _tool_names(app, "http://prova/mcp", raw)
     assert "describe_schema" in names
-    assert "create_customer" in names
+    assert "create_organization" in names
     # The root's environment has mcp_full_access false: the fiscal tools are not there.
     assert "issue_invoice" not in names
 
@@ -247,7 +247,7 @@ async def test_a_write_is_recorded_against_the_token_owner_as_an_agent(
     raw, user_id = root_token
     app, _ = served
     created = await _call_tool(
-        app, "http://prova/mcp", raw, "create_customer", {"legal_name": "Cliente via HTTP"}
+        app, "http://prova/mcp", raw, "create_organization", {"legal_name": "Cliente via HTTP"}
     )
     with session_factory(mcp_engine)() as session:
         activity = session.scalars(
@@ -520,21 +520,21 @@ async def test_two_spaces_do_not_see_each_other(
         app,
         "http://prova/spazio-uno/mcp",
         first_space,
-        "create_customer",
+        "create_organization",
         {"legal_name": "Solo in uno"},
     )
     found_in_first = await _call_tool(
         app,
         "http://prova/spazio-uno/mcp",
         first_space,
-        "search_customers",
+        "search_organizations",
         {"search": "Solo in uno"},
     )
     found_in_due = await _call_tool(
         app,
         "http://prova/spazio-due/mcp",
         second_space,
-        "search_customers",
+        "search_organizations",
         {"search": "Solo in uno"},
     )
     assert len(found_in_first["items"]) == 1
@@ -701,7 +701,7 @@ def admin_root_token(mcp_engine: Engine) -> Iterator[tuple[str, UUID]]:
             session.execute(delete(FiscalProfile))
             session.execute(delete(LegalEntity).where(LegalEntity.is_default.is_(False)))
             session.execute(
-                update(Customer).where(Customer.owner_id.in_(ids)).values(owner_id=None)
+                update(Organization).where(Organization.owner_id.in_(ids)).values(owner_id=None)
             )
             session.execute(delete(User).where(User.id.in_(ids)))
             session.commit()
@@ -779,6 +779,6 @@ async def test_a_demoted_admins_agent_loses_the_admin_tools_on_its_next_call(
     # The credential itself survives: a demotion moves the ceiling, it does not end
     # the account (the deactivation test above is the one that ends it).
     still_works = await _call_tool(
-        app, url, raw, "create_customer", {"legal_name": "Cliente post-demotione"}
+        app, url, raw, "create_organization", {"legal_name": "Cliente post-demotione"}
     )
     assert still_works["legal_name"] == "Cliente post-demotione"

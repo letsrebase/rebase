@@ -36,7 +36,7 @@ def set_up_fiscal(logged_in: TestClient) -> None:
 
 def create_contract(logged_in: TestClient) -> dict[str, Any]:
     customer = logged_in.post(
-        "/api/customers",
+        "/api/organizations",
         json={
             "legal_name": "Acme S.r.l.",
             "vat_number": "12345678901",

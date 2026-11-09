@@ -16,9 +16,9 @@ from sqlalchemy.orm import Session
 
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.calendar.service import CalendarService, month_bounds
-from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.deals.models import Deal
 from pigrocrm.core.errors import ValidationFailed
+from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.tasks.schemas import TaskCreate
 from pigrocrm.core.tasks.service import TaskService
 from pigrocrm.core.timetracking.models import TimeEntry
@@ -117,7 +117,7 @@ def test_a_day_carries_its_total_and_its_breakdown_by_deal(
 ) -> None:
     """The total is the sum of the day's own rows: computing it separately in SQL would
     be two totals of the same hours, which is how they start to disagree."""
-    customer = Customer(legal_name="Secondo cliente")
+    customer = Organization(legal_name="Secondo cliente")
     db_session.add(customer)
     db_session.flush()
     second = Deal(
@@ -284,7 +284,7 @@ def _contract_day(db_session: Session, day: date, status: str = "worked") -> UUI
     from pigrocrm.core.contracts.models import Contract
     from pigrocrm.core.work_units.models import WorkUnit
 
-    customer = Customer(legal_name=f"Cliente {uuid4()}")
+    customer = Organization(legal_name=f"Cliente {uuid4()}")
     db_session.add(customer)
     db_session.flush()
     contract = Contract(

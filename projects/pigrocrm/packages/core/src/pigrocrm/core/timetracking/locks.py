@@ -34,7 +34,7 @@ ENTITY = "period_lock"
 PERIOD_LOCK_TIMELINE_ID = UUID("00000000-0000-0000-0000-0000706c6f63")
 
 # The first key of the advisory locks taken per month (`PeriodLockRepository.lock_month`),
-# a namespace of this project's own next to `gmail/repository.py` and `customers/repository.py`.
+# a namespace of this project's own next to `gmail/repository.py` and `organizations/repository.py`.
 PERIOD_LOCK_NAMESPACE = 0x7093
 
 MONTHS_ITALIAN = (

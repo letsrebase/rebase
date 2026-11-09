@@ -37,7 +37,6 @@ from sqlalchemy.orm import Session
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.auth.models import User
 from pigrocrm.core.contact_points.models import ContactPoint
-from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.db import session_factory
 from pigrocrm.core.db.clock import today_local
 from pigrocrm.core.documents.models import Document, DocumentVersion
@@ -52,6 +51,7 @@ from pigrocrm.core.invoices.models import Invoice
 from pigrocrm.core.invoices.naming import number_complete
 from pigrocrm.core.legal_entities.models import LegalEntity
 from pigrocrm.core.legal_entities.repository import LegalEntityRepository
+from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.people.models import Person
 
 IBAN = "IT60X0542811101000000123456"
@@ -449,7 +449,7 @@ def test_it_goes_to_the_primary_address_of_a_person_and_never_to_the_others(
     assert draft.to_addresses == ["ada@acme.it"]
 
 
-def test_a_customers_primary_address_wins_over_its_people(db_session: Session) -> None:
+def test_a_organizations_primary_address_wins_over_its_people(db_session: Session) -> None:
     account = connected_account(db_session)
     _profiles(db_session)
     invoice = unpaid_invoice(db_session, due=_days_ago(30), email="amministrazione@acme.it")
@@ -683,7 +683,7 @@ def test_an_ordinary_email_that_is_not_a_reminder_stamps_nothing(
 
     draft = EmailDraftService(db_session, settings=gmail_settings()).create(
         EmailDraftCreate(
-            entity_type="customer",
+            entity_type="organization",
             entity_id=invoice.customer_id,
             to_addresses=["ada@acme.it"],
             subject="Buongiorno",
@@ -783,7 +783,7 @@ def _cleanup(
             session.execute(delete(Invoice).where(Invoice.id == invoice_id))
         if customer_id is not None:
             session.execute(delete(Person).where(Person.customer_id == customer_id))
-            session.execute(delete(Customer).where(Customer.id == customer_id))
+            session.execute(delete(Organization).where(Organization.id == customer_id))
         # The fiscal profile first: since REB-615 it references its azienda, and a
         # delete in the old order fails on the foreign key and leaks the whole cleanup.
         session.execute(delete(FiscalProfile))

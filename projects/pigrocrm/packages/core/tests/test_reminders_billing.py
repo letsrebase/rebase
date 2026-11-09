@@ -21,12 +21,12 @@ from pigrocrm.core.activities.models import Activity
 from pigrocrm.core.auth.models import User
 from pigrocrm.core.config import Settings
 from pigrocrm.core.contracts.models import Contract, RateCard
-from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.deals.models import Deal
 from pigrocrm.core.fiscal.models import FiscalProfile
 from pigrocrm.core.fiscal.schemas import FiscalProfileUpsert
 from pigrocrm.core.invoices.models import Invoice, InvoiceLine
 from pigrocrm.core.legal_entities.models import LegalEntity
+from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.pipeline.models import PipelineStage
 from pigrocrm.core.reminders.catalogue import REMINDER_TYPES
 from pigrocrm.core.reminders.engine import Evaluation, ReminderEngine
@@ -54,7 +54,7 @@ class World:
     owner: User
     bob: User  # owns the deal
     carol: User  # owns the customer
-    customer: Customer
+    customer: Organization
     deal: Deal
     legal_entity: UUID
 
@@ -217,7 +217,7 @@ def world(db_session: Session) -> World:
     stage = PipelineStage(name=f"Aperto {uuid4()}", position=0, default_probability=10, type="open")
     db_session.add(stage)
     db_session.flush()
-    customer = Customer(
+    customer = Organization(
         legal_name="ACME Srl", legal_entity_id=legal_entity, owner_id=users["carol"].id
     )
     db_session.add(customer)
@@ -314,7 +314,7 @@ def test_only_an_issued_unpaid_live_invoice_is_overdue(world: World) -> None:
     assert world.raised("invoice_overdue") == {}
 
 
-def test_overdue_is_told_to_the_customers_owner_and_the_deals_owner(world: World) -> None:
+def test_overdue_is_told_to_the_organizations_owner_and_the_deals_owner(world: World) -> None:
     plain = world.overdue(10)
     with_deal = world.overdue(10, deal_id=world.deal.id)
 
@@ -468,7 +468,7 @@ def test_a_converted_draft_or_discarded_proforma_is_not_waiting_to_be_invoiced(
     assert world.raised("proforma_not_invoiced") == {}
 
 
-def test_a_proforma_is_told_to_the_customers_and_the_deals_owner_and_opens_as_a_proforma(
+def test_a_proforma_is_told_to_the_organizations_and_the_deals_owner_and_opens_as_a_proforma(
     world: World,
 ) -> None:
     proforma = _confirmed(world, _ago(10), deal_id=world.deal.id, reference="PF-2026-3")
@@ -835,7 +835,7 @@ def test_a_completed_contract_with_nothing_unbilled_or_deleted_is_not_raised(wor
     assert world.raised("on_completion_unbilled") == {}
 
 
-def test_on_completion_is_told_to_the_customers_owner(world: World) -> None:
+def test_on_completion_is_told_to_the_organizations_owner(world: World) -> None:
     contract = world.contract("on_completion", end=_ago(10))
     world.day(contract, date(2026, 2, 3))
 
@@ -975,12 +975,12 @@ def test_an_invoice_whose_lines_carry_a_day_is_linked(world: World) -> None:
     assert world.raised("invoice_days_unlinked") == {}
 
 
-def test_a_draft_annulled_or_other_customers_invoice_is_not_unlinked(world: World) -> None:
+def test_a_draft_annulled_or_other_organizations_invoice_is_not_unlinked(world: World) -> None:
     contract = world.contract()
     world.day(contract, date(2026, 9, 10))
     world.invoice(status="draft")
     world.invoice(status="cancelled", cancelled_at=_ago(1), cancellation_reason="error")
-    other = Customer(legal_name="Beta Srl", legal_entity_id=world.legal_entity)
+    other = Organization(legal_name="Beta Srl", legal_entity_id=world.legal_entity)
     world.session.add(other)
     world.session.flush()
     world.invoice(customer_id=other.id, issue_date=date(2026, 9, 20))

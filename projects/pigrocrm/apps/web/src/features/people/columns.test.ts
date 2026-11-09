@@ -9,7 +9,7 @@ import type { Person } from './queries'
 /**
  * Reads a native column's cell value the same way `DataTable` does internally --
  * through the column's own `accessorFn` -- for every native column below, all of
- * which carry one. Mirrors `features/customers/queries.test.ts`'s identical
+ * which carry one. Mirrors `features/organizations/queries.test.ts`'s identical
  * helper, added there only after a live bug (see task-6-report.md): a native
  * column cleared through the edit form holds `""`, not `null`, and a naive
  * `value ?? EMPTY` does not catch it.
@@ -150,8 +150,8 @@ describe("the person's company", () => {
     const rendered = renderedCell(legal_entity!, WITH_COMPANY)
     expect(isValidElement(rendered)).toBe(true)
     const props = (rendered as { props: Record<string, unknown> }).props
-    expect(props.to).toBe('/app/customers/$customerId')
-    expect(props.params).toEqual({ customerId: 'c1' })
+    expect(props.to).toBe('/app/organizations/$organizationId')
+    expect(props.params).toEqual({ organizationId: 'c1' })
     expect(props.children).toBe('ACME Srl')
   })
 

@@ -21,8 +21,8 @@ const RECORD_LINKS: Record<string, (id: string) => LinkProps> = {
   // A task has no page of its own: the list opens it in a dialog (`?open=`).
   task: (id: string) => linkOptions({ to: '/app/activities', search: { open: id } }),
   deal: (id: string) => linkOptions({ to: '/app/deal/$dealId', params: { dealId: id } }),
-  customer: (id: string) =>
-    linkOptions({ to: '/app/customers/$customerId', params: { customerId: id } }),
+  organization: (id: string) =>
+    linkOptions({ to: '/app/organizations/$organizationId', params: { organizationId: id } }),
   // A proforma is an invoice row of type `proforma`, opened by the same page.
   invoice: (id: string) =>
     linkOptions({ to: '/app/invoices/$invoiceId', params: { invoiceId: id } }),

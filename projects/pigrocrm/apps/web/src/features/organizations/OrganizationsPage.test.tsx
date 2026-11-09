@@ -3,14 +3,14 @@
  * customer» come from `PageHeader`, and the search box lives in the filter row above the
  * table rather than floating between a local `<header>` and the rows.
  *
- * `api.GET` is spied on directly, mirroring `customers/$customerId.test.tsx`.
+ * `api.GET` is spied on directly, mirroring `organizations/$organizationId.test.tsx`.
  */
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { api } from '@/lib/api'
-import { CustomersPage } from './CustomersPage'
+import { OrganizationsPage } from './OrganizationsPage'
 
 vi.mock('@tanstack/react-router', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@tanstack/react-router')>()
@@ -37,7 +37,7 @@ function answering(gmail: unknown) {
       data:
         path === '/api/gmail/account'
           ? gmail
-          : path === '/api/gmail/customer-suggestions'
+          : path === '/api/gmail/organization-suggestions'
             ? PROPOSALS
             : PAGE,
       response: new Response(null, { status: 200 }),
@@ -54,7 +54,7 @@ function renderPage() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   render(
     <QueryClientProvider client={client}>
-      <CustomersPage initialSearch="" />
+      <OrganizationsPage initialSearch="" />
     </QueryClientProvider>,
   )
 }
@@ -92,13 +92,13 @@ describe('«Proponi dalla casella» (REB-223)', () => {
     renderPage()
 
     const open = await screen.findByRole('button', { name: 'Proponi dalla casella' })
-    expect(mockGet).not.toHaveBeenCalledWith('/api/gmail/customer-suggestions')
+    expect(mockGet).not.toHaveBeenCalledWith('/api/gmail/organization-suggestions')
     await user.click(open)
     const dialog = await screen.findByRole('dialog', { name: 'Proponi dalla casella' })
     await user.click(await within(dialog).findByRole('checkbox', { name: /Acme/ }))
     await user.click(within(dialog).getByRole('button', { name: 'Importa 1 cliente' }))
 
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
-    expect(mockPost).toHaveBeenCalledWith('/api/customers/from-suggestions', expect.anything())
+    expect(mockPost).toHaveBeenCalledWith('/api/organizations/from-suggestions', expect.anything())
   })
 })

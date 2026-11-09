@@ -23,8 +23,8 @@ export const queryKeys = {
   // (`tenants/root`): one read each, shared by the shell's space switcher and the login page.
   identitySpaces: ['identity', 'spaces'] as const,
   rootTenant: ['tenants', 'root'] as const,
-  customers: (params?: unknown) => ['customers', params ?? {}] as const,
-  customer: (id: string) => ['customer', id] as const,
+  organizations: (params?: unknown) => ['organizations', params ?? {}] as const,
+  customer: (id: string) => ['organization', id] as const,
   people: (params?: unknown) => ['people', params ?? {}] as const,
   person: (id: string) => ['person', id] as const,
   deals: (params?: unknown) => ['deals', params ?? {}] as const,

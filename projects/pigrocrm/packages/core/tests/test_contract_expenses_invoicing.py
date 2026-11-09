@@ -21,9 +21,9 @@ from pigrocrm.core.contract_expenses.invoicing import (
 )
 from pigrocrm.core.contract_expenses.models import ContractExpense
 from pigrocrm.core.contracts.models import Contract
-from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.errors import NotFound, ValidationFailed
 from pigrocrm.core.invoices.models import Invoice, InvoiceLine
+from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.storage.local import LocalFileStorage
 from pigrocrm.core.timetracking.models import CostCategory
 
@@ -64,7 +64,7 @@ def _install_fiscal_and_legal_entity_profiles(session: Session) -> None:
 
 
 def _contract(db_session: Session, *, expense_policy: dict[str, object] | None = None) -> Contract:
-    customer = Customer(legal_name=f"ACME {uuid4()}")
+    customer = Organization(legal_name=f"ACME {uuid4()}")
     db_session.add(customer)
     db_session.flush()
     contract = Contract(
@@ -311,7 +311,7 @@ def test_bind_refuses_an_expense_billed_in_the_meantime_instead_of_repointing_it
     assert expense.invoice_line_id == first.id
 
 
-def test_the_draft_is_issued_under_the_contracts_legal_entity_not_the_customers_current_one(
+def test_the_draft_is_issued_under_the_contracts_legal_entity_not_the_organizations_current_one(
     db_session: Session, local_storage: LocalFileStorage
 ) -> None:
     from pigrocrm.core.fiscal.schemas import FiscalProfileUpsert
@@ -336,7 +336,7 @@ def test_the_draft_is_issued_under_the_contracts_legal_entity_not_the_customers_
         ADMIN,
     )
     contract.legal_entity_id = default.id
-    customer = db_session.get(Customer, contract.customer_id)
+    customer = db_session.get(Organization, contract.customer_id)
     assert customer is not None
     customer.legal_entity_id = second.id  # the customer moved after the contract was made
     db_session.flush()

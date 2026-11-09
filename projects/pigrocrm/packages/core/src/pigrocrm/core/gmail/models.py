@@ -214,7 +214,7 @@ class GmailKnownAddress(Base, PrimaryKeyMixin, TimestampMixin):
     the same client, and each mailbox has to be searched back over that address once on
     its own. A global register would give whichever mailbox synced second nothing.
 
-    Deliberately not a column on `people` or `customers`. A CRM row is not the place to
+    Deliberately not a column on `people` or `organizations`. A CRM row is not the place to
     record what one particular Google mailbox has been asked; putting it there would
     also mean a customer's address could only ever be backfilled for one user, and it
     would make the address book carry Gmail's bookkeeping into every other feature.

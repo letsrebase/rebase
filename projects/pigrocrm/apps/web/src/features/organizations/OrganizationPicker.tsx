@@ -4,31 +4,31 @@ import { Button } from '@rebase/ui/button'
 import { Input } from '@rebase/ui/input'
 import { SEARCH_DEBOUNCE_MS } from '@/features/search/queries'
 import { useDebounced } from '@/hooks/useDebounced'
-import { useCustomer, useCustomers, type Customer } from './queries'
+import { useOrganization, useOrganizations, type Organization } from './queries'
 
 /** How many matches the list shows: enough to find a customer by its first letters, few
  *  enough that the list is read rather than scrolled. More is a longer term away. */
 const MATCHES = 8
 
-export type PickedCustomer = Pick<Customer, 'id' | 'legal_name'>
+export type PickedOrganization = Pick<Organization, 'id' | 'legal_name'>
 
 /**
  * Picks one customer by asking the server for the ones that match what was typed.
  *
  * The one customer picker of the app. It replaces four dropdowns that each loaded
- * `limit: 200` customers whole, and silently stopped at the 200th: a space has as many
- * customers as it has, so «scegli dall'elenco» has to be a search, the same gesture as
+ * `limit: 200` organizations whole, and silently stopped at the 200th: a space has as many
+ * organizations as it has, so «scegli dall'elenco» has to be a search, the same gesture as
  * `tasks/RecordPicker`'s. A chosen customer is shown by name, with a button to take it
  * off and search again.
  *
- * `value` is the customer's id and the name is read from it (`useCustomer`), so a form
+ * `value` is the customer's id and the name is read from it (`useOrganization`), so a form
  * that only stores the id -- a person's stored customer, say -- shows the name on open.
  * A customer picked here is named from the pick; a caller that already has the name
  * passes it as `selectedName`. Either way no read is made.
- * `legalEntityId` limits the matches to one legal entity's customers; without it the sidebar's
- * legal entity applies, as on every list of customers.
+ * `legalEntityId` limits the matches to one legal entity's organizations; without it the sidebar's
+ * legal entity applies, as on every list of organizations.
  */
-export function CustomerPicker({
+export function OrganizationPicker({
   id,
   value,
   onChange,
@@ -40,7 +40,7 @@ export function CustomerPicker({
 }: {
   id: string
   value: string | null
-  onChange: (customer: PickedCustomer | null) => void
+  onChange: (customer: PickedOrganization | null) => void
   selectedName?: string
   legalEntityId?: string | null
   placeholder?: string
@@ -49,17 +49,17 @@ export function CustomerPicker({
 }) {
   const [term, setTerm] = useState('')
   // The customer picked in this session: its name is known, so no read is made for it.
-  const [picked, setPicked] = useState<PickedCustomer | null>(null)
+  const [picked, setPicked] = useState<PickedOrganization | null>(null)
   const typed = term.trim()
   const settled = useDebounced(typed, SEARCH_DEBOUNCE_MS)
   const chosen = value !== null && value !== ''
-  const matches = useCustomers(
+  const matches = useOrganizations(
     { search: settled || undefined, limit: MATCHES, legal_entity_id: legalEntityId ?? undefined },
     // A chosen customer needs no list of matches.
     { enabled: !chosen },
   )
   const knownName = selectedName ?? (picked?.id === value ? picked.legal_name : undefined)
-  const named = useCustomer(value ?? '', { enabled: chosen && knownName === undefined })
+  const named = useOrganization(value ?? '', { enabled: chosen && knownName === undefined })
 
   if (chosen) {
     return (

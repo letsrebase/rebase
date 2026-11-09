@@ -32,10 +32,10 @@ from sqlalchemy.orm import Session
 from pigrocrm.core.analytics.filters import revenue_filter
 from pigrocrm.core.analytics.schemas import DaysMonth, DaysRate, DaysStateShare
 from pigrocrm.core.contracts.models import Contract, RateCard
-from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.db.clock import month_bounds
 from pigrocrm.core.invoices.models import Invoice, InvoiceLine
 from pigrocrm.core.money import ZERO_MONEY, round_money, share
+from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.work_units.models import WorkUnit, WorkUnitTransition
 
 # The eight states a bar stacks, in the order the legend reads them.
@@ -240,13 +240,13 @@ def realised_rates(
             WorkUnit.quantity,
             Contract.id,
             Contract.title,
-            Customer.id,
-            Customer.legal_name,
+            Organization.id,
+            Organization.legal_name,
             InvoiceLine.id,
             InvoiceLine.total_price,
         )
         .join(Contract, Contract.id == WorkUnit.contract_id)
-        .join(Customer, Customer.id == Contract.customer_id)
+        .join(Organization, Organization.id == Contract.customer_id)
         .join(InvoiceLine, InvoiceLine.id == WorkUnit.invoice_line_id)
         .join(Invoice, Invoice.id == InvoiceLine.invoice_id)
         .where(

@@ -10,33 +10,33 @@ import { useCursorPages } from '@/lib/useCursorPages'
 
 /**
  * Wire shape of one customer, taken directly from the generated OpenAPI schema
- * (`components['schemas']['CustomerRead']`) rather than hand-declared -- the same
+ * (`components['schemas']['OrganizationRead']`) rather than hand-declared -- the same
  * reasoning as Timeline.tsx's `ActivityEntry` alias: the single source of truth is
- * `CustomerRead` in packages/core/src/pigrocrm/core/customers/schemas.py, and this
+ * `OrganizationRead` in packages/core/src/pigrocrm/core/organizations/schemas.py, and this
  * alias tracks it through `pnpm generate:api` automatically. A hand-written
  * interface here would silently drift the day that schema grows a field.
  */
-export type Customer = components['schemas']['CustomerRead']
-export type CustomerPage = components['schemas']['CustomerPage']
+export type Organization = components['schemas']['OrganizationRead']
+export type OrganizationPage = components['schemas']['OrganizationPage']
 
-type CustomerCreateBody = components['schemas']['CustomerCreate']
-type CustomerUpdateBody = components['schemas']['CustomerUpdate']
+type OrganizationCreateBody = components['schemas']['OrganizationCreate']
+type OrganizationUpdateBody = components['schemas']['OrganizationUpdate']
 
-interface CustomersListParams {
+interface OrganizationsListParams {
   search?: string
   limit?: number
   legal_entity_id?: string
 }
 
 /**
- * `/api/customers`, never the bare `/customers`: every router in
+ * `/api/organizations`, never the bare `/organizations`: every router in
  * apps/api/src/pigrocrm_api/routers/*.py declares its own "/api" prefix, and the
  * shared client (lib/api.ts) is built with `baseUrl: ''` to match -- confirmed live,
  * the bare path 404s.
  */
-function fetchCustomersPage(params: CustomersListParams, cursor?: string) {
+function fetchOrganizationsPage(params: OrganizationsListParams, cursor?: string) {
   return unwrap(
-    api.GET('/api/customers', {
+    api.GET('/api/organizations', {
       params: {
         query: {
           search: params.search,
@@ -50,43 +50,43 @@ function fetchCustomersPage(params: CustomersListParams, cursor?: string) {
 }
 
 /**
- * One page of customers, for a picker that asks the server for the few that match what
- * was typed (`CustomerPicker`). The Clienti list itself walks the pages: `useCustomerPages`.
+ * One page of organizations, for a picker that asks the server for the few that match what
+ * was typed (`OrganizationPicker`). The Clienti list itself walks the pages: `useOrganizationPages`.
  */
-export function useCustomers(
-  params: CustomersListParams = {},
+export function useOrganizations(
+  params: OrganizationsListParams = {},
   options: { enabled?: boolean } = {},
 ) {
   // The sidebar's legal entity, when one is selected (REB-625): on every picker that offers
-  // the space's customers, which under azienda A are A's. A legal entity the caller names is
+  // the space's organizations, which under azienda A are A's. A legal entity the caller names is
   // its own scope and wins over the sidebar's.
   const sidebarScoped = useLegalEntityScope(params)
   const scoped = params.legal_entity_id === undefined ? sidebarScoped : params
   return useQuery({
-    queryKey: queryKeys.customers(scoped),
+    queryKey: queryKeys.organizations(scoped),
     enabled: options.enabled ?? true,
-    queryFn: () => fetchCustomersPage(scoped),
+    queryFn: () => fetchOrganizationsPage(scoped),
     // The picker's term is typed: keep the previous matches up until the next ones land.
-    placeholderData: keepWhileTyping(queryKeys.customers(scoped)),
+    placeholderData: keepWhileTyping(queryKeys.organizations(scoped)),
   })
 }
 
 /**
  * The Clienti list, every page reachable: the first on arrival and one more per
- * `loadMore()`, so a space with more customers than a page holds is not cut at the first
- * page with only the search to reach the rest. Under the `['customers']` prefix every
+ * `loadMore()`, so a space with more organizations than a page holds is not cut at the first
+ * page with only the search to reach the rest. Under the `['organizations']` prefix every
  * customer write invalidates; `pages` in the key keeps its infinite-query data apart from
- * `useCustomers`' single pages.
+ * `useOrganizations`' single pages.
  */
-export function useCustomerPages(params: Pick<CustomersListParams, 'search'> = {}) {
+export function useOrganizationPages(params: Pick<OrganizationsListParams, 'search'> = {}) {
   const scoped = useLegalEntityScope(params)
   return useCursorPages({
-    queryKey: queryKeys.customers({ ...scoped, pages: true }),
-    fetchPage: (cursor) => fetchCustomersPage(scoped, cursor),
+    queryKey: queryKeys.organizations({ ...scoped, pages: true }),
+    fetchPage: (cursor) => fetchOrganizationsPage(scoped, cursor),
   })
 }
 
-export function useCustomer(customerId: string, options: { enabled?: boolean } = {}) {
+export function useOrganization(customerId: string, options: { enabled?: boolean } = {}) {
   return useQuery({
     // `enabled` for a caller that only sometimes needs the row (the proforma dialog's
     // issuing legal entity, REB-626); an empty id must never produce a request (residuo B1).
@@ -94,8 +94,8 @@ export function useCustomer(customerId: string, options: { enabled?: boolean } =
     queryKey: queryKeys.customer(customerId),
     queryFn: () =>
       unwrap(
-        api.GET('/api/customers/{customer_id}', {
-          params: { path: { customer_id: customerId } },
+        api.GET('/api/organizations/{organization_id}', {
+          params: { path: { organization_id: customerId } },
         }),
       ),
   })
@@ -103,41 +103,41 @@ export function useCustomer(customerId: string, options: { enabled?: boolean } =
 
 /**
  * `body` arrives as the loosely-typed `Record<string, unknown>` that
- * `CustomerForm.submit` builds from whatever `DynamicForm` collected -- a dynamic
+ * `OrganizationForm.submit` builds from whatever `DynamicForm` collected -- a dynamic
  * mix of native columns and tenant-defined custom fields that no fixed interface can
  * describe. `asBody` is where that is said, once.
  */
-export function useCreateCustomer() {
+export function useCreateOrganization() {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: (body: Record<string, unknown>) =>
-      unwrap(api.POST('/api/customers', { body: asBody<CustomerCreateBody>(body) })),
+      unwrap(api.POST('/api/organizations', { body: asBody<OrganizationCreateBody>(body) })),
     onSuccess: () => {
-      // `queryKeys.customers()` (params defaulting to `{}`) is a deliberate
+      // `queryKeys.organizations()` (params defaulting to `{}`) is a deliberate
       // wildcard here, not merely "the no-filter case": TanStack Query matches an
       // object filter key by checking only the keys *present* on it, so `{}`
       // partially matches every params object a list query was ever called
       // with -- every cached search/limit combination gets invalidated, not just
       // the unfiltered one.
-      void queryClient.invalidateQueries({ queryKey: queryKeys.customers() })
+      void queryClient.invalidateQueries({ queryKey: queryKeys.organizations() })
     },
   })
 }
 
-export function useUpdateCustomer(customerId: string) {
+export function useUpdateOrganization(customerId: string) {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: (body: Record<string, unknown>) =>
       unwrap(
-        api.PATCH('/api/customers/{customer_id}', {
-          params: { path: { customer_id: customerId } },
-          body: asBody<CustomerUpdateBody>(body),
+        api.PATCH('/api/organizations/{organization_id}', {
+          params: { path: { organization_id: customerId } },
+          body: asBody<OrganizationUpdateBody>(body),
         }),
       ),
     onSuccess: (_updated, body) => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.customer(customerId) })
-      void queryClient.invalidateQueries({ queryKey: queryKeys.customers() })
-      void queryClient.invalidateQueries({ queryKey: queryKeys.timeline('customer', customerId) })
+      void queryClient.invalidateQueries({ queryKey: queryKeys.organizations() })
+      void queryClient.invalidateQueries({ queryKey: queryKeys.timeline('organization', customerId) })
       // The addresses the mailbox found are for the domain read from the website and the
       // primary email (REB-766): a corrected website or a changed list of contact points
       // makes that answer the old domain's.
@@ -149,22 +149,22 @@ export function useUpdateCustomer(customerId: string) {
 }
 
 /**
- * `DELETE /api/customers/{id}` is a soft delete: the server sets `deleted_at` and
+ * `DELETE /api/organizations/{id}` is a soft delete: the server sets `deleted_at` and
  * refuses with a 409 (naming how many) when active deals still reference this
- * customer -- see `CustomerService.soft_delete`. Nothing here re-implements that
+ * customer -- see `OrganizationService.soft_delete`. Nothing here re-implements that
  * check; this hook only calls the endpoint, and the caller (the detail route) is
  * responsible for surfacing the 409's message instead of swallowing it.
  */
-export function useDeleteCustomer() {
+export function useDeleteOrganization() {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: (customerId: string) =>
       unwrap(
-        api.DELETE('/api/customers/{customer_id}', {
-          params: { path: { customer_id: customerId } },
+        api.DELETE('/api/organizations/{organization_id}', {
+          params: { path: { organization_id: customerId } },
         }),
       ),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.customers() }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.organizations() }),
   })
 }
 
@@ -179,7 +179,7 @@ export function useDeleteCustomer() {
 export type RelatedPerson = components['schemas']['PersonRead']
 export type RelatedDeal = components['schemas']['DealRead']
 
-export function useCustomerPeople(customerId: string) {
+export function useOrganizationPeople(customerId: string) {
   return useQuery({
     queryKey: queryKeys.people({ customer_id: customerId }),
     queryFn: () =>
@@ -187,7 +187,7 @@ export function useCustomerPeople(customerId: string) {
   })
 }
 
-export function useCustomerDeals(customerId: string, enabled = true) {
+export function useOrganizationDeals(customerId: string, enabled = true) {
   return useQuery({
     enabled,
     queryKey: queryKeys.deals({ customer_id: customerId }),

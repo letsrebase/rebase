@@ -9,7 +9,7 @@ import type { TimeEntry } from './queries'
 
 /**
  * The editable native columns, as `FieldDefinition`s so `DynamicFieldRenderer` draws
- * them -- the same idiom `DealForm`/`CustomerForm` use. `deal_id` is absent: it comes
+ * them -- the same idiom `DealForm`/`OrganizationForm` use. `deal_id` is absent: it comes
  * from the route, and reassigning an hour to another deal is not something this screen
  * offers. `user_id` is absent too: it is the logged-in user on create, and reassigning
  * it is an admin operation with no picker control (`FieldType` has no user type).

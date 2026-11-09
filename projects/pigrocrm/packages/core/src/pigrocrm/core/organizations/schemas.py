@@ -9,12 +9,12 @@ from pigrocrm.core.contact_points.schemas import (
     ContactPointIn,
     ContactPointRead,
 )
-from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.db import CURSOR_MAX_LENGTH, SortDirection, SortSpec, SortWhitelist
 from pigrocrm.core.notes.schemas import NOTE_MAX_LENGTH
+from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.validation import SafeStr
 
-# Mirror Customer's column widths (models.py). Without these, an over-length value
+# Mirror Organization's column widths (models.py). Without these, an over-length value
 # sails past Pydantic, reaches flush(), and comes back as a raw sqlalchemy.exc.DataError
 # (StringDataRightTruncation) -- not a subclass of IntegrityError, so no handler catches
 # it, and it poisons the session. The same gap fields/schemas.py's KEY_MAX_LENGTH and
@@ -22,7 +22,7 @@ from pigrocrm.core.validation import SafeStr
 # fourth time this project has hit it.
 #
 # `vat_number` is deliberately absent from this list -- see the comment on
-# `CustomerCreate.vat_number` below for why bounding it here would be actively wrong,
+# `OrganizationCreate.vat_number` below for why bounding it here would be actively wrong,
 # not merely redundant.
 LEGAL_NAME_MAX_LENGTH = 255
 TAX_CODE_MAX_LENGTH = 16
@@ -48,7 +48,7 @@ CONTACT_POINTS_DESCRIPTION = (
 )
 
 
-class CustomerCreate(BaseModel):
+class OrganizationCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     legal_name: SafeStr = Field(max_length=LEGAL_NAME_MAX_LENGTH)
@@ -95,15 +95,15 @@ class CustomerCreate(BaseModel):
     custom_fields: dict[str, Any] = {}
 
 
-class CustomerUpdate(BaseModel):
+class OrganizationUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     legal_name: SafeStr | None = Field(default=None, max_length=LEGAL_NAME_MAX_LENGTH)
-    # See CustomerCreate.partita_iva: _check_fiscal covers this field's length exactly,
+    # See OrganizationCreate.partita_iva: _check_fiscal covers this field's length exactly,
     # so no Pydantic bound is added here either.
     vat_number: SafeStr | None = None
     tax_code: SafeStr | None = Field(default=None, max_length=TAX_CODE_MAX_LENGTH)
-    # See CustomerCreate.codice_sdi: _check_fiscal covers this field's length exactly.
+    # See OrganizationCreate.codice_sdi: _check_fiscal covers this field's length exactly.
     sdi_code: SafeStr | None = None
     certified_email: SafeStr | None = Field(default=None, max_length=CERTIFIED_EMAIL_MAX_LENGTH)
     address: SafeStr | None = Field(default=None, max_length=ADDRESS_MAX_LENGTH)
@@ -125,7 +125,7 @@ class CustomerUpdate(BaseModel):
     custom_fields: dict[str, Any] | None = None
 
 
-class CustomerRead(BaseModel):
+class OrganizationRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
@@ -159,13 +159,13 @@ class CustomerRead(BaseModel):
 # that reason, not out of caution. `created_at` is the default because it reproduces
 # today's behaviour exactly -- UUIDv7 order *is* creation order -- which is what keeps
 # this change contained to the type of `cursor`.
-CUSTOMER_SORTS = SortWhitelist(
+ORGANIZATION_SORTS = SortWhitelist(
     specs=(
-        SortSpec(key="created_at", column=Customer.created_at, kind="datetime", nullable=False),
-        SortSpec(key="updated_at", column=Customer.updated_at, kind="datetime", nullable=False),
+        SortSpec(key="created_at", column=Organization.created_at, kind="datetime", nullable=False),
+        SortSpec(key="updated_at", column=Organization.updated_at, kind="datetime", nullable=False),
         SortSpec(
             key="legal_name",
-            column=Customer.legal_name,
+            column=Organization.legal_name,
             kind="text",
             nullable=False,
         ),
@@ -174,12 +174,12 @@ CUSTOMER_SORTS = SortWhitelist(
 )
 
 
-class CustomerListQuery(BaseModel):
+class OrganizationListQuery(BaseModel):
     # `SafeStr`, not a bare `str`, on every free-text parameter: these values reach
     # psycopg as query parameters, and a NUL byte there raises a raw `ValueError` out
     # of the driver rather than any exception this project handles.
     search: SafeStr | None = None
-    # One legal entity's customers (REB-623); `None` is every legal entity the caller may see.
+    # One legal entity's organizations (REB-623); `None` is every legal entity the caller may see.
     legal_entity_id: UUID | None = None
     status: SafeStr | None = None
     custom: dict[str, Any] | None = None
@@ -192,7 +192,7 @@ class CustomerListQuery(BaseModel):
     # lost on exactly that distinction. Clients echo `next_cursor` back verbatim and
     # never parse it. See `db/sort.py`.
     cursor: str | None = Field(default=None, max_length=CURSOR_MAX_LENGTH)
-    # Validated against CUSTOMER_SORTS by the repository, which raises a domain
+    # Validated against ORGANIZATION_SORTS by the repository, which raises a domain
     # `ValidationFailed` naming `sort`. Not a `Literal` here on purpose: a Literal
     # would answer with pydantic's own error shape, and both the web client's
     # `fieldErrorFrom` and an MCP agent read this project's `field` key instead.
@@ -200,8 +200,8 @@ class CustomerListQuery(BaseModel):
     dir: SortDirection = "asc"
 
 
-class CustomerPage(BaseModel):
-    items: list[CustomerRead]
+class OrganizationPage(BaseModel):
+    items: list[OrganizationRead]
     next_cursor: str | None
 
 
@@ -215,7 +215,7 @@ class PersonFromSuggestion(BaseModel):
     name: SafeStr = Field(default="", max_length=LEGAL_NAME_MAX_LENGTH)
 
 
-class CustomerFromSuggestion(BaseModel):
+class OrganizationFromSuggestion(BaseModel):
     """One ticked proposal: the domain it was proposed for, the company name as the
     person corrected it, and the people to create under it."""
 
@@ -234,10 +234,10 @@ class CustomerFromSuggestion(BaseModel):
         return stripped
 
 
-class CustomersFromSuggestions(BaseModel):
-    """What `POST /api/customers/from-suggestions` takes: the proposals a person ticked,
+class OrganizationsFromSuggestions(BaseModel):
+    """What `POST /api/organizations/from-suggestions` takes: the proposals a person ticked,
     created together or not at all."""
 
     model_config = ConfigDict(extra="forbid")
 
-    customers: list[CustomerFromSuggestion] = Field(min_length=1, max_length=50)
+    organizations: list[OrganizationFromSuggestion] = Field(min_length=1, max_length=50)

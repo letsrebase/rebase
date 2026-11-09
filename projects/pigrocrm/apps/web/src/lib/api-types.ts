@@ -169,25 +169,25 @@ export interface paths {
         patch: operations["update_me_api_auth_me_patch"];
         trace?: never;
     };
-    "/api/customers": {
+    "/api/organizations": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        /** List Customers */
-        get: operations["list_customers_api_customers_get"];
+        /** List Organizations */
+        get: operations["list_organizations_api_organizations_get"];
         put?: never;
         /** Create */
-        post: operations["create_api_customers_post"];
+        post: operations["create_api_organizations_post"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/customers/from-suggestions": {
+    "/api/organizations/from-suggestions": {
         parameters: {
             query?: never;
             header?: never;
@@ -197,14 +197,14 @@ export interface paths {
         get?: never;
         put?: never;
         /** Create From Suggestions */
-        post: operations["create_from_suggestions_api_customers_from_suggestions_post"];
+        post: operations["create_from_suggestions_api_organizations_from_suggestions_post"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/customers/{customer_id}/people-from-mail": {
+    "/api/organizations/{organization_id}/people-from-mail": {
         parameters: {
             query?: never;
             header?: never;
@@ -214,14 +214,14 @@ export interface paths {
         get?: never;
         put?: never;
         /** Add Person From Mail */
-        post: operations["add_person_from_mail_api_customers__customer_id__people_from_mail_post"];
+        post: operations["add_person_from_mail_api_organizations__organization_id__people_from_mail_post"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/customers/{customer_id}": {
+    "/api/organizations/{organization_id}": {
         parameters: {
             query?: never;
             header?: never;
@@ -229,21 +229,21 @@ export interface paths {
             cookie?: never;
         };
         /** Get */
-        get: operations["get_api_customers__customer_id__get"];
+        get: operations["get_api_organizations__organization_id__get"];
         put?: never;
         post?: never;
         /**
          * Soft Delete
          * @description Sets deleted_at. Nothing in this slice removes a row.
          */
-        delete: operations["soft_delete_api_customers__customer_id__delete"];
+        delete: operations["soft_delete_api_organizations__organization_id__delete"];
         options?: never;
         head?: never;
         /** Update */
-        patch: operations["update_api_customers__customer_id__patch"];
+        patch: operations["update_api_organizations__organization_id__patch"];
         trace?: never;
     };
-    "/api/customers/{customer_id}/restore": {
+    "/api/organizations/{organization_id}/restore": {
         parameters: {
             query?: never;
             header?: never;
@@ -253,14 +253,14 @@ export interface paths {
         get?: never;
         put?: never;
         /** Restore */
-        post: operations["restore_api_customers__customer_id__restore_post"];
+        post: operations["restore_api_organizations__organization_id__restore_post"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/customers/{customer_id}/timeline": {
+    "/api/organizations/{organization_id}/timeline": {
         parameters: {
             query?: never;
             header?: never;
@@ -268,7 +268,7 @@ export interface paths {
             cookie?: never;
         };
         /** Timeline */
-        get: operations["timeline_api_customers__customer_id__timeline_get"];
+        get: operations["timeline_api_organizations__organization_id__timeline_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1594,8 +1594,8 @@ export interface paths {
          *     document's own stored bytes -- never trusts an earlier `/import/review` call
          *     -- and writes the register through `import_issued` itself for every invoice
          *     that classifies `"ready"`: never a second, independently-maintained write
-         *     path. `create_customer` (REB-367) creates the matched party as a new
-         *     `Customer` inside that same write when no `customer_id` is given and no
+         *     path. `create_organization` (REB-367) creates the matched party as a new
+         *     `Organization` inside that same write when no `customer_id` is given and no
          *     exact tax-id match exists.
          */
         post: operations["confirm_import_api_invoices_import_confirm_post"];
@@ -1644,8 +1644,8 @@ export interface paths {
          *     each file is parsed and classified from its own bytes against the register as it is
          *     now, never from the review, and written by the same code `/import/confirm` runs. A
          *     single-invoice file's XML is archived as a document of the invoice's customer.
-         *     `decisioni` is the JSON `{"clienti": {"<party_key>": {"create_customer": true}}}`:
-         *     per customer, a `customer_id` to attach or `create_customer`, as on
+         *     `decisioni` is the JSON `{"clienti": {"<party_key>": {"create_organization": true}}}`:
+         *     per customer, a `customer_id` to attach or `create_organization`, as on
          *     `/import/confirm`.
          */
         post: operations["confirm_import_upload_api_invoices_import_upload_confirm_post"];
@@ -2472,7 +2472,7 @@ export interface paths {
          * Suggest Legal Entity
          * @description The legal entity a new customer of `country` would be billed by when nobody picks one
          *     (REB-624, spec 2026-10-03 §1.6). The form and an agent both ask here, so the rule
-         *     lives in the service once; `POST /api/customers` applies the same one
+         *     lives in the service once; `POST /api/organizations` applies the same one
          *     when `legal_entity_id` is left out.
          */
         get: operations["suggest_legal_entity_api_legal_entities_suggestion_get"];
@@ -2506,7 +2506,7 @@ export interface paths {
          * Deactivate Legal Entity
          * @description Deactivation, never a row delete: a legal entity that issued an invoice stays
          *     readable forever. Refused on the default; move the default first. The answer says
-         *     how many customers still point at the row (`linked_customers`): nothing new is
+         *     how many organizations still point at the row (`linked_organizations`): nothing new is
          *     born under them until they are moved to an active legal entity.
          */
         delete: operations["deactivate_legal_entity_api_legal_entities__legal_entity_id__delete"];
@@ -2716,15 +2716,15 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/gmail/customer-suggestions": {
+    "/api/gmail/organization-suggestions": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        /** Suggest Customers */
-        get: operations["suggest_customers_api_gmail_customer_suggestions_get"];
+        /** Suggest Organizations */
+        get: operations["suggest_organizations_api_gmail_organization_suggestions_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -2733,7 +2733,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/gmail/customers/{customer_id}/correspondents": {
+    "/api/gmail/organizations/{customer_id}/correspondents": {
         parameters: {
             query?: never;
             header?: never;
@@ -2741,7 +2741,7 @@ export interface paths {
             cookie?: never;
         };
         /** Discover Correspondents */
-        get: operations["discover_correspondents_api_gmail_customers__customer_id__correspondents_get"];
+        get: operations["discover_correspondents_api_gmail_organizations__customer_id__correspondents_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -7078,197 +7078,6 @@ export interface components {
             /** Token */
             token: string;
         };
-        /** CustomerCreate */
-        CustomerCreate: {
-            /** Legal Name */
-            legal_name: string;
-            /** Vat Number */
-            vat_number?: string | null;
-            /** Tax Code */
-            tax_code?: string | null;
-            /** Sdi Code */
-            sdi_code?: string | null;
-            /** Certified Email */
-            certified_email?: string | null;
-            /** Address */
-            address?: string | null;
-            /** Postal Code */
-            postal_code?: string | null;
-            /** City */
-            city?: string | null;
-            /** Province */
-            province?: string | null;
-            /**
-             * Country
-             * @default IT
-             */
-            country: string;
-            /** Legal Entity Id */
-            legal_entity_id?: string | null;
-            /** Owner Id */
-            owner_id?: string | null;
-            /**
-             * Contact Points
-             * @description The customer's contact points (email, phone, linkedin), each with a label and an optional note. On an update the list replaces the stored one. At most one point per kind is primary (the first of a kind is when none is flagged). The PEC address stays in certified_email.
-             */
-            contact_points?: components["schemas"]["ContactPointIn"][];
-            /** Website */
-            website?: string | null;
-            /** Status */
-            status?: string | null;
-            /** Note */
-            note?: string | null;
-            /** Payment Days */
-            payment_days?: number | null;
-            /**
-             * Payment End Of Month
-             * @default false
-             */
-            payment_end_of_month: boolean;
-            /**
-             * Custom Fields
-             * @default {}
-             */
-            custom_fields: {
-                [key: string]: unknown;
-            };
-        };
-        /**
-         * CustomerFromSuggestion
-         * @description One ticked proposal: the domain it was proposed for, the company name as the
-         *     person corrected it, and the people to create under it.
-         */
-        CustomerFromSuggestion: {
-            /** Domain */
-            domain: string;
-            /** Legal Name */
-            legal_name: string;
-            /** People */
-            people?: components["schemas"]["PersonFromSuggestion"][];
-        };
-        /** CustomerPage */
-        CustomerPage: {
-            /** Items */
-            items: components["schemas"]["CustomerRead"][];
-            /** Next Cursor */
-            next_cursor: string | null;
-        };
-        /** CustomerRead */
-        CustomerRead: {
-            /**
-             * Id
-             * Format: uuid
-             */
-            id: string;
-            /**
-             * Legal Entity Id
-             * Format: uuid
-             */
-            legal_entity_id: string;
-            /** Owner Id */
-            owner_id: string | null;
-            /** Legal Name */
-            legal_name: string;
-            /** Vat Number */
-            vat_number: string | null;
-            /** Tax Code */
-            tax_code: string | null;
-            /** Sdi Code */
-            sdi_code: string | null;
-            /** Certified Email */
-            certified_email: string | null;
-            /** Address */
-            address: string | null;
-            /** Postal Code */
-            postal_code: string | null;
-            /** City */
-            city: string | null;
-            /** Province */
-            province: string | null;
-            /** Country */
-            country: string;
-            /** Email */
-            email: string | null;
-            /** Phone */
-            phone: string | null;
-            /** Contact Points */
-            contact_points: components["schemas"]["ContactPointRead"][];
-            /** Website */
-            website: string | null;
-            /** Status */
-            status: string | null;
-            /** Payment Days */
-            payment_days: number | null;
-            /** Payment End Of Month */
-            payment_end_of_month: boolean;
-            /** Custom Fields */
-            custom_fields: {
-                [key: string]: unknown;
-            };
-            /**
-             * Created At
-             * Format: date-time
-             */
-            created_at: string;
-            /**
-             * Updated At
-             * Format: date-time
-             */
-            updated_at: string;
-        };
-        /** CustomerUpdate */
-        CustomerUpdate: {
-            /** Legal Name */
-            legal_name?: string | null;
-            /** Vat Number */
-            vat_number?: string | null;
-            /** Tax Code */
-            tax_code?: string | null;
-            /** Sdi Code */
-            sdi_code?: string | null;
-            /** Certified Email */
-            certified_email?: string | null;
-            /** Address */
-            address?: string | null;
-            /** Postal Code */
-            postal_code?: string | null;
-            /** City */
-            city?: string | null;
-            /** Province */
-            province?: string | null;
-            /** Country */
-            country?: string | null;
-            /** Legal Entity Id */
-            legal_entity_id?: string | null;
-            /** Owner Id */
-            owner_id?: string | null;
-            /**
-             * Contact Points
-             * @description The customer's contact points (email, phone, linkedin), each with a label and an optional note. On an update the list replaces the stored one. At most one point per kind is primary (the first of a kind is when none is flagged). The PEC address stays in certified_email.
-             */
-            contact_points?: components["schemas"]["ContactPointIn"][] | null;
-            /** Website */
-            website?: string | null;
-            /** Status */
-            status?: string | null;
-            /** Payment Days */
-            payment_days?: number | null;
-            /** Payment End Of Month */
-            payment_end_of_month?: boolean | null;
-            /** Custom Fields */
-            custom_fields?: {
-                [key: string]: unknown;
-            } | null;
-        };
-        /**
-         * CustomersFromSuggestions
-         * @description What `POST /api/customers/from-suggestions` takes: the proposals a person ticked,
-         *     created together or not at all.
-         */
-        CustomersFromSuggestions: {
-            /** Customers */
-            customers: components["schemas"]["CustomerFromSuggestion"][];
-        };
         /**
          * DayDealHours
          * @description The hours of one deal on one day, with the labels a grid needs to draw them.
@@ -7796,7 +7605,7 @@ export interface components {
          * DiscoveredCorrespondent
          * @description One address at the customer's domain that the connected mailbox has actually
          *     exchanged mail with. A suggestion, not a record: nothing is written until a person
-         *     puts the address on a Person or the Customer.
+         *     puts the address on a Person or the Organization.
          */
         DiscoveredCorrespondent: {
             /** Address */
@@ -8430,7 +8239,7 @@ export interface components {
              * Entity Type
              * @enum {string}
              */
-            entity_type: "customer" | "person" | "deal";
+            entity_type: "organization" | "person" | "deal";
             /**
              * Entity Id
              * Format: uuid
@@ -8719,7 +8528,7 @@ export interface components {
              * Entity Type
              * @enum {string}
              */
-            entity_type: "customer" | "person" | "deal" | "document" | "invoice" | "time_entry" | "cost" | "task" | "contract";
+            entity_type: "organization" | "person" | "deal" | "document" | "invoice" | "time_entry" | "cost" | "task" | "contract";
             /** Key */
             key: string;
             /** Label */
@@ -8756,7 +8565,7 @@ export interface components {
              * Entity Type
              * @enum {string}
              */
-            entity_type: "customer" | "person" | "deal" | "document" | "invoice" | "time_entry" | "cost" | "task" | "contract";
+            entity_type: "organization" | "person" | "deal" | "document" | "invoice" | "time_entry" | "cost" | "task" | "contract";
             /** Key */
             key: string;
             /** Label */
@@ -9013,7 +8822,7 @@ export interface components {
              * Entity Type
              * @enum {string}
              */
-            entity_type: "person" | "customer";
+            entity_type: "person" | "organization";
             /**
              * Entity Id
              * Format: uuid
@@ -9505,7 +9314,7 @@ export interface components {
         /**
          * InvoiceConfirmRequest
          * @description One already-archived document plus the two human decisions this issue's
-         *     scope adds: which `Customer` to attach when no exact tax-id match exists, and
+         *     scope adds: which `Organization` to attach when no exact tax-id match exists, and
          *     whether to create one (`review_invoice_import`'s own `"needs_customer_
          *     confirmation"`).
          *
@@ -9514,13 +9323,13 @@ export interface components {
          *     automatic match, exactly as `"needs_customer_confirmation"`'s own name
          *     promises a caller who reads it.
          *
-         *     `create_customer`, when true and `customer_id` is omitted and no exact
-         *     match is found, creates the matched party as a new `Customer` instead of
+         *     `create_organization`, when true and `customer_id` is omitted and no exact
+         *     match is found, creates the matched party as a new `Organization` instead of
          *     reporting `"needs_customer_confirmation"` -- inside the same transaction
          *     as the invoice write (design §7 item 5), never a premature commit of an
          *     orphan customer. One document's `lotto` batch can carry several invoices
          *     from the same new counterparty: every one of them attaches to the same
-         *     freshly-created row, never one `Customer` per invoice.
+         *     freshly-created row, never one `Organization` per invoice.
          */
         InvoiceConfirmRequest: {
             /**
@@ -9531,10 +9340,10 @@ export interface components {
             /** Customer Id */
             customer_id?: string | null;
             /**
-             * Create Customer
+             * Create Organization
              * @default false
              */
-            create_customer: boolean;
+            create_organization: boolean;
         };
         /** InvoiceConfirmResult */
         InvoiceConfirmResult: {
@@ -10114,7 +9923,7 @@ export interface components {
         /**
          * LegalEntityDeactivated
          * @description What `DELETE /api/aziende/{id}` answers (spec §3): the row, switched off, and
-         *     how many live customers still point at it. Nothing new is born under such a
+         *     how many live organizations still point at it. Nothing new is born under such a
          *     customer until it is moved («sposta prima il cliente su un'azienda attiva»), so the
          *     count is the work the person has left to do, said once, in the same answer.
          */
@@ -10178,8 +9987,8 @@ export interface components {
              * Format: date-time
              */
             updated_at: string;
-            /** Linked Customers */
-            linked_customers: number;
+            /** Linked Organizations */
+            linked_organizations: number;
         };
         /** LegalEntityRead */
         LegalEntityRead: {
@@ -10468,7 +10277,7 @@ export interface components {
              * Entity Type
              * @enum {string}
              */
-            entity_type: "deal" | "customer" | "person";
+            entity_type: "deal" | "organization" | "person";
             /**
              * Entity Id
              * Format: uuid
@@ -10573,6 +10382,197 @@ export interface components {
             signals: components["schemas"]["Signal"][];
             /** Recent Activity */
             recent_activity: components["schemas"]["ActivityRead"][];
+        };
+        /** OrganizationCreate */
+        OrganizationCreate: {
+            /** Legal Name */
+            legal_name: string;
+            /** Vat Number */
+            vat_number?: string | null;
+            /** Tax Code */
+            tax_code?: string | null;
+            /** Sdi Code */
+            sdi_code?: string | null;
+            /** Certified Email */
+            certified_email?: string | null;
+            /** Address */
+            address?: string | null;
+            /** Postal Code */
+            postal_code?: string | null;
+            /** City */
+            city?: string | null;
+            /** Province */
+            province?: string | null;
+            /**
+             * Country
+             * @default IT
+             */
+            country: string;
+            /** Legal Entity Id */
+            legal_entity_id?: string | null;
+            /** Owner Id */
+            owner_id?: string | null;
+            /**
+             * Contact Points
+             * @description The customer's contact points (email, phone, linkedin), each with a label and an optional note. On an update the list replaces the stored one. At most one point per kind is primary (the first of a kind is when none is flagged). The PEC address stays in certified_email.
+             */
+            contact_points?: components["schemas"]["ContactPointIn"][];
+            /** Website */
+            website?: string | null;
+            /** Status */
+            status?: string | null;
+            /** Note */
+            note?: string | null;
+            /** Payment Days */
+            payment_days?: number | null;
+            /**
+             * Payment End Of Month
+             * @default false
+             */
+            payment_end_of_month: boolean;
+            /**
+             * Custom Fields
+             * @default {}
+             */
+            custom_fields: {
+                [key: string]: unknown;
+            };
+        };
+        /**
+         * OrganizationFromSuggestion
+         * @description One ticked proposal: the domain it was proposed for, the company name as the
+         *     person corrected it, and the people to create under it.
+         */
+        OrganizationFromSuggestion: {
+            /** Domain */
+            domain: string;
+            /** Legal Name */
+            legal_name: string;
+            /** People */
+            people?: components["schemas"]["PersonFromSuggestion"][];
+        };
+        /** OrganizationPage */
+        OrganizationPage: {
+            /** Items */
+            items: components["schemas"]["OrganizationRead"][];
+            /** Next Cursor */
+            next_cursor: string | null;
+        };
+        /** OrganizationRead */
+        OrganizationRead: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Legal Entity Id
+             * Format: uuid
+             */
+            legal_entity_id: string;
+            /** Owner Id */
+            owner_id: string | null;
+            /** Legal Name */
+            legal_name: string;
+            /** Vat Number */
+            vat_number: string | null;
+            /** Tax Code */
+            tax_code: string | null;
+            /** Sdi Code */
+            sdi_code: string | null;
+            /** Certified Email */
+            certified_email: string | null;
+            /** Address */
+            address: string | null;
+            /** Postal Code */
+            postal_code: string | null;
+            /** City */
+            city: string | null;
+            /** Province */
+            province: string | null;
+            /** Country */
+            country: string;
+            /** Email */
+            email: string | null;
+            /** Phone */
+            phone: string | null;
+            /** Contact Points */
+            contact_points: components["schemas"]["ContactPointRead"][];
+            /** Website */
+            website: string | null;
+            /** Status */
+            status: string | null;
+            /** Payment Days */
+            payment_days: number | null;
+            /** Payment End Of Month */
+            payment_end_of_month: boolean;
+            /** Custom Fields */
+            custom_fields: {
+                [key: string]: unknown;
+            };
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /** OrganizationUpdate */
+        OrganizationUpdate: {
+            /** Legal Name */
+            legal_name?: string | null;
+            /** Vat Number */
+            vat_number?: string | null;
+            /** Tax Code */
+            tax_code?: string | null;
+            /** Sdi Code */
+            sdi_code?: string | null;
+            /** Certified Email */
+            certified_email?: string | null;
+            /** Address */
+            address?: string | null;
+            /** Postal Code */
+            postal_code?: string | null;
+            /** City */
+            city?: string | null;
+            /** Province */
+            province?: string | null;
+            /** Country */
+            country?: string | null;
+            /** Legal Entity Id */
+            legal_entity_id?: string | null;
+            /** Owner Id */
+            owner_id?: string | null;
+            /**
+             * Contact Points
+             * @description The customer's contact points (email, phone, linkedin), each with a label and an optional note. On an update the list replaces the stored one. At most one point per kind is primary (the first of a kind is when none is flagged). The PEC address stays in certified_email.
+             */
+            contact_points?: components["schemas"]["ContactPointIn"][] | null;
+            /** Website */
+            website?: string | null;
+            /** Status */
+            status?: string | null;
+            /** Payment Days */
+            payment_days?: number | null;
+            /** Payment End Of Month */
+            payment_end_of_month?: boolean | null;
+            /** Custom Fields */
+            custom_fields?: {
+                [key: string]: unknown;
+            } | null;
+        };
+        /**
+         * OrganizationsFromSuggestions
+         * @description What `POST /api/organizations/from-suggestions` takes: the proposals a person ticked,
+         *     created together or not at all.
+         */
+        OrganizationsFromSuggestions: {
+            /** Organizations */
+            organizations: components["schemas"]["OrganizationFromSuggestion"][];
         };
         /**
          * OverdueInvoice
@@ -10692,7 +10692,7 @@ export interface components {
          * ParsedInvoiceParty
          * @description One party to a parsed invoice, exactly as the source document states it --
          *     not `PartySnapshot` (what the CRM's own emission recorded at the time) and not
-         *     a `Customer` row (what a caller declares about an entity on file): this is what
+         *     a `Organization` row (what a caller declares about an entity on file): this is what
          *     the document itself claims about whoever issued it or whoever it was issued to,
          *     before any matching against the register has happened.
          *
@@ -10706,7 +10706,7 @@ export interface components {
          *     identifier a FatturaPA document actually guarantees. A concrete adapter
          *     enforces that at least one of the two is present when the source schema
          *     itself allows neither -- FatturaPA's `CessionarioCommittente` is the one case
-         *     (mastro's `mapCustomer` throws for the same reason); `CedentePrestatore`
+         *     (mastro's `mapOrganization` throws for the same reason); `CedentePrestatore`
          *     always carries `IdFiscaleIVA`, mandatory in FatturaPA's own schema.
          */
         ParsedInvoiceParty: {
@@ -12280,7 +12280,7 @@ export interface components {
              * Entity
              * @enum {string}
              */
-            entity: "customer" | "person" | "deal" | "document" | "invoice" | "task";
+            entity: "organization" | "person" | "deal" | "document" | "invoice" | "task";
             /** Hits */
             hits: components["schemas"]["SearchHit"][];
             /** Total */
@@ -12294,7 +12294,7 @@ export interface components {
              * Entity
              * @enum {string}
              */
-            entity: "customer" | "person" | "deal" | "document" | "invoice" | "task";
+            entity: "organization" | "person" | "deal" | "document" | "invoice" | "task";
             /**
              * Id
              * Format: uuid
@@ -12692,12 +12692,12 @@ export interface components {
             updated_at?: string | null;
         };
         /**
-         * SuggestedCustomer
+         * SuggestedOrganization
          * @description One domain the connected mailbox has corresponded with, proposed as a customer
          *     (spec 2026-09-16 §5, REB-223). A proposal, not a record: nothing is written until a
-         *     person ticks it and `POST /api/customers/from-suggestions` creates it.
+         *     person ticks it and `POST /api/organizations/from-suggestions` creates it.
          */
-        SuggestedCustomer: {
+        SuggestedOrganization: {
             /** Domain */
             domain: string;
             /** Name */
@@ -15279,7 +15279,7 @@ export interface operations {
             };
         };
     };
-    list_customers_api_customers_get: {
+    list_organizations_api_organizations_get: {
         parameters: {
             query?: {
                 /** @description Filter on custom fields (JSONB), repeatable for several keys: */
@@ -15306,7 +15306,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["CustomerPage"];
+                    "application/json": components["schemas"]["OrganizationPage"];
                 };
             };
             /** @description Permission denied: the actor does not have the required role. */
@@ -15408,7 +15408,7 @@ export interface operations {
             };
         };
     };
-    create_api_customers_post: {
+    create_api_organizations_post: {
         parameters: {
             query?: never;
             header?: never;
@@ -15417,7 +15417,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["CustomerCreate"];
+                "application/json": components["schemas"]["OrganizationCreate"];
             };
         };
         responses: {
@@ -15427,7 +15427,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["CustomerRead"];
+                    "application/json": components["schemas"]["OrganizationRead"];
                 };
             };
             /** @description Permission denied: the actor does not have the required role. */
@@ -15529,7 +15529,7 @@ export interface operations {
             };
         };
     };
-    create_from_suggestions_api_customers_from_suggestions_post: {
+    create_from_suggestions_api_organizations_from_suggestions_post: {
         parameters: {
             query?: never;
             header?: never;
@@ -15538,7 +15538,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["CustomersFromSuggestions"];
+                "application/json": components["schemas"]["OrganizationsFromSuggestions"];
             };
         };
         responses: {
@@ -15548,7 +15548,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["CustomerRead"][];
+                    "application/json": components["schemas"]["OrganizationRead"][];
                 };
             };
             /** @description Permission denied: the actor does not have the required role. */
@@ -15650,12 +15650,12 @@ export interface operations {
             };
         };
     };
-    add_person_from_mail_api_customers__customer_id__people_from_mail_post: {
+    add_person_from_mail_api_organizations__organization_id__people_from_mail_post: {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                customer_id: string;
+                organization_id: string;
             };
             cookie?: never;
         };
@@ -15773,12 +15773,12 @@ export interface operations {
             };
         };
     };
-    get_api_customers__customer_id__get: {
+    get_api_organizations__organization_id__get: {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                customer_id: string;
+                organization_id: string;
             };
             cookie?: never;
         };
@@ -15790,7 +15790,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["CustomerRead"];
+                    "application/json": components["schemas"]["OrganizationRead"];
                 };
             };
             /** @description Permission denied: the actor does not have the required role. */
@@ -15892,12 +15892,12 @@ export interface operations {
             };
         };
     };
-    soft_delete_api_customers__customer_id__delete: {
+    soft_delete_api_organizations__organization_id__delete: {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                customer_id: string;
+                organization_id: string;
             };
             cookie?: never;
         };
@@ -16009,18 +16009,18 @@ export interface operations {
             };
         };
     };
-    update_api_customers__customer_id__patch: {
+    update_api_organizations__organization_id__patch: {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                customer_id: string;
+                organization_id: string;
             };
             cookie?: never;
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["CustomerUpdate"];
+                "application/json": components["schemas"]["OrganizationUpdate"];
             };
         };
         responses: {
@@ -16030,7 +16030,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["CustomerRead"];
+                    "application/json": components["schemas"]["OrganizationRead"];
                 };
             };
             /** @description Permission denied: the actor does not have the required role. */
@@ -16132,12 +16132,12 @@ export interface operations {
             };
         };
     };
-    restore_api_customers__customer_id__restore_post: {
+    restore_api_organizations__organization_id__restore_post: {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                customer_id: string;
+                organization_id: string;
             };
             cookie?: never;
         };
@@ -16149,7 +16149,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["CustomerRead"];
+                    "application/json": components["schemas"]["OrganizationRead"];
                 };
             };
             /** @description Permission denied: the actor does not have the required role. */
@@ -16251,14 +16251,14 @@ export interface operations {
             };
         };
     };
-    timeline_api_customers__customer_id__timeline_get: {
+    timeline_api_organizations__organization_id__timeline_get: {
         parameters: {
             query?: {
                 limit?: number;
             };
             header?: never;
             path: {
-                customer_id: string;
+                organization_id: string;
             };
             cookie?: never;
         };
@@ -19781,7 +19781,7 @@ export interface operations {
     list_fields_api_field_definitions_get: {
         parameters: {
             query: {
-                entity_type: "customer" | "person" | "deal" | "document" | "invoice" | "time_entry" | "cost" | "task" | "contract";
+                entity_type: "organization" | "person" | "deal" | "document" | "invoice" | "time_entry" | "cost" | "task" | "contract";
                 include_archived?: boolean;
             };
             header?: never;
@@ -23128,7 +23128,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                entity_type: "customer" | "person" | "deal" | "document" | "invoice" | "time_entry" | "cost" | "task" | "contract";
+                entity_type: "organization" | "person" | "deal" | "document" | "invoice" | "time_entry" | "cost" | "task" | "contract";
             };
             cookie?: never;
         };
@@ -26665,7 +26665,7 @@ export interface operations {
                 "multipart/form-data": {
                     /** @description FatturaPA XML files or ZIPs of them, one part each. */
                     file: string[];
-                    /** @description On the confirmation: `{"clienti": {"<party_key>": {"create_customer": true}}}`. */
+                    /** @description On the confirmation: `{"clienti": {"<party_key>": {"create_organization": true}}}`. */
                     decisioni?: string;
                 };
             };
@@ -26791,7 +26791,7 @@ export interface operations {
                 "multipart/form-data": {
                     /** @description FatturaPA XML files or ZIPs of them, one part each. */
                     file: string[];
-                    /** @description On the confirmation: `{"clienti": {"<party_key>": {"create_customer": true}}}`. */
+                    /** @description On the confirmation: `{"clienti": {"<party_key>": {"create_organization": true}}}`. */
                     decisioni?: string;
                 };
             };
@@ -35851,7 +35851,7 @@ export interface operations {
             };
         };
     };
-    suggest_customers_api_gmail_customer_suggestions_get: {
+    suggest_organizations_api_gmail_organization_suggestions_get: {
         parameters: {
             query?: {
                 months?: number;
@@ -35868,7 +35868,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["SuggestedCustomer"][];
+                    "application/json": components["schemas"]["SuggestedOrganization"][];
                 };
             };
             /** @description Permission denied: the actor does not have the required role. */
@@ -35970,7 +35970,7 @@ export interface operations {
             };
         };
     };
-    discover_correspondents_api_gmail_customers__customer_id__correspondents_get: {
+    discover_correspondents_api_gmail_organizations__customer_id__correspondents_get: {
         parameters: {
             query?: never;
             header?: never;
@@ -36092,7 +36092,7 @@ export interface operations {
     read_messages_api_gmail_messages_get: {
         parameters: {
             query: {
-                entity_type: "customer" | "person" | "deal";
+                entity_type: "organization" | "person" | "deal";
                 entity_id: string;
                 limit?: number;
                 /** @description `conversations`: grouped by conversation, like a client's page; `recent`: most recent first, so that the limit cuts the oldest */
@@ -37990,7 +37990,7 @@ export interface operations {
     list_drafts_api_email_drafts_get: {
         parameters: {
             query?: {
-                entity_type?: ("customer" | "person" | "deal") | null;
+                entity_type?: ("organization" | "person" | "deal") | null;
                 entity_id?: string | null;
                 send_state?: ("draft" | "sending" | "sent" | "uncertain" | "failed") | null;
                 unsent?: boolean;
@@ -51023,7 +51023,7 @@ export interface operations {
             };
             header?: never;
             path: {
-                collection: "deals" | "customers" | "people";
+                collection: "deals" | "organizations" | "people";
                 entity_id: string;
             };
             cookie?: never;
@@ -51143,7 +51143,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                collection: "deals" | "customers" | "people";
+                collection: "deals" | "organizations" | "people";
                 entity_id: string;
             };
             cookie?: never;

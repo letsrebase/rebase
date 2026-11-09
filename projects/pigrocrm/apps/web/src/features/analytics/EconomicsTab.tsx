@@ -79,7 +79,7 @@ const BASE_NOTE: Record<PnlBase, string> = {
     'Ricavi attribuiti al periodo di competenza della fattura, o alla data di emissione quando manca.',
 }
 
-function CustomerEconomics({ customerId }: { customerId: string }) {
+function OrganizationEconomics({ customerId }: { customerId: string }) {
   // A customer's economics is the sum of their deals, served by the same period endpoint
   // with a `customer_id` filter -- never a second aggregation written here, which is how
   // two totals begin to disagree. The window defaults to the current calendar year
@@ -147,6 +147,6 @@ export function EconomicsTab(props: EconomicsTabProps) {
   return 'dealId' in props ? (
     <DealEconomics dealId={props.dealId} />
   ) : (
-    <CustomerEconomics customerId={props.customerId} />
+    <OrganizationEconomics customerId={props.customerId} />
   )
 }

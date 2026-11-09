@@ -24,10 +24,10 @@ from sqlalchemy.orm import Session
 import pigrocrm.core.cli as cli
 from pigrocrm.core.automations.daily import AutomationPass
 from pigrocrm.core.config import Settings
-from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.db import session_factory, today_local
 from pigrocrm.core.db.sidecar import create_database_if_missing, drop_database
 from pigrocrm.core.invoices.models import Invoice
+from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.tasks.models import Task
 from pigrocrm.core.tenants import TenantService, TenantSignup, ensure_tenants_database
 from pigrocrm.core.tenants.database import tenant_database_name, tenant_database_url
@@ -113,7 +113,7 @@ def _an_overdue_invoice_in_every_space(settings: Settings, spaces: None) -> Iter
     today = today_local(settings)
     for slug in (None, *SPACES):
         with _engine(_url(settings, slug)) as engine, session_factory(engine)() as session:
-            customer = Customer(legal_name="Acme S.r.l.", country="IT", custom_fields={})
+            customer = Organization(legal_name="Acme S.r.l.", country="IT", custom_fields={})
             session.add(customer)
             session.flush()
             session.add(
@@ -141,7 +141,7 @@ def _an_overdue_invoice_in_every_space(settings: Settings, spaces: None) -> Iter
             connection.execute(text("delete from automation_config"))
             connection.execute(text("delete from reminder_job_run"))
             connection.execute(text("delete from invoices"))
-            connection.execute(text("delete from customers"))
+            connection.execute(text("delete from organizations"))
 
 
 @pytest.fixture(autouse=True)

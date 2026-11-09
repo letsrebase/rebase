@@ -642,7 +642,7 @@ def test_a_value_inside_text_survives_the_full_render_with_no_visible_backslashe
 
 
 @requires_real_compiler
-def test_for_real_a_customers_url_inside_link_is_a_working_link_end_to_end(
+def test_for_real_a_organizations_url_inside_link_is_a_working_link_end_to_end(
     tmp_path: Path,
 ) -> None:
     real_url = "https://esempio.it"

@@ -548,7 +548,7 @@ def _compile_markdown_to_pdf_uris(body_markdown: str, tmp_path: Path) -> list[st
 
 
 @requires_real_compiler
-def test_url_context_makes_the_customers_own_site_a_working_link_for_real(
+def test_url_context_makes_the_organizations_own_site_a_working_link_for_real(
     tmp_path: Path,
 ) -> None:
     # The brief's own flagship example, and the bug this round's fix closes: before

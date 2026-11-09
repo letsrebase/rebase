@@ -222,7 +222,7 @@ class ApprovalRequestService:
             ]
             draft = EmailDraftService(self.session, settings=self.settings).create(
                 EmailDraftCreate(
-                    entity_type="customer",
+                    entity_type="organization",
                     entity_id=customer_id,
                     to_addresses=list(data.to_addresses),
                     cc_addresses=list(data.cc_addresses),

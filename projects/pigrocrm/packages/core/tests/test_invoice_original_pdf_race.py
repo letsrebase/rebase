@@ -27,7 +27,6 @@ from sqlalchemy import Engine, text
 from sqlalchemy.orm import Session, sessionmaker
 
 from pigrocrm.core.actor import Actor
-from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.db import session_factory
 from pigrocrm.core.documents.schemas import DocumentCreate
 from pigrocrm.core.documents.service import DocumentService
@@ -39,6 +38,7 @@ from pigrocrm.core.invoices.schemas import InvoiceImport, InvoiceLineImport, Pdf
 from pigrocrm.core.invoices.service import InvoiceService
 from pigrocrm.core.legal_entities.schemas import LegalEntityUpsert
 from pigrocrm.core.legal_entities.service import LegalEntityService
+from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.storage.local import LocalFileStorage
 
 ADMIN = Actor(id=None, type="user", role="admin")
@@ -63,7 +63,7 @@ def _configure(session: Session) -> UUID:
     )
     # After the azienda, which the profile belongs to since REB-615.
     FiscalProfileService(session).upsert(FiscalProfileUpsert(regime_code="RF19"), ADMIN)
-    customer = Customer(
+    customer = Organization(
         legal_name="Acme S.r.l.",
         vat_number="12345678901",
         sdi_code="ABCDEFG",
@@ -140,7 +140,7 @@ def _cleanup(factory: sessionmaker[Session], customer_id: UUID | None) -> None:
         cleaner.execute(text("DELETE FROM invoice_counters"))
         cleaner.execute(text("DELETE FROM fiscal_profile"))
         cleaner.execute(text("DELETE FROM legal_entities WHERE NOT is_default"))
-        cleaner.execute(text("DELETE FROM customers WHERE id = :customer"), params)
+        cleaner.execute(text("DELETE FROM organizations WHERE id = :customer"), params)
         cleaner.commit()
 
 

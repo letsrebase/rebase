@@ -158,7 +158,7 @@ def test_the_profile_defaults_do_not_override_the_non_resident_answer() -> None:
 
 
 def test_the_country_is_compared_after_normalisation() -> None:
-    """`customers.country` is stored as typed; a lowercase or padded `it` is still
+    """`organizations.country` is stored as typed; a lowercase or padded `it` is still
     Italy, not a foreign customer, and so is a lowercase `fr` still France."""
     for country in ("IT", "it", " It "):
         assert FLAT_RATE.resolve_line_vat(None, _profile(), country_customer=country)[1] == "N2.2"
@@ -168,7 +168,7 @@ def test_the_country_is_compared_after_normalisation() -> None:
 
 
 def test_an_empty_country_is_italy_not_a_foreign_customer() -> None:
-    """`CustomerCreate.country` has no minimum length, so `""` can be stored. The
+    """`OrganizationCreate.country` has no minimum length, so `""` can be stored. The
     column's default is `IT`, and `_buyer` in the exporter reads an empty value
     as Italy; the strategy reads it the same way rather than answering `N2.1`."""
     for empty in ("", "   "):

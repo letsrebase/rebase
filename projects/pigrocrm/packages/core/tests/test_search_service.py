@@ -29,10 +29,10 @@ from pigrocrm.core.actor import Actor
 from pigrocrm.core.contact_points.models import ContactPoint
 from pigrocrm.core.contact_points.schemas import ContactPointIn
 from pigrocrm.core.contact_points.service import prepare
-from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.db.base import uuid7
 from pigrocrm.core.deals.models import Deal
 from pigrocrm.core.documents.models import Document
+from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.people.models import Person
 from pigrocrm.core.search.schemas import (
     COUNT_CEILING,
@@ -60,17 +60,17 @@ def _search(session: Session, term: str, limit: int = 5) -> dict[str, SearchGrou
 def test_a_vat_fragment_finds_the_customer(db_session: Session) -> None:
     """The use case §17 names as 6A's reason to exist on its own."""
     build_corpus(db_session, SMALL)
-    customers = _search(db_session, "34567")["customer"]
-    assert KNOWN_LEGAL_NAME in [hit.label for hit in customers.hits]
+    organizations = _search(db_session, "34567")["organization"]
+    assert KNOWN_LEGAL_NAME in [hit.label for hit in organizations.hits]
 
 
 def test_an_exact_vat_number_ranks_the_customer_first(db_session: Session) -> None:
     """§16 criterion 4, first sentence."""
     build_corpus(db_session, SMALL)
-    customers = _search(db_session, KNOWN_VAT_NUMBER)["customer"]
-    assert customers.hits[0].label == KNOWN_LEGAL_NAME
-    assert customers.hits[0].field == "vat_number"
-    assert customers.hits[0].score == Decimal("1.0000")
+    organizations = _search(db_session, KNOWN_VAT_NUMBER)["organization"]
+    assert organizations.hits[0].label == KNOWN_LEGAL_NAME
+    assert organizations.hits[0].field == "vat_number"
+    assert organizations.hits[0].score == Decimal("1.0000")
 
 
 def test_every_group_is_present_even_when_empty(db_session: Session) -> None:
@@ -84,7 +84,7 @@ def test_every_group_is_present_even_when_empty(db_session: Session) -> None:
     same, which is exactly what this assertion exists to prevent."""
     results = SearchService(db_session).search_everything(SearchQuery(term="zzzqqq"), READONLY)
     assert [group.entity for group in results.groups] == [
-        "customer",
+        "organization",
         "person",
         "deal",
         "document",
@@ -102,7 +102,7 @@ def test_a_group_is_truncated_to_the_limit_and_reports_the_real_count(
 ) -> None:
     for index in range(40):
         db_session.add(
-            Customer(
+            Organization(
                 legal_name=f"Vulcano Impianti {index} Srl",
                 country="IT",
                 custom_fields={},
@@ -110,10 +110,10 @@ def test_a_group_is_truncated_to_the_limit_and_reports_the_real_count(
         )
     db_session.flush()
 
-    customers = _search(db_session, "Vulcano")["customer"]
-    assert len(customers.hits) == 5
-    assert customers.total == 40
-    assert customers.total_is_minimum is False
+    organizations = _search(db_session, "Vulcano")["organization"]
+    assert len(organizations.hits) == 5
+    assert organizations.total == 40
+    assert organizations.total_is_minimum is False
 
 
 def test_the_count_is_the_same_predicate_as_the_hits(db_session: Session) -> None:
@@ -129,27 +129,29 @@ def test_the_count_is_the_same_predicate_as_the_hits(db_session: Session) -> Non
     """
     for index in range(15):
         db_session.add(
-            Customer(
+            Organization(
                 legal_name=f"Vulcano Impianti {index} Srl",
                 country="IT",
                 custom_fields={},
             )
         )
-    deleted_customer = Customer(legal_name="Vulcano Cancellata Srl", country="IT", custom_fields={})
+    deleted_customer = Organization(
+        legal_name="Vulcano Cancellata Srl", country="IT", custom_fields={}
+    )
     db_session.add(deleted_customer)
     db_session.add(
-        Customer(legal_name="Quadrifoglio Logistica Spa", country="IT", custom_fields={})
+        Organization(legal_name="Quadrifoglio Logistica Spa", country="IT", custom_fields={})
     )
     db_session.flush()
     deleted_customer.deleted_at = datetime.now(UTC)
     db_session.flush()
 
-    customers = _search(db_session, "Vulcano", limit=20)["customer"]
-    assert customers.total == len(customers.hits), (
+    organizations = _search(db_session, "Vulcano", limit=20)["organization"]
+    assert organizations.total == len(organizations.hits), (
         "the count and the hits disagree, so one of them applies a filter the other does not"
     )
-    assert customers.total == 15
-    assert customers.total_is_minimum is False
+    assert organizations.total == 15
+    assert organizations.total_is_minimum is False
 
 
 def test_beyond_the_ceiling_the_count_is_declared_as_a_minimum(
@@ -158,7 +160,7 @@ def test_beyond_the_ceiling_the_count_is_declared_as_a_minimum(
     """Exact when exactness serves, cheap when it does not, never a lie (§8.5)."""
     for index in range(COUNT_CEILING + 25):
         db_session.add(
-            Customer(
+            Organization(
                 legal_name=f"Quadrifoglio {index} Srl",
                 country="IT",
                 custom_fields={},
@@ -166,9 +168,9 @@ def test_beyond_the_ceiling_the_count_is_declared_as_a_minimum(
         )
     db_session.flush()
 
-    customers = _search(db_session, "Quadrifoglio")["customer"]
-    assert customers.total == COUNT_CEILING
-    assert customers.total_is_minimum is True
+    organizations = _search(db_session, "Quadrifoglio")["organization"]
+    assert organizations.total == COUNT_CEILING
+    assert organizations.total_is_minimum is True
 
 
 def test_every_returned_hit_is_above_the_floor(db_session: Session) -> None:
@@ -199,15 +201,17 @@ def test_a_containment_below_the_floor_is_not_a_result(db_session: Session) -> N
     Without the floor in both the scored query and the count, this is the test that goes
     red.
     """
-    buried = Customer(legal_name="Quadrifoglinoxyz Logistica Spa", country="IT", custom_fields={})
-    ending = Customer(legal_name="Marino Trasporti Srl", country="IT", custom_fields={})
+    buried = Organization(
+        legal_name="Quadrifoglinoxyz Logistica Spa", country="IT", custom_fields={}
+    )
+    ending = Organization(legal_name="Marino Trasporti Srl", country="IT", custom_fields={})
     db_session.add_all([buried, ending])
     db_session.flush()
 
-    customers = _search(db_session, "ino", limit=20)["customer"]
+    organizations = _search(db_session, "ino", limit=20)["organization"]
 
-    assert [hit.id for hit in customers.hits] == [ending.id]
-    assert customers.total == 1
+    assert [hit.id for hit in organizations.hits] == [ending.id]
+    assert organizations.total == 1
 
 
 def test_the_hits_are_ordered_by_score_and_the_order_is_total(db_session: Session) -> None:
@@ -220,15 +224,15 @@ def test_the_hits_are_ordered_by_score_and_the_order_is_total(db_session: Sessio
     the same set in a different sequence on the next keystroke.
     """
     tied = [
-        Customer(legal_name=f"Vulcano Impianti {index} Srl", country="IT", custom_fields={})
+        Organization(legal_name=f"Vulcano Impianti {index} Srl", country="IT", custom_fields={})
         for index in range(6)
     ]
     for row in tied:
         db_session.add(row)
     db_session.flush()
 
-    first = _search(db_session, "Vulcano", limit=6)["customer"]
-    second = _search(db_session, "Vulcano", limit=6)["customer"]
+    first = _search(db_session, "Vulcano", limit=6)["organization"]
+    second = _search(db_session, "Vulcano", limit=6)["organization"]
 
     assert {hit.score for hit in first.hits} == {Decimal("0.8000")}
     assert [hit.id for hit in first.hits] == sorted((row.id for row in tied), reverse=True)
@@ -236,17 +240,17 @@ def test_the_hits_are_ordered_by_score_and_the_order_is_total(db_session: Sessio
 
 
 def test_a_soft_deleted_row_is_not_a_result(db_session: Session) -> None:
-    row = Customer(legal_name="Cancellata Srl", country="IT", custom_fields={})
+    row = Organization(legal_name="Cancellata Srl", country="IT", custom_fields={})
     db_session.add(row)
     db_session.flush()
     # Found while it lives, so the assertion below is about the soft delete and not about
     # a term that never matched anything.
-    assert _search(db_session, "Cancellata")["customer"].total == 1
+    assert _search(db_session, "Cancellata")["organization"].total == 1
 
     row.deleted_at = datetime.now(UTC)
     db_session.flush()
 
-    gone = _search(db_session, "Cancellata")["customer"]
+    gone = _search(db_session, "Cancellata")["organization"]
     assert gone.total == 0
     assert gone.hits == []
 
@@ -283,7 +287,7 @@ def test_a_deal_hit_carries_its_customer_as_the_subtitle(db_session: Session) ->
     """A palette row reading "Rifacimento impianti 42" with no client is not an answer.
     The subtitle is built by the repository, never by the browser concatenating fields."""
     ids = build_corpus(db_session, SMALL)
-    customer = db_session.get(Customer, ids.customer_ids[0])
+    customer = db_session.get(Organization, ids.customer_ids[0])
     assert customer is not None
     db_session.add(
         Deal(
@@ -331,12 +335,12 @@ def test_the_term_is_stripped_before_it_is_matched(db_session: Session) -> None:
     otherwise turn a prefix match into a substring one -- a different score for the same
     intention. The echoed `term` is the stripped one, because that is what was
     searched for."""
-    db_session.add(Customer(legal_name="Vulcano Srl", country="IT", custom_fields={}))
+    db_session.add(Organization(legal_name="Vulcano Srl", country="IT", custom_fields={}))
     db_session.flush()
 
     results = SearchService(db_session).search_everything(SearchQuery(term="  Vulcano  "), READONLY)
     assert results.term == "Vulcano"
-    assert _groups(results)["customer"].hits[0].score == Decimal("0.8000")
+    assert _groups(results)["organization"].hits[0].score == Decimal("0.8000")
 
 
 def test_a_readonly_actor_can_search(db_session: Session) -> None:
@@ -345,7 +349,7 @@ def test_a_readonly_actor_can_search(db_session: Session) -> None:
     build_corpus(db_session, SMALL)
     results = SearchService(db_session).search_everything(SearchQuery(term="Rossi"), READONLY)
     assert results.term == "Rossi"
-    assert _groups(results)["customer"].total > 0
+    assert _groups(results)["organization"].total > 0
 
 
 def test_search_service_exposes_exactly_one_public_method() -> None:
@@ -363,7 +367,7 @@ def test_search_service_exposes_exactly_one_public_method() -> None:
     assert public == {"search_everything"}
 
 
-def _customer_with_two_phones(session: Session) -> Customer:
+def _customer_with_two_phones(session: Session) -> Organization:
     """A customer whose second phone, the one nobody reads on the card, is the one searched."""
     owned = [
         ContactPoint(
@@ -377,7 +381,7 @@ def _customer_with_two_phones(session: Session) -> Customer:
         )
         for position, point in enumerate(
             prepare(
-                "customer",
+                "organization",
                 [
                     ContactPointIn(kind="phone", value="+39 02 1234567"),
                     ContactPointIn(kind="phone", value="+39 388 871 3657", label="other"),
@@ -386,7 +390,9 @@ def _customer_with_two_phones(session: Session) -> Customer:
             )
         )
     ]
-    row = Customer(legal_name="Telefono Srl", contact_points=owned, country="IT", custom_fields={})
+    row = Organization(
+        legal_name="Telefono Srl", contact_points=owned, country="IT", custom_fields={}
+    )
     session.add(row)
     session.flush()
     return row
@@ -408,7 +414,7 @@ def test_a_phone_is_found_in_any_form_and_the_hit_says_phone(db_session: Session
     db_session.flush()
 
     for term in ("3888713657", "+393888713657", "388-871-3657", "388 871 3657", "+39 388 871 3657"):
-        group = _search(db_session, term)["customer"]
+        group = _search(db_session, term)["organization"]
         assert [hit.id for hit in group.hits] == [customer.id], term
         assert group.hits[0].field == "phone", term
     people = _search(db_session, "3884496965")["person"]
@@ -429,4 +435,6 @@ def test_a_hit_names_the_kind_of_the_contact_point_that_matched(db_session: Sess
     db_session.flush()
 
     assert _search(db_session, "ada.unique@acme")["person"].hits[0].field == "email"
-    assert _search(db_session, "linkedin.com/company/acme")["customer"].hits[0].field == "linkedin"
+    assert (
+        _search(db_session, "linkedin.com/company/acme")["organization"].hits[0].field == "linkedin"
+    )

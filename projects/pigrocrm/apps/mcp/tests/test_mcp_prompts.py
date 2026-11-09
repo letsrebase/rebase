@@ -44,19 +44,19 @@ from pigrocrm.core.activities.models import Activity
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.auth.models import User
 from pigrocrm.core.config import Settings
-from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.db import Base, session_factory, today_local
 from pigrocrm.core.deals.models import Deal
 from pigrocrm.core.documents.models import Document
 from pigrocrm.core.errors import Conflict, NotFound, ValidationFailed
 from pigrocrm.core.invoices.models import Invoice
+from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.pipeline.models import PipelineStage
 from pigrocrm.core.storage import LocalFileStorage
 from pigrocrm.core.timetracking.models import Cost, CostCategory, TimeEntry
 from pigrocrm_mcp.context import ScopedSessionProvider
 from pigrocrm_mcp.errors import to_agent_message
-from pigrocrm_mcp.prompts import customer as customer_prompts
 from pigrocrm_mcp.prompts import dashboards as dashboard_prompts
+from pigrocrm_mcp.prompts import organization as organization_prompts
 from pigrocrm_mcp.server import DOMAIN_REFUSAL, build_server
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "packages" / "core" / "tests"))
@@ -72,7 +72,7 @@ _PREFIX = "MCPPROMPT"
 # on the day the suite runs.
 _YEAR, _MONTH = 2026, 3
 
-PROMPT_NAMES = {"pipeline-review", "month-close", "customer-status", "hours-to-log"}
+PROMPT_NAMES = {"pipeline-review", "month-close", "organization-status", "hours-to-log"}
 
 
 class Corpus(NamedTuple):
@@ -120,7 +120,7 @@ def _seed(factory: sessionmaker[Any]) -> _Seeded:
         )
         category = CostCategory(name=f"{_PREFIX} generali", position=910, code=None)
         user = User(email=f"{_PREFIX.lower()}@example.test", password_hash="x", name="Worker")
-        customer = Customer(legal_name=f"{_PREFIX} Cliente", country="IT", custom_fields={})
+        customer = Organization(legal_name=f"{_PREFIX} Cliente", country="IT", custom_fields={})
         session.add_all([open, won, category, user, customer])
         session.flush()
 
@@ -331,7 +331,7 @@ def _teardown(factory: sessionmaker[Any], legal_entity_id: UUID | None = None) -
         session.execute(delete(Invoice).where(Invoice.memo.like(f"{_PREFIX} %")))
         session.execute(delete(Document).where(Document.title.like(f"{_PREFIX} %")))
         session.execute(delete(Deal).where(Deal.name.like(f"{_PREFIX} %")))
-        session.execute(delete(Customer).where(Customer.legal_name.like(f"{_PREFIX} %")))
+        session.execute(delete(Organization).where(Organization.legal_name.like(f"{_PREFIX} %")))
         session.execute(delete(CostCategory).where(CostCategory.name.like(f"{_PREFIX} %")))
         session.execute(delete(User).where(User.email.like(f"{_PREFIX.lower()}%")))
         session.execute(delete(PipelineStage).where(PipelineStage.name.like(f"{_PREFIX} %")))
@@ -470,7 +470,7 @@ async def test_the_arguments_are_inferred_from_the_signatures(mcp_server: Any) -
         "year": True,
         "month": True,
     }
-    assert {arg.name: arg.required for arg in by_name["customer-status"].arguments} == {
+    assert {arg.name: arg.required for arg in by_name["organization-status"].arguments} == {
         "customer_id": True
     }
     assert {arg.name: arg.required for arg in by_name["hours-to-log"].arguments} == {"week": False}
@@ -663,18 +663,18 @@ async def test_hours_to_log_on_an_empty_database_is_to_valid_message(
     assert text_block.count("| 2") == 7
 
 
-# -- customer-status ---------------------------------------------------------------
+# -- organization-status ---------------------------------------------------------------
 
 
 async def test_status_customer_embeds_the_existing_resource(
     mcp_server: Any, seeded_customer: _Identified
 ) -> None:
     """§10: the **only** prompt with a resource block, because it is the only one whose
-    resource already exists. `customer://{id}` is slice 1 §8.4's."""
+    resource already exists. `organization://{id}` is slice 1 §8.4's."""
     rendered = await mcp_server.get_prompt(
-        "customer-status", {"customer_id": str(seeded_customer.id)}
+        "organization-status", {"customer_id": str(seeded_customer.id)}
     )
-    assert _resource_uris(rendered) == [f"customer://{seeded_customer.id}"]
+    assert _resource_uris(rendered) == [f"organization://{seeded_customer.id}"]
 
 
 async def test_the_embedded_resource_carries_the_card_and_not_only_the_uri(
@@ -685,7 +685,7 @@ async def test_the_embedded_resource_carries_the_card_and_not_only_the_uri(
     follow the URI still has the card, so "the context arrives inside the prompt" holds
     without the model going to fetch anything."""
     rendered = await mcp_server.get_prompt(
-        "customer-status", {"customer_id": str(seeded_customer.id)}
+        "organization-status", {"customer_id": str(seeded_customer.id)}
     )
     card = _resource_text(rendered)
     assert f"# {_PREFIX} Cliente" in card
@@ -697,13 +697,13 @@ async def test_status_customer_does_not_repeat_the_deals_the_card_already_carrie
 ) -> None:
     """The tax half of §10, and the reason this prompt diverges from the obvious shape.
 
-    `render_customer` already lists the deals, and the resource block must carry its text,
+    `render_organization` already lists the deals, and the resource block must carry its text,
     so a "## Deal" section in the text block beside it would be the most expensive section
     of the message paid for twice -- for rows the reader already has. What the card has no
     notion of is money owed, so that is what the text block is.
     """
     rendered = await mcp_server.get_prompt(
-        "customer-status", {"customer_id": str(seeded_customer.id)}
+        "organization-status", {"customer_id": str(seeded_customer.id)}
     )
     assert prompt_corpus.open_deal_name not in _text_of(rendered)
     assert prompt_corpus.open_deal_name in _resource_text(rendered)
@@ -715,7 +715,7 @@ async def test_status_customer_lists_the_unpaid_invoices_with_their_deadline(
     """The one thing the card cannot say. Both rows, because the undated one is the branch
     that would otherwise print `None`."""
     text_block = _text_of(
-        await mcp_server.get_prompt("customer-status", {"customer_id": str(seeded_customer.id)})
+        await mcp_server.get_prompt("organization-status", {"customer_id": str(seeded_customer.id)})
     )
     assert f"- {_YEAR}/9001 — 4000,00 € (total incl. VAT), due {_YEAR}-03-31" in text_block
     assert f"- {_YEAR}/9002 — 750,00 € (total incl. VAT), due no due date" in text_block
@@ -731,7 +731,7 @@ async def test_status_customer_on_an_unknown_customer_reaches_the_assistant_as_t
 
     The assertion is on what a client receives, in both protocol eras, and not on the
     exception the server raises in process. mcp 2.2's `Prompt.render` passes an `MCPError`
-    through and replaces anything else with «Error rendering prompt customer-status», with no
+    through and replaces anything else with «Error rendering prompt organization-status», with no
     text after it; the modern protocol then answers «Internal server error» for that, and
     the legacy one did already on mcp 2.0 (REB-451). The guard's `MCPError` is what reaches
     the assistant as the domain's own sentence, whole."""
@@ -739,9 +739,9 @@ async def test_status_customer_on_an_unknown_customer_reaches_the_assistant_as_t
 
     async with Client(mcp_server, mode=mode) as client:
         with pytest.raises(MCPError) as caught:
-            await client.get_prompt("customer-status", {"customer_id": str(unknown)})
+            await client.get_prompt("organization-status", {"customer_id": str(unknown)})
 
-    assert caught.value.message == to_agent_message(NotFound("customer", unknown))
+    assert caught.value.message == to_agent_message(NotFound("organization", unknown))
     assert caught.value.code == INVALID_PARAMS
 
 
@@ -752,16 +752,16 @@ async def test_a_conflict_inside_a_prompt_carries_the_application_code(
     """A conflict is a refusal the domain meant, not a server failure, so it must not share
     `-32603` with a crash: the client reads `DOMAIN_REFUSAL` and the domain's own sentence
     (REB-451)."""
-    refusal = Conflict("customer", "briefing già in preparazione")
+    refusal = Conflict("organization", "briefing già in preparazione")
 
     def _refuse(context: Any, customer_id: str) -> list[dict[str, Any]]:
         raise refusal
 
-    monkeypatch.setattr(customer_prompts, "status_customer", _refuse)
+    monkeypatch.setattr(organization_prompts, "status_organization", _refuse)
 
     async with Client(mcp_server, mode=mode) as client:
         with pytest.raises(MCPError) as caught:
-            await client.get_prompt("customer-status", {"customer_id": str(uuid4())})
+            await client.get_prompt("organization-status", {"customer_id": str(uuid4())})
 
     assert caught.value.code == DOMAIN_REFUSAL
     assert caught.value.message == to_agent_message(refusal)
@@ -779,17 +779,17 @@ async def test_a_crash_inside_a_prompt_keeps_its_text_on_the_server(
     def _crash(context: Any, customer_id: str) -> list[dict[str, Any]]:
         raise KeyError("boom")
 
-    monkeypatch.setattr(customer_prompts, "status_customer", _crash)
+    monkeypatch.setattr(organization_prompts, "status_organization", _crash)
 
     async with Client(mcp_server, mode=mode) as client:
         with pytest.raises(MCPError) as caught:
-            await client.get_prompt("customer-status", {"customer_id": str(uuid4())})
+            await client.get_prompt("organization-status", {"customer_id": str(uuid4())})
 
     assert "boom" not in caught.value.message
     assert "Rivedi" not in caught.value.message
     assert caught.value.message in {
         "Internal server error",
-        "Error rendering prompt customer-status",
+        "Error rendering prompt organization-status",
     }
     assert caught.value.code not in {DOMAIN_REFUSAL, INVALID_PARAMS}
 
@@ -819,7 +819,7 @@ FORBIDDEN_FISCAL_FIELDS = frozenset(
 
 # The resources that exist. §11.1 adds none, and inventing `dashboard://commercial?da=...`
 # in order to have a URI to embed would be adding one without saying so.
-KNOWN_RESOURCE_URIS = frozenset({"customer://", "person://", "deal://"})
+KNOWN_RESOURCE_URIS = frozenset({"organization://", "person://", "deal://"})
 
 _ALL_PROMPTS = (
     ("pipeline-review", {}),
@@ -955,10 +955,10 @@ async def test_status_customer_does_not_grow_with_the_register(
     """
     args = {"customer_id": str(seeded_customer.id)}
     inflate(0)
-    first = await mcp_server.get_prompt("customer-status", args)
+    first = await mcp_server.get_prompt("organization-status", args)
     before = len(_text_of(first)) + len(_resource_text(first))
     inflate(1)
-    second = await mcp_server.get_prompt("customer-status", args)
+    second = await mcp_server.get_prompt("organization-status", args)
     after = len(_text_of(second)) + len(_resource_text(second))
     assert after - before <= _GROWTH_BUDGET, (
         f"the briefing grew by {after - before} characters when {_EXTRA_ROWS} unpaid "
@@ -971,10 +971,10 @@ async def test_status_customer_shows_the_postal_code_and_admits_the_rest(
 ) -> None:
     inflate(0)
     text_block = _text_of(
-        await mcp_server.get_prompt("customer-status", {"customer_id": str(seeded_customer.id)})
+        await mcp_server.get_prompt("organization-status", {"customer_id": str(seeded_customer.id)})
     )
     listed = [line for line in text_block.splitlines() if line.startswith("- ")]
-    assert len(listed) == customer_prompts.UNPAID_INVOICES_SHOWN
+    assert len(listed) == organization_prompts.UNPAID_INVOICES_SHOWN
     assert [line for line in text_block.splitlines() if line.startswith("_")]
 
 
@@ -994,7 +994,7 @@ async def test_no_prompt_contains_a_fiscal_field_by_name(
     By field name, not by intention, and over the raw messages rather than the text blocks:
     a fiscal figure smuggled into the embedded resource would be just as reachable.
     """
-    cases = [*_ALL_PROMPTS, ("customer-status", {"customer_id": str(seeded_customer.id)})]
+    cases = [*_ALL_PROMPTS, ("organization-status", {"customer_id": str(seeded_customer.id)})]
     for name, args in cases:
         rendered = await mcp_server.get_prompt(name, args)
         haystack = str(rendered.messages).lower()
@@ -1101,9 +1101,9 @@ async def test_status_customer_is_the_only_prompt_with_to_resource_block(
         assert _resource_uris(rendered) == [], name
 
     rendered = await mcp_server.get_prompt(
-        "customer-status", {"customer_id": str(seeded_customer.id)}
+        "organization-status", {"customer_id": str(seeded_customer.id)}
     )
-    assert _resource_uris(rendered) == [f"customer://{seeded_customer.id}"]
+    assert _resource_uris(rendered) == [f"organization://{seeded_customer.id}"]
 
 
 async def test_no_prompt_introduces_a_new_resource_uri_scheme(
@@ -1111,7 +1111,7 @@ async def test_no_prompt_introduces_a_new_resource_uri_scheme(
 ) -> None:
     """Criterion 10: the URIs the four embed are listed and checked for new ones. A resource
     is a surface, and adding one silently is adding a surface silently."""
-    cases = [*_ALL_PROMPTS, ("customer-status", {"customer_id": str(seeded_customer.id)})]
+    cases = [*_ALL_PROMPTS, ("organization-status", {"customer_id": str(seeded_customer.id)})]
     seen: set[str] = set()
     for name, args in cases:
         rendered = await mcp_server.get_prompt(name, args)
@@ -1131,7 +1131,7 @@ async def test_the_registered_resource_templates_are_still_exactly_three(
         str(template.uri_template) for template in await mcp_server.list_resource_templates()
     }
     assert templates == {
-        "customer://{customer_id}",
+        "organization://{customer_id}",
         "person://{person_id}",
         "deal://{deal_id}",
     }

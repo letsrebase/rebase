@@ -101,7 +101,7 @@ def test_addresses_are_batched_and_every_batch_keeps_the_filter() -> None:
 
 
 def test_a_repeated_address_is_asked_for_once() -> None:
-    """The roster is built from customers, people and deals, so the same address can
+    """The roster is built from organizations, people and deals, so the same address can
     arrive three times. Three identical clauses would cost a third of the `q`'s length
     limit for nothing."""
     query = build_list_queries(

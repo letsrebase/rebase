@@ -14,7 +14,6 @@ from fakes.customer_fixtures import make_customer_with_address
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.actor import Actor
-from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.documents.schemas import DocumentCreate
 from pigrocrm.core.documents.service import DocumentService
 from pigrocrm.core.errors import Conflict
@@ -22,6 +21,7 @@ from pigrocrm.core.fiscal.models import FiscalProfile
 from pigrocrm.core.invoices.models import Invoice
 from pigrocrm.core.invoices.service import InvoiceService
 from pigrocrm.core.legal_entities.repository import LegalEntityRepository
+from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.storage import LocalFileStorage
 
 FIXTURES = Path(__file__).parent / "fixtures" / "fatturapa"
@@ -60,7 +60,11 @@ def _svc(session: Session, storage: LocalFileStorage) -> InvoiceService:
 
 
 def _document(
-    session: Session, storage: LocalFileStorage, content: bytes, *, owner: Customer | None = None
+    session: Session,
+    storage: LocalFileStorage,
+    content: bytes,
+    *,
+    owner: Organization | None = None,
 ) -> UUID:
     owner = owner if owner is not None else make_customer_with_address(session)
     service = DocumentService(session, storage)

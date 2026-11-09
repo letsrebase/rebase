@@ -3,7 +3,7 @@
 `AnalyticsService.economic_overview` (§1.5, §5 item 1 of
 `docs/superpowers/specs/2026-09-23-forecasting-and-analytics-from-mastro-design.md`).
 
-Buildable off existing `Invoice`/`Customer` data alone, with no dependency on the
+Buildable off existing `Invoice`/`Organization` data alone, with no dependency on the
 ledger milestone: every row here is a raw `Invoice`, never issued through
 `InvoiceService`, the same shortcut `test_dashboard_receivables.py` takes for the
 same reason -- this is a repository aggregate, not a fiscal-document lifecycle test.
@@ -18,8 +18,8 @@ from sqlalchemy.orm import Session
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.analytics.repository import AnalyticsRepository
 from pigrocrm.core.analytics.service import AnalyticsService
-from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.invoices.models import Invoice
+from pigrocrm.core.organizations.models import Organization
 
 ADMIN = Actor(id=None, type="system", role="admin")
 COLLABORATOR = Actor(id=None, type="mcp", role="collaborator")
@@ -59,9 +59,9 @@ def _corpus(session: Session) -> tuple[UUID, UUID, UUID]:
     counted row: a `revenue_by_customer` that forgot `_revenue_filter()` would fail
     both the total and the ranking, not just an edge case nobody would notice.
     """
-    large = Customer(legal_name="Grande S.r.l.", country="IT", custom_fields={})
-    small = Customer(legal_name="Piccolo S.r.l.", country="IT", custom_fields={})
-    absent = Customer(legal_name="Assente S.r.l.", country="IT", custom_fields={})
+    large = Organization(legal_name="Grande S.r.l.", country="IT", custom_fields={})
+    small = Organization(legal_name="Piccolo S.r.l.", country="IT", custom_fields={})
+    absent = Organization(legal_name="Assente S.r.l.", country="IT", custom_fields={})
     session.add_all([large, small, absent])
     session.flush()
 
@@ -153,7 +153,7 @@ def test_economic_overview_carries_the_same_concentration_for_every_role(
 # --- count_over_concentration_threshold (REB-371) --------------------------------------
 
 
-def test_count_over_concentration_threshold_counts_customers_above_the_share(
+def test_count_over_concentration_threshold_counts_organizations_above_the_share(
     db_session: Session,
 ) -> None:
     """The COUNT `OperationalDashboard`'s fourth signal reads (§3, §5 item 2 of
@@ -172,8 +172,8 @@ def test_count_over_concentration_threshold_is_strictly_above_not_at_it(
 ) -> None:
     """A customer sitting exactly on the configured share has not yet crossed it -- the
     boundary the signal's own name promises."""
-    tied_first = Customer(legal_name="Pari Uno S.r.l.", country="IT", custom_fields={})
-    tied_second = Customer(legal_name="Pari Due S.r.l.", country="IT", custom_fields={})
+    tied_first = Organization(legal_name="Pari Uno S.r.l.", country="IT", custom_fields={})
+    tied_second = Organization(legal_name="Pari Due S.r.l.", country="IT", custom_fields={})
     db_session.add_all([tied_first, tied_second])
     db_session.flush()
     db_session.add_all(

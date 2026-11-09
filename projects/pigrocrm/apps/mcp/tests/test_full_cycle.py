@@ -47,8 +47,6 @@ from pigrocrm.core.analytics.schemas import BindTimeRequest
 from pigrocrm.core.analytics.service import AnalyticsService
 from pigrocrm.core.auth.schemas import UserCreate
 from pigrocrm.core.auth.service import UserService
-from pigrocrm.core.customers.schemas import CustomerCreate
-from pigrocrm.core.customers.service import CustomerService
 from pigrocrm.core.db.clock import today_local
 from pigrocrm.core.deals.schemas import DealCreate
 from pigrocrm.core.deals.service import DealService
@@ -59,6 +57,8 @@ from pigrocrm.core.invoices.schemas import InvoiceIssue
 from pigrocrm.core.invoices.service import InvoiceService
 from pigrocrm.core.legal_entities.schemas import LegalEntityUpsert
 from pigrocrm.core.legal_entities.service import LegalEntityService
+from pigrocrm.core.organizations.schemas import OrganizationCreate
+from pigrocrm.core.organizations.service import OrganizationService
 from pigrocrm.core.pipeline.service import PipelineService
 from pigrocrm.core.storage import LocalFileStorage
 from pigrocrm.core.timetracking.billing import TimeBilling
@@ -114,8 +114,8 @@ def cycle(mcp_session: Session, tmp_path: Path) -> dict[str, Any]:
         AGENT_ACTOR,
     )
     stages = PipelineService(mcp_session).seed_defaults(Actor(id=None, type="system", role="admin"))
-    customer = CustomerService(mcp_session).create(
-        CustomerCreate(
+    customer = OrganizationService(mcp_session).create(
+        OrganizationCreate(
             legal_name="Acme S.r.l.",
             vat_number="12345678901",
             sdi_code="ABCDEFG",

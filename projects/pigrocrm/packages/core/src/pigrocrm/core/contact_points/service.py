@@ -26,7 +26,7 @@ from pigrocrm.core.errors import ValidationFailed
 if TYPE_CHECKING:
     # Not imported at run time: the two models import this package's own, and their packages'
     # `__init__` import their services, which import this module.
-    from pigrocrm.core.customers.models import Customer
+    from pigrocrm.core.organizations.models import Organization
     from pigrocrm.core.people.models import Person
 
 FIELD = "contact_points"
@@ -168,7 +168,9 @@ def prepare(
     ]
 
 
-def write_points(session: Session, owner: Person | Customer, points: list[ContactPointIn]) -> bool:
+def write_points(
+    session: Session, owner: Person | Organization, points: list[ContactPointIn]
+) -> bool:
     """Replaces the owner's whole list with these points, in the caller's transaction, and
     answers whether the list changed: a list sent back as it was is written nowhere.
 
@@ -179,7 +181,7 @@ def write_points(session: Session, owner: Person | Customer, points: list[Contac
     new one.
     """
     is_person = owner.__tablename__ == "people"
-    entity = "person" if is_person else "customer"
+    entity = "person" if is_person else "organization"
     prepared = prepare(entity, points, owner.contact_points)
     stored = [
         (row.kind, row.value, row.label, row.note, row.is_primary) for row in owner.contact_points
@@ -213,7 +215,7 @@ def write_points(session: Session, owner: Person | Customer, points: list[Contac
     return True
 
 
-def lock_owner(session: Session, owner: Person | Customer) -> None:
+def lock_owner(session: Session, owner: Person | Organization) -> None:
     """Locks the owner's row and reloads its list, so what the caller reads next is what
     another writer left and no later writer can change it before this transaction ends."""
     parent = type(owner)
@@ -227,7 +229,7 @@ def lock_owner(session: Session, owner: Person | Customer) -> None:
 
 
 def add_points(
-    session: Session, owner: Person | Customer, points: list[ContactPointIn]
+    session: Session, owner: Person | Organization, points: list[ContactPointIn]
 ) -> list[ContactPoint]:
     """Appends points to the owner's list, in the caller's transaction, and answers the rows
     added. Unlike `write_points` it touches nothing the owner has: their rows keep their ids,
@@ -241,7 +243,7 @@ def add_points(
     first of its kind and the owner has none of that kind: `is_primary` on a point is ignored.
     """
     lock_owner(session, owner)
-    entity = "person" if owner.__tablename__ == "people" else "customer"
+    entity = "person" if owner.__tablename__ == "people" else "organization"
     stored = owner.contact_points
     if len(stored) + len(points) > MAX_CONTACT_POINTS:
         raise ValidationFailed(
@@ -283,7 +285,7 @@ def add_points(
     return rows
 
 
-def email_addresses(owner: Person | Customer) -> list[str]:
+def email_addresses(owner: Person | Organization) -> list[str]:
     """Every email of an owner, lowercased, the primary first: what a lookup that reads mail
     (a backfill, the search for a reply) asks, where mail sent goes to the primary alone."""
     points = sorted(
@@ -298,7 +300,7 @@ def email_addresses(owner: Person | Customer) -> list[str]:
 COMPANY_EMAIL_LABELS = ("work", "other")
 
 
-def company_email_addresses(owner: Person | Customer) -> list[str]:
+def company_email_addresses(owner: Person | Organization) -> list[str]:
     """The emails of an owner that may name its company's domain, lowercased: the primary
     first (whatever its label), then the others labelled `work` or `other`, in position order.
     What reads a domain off a record (`customer_domain`) asks this, not `email_addresses`."""

@@ -51,7 +51,7 @@ from anything outside the document itself."""
 class ParsedInvoiceParty(BaseModel):
     """One party to a parsed invoice, exactly as the source document states it --
     not `PartySnapshot` (what the CRM's own emission recorded at the time) and not
-    a `Customer` row (what a caller declares about an entity on file): this is what
+    a `Organization` row (what a caller declares about an entity on file): this is what
     the document itself claims about whoever issued it or whoever it was issued to,
     before any matching against the register has happened.
 
@@ -65,7 +65,7 @@ class ParsedInvoiceParty(BaseModel):
     identifier a FatturaPA document actually guarantees. A concrete adapter
     enforces that at least one of the two is present when the source schema
     itself allows neither -- FatturaPA's `CessionarioCommittente` is the one case
-    (mastro's `mapCustomer` throws for the same reason); `CedentePrestatore`
+    (mastro's `mapOrganization` throws for the same reason); `CedentePrestatore`
     always carries `IdFiscaleIVA`, mandatory in FatturaPA's own schema.
     """
 

@@ -30,7 +30,7 @@ function failed(error: unknown, status: number) {
 
 const ACTIVE_FIELD = {
   id: 'f1',
-  entity_type: 'customer',
+  entity_type: 'organization',
   key: 'segmento',
   label: 'Segmento',
   field_type: 'text',
@@ -42,7 +42,7 @@ const ACTIVE_FIELD = {
 
 const ARCHIVED_FIELD = {
   id: 'f2',
-  entity_type: 'customer',
+  entity_type: 'organization',
   key: 'vecchio_campo',
   label: 'Vecchio campo',
   field_type: 'text',
@@ -83,7 +83,7 @@ describe('FieldsPanel', () => {
     expect(api.GET).toHaveBeenCalledWith(
       '/api/field-definitions',
       expect.objectContaining({
-        params: { query: { entity_type: 'customer', include_archived: true } },
+        params: { query: { entity_type: 'organization', include_archived: true } },
       }),
     )
   })

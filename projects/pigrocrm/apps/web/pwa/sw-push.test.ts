@@ -82,7 +82,7 @@ describe('clickTarget', () => {
 describe('inScope', () => {
   it('holds a page by path segment, not by string prefix', () => {
     expect(inScope(`${SCOPE}`, SCOPE)).toBe(true)
-    expect(inScope(`${SCOPE}/customers`, SCOPE)).toBe(true)
+    expect(inScope(`${SCOPE}/organizations`, SCOPE)).toBe(true)
     expect(inScope(`${SCOPE}?tab=anno`, SCOPE)).toBe(true)
     expect(inScope('https://pigro.example/acme/application', SCOPE)).toBe(false)
     expect(inScope('https://pigro.example/other/app', SCOPE)).toBe(false)
@@ -160,7 +160,7 @@ describe('registerPush', () => {
     const focus = vi.fn().mockResolvedValue(undefined)
     const moved = { focus }
     const navigate = vi.fn().mockResolvedValue(moved)
-    const { listeners, sw } = worker([{ url: `${SCOPE}/customers`, navigate, focus: vi.fn() }])
+    const { listeners, sw } = worker([{ url: `${SCOPE}/organizations`, navigate, focus: vi.fn() }])
     await tap(listeners, { url: '/acme/app/invoices/1' })
     expect(navigate).toHaveBeenCalledWith('https://pigro.example/acme/app/invoices/1')
     expect(focus).toHaveBeenCalled()
@@ -169,7 +169,7 @@ describe('registerPush', () => {
 
   it('opens a window of its own when the browser will not navigate the open one', async () => {
     const navigate = vi.fn().mockRejectedValue(new TypeError('uncontrolled'))
-    const { listeners, sw } = worker([{ url: `${SCOPE}/customers`, navigate, focus: vi.fn() }])
+    const { listeners, sw } = worker([{ url: `${SCOPE}/organizations`, navigate, focus: vi.fn() }])
     await tap(listeners, { url: '/acme/app/invoices/1' })
     expect(sw.clients.openWindow).toHaveBeenCalledWith('https://pigro.example/acme/app/invoices/1')
   })

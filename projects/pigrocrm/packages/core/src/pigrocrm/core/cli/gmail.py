@@ -207,7 +207,7 @@ def _sync_mailbox(
                 raise Conflict("google_account", "no Google mailbox connected")
             actor = _cron_actor(session, account)
             # The owner's own scope, never «tutte» (spec 2026-10-03 §4): a scoped
-            # owner's mailbox is matched against the customers and people their scope
+            # owner's mailbox is matched against the organizations and people their scope
             # can see, so the sync writes no link on another legal entity's customer.
             bind_scope(session, actor)
             report = GmailSyncService(

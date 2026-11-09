@@ -18,7 +18,7 @@ export type ConfirmOutcome = ConfirmRow['outcome']
 /** What the confirmation takes: one decision per new customer, keyed by the `party_key`
  *  the review named (`UploadedInvoiceDecisions`). */
 export interface ImportDecisions {
-  customers: Record<string, { create_customer?: true; customer_id?: string; skip?: true }>
+  organizations: Record<string, { create_organization?: true; customer_id?: string; skip?: true }>
 }
 
 /** The words of each verdict. Typed on the API's own union, so a seventh outcome added
@@ -98,7 +98,7 @@ export interface NewParty {
   taxId: string
   invoices: number
   /** The azienda the file's issuer is: the one every invoice of this party is written on,
-   *  and so the only one whose customers it may be attached to. `null` when the server
+   *  and so the only one whose organizations it may be attached to. `null` when the server
    *  did not say. */
   legalEntityId: string | null
   /** The party's invoices are written on more than one azienda (one upload of two issuers'
@@ -148,12 +148,12 @@ export function countWrites(rows: readonly ReviewRow[], declined: ReadonlySet<st
 
 /** The existing customer a person picked for a new party by hand, by `partyKey`: its id, which
  *  the confirmation takes as `customer_id`, and its name, which the review reads back. */
-export interface ChosenCustomer {
+export interface ChosenOrganization {
   id: string
   name: string
 }
 
-/** The decisions to send, one per new customer in the batch: `create_customer` for one left
+/** The decisions to send, one per new customer in the batch: `create_organization` for one left
  *  ticked, or `customer_id` for one that is already a customer, which is either one an
  *  earlier batch created or one the person picked from the customer list. Either keeps a
  *  counterparty the register cannot match by tax id (a foreign one, a private person with
@@ -169,31 +169,31 @@ export function decisionsFor(
   rows: readonly ReviewRow[],
   declined: ReadonlySet<string>,
   created: ReadonlyMap<string, string> = new Map(),
-  chosen: ReadonlyMap<string, ChosenCustomer> = new Map(),
+  chosen: ReadonlyMap<string, ChosenOrganization> = new Map(),
 ): ImportDecisions {
-  const customers: ImportDecisions['customers'] = {}
+  const organizations: ImportDecisions['organizations'] = {}
   for (const row of rows) {
     if (row.outcome !== 'needs_customer_confirmation' || !row.party_key) continue
     const key = row.party_key
     const customerId = created.get(key) ?? chosen.get(key)?.id
-    customers[key] = declined.has(key)
+    organizations[key] = declined.has(key)
       ? { skip: true }
       : customerId === undefined
-        ? { create_customer: true }
+        ? { create_organization: true }
         : { customer_id: customerId }
   }
-  return { customers }
+  return { organizations }
 }
 
 /** The customer each party's imported invoices went to, from a confirmation's rows. */
-export function customersOf(rows: readonly ConfirmRow[]): Map<string, string> {
-  const customers = new Map<string, string>()
+export function organizationsOf(rows: readonly ConfirmRow[]): Map<string, string> {
+  const organizations = new Map<string, string>()
   for (const row of rows) {
     if (row.outcome === 'imported' && row.party_key && row.invoice) {
-      customers.set(row.party_key, row.invoice.customer_id)
+      organizations.set(row.party_key, row.invoice.customer_id)
     }
   }
-  return customers
+  return organizations
 }
 
 /** The review rows of a batch that holds nothing to write, as rows of the result. Such a

@@ -1,5 +1,5 @@
 """The partial update of a record's custom fields, shared by every entity that carries
-them (customers, people, deals, and the money half's records).
+them (organizations, people, deals, and the money half's records).
 
 The complete-set check of a `create` is `fields.validator.validate_custom_fields`, called
 with every active spec; this is its partial-update twin.

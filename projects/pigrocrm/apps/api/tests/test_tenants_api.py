@@ -100,9 +100,9 @@ def registry_client(container_settings: Settings) -> Iterator[TestClient]:
 
 
 def test_the_prefix_is_split_only_for_a_space_and_only_before_api_or_health() -> None:
-    assert split_tenant_prefix("/studio/api/customers") == ("studio", "/api/customers")
+    assert split_tenant_prefix("/studio/api/organizations") == ("studio", "/api/organizations")
     assert split_tenant_prefix("/studio/health") == ("studio", "/health")
-    assert split_tenant_prefix("/api/customers") == (None, "/api/customers")
+    assert split_tenant_prefix("/api/organizations") == (None, "/api/organizations")
     assert split_tenant_prefix("/app/api/x") == (None, "/app/api/x")  # reserved word
     assert split_tenant_prefix("/studio/app/login") == (None, "/studio/app/login")  # not the API
     assert split_tenant_prefix("/Studio/api/x") == (None, "/Studio/api/x")  # not a slug
@@ -162,9 +162,9 @@ def test_signing_up_creates_a_space_that_serves_its_own_data(
     assert spaces_client.get(f"/{SLUG}/api/auth/me").json()["email"] == SIGNUP["email"]
 
     # The space is empty and separate: the root's session is not this one.
-    customers = spaces_client.get(f"/{SLUG}/api/customers")
-    assert customers.status_code == 200, customers.text
-    assert customers.json()["items"] == []
+    organizations = spaces_client.get(f"/{SLUG}/api/organizations")
+    assert organizations.status_code == 200, organizations.text
+    assert organizations.json()["items"] == []
 
     # Gmail does not exist for a space, whatever the installation has configured: the
     # account read says "nothing connected", and connecting one is refused outright.
@@ -181,7 +181,7 @@ def test_signing_up_creates_a_space_that_serves_its_own_data(
 
 
 def test_an_unknown_space_is_a_404_not_a_server_error(spaces_client: TestClient) -> None:
-    response = spaces_client.get("/nessuno-qui/api/customers")
+    response = spaces_client.get("/nessuno-qui/api/organizations")
     assert response.status_code == 404, response.text
     assert response.json()["code"] == "not_found"
 

@@ -27,7 +27,6 @@ from pigrocrm_api.routers import (
     contracts,
     cost_categories,
     costs,
-    customers,
     dashboard,
     deals,
     documents,
@@ -42,6 +41,7 @@ from pigrocrm_api.routers import (
     invoices,
     legal_entities,
     notes,
+    organizations,
     payment_reminders,
     people,
     period_locks,
@@ -99,7 +99,7 @@ def create_app() -> FastAPI:
 
     for module in (
         auth,
-        customers,
+        organizations,
         people,
         deals,
         fields,

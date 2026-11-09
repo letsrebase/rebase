@@ -22,8 +22,8 @@ import {
   SelectValue,
 } from '@rebase/ui/select'
 import { Textarea } from '@rebase/ui/textarea'
-import { CustomerPicker } from '@/features/customers/CustomerPicker'
-import { useCustomer } from '@/features/customers/queries'
+import { OrganizationPicker } from '@/features/organizations/OrganizationPicker'
+import { useOrganization } from '@/features/organizations/queries'
 import { useDeal, useDeals } from '@/features/deals/queries'
 import { toProblem, type ProblemDetail } from '@/lib/api'
 import { useCan } from '@/lib/auth'
@@ -140,11 +140,11 @@ function FixedField({ label, value }: { label: string; value: string | undefined
 
 /**
  * The customer, when only the customer is fixed -- which is the Fatture tab of that
- * customer's own page. `useCustomer` is mounted there at route level, so this is a cache
+ * customer's own page. `useOrganization` is mounted there at route level, so this is a cache
  * hit and the name is on screen the instant the dialog opens.
  */
-function FixedCustomer({ customerId }: { customerId: string }) {
-  const customer = useCustomer(customerId)
+function FixedOrganization({ customerId }: { customerId: string }) {
+  const customer = useOrganization(customerId)
   return <FixedField label="Cliente" value={customer.data?.legal_name} />
 }
 
@@ -156,12 +156,12 @@ function FixedCustomer({ customerId }: { customerId: string }) {
  * without a second request -- see that field's comment in `deals/schemas.py`), and
  * `useDeal(dealId)` is mounted at the deal route's own top level.
  *
- * This is why the customer is *not* read through `useCustomer` here: on the deal page
- * that would be a cold `GET /api/customers/{id}` on every open. `DealCustomerCard` does
+ * This is why the customer is *not* read through `useOrganization` here: on the deal page
+ * that would be a cold `GET /api/organizations/{id}` on every open. `DealCustomerCard` does
  * hold one, but it lives in the Collegamenti tab, which Radix leaves unmounted until it
  * is selected -- so its cache entry is not there to be hit.
  */
-function FixedCustomerAndDeal({ dealId }: { dealId: string }) {
+function FixedOrganizationAndDeal({ dealId }: { dealId: string }) {
   const deal = useDeal(dealId)
   return (
     <>
@@ -269,10 +269,10 @@ function NewProformaDialog({
   const legal_entity = useLegalEntity()
   // The deal to link is offered only while `deals` is on (REB-953).
   const dealsOn = useModules().on('deals')
-  const issuingCustomer = useCustomer(customerId, { enabled: legal_entity.several })
+  const issuingOrganization = useOrganization(customerId, { enabled: legal_entity.several })
   const issuingDeal = useDeal(dealId, { enabled: legal_entity.several })
   const issuedBy = legal_entity.several
-    ? legal_entity.byId(dealId !== '' ? issuingDeal.data?.legal_entity_id : issuingCustomer.data?.legal_entity_id)
+    ? legal_entity.byId(dealId !== '' ? issuingDeal.data?.legal_entity_id : issuingOrganization.data?.legal_entity_id)
     : undefined
 
   function update(index: number, field: keyof DraftRow, value: string) {
@@ -281,7 +281,7 @@ function NewProformaDialog({
     )
   }
 
-  function chooseCustomer(value: string) {
+  function chooseOrganization(value: string) {
     setCustomerId(value)
     // A deal chosen for the previous customer would be a 409 from `_check_owner`, and
     // the picker below is about to list a different set entirely. Back to the *fixed*
@@ -383,10 +383,10 @@ function NewProformaDialog({
                   Cliente
                   <span className="ml-1 text-destructive">*</span>
                 </Label>
-                <CustomerPicker
+                <OrganizationPicker
                   id="proforma-customer"
                   value={customerId === '' ? null : customerId}
-                  onChange={(customer) => chooseCustomer(customer?.id ?? '')}
+                  onChange={(customer) => chooseOrganization(customer?.id ?? '')}
                 />
               </div>
               {errors.customer ? (
@@ -394,10 +394,10 @@ function NewProformaDialog({
               ) : null}
             </>
           ) : fixedDealId === undefined ? (
-            <FixedCustomer customerId={fixedCustomerId} />
+            <FixedOrganization customerId={fixedCustomerId} />
           ) : (
             // The state and not `fixedDealId`: what is shown is what the body will carry.
-            <FixedCustomerAndDeal dealId={dealId} />
+            <FixedOrganizationAndDeal dealId={dealId} />
           )}
 
           {fixedDealId === undefined && customerId !== '' && dealsOn ? (
@@ -548,7 +548,7 @@ function NewProformaDialog({
  * all three.
  *
  * The dialog is *mounted* only while open rather than kept behind `open={false}`, so
- * customers are searched when someone actually wants to pick one.
+ * organizations are searched when someone actually wants to pick one.
  */
 export function NewProformaButton(props: { prefill?: ProformaPrefill } & FixedParties) {
   const [open, setOpen] = useState(false)

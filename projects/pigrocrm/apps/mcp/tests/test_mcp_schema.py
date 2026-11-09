@@ -24,12 +24,12 @@ def _payload(result) -> dict:
 async def test_describe_schema_lists_native_and_custom_fields(server, mcp_session: Session) -> None:
     FieldDefinitionService(mcp_session).create(
         FieldDefinitionCreate(
-            entity_type="customer", key="settore", label="Settore", field_type="text"
+            entity_type="organization", key="settore", label="Settore", field_type="text"
         ),
         ADMIN,
     )
     async with Client(server) as client:
-        result = await client.call_tool("describe_schema", {"entity_type": "customer"})
+        result = await client.call_tool("describe_schema", {"entity_type": "organization"})
 
     body = _payload(result)
     assert "legal_name" in body["native_fields"]
@@ -67,14 +67,14 @@ async def test_the_tool_list_is_advertised(server) -> None:
 
 async def test_customer_resource_returns_readable_markdown(server, mcp_session: Session) -> None:
     """Resources exist so an agent can read before it acts."""
-    from pigrocrm.core.customers.schemas import CustomerCreate
-    from pigrocrm.core.customers.service import CustomerService
+    from pigrocrm.core.organizations.schemas import OrganizationCreate
+    from pigrocrm.core.organizations.service import OrganizationService
 
-    customer = CustomerService(mcp_session).create(
-        CustomerCreate(legal_name="ACME Srl", vat_number="12345678901"), ADMIN
+    customer = OrganizationService(mcp_session).create(
+        OrganizationCreate(legal_name="ACME Srl", vat_number="12345678901"), ADMIN
     )
     async with Client(server) as client:
-        result = await client.read_resource(f"customer://{customer.id}")
+        result = await client.read_resource(f"organization://{customer.id}")
 
     text = result.contents[0].text
     assert "ACME Srl" in text
@@ -88,8 +88,8 @@ async def test_an_unknown_resource_id_explains_itself(server) -> None:
     unknown = uuid4()
     async with Client(server) as client:
         with pytest.raises(MCPError) as exc:
-            await client.read_resource(f"customer://{unknown}")
-    assert exc.value.message == to_agent_message(NotFound("customer", unknown))
+            await client.read_resource(f"organization://{unknown}")
+    assert exc.value.message == to_agent_message(NotFound("organization", unknown))
     assert exc.value.code == INVALID_PARAMS
 
 
@@ -100,7 +100,7 @@ async def test_a_malformed_resource_id_is_a_refusal_and_not_a_crash(server) -> N
     with, so a client could not tell this refusal from a server failure (REB-451)."""
     async with Client(server) as client:
         with pytest.raises(MCPError) as exc:
-            await client.read_resource("customer://non-un-id")
+            await client.read_resource("organization://non-un-id")
     assert exc.value.code == DOMAIN_REFUSAL
     assert "Fix the indicated value" in exc.value.message
 
@@ -112,16 +112,16 @@ async def test_a_conflict_raised_by_a_resource_carries_the_application_code(
     sentence and the code says so, `DOMAIN_REFUSAL` and not `-32603`."""
     from uuid import uuid4
 
-    refusal = Conflict("customer", "scheda bloccata da un'altra operazione")
+    refusal = Conflict("organization", "scheda bloccata da un'altra operazione")
 
     def _refuse(context: object, customer_id: object) -> str:
         raise refusal
 
-    monkeypatch.setattr(entities, "render_customer", _refuse)
+    monkeypatch.setattr(entities, "render_organization", _refuse)
 
     async with Client(server) as client:
         with pytest.raises(MCPError) as exc:
-            await client.read_resource(f"customer://{uuid4()}")
+            await client.read_resource(f"organization://{uuid4()}")
     assert exc.value.code == DOMAIN_REFUSAL
     assert exc.value.message == to_agent_message(refusal)
 

@@ -17,10 +17,10 @@ from sqlalchemy.orm import Session
 
 from pigrocrm.core.activities.repository import ActivityRepository
 from pigrocrm.core.actor import Actor
-from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.db import today_local
 from pigrocrm.core.deals.models import Deal
 from pigrocrm.core.deals.service import DealService
+from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.pipeline.schemas import PipelineStageRead
 from pigrocrm.core.pipeline.service import PipelineService
 
@@ -35,7 +35,7 @@ def stages(db_session: Session) -> dict[str, PipelineStageRead]:
 
 @pytest.fixture
 def deal(db_session: Session, stages: dict[str, PipelineStageRead]) -> Deal:
-    customer = Customer(legal_name="Cliente Srl", country="IT", custom_fields={})
+    customer = Organization(legal_name="Cliente Srl", country="IT", custom_fields={})
     db_session.add(customer)
     db_session.flush()
     row = Deal(

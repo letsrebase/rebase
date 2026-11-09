@@ -121,11 +121,11 @@ from pigrocrm.core.actor import Actor  # noqa: E402
 from pigrocrm.core.contact_points.models import ContactPoint  # noqa: E402
 from pigrocrm.core.contact_points.schemas import ContactPointIn  # noqa: E402
 from pigrocrm.core.contact_points.service import prepare  # noqa: E402
-from pigrocrm.core.customers.models import Customer  # noqa: E402
 from pigrocrm.core.errors import AgentForbidden, Conflict, NotFound  # noqa: E402
 from pigrocrm.core.gmail import sync as sync_module  # noqa: E402
 from pigrocrm.core.gmail.errors import GmailUnavailable  # noqa: E402
 from pigrocrm.core.gmail.models import GmailMessage  # noqa: E402
+from pigrocrm.core.organizations.models import Organization  # noqa: E402
 
 DOMAIN_CLAUSE = "(from:@example.com OR to:@example.com)"
 
@@ -148,7 +148,7 @@ def _mail(
     )
 
 
-def _example(session: Session, **overrides: object) -> Customer:
+def _example(session: Session, **overrides: object) -> Organization:
     fields: dict[str, object] = {
         "legal_name": "Example Ltd",
         "website": "https://www.example.com/",
@@ -156,7 +156,7 @@ def _example(session: Session, **overrides: object) -> Customer:
     fields.update(overrides)
     if "email" in fields:
         fields["contact_points"] = points(email=str(fields.pop("email")))
-    customer = Customer(**fields)
+    customer = Organization(**fields)
     session.add(customer)
     session.flush()
     return customer
@@ -380,15 +380,15 @@ def _labelled_emails(*given: tuple[str, str]) -> list[ContactPoint]:
         )
         for position, point in enumerate(
             prepare(
-                "customer",
+                "organization",
                 [ContactPointIn(kind="email", value=a, label=label) for a, label in given],  # type: ignore[arg-type]
             )
         )
     ]
 
 
-def _with_emails(session: Session, *given: tuple[str, str]) -> Customer:
-    customer = Customer(
+def _with_emails(session: Session, *given: tuple[str, str]) -> Organization:
+    customer = Organization(
         legal_name="Example Ltd", website=None, contact_points=_labelled_emails(*given)
     )
     session.add(customer)
@@ -425,8 +425,8 @@ def test_a_billing_or_personal_address_never_gives_the_domain(
 def test_a_person_is_added_from_mail_at_the_domain_of_an_extra_work_address(
     db_session: Session,
 ) -> None:
-    from pigrocrm.core.customers.schemas import PersonFromSuggestion
-    from pigrocrm.core.customers.service import CustomerService
+    from pigrocrm.core.organizations.schemas import PersonFromSuggestion
+    from pigrocrm.core.organizations.service import OrganizationService
 
     account = connected_account(db_session)
     customer = _with_emails(
@@ -436,7 +436,7 @@ def test_a_person_is_added_from_mail_at_the_domain_of_an_extra_work_address(
         ("info@example.com", "other"),
     )
     actor = actor_for(account)
-    service = CustomerService(db_session)
+    service = OrganizationService(db_session)
 
     person = service.add_person_from_mail(
         customer.id, PersonFromSuggestion(address="marco@example.com", name="Marco Bianchi"), actor

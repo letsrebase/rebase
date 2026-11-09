@@ -14,17 +14,17 @@ from corpus import KNOWN_LEGAL_NAME, KNOWN_VAT_NUMBER, REFERENCE, SMALL, build_c
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.deals.models import Deal
 from pigrocrm.core.documents.models import Document
 from pigrocrm.core.invoices.models import Invoice
+from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.people.models import Person
 
 
 def test_build_corpus_produces_exactly_the_row_counts_it_claims(db_session: Session) -> None:
     build_corpus(db_session, REFERENCE)
 
-    assert db_session.scalar(select(func.count()).select_from(Customer)) == 500
+    assert db_session.scalar(select(func.count()).select_from(Organization)) == 500
     assert db_session.scalar(select(func.count()).select_from(Person)) == 800
     assert db_session.scalar(select(func.count()).select_from(Deal)) == 2000
     assert db_session.scalar(select(func.count()).select_from(Document)) == 1000
@@ -46,7 +46,7 @@ def test_build_corpus_plants_the_one_customer_every_search_test_looks_for(
 ) -> None:
     build_corpus(db_session, SMALL)
 
-    row = db_session.scalar(select(Customer).where(Customer.vat_number == KNOWN_VAT_NUMBER))
+    row = db_session.scalar(select(Organization).where(Organization.vat_number == KNOWN_VAT_NUMBER))
     assert row is not None
     assert row.legal_name == KNOWN_LEGAL_NAME
 
@@ -66,7 +66,7 @@ def test_build_corpus_is_deterministic_for_a_given_seed(db_session: Session) -> 
     build_corpus(db_session, SMALL, seed=7)
     first = list(
         db_session.scalars(
-            select(Customer.legal_name).order_by(Customer.legal_name).limit(20)
+            select(Organization.legal_name).order_by(Organization.legal_name).limit(20)
         ).all()
     )
     savepoint.rollback()
@@ -74,7 +74,7 @@ def test_build_corpus_is_deterministic_for_a_given_seed(db_session: Session) -> 
     build_corpus(db_session, SMALL, seed=7)
     second = list(
         db_session.scalars(
-            select(Customer.legal_name).order_by(Customer.legal_name).limit(20)
+            select(Organization.legal_name).order_by(Organization.legal_name).limit(20)
         ).all()
     )
 
@@ -92,7 +92,7 @@ def test_build_corpus_varies_with_the_seed(db_session: Session) -> None:
     build_corpus(db_session, SMALL, seed=7)
     first = list(
         db_session.scalars(
-            select(Customer.legal_name).order_by(Customer.legal_name).limit(20)
+            select(Organization.legal_name).order_by(Organization.legal_name).limit(20)
         ).all()
     )
     savepoint.rollback()
@@ -100,7 +100,7 @@ def test_build_corpus_varies_with_the_seed(db_session: Session) -> None:
     build_corpus(db_session, SMALL, seed=8)
     second = list(
         db_session.scalars(
-            select(Customer.legal_name).order_by(Customer.legal_name).limit(20)
+            select(Organization.legal_name).order_by(Organization.legal_name).limit(20)
         ).all()
     )
 
@@ -132,8 +132,8 @@ def test_build_corpus_returns_the_ids_its_callers_need(db_session: Session) -> N
     nothing."""
     ids = build_corpus(db_session, SMALL)
 
-    assert len(ids.customer_ids) == SMALL.customers
+    assert len(ids.customer_ids) == SMALL.organizations
     assert len(ids.deal_ids) == SMALL.deals
     assert len({ids.stage_open_id, ids.stage_won_id, ids.stage_lost_id}) == 3
-    assert db_session.get(Customer, ids.customer_ids[0]) is not None
+    assert db_session.get(Organization, ids.customer_ids[0]) is not None
     assert db_session.get(Deal, ids.deal_ids[-1]) is not None

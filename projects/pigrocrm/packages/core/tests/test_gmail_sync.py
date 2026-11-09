@@ -38,7 +38,6 @@ from pigrocrm.core.activities.models import Activity
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.auth.models import User
 from pigrocrm.core.contact_points.models import ContactPoint
-from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.db import session_factory
 from pigrocrm.core.errors import Conflict, PermissionDenied
 from pigrocrm.core.gmail.errors import GmailUnavailable
@@ -50,6 +49,7 @@ from pigrocrm.core.gmail.schemas import GmailMessageRead
 from pigrocrm.core.gmail.sync import GmailSyncService
 from pigrocrm.core.gmail.tokens import GoogleTokenClient
 from pigrocrm.core.gmail.transport import GmailTransport
+from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.people.models import Person
 
 # Every address-bearing clause Gmail understands, as the query builder writes them. The
@@ -100,8 +100,8 @@ def _noise(fake: FakeGmail, count: int) -> None:
         )
 
 
-def _customer(session: Session, email: str, legal_name: str = "Acme") -> Customer:
-    customer = Customer(legal_name=legal_name, contact_points=points(email=email))
+def _customer(session: Session, email: str, legal_name: str = "Acme") -> Organization:
+    customer = Organization(legal_name=legal_name, contact_points=points(email=email))
     session.add(customer)
     session.flush()
     return customer
@@ -576,8 +576,8 @@ def committed_account(db_engine: Engine) -> Iterator[tuple[UUID, UUID, str]]:
             # whatever state the test left it in.
             session.execute(delete(User).where(User.id == ids[0]))
             session.execute(
-                delete(Customer).where(
-                    Customer.id.in_(
+                delete(Organization).where(
+                    Organization.id.in_(
                         select(ContactPoint.customer_id).where(ContactPoint.normalized == address)
                     )
                 )

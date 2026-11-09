@@ -1,14 +1,14 @@
 /**
- * The customers the connected mailbox proposes, as a list to tick (spec 2026-09-16 §5,
+ * The organizations the connected mailbox proposes, as a list to tick (spec 2026-09-16 §5,
  * REB-223). Under the Home's Gmail door once a mailbox is connected, and in Clienti as
  * «Proponi dalla casella», for whoever connects Gmail after the space has work in it.
  *
  * Each proposal is a domain the owner wrote to in the last twelve months, with the
  * conversations, the last message and the people seen there. Nothing is ticked at
  * first: a supplier or a friend's company is on the same list, and only the person knows
- * which are customers. Ticking one opens its company name for correction and ticks its
+ * which are organizations. Ticking one opens its company name for correction and ticks its
  * people, except those already in the address book, which the import leaves alone.
- * `POST /api/customers/from-suggestions` creates the ticked ones together or not at all.
+ * `POST /api/organizations/from-suggestions` creates the ticked ones together or not at all.
  */
 import { useState } from 'react'
 import { Button } from '@rebase/ui/button'
@@ -18,7 +18,7 @@ import { Label } from '@rebase/ui/label'
 import { toast } from '@rebase/ui/sonner'
 import { toProblem } from '@/lib/api'
 import { formatInstant } from './instants'
-import { useCustomerSuggestions, useImportSuggestions, type SuggestedCustomer } from './suggestions'
+import { useOrganizationSuggestions, useImportSuggestions, type SuggestedOrganization } from './suggestions'
 
 /** What the person decided about one ticked proposal. */
 interface Choice {
@@ -26,7 +26,7 @@ interface Choice {
   people: Record<string, boolean>
 }
 
-function firstChoice(proposal: SuggestedCustomer): Choice {
+function firstChoice(proposal: SuggestedOrganization): Choice {
   return {
     name: proposal.name,
     people: Object.fromEntries(
@@ -44,8 +44,8 @@ function importLabel(count: number): string {
   return count === 1 ? 'Importa 1 cliente' : `Importa ${count} clienti`
 }
 
-export function SuggestedCustomers({ onImported }: { onImported?: (count: number) => void }) {
-  const suggestions = useCustomerSuggestions()
+export function SuggestedOrganizations({ onImported }: { onImported?: (count: number) => void }) {
+  const suggestions = useOrganizationSuggestions()
   const importing = useImportSuggestions()
   const [chosen, setChosen] = useState<Record<string, Choice>>({})
 
@@ -76,7 +76,7 @@ export function SuggestedCustomers({ onImported }: { onImported?: (count: number
   const picked = proposals.filter((proposal) => chosen[proposal.domain] !== undefined)
   const unnamed = picked.some((proposal) => (chosen[proposal.domain]?.name ?? '').trim() === '')
 
-  function toggle(proposal: SuggestedCustomer) {
+  function toggle(proposal: SuggestedOrganization) {
     setChosen((current) => {
       const next = { ...current }
       if (next[proposal.domain]) delete next[proposal.domain]
@@ -95,7 +95,7 @@ export function SuggestedCustomers({ onImported }: { onImported?: (count: number
   function submit() {
     importing.mutate(
       {
-        customers: picked.map((proposal) => {
+        organizations: picked.map((proposal) => {
           const choice = chosen[proposal.domain] ?? firstChoice(proposal)
           return {
             domain: proposal.domain,

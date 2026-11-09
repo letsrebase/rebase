@@ -19,7 +19,6 @@ from sqlalchemy.orm import Session
 from test_invoice_import_review import CONSULTING, _fixture
 
 from pigrocrm.core.actor import Actor
-from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.db import session_factory
 from pigrocrm.core.db.clock import today_local
 from pigrocrm.core.documents.schemas import DocumentCreate
@@ -44,6 +43,7 @@ from pigrocrm.core.legal_entities.models import LegalEntity
 from pigrocrm.core.legal_entities.repository import LegalEntityRepository
 from pigrocrm.core.legal_entities.schemas import LegalEntityUpsert
 from pigrocrm.core.legal_entities.service import LegalEntityService
+from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.storage.local import LocalFileStorage
 
 ADMIN = Actor(id=None, type="system", role="admin")
@@ -81,7 +81,7 @@ def service(db_session: Session, local_storage: LocalFileStorage) -> InvoiceServ
 
 @pytest.fixture
 def customer_id(db_session: Session) -> UUID:
-    customer = Customer(
+    customer = Organization(
         legal_name="Acme S.r.l.",
         vat_number="12345678901",
         sdi_code="ABCDEFG",
@@ -243,7 +243,7 @@ def test_an_artifact_of_the_second_legal_entity_lives_under_its_own_prefix(
 
 
 def _customer_of(session: Session, legal_entity_id: UUID) -> UUID:
-    customer = Customer(
+    customer = Organization(
         legal_name=f"Cliente {uuid4()}",
         address="Corso Italia 5",
         postal_code="00100",
@@ -279,12 +279,12 @@ def test_an_import_may_take_to_number_the_other_legal_entity_already_issued(
 def test_an_import_refuses_to_customer_of_another_legal_entity_or_an_archived_one(
     service: InvoiceService, db_session: Session, customer_id: UUID
 ) -> None:
-    """REB-784: `import_issued` named for a legal entity takes only that legal entity's customers,
+    """REB-784: `import_issued` named for a legal entity takes only that legal entity's organizations,
     the rule the FatturaPA confirmation already holds (REB-783); nothing is written."""
     second = _second_legal_entity(db_session)
     own = _customer_of(db_session, second.id)
     archived = _customer_of(db_session, second.id)
-    db_session.get(Customer, archived).deleted_at = datetime.now(UTC)  # type: ignore[union-attr]
+    db_session.get(Organization, archived).deleted_at = datetime.now(UTC)  # type: ignore[union-attr]
     db_session.flush()
     before = db_session.query(Invoice).count()
 
@@ -416,7 +416,7 @@ def test_the_confirm_writes_the_invoice_on_the_matched_legal_entity_register(
     second = _second_legal_entity(db_session)
     # The customer the person chose is on the legal entity the file landed on: the confirmation
     # refuses one of another legal entity (REB-783).
-    chosen = db_session.get(Customer, customer_id)
+    chosen = db_session.get(Organization, customer_id)
     assert chosen is not None
     chosen.legal_entity_id = second.id
     db_session.flush()
@@ -563,7 +563,7 @@ def test_to_foreign_legal_entity_issues_without_the_sdis_checks_on_the_parties_o
     a foreign PDF has none of them. The same draft under the Italian default is
     refused, which is what shows the skip is the foreign legal entity's and not a loosening."""
     foreign = _foreign_legal_entity(db_session)
-    bare = Customer(legal_name="Overseas Ltd", country="GB")
+    bare = Organization(legal_name="Overseas Ltd", country="GB")
     db_session.add(bare)
     db_session.flush()
 

@@ -34,13 +34,13 @@ from pigrocrm.core.activities.repository import ActivityRepository
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.automations.models import AutomationConfig
 from pigrocrm.core.automations.schemas import KIND_NOT_EXECUTED, KIND_STAGE_MOVED
-from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.db import session_factory
 from pigrocrm.core.db.base import uuid7
 from pigrocrm.core.deals.models import Deal
 from pigrocrm.core.documents.models import Document
 from pigrocrm.core.documents.service import DocumentService
 from pigrocrm.core.errors import PermissionDenied
+from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.pipeline.models import PipelineStage
 from pigrocrm.core.pipeline.schemas import PipelineStageRead
 from pigrocrm.core.pipeline.service import PipelineService
@@ -71,7 +71,7 @@ def committed(db_engine: Engine) -> Iterator[Committed]:
     PipelineService(session).seed_defaults(SEED)
     stages = {s.code: s for s in PipelineService(session).list() if s.code is not None}
 
-    customer = Customer(legal_name="ATOMIC Cliente", country="IT", custom_fields={})
+    customer = Organization(legal_name="ATOMIC Cliente", country="IT", custom_fields={})
     session.add(customer)
     session.flush()
     deal = Deal(
@@ -102,7 +102,7 @@ def committed(db_engine: Engine) -> Iterator[Committed]:
         session.execute(delete(Activity).where(Activity.entity_id.in_(touched)))
         session.execute(delete(Document).where(Document.title.like("ATOMIC %")))
         session.execute(delete(Deal).where(Deal.name.like("ATOMIC %")))
-        session.execute(delete(Customer).where(Customer.legal_name.like("ATOMIC %")))
+        session.execute(delete(Organization).where(Organization.legal_name.like("ATOMIC %")))
         session.execute(delete(PipelineStage))
         session.execute(delete(AutomationConfig))
         session.commit()

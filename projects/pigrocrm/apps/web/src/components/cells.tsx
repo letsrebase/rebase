@@ -116,7 +116,7 @@ function initialsOf(name: string): string {
  * The first column of a table when the row *is* somebody: an initials chip on Paper
  * beside the name, with an optional quiet second line (design spec §4, "first column with avatar/initials where there is an entity").
  *
- * Initials rather than an image because this product stores no avatars for customers,
+ * Initials rather than an image because this product stores no avatars for organizations,
  * people or deals -- and the chip is `aria-hidden`: the name is right there in words,
  * so announcing "AS ACME Srl" would read the same thing twice, once as nonsense.
  *

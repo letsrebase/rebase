@@ -48,7 +48,7 @@ def reject_cleared_columns(entity: str, model: type[Any], changes: dict[str, Any
     contract those nulls were silently dropped; under `exclude_unset` they reach
     `setattr` and then `flush()`, and a `NOT NULL` violation does not merely fail the
     call -- it poisons the caller's `Session` for every statement after it, which is the
-    failure mode this codebase already paid for on `customers.vat_number` and guards
+    failure mode this codebase already paid for on `organizations.vat_number` and guards
     against by hand in `LegalEntityService._check_fiscal`.
 
     Nullability is read from the mapper rather than from a hand-written list per

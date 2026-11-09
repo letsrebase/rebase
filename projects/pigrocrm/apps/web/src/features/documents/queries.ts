@@ -279,7 +279,7 @@ export function useDeleteDocument(owner: DocumentOwner) {
       // The owner-scoped key first (the exact list this tab is looking at), then the
       // wildcard (`queryKeys.documents()`, an empty-object filter that partially
       // matches every cached owner) as defense in depth -- the same belt-and-braces
-      // pattern `useUpdateCustomer` already uses for its own single-record key plus
+      // pattern `useUpdateOrganization` already uses for its own single-record key plus
       // the list wildcard.
       void queryClient.invalidateQueries({ queryKey: queryKeys.documents(owner) })
       void queryClient.invalidateQueries({ queryKey: queryKeys.documents() })

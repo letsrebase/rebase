@@ -1,8 +1,8 @@
 """Who wrote from a customer's domain, and adding them as people, over real HTTP (REB-766).
 
-`GET /api/gmail/customers/{id}/correspondents` asks the connected mailbox, here the core
+`GET /api/gmail/organizations/{id}/correspondents` asks the connected mailbox, here the core
 suite's `FakeGmail` behind the router's own transport; `POST
-/api/customers/{id}/people-from-mail` files one of the addresses it found as a person.
+/api/organizations/{id}/people-from-mail` files one of the addresses it found as a person.
 """
 
 import base64
@@ -27,10 +27,10 @@ import pigrocrm_api.google_tokens as google_tokens  # noqa: E402
 import pigrocrm_api.routers.gmail as gmail_router  # noqa: E402
 from pigrocrm.core.config import Settings, get_settings  # noqa: E402
 from pigrocrm.core.crypto import seal  # noqa: E402
-from pigrocrm.core.customers.models import Customer  # noqa: E402
 from pigrocrm.core.gmail.models import GoogleAccount  # noqa: E402
 from pigrocrm.core.gmail.schemas import REQUESTED_SCOPES  # noqa: E402
 from pigrocrm.core.gmail.transport import GmailTransport  # noqa: E402
+from pigrocrm.core.organizations.models import Organization  # noqa: E402
 from pigrocrm.core.people.models import Person  # noqa: E402
 
 TOKEN_KEY = b"k" * 32
@@ -96,14 +96,14 @@ def _mail(fake: FakeGmail, index: int, sender: str, to: str, *, days_ago: int) -
     )
 
 
-def _acme(session: Session) -> Customer:
-    customer = Customer(legal_name="Acme S.r.l.", website="acme.it")
+def _acme(session: Session) -> Organization:
+    customer = Organization(legal_name="Acme S.r.l.", website="acme.it")
     session.add(customer)
     session.flush()
     return customer
 
 
-def test_the_addresses_at_the_customers_domain_come_with_their_counts(
+def test_the_addresses_at_the_organizations_domain_come_with_their_counts(
     logged_in: TestClient,
     gmail_ready: TestClient,
     google: FakeGmail,
@@ -116,7 +116,7 @@ def test_the_addresses_at_the_customers_domain_come_with_their_counts(
     _mail(google, 2, MAILBOX, "marco@acme.it, Sara Verdi <sara@acme.it>", days_ago=10)
     _mail(google, 3, "amico@gmail.com", MAILBOX, days_ago=4)
 
-    response = logged_in.get(f"/api/gmail/customers/{customer.id}/correspondents")
+    response = logged_in.get(f"/api/gmail/organizations/{customer.id}/correspondents")
 
     assert response.status_code == 200, response.text
     body = response.json()
@@ -151,7 +151,7 @@ def test_an_address_in_the_address_book_is_marked_as_known(
     _connect(api_session, admin_user.id)
     _mail(google, 1, "marco@acme.it", MAILBOX, days_ago=3)
 
-    body = logged_in.get(f"/api/gmail/customers/{customer.id}/correspondents").json()
+    body = logged_in.get(f"/api/gmail/organizations/{customer.id}/correspondents").json()
 
     assert [c["already_in_directory"] for c in body["matching"]] == [True]
 
@@ -159,11 +159,11 @@ def test_an_address_in_the_address_book_is_marked_as_known(
 def test_a_customer_without_a_domain_or_a_mailbox_answers_conflict(
     logged_in: TestClient, gmail_ready: TestClient, api_session: Session, admin_user: Any
 ) -> None:
-    bare = Customer(legal_name="Senza sito")
+    bare = Organization(legal_name="Senza sito")
     api_session.add(bare)
     api_session.flush()
     _connect(api_session, admin_user.id)
-    response = logged_in.get(f"/api/gmail/customers/{bare.id}/correspondents")
+    response = logged_in.get(f"/api/gmail/organizations/{bare.id}/correspondents")
     assert response.status_code == 409, response.text
     assert "dominio" in response.json()["detail"]
 
@@ -172,7 +172,7 @@ def test_an_unknown_customer_is_not_found(
     logged_in: TestClient, gmail_ready: TestClient, api_session: Session, admin_user: Any
 ) -> None:
     _connect(api_session, admin_user.id)
-    response = logged_in.get(f"/api/gmail/customers/{uuid4()}/correspondents")
+    response = logged_in.get(f"/api/gmail/organizations/{uuid4()}/correspondents")
     assert response.status_code == 404, response.text
 
 
@@ -188,7 +188,7 @@ def test_gmail_failing_is_a_sentence_to_retry_not_a_server_error(
     _mail(google, 1, "marco@acme.it", MAILBOX, days_ago=3)
     google.fail_with = [(503, b"{}", {})] * 10
 
-    response = logged_in.get(f"/api/gmail/customers/{customer.id}/correspondents")
+    response = logged_in.get(f"/api/gmail/organizations/{customer.id}/correspondents")
 
     assert response.status_code == 409, response.text
     assert "Riprova più tardi" in response.json()["detail"]
@@ -200,7 +200,7 @@ def test_one_address_becomes_a_person_of_the_customer(
     customer = _acme(api_session)
 
     response = logged_in.post(
-        f"/api/customers/{customer.id}/people-from-mail",
+        f"/api/organizations/{customer.id}/people-from-mail",
         json={"address": "Marco@Acme.it", "name": "Bianchi, Marco"},
     )
 
@@ -220,7 +220,7 @@ def test_an_address_from_another_domain_or_already_filed_is_refused(
     logged_in: TestClient, api_session: Session
 ) -> None:
     customer = _acme(api_session)
-    url = f"/api/customers/{customer.id}/people-from-mail"
+    url = f"/api/organizations/{customer.id}/people-from-mail"
     for lookalike in ("x@altro.it", "x@evil-acme.it", "x@mail.acme.it", "x@acme.it.evil.com"):
         assert logged_in.post(url, json={"address": lookalike}).status_code == 422, lookalike
     assert logged_in.post(url, json={"address": "marco@acme.it"}).status_code == 201
@@ -234,12 +234,13 @@ def test_a_missing_or_domainless_customer_cannot_take_a_person(
 ) -> None:
     body = {"address": "marco@acme.it"}
     assert (
-        logged_in.post(f"/api/customers/{uuid4()}/people-from-mail", json=body).status_code == 404
+        logged_in.post(f"/api/organizations/{uuid4()}/people-from-mail", json=body).status_code
+        == 404
     )
-    bare = Customer(legal_name="Senza sito")
+    bare = Organization(legal_name="Senza sito")
     api_session.add(bare)
     api_session.flush()
-    response = logged_in.post(f"/api/customers/{bare.id}/people-from-mail", json=body)
+    response = logged_in.post(f"/api/organizations/{bare.id}/people-from-mail", json=body)
     assert response.status_code == 409, response.text
     assert "dominio" in response.json()["detail"]
 
@@ -248,8 +249,8 @@ def test_a_readonly_person_can_neither_ask_nor_add(
     readonly_client: TestClient, gmail_ready: TestClient
 ) -> None:
     some = uuid4()
-    assert readonly_client.get(f"/api/gmail/customers/{some}/correspondents").status_code == 403
+    assert readonly_client.get(f"/api/gmail/organizations/{some}/correspondents").status_code == 403
     response = readonly_client.post(
-        f"/api/customers/{some}/people-from-mail", json={"address": "a@acme.it"}
+        f"/api/organizations/{some}/people-from-mail", json={"address": "a@acme.it"}
     )
     assert response.status_code == 403, response.text

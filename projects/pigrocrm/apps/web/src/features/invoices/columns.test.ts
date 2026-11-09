@@ -160,7 +160,7 @@ describe('how an invoice row reads', () => {
  * The «Cliente» column (ORB-98). Opt-in, because the same columns draw the Fatture tab
  * inside a customer's page, where every row belongs to the customer named in the title:
  * a column repeating it on each line would be noise there and information only on the
- * list page, which is the one screen that mixes customers.
+ * list page, which is the one screen that mixes organizations.
  */
 describe('the customer column', () => {
   const CUSTOMER = { customer: true }
@@ -249,8 +249,8 @@ describe('the accrual period column', () => {
  */
 describe('the description column', () => {
   it('sits right after the customer when the list shows one, and after the number otherwise', () => {
-    const withCustomer = buildInvoiceColumns({ customer: true }).map((c) => c.id ?? '')
-    expect(withCustomer.indexOf('description')).toBe(withCustomer.indexOf('customer') + 1)
+    const withOrganization = buildInvoiceColumns({ customer: true }).map((c) => c.id ?? '')
+    expect(withOrganization.indexOf('description')).toBe(withOrganization.indexOf('customer') + 1)
     const plain = buildInvoiceColumns().map((c) => c.id ?? '')
     expect(plain.indexOf('description')).toBe(plain.indexOf('number') + 1)
     expect(column('description').header).toBe('Descrizione')

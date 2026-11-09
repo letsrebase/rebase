@@ -10,10 +10,10 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
-from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.due_items.schemas import DueItemCreate
 from pigrocrm.core.due_items.service import DueItemService
 from pigrocrm.core.legal_entities.repository import LegalEntityRepository
+from pigrocrm.core.organizations.models import Organization
 from pigrocrm_api.deps import invalidate_space_settings
 
 D = dt.date
@@ -23,7 +23,7 @@ def _customer(session: Session) -> tuple[str, str]:
     """A customer written by hand: a reader's session cannot create one over the wire."""
     entity = LegalEntityRepository(session).default()
     assert entity is not None
-    customer = Customer(legal_name="ACME", legal_entity_id=entity.id)
+    customer = Organization(legal_name="ACME", legal_entity_id=entity.id)
     session.add(customer)
     session.flush()
     return str(customer.id), str(entity.id)

@@ -273,7 +273,7 @@ def register(
     @mcp.tool(annotations=DESTRUCTIVE)
     @guard
     def confirm_invoice_import(
-        document_id: str, customer_id: str | None = None, create_customer: bool = False
+        document_id: str, customer_id: str | None = None, create_organization: bool = False
     ) -> dict[str, Any]:
         """Confirms on the register a document reviewed with `review_invoice_import`. It rereads the
         file and reclassifies against the current state, then records every `ready` invoice as
@@ -285,7 +285,7 @@ def register(
 
         `customer_id` chooses the customer; omitted, the automatic match by VAT number or
         tax code applies. Without a match the line is `needs_customer_confirmation` and does
-        not write, unless `create_customer` = `true`: the document's counterparty becomes a new
+        not write, unless `create_organization` = `true`: the document's counterparty becomes a new
         customer (just one for all the invoices of a batch).
 
         For a document with a single invoice the line carries `xml_document_id` and
@@ -296,7 +296,7 @@ def register(
             UUID(document_id),
             context.actor,
             customer_id=UUID(customer_id) if customer_id is not None else None,
-            create_customer=create_customer,
+            create_organization=create_organization,
         )
         return {"lines": [line.model_dump(mode="json") for line in lines]}
 
@@ -573,13 +573,13 @@ def register(
 
         @mcp.tool(annotations=READ_ONLY)
         @guard
-        def suggest_customers_from_gmail(months: int = 12) -> list[dict[str, Any]]:
+        def suggest_organizations_from_gmail(months: int = 12) -> list[dict[str, Any]]:
             """The companies the mailbox has corresponded with in the last `months` months
-            (1 to 24), proposed as customers: by domain, conversations, last message and
+            (1 to 24), proposed as organizations: by domain, conversations, last message and
             people seen. The company name is derived from the domain: correct it before creating it.
 
             It reads only the headers of sent mail; it excludes webmail, PEC and domains that
-            are already customers. It saves nothing: to create use `create_customer` and
+            are already organizations. It saves nothing: to create use `create_organization` and
             `create_person`. It spends the owner's Gmail quota.
             """
             transport = GmailTransport()
@@ -596,7 +596,9 @@ def register(
             return marked_items(
                 [
                     proposal.model_dump(mode="json")
-                    for proposal in service.suggest_customers(actor=context.actor, months=months)
+                    for proposal in service.suggest_organizations(
+                        actor=context.actor, months=months
+                    )
                 ]
             )
 

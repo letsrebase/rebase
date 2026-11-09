@@ -21,13 +21,13 @@ from sqlalchemy import Engine, delete, event, select
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.actor import Actor
-from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.dashboard.schemas import PeriodQuery
 from pigrocrm.core.dashboard.service import DashboardService
 from pigrocrm.core.db import session_factory
 from pigrocrm.core.db.base import uuid7
 from pigrocrm.core.deals.models import Deal
 from pigrocrm.core.invoices.models import Invoice
+from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.pipeline.models import PipelineStage
 
 READONLY = Actor(id=uuid7(), type="user", role="readonly")
@@ -46,7 +46,9 @@ def _seed(session: Session, deals: int) -> None:
     session.add_all([open_stage, won_stage])
     session.flush()
     for index in range(deals):
-        customer = Customer(legal_name=f"{_PREFIX} Cliente {index}", country="IT", custom_fields={})
+        customer = Organization(
+            legal_name=f"{_PREFIX} Cliente {index}", country="IT", custom_fields={}
+        )
         session.add(customer)
         session.flush()
         stage = open_stage if index % 2 else won_stage
@@ -87,7 +89,7 @@ def _clean(session: Session) -> None:
         )
     )
     session.execute(delete(Deal).where(Deal.name.like(f"{_PREFIX} %")))
-    session.execute(delete(Customer).where(Customer.legal_name.like(f"{_PREFIX} %")))
+    session.execute(delete(Organization).where(Organization.legal_name.like(f"{_PREFIX} %")))
     session.execute(delete(PipelineStage).where(PipelineStage.name.like(f"{_PREFIX} %")))
     session.commit()
 

@@ -692,7 +692,7 @@ def test_disconnecting_with_deletion_removes_the_messages_and_their_links(
     account = db_session.execute(select(GoogleAccount)).scalars().one()
     message = _stored_message(db_session, account, "m1")
     db_session.add(
-        GmailMessageLink(gmail_message_id=message.id, entity_type="customer", entity_id=uuid4())
+        GmailMessageLink(gmail_message_id=message.id, entity_type="organization", entity_id=uuid4())
     )
     db_session.flush()
 

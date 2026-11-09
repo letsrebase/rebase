@@ -81,7 +81,7 @@ def mcp_session(mcp_engine: Engine) -> Iterator[Session]:
     # was dormant here because no MCP-side code ever called `session.rollback()`
     # across more than one tool call sharing this session -- until the final review's
     # item 6 fix made `_guard` roll back on every exception, which surfaced it
-    # immediately: a blocked `archive_customer` call's `Conflict` rolling back with
+    # immediately: a blocked `archive_organization` call's `Conflict` rolling back with
     # this parameter absent silently discarded the customer and deal an earlier,
     # already-committed tool call in the *same test* had created. Confirmed directly
     # by reproducing it with this parameter removed and watching two already-
@@ -130,9 +130,9 @@ def mcp_storage(tmp_path: Path) -> LocalFileStorage:
 
 @pytest.fixture
 def seeded_customer_id(mcp_session: Session) -> str:
-    from pigrocrm.core.customers.models import Customer
+    from pigrocrm.core.organizations.models import Organization
 
-    customer = Customer(legal_name="ACME S.r.l.")
+    customer = Organization(legal_name="ACME S.r.l.")
     mcp_session.add(customer)
     mcp_session.flush()
     return str(customer.id)

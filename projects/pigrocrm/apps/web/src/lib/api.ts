@@ -365,7 +365,7 @@ function permissionDeniedSentence(problem: ProblemDetail): string | null {
  *    `apps/api/src/pigrocrm_api/errors.py`) precisely so this function has
  *    something real to normalise. The field pydantic actually complained about is
  *    always the *last* segment of `loc` -- everything before it is the path to get
- *    there, e.g. `["body", "customer", "partita_iva"]`.
+ *    there, e.g. `["body", "organization", "partita_iva"]`.
  *  - a bare `HTTPException` (`application/json`, `{ detail: "<message>" }`, no
  *    `code`): this is where a real 401 lands (login's credentials check, and
  *    get_actor's/refresh's "the session is gone" checks -- see `pigrocrm_api/deps.py`

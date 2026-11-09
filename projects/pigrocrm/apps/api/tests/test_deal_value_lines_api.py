@@ -18,7 +18,7 @@ def _stages(api_session: Session) -> None:
 
 
 def _customer(client: TestClient) -> str:
-    response = client.post("/api/customers", json={"legal_name": "ACME Srl"})
+    response = client.post("/api/organizations", json={"legal_name": "ACME Srl"})
     assert response.status_code == 201, response.text
     return response.json()["id"]
 

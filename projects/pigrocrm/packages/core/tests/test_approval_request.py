@@ -16,9 +16,9 @@ from sqlalchemy.orm import Session
 
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.contracts.models import Contract
-from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.errors import AgentForbidden, Conflict, NotFound, ValidationFailed
 from pigrocrm.core.gmail.models import EmailDraft
+from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.work_units.approval_request import (
     ApprovalRequestCompose,
     ApprovalRequestDay,
@@ -35,7 +35,7 @@ AGENT = Actor(id=uuid4(), type="mcp", role="admin")
 
 
 def _contract(session: Session) -> Contract:
-    customer = Customer(
+    customer = Organization(
         legal_name=f"ACME {uuid4()}", contact_points=points(email="amministrazione@acme.example")
     )
     session.add(customer)
@@ -153,7 +153,7 @@ def test_preparing_records_the_days_as_proposed_and_files_the_draft_in_one_go(
     ]
     assert prepared.draft.send_state == "draft"
     assert prepared.draft.to_addresses == ["amministrazione@acme.example"]
-    assert prepared.draft.entity_type == "customer"
+    assert prepared.draft.entity_type == "organization"
     assert db_session.scalar(select(EmailDraft).where(EmailDraft.id == prepared.draft.id))
     steps = WorkUnitService(db_session).transitions_for(prepared.work_units[0].id)
     # A fixed reason: the recipient is on the draft, and the log is immutable.

@@ -67,7 +67,7 @@ describe('useSpaceEmpty', () => {
     const { result } = renderHook(() => useSpaceEmpty(), { wrapper: wrapper(client) })
     await waitFor(() => expect(result.current.spaceEmpty).toBe(false))
 
-    for (const prefix of ['customers', 'deals', 'time-entries', 'documents']) {
+    for (const prefix of ['organizations', 'deals', 'time-entries', 'documents']) {
       const entries = client.getQueriesData<{ items: unknown[] }>({ queryKey: [prefix] })
       expect(entries.length, prefix).toBeGreaterThan(0)
       for (const [, data] of entries) expect(Array.isArray(data?.items), prefix).toBe(true)
@@ -131,7 +131,7 @@ describe('with modules off', () => {
           : ok({ items: [], next_cursor: null })) as never)
   }
 
-  it('is an empty space when only the customers and documents are read and neither has a row', async () => {
+  it('is an empty space when only the organizations and documents are read and neither has a row', async () => {
     answerModules(['deals'])
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     const { result } = renderHook(() => useSpaceEmpty(), { wrapper: wrapper(client) })

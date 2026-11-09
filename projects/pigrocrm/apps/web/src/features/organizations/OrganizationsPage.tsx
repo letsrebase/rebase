@@ -9,11 +9,11 @@ import { PageHeader } from '@/components/PageHeader'
 import { Button } from '@rebase/ui/button'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@rebase/ui/dialog'
 import { Input } from '@rebase/ui/input'
-import { CustomerForm } from '@/features/customers/CustomerForm'
-import { buildCustomerColumns } from '@/features/customers/columns'
-import { useCreateCustomer, useCustomerPages } from '@/features/customers/queries'
+import { OrganizationForm } from '@/features/organizations/OrganizationForm'
+import { buildOrganizationColumns } from '@/features/organizations/columns'
+import { useCreateOrganization, useOrganizationPages } from '@/features/organizations/queries'
 import { useGmailHealth } from '@/features/gmail/queries'
-import { SuggestedCustomers } from '@/features/gmail/SuggestedCustomers'
+import { SuggestedOrganizations } from '@/features/gmail/SuggestedOrganizations'
 import { SEARCH_DEBOUNCE_MS } from '@/features/search/queries'
 import { useDebounced } from '@/hooks/useDebounced'
 import { useLegalEntitiesToName } from '@/lib/legalEntity'
@@ -25,7 +25,7 @@ import { useEntitySchema } from '@/lib/schema'
  * Exported so `index.test.tsx` can render the list without a router. The route
  * component below is what reads `?search=` out of the URL; this is what draws the page.
  */
-export function CustomersPage({ initialSearch }: { initialSearch: string }) {
+export function OrganizationsPage({ initialSearch }: { initialSearch: string }) {
   const navigate = useNavigate()
   const canWrite = useCanWrite()
   const [search, setSearch] = useState(initialSearch)
@@ -35,18 +35,18 @@ export function CustomersPage({ initialSearch }: { initialSearch: string }) {
   // A connected mailbox whose consent still holds: the only one that can propose.
   const mailbox = useGmailHealth().data?.account?.status === 'active'
 
-  const schema = useEntitySchema('customer')
+  const schema = useEntitySchema('organization')
   // The request follows the settled term, not every keystroke.
   const settled = useDebounced(search, SEARCH_DEBOUNCE_MS)
-  const customers = useCustomerPages({ search: settled || undefined })
-  const create = useCreateCustomer()
+  const organizations = useOrganizationPages({ search: settled || undefined })
+  const create = useCreateOrganization()
 
   // Recomputed every render, not memoised: `schema.data?.custom_fields` only
-  // changes when the schema query itself refetches, and `buildCustomerColumns`
+  // changes when the schema query itself refetches, and `buildOrganizationColumns`
   // does no work heavier than building a handful of plain objects -- not worth a
   // `useMemo` whose dependency array would just repeat the same query result.
   // «Azienda» only under «Tutte le aziende» from the second azienda on (REB-625).
-  const columns = buildCustomerColumns(schema.data?.custom_fields ?? [], {
+  const columns = buildOrganizationColumns(schema.data?.custom_fields ?? [], {
     legal_entities: useLegalEntitiesToName(),
   })
 
@@ -97,23 +97,23 @@ export function CustomersPage({ initialSearch }: { initialSearch: string }) {
         <DataTable
           label="Clienti"
           columns={columns}
-          data={customers.items}
-          isLoading={customers.isLoading}
-          isError={customers.isError}
-          error={customers.error}
+          data={organizations.items}
+          isLoading={organizations.isLoading}
+          isError={organizations.isError}
+          error={organizations.error}
           onRowClick={(row) =>
-            void navigate({ to: '/app/customers/$customerId', params: { customerId: row.id } })
+            void navigate({ to: '/app/organizations/$organizationId', params: { organizationId: row.id } })
           }
           emptyMessage="Nessun cliente. Creane uno per iniziare."
         />
-        {customers.hasMore && (
+        {organizations.hasMore && (
           <LoadMore
             label="Carica altri"
-            message={`Mostrati ${customers.items.length} clienti, ce ne sono altri.`}
-            isFetchingMore={customers.isFetchingMore}
-            hasError={customers.isError}
-            error={customers.error}
-            onLoadMore={customers.loadMore}
+            message={`Mostrati ${organizations.items.length} clienti, ce ne sono altri.`}
+            isFetchingMore={organizations.isFetchingMore}
+            hasError={organizations.isError}
+            error={organizations.error}
+            onLoadMore={organizations.loadMore}
           />
         )}
       </div>
@@ -126,11 +126,11 @@ export function CustomersPage({ initialSearch }: { initialSearch: string }) {
           <DialogHeader>
             <DialogTitle>Proponi dalla casella</DialogTitle>
           </DialogHeader>
-          {proposing ? <SuggestedCustomers onImported={() => setProposing(false)} /> : null}
+          {proposing ? <SuggestedOrganizations onImported={() => setProposing(false)} /> : null}
         </DialogContent>
       </Dialog>
 
-      <CustomerForm
+      <OrganizationForm
         title="Nuovo cliente"
         open={open}
         onOpenChange={setOpen}

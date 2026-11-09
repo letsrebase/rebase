@@ -10,8 +10,8 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.actor import Actor
-from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.invoices.models import Invoice, InvoiceCounter, InvoiceRegisterGap
+from pigrocrm.core.organizations.models import Organization
 
 ADMIN = Actor(id=None, type="system", role="admin")
 
@@ -24,7 +24,7 @@ def _fiscal_customer_id(session: Session) -> UUID:
     directory pytest resolves first would ever bind `from conftest import ...`
     correctly when the whole suite is collected in one run.
     """
-    customer = Customer(
+    customer = Organization(
         legal_name=f"Acme {uuid4()}",
         vat_number="12345678901",
         sdi_code="ABCDEFG",

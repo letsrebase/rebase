@@ -37,7 +37,7 @@ let draftNow: Record<string, unknown> = { ...DRAFT }
 function serving() {
   vi.mocked(api.GET).mockImplementation(((path: string) => {
     if (path === '/api/email-drafts/{draft_id}') return Promise.resolve(ok(draftNow))
-    if (path === '/api/customers/{customer_id}') {
+    if (path === '/api/organizations/{organization_id}') {
       return Promise.resolve(ok({ id: CUSTOMER_ID, legal_name: 'Acme', email: 'amministrazione@acme.example' }))
     }
     return Promise.resolve(ok(undefined))

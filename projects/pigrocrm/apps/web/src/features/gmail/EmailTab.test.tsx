@@ -69,7 +69,7 @@ const SEND_SCOPE = 'https://www.googleapis.com/auth/gmail.send'
 function draft(overrides: Partial<EmailDraftRead> = {}): EmailDraftRead {
   return {
     id: DRAFT_ID,
-    entity_type: 'customer',
+    entity_type: 'organization',
     entity_id: ENTITY_ID,
     google_account_id: null,
     to_addresses: ['ada@acme.it'],
@@ -120,7 +120,7 @@ function renderTab() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(
     <QueryClientProvider client={client}>
-      <EmailTab entityType="customer" entityId={ENTITY_ID} />
+      <EmailTab entityType="organization" entityId={ENTITY_ID} />
     </QueryClientProvider>,
   )
 }
@@ -177,7 +177,7 @@ describe('EmailTab', () => {
 
     expect(await screen.findByText('Rinnovo')).toBeInTheDocument()
     expect(messagesCall()?.[1]).toMatchObject({
-      params: { query: { entity_type: 'customer', entity_id: ENTITY_ID } },
+      params: { query: { entity_type: 'organization', entity_id: ENTITY_ID } },
     })
     // And nothing on either read is a Gmail search string: both reach the CRM's own rows.
     await waitFor(() =>
@@ -356,7 +356,7 @@ describe('EmailTab', () => {
     // older unsent draft off the list.
     expect(vi.mocked(api.GET).mock.calls.find((call) => call[0] === '/api/email-drafts')?.[1])
       .toMatchObject({
-        params: { query: { entity_type: 'customer', entity_id: ENTITY_ID, unsent: true } },
+        params: { query: { entity_type: 'organization', entity_id: ENTITY_ID, unsent: true } },
       })
   })
 

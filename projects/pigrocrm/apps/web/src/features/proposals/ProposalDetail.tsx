@@ -281,8 +281,8 @@ function Outcome({ proposal, customerId }: { proposal: Proposal; customerId: str
             : 'Ha registrato la giornata come approvata.'}{' '}
           {customerId !== null ? (
             <Link
-              to="/app/customers/$customerId"
-              params={{ customerId }}
+              to="/app/organizations/$organizationId"
+              params={{ organizationId: customerId }}
               className="text-foreground underline underline-offset-4"
             >
               Vai al cliente

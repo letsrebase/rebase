@@ -38,7 +38,7 @@ def _files(*files: tuple[str, bytes]) -> list[tuple[str, tuple[str, bytes, str]]
 
 
 def _decisions(by_party: dict[str, dict[str, Any]]) -> dict[str, str]:
-    return {"decisioni": json.dumps({"customers": by_party})}
+    return {"decisioni": json.dumps({"organizations": by_party})}
 
 
 def _year(count: int) -> bytes:
@@ -85,7 +85,7 @@ def legal_entity(logged_in: TestClient) -> dict[str, Any]:
 @pytest.fixture
 def customer(logged_in: TestClient) -> dict[str, Any]:
     response = logged_in.post(
-        "/api/customers",
+        "/api/organizations",
         json={
             "legal_name": "Esempio Servizi S.r.l.",
             "vat_number": CUSTOMER_VAT_NUMBER,
@@ -164,13 +164,13 @@ def test_a_counterparty_nobody_filed_is_created_only_on_the_decision_for_its_cus
     created = logged_in.post(
         CONFIRM,
         files=_files(("fattura.xml", content)),
-        data=_decisions({review_row["party_key"]: {"create_customer": True}}),
+        data=_decisions({review_row["party_key"]: {"create_organization": True}}),
     )
     assert created.status_code == 200, created.text
     [row] = created.json()["lines"]
     assert row["outcome"] == "imported"
-    customers = logged_in.get("/api/customers").json()["items"]
-    assert [c["vat_number"] for c in customers] == [CUSTOMER_VAT_NUMBER]
+    organizations = logged_in.get("/api/organizations").json()["items"]
+    assert [c["vat_number"] for c in organizations] == [CUSTOMER_VAT_NUMBER]
 
 
 def test_to_customer_of_another_legal_entity_is_to_422_that_names_the_party_and_writes_nothing(
@@ -179,7 +179,7 @@ def test_to_customer_of_another_legal_entity_is_to_422_that_names_the_party_and_
     legal_entity: dict[str, Any],
     customer: dict[str, Any],
 ) -> None:
-    """REB-783: the dialog lists only the file's legal entity's customers, but the id is the
+    """REB-783: the dialog lists only the file's legal entity's organizations, but the id is the
     caller's, so the confirmation itself refuses one from another legal entity, and one of
     the right legal entity still imports."""
     content = _fixture(CONSULTING)
@@ -196,8 +196,8 @@ def test_to_customer_of_another_legal_entity_is_to_422_that_names_the_party_and_
         },
     ).json()
     foreign = logged_in.post(
-        "/api/customers",
-        json={"legal_name": "Acme Customer Ltd", "country": "GB", "legal_entity_id": ltd["id"]},
+        "/api/organizations",
+        json={"legal_name": "Acme Organization Ltd", "country": "GB", "legal_entity_id": ltd["id"]},
     )
     assert foreign.status_code == 201, foreign.text
     party = CUSTOMER_VAT_NUMBER
@@ -234,7 +234,7 @@ def test_a_year_of_xml_in_one_zip_imports_with_no_gap_to_declare(
     lines = reviewed.json()["lines"]
     assert len(lines) == 12
     assert {r["file"].split("/")[0] for r in lines} == {"fatture-2026.zip"}
-    decisions = _decisions({r["party_key"]: {"create_customer": True} for r in lines})
+    decisions = _decisions({r["party_key"]: {"create_organization": True} for r in lines})
 
     confirmed = logged_in.post(CONFIRM, files=_files(archive), data=decisions)
 

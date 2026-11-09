@@ -17,16 +17,16 @@ from sqlalchemy.orm import Session
 from test_invoice_import_tools import _payload, _seed_fiscal_and_legal_entity_profiles, _server
 
 from pigrocrm.core.actor import Actor
-from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.invoices.artifacts import InvoiceArtifacts
 from pigrocrm.core.invoices.schemas import InvoiceCreate, InvoiceLineIn
 from pigrocrm.core.invoices.service import InvoiceService
+from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.storage import LocalFileStorage
 
 
 def _draft(session: Session, tmp_path: Path) -> str:
     _seed_fiscal_and_legal_entity_profiles(session)
-    customer = Customer(
+    customer = Organization(
         legal_name="Acme S.r.l.",
         vat_number="12345678901",
         sdi_code="ABCDEFG",

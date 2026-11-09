@@ -51,7 +51,7 @@ CONFIRM_ACTION = "confirm_invoice_import"
 # What a confirmation asks about the counterparty of an invoice: the customer id to
 # attach, whether to create the counterparty when none matches, and whether to leave the
 # invoice out altogether.
-CustomerDecision = Callable[[ParsedInvoiceParty], tuple[UUID | None, bool, bool]]
+OrganizationDecision = Callable[[ParsedInvoiceParty], tuple[UUID | None, bool, bool]]
 
 
 class _Refused(Exception):
@@ -90,12 +90,12 @@ class _GapTracker:
 
 @dataclass
 class _Batch:
-    """What outlives one file of a confirmation request: `created_customers`, keyed by
+    """What outlives one file of a confirmation request: `created_organizations`, keyed by
     the legal entity and the `party_key`, so a counterparty created for one invoice is the
     customer of every later invoice of it in the request, and the gap tracker."""
 
     gaps: _GapTracker
-    created_customers: dict[tuple[UUID, str], UUID] = field(default_factory=dict)
+    created_organizations: dict[tuple[UUID, str], UUID] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -190,7 +190,7 @@ class InvoiceImporter:
         actor: Actor,
         *,
         customer_id: UUID | None = None,
-        create_customer: bool = False,
+        create_organization: bool = False,
     ) -> list[ConfirmedInvoiceRead]:
         """Confirm one already-reviewed document onto the register (REB-366, design
         record §4-5, §7 item 4): **re-reads and re-parses the document's own stored
@@ -209,19 +209,19 @@ class InvoiceImporter:
         call still comes back with its own row: one named outcome per invoice, never a
         silent drop.
 
-        `customer_id` is the one human decision this adds: which `Customer` the invoice
+        `customer_id` is the one human decision this adds: which `Organization` the invoice
         attaches to. When omitted, the current exact tax-id match
         (`import_review.match_customer`, re-run against the database's current state,
         never review time's) is used. A `customer_id` that is archived, or that is not on
         the legal entity the invoice's issuer resolves to, is a `ValidationFailed` naming the
         counterparty, raised before any invoice is written (REB-783).
 
-        `create_customer` (REB-367, design §7 item 5): when still unresolved and true,
-        the matched party is inserted as a new `Customer` through
-        `CustomerService._insert`, the non-committing half of `create`, inside the
+        `create_organization` (REB-367, design §7 item 5): when still unresolved and true,
+        the matched party is inserted as a new `Organization` through
+        `OrganizationService._insert`, the non-committing half of `create`, inside the
         invoice's own transaction, so a refusal of the register write takes the customer
         with it. A `lotto` batch's invoices from the same brand-new counterparty share
-        one freshly created row. `create_customer` false (the default) reports
+        one freshly created row. `create_organization` false (the default) reports
         `"needs_customer_confirmation"` and writes nothing.
 
         **`xml_document_id`/`xml_hash_sha256`, for a single-invoice source document
@@ -236,9 +236,9 @@ class InvoiceImporter:
         content, _content_type, _filename = self.ctx.documents.download(document_id, None, actor)
 
         def decide(_party: ParsedInvoiceParty) -> tuple[UUID | None, bool, bool]:
-            return customer_id, create_customer, False
+            return customer_id, create_organization, False
 
-        self._refuse_chosen_customers([content], legal_entities, decide)
+        self._refuse_chosen_organizations([content], legal_entities, decide)
         batch = _Batch(gaps=_GapTracker(self.ctx))
         return [
             ConfirmedInvoiceRead(
@@ -290,10 +290,12 @@ class InvoiceImporter:
             decision = decisions.get(party_key(party))
             if decision is None:
                 return None, False, False
-            return decision.customer_id, decision.create_customer, decision.skip
+            return decision.customer_id, decision.create_organization, decision.skip
 
         uploaded = expand_uploads(files)
-        self._refuse_chosen_customers([file.content for file in uploaded], legal_entities, decide)
+        self._refuse_chosen_organizations(
+            [file.content for file in uploaded], legal_entities, decide
+        )
         batch = _Batch(gaps=_GapTracker(self.ctx))
         rows: list[UploadedInvoiceConfirmRead] = []
         for file in uploaded:
@@ -320,11 +322,11 @@ class InvoiceImporter:
                 )
         return rows
 
-    def _refuse_chosen_customers(
+    def _refuse_chosen_organizations(
         self,
         contents: Sequence[bytes],
         legal_entities: Sequence[LegalEntity],
-        decide: CustomerDecision,
+        decide: OrganizationDecision,
     ) -> None:
         """`check_import_customer` for every invoice a confirmation is about to write,
         before the first of them is. Each invoice commits on its own, so a refusal found
@@ -362,7 +364,7 @@ class InvoiceImporter:
         *,
         stored_as: UUID | None,
         origin: str | None,
-        decide: CustomerDecision,
+        decide: OrganizationDecision,
         batch: _Batch,
     ) -> list[ConfirmedInvoice]:
         """The write both `confirm_import` and `confirm_upload` run, on one file's bytes
@@ -390,7 +392,7 @@ class InvoiceImporter:
         file: _File,
         legal_entities: Sequence[LegalEntity],
         actor: Actor,
-        decide: CustomerDecision,
+        decide: OrganizationDecision,
         batch: _Batch,
     ) -> ConfirmedInvoice:
         ctx = self.ctx
@@ -420,7 +422,7 @@ class InvoiceImporter:
                 invoice=ctx.get(existing.id) if existing is not None else None,
                 party_key=party,
             )
-        customer_id, create_customer, skip = decide(invoice.customer)
+        customer_id, create_organization, skip = decide(invoice.customer)
         if skip:
             # The person left this customer out: whatever the register would match now (a
             # customer created by somebody else since the review, say), the invoice is not
@@ -430,8 +432,8 @@ class InvoiceImporter:
             check_import_customer(ctx, customer_id, legal_entity, invoice.customer.legal_name)
         else:
             customer_id = match_customer(ctx.session, invoice.customer, legal_entity.id)
-        cached_id = batch.created_customers.get((legal_entity.id, party))
-        if customer_id is None and not create_customer:
+        cached_id = batch.created_organizations.get((legal_entity.id, party))
+        if customer_id is None and not create_organization:
             return self._needs_customer(legal_entity, party)
 
         new_customer_id: UUID | None = None
@@ -445,7 +447,7 @@ class InvoiceImporter:
                 if customer_id is None:
                     # On the legal entity the file landed on (§1.5), not the one the nation
                     # would propose: the customer was billed by this legal entity already.
-                    new_customer = ctx.customers._insert(
+                    new_customer = ctx.organizations._insert(
                         map_parsed_party_to_customer(invoice.customer).model_copy(
                             update={"legal_entity_id": legal_entity.id}
                         ),
@@ -461,7 +463,7 @@ class InvoiceImporter:
         # Cached only now that the invoice it was created for is committed: a rolled-back
         # insert must not leave an id behind for the next invoice of the batch to reuse.
         if new_customer_id is not None:
-            batch.created_customers[(legal_entity.id, party)] = new_customer_id
+            batch.created_organizations[(legal_entity.id, party)] = new_customer_id
         return ConfirmedInvoice(
             outcome="imported",
             legal_entity_id=legal_entity.id,

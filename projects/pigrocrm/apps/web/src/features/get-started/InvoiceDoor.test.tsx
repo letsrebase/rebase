@@ -66,7 +66,7 @@ function reply(answer: Answer) {
 /** GET by path; the invoice list and the space settings are the ones a test varies. */
 function gets(overrides: Record<string, Answer> = {}) {
   const defaults: Record<string, Answer> = {
-    '/api/customers': { data: EMPTY_PAGE },
+    '/api/organizations': { data: EMPTY_PAGE },
     '/api/documents/{document_id}': { data: DOCUMENT },
     '/api/invoices': { data: EMPTY_PAGE },
     '/api/settings/space': { data: { mcp_full_access: true } },
@@ -77,7 +77,7 @@ function gets(overrides: Record<string, Answer> = {}) {
 
 function posts(overrides: Record<string, Answer> = {}) {
   const defaults: Record<string, Answer> = {
-    '/api/customers': { data: CUSTOMER },
+    '/api/organizations': { data: CUSTOMER },
     '/api/documents': { data: DOCUMENT },
   }
   vi.mocked(api.POST).mockImplementation(((path: string) =>
@@ -122,7 +122,7 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 
-/** `ChooseCustomer`'s `useDebounced` (`InvoiceDoor.tsx`) debounces the typed name
+/** `ChooseOrganization`'s `useDebounced` (`InvoiceDoor.tsx`) debounces the typed name
  *  250ms, on a real timer, before the search it gates even fires -- so every wait below
  *  for that search's suggestions, its failure, or the button it un-disables is already
  *  waiting out that debounce before the fetch that answers it has even started. The
@@ -146,14 +146,14 @@ describe('the invoice door, first the customer', () => {
     expect(door.getByRole('button', { name: 'Crea il cliente e vai avanti' })).toBeDisabled()
     await userEvent.type(door.getByLabelText('Ragione sociale del cliente'), '  Officina Verdi S.r.l. ')
     await create()
-    expect(api.POST).toHaveBeenCalledWith('/api/customers', { body: { legal_name: 'Officina Verdi S.r.l.' } })
+    expect(api.POST).toHaveBeenCalledWith('/api/organizations', { body: { legal_name: 'Officina Verdi S.r.l.' } })
     expect(await door.findByText('Officina Verdi S.r.l.')).toBeInTheDocument()
     expect(door.getByTestId('upload-dropzone')).toBeInTheDocument()
   })
 
   it('finds a customer already on file by searching, in a space of any size, and creates nothing', async () => {
     gets({
-      '/api/customers': {
+      '/api/organizations': {
         data: { items: [{ id: 'c-old', legal_name: 'ACME Srl', vat_number: '01234567890' }], next_cursor: null },
       },
     })
@@ -167,25 +167,25 @@ describe('the invoice door, first the customer', () => {
       ),
     )
     expect(await screen.findByText('ACME Srl')).toBeInTheDocument()
-    expect(api.GET).toHaveBeenCalledWith('/api/customers', { params: { query: { search: 'acm', limit: 8 } } })
-    expect(api.POST).not.toHaveBeenCalledWith('/api/customers', expect.anything())
+    expect(api.GET).toHaveBeenCalledWith('/api/organizations', { params: { query: { search: 'acm', limit: 8 } } })
+    expect(api.POST).not.toHaveBeenCalledWith('/api/organizations', expect.anything())
   })
 
   it('uses the customer on file when the typed name is exactly theirs, instead of a duplicate', async () => {
-    gets({ '/api/customers': { data: { items: [{ id: 'c-old', legal_name: 'ACME Srl' }], next_cursor: null } } })
+    gets({ '/api/organizations': { data: { items: [{ id: 'c-old', legal_name: 'ACME Srl' }], next_cursor: null } } })
     renderDoor()
     await userEvent.type(await screen.findByLabelText('Ragione sociale del cliente'), 'acme srl')
     const use = await screen.findByRole('button', { name: 'Usa ACME Srl' }, SETTLE_TIMEOUT)
     await waitFor(() => expect(use).toBeEnabled(), SETTLE_TIMEOUT)
     await userEvent.click(use)
     expect(await screen.findByTestId('upload-dropzone')).toBeInTheDocument()
-    expect(api.POST).not.toHaveBeenCalledWith('/api/customers', expect.anything())
+    expect(api.POST).not.toHaveBeenCalledWith('/api/organizations', expect.anything())
   })
 
   it('uses a customer named exactly so even when the suggestions do not show it, instead of a duplicate', async () => {
     const partial = Array.from({ length: 8 }, (_, i) => ({ id: `p${i}`, legal_name: `ACME Srl filiale ${i}` }))
     vi.mocked(api.GET).mockImplementation(((path: string, init?: { params?: { query?: { limit?: number; cursor?: string } } }) => {
-      if (path !== '/api/customers') return reply({ data: null })
+      if (path !== '/api/organizations') return reply({ data: null })
       const query = init?.params?.query ?? {}
       if (query.limit === 8) return reply({ data: { items: partial, next_cursor: 'more' } })
       // The whole search, page by page: the exact name is on the second page.
@@ -198,13 +198,13 @@ describe('the invoice door, first the customer', () => {
     await create()
     expect(await screen.findByTestId('upload-dropzone')).toBeInTheDocument()
     expect(screen.getByText('ACME Srl')).toBeInTheDocument()
-    expect(api.POST).not.toHaveBeenCalledWith('/api/customers', expect.anything())
+    expect(api.POST).not.toHaveBeenCalledWith('/api/organizations', expect.anything())
   })
 
   it('holds the name while it is looked up, so the customer chosen is the one on screen', async () => {
     let release: (value: unknown) => void = () => {}
     vi.mocked(api.GET).mockImplementation(((path: string, init?: { params?: { query?: { limit?: number } } }) => {
-      if (path !== '/api/customers') return reply({ data: null })
+      if (path !== '/api/organizations') return reply({ data: null })
       if (init?.params?.query?.limit === 8) return reply({ data: EMPTY_PAGE })
       return new Promise((resolve) => {
         release = resolve
@@ -219,22 +219,22 @@ describe('the invoice door, first the customer', () => {
     expect(field).toHaveValue('Officina')
     release({ data: EMPTY_PAGE, response: new Response(null, { status: 200 }) })
     expect(await screen.findByTestId('upload-dropzone')).toBeInTheDocument()
-    expect(api.POST).toHaveBeenCalledWith('/api/customers', { body: { legal_name: 'Officina' } })
+    expect(api.POST).toHaveBeenCalledWith('/api/organizations', { body: { legal_name: 'Officina' } })
   })
 
-  it('still takes a new name when the customers on file cannot be searched', async () => {
-    gets({ '/api/customers': { status: 500 } })
+  it('still takes a new name when the organizations on file cannot be searched', async () => {
+    gets({ '/api/organizations': { status: 500 } })
     renderDoor()
     await userEvent.type(await screen.findByLabelText('Ragione sociale del cliente'), 'Officina')
     expect(
       await screen.findByText(/Non riesco a cercare tra i clienti/, {}, SETTLE_TIMEOUT),
     ).toBeInTheDocument()
     await create()
-    expect(api.POST).toHaveBeenCalledWith('/api/customers', { body: { legal_name: 'Officina' } })
+    expect(api.POST).toHaveBeenCalledWith('/api/organizations', { body: { legal_name: 'Officina' } })
   })
 
   it('says why a new customer was refused, in the server’s words', async () => {
-    posts({ '/api/customers': { status: 422, detail: 'ragione_sociale: già usata' } })
+    posts({ '/api/organizations': { status: 422, detail: 'ragione_sociale: già usata' } })
     renderDoor()
     await userEvent.type(await screen.findByLabelText('Ragione sociale del cliente'), 'Officina')
     await create()
@@ -460,7 +460,7 @@ describe('the invoice door, by role', () => {
       renderDoor()
       expect(screen.getByText(/passo dell’amministratore dello spazio/)).toBeInTheDocument()
       expect(screen.queryByText('A chi l’hai emessa?')).toBeNull()
-      expect(api.GET).not.toHaveBeenCalledWith('/api/customers', expect.anything())
+      expect(api.GET).not.toHaveBeenCalledWith('/api/organizations', expect.anything())
     },
   )
 })

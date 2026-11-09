@@ -24,7 +24,6 @@ from pigrocrm.core.contracts.schemas import (
     ContractRead,
     ProposedRateCard,
 )
-from pigrocrm.core.customers.repository import CustomerRepository
 from pigrocrm.core.db import today_local
 from pigrocrm.core.db.transactions import savepoint
 from pigrocrm.core.deals.models import Deal, DealValueLine
@@ -34,6 +33,7 @@ from pigrocrm.core.errors import Conflict, NotFound, ValidationFailed
 from pigrocrm.core.fields.service import FieldDefinitionService
 from pigrocrm.core.fields.validator import validate_custom_fields
 from pigrocrm.core.legal_entities.service import LegalEntityService
+from pigrocrm.core.organizations.repository import OrganizationRepository
 from pigrocrm.core.pipeline.service import PipelineService
 
 DEAL = "deal"
@@ -116,7 +116,7 @@ class ContractConversionService:
         self.session = session
         self.deals = DealRepository(session)
         self.contracts = ContractRepository(session)
-        self.customers = CustomerRepository(session)
+        self.organizations = OrganizationRepository(session)
         self.pipeline = PipelineService(session)
         self.legal_entity = LegalEntityService(session)
         self.fields = FieldDefinitionService(session)
@@ -187,8 +187,8 @@ class ContractConversionService:
             ENTITY, self.fields.specs_for(ENTITY), payload["custom_fields"]
         )
         lines = self._convertible(deal)
-        if self.customers.get(deal.customer_id) is None:
-            raise NotFound("customer", deal.customer_id)
+        if self.organizations.get(deal.customer_id) is None:
+            raise NotFound("organization", deal.customer_id)
 
         terms = _terms_or_refuse(lines, data.start)
         # Lines with no start follow the contract's, so two day or hour rates that never

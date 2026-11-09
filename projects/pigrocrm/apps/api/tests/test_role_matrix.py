@@ -323,20 +323,20 @@ ROWS: list[Row] = [
         "/api/work-units/{work_unit_id}/transitions",
         body={"status": "disputed", "reason": "Matrice"},
     ),
-    # --- customers / people / deals: `require_write` on every plain write ------------
-    Row("POST", "/api/customers", body={"legal_name": "Matrice Due Srl"}),
+    # --- organizations / people / deals: `require_write` on every plain write ------------
+    Row("POST", "/api/organizations", body={"legal_name": "Matrice Due Srl"}),
     # The ticked Gmail proposals (REB-223): `require_write`, like one «Nuovo cliente».
     Row(
         "POST",
-        "/api/customers/from-suggestions",
-        body={"customers": [{"domain": "matrice.it", "legal_name": "Matrice", "people": []}]},
+        "/api/organizations/from-suggestions",
+        body={"organizations": [{"domain": "matrice.it", "legal_name": "Matrice", "people": []}]},
     ),
-    Row("DELETE", "/api/customers/{customer_id}"),
-    Row("PATCH", "/api/customers/{customer_id}", body={}),
-    Row("POST", "/api/customers/{customer_id}/restore"),
+    Row("DELETE", "/api/organizations/{organization_id}"),
+    Row("PATCH", "/api/organizations/{organization_id}", body={}),
+    Row("POST", "/api/organizations/{organization_id}/restore"),
     Row(
         "POST",
-        "/api/customers/{customer_id}/people-from-mail",
+        "/api/organizations/{organization_id}/people-from-mail",
         body={"address": "marco@acme.it", "name": "Marco"},
     ),
     Row("POST", "/api/deals", body={"name": "matrice-deal", "customer_id": "__CUST__"}),
@@ -424,7 +424,7 @@ ROWS: list[Row] = [
         "POST",
         "/api/email-drafts",
         body={
-            "entity_type": "customer",
+            "entity_type": "organization",
             "entity_id": "__CUST__",
             "to_addresses": ["uno@pigro.it"],
             "subject": "matrice",
@@ -480,7 +480,7 @@ ROWS: list[Row] = [
         "/api/field-definitions",
         admin_only=True,
         body={
-            "entity_type": "customer",
+            "entity_type": "organization",
             "key": "matrice_k",
             "label": "Matrice",
             "field_type": "text",
@@ -496,14 +496,14 @@ ROWS: list[Row] = [
         "POST",
         "/api/gmail/backfill",
         google=True,
-        body={"entity_type": "customer", "entity_id": "__CUST__"},
+        body={"entity_type": "organization", "entity_id": "__CUST__"},
     ),
     Row("POST", "/api/gmail/sync", google=True),
     # A GET, and gated all the same: the proposals spend the owner's Gmail quota, as
     # discovery does (REB-223), so a readonly person is refused like on `sync`.
-    Row("GET", "/api/gmail/customer-suggestions", google=True),
+    Row("GET", "/api/gmail/organization-suggestions", google=True),
     # The same for one customer's domain (REB-766).
-    Row("GET", "/api/gmail/customers/{customer_id}/correspondents", google=True),
+    Row("GET", "/api/gmail/organizations/{customer_id}/correspondents", google=True),
     Row("GET", "/api/gmail/oauth/start", google=True),
     Row(
         "GET",
@@ -586,7 +586,7 @@ ROWS: list[Row] = [
     ),
     # --- payment reminders: preparing one is a write (gmail/solleciti.py:220) --------
     Row("POST", "/api/payment-reminders", body={"invoice_id": "__FAKE__"}),
-    # --- people: same CRUD shape as customers ----------------------------------------
+    # --- people: same CRUD shape as organizations ----------------------------------------
     Row("POST", "/api/people", body={"first_name": "Matrice Persona"}),
     Row("DELETE", "/api/people/{person_id}"),
     Row("PATCH", "/api/people/{person_id}", body={}),
@@ -925,7 +925,7 @@ def matrix(api_engine: Engine) -> Iterator[Matrix]:
         # refused to the two roles exactly as the other admin routes; the seed here
         # happens before the sweep, so running it early costs the sweep nothing.
         assert admin.post("/api/pipeline-stages/seed").status_code == 200
-        customer = admin.post("/api/customers", json={"legal_name": "Matrice Srl"})
+        customer = admin.post("/api/organizations", json={"legal_name": "Matrice Srl"})
         assert customer.status_code == 201, customer.text
         ids["__CUST__"] = customer.json()["id"]
         deal = admin.post("/api/deals", json={"name": "Matrice", "customer_id": ids["__CUST__"]})
@@ -1002,7 +1002,7 @@ AGENT_REACHABLE: frozenset[tuple[str, str]] = frozenset(
     {
         ("DELETE", "/api/activities/{task_id}"),
         ("DELETE", "/api/costs/{cost_id}"),
-        ("DELETE", "/api/customers/{customer_id}"),
+        ("DELETE", "/api/organizations/{organization_id}"),
         ("DELETE", "/api/deals/{deal_id}"),
         ("DELETE", "/api/documents/{document_id}"),
         ("DELETE", "/api/invoices/{invoice_id}"),
@@ -1018,7 +1018,7 @@ AGENT_REACHABLE: frozenset[tuple[str, str]] = frozenset(
         ("PATCH", "/api/contracts/{contract_id}/expenses/{expense_id}"),
         ("PATCH", "/api/contracts/{contract_id}/rate-cards/{rate_card_id}"),
         ("PATCH", "/api/costs/{cost_id}"),
-        ("PATCH", "/api/customers/{customer_id}"),
+        ("PATCH", "/api/organizations/{organization_id}"),
         ("PATCH", "/api/deals/{deal_id}"),
         ("PATCH", "/api/deals/{deal_id}/stage"),
         ("PATCH", "/api/invoices/{invoice_id}"),
@@ -1044,10 +1044,10 @@ AGENT_REACHABLE: frozenset[tuple[str, str]] = frozenset(
         ("POST", "/api/contracts/{contract_id}/state"),
         ("POST", "/api/costs"),
         ("POST", "/api/costs/{cost_id}/restore"),
-        ("POST", "/api/customers"),
-        ("POST", "/api/customers/{customer_id}/people-from-mail"),
-        ("POST", "/api/customers/{customer_id}/restore"),
-        ("POST", "/api/customers/from-suggestions"),
+        ("POST", "/api/organizations"),
+        ("POST", "/api/organizations/{organization_id}/people-from-mail"),
+        ("POST", "/api/organizations/{organization_id}/restore"),
+        ("POST", "/api/organizations/from-suggestions"),
         ("POST", "/api/deals"),
         ("POST", "/api/deals/{deal_id}/contract"),
         ("POST", "/api/deals/{deal_id}/restore"),

@@ -14,11 +14,11 @@ from frozen_clock import TODAY_IN_ITALY, TODAY_OF_PROCESS, freeze
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.actor import Actor
-from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.deals.models import Deal, DealValueLine
 from pigrocrm.core.deals.repository import DealRepository
 from pigrocrm.core.documents.models import Document
 from pigrocrm.core.documents.repository import DocumentRepository
+from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.pipeline.models import PipelineStage
 from pigrocrm.core.pipeline.service import PipelineService
 
@@ -32,8 +32,8 @@ def stages(db_session: Session) -> dict[str, Any]:
 
 
 @pytest.fixture
-def customer(db_session: Session) -> Customer:
-    row = Customer(legal_name="Cliente Srl", country="IT", custom_fields={})
+def customer(db_session: Session) -> Organization:
+    row = Organization(legal_name="Cliente Srl", country="IT", custom_fields={})
     db_session.add(row)
     db_session.flush()
     return row
@@ -41,7 +41,7 @@ def customer(db_session: Session) -> Customer:
 
 def _deal(
     db_session: Session,
-    customer: Customer,
+    customer: Organization,
     stage_id: object,
     *,
     value: str | None = "1000.00",
@@ -66,7 +66,7 @@ def _deal(
 
 def _offer(
     db_session: Session,
-    customer: Customer,
+    customer: Organization,
     title: str,
     *,
     status: str = "sent",
@@ -90,7 +90,7 @@ def _offer(
 
 
 def test_pipeline_summary_groups_open_deals_by_stage(
-    db_session: Session, customer: Customer, stages: dict[str, Any]
+    db_session: Session, customer: Organization, stages: dict[str, Any]
 ) -> None:
     _deal(db_session, customer, stages["lead"].id, value="1000.00")
     _deal(db_session, customer, stages["lead"].id, value="2000.00")
@@ -104,7 +104,7 @@ def test_pipeline_summary_groups_open_deals_by_stage(
 
 
 def test_pipeline_summary_includes_the_closed_stages_last(
-    db_session: Session, customer: Customer, stages: dict[str, Any]
+    db_session: Session, customer: Organization, stages: dict[str, Any]
 ) -> None:
     """Every configured stage, in `position` order, closed ones included.
 
@@ -135,7 +135,7 @@ def test_pipeline_summary_includes_the_closed_stages_last(
 
 
 def test_pipeline_summary_excludes_soft_deleted_deals(
-    db_session: Session, customer: Customer, stages: dict[str, Any]
+    db_session: Session, customer: Organization, stages: dict[str, Any]
 ) -> None:
     row = _deal(db_session, customer, stages["lead"].id)
     row.deleted_at = datetime.now(UTC)
@@ -150,7 +150,7 @@ def test_pipeline_summary_excludes_soft_deleted_deals(
 
 
 def test_a_deal_without_a_value_is_counted_separately_and_never_summed_as_zero(
-    db_session: Session, customer: Customer, stages: dict[str, Any]
+    db_session: Session, customer: Organization, stages: dict[str, Any]
 ) -> None:
     """§4's own note. Counting a missing value as zero understates the pipeline and there
     is no way for the reader to tell -- so it is a column of its own."""
@@ -164,7 +164,7 @@ def test_a_deal_without_a_value_is_counted_separately_and_never_summed_as_zero(
 
 
 def test_a_stage_with_no_deals_still_appears_with_zeroes(
-    db_session: Session, customer: Customer, stages: dict[str, Any]
+    db_session: Session, customer: Organization, stages: dict[str, Any]
 ) -> None:
     """A missing stage and an empty stage render identically in a bar chart, and the
     reader cannot tell which they are looking at.
@@ -184,7 +184,7 @@ def test_a_stage_with_no_deals_still_appears_with_zeroes(
 
 
 def test_stages_come_back_in_pipeline_order(
-    db_session: Session, customer: Customer, stages: dict[str, Any]
+    db_session: Session, customer: Organization, stages: dict[str, Any]
 ) -> None:
     """A pipeline chart whose bars reorder between loads is unreadable.
 
@@ -207,7 +207,7 @@ def test_stages_come_back_in_pipeline_order(
 
 
 def test_the_weighted_value_is_the_product_of_two_columns_of_deals(
-    db_session: Session, customer: Customer, stages: dict[str, Any]
+    db_session: Session, customer: Organization, stages: dict[str, Any]
 ) -> None:
     """**§3 exception 1.** `Σ ROUND(valore_previsto × probabilita / 100, 2)`. Allowed
     because it combines only columns of `deals` and is not money received; labelled
@@ -224,7 +224,7 @@ def test_the_weighted_value_is_the_product_of_two_columns_of_deals(
 
 
 def test_the_weighted_value_rounds_per_row_then_sums(
-    db_session: Session, customer: Customer, stages: dict[str, Any]
+    db_session: Session, customer: Organization, stages: dict[str, Any]
 ) -> None:
     """`Σ ROUND(row, 2)`, never `ROUND(Σ exact, 2)`, and HALF_UP not HALF_EVEN -- the
     project-wide rule from slice 4. Three rows at 0.005 differ between the two by a cent,
@@ -238,7 +238,7 @@ def test_the_weighted_value_rounds_per_row_then_sums(
 
 
 def test_a_deal_without_a_value_contributes_nothing_to_the_weighted_value(
-    db_session: Session, customer: Customer, stages: dict[str, Any]
+    db_session: Session, customer: Organization, stages: dict[str, Any]
 ) -> None:
     _deal(db_session, customer, stages["lead"].id, value=None, probability=90)
     row = next(r for r in DealRepository(db_session).pipeline_summary() if r.stage_code == "lead")
@@ -250,7 +250,7 @@ def test_a_deal_without_a_value_contributes_nothing_to_the_weighted_value(
 
 
 def test_closed_in_period_counts_won_and_lost_by_closed_at(
-    db_session: Session, customer: Customer, stages: dict[str, Any]
+    db_session: Session, customer: Organization, stages: dict[str, Any]
 ) -> None:
     _deal(db_session, customer, stages["won"].id, closed_at=date(2026, 3, 10), value="1000.00")
     _deal(db_session, customer, stages["won"].id, closed_at=date(2026, 3, 20), value="2000.00")
@@ -266,7 +266,7 @@ def test_closed_in_period_counts_won_and_lost_by_closed_at(
 
 
 def test_closed_in_period_ignores_a_soft_deleted_deal(
-    db_session: Session, customer: Customer, stages: dict[str, Any]
+    db_session: Session, customer: Organization, stages: dict[str, Any]
 ) -> None:
     row = _deal(db_session, customer, stages["won"].id, closed_at=date(2026, 3, 10))
     row.deleted_at = datetime.now(UTC)
@@ -277,7 +277,7 @@ def test_closed_in_period_ignores_a_soft_deleted_deal(
 
 
 def test_the_period_bounds_are_inclusive(
-    db_session: Session, customer: Customer, stages: dict[str, Any]
+    db_session: Session, customer: Organization, stages: dict[str, Any]
 ) -> None:
     _deal(db_session, customer, stages["won"].id, closed_at=date(2026, 3, 1))
     _deal(db_session, customer, stages["won"].id, closed_at=date(2026, 3, 31))
@@ -289,7 +289,7 @@ def test_the_period_bounds_are_inclusive(
 
 
 def test_the_conversion_rate_is_a_ratio_of_two_counts(
-    db_session: Session, customer: Customer, stages: dict[str, Any]
+    db_session: Session, customer: Organization, stages: dict[str, Any]
 ) -> None:
     """**§3 exception 2.** `vinti / (vinti + persi)`, two decimals."""
     for _ in range(3):
@@ -301,7 +301,7 @@ def test_the_conversion_rate_is_a_ratio_of_two_counts(
 
 
 def test_the_conversion_rate_rounds_half_up(
-    db_session: Session, customer: Customer, stages: dict[str, Any]
+    db_session: Session, customer: Organization, stages: dict[str, Any]
 ) -> None:
     """1 of 32 is 3.125 per cent exactly: 3.13 half-up, 3.12 half-even.
 
@@ -320,7 +320,7 @@ def test_the_conversion_rate_rounds_half_up(
 
 
 def test_the_conversion_rate_is_null_when_nothing_closed(
-    db_session: Session, customer: Customer, stages: dict[str, Any]
+    db_session: Session, customer: Organization, stages: dict[str, Any]
 ) -> None:
     """`null`, not `0`. Zero per cent means "I lost everything"; no closed deals means
     something else. Same rule as slice 4 §7.1's margin percentage, and the *same* rule so
@@ -331,7 +331,7 @@ def test_the_conversion_rate_is_null_when_nothing_closed(
 
 
 def test_the_conversion_rate_is_zero_when_everything_was_lost(
-    db_session: Session, customer: Customer, stages: dict[str, Any]
+    db_session: Session, customer: Organization, stages: dict[str, Any]
 ) -> None:
     """The other half of the same distinction, which a `null`-only test would not catch."""
     _deal(db_session, customer, stages["lost"].id, closed_at=date(2026, 3, 10))
@@ -340,7 +340,7 @@ def test_the_conversion_rate_is_zero_when_everything_was_lost(
 
 
 def test_deals_closed_before_the_column_existed_are_reported_not_counted(
-    db_session: Session, customer: Customer, stages: dict[str, Any]
+    db_session: Session, customer: Organization, stages: dict[str, Any]
 ) -> None:
     """§4.1: `closed_at` is not backfilled, so historical closures are unattributable. The
     dashboard says how many rather than counting them as zero or putting them in the wrong
@@ -356,7 +356,7 @@ def test_deals_closed_before_the_column_existed_are_reported_not_counted(
 
 
 def test_an_open_deal_with_no_closed_at_is_not_an_unattributable_closure(
-    db_session: Session, customer: Customer, stages: dict[str, Any]
+    db_session: Session, customer: Organization, stages: dict[str, Any]
 ) -> None:
     """Nearly every deal in the table is open and has no `closed_at`; counting those would
     make the warning meaningless the day it shipped."""
@@ -365,7 +365,7 @@ def test_an_open_deal_with_no_closed_at_is_not_an_unattributable_closure(
 
 
 def test_expected_closures_counts_open_deals_in_the_window(
-    db_session: Session, customer: Customer, stages: dict[str, Any]
+    db_session: Session, customer: Organization, stages: dict[str, Any]
 ) -> None:
     _deal(db_session, customer, stages["lead"].id, expected_close_date=date(2026, 3, 15))
     _deal(db_session, customer, stages["lead"].id, expected_close_date=date(2026, 6, 1))
@@ -387,7 +387,7 @@ def test_expected_closures_counts_open_deals_in_the_window(
 
 
 def test_pending_offers_carries_the_age_in_days(
-    db_session: Session, customer: Customer, monkeypatch: pytest.MonkeyPatch
+    db_session: Session, customer: Organization, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The age is the emitter's day minus `status_since`, not the database server's.
 
@@ -409,7 +409,7 @@ def test_pending_offers_carries_the_age_in_days(
 
 
 def test_pending_offers_ignores_offers_in_any_other_state(
-    db_session: Session, customer: Customer
+    db_session: Session, customer: Organization
 ) -> None:
     for status in ("draft", "accepted", "rejected"):
         _offer(db_session, customer, f"Offerta {status}", status=status)
@@ -417,7 +417,7 @@ def test_pending_offers_ignores_offers_in_any_other_state(
 
 
 def test_pending_offers_ignores_a_soft_deleted_offer(
-    db_session: Session, customer: Customer
+    db_session: Session, customer: Organization
 ) -> None:
     row = _offer(db_session, customer, "Offerta cestinata")
     row.deleted_at = datetime.now(UTC)
@@ -428,7 +428,7 @@ def test_pending_offers_ignores_a_soft_deleted_offer(
 
 
 def test_pending_offers_are_oldest_first_with_unknown_ages_last(
-    db_session: Session, customer: Customer
+    db_session: Session, customer: Organization
 ) -> None:
     """Oldest first because the list exists to be acted on from the top, and an offer with
     no known start date is not the oldest one.
@@ -450,7 +450,7 @@ def test_pending_offers_are_oldest_first_with_unknown_ages_last(
 
 
 def test_the_list_is_truncated_but_the_count_is_the_real_total(
-    db_session: Session, customer: Customer
+    db_session: Session, customer: Organization
 ) -> None:
     """A dashboard showing twenty of ninety must say ninety: a truncated list presented as
     the whole is the "partial results without saying so" failure §12 names."""
@@ -463,7 +463,7 @@ def test_the_list_is_truncated_but_the_count_is_the_real_total(
 
 
 def test_an_offer_with_no_status_since_has_to_null_age_rather_than_zero(
-    db_session: Session, customer: Customer
+    db_session: Session, customer: Organization
 ) -> None:
     """The backfill covers documents with a `state_changed` in their timeline; one written
     directly by a fixture or an import has none. Zero days would read as "sent today"."""
@@ -474,7 +474,7 @@ def test_an_offer_with_no_status_since_has_to_null_age_rather_than_zero(
 
 
 def test_the_signal_counts_accepted_offers_whose_deal_is_not_won(
-    db_session: Session, customer: Customer, stages: dict[str, Any]
+    db_session: Session, customer: Organization, stages: dict[str, Any]
 ) -> None:
     """§6.2's first signal, and the permanent cross-check on automation A1: if the
     automation goes quiet, this count speaks. A `COUNT` across a join, which §3 permits --
@@ -506,7 +506,7 @@ def test_the_signal_counts_accepted_offers_whose_deal_is_not_won(
 
 
 def test_the_signal_ignores_an_offer_that_was_never_accepted(
-    db_session: Session, customer: Customer, stages: dict[str, Any]
+    db_session: Session, customer: Organization, stages: dict[str, Any]
 ) -> None:
     """An offer still out for signature on an open deal is the normal case, not a signal."""
     deal = _deal(db_session, customer, stages["lead"].id)
@@ -526,7 +526,7 @@ def test_the_signal_ignores_an_offer_that_was_never_accepted(
 
 
 def test_the_signal_ignores_an_accepted_offer_with_no_deal(
-    db_session: Session, customer: Customer
+    db_session: Session, customer: Organization
 ) -> None:
     """An offer attached to a customer has no deal to be won, so it is not an
     inconsistency."""
@@ -535,7 +535,7 @@ def test_the_signal_ignores_an_accepted_offer_with_no_deal(
 
 
 def test_the_signal_ignores_a_soft_deleted_deal(
-    db_session: Session, customer: Customer, stages: dict[str, Any]
+    db_session: Session, customer: Organization, stages: dict[str, Any]
 ) -> None:
     deal = _deal(db_session, customer, stages["lead"].id)
     deal.deleted_at = datetime.now(UTC)
@@ -555,7 +555,7 @@ def test_the_signal_ignores_a_soft_deleted_deal(
 
 
 def test_the_signal_ignores_a_soft_deleted_offer(
-    db_session: Session, customer: Customer, stages: dict[str, Any]
+    db_session: Session, customer: Organization, stages: dict[str, Any]
 ) -> None:
     deal = _deal(db_session, customer, stages["lead"].id)
     offer = Document(
@@ -601,7 +601,7 @@ def _line(
 
 
 def test_the_monthly_recurring_value_of_the_open_deals_is_a_monthly_figure_per_line(
-    db_session: Session, customer: Customer, stages: dict[str, Any]
+    db_session: Session, customer: Organization, stages: dict[str, Any]
 ) -> None:
     """**§3 exception 3.** A monthly fee counts as it is, an annual one a twelfth, a day
     line by its days a month, a one-off nothing; a won deal is not an open one."""
@@ -620,7 +620,7 @@ def test_the_monthly_recurring_value_of_the_open_deals_is_a_monthly_figure_per_l
 
 
 def test_the_monthly_recurring_value_of_the_won_deals_is_the_periods_by_closed_at(
-    db_session: Session, customer: Customer, stages: dict[str, Any]
+    db_session: Session, customer: Organization, stages: dict[str, Any]
 ) -> None:
     inside = _deal(db_session, customer, stages["won"].id, closed_at=date(2026, 3, 10))
     _line(db_session, inside, period="annual", price="6000.00")
@@ -641,7 +641,7 @@ def test_the_monthly_recurring_value_of_the_won_deals_is_the_periods_by_closed_a
 
 
 def test_the_monthly_recurring_value_is_zero_when_nothing_recurs(
-    db_session: Session, customer: Customer, stages: dict[str, Any]
+    db_session: Session, customer: Organization, stages: dict[str, Any]
 ) -> None:
     repo = DealRepository(db_session)
     assert repo.open_monthly_recurring() == Decimal("0.00")

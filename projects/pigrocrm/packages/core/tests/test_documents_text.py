@@ -17,12 +17,12 @@ from test_text import minimal_pdf, minimal_pdf_pages
 
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.config import Settings
-from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.documents.models import DocumentVersion
 from pigrocrm.core.documents.schemas import DocumentCreate, DocumentRead
 from pigrocrm.core.documents.service import DocumentService
 from pigrocrm.core.documents.text import TEXT_SOURCE_MAX_BYTES
 from pigrocrm.core.errors import Conflict, NotFound
+from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.storage import LocalFileStorage
 from pigrocrm.core.text import PROVENANCE, TEXT_TRUNCATION_MARKER
 
@@ -39,21 +39,21 @@ def service(db_session: Session, tmp_path: Path) -> DocumentService:
 
 
 @pytest.fixture
-def customer(db_session: Session) -> Customer:
-    row = Customer(legal_name="ACME S.r.l.")
+def customer(db_session: Session) -> Organization:
+    row = Organization(legal_name="ACME S.r.l.")
     db_session.add(row)
     db_session.flush()
     return row
 
 
-def _document(service: DocumentService, customer: Customer) -> DocumentRead:
+def _document(service: DocumentService, customer: Organization) -> DocumentRead:
     return service.create(
         DocumentCreate(customer_id=customer.id, type="document", title="Modulo d'ordine"), ADMIN
     )
 
 
 def test_reads_the_text_of_the_current_version(
-    service: DocumentService, customer: Customer
+    service: DocumentService, customer: Organization
 ) -> None:
     document = _document(service, customer)
     service.add_version(
@@ -69,7 +69,7 @@ def test_reads_the_text_of_the_current_version(
 
 
 def test_without_to_number_it_is_the_latest_version_and_not_the_first(
-    service: DocumentService, customer: Customer
+    service: DocumentService, customer: Organization
 ) -> None:
     """The default is `current_version`, which is what an agent holding only a
     document id means by "the document"."""
@@ -84,7 +84,7 @@ def test_without_to_number_it_is_the_latest_version_and_not_the_first(
 
 
 def test_an_explicit_number_reads_that_version(
-    service: DocumentService, customer: Customer
+    service: DocumentService, customer: Organization
 ) -> None:
     document = _document(service, customer)
     service.add_version(document.id, minimal_pdf(["prima stesura"]), "application/pdf", ADMIN)
@@ -97,7 +97,7 @@ def test_an_explicit_number_reads_that_version(
 
 
 def test_a_version_nobody_uploaded_is_not_found(
-    service: DocumentService, customer: Customer
+    service: DocumentService, customer: Organization
 ) -> None:
     document = _document(service, customer)
     service.add_version(document.id, minimal_pdf(["unica"]), "application/pdf", ADMIN)
@@ -107,7 +107,7 @@ def test_a_version_nobody_uploaded_is_not_found(
 
 
 def test_a_document_without_versions_is_not_found(
-    service: DocumentService, customer: Customer
+    service: DocumentService, customer: Organization
 ) -> None:
     """`current_version` is 0 on a document nobody has uploaded to, and the honest
     answer is the same as for a version number that does not exist: there is no file."""
@@ -125,7 +125,7 @@ def test_an_unknown_document_is_not_found(service: DocumentService) -> None:
 
 
 def test_the_xml_of_an_invoice_is_read_as_text(
-    service: DocumentService, customer: Customer
+    service: DocumentService, customer: Organization
 ) -> None:
     """The FatturaPA file holds, in plain characters, the fields the PDF only prints."""
     document = _document(service, customer)
@@ -140,7 +140,7 @@ def test_the_xml_of_an_invoice_is_read_as_text(
 
 
 def test_a_type_with_no_text_answers_empty_with_its_mime(
-    service: DocumentService, customer: Customer
+    service: DocumentService, customer: Organization
 ) -> None:
     """Not an exception, and not a bare empty string either: the mime is how a caller
     says *which* file it could not read."""
@@ -156,7 +156,7 @@ def test_a_type_with_no_text_answers_empty_with_its_mime(
 
 
 def test_a_scan_without_a_text_layer_is_not_reported_as_truncated(
-    service: DocumentService, customer: Customer
+    service: DocumentService, customer: Organization
 ) -> None:
     document = _document(service, customer)
     service.add_version(document.id, minimal_pdf([]), "application/pdf", ADMIN)
@@ -168,7 +168,7 @@ def test_a_scan_without_a_text_layer_is_not_reported_as_truncated(
 
 
 def test_text_longer_than_the_ceiling_is_cut_and_says_so(
-    service: DocumentService, customer: Customer
+    service: DocumentService, customer: Organization
 ) -> None:
     document = _document(service, customer)
     service.add_version(document.id, b"a" * 500, "text/plain", ADMIN)
@@ -180,7 +180,7 @@ def test_text_longer_than_the_ceiling_is_cut_and_says_so(
 
 
 def test_the_ceiling_comes_from_the_settings_when_the_caller_gives_none(
-    db_session: Session, tmp_path: Path, customer: Customer
+    db_session: Session, tmp_path: Path, customer: Organization
 ) -> None:
     service = DocumentService(
         db_session,
@@ -194,7 +194,7 @@ def test_the_ceiling_comes_from_the_settings_when_the_caller_gives_none(
 
 
 def test_a_file_too_large_to_parse_is_refused_rather_than_cut(
-    service: DocumentService, customer: Customer, db_session: Session
+    service: DocumentService, customer: Organization, db_session: Session
 ) -> None:
     """Half a PDF is not a PDF: the bytes ceiling refuses, where the text ceiling cuts.
 
@@ -215,7 +215,7 @@ def test_a_file_too_large_to_parse_is_refused_rather_than_cut(
 
 
 def test_a_pdf_beyond_the_page_ceiling_reports_that_it_stopped(
-    service: DocumentService, customer: Customer
+    service: DocumentService, customer: Organization
 ) -> None:
     """`truncated` covers the page ceiling too, which leaves nothing in the text to
     notice -- see `_extracted`. Six hundred pages, one word each: far under any byte
@@ -230,7 +230,9 @@ def test_a_pdf_beyond_the_page_ceiling_reports_that_it_stopped(
     assert read.truncated is True
 
 
-def test_every_answer_carries_its_provenance(service: DocumentService, customer: Customer) -> None:
+def test_every_answer_carries_its_provenance(
+    service: DocumentService, customer: Organization
+) -> None:
     """The one field that is not about the file: whoever reads `text` is reading words
     written outside this system, and has to be told so in the same payload."""
     document = _document(service, customer)

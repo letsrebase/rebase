@@ -16,7 +16,6 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.db import (
     CURSOR_MAX_LENGTH,
     SortSpec,
@@ -28,10 +27,11 @@ from pigrocrm.core.db import (
 )
 from pigrocrm.core.db.base import uuid7
 from pigrocrm.core.errors import ValidationFailed
+from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.people.models import Person
 
-_TEXT = SortSpec(key="legal_name", column=Customer.legal_name, kind="text", nullable=False)
-_STAMP = SortSpec(key="created_at", column=Customer.created_at, kind="datetime", nullable=False)
+_TEXT = SortSpec(key="legal_name", column=Organization.legal_name, kind="text", nullable=False)
+_STAMP = SortSpec(key="created_at", column=Organization.created_at, kind="datetime", nullable=False)
 _NULLABLE = SortSpec(key="last_name", column=Person.last_name, kind="text", nullable=True)
 
 
@@ -76,10 +76,10 @@ def test_the_longest_value_the_column_admits_still_fits_the_cursor_bound(
     character: str,
 ) -> None:
     """`CURSOR_MAX_LENGTH` is a rejection threshold as well as a documented size, so a
-    legitimate cursor must not be able to exceed it. `customers.legal_name` is
+    legitimate cursor must not be able to exceed it. `organizations.legal_name` is
     String(255) and is the longest whitelisted sort column in the slice; a bound that
     refused its own output would make the last page of an ordered scan unreachable, and
-    only for customers whose names contain the expensive characters.
+    only for organizations whose names contain the expensive characters.
 
     This is what caught the brief's `CURSOR_MAX_LENGTH = 512`: 255 accented characters
     encode to a 2138-character cursor under `json.dumps`'s default `ensure_ascii=True`,
@@ -170,7 +170,7 @@ def test_the_whitelist_refuses_a_key_it_does_not_contain() -> None:
     assert whitelist.resolve(None).key == "created_at"
     assert whitelist.resolve("legal_name").key == "legal_name"
     with pytest.raises(ValidationFailed) as caught:
-        whitelist.resolve("note; DROP TABLE customers")
+        whitelist.resolve("note; DROP TABLE organizations")
     assert caught.value.details["field"] == "sort"
 
 

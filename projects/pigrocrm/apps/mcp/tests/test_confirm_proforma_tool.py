@@ -14,18 +14,18 @@ from mcp import Client
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.actor import Actor
-from pigrocrm.core.customers.schemas import CustomerCreate
-from pigrocrm.core.customers.service import CustomerService
 from pigrocrm.core.fiscal.schemas import FiscalProfileUpsert
 from pigrocrm.core.fiscal.service import FiscalProfileService
+from pigrocrm.core.organizations.schemas import OrganizationCreate
+from pigrocrm.core.organizations.service import OrganizationService
 
 LINE = {"description": "Consulenza", "quantity": "2", "unit_price": "100.00"}
 
 
 def _customer(session: Session) -> str:
     FiscalProfileService(session).upsert(FiscalProfileUpsert(regime_code="RF19"), Actor.system())
-    customer = CustomerService(session).create(
-        CustomerCreate(legal_name="Bozze S.r.l.", vat_number="12345678901"),
+    customer = OrganizationService(session).create(
+        OrganizationCreate(legal_name="Bozze S.r.l.", vat_number="12345678901"),
         Actor(id=None, type="mcp", role="admin"),
     )
     return str(customer.id)

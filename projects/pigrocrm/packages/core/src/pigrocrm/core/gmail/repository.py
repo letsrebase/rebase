@@ -11,7 +11,6 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import DBAPIError, IntegrityError
 from sqlalchemy.orm import Session
 
-from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.db import escape_like
 from pigrocrm.core.deals.models import Deal
 from pigrocrm.core.documents.models import Document, DocumentVersion
@@ -27,6 +26,7 @@ from pigrocrm.core.gmail.roster import EntityRef
 from pigrocrm.core.gmail.schemas import EDITABLE_SEND_STATES
 from pigrocrm.core.invoices.models import Invoice
 from pigrocrm.core.legal_entities.models import LegalEntity
+from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.people.models import Person
 
 # An arbitrary but stable first key for `pg_try_advisory_lock(int, int)`, so this
@@ -780,14 +780,14 @@ class GmailRepository:
         none, or names none. It supplies the `From` display name and the Message-ID
         domain, so a letter about legal entity X's customer leaves in X's name."""
         legal_entity_id: UUID | None = None
-        if entity_type == "customer":
+        if entity_type == "organization":
             legal_entity_id = self.session.execute(
-                select(Customer.legal_entity_id).where(Customer.id == entity_id)
+                select(Organization.legal_entity_id).where(Organization.id == entity_id)
             ).scalar_one_or_none()
         elif entity_type == "person":
             legal_entity_id = self.session.execute(
-                select(Customer.legal_entity_id)
-                .join(Person, Person.customer_id == Customer.id)
+                select(Organization.legal_entity_id)
+                .join(Person, Person.customer_id == Organization.id)
                 .where(Person.id == entity_id)
             ).scalar_one_or_none()
         elif entity_type == "deal":

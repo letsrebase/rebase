@@ -3,11 +3,11 @@ import { safeAppRedirect, slugProblem, slugify, tenantPrefixFrom } from './tenan
 
 describe('the space prefix', () => {
   it('is read from /<slug>/app/... and nothing else', () => {
-    expect(tenantPrefixFrom('/studio/app/customers/abc')).toBe('/studio')
+    expect(tenantPrefixFrom('/studio/app/organizations/abc')).toBe('/studio')
     expect(tenantPrefixFrom('/studio/app')).toBe('/studio')
-    expect(tenantPrefixFrom('/app/customers')).toBe('')
+    expect(tenantPrefixFrom('/app/organizations')).toBe('')
     expect(tenantPrefixFrom('/')).toBe('')
-    expect(tenantPrefixFrom('/studio/customers')).toBe('')
+    expect(tenantPrefixFrom('/studio/organizations')).toBe('')
   })
 
   it('never mistakes a reserved word or a malformed segment for a space', () => {
@@ -44,12 +44,12 @@ describe('slugProblem', () => {
 describe('safeAppRedirect', () => {
   it('accepts a deep link under /app, search and all', () => {
     expect(safeAppRedirect('/app/invoices/42')).toBe('/app/invoices/42')
-    expect(safeAppRedirect('/app/customers?search=rossi')).toBe('/app/customers?search=rossi')
+    expect(safeAppRedirect('/app/organizations?search=rossi')).toBe('/app/organizations?search=rossi')
   })
 
   it('refuses anything not resolving under /app, undefined, a scheme or a protocol-relative address', () => {
     expect(safeAppRedirect(undefined)).toBeUndefined()
-    expect(safeAppRedirect('/customers')).toBeUndefined()
+    expect(safeAppRedirect('/organizations')).toBeUndefined()
     expect(safeAppRedirect('https://evil.example/steal')).toBeUndefined()
     expect(safeAppRedirect('//evil.example/app/steal')).toBeUndefined()
   })

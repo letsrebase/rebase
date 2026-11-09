@@ -15,7 +15,7 @@ from pigrocrm.core.validation import SafeStr
 # -- and no migration. That is R13 stated correctly; the earlier phrasing ("no
 # changes required") has now been checked and disproved three times, once per slice.
 EntityType = Literal[
-    "customer",
+    "organization",
     "person",
     "deal",
     "document",

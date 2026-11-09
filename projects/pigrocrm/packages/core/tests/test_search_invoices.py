@@ -31,9 +31,9 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.actor import Actor
-from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.db.base import uuid7
 from pigrocrm.core.invoices.models import Invoice
+from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.search.schemas import SearchGroup, SearchQuery, parse_fiscal_number
 from pigrocrm.core.search.service import SearchService
 
@@ -79,7 +79,7 @@ def test_parse_fiscal_number(term: str, expected: tuple[int | None, int] | None)
 
 
 @pytest.fixture
-def invoices(db_session: Session) -> Customer:
+def invoices(db_session: Session) -> Organization:
     """Five invoices on one customer, and every one of them is load-bearing.
 
     `2026/7` and `2025/7` share a number across two years, which is what makes "a bare
@@ -88,7 +88,7 @@ def invoices(db_session: Session) -> Customer:
     number does not, so a search for `123` that also trigrammed the memo would return
     two rows instead of one.
     """
-    customer = Customer(legal_name="Cliente Srl", country="IT", custom_fields={})
+    customer = Organization(legal_name="Cliente Srl", country="IT", custom_fields={})
     db_session.add(customer)
     db_session.flush()
     for year, number, memo in (
@@ -127,14 +127,14 @@ def _group(db_session: Session, term: str) -> SearchGroup:
 
 
 def test_the_invoice_group_is_always_present_and_fifth(
-    db_session: Session, invoices: Customer
+    db_session: Session, invoices: Organization
 ) -> None:
     """A missing group and an empty group render identically in a palette (§8.6), and the
     order is fixed because a palette whose sections move between keystrokes cannot be
     driven with the keyboard."""
     results = SearchService(db_session).search_everything(SearchQuery(term="zzzqqq"), READONLY)
     assert [group.entity for group in results.groups] == [
-        "customer",
+        "organization",
         "person",
         "deal",
         "document",
@@ -147,7 +147,7 @@ def test_the_invoice_group_is_always_present_and_fifth(
     assert invoices_group.hits == []
 
 
-def test_the_memo_is_searchable_by_to_fragment(db_session: Session, invoices: Customer) -> None:
+def test_the_memo_is_searchable_by_to_fragment(db_session: Session, invoices: Organization) -> None:
     group = _group(db_session, "impianti")
     assert group.total == 1
     assert group.total_is_minimum is False
@@ -156,7 +156,7 @@ def test_the_memo_is_searchable_by_to_fragment(db_session: Session, invoices: Cu
 
 
 def test_a_full_fiscal_number_finds_exactly_that_invoice(
-    db_session: Session, invoices: Customer
+    db_session: Session, invoices: Organization
 ) -> None:
     group = _group(db_session, "2026/7")
     assert group.total == 1
@@ -169,7 +169,7 @@ def test_a_full_fiscal_number_finds_exactly_that_invoice(
 
 @pytest.mark.parametrize("term", ["7/2026", "2026-7", "2026/007"])
 def test_every_spelling_of_the_same_number_finds_the_same_invoice(
-    db_session: Session, invoices: Customer, term: str
+    db_session: Session, invoices: Organization, term: str
 ) -> None:
     group = _group(db_session, term)
     assert group.total == 1
@@ -177,7 +177,7 @@ def test_every_spelling_of_the_same_number_finds_the_same_invoice(
 
 
 def test_a_bare_number_finds_that_number_in_every_year(
-    db_session: Session, invoices: Customer
+    db_session: Session, invoices: Organization
 ) -> None:
     """`007` has no year, so it matches invoice 7 of every year. Guessing the current year
     would hide last year's invoice 7 with nothing on screen to say so -- a partial result
@@ -191,7 +191,7 @@ def test_a_bare_number_finds_that_number_in_every_year(
 
 
 def test_to_fiscal_number_term_does_not_also_trigram_the_memo(
-    db_session: Session, invoices: Customer
+    db_session: Session, invoices: Organization
 ) -> None:
     """The two paths are exclusive, and this is the assertion that measures it.
 
@@ -213,7 +213,7 @@ def test_to_fiscal_number_term_does_not_also_trigram_the_memo(
 
 
 def test_a_draft_invoice_has_no_number_and_is_not_found_by_one(
-    db_session: Session, invoices: Customer
+    db_session: Session, invoices: Organization
 ) -> None:
     """`year`/`number` are NULL until emission -- that is what makes "a failed creation
     cannot burn a number" true by construction (slice 3). A draft is still findable by its
@@ -248,7 +248,9 @@ def test_a_draft_invoice_has_no_number_and_is_not_found_by_one(
     assert _group(db_session, "456").total == 0
 
 
-def test_a_soft_deleted_invoice_is_not_a_result(db_session: Session, invoices: Customer) -> None:
+def test_a_soft_deleted_invoice_is_not_a_result(
+    db_session: Session, invoices: Organization
+) -> None:
     """Both directions, because `totale == 0` alone would also be what a term matching
     nothing looked like.
 
@@ -295,7 +297,7 @@ def test_a_soft_deleted_invoice_is_not_a_result(db_session: Session, invoices: C
 
 
 def test_the_hit_carries_the_customer_as_its_subtitle(
-    db_session: Session, invoices: Customer
+    db_session: Session, invoices: Organization
 ) -> None:
     """On both paths. The subtitle is resolved after the limit, for at most `limit` rows,
     and a lookup wired into one path only would leave the other's rows unattributed."""
@@ -304,7 +306,7 @@ def test_the_hit_carries_the_customer_as_its_subtitle(
 
 
 def test_the_group_is_truncated_to_the_limit_and_reports_the_real_count(
-    db_session: Session, invoices: Customer
+    db_session: Session, invoices: Organization
 ) -> None:
     """§8.5's "five per class plus the real count", on the trigram path.
 
@@ -343,7 +345,7 @@ def test_the_group_is_truncated_to_the_limit_and_reports_the_real_count(
 
 
 def test_the_order_is_total_so_two_identical_searches_agree(
-    db_session: Session, invoices: Customer
+    db_session: Session, invoices: Organization
 ) -> None:
     """Criterion 4 in miniature. Both paths, because the equality path has an `ORDER BY` of
     its own and a missing tie-break there would be just as unstable as one in the scored

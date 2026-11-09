@@ -4,7 +4,7 @@ No brief exists for this task (task-8-brief.md was never written to
 `.superpowers/sdd/2026-08-10-slice-2-documenti-e-template/`); these shapes are
 derived directly from `Template`'s own committed columns (name String(120), type
 String(20), body_markdown Text, declared_variables JSONB, active Boolean) and from
-the conventions every sibling domain in this package already follows (`customers/
+the conventions every sibling domain in this package already follows (`organizations/
 schemas.py`, `fields/schemas.py`, `pipeline/schemas.py`).
 """
 

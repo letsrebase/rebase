@@ -20,7 +20,6 @@ from sqlalchemy import Engine, text
 from sqlalchemy.orm import Session, sessionmaker
 
 from pigrocrm.core.actor import Actor
-from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.db import session_factory
 from pigrocrm.core.db.clock import today_local
 from pigrocrm.core.errors import ImmutableField
@@ -39,6 +38,7 @@ from pigrocrm.core.invoices.schemas import (
 from pigrocrm.core.invoices.service import InvoiceService
 from pigrocrm.core.legal_entities.schemas import LegalEntityUpsert
 from pigrocrm.core.legal_entities.service import LegalEntityService
+from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.storage.local import LocalFileStorage
 
 ADMIN = Actor(id=None, type="user", role="admin")
@@ -88,7 +88,7 @@ def committed_draft(db_engine: Engine) -> Iterator[tuple[sessionmaker[Session], 
                 ADMIN,
             )
             FiscalProfileService(setup).upsert(FiscalProfileUpsert(regime_code="RF19"), ADMIN)
-            customer = Customer(
+            customer = Organization(
                 legal_name="Acme S.r.l.",
                 vat_number="98765432109",
                 sdi_code="ABCDEFG",
@@ -137,7 +137,9 @@ def committed_draft(db_engine: Engine) -> Iterator[tuple[sessionmaker[Session], 
                 dict(original),
             )
             if customer_id is not None:
-                cleaner.execute(text("DELETE FROM customers WHERE id = :id"), {"id": customer_id})
+                cleaner.execute(
+                    text("DELETE FROM organizations WHERE id = :id"), {"id": customer_id}
+                )
             cleaner.commit()
 
 

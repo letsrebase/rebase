@@ -37,7 +37,7 @@ const users = [
 const search = {
   deadline: 'Flore',
   groups: [
-    { entity: 'customer', hits: [], total: 0, total_and_a_minimum: false },
+    { entity: 'organization', hits: [], total: 0, total_and_a_minimum: false },
     {
       entity: 'deal',
       hits: [

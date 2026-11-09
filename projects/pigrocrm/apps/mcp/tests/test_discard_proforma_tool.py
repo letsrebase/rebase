@@ -17,14 +17,14 @@ from mcp import Client
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.actor import Actor
-from pigrocrm.core.customers.schemas import CustomerCreate
-from pigrocrm.core.customers.service import CustomerService
 from pigrocrm.core.fiscal.schemas import FiscalProfileUpsert
 from pigrocrm.core.fiscal.service import FiscalProfileService
 from pigrocrm.core.invoices.schemas import InvoiceCreate, InvoiceIssue, InvoiceLineIn
 from pigrocrm.core.invoices.service import InvoiceService
 from pigrocrm.core.legal_entities.schemas import LegalEntityUpsert
 from pigrocrm.core.legal_entities.service import LegalEntityService
+from pigrocrm.core.organizations.schemas import OrganizationCreate
+from pigrocrm.core.organizations.service import OrganizationService
 from pigrocrm.core.storage import LocalFileStorage
 
 LINE = {"description": "Consulenza", "quantity": "2", "unit_price": "100.00"}
@@ -65,8 +65,8 @@ def _customer(session: Session, *, exportable: bool = False) -> str:
         if exportable
         else {}
     )
-    customer = CustomerService(session).create(
-        CustomerCreate(legal_name="Bozze S.r.l.", vat_number="12345678901", **recipient),
+    customer = OrganizationService(session).create(
+        OrganizationCreate(legal_name="Bozze S.r.l.", vat_number="12345678901", **recipient),
         Actor(id=None, type="mcp", role="admin"),
     )
     return str(customer.id)
@@ -95,7 +95,7 @@ async def test_a_proforma_draft_is_discarded_and_is_gone_from_the_reads(
         assert [item["id"] for item in listed.structured_content["items"]] == []
 
 
-async def test_a_discarded_proforma_takes_its_pdf_out_of_the_customers_documents(
+async def test_a_discarded_proforma_takes_its_pdf_out_of_the_organizations_documents(
     server: Any, mcp_session: Session
 ) -> None:
     """ORB-41: `render_proforma_pdf` files the PDF among the customer's documents, and

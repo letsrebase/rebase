@@ -20,10 +20,10 @@ from sqlalchemy.orm import Session
 from conftest import _invoice_service
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.contracts.models import Contract, RateCard
-from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.documents.models import Document, DocumentVersion
 from pigrocrm.core.errors import Conflict, NotFound, ValidationFailed
 from pigrocrm.core.invoices.schemas import InvoiceIssue
+from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.storage.local import LocalFileStorage
 from pigrocrm.core.work_units.dispute_bundle import (
     SOURCE_MAX_BYTES,
@@ -42,7 +42,7 @@ EMAIL = b"From: giulia@cliente.example\nSubject: Ok\n\nConfermo le giornate di m
 
 
 def _contract(session: Session) -> Contract:
-    customer = Customer(
+    customer = Organization(
         legal_name=f"Acme S.r.l. {uuid4().hex[:6]}",
         vat_number="01234567890",
         sdi_code="ABCDEFG",

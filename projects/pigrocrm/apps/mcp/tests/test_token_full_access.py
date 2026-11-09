@@ -94,7 +94,7 @@ async def test_an_ordinary_tool_is_unaffected_by_the_flag(
     mcp_session: Session, tmp_path: Path
 ) -> None:
     async with Client(_server(mcp_session, tmp_path, OPEN, full_access=False)) as client:
-        result = await client.call_tool("describe_schema", {"entity_type": "customer"})
+        result = await client.call_tool("describe_schema", {"entity_type": "organization"})
 
     assert not result.is_error
 

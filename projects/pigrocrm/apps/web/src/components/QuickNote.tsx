@@ -18,9 +18,9 @@ import { toProblem } from '@/lib/api'
 import { useModules } from '@/lib/modules'
 
 /** The records a note hangs from: a note is never on an invoice. */
-const NOTE_KINDS: readonly LinkKind[] = ['customer', 'person', 'deal']
+const NOTE_KINDS: readonly LinkKind[] = ['organization', 'person', 'deal']
 
-type NoteTarget = LinkValue & { kind: 'customer' | 'person' | 'deal' }
+type NoteTarget = LinkValue & { kind: 'organization' | 'person' | 'deal' }
 
 /**
  * «Nota» of the phone's quick add (REB-959): pick the customer, person or deal and write

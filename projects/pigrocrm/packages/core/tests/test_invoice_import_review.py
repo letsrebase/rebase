@@ -19,7 +19,6 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.actor import Actor
-from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.documents.schemas import DocumentCreate
 from pigrocrm.core.documents.service import DocumentService
 from pigrocrm.core.errors import AgentForbidden, PermissionDenied, ValidationFailed
@@ -27,6 +26,7 @@ from pigrocrm.core.invoices.models import Invoice
 from pigrocrm.core.invoices.service import InvoiceService
 from pigrocrm.core.legal_entities.models import LegalEntity
 from pigrocrm.core.legal_entities.repository import LegalEntityRepository
+from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.storage import LocalFileStorage
 
 FIXTURES = Path(__file__).parent / "fixtures" / "fatturapa"
@@ -37,7 +37,7 @@ ADMIN = Actor(id=None, type="user", role="admin")
 # `LegalEntity` is what makes the fixture "outgoing" for the account holder.
 SUPPLIER_VAT_NUMBER = "01234567890"
 SUPPLIER_CF = "BNCCHR85M41H501Z"
-# Its `CessionarioCommittente` (cliente): matching this on a `Customer` is what
+# Its `CessionarioCommittente` (cliente): matching this on a `Organization` is what
 # turns an otherwise-`"ready"` outcome into a real match instead of `"needs_
 # customer_confirmation"`.
 CUSTOMER_VAT_NUMBER = "09876543210"
@@ -74,7 +74,7 @@ def _document(
     content: bytes,
     *,
     content_type: str = "application/xml",
-    owner: Customer | None = None,
+    owner: Organization | None = None,
 ) -> UUID:
     """A `documents` row carrying `content` as its current version -- the same door
     (`POST /api/documents/upload`, in production) the design record names as the

@@ -19,9 +19,9 @@ from sqlalchemy.orm import Session
 
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.auth.models import User
-from pigrocrm.core.customers.schemas import CustomerCreate, CustomerUpdate
-from pigrocrm.core.customers.service import CustomerService
 from pigrocrm.core.errors import NotFound, PermissionDenied, ValidationFailed
+from pigrocrm.core.organizations.schemas import OrganizationCreate, OrganizationUpdate
+from pigrocrm.core.organizations.service import OrganizationService
 
 CORE_ROOT = Path(__file__).resolve().parents[1]
 
@@ -46,16 +46,16 @@ def _actor(user: User) -> Actor:
 def test_a_customer_created_by_a_member_is_owned_by_that_member(db_session: Session) -> None:
     member = _user(db_session)
 
-    created = CustomerService(db_session).create(
-        CustomerCreate(legal_name="ACME Srl"), _actor(member)
+    created = OrganizationService(db_session).create(
+        OrganizationCreate(legal_name="ACME Srl"), _actor(member)
     )
 
     assert created.owner_id == member.id
 
 
 def test_a_customer_created_by_a_job_has_no_owner(db_session: Session) -> None:
-    created = CustomerService(db_session).create(
-        CustomerCreate(legal_name="ACME Srl"), Actor.system()
+    created = OrganizationService(db_session).create(
+        OrganizationCreate(legal_name="ACME Srl"), Actor.system()
     )
 
     assert created.owner_id is None
@@ -65,13 +65,13 @@ def test_a_member_cannot_hand_a_new_customer_to_somebody_else(db_session: Sessio
     member, other = _user(db_session), _user(db_session)
 
     with pytest.raises(PermissionDenied):
-        CustomerService(db_session).create(
-            CustomerCreate(legal_name="ACME Srl", owner_id=other.id), _actor(member)
+        OrganizationService(db_session).create(
+            OrganizationCreate(legal_name="ACME Srl", owner_id=other.id), _actor(member)
         )
 
     # Naming yourself is not handing it to anybody.
-    own = CustomerService(db_session).create(
-        CustomerCreate(legal_name="ACME Srl", owner_id=member.id), _actor(member)
+    own = OrganizationService(db_session).create(
+        OrganizationCreate(legal_name="ACME Srl", owner_id=member.id), _actor(member)
     )
     assert own.owner_id == member.id
 
@@ -79,8 +79,8 @@ def test_a_member_cannot_hand_a_new_customer_to_somebody_else(db_session: Sessio
 def test_an_admin_can_create_a_customer_for_somebody_else(db_session: Session) -> None:
     admin, other = _user(db_session, role="admin"), _user(db_session)
 
-    created = CustomerService(db_session).create(
-        CustomerCreate(legal_name="ACME Srl", owner_id=other.id), _actor(admin)
+    created = OrganizationService(db_session).create(
+        OrganizationCreate(legal_name="ACME Srl", owner_id=other.id), _actor(admin)
     )
 
     assert created.owner_id == other.id
@@ -89,40 +89,40 @@ def test_an_admin_can_create_a_customer_for_somebody_else(db_session: Session) -
 def test_an_admin_changes_the_owner_and_a_member_cannot(db_session: Session) -> None:
     admin = _user(db_session, role="admin")
     member, other = _user(db_session), _user(db_session)
-    service = CustomerService(db_session)
-    created = service.create(CustomerCreate(legal_name="ACME Srl"), _actor(member))
+    service = OrganizationService(db_session)
+    created = service.create(OrganizationCreate(legal_name="ACME Srl"), _actor(member))
 
     with pytest.raises(PermissionDenied):
-        service.update(created.id, CustomerUpdate(owner_id=other.id), _actor(member))
+        service.update(created.id, OrganizationUpdate(owner_id=other.id), _actor(member))
     assert service.get(created.id, _actor(member)).owner_id == member.id
 
-    moved = service.update(created.id, CustomerUpdate(owner_id=other.id), _actor(admin))
+    moved = service.update(created.id, OrganizationUpdate(owner_id=other.id), _actor(admin))
     assert moved.owner_id == other.id
 
-    cleared = service.update(created.id, CustomerUpdate(owner_id=None), _actor(admin))
+    cleared = service.update(created.id, OrganizationUpdate(owner_id=None), _actor(admin))
     assert cleared.owner_id is None
 
 
 def test_clearing_the_owner_is_an_admins_too(db_session: Session) -> None:
     member = _user(db_session)
-    service = CustomerService(db_session)
-    created = service.create(CustomerCreate(legal_name="ACME Srl"), _actor(member))
+    service = OrganizationService(db_session)
+    created = service.create(OrganizationCreate(legal_name="ACME Srl"), _actor(member))
 
     with pytest.raises(PermissionDenied):
-        service.update(created.id, CustomerUpdate(owner_id=None), _actor(member))
+        service.update(created.id, OrganizationUpdate(owner_id=None), _actor(member))
 
 
 def test_an_update_that_does_not_mention_the_owner_leaves_it_and_asks_nobody(
     db_session: Session,
 ) -> None:
     member = _user(db_session)
-    service = CustomerService(db_session)
-    created = service.create(CustomerCreate(legal_name="ACME Srl"), _actor(member))
+    service = OrganizationService(db_session)
+    created = service.create(OrganizationCreate(legal_name="ACME Srl"), _actor(member))
 
     renamed = service.update(
-        created.id, CustomerUpdate(contact_points=points_in(phone="02 1234567")), _actor(member)
+        created.id, OrganizationUpdate(contact_points=points_in(phone="02 1234567")), _actor(member)
     )
-    again = service.update(created.id, CustomerUpdate(owner_id=member.id), _actor(member))
+    again = service.update(created.id, OrganizationUpdate(owner_id=member.id), _actor(member))
 
     assert renamed.owner_id == member.id
     assert again.owner_id == member.id
@@ -131,12 +131,12 @@ def test_an_update_that_does_not_mention_the_owner_leaves_it_and_asks_nobody(
 def test_the_owner_must_be_an_active_user_that_exists(db_session: Session) -> None:
     admin = _user(db_session, role="admin")
     gone = _user(db_session, active=False)
-    service = CustomerService(db_session)
+    service = OrganizationService(db_session)
 
     with pytest.raises(NotFound):
-        service.create(CustomerCreate(legal_name="A", owner_id=uuid4()), _actor(admin))
+        service.create(OrganizationCreate(legal_name="A", owner_id=uuid4()), _actor(admin))
     with pytest.raises(ValidationFailed) as excinfo:
-        service.create(CustomerCreate(legal_name="B", owner_id=gone.id), _actor(admin))
+        service.create(OrganizationCreate(legal_name="B", owner_id=gone.id), _actor(admin))
     assert excinfo.value.details["field"] == "owner_id"
 
 
@@ -167,7 +167,7 @@ def _check_backfill(migration_engine: Engine, config: Config) -> None:
 
     ids = {name: uuid4() for name in ("a", "b", "c", "stage_open", "stage_won")}
     users = {name: uuid4() for name in ("one", "two", "three")}
-    customers = {name: uuid4() for name in ("only_open", "majority", "tie", "none", "won_only")}
+    organizations = {name: uuid4() for name in ("only_open", "majority", "tie", "none", "won_only")}
     with migration_engine.begin() as connection:
         for name, user_id in users.items():
             connection.execute(
@@ -196,10 +196,10 @@ def _check_backfill(migration_engine: Engine, config: Config) -> None:
                 ),
                 {"id": legal_entity},
             )
-        for name, customer_id in customers.items():
+        for name, customer_id in organizations.items():
             connection.execute(
                 text(
-                    "INSERT INTO customers (id, azienda_id, ragione_sociale, nazione, "
+                    "INSERT INTO organizations (id, azienda_id, ragione_sociale, nazione, "
                     "pagamento_fine_mese, custom_fields) "
                     "VALUES (:id, :azienda, :nome, 'IT', false, '{}')"
                 ),
@@ -216,7 +216,7 @@ def _check_backfill(migration_engine: Engine, config: Config) -> None:
                 {
                     "id": uuid4(),
                     "azienda": legal_entity,
-                    "customer": customers[customer],
+                    "organization": organizations[customer],
                     "stage": ids[stage],
                     "owner": users[owner] if owner else None,
                     "created": created,
@@ -236,9 +236,9 @@ def _check_backfill(migration_engine: Engine, config: Config) -> None:
     with migration_engine.connect() as connection:
         owners: dict[str, UUID | None] = {
             name: connection.execute(
-                text("SELECT owner_id FROM customers WHERE id = :id"), {"id": customer_id}
+                text("SELECT owner_id FROM organizations WHERE id = :id"), {"id": customer_id}
             ).scalar()
-            for name, customer_id in customers.items()
+            for name, customer_id in organizations.items()
         }
     assert owners == {
         "only_open": users["one"],
@@ -252,7 +252,7 @@ def _check_backfill(migration_engine: Engine, config: Config) -> None:
         columns = connection.execute(
             text(
                 "SELECT column_name FROM information_schema.columns "
-                "WHERE table_name = 'customers' AND column_name = 'owner_id'"
+                "WHERE table_name = 'organizations' AND column_name = 'owner_id'"
             )
         ).all()
     assert columns == []

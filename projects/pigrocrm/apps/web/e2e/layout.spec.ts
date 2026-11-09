@@ -27,7 +27,7 @@ const FIFTEENTH = `${Month}-15`
 
 /** A contract with a rate, a worked day in the month before this one and a draft invoice. */
 async function seedPages(request: APIRequestContext): Promise<{ contractId: string; invoiceId: string }> {
-  const customer = await request.post('/api/customers', {
+  const customer = await request.post('/api/organizations', {
     data: { legal_name: `Layout E2E ${Date.now()} Srl` },
   })
   expect(customer.status(), await customer.text()).toBe(201)

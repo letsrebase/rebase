@@ -31,7 +31,6 @@ from sqlalchemy import Engine, delete, func, select, text
 
 from pigrocrm.core.activities.models import Activity
 from pigrocrm.core.actor import Actor
-from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.dashboard.schemas import (
     MAX_PERIOD_DAYS,
     CommercialDashboard,
@@ -44,6 +43,7 @@ from pigrocrm.core.deals.models import Deal, DealValueLine
 from pigrocrm.core.deals.repository import DealRepository
 from pigrocrm.core.documents.models import Document
 from pigrocrm.core.errors import ValidationFailed
+from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.pipeline.models import PipelineStage
 from pigrocrm.core.pipeline.schemas import PipelineStageRead
 from pigrocrm.core.pipeline.service import PipelineService
@@ -75,7 +75,7 @@ def seeded(db_engine: Engine) -> Iterator[Seeded]:
     with factory() as session:
         PipelineService(session).seed_defaults(SEED)
         stages = {s.code: s for s in PipelineService(session).list() if s.code is not None}
-        customer = Customer(legal_name="DASH Cliente", country="IT", custom_fields={})
+        customer = Organization(legal_name="DASH Cliente", country="IT", custom_fields={})
         session.add(customer)
         session.flush()
         customer_id = customer.id
@@ -132,7 +132,7 @@ def seeded(db_engine: Engine) -> Iterator[Seeded]:
         with factory() as session:
             session.execute(delete(Document).where(Document.title.like("DASH %")))
             session.execute(delete(Deal).where(Deal.name.like("DASH %")))
-            session.execute(delete(Customer).where(Customer.legal_name.like("DASH %")))
+            session.execute(delete(Organization).where(Organization.legal_name.like("DASH %")))
             session.execute(delete(PipelineStage))
             session.commit()
 

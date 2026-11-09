@@ -18,7 +18,6 @@ from uuid import UUID
 from sqlalchemy import ColumnElement, case, delete, distinct, func, select, text
 from sqlalchemy.orm import Session
 
-from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.deals.models import Deal
 from pigrocrm.core.gmail.models import PaymentReminder
 from pigrocrm.core.invoices.models import (
@@ -32,8 +31,8 @@ from pigrocrm.core.invoices.naming import number_complete
 from pigrocrm.core.invoices.receivables import (
     BANDS_RECEIVABLES,
     BandRow,
-    CustomerRow,
     MonthRow,
+    OrganizationRow,
     OverdueRow,
     _issued_filter,
     _legal_entity_filter,
@@ -43,6 +42,7 @@ from pigrocrm.core.invoices.receivables import (
 )
 from pigrocrm.core.invoices.schemas import InvoiceListQuery
 from pigrocrm.core.money import round_money, share
+from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.pipeline.models import PipelineStage
 
 
@@ -486,7 +486,7 @@ class InvoiceRepository:
     def count_overdue_not_paid(self, legal_entity_id: UUID | None = None) -> int:
         """§6.2's fourth signal: the candidate list of slice 5 §7.1's payment reminders,
         counted. The count **sends nothing** -- and saying so here is the point, because a
-        count next to a list of overdue customers is exactly the place someone later adds a
+        count next to a list of overdue organizations is exactly the place someone later adds a
         "send all" button.
 
         The same `_overdue_predicate()` `sum_expired` uses, so the count and the sum can
@@ -505,7 +505,7 @@ class InvoiceRepository:
 
         The rows behind `sum_unpaid` restricted to one customer, sharing
         `_receivable_filter()` literally rather than restating it: the total on the economic
-        dashboard and the list in the `customer-status` briefing describe the same set, and a
+        dashboard and the list in the `organization-status` briefing describe the same set, and a
         briefing that listed a different set from the figure beside it is the divergence
         §7.2 exists to make impossible.
 
@@ -600,7 +600,7 @@ class InvoiceRepository:
 
     def receivables_by_customer(
         self, today: date, limit: int, legal_entity_id: UUID | None = None
-    ) -> list[CustomerRow]:
+    ) -> list[OrganizationRow]:
         """Who owes what, largest exposure first, with the overdue part of each: the
         `unpaid_for_customer` reading turned around, over the same predicate. `today`
         splits the overdue share the way `_overdue_predicate` does, strictly before."""
@@ -609,17 +609,17 @@ class InvoiceRepository:
         )
         total = func.coalesce(func.sum(Invoice.total), 0)
         rows = self.session.execute(
-            select(Customer.id, Customer.legal_name, total, func.count(Invoice.id), expired)
-            .join(Customer, Customer.id == Invoice.customer_id)
+            select(Organization.id, Organization.legal_name, total, func.count(Invoice.id), expired)
+            .join(Organization, Organization.id == Invoice.customer_id)
             .where(*_receivable_filter(), *_legal_entity_filter(legal_entity_id))
-            .group_by(Customer.id, Customer.legal_name)
-            .order_by(total.desc(), Customer.legal_name)
+            .group_by(Organization.id, Organization.legal_name)
+            .order_by(total.desc(), Organization.legal_name)
             .limit(limit)
         ).all()
         amounts = [round_money(Decimal(row[2])) for row in rows]
         largest = max(amounts, default=Decimal("0"))
         return [
-            CustomerRow(
+            OrganizationRow(
                 customer_id=row[0],
                 legal_name=row[1],
                 amount=amount,
@@ -649,8 +649,8 @@ class InvoiceRepository:
             .scalar_subquery()
         )
         rows = self.session.execute(
-            select(Invoice, Customer.legal_name, sent, last_sent)
-            .join(Customer, Customer.id == Invoice.customer_id)
+            select(Invoice, Organization.legal_name, sent, last_sent)
+            .join(Organization, Organization.id == Invoice.customer_id)
             .where(
                 *_receivable_filter(),
                 *_legal_entity_filter(legal_entity_id),
@@ -687,7 +687,7 @@ class InvoiceRepository:
         the limit.
 
         No `deleted_at` filter, deliberately, and here it matters more than for deals: an
-        issued invoice outlives the customer relationship, and `CustomerService.soft_delete`
+        issued invoice outlives the customer relationship, and `OrganizationService.soft_delete`
         may archive a customer whose invoices stay in the register. An archived customer's
         name is still the name on those invoices; filtering it out would print a dash on
         rows that have a perfectly good one.
@@ -697,7 +697,9 @@ class InvoiceRepository:
         if not customer_ids:
             return {}
         rows = self.session.execute(
-            select(Customer.id, Customer.legal_name).where(Customer.id.in_(customer_ids))
+            select(Organization.id, Organization.legal_name).where(
+                Organization.id.in_(customer_ids)
+            )
         ).all()
         return {row[0]: row[1] for row in rows}
 
@@ -709,9 +711,9 @@ class InvoiceRepository:
         if not customer_ids:
             return {}
         rows = self.session.execute(
-            select(Customer.id, Customer.payment_days, Customer.payment_end_of_month).where(
-                Customer.id.in_(customer_ids)
-            )
+            select(
+                Organization.id, Organization.payment_days, Organization.payment_end_of_month
+            ).where(Organization.id.in_(customer_ids))
         ).all()
         return {row[0]: (row[1], row[2]) for row in rows}
 

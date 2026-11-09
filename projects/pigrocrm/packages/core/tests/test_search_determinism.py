@@ -54,17 +54,17 @@ from sqlalchemy import insert, text
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.actor import Actor
-from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.db.base import uuid7
 from pigrocrm.core.deals.models import Deal
 from pigrocrm.core.documents.models import Document
 from pigrocrm.core.invoices.models import Invoice
+from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.people.models import Person
 from pigrocrm.core.search.repository import (
-    CUSTOMER_FIELDS,
     DEAL_FIELDS,
     DOCUMENT_FIELDS,
     INVOICE_FIELDS,
+    ORGANIZATION_FIELDS,
     PERSON_FIELDS,
     SearchRepository,
 )
@@ -88,7 +88,7 @@ _RUNS = 5
 # `_scored` at all, so its totality is argued where it lives -- `test_search_invoices.py`'s
 # `test_the_order_is_total_so_two_identical_searches_agree`, which runs both paths.
 _BRANCHES = (
-    ("customers", Customer, CUSTOMER_FIELDS),
+    ("organizations", Organization, ORGANIZATION_FIELDS),
     ("people", Person, PERSON_FIELDS),
     ("deals", Deal, DEAL_FIELDS),
     ("documents", Document, DOCUMENT_FIELDS),
@@ -108,7 +108,7 @@ _ACCESS_PATHS = (
     ("no bitmap scan", "off", "on", "off"),
 )
 
-_FIXED_GROUP_ORDER = ["customer", "person", "deal", "document", "invoice", "task"]
+_FIXED_GROUP_ORDER = ["organization", "person", "deal", "document", "invoice", "task"]
 
 
 def _set_access_path(session: Session, seqscan: str, indexscan: str, bitmapscan: str) -> None:
@@ -135,7 +135,7 @@ def _reshuffle(session: Session) -> int:
     """
     moved = 0
     for table, column in (
-        ("customers", "country"),
+        ("organizations", "country"),
         ("people", "first_name"),
         ("deals", "name"),
         ("documents", "title"),
@@ -216,7 +216,7 @@ def test_repeated_runs_under_four_access_paths_produce_one_byte_identical_respon
 
 
 # The term each branch is searched with in the ordering test: `Ingegneria` is in the sector
-# of the corpus' customers, deals, documents and invoices, and a surname is what people have.
+# of the corpus' organizations, deals, documents and invoices, and a surname is what people have.
 _TERMS = {"people": "Rossi"}
 
 
@@ -296,12 +296,12 @@ def test_the_first_two_ordering_keys_really_do_tie(db_session: Session) -> None:
     keys = [
         (row[1], row[0].updated_at, row[0].id)
         for row in db_session.execute(
-            repo._scored(Customer, CUSTOMER_FIELDS, "Ingegneria", 10_000)
+            repo._scored(Organization, ORGANIZATION_FIELDS, "Ingegneria", 10_000)
         ).all()
     ]
 
     assert len(keys) > 10, (
-        f"only {len(keys)} customers matched, which is not enough rows for a tie to be meaningful"
+        f"only {len(keys)} organizations matched, which is not enough rows for a tie to be meaningful"
     )
     first_two = Counter((row[0], row[1]) for row in keys)
     collisions = {pair: count for pair, count in first_two.items() if count > 1}
@@ -325,7 +325,7 @@ def test_the_property_holds_for_a_term_with_nothing_but_ties(db_session: Session
     two hundred rows carry exactly one non-zero field score and it is the same number.
     """
     db_session.execute(
-        insert(Customer),
+        insert(Organization),
         [
             {
                 "id": uuid7(),
@@ -348,9 +348,9 @@ def test_the_property_holds_for_a_term_with_nothing_but_ties(db_session: Session
     results = SearchService(db_session).search_everything(
         SearchQuery(term="Identica", limit=5), READONLY
     )
-    customers = next(group for group in results.groups if group.entity == "customer")
-    assert len(customers.hits) == 5
-    assert customers.total == 200
+    organizations = next(group for group in results.groups if group.entity == "organization")
+    assert len(organizations.hits) == 5
+    assert organizations.total == 200
 
 
 def test_the_property_survives_the_rows_being_physically_reordered(db_session: Session) -> None:
@@ -364,7 +364,7 @@ def test_the_property_survives_the_rows_being_physically_reordered(db_session: S
     heap rather than from `ORDER BY`, it would move here.
     """
     db_session.execute(
-        insert(Customer),
+        insert(Organization),
         [
             {
                 "id": uuid7(),
@@ -383,7 +383,7 @@ def test_the_property_survives_the_rows_being_physically_reordered(db_session: S
 
     moved = db_session.execute(
         text(
-            "UPDATE customers SET country = country "
+            "UPDATE organizations SET country = country "
             "WHERE legal_name LIKE 'Riordinabile Srl %%' "
             "AND right(legal_name, 1) IN ('0', '2', '4', '6', '8')"
         )
@@ -397,12 +397,12 @@ def test_the_property_survives_the_rows_being_physically_reordered(db_session: S
         f"{after.decode()}"
     )
     # Non-vacuity: five hits chosen out of two hundred, so there was a choice to get wrong.
-    customers = next(
+    organizations = next(
         group
         for group in service.search_everything(query, READONLY).groups
-        if group.entity == "customer"
+        if group.entity == "organization"
     )
-    assert (len(customers.hits), customers.total) == (5, 200)
+    assert (len(organizations.hits), organizations.total) == (5, 200)
 
 
 def test_an_exact_vat_number_puts_that_customer_first(db_session: Session) -> None:
@@ -414,7 +414,7 @@ def test_an_exact_vat_number_puts_that_customer_first(db_session: Session) -> No
     """
     build_corpus(db_session, SMALL)
     db_session.add(
-        Customer(
+        Organization(
             legal_name=f"Studio {KNOWN_VAT_NUMBER} Srl",
             country="IT",
             custom_fields={},
@@ -425,22 +425,24 @@ def test_an_exact_vat_number_puts_that_customer_first(db_session: Session) -> No
     results = SearchService(db_session).search_everything(
         SearchQuery(term=KNOWN_VAT_NUMBER), READONLY
     )
-    customers = next(group for group in results.groups if group.entity == "customer")
+    organizations = next(group for group in results.groups if group.entity == "organization")
 
-    labels = [hit.label for hit in customers.hits]
+    labels = [hit.label for hit in organizations.hits]
     assert len(labels) >= 2, f"only {labels} matched, so 'first' is not a ranking claim"
     assert labels[0] == KNOWN_LEGAL_NAME, (
         f"the exact P.IVA did not come first: {labels}, scores "
-        f"{[str(hit.score) for hit in customers.hits]}"
+        f"{[str(hit.score) for hit in organizations.hits]}"
     )
-    assert customers.hits[0].field == "vat_number"
+    assert organizations.hits[0].field == "vat_number"
 
 
 def test_a_prefix_outranks_a_mid_word_match(db_session: Session) -> None:
     """§16 criterion 4's second named expectation, at the service level rather than the
     expression level (task A7 covers the expression)."""
-    db_session.add(Customer(legal_name="Vulcano Impianti Srl", country="IT", custom_fields={}))
-    db_session.add(Customer(legal_name="Grande Vulcanologia Spa", country="IT", custom_fields={}))
+    db_session.add(Organization(legal_name="Vulcano Impianti Srl", country="IT", custom_fields={}))
+    db_session.add(
+        Organization(legal_name="Grande Vulcanologia Spa", country="IT", custom_fields={})
+    )
     db_session.flush()
 
     results = SearchService(db_session).search_everything(
@@ -448,7 +450,7 @@ def test_a_prefix_outranks_a_mid_word_match(db_session: Session) -> None:
     )
     labels = [
         hit.label
-        for hit in next(group for group in results.groups if group.entity == "customer").hits
+        for hit in next(group for group in results.groups if group.entity == "organization").hits
     ]
 
     # Both have to be shown before their order can mean anything: a floor that discarded the

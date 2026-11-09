@@ -26,8 +26,8 @@ from pigrocrm.core.activities.models import Activity
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.auth.models import User
 from pigrocrm.core.config import Settings
-from pigrocrm.core.customers.schemas import CustomerCreate
-from pigrocrm.core.customers.service import CustomerService
+from pigrocrm.core.organizations.schemas import OrganizationCreate
+from pigrocrm.core.organizations.service import OrganizationService
 from pigrocrm.core.pipeline.service import PipelineService
 from pigrocrm.core.storage import LocalFileStorage
 from pigrocrm_mcp.server import build_server
@@ -75,7 +75,7 @@ async def test_every_row_an_agent_writes_carries_the_token_owner_and_the_mcp_cha
     stages = None
     async with Client(owner_server) as client:
         stages = _payload(await client.call_tool("list_pipeline_stages", {}))["stages"]
-        customer = _payload(await client.call_tool("create_customer", {"legal_name": "ACME"}))
+        customer = _payload(await client.call_tool("create_organization", {"legal_name": "ACME"}))
         await client.call_tool("add_note", {"customer_id": customer["id"], "text": "una nota"})
         person = _payload(
             await client.call_tool(
@@ -108,16 +108,16 @@ async def test_get_timeline_serves_the_name_and_the_channel_of_a_web_and_an_mcp_
 ) -> None:
     web_member = _member(mcp_session, "Giulia Bianchi", "giulia")
     web = Actor(id=web_member.id, type="user", role="admin")
-    created = CustomerService(mcp_session).create(CustomerCreate(legal_name="ACME"), web)
+    created = OrganizationService(mcp_session).create(OrganizationCreate(legal_name="ACME"), web)
 
     async with Client(owner_server) as client:
         await client.call_tool(
-            "update_customer",
-            {"customer_id": str(created.id), "changes": {"certified_email": "a@pec.test"}},
+            "update_organization",
+            {"organization_id": str(created.id), "changes": {"certified_email": "a@pec.test"}},
         )
         entries = _payload(
             await client.call_tool(
-                "get_timeline", {"entity_type": "customer", "entity_id": str(created.id)}
+                "get_timeline", {"entity_type": "organization", "entity_id": str(created.id)}
             )
         )["entries"]
 

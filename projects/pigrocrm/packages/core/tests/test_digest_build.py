@@ -34,7 +34,6 @@ from pigrocrm.core.activities.models import Activity
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.auth.models import User
 from pigrocrm.core.config import Settings
-from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.db import clock, month_bounds, session_factory, today_local
 from pigrocrm.core.db.base import uuid7
 from pigrocrm.core.deals.models import Deal
@@ -50,6 +49,7 @@ from pigrocrm.core.digest.service import (
 from pigrocrm.core.documents.models import Document
 from pigrocrm.core.gmail.models import PaymentReminder
 from pigrocrm.core.invoices.models import Invoice
+from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.pipeline.models import PipelineStage
 from pigrocrm.core.timetracking.models import TimeEntry
 
@@ -139,7 +139,7 @@ def corpus(db_engine: Engine, frozen_day: date) -> Iterator[Corpus]:
         won = PipelineStage(
             name=f"{_PREFIX} Vinto", position=1, default_probability=100, type="won"
         )
-        customer = Customer(legal_name=f"{_PREFIX} Cliente", country="IT", custom_fields={})
+        customer = Organization(legal_name=f"{_PREFIX} Cliente", country="IT", custom_fields={})
         user = User(
             email=f"{_PREFIX.lower()}-{uuid7()}@example.test",
             password_hash="x",
@@ -285,14 +285,18 @@ def corpus(db_engine: Engine, frozen_day: date) -> Iterator[Corpus]:
         yield Corpus(db_engine, date_from, date_to, tuple(issues))
     finally:
         with factory() as session:
-            corpus_customers = select(Customer.id).where(Customer.legal_name.like(f"{_PREFIX} %"))
+            corpus_organizations = select(Organization.id).where(
+                Organization.legal_name.like(f"{_PREFIX} %")
+            )
             corpus_deals = select(Deal.id).where(Deal.name.like(f"{_PREFIX} %"))
             session.execute(delete(Activity).where(Activity.entity_id.in_(corpus_deals)))
             session.execute(delete(Document).where(Document.title.like(f"{_PREFIX} %")))
             session.execute(delete(TimeEntry).where(TimeEntry.deal_id.in_(corpus_deals)))
-            session.execute(delete(Invoice).where(Invoice.customer_id.in_(corpus_customers)))
+            session.execute(delete(Invoice).where(Invoice.customer_id.in_(corpus_organizations)))
             session.execute(delete(Deal).where(Deal.name.like(f"{_PREFIX} %")))
-            session.execute(delete(Customer).where(Customer.legal_name.like(f"{_PREFIX} %")))
+            session.execute(
+                delete(Organization).where(Organization.legal_name.like(f"{_PREFIX} %"))
+            )
             session.execute(delete(PipelineStage).where(PipelineStage.name.like(f"{_PREFIX} %")))
             session.execute(delete(User).where(User.name == "Digestore"))
             remove_legal_entity(session, legal_entity_id)
@@ -310,7 +314,7 @@ def _invoice_in_more(
     """
     with session_factory(engine)() as session:
         customer_id = session.execute(
-            select(Customer.id).where(Customer.legal_name == f"{_PREFIX} Cliente")
+            select(Organization.id).where(Organization.legal_name == f"{_PREFIX} Cliente")
         ).scalar_one()
         amount = Decimal(total)
         invoice = Invoice(
@@ -463,7 +467,7 @@ def test_the_backlog_and_the_signals_come_from_the_operational_dashboard(
             select(PipelineStage.id).where(PipelineStage.name == f"{_PREFIX} Vinto")
         ).scalar_one()
         customer_id = session.execute(
-            select(Customer.id).where(Customer.legal_name == f"{_PREFIX} Cliente")
+            select(Organization.id).where(Organization.legal_name == f"{_PREFIX} Cliente")
         ).scalar_one()
         user_id = session.execute(select(User.id).where(User.name == "Digestore")).scalar_one()
         deal = Deal(

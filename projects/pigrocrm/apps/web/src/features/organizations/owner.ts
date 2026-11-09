@@ -3,7 +3,7 @@ import { useMemo } from 'react'
 import { api, unwrap } from '@/lib/api'
 import { useAuth, useCan } from '@/lib/auth'
 import { queryKeys } from '@/lib/query'
-import type { OwnerOption } from './CustomerForm'
+import type { OwnerOption } from './OrganizationForm'
 
 /**
  * Who a customer's owner is, in words (REB-773).
@@ -14,7 +14,7 @@ import type { OwnerOption } from './CustomerForm'
  * collega» otherwise. The query shares `queryKeys.users` with the Utenti panel, so an
  * admin who has been there pays no second request.
  */
-export function useCustomerOwners() {
+export function useOrganizationOwners() {
   const { user } = useAuth()
   const canChange = useCan('change_customer_owner')
   const users = useQuery({

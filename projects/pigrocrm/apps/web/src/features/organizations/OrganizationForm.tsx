@@ -30,7 +30,7 @@ import {
   pointsToDrafts,
   type ContactPointDraft,
 } from '@/features/contact-points/contactPoints'
-import type { Customer } from './queries'
+import type { Organization } from './queries'
 
 const NATIVE_FIELDS: FieldDefinition[] = [
   { key: 'legal_name', label: 'Ragione sociale', type: 'text', required: true, options: [] },
@@ -42,7 +42,7 @@ const NATIVE_FIELDS: FieldDefinition[] = [
   { key: 'postal_code', label: 'CAP', type: 'text', required: false, options: [] },
   { key: 'city', label: 'Comune', type: 'text', required: false, options: [] },
   { key: 'province', label: 'Provincia', type: 'text', required: false, options: [] },
-  // Freeform text, not a `select`: CustomerCreate/Update place no enum on either
+  // Freeform text, not a `select`: OrganizationCreate/Update place no enum on either
   // field (plain `SafeStr`, max_length only) -- offering a client-side dropdown of
   // guessed options would let the UI reject a value the backend, and an MCP agent
   // writing through the same service, both accept without complaint.
@@ -91,28 +91,28 @@ export interface OwnerOption {
  * flattened. `native` holds `SEEDED_KEYS`; `custom` everything stored under
  * `custom_fields`, archived keys included.
  */
-export type CustomerFormValues = FormValues
+export type OrganizationFormValues = FormValues
 
-// `country` pre-filled to match `CustomerCreate.country`'s own server-side default
-// (customers/schemas.py: `Field(default="IT", ...)`) -- a convenience, not a rule:
+// `country` pre-filled to match `OrganizationCreate.country`'s own server-side default
+// (organizations/schemas.py: `Field(default="IT", ...)`) -- a convenience, not a rule:
 // leaving it blank omits the key from the payload entirely (see `submit` below) and
 // the server fills in the exact same default either way.
-const DEFAULT_CREATE_VALUES: CustomerFormValues = { native: { country: 'IT' }, custom: {} }
+const DEFAULT_CREATE_VALUES: OrganizationFormValues = { native: { country: 'IT' }, custom: {} }
 
 /**
  * Builds the form's starting state from a real, already-saved customer.
  *
- * A `CustomerRead` also carries `id`, `created_at` and `updated_at`, and
- * `CustomerUpdate` is `extra="forbid"` (customers/schemas.py), so sending them back would
+ * A `OrganizationRead` also carries `id`, `created_at` and `updated_at`, and
+ * `OrganizationUpdate` is `extra="forbid"` (organizations/schemas.py), so sending them back would
  * 422 on every edit: only `SEEDED_KEYS` are seeded -- see `toFormValues`.
  */
-export function customerToFormValues(customer: Customer): CustomerFormValues {
+export function organizationToFormValues(customer: Organization): OrganizationFormValues {
   const values = toFormValues(customer, SEEDED_KEYS)
   values.native[CONTACT_POINTS_KEY] = pointsToDrafts(customer.contact_points)
   return values
 }
 
-function draftsOf(values: CustomerFormValues | undefined): ContactPointDraft[] {
+function draftsOf(values: OrganizationFormValues | undefined): ContactPointDraft[] {
   return (values?.native[CONTACT_POINTS_KEY] as ContactPointDraft[] | undefined) ?? []
 }
 
@@ -120,7 +120,7 @@ interface Props {
   open: boolean
   onOpenChange: (open: boolean) => void
   customFields: FieldDefinition[]
-  initial?: CustomerFormValues
+  initial?: OrganizationFormValues
   problem?: ProblemDetail | null
   busy?: boolean
   onSubmit: (values: Record<string, unknown>) => void
@@ -130,7 +130,7 @@ interface Props {
   owners?: OwnerOption[]
 }
 
-export function CustomerForm({
+export function OrganizationForm({
   open,
   onOpenChange,
   customFields,
@@ -141,7 +141,7 @@ export function CustomerForm({
   title,
   owners,
 }: Props) {
-  const [values, setValues] = useState<CustomerFormValues>(initial ?? DEFAULT_CREATE_VALUES)
+  const [values, setValues] = useState<OrganizationFormValues>(initial ?? DEFAULT_CREATE_VALUES)
   const isCreate = initial === undefined
   // «Azienda» from the second legal entity on (REB-626, spec §1.6): while creating, the one
   // the nation proposes is shown live until the person picks one by hand, and what the
@@ -178,7 +178,7 @@ export function CustomerForm({
 
   // This component stays mounted across opens -- only `Dialog`'s own visibility
   // toggles (see the list/detail routes: `open={open}` on an always-rendered
-  // `<CustomerForm>`, not a conditional `{open && <CustomerForm />}`, which would
+  // `<OrganizationForm>`, not a conditional `{open && <OrganizationForm />}`, which would
   // lose Radix's closing animation) -- so `useState`'s initializer alone, which
   // only ever runs on first mount, is not enough: reopening "Nuovo cliente" a
   // second time would still show the first customer's already-submitted values,
@@ -188,7 +188,7 @@ export function CustomerForm({
   // case ("Adjusting state when a prop changes", react.dev) -- deliberately not a
   // `useEffect`: that would need `initial` in its dependency array to be honest
   // about what it reads, but the caller recomputes a brand-new `initial` object
-  // every render (`customerToFormValues(customer)` has no stable identity), so the
+  // every render (`organizationToFormValues(customer)` has no stable identity), so the
   // effect would re-fire on every keystroke and wipe out whatever the user just
   // typed.
   const [wasOpen, setWasOpen] = useState(open)
@@ -244,7 +244,7 @@ export function CustomerForm({
       skipNative: (key) =>
         key === 'legal_entity_id' || key === 'owner_id' || key === CONTACT_POINTS_KEY,
       // A number control hands back its text (`DynamicFieldRenderer` reads
-      // `event.target.value`); the column is an integer and `CustomerUpdate` is typed
+      // `event.target.value`); the column is an integer and `OrganizationUpdate` is typed
       // `int | None`, so the digits are sent as the number they are.
       coerceNative: (key, value) =>
         NATIVE_FIELDS.find((field) => field.key === key)?.type === 'number' &&
@@ -287,7 +287,7 @@ export function CustomerForm({
         <DynamicForm
           fields={[...NATIVE_FIELDS, ...(isCreate ? [FIRST_NOTE_FIELD] : []), ...customFields]}
           // Flattened for rendering only -- one control per key is all a form can
-          // draw. The state behind it stays split (see `CustomerFormValues`), so what
+          // draw. The state behind it stays split (see `OrganizationFormValues`), so what
           // reaches `submit` still knows which namespace each value came from. Custom
           // last, matching the field order below it: nothing today stops a
           // tenant-defined key from being named after a native column
@@ -301,7 +301,7 @@ export function CustomerForm({
           // next to the line shown under the picker below.
           problem={legalEntityRefused || isPointProblem(problem) ? null : problem}
           // `initial` is not a prefill, it *is* the record being edited
-          // (`customerToFormValues(customer)`, from the detail route); its absence is
+          // (`organizationToFormValues(customer)`, from the detail route); its absence is
           // what "Nuovo cliente" means, and the list route passes none. Deriving the
           // mode from it rather than taking a third prop is what keeps the two from
           // ever disagreeing -- a `mode="edit"` next to no record, or a

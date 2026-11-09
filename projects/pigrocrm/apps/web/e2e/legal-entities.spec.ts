@@ -44,12 +44,12 @@ async function createLegalEntity(request: APIRequestContext): Promise<string> {
   return ((await created.json()) as { id: string }).id
 }
 
-async function createCustomer(
+async function createOrganization(
   request: APIRequestContext,
   name: string,
   legalEntityId: string,
 ): Promise<string> {
-  const created = await request.post('/api/customers', {
+  const created = await request.post('/api/organizations', {
     data: { legal_name: name, legal_entity_id: legalEntityId },
   })
   expect(created.status(), await created.text()).toBe(201)
@@ -91,8 +91,8 @@ test('a member scoped to one azienda sees it pinned, lists its rows alone and ge
   const studio = legal_entities.find((a) => a.is_default)
   expect(studio).toBeDefined()
   const ltdId = await createLegalEntity(page.request)
-  const studioCustomer = await createCustomer(page.request, `Studio Cliente ${STAMP}`, studio!.id)
-  const ltdCustomer = await createCustomer(page.request, `Ltd Cliente ${STAMP}`, ltdId)
+  const studioOrganization = await createOrganization(page.request, `Studio Cliente ${STAMP}`, studio!.id)
+  const ltdOrganization = await createOrganization(page.request, `Ltd Cliente ${STAMP}`, ltdId)
 
   // B, created by A with a password (no mail leaves the e2e stack), then scoped to
   // «Scope Ltd» from the Team panel: the row said «Tutte», it says the legal entity now.
@@ -109,13 +109,13 @@ test('a member scoped to one azienda sees it pinned, lists its rows alone and ge
     // The sidebar: the legal entity's name where the selector would be, and no selector.
     await expect(bPage.getByLabel('Azienda')).toContainText(LTD)
     await expect(bPage.getByRole('combobox', { name: 'Azienda' })).toHaveCount(0)
-    // The customers list: B's azienda's row and not A's.
-    await bPage.goto('/app/customers')
+    // The organizations list: B's azienda's row and not A's.
+    await bPage.goto('/app/organizations')
     await expect(bPage.getByText(`Ltd Cliente ${STAMP}`)).toBeVisible()
     await expect(bPage.getByText(`Studio Cliente ${STAMP}`)).toHaveCount(0)
     // By id: the other legal entity's row does not exist for B, and the one B may see does.
-    expect((await bPage.request.get(`/api/customers/${studioCustomer}`)).status()).toBe(404)
-    expect((await bPage.request.get(`/api/customers/${ltdCustomer}`)).status()).toBe(200)
+    expect((await bPage.request.get(`/api/organizations/${studioOrganization}`)).status()).toBe(404)
+    expect((await bPage.request.get(`/api/organizations/${ltdOrganization}`)).status()).toBe(200)
     expect((await bPage.request.get(`/api/legal-entities/${studio!.id}`)).status()).toBe(404)
     // `me` says so, which is what pinned the selector.
     const me = (await (await bPage.request.get('/api/auth/me')).json()) as { legal_entities: string[] | null }

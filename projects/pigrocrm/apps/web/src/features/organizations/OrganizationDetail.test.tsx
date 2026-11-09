@@ -3,14 +3,14 @@ import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { ReactElement } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { CustomerDetail } from './CustomerDetail'
+import { OrganizationDetail } from './OrganizationDetail'
 import { api } from '@/lib/api'
 import { spaceModules } from '@/lib/modules.testing'
 import type { ModuleKey } from '@/lib/modules'
 
 vi.mock('@tanstack/react-router', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@tanstack/react-router')>()
-  return { ...actual, useParams: () => ({ customerId: 'c1' }), useNavigate: () => vi.fn() }
+  return { ...actual, useParams: () => ({ organizationId: 'c1' }), useNavigate: () => vi.fn() }
 })
 
 // Hoisted so a single test can flip it: everything below is about what the page draws
@@ -33,8 +33,8 @@ vi.mock('@/lib/auth', () => ({
 // `api.GET` is spied on directly (not `vi.mock('@/lib/api', ...)`), mirroring
 // Timeline.test.tsx: what is under test is this route's own handling of what the
 // real `unwrap` produces (a resolved customer, a thrown `ProblemDetail`), not a
-// reimplementation of either. `CustomerDetail` also mounts `useEntitySchema`,
-// `useCustomerPeople` and `useCustomerDeals` unconditionally, through the same
+// reimplementation of either. `OrganizationDetail` also mounts `useEntitySchema`,
+// `useOrganizationPeople` and `useOrganizationDeals` unconditionally, through the same
 // client -- every path other than the customer fetch itself below resolves to a
 // harmless empty success, since none of it is ever read before the isError/404
 // guard under test here returns.
@@ -51,10 +51,10 @@ function failed(error: unknown, status: number) {
  *  overview's «Note» section would render `{items: []}.map` and take the tree down. */
 const NOTES_PATH = '/api/{collection}/{entity_id}/notes'
 
-function mockCustomerFetch(result: ReturnType<typeof ok> | ReturnType<typeof failed>) {
+function mockOrganizationFetch(result: ReturnType<typeof ok> | ReturnType<typeof failed>) {
   mockGet.mockImplementation(
     ((path: string) =>
-      path === '/api/customers/{customer_id}'
+      path === '/api/organizations/{organization_id}'
         ? result
         : path === NOTES_PATH
           ? ok([])
@@ -69,7 +69,7 @@ beforeEach(() => {
   auth.user = null
 })
 
-/** Enough of a `CustomerRead` for the page to render past its guards. Cast rather than
+/** Enough of a `OrganizationRead` for the page to render past its guards. Cast rather than
  *  typed in full: the fields this file asserts on are the tab strip, not the overview. */
 const CUSTOMER = {
   id: 'c1',
@@ -87,7 +87,7 @@ const POINTS = [
 
 const NOTE = {
   id: 'n1',
-  entity_type: 'customer',
+  entity_type: 'organization',
   entity_id: 'c1',
   text: 'Richiamare a settembre.',
   author: 'Giulia Rossi',
@@ -104,25 +104,25 @@ function renderWithClient(ui: ReactElement) {
   return render(<QueryClientProvider client={client}>{ui}</QueryClientProvider>)
 }
 
-describe('CustomerDetail', () => {
+describe('OrganizationDetail', () => {
   /** REB-879: the Note card of the overview is the customer's thread, read from the
    *  notes endpoint and not from a field of the customer. */
   it('shows the customer’s notes thread in the overview', async () => {
     mockGet.mockImplementation(
       ((path: string) =>
-        path === '/api/customers/{customer_id}'
+        path === '/api/organizations/{organization_id}'
           ? ok(CUSTOMER)
           : path === NOTES_PATH
             ? ok([NOTE])
             : ok({ items: [] })) as never,
     )
-    renderWithClient(<CustomerDetail />)
+    renderWithClient(<OrganizationDetail />)
     // The first render of the page in this file also pays the cold load of its lazy parts:
     // under a loaded machine that outlasts the default second, so this one waits for the
     // thread's own query, not for a guess about the clock.
     expect(await screen.findByText('Richiamare a settembre.', {}, { timeout: 10_000 })).toBeInTheDocument()
     expect(mockGet).toHaveBeenCalledWith(NOTES_PATH, {
-      params: { path: { collection: 'customers', entity_id: 'c1' } },
+      params: { path: { collection: 'organizations', entity_id: 'c1' } },
     })
   })
 
@@ -130,15 +130,15 @@ describe('CustomerDetail', () => {
    *  from, stated on the card so a wrong one is seen before an emission prints it. */
   describe('the payment terms row', () => {
     it('states the agreed terms, end of month included', async () => {
-      mockCustomerFetch(ok({ ...(CUSTOMER as object), payment_days: 30, payment_end_of_month: true }))
-      renderWithClient(<CustomerDetail />)
+      mockOrganizationFetch(ok({ ...(CUSTOMER as object), payment_days: 30, payment_end_of_month: true }))
+      renderWithClient(<OrganizationDetail />)
       expect(await screen.findByText('Termini di pagamento')).toBeInTheDocument()
       expect(screen.getByText('30 giorni data fattura fine mese')).toBeInTheDocument()
     })
 
     it('says the profile decides when the customer has no days of its own', async () => {
-      mockCustomerFetch(ok({ ...(CUSTOMER as object), payment_days: null, payment_end_of_month: false }))
-      renderWithClient(<CustomerDetail />)
+      mockOrganizationFetch(ok({ ...(CUSTOMER as object), payment_days: null, payment_end_of_month: false }))
+      renderWithClient(<OrganizationDetail />)
       expect(await screen.findByText('Termini di pagamento')).toBeInTheDocument()
       expect(screen.getByText('Dal profilo fiscale')).toBeInTheDocument()
     })
@@ -147,23 +147,23 @@ describe('CustomerDetail', () => {
   /** REB-773: who answers for the customer, which is who its reminders go to. */
   describe('the owner row', () => {
     it('shows a dash for a customer nobody owns', async () => {
-      mockCustomerFetch(ok({ ...(CUSTOMER as object), owner_id: null }))
-      renderWithClient(<CustomerDetail />)
+      mockOrganizationFetch(ok({ ...(CUSTOMER as object), owner_id: null }))
+      renderWithClient(<OrganizationDetail />)
       const label = await screen.findByText('Responsabile')
       expect(label.parentElement).toHaveTextContent('Responsabile—')
     })
 
     it('names the signed-in person when the customer is theirs', async () => {
       auth.user = { id: 'u1', name: 'Giulia' }
-      mockCustomerFetch(ok({ ...(CUSTOMER as object), owner_id: 'u1' }))
-      renderWithClient(<CustomerDetail />)
+      mockOrganizationFetch(ok({ ...(CUSTOMER as object), owner_id: 'u1' }))
+      renderWithClient(<OrganizationDetail />)
       expect(await screen.findByText('Giulia (tu)')).toBeInTheDocument()
     })
 
     it('does not name a colleague to someone who cannot list the space', async () => {
       auth.user = { id: 'u1', name: 'Giulia' }
-      mockCustomerFetch(ok({ ...(CUSTOMER as object), owner_id: 'u2' }))
-      renderWithClient(<CustomerDetail />)
+      mockOrganizationFetch(ok({ ...(CUSTOMER as object), owner_id: 'u2' }))
+      renderWithClient(<OrganizationDetail />)
       expect(await screen.findByText('Un collega')).toBeInTheDocument()
     })
 
@@ -172,14 +172,14 @@ describe('CustomerDetail', () => {
       auth.canWrite = true
       auth.user = { id: 'u1', name: 'Giulia' }
       mockGet.mockImplementation(((path: string) => {
-        if (path === '/api/customers/{customer_id}') {
+        if (path === '/api/organizations/{organization_id}') {
           return ok({ ...(CUSTOMER as object), owner_id: 'u2' })
         }
         if (path === '/api/users') return ok([{ id: 'u2', name: 'Marco', active: true }])
         if (path === NOTES_PATH) return ok([])
         return ok({ items: [] })
       }) as never)
-      renderWithClient(<CustomerDetail />)
+      renderWithClient(<OrganizationDetail />)
       expect(await screen.findByText('Marco')).toBeInTheDocument()
     })
   })
@@ -187,8 +187,8 @@ describe('CustomerDetail', () => {
   /** REB-942: every way to reach the customer, each as a link of its kind. */
   describe('the contact points', () => {
     it('lists every point with its label, note and primary marker, in the order they are kept', async () => {
-      mockCustomerFetch(ok({ ...(CUSTOMER as object), contact_points: POINTS }))
-      renderWithClient(<CustomerDetail />)
+      mockOrganizationFetch(ok({ ...(CUSTOMER as object), contact_points: POINTS }))
+      renderWithClient(<OrganizationDetail />)
 
       const main = await screen.findByRole('link', { name: 'info@acme.it' })
       expect(main).toHaveAttribute('href', 'mailto:info@acme.it')
@@ -213,14 +213,14 @@ describe('CustomerDetail', () => {
     })
 
     it('says so when the customer has none', async () => {
-      mockCustomerFetch(ok(CUSTOMER))
-      renderWithClient(<CustomerDetail />)
+      mockOrganizationFetch(ok(CUSTOMER))
+      renderWithClient(<OrganizationDetail />)
       expect(await screen.findByText('Nessun recapito.')).toBeInTheDocument()
     })
   })
 
   it('shows "Cliente non trovato" for a genuine 404', async () => {
-    mockCustomerFetch(
+    mockOrganizationFetch(
       failed(
         {
           type: 'about:blank',
@@ -232,7 +232,7 @@ describe('CustomerDetail', () => {
         404,
       ),
     )
-    renderWithClient(<CustomerDetail />)
+    renderWithClient(<OrganizationDetail />)
     expect(await screen.findByText('Cliente non trovato.')).toBeInTheDocument()
   })
 
@@ -245,8 +245,8 @@ describe('CustomerDetail', () => {
    * rather than inventing a fourth way to say "something went wrong".
    */
   it('shows the failed-request banner, not "Cliente non trovato", when the fetch fails for a reason other than 404', async () => {
-    mockCustomerFetch(failed({ code: 'http_error', detail: 'Il server non risponde.', status: 503 }, 503))
-    renderWithClient(<CustomerDetail />)
+    mockOrganizationFetch(failed({ code: 'http_error', detail: 'Il server non risponde.', status: 503 }, 503))
+    renderWithClient(<OrganizationDetail />)
     expect(await screen.findByRole('alert')).toHaveTextContent('Il server non risponde.')
     expect(screen.queryByText('Cliente non trovato.')).not.toBeInTheDocument()
   })
@@ -261,7 +261,7 @@ describe('CustomerDetail', () => {
     function mockPage(health: unknown) {
       mockGet.mockImplementation(
         ((path: string) => {
-          if (path === '/api/customers/{customer_id}') return ok(CUSTOMER)
+          if (path === '/api/organizations/{organization_id}') return ok(CUSTOMER)
           if (path === '/api/gmail/account') return ok(health)
           if (path === NOTES_PATH) return ok([])
           return ok({ items: [] })
@@ -271,13 +271,13 @@ describe('CustomerDetail', () => {
 
     it('is offered when this installation has Gmail', async () => {
       mockPage({ account: null, banner: null, banner_text: null, missing_scopes: [], configured: true })
-      renderWithClient(<CustomerDetail />)
+      renderWithClient(<OrganizationDetail />)
       expect(await screen.findByRole('tab', { name: 'Email' })).toBeInTheDocument()
     })
 
     it('is absent when Gmail is not configured on this installation', async () => {
       mockPage({ account: null, banner: null, banner_text: null, missing_scopes: [], configured: false })
-      renderWithClient(<CustomerDetail />)
+      renderWithClient(<OrganizationDetail />)
       // Awaited on a tab that is always present, so this is an assertion about the
       // rendered page rather than about a page that had not rendered yet.
       expect(await screen.findByRole('tab', { name: 'Panoramica' })).toBeInTheDocument()
@@ -295,13 +295,13 @@ describe('CustomerDetail', () => {
     async function openInvoices() {
       mockGet.mockImplementation(
         ((path: string) =>
-          path === '/api/customers/{customer_id}'
+          path === '/api/organizations/{organization_id}'
             ? ok(CUSTOMER)
             : path === NOTES_PATH
               ? ok([])
               : ok({ items: [] })) as never,
       )
-      renderWithClient(<CustomerDetail />)
+      renderWithClient(<OrganizationDetail />)
       await userEvent.click(await screen.findByRole('tab', { name: 'Fatture' }))
     }
 
@@ -320,13 +320,13 @@ describe('CustomerDetail', () => {
 })
 
 /** REB-953: a core page that points into a switched-off module hides that part. */
-describe('CustomerDetail with modules off', () => {
+describe('OrganizationDetail with modules off', () => {
   function mockWithModules(off: readonly ModuleKey[]) {
     mockGet.mockImplementation(
       ((path: string) =>
         path === '/api/settings/modules'
           ? ok(spaceModules(off))
-          : path === '/api/customers/{customer_id}'
+          : path === '/api/organizations/{organization_id}'
             ? ok(CUSTOMER)
             : path === NOTES_PATH
               ? ok([])
@@ -336,7 +336,7 @@ describe('CustomerDetail with modules off', () => {
 
   it('draws the Contratti tab and the Deal card while both modules are on', async () => {
     mockWithModules([])
-    renderWithClient(<CustomerDetail />)
+    renderWithClient(<OrganizationDetail />)
     expect(await screen.findByRole('tab', { name: 'Contratti' }, { timeout: 10_000 })).toBeInTheDocument()
     await userEvent.click(screen.getByRole('tab', { name: 'Collegamenti' }))
     expect(await screen.findByText(/^Deal \(/)).toBeInTheDocument()
@@ -345,7 +345,7 @@ describe('CustomerDetail with modules off', () => {
 
   it('draws no Deal card with deals off, and does not ask for the deals', async () => {
     mockWithModules(['deals'])
-    renderWithClient(<CustomerDetail />)
+    renderWithClient(<OrganizationDetail />)
     await userEvent.click(await screen.findByRole('tab', { name: 'Collegamenti' }, { timeout: 10_000 }))
     expect(await screen.findByText(/^Persone \(/)).toBeInTheDocument()
     expect(screen.queryByText(/^Deal \(/)).toBeNull()
@@ -354,7 +354,7 @@ describe('CustomerDetail with modules off', () => {
 
   it('draws no Contratti tab with contracts off', async () => {
     mockWithModules(['contracts'])
-    renderWithClient(<CustomerDetail />)
+    renderWithClient(<OrganizationDetail />)
     expect(await screen.findByRole('tab', { name: 'Fatture' }, { timeout: 10_000 })).toBeInTheDocument()
     await waitFor(() => expect(mockGet).toHaveBeenCalledWith('/api/settings/modules'))
     await waitFor(() => expect(screen.queryByRole('tab', { name: 'Contratti' })).toBeNull())

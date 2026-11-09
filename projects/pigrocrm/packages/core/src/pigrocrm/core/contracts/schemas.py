@@ -14,7 +14,7 @@ from pigrocrm.core.validation import SafeStr
 # Mirrors Contract's column widths (models.py). Without these, an over-length value
 # sails past Pydantic, reaches flush(), and comes back as a raw sqlalchemy.exc.DataError
 # (StringDataRightTruncation) -- not a subclass of IntegrityError, so no handler
-# catches it, and it poisons the session. The same gap CustomerCreate's/DealCreate's
+# catches it, and it poisons the session. The same gap OrganizationCreate's/DealCreate's
 # own *_MAX_LENGTH constants close.
 TITLE_MAX_LENGTH = 255
 BILLING_CADENCE_MAX_LENGTH = 20
@@ -96,9 +96,9 @@ class ContractCreate(BaseModel):
     renewal_type: RenewalType
     renewal_notice_days: int | None = Field(default=None, ge=0)
     termination_notice_days: int = Field(ge=0)
-    # Reuses Customer.giorni_pagamento's own shape (REB-326): null cascades to the
+    # Reuses Organization.giorni_pagamento's own shape (REB-326): null cascades to the
     # customer's own term. See models.py for why pagamento_fine_mese is nullable
-    # here, unlike Customer's own copy.
+    # here, unlike Organization's own copy.
     payment_days: int | None = Field(default=None, ge=0)
     payment_end_of_month: bool | None = None
     billing_cadence: SafeStr = Field(max_length=BILLING_CADENCE_MAX_LENGTH)
@@ -269,7 +269,7 @@ class ContractRead(BaseModel):
     updated_at: datetime
 
 
-# Residuo R9. Mirrors CUSTOMER_SORTS (customers/schemas.py) -- see there for why three
+# Residuo R9. Mirrors ORGANIZATION_SORTS (organizations/schemas.py) -- see there for why three
 # keys and why `created_at` is the default.
 CONTRACT_SORTS = SortWhitelist(
     specs=(

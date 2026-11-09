@@ -32,8 +32,8 @@ from mcp.server import MCPServer
 from pigrocrm.core.config import Settings
 from pigrocrm_mcp.context import McpContext
 from pigrocrm_mcp.modules import prompt_available
-from pigrocrm_mcp.prompts import customer as customer_prompts
 from pigrocrm_mcp.prompts import dashboards as dashboard_prompts
+from pigrocrm_mcp.prompts import organization as organization_prompts
 
 
 def register_prompts(
@@ -78,9 +78,9 @@ def register_prompts(
         recently."""
         return dashboard_prompts.hours_to_log(context, week)
 
-    @prompt("customer-status")
+    @prompt("organization-status")
     @guard
-    def status_customer(customer_id: str) -> list[dict[str, Any]]:
+    def status_organization(customer_id: str) -> list[dict[str, Any]]:
         """The briefing before a phone call: unpaid invoices, and the customer's full record
         attached as a resource."""
-        return customer_prompts.status_customer(context, customer_id)
+        return organization_prompts.status_organization(context, customer_id)

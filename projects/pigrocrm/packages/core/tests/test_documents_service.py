@@ -6,12 +6,12 @@ import pytest
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.actor import Actor
-from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.deals.models import Deal
 from pigrocrm.core.documents.schemas import DocumentCreate, DocumentListQuery, DocumentUpdate
 from pigrocrm.core.documents.service import DocumentService
 from pigrocrm.core.documents.uploads import DocumentUploads
 from pigrocrm.core.errors import Conflict, NotFound, PermissionDenied, ValidationFailed
+from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.pipeline.service import PipelineService
 from pigrocrm.core.storage import LocalFileStorage
 
@@ -26,14 +26,14 @@ def service(db_session: Session, tmp_path: Path) -> DocumentService:
 
 
 @pytest.fixture
-def customer(db_session: Session) -> Customer:
-    row = Customer(legal_name="ACME S.r.l.")
+def customer(db_session: Session) -> Organization:
+    row = Organization(legal_name="ACME S.r.l.")
     db_session.add(row)
     db_session.flush()
     return row
 
 
-def test_create_on_a_customer(service: DocumentService, customer: Customer) -> None:
+def test_create_on_a_customer(service: DocumentService, customer: Organization) -> None:
     document = service.create(
         DocumentCreate(customer_id=customer.id, type="offer", title="Offerta 2026-01"), ADMIN
     )
@@ -43,7 +43,9 @@ def test_create_on_a_customer(service: DocumentService, customer: Customer) -> N
     assert document.status == "draft"
 
 
-def test_create_of_a_non_offer_has_no_state(service: DocumentService, customer: Customer) -> None:
+def test_create_of_a_non_offer_has_no_state(
+    service: DocumentService, customer: Organization
+) -> None:
     document = service.create(
         DocumentCreate(customer_id=customer.id, type="minutes", title="Verbale"), ADMIN
     )
@@ -57,7 +59,7 @@ def test_create_with_neither_customer_nor_deal_is_refused(service: DocumentServi
 
 
 def test_create_with_both_customer_and_deal_is_refused(
-    service: DocumentService, customer: Customer
+    service: DocumentService, customer: Organization
 ) -> None:
     with pytest.raises(ValidationFailed):
         service.create(
@@ -78,7 +80,7 @@ def test_create_with_an_unknown_deal_raises_not_found(service: DocumentService) 
         service.create(DocumentCreate(deal_id=uuid4(), type="document", title="X"), ADMIN)
 
 
-def test_a_readonly_actor_cannot_create(service: DocumentService, customer: Customer) -> None:
+def test_a_readonly_actor_cannot_create(service: DocumentService, customer: Organization) -> None:
     with pytest.raises(PermissionDenied):
         service.create(
             DocumentCreate(customer_id=customer.id, type="document", title="X"), READONLY
@@ -86,7 +88,7 @@ def test_a_readonly_actor_cannot_create(service: DocumentService, customer: Cust
 
 
 def test_add_version_stores_the_bytes_and_bumps_the_current_version(
-    service: DocumentService, customer: Customer
+    service: DocumentService, customer: Organization
 ) -> None:
     document = service.create(
         DocumentCreate(customer_id=customer.id, type="offer", title="Offerta"), ADMIN
@@ -99,7 +101,7 @@ def test_add_version_stores_the_bytes_and_bumps_the_current_version(
 
 
 def test_a_second_version_does_not_overwrite_the_first(
-    service: DocumentService, customer: Customer
+    service: DocumentService, customer: Organization
 ) -> None:
     document = service.create(
         DocumentCreate(customer_id=customer.id, type="offer", title="Offerta"), ADMIN
@@ -112,7 +114,7 @@ def test_a_second_version_does_not_overwrite_the_first(
 
 
 def test_download_without_a_number_returns_the_current_version(
-    service: DocumentService, customer: Customer
+    service: DocumentService, customer: Organization
 ) -> None:
     document = service.create(
         DocumentCreate(customer_id=customer.id, type="offer", title="Offerta"), ADMIN
@@ -126,7 +128,7 @@ def test_download_without_a_number_returns_the_current_version(
 
 
 def test_download_of_a_document_with_no_version_raises_not_found(
-    service: DocumentService, customer: Customer
+    service: DocumentService, customer: Organization
 ) -> None:
     document = service.create(
         DocumentCreate(customer_id=customer.id, type="offer", title="Offerta"), ADMIN
@@ -135,7 +137,9 @@ def test_download_of_a_document_with_no_version_raises_not_found(
         service.download(document.id, None, ADMIN)
 
 
-def test_an_unallowed_content_type_is_refused(service: DocumentService, customer: Customer) -> None:
+def test_an_unallowed_content_type_is_refused(
+    service: DocumentService, customer: Organization
+) -> None:
     # The content type is chosen from a fixed allowlist, never echoed from the
     # request: a caller-supplied value reaches a Content-Disposition header later.
     document = service.create(
@@ -147,7 +151,7 @@ def test_an_unallowed_content_type_is_refused(service: DocumentService, customer
 
 
 def test_the_storage_key_carries_the_customer_slug_and_id_fragment(
-    service: DocumentService, customer: Customer
+    service: DocumentService, customer: Organization
 ) -> None:
     document = service.create(
         DocumentCreate(customer_id=customer.id, type="offer", title="Offerta"), ADMIN
@@ -158,7 +162,7 @@ def test_the_storage_key_carries_the_customer_slug_and_id_fragment(
 
 
 def test_a_customer_rename_does_not_change_an_existing_key(
-    service: DocumentService, customer: Customer, db_session: Session
+    service: DocumentService, customer: Organization, db_session: Session
 ) -> None:
     document = service.create(
         DocumentCreate(customer_id=customer.id, type="offer", title="Offerta"), ADMIN
@@ -171,7 +175,7 @@ def test_a_customer_rename_does_not_change_an_existing_key(
 
 
 def test_update_changes_the_title_and_clears_it_with_an_empty_string(
-    service: DocumentService, customer: Customer
+    service: DocumentService, customer: Organization
 ) -> None:
     document = service.create(
         DocumentCreate(customer_id=customer.id, type="document", title="Vecchio"), ADMIN
@@ -180,7 +184,7 @@ def test_update_changes_the_title_and_clears_it_with_an_empty_string(
 
 
 def test_soft_delete_hides_the_document_from_the_list(
-    service: DocumentService, customer: Customer
+    service: DocumentService, customer: Organization
 ) -> None:
     document = service.create(
         DocumentCreate(customer_id=customer.id, type="document", title="X"), ADMIN
@@ -191,7 +195,7 @@ def test_soft_delete_hides_the_document_from_the_list(
 
 
 def test_soft_delete_keeps_the_bytes_so_a_restore_is_a_real_restore(
-    service: DocumentService, customer: Customer
+    service: DocumentService, customer: Organization
 ) -> None:
     document = service.create(
         DocumentCreate(customer_id=customer.id, type="offer", title="X"), ADMIN
@@ -203,7 +207,7 @@ def test_soft_delete_keeps_the_bytes_so_a_restore_is_a_real_restore(
 
 
 def test_list_filters_by_customer_and_by_deal(
-    service: DocumentService, customer: Customer, db_session: Session
+    service: DocumentService, customer: Organization, db_session: Session
 ) -> None:
     stage = PipelineService(db_session).seed_defaults(ADMIN)[0]
     deal = Deal(name="D", customer_id=customer.id, pipeline_stage_id=stage.id)
@@ -218,7 +222,7 @@ def test_list_filters_by_customer_and_by_deal(
 
 
 def test_list_filters_by_contract_and_a_reowned_document_moves_lists(
-    service: DocumentService, customer: Customer, db_session: Session
+    service: DocumentService, customer: Organization, db_session: Session
 ) -> None:
     """REB-358 §11's own acceptance: a document re-owned by a contract is findable
     through a contract-scoped document list, never only through the contract's own
@@ -276,7 +280,7 @@ def test_list_limit_is_bounded(service: DocumentService) -> None:
 
 
 def test_two_racing_uploads_computing_the_same_version_number_become_a_clean_conflict(
-    service: DocumentService, customer: Customer, monkeypatch: pytest.MonkeyPatch
+    service: DocumentService, customer: Organization, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Forces two `add_version` calls to compute the *same* `number`, which is what a
     real race looks like (two transactions both reading `current_version` before
@@ -308,7 +312,7 @@ def test_two_racing_uploads_computing_the_same_version_number_become_a_clean_con
 
 
 def test_a_storage_failure_does_not_burn_a_version_number(
-    service: DocumentService, customer: Customer, monkeypatch: pytest.MonkeyPatch
+    service: DocumentService, customer: Organization, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """If writing the bytes fails after the database row was flushed but before
     anything committed, the failure must roll everything back: no row survives
@@ -335,7 +339,7 @@ def test_a_storage_failure_does_not_burn_a_version_number(
 
 
 def test_a_storage_prefix_overrides_the_customer_folder(
-    service: DocumentService, customer: Customer
+    service: DocumentService, customer: Organization
 ) -> None:
     """Slice 3 needs `invoices/{year}/{number}/v1.xml`, not the customer-slug folder:
     a file pulled out of context has to stay identifiable as a fiscal artefact, which
@@ -356,7 +360,7 @@ def test_a_storage_prefix_overrides_the_customer_folder(
 
 
 def test_without_a_prefix_the_customer_folder_is_still_used(
-    service: DocumentService, customer: Customer
+    service: DocumentService, customer: Organization
 ) -> None:
     document = service.create(
         DocumentCreate(customer_id=customer.id, type="document", title="Nota"), ADMIN
@@ -382,7 +386,7 @@ def test_without_a_prefix_the_customer_folder_is_still_used(
     ],
 )
 def test_bytes_that_do_not_start_like_the_declared_type_are_refused(
-    service: DocumentService, customer: Customer, content_type: str, data: bytes
+    service: DocumentService, customer: Organization, content_type: str, data: bytes
 ) -> None:
     document = service.create(
         DocumentCreate(customer_id=customer.id, type="document", title="Falso"), ADMIN
@@ -405,7 +409,7 @@ def test_bytes_that_do_not_start_like_the_declared_type_are_refused(
     ],
 )
 def test_bytes_that_start_like_the_declared_type_are_accepted(
-    service: DocumentService, customer: Customer, content_type: str, data: bytes
+    service: DocumentService, customer: Organization, content_type: str, data: bytes
 ) -> None:
     document = service.create(
         DocumentCreate(customer_id=customer.id, type="document", title="Vero"), ADMIN

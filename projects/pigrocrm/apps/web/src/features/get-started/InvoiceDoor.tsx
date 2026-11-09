@@ -7,7 +7,7 @@
  * 1. **The customer.** A document belongs to exactly one customer, deal or contract
  *    (REB-358, a database check), and an empty space has none, so the door first asks
  *    whom the invoice was issued to: one already on file, found by name as it is typed,
- *    or a new name, which is `POST /api/customers` exactly as «Nuovo cliente» on
+ *    or a new name, which is `POST /api/organizations` exactly as «Nuovo cliente» on
  *    «Clienti» sends it.
  * 2. **The PDF.** One file, a PDF, filed as a `invoice` document of that customer
  *    (`POST /api/documents`, then its first version), because that is the one shape
@@ -37,7 +37,7 @@ import { fetchAllPages } from '@/lib/fetchAllPages'
 import { useDebounced } from '@/hooks/useDebounced'
 import { SEARCH_DEBOUNCE_MS } from '@/features/search/queries'
 import { queryKeys } from '@/lib/query'
-import { useCreateCustomer } from '@/features/customers/queries'
+import { useCreateOrganization } from '@/features/organizations/queries'
 import { useDocument, useUploadVersion } from '@/features/documents/queries'
 import { UploadDropzone } from '@/features/documents/UploadDropzone'
 import { ConnectAgentPanel } from '@/features/tokens/ConnectAgentPanel'
@@ -97,12 +97,12 @@ export function InvoiceDoor({ assistantConnected }: { assistantConnected: boolea
 
 /** Steps 1 and 2: the customer, then the one PDF. */
 function Upload({ onUploaded }: { onUploaded: (handoff: InvoiceHandoff) => void }) {
-  const [customer, setCustomer] = useState<{ id: string; name: string } | null>(null)
-  if (customer === null) return <ChooseCustomer onChosen={setCustomer} />
+  const [customer, setOrganization] = useState<{ id: string; name: string } | null>(null)
+  if (customer === null) return <ChooseOrganization onChosen={setOrganization} />
   return (
     <UploadPdf
       customer={customer}
-      onChangeCustomer={() => setCustomer(null)}
+      onChangeOrganization={() => setOrganization(null)}
       onUploaded={onUploaded}
     />
   )
@@ -114,30 +114,30 @@ function Upload({ onUploaded }: { onUploaded: (handoff: InvoiceHandoff) => void 
 async function customerNamed(name: string): Promise<{ id: string; legal_name: string } | null> {
   const wanted = name.toLowerCase()
   const { items } = await fetchAllPages((cursor) =>
-    unwrap(api.GET('/api/customers', { params: { query: { search: name, limit: 200, cursor } } })),
+    unwrap(api.GET('/api/organizations', { params: { query: { search: name, limit: 200, cursor } } })),
   )
   return items.find((item) => item.legal_name.trim().toLowerCase() === wanted) ?? null
 }
 
 /**
- * One field: the customer's name. As it is typed, the customers already on file whose
- * name or VAT number matches are offered (`GET /api/customers?search=`, the Clienti
+ * One field: the customer's name. As it is typed, the organizations already on file whose
+ * name or VAT number matches are offered (`GET /api/organizations?search=`, the Clienti
  * page's own search), so a space of any size finds its customer. A name that is already
  * on file is used rather than created twice: shown as «Usa …» when it is among the
  * suggestions, and looked up through every page of the search before anything is
  * created. Nothing is created while the search for the typed name is still on its way.
  */
-function ChooseCustomer({ onChosen }: { onChosen: (customer: { id: string; name: string }) => void }) {
+function ChooseOrganization({ onChosen }: { onChosen: (customer: { id: string; name: string }) => void }) {
   const [name, setName] = useState('')
   const typed = name.trim()
   const query = useDebounced(typed, SEARCH_DEBOUNCE_MS)
   const searchable = query.length >= 2
   const matches = useQuery({
-    queryKey: queryKeys.customers({ search: query, limit: 8, scope: 'invoice-door' }),
-    queryFn: () => unwrap(api.GET('/api/customers', { params: { query: { search: query, limit: 8 } } })),
+    queryKey: queryKeys.organizations({ search: query, limit: 8, scope: 'invoice-door' }),
+    queryFn: () => unwrap(api.GET('/api/organizations', { params: { query: { search: query, limit: 8 } } })),
     enabled: searchable,
   })
-  const create = useCreateCustomer()
+  const create = useCreateOrganization()
   const ids = useId()
   const items = searchable ? (matches.data?.items ?? []) : []
   const exact = items.find((item) => item.legal_name.trim().toLowerCase() === typed.toLowerCase())
@@ -225,11 +225,11 @@ function ChooseCustomer({ onChosen }: { onChosen: (customer: { id: string; name:
 
 function UploadPdf({
   customer,
-  onChangeCustomer,
+  onChangeOrganization,
   onUploaded,
 }: {
   customer: { id: string; name: string }
-  onChangeCustomer: () => void
+  onChangeOrganization: () => void
   onUploaded: (handoff: InvoiceHandoff) => void
 }) {
   // The document is created once per attempt: a failed upload of its file removes it
@@ -311,7 +311,7 @@ function UploadPdf({
       <p>
         Emessa a <span className="font-medium">{customer.name}</span>.{' '}
         {documentId === null && (
-          <button type="button" onClick={onChangeCustomer} className="underline underline-offset-4">
+          <button type="button" onClick={onChangeOrganization} className="underline underline-offset-4">
             Cambia cliente
           </button>
         )}

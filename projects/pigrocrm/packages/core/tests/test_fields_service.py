@@ -12,7 +12,12 @@ COLLAB = Actor(id=None, type="user", role="collaborator")
 
 
 def _create(service: FieldDefinitionService, key: str = "settore", **kw):
-    payload = {"entity_type": "customer", "key": key, "label": key.title(), "field_type": "text"}
+    payload = {
+        "entity_type": "organization",
+        "key": key,
+        "label": key.title(),
+        "field_type": "text",
+    }
     payload.update(kw)
     return service.create(FieldDefinitionCreate(**payload), ADMIN)
 
@@ -81,8 +86,8 @@ def test_archive_hides_the_field_but_keeps_it_readable(db_session: Session) -> N
     field = _create(service)
     service.archive(field.id, ADMIN)
 
-    assert service.list("customer") == []
-    archived = service.list("customer", include_archived=True)
+    assert service.list("organization") == []
+    archived = service.list("organization", include_archived=True)
     assert len(archived) == 1
     assert archived[0].archived is True
 
@@ -93,7 +98,7 @@ def test_archived_fields_are_excluded_from_specs(db_session: Session) -> None:
     drop = _create(service, key="archiviato")
     service.archive(drop.id, ADMIN)
 
-    keys = [spec.key for spec in service.specs_for("customer")]
+    keys = [spec.key for spec in service.specs_for("organization")]
     assert keys == [keep.key]
 
 
@@ -102,14 +107,16 @@ def test_list_is_ordered_by_position_then_label(db_session: Session) -> None:
     _create(service, key="terzo", position=2)
     _create(service, key="primo", position=0)
     _create(service, key="secondo", position=1)
-    assert [f.key for f in service.list("customer")] == ["primo", "secondo", "terzo"]
+    assert [f.key for f in service.list("organization")] == ["primo", "secondo", "terzo"]
 
 
 def test_only_admins_change_the_schema(db_session: Session) -> None:
     service = FieldDefinitionService(db_session)
     with pytest.raises(PermissionDenied) as exc:
         service.create(
-            FieldDefinitionCreate(entity_type="customer", key="x", label="X", field_type="text"),
+            FieldDefinitionCreate(
+                entity_type="organization", key="x", label="X", field_type="text"
+            ),
             COLLAB,
         )
     assert exc.value.details["required_roles"] == ["admin"]
@@ -117,7 +124,7 @@ def test_only_admins_change_the_schema(db_session: Session) -> None:
 
 def test_specs_for_returns_field_specs_usable_by_the_validator(db_session: Session) -> None:
     """`key="stato_operativo"`, not `"status"`: `customer` already has a native
-    `status` column (customers/schemas.py), so a custom field with that key would
+    `status` column (organizations/schemas.py), so a custom field with that key would
     now be refused by the A13 guard (fields/service.py) -- exactly the collision
     this test would otherwise have silently exercised without ever noticing it
     was shadowing a real column."""
@@ -126,8 +133,8 @@ def test_specs_for_returns_field_specs_usable_by_the_validator(db_session: Sessi
     service = FieldDefinitionService(db_session)
     _create(service, key="stato_operativo", field_type="select", options=["active", "sospeso"])
 
-    specs = service.specs_for("customer")
-    assert validate_custom_fields("customer", specs, {"stato_operativo": "active"}) == {
+    specs = service.specs_for("organization")
+    assert validate_custom_fields("organization", specs, {"stato_operativo": "active"}) == {
         "stato_operativo": "active"
     }
 
@@ -140,14 +147,16 @@ def test_key_length_is_bounded_to_the_column_width_after_slugification() -> None
     existing `except IntegrityError` around the commit does not catch it either."""
     with pytest.raises(ValidationError):
         FieldDefinitionCreate(
-            entity_type="customer", key="a" * 70, label="Lunga", field_type="text"
+            entity_type="organization", key="a" * 70, label="Lunga", field_type="text"
         )
 
 
 def test_label_length_is_bounded_to_the_column_width() -> None:
     """`label` is `String(120)` in the database; same reasoning as the key bound above."""
     with pytest.raises(ValidationError):
-        FieldDefinitionCreate(entity_type="customer", key="ok", label="a" * 121, field_type="text")
+        FieldDefinitionCreate(
+            entity_type="organization", key="ok", label="a" * 121, field_type="text"
+        )
 
 
 @pytest.mark.parametrize(
@@ -186,11 +195,11 @@ def test_unarchive_restores_the_field_definition(db_session: Session) -> None:
     service = FieldDefinitionService(db_session)
     field = _create(service)
     value = {field.key: "prova"}
-    specs_before = service.specs_for("customer")
-    assert validate_custom_fields("customer", specs_before, value) == value
+    specs_before = service.specs_for("organization")
+    assert validate_custom_fields("organization", specs_before, value) == value
 
     service.archive(field.id, ADMIN)
-    assert service.specs_for("customer") == []
+    assert service.specs_for("organization") == []
     # The key stays reserved while archived, on purpose: recreating it would allow a
     # different, incompatible field_type under the same key.
     with pytest.raises(Conflict):
@@ -199,10 +208,10 @@ def test_unarchive_restores_the_field_definition(db_session: Session) -> None:
     restored = service.unarchive(field.id, ADMIN)
     assert restored.archived is False
 
-    specs_after = service.specs_for("customer")
+    specs_after = service.specs_for("organization")
     assert [spec.key for spec in specs_after] == [field.key]
     # Archiving/unarchiving never touched the stored value -- only its visibility.
-    assert validate_custom_fields("customer", specs_after, value) == value
+    assert validate_custom_fields("organization", specs_after, value) == value
 
 
 def test_duplicate_key_race_past_the_precheck_still_becomes_a_domain_conflict(
@@ -222,11 +231,11 @@ def test_duplicate_key_race_past_the_precheck_still_becomes_a_domain_conflict(
 
     with pytest.raises(Conflict) as exc:
         _create(service)
-    assert exc.value.details["entity_type"] == "customer"
+    assert exc.value.details["entity_type"] == "organization"
 
     # The session must still be usable right after -- a leftover PendingRollbackError
     # would blow up on the very next statement issued on it.
-    assert len(service.list("customer")) == 1
+    assert len(service.list("organization")) == 1
 
 
 # --- Final review item 2 (CRITICAL): position is a bare Integer, unbounded -------
@@ -250,7 +259,7 @@ def test_position_at_the_bound_is_accepted_on_create(db_session: Session) -> Non
 def test_position_far_beyond_the_bound_is_rejected_on_create() -> None:
     with pytest.raises(ValidationError):
         FieldDefinitionCreate(
-            entity_type="customer", key="x", label="X", field_type="text", position=2**40
+            entity_type="organization", key="x", label="X", field_type="text", position=2**40
         )
 
 
@@ -265,7 +274,7 @@ def test_a_negative_position_is_rejected() -> None:
     negative display order, so `position` is bounded to `>= 0`."""
     with pytest.raises(ValidationError):
         FieldDefinitionCreate(
-            entity_type="customer", key="x", label="X", field_type="text", position=-1
+            entity_type="organization", key="x", label="X", field_type="text", position=-1
         )
 
 
@@ -277,7 +286,9 @@ def test_a_negative_position_is_rejected() -> None:
 
 def test_a_nul_byte_in_label_is_rejected() -> None:
     with pytest.raises(ValidationError):
-        FieldDefinitionCreate(entity_type="customer", key="x", label="X\x00Y", field_type="text")
+        FieldDefinitionCreate(
+            entity_type="organization", key="x", label="X\x00Y", field_type="text"
+        )
 
 
 def test_a_nul_byte_inside_an_options_entry_is_rejected() -> None:
@@ -285,7 +296,7 @@ def test_a_nul_byte_inside_an_options_entry_is_rejected() -> None:
     into every element, not just a top-level scalar field."""
     with pytest.raises(ValidationError):
         FieldDefinitionCreate(
-            entity_type="customer",
+            entity_type="organization",
             key="settore",
             label="Settore",
             field_type="select",
@@ -301,6 +312,6 @@ def test_a_nul_byte_in_key_is_silently_removed_by_slugify_not_rejected() -> None
     does not change; the test exists so a future reader does not "fix" the
     inconsistency by adding a SafeStr that would never fire."""
     field = FieldDefinitionCreate(
-        entity_type="customer", key="a\x00b", label="X", field_type="text"
+        entity_type="organization", key="a\x00b", label="X", field_type="text"
     )
     assert field.key == "a_b"

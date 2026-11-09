@@ -25,10 +25,10 @@ router = APIRouter(
 
 # The collection a note hangs on, as the URL spells it, and the entity type the service
 # and the timeline know it by.
-Collection = Literal["deals", "customers", "people"]
+Collection = Literal["deals", "organizations", "people"]
 ENTITY_TYPES: dict[str, NoteEntityType] = {
     "deals": "deal",
-    "customers": "customer",
+    "organizations": "organization",
     "people": "person",
 }
 

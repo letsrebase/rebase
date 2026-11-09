@@ -20,10 +20,10 @@ _ENTITY_TYPE_MAX_LENGTH = 30
 _KIND_MAX_LENGTH = 50
 
 # Matches every REST timeline route's own `Query(ge=1, le=200)` exactly (see
-# routers/customers.py, people.py, deals.py). Enforced here, not only per-router,
+# routers/organizations.py, people.py, deals.py). Enforced here, not only per-router,
 # because the MCP `get_timeline` tool calls straight into this method with a bare
 # `limit: int` parameter of its own -- no schema of any kind sits between the tool
-# and this call, unlike search_customers/search_people/search_deals, whose `limit`
+# and this call, unlike search_organizations/search_people/search_deals, whose `limit`
 # is bounded through `*ListQuery`'s own `Field(ge=1, le=200)`. Without this check,
 # `-1` reached Postgres raw as `psycopg.errors.InvalidRowCountInLimitClause` ("LIMIT
 # must not be negative"), and `10**9` silently returned everything where REST would

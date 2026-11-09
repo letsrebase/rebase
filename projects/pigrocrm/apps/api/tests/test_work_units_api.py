@@ -17,7 +17,7 @@ from pigrocrm.core.config import Settings
 
 
 def _contract(client: TestClient, *, requires_prior_approval: bool = False) -> str:
-    customer = client.post("/api/customers", json={"legal_name": "ACME Srl"})
+    customer = client.post("/api/organizations", json={"legal_name": "ACME Srl"})
     assert customer.status_code == 201, customer.text
     response = client.post(
         "/api/contracts",

@@ -39,7 +39,6 @@ from pigrocrm.core.analytics.repository import AnalyticsRepository
 from pigrocrm.core.analytics.service import AnalyticsService
 from pigrocrm.core.auth.models import User
 from pigrocrm.core.config import Settings
-from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.dashboard.schemas import OperationalDashboard
 from pigrocrm.core.dashboard.service import DashboardService
 from pigrocrm.core.db import Base, current_week, session_factory, today_local
@@ -50,6 +49,7 @@ from pigrocrm.core.deals.schemas import DealListQuery
 from pigrocrm.core.invoices.models import Invoice, InvoiceLine
 from pigrocrm.core.invoices.repository import InvoiceRepository
 from pigrocrm.core.invoices.schemas import InvoiceListQuery
+from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.pipeline.models import PipelineStage
 from pigrocrm.core.timetracking.models import TimeEntry
 
@@ -113,7 +113,7 @@ def seeded(db_engine: Engine) -> Iterator[Seeded]:
                 (("open", "open", 20), ("won", "won", 100), ("lost", "lost", 0))
             )
         }
-        customer = Customer(legal_name=f"{_PREFIX} Cliente", country="IT", custom_fields={})
+        customer = Organization(legal_name=f"{_PREFIX} Cliente", country="IT", custom_fields={})
         user = User(
             email=f"{_PREFIX.lower()}-{uuid7()}@example.test",
             password_hash="x",
@@ -235,7 +235,7 @@ def seeded(db_engine: Engine) -> Iterator[Seeded]:
         _invoice(None, status="cancelled", due_date=date(2026, 1, 1))
 
         # -- concentration above threshold (REB-371) -----------------------------
-        # Two customers, both outside the single-customer register the other three
+        # Two organizations, both outside the single-customer register the other three
         # signals share. `year` is set explicitly here (§7.1's fiscal register value,
         # never derived from `issue_date`) because `revenue_by_customer` filters
         # by it, and every invoice above leaves it `None` on purpose -- the value one
@@ -243,8 +243,10 @@ def seeded(db_engine: Engine) -> Iterator[Seeded]:
         # one customer's own share at 0.90 (over the default 0.30 threshold) and the
         # other's at 0.10 (under it), clear of the boundary so the ordinary case needs
         # no exact-float care.
-        concentrated = Customer(legal_name=f"{_PREFIX} Concentrato", country="IT", custom_fields={})
-        diluted = Customer(legal_name=f"{_PREFIX} Diluito", country="IT", custom_fields={})
+        concentrated = Organization(
+            legal_name=f"{_PREFIX} Concentrato", country="IT", custom_fields={}
+        )
+        diluted = Organization(legal_name=f"{_PREFIX} Diluito", country="IT", custom_fields={})
         session.add_all([concentrated, diluted])
         session.flush()
         session.add_all(
@@ -307,8 +309,12 @@ def seeded(db_engine: Engine) -> Iterator[Seeded]:
             # future suite commits -- `test_dashboard_commercial.py` empties
             # `pipeline_stages` wholesale only because it is the file that seeds the
             # defaults, which is not the case here.
-            corpus_customers = select(Customer.id).where(Customer.legal_name.like(f"{_PREFIX} %"))
-            corpus_invoices = select(Invoice.id).where(Invoice.customer_id.in_(corpus_customers))
+            corpus_organizations = select(Organization.id).where(
+                Organization.legal_name.like(f"{_PREFIX} %")
+            )
+            corpus_invoices = select(Invoice.id).where(
+                Invoice.customer_id.in_(corpus_organizations)
+            )
             session.execute(delete(Activity).where(Activity.kind == f"{_PREFIX}.test"))
             session.execute(
                 delete(TimeEntry).where(
@@ -316,9 +322,11 @@ def seeded(db_engine: Engine) -> Iterator[Seeded]:
                 )
             )
             session.execute(delete(InvoiceLine).where(InvoiceLine.invoice_id.in_(corpus_invoices)))
-            session.execute(delete(Invoice).where(Invoice.customer_id.in_(corpus_customers)))
+            session.execute(delete(Invoice).where(Invoice.customer_id.in_(corpus_organizations)))
             session.execute(delete(Deal).where(Deal.name.like(f"{_PREFIX} %")))
-            session.execute(delete(Customer).where(Customer.legal_name.like(f"{_PREFIX} %")))
+            session.execute(
+                delete(Organization).where(Organization.legal_name.like(f"{_PREFIX} %"))
+            )
             session.execute(delete(PipelineStage).where(PipelineStage.name.like(f"{_PREFIX} %")))
             session.execute(delete(User).where(User.name == "Operatore"))
             remove_legal_entity(session, legal_entity_id)
@@ -578,7 +586,7 @@ def test_the_overdue_filter_composes_with_the_others(seeded: Seeded) -> None:
 # --- signal 4: concentration above threshold (REB-371) -----------------------------------
 
 
-def test_the_concentration_signal_counts_customers_over_the_configured_share(
+def test_the_concentration_signal_counts_organizations_over_the_configured_share(
     seeded: Seeded,
 ) -> None:
     """`Concentrato` holds 0.90 of the year's two-customer register, well past the
@@ -621,7 +629,7 @@ def test_the_concentration_signal_reflects_a_differently_configured_threshold(
 
 
 def test_the_concentration_signal_link_is_the_economic_tab(seeded: Seeded) -> None:
-    """Unlike the other three, this link is not a filtered list: there is no "customers
+    """Unlike the other three, this link is not a filtered list: there is no "organizations
     over the threshold" endpoint, only the concentration table itself, on the tab that
     already renders it."""
     signal = next(

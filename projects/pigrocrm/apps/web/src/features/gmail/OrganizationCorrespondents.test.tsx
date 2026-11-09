@@ -3,7 +3,7 @@ import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { toast } from '@rebase/ui/sonner'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { CustomerCorrespondents } from './CustomerCorrespondents'
+import { OrganizationCorrespondents } from './OrganizationCorrespondents'
 import { api } from '@/lib/api'
 import type { Role } from '@/lib/permissions'
 
@@ -64,14 +64,14 @@ function renderIt(customerId = CUSTOMER_ID, domainSource = 'acme.it|') {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   const tree = (id: string, source: string) => (
     <QueryClientProvider client={client}>
-      <CustomerCorrespondents customerId={id} domainSource={source} />
+      <OrganizationCorrespondents customerId={id} domainSource={source} />
     </QueryClientProvider>
   )
   const view = render(tree(customerId, domainSource))
   return {
     ...view,
     client,
-    showCustomer: (next: string) => view.rerender(tree(next, domainSource)),
+    showOrganization: (next: string) => view.rerender(tree(next, domainSource)),
     saveDomain: (next: string) => view.rerender(tree(customerId, next)),
   }
 }
@@ -81,7 +81,7 @@ beforeEach(() => {
   mockAuth.role = 'admin'
 })
 
-describe('CustomerCorrespondents', () => {
+describe('OrganizationCorrespondents', () => {
   it('asks Gmail nothing until the person presses', () => {
     renderIt()
     expect(screen.getByRole('button', { name: ASK })).toBeInTheDocument()
@@ -90,12 +90,12 @@ describe('CustomerCorrespondents', () => {
 
   it('asks nothing for another customer the page moves to, until that one is pressed', async () => {
     vi.mocked(api.GET).mockResolvedValue(report())
-    const { showCustomer } = renderIt()
+    const { showOrganization } = renderIt()
     await userEvent.click(screen.getByRole('button', { name: ASK }))
     await screen.findByRole('list', { name: 'Indirizzi di acme.it nella casella' })
     expect(api.GET).toHaveBeenCalledTimes(1)
 
-    showCustomer('00000000-0000-7000-8000-000000000002')
+    showOrganization('00000000-0000-7000-8000-000000000002')
 
     expect(screen.getByRole('button', { name: ASK })).toBeInTheDocument()
     expect(api.GET).toHaveBeenCalledTimes(1)
@@ -129,7 +129,7 @@ describe('CustomerCorrespondents', () => {
     expect(rows[1]).toHaveTextContent('1 conversazione')
     expect(rows[1]).toHaveTextContent('già in anagrafica')
     expect(within(rows[1]!).queryByRole('button')).toBeNull()
-    expect(api.GET).toHaveBeenCalledWith('/api/gmail/customers/{customer_id}/correspondents', {
+    expect(api.GET).toHaveBeenCalledWith('/api/gmail/organizations/{customer_id}/correspondents', {
       params: { path: { customer_id: CUSTOMER_ID } },
     })
   })
@@ -143,8 +143,8 @@ describe('CustomerCorrespondents', () => {
       await screen.findByRole('button', { name: 'Aggiungi come persona: Marco Bianchi' }),
     )
 
-    expect(api.POST).toHaveBeenCalledWith('/api/customers/{customer_id}/people-from-mail', {
-      params: { path: { customer_id: CUSTOMER_ID } },
+    expect(api.POST).toHaveBeenCalledWith('/api/organizations/{organization_id}/people-from-mail', {
+      params: { path: { organization_id: CUSTOMER_ID } },
       body: { address: 'marco@acme.it', name: 'Marco Bianchi' },
     })
     await waitFor(() => expect(toast.success).toHaveBeenCalledWith('Marco Bianchi aggiunto alle persone'))

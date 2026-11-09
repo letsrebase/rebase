@@ -16,10 +16,10 @@ from sqlalchemy import Engine, text
 
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.auth.models import User
-from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.db import session_factory
 from pigrocrm.core.deals.models import Deal
 from pigrocrm.core.errors import Conflict, NotFound
+from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.pipeline.models import PipelineStage
 from pigrocrm.core.timetracking.locks import PeriodLockService
 from pigrocrm.core.timetracking.schemas import PeriodLockCreate, TimerStart, TimerStop
@@ -43,7 +43,7 @@ def world(db_engine: Engine) -> Iterator[tuple[Any, UUID, UUID]]:
         stage = PipelineStage(
             name=f"Aperto {uuid4()}", position=0, default_probability=10, type="open"
         )
-        customer = Customer(legal_name=f"Cliente {uuid4()}")
+        customer = Organization(legal_name=f"Cliente {uuid4()}")
         setup.add_all([user, stage, customer])
         setup.flush()
         deal = Deal(
@@ -63,7 +63,7 @@ def world(db_engine: Engine) -> Iterator[tuple[Any, UUID, UUID]]:
             cleanup.execute(text("DELETE FROM time_timers WHERE user_id = :user"), params)
             cleanup.execute(text("DELETE FROM period_locks WHERE year = 2020 AND month = 6"))
             cleanup.execute(text("DELETE FROM deals WHERE id = :deal"), params)
-            cleanup.execute(text("DELETE FROM customers WHERE id = :customer"), params)
+            cleanup.execute(text("DELETE FROM organizations WHERE id = :customer"), params)
             cleanup.execute(text("DELETE FROM pipeline_stages WHERE id = :stage"), params)
             cleanup.execute(text("DELETE FROM users WHERE id = :user"), params)
             cleanup.commit()

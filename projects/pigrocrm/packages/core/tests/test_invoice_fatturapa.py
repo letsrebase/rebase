@@ -442,7 +442,7 @@ def test_to_customer_with_neither_sdi_nor_certified_email_is_refused_by_field_na
 
 @pytest.mark.parametrize("field", ["address", "postal_code", "city", "province"])
 def test_a_missing_address_part_is_refused_by_field_name(field: str) -> None:
-    """These are four real columns on `customers`. The previous system guessed them out of one
+    """These are four real columns on `organizations`. The previous system guessed them out of one
     free-text address with a regex over Italian street prefixes."""
     with pytest.raises(ValidationFailed) as caught:
         InvoicePaExporter().to_bytes(
@@ -455,7 +455,7 @@ def test_a_missing_address_part_is_refused_by_field_name(field: str) -> None:
 
 
 def test_a_cap_that_is_not_five_digits_is_refused() -> None:
-    """FPR12's CAP is exactly `[0-9]{5}`, while `customers.postal_code` is String(10)."""
+    """FPR12's CAP is exactly `[0-9]{5}`, while `organizations.postal_code` is String(10)."""
     with pytest.raises(ValidationFailed) as caught:
         InvoicePaExporter().to_bytes(
             _invoice(
@@ -467,7 +467,7 @@ def test_a_cap_that_is_not_five_digits_is_refused() -> None:
 
 
 def test_a_denomination_longer_than_the_schema_allows_is_refused_not_truncated() -> None:
-    """`Denominazione` is String80LatinType; `customers.legal_name` is
+    """`Denominazione` is String80LatinType; `organizations.legal_name` is
     String(255). Truncating a legal name on a fiscal document is worse than refusing
     to issue it."""
     with pytest.raises(ValidationFailed) as caught:
@@ -501,7 +501,7 @@ def test_a_country_code_that_is_not_a_country_code_is_refused() -> None:
     longer the behaviour, and inverting the test is the honest way to record it -- a
     deleted test leaves nobody able to see that the decision changed, or when.
 
-    What remains checked is that the field is a country code at all. `customers.country`
+    What remains checked is that the field is a country code at all. `organizations.country`
     is `String(2)`, which admits `"xx"` and `"1"` as readily as `"GB"`, and FPR12's
     `Nazione` wants two upper-case letters -- so a typo would otherwise reach the file and
     be rejected by the SdI after a register number had been spent on it.
@@ -916,7 +916,7 @@ def test_to_missing_city_is_refused_outside_italy_as_well() -> None:
 
 def test_a_name_too_long_for_the_schema_is_refused_by_the_pre_check() -> None:
     """`check_party_exportable` is called by `InvoiceService.issue` *before* the register
-    number is consumed, and used to check presence only. `customers.legal_name` is
+    number is consumed, and used to check presence only. `organizations.legal_name` is
     `String(255)` against FPR12's 80, so an ordinary consortium name passed, the emission
     committed, and every later export raised forever — leaving annulment as the only
     remedy for a document that was never wrong, only unprintable.
@@ -932,7 +932,7 @@ def test_a_name_too_long_for_the_schema_is_refused_by_the_pre_check() -> None:
 
 
 def test_a_cap_that_is_not_five_digits_is_refused_by_the_pre_check() -> None:
-    """`customers.postal_code` is `String(10)`; the schema wants exactly five digits."""
+    """`organizations.postal_code` is `String(10)`; the schema wants exactly five digits."""
     with pytest.raises(ValidationFailed) as caught:
         check_party_exportable(_customer(postal_code="2012"), "customer")
     assert caught.value.details["field"] == "postal_code"

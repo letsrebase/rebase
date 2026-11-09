@@ -24,10 +24,10 @@ from sqlalchemy.orm import Session
 
 from pigrocrm.core.activities.models import Activity
 from pigrocrm.core.actor import Actor
-from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.documents.models import Document, DocumentVersion
 from pigrocrm.core.documents.service import DocumentService
 from pigrocrm.core.errors import PermissionDenied, ValidationFailed
+from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.storage.local import LocalFileStorage
 
 ADMIN = Actor(id=None, type="system", role="admin")
@@ -38,7 +38,7 @@ ORIGIN = {"drive_file_id": "1PreventivoPdfXXXX", "name": "Fattura 7.pdf"}
 
 
 def _customer_id(session: Session) -> UUID:
-    customer = Customer(legal_name=f"Acme {uuid4()}")
+    customer = Organization(legal_name=f"Acme {uuid4()}")
     session.add(customer)
     session.flush()
     return customer.id

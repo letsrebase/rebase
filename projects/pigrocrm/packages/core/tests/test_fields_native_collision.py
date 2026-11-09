@@ -37,11 +37,11 @@ def admin() -> Actor:
         ("cost", "Amount", "amount"),
         ("cost", "Date", "date"),
         ("deal", "Name", "name"),
-        ("customer", "Legal name", "legal_name"),
+        ("organization", "Legal name", "legal_name"),
         # `note` is no column since the notes thread (REB-879), but a Create takes it as the
         # first note, so a custom field may not take the name.
         ("deal", "Note", "note"),
-        ("customer", "Note", "note"),
+        ("organization", "Note", "note"),
         ("person", "Note", "note"),
         # Slugification is what makes this reachable by accident: nobody types
         # `budgeted_hours`, they type "Budgeted hours".

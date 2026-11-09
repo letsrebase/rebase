@@ -59,13 +59,13 @@ def _tools_of(module: str) -> set[str]:
 CORE_TOOLS = frozenset(
     {
         "describe_schema",
-        "create_customer",
+        "create_organization",
         "suggest_legal_entity",
-        "update_customer",
-        "get_customer",
-        "search_customers",
-        "archive_customer",
-        "restore_customer",
+        "update_organization",
+        "get_organization",
+        "search_organizations",
+        "archive_organization",
+        "restore_organization",
         "create_person",
         "update_person",
         "get_person",
@@ -262,7 +262,7 @@ async def test_off_hides_the_deals_and_on_finds_them_as_they_were(
 ) -> None:
     PipelineService(mcp_session).seed_defaults(SETUP)
     async with Client(_server(mcp_session, tmp_path, _settings())) as client:
-        customer = await client.call_tool("create_customer", {"legal_name": "ACME"})
+        customer = await client.call_tool("create_organization", {"legal_name": "ACME"})
         customer_id = (customer.structured_content or {})["id"]
         created = await client.call_tool(
             "create_deal", {"name": "Sito", "customer_id": customer_id}
@@ -275,14 +275,14 @@ async def test_off_hides_the_deals_and_on_finds_them_as_they_were(
         assert refused.is_error
         assert refused.content[0].text == "Unknown tool: get_deal"  # type: ignore[union-attr]
         # The customer's own card no longer points into deals.
-        card = (await client.read_resource(f"customer://{customer_id}")).contents[0].text
+        card = (await client.read_resource(f"organization://{customer_id}")).contents[0].text
         assert "## Deal" not in card
 
     async with Client(_server(mcp_session, tmp_path, _settings())) as client:
         found = await client.call_tool("get_deal", {"deal_id": deal_id})
         assert not found.is_error
         assert (found.structured_content or {})["name"] == "Sito"
-        card = (await client.read_resource(f"customer://{customer_id}")).contents[0].text
+        card = (await client.read_resource(f"organization://{customer_id}")).contents[0].text
         assert "Sito" in card
 
 
@@ -383,7 +383,7 @@ async def test_set_space_modules_refuses_a_module_with_data_the_call_does_not_na
     PipelineService(mcp_session).seed_defaults(SETUP)
     admin = _server(mcp_session, tmp_path, _settings(**OPEN), full_access=True)
     async with Client(admin) as client:
-        customer = await client.call_tool("create_customer", {"legal_name": "ACME"})
+        customer = await client.call_tool("create_organization", {"legal_name": "ACME"})
         await client.call_tool(
             "create_deal",
             {"name": "Sito", "customer_id": (customer.structured_content or {})["id"]},
@@ -462,7 +462,7 @@ async def test_a_core_tool_refuses_a_deal_reference_while_deals_is_off_and_takes
     PipelineService(mcp_session).seed_defaults(SETUP)
     async with Client(_server(mcp_session, tmp_path, _settings())) as client:
         customer = (
-            await client.call_tool("create_customer", {"legal_name": "ACME"})
+            await client.call_tool("create_organization", {"legal_name": "ACME"})
         ).structured_content
         deal = (
             await client.call_tool(
@@ -491,7 +491,7 @@ async def test_a_core_tool_refuses_a_deal_reference_while_deals_is_off_and_takes
         ).is_error
         assert not (
             await client.call_tool(
-                "get_timeline", {"entity_type": "customer", "entity_id": customer_id}
+                "get_timeline", {"entity_type": "organization", "entity_id": customer_id}
             )
         ).is_error
 
@@ -508,7 +508,7 @@ def test_the_gmail_tools_refuse_a_kind_of_a_module_that_is_off() -> None:
     for tool in ("list_gmail_messages", "draft_email", "get_timeline"):
         with pytest.raises(ModuleOff, match=ABOUT_DEALS):
             refuse_off_references(tool, {"entity_type": "deal"}, on)
-        refuse_off_references(tool, {"entity_type": "customer"}, on)
+        refuse_off_references(tool, {"entity_type": "organization"}, on)
         refuse_off_references(tool, {"entity_type": "deal"}, frozenset(MODULE_KEYS))
         refuse_off_references(tool, {"entity_type": "deal"}, None)
     with pytest.raises(ModuleOff, match="Contratti"):
@@ -581,7 +581,7 @@ async def test_the_deal_resource_prints_no_economics_while_costs_is_off(
     PipelineService(mcp_session).seed_defaults(SETUP)
     async with Client(_server(mcp_session, tmp_path, _settings())) as client:
         customer = (
-            await client.call_tool("create_customer", {"legal_name": "ACME"})
+            await client.call_tool("create_organization", {"legal_name": "ACME"})
         ).structured_content
         deal = (
             await client.call_tool(

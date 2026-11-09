@@ -4,11 +4,11 @@ from typing import Protocol
 from uuid import UUID
 
 from pigrocrm.core.actor import Actor
-from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.errors import NotFound
 from pigrocrm.core.fiscal.schemas import FiscalSnapshot
 from pigrocrm.core.invoices.context import InvoiceContext
 from pigrocrm.core.invoices.schemas import SNAPSHOT_VERSION, InvoiceSnapshot, PartySnapshot
+from pigrocrm.core.organizations.models import Organization
 
 
 class _Party(Protocol):
@@ -83,9 +83,9 @@ def build_snapshot(
     caption for the PDF header, free text, and the machine value the SdI validates is
     `fiscal_profile.regime_code`. Two columns, two jobs.
     """
-    customer = ctx.session.get(Customer, customer_id)
+    customer = ctx.session.get(Organization, customer_id)
     if customer is None:  # pragma: no cover - the FK makes this unreachable
-        raise NotFound("customer", customer_id)
+        raise NotFound("organization", customer_id)
     return InvoiceSnapshot(
         version=SNAPSHOT_VERSION,
         legal_entity=party_snapshot(ctx.legal_entity.get(actor, legal_entity_id)),

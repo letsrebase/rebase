@@ -13,7 +13,7 @@ from pigrocrm.core.config import Settings
 
 
 def _customer(client: TestClient) -> str:
-    response = client.post("/api/customers", json={"legal_name": "ACME S.r.l."})
+    response = client.post("/api/organizations", json={"legal_name": "ACME S.r.l."})
     assert response.status_code == 201, response.text
     return str(response.json()["id"])
 

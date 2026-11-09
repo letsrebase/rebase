@@ -61,11 +61,11 @@ from sqlalchemy.orm import Session
 
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.config import Settings
-from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.dashboard.schemas import PeriodQuery
 from pigrocrm.core.db import session_factory, today_local
 from pigrocrm.core.deals.models import Deal
 from pigrocrm.core.invoices.models import Invoice
+from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.pipeline.models import PipelineStage
 from pigrocrm.core.storage import LocalFileStorage
 from pigrocrm_mcp.context import McpContext, ScopedSessionProvider
@@ -125,7 +125,7 @@ def committed_corpus(mcp_engine: Engine) -> Iterator[None]:
         won = PipelineStage(
             name=STAGE_WON, position=910, default_probability=100, type="won", code=None
         )
-        customer = Customer(legal_name=f"{_PREFIX} Cliente", country="IT", custom_fields={})
+        customer = Organization(legal_name=f"{_PREFIX} Cliente", country="IT", custom_fields={})
         session.add_all([won, customer])
         session.flush()
         deal = Deal(
@@ -167,12 +167,16 @@ def committed_corpus(mcp_engine: Engine) -> Iterator[None]:
             session.execute(
                 delete(Invoice).where(
                     Invoice.customer_id.in_(
-                        session.query(Customer.id).filter(Customer.legal_name.like(f"{_PREFIX} %"))
+                        session.query(Organization.id).filter(
+                            Organization.legal_name.like(f"{_PREFIX} %")
+                        )
                     )
                 )
             )
             session.execute(delete(Deal).where(Deal.name.like(f"{_PREFIX} %")))
-            session.execute(delete(Customer).where(Customer.legal_name.like(f"{_PREFIX} %")))
+            session.execute(
+                delete(Organization).where(Organization.legal_name.like(f"{_PREFIX} %"))
+            )
             session.execute(delete(PipelineStage).where(PipelineStage.name.like(f"{_PREFIX} %")))
             remove_legal_entity(session, legal_entity_id)
             session.commit()

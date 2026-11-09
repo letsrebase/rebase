@@ -119,13 +119,15 @@ def test_the_application_role_runs_the_definer_helpers_but_cannot_move_the_schem
     try:
         with app.begin() as connection:
             assert (
-                connection.execute(text("SELECT customer_archived(gen_random_uuid())")).scalar_one()
+                connection.execute(
+                    text("SELECT organization_archived(gen_random_uuid())")
+                ).scalar_one()
                 is None
             )
             with pytest.raises(DBAPIError):
                 connection.execute(text("UPDATE alembic_version SET version_num = version_num"))
         with outside.connect() as connection, pytest.raises(DBAPIError):
-            connection.execute(text("SELECT customer_archived(gen_random_uuid())"))
+            connection.execute(text("SELECT organization_archived(gen_random_uuid())"))
     finally:
         app.dispose()
         outside.dispose()

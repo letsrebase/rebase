@@ -16,7 +16,6 @@ from sqlalchemy import Engine, text
 
 from pigrocrm.core.activities.service import ActivityService
 from pigrocrm.core.actor import Actor
-from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.db import session_factory
 from pigrocrm.core.db.clock import today_local
 from pigrocrm.core.fiscal.schemas import FiscalProfileUpsert
@@ -25,6 +24,7 @@ from pigrocrm.core.invoices.schemas import InvoiceCreate, InvoiceIssue, InvoiceL
 from pigrocrm.core.invoices.service import InvoiceService
 from pigrocrm.core.legal_entities.schemas import LegalEntityUpsert
 from pigrocrm.core.legal_entities.service import LegalEntityService
+from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.storage.local import LocalFileStorage
 
 ADMIN = Actor(id=None, type="system", role="admin")
@@ -47,7 +47,7 @@ def world(db_engine: Engine, tmp_path):  # type: ignore[no-untyped-def]
     """
     factory = session_factory(db_engine)
     with factory() as setup:
-        customer = Customer(
+        customer = Organization(
             legal_name="Acme S.r.l.",
             vat_number="12345678901",
             sdi_code="ABCDEFG",
@@ -88,7 +88,7 @@ def world(db_engine: Engine, tmp_path):  # type: ignore[no-untyped-def]
             cleanup.execute(text("DELETE FROM invoice_counters"))
             cleanup.execute(text("DELETE FROM fiscal_profile"))
             cleanup.execute(text("DELETE FROM legal_entities WHERE NOT is_default"))
-            cleanup.execute(text("DELETE FROM customers WHERE id = :id"), {"id": customer_id})
+            cleanup.execute(text("DELETE FROM organizations WHERE id = :id"), {"id": customer_id})
             cleanup.commit()
 
 

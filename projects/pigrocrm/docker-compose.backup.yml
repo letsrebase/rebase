@@ -1,5 +1,5 @@
 # Production's overlay: the nightly, encrypted, off-host backup of the CRM's whole Postgres
-# server (INFRA-A-07). The register holds customers' fiscal data and every space has a
+# server (INFRA-A-07). The register holds organizations' fiscal data and every space has a
 # database of its own, so what it saves is the server and not one database: the roles, the
 # register and every `pigro_t_*` space, listed afresh at each run. A file of its own, which
 # only production's `.env` loads:

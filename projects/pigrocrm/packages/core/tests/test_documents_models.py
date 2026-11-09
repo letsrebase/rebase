@@ -7,14 +7,14 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.contracts.models import Contract
-from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.documents.models import Document, DocumentVersion
 from pigrocrm.core.legal_entities.models import LegalEntity
+from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.schema_registry import ENTITY_TYPES, native_fields
 from pigrocrm.core.templates.models import Template
 
 
-def _contract(db_session: Session, customer: Customer) -> Contract:
+def _contract(db_session: Session, customer: Organization) -> Contract:
     contract = Contract(
         customer_id=customer.id,
         title="Consulenza CTO",

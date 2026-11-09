@@ -52,7 +52,7 @@ describe('visibleSections (REB-953)', () => {
   })
 
   it('drops a section left with no entry', () => {
-    // Vendite keeps its customers and people, so it stays; it is Amministrazione that
+    // Vendite keeps its organizations and people, so it stays; it is Amministrazione that
     // loses two of its three, and keeps «Fatture».
     const sections = visibleSections(moduleAccess(spaceModules(['deals', 'contracts'])))
     expect(sections.map((section) => section.id)).toEqual(['da-fare', 'vendite', 'amministrazione'])

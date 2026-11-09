@@ -9,12 +9,12 @@ import { api } from '@/lib/api'
 import type { FieldDefinition } from '@/lib/schema'
 
 // `api.GET` is spied on directly (not `vi.mock('@/lib/api', ...)`), mirroring
-// `Timeline.test.tsx`: `PersonForm` mounts `CustomerPicker` (for the "Azienda (cliente)"
+// `Timeline.test.tsx`: `PersonForm` mounts `OrganizationPicker` (for the "Azienda (cliente)"
 // picker), which runs a real query through the real `unwrap`, so what is under test is this
 // form's own handling of what that hook returns, not a reimplementation of it.
 const mockGet = vi.spyOn(api, 'GET')
 
-function customerPage(items: { id: string; legal_name: string }[]) {
+function organizationPage(items: { id: string; legal_name: string }[]) {
   return Promise.resolve({
     data: { items, next_cursor: null },
     response: new Response(null, { status: 200 }),
@@ -24,12 +24,12 @@ function customerPage(items: { id: string; legal_name: string }[]) {
 beforeEach(() => {
   mockGet.mockReset()
   // Every test that renders PersonForm with the dialog open reaches
-  // `CustomerPicker`, which searches customers for the "Azienda (cliente)" picker -- an
+  // `OrganizationPicker`, which searches organizations for the "Azienda (cliente)" picker -- an
   // empty page is enough for every one of those that does not care about its
   // contents; the ones that do override this before rendering. The one test
   // below that renders with the dialog closed never calls `api.GET` at all, so
   // this default simply goes unused there.
-  mockGet.mockReturnValue(customerPage([]))
+  mockGet.mockReturnValue(organizationPage([]))
 })
 
 function renderWithClient(ui: ReactElement) {
@@ -105,7 +105,7 @@ function mockGmail(syncing: boolean) {
     ((path: string) =>
       path === '/api/gmail/account'
         ? Promise.resolve({ data: gmailHealth(syncing), response: new Response(null, { status: 200 }) })
-        : customerPage([])) as never,
+        : organizationPage([])) as never,
   )
 }
 
@@ -139,7 +139,7 @@ describe('PersonForm', () => {
   })
 
   /**
-   * The defect this guards, identical in shape to `CustomerForm`'s own
+   * The defect this guards, identical in shape to `OrganizationForm`'s own
    * (reproduced live there first -- see task-6-report.md): archive a field
    * definition while a record still carries a value for it, open Edit,
    * press Save with nothing else changed. A flat form state would re-derive
@@ -254,9 +254,9 @@ describe('PersonForm', () => {
      * unconditionally -- and this form is mounted by both the Persone list and
      * every person detail page regardless of `open` (only the dialog's own
      * visibility toggles on it), so every view of either screen fired a
-     * `GET /api/customers` for a picker nobody had opened. The picker is its own
-     * component (`CustomerPicker`), mounted -- and therefore only ever
-     * searching customers -- inside `DialogContent`, which Radix does not render
+     * `GET /api/organizations` for a picker nobody had opened. The picker is its own
+     * component (`OrganizationPicker`), mounted -- and therefore only ever
+     * searching organizations -- inside `DialogContent`, which Radix does not render
      * at all while `open` is false.
      */
     it('does not fetch the customer list while the dialog is closed', () => {
@@ -294,7 +294,7 @@ describe('PersonForm', () => {
     })
 
     it('sends a chosen customer_id on create', async () => {
-      mockGet.mockReturnValue(customerPage([{ id: 'cust-1', legal_name: 'ACME Srl' }]))
+      mockGet.mockReturnValue(organizationPage([{ id: 'cust-1', legal_name: 'ACME Srl' }]))
       const onSubmit = vi.fn()
       renderWithClient(
         <PersonForm
@@ -319,8 +319,8 @@ describe('PersonForm', () => {
 
     /**
      * The bug the brief's own sample would have shipped, found by reading
-     * `PersonUpdate`/`PersonService.update` rather than assumed from Customer's
-     * shape (Customer has no such relationship to generalise from): there is no
+     * `PersonUpdate`/`PersonService.update` rather than assumed from Organization's
+     * shape (Organization has no such relationship to generalise from): there is no
      * way to clear `customer_id` with `null` (`model_dump(exclude_none=True)`
      * drops it before the service ever sees it) or `""` (fails UUID parsing,
      * 422). Only an explicit `detach: true` removes an existing association.
@@ -329,7 +329,7 @@ describe('PersonForm', () => {
      * rejects, both leave the stale association in place.
      */
     it('detaches an existing customer with `detach: true`, never `customer_id: null`', async () => {
-      mockGet.mockReturnValue(customerPage([{ id: 'cust-1', legal_name: 'ACME Srl' }]))
+      mockGet.mockReturnValue(organizationPage([{ id: 'cust-1', legal_name: 'ACME Srl' }]))
       const onSubmit = vi.fn()
       renderWithClient(
         <PersonForm
@@ -351,7 +351,7 @@ describe('PersonForm', () => {
     })
 
     it('keeps sending the same customer_id when the association is untouched on edit', async () => {
-      mockGet.mockReturnValue(customerPage([{ id: 'cust-1', legal_name: 'ACME Srl' }]))
+      mockGet.mockReturnValue(organizationPage([{ id: 'cust-1', legal_name: 'ACME Srl' }]))
       const onSubmit = vi.fn()
       renderWithClient(
         <PersonForm

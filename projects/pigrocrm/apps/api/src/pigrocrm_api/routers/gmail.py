@@ -51,7 +51,7 @@ from pigrocrm.core.gmail.schemas import (
     GmailMessageRead,
     GmailSettingsUpdate,
     GoogleAccountRead,
-    SuggestedCustomer,
+    SuggestedOrganization,
     SyncReport,
 )
 from pigrocrm.core.gmail.sync import SUGGEST_MAX_MONTHS, GmailSyncService
@@ -82,8 +82,8 @@ _START_PAGE = "/app/get-started"
 # rather than spelled here in a way that evades the scan.
 _MESSAGES_PATH = "/messages"
 _ACCOUNT_PATH = "/account"
-_SUGGESTIONS_PATH = "/customer-suggestions"
-_CORRESPONDENTS_PATH = "/customers/{customer_id}/correspondents"
+_SUGGESTIONS_PATH = "/organization-suggestions"
+_CORRESPONDENTS_PATH = "/organizations/{customer_id}/correspondents"
 _CALLBACK_ROUTE = "/oauth/callback"
 _CALLBACK_PATH = f"{router.prefix}{_CALLBACK_ROUTE}"
 
@@ -207,17 +207,17 @@ def run_backfill(
     )
 
 
-# The customers the connected mailbox proposes (spec 2026-09-16 §5, REB-223). It asks
+# The organizations the connected mailbox proposes (spec 2026-09-16 §5, REB-223). It asks
 # Gmail, so it answers 409 without a Google client or a mailbox, like `/sync`. No search
 # string: the only parameter is how many months back, bounded by the service.
-@authenticated.get(_SUGGESTIONS_PATH, response_model=list[SuggestedCustomer])
-def suggest_customers(
+@authenticated.get(_SUGGESTIONS_PATH, response_model=list[SuggestedOrganization])
+def suggest_organizations(
     session: SessionDep,
     actor: ActorDep,
     settings: SettingsDep,
     months: Annotated[int, Query(ge=1, le=SUGGEST_MAX_MONTHS)] = 12,
-) -> list[SuggestedCustomer]:
-    return _sync(session, settings).suggest_customers(actor=actor, months=months)
+) -> list[SuggestedOrganization]:
+    return _sync(session, settings).suggest_organizations(actor=actor, months=months)
 
 
 # Who at one customer's domain the connected mailbox has written to or heard from
@@ -237,7 +237,7 @@ def discover_correspondents(
 def read_messages(
     session: SessionDep,
     actor: ActorDep,
-    entity_type: Annotated[Literal["customer", "person", "deal"], Query()],
+    entity_type: Annotated[Literal["organization", "person", "deal"], Query()],
     entity_id: Annotated[UUID, Query()],
     limit: Annotated[int, Query(ge=1, le=200)] = 100,
     order: Annotated[

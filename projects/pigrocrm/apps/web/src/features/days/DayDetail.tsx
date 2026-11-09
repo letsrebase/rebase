@@ -141,8 +141,8 @@ function Loaded({ day }: { day: WorkUnitDetail }) {
             {day.contract_title}
           </Link>
           <Link
-            to="/app/customers/$customerId"
-            params={{ customerId: day.customer_id }}
+            to="/app/organizations/$organizationId"
+            params={{ organizationId: day.customer_id }}
             className="underline underline-offset-4"
           >
             {day.customer_name}

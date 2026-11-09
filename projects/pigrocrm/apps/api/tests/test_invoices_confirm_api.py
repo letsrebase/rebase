@@ -60,7 +60,7 @@ def legal_entity(logged_in: TestClient) -> dict[str, Any]:
 @pytest.fixture
 def customer(logged_in: TestClient) -> dict[str, Any]:
     response = logged_in.post(
-        "/api/customers",
+        "/api/organizations",
         json={
             "legal_name": "Esempio Servizi S.r.l.",
             "vat_number": CUSTOMER_VAT_NUMBER,
@@ -156,7 +156,7 @@ def test_no_matching_customer_reports_needs_customer_confirmation_and_writes_not
     logged_in: TestClient, fiscal_profile: dict[str, Any], legal_entity: dict[str, Any]
 ) -> None:
     customer = logged_in.post(
-        "/api/customers",
+        "/api/organizations",
         json={
             "legal_name": "Cliente Senza Match",
             "address": "Via Roma 1",
@@ -182,7 +182,7 @@ def test_an_explicit_customer_id_resolves_needs_customer_confirmation(
     logged_in: TestClient, fiscal_profile: dict[str, Any], legal_entity: dict[str, Any]
 ) -> None:
     uploader = logged_in.post(
-        "/api/customers",
+        "/api/organizations",
         json={
             "legal_name": "Cliente Caricatore",
             "address": "Via Roma 1",
@@ -193,7 +193,7 @@ def test_an_explicit_customer_id_resolves_needs_customer_confirmation(
         },
     ).json()
     chosen = logged_in.post(
-        "/api/customers",
+        "/api/organizations",
         json={
             "legal_name": "Cliente Scelto",
             "address": "Via Milano 2",
@@ -218,11 +218,11 @@ def test_an_explicit_customer_id_resolves_needs_customer_confirmation(
 def test_create_customer_writes_one_new_customer_for_the_whole_batch(
     logged_in: TestClient, fiscal_profile: dict[str, Any], legal_entity: dict[str, Any]
 ) -> None:
-    """REB-367: no `customer_id` and no exact match, but `create_customer` is
-    true -- the matched party becomes a new `Customer`, and every invoice in
+    """REB-367: no `customer_id` and no exact match, but `create_organization` is
+    true -- the matched party becomes a new `Organization`, and every invoice in
     the `lotto` batch attaches to that same freshly-created row."""
     uploader = logged_in.post(
-        "/api/customers",
+        "/api/organizations",
         json={
             "legal_name": "Cliente Caricatore",
             "address": "Via Roma 1",
@@ -236,7 +236,7 @@ def test_create_customer_writes_one_new_customer_for_the_whole_batch(
 
     response = logged_in.post(
         "/api/invoices/import/confirm",
-        json={"document_id": document_id, "create_customer": True},
+        json={"document_id": document_id, "create_organization": True},
     )
     assert response.status_code == 200, response.text
     lines = response.json()["lines"]
@@ -246,7 +246,7 @@ def test_create_customer_writes_one_new_customer_for_the_whole_batch(
     [customer_id] = customer_ids
     assert customer_id != uploader["id"]
 
-    created = logged_in.get(f"/api/customers/{customer_id}")
+    created = logged_in.get(f"/api/organizations/{customer_id}")
     assert created.status_code == 200, created.text
     assert created.json()["vat_number"] == CUSTOMER_VAT_NUMBER
 

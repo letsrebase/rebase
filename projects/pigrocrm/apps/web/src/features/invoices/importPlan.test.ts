@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   batchFiles,
   countWrites,
-  customersOf,
+  organizationsOf,
   decisionsFor,
   newParties,
   registerYears,
@@ -74,7 +74,7 @@ describe('the order of a review', () => {
   })
 })
 
-describe('the new customers of a review', () => {
+describe('the new organizations of a review', () => {
   it('are one party for every invoice that names them, by the key the server gave', () => {
     const rows = [
       row('needs_customer_confirmation', '1'),
@@ -88,7 +88,7 @@ describe('the new customers of a review', () => {
     ]
 
     // `legalEntityId` is the azienda the party's invoices are written on, which bounds the
-    // customers it may be attached to.
+    // organizations it may be attached to.
     expect(newParties(rows)).toEqual([
       {
         key: '09876543210',
@@ -129,7 +129,7 @@ describe('what a confirmation would write', () => {
     row('unclaimed', '6'),
   ]
 
-  it('is the ready invoices and the new customers left ticked, and nothing else', () => {
+  it('is the ready invoices and the new organizations left ticked, and nothing else', () => {
     expect(rows.filter((r) => willBeWritten(r, NONE)).map((r) => r.sha256)).toEqual(['1', '2'])
     expect(countWrites(rows, NONE)).toBe(2)
   })
@@ -143,9 +143,9 @@ describe('what a confirmation would write', () => {
   })
 
   it('sends one decision per new customer: create for one ticked, an explicit skip for one unticked', () => {
-    expect(decisionsFor(rows, NONE)).toEqual({ customers: { '09876543210': { create_customer: true } } })
+    expect(decisionsFor(rows, NONE)).toEqual({ organizations: { '09876543210': { create_organization: true } } })
     expect(decisionsFor(rows, new Set(['09876543210']))).toEqual({
-      customers: { '09876543210': { skip: true } },
+      organizations: { '09876543210': { skip: true } },
     })
   })
 
@@ -153,7 +153,7 @@ describe('what a confirmation would write', () => {
     const created = new Map([['09876543210', 'customer-1']])
 
     expect(decisionsFor(rows, NONE, created)).toEqual({
-      customers: { '09876543210': { customer_id: 'customer-1' } },
+      organizations: { '09876543210': { customer_id: 'customer-1' } },
     })
   })
 
@@ -161,7 +161,7 @@ describe('what a confirmation would write', () => {
     const chosen = new Map([['09876543210', { id: 'customer-9', name: 'Acme Ltd' }]])
 
     expect(decisionsFor(rows, NONE, new Map(), chosen)).toEqual({
-      customers: { '09876543210': { customer_id: 'customer-9' } },
+      organizations: { '09876543210': { customer_id: 'customer-9' } },
     })
   })
 
@@ -170,34 +170,34 @@ describe('what a confirmation would write', () => {
     const created = new Map([['09876543210', 'customer-1']])
 
     expect(decisionsFor(rows, new Set(['09876543210']), new Map(), chosen)).toEqual({
-      customers: { '09876543210': { skip: true } },
+      organizations: { '09876543210': { skip: true } },
     })
     expect(decisionsFor(rows, NONE, created, chosen)).toEqual({
-      customers: { '09876543210': { customer_id: 'customer-1' } },
+      organizations: { '09876543210': { customer_id: 'customer-1' } },
     })
   })
 
-  it('names two customers of one file separately, so unticking one leaves the other', () => {
+  it('names two organizations of one file separately, so unticking one leaves the other', () => {
     const two = [
       row('needs_customer_confirmation', '1', { party_key: 'AAA' }),
       row('needs_customer_confirmation', '1', { party_key: 'BBB' }),
     ]
 
     expect(decisionsFor(two, new Set(['AAA']))).toEqual({
-      customers: { AAA: { skip: true }, BBB: { create_customer: true } },
+      organizations: { AAA: { skip: true }, BBB: { create_organization: true } },
     })
     expect(countWrites(two, new Set(['AAA']))).toBe(1)
   })
 })
 
-describe('the customers an import created', () => {
+describe('the organizations an import created', () => {
   it('are read from the confirmed rows, per party', () => {
     const rows = [
       { file: 'a', sha256: 'a', outcome: 'imported', party_key: 'AAA', invoice: { customer_id: 'c1' } },
       { file: 'b', sha256: 'b', outcome: 'conflict', party_key: 'BBB' },
     ] as ConfirmRow[]
 
-    expect([...customersOf(rows)]).toEqual([['AAA', 'c1']])
+    expect([...organizationsOf(rows)]).toEqual([['AAA', 'c1']])
   })
 })
 

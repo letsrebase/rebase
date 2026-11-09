@@ -26,7 +26,6 @@ from sqlalchemy.orm import Session
 
 from pigrocrm.core.contracts.models import Contract, RateCard
 from pigrocrm.core.contracts.repository import ContractRepository, RateCardRepository
-from pigrocrm.core.customers.repository import CustomerRepository
 from pigrocrm.core.invoices.fatturapa.normalise import normalise_fiscal_id
 from pigrocrm.core.invoices.fatturapa_import import invoice_pa_fpr_12_adapter
 from pigrocrm.core.invoices.import_adapter import InvoiceFormatAdapter
@@ -36,6 +35,7 @@ from pigrocrm.core.invoices.models import Invoice
 from pigrocrm.core.invoices.naming import NUMBER_COMPLETE_RE
 from pigrocrm.core.invoices.repository import InvoiceRepository
 from pigrocrm.core.legal_entities.models import LegalEntity
+from pigrocrm.core.organizations.repository import OrganizationRepository
 from pigrocrm.core.work_units.day_mapping import (
     WorkUnitDayMappingProposal,
     propose_day_mapping,
@@ -61,7 +61,7 @@ InvoiceReviewOutcome = Literal[
 """REB-364's own `InvoiceImportClassification` (`ready`/`already_present`/
 `conflict`/`incoming_skipped`) plus the two facts only this issue adds:
 `"needs_customer_confirmation"` -- an otherwise-`ready` invoice whose `customer`
-matches no `Customer` on file by `vat_number`/`tax_code` -- and
+matches no `Organization` on file by `vat_number`/`tax_code` -- and
 `"unclaimed"`, for a document no registered adapter's `detect` recognises at all:
 never a silent drop, mirroring mastro's own `importer.ts:31-33` outcome for a file
 no adapter claims."""
@@ -180,10 +180,10 @@ def match_customer(
 ) -> UUID | None:
     """The customer on file for `customer`, by tax id, among those of `legal_entity_id` when
     given: an invoice written on one legal entity's register attaches only to that legal entity's
-    customers (REB-783)."""
+    organizations (REB-783)."""
     vat_number = normalise_fiscal_id(customer.vat_number)
     cf = normalise_fiscal_id(customer.tax_code)
-    found = CustomerRepository(session).match_by_fiscal_id(
+    found = OrganizationRepository(session).match_by_fiscal_id(
         vat_number=vat_number, tax_code=cf, legal_entity_id=legal_entity_id
     )
     return found.id if found is not None else None
@@ -191,11 +191,11 @@ def match_customer(
 
 # A customer's contracts with their rate cards, read once per `review_invoices` call:
 # several invoices of one upload usually belong to the same customer.
-CustomerContracts = dict[UUID, list[tuple[Contract, list[RateCard]]]]
+OrganizationContracts = dict[UUID, list[tuple[Contract, list[RateCard]]]]
 
 
 def _contracts_of(
-    session: Session, cache: CustomerContracts, customer_id: UUID
+    session: Session, cache: OrganizationContracts, customer_id: UUID
 ) -> list[tuple[Contract, list[RateCard]]]:
     if customer_id not in cache:
         rate_card_repo = RateCardRepository(session)
@@ -207,7 +207,7 @@ def _contracts_of(
 
 
 def _day_rate_contract_for_customer(
-    session: Session, cache: CustomerContracts, customer_id: UUID, issue_date: date
+    session: Session, cache: OrganizationContracts, customer_id: UUID, issue_date: date
 ) -> tuple[Contract, list[RateCard]] | None:
     """The one contract, among `customer_id`'s, whose own rate card is a day-rate
     one on the invoice's own `issue_date` -- mastro's `resolveActiveContractId`
@@ -232,7 +232,7 @@ def _day_rate_contract_for_customer(
 
 
 def _propose_day_mappings(
-    session: Session, cache: CustomerContracts, invoice: ParsedInvoice, customer_id: UUID
+    session: Session, cache: OrganizationContracts, invoice: ParsedInvoice, customer_id: UUID
 ) -> list[WorkUnitDayMappingProposal | None]:
     """REB-369: one entry per `invoice.lines`, `None` where the customer resolves
     to no single day-rate contract, that contract has no recorded, unbilled days,
@@ -292,7 +292,7 @@ def review_invoices(
     except ValueError as exc:
         return [ReviewedInvoice(outcome="unclaimed", note=str(exc))]
 
-    contracts: CustomerContracts = {}
+    contracts: OrganizationContracts = {}
     rows: list[ReviewedInvoice] = []
     for invoice in parsed:
         classification, legal_entity = classify_parsed_invoice(

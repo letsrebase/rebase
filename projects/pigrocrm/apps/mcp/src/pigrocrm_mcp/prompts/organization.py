@@ -1,11 +1,11 @@
 """§10's fourth prompt, and the only one that embeds a resource.
 
 It is the only one because it is the only one whose resource **already exists**:
-`customer://{id}`, from slice 1 §8.4. A resource block needs a URI, and there is no URI for
+`organization://{id}`, from slice 1 §8.4. A resource block needs a URI, and there is no URI for
 "the commercial dashboard for March" that would not be a new resource invented in order to
 have one -- which §11.1 explicitly declines.
 
-**The text block carries only what the card does not.** `render_customer` already renders
+**The text block carries only what the card does not.** `render_organization` already renders
 the fiscal identity, the contacts, the deals and the timeline, and an `EmbeddedResource`
 must carry the resource's text -- `TextResourceContents.text` is required by the protocol
 types, so the card is in the message either way. Repeating the deal list beside it would
@@ -26,19 +26,19 @@ from pigrocrm_mcp.resources import entities
 UNPAID_INVOICES_SHOWN = 15
 
 
-def status_customer(context: McpContext, customer_id: str) -> list[dict[str, Any]]:
+def status_organization(context: McpContext, organization_id: str) -> list[dict[str, Any]]:
     """The briefing before a phone call.
 
     The card is rendered before anything else so an unknown id is a `NotFound` the guard
     renders as a sentence, rather than an empty briefing about nobody -- which would read as
-    "this customer has nothing open" and is the more dangerous of the two answers.
+    "this organization has nothing open" and is the more dangerous of the two answers.
     """
-    identifier = UUID(customer_id)
-    card = entities.render_customer(context, identifier)
+    identifier = UUID(organization_id)
+    card = entities.render_organization(context, identifier)
 
     # One row past the cap, and then discarded: it is asked for only so the prompt can say
     # that it truncated. A briefing that omits its tail silently cannot be told apart from a
-    # short register, which is the reading that gets somebody told a customer owes less than
+    # short register, which is the reading that gets somebody told an organization owes less than
     # they do.
     fetched = InvoiceService(context.session, context.storage).unpaid_for_customer(
         identifier, context.actor, limit=UNPAID_INVOICES_SHOWN + 1
@@ -70,7 +70,7 @@ def status_customer(context: McpContext, customer_id: str) -> list[dict[str, Any
         "",
         "---",
         "",
-        "The customer's full record — tax data, contacts, deals and timeline — is "
+        "The organization's full record — tax data, contacts, deals and timeline — is "
         "attached as a resource: read it there, it is not repeated here. Prepare the briefing "
         "for a phone call: what is open, what is overdue, and the two or three questions to "
         "ask. Unpaid invoices are receivables including VAT, not revenue. Do not suggest "
@@ -83,7 +83,7 @@ def status_customer(context: McpContext, customer_id: str) -> list[dict[str, Any
             "content": {
                 "type": "resource",
                 "resource": {
-                    "uri": f"customer://{identifier}",
+                    "uri": f"organization://{identifier}",
                     # Required by `TextResourceContents`, and the reason the resource block
                     # *is* the context rather than a pointer to it: a client that cannot
                     # follow the URI still has the card, so "the context arrives inside the

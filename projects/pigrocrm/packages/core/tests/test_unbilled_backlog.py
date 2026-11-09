@@ -36,9 +36,9 @@ from sqlalchemy.orm import Session
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.analytics.schemas import PeriodPnlQuery
 from pigrocrm.core.analytics.service import AnalyticsService
-from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.db.base import uuid7
 from pigrocrm.core.deals.models import Deal
+from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.timetracking.models import TimeEntry
 
 READONLY = Actor(id=uuid7(), type="user", role="readonly")
@@ -259,7 +259,7 @@ def test_the_period_rows_honour_the_customer_filter(
     somebody else, printed on this customer's page."""
     mine = db_session.get(Deal, seeded_deal_id)
     assert mine is not None
-    other_customer = Customer(legal_name=f"Altro cliente {uuid4()}")
+    other_customer = Organization(legal_name=f"Altro cliente {uuid4()}")
     db_session.add(other_customer)
     db_session.flush()
     other_deal = Deal(

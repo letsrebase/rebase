@@ -13,7 +13,7 @@ Under `fakes/` for the reason `invoice_fixtures.py` gives: three test roots, no
 The row is inserted only when the database has no default yet, and the id returned is
 the one *this call* inserted, or `None` when another file's world already holds one:
 a teardown must never take a row it did not write, which is the same rule every
-committed fixture in these files already follows for its customers and deals.
+committed fixture in these files already follows for its organizations and deals.
 
 `is_default=False` is for a world built while a `db_session`-style fixture is open on
 the same database (the API's `client` seeds a default on the test's own connection,

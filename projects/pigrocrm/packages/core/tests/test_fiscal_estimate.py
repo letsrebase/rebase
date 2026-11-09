@@ -353,12 +353,12 @@ def test_the_social_security_surcharge_amount_is_excluded_from_the_coefficient_b
     ordinary income."""
     from datetime import date
 
-    from pigrocrm.core.customers.models import Customer
     from pigrocrm.core.fiscal.pack import IT_FLAT_RATE_PACK
     from pigrocrm.core.invoices.models import Invoice, InvoiceLine
+    from pigrocrm.core.organizations.models import Organization
 
     _set_rates(db_session, coefficient="67.00", substitute="5.00", social_security="26.07")
-    customer = Customer(legal_name="Acme")
+    customer = Organization(legal_name="Acme")
     db_session.add(customer)
     db_session.flush()
     invoice = Invoice(

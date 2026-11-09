@@ -120,7 +120,7 @@ test.describe('il ciclo completo — metà umana', () => {
     await expect(palette).toBeFocused()
     await palette.fill(cycle.vatNumber.slice(3, 9))
     await page.getByRole('option', { name: cycle.customerName }).click()
-    await expect(page).toHaveURL(new RegExp(`/app/customers/${cycle.customerId}$`))
+    await expect(page).toHaveURL(new RegExp(`/app/organizations/${cycle.customerId}$`))
 
     // 3. From the customer to the deal, and from the deal's own Documenti tab to the offer.
     //    Not a `goto` straight to the document: the point of the cycle is that these screens

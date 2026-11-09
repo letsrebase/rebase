@@ -35,7 +35,7 @@ CUSTOM_QUERY_DESCRIPTION = "Filter on custom fields (JSONB), repeatable for seve
 
 def parse_custom_filter(raw: list[str] | None) -> dict[str, str] | None:
     """Turns a repeated `?custom=key:value` query parameter into the dict
-    `CustomerListQuery.custom`/`PersonListQuery.custom`/`DealListQuery.custom`
+    `OrganizationListQuery.custom`/`PersonListQuery.custom`/`DealListQuery.custom`
     already accept and pass straight through to the service's JSONB containment
     filter (`custom_fields.contains(...)`).
 
@@ -47,7 +47,7 @@ def parse_custom_filter(raw: list[str] | None) -> dict[str, str] | None:
     repeated key wins, the same convention most `key=value`-shaped query
     parameters already follow.
 
-    Deliberately shared across the three list routers (customers, people,
+    Deliberately shared across the three list routers (organizations, people,
     deals) rather than duplicated per domain, unlike the domain-specific
     services/repositories those routers call: this is adapter-only, purely
     mechanical string parsing with no business rule in it, the same class of

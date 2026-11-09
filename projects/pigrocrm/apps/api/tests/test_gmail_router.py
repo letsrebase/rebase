@@ -35,10 +35,10 @@ from sqlalchemy.orm import Session
 import pigrocrm_api.google_tokens as google_tokens
 from pigrocrm.core.auth.tokens import issue_access_token
 from pigrocrm.core.config import Settings, get_settings
-from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.gmail.models import GmailMessage, GmailMessageLink, GoogleAccount
 from pigrocrm.core.gmail.schemas import REQUESTED_SCOPES
 from pigrocrm.core.gmail.tokens import TokenGrant
+from pigrocrm.core.organizations.models import Organization
 from pigrocrm_api.deps import ACCESS_COOKIE, REFRESH_COOKIE
 from pigrocrm_api.google_tokens import token_client_key
 
@@ -125,7 +125,7 @@ def test_an_unconfigured_installation_answers_conflict_not_five_hundred(
         (
             "POST",
             "/api/gmail/backfill",
-            {"entity_type": "customer", "entity_id": str(uuid4())},
+            {"entity_type": "organization", "entity_id": str(uuid4())},
         ),
     ]
     for method, path, body in calls:
@@ -268,7 +268,7 @@ def test_the_consent_flow_ends_on_the_home_only_while_the_space_is_empty(
 
     assert landing() == "/app/?outcome=denied"
 
-    customer = Customer(legal_name="Acme S.r.l.", country="IT", custom_fields={})
+    customer = Organization(legal_name="Acme S.r.l.", country="IT", custom_fields={})
     api_session.add(customer)
     api_session.flush()
     assert landing() == "/app/settings/gmail?outcome=denied"
@@ -285,7 +285,7 @@ def test_to_collaborator_is_brought_back_to_first_steps_not_to_settings_they_can
     page's Gmail door, but Settings is admin-only: a consent that ended there would
     answer «Accesso riservato». With work in the space the way back is «Primi passi»,
     the other page that carries the door and reads the same outcome table."""
-    api_session.add(Customer(legal_name="Acme S.r.l.", country="IT", custom_fields={}))
+    api_session.add(Organization(legal_name="Acme S.r.l.", country="IT", custom_fields={}))
     api_session.flush()
     response = collaborator_client.get(
         "/api/gmail/oauth/callback?error=access_denied", follow_redirects=False
@@ -610,12 +610,14 @@ def test_the_messages_endpoint_returns_what_is_filed_against_an_entity(
     api_session.add(message)
     api_session.flush()
     api_session.add(
-        GmailMessageLink(gmail_message_id=message.id, entity_type="customer", entity_id=customer_id)
+        GmailMessageLink(
+            gmail_message_id=message.id, entity_type="organization", entity_id=customer_id
+        )
     )
     api_session.flush()
 
     response = logged_in.get(
-        "/api/gmail/messages", params={"entity_type": "customer", "entity_id": str(customer_id)}
+        "/api/gmail/messages", params={"entity_type": "organization", "entity_id": str(customer_id)}
     )
     assert response.status_code == 200, response.text
     body = response.json()
@@ -654,11 +656,11 @@ def test_the_messages_endpoint_can_read_newest_first_so_the_limit_cuts_the_oldes
         api_session.flush()
         api_session.add(
             GmailMessageLink(
-                gmail_message_id=message.id, entity_type="customer", entity_id=customer_id
+                gmail_message_id=message.id, entity_type="organization", entity_id=customer_id
             )
         )
     api_session.flush()
-    query = {"entity_type": "customer", "entity_id": str(customer_id), "limit": 1}
+    query = {"entity_type": "organization", "entity_id": str(customer_id), "limit": 1}
 
     by_thread = logged_in.get("/api/gmail/messages", params=query)
     newest = logged_in.get("/api/gmail/messages", params={**query, "order": "recent"})
@@ -671,7 +673,7 @@ def test_the_messages_endpoint_bounds_its_limit(logged_in: TestClient) -> None:
     response = logged_in.get(
         "/api/gmail/messages",
         params={
-            "entity_type": "customer",
+            "entity_type": "organization",
             "entity_id": "00000000-0000-7000-8000-000000000000",
             "limit": 5_000,
         },
@@ -757,10 +759,12 @@ def test_disconnecting_keeps_the_stored_messages_unless_the_caller_asks(
     api_session.add(message)
     api_session.flush()
     api_session.add(
-        GmailMessageLink(gmail_message_id=message.id, entity_type="customer", entity_id=customer_id)
+        GmailMessageLink(
+            gmail_message_id=message.id, entity_type="organization", entity_id=customer_id
+        )
     )
     api_session.flush()
-    params = {"entity_type": "customer", "entity_id": str(customer_id)}
+    params = {"entity_type": "organization", "entity_id": str(customer_id)}
 
     assert logged_in.delete("/api/gmail/account").status_code == 204
     assert len(logged_in.get("/api/gmail/messages", params=params).json()) == 1

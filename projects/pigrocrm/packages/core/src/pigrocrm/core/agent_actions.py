@@ -45,11 +45,11 @@ AGENT_ALLOWED_ACTIONS: frozenset[str] = frozenset(
         "add_note",
         "update_note",
         "delete_note",
-        # Customers, people, deals.
-        "create_customer",
-        "update_customer",
-        "delete_customer",
-        "restore_customer",
+        # Organizations, people, deals.
+        "create_organization",
+        "update_organization",
+        "delete_organization",
+        "restore_organization",
         "change_customer_owner",
         "create_person",
         "update_person",
@@ -167,7 +167,7 @@ FULL_ACCESS_ACTIONS: frozenset[str] = frozenset(
         # Gmail reads that spend the owner's quota under the owner's consent, and the text
         # of an attachment, which is a file written by an outside sender.
         "discover_gmail_correspondents",
-        "suggest_customers_from_gmail",
+        "suggest_organizations_from_gmail",
         "read_gmail_attachment",
         # Slice 9 §3.6: writing a numbered row straight into the fiscal register, declaring
         # the numbers it will never carry, and the review and confirm steps (REB-365/366)

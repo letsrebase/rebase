@@ -1,26 +1,26 @@
 import { describe, expect, it } from 'vitest'
-import { buildCustomerColumns } from './columns'
+import { buildOrganizationColumns } from './columns'
 import type { FieldDefinition } from '@/lib/schema'
-import type { Customer } from './queries'
+import type { Organization } from './queries'
 
 /**
  * Reads a native column's cell value the same way `DataTable` does internally --
  * through the column's own `accessorFn` -- for the two columns below that carry
  * one. Verified live in a browser first (see task-6-report.md): after using
- * `CustomerForm`'s edit dialog to clear a previously-set "Telefono", the detail
+ * `OrganizationForm`'s edit dialog to clear a previously-set "Telefono", the detail
  * page rendered a blank cell instead of the dash every other absent value gets,
- * because `CustomerUpdate.model_dump(exclude_none=True)` only clears a native
+ * because `OrganizationUpdate.model_dump(exclude_none=True)` only clears a native
  * column on an explicit `""`, never `null` -- so the value really is `""`, not
  * `null`, and a naive `value ?? EMPTY` does not catch it.
  */
-function cellValue(column: ReturnType<typeof buildCustomerColumns>[number], customer: Customer) {
+function cellValue(column: ReturnType<typeof buildOrganizationColumns>[number], customer: Organization) {
   if (!('accessorFn' in column) || typeof column.accessorFn !== 'function') {
     throw new Error(`column "${String(column.header)}" has no accessorFn to read`)
   }
   return column.accessorFn(customer, 0)
 }
 
-const BASE_CUSTOMER: Customer = {
+const BASE_CUSTOMER: Organization = {
   id: 'c1',
   legal_entity_id: 'a-1',
   owner_id: null,
@@ -46,9 +46,9 @@ const BASE_CUSTOMER: Customer = {
   updated_at: '2026-08-06T00:00:00Z',
 }
 
-describe('buildCustomerColumns', () => {
+describe('buildOrganizationColumns', () => {
   it('always shows the core commercial columns', () => {
-    const headers = buildCustomerColumns([]).map((column) => column.header)
+    const headers = buildOrganizationColumns([]).map((column) => column.header)
     expect(headers).toEqual(['Ragione sociale', 'P.IVA', 'Comune', 'Email', 'Telefono'])
   })
 
@@ -56,26 +56,26 @@ describe('buildCustomerColumns', () => {
     const fields: FieldDefinition[] = [
       { key: 'settore', label: 'Settore', type: 'text', required: false, options: [] },
     ]
-    const headers = buildCustomerColumns(fields).map((column) => column.header)
+    const headers = buildOrganizationColumns(fields).map((column) => column.header)
     expect(headers).toContain('Settore')
   })
 
   it('does not add columns for archived fields, which are simply not returned', () => {
-    expect(buildCustomerColumns([])).toHaveLength(5)
+    expect(buildOrganizationColumns([])).toHaveLength(5)
   })
 
   it('renders a null native field as the empty dash', () => {
-    const [, vatNumber] = buildCustomerColumns([])
+    const [, vatNumber] = buildOrganizationColumns([])
     expect(cellValue(vatNumber!, { ...BASE_CUSTOMER, vat_number: null })).toBe('—')
   })
 
   it('renders an explicitly-cleared ("") native field as the same dash, never a blank cell', () => {
-    const [, vatNumber] = buildCustomerColumns([])
+    const [, vatNumber] = buildOrganizationColumns([])
     expect(cellValue(vatNumber!, { ...BASE_CUSTOMER, vat_number: '' })).toBe('—')
   })
 
   it('renders a present native field as itself', () => {
-    const [, vatNumber] = buildCustomerColumns([])
+    const [, vatNumber] = buildOrganizationColumns([])
     expect(cellValue(vatNumber!, { ...BASE_CUSTOMER, vat_number: '01234567890' })).toBe(
       '01234567890',
     )
@@ -94,7 +94,7 @@ describe('buildCustomerColumns', () => {
       required: false,
       options: [],
     }
-    const [, , , , , vipColumn] = buildCustomerColumns([vip])
+    const [, , , , , vipColumn] = buildOrganizationColumns([vip])
     expect(cellValue(vipColumn!, { ...BASE_CUSTOMER, custom_fields: {} })).toBe('No')
     expect(cellValue(vipColumn!, { ...BASE_CUSTOMER, custom_fields: { vip: false } })).toBe('No')
     expect(cellValue(vipColumn!, { ...BASE_CUSTOMER, custom_fields: { vip: true } })).toBe('Sì')

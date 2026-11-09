@@ -31,7 +31,6 @@ from pigrocrm.core.contract_emails.schemas import (
     ContractEmailVariable,
 )
 from pigrocrm.core.contracts.models import Contract
-from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.db.transactions import savepoint
 from pigrocrm.core.documents.repository import DocumentRepository
 from pigrocrm.core.errors import Conflict, NotFound, ValidationFailed
@@ -40,6 +39,7 @@ from pigrocrm.core.gmail.schemas import EmailDraftCreate, EmailDraftRead
 from pigrocrm.core.invoices.models import Invoice, InvoiceLine
 from pigrocrm.core.invoices.naming import number_complete
 from pigrocrm.core.legal_entities.service import LegalEntityService
+from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.people.models import Person
 from pigrocrm.core.storage.base import DocumentStorage
 from pigrocrm.core.templates.renderer import DeclaredVariable, render_template
@@ -232,7 +232,7 @@ class ContractEmailService:
         quantity: Decimal,
         actor: Actor,
     ) -> dict[str, Any]:
-        customer = self.session.get(Customer, contract.customer_id)
+        customer = self.session.get(Organization, contract.customer_id)
         if invoice.year is None or invoice.number is None:
             raise ValidationFailed(
                 ENTITY,
@@ -262,7 +262,7 @@ class ContractEmailService:
             .where(Person.customer_id == contract.customer_id, Person.deleted_at.is_(None))
             .order_by(Person.created_at, Person.id)
         )
-        customer = self.session.get(Customer, contract.customer_id)
+        customer = self.session.get(Organization, contract.customer_id)
         found = [e for person in people if (e := person.email)]
         if customer is not None and customer.email:
             found.append(customer.email)
@@ -357,7 +357,7 @@ class ContractEmailService:
 
         return EmailDraftService(self.session, settings=settings).create(
             EmailDraftCreate(
-                entity_type="customer",
+                entity_type="organization",
                 entity_id=contract.customer_id,
                 to_addresses=to_addresses,
                 subject=_render(template.subject, values),

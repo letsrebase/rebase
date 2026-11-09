@@ -25,7 +25,6 @@ from fakes.legal_entity_fixtures import committed_default_legal_entity, remove_l
 from sqlalchemy import Engine, delete, func, select
 
 from pigrocrm.core.actor import Actor
-from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.dashboard.schemas import ReceivablesDashboard
 from pigrocrm.core.dashboard.service import DashboardService
 from pigrocrm.core.db import session_factory, today_local
@@ -33,6 +32,7 @@ from pigrocrm.core.db.base import uuid7
 from pigrocrm.core.gmail.models import PaymentReminder
 from pigrocrm.core.invoices.models import Invoice
 from pigrocrm.core.invoices.receivables import BANDS_RECEIVABLES
+from pigrocrm.core.organizations.models import Organization
 
 READONLY = Actor(id=uuid7(), type="user", role="readonly")
 _PREFIX = "SCAD"
@@ -52,8 +52,8 @@ def corpus(db_engine: Engine) -> Iterator[tuple[Engine, date, UUID, UUID]]:
         leftovers = session.execute(select(func.count(Invoice.id))).scalar_one()
         assert leftovers == 0, f"{leftovers} committed invoice(s) already in the register"
         legal_entity_id = committed_default_legal_entity(session)
-        acme = Customer(legal_name=f"{_PREFIX} Acme", country="IT", custom_fields={})
-        beta = Customer(legal_name=f"{_PREFIX} Beta", country="IT", custom_fields={})
+        acme = Organization(legal_name=f"{_PREFIX} Acme", country="IT", custom_fields={})
+        beta = Organization(legal_name=f"{_PREFIX} Beta", country="IT", custom_fields={})
         session.add_all([acme, beta])
         session.flush()
         rows = [
@@ -95,11 +95,13 @@ def corpus(db_engine: Engine) -> Iterator[tuple[Engine, date, UUID, UUID]]:
         yield ids
     finally:
         with factory() as session:
-            customers = select(Customer.id).where(Customer.legal_name.like(f"{_PREFIX} %"))
-            invoices = select(Invoice.id).where(Invoice.customer_id.in_(customers))
+            organizations = select(Organization.id).where(
+                Organization.legal_name.like(f"{_PREFIX} %")
+            )
+            invoices = select(Invoice.id).where(Invoice.customer_id.in_(organizations))
             session.execute(delete(PaymentReminder).where(PaymentReminder.invoice_id.in_(invoices)))
-            session.execute(delete(Invoice).where(Invoice.customer_id.in_(customers)))
-            session.execute(delete(Customer).where(Customer.id.in_(customers)))
+            session.execute(delete(Invoice).where(Invoice.customer_id.in_(organizations)))
+            session.execute(delete(Organization).where(Organization.id.in_(organizations)))
             remove_legal_entity(session, legal_entity_id)
             session.commit()
 

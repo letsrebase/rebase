@@ -45,11 +45,11 @@ from sqlalchemy.orm import Session
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.auth.models import User
 from pigrocrm.core.config import Settings
-from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.db.clock import today_local
 from pigrocrm.core.gmail.models import EmailDraft, GmailMessage, GmailMessageLink, GoogleAccount
 from pigrocrm.core.gmail.schemas import REQUESTED_SCOPES
 from pigrocrm.core.invoices.models import Invoice
+from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.storage import LocalFileStorage
 from pigrocrm_mcp.provenance import PROVENANCE_TEXT_FREE
 from pigrocrm_mcp.server import build_server
@@ -128,8 +128,8 @@ def connected_account(mcp_session: Session, gmail_actor: Actor) -> GoogleAccount
 
 
 @pytest.fixture
-def customer(mcp_session: Session) -> Customer:
-    """A real `customers` row.
+def customer(mcp_session: Session) -> Organization:
+    """A real `organizations` row.
 
     `filed_message` predates this and files its link against a bare `uuid4()`, which is
     enough for the read tools -- `gmail_message_links` carries no foreign key, because
@@ -137,7 +137,7 @@ def customer(mcp_session: Session) -> Customer:
     surface that *validates* the entity against the right table, so it needs a row that
     exists.
     """
-    row = Customer(legal_name="Acme S.r.l.", contact_points=points(email=CLIENT))
+    row = Organization(legal_name="Acme S.r.l.", contact_points=points(email=CLIENT))
     mcp_session.add(row)
     mcp_session.flush()
     return row
@@ -145,7 +145,7 @@ def customer(mcp_session: Session) -> Customer:
 
 @pytest.fixture
 def filed_message(
-    mcp_session: Session, connected_account: GoogleAccount, customer: Customer
+    mcp_session: Session, connected_account: GoogleAccount, customer: Organization
 ) -> Iterator[tuple[UUID, UUID]]:
     """One inbound message filed against one customer. Returns (customer id, message
     id) -- the two identifiers an agent would hold."""
@@ -167,7 +167,9 @@ def filed_message(
     mcp_session.add(message)
     mcp_session.flush()
     mcp_session.add(
-        GmailMessageLink(gmail_message_id=message.id, entity_type="customer", entity_id=customer_id)
+        GmailMessageLink(
+            gmail_message_id=message.id, entity_type="organization", entity_id=customer_id
+        )
     )
     mcp_session.flush()
     yield customer_id, message.id
@@ -281,7 +283,7 @@ async def test_the_gmail_tools_are_absent_when_gmail_is_not_configured(server: A
     assert not (names & SLICE_5B_TOOLS)
     # And the rest of the surface is untouched: "absent" must mean the Gmail tools, not
     # a server that failed to build.
-    assert "create_customer" in names
+    assert "create_organization" in names
 
 
 # --- what the three tools actually answer ----------------------------------------------
@@ -298,7 +300,7 @@ async def test_list_gmail_messages_reads_the_stored_mirror(
     async with Client(gmail_server) as client:
         result = await client.call_tool(
             "list_gmail_messages",
-            {"entity_type": "customer", "entity_id": str(customer_id)},
+            {"entity_type": "organization", "entity_id": str(customer_id)},
         )
 
     rows = _payload(result)
@@ -408,7 +410,7 @@ async def test_no_gmail_tool_answer_carries_a_credential(
         answers = [
             await client.call_tool(
                 "list_gmail_messages",
-                {"entity_type": "customer", "entity_id": str(customer_id)},
+                {"entity_type": "organization", "entity_id": str(customer_id)},
             ),
             await client.call_tool("get_gmail_message", {"message_id": str(message_id)}),
             await client.call_tool("describe_gmail_account", {}),
@@ -448,7 +450,7 @@ async def test_draft_email_leaves_the_draft_unsent_and_asks_google_nothing(
         result = await client.call_tool(
             "draft_email",
             {
-                "entity_type": "customer",
+                "entity_type": "organization",
                 "entity_id": str(customer_id),
                 "to_addresses": [CLIENT],
                 "subject": "Accompagnamento offerta",
@@ -477,7 +479,7 @@ async def test_draft_email_refuses_an_entity_that_does_not_exist(gmail_server: A
         result = await client.call_tool(
             "draft_email",
             {
-                "entity_type": "customer",
+                "entity_type": "organization",
                 "entity_id": str(uuid4()),
                 "to_addresses": [CLIENT],
                 "subject": "Offerta",
@@ -508,7 +510,7 @@ async def test_a_readonly_agent_cannot_even_draft(
         result = await client.call_tool(
             "draft_email",
             {
-                "entity_type": "customer",
+                "entity_type": "organization",
                 "entity_id": str(customer_id),
                 "to_addresses": [CLIENT],
                 "subject": "Offerta",
@@ -524,7 +526,7 @@ async def test_a_readonly_agent_cannot_even_draft(
 
 
 async def test_list_payment_reminder_candidates_reads_the_register_and_calls_nobody(
-    gmail_server: Any, mcp_session: Session, customer: Customer
+    gmail_server: Any, mcp_session: Session, customer: Organization
 ) -> None:
     """The one method of 5B-2 that genuinely earns a tool: crossing due dates against
     payments against what has already gone out is the laborious part of chasing money.
@@ -585,7 +587,7 @@ async def test_a_malformed_gmail_message_id_gets_the_same_guidance_as_every_othe
     async with Client(gmail_server) as client:
         message = await client.call_tool("get_gmail_message", {"message_id": "non-un-uuid"})
         listing = await client.call_tool(
-            "list_gmail_messages", {"entity_type": "customer", "entity_id": "non-un-uuid"}
+            "list_gmail_messages", {"entity_type": "organization", "entity_id": "non-un-uuid"}
         )
 
     for result in (message, listing):

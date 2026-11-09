@@ -27,7 +27,7 @@ def _payload(result: Any) -> dict[str, Any]:
 
 
 async def _won_deal(client: Client, session: Session) -> str:
-    customer = _payload(await client.call_tool("create_customer", {"legal_name": "ACME"}))["id"]
+    customer = _payload(await client.call_tool("create_organization", {"legal_name": "ACME"}))["id"]
     deal = _payload(
         await client.call_tool(
             "create_deal",

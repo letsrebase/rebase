@@ -10,7 +10,7 @@ export type NoteEntityType = Note['entity_type']
 export type NoteSource = NonNullable<Note['source']>
 
 /** The collection the URL spells for each entity type a note can hang on. */
-const COLLECTIONS = { deal: 'deals', customer: 'customers', person: 'people' } as const
+const COLLECTIONS = { deal: 'deals', organization: 'organizations', person: 'people' } as const
 
 export function useNotes(entityType: NoteEntityType, entityId: string) {
   return useQuery({

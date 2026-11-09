@@ -12,7 +12,6 @@ from pigrocrm.core.activities.service import ActivityService
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.config import Settings, get_settings
 from pigrocrm.core.contracts.models import Contract
-from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.deals.models import Deal
 from pigrocrm.core.documents.models import Document, DocumentVersion
 from pigrocrm.core.documents.naming import slugify_folder
@@ -24,6 +23,7 @@ from pigrocrm.core.fields.service import FieldDefinitionService
 from pigrocrm.core.fields.validator import validate_custom_fields
 from pigrocrm.core.legal_entities.assets import LegalEntityAssets
 from pigrocrm.core.legal_entities.service import LegalEntityService
+from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.storage.base import DocumentStorage
 from pigrocrm.core.templates.service import TemplateService
 
@@ -59,7 +59,7 @@ class DocumentContext:
         customer_id: UUID | None,
         deal_id: UUID | None,
         contract_id: UUID | None = None,
-    ) -> Customer | Deal | Contract:
+    ) -> Organization | Deal | Contract:
         """Exactly one owner, and it must exist; returns it.
 
         The database check constraint (`ck_documents_customer_xor_deal`) is the
@@ -82,9 +82,9 @@ class DocumentContext:
                 expected="esattamente uno fra customer_id, deal_id e contract_id",
             )
         if customer_id is not None:
-            customer = self.session.get(Customer, customer_id)
+            customer = self.session.get(Organization, customer_id)
             if customer is None:
-                raise NotFound("customer", customer_id)
+                raise NotFound("organization", customer_id)
             return customer
         if deal_id is not None:
             deal = self.session.get(Deal, deal_id)
@@ -98,25 +98,25 @@ class DocumentContext:
             raise NotFound("contract", contract_id)
         return contract
 
-    def legal_entity_of(self, owner: Customer | Deal | Contract) -> UUID:
+    def legal_entity_of(self, owner: Organization | Deal | Contract) -> UUID:
         """The legal entity a new document hangs on (REB-623, spec §1.7): its owner's.
         Refused when that legal entity is deactivated (spec §3)."""
         return self.legal_entity.inherited(owner.legal_entity_id, ENTITY)
 
     def customer_for(
         self, customer_id: UUID | None, deal_id: UUID | None, contract_id: UUID | None
-    ) -> Customer | None:
+    ) -> Organization | None:
         if customer_id is not None:
-            return self.session.get(Customer, customer_id)
+            return self.session.get(Organization, customer_id)
         if deal_id is not None:
             deal = self.session.get(Deal, deal_id)
-            return self.session.get(Customer, deal.customer_id) if deal else None
+            return self.session.get(Organization, deal.customer_id) if deal else None
         if contract_id is not None:
             contract = self.session.get(Contract, contract_id)
-            return self.session.get(Customer, contract.customer_id) if contract else None
+            return self.session.get(Organization, contract.customer_id) if contract else None
         return None
 
-    def customer_of(self, document: Document) -> Customer | None:
+    def customer_of(self, document: Document) -> Organization | None:
         return self.customer_for(document.customer_id, document.deal_id, document.contract_id)
 
     def storage_key_for(

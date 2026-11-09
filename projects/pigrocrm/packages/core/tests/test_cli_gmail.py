@@ -40,11 +40,11 @@ import pigrocrm.core.cli as cli
 import pigrocrm.core.cli.gmail as gmail_cli
 from pigrocrm.core.auth.models import User
 from pigrocrm.core.config import Settings
-from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.db import session_factory
 from pigrocrm.core.db.sidecar import drop_database
 from pigrocrm.core.gmail.repository import GmailRepository
 from pigrocrm.core.gmail.transport import GmailTransport
+from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.reminders.run import ROOT_LABEL
 
 # A registry of this module's own, so the walk finds it empty whatever else has
@@ -101,7 +101,7 @@ def cli_gmail(
         connection.execute(text("delete from google_accounts"))
         connection.execute(text("delete from reminder_job_run"))
         connection.execute(text("delete from users where email like 'user-%@example.it'"))
-        connection.execute(text("delete from customers where legal_name like 'CLI %'"))
+        connection.execute(text("delete from organizations where legal_name like 'CLI %'"))
 
 
 def _connect(
@@ -129,7 +129,9 @@ def _correspondent(engine: Engine) -> None:
     empty roster no request is issued at all, which is the right behaviour and the
     wrong starting point for a test about a request failing."""
     with session_factory(engine)() as session:
-        session.add(Customer(legal_name="CLI Acme", contact_points=points(email="info@acme.it")))
+        session.add(
+            Organization(legal_name="CLI Acme", contact_points=points(email="info@acme.it"))
+        )
         session.commit()
 
 

@@ -18,18 +18,18 @@ from uuid import uuid4
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.auth.models import User
-from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.deals.models import Deal
 from pigrocrm.core.documents.models import Document
 from pigrocrm.core.first_steps import space_is_empty
+from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.pipeline.models import PipelineStage
 from pigrocrm.core.timetracking.models import TimeEntry
 
 _NOW = datetime(2026, 9, 23, 10, 0, tzinfo=UTC)
 
 
-def _deleted_customer(session: Session) -> Customer:
-    customer = Customer(
+def _deleted_customer(session: Session) -> Organization:
+    customer = Organization(
         legal_name="Cliente cancellato", country="IT", custom_fields={}, deleted_at=_NOW
     )
     session.add(customer)
@@ -37,7 +37,7 @@ def _deleted_customer(session: Session) -> Customer:
     return customer
 
 
-def _deal(session: Session, customer: Customer, *, deleted: bool = False) -> Deal:
+def _deal(session: Session, customer: Organization, *, deleted: bool = False) -> Deal:
     stage = PipelineStage(name=f"Aperto {uuid4()}", position=0, default_probability=20, type="open")
     session.add(stage)
     session.flush()
@@ -62,7 +62,7 @@ def test_a_deleted_customer_is_not_work(db_session: Session) -> None:
 
 
 def test_a_live_customer_is_work(db_session: Session) -> None:
-    db_session.add(Customer(legal_name="Acme S.r.l.", country="IT", custom_fields={}))
+    db_session.add(Organization(legal_name="Acme S.r.l.", country="IT", custom_fields={}))
     db_session.flush()
     assert space_is_empty(db_session) is False
 

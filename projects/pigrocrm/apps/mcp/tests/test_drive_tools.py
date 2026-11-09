@@ -80,7 +80,7 @@ async def test_describe_drive_account_is_absent_when_google_is_not_configured(
     repository actually runs its whole suite under."""
     names = await _tool_names(server)
     assert "describe_drive_account" not in names
-    assert "create_customer" in names
+    assert "create_organization" in names
 
 
 async def test_describe_drive_account_reports_no_account_when_nothing_is_connected(

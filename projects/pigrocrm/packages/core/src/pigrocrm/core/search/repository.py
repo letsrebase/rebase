@@ -35,11 +35,11 @@ from sqlalchemy.orm import Session, aliased
 
 from pigrocrm.core.contact_points.models import ContactPoint
 from pigrocrm.core.contact_points.service import owners_matching
-from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.deals.models import Deal
 from pigrocrm.core.documents.models import Document
 from pigrocrm.core.invoices.models import Invoice
 from pigrocrm.core.labels import DOCUMENT_TYPE, TASK_STATUS, label
+from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.people.models import Person
 from pigrocrm.core.search.schemas import (
     COUNT_CEILING,
@@ -99,11 +99,11 @@ def contact_fields(owner: Any, owner_column: Any) -> tuple[ScoredField, ...]:
     )
 
 
-CUSTOMER_FIELDS: tuple[ScoredField, ...] = (
-    ScoredField("legal_name", Customer.legal_name, WEIGHT_IDENTIFYING),
-    ScoredField("vat_number", Customer.vat_number, WEIGHT_CODE),
-    ScoredField("tax_code", Customer.tax_code, WEIGHT_CODE),
-    *contact_fields(Customer, ContactPoint.customer_id),
+ORGANIZATION_FIELDS: tuple[ScoredField, ...] = (
+    ScoredField("legal_name", Organization.legal_name, WEIGHT_IDENTIFYING),
+    ScoredField("vat_number", Organization.vat_number, WEIGHT_CODE),
+    ScoredField("tax_code", Organization.tax_code, WEIGHT_CODE),
+    *contact_fields(Organization, ContactPoint.customer_id),
 )
 PERSON_FIELDS: tuple[ScoredField, ...] = (
     ScoredField("last_name", Person.last_name, WEIGHT_IDENTIFYING),
@@ -272,16 +272,18 @@ class SearchRepository:
 
     # -- one branch per entity -------------------------------------------------
 
-    def customers(self, term: str, limit: int, legal_entity_id: UUID | None = None) -> SearchGroup:
+    def organizations(
+        self, term: str, limit: int, legal_entity_id: UUID | None = None
+    ) -> SearchGroup:
         return self._group(
-            "customer",
-            Customer,
-            CUSTOMER_FIELDS,
+            "organization",
+            Organization,
+            ORGANIZATION_FIELDS,
             term,
             limit,
             label=lambda row: row.legal_name,
             subtitle=lambda row: row.vat_number,
-            scope=_own(Customer, legal_entity_id),
+            scope=_own(Organization, legal_entity_id),
         )
 
     def people(self, term: str, limit: int, legal_entity_id: UUID | None = None) -> SearchGroup:
@@ -293,7 +295,7 @@ class SearchRepository:
         if legal_entity_id is not None:
             scope = (
                 Person.customer_id.in_(
-                    select(Customer.id).where(Customer.legal_entity_id == legal_entity_id)
+                    select(Organization.id).where(Organization.legal_entity_id == legal_entity_id)
                 ),
             )
         return self._group(
@@ -344,8 +346,8 @@ class SearchRepository:
             return hits
         row_ids = [hit.id for hit in hits]
         pairs = self.session.execute(
-            select(model.id, Customer.legal_name)
-            .join(Customer, Customer.id == model.customer_id)
+            select(model.id, Organization.legal_name)
+            .join(Organization, Organization.id == model.customer_id)
             .where(model.id.in_(row_ids))
         ).all()
         names: dict[UUID, str] = {row[0]: row[1] for row in pairs}

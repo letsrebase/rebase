@@ -70,7 +70,7 @@ class Contract(Base, PrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
     __tablename__ = "contracts"
 
     customer_id: Mapped[UUID] = mapped_column(
-        ForeignKey("customers.id"), nullable=False, index=True
+        ForeignKey("organizations.id"), nullable=False, index=True
     )
     # The customer's legal entity at creation (REB-623, §1.7), kept from then on.
     legal_entity_id: Mapped[UUID] = mapped_column(
@@ -86,10 +86,10 @@ class Contract(Base, PrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
     # Required by a CHECK whenever `tipo_rinnovo <> 'nessuno'` -- see __table_args__.
     renewal_notice_days: Mapped[int | None] = mapped_column(Integer, default=None)
     termination_notice_days: Mapped[int] = mapped_column(Integer, nullable=False)
-    # Reuses `Customer.payment_days`/`payment_end_of_month`'s exact shape
+    # Reuses `Organization.payment_days`/`payment_end_of_month`'s exact shape
     # (REB-326) rather than a second payment-terms representation. Null cascades to
-    # the customer's own term, the same way `Customer.payment_days` null already
-    # cascades to `FiscalProfile.due_days`. Unlike `Customer`'s own copy,
+    # the customer's own term, the same way `Organization.payment_days` null already
+    # cascades to `FiscalProfile.due_days`. Unlike `Organization`'s own copy,
     # `payment_end_of_month` is nullable here and tied to `payment_days` by the
     # "together" CHECK below -- the override is atomic: a contract states both of its
     # own payment-term facts or neither.

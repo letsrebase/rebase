@@ -127,7 +127,7 @@ _FORBIDDEN: dict[Method, str] = {
         "del titolare, come `sync` e `backfill`; a differenza loro l'installazione puo' "
         "aprirla con `mcp_full_access`"
     ),
-    ("GmailSyncService", "suggest_customers"): (
+    ("GmailSyncService", "suggest_organizations"): (
         "propone come clienti i domini della posta inviata dal titolare (REB-223): "
         "interroga Gmail a carico della sua quota e del suo consenso come `discover`, e "
         "come lei l'installazione puo' aprirla con `mcp_full_access`"
@@ -736,7 +736,7 @@ _BYTE: dict[Method, str] = {
 #    `DocumentService.regenerate`, `soft_delete` and `restore` were all recorded here as
 #    "non ha ancora un tool" / "e' una decisione della persona" -- and each turned out to
 #    be a plain read, or a reversible audited write whose inverse this surface already
-#    exposes for customers, deals, people, costs and time entries. `EmailDraftService.
+#    exposes for organizations, deals, people, costs and time entries. `EmailDraftService.
 #    create` and `SollecitiService.candidates` left the same way at B2-10, as
 #    `draft_email` and `list_payment_reminder_candidates`. `InvoiceService.soft_delete`
 #    left at ORB-37 as `discard_proforma`: "a person's decision" had described a draft
@@ -788,7 +788,7 @@ _COVERED_OR_HUMAN: dict[Method, str] = {
         "is not a tool, and an agent already reads a deal through `get_deal` and `search_deals`"
     ),
     ("InvoiceService", "unpaid_for_customer"): (
-        "read by the `status_customer` prompt for the receivables of one customer; an agent "
+        "read by the `status_organization` prompt for the receivables of one customer; an agent "
         "already reads them through `list_invoices` and `get_receivables_dashboard`"
     ),
     ("ContractEmailService", "create"): "il testo che esce a name del titolare lo salva la "
@@ -797,13 +797,13 @@ _COVERED_OR_HUMAN: dict[Method, str] = {
     ("ContractEmailService", "prepare"): "prepara una bozza con gli allegati d'archivio e "
     "precede l'invio, che non ha un tool MCP e non lo avra' mai (routers/email_drafts.py)",
     ("ContractRegisterService", "csv_filename"): "il name del file che build_csv consegna",
-    ("CustomerService", "create_from_suggestions"): (
+    ("OrganizationService", "create_from_suggestions"): (
         "crea insieme, in una transazione, i clienti spuntati nella lista delle proposte "
         "Gmail della Home e di Clienti (REB-223): un agente crea gli stessi clienti e le "
-        "stesse persone con `create_customer` e `create_person`, e il confine della "
+        "stesse persone con `create_organization` e `create_person`, e il confine della "
         "transazione e' quello della lista di caselle, che un agente non ha"
     ),
-    ("CustomerService", "add_person_from_mail"): (
+    ("OrganizationService", "add_person_from_mail"): (
         "adds an address found at the customer's domain as a person of that customer "
         "(REB-766): an agent finds the same addresses with "
         "`discover_gmail_correspondents` and saves them with `create_person`; this "
@@ -862,13 +862,13 @@ _COVERED_OR_HUMAN: dict[Method, str] = {
         "same PIGROCRM_ENGAGEMENTS_TOKEN: filing a company's request in rebase's space is "
         "the hub's own act when the request is completed, in one space the installation "
         "names (PIGROCRM_LEADS_SPACE), never something an agent inside a space decides, "
-        "and creating the customer, contact and deal is what `create_customer`, "
+        "and creating the customer, contact and deal is what `create_organization`, "
         "`create_person` and `create_deal` already are for an agent"
     ),
     ("EngagementService", "report"): (
         "reads a match's hours back for the same hub door (spec 2026-09-25 §2.4), never "
         "for an agent in the space: the deal's own hours are already `list_time_entries`, "
-        "and this route reads nothing else of the space -- not its customers, not its "
+        "and this route reads nothing else of the space -- not its organizations, not its "
         "other deals, not an invoice these hours do not sit on"
     ),
     ("TenantService", "count_for_owner"): (
@@ -1170,7 +1170,7 @@ def _reachable(known: set[str]) -> set[Method]:
     `ServiceClass(context.session).m(...)`, `svc = ServiceClass(...)` followed by
     `svc.m(...)`, and the module-private factories `_invoices(context)` /
     `_documents(context)` whose return annotation names the class. A name-only scan
-    would report `CustomerService.create` as covered because *some* `.create(` exists
+    would report `OrganizationService.create` as covered because *some* `.create(` exists
     somewhere under `tools/`, which is precisely the false green this file exists to
     avoid.
     """
@@ -1205,9 +1205,9 @@ PUBLIC_METHODS = [(cls, method) for cls, methods in SERVICES.items() for method 
 
 
 def test_the_service_sweep_finds_the_services_it_should() -> None:
-    assert {"CustomerService", "InvoiceService", "TimeEntryService"} <= set(SERVICES)
+    assert {"OrganizationService", "InvoiceService", "TimeEntryService"} <= set(SERVICES)
     assert len(SERVICES) > 15
-    assert "create" in SERVICES["CustomerService"]
+    assert "create" in SERVICES["OrganizationService"]
     # Private helpers stay out: `_check_owner` is not part of anybody's surface.
     assert not [m for methods in SERVICES.values() for m in methods if m.startswith("_")]
 
@@ -1217,15 +1217,15 @@ def test_the_reachability_walk_resolves_all_three_call_shapes() -> None:
     silently stopped understanding the factory shape, every method of `InvoiceService`
     and `DocumentService` would look unexposed and this file would demand exclusions for
     operations that have working tools."""
-    assert ("CustomerService", "create") in REACHABLE  # ServiceClass(...).m(...)
-    assert ("CustomerService", "list") in REACHABLE  # svc = ServiceClass(...); svc.m()
+    assert ("OrganizationService", "create") in REACHABLE  # ServiceClass(...).m(...)
+    assert ("OrganizationService", "list") in REACHABLE  # svc = ServiceClass(...); svc.m()
     assert ("InvoiceService", "create") in REACHABLE  # _invoices(context).m(...)
     assert ("PipelineService", "get") in REACHABLE  # reached only from resources/
 
 
 def test_the_walk_attributes_a_call_to_its_own_receiver() -> None:
     """The property that separates this from a substring scan. `.create(` appears under
-    `tools/` for customers, people, deals, costs, time entries and invoices -- and for
+    `tools/` for organizations, people, deals, costs, time entries and invoices -- and for
     none of the four services below, each of which defines a `create` of its own. A
     name-only scan would report all four as covered."""
     for service in ("UserService", "PatService", "PipelineService", "FieldDefinitionService"):

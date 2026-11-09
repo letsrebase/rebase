@@ -8,7 +8,6 @@ from uuid import UUID
 from sqlalchemy import ColumnElement, and_, func, or_, select
 from sqlalchemy.orm import Session
 
-from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.due_items.models import (
     OPEN_STATES,
     RESTRICTED_SOURCE_KINDS,
@@ -17,6 +16,7 @@ from pigrocrm.core.due_items.models import (
 )
 from pigrocrm.core.due_items.schemas import DueItemListQuery
 from pigrocrm.core.errors import ValidationFailed
+from pigrocrm.core.organizations.models import Organization
 
 ZERO = Decimal("0.00")
 
@@ -93,14 +93,14 @@ class DueItemRepository:
 
     def organization_legal_entity(self, organization_id: UUID) -> UUID | None:
         return self.session.execute(
-            select(Customer.legal_entity_id).where(Customer.id == organization_id)
+            select(Organization.legal_entity_id).where(Organization.id == organization_id)
         ).scalar_one_or_none()
 
     def organization_name(self, organization_id: UUID | None) -> str | None:
         if organization_id is None:
             return None
         return self.session.execute(
-            select(Customer.legal_name).where(Customer.id == organization_id)
+            select(Organization.legal_name).where(Organization.id == organization_id)
         ).scalar_one_or_none()
 
     # `list_rows` stays the last method in this class -- the unconditional project rule (a
@@ -128,8 +128,8 @@ class DueItemRepository:
             else DueItem.state.in_(OPEN_STATES)
         )
         stmt = (
-            select(DueItem, Customer.legal_name, settled)
-            .outerjoin(Customer, Customer.id == DueItem.organization_id)
+            select(DueItem, Organization.legal_name, settled)
+            .outerjoin(Organization, Organization.id == DueItem.organization_id)
             .where(state_filter)
         )
         if not restricted:

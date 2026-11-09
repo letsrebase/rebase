@@ -16,11 +16,11 @@ from sqlalchemy.orm import Session
 
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.config import Settings
-from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.due_items.schemas import DueItemCreate
 from pigrocrm.core.due_items.service import DueItemService
 from pigrocrm.core.legal_entities.repository import LegalEntityRepository
 from pigrocrm.core.modules import MODULE_KEYS
+from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.storage import LocalFileStorage
 from pigrocrm_mcp.server import build_server
 
@@ -44,7 +44,7 @@ def _payload(result: Any) -> dict[str, Any]:
 def _item(session: Session, **overrides: Any) -> str:
     entity = LegalEntityRepository(session).default()
     assert entity is not None
-    customer = Customer(legal_name="ACME S.r.l.", legal_entity_id=entity.id)
+    customer = Organization(legal_name="ACME S.r.l.", legal_entity_id=entity.id)
     session.add(customer)
     session.flush()
     values: dict[str, Any] = {

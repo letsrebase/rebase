@@ -43,13 +43,13 @@ from sqlalchemy.orm import Session
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.analytics.schemas import PeriodPnlQuery
 from pigrocrm.core.analytics.service import AnalyticsService
-from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.dashboard.schemas import EconomicDashboard, PeriodQuery
 from pigrocrm.core.dashboard.service import DashboardService
 from pigrocrm.core.db import month_bounds, session_factory, today_local
 from pigrocrm.core.db.base import uuid7
 from pigrocrm.core.deals.models import Deal
 from pigrocrm.core.invoices.models import Invoice
+from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.pipeline.models import PipelineStage
 
 READONLY = Actor(id=uuid7(), type="user", role="readonly")
@@ -102,7 +102,7 @@ def rf01_corpus(db_engine: Engine) -> Iterator[Corpus]:
         won = PipelineStage(
             name=f"{_PREFIX} vinto", position=1, default_probability=100, type="won"
         )
-        customer = Customer(legal_name=f"{_PREFIX} Cliente", country="IT", custom_fields={})
+        customer = Organization(legal_name=f"{_PREFIX} Cliente", country="IT", custom_fields={})
         session.add_all([open, won, customer])
         session.flush()
         deal_open = Deal(
@@ -173,16 +173,18 @@ def rf01_corpus(db_engine: Engine) -> Iterator[Corpus]:
         yield ids
     finally:
         with factory() as session:
-            session.execute(delete(Invoice).where(Invoice.customer_id.in_(_corpus_customers())))
+            session.execute(delete(Invoice).where(Invoice.customer_id.in_(_corpus_organizations())))
             session.execute(delete(Deal).where(Deal.name.like(f"{_PREFIX} %")))
-            session.execute(delete(Customer).where(Customer.legal_name.like(f"{_PREFIX} %")))
+            session.execute(
+                delete(Organization).where(Organization.legal_name.like(f"{_PREFIX} %"))
+            )
             session.execute(delete(PipelineStage).where(PipelineStage.name.like(f"{_PREFIX} %")))
             remove_legal_entity(session, legal_entity_id)
             session.commit()
 
 
-def _corpus_customers() -> Select[UUID]:
-    return select(Customer.id).where(Customer.legal_name.like(f"{_PREFIX} %"))
+def _corpus_organizations() -> Select[UUID]:
+    return select(Organization.id).where(Organization.legal_name.like(f"{_PREFIX} %"))
 
 
 def _require_an_empty_register(session: Session) -> None:

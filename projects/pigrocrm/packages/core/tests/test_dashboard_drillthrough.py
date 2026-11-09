@@ -40,7 +40,6 @@ import pytest
 from sqlalchemy import Engine, delete
 
 from pigrocrm.core.actor import Actor
-from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.dashboard.schemas import CommercialDashboard, PeriodQuery
 from pigrocrm.core.dashboard.service import DashboardService
 from pigrocrm.core.db import session_factory, today_local
@@ -53,6 +52,7 @@ from pigrocrm.core.documents.models import Document
 from pigrocrm.core.documents.repository import DocumentRepository
 from pigrocrm.core.documents.schemas import DocumentListQuery
 from pigrocrm.core.invoices.repository import InvoiceRepository
+from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.pipeline.models import PipelineStage
 from pigrocrm.core.pipeline.service import PipelineService
 from pigrocrm.core.timetracking.repository import TimeEntryRepository
@@ -80,7 +80,7 @@ def seeded(db_engine: Engine) -> Iterator[Seeded]:
     factory = session_factory(db_engine)
     with factory() as session:
         stages = {s.code: s for s in PipelineService(session).seed_defaults(SEED) if s.code}
-        customer = Customer(legal_name=f"{_PREFIX} Cliente", country="IT", custom_fields={})
+        customer = Organization(legal_name=f"{_PREFIX} Cliente", country="IT", custom_fields={})
         session.add(customer)
         session.flush()
 
@@ -158,7 +158,9 @@ def seeded(db_engine: Engine) -> Iterator[Seeded]:
         with factory() as session:
             session.execute(delete(Document).where(Document.title.like(f"{_PREFIX} %")))
             session.execute(delete(Deal).where(Deal.name.like(f"{_PREFIX} %")))
-            session.execute(delete(Customer).where(Customer.legal_name.like(f"{_PREFIX} %")))
+            session.execute(
+                delete(Organization).where(Organization.legal_name.like(f"{_PREFIX} %"))
+            )
             session.execute(delete(PipelineStage))
             session.commit()
 

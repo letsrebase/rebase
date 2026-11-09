@@ -70,7 +70,7 @@ describe('DataTable', () => {
   })
 
   /**
-   * The defect a fix round caught live on Customers, People and Deal alike: a
+   * The defect a fix round caught live on Organizations, People and Deal alike: a
    * failed list request rendered the exact same "Nessun risultato." row an
    * honestly-empty result gets, with nothing on screen distinguishing "you
    * have none" from "we could not ask". `isError`/`error` exist to make the

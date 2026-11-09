@@ -4,12 +4,12 @@ from uuid import UUID
 from pigrocrm.core.activities.service import ActivityService
 from pigrocrm.core.analytics.service import AnalyticsService
 from pigrocrm.core.contact_points.schemas import ContactPointRead
-from pigrocrm.core.customers.schemas import CustomerRead
-from pigrocrm.core.customers.service import CustomerService
 from pigrocrm.core.deals.schemas import DealListQuery, DealRead, DealValueLineRead
 from pigrocrm.core.deals.service import DealService
 from pigrocrm.core.labels import ACTIVITY_KIND, NOTE_SOURCE, label
 from pigrocrm.core.notes.service import NoteService
+from pigrocrm.core.organizations.schemas import OrganizationRead
+from pigrocrm.core.organizations.service import OrganizationService
 from pigrocrm.core.people.schemas import PersonListQuery
 from pigrocrm.core.people.service import PersonService
 from pigrocrm.core.pipeline.service import PipelineService
@@ -101,7 +101,7 @@ def _or_dash(value: object) -> str:
     return "—" if value is None else str(value)
 
 
-def _address_line(customer: CustomerRead) -> str:
+def _address_line(customer: OrganizationRead) -> str:
     """Joins only the parts that are actually present.
 
     A customer with no street/postal code/city/province used to render as
@@ -137,8 +137,8 @@ def _provenance_line() -> str:
     return f"_Provenance: {PROVENANCE_TEXT_FREE}_"
 
 
-def render_customer(context: McpContext, customer_id: UUID) -> str:
-    customer = CustomerService(context.session).get(customer_id, context.actor)
+def render_organization(context: McpContext, customer_id: UUID) -> str:
+    customer = OrganizationService(context.session).get(customer_id, context.actor)
     people = PersonService(context.session).list(
         PersonListQuery(customer_id=customer_id, limit=50), context.actor
     )
@@ -174,7 +174,7 @@ def render_customer(context: McpContext, customer_id: UUID) -> str:
         f"- {p.first_name} {p.last_name or ''} — {p.role or 'role not given'} — {p.email or '—'}"
         for p in people.items
     ] or ["_No contacts._"]
-    lines += _contact_point_lines(customer.contact_points, heading="Customer contact points")
+    lines += _contact_point_lines(customer.contact_points, heading="Organization contact points")
     if deals is not None:
         lines += ["", "## Deal", ""]
         lines += [
@@ -183,8 +183,8 @@ def render_customer(context: McpContext, customer_id: UUID) -> str:
             for d in deals.items
         ] or ["_No deals._"]
     lines += _custom_lines(customer.custom_fields)
-    lines += ["", "## Timeline", ""] + _timeline_lines(context, "customer", customer_id)
-    lines += _note_lines(context, "customer", customer_id)
+    lines += ["", "## Timeline", ""] + _timeline_lines(context, "organization", customer_id)
+    lines += _note_lines(context, "organization", customer_id)
     return "\n".join(lines)
 
 
@@ -201,10 +201,10 @@ def render_person(context: McpContext, person_id: UUID) -> str:
         f"- Primary LinkedIn: {person.linkedin or '—'}",
     ]
     if person.customer_id:
-        customer = CustomerService(context.session).get(person.customer_id, context.actor)
-        lines.append(f"- Customer: {customer.legal_name} (`customer://{customer.id}`)")
+        customer = OrganizationService(context.session).get(person.customer_id, context.actor)
+        lines.append(f"- Organization: {customer.legal_name} (`organization://{customer.id}`)")
     else:
-        lines.append("- Customer: not linked")
+        lines.append("- Organization: not linked")
     lines += _contact_point_lines(person.contact_points, heading="Contact points")
     lines += _custom_lines(person.custom_fields)
     lines += ["", "## Timeline", ""] + _timeline_lines(context, "person", person_id)
@@ -214,7 +214,7 @@ def render_person(context: McpContext, person_id: UUID) -> str:
 
 def render_deal(context: McpContext, deal_id: UUID) -> str:
     deal = DealService(context.session).get(deal_id, context.actor)
-    customer = CustomerService(context.session).get(deal.customer_id, context.actor)
+    customer = OrganizationService(context.session).get(deal.customer_id, context.actor)
 
     stage = PipelineService(context.session).get(deal.pipeline_stage_id)
 
@@ -223,7 +223,7 @@ def render_deal(context: McpContext, deal_id: UUID) -> str:
         "",
         f"# {deal.name}",
         "",
-        f"- Customer: {customer.legal_name} (`customer://{customer.id}`)",
+        f"- Organization: {customer.legal_name} (`organization://{customer.id}`)",
         f"- Stage: {stage.name} ({stage.type})",
         f"- Expected value: {_or_dash(deal.expected_value)}",
         f"- Probability: {deal.probability}%",

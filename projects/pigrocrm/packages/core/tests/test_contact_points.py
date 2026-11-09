@@ -20,10 +20,14 @@ from pigrocrm.core.actor import Actor
 from pigrocrm.core.contact_points.models import ContactPoint
 from pigrocrm.core.contact_points.schemas import MAX_CONTACT_POINTS, ContactPointIn
 from pigrocrm.core.contact_points.service import phone_key, prepare
-from pigrocrm.core.customers.schemas import CustomerCreate, CustomerListQuery, CustomerUpdate
-from pigrocrm.core.customers.service import CustomerService
 from pigrocrm.core.errors import ValidationFailed
 from pigrocrm.core.gmail.roster import AddressRoster, EntityRef
+from pigrocrm.core.organizations.schemas import (
+    OrganizationCreate,
+    OrganizationListQuery,
+    OrganizationUpdate,
+)
+from pigrocrm.core.organizations.service import OrganizationService
 from pigrocrm.core.people.models import Person
 from pigrocrm.core.people.schemas import PersonCreate, PersonListQuery, PersonUpdate
 from pigrocrm.core.people.service import PersonService
@@ -315,16 +319,16 @@ def test_the_old_flat_fields_are_refused_on_write() -> None:
     with pytest.raises(ValidationError):
         PersonUpdate.model_validate({"phone": "0212345"})
     with pytest.raises(ValidationError):
-        CustomerCreate.model_validate({"legal_name": "Acme", "email": "info@acme.it"})
+        OrganizationCreate.model_validate({"legal_name": "Acme", "email": "info@acme.it"})
     with pytest.raises(ValidationError):
-        CustomerUpdate.model_validate({"phone": "0212345"})
+        OrganizationUpdate.model_validate({"phone": "0212345"})
 
 
 def test_a_customer_takes_a_list_like_a_person(db_session: Session) -> None:
-    service = CustomerService(db_session)
+    service = OrganizationService(db_session)
 
     read = service.create(
-        CustomerCreate(
+        OrganizationCreate(
             legal_name="Acme",
             certified_email="acme@pec.it",
             contact_points=[
@@ -340,7 +344,7 @@ def test_a_customer_takes_a_list_like_a_person(db_session: Session) -> None:
         "+39 02 7654321",
         "acme@pec.it",
     )
-    updated = service.update(read.id, CustomerUpdate(contact_points=[]), ADMIN)
+    updated = service.update(read.id, OrganizationUpdate(contact_points=[]), ADMIN)
     assert (updated.email, updated.phone, updated.certified_email) == (None, None, "acme@pec.it")
 
 
@@ -402,19 +406,19 @@ def test_a_search_with_digits_in_a_word_is_not_a_phone_search(db_session: Sessio
     assert page.items == []
 
 
-def test_customers_are_found_by_any_of_their_points(db_session: Session) -> None:
-    service = CustomerService(db_session)
+def test_organizations_are_found_by_any_of_their_points(db_session: Session) -> None:
+    service = OrganizationService(db_session)
     service.create(
-        CustomerCreate(
+        OrganizationCreate(
             legal_name="Acme",
             contact_points=[_point("email", "info@acme.it"), _point("phone", "+39 02 7654321")],
         ),
         ADMIN,
     )
-    service.create(CustomerCreate(legal_name="Beta"), ADMIN)
+    service.create(OrganizationCreate(legal_name="Beta"), ADMIN)
 
     def found(term: str) -> list[str]:
-        return [c.legal_name for c in service.list(CustomerListQuery(search=term), ADMIN).items]
+        return [c.legal_name for c in service.list(OrganizationListQuery(search=term), ADMIN).items]
 
     assert found("info@acme") == ["Acme"]
     assert found("02 76543") == ["Acme"]
@@ -434,8 +438,8 @@ def test_the_roster_knows_every_address_of_a_person_and_resolves_by_any(
     )
 
 
-def test_a_domain_is_taken_by_any_address_of_a_customers_person(db_session: Session) -> None:
-    customer = CustomerService(db_session).create(CustomerCreate(legal_name="Acme"), ADMIN)
+def test_a_domain_is_taken_by_any_address_of_a_organizations_person(db_session: Session) -> None:
+    customer = OrganizationService(db_session).create(OrganizationCreate(legal_name="Acme"), ADMIN)
     PersonService(db_session).create(
         PersonCreate(
             first_name="Ada",

@@ -20,7 +20,6 @@ from conftest import _invoice_service
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.analytics.repository import AnalyticsRepository
 from pigrocrm.core.analytics.service import AnalyticsService
-from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.fiscal.pack import SOCIAL_SECURITY_SURCHARGE_INPS
 from pigrocrm.core.invoices.models import Invoice
 from pigrocrm.core.invoices.schemas import (
@@ -31,6 +30,7 @@ from pigrocrm.core.invoices.schemas import (
     PaymentState,
 )
 from pigrocrm.core.invoices.service import InvoiceService
+from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.storage.local import LocalFileStorage
 
 ADMIN = Actor(id=None, type="system", role="admin")
@@ -40,8 +40,8 @@ YEAR = 2026
 
 def _customer(
     session: Session, name: str = "Acme S.r.l.", vat_number: str | None = "01234567890"
-) -> Customer:
-    customer = Customer(
+) -> Organization:
+    customer = Organization(
         legal_name=name,
         vat_number=vat_number,
         tax_code=None if vat_number else "RSSMRA80A01H501U",
@@ -59,7 +59,7 @@ def _customer(
 
 def _issue(
     service: InvoiceService,
-    customer: Customer,
+    customer: Organization,
     *lines: tuple[str, str],
     day: date = date(YEAR, 3, 10),
 ):

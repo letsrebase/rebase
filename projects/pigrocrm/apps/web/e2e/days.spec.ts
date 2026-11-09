@@ -20,7 +20,7 @@ async function seedContract(
   request: APIRequestContext,
   options: { title: string; requiresPriorApproval: boolean },
 ): Promise<string> {
-  const customer = await request.post('/api/customers', { data: { legal_name: `Cliente ${options.title}` } })
+  const customer = await request.post('/api/organizations', { data: { legal_name: `Cliente ${options.title}` } })
   expect(customer.status(), await customer.text()).toBe(201)
   const contract = await request.post('/api/contracts', {
     data: {

@@ -30,7 +30,6 @@ from fastapi.testclient import TestClient
 from sqlalchemy import Engine, delete, select
 
 from pigrocrm.core.actor import Actor
-from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.dashboard.schemas import PeriodQuery
 from pigrocrm.core.dashboard.service import DashboardService
 from pigrocrm.core.db import session_factory, today_local
@@ -38,6 +37,7 @@ from pigrocrm.core.deals.models import Deal
 from pigrocrm.core.documents.models import Document
 from pigrocrm.core.invoices.models import Invoice
 from pigrocrm.core.legal_entities.models import LegalEntity
+from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.pipeline.models import PipelineStage
 from pigrocrm.core.pipeline.service import PipelineService
 from pigrocrm_api.deps import get_snapshot_session
@@ -127,7 +127,7 @@ def dashboard_corpus(client: TestClient, api_engine: Engine) -> Iterator[Engine]
         )
         assert legal_entity_id is not None
         stages = {s.code: s for s in PipelineService(session).seed_defaults(SEED) if s.code}
-        customer = Customer(legal_name=f"{_PREFIX} Cliente", country="IT", custom_fields={})
+        customer = Organization(legal_name=f"{_PREFIX} Cliente", country="IT", custom_fields={})
         session.add(customer)
         session.flush()
         open = Deal(
@@ -242,12 +242,14 @@ def dashboard_corpus(client: TestClient, api_engine: Engine) -> Iterator[Engine]
             session.execute(
                 delete(Invoice).where(
                     Invoice.customer_id.in_(
-                        select(Customer.id).where(Customer.legal_name.like(f"{_PREFIX} %"))
+                        select(Organization.id).where(Organization.legal_name.like(f"{_PREFIX} %"))
                     )
                 )
             )
             session.execute(delete(Deal).where(Deal.name.like(f"{_PREFIX} %")))
-            session.execute(delete(Customer).where(Customer.legal_name.like(f"{_PREFIX} %")))
+            session.execute(
+                delete(Organization).where(Organization.legal_name.like(f"{_PREFIX} %"))
+            )
             session.execute(delete(PipelineStage))
             remove_legal_entity(session, legal_entity_id)
             session.commit()
@@ -532,7 +534,7 @@ def test_every_signal_link_names_a_filter_the_api_actually_declares(
 
     `concentration_above_threshold` is not in this loop, by design and not by omission: its
     own link is the concentration table itself, not a filtered list -- there is no
-    "customers over the threshold" endpoint for a query parameter to narrow, so it would
+    "organizations over the threshold" endpoint for a query parameter to narrow, so it would
     fail this loop's `items` assumption for a reason unrelated to the one the loop checks.
     `test_the_concentration_signals_link_leads_to_the_same_rows_it_counted`, immediately
     below, is its own criterion 2.
@@ -569,7 +571,7 @@ def test_the_concentration_signals_link_leads_to_the_same_rows_it_counted(
     the economic tab's `customer_concentration` table, not a filtered list. The card and
     the rows behind its link still must not disagree, checked here by recomputing, from
     the same threshold `/api/settings/space` reports as effective right now, exactly
-    which customers the tab would show as over it -- and comparing the count to the
+    which organizations the tab would show as over it -- and comparing the count to the
     signal's own.
 
     `dashboard_corpus`'s own invoices never carry `year` (nothing else on this page reads
@@ -578,7 +580,7 @@ def test_the_concentration_signals_link_leads_to_the_same_rows_it_counted(
     """
     year = today_local().year
     with session_factory(dashboard_corpus)() as session:
-        customer = Customer(legal_name=f"{_PREFIX} Concentrato", country="IT", custom_fields={})
+        customer = Organization(legal_name=f"{_PREFIX} Concentrato", country="IT", custom_fields={})
         session.add(customer)
         session.flush()
         # The corpus's own azienda (non-default, see `dashboard_corpus`), named on the
@@ -622,7 +624,7 @@ def test_the_concentration_signals_link_leads_to_the_same_rows_it_counted(
     finally:
         with session_factory(dashboard_corpus)() as session:
             session.execute(delete(Invoice).where(Invoice.customer_id == customer_id))
-            session.execute(delete(Customer).where(Customer.id == customer_id))
+            session.execute(delete(Organization).where(Organization.id == customer_id))
             session.commit()
 
 

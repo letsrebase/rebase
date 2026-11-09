@@ -1,17 +1,17 @@
 import { render, screen } from '@testing-library/react'
 import type { ReactElement } from 'react'
 import { describe, expect, it } from 'vitest'
-import { buildCustomerColumns } from './columns'
-import type { Customer } from './queries'
+import { buildOrganizationColumns } from './columns'
+import type { Organization } from './queries'
 
 /**
  * Where a customer column test belongs -- the other five features each have their own
- * `columns.test.ts`. The older assertions on `buildCustomerColumns` still live in
+ * `columns.test.ts`. The older assertions on `buildOrganizationColumns` still live in
  * `queries.test.ts`, which is where this feature first put them; they are not moved
  * here in the same breath as adding these, because moving a green file's contents and
  * changing behaviour in one commit hides which of the two broke something.
  */
-const BASE_CUSTOMER: Customer = {
+const BASE_CUSTOMER: Organization = {
   id: 'c1',
   legal_entity_id: 'a-1',
   owner_id: null,
@@ -43,8 +43,8 @@ const BASE_CUSTOMER: Customer = {
  * the bare `legal_name`, which is what the tests above read.
  */
 describe('the customer as an entity in the first cell', () => {
-  function renderName(customer: Customer) {
-    const column = buildCustomerColumns([])[0]
+  function renderName(customer: Organization) {
+    const column = buildOrganizationColumns([])[0]
     if (column === undefined || typeof column.cell !== 'function') {
       throw new Error('la colonna «Ragione sociale» non ha un cell renderer')
     }
@@ -67,15 +67,15 @@ describe('the «Azienda» column (REB-625)', () => {
   const LEGAL_ENTITIES = [
     { id: 'a-1', name: 'humancraft' },
     { id: 'a-2', name: 'rebase' },
-  ] as NonNullable<Parameters<typeof buildCustomerColumns>[1]>['legal_entities']
+  ] as NonNullable<Parameters<typeof buildOrganizationColumns>[1]>['legal_entities']
 
   it('is absent without the option, so a one-legal-entity space keeps its five columns', () => {
-    const headers = buildCustomerColumns([]).map((column) => column.header)
+    const headers = buildOrganizationColumns([]).map((column) => column.header)
     expect(headers).not.toContain('Azienda')
   })
 
   it('follows the name under «tutte» and reads each row\'s azienda by id', () => {
-    const columns = buildCustomerColumns([], { legal_entities: LEGAL_ENTITIES })
+    const columns = buildOrganizationColumns([], { legal_entities: LEGAL_ENTITIES })
     expect(columns.map((column) => column.header).slice(0, 3)).toEqual([
       'Ragione sociale',
       'Azienda',

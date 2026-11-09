@@ -15,11 +15,11 @@ from sqlalchemy.orm import Session
 
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.contracts.models import Contract, RateCard
-from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.errors import AgentForbidden, NotFound, ValidationFailed
 from pigrocrm.core.invoices.models import Invoice, InvoiceLine
 from pigrocrm.core.invoices.schemas import InvoiceAnnul, InvoiceIssue
 from pigrocrm.core.invoices.service import InvoiceService
+from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.storage.local import LocalFileStorage
 from pigrocrm.core.work_units.invoicing import (
     assemble_unbilled_work_units_into_new_invoice,
@@ -68,7 +68,7 @@ def _install_fiscal_and_legal_entity_profiles(session: Session) -> None:
 
 def _contract(db_session: Session) -> Contract:
     # Enough identity to appear on an issued document: some tests below issue the invoice.
-    customer = Customer(
+    customer = Organization(
         legal_name=f"ACME {uuid4()}",
         vat_number="12345678901",
         sdi_code="ABCDEFG",
@@ -631,7 +631,7 @@ def test_a_usd_contract_is_refused_instead_of_billed_in_euros(
     assert (day.status, day.invoice_line_id) == ("worked", None)
 
 
-def test_the_draft_is_issued_under_the_contracts_legal_entity_not_the_customers_current_one(
+def test_the_draft_is_issued_under_the_contracts_legal_entity_not_the_organizations_current_one(
     db_session: Session, local_storage: LocalFileStorage
 ) -> None:
     from pigrocrm.core.fiscal.schemas import FiscalProfileUpsert
@@ -656,7 +656,7 @@ def test_the_draft_is_issued_under_the_contracts_legal_entity_not_the_customers_
         ADMIN,
     )
     contract.legal_entity_id = default.id
-    customer = db_session.get(Customer, contract.customer_id)
+    customer = db_session.get(Organization, contract.customer_id)
     assert customer is not None
     customer.legal_entity_id = second.id  # the customer moved after the contract was made
     db_session.flush()

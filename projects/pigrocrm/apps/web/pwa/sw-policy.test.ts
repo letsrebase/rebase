@@ -11,7 +11,7 @@ const ORIGIN = 'https://pigro.example'
 const SHELL = new Set(['/app/assets/offline-AAA.js', '/app/assets/tokens-BBB.css'])
 
 function decide(overrides: Partial<FetchInput> & { href?: string }) {
-  const { href = `${ORIGIN}/studio/app/customers`, ...rest } = overrides
+  const { href = `${ORIGIN}/studio/app/organizations`, ...rest } = overrides
   return decideFetch({
     method: 'GET',
     mode: 'cors',
@@ -33,8 +33,8 @@ describe('decideFetch', () => {
   })
 
   it('never touches an API call, whatever space it is in', () => {
-    expect(decide({ href: `${ORIGIN}/studio/api/customers` })).toBe('network')
-    expect(decide({ href: `${ORIGIN}/api/customers`, mode: 'same-origin' })).toBe('network')
+    expect(decide({ href: `${ORIGIN}/studio/api/organizations` })).toBe('network')
+    expect(decide({ href: `${ORIGIN}/api/organizations`, mode: 'same-origin' })).toBe('network')
   })
 
   it('never touches an asset the application loads for itself', () => {

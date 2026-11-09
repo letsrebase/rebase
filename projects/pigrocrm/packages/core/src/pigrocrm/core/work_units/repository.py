@@ -5,8 +5,8 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.contracts.models import Contract
-from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.documents.models import Document
+from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.work_units.models import Approval, WorkUnit, WorkUnitTransition
 from pigrocrm.core.work_units.schemas import WorkUnitListQuery
 
@@ -50,14 +50,14 @@ class WorkUnitRepository:
             stmt = stmt.where(WorkUnit.date <= date_to)
         return list(self.session.execute(stmt).scalars())
 
-    def labelled(self, work_unit_id: UUID) -> tuple[WorkUnit, Contract, Customer] | None:
+    def labelled(self, work_unit_id: UUID) -> tuple[WorkUnit, Contract, Organization] | None:
         """A day with its contract and customer, in one read, or `None`. No `deleted_at`
         filter on the customer, for the reason `CalendarRepository.deal_labels` records:
         an archived client is still who the work was for."""
         row = self.session.execute(
-            select(WorkUnit, Contract, Customer)
+            select(WorkUnit, Contract, Organization)
             .join(Contract, Contract.id == WorkUnit.contract_id)
-            .join(Customer, Customer.id == Contract.customer_id)
+            .join(Organization, Organization.id == Contract.customer_id)
             .where(WorkUnit.id == work_unit_id)
         ).first()
         return None if row is None else (row[0], row[1], row[2])
@@ -86,14 +86,16 @@ class WorkUnitRepository:
         )
         return list(self.session.execute(stmt).scalars())
 
-    def list_labelled(self, query: WorkUnitListQuery) -> list[tuple[WorkUnit, Contract, Customer]]:
+    def list_labelled(
+        self, query: WorkUnitListQuery
+    ) -> list[tuple[WorkUnit, Contract, Organization]]:
         """The newest `query.limit + 1` days matching `query`, newest first, each with its
         contract and customer. One row more than asked, so the caller can tell a list that
         was cut from one that merely ended."""
         stmt = (
-            select(WorkUnit, Contract, Customer)
+            select(WorkUnit, Contract, Organization)
             .join(Contract, Contract.id == WorkUnit.contract_id)
-            .join(Customer, Customer.id == Contract.customer_id)
+            .join(Organization, Organization.id == Contract.customer_id)
         )
         if query.contract_id is not None:
             stmt = stmt.where(WorkUnit.contract_id == query.contract_id)

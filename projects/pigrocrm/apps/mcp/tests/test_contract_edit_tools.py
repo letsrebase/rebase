@@ -9,11 +9,11 @@ from mcp import Client
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.contracts.models import Contract
-from pigrocrm.core.customers.models import Customer
+from pigrocrm.core.organizations.models import Organization
 
 
 def _contract_id(mcp_session: Session) -> str:
-    customer = Customer(legal_name="ACME Srl")
+    customer = Organization(legal_name="ACME Srl")
     mcp_session.add(customer)
     mcp_session.flush()
     contract = Contract(
@@ -96,7 +96,7 @@ async def test_a_rate_card_is_replaced_and_edited(server, mcp_session) -> None:
         assert edited.structured_content["amount"] == "475.00"
 
 
-async def test_a_cap_on_the_customers_share_is_set_read_and_simulated(
+async def test_a_cap_on_the_organizations_share_is_set_read_and_simulated(
     server, mcp_session: Session
 ) -> None:
     """REB-761: an agent sets `customer_share_cap`, reads it back with `get_contract`,

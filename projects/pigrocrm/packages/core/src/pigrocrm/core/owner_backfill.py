@@ -1,6 +1,6 @@
-"""The one-off that gives a space's customers and deals the owner their creation names (REB-797).
+"""The one-off that gives a space's organizations and deals the owner their creation names (REB-797).
 
-Customers and deals created before owners existed (REB-773 for customers, REB-780 for deals)
+Organizations and deals created before owners existed (REB-773 for organizations, REB-780 for deals)
 carry none. The rule is the card's: a live record without an owner takes the user who
 created it, read from the record's earliest `created` entry in the activity log. Nothing is
 guessed, so a record is *listed* and left alone when:
@@ -8,7 +8,7 @@ guessed, so a record is *listed* and left alone when:
 - the creation entry names no user (`system`, `rebase`, a job, or no actor id at all);
 - the creator is one of the accounts the operator named as generic (`--generic-account`): an
   account several people or agents act through says nothing about who owns the record;
-- the creator's account is deactivated, because `CustomerService` refuses an inactive owner
+- the creator's account is deactivated, because `OrganizationService` refuses an inactive owner
   and this would put one where the product does not;
 - the record has no creation entry (a row imported without a timeline).
 
@@ -32,12 +32,12 @@ from pigrocrm.core.activities.models import Activity
 from pigrocrm.core.activities.service import ActivityService
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.auth.models import User
-from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.deals.models import Deal
+from pigrocrm.core.organizations.models import Organization
 
 SOURCE = "REB-797"
 
-Entity = Literal["customer", "deal"]
+Entity = Literal["organization", "deal"]
 Reason = Literal["generic_account", "no_user", "inactive_creator", "no_creation_entry"]
 
 # The creation entry is read for these actor types only: a `user` acts as itself and an
@@ -70,7 +70,7 @@ class BackfillPlan:
     assignments: list[Assignment] = field(default_factory=list)
     listed: list[Listed] = field(default_factory=list)
     # Live records that already had an owner and are not touched.
-    already_owned: dict[Entity, int] = field(default_factory=lambda: {"customer": 0, "deal": 0})
+    already_owned: dict[Entity, int] = field(default_factory=lambda: {"organization": 0, "deal": 0})
 
     def assigned(self, entity: Entity) -> int:
         return sum(1 for item in self.assignments if item.entity == entity)
@@ -129,14 +129,16 @@ def plan_owner_backfill(session: Session, *, generic_emails: Collection[str] = (
         else:
             plan.assignments.append(Assignment(entity, entity_id, label, creator.id, creator.name))
 
-    customer_creators = _creators(session, "customer")
+    customer_creators = _creators(session, "organization")
     for customer in session.scalars(
-        select(Customer).where(Customer.deleted_at.is_(None)).order_by(Customer.created_at)
+        select(Organization)
+        .where(Organization.deleted_at.is_(None))
+        .order_by(Organization.created_at)
     ).all():
         if customer.owner_id is not None:
-            plan.already_owned["customer"] += 1
+            plan.already_owned["organization"] += 1
         else:
-            decide("customer", customer.id, customer.legal_name, customer_creators)
+            decide("organization", customer.id, customer.legal_name, customer_creators)
 
     deal_creators = _creators(session, "deal")
     for deal in session.scalars(
@@ -160,9 +162,9 @@ def apply_owner_backfill(session: Session, plan: BackfillPlan) -> int:
     system = Actor.system()
     changed = 0
     for item in plan.assignments:
-        record: Customer | Deal | None = (
-            session.get(Customer, item.entity_id, with_for_update=True, populate_existing=True)
-            if item.entity == "customer"
+        record: Organization | Deal | None = (
+            session.get(Organization, item.entity_id, with_for_update=True, populate_existing=True)
+            if item.entity == "organization"
             else session.get(Deal, item.entity_id, with_for_update=True, populate_existing=True)
         )
         if record is None or record.owner_id is not None or record.deleted_at is not None:

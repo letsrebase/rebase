@@ -4,7 +4,7 @@
  * the «Primi passi» page (ORB-180) and behind the Home, which is that same page while
  * the space is empty and the dashboard afterwards (spec 2026-09-16 §4.1, REB-222).
  *
- * The keys sit under the prefixes the rest of the app invalidates (`['customers', …]`,
+ * The keys sit under the prefixes the rest of the app invalidates (`['organizations', …]`,
  * `['emitter', …]`, `['tokens', userId, …]`), so creating the first customer, saving
  * the emitter or minting a token refreshes the page on its next visit without waiting
  * out `staleTime`.
@@ -20,7 +20,7 @@ export type StepId = 'onboarding' | 'tax' | 'customer' | 'work' | 'document'
 export type StepTarget =
   | '/app/onboarding'
   | '/app/settings/legal-entities'
-  | '/app/customers'
+  | '/app/organizations'
   | '/app/deal'
 
 export interface FirstStep {
@@ -75,7 +75,7 @@ function settled<T>(
 /**
  * The five «is there anything» reads keep the **page** the API sent and answer the boolean
  * in `select`, instead of caching a boolean. Their keys sit under the prefixes the rest of
- * the app invalidates (`['deals', …]`, `['customers', …]`), and that is also the prefix
+ * the app invalidates (`['deals', …]`, `['organizations', …]`), and that is also the prefix
  * the Kanban's optimistic move walks with `getQueriesData` expecting `{ items }`: a boolean
  * under `['deals', { scope: 'first-steps' }]` made `useMoveDeal` throw on `data.items.map`
  * and drop every card move, once the shell kept the read mounted on every page (REB-873).
@@ -89,8 +89,8 @@ const NO_ITEMS = { items: [], next_cursor: null }
 
 const hasItems = (page: Page) => (page.items?.length ?? 0) > 0
 
-async function customersPage() {
-  return settled(await api.GET('/api/customers', { params: { query: { limit: 1 } } })) ?? NO_ITEMS
+async function organizationsPage() {
+  return settled(await api.GET('/api/organizations', { params: { query: { limit: 1 } } })) ?? NO_ITEMS
 }
 
 async function dealsPage() {
@@ -153,7 +153,7 @@ function useWork(options: { staleTime: number; refetchOnWindowFocus?: boolean; e
   const ready = (options.enabled ?? true) && !modules.loading
   const dealsOn = modules.on('deals')
   const timeOn = modules.on('time')
-  const customer = useQuery({ queryKey: queryKeys.customers(SCOPE), queryFn: customersPage, select: hasItems, ...options, enabled: ready })
+  const customer = useQuery({ queryKey: queryKeys.organizations(SCOPE), queryFn: organizationsPage, select: hasItems, ...options, enabled: ready })
   const deal = useQuery({ queryKey: queryKeys.deals(SCOPE), queryFn: dealsPage, select: hasItems, ...options, enabled: ready && dealsOn })
   const hours = useQuery({ queryKey: queryKeys.timeEntries(SCOPE), queryFn: timeEntriesPage, select: hasItems, ...options, enabled: ready && timeOn })
   const document = useQuery({ queryKey: queryKeys.documents(SCOPE), queryFn: documentsPage, select: hasItems, ...options, enabled: ready })
@@ -240,7 +240,7 @@ export function useFirstSteps(): FirstStepsState {
       id: 'customer',
       title: 'Il primo cliente',
       hint: 'Un’azienda o una persona per cui lavori. Tutto il resto parte da qui.',
-      to: '/app/customers',
+      to: '/app/organizations',
       screen: 'Clienti',
       canDo: true,
       done: value(customer),
