@@ -346,6 +346,26 @@ describe('EconomicsTab on a customer', () => {
     expect(screen.queryByText('7.800,00 €')).toBeNull()
   })
 
+  it('prints no labour cost when the hours module is off and the API sends none', async () => {
+    routeGet({
+      '/api/analytics/pnl': ok(
+        periodPnl({
+          closed: totals({ revenue: '1000.00', work_cost: null, gross_margin: '1000.00' }),
+          in_progress: totals({ work_cost: null }),
+          accrued_value: null,
+          billable_uninvoiced_hours: null,
+          hours_without_rate: null,
+          written_entries_overdue: null,
+        }),
+      ),
+    })
+    renderTab({ customerId: CUSTOMER })
+
+    const closed = await screen.findByRole('group', { name: /deal chiusi/i })
+    expect(within(closed).getByText(/margine lordo/i)).toBeInTheDocument()
+    expect(within(closed).queryByText(/costo del lavoro/i)).toBeNull()
+  })
+
   it('says the general expenses belong to no customer', async () => {
     routeGet({ '/api/analytics/pnl': ok(periodPnl()) })
     renderTab({ customerId: CUSTOMER })

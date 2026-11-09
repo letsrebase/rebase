@@ -11,6 +11,7 @@ from pigrocrm.core.activities.service import ActivityService
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.config import Settings, gmail_configured
 from pigrocrm.core.crypto import KEY_BYTES
+from pigrocrm.core.modules.registry import MODULE_SETTING_KEYS, SHAPE_KEYS
 from pigrocrm.core.space_settings.models import SpaceSetting
 from pigrocrm.core.space_settings.schemas import (
     OVERRIDABLE_KEYS,
@@ -37,7 +38,7 @@ VERSION_KEY = "_version"
 # carries a version is compared against a settled state.
 VERSION_LOCK = 0xC0F6
 
-_BOOLS = {"google_app_unverified", "mcp_full_access"}
+_BOOLS = {"google_app_unverified", "mcp_full_access", *MODULE_SETTING_KEYS}
 _INTS = {
     "payment_reminders_grace_days",
     "payment_reminders_min_interval_days",
@@ -205,6 +206,34 @@ class SpaceSettingsService:
         self.session.commit()
         return self._read(space=space)
 
+    def lock(self) -> None:
+        """The advisory lock every write takes, transaction-scoped: a caller that reads the
+        state it is about to change takes it first, so two admins cannot both pass a check
+        the other is invalidating."""
+        self.session.execute(select(func.pg_advisory_xact_lock(VERSION_LOCK)))
+
+    def write_shape(self, values: dict[str, str | None]) -> list[str]:
+        """Stages the profile and module rows (`SHAPE_KEYS`) in the caller's transaction, a
+        `None` deleting the row, and answers the keys that really changed. The one writer of
+        those keys: `SpaceSettingsUpdate` cannot carry them. It does no authorisation, takes
+        the advisory lock every write takes and stamps the version; the caller records who did
+        it on the timeline (`ENTITY`, `SETTINGS_ID`, keys only, never values) and commits."""
+        self.session.execute(select(func.pg_advisory_xact_lock(VERSION_LOCK)))
+        changed: list[str] = []
+        for key, value in values.items():
+            if key not in SHAPE_KEYS:
+                raise ValueError(f"{key} is not a profile or module key")
+            row = self.session.get(SpaceSetting, key)
+            if value is None:
+                if self._delete(key):
+                    changed.append(key)
+            elif row is None or row.value != value:
+                self._set(key, value)
+                changed.append(key)
+        if changed:
+            self._set(VERSION_KEY, datetime.now(UTC).isoformat())
+        return sorted(changed)
+
     def _set(self, key: str, value: str) -> None:
         if key in SECRET_KEYS:
             value = seal_value(value, self.base.jwt_secret)
@@ -247,7 +276,11 @@ class SpaceSettingsService:
             payment_reminders_max_reminders=settings.payment_reminders_max_reminders,
             gmail_backfill_days=settings.gmail_backfill_days,
             preferred_concentration_threshold=settings.preferred_concentration_threshold,
-            overwritten=sorted(key for key in overrides if key not in SECRET_KEYS)
+            # The profile and the module switches have their own read (`modules/service.py`):
+            # this page lists what its own form can write.
+            overwritten=sorted(
+                key for key in overrides if key not in SECRET_KEYS and key not in SHAPE_KEYS
+            )
             + sorted(key for key in overrides if key in SECRET_KEYS),
             updated_at=self._version_of(rows),
         )

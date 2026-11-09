@@ -30,6 +30,7 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
+from pigrocrm.core.modules import ModuleKey
 from pigrocrm.core.reminders.catalogue import ReminderType, Severity
 from pigrocrm.core.reminders.directory import Directory
 from pigrocrm.core.reminders.preferences import ReminderSettings
@@ -101,6 +102,10 @@ class Detector:
     # «Applies when» (spec §3), a condition on the space: the ceiling only under the
     # flat-rate regime, period reminders only if the space closes periods. Always, by default.
     applies: Callable[[DetectorContext], bool] = _always
+    # The modules whose records this type reads (spec 2026-11-09, A2): the engine does not
+    # run it for a space where one of them is off, the way it does not run one that does not
+    # apply, so its reminders are neither raised nor cleaned. Empty: the core, always on.
+    modules: tuple[ModuleKey, ...] = ()
 
 
 @dataclass(frozen=True)

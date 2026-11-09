@@ -143,8 +143,15 @@ def render_customer(context: McpContext, customer_id: UUID) -> str:
         PersonListQuery(customer_id=customer_id, limit=50), context.actor
     )
 
-    deals = DealService(context.session).list(
-        DealListQuery(customer_id=customer_id, limit=50), context.actor
+    # A core page that points into a module the space switched off leaves that part out
+    # (spec 2026-11-09, A2); `None` is every module.
+    show_deals = context.modules is None or "deals" in context.modules
+    deals = (
+        DealService(context.session).list(
+            DealListQuery(customer_id=customer_id, limit=50), context.actor
+        )
+        if show_deals
+        else None
     )
 
     lines = [
@@ -168,12 +175,13 @@ def render_customer(context: McpContext, customer_id: UUID) -> str:
         for p in people.items
     ] or ["_No contacts._"]
     lines += _contact_point_lines(customer.contact_points, heading="Customer contact points")
-    lines += ["", "## Deal", ""]
-    lines += [
-        f"- {d.name} — expected value {_or_dash(d.expected_value)}{_figures(d)}"
-        f" — probability {d.probability}%"
-        for d in deals.items
-    ] or ["_No deals._"]
+    if deals is not None:
+        lines += ["", "## Deal", ""]
+        lines += [
+            f"- {d.name} — expected value {_or_dash(d.expected_value)}{_figures(d)}"
+            f" — probability {d.probability}%"
+            for d in deals.items
+        ] or ["_No deals._"]
     lines += _custom_lines(customer.custom_fields)
     lines += ["", "## Timeline", ""] + _timeline_lines(context, "customer", customer_id)
     lines += _note_lines(context, "customer", customer_id)
@@ -237,46 +245,48 @@ def render_deal(context: McpContext, deal_id: UUID) -> str:
     # know before logging an hour. Still no revenue figure in *this* block: revenue is
     # the invoice (§3, decision 2), and the hours half has to be readable on a deal that
     # has none. The economics live in their own section below.
-    summary = TimeEntryService(context.session).deal_summary(deal.id, context.actor)
-    lines += [
-        "",
-        "## Hours",
-        f"- Status: **{_DEAL_HOURS_STATUS.get(summary.status, summary.status)}**",
-        f"- Hours logged: {summary.total_hours}",
-        f"- Billable hours not yet invoiced: {summary.billable_uninvoiced_hours}",
-        f"- Value of uninvoiced hours (estimate): {summary.unbilled_hours_value} EUR",
-    ]
-    if summary.hours_without_rate:
-        lines.append(
-            f"- Entries without a rate: {summary.hours_without_rate} "
-            "(excluded from the accrued value and the margin)"
-        )
+    # Hours, labour and the margin they feed are `time`'s: without it the deal has none to show.
+    if context.modules is None or "time" in context.modules:
+        summary = TimeEntryService(context.session).deal_summary(deal.id, context.actor)
+        lines += [
+            "",
+            "## Hours",
+            f"- Status: **{_DEAL_HOURS_STATUS.get(summary.status, summary.status)}**",
+            f"- Hours logged: {summary.total_hours}",
+            f"- Billable hours not yet invoiced: {summary.billable_uninvoiced_hours}",
+            f"- Value of uninvoiced hours (estimate): {summary.unbilled_hours_value} EUR",
+        ]
+        if summary.hours_without_rate:
+            lines.append(
+                f"- Entries without a rate: {summary.hours_without_rate} "
+                "(excluded from the accrued value and the margin)"
+            )
 
-    # 4A deliberately printed no revenue here, because there were no invoices to read and
-    # a zero would have looked like a real figure. There are now: `deal_pnl` reads the
-    # issued ones and this block is the payoff -- an agent asked "how is this project
-    # going" sees the economics in the same read as the hours, instead of inferring them.
-    pnl = AnalyticsService(context.session).deal_pnl(deal.id, context.actor)
-    lines += [
-        "",
-        "## Economics",
-        f"- Invoiced revenue: {pnl.revenue} EUR ({pnl.issued_invoices} invoices issued)",
-        f"- Direct costs: {pnl.direct_costs} EUR",
-        f"- Labor cost: {pnl.work_cost} EUR",
-    ]
-    if pnl.status == "closed":
-        lines.append(f"- Gross margin: {pnl.gross_margin} EUR (final)")
-    else:
-        # Never a margin without the qualifier on an unfinished deal: the figure is
-        # provisional, and an agent handed a bare number will quote it as final.
-        lines.append(f"- Gross margin: {pnl.gross_margin} EUR — **provisional**")
-        lines.append(f"- Accrued value (estimate, not revenue): {pnl.accrued_value} EUR")
-    if pnl.percentage_margin is None:
-        # `null` is not zero per cent: nothing has been invoiced yet, which is a
-        # different sentence from "every euro earned went out in costs".
-        lines.append("- Margin %: not computable, no revenue invoiced")
-    else:
-        lines.append(f"- Margin %: {pnl.percentage_margin}")
+        # 4A deliberately printed no revenue here, because there were no invoices to read and
+        # a zero would have looked like a real figure. There are now: `deal_pnl` reads the
+        # issued ones and this block is the payoff -- an agent asked "how is this project
+        # going" sees the economics in the same read as the hours, instead of inferring them.
+        pnl = AnalyticsService(context.session).deal_pnl(deal.id, context.actor)
+        lines += [
+            "",
+            "## Economics",
+            f"- Invoiced revenue: {pnl.revenue} EUR ({pnl.issued_invoices} invoices issued)",
+            f"- Direct costs: {pnl.direct_costs} EUR",
+            f"- Labor cost: {pnl.work_cost} EUR",
+        ]
+        if pnl.status == "closed":
+            lines.append(f"- Gross margin: {pnl.gross_margin} EUR (final)")
+        else:
+            # Never a margin without the qualifier on an unfinished deal: the figure is
+            # provisional, and an agent handed a bare number will quote it as final.
+            lines.append(f"- Gross margin: {pnl.gross_margin} EUR — **provisional**")
+            lines.append(f"- Accrued value (estimate, not revenue): {pnl.accrued_value} EUR")
+        if pnl.percentage_margin is None:
+            # `null` is not zero per cent: nothing has been invoiced yet, which is a
+            # different sentence from "every euro earned went out in costs".
+            lines.append("- Margin %: not computable, no revenue invoiced")
+        else:
+            lines.append(f"- Margin %: {pnl.percentage_margin}")
 
     lines += ["", "## Timeline", ""] + _timeline_lines(context, "deal", deal_id)
     lines += _note_lines(context, "deal", deal_id)

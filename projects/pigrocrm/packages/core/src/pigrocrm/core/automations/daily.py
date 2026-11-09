@@ -63,6 +63,7 @@ from pigrocrm.core.automations.repository import AutomationConfigRepository
 from pigrocrm.core.automations.schemas import (
     KIND_STAGE_MOVED,
     KIND_TASK_OPENED,
+    RULE_MODULES,
     TASK_RULES,
     TaskRule,
 )
@@ -74,7 +75,9 @@ from pigrocrm.core.deals.models import Deal
 from pigrocrm.core.documents.models import Document
 from pigrocrm.core.invoices.models import Invoice
 from pigrocrm.core.invoices.naming import number_complete
+from pigrocrm.core.modules import enabled_modules
 from pigrocrm.core.pipeline.models import PipelineStage
+from pigrocrm.core.space_settings.service import SpaceSettingsService
 from pigrocrm.core.tasks.models import Task
 from pigrocrm.core.tasks.schemas import TITLE_MAX_LENGTH
 
@@ -163,8 +166,13 @@ class AutomationPass:
             # `get_or_create` may have inserted the row: committed before the first rule so
             # that a rule's own failure cannot take it away.
             self.session.commit()
+        modules_on = enabled_modules(SpaceSettingsService(self.session, self.settings).effective())
         return PassReport(
-            rules=tuple(self._run_rule(rule, config, day, dry_run=dry_run) for rule in TASK_RULES)
+            rules=tuple(
+                self._run_rule(rule, config, day, dry_run=dry_run)
+                for rule in TASK_RULES
+                if set(RULE_MODULES.get(rule, ())) <= modules_on
+            )
         )
 
     # -- one rule -----------------------------------------------------------------

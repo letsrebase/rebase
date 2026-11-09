@@ -5,7 +5,8 @@ from fastapi import APIRouter, Depends, Query
 
 from pigrocrm.core.calendar.schemas import MONTH_PATTERN, CalendarMonth
 from pigrocrm.core.calendar.service import CalendarService
-from pigrocrm_api.deps import ActorDep, SessionDep, get_actor
+from pigrocrm.core.modules import enabled_modules
+from pigrocrm_api.deps import ActorDep, SessionDep, SettingsDep, get_actor
 from pigrocrm_api.errors import PROBLEM_RESPONSES
 
 router = APIRouter(
@@ -20,6 +21,7 @@ router = APIRouter(
 def month(
     session: SessionDep,
     actor: ActorDep,
+    settings: SettingsDep,
     month: Annotated[str, Query(pattern=MONTH_PATTERN, description="AAAA-MM")],
     # `all=true` is how an admin asks for the space's whole calendar instead of their
     # own. A boolean and not a `user_id`, because «somebody else's hours» is not a
@@ -44,5 +46,9 @@ def month(
     """
     user_id: UUID | None = None if all else actor.id
     return CalendarService(session).month(
-        month, actor, user_id=user_id, legal_entity_id=legal_entity_id
+        month,
+        actor,
+        user_id=user_id,
+        legal_entity_id=legal_entity_id,
+        modules=enabled_modules(settings),
     )

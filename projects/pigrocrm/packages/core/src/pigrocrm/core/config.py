@@ -186,6 +186,19 @@ class Settings(BaseSettings):
     # reasoning in `actor.py`).
     mcp_full_access: bool = False
 
+    # The space's shape (spec 2026-11-09, B1/B2): the profile and one switch per built
+    # module, all `None` while a space has not decided. They are laid over a `Settings` from
+    # the `space_settings` rows and written only by the actions `set_space_profile` and
+    # `set_space_modules` (never through `SpaceSettingsUpdate`), so the confirmation they
+    # ask for cannot be bypassed from the generic settings page. `core/modules.py` reads
+    # them: an absent switch is the profile's default, and with no profile, on.
+    space_profile: Literal["solo", "company"] | None = None
+    module_deals: bool | None = None
+    module_contracts: bool | None = None
+    module_time: bool | None = None
+    module_costs: bool | None = None
+    module_taxes: bool | None = None
+
     # The emitter's timezone, and the only one. Every `Date` column in the product is a
     # calendar day in *this* zone: `invoices.issue_date` (slice 3 §6.2),
     # `costs.date` and `time_entries.date` (slice 4), `deals.closed_at` and

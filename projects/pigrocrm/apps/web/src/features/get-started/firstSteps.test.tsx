@@ -4,7 +4,8 @@ import type { ReactNode } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { api } from '@/lib/api'
 import { useDeals, useMoveDeal } from '@/features/deals/queries'
-import { useSpaceEmpty, useSpaceHasData } from './firstSteps'
+import { spaceModules } from '@/lib/modules.testing'
+import { useFirstSteps, useSpaceEmpty, useSpaceHasData } from './firstSteps'
 
 vi.mock('@/lib/api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/api')>()
@@ -24,6 +25,13 @@ const DEAL = { id: 'd-1', name: 'Progetto', pipeline_stage_id: 's-lead' }
 function wrapper(client: QueryClient) {
   return ({ children }: { children: ReactNode }) => (
     <QueryClientProvider client={client}>{children}</QueryClientProvider>
+  )
+}
+
+/** The reads the hooks make about the work (the space's modules are read too, REB-953). */
+function workReads() {
+  return (vi.mocked(api.GET).mock.calls as unknown as [string, unknown][]).filter(
+    ([path]) => path !== '/api/settings/modules',
   )
 }
 
@@ -86,7 +94,7 @@ describe('useSpaceHasData', () => {
     vi.mocked(api.GET).mockImplementation((() => ok({ items: [], next_cursor: null })) as never)
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     const { result } = renderHook(() => useSpaceHasData(), { wrapper: wrapper(client) })
-    await waitFor(() => expect(api.GET).toHaveBeenCalledTimes(4))
+    await waitFor(() => expect(workReads()).toHaveLength(4))
     await waitFor(() => expect(client.isFetching()).toBe(0))
     expect(result.current).toBe(false)
 
@@ -100,10 +108,54 @@ describe('useSpaceHasData', () => {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     const { result } = renderHook(() => useSpaceHasData(), { wrapper: wrapper(client) })
     await waitFor(() => expect(result.current).toBe(true))
-    const reads = vi.mocked(api.GET).mock.calls.length
+    const reads = workReads().length
 
     await client.invalidateQueries()
     expect(result.current).toBe(true)
-    expect(api.GET).toHaveBeenCalledTimes(reads)
+    expect(workReads()).toHaveLength(reads)
+  })
+})
+
+/** REB-953: a switched-off module's reads are not made, and do not count as work. */
+describe('with modules off', () => {
+  function answerModules(off: Parameters<typeof spaceModules>[0]) {
+    vi.mocked(api.GET).mockImplementation(((path: string) =>
+      path === '/api/settings/modules'
+        ? ok(spaceModules(off))
+        : path === '/api/deals' || path === '/api/time-entries'
+          ? // What a switched-off module's route answers: a failed read would count as work.
+            Promise.resolve({
+              error: { status: 404, code: 'module_off', detail: 'Il modulo Deal è spento' },
+              response: new Response(null, { status: 404 }),
+            })
+          : ok({ items: [], next_cursor: null })) as never)
+  }
+
+  it('is an empty space when only the customers and documents are read and neither has a row', async () => {
+    answerModules(['deals'])
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const { result } = renderHook(() => useSpaceEmpty(), { wrapper: wrapper(client) })
+    await waitFor(() => expect(result.current.spaceEmpty).toBe(true))
+    expect(result.current.workFailed).toBe(false)
+    const paths = workReads().map(([path]) => path)
+    expect(paths).not.toContain('/api/deals')
+    expect(paths).not.toContain('/api/time-entries')
+  })
+
+  it('drops the two steps that lead to the deals', async () => {
+    answerModules(['deals'])
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const { result } = renderHook(() => useFirstSteps(), { wrapper: wrapper(client) })
+    await waitFor(() => expect(result.current.steps.map((step) => step.id)).toEqual(['tax', 'customer']))
+  })
+
+  it('keeps the four steps with every module on', async () => {
+    answerModules([])
+    vi.mocked(api.GET).mockImplementation(((path: string) =>
+      path === '/api/settings/modules' ? ok(spaceModules([])) : ok({ items: [], next_cursor: null })) as never)
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const { result } = renderHook(() => useFirstSteps(), { wrapper: wrapper(client) })
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    expect(result.current.steps.map((step) => step.id)).toEqual(['tax', 'customer', 'work', 'document'])
   })
 })

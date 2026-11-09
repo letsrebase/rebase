@@ -32,7 +32,8 @@ from pigrocrm.core.analytics.schemas import (
     YearOverview,
 )
 from pigrocrm.core.analytics.service import AnalyticsService
-from pigrocrm_api.deps import ActorDep, SessionDep, get_actor
+from pigrocrm.core.modules import enabled_modules
+from pigrocrm_api.deps import ActorDep, SessionDep, SettingsDep, get_actor, module_guard
 from pigrocrm_api.downloads import attachment_response
 from pigrocrm_api.errors import PROBLEM_RESPONSES
 from pigrocrm_api.query_params import KeysetParams
@@ -77,6 +78,7 @@ LegalEntityRequired = Annotated[
 def period_pnl(
     session: SessionDep,
     actor: ActorDep,
+    settings: SettingsDep,
     date_from: FromDate,
     date_to: ToDate,
     customer_id: Annotated[UUID | None, Query()] = None,
@@ -106,6 +108,7 @@ def period_pnl(
             legal_entity_id=legal_entity_id,
         ),
         actor,
+        enabled_modules(settings),
     )
 
 
@@ -115,7 +118,7 @@ class BudgetParams(KeysetParams):
     customer_id: UUID | None = None
 
 
-@router.get("/budget", response_model=BudgetPage)
+@router.get("/budget", response_model=BudgetPage, dependencies=[module_guard("deals", "time")])
 def budget_vs_actual(
     session: SessionDep, actor: ActorDep, params: Annotated[BudgetParams, Query()]
 ) -> BudgetPage:
@@ -129,6 +132,7 @@ def budget_vs_actual(
 def economic_overview(
     session: SessionDep,
     actor: ActorDep,
+    settings: SettingsDep,
     year: Annotated[int, Query(ge=2000, le=2200)],
     legal_entity_id: LegalEntityFilter = None,
     base: Annotated[
@@ -151,10 +155,12 @@ def economic_overview(
     between the two readings (ORB-133); the fiscal block stays on the money. In «tutte»
     on a space with several legal entities the fiscal block is empty and the page asks
     `/fiscal` once per legal entity (REB-630)."""
-    return AnalyticsService(session).economic_overview(year, actor, base, legal_entity_id)
+    return AnalyticsService(session).economic_overview(
+        year, actor, base, legal_entity_id, enabled_modules(settings)
+    )
 
 
-@router.get("/fiscal", response_model=FiscalEstimate)
+@router.get("/fiscal", response_model=FiscalEstimate, dependencies=[module_guard("taxes")])
 def fiscal_estimate(
     session: SessionDep,
     actor: ActorDep,
@@ -170,17 +176,17 @@ def fiscal_estimate(
 
 
 @router.get("/backlog", response_model=UnbilledBacklog)
-def backlog(session: SessionDep, actor: ActorDep) -> UnbilledBacklog:
+def backlog(session: SessionDep, actor: ActorDep, settings: SettingsDep) -> UnbilledBacklog:
     """No period parameter, deliberately: see `AnalyticsService.unbilled_backlog`.
 
     Placed beside the other analytics reads rather than under `/dashboard`, because the
     figure belongs to `AnalyticsService` and §3 forbids a dashboard module from owning
     one -- its euro value is a product of two columns.
     """
-    return AnalyticsService(session).unbilled_backlog(actor)
+    return AnalyticsService(session).unbilled_backlog(actor, modules=enabled_modules(settings))
 
 
-@router.get("/ceilings", response_model=CeilingHeadroom)
+@router.get("/ceilings", response_model=CeilingHeadroom, dependencies=[module_guard("taxes")])
 def ceiling_headroom(
     session: SessionDep,
     actor: ActorDep,
@@ -195,7 +201,11 @@ def ceiling_headroom(
     return AnalyticsService(session).ceiling_headroom(year, actor, legal_entity_id)
 
 
-@router.get("/ceilings/simulate", response_model=CeilingSimulation)
+@router.get(
+    "/ceilings/simulate",
+    response_model=CeilingSimulation,
+    dependencies=[module_guard("taxes", "deals")],
+)
 def simulate_ceiling(
     session: SessionDep,
     actor: ActorDep,
@@ -249,7 +259,7 @@ def simulate_ceiling(
     )
 
 
-@router.get("/days", response_model=DaysAnalysis)
+@router.get("/days", response_model=DaysAnalysis, dependencies=[module_guard("contracts")])
 def days_analysis(
     session: SessionDep,
     actor: ActorDep,
@@ -268,7 +278,7 @@ def days_analysis(
     return AnalyticsService(session).days_analysis(actor, date_from, date_to, legal_entity_id)
 
 
-@router.get("/year", response_model=YearOverview)
+@router.get("/year", response_model=YearOverview, dependencies=[module_guard("taxes")])
 def year_overview(
     session: SessionDep,
     actor: ActorDep,
@@ -286,6 +296,7 @@ def year_overview(
     "/year/csv",
     response_class=Response,
     responses={200: {"content": {"text/csv": {}}, "description": "The year as CSV"}},
+    dependencies=[module_guard("taxes")],
 )
 def year_csv(
     session: SessionDep,

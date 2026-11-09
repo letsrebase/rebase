@@ -29,21 +29,33 @@ from typing import Any
 
 from mcp.server import MCPServer
 
+from pigrocrm.core.config import Settings
 from pigrocrm_mcp.context import McpContext
+from pigrocrm_mcp.modules import prompt_available
 from pigrocrm_mcp.prompts import customer as customer_prompts
 from pigrocrm_mcp.prompts import dashboards as dashboard_prompts
 
 
-def register_prompts(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> None:
+def register_prompts(
+    mcp: MCPServer, context: McpContext, guard: Callable[..., Any], settings: Settings
+) -> None:
     """`guard` is typed `Callable[..., Any]`, exactly as `register_entity_tools` types it.
 
     A single `[T: Callable[..., Any]]` on this function would bind one `T` for all four
     registrations, so the second signature it met would be an error -- and the honest
     alternative, a `Protocol` with a generic `__call__`, would describe `_guard` no better
     than this does while adding a type nobody else in this package needs.
+
+    A prompt of a module the space has switched off is not registered (`modules.py`).
     """
 
-    @mcp.prompt(name="pipeline-review")
+    def prompt(name: str) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
+        if not prompt_available(name, settings):
+            return lambda fn: fn
+        decorator: Callable[[Callable[..., Any]], Callable[..., Any]] = mcp.prompt(name=name)
+        return decorator
+
+    @prompt("pipeline-review")
     @guard
     def review_pipeline(
         date_from: str | None = None, date_to: str | None = None
@@ -52,21 +64,21 @@ def register_prompts(mcp: MCPServer, context: McpContext, guard: Callable[..., A
         `date_from` and `date_to` are optional ISO dates: without them, the current month."""
         return dashboard_prompts.review_pipeline(context, date_from, date_to)
 
-    @mcp.prompt(name="month-close")
+    @prompt("month-close")
     @guard
     def closing_month(year: int, month: int) -> list[dict[str, Any]]:
         """The to-do list before closing a month: the period's profit and loss, unbilled
         hours, overdue invoices, and whether the period is already closed."""
         return dashboard_prompts.closing_month(context, year, month)
 
-    @mcp.prompt(name="hours-to-log")
+    @prompt("hours-to-log")
     @guard
     def hours_to_log(week: str | None = None) -> list[dict[str, Any]]:
         """The days of the current week with no hours logged, with the deals worked on
         recently."""
         return dashboard_prompts.hours_to_log(context, week)
 
-    @mcp.prompt(name="customer-status")
+    @prompt("customer-status")
     @guard
     def status_customer(customer_id: str) -> list[dict[str, Any]]:
         """The briefing before a phone call: unpaid invoices, and the customer's full record

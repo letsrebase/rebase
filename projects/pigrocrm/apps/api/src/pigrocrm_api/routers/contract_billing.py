@@ -16,7 +16,7 @@ from pigrocrm.core.work_units.register import (
     ContractRegister,
     ContractRegisterService,
 )
-from pigrocrm_api.deps import ActorDep, SessionDep, StorageDep, get_actor
+from pigrocrm_api.deps import ActorDep, SessionDep, StorageDep, get_actor, module_guard
 from pigrocrm_api.downloads import attachment_response
 from pigrocrm_api.errors import PROBLEM_RESPONSES
 
@@ -24,7 +24,7 @@ router = APIRouter(
     prefix="/api/contracts",
     tags=["contract-billing"],
     responses=PROBLEM_RESPONSES,
-    dependencies=[Depends(get_actor)],
+    dependencies=[Depends(get_actor), module_guard("contracts")],
 )
 
 DateFrom = Annotated[date, Query(alias="from", description="From the day, YYYY-MM-DD, inclusive")]

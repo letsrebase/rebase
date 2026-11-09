@@ -9,14 +9,14 @@ from pigrocrm.core.timetracking.schemas import (
     CostCategoryRead,
     CostCategoryUpdate,
 )
-from pigrocrm_api.deps import ActorDep, SessionDep, get_actor
+from pigrocrm_api.deps import ActorDep, SessionDep, get_actor, module_guard
 from pigrocrm_api.errors import PROBLEM_RESPONSES
 
 router = APIRouter(
     prefix="/api/cost-categories",
     tags=["cost-categories"],
     responses=PROBLEM_RESPONSES,
-    dependencies=[Depends(get_actor)],
+    dependencies=[Depends(get_actor), module_guard("costs")],
 )
 
 

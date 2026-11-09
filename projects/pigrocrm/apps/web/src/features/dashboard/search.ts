@@ -1,4 +1,5 @@
 import type { components } from '@/lib/api-types'
+import { TAB_MODULES, type ModuleAccess } from '@/lib/modules'
 import { currentMonth } from './period'
 
 /**
@@ -30,6 +31,25 @@ export const DASHBOARD_TABS = [
 ] as const
 
 export type TabId = (typeof DASHBOARD_TABS)[number]['id']
+
+/**
+ * The tabs a space with these modules on shows (REB-953, spec 2026-11-09 B5): «Anno» is
+ * `taxes`, «Giornate» is `contracts`, «Commerciale» is `deals` (the table is `TAB_MODULES`);
+ * «Economica» and «Scadenziario» are the core's and always stay.
+ */
+export function availableTabs(access: ModuleAccess) {
+  return DASHBOARD_TABS.filter((tab) => access.on(...(TAB_MODULES[tab.id] ?? [])))
+}
+
+/**
+ * The tab to draw for the one the URL names: that tab when the space shows it, else the
+ * first it does show. The URL's own validator cannot know the modules, and a bookmark of
+ * «Anno» must open something rather than a tab that is not there.
+ */
+export function resolveTab(tab: TabId, access: ModuleAccess): TabId {
+  const tabs = availableTabs(access)
+  return tabs.some((candidate) => candidate.id === tab) ? tab : (tabs[0]?.id ?? 'economic')
+}
 
 /**
  * Which month a document's money falls in on the economic charts (ORB-133): the accrual

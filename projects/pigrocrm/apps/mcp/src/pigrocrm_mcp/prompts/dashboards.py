@@ -36,6 +36,8 @@ from pigrocrm.core.dashboard.schemas import PeriodQuery
 from pigrocrm.core.dashboard.service import DashboardService
 from pigrocrm.core.db import month_bounds
 from pigrocrm.core.deals.service import DealService
+from pigrocrm.core.errors import ModuleOff
+from pigrocrm.core.modules.registry import MODULES_BY_KEY
 from pigrocrm_mcp.context import McpContext
 
 # The caps. Each is the number of rows that is worth a place in the model's context window
@@ -170,9 +172,11 @@ def closing_month(context: McpContext, year: int, month: int) -> list[dict[str, 
     date_from, date_to = month_bounds(year, month)
     service = DashboardService(context.session)
     economic = service.get_economic_dashboard(
-        PeriodQuery(date_from=date_from, date_to=date_to), context.actor
+        PeriodQuery(date_from=date_from, date_to=date_to), context.actor, context.modules
     )
-    backlog = AnalyticsService(context.session).unbilled_backlog(context.actor)
+    # Without the `time` module the report carries no labour and no hours (`pnl.without_labour`)
+    # and the prompt leaves those lines out rather than printing a dash for them.
+    hours_on = context.modules is None or "time" in context.modules
 
     pnl = economic.pnl
     lines = [
@@ -186,7 +190,12 @@ def closing_month(context: McpContext, year: int, month: int) -> list[dict[str, 
         f"| {_euro(pnl.in_progress.revenue)} |",
         f"| Direct costs | {_euro(pnl.closed.direct_costs)} "
         f"| {_euro(pnl.in_progress.direct_costs)} |",
-        f"| Labor cost | {_euro(pnl.closed.work_cost)} | {_euro(pnl.in_progress.work_cost)} |",
+    ]
+    if pnl.closed.work_cost is not None and pnl.in_progress.work_cost is not None:
+        lines.append(
+            f"| Labor cost | {_euro(pnl.closed.work_cost)} | {_euro(pnl.in_progress.work_cost)} |"
+        )
+    lines += [
         f"| Gross margin | {_euro(pnl.closed.gross_margin)} "
         f"| {_euro(pnl.in_progress.gross_margin)} |",
         f"| Margin % | {_percent(pnl.closed.percentage_margin)} "
@@ -201,27 +210,51 @@ def closing_month(context: McpContext, year: int, month: int) -> list[dict[str, 
         "",
         "## To settle before closing",
         "",
-        f"- Billable uninvoiced hours **in the period**: "
-        f"{pnl.billable_uninvoiced_hours} hours, accrued value "
-        f"{_euro(pnl.accrued_value)}",
-        f"- Entries without a rate in the period: {pnl.hours_without_rate}",
-        f"- Backlog **in total** (no period): "
-        f"{backlog.billable_uninvoiced_hours} hours, "
-        f"{_euro(backlog.accrued_value)}, of which {backlog.entries_without_rate} entries "
-        "without a rate",
+    ]
+    backlog = AnalyticsService(context.session).unbilled_backlog(
+        context.actor, modules=context.modules
+    )
+    if hours_on:
+        lines += [
+            f"- Billable uninvoiced hours **in the period**: "
+            f"{pnl.billable_uninvoiced_hours} hours, accrued value "
+            f"{_euro(pnl.accrued_value)}",
+            f"- Entries without a rate in the period: {pnl.hours_without_rate}",
+            f"- Backlog **in total** (no period): "
+            f"{backlog.billable_uninvoiced_hours} hours, "
+            f"{_euro(backlog.accrued_value)}, of which {backlog.entries_without_rate} entries "
+            "without a rate",
+        ]
+    else:
+        # No hours without `time`; what is left of the arrears is the approved contract days.
+        lines += [
+            f"- Approved contract days not yet invoiced **in the period**: "
+            f"{_euro(pnl.accrued_value)}",
+            f"- Backlog **in total** (no period): {_euro(backlog.accrued_value)}, of which "
+            f"{backlog.entries_without_rate} days without a rate",
+        ]
+    lines += [
         f"- Invoices issued in the period: {economic.issued_invoices}",
         f"- To collect (total incl. VAT, no period): {_euro(economic.unpaid)}",
         f"- Of which **overdue**: {_euro(economic.expired)}",
         "",
-        f"Period closed: {'yes' if pnl.closed_period else 'no'}. "
-        f"Entries written late: {pnl.written_entries_overdue}.",
+        f"Period closed: {'yes' if pnl.closed_period else 'no'}."
+        + (f" Entries written late: {pnl.written_entries_overdue}." if hours_on else ""),
         "",
         "---",
         "",
         "Prepare the to-do list before closing this month. Flag only the deviations that "
-        "matter: unbilled hours, entries without a rate, overdue invoices. «To collect» is "
+        "matter: "
+        + (
+            "unbilled hours, entries without a rate, "
+            if hours_on
+            else "approved days not invoiced, days without a rate, "
+        )
+        + "overdue invoices. «To collect» is "
         "a receivable, not revenue: do not add it to revenue and do not use it to compute a "
-        "margin. If the period is not closed and there are entries written late, say that "
+        "margin. If the period is not closed"
+        + (" and there are entries written late" if hours_on else "")
+        + ", say that "
         "the numbers may still move. Do not compute any tax or contribution: it is not data "
         "you have.",
     ]
@@ -240,8 +273,14 @@ def hours_to_log(context: McpContext, week: str | None = None) -> list[dict[str,
     knows which days have no *entry*, which is not the same statement as "these hours sum to
     zero", and re-deriving it from `days` would silently pick the second reading.
     """
-    board = DashboardService(context.session).get_operational_dashboard(context.actor)
+    board = DashboardService(context.session).get_operational_dashboard(
+        context.actor, modules=context.modules
+    )
     current = board.week
+    if (
+        current is None
+    ):  # `time` is off; the prompt is not registered then, a direct call lands here
+        raise ModuleOff("time", MODULES_BY_KEY["time"].label)
     if week is not None and week != current.date_from.isoformat():
         return [
             _user(

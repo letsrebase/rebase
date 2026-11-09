@@ -3,6 +3,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from pigrocrm.core.modules.registry import SHAPE_KEYS
+
 # The keys a space may decide for itself. Deliberately not every field of `Settings`:
 # the database URL, the JWT secret and the cookie flag are the process's; the timezone
 # is read by the clock through `get_settings()` and would lie if it differed per space.
@@ -18,6 +20,9 @@ OVERRIDABLE_KEYS: tuple[str, ...] = (
     "payment_reminders_max_reminders",
     "gmail_backfill_days",
     "preferred_concentration_threshold",
+    # The space's profile and module switches: read like any other row, but written only
+    # by `set_space_profile` / `set_space_modules`, never through `SpaceSettingsUpdate`.
+    *SHAPE_KEYS,
 )
 # Never sent back to a browser; the page learns only whether they are set.
 SECRET_KEYS: frozenset[str] = frozenset({"google_client_secret", "google_token_key"})

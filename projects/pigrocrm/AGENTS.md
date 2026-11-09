@@ -141,6 +141,20 @@ takes `person_only(action)`. Action keys are English snake_case; the Italian sen
 reads is a label in `ACTION_LABELS`. `apps/api/tests/test_role_matrix.py` walks every writing
 route with an administrator's token and lists the ones it reaches (`AGENT_REACHABLE`).
 
+**A module that is off is guarded once per surface, never by an `if` in a handler (REB-953).**
+`core/modules/registry.py` decides whether `deals`, `contracts`, `time`, `costs` or `taxes` is on
+(a stored `module_*` row over the profile's default, then the dependency `time` -> `deals`);
+each surface asks it in one place. REST: `module_guard(...)` from `pigrocrm_api.deps`, listed
+after `get_actor` on a router or on one route (a route across modules lists all of them), which
+answers 404 `module_off` with the Italian sentence. MCP: `pigrocrm_mcp/modules.py::TOOL_MODULES`,
+applied once by `prune_off_modules` in `build_server`; `tests/test_module_guard.py` fails for a
+tool that is in neither that table nor its `CORE_TOOLS`, so a new tool is classified on purpose.
+Jobs: `Detector.modules` for the reminders, `RULE_MODULES` for the automations, and the digest's
+sections. A core read that spans modules (search, the calendar, the customer card) takes
+`modules=` and leaves that part out. The profile and the switches are written only by
+`SpaceModulesService` (`set_space_profile`, `set_space_modules`: unscoped admin, and for a token
+`full_access`), never through `SpaceSettingsUpdate`. Switching off touches no record.
+
 **A router authenticates with `dependencies=[Depends(get_actor)]`, not per handler.** A
 handler that never names the actor is still behind it, and `test_routes_authenticate.py`
 asks every route of the OpenAPI document once with no credential. The open routes are the

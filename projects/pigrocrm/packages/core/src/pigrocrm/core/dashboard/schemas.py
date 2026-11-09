@@ -283,7 +283,8 @@ class OperationalDashboard(BaseModel):
 
     calculated_at: datetime
     legal_entity_id: UUID | None = None
-    week: WeekHours
+    # `None` when the space has the `time` module off.
+    week: WeekHours | None
     backlog: UnbilledBacklog
     signals: list[Signal]
     recent_activity: list[ActivityRead]

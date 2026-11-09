@@ -25,6 +25,7 @@ import { useDeals } from '@/features/deals/queries'
 import { useLogTime } from '@/features/time/queries'
 import { toProblem } from '@/lib/api'
 import { useAuth, useCanWrite } from '@/lib/auth'
+import { useModules } from '@/lib/modules'
 import { formatIsoDateItalian } from '@/lib/dates'
 import { formatItalianQuantity } from '@/lib/decimal'
 import { FULL_DAY, HALF, normaliseHours } from './hours'
@@ -53,6 +54,9 @@ export function DayPanel({
   onClose: () => void
 }) {
   const canWrite = useCanWrite()
+  // Hours are `time`'s and worked days `contracts`': the part of a switched-off module is
+  // not drawn, whatever the day holds (REB-953).
+  const modules = useModules()
   const [problem, setProblem] = useState<string | null>(null)
 
   return (
@@ -65,12 +69,12 @@ export function DayPanel({
         </DialogHeader>
 
         <div className="min-h-0 space-y-5 overflow-y-auto">
-          <Worked data={data} />
-          <PanelDays day={day} days={data?.work_units ?? []} />
+          {modules.on('time') && <Worked data={data} />}
+          {modules.on('contracts') && <PanelDays day={day} days={data?.work_units ?? []} />}
           <Due data={data} />
           {canWrite && (
             <>
-              <LogHours day={day} onProblem={setProblem} />
+              {modules.on('time') && <LogHours day={day} onProblem={setProblem} />}
               <NewCommitment day={day} />
             </>
           )}

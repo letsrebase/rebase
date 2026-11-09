@@ -7,6 +7,7 @@ import { usePerson } from '@/features/people/queries'
 import { useUsers } from '@/features/settings/queries'
 import { api, unwrap } from '@/lib/api'
 import { useAuth, useIsAdmin } from '@/lib/auth'
+import { useModules } from '@/lib/modules'
 import type { Task } from '@/features/calendar/queries'
 import type { components } from '@/lib/api-types'
 import type { LinkKind, LinkValue } from './links'
@@ -21,11 +22,13 @@ import { queryKeys } from '@/lib/query'
  * UUID would be a link nobody could read.
  */
 export function useRecordLabel(link: LinkValue | null): string | undefined {
+  // A deal is not read while `deals` is off (REB-953): its route answers 404.
+  const dealsOn = useModules().on('deals')
   const is = (kind: LinkKind) => link?.kind === kind
   const id = link?.id ?? ''
   const customer = useCustomer(id, { enabled: is('customer') })
   const person = usePerson(id, { enabled: is('person') })
-  const deal = useDeal(id, { enabled: is('deal') })
+  const deal = useDeal(id, { enabled: is('deal') && dealsOn })
   const invoice = useInvoice(is('invoice') ? id : '')
 
   if (link === null) return undefined
@@ -45,6 +48,17 @@ export function useRecordLabel(link: LinkValue | null): string | undefined {
       return data.memo ? `${prefix} · ${data.memo}` : prefix
     }
   }
+}
+
+/**
+ * The link a task shows: the record it hangs from, or `null` when that record's page is not
+ * there (REB-953, spec 2026-11-09 A2): a task linked to a deal while `deals` is off shows no
+ * link rather than one to a 404. The link itself stays on the task and returns with the
+ * module; only what is drawn changes.
+ */
+export function useVisibleLink(link: LinkValue | null): LinkValue | null {
+  const dealsOn = useModules().on('deals')
+  return link?.kind === 'deal' && !dealsOn ? null : link
 }
 
 export interface Assignee {

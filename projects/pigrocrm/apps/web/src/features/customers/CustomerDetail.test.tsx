@@ -1,10 +1,12 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { ReactElement } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { CustomerDetail } from './CustomerDetail'
 import { api } from '@/lib/api'
+import { spaceModules } from '@/lib/modules.testing'
+import type { ModuleKey } from '@/lib/modules'
 
 vi.mock('@tanstack/react-router', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@tanstack/react-router')>()
@@ -314,5 +316,47 @@ describe('CustomerDetail', () => {
       expect(await screen.findByText('Nessuna fattura.')).toBeInTheDocument()
       expect(screen.queryByRole('button', { name: 'Nuova fattura' })).not.toBeInTheDocument()
     })
+  })
+})
+
+/** REB-953: a core page that points into a switched-off module hides that part. */
+describe('CustomerDetail with modules off', () => {
+  function mockWithModules(off: readonly ModuleKey[]) {
+    mockGet.mockImplementation(
+      ((path: string) =>
+        path === '/api/settings/modules'
+          ? ok(spaceModules(off))
+          : path === '/api/customers/{customer_id}'
+            ? ok(CUSTOMER)
+            : path === NOTES_PATH
+              ? ok([])
+              : ok({ items: [] })) as never,
+    )
+  }
+
+  it('draws the Contratti tab and the Deal card while both modules are on', async () => {
+    mockWithModules([])
+    renderWithClient(<CustomerDetail />)
+    expect(await screen.findByRole('tab', { name: 'Contratti' }, { timeout: 10_000 })).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('tab', { name: 'Collegamenti' }))
+    expect(await screen.findByText(/^Deal \(/)).toBeInTheDocument()
+    expect(mockGet).toHaveBeenCalledWith('/api/deals', expect.anything())
+  })
+
+  it('draws no Deal card with deals off, and does not ask for the deals', async () => {
+    mockWithModules(['deals'])
+    renderWithClient(<CustomerDetail />)
+    await userEvent.click(await screen.findByRole('tab', { name: 'Collegamenti' }, { timeout: 10_000 }))
+    expect(await screen.findByText(/^Persone \(/)).toBeInTheDocument()
+    expect(screen.queryByText(/^Deal \(/)).toBeNull()
+    expect(mockGet).not.toHaveBeenCalledWith('/api/deals', expect.anything())
+  })
+
+  it('draws no Contratti tab with contracts off', async () => {
+    mockWithModules(['contracts'])
+    renderWithClient(<CustomerDetail />)
+    expect(await screen.findByRole('tab', { name: 'Fatture' }, { timeout: 10_000 })).toBeInTheDocument()
+    await waitFor(() => expect(mockGet).toHaveBeenCalledWith('/api/settings/modules'))
+    await waitFor(() => expect(screen.queryByRole('tab', { name: 'Contratti' })).toBeNull())
   })
 })

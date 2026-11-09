@@ -14,6 +14,7 @@ import {
   Users,
 } from 'lucide-react'
 import { SETTINGS_GROUPS, type SettingsTabValue } from '@/features/settings/tabs'
+import { modulesOfPath, type ModuleAccess } from '@/lib/modules'
 import { canSeeSettingsTab, type Role } from '@/lib/permissions'
 
 /**
@@ -67,6 +68,19 @@ export const SECTIONS = [
     ],
   },
 ] as const
+
+/**
+ * The sections as one space sees them (REB-953, spec 2026-11-09 B4): an entry whose module
+ * is off is gone, and a section left with no entry goes with it. Which module owns which
+ * entry is not written here: it is `ROUTE_MODULES`, the table the route guard reads too,
+ * so a link and the page it leads to cannot disagree.
+ */
+export function visibleSections(access: ModuleAccess) {
+  return SECTIONS.map((section) => ({
+    ...section,
+    items: section.items.filter((item) => access.on(...modulesOfPath(item.to))),
+  })).filter((section) => section.items.length > 0)
+}
 
 /**
  * «Agenti», at the foot with «Impostazioni» (REB-873): the personal access tokens and the

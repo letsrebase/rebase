@@ -7,7 +7,7 @@
  * handed back as a new search object for the route to push into the URL.
  */
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -24,6 +24,8 @@ vi.mock('@/lib/auth', async () => {
 import { DashboardPage } from './DashboardPage'
 import type { DashboardSearch } from './search'
 import { api } from '@/lib/api'
+import { spaceModules } from '@/lib/modules.testing'
+import type { ModuleKey } from '@/lib/modules'
 
 vi.mock('@/lib/api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/api')>()
@@ -314,5 +316,70 @@ describe('DashboardPage, four tabs', () => {
     // No period, and in «tutte» no azienda either: an empty query (REB-632).
     expect(api.GET).toHaveBeenCalledWith('/api/dashboard/receivables', { params: { query: {} } })
     expect(api.GET).not.toHaveBeenCalledWith('/api/dashboard/sales', expect.anything())
+  })
+})
+
+/** REB-953: the tabs of a module the space has switched off are not drawn. */
+describe('DashboardPage with modules off', () => {
+  function answerModules(off: readonly ModuleKey[]) {
+    vi.mocked(api.GET).mockImplementation(
+      ((path: string) =>
+        Promise.resolve({
+          data: path === '/api/settings/modules' ? spaceModules(off) : BY_PATH[path],
+          response: new Response(null, { status: 200 }),
+        })) as never,
+    )
+  }
+
+  it('draws no «Commerciale» tab with deals off, and opens a link to it on the first tab', async () => {
+    answerModules(['deals'])
+    renderPage({ ...SEARCH, tab: 'commercial' })
+    await waitFor(() => expect(screen.queryByRole('tab', { name: 'Commerciale' })).toBeNull())
+    expect(screen.getAllByRole('tab').map((tab) => tab.textContent)).toEqual([
+      'Economica',
+      'Scadenziario',
+      'Anno',
+      'Giornate',
+    ])
+    expect(screen.getByRole('tab', { name: 'Economica' })).toHaveAttribute('aria-selected', 'true')
+    expect(await screen.findByRole('group', { name: 'Ricavi incassati' })).toBeInTheDocument()
+    expect(api.GET).not.toHaveBeenCalledWith('/api/dashboard/sales', expect.anything())
+  })
+
+  it('draws no «Anno» tab with taxes off and no «Giornate» with contracts off', async () => {
+    answerModules(['taxes', 'contracts'])
+    renderPage({ ...SEARCH, tab: 'year' })
+    await waitFor(() => expect(screen.queryByRole('tab', { name: 'Anno' })).toBeNull())
+    expect(screen.getAllByRole('tab').map((tab) => tab.textContent)).toEqual([
+      'Economica',
+      'Commerciale',
+      'Scadenziario',
+    ])
+    expect(await screen.findByRole('group', { name: 'Ricavi incassati' })).toBeInTheDocument()
+    expect(api.GET).not.toHaveBeenCalledWith('/api/analytics/year', expect.anything())
+  })
+
+  it('leaves the economic tab without its fiscal estimate and ceilings with taxes off', async () => {
+    answerModules(['taxes'])
+    renderPage({ ...SEARCH, tab: 'economic' })
+    expect(await screen.findByRole('group', { name: 'Ricavi incassati' })).toBeInTheDocument()
+    await waitFor(() => expect(api.GET).toHaveBeenCalledWith('/api/settings/modules'))
+    await waitFor(() => expect(screen.queryByRole('tab', { name: 'Anno' })).toBeNull())
+    expect(screen.queryByText('Stima fiscale')).toBeNull()
+    expect(api.GET).not.toHaveBeenCalledWith('/api/analytics/fiscal', expect.anything())
+    expect(api.GET).not.toHaveBeenCalledWith('/api/analytics/ceilings', expect.anything())
+  })
+
+  it('draws every tab again with the modules on', async () => {
+    answerModules([])
+    renderPage({ ...SEARCH, tab: 'economic' })
+    await waitFor(() => expect(api.GET).toHaveBeenCalledWith('/api/settings/modules'))
+    expect(screen.getAllByRole('tab').map((tab) => tab.textContent)).toEqual([
+      'Economica',
+      'Commerciale',
+      'Scadenziario',
+      'Anno',
+      'Giornate',
+    ])
   })
 })

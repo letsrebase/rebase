@@ -44,7 +44,15 @@ from pigrocrm.core.gmail.schemas import (
 from pigrocrm.core.gmail.send import EmailSendService, reconcile_only
 from pigrocrm.core.gmail.transport import GmailTransport
 from pigrocrm.core.storage.base import DocumentStorage
-from pigrocrm_api.deps import ActorDep, SessionDep, SettingsDep, StorageDep, get_actor
+from pigrocrm_api.deps import (
+    ActorDep,
+    SessionDep,
+    SettingsDep,
+    StorageDep,
+    get_actor,
+    off_entity_type_guard,
+    refuse_off_kind,
+)
 from pigrocrm_api.errors import PROBLEM_RESPONSES
 from pigrocrm_api.google_tokens import token_client
 
@@ -80,10 +88,11 @@ def create_draft(
     """The row exists before Gmail is called and the `Message-ID` is minted here (spec
     6.2), which is what makes text somebody typed survive a closed tab -- and an unknown
     outcome resolvable by an exact lookup instead of by comparing timestamps."""
+    refuse_off_kind(settings, payload.entity_type)
     return _drafts(session, settings).create(payload, actor)
 
 
-@router.get("", response_model=EmailDraftPage)
+@router.get("", response_model=EmailDraftPage, dependencies=[off_entity_type_guard])
 def list_drafts(
     session: SessionDep,
     actor: ActorDep,

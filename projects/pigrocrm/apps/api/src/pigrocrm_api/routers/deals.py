@@ -40,7 +40,7 @@ from pigrocrm.core.timetracking.schemas import (
 )
 from pigrocrm.core.timetracking.service import TimeEntryService
 from pigrocrm.core.validation import SafeStr
-from pigrocrm_api.deps import ActorDep, SessionDep, StorageDep, get_actor
+from pigrocrm_api.deps import ActorDep, SessionDep, StorageDep, get_actor, module_guard
 from pigrocrm_api.downloads import attachment_response
 from pigrocrm_api.errors import PROBLEM_RESPONSES
 from pigrocrm_api.query_params import (
@@ -57,7 +57,7 @@ router = APIRouter(
     prefix="/api/deals",
     tags=["deals"],
     responses=PROBLEM_RESPONSES,
-    dependencies=[Depends(get_actor)],
+    dependencies=[Depends(get_actor), module_guard("deals")],
 )
 
 XLSX_CONTENT_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
@@ -115,7 +115,11 @@ def get(deal_id: UUID, session: SessionDep, actor: ActorDep) -> DealDetailRead:
     return DealService(session).get(deal_id, actor)
 
 
-@router.get("/{deal_id}/contract-proposal", response_model=ContractFromDealProposal)
+@router.get(
+    "/{deal_id}/contract-proposal",
+    response_model=ContractFromDealProposal,
+    dependencies=[module_guard("contracts")],
+)
 def contract_proposal(
     deal_id: UUID,
     session: SessionDep,
@@ -135,7 +139,10 @@ def contract_proposal(
 
 
 @router.post(
-    "/{deal_id}/contract", response_model=ContractRead, status_code=status.HTTP_201_CREATED
+    "/{deal_id}/contract",
+    response_model=ContractRead,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[module_guard("contracts")],
 )
 def convert_to_contract(
     deal_id: UUID, data: ContractFromDeal, session: SessionDep, actor: ActorDep
@@ -181,7 +188,9 @@ class DealTimeEntriesParams(KeysetParams):
     date_to: date | None = Field(default=None, alias="to")
 
 
-@router.get("/{deal_id}/time-entries", response_model=TimeEntryPage)
+@router.get(
+    "/{deal_id}/time-entries", response_model=TimeEntryPage, dependencies=[module_guard("time")]
+)
 def deal_time_entries(
     deal_id: UUID,
     session: SessionDep,
@@ -193,12 +202,14 @@ def deal_time_entries(
     )
 
 
-@router.get("/{deal_id}/time-summary", response_model=DealTimeSummary)
+@router.get(
+    "/{deal_id}/time-summary", response_model=DealTimeSummary, dependencies=[module_guard("time")]
+)
 def deal_time_summary(deal_id: UUID, session: SessionDep, actor: ActorDep) -> DealTimeSummary:
     return TimeEntryService(session).deal_summary(deal_id, actor)
 
 
-@router.get("/{deal_id}/rates", response_model=RateDescription)
+@router.get("/{deal_id}/rates", response_model=RateDescription, dependencies=[module_guard("time")])
 def deal_rates(
     deal_id: UUID, user_id: Annotated[UUID, Query()], session: SessionDep, actor: ActorDep
 ) -> RateDescription:
@@ -207,14 +218,20 @@ def deal_rates(
     return TimeEntryService(session).describe_rates(deal_id, user_id, actor)
 
 
-@router.put("/{deal_id}/rate", status_code=status.HTTP_204_NO_CONTENT)
+@router.put(
+    "/{deal_id}/rate", status_code=status.HTTP_204_NO_CONTENT, dependencies=[module_guard("time")]
+)
 def set_deal_rate(
     deal_id: UUID, data: DealRateUpdate, session: SessionDep, actor: ActorDep
 ) -> None:
     TimeEntryService(session).update_deal_rate(deal_id, data, actor)
 
 
-@router.post("/{deal_id}/rates/recalculate", response_model=RecalculateResponse)
+@router.post(
+    "/{deal_id}/rates/recalculate",
+    response_model=RecalculateResponse,
+    dependencies=[module_guard("time")],
+)
 def recalculate_rates(
     deal_id: UUID, data: RecalculateRatesRequest, session: SessionDep, actor: ActorDep
 ) -> RecalculateResponse:
@@ -223,7 +240,7 @@ def recalculate_rates(
     )
 
 
-@router.get("/{deal_id}/time-report")
+@router.get("/{deal_id}/time-report", dependencies=[module_guard("time")])
 def time_report_xlsx(
     deal_id: UUID,
     session: SessionDep,
@@ -242,6 +259,7 @@ def time_report_xlsx(
     "/{deal_id}/time-report/pdf",
     response_model=DocumentRead,
     status_code=status.HTTP_201_CREATED,
+    dependencies=[module_guard("time")],
 )
 def render_time_report_pdf(
     deal_id: UUID,
@@ -259,7 +277,7 @@ def render_time_report_pdf(
     return TimeReportService(session, storage).render_pdf(deal_id, month, actor)
 
 
-@router.get("/{deal_id}/pnl", response_model=DealPnl)
+@router.get("/{deal_id}/pnl", response_model=DealPnl, dependencies=[module_guard("time", "costs")])
 def deal_pnl(deal_id: UUID, session: SessionDep, actor: ActorDep) -> DealPnl:
     """Every row of §7.1, already summed. No role gate, deliberately: a deal's P&L is not
     more sensitive than the deal, the hours and the invoices it is derived from, each of
@@ -267,7 +285,9 @@ def deal_pnl(deal_id: UUID, session: SessionDep, actor: ActorDep) -> DealPnl:
     return AnalyticsService(session).deal_pnl(deal_id, actor)
 
 
-@router.get("/{deal_id}/budget", response_model=BudgetVsActualRow)
+@router.get(
+    "/{deal_id}/budget", response_model=BudgetVsActualRow, dependencies=[module_guard("time")]
+)
 def deal_budget(
     deal_id: UUID,
     session: SessionDep,
@@ -296,7 +316,11 @@ def deal_budget(
     raise NotFound("deal_budget", deal_id)
 
 
-@router.post("/{deal_id}/time-entries/to-invoice-draft", response_model=InvoiceRead)
+@router.post(
+    "/{deal_id}/time-entries/to-invoice-draft",
+    response_model=InvoiceRead,
+    dependencies=[module_guard("time")],
+)
 def to_invoice_draft(
     deal_id: UUID,
     data: BindTimeRequest,

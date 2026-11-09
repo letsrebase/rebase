@@ -23,6 +23,6 @@ from pigrocrm_mcp.context import McpContext
 def search_everything(context: McpContext, query: SearchQuery) -> dict[str, Any]:
     return (
         SearchService(context.session)
-        .search_everything(query, context.actor)
+        .search_everything(query, context.actor, modules=context.modules)
         .model_dump(mode="json")
     )

@@ -10,6 +10,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@rebase/ui/select'
+import { useModules } from '@/lib/modules'
 import { formatMoney } from './columns'
 import type { ValuePreview } from './queries'
 import { emptyLine, type LineDraft, type LinePeriod, type LineUnit } from './valueLines'
@@ -257,6 +258,8 @@ export function LockedValueLines({
   lines: LineDraft[]
   contractId: string
 }) {
+  // The contract's page is `contracts`': the sentence stays, the link goes with the module.
+  const contractsOn = useModules().on('contracts')
   return (
     <section className="space-y-3" aria-labelledby="deal-value-lines">
       <h3 id="deal-value-lines" className="text-sm font-medium">
@@ -264,13 +267,15 @@ export function LockedValueLines({
       </h3>
       <p className="text-sm text-muted-foreground">
         Il prezzo ora è nel contratto, le righe non si modificano più.{' '}
-        <Link
-          to="/app/contracts/$contractId"
-          params={{ contractId }}
-          className="underline underline-offset-2"
-        >
-          Apri il contratto
-        </Link>
+        {contractsOn && (
+          <Link
+            to="/app/contracts/$contractId"
+            params={{ contractId }}
+            className="underline underline-offset-2"
+          >
+            Apri il contratto
+          </Link>
+        )}
       </p>
       <ul className="divide-y rounded-md border text-sm">
         {lines.map((line, index) => (

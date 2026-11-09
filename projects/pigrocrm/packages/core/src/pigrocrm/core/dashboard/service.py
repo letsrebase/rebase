@@ -33,6 +33,7 @@ and it is the price of the property this page exists for.
 
 from __future__ import annotations
 
+from collections.abc import Set as AbstractSet
 from datetime import datetime
 from functools import cached_property
 from uuid import UUID
@@ -121,6 +122,26 @@ _EXPIRED_LINK = "/app/invoices?overdue=true"
 _CONCENTRATION_LINK = "/app?tab=economic"
 _CUSTOMERS_SHOWN = 10
 _OVERDUE_SHOWN = 50
+
+
+# The modules a signal of the operational dashboard reads; a signal with no row is the core's.
+_SIGNAL_MODULES: dict[str, tuple[str, ...]] = {
+    "invoiced_unwon": ("deals",),
+    "won_to_invoice": ("deals", "time"),
+}
+# The activity rows of each module's records: an off module's history is not in the feed.
+_MODULE_ENTITIES: dict[str, frozenset[str]] = {
+    "deals": frozenset({"deal"}),
+    "contracts": frozenset({"contract", "contract_expense", "work_unit", "approval"}),
+    "time": frozenset({"time_entry"}),
+    "costs": frozenset({"cost"}),
+}
+
+
+def signals_for(signals: list[Signal], modules: AbstractSet[str]) -> list[Signal]:
+    """`modules` is what the space has on: a signal about a module that is off would link to
+    a page that answers 404 (spec 2026-11-09, A2)."""
+    return [s for s in signals if set(_SIGNAL_MODULES.get(s.code, ())) <= modules]
 
 
 class DashboardService:
@@ -243,7 +264,12 @@ class DashboardService:
             ),
         )
 
-    def get_economic_dashboard(self, query: PeriodQuery, actor: Actor) -> EconomicDashboard:
+    def get_economic_dashboard(
+        self,
+        query: PeriodQuery,
+        actor: Actor,
+        modules: AbstractSet[str] | None = None,
+    ) -> EconomicDashboard:
         """§5. Composition only: not one figure on this page is computed here.
 
         `period_pnl` is called with the same `actor` the caller supplied, so its own
@@ -268,6 +294,9 @@ class DashboardService:
         The period is resolved **before** the snapshot is opened, as on the commercial
         dashboard: a malformed period is the caller's mistake and should not cost a
         transaction.
+
+        `modules` is what the space has on (`None`: everything), handed to `period_pnl`: without
+        `time` the labour and the hours are `None` (spec 2026-11-09, A2).
         """
         period = query.resolve()
         calculated_at = self._open_snapshot()
@@ -284,6 +313,7 @@ class DashboardService:
                     legal_entity_id=legal_entity,
                 ),
                 actor,
+                modules,
             ),
             unpaid=self._invoices.sum_unpaid(legal_entity),
             expired=self._invoices.sum_expired(legal_entity),
@@ -292,13 +322,23 @@ class DashboardService:
             ),
         )
 
-    def _recent_feed(self, actor: Actor) -> list[Activity]:
+    def _recent_feed(self, actor: Actor, modules: AbstractSet[str] | None) -> list[Activity]:
+        off = (
+            frozenset().union(
+                *(rows for key, rows in _MODULE_ENTITIES.items() if key not in modules)
+            )
+            if modules is not None
+            else frozenset()
+        )
         if actor.type == "user" and actor.can_administer:
-            return self._activities.recent(_RECENT_ACTIVITIES)
-        return self._activities.recent(_RECENT_ACTIVITIES_FILTERED, _BUSINESS_ENTITIES)
+            return self._activities.recent(_RECENT_ACTIVITIES, None, off)
+        return self._activities.recent(_RECENT_ACTIVITIES_FILTERED, _BUSINESS_ENTITIES, off)
 
     def get_operational_dashboard(
-        self, actor: Actor, legal_entity_id: UUID | None = None
+        self,
+        actor: Actor,
+        legal_entity_id: UUID | None = None,
+        modules: AbstractSet[str] | None = None,
     ) -> OperationalDashboard:
         """§6. **No period parameter**, deliberately: the current week and a backlog are the
         two things that make no sense in the past, so there is nothing here to get wrong --
@@ -351,11 +391,15 @@ class DashboardService:
         date_from, date_to = current_week()
         year = today_local().year
         calculated_at = self._open_snapshot()
-        return OperationalDashboard(
+        board = OperationalDashboard(
             calculated_at=calculated_at,
             legal_entity_id=legal_entity_id,
-            week=self._entries.week_hours(date_from, date_to, legal_entity_id),
-            backlog=self._analytics.unbilled_backlog(actor, legal_entity_id),
+            week=(
+                self._entries.week_hours(date_from, date_to, legal_entity_id)
+                if modules is None or "time" in modules
+                else None
+            ),
+            backlog=self._analytics.unbilled_backlog(actor, legal_entity_id, modules),
             signals=[
                 Signal(
                     code="invoiced_unwon",
@@ -384,8 +428,11 @@ class DashboardService:
                     link=_CONCENTRATION_LINK,
                 ),
             ],
-            recent_activity=serve_activities(self.session, self._recent_feed(actor)),
+            recent_activity=serve_activities(self.session, self._recent_feed(actor, modules)),
         )
+        if modules is not None:
+            board.signals = signals_for(board.signals, modules)
+        return board
 
     def get_receivables_dashboard(
         self, actor: Actor, legal_entity_id: UUID | None = None

@@ -5,7 +5,11 @@ a person's own."""
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, Path, Query, status
+from sqlalchemy.orm import Session
 
+from pigrocrm.core.config import Settings
+from pigrocrm.core.modules import enabled_modules
+from pigrocrm.core.reminders.detectors import off_types
 from pigrocrm.core.reminders.preferences import ReminderPreferenceService
 from pigrocrm.core.reminders.schemas import (
     AcknowledgeRequest,
@@ -43,6 +47,10 @@ TypePath = Annotated[
 ]
 
 
+def _preferences(session: Session, settings: Settings) -> ReminderPreferenceService:
+    return ReminderPreferenceService(session, off_types(enabled_modules(settings)))
+
+
 @router.get("", response_model=list[ReminderRead])
 def list_reminders(
     session: SessionDep,
@@ -58,16 +66,19 @@ def list_reminders(
 
 
 @router.get("/types", response_model=list[ReminderTypeRead])
-def list_types(session: SessionDep) -> list[ReminderTypeRead]:
-    """The reminder types of this space, with the default thresholds."""
-    return ReminderPreferenceService(session).catalogue()
+def list_types(session: SessionDep, settings: SettingsDep) -> list[ReminderTypeRead]:
+    """The reminder types of this space, with the default thresholds: not the ones of a
+    module the space has switched off."""
+    return _preferences(session, settings).catalogue()
 
 
 @router.get("/preferences", response_model=ReminderPreferencesRead)
-def read_preferences(session: SessionDep, actor: ActorDep) -> ReminderPreferencesRead:
+def read_preferences(
+    session: SessionDep, actor: ActorDep, settings: SettingsDep
+) -> ReminderPreferencesRead:
     """The space's values, yours, and the result for you: your choice, then
     the space's value, then the default."""
-    return ReminderPreferenceService(session).read(actor)
+    return _preferences(session, settings).read(actor)
 
 
 @router.patch("/preferences/{scope}/{type_key}", response_model=ReminderPreferenceRead | None)

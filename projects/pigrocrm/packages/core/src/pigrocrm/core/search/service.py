@@ -22,11 +22,13 @@ hottest read path in the product for no property gained.
 
 from __future__ import annotations
 
+from collections.abc import Set as AbstractSet
+
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.search.repository import SearchRepository
-from pigrocrm.core.search.schemas import SearchQuery, SearchResults
+from pigrocrm.core.search.schemas import SearchGroup, SearchQuery, SearchResults
 
 
 class SearchService:
@@ -34,7 +36,9 @@ class SearchService:
         self.session = session
         self.repo = SearchRepository(session)
 
-    def search_everything(self, query: SearchQuery, actor: Actor) -> SearchResults:
+    def search_everything(
+        self, query: SearchQuery, actor: Actor, *, modules: AbstractSet[str] | None = None
+    ) -> SearchResults:
         """Every group is present even when empty.
 
         A missing group and an empty group render identically in a palette, so the client
@@ -44,6 +48,10 @@ class SearchService:
         The group order is fixed, not sorted by count: a palette whose sections move
         between keystrokes cannot be used with the keyboard, which is the only way a
         palette is used.
+
+        `modules` is what the space has on (`None`: everything). A switched-off `deals` leaves
+        its group present and empty, for the reason above, and is not searched: a hit would
+        link to a page that answers 404 (spec 2026-11-09, A2).
         """
         # `strip()` and nothing else. No lowercasing here: the scoring expression
         # lowercases on both sides where it needs to, and `similarity()` normalises
@@ -57,7 +65,9 @@ class SearchService:
             groups=[
                 self.repo.customers(term, limit, legal_entity),
                 self.repo.people(term, limit, legal_entity),
-                self.repo.deals(term, limit, legal_entity),
+                self.repo.deals(term, limit, legal_entity)
+                if modules is None or "deals" in modules
+                else SearchGroup(entity="deal", hits=[], total=0, total_is_minimum=False),
                 self.repo.documents(term, limit, legal_entity),
                 # Fifth and last. Added by Task C12, which is also what made `SearchEntity`
                 # true: it declared five entities from the start and four were searched, so

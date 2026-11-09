@@ -18,7 +18,7 @@ from pigrocrm.core.work_units.schemas import (
     WorkUnitTransitionIn,
 )
 from pigrocrm.core.work_units.service import WorkUnitService
-from pigrocrm_api.deps import ActorDep, SessionDep, StorageDep, get_actor
+from pigrocrm_api.deps import ActorDep, SessionDep, StorageDep, get_actor, module_guard
 from pigrocrm_api.downloads import attachment_response
 from pigrocrm_api.errors import PROBLEM_RESPONSES
 from pigrocrm_api.query_params import PAGE_LIMIT_MAX
@@ -27,7 +27,7 @@ router = APIRouter(
     prefix="/api/work-units",
     tags=["work_units"],
     responses=PROBLEM_RESPONSES,
-    dependencies=[Depends(get_actor)],
+    dependencies=[Depends(get_actor), module_guard("contracts")],
 )
 
 

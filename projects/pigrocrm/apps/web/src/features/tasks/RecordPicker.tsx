@@ -3,6 +3,7 @@ import { useState } from 'react'
 import { Button } from '@rebase/ui/button'
 import { Input } from '@rebase/ui/input'
 import { MIN_TERM_LENGTH, useGlobalSearch, type SearchEntity } from '@/features/search/queries'
+import { useModules } from '@/lib/modules'
 import { LINK_KIND_LABELS, type LinkKind, type LinkValue } from './links'
 import { useRecordLabel } from './queries'
 
@@ -35,6 +36,9 @@ export function RecordPicker({
   const [term, setTerm] = useState('')
   const search = useGlobalSearch(term)
   const label = useRecordLabel(value)
+  // With `deals` off (REB-953) a deal is not offered, and one a task already hangs from is
+  // named for what it is rather than waited for: its page and its read are not there.
+  const dealsOn = useModules().on('deals')
 
   if (value !== null) {
     return (
@@ -44,7 +48,7 @@ export function RecordPicker({
       >
         <span className="min-w-0 truncate">
           <span className="text-muted-foreground">{LINK_KIND_LABELS[value.kind]} · </span>
-          {label ?? 'Caricamento…'}
+          {label ?? (value.kind === 'deal' && !dealsOn ? 'non disponibile' : 'Caricamento…')}
         </span>
         <Button
           type="button"
@@ -63,7 +67,7 @@ export function RecordPicker({
   }
 
   const hits = (search.data?.groups ?? []).flatMap((group) =>
-    isLinkable(group.entity) ? group.hits : [],
+    isLinkable(group.entity) && (group.entity !== 'deal' || dealsOn) ? group.hits : [],
   )
   const tooShort = search.debounced.length < MIN_TERM_LENGTH
 
@@ -73,7 +77,11 @@ export function RecordPicker({
         id={id}
         aria-label="Cerca un record da collegare"
         value={term}
-        placeholder="Cerca un cliente, una persona, un deal o una fattura…"
+        placeholder={
+          dealsOn
+            ? 'Cerca un cliente, una persona, un deal o una fattura…'
+            : 'Cerca un cliente, una persona o una fattura…'
+        }
         onChange={(event) => setTerm(event.target.value)}
       />
       {!tooShort && (

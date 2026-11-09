@@ -10,7 +10,7 @@ from pigrocrm.core.pipeline.schemas import (
     PipelineStageUpdate,
 )
 from pigrocrm.core.pipeline.service import PipelineService
-from pigrocrm_api.deps import ActorDep, SessionDep, get_actor
+from pigrocrm_api.deps import ActorDep, SessionDep, get_actor, module_guard
 from pigrocrm_api.errors import PROBLEM_RESPONSES
 from pigrocrm_api.timeline import timeline_router
 
@@ -18,7 +18,7 @@ router = APIRouter(
     prefix="/api/pipeline-stages",
     tags=["pipeline"],
     responses=PROBLEM_RESPONSES,
-    dependencies=[Depends(get_actor)],
+    dependencies=[Depends(get_actor), module_guard("deals")],
 )
 
 

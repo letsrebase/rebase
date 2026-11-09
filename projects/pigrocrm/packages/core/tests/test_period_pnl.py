@@ -504,3 +504,30 @@ def test_a_dated_proforma_is_not_revenue_under_either_reading(
             assert pnl.closed.revenue == Decimal("0.00"), (base, date_from)
             assert pnl.in_progress.revenue == Decimal("0.00"), (base, date_from)
             assert pnl.closed.deal == 0 and pnl.in_progress.deal == 0, (base, date_from)
+
+
+def test_without_the_time_module_the_report_has_no_labour_and_no_hours(
+    db_session: Session, open_deal_with_hours: UUID, closed_deal_with_invoice: UUID
+) -> None:
+    service = AnalyticsService(db_session)
+    everything = frozenset({"deals", "contracts", "time", "costs", "taxes"})
+    on = service.period_pnl(PERIOD, READER, everything)
+    off = service.period_pnl(PERIOD, READER, everything - {"time"})
+
+    assert on == service.period_pnl(PERIOD, READER)
+    assert on.in_progress.work_cost == Decimal("400.00")
+    for column in (off.closed, off.in_progress):
+        assert column.work_cost is None
+    # The margin is what is left of the revenue after the direct costs, and says so in its
+    # percentage too: 2000 - 200 on the closed deal, and nothing invoiced on the open one.
+    assert off.closed.gross_margin == Decimal("1800.00")
+    assert off.closed.percentage_margin == Decimal("90.00")
+    assert off.in_progress.gross_margin == Decimal("-150.00")
+    assert off.in_progress.percentage_margin is None
+    # The hours are `time`'s and go; the value and the rate-less count are what the approved
+    # contract days alone contribute (none here), and stay.
+    assert off.billable_uninvoiced_hours is None and off.written_entries_overdue is None
+    assert (off.accrued_value, off.hours_without_rate) == (Decimal("0.00"), 0)
+    # What is not time's is untouched.
+    assert (off.general_expenses, off.closed_period) == (on.general_expenses, on.closed_period)
+    assert off.closed.revenue == on.closed.revenue and off.in_progress.deal == on.in_progress.deal

@@ -2,6 +2,7 @@ import { Link } from '@tanstack/react-router'
 import { RadioGroup } from 'radix-ui'
 import { QueryErrorBanner } from '@/components/QueryErrorBanner'
 import { useLegalEntity } from '@/lib/legalEntity'
+import { useModules } from '@/lib/modules'
 import { Button } from '@rebase/ui/button'
 import { Skeleton } from '@rebase/ui/skeleton'
 import {
@@ -30,6 +31,14 @@ function yearOf(period: Period): number {
 
 function due(estimate: FiscalEstimate | null): string {
   return estimate?.due_total ? money(estimate.due_total) : '—'
+}
+
+/** What the opening sentence says the tab shows, for the modules that are on. */
+function shownFigures(costsOn: boolean, taxesOn: boolean): string {
+  if (costsOn && taxesOn) return 'ricavi, costi passivi e stima fiscale'
+  if (costsOn) return 'ricavi e costi passivi'
+  if (taxesOn) return 'ricavi e stima fiscale'
+  return 'ricavi'
 }
 
 type ConcentrationRow = EconomicOverview['customer_concentration'][number]
@@ -146,9 +155,17 @@ export function EconomicTab({
   // selected, the page reads as it always did.
   const { legal_entities, selected, several, byId } = useLegalEntity()
   const perLegalEntity = several && selected === null
+  // What the tab shows is what its switched-on modules feed it (spec 2026-11-09, B5): the
+  // fiscal estimate, the ceilings and the nets drawn from it are `taxes`, the passive
+  // costs are `costs`. The figures stay in the books and return with the module.
+  const modules = useModules()
+  const taxesOn = modules.on('taxes')
+  const costsOn = modules.on('costs')
 
   if (query.isError) return <QueryErrorBanner error={query.error} />
-  if (query.isPending || !query.data) {
+  // Not before the modules are known either: the panels of `taxes` would otherwise be drawn,
+  // and ask the API for what a switched-off module refuses, for the length of one read.
+  if (query.isPending || !query.data || modules.loading) {
     return (
       <div className="space-y-4">
         <Skeleton className="h-24 w-full" />
@@ -176,7 +193,7 @@ export function EconomicTab({
           {/* The reading is named in words as well as on the switch: the sentence is what
               a screenshot carries, and «per competenza» is the difference between a
               chart of what was earned and a chart of what arrived. */}
-          Vista economica {year} {reading}: ricavi, costi passivi e stima fiscale.
+          Vista economica {year} {reading}: {shownFigures(costsOn, taxesOn)}.
         </p>
         <div className="flex flex-wrap items-center gap-4">
           <BaseSwitch base={base} onChange={onBaseChange} />
@@ -192,13 +209,13 @@ export function EconomicTab({
       <MonthlyBars
         title={`Andamento economico ${year}`}
         months={pension_fund.months}
-        series={['paid', 'costs']}
+        series={costsOn ? ['paid', 'costs'] : ['paid']}
         shares="trend_shares"
       />
       <MonthlyBars
         title={`Proiezione economica ${year}`}
         months={pension_fund.months}
-        series={['paid', 'unpaid', 'drafts', 'costs']}
+        series={costsOn ? ['paid', 'unpaid', 'drafts', 'costs'] : ['paid', 'unpaid', 'drafts']}
         shares="projection_shares"
       />
 
@@ -209,13 +226,17 @@ export function EconomicTab({
           value={money(pension_fund.projected)}
           hint={`Incassato ${money(pension_fund.paid)} · da incassare ${money(pension_fund.unpaid)} · bozze e proforma ${money(pension_fund.drafts)}`}
         />
-        <BigNumber label="Costi passivi" value={money(pension_fund.costs)} />
-        <BigNumber
-          label="Totale lordo effettivo"
-          value={money(pension_fund.actual_gross)}
-          hint="incassato meno costi"
-        />
-        {tax ? (
+        {costsOn && (
+          <>
+            <BigNumber label="Costi passivi" value={money(pension_fund.costs)} />
+            <BigNumber
+              label="Totale lordo effettivo"
+              value={money(pension_fund.actual_gross)}
+              hint="incassato meno costi"
+            />
+          </>
+        )}
+        {!taxesOn ? null : tax ? (
           <>
             <BigNumber
               label="Imponibile forfettario stimato"
@@ -287,7 +308,7 @@ export function EconomicTab({
           (REB-755), right under the figures they bound: the cards above say how much was
           collected, this says how much more can be before the regime ends. It draws
           nothing for an azienda those ceilings do not apply to. */}
-      {perLegalEntity ? (
+      {!taxesOn ? null : perLegalEntity ? (
         legal_entities.map((legal_entity) => (
           <CeilingPanel
             key={legal_entity.id}
@@ -348,7 +369,7 @@ export function EconomicTab({
           one request, its own loading and error branches -- rather than taking the excerpt
           `panoramica` already carries, because a card that renders half of itself while the
           other half loads is worse than a card that arrives whole. */}
-      {perLegalEntity ? (
+      {!taxesOn ? null : perLegalEntity ? (
         legal_entities.map((legal_entity) => (
           <FiscalPanel
             key={legal_entity.id}

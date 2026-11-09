@@ -35,6 +35,7 @@ import { NewProformaButton } from '@/features/invoices/NewProformaDialog'
 import { NotesSection } from '@/features/notes/NotesSection'
 import { toProblem, type ProblemDetail } from '@/lib/api'
 import { useCanWrite } from '@/lib/auth'
+import { useModules } from '@/lib/modules'
 import { useEntitySchema } from '@/lib/schema'
 
 const EMPTY = '—'
@@ -107,7 +108,12 @@ export function CustomerDetail() {
   const update = useUpdateCustomer(customerId)
   const remove = useDeleteCustomer()
   const people = useCustomerPeople(customerId)
-  const deals = useCustomerDeals(customerId)
+  // The deals and the contracts of a customer are parts of two modules: with one switched
+  // off the part is not drawn and its read is not made (REB-953), not left to answer 404.
+  const modules = useModules()
+  const dealsOn = modules.on('deals')
+  const contractsOn = modules.on('contracts')
+  const deals = useCustomerDeals(customerId, dealsOn && !modules.loading)
   // Not a request of its own: the shell banner already holds `gmailKeys.health`, so
   // this reads the same cache entry. See `useGmailConfigured` for why an installation
   // without Google gets no Email tab at all rather than a permanently empty one.
@@ -187,7 +193,7 @@ export function CustomerDetail() {
             actions={canWrite ? <NewProformaButton customerId={customerId} /> : undefined}
           />
         }
-        contracts={<ContractsTab customerId={customerId} />}
+        contracts={contractsOn ? <ContractsTab customerId={customerId} /> : undefined}
         economics={<EconomicsTab customerId={customerId} />}
         tasks={<EntityTask link={{ kind: 'customer', id: customerId }} />}
         emails={
@@ -294,18 +300,20 @@ export function CustomerDetail() {
                 />
               </CardContent>
             </Card>
-            <Card>
-              <CardContent className="pt-6">
-                <h2 className="mb-3 font-semibold">Deal ({deals.data?.items.length ?? 0})</h2>
-                <LinkedList<RelatedDeal>
-                  query={deals}
-                  emptyMessage="Nessun deal collegato."
-                  renderItem={(deal) => (
-                    <Row key={deal.id} label={deal.name} value={formatDealValue(deal)} />
-                  )}
-                />
-              </CardContent>
-            </Card>
+            {dealsOn && (
+              <Card>
+                <CardContent className="pt-6">
+                  <h2 className="mb-3 font-semibold">Deal ({deals.data?.items.length ?? 0})</h2>
+                  <LinkedList<RelatedDeal>
+                    query={deals}
+                    emptyMessage="Nessun deal collegato."
+                    renderItem={(deal) => (
+                      <Row key={deal.id} label={deal.name} value={formatDealValue(deal)} />
+                    )}
+                  />
+                </CardContent>
+              </Card>
+            )}
           </div>
         }
       />

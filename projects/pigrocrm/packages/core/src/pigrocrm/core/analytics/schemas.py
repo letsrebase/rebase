@@ -103,7 +103,9 @@ class PeriodPnlQuery(BaseModel):
 class PnlTotals(BaseModel):
     revenue: Decimal
     direct_costs: Decimal
-    work_cost: Decimal
+    # `None` when the space has the `time` module off: there is no labour to count, and the
+    # margin below is then revenue less the direct costs (`pnl.without_labour`).
+    work_cost: Decimal | None
     gross_margin: Decimal
     percentage_margin: Decimal | None
     deal: int
@@ -145,8 +147,10 @@ class PeriodPnl(BaseModel):
     # adding it in again would put revenue under a heading that says "non sono ricavi".
     # So this one is the accrued value of the unbilled billable hours **alone**, which is
     # what the card that prints it is labelled: "Valore maturato non fatturato".
+    # The hours are `None` when the space has the `time` module off; the value and the
+    # rate-less count then come from the approved contract days alone.
     accrued_value: Decimal = Field(max_digits=12, decimal_places=2)
-    billable_uninvoiced_hours: Decimal = Field(max_digits=8, decimal_places=2)
+    billable_uninvoiced_hours: Decimal | None = Field(max_digits=8, decimal_places=2)
     # A count of entries, not a quantity of hours, exactly like `DealPnl.hours_without_rate`
     # -- and scoped to the same rows as the two figures above it, so the three can be
     # reconciled with each other on the card that shows them together.
@@ -154,7 +158,7 @@ class PeriodPnl(BaseModel):
     # Whether the number can still move, which is the thing a reader most needs to know
     # and costs a COUNT over two columns that already exist (§6.4).
     closed_period: bool
-    written_entries_overdue: int
+    written_entries_overdue: int | None
 
 
 class UnbilledBacklog(BaseModel):
@@ -167,7 +171,9 @@ class UnbilledBacklog(BaseModel):
     rendered side by side.
     """
 
-    billable_uninvoiced_hours: Decimal = Field(max_digits=8, decimal_places=2)
+    # `None` when the space has the `time` module off: the hours are `time`'s, while the
+    # approved contract days in `accrued_value` are `contracts`'.
+    billable_uninvoiced_hours: Decimal | None = Field(max_digits=8, decimal_places=2)
     # `Σ ROUND(ore × tariffa_applicata, 2)` over `time_entries` -- slice 4 §7.3's
     # formula, computed here because §3 forbids `core/dashboard/` any multiplication at
     # all -- plus REB-372's own contribution from approved-or-later `work_units`, priced

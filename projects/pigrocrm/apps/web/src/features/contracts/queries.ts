@@ -370,8 +370,12 @@ export function useRenewContract(contractId: string) {
  *  cap, so every page of the active contracts is read and the capped ones kept here: an
  *  legal entity has a handful of active contracts, and a first page alone could hide one. Under
  *  the `contracts` key, so any contract written anywhere refreshes it. */
-export function useCappedContracts(legalEntityId: string | null | undefined) {
+export function useCappedContracts(
+  legalEntityId: string | null | undefined,
+  enabled = true,
+) {
   return useQuery({
+    enabled,
     queryKey: queryKeys.contracts({ legal_entity_id: legalEntityId ?? null, status: 'active', capped: true }),
     queryFn: async () => {
       const { items } = await fetchAllPages((cursor) =>

@@ -13,6 +13,7 @@ import { useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
 import { api, toProblem } from '@/lib/api'
 import { useAuth } from '@/lib/auth'
+import { useModules } from '@/lib/modules'
 import { queryKeys } from '@/lib/query'
 
 export type StepId = 'tax' | 'customer' | 'work' | 'document'
@@ -140,20 +141,32 @@ const value = (q: { data?: boolean; isError: boolean }) => (q.isError ? true : (
 
 /** The four reads that say whether the space has any work, and the verdict they give. */
 function useWork(options: { staleTime: number; refetchOnWindowFocus?: boolean; enabled?: boolean } = WORK_OPTIONS) {
-  const customer = useQuery({ queryKey: queryKeys.customers(SCOPE), queryFn: customersPage, select: hasItems, ...options })
-  const deal = useQuery({ queryKey: queryKeys.deals(SCOPE), queryFn: dealsPage, select: hasItems, ...options })
-  const hours = useQuery({ queryKey: queryKeys.timeEntries(SCOPE), queryFn: timeEntriesPage, select: hasItems, ...options })
-  const document = useQuery({ queryKey: queryKeys.documents(SCOPE), queryFn: documentsPage, select: hasItems, ...options })
-  const reads = [customer, deal, hours, document]
+  // A module the space has switched off is not read (REB-953): its routes answer 404, which
+  // would count as «work» (a failed read does, see `value`) and keep an empty space from
+  // ever being the start page. Nor is anything read until the modules are known, for the
+  // same reason: a read that is about to be refused is no answer.
+  const modules = useModules()
+  const ready = (options.enabled ?? true) && !modules.loading
+  const dealsOn = modules.on('deals')
+  const timeOn = modules.on('time')
+  const customer = useQuery({ queryKey: queryKeys.customers(SCOPE), queryFn: customersPage, select: hasItems, ...options, enabled: ready })
+  const deal = useQuery({ queryKey: queryKeys.deals(SCOPE), queryFn: dealsPage, select: hasItems, ...options, enabled: ready && dealsOn })
+  const hours = useQuery({ queryKey: queryKeys.timeEntries(SCOPE), queryFn: timeEntriesPage, select: hasItems, ...options, enabled: ready && timeOn })
+  const document = useQuery({ queryKey: queryKeys.documents(SCOPE), queryFn: documentsPage, select: hasItems, ...options, enabled: ready })
+  const reads = [customer, document, ...(dealsOn ? [deal] : []), ...(timeOn ? [hours] : [])]
   return {
     customer,
     deal,
     hours,
+    dealsOn,
     reads,
     // Not while a work read is refetching either: a Home mounted right after the first
     // customer was created would otherwise decide on the cached «empty» that the
     // invalidation is about to replace, and then hold that stale answer for the visit.
-    spaceEmpty: reads.some((q) => q.isPending || q.isFetching) ? null : !reads.some(value),
+    // And not while the modules are unknown: the reads are held back until they are, and a
+    // held-back read that has a cached answer reports neither pending nor fetching.
+    spaceEmpty:
+      modules.loading || reads.some((q) => q.isPending || q.isFetching) ? null : !reads.some(value),
     workFailed: reads.some((q) => q.isError),
   }
 }
@@ -196,7 +209,7 @@ export function useFirstSteps(): FirstStepsState {
     ...OPTIONS,
   })
   const tax = useQuery({ queryKey: [...queryKeys.legal_entities, 'first-steps'], queryFn: fiscalDataSaved, ...OPTIONS })
-  const { customer, deal, hours, reads, spaceEmpty, workFailed } = useWork()
+  const { customer, deal, hours, dealsOn, reads, spaceEmpty, workFailed } = useWork()
   const offer = useQuery({
     queryKey: queryKeys.documents({ ...SCOPE, type: 'offer' }),
     queryFn: offersPage,
@@ -206,7 +219,7 @@ export function useFirstSteps(): FirstStepsState {
 
   const loading = [token, tax, offer, ...reads].some((q) => q.isPending)
 
-  const list: FirstStep[] = [
+  const everyStep: FirstStep[] = [
     {
       id: 'tax',
       title: 'I tuoi dati fiscali',
@@ -246,6 +259,9 @@ export function useFirstSteps(): FirstStepsState {
       done: value(offer),
     },
   ]
+  // «Il primo deal, o le prime ore» and «La prima offerta» send the person to the Deal
+  // pages: with `deals` off (REB-953) there is no such page to send them to.
+  const list = dealsOn ? everyStep : everyStep.filter((s) => s.id !== 'work' && s.id !== 'document')
   const doneCount = list.filter((s) => s.done).length
   return {
     loading,

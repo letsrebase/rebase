@@ -23,6 +23,7 @@ import {
   subjectOf,
   type Reminder,
 } from './fields'
+import { modulesOfPath, useModules } from '@/lib/modules'
 import { recordLink } from './links'
 import { useAcknowledge, useReminders, useSnooze } from './queries'
 
@@ -135,7 +136,11 @@ export function RemindersPage() {
 
 function ReminderRow({ reminder }: { reminder: Reminder }) {
   const severity = SEVERITIES.find((candidate) => candidate.id === reminder.severity)
-  const link = recordLink(reminder)
+  // The server leaves out the reminders of a switched-off module; one a cache still holds
+  // is named without a link to a page that is not there (REB-953).
+  const modules = useModules()
+  const target = recordLink(reminder)
+  const link = target !== null && modules.on(...modulesOfPath(String(target.to))) ? target : null
   const { select } = useLegalEntity()
   const open = isOpen(reminder)
   const subject = subjectOf(reminder)

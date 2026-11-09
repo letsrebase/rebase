@@ -28,7 +28,8 @@ from pigrocrm.core.dashboard.schemas import (
     ReceivablesDashboard,
 )
 from pigrocrm.core.dashboard.service import DashboardService
-from pigrocrm_api.deps import ActorDep, SettingsDep, SnapshotSessionDep, get_actor
+from pigrocrm.core.modules import enabled_modules
+from pigrocrm_api.deps import ActorDep, SettingsDep, SnapshotSessionDep, get_actor, module_guard
 from pigrocrm_api.errors import PROBLEM_RESPONSES
 
 router = APIRouter(
@@ -52,7 +53,7 @@ LegalEntityQuery = Annotated[
 ]
 
 
-@router.get("/sales", response_model=CommercialDashboard)
+@router.get("/sales", response_model=CommercialDashboard, dependencies=[module_guard("deals")])
 def commercial(
     session: SnapshotSessionDep,
     actor: ActorDep,
@@ -73,6 +74,7 @@ def commercial(
 def economic(
     session: SnapshotSessionDep,
     actor: ActorDep,
+    settings: SettingsDep,
     # The same both-or-neither period as `commercial`, resolved by the same
     # `PeriodQuery.resolve`: the route adds no validation of its own and must not lose the
     # one the service performs, because `field` is what the web client's `fieldErrorFrom`
@@ -82,7 +84,9 @@ def economic(
     legal_entity_id: LegalEntityQuery = None,
 ) -> EconomicDashboard:
     return DashboardService(session).get_economic_dashboard(
-        PeriodQuery(date_from=date_from, date_to=date_to, legal_entity_id=legal_entity_id), actor
+        PeriodQuery(date_from=date_from, date_to=date_to, legal_entity_id=legal_entity_id),
+        actor,
+        enabled_modules(settings),
     )
 
 
@@ -107,7 +111,9 @@ def operational(
     resolved to authenticate this request -- so the concentration signal (REB-371) reads
     the threshold a space actually configured, not the process's bare environment.
     """
-    return DashboardService(session, settings).get_operational_dashboard(actor, legal_entity_id)
+    return DashboardService(session, settings).get_operational_dashboard(
+        actor, legal_entity_id, modules=enabled_modules(settings)
+    )
 
 
 @router.get("/receivables", response_model=ReceivablesDashboard)

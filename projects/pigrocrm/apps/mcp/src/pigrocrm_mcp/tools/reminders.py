@@ -19,6 +19,7 @@ from mcp.server import MCPServer
 
 from pigrocrm.core.config import Settings
 from pigrocrm.core.reminders.catalogue import Severity
+from pigrocrm.core.reminders.detectors import off_types
 from pigrocrm.core.reminders.jobs import ScheduledJobService
 from pigrocrm.core.reminders.preferences import ReminderPreferenceService
 from pigrocrm.core.reminders.schemas import (
@@ -35,7 +36,7 @@ from pigrocrm_mcp.tools.params import literal_arg
 
 
 def _preferences(context: McpContext) -> ReminderPreferenceService:
-    return ReminderPreferenceService(context.session)
+    return ReminderPreferenceService(context.session, off_types(context.modules))
 
 
 def _state(context: McpContext) -> ReminderStateService:

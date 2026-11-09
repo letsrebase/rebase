@@ -5,6 +5,7 @@ import { Button } from '@rebase/ui/button'
 import { ConvertDealDialog } from '@/features/deals/ConvertDealDialog'
 import { useStages } from '@/features/deals/queries'
 import type { components } from '@/lib/api-types'
+import { useModules } from '@/lib/modules'
 
 type DealWithContract = Pick<
   components['schemas']['DealDetailRead'],
@@ -19,8 +20,10 @@ type DealWithContract = Pick<
 export function ConvertDealButton({ deal }: { deal: DealWithContract }) {
   const [open, setOpen] = useState(false)
   const stages = useStages()
+  // A surface of the deals and of the contracts: drawn only when both are on (REB-953).
+  const contractsOn = useModules().on('contracts')
   const stage = stages.data?.find((item) => item.id === deal.pipeline_stage_id)
-  if (stage?.type !== 'won' || deal.contract_id != null) return null
+  if (!contractsOn || stage?.type !== 'won' || deal.contract_id != null) return null
   return (
     <>
       <Button variant="outline" onClick={() => setOpen(true)}>
@@ -38,7 +41,8 @@ export function ConvertDealButton({ deal }: { deal: DealWithContract }) {
  * on this page are the price as it was booked and the contract is the one to read.
  */
 export function DealContractSection({ contractId }: { contractId: string | null | undefined }) {
-  if (contractId == null) return null
+  const contractsOn = useModules().on('contracts')
+  if (contractId == null || !contractsOn) return null
   return (
     <section className="text-sm">
       <h3 className="mb-1 text-xs font-medium tracking-wide text-muted-foreground uppercase">

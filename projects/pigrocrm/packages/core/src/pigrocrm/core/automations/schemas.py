@@ -13,6 +13,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from pigrocrm.core.modules.registry import ModuleKey
+
 # New `kind` values. No migration: `activities.kind` is an open value by project
 # (slice 1 §5.8) and `ActivityService.record` takes `kind: str` and truncates to the
 # column width without consulting any Literal.
@@ -38,6 +40,12 @@ TASK_RULES: tuple[TaskRule, ...] = (
     "overdue_invoice",
 )
 AutomationRuleCode = AutomationRule | TaskRule
+# The modules a rule reads (spec 2026-11-09, A2): the pass skips a rule whose modules are
+# not all on for the space, and reports nothing for it. A rule with no row is the core's.
+RULE_MODULES: dict[TaskRule, tuple[ModuleKey, ...]] = {
+    "sent_offer_follow_up": ("deals",),
+    "stalled_deal": ("deals",),
+}
 # The rule whose cause a reminder already raises (`invoice_overdue`): the task reminders
 # skip what it opened, so one late invoice is not announced twice. See `daily.py`.
 RULE_COVERED_BY_REMINDER: TaskRule = "overdue_invoice"

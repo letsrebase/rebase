@@ -1,3 +1,4 @@
+from collections.abc import Set as AbstractSet
 from datetime import date
 from uuid import UUID
 
@@ -61,6 +62,7 @@ class CalendarService:
         *,
         user_id: UUID | None = None,
         legal_entity_id: UUID | None = None,
+        modules: AbstractSet[str] | None = None,
     ) -> CalendarMonth:
         """Every day of `month` that has hours, activities, a contract day or an invoice falling
         due.
@@ -74,9 +76,16 @@ class CalendarService:
         date_from, date_to = month_bounds(month)
         today = today_local()
 
+        # `modules` is what the space has on (`None`: everything): hours belong to `time` and
+        # contract days to `contracts`, and a switched-off module's part is not drawn (spec
+        # 2026-11-09, A2). Its records stay where they are.
         # `legal_entity_id` narrows both reads to one legal entity's deals and invoices (REB-623).
-        hours = self.repo.hours_by_day_and_deal(
-            date_from, date_to, user_id=user_id, legal_entity_id=legal_entity_id
+        hours = (
+            self.repo.hours_by_day_and_deal(
+                date_from, date_to, user_id=user_id, legal_entity_id=legal_entity_id
+            )
+            if modules is None or "time" in modules
+            else []
         )
         labels = self.repo.deal_labels({deal_id for _, deal_id, _ in hours})
 
@@ -132,8 +141,10 @@ class CalendarService:
                 )
             )
 
-        for work_unit, contract_title, customer_name in self.repo.work_units_in_window(
-            date_from, date_to, legal_entity_id=legal_entity_id
+        for work_unit, contract_title, customer_name in (
+            self.repo.work_units_in_window(date_from, date_to, legal_entity_id=legal_entity_id)
+            if modules is None or "contracts" in modules
+            else []
         ):
             day(work_unit.date).work_units.append(
                 DayWorkUnit(

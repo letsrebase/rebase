@@ -3,6 +3,7 @@ import { StatusPill } from '@/components/StatusPill'
 import { useCappedContracts } from '@/features/contracts/queries'
 import { useLegalEntity } from '@/lib/legalEntity'
 import { toProblem } from '@/lib/api'
+import { useModules } from '@/lib/modules'
 import { Card, CardContent } from '@rebase/ui/card'
 import { Skeleton } from '@rebase/ui/skeleton'
 import { Meter } from './charts'
@@ -79,7 +80,13 @@ export function CeilingPanel({
   // legal entity a question typed for the old one.
   const { selected } = useLegalEntity()
   const legal_entity = legalEntityId ?? selected
-  const capped = useCappedContracts(legal_entity)
+  // «Ci sta?» is a `taxes` and `deals` surface and the caps it reads are `contracts`'
+  // (REB-953): with `deals` off there is no simulator, and with `contracts` off no cap to
+  // offer. The ceilings themselves stay, the panel is only drawn with `taxes` on.
+  const modules = useModules()
+  const simulate = modules.on('deals')
+  const readCaps = simulate && modules.on('contracts')
+  const capped = useCappedContracts(legal_entity, readCaps)
 
   if (headroom.isError) {
     // No profile (404): the estimate card above already says so, in the place that owns
@@ -89,12 +96,14 @@ export function CeilingPanel({
   }
   if (headroom.isLoading || !headroom.data) return <Skeleton className="h-48 w-full" />
   const hasCeilings = headroom.data.thresholds.length > 0
-  const contracts = capped.data ?? []
+  const contracts = readCaps ? (capped.data ?? []) : []
   if (!hasCeilings) {
-    // Without ceilings there is only the contracts' caps to show: wait for them, say why
-    // they could not be read, and draw nothing when no active contract has one.
-    if (capped.isPending) return <Skeleton className="h-48 w-full" />
-    if (capped.isError) return <QueryErrorBanner error={capped.error} />
+    // Without ceilings there is only the contracts' caps to show, for the simulator to
+    // read: wait for them, say why they could not be read, and draw nothing when no active
+    // contract has one (or when there is no simulator to give them to).
+    if (!simulate) return null
+    if (readCaps && capped.isPending) return <Skeleton className="h-48 w-full" />
+    if (readCaps && capped.isError) return <QueryErrorBanner error={capped.error} />
     if (contracts.length === 0) return null
   }
 
@@ -127,16 +136,18 @@ export function CeilingPanel({
         ) : null}
         {/* With ceilings the page still draws; a contracts read that failed must not look like
             «no contract has a cap», or «Ci sta» would be answered from the ceilings alone. */}
-        {hasCeilings && capped.isError ? <QueryErrorBanner error={capped.error} /> : null}
+        {hasCeilings && readCaps && capped.isError ? <QueryErrorBanner error={capped.error} /> : null}
         {/* Keyed on the year so a new period starts the form over: a date typed for 2026
             means nothing against 2027's room. */}
-        <Simulator
-          key={`${year}:${legal_entity ?? ''}`}
-          year={year}
-          legalEntityId={legalEntityId}
-          hasCeilings={hasCeilings}
-          contracts={contracts}
-        />
+        {simulate ? (
+          <Simulator
+            key={`${year}:${legal_entity ?? ''}`}
+            year={year}
+            legalEntityId={legalEntityId}
+            hasCeilings={hasCeilings}
+            contracts={contracts}
+          />
+        ) : null}
       </CardContent>
     </Card>
   )
