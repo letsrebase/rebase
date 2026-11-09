@@ -30,6 +30,7 @@ import { toast } from '@rebase/ui/sonner'
 import { cn } from '@rebase/ui/cn'
 import { defaultDashboardSearch } from '@/features/dashboard/search'
 import { api, toProblem, unwrap } from '@/lib/api'
+import { useAuth } from '@/lib/auth'
 import type { ModuleKey } from '@/lib/modules'
 import { queryKeys } from '@/lib/query'
 import { ORDINARY_RATE, bodyFrom, emptyValues } from '@/features/settings/fiscalModel'
@@ -94,6 +95,11 @@ function fiscalBodyFor(pack: FiscalPack): Record<string, unknown> {
     regime_code: ordinary ? 'RF01' : 'RF19',
     ...(ordinary ? { default_vat_rate: ORDINARY_RATE } : {}),
   })
+}
+
+function defaultPack(profile: Profile): FiscalPack | null {
+  const choices = REGIMES[profile]
+  return choices.length === 1 ? (choices[0]?.pack ?? null) : null
 }
 
 function Progress({ step }: { step: Step }) {
@@ -205,6 +211,7 @@ export function Onboarding() {
   const [proposal, setProposal] = useState<Proposal | null>(null)
   const [wanted, setWanted] = useState<Record<ModuleKey, boolean> | null>(null)
   const legalEntity = useFirstLegalEntity()
+  const { logout } = useAuth()
 
   const finish = async () => {
     await queryClient.invalidateQueries({ queryKey: queryKeys.modules })
@@ -220,46 +227,46 @@ export function Onboarding() {
     onError: (error) => toast.error(problem(error)),
   })
 
-  const writeRegime = useMutation({
-    mutationFn: async (chosen: FiscalPack) => {
+  /** Step 2 to step 3: the modules the profile would switch, with nothing written yet. */
+  const propose = useMutation({
+    mutationFn: () =>
+      unwrap(
+        api.PUT('/api/settings/modules/profile', {
+          body: { profile: profile as Profile, confirm: false },
+        }),
+      ),
+    onSuccess: (result) => {
+      setProposal(result)
+      setWanted(proposedState(result))
+      setStep(3)
+    },
+    onError: (error) => toast.error(problem(error)),
+  })
+
+  /** The last step: the regime (unless the space already has one) and then the profile with
+   *  its module edits. Written together, here, so going back to change the profile never
+   *  leaves a regime that belongs to the other answer. */
+  const apply = useMutation({
+    mutationFn: async (modules: Partial<Record<ModuleKey, boolean>>) => {
       const entity = legalEntity.data
-      if (entity && !entity.saved) {
+      const chosen = pack ?? (profile ? defaultPack(profile) : null)
+      if (entity && !entity.saved && chosen) {
         await unwrap(
           api.PUT('/api/legal-entities/{legal_entity_id}/fiscal-profile', {
             params: { path: { legal_entity_id: entity.id } },
-            body: fiscalBodyFor(chosen) as never,
+            // `null` is a real version check: a profile saved since this screen opened is a
+            // 409, never silently replaced.
+            body: { ...fiscalBodyFor(chosen), updated_at: null } as never,
           }),
         )
         await queryClient.invalidateQueries({ queryKey: queryKeys.legal_entities })
       }
-      return propose()
-    },
-    onSuccess: enterModules,
-    onError: (error) => toast.error(problem(error)),
-  })
-
-  async function propose() {
-    return unwrap(
-      api.PUT('/api/settings/modules/profile', { body: { profile: profile as Profile, confirm: false } }),
-    )
-  }
-
-  function enterModules(result: Proposal) {
-    setProposal(result)
-    setWanted(proposedState(result))
-    setStep(3)
-  }
-
-  /** Step 2 skipped: no regime written, the modules are still proposed. */
-  const laterOnRegime = useMutation({ mutationFn: propose, onSuccess: enterModules, onError: (e) => toast.error(problem(e)) })
-
-  const apply = useMutation({
-    mutationFn: (modules: Partial<Record<ModuleKey, boolean>>) =>
-      unwrap(
+      return unwrap(
         api.PUT('/api/settings/modules/profile', {
           body: { profile: profile as Profile, confirm: true, modules },
         }),
-      ),
+      )
+    },
     onSuccess: finish,
     onError: (error) => toast.error(problem(error)),
   })
@@ -273,10 +280,16 @@ export function Onboarding() {
     <div className="bg-background flex min-h-full items-start justify-center p-4 sm:items-center sm:p-8" data-testid="onboarding">
       <Card className="w-full max-w-xl">
         <CardHeader className="space-y-4">
-          <p className="inline-flex items-center text-lg font-semibold">
-            <BrandMark className="mr-2.5 size-3.5" />
-            Pigro<span className="text-[var(--color-watermelon)]">CRM</span>
-          </p>
+          <div className="flex items-center justify-between">
+            <p className="inline-flex items-center text-lg font-semibold">
+              <BrandMark className="mr-2.5 size-3.5" />
+              Pigro<span className="text-[var(--color-watermelon)]">CRM</span>
+            </p>
+            {/* The screen stands outside the shell, so it carries its own way out. */}
+            <Button type="button" variant="ghost" size="sm" onClick={() => void logout()}>
+              Esci
+            </Button>
+          </div>
           <Progress step={step} />
           {step === 1 && (
             <>
@@ -337,15 +350,10 @@ export function Onboarding() {
               pack={pack}
               onPack={setPack}
               legalEntity={legalEntity}
-              busy={writeRegime.isPending || laterOnRegime.isPending}
+              busy={propose.isPending || skip.isPending}
               onBack={() => setStep(1)}
-              onLater={() => laterOnRegime.mutate()}
-              onNext={() => {
-                const saved = legalEntity.data?.saved
-                const chosen = pack ?? REGIMES[profile][0]!.pack
-                if (saved) laterOnRegime.mutate()
-                else writeRegime.mutate(chosen)
-              }}
+              onLater={() => skip.mutate()}
+              onNext={() => propose.mutate()}
             />
           )}
           {step === 3 && proposal && wanted && (
@@ -353,16 +361,10 @@ export function Onboarding() {
               proposal={proposal}
               wanted={wanted}
               onChange={setWanted}
-              busy={apply.isPending}
+              busy={apply.isPending || skip.isPending}
               onBack={() => setStep(2)}
               onConfirm={() => apply.mutate(editsAgainst(proposal, wanted))}
-              onLater={() =>
-                // «Decido dopo» keeps every module as it is today: the profile is stored, and
-                // nothing is hidden until the admin chooses.
-                apply.mutate(
-                  Object.fromEntries(proposal.state.modules.map((m) => [m.key, m.enabled])),
-                )
-              }
+              onLater={() => skip.mutate()}
             />
           )}
         </CardContent>
@@ -397,7 +399,25 @@ function RegimeStep({
       </div>
     )
   }
-  if (legalEntity.data?.saved) {
+  if (legalEntity.isError || !legalEntity.data) {
+    // Nothing to write the regime on: say so rather than let the answer vanish.
+    return (
+      <>
+        <p className="text-sm" role="alert">
+          {legalEntity.isError
+            ? 'Non riesco a leggere i dati della tua azienda.'
+            : 'Non c’è ancora un’azienda a cui dare un regime: la crei in Impostazioni → Aziende.'}
+        </p>
+        {legalEntity.isError && (
+          <Button type="button" variant="outline" onClick={() => void legalEntity.refetch()}>
+            Riprova
+          </Button>
+        )}
+        <Footer onLater={onLater} onBack={onBack} onNext={onNext} nextDisabled busy={busy} />
+      </>
+    )
+  }
+  if (legalEntity.data.saved) {
     return (
       <>
         <p className="text-sm" role="status">
@@ -408,7 +428,7 @@ function RegimeStep({
     )
   }
   const choices = REGIMES[profile]
-  const selected = pack ?? (choices.length === 1 ? (choices[0]?.pack ?? null) : null)
+  const selected = pack ?? defaultPack(profile)
   return (
     <>
       <div role="radiogroup" aria-label="Regime" className="space-y-2">

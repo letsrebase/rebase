@@ -279,7 +279,7 @@ export function useFirstSteps(): FirstStepsState {
             hint: 'Da solo o come azienda: lo spazio mostra solo i moduli che ti servono.',
             to: '/app/onboarding',
             screen: 'Le tre domande',
-            canDo: isAdmin,
+            canDo: isAdmin && !Array.isArray(user?.legal_entities),
             done: false,
           },
           ...dealSteps,

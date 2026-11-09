@@ -18,6 +18,9 @@ vi.mock('@/lib/api', async (importOriginal) => {
   return { ...actual, api: { GET: vi.fn(), PUT: vi.fn(), POST: vi.fn() } }
 })
 
+const logout = vi.fn()
+vi.mock('@/lib/auth', () => ({ useAuth: () => ({ logout }) }))
+
 import { api } from '@/lib/api'
 import { Onboarding } from './Onboarding'
 
@@ -64,9 +67,11 @@ function proposal(dealRecords = 0): Proposal {
   } as Proposal
 }
 
-function stub({ saved = false, dealRecords = 0 } = {}) {
+function stub({ saved = false, dealRecords = 0, entities = [{ id: 'le-1' }] as unknown[] | 'error' } = {}) {
   GET.mockImplementation(async (path: string) => {
-    if (path === '/api/legal-entities') return ok([{ id: 'le-1' }])
+    if (path === '/api/legal-entities') {
+      return entities === 'error' ? { error: { status: 500 }, response: { status: 500 } } : ok(entities)
+    }
     return saved ? ok({ pack_id: 'it-flat-rate' }) : { error: {}, response: { status: 404 } }
   })
   PUT.mockImplementation(async (path: string, init: { body: { confirm?: boolean } }) => {
@@ -88,7 +93,10 @@ function renderOnboarding() {
 const profileCalls = () =>
   PUT.mock.calls.filter(([path]) => path === '/api/settings/modules/profile') as [string, { body: unknown }][]
 
+const fiscalCalls = () => PUT.mock.calls.filter(([path]) => String(path).endsWith('/fiscal-profile'))
+
 beforeEach(() => {
+  logout.mockReset()
   GET.mockReset()
   PUT.mockReset()
   POST.mockReset()
@@ -124,7 +132,7 @@ describe('Onboarding', () => {
     expect(PUT).not.toHaveBeenCalled()
   })
 
-  it('writes the regime, shows the modules and applies the profile at the end', async () => {
+  it('shows the modules, and writes the regime and the profile only at the end', async () => {
     stub()
     const user = userEvent.setup()
     renderOnboarding()
@@ -135,10 +143,8 @@ describe('Onboarding', () => {
     await user.click(screen.getByRole('button', { name: 'Avanti' }))
 
     expect(await screen.findByRole('heading', { name: 'Ecco come sarà il tuo spazio' })).toBeInTheDocument()
-    expect(PUT).toHaveBeenCalledWith(
-      '/api/legal-entities/{legal_entity_id}/fiscal-profile',
-      expect.objectContaining({ body: expect.objectContaining({ pack_id: 'it-flat-rate', regime_code: 'RF19' }) }),
-    )
+    // Nothing is written until the last step, so going back never leaves a stale answer.
+    expect(fiscalCalls()).toHaveLength(0)
     const list = screen.getByTestId('onboarding-modules')
     expect(within(list).getByRole('checkbox', { name: 'Deal' })).not.toBeChecked()
     expect(within(list).getByRole('checkbox', { name: 'Contratti' })).toBeChecked()
@@ -148,6 +154,10 @@ describe('Onboarding', () => {
     await user.click(screen.getByRole('button', { name: 'Conferma' }))
 
     await waitFor(() => expect(navigate).toHaveBeenCalledWith(expect.objectContaining({ to: '/app' })))
+    expect(fiscalCalls()).toHaveLength(1)
+    expect(fiscalCalls()[0]![1]).toMatchObject({
+      body: { pack_id: 'it-flat-rate', regime_code: 'RF19', updated_at: null },
+    })
     expect(profileCalls()[1]![1].body).toEqual({ profile: 'solo', confirm: true, modules: {} })
   })
 
@@ -162,7 +172,9 @@ describe('Onboarding', () => {
     await user.click(screen.getByRole('button', { name: 'Avanti' }))
 
     expect(await screen.findByRole('heading', { name: 'Ecco come sarà il tuo spazio' })).toBeInTheDocument()
-    expect(PUT.mock.calls.some(([path]) => String(path).endsWith('/fiscal-profile'))).toBe(false)
+    await user.click(screen.getByRole('button', { name: 'Conferma' }))
+    await waitFor(() => expect(navigate).toHaveBeenCalled())
+    expect(fiscalCalls()).toHaveLength(0)
   })
 
   it('offers a company the srl and marks the other forms as coming', async () => {
@@ -177,10 +189,11 @@ describe('Onboarding', () => {
     expect(screen.getByRole('radio', { name: /SpA/ })).toBeDisabled()
     await user.click(screen.getByRole('button', { name: 'Avanti' }))
     await screen.findByRole('heading', { name: 'Ecco come sarà il tuo spazio' })
-    expect(PUT).toHaveBeenCalledWith(
-      '/api/legal-entities/{legal_entity_id}/fiscal-profile',
-      expect.objectContaining({ body: expect.objectContaining({ pack_id: 'it-standard', regime_code: 'RF01', default_vat_rate: '22.00' }) }),
-    )
+    await user.click(screen.getByRole('button', { name: 'Conferma' }))
+    await waitFor(() => expect(fiscalCalls()).toHaveLength(1))
+    expect(fiscalCalls()[0]![1]).toMatchObject({
+      body: { pack_id: 'it-standard', regime_code: 'RF01', default_vat_rate: '22.00' },
+    })
   })
 
   it('names what a space with data would hide and lets the admin keep it on', async () => {
@@ -209,7 +222,22 @@ describe('Onboarding', () => {
     })
   })
 
-  it('«Decido dopo» on the last step stores the profile and keeps every module as it is', async () => {
+  it('«Decido dopo» on any later step skips the onboarding and writes nothing', async () => {
+    stub({ dealRecords: 3 })
+    const user = userEvent.setup()
+    renderOnboarding()
+
+    await user.click(screen.getByRole('radio', { name: /Da solo/ }))
+    await user.click(screen.getByRole('button', { name: 'Avanti' }))
+    await user.click(await screen.findByRole('radio', { name: /Forfettario/ }))
+    await user.click(screen.getByRole('button', { name: 'Decido dopo' }))
+
+    await waitFor(() => expect(navigate).toHaveBeenCalledWith({ to: '/app/get-started' }))
+    expect(POST).toHaveBeenCalledWith('/api/settings/modules/onboarding/skip')
+    expect(PUT).not.toHaveBeenCalled()
+  })
+
+  it('skips from the last step too, keeping every module on', async () => {
     stub({ dealRecords: 3 })
     const user = userEvent.setup()
     renderOnboarding()
@@ -221,11 +249,36 @@ describe('Onboarding', () => {
     await screen.findByRole('heading', { name: 'Ecco come sarà il tuo spazio' })
     await user.click(screen.getByRole('button', { name: 'Decido dopo' }))
 
-    await waitFor(() => expect(navigate).toHaveBeenCalled())
-    expect(profileCalls()[1]![1].body).toEqual({
-      profile: 'solo',
-      confirm: true,
-      modules: { deals: true, contracts: true, time: true, costs: true, taxes: true },
-    })
+    await waitFor(() => expect(POST).toHaveBeenCalled())
+    expect(profileCalls()).toHaveLength(1)
+    expect(profileCalls()[0]![1].body).toEqual({ profile: 'solo', confirm: false })
+    expect(fiscalCalls()).toHaveLength(0)
+  })
+
+  it('says so, and goes no further, when the legal entity cannot be read or does not exist', async () => {
+    stub({ entities: 'error' })
+    const user = userEvent.setup()
+    const first = renderOnboarding()
+    await user.click(screen.getByRole('radio', { name: /Da solo/ }))
+    await user.click(screen.getByRole('button', { name: 'Avanti' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('Non riesco a leggere')
+    expect(screen.getByRole('button', { name: 'Avanti' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Riprova' })).toBeInTheDocument()
+    first.unmount()
+
+    stub({ entities: [] })
+    renderOnboarding()
+    await user.click(screen.getByRole('radio', { name: /Da solo/ }))
+    await user.click(screen.getByRole('button', { name: 'Avanti' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('Non c’è ancora un’azienda')
+    expect(screen.getByRole('button', { name: 'Avanti' })).toBeDisabled()
+  })
+
+  it('carries its own way out, since it stands outside the shell', async () => {
+    stub()
+    const user = userEvent.setup()
+    renderOnboarding()
+    await user.click(screen.getByRole('button', { name: 'Esci' }))
+    expect(logout).toHaveBeenCalled()
   })
 })
