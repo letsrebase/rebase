@@ -17,7 +17,7 @@ from pigrocrm.core.proposals.schemas import (
     ProposalTargetType,
 )
 from pigrocrm.core.proposals.service import ProposalService
-from pigrocrm_api.deps import ActorDep, SessionDep, get_actor
+from pigrocrm_api.deps import ActorDep, SessionDep, get_actor, module_guard
 from pigrocrm_api.errors import PROBLEM_RESPONSES
 from pigrocrm_api.timeline import timeline_router
 
@@ -29,7 +29,14 @@ router = APIRouter(
 )
 
 
-@router.post("", response_model=ProposalRead, status_code=status.HTTP_201_CREATED)
+# A proposal is core, its queue stays readable, but both kinds name a contract or one of its
+# days: filing or accepting one writes into `contracts`, so it needs the module (REB-978).
+@router.post(
+    "",
+    response_model=ProposalRead,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[module_guard("contracts")],
+)
 def create(data: ProposalCreate, session: SessionDep, actor: ActorDep) -> ProposalRead:
     return ProposalService(session).create(data, actor)
 
@@ -61,7 +68,11 @@ def get(proposal_id: UUID, session: SessionDep, actor: ActorDep) -> ProposalRead
     return ProposalService(session).get(proposal_id, actor)
 
 
-@router.post("/{proposal_id}/accept", response_model=ProposalRead)
+@router.post(
+    "/{proposal_id}/accept",
+    response_model=ProposalRead,
+    dependencies=[module_guard("contracts")],
+)
 def accept(
     proposal_id: UUID, data: ProposalAccept, session: SessionDep, actor: ActorDep
 ) -> ProposalRead:

@@ -51,9 +51,6 @@ TOOL_MODULES: Mapping[str, tuple[ModuleKey, ...]] = {
     "create_clause_note": ("contracts",),
     "update_clause_note": ("contracts",),
     "list_clause_notes": ("contracts",),
-    "create_contract_expense": ("contracts",),
-    "update_contract_expense": ("contracts",),
-    "list_contract_expenses": ("contracts",),
     "get_contract_concentration": ("contracts",),
     "get_contract_register": ("contracts",),
     "list_contract_email_templates": ("contracts",),
@@ -85,6 +82,10 @@ TOOL_MODULES: Mapping[str, tuple[ModuleKey, ...]] = {
     "recalculate_rates": ("time",),
     "bind_time_to_invoice": ("time",),
     "get_budget_vs_actual": ("deals", "time"),
+    # An expense is a contract's and carries a cost category: both modules, as in the web app.
+    "create_contract_expense": ("contracts", "costs"),
+    "update_contract_expense": ("contracts", "costs"),
+    "list_contract_expenses": ("contracts", "costs"),
     # costs.
     "create_cost": ("costs",),
     "update_cost": ("costs",),
@@ -101,11 +102,13 @@ TOOL_MODULES: Mapping[str, tuple[ModuleKey, ...]] = {
     "get_ceiling_headroom": ("taxes",),
     "get_year_overview": ("taxes",),
     "get_fiscal_estimate": ("taxes",),
+    # The raw figures are `taxes` alone; `deal_id` and `contract_id` are references into
+    # their modules, refused by `ID_REFERENCES` below only when the call carries one.
+    "simulate_ceiling": ("taxes",),
     # Across modules: all of them, or the tool is not there.
     "convert_deal_to_contract": ("deals", "contracts"),
     "preview_deal_contract": ("deals", "contracts"),
     "get_deal_pnl": ("deals", "time", "costs"),
-    "simulate_ceiling": ("taxes", "deals"),
 }
 
 
@@ -144,6 +147,7 @@ ID_REFERENCES: Mapping[str, tuple[tuple[str, ModuleKey], ...]] = {
     "create_proforma": (("deal_id", "deals"),),
     "list_invoices": (("deal_id", "deals"),),
     "list_documents": (("deal_id", "deals"),),
+    "simulate_ceiling": (("deal_id", "deals"), ("contract_id", "contracts")),
     "create_document_from_template": (("deal_id", "deals"),),
 }
 # Tools whose argument names the kind of record, mapped to that argument.

@@ -2351,6 +2351,10 @@ export interface paths {
          *     saving anything. Needs `budgeted_value`, or `budgeted_hours` together with
          *     `hourly_rate`, or a saved deal's `deal_id` (never both): the deal's value lines give the
          *     share that falls in `year`. With `contract_id` it also answers on that contract's cap.
+         *
+         *     The raw figures are `taxes`' alone; a saved deal needs `deals` and a contract's cap needs
+         *     `contracts`, and each is refused with the sentence naming the module only when asked for
+         *     (REB-978).
          */
         get: operations["simulate_ceiling_api_analytics_ceilings_simulate_get"];
         put?: never;

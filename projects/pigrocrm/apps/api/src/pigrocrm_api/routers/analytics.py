@@ -32,7 +32,7 @@ from pigrocrm.core.analytics.schemas import (
     YearOverview,
 )
 from pigrocrm.core.analytics.service import AnalyticsService
-from pigrocrm.core.modules import enabled_modules
+from pigrocrm.core.modules import enabled_modules, require_modules
 from pigrocrm_api.deps import ActorDep, SessionDep, SettingsDep, get_actor, module_guard
 from pigrocrm_api.downloads import attachment_response
 from pigrocrm_api.errors import PROBLEM_RESPONSES
@@ -204,11 +204,12 @@ def ceiling_headroom(
 @router.get(
     "/ceilings/simulate",
     response_model=CeilingSimulation,
-    dependencies=[module_guard("taxes", "deals")],
+    dependencies=[module_guard("taxes")],
 )
 def simulate_ceiling(
     session: SessionDep,
     actor: ActorDep,
+    settings: SettingsDep,
     year: Annotated[int, Query(ge=2000, le=2200)],
     budgeted_hours: Annotated[Decimal | None, Query(ge=0)] = None,
     budgeted_value: Annotated[Decimal | None, Query(ge=0)] = None,
@@ -243,7 +244,15 @@ def simulate_ceiling(
     added to the actual revenue and re-evaluated against every active threshold, without
     saving anything. Needs `budgeted_value`, or `budgeted_hours` together with
     `hourly_rate`, or a saved deal's `deal_id` (never both): the deal's value lines give the
-    share that falls in `year`. With `contract_id` it also answers on that contract's cap."""
+    share that falls in `year`. With `contract_id` it also answers on that contract's cap.
+
+    The raw figures are `taxes`' alone; a saved deal needs `deals` and a contract's cap needs
+    `contracts`, and each is refused with the sentence naming the module only when asked for
+    (REB-978)."""
+    if deal_id is not None:
+        require_modules(settings, "deals")
+    if contract_id is not None:
+        require_modules(settings, "contracts")
     return AnalyticsService(session).simulate_ceiling(
         year,
         CeilingSimulationQuery(

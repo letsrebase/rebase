@@ -64,14 +64,20 @@ class SpaceModulesService:
         self.settings = SpaceSettingsService(session, base)
         self.activities = ActivityService(session)
 
-    def _records(self, module: ModuleKey) -> int:
-        model = _RECORDS.get(module)
-        if model is None:
-            return 0
-        count = self.session.scalar(
-            select(func.count()).select_from(model).where(model.deleted_at.is_(None))
-        )
-        return int(count or 0)
+    def _counts(self) -> dict[str, int]:
+        """The live rows of every module that keeps any, in one statement: this answers the
+        shell's read of the modules, which every page asks, so it is one round trip and
+        not one per table."""
+        columns = [
+            select(func.count())
+            .select_from(model)
+            .where(model.deleted_at.is_(None))
+            .scalar_subquery()
+            .label(key)
+            for key, model in _RECORDS.items()
+        ]
+        row = self.session.execute(select(*columns)).one()
+        return {key: int(row._mapping[key] or 0) for key in _RECORDS}
 
     def _write(self, values: dict[str, str | None], actor: Actor) -> None:
         """The rows, and on the settings' timeline which keys moved and who moved them (keys
@@ -86,9 +92,10 @@ class SpaceModulesService:
         tools that are listed already say as much."""
         effective = self.settings.effective()
         on = enabled_modules(effective)
+        counts = self._counts()
         modules = []
         for module in MODULES:
-            records = self._records(module.key)
+            records = counts.get(module.key, 0)
             modules.append(
                 ModuleRead(
                     key=module.key,
@@ -113,6 +120,7 @@ class SpaceModulesService:
             self.settings.lock()
         effective = self.settings.effective()
         now_on = enabled_modules(effective)
+        counts = self._counts()
         proposed = {
             key: data.modules.get(key, profile_default(data.profile, key)) for key in MODULE_KEYS
         }
@@ -123,7 +131,7 @@ class SpaceModulesService:
                 label=module.label,
                 was=module.key in now_on,
                 becomes=proposed[module.key],
-                records=self._records(module.key),
+                records=counts.get(module.key, 0),
             )
             for module in MODULES
             if (module.key in now_on) != proposed[module.key]
@@ -163,11 +171,31 @@ class SpaceModulesService:
         target = {key: key in now_on for key in MODULE_KEYS}
         target.update({key: True for key in data.on})
         target.update({key: False for key in data.off})
+        # Switching a module off while modules that need it stay on is the confirmation of
+        # spec A2 and B1, not a malformed request: the answer lists those modules, and the
+        # call that names them in `off` too is the one that goes through. A module the call
+        # switches on over a requirement that is off stays the plain refusal below.
+        dependants = [
+            module.key
+            for module in MODULES
+            if target[module.key]
+            and module.key not in data.on
+            and any(need in data.off for need in module.requires)
+        ]
+        if dependants:
+            raise Conflict(
+                "space_modules",
+                "altri moduli accesi dipendono da quelli da spegnere: spegnili insieme, "
+                "nominandoli anche in `off`: "
+                + ", ".join(MODULES_BY_KEY[key].label for key in dependants),
+                modules=dependants,
+            )
         _check_dependencies(target)
+        counts = self._counts()
         holding = {
-            key: records
+            key: counts[key]
             for key in data.off
-            if key in now_on and key not in data.confirm_off and (records := self._records(key))
+            if key in now_on and key not in data.confirm_off and counts.get(key, 0)
         }
         if holding:
             raise Conflict(
