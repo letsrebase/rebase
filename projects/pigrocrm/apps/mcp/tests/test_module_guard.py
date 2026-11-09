@@ -64,6 +64,7 @@ CORE_TOOLS = frozenset(
         "update_organization",
         "get_organization",
         "search_organizations",
+        "list_duplicate_organizations",
         "archive_organization",
         "restore_organization",
         "create_person",

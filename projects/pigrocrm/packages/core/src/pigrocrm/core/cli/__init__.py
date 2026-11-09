@@ -2,8 +2,8 @@
 
 One module per family: `admin` (createadmin, resetpassword), `spaces` (ensure-space-defaults,
 rebuild-identity-index, seed-templates), `cron` (digest, reminders, automations), `gmail`
-(gmail-sync), `backfill` (owner-backfill, vapid-keys). What they share, the walk over the root
-installation and the registry's spaces, is `spaces_walk`.
+(gmail-sync), `backfill` (owner-backfill, duplicate-organizations, vapid-keys). What they
+share, the walk over the root installation and the registry's spaces, is `spaces_walk`.
 """
 
 import argparse
@@ -11,7 +11,7 @@ from collections.abc import Sequence
 from datetime import date
 
 from pigrocrm.core.cli.admin import createadmin, resetpassword
-from pigrocrm.core.cli.backfill import owner_backfill, vapid_keys
+from pigrocrm.core.cli.backfill import duplicate_organizations, owner_backfill, vapid_keys
 from pigrocrm.core.cli.cron import automations, digest, reminders
 from pigrocrm.core.cli.gmail import gmail_sync
 from pigrocrm.core.cli.spaces import ensure_space_defaults, rebuild_identity_index, seed_templates
@@ -113,6 +113,11 @@ def _build_parser() -> argparse.ArgumentParser:
     backfill.add_argument(
         "--apply", action="store_true", help="Writes; without it, only prints what it would do"
     )
+    duplicates = sub.add_parser(
+        "duplicate-organizations",
+        help="List the organizations of a space that share a VAT number (exit 2 when there are)",
+    )
+    duplicates.add_argument("--slug", required=True, help="The space to read (or root)")
     return parser
 
 
@@ -142,6 +147,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             return reminders(settings, slug=args.slug, day=args.date, dry_run=args.dry_run)
         case "automations":
             return automations(settings, slug=args.slug, day=args.date, dry_run=args.dry_run)
+        case "duplicate-organizations":
+            return duplicate_organizations(settings, slug=args.slug)
         case "owner-backfill":
             return owner_backfill(
                 settings,

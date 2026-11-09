@@ -51,6 +51,7 @@ AGENT_ALLOWED_ACTIONS: frozenset[str] = frozenset(
         "delete_organization",
         "restore_organization",
         "change_customer_owner",
+        "list_duplicate_organizations",
         "create_person",
         "update_person",
         "delete_person",
@@ -299,6 +300,7 @@ ACTION_LABELS: dict[str, str] = {
     "settle_outgoing_due_item": "segnare come pagata una scadenza in uscita o fiscale",
     "reverse_outgoing_settlement": "annullare il pagamento di una scadenza in uscita o fiscale",
     "read_fiscal_due_items": "leggere le scadenze di imposte, IVA, ritenute e stipendi",
+    "list_duplicate_organizations": "elencare le anagrafiche con la stessa partita IVA",
     "skip_space_onboarding": "rimandare le domande su come lavora lo spazio",
 }
 

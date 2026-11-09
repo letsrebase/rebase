@@ -76,6 +76,16 @@ kind (the first of a kind when none is flagged). `email`, `phone` and `linkedin`
 the primary of each kind, and the CRM's mail goes to the primary email. The searches
 (`search_organizations`, `search_people`, `search_everything`) find an owner by any of its points,
 a phone in any form, and a `search_everything` hit's `field` is the kind that matched.
+An organization has `roles` (`customer`, `supplier`, `freelancer`; at least one, `customer` if
+omitted): one company is one organization, and a VAT number a live one of the same country
+holds (any role) is refused, so add the missing role with `update_organization` instead.
+`search_organizations` shows customers unless `role` says `supplier`, `freelancer` or `any`.
+`supplier_payment_days` and `supplier_payment_end_of_month` are the terms it grants us, against
+`payment_days` and `payment_end_of_month` as a customer. `supplier_kind` is `company`,
+`professional`, `flat_rate`, `occasional` or `foreign` (foreign also takes `supplier_area` `eu`
+or `extra_eu` and `supplier_supplies` `goods` or `services`); `customer_kind` is `business`,
+`consumer` or `public_body` (whose `sdi_code` is its 6-character IPA code); and
+`is_withholding_agent` marks a customer that withholds on our professional invoices.
 """
 
 

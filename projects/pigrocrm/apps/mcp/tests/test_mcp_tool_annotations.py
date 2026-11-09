@@ -55,10 +55,15 @@ SURFACES: dict[str, dict[str, Any]] = {
 # `get_due_item`, `settle_due_item` and `reverse_settlement` (2.6 KB): the four are core and on
 # every token's surface, the settlement takes the item's amount, its date and the account's own
 # figures, and the list its five filters.
-DEFAULT_BUDGET_BYTES = 98_200
+# REB-970: 99.4 KB and 113.3 KB, up from 98.2 KB and 111.9 KB, for `list_duplicate_organizations`
+# and the organization fields of design § 1 (roles, the supplier terms and kinds, the customer kind
+# and the withholding flag), measured at 99,358 bytes. The fields are in `update_organization`'s
+# `changes` schema; `create_organization` takes only `roles`, and the rest is said once in
+# `INSTRUCTIONS`.
+DEFAULT_BUDGET_BYTES = 99_400
 # REB-957: 111.9 KB, up from 111.6 KB, for `skip_space_onboarding` (a full-access
 # administrator's), measured at 111,786 bytes; `describe_space`'s `onboarding` fits the default.
-FULL_ACCESS_BUDGET_BYTES = 111_900
+FULL_ACCESS_BUDGET_BYTES = 113_300
 
 # A name starting with one of these reads. The tools that read without such a name are
 # listed, so adding one is a decision somebody wrote down.

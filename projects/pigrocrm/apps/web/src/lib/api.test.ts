@@ -551,6 +551,8 @@ describe('the typed client', () => {
       legal_name: 'Rossi SRL',
       country: 'IT',
       payment_end_of_month: false,
+      supplier_payment_end_of_month: false,
+      is_withholding_agent: false,
       custom_fields: {},
     }
     await unwrap(api.POST('/api/organizations', { baseUrl: BASE, body }))

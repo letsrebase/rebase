@@ -15,7 +15,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from uuid import UUID
 
-from sqlalchemy import or_, select
+from sqlalchemy import ColumnElement, or_, select
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.contact_points.models import ContactPoint
@@ -37,6 +37,19 @@ class EntityRef:
     entity_id: UUID
 
 
+def _customer() -> ColumnElement[bool]:
+    """The roster is the sync address book, and it holds customers only (design 2026-11-09
+    suppliers § 1): a supplier's mail must not start being synced into an activities
+    mailbox because it became a row of the registry."""
+    return Organization.roles.contains(["customer"])
+
+
+def _belongs_to_customer_or_nobody() -> ColumnElement[bool]:
+    """A person with no organization, or whose organization is a customer; used with an outer
+    join to `Organization` on `Person.customer_id`."""
+    return or_(Person.customer_id.is_(None), _customer())
+
+
 class AddressRoster:
     def __init__(self, session: Session) -> None:
         self.session = session
@@ -50,12 +63,17 @@ class AddressRoster:
         people = (
             select(ContactPoint.normalized)
             .join(Person, Person.id == ContactPoint.person_id)
-            .where(ContactPoint.kind == "email", Person.deleted_at.is_(None))
+            .outerjoin(Organization, Organization.id == Person.customer_id)
+            .where(
+                ContactPoint.kind == "email",
+                Person.deleted_at.is_(None),
+                _belongs_to_customer_or_nobody(),
+            )
         )
         organizations = (
             select(ContactPoint.normalized)
             .join(Organization, Organization.id == ContactPoint.customer_id)
-            .where(ContactPoint.kind == "email", Organization.deleted_at.is_(None))
+            .where(ContactPoint.kind == "email", Organization.deleted_at.is_(None), _customer())
         )
         rows = self.session.execute(people.union(organizations)).scalars().all()
         # `if address` drops the empty string: a point saved with "" is not an address, and an
@@ -169,10 +187,12 @@ class AddressRoster:
         person_rows = self.session.execute(
             select(ContactPoint.normalized, Person.id, Person.customer_id)
             .join(Person, Person.id == ContactPoint.person_id)
+            .outerjoin(Organization, Organization.id == Person.customer_id)
             .where(
                 ContactPoint.kind == "email",
                 ContactPoint.normalized.in_(needles),
                 Person.deleted_at.is_(None),
+                _belongs_to_customer_or_nobody(),
             )
         ).all()
         direct_rows = self.session.execute(
@@ -182,6 +202,7 @@ class AddressRoster:
                 ContactPoint.kind == "email",
                 ContactPoint.normalized.in_(needles),
                 Organization.deleted_at.is_(None),
+                _customer(),
             )
         ).all()
         # A live person may point at a soft-deleted customer, so the organizations reached
@@ -192,7 +213,9 @@ class AddressRoster:
             set(
                 self.session.execute(
                     select(Organization.id).where(
-                        Organization.id.in_(via_people), Organization.deleted_at.is_(None)
+                        Organization.id.in_(via_people),
+                        Organization.deleted_at.is_(None),
+                        _customer(),
                     )
                 )
                 .scalars()

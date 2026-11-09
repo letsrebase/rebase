@@ -103,7 +103,7 @@ def test_the_revision_gives_every_row_the_customer_role_and_builds_the_index_bot
         assert not NEW_COLUMNS & _columns(engine)
 
         upgrade(config, revision)
-        assert NEW_COLUMNS <= _columns(engine)
+        assert _columns(engine) >= NEW_COLUMNS
         assert _scalar(engine, "SELECT count(*) FROM organizations WHERE roles = '{customer}'") == 2
         assert (
             _scalar(engine, "SELECT count(*) FROM organizations WHERE NOT is_withholding_agent")

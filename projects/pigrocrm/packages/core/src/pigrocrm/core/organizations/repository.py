@@ -1,12 +1,14 @@
+from typing import Any
 from uuid import UUID
 
-from sqlalchemy import column, func, or_, select, table, text
+from sqlalchemy import Select, column, func, or_, select, table, text
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.contact_points.models import ContactPoint
 from pigrocrm.core.contact_points.service import owners_matching
 from pigrocrm.core.db import decode_cursor, escape_like, keyset_predicate, order_by
 from pigrocrm.core.organizations.models import Organization
+from pigrocrm.core.organizations.roles import RoleFilter, country_key, normalise_vat, vat_key
 from pigrocrm.core.organizations.schemas import ORGANIZATION_SORTS, OrganizationListQuery
 
 # `pg_advisory_xact_lock(int, int)`: a namespace of this project's own, as
@@ -54,6 +56,7 @@ class OrganizationRepository:
         vat_number: str | None,
         tax_code: str | None,
         legal_entity_id: UUID | None = None,
+        role: RoleFilter = "customer",
     ) -> Organization | None:
         """Exact match against a normalised `vat_number`/`tax_code` -- the same
         two columns `list`'s own fuzzy `ilike` search already reads (`:42-45` below),
@@ -66,7 +69,8 @@ class OrganizationRepository:
         `None` when neither identifier is given (nothing to match on) or neither
         matches an active customer. `legal_entity_id` narrows the match to the organizations of one
         legal entity, which is what an invoice written on that legal entity's register can attach to
-        (REB-783); `None` looks across all of them.
+        (REB-783); `None` looks across all of them. `role` is the role the match must hold,
+        `customer` unless the caller says otherwise (`any` for none).
         """
         if vat_number is None and tax_code is None:
             return None
@@ -76,11 +80,14 @@ class OrganizationRepository:
         if tax_code is not None:
             conditions.append(Organization.tax_code == tax_code)
         stmt = select(Organization).where(Organization.deleted_at.is_(None), or_(*conditions))
+        stmt = self._with_role(stmt, role)
         if legal_entity_id is not None:
             stmt = stmt.where(Organization.legal_entity_id == legal_entity_id)
         return self.session.execute(stmt).scalars().first()
 
-    def find_by_name(self, legal_name: str) -> Organization | None:
+    def find_by_name(
+        self, legal_name: str, *, role: RoleFilter = "customer"
+    ) -> Organization | None:
         """The live customer whose `legal_name` is exactly this one, oldest first:
         an identity check, as `match_by_fiscal_id` is for the VAT number (the
         engagements door finds the customer «rebase» this way when the body carries no
@@ -94,7 +101,34 @@ class OrganizationRepository:
             .order_by(Organization.created_at, Organization.id)
             .limit(1)
         )
+        return self.session.execute(self._with_role(stmt, role)).scalars().first()
+
+    def find_by_vat(
+        self, country: str, vat_number: str, *, excluding: UUID | None = None
+    ) -> Organization | None:
+        """The live organization of `country` that holds this VAT number, compared in its
+        normalised form, whatever its roles: the one the unique index would collide with.
+        `excluding` leaves out the row being updated. Read under the caller's row-level
+        scope, so a row of a legal entity the caller cannot see is found by the index
+        instead."""
+        stmt = (
+            select(Organization)
+            .where(
+                Organization.deleted_at.is_(None),
+                country_key(Organization.country) == country.upper(),
+                vat_key(Organization.vat_number) == normalise_vat(vat_number),
+            )
+            .order_by(Organization.created_at, Organization.id)
+            .limit(1)
+        )
+        if excluding is not None:
+            stmt = stmt.where(Organization.id != excluding)
         return self.session.execute(stmt).scalars().first()
+
+    @staticmethod
+    def _with_role(stmt: Select[Any], role: RoleFilter) -> Select[Any]:
+        """Narrow a select of `Organization` to one role; `any` leaves it as it is."""
+        return stmt if role == "any" else stmt.where(Organization.roles.contains([role]))
 
     def list(self, query: OrganizationListQuery) -> list[Organization]:
         stmt = select(Organization).where(Organization.deleted_at.is_(None))
@@ -116,6 +150,7 @@ class OrganizationRepository:
                     Organization.tax_code.ilike(like, escape="\\"),
                 )
             )
+        stmt = self._with_role(stmt, query.role)
         if query.status:
             stmt = stmt.where(Organization.status == query.status)
         if query.legal_entity_id:

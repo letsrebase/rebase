@@ -1,4 +1,5 @@
-"""The two commands an operator runs by hand: `owner-backfill` and `vapid-keys`."""
+"""The commands an operator runs by hand: `owner-backfill`, `duplicate-organizations` and
+`vapid-keys`."""
 
 import sys
 from collections.abc import Sequence
@@ -8,6 +9,7 @@ from pigrocrm.core.cli.spaces_walk import read_spaces, report_unreadable, space_
 from pigrocrm.core.config import Settings
 from pigrocrm.core.db import session_factory
 from pigrocrm.core.db.scope import bind_scope
+from pigrocrm.core.organizations.duplicates import duplicate_vat_groups
 from pigrocrm.core.owner_backfill import apply_owner_backfill, plan_owner_backfill
 from pigrocrm.core.reminders.push import generate_vapid_keys
 
@@ -62,6 +64,42 @@ def owner_backfill(
         )
     print(f"{slug}: {'written ' + str(written) if apply else 'dry run, nothing written'}")
     return 0
+
+
+def duplicate_organizations(settings: Settings, *, slug: str) -> int:
+    """`pigrocrm duplicate-organizations --slug <space>`: the live organizations of one space
+    that share a country and a VAT number (REB-970, design 2026-11-09 suppliers § 1), as the
+    report a person works from before the unique index can be built. One line per row,
+    grouped, oldest first. Reads only: nothing is merged, archived or corrected here, since
+    which row is the real one is a person's call.
+
+    Exit 0 when the space has none, 2 when it has some (so a deploy script can stop on it),
+    1 when the space is not in the registry or cannot be read. A failure prints the
+    exception's type and never its text, which may carry the database URL.
+    """
+    walk = read_spaces(settings, slug=slug)
+    if report_unreadable(walk):
+        return 1
+    if not walk.targets:
+        print(f"{slug}: not in the registry", file=sys.stderr)
+        return 1
+    target = walk.targets[0]
+    try:
+        with space_engine(target.url) as engine, session_factory(engine)() as space:
+            bind_scope(space, Actor.system())
+            groups = duplicate_vat_groups(space)
+    except Exception as exc:  # noqa: BLE001 - one line, never a traceback
+        print(f"{slug}: skipped ({type(exc).__name__})", file=sys.stderr)
+        return 1
+    for group in groups:
+        print(f"{slug}: {group.country} {group.vat_key}: {len(group.organizations)} rows")
+        for row in group.organizations:
+            print(
+                f"{slug}:   {row.id} «{row.legal_name}» as {row.vat_number}, "
+                f"roles {','.join(row.roles)}, created {row.created_at:%Y-%m-%d}"
+            )
+    print(f"{slug}: {len(groups)} VAT numbers held by more than one organization")
+    return 2 if groups else 0
 
 
 def vapid_keys() -> int:

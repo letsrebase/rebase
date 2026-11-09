@@ -115,6 +115,7 @@ _READS: dict[Method, str] = {
     ("GmailSyncService", "discover"): "asks Gmail, writes nothing",
     ("GmailSyncService", "suggest_organizations"): "asks Gmail, writes nothing",
     ("InvitationService", "list"): "reads the invitations",
+    ("OrganizationService", "duplicates"): "reads the registry; the role check only gates who may",
     ("DocumentTemplating", "render_to_pdf"): (
         "commits only to release the read transaction before the Typst compile; writes nothing"
     ),

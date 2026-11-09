@@ -221,6 +221,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/organizations/duplicates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Duplicates
+         * @description The organizations that share a country and a VAT number, in groups. An administrator
+         *     of the whole space reads it, and resolves each group by archiving a row or correcting a
+         *     number.
+         */
+        get: operations["list_duplicates_api_organizations_duplicates_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/organizations/{organization_id}": {
         parameters: {
             query?: never;
@@ -8119,6 +8141,46 @@ export interface components {
             not_after: string | null;
         };
         /**
+         * DuplicateGroupRead
+         * @description Live organizations of one country that share a VAT number once it is normalised
+         *     (upper case, letters and digits only).
+         */
+        DuplicateGroupRead: {
+            /** Country */
+            country: string;
+            /** Vat Key */
+            vat_key: string;
+            /** Organizations */
+            organizations: components["schemas"]["DuplicateOrganizationRead"][];
+        };
+        /**
+         * DuplicateOrganizationRead
+         * @description One row of a duplicate group: enough to tell which to keep (the oldest is first).
+         */
+        DuplicateOrganizationRead: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Legal Name */
+            legal_name: string;
+            /** Vat Number */
+            vat_number: string;
+            /** Roles */
+            roles: string[];
+            /**
+             * Legal Entity Id
+             * Format: uuid
+             */
+            legal_entity_id: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+        };
+        /**
          * EconomicDashboard
          * @description §5. **No new aggregate exists on this page.** Every figure comes from
          *     `AnalyticsService` or from `InvoiceRepository`.
@@ -10430,6 +10492,43 @@ export interface components {
              * @default false
              */
             payment_end_of_month: boolean;
+            /** Supplier Payment Days */
+            supplier_payment_days?: number | null;
+            /**
+             * Supplier Payment End Of Month
+             * @default false
+             */
+            supplier_payment_end_of_month: boolean;
+            /**
+             * Roles
+             * @description What the organization is to us: any of customer, supplier, freelancer, at least one (a company that is both customer and supplier is one organization with both roles). On an update the list replaces the stored one.
+             */
+            roles?: string[];
+            /**
+             * Supplier Kind
+             * @description What a payment to it involves, one of company, professional, flat_rate, occasional, foreign: professional and occasional are withheld at 20% when the buyer is a withholding agent, flat_rate is not withheld, foreign also needs supplier_area and supplier_supplies.
+             */
+            supplier_kind?: string | null;
+            /**
+             * Supplier Area
+             * @description Where a foreign supplier is, one of eu, extra_eu.
+             */
+            supplier_area?: string | null;
+            /**
+             * Supplier Supplies
+             * @description What a foreign supplier supplies, one of goods, services.
+             */
+            supplier_supplies?: string | null;
+            /**
+             * Customer Kind
+             * @description What a sale to it involves, one of business, consumer, public_body. For a public_body, sdi_code is its 6-character IPA code.
+             */
+            customer_kind?: string | null;
+            /**
+             * Is Withholding Agent
+             * @default false
+             */
+            is_withholding_agent: boolean;
             /**
              * Custom Fields
              * @default {}
@@ -10506,6 +10605,22 @@ export interface components {
             payment_days: number | null;
             /** Payment End Of Month */
             payment_end_of_month: boolean;
+            /** Supplier Payment Days */
+            supplier_payment_days: number | null;
+            /** Supplier Payment End Of Month */
+            supplier_payment_end_of_month: boolean;
+            /** Roles */
+            roles: string[];
+            /** Supplier Kind */
+            supplier_kind: string | null;
+            /** Supplier Area */
+            supplier_area: string | null;
+            /** Supplier Supplies */
+            supplier_supplies: string | null;
+            /** Customer Kind */
+            customer_kind: string | null;
+            /** Is Withholding Agent */
+            is_withholding_agent: boolean;
             /** Custom Fields */
             custom_fields: {
                 [key: string]: unknown;
@@ -10560,6 +10675,37 @@ export interface components {
             payment_days?: number | null;
             /** Payment End Of Month */
             payment_end_of_month?: boolean | null;
+            /** Supplier Payment Days */
+            supplier_payment_days?: number | null;
+            /** Supplier Payment End Of Month */
+            supplier_payment_end_of_month?: boolean | null;
+            /**
+             * Roles
+             * @description What the organization is to us: any of customer, supplier, freelancer, at least one (a company that is both customer and supplier is one organization with both roles). On an update the list replaces the stored one.
+             */
+            roles?: string[] | null;
+            /**
+             * Supplier Kind
+             * @description What a payment to it involves, one of company, professional, flat_rate, occasional, foreign: professional and occasional are withheld at 20% when the buyer is a withholding agent, flat_rate is not withheld, foreign also needs supplier_area and supplier_supplies.
+             */
+            supplier_kind?: string | null;
+            /**
+             * Supplier Area
+             * @description Where a foreign supplier is, one of eu, extra_eu.
+             */
+            supplier_area?: string | null;
+            /**
+             * Supplier Supplies
+             * @description What a foreign supplier supplies, one of goods, services.
+             */
+            supplier_supplies?: string | null;
+            /**
+             * Customer Kind
+             * @description What a sale to it involves, one of business, consumer, public_body. For a public_body, sdi_code is its 6-character IPA code.
+             */
+            customer_kind?: string | null;
+            /** Is Withholding Agent */
+            is_withholding_agent?: boolean | null;
             /** Custom Fields */
             custom_fields?: {
                 [key: string]: unknown;
@@ -15291,6 +15437,8 @@ export interface operations {
                 sort?: string | null;
                 dir?: "asc" | "desc";
                 status?: string | null;
+                /** @description One role (customer, supplier, freelancer), or `any` for the registry across roles. Customers only when omitted. */
+                role?: "customer" | "supplier" | "freelancer" | "any";
                 /** @description Only this legal entity's rows; omitted, all of them */
                 legal_entity_id?: string | null;
             };
@@ -15672,6 +15820,123 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PersonRead"];
+                };
+            };
+            /** @description Permission denied: the actor does not have the required role. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The requested resource does not exist or was removed. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The request conflicts with the current state of the resource. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_duplicates_api_organizations_duplicates_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DuplicateGroupRead"][];
                 };
             };
             /** @description Permission denied: the actor does not have the required role. */

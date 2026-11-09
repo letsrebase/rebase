@@ -24,7 +24,7 @@ from sqlalchemy.orm import Session
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.documents.schemas import DocumentCreate
 from pigrocrm.core.documents.service import DocumentService
-from pigrocrm.core.errors import AgentForbidden, PermissionDenied, ValidationFailed
+from pigrocrm.core.errors import AgentForbidden, Conflict, PermissionDenied, ValidationFailed
 from pigrocrm.core.fiscal.models import FiscalProfile
 from pigrocrm.core.fiscal.repository import FiscalProfileRepository
 from pigrocrm.core.invoices.import_confirm import map_parsed_invoice_to_import
@@ -432,8 +432,9 @@ def test_the_automatic_match_never_attaches_to_customer_of_another_legal_entity(
     db_session: Session, local_storage: LocalFileStorage
 ) -> None:
     """The same tax id on file under another legal entity is not this invoice's customer:
-    the review does not propose it, and a confirmation that creates the counterparty
-    makes one on the legal entity the file landed on instead of reusing the other's."""
+    the review does not propose it. And since one company is one organization (REB-970), a
+    confirmation that would create the counterparty a second time is refused with the
+    existing one named, instead of making a duplicate of another legal entity's customer."""
     service = _svc(db_session, local_storage)
     other = LegalEntity(
         legal_name="Acme Ltd", vat_number="IE6388047V", country="IE", is_default=False
@@ -449,14 +450,11 @@ def test_the_automatic_match_never_attaches_to_customer_of_another_legal_entity(
     assert reviewed.outcome == "needs_customer_confirmation"
     assert reviewed.matched_customer_id is None
 
-    [row] = service.confirm_import(document_id, ADMIN, create_organization=True)
-
-    assert row.outcome == "imported"
-    assert row.invoice is not None
-    assert row.invoice.customer_id != foreign.id
-    created = db_session.get(Organization, row.invoice.customer_id)
-    assert created is not None
-    assert created.legal_entity_id == row.legal_entity_id
+    before = _invoice_count(db_session)
+    with pytest.raises(Conflict) as refused:
+        service.confirm_import(document_id, ADMIN, create_organization=True)
+    assert refused.value.details["existing_id"] == str(foreign.id)
+    assert _invoice_count(db_session) == before
 
 
 def test_create_customer_makes_exactly_one_new_customer_for_a_brand_new_counterparty_batch(
