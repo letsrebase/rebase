@@ -154,7 +154,7 @@ with it. The solo profile shows only money in and its own taxes; the company pro
 both directions and the projected balance.
 
 This section fixes the concept. The tables are designed in C4, which is also where the
-existing receivables (`invoices.due_date`, `payment_state`) are folded in.
+existing receivables (`invoices.due_date`, `payment_status`) are folded in.
 
 ### A4. Proposals and certain data
 
@@ -214,6 +214,10 @@ The register as of today, from the conversation:
 | Exempt thresholds for travel allowances, traceable payment of reimbursements | to verify | |
 | ACI tables for mileage | to verify | |
 | CBI Globe as the Italian access to banking APIs | to verify | |
+| Qonto and Revolut Business CSV export formats | to verify | |
+| Banco BPM business banking export format (it may be «YouBusiness Web», not «YouWeb») | to verify | |
+| CAMT.053 availability per bank | to verify | |
+| ECB reference rate as the source for converting balances | to verify | |
 
 ### A6. Not the books
 
