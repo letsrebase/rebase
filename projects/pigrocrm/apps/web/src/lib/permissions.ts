@@ -238,6 +238,7 @@ export const SETTINGS_TAB_MIN_ROLE: Record<
   profile: null,
   notifications: null,
   space: 'admin',
+  modules: 'admin',
   fields: 'admin',
   pipeline: 'admin',
   templates: 'admin',
