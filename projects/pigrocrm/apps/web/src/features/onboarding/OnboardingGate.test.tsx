@@ -37,37 +37,37 @@ beforeEach(() => {
 
 describe('OnboardingGate', () => {
   it('covers the shell for an administrator while the onboarding is pending', () => {
-    renderGate(spaceModules([], 'pending'))
+    renderGate(spaceModules([], null, 'pending'))
     expect(screen.getByText('onboarding')).toBeInTheDocument()
     expect(screen.queryByText('shell')).not.toBeInTheDocument()
   })
 
   it.each(['skipped', 'done'] as const)('lets the shell through when it is %s', (state) => {
-    renderGate(spaceModules([], state))
+    renderGate(spaceModules([], null, state))
     expect(screen.getByText('shell')).toBeInTheDocument()
   })
 
   it('opens the screen again on /app/onboarding after a «Decido dopo», and only then', () => {
     pathname = '/app/onboarding/'
-    renderGate(spaceModules([], 'skipped'))
+    renderGate(spaceModules([], null, 'skipped'))
     expect(screen.getByText('onboarding')).toBeInTheDocument()
   })
 
   it('does not reopen a finished onboarding from the address bar', () => {
     pathname = '/app/onboarding'
-    renderGate(spaceModules([], 'done'))
+    renderGate(spaceModules([], null, 'done'))
     expect(screen.getByText('shell')).toBeInTheDocument()
   })
 
   it('never shows it to a member who is not an administrator', () => {
     user = { id: 'u-2', role: 'collaborator' }
-    renderGate(spaceModules([], 'pending'))
+    renderGate(spaceModules([], null, 'pending'))
     expect(screen.getByText('shell')).toBeInTheDocument()
   })
 
   it('never shows it to an administrator scoped to some aziende: the server would refuse every answer', () => {
     user = { id: 'u-3', role: 'admin', legal_entities: ['le-1'] }
-    renderGate(spaceModules([], 'pending'))
+    renderGate(spaceModules([], null, 'pending'))
     expect(screen.getByText('shell')).toBeInTheDocument()
   })
 

@@ -165,7 +165,7 @@ describe('with the onboarding skipped', () => {
   function answerOnboarding(onboarding: 'pending' | 'skipped' | 'done') {
     vi.mocked(api.GET).mockImplementation(((path: string) =>
       path === '/api/settings/modules'
-        ? ok(spaceModules([], onboarding))
+        ? ok(spaceModules([], null, onboarding))
         : ok({ items: [], next_cursor: null })) as never)
   }
 
