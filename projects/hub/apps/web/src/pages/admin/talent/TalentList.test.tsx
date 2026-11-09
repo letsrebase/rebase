@@ -38,6 +38,30 @@ describe('the Talenti list (REB-282/283)', () => {
     expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('2')
   })
 
+  it('shows a row\'s role, level, years, place and first skills from the anonymous card (REB-823)', async () => {
+    const llm = {
+      ...CARD_TALENT,
+      role: 'AI engineer',
+      seniority: 'senior',
+      experience_years: 9,
+      location: 'Milano',
+      skills: ['LLM', 'Python', 'RAG', 'Docker', 'AWS', 'Terraform'],
+    }
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      answer(200, { total: 2, items: [llm, LEAD_TALENT], by_status: { new: 1, lead: 1 } }),
+    )
+    mount('/admin/talent')
+
+    const ada = (await screen.findByText('ada@studio.it')).closest('tr')!
+    expect(cellUnder(ada, 'Profilo')).toHaveTextContent('AI engineer')
+    expect(cellUnder(ada, 'Profilo')).toHaveTextContent('Senior · 9 anni · Milano')
+    expect(cellUnder(ada, 'Competenze')).toHaveTextContent('LLM, Python, RAG, Docker, AWS')
+    expect(cellUnder(ada, 'Competenze')).not.toHaveTextContent('Terraform')
+    const bob = screen.getByText('bob@example.org').closest('tr')!
+    expect(cellUnder(bob, 'Profilo')).toHaveTextContent('—')
+    expect(cellUnder(bob, 'Competenze')).toHaveTextContent('—')
+  })
+
   it('reads the LinkedIn cell as «—» for anything other than an http(s) address (REB-558)', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       answer(200, {
@@ -134,6 +158,36 @@ describe('every filter and the search box live in the URL, both ways (REB-286)',
       expect(urls.some((url) => url.includes('origin_page=home'))).toBe(true)
       expect(urls.some((url) => /[?&]origin=/.test(url))).toBe(false)
     })
+  })
+
+  it('sends the senior LLM profiles under 400 a day, cheapest first, as the API takes them (REB-823)', async () => {
+    const fetch = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(answer(200, { total: 0, items: [], by_status: {} }))
+    mount('/admin/talent?skills=LLM%2C%20Python&seniority=senior&max_rate=400&min_years=5&sort=rate_asc')
+    await screen.findByRole('heading', { name: 'Talenti' })
+
+    await waitFor(() => {
+      const url = new URL(
+        String(fetch.mock.calls.map(([input]) => input).find((input) => String(input).includes('/api/hub/talent'))),
+        'http://test',
+      )
+      expect(url.searchParams.getAll('skills')).toEqual(['LLM', 'Python'])
+      expect(url.searchParams.getAll('seniority')).toEqual(['senior'])
+      expect(url.searchParams.get('max_rate')).toBe('400.00')
+      expect(url.searchParams.get('min_years')).toBe('5')
+      expect(url.searchParams.get('sort')).toBe('rate_asc')
+    })
+    expect(screen.getByLabelText('Competenze (separate da virgole)')).toHaveValue('LLM, Python')
+  })
+
+  it('does not send years it cannot read (REB-823)', async () => {
+    const fetch = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(answer(200, { total: 0, items: [], by_status: {} }))
+    mount('/admin/talent?min_years=molti')
+    await screen.findByRole('heading', { name: 'Talenti' })
+    expect(fetch.mock.calls.every(([url]) => !String(url).includes('min_years'))).toBe(true)
   })
 
   it('keeps a purely numeric filter value on a fresh load, not just an in-app navigation', async () => {

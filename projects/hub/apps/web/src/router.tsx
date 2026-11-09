@@ -354,6 +354,15 @@ const adminTalent = createRoute({
           : undefined,
     created_from: strParam(search.created_from),
     created_to: strParam(search.created_to),
+    skills: strParam(search.skills),
+    location: strParam(search.location),
+    seniority: strParam(search.seniority),
+    min_years: strParam(search.min_years),
+    max_years: strParam(search.max_years),
+    industries: strParam(search.industries),
+    languages: strParam(search.languages),
+    card: strParam(search.card),
+    sort: strParam(search.sort),
   }),
 })
 // Every filter on the old list has to survive the redirect too, or a saved/shared
