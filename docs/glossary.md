@@ -73,6 +73,11 @@ This file is the single mapping from the Italian word to the English identifier.
 | scadenza | due_date | A deadline; invoice `data_scadenza` is also `due_date` |
 | scadenza (an amount owed or to be received) | due_item | One amount that falls due, in or out, with its counterparty, state and rule (`due_items`); its date is `due_date` |
 | pagamento registrato su una scadenza | settlement | A payment against a due item, possibly partial; reversed, never deleted (`due_item_settlements`) |
+| dipendente | employee | A staff member on a contract (`staff_members.kind`): collective agreement, level, gross annual pay, monthly payments, part-time share, the employer's INPS and INAIL rates |
+| amministratore (con compenso) | director | A staff member paid a fee, on a company only (`staff_members.kind`): annual fee, how it is paid, TFM, INPS split |
+| persone dell'azienda | staff | Employees and directors of a legal entity (`staff_members`, module `staff`); their pay is admin-only |
+| retribuzione annua lorda (RAL) | gross_annual_pay | An employee's gross pay for a full year, before the part-time share |
+| giorno di paga | pay_day | The day of the month net pay leaves, with `pay_month_offset` 0 (month worked) or 1 (the month after); one per legal entity, overridden per staff member |
 | promemoria | reminder | A reminder raised by the CRM (also the UI "Avvisi") |
 | sollecito | payment_reminder | An overdue-invoice dunning mail |
 | registro | register | The invoice register; `buchi` are `gaps` |

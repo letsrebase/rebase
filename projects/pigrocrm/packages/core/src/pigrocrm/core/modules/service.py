@@ -9,13 +9,14 @@ change what the whole team sees. Neither touches a record: off hides, it never d
 
 from collections.abc import Collection
 
-from sqlalchemy import func, select
+from sqlalchemy import ColumnElement, func, select, true
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.activities.service import ActivityService
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.config import Settings
 from pigrocrm.core.contracts.models import Contract
+from pigrocrm.core.db import SoftDeleteMixin
 from pigrocrm.core.deals.models import Deal
 from pigrocrm.core.errors import Conflict, ValidationFailed
 from pigrocrm.core.modules.registry import (
@@ -41,6 +42,7 @@ from pigrocrm.core.modules.schemas import (
     SpaceProfileSet,
 )
 from pigrocrm.core.space_settings.service import ENTITY, SETTINGS_ID, SpaceSettingsService
+from pigrocrm.core.staff.models import StaffMember
 from pigrocrm.core.timetracking.models import Cost, TimeEntry
 
 SET_PROFILE = "set_space_profile"
@@ -49,13 +51,27 @@ SKIP_ONBOARDING = "skip_space_onboarding"
 
 # What each module holds that a person would miss: the live rows of its own tables. `taxes`
 # keeps nothing of its own (the estimate is computed from invoices, and the fiscal profile
-# stays in the core), so it never asks for a confirmation.
-_RECORDS: dict[str, type[Deal] | type[Contract] | type[TimeEntry] | type[Cost]] = {
+# stays in the core), so it never asks for a confirmation. `staff` counts every person
+# recorded, an ended one included: nothing there is deleted.
+_RECORDS: dict[
+    str, type[Deal] | type[Contract] | type[TimeEntry] | type[Cost] | type[StaffMember]
+] = {
     "deals": Deal,
     "contracts": Contract,
     "time": TimeEntry,
     "costs": Cost,
+    "staff": StaffMember,
 }
+
+
+def _live(
+    model: type[Deal] | type[Contract] | type[TimeEntry] | type[Cost] | type[StaffMember],
+) -> ColumnElement[bool]:
+    """The rows a person would miss: the ones not deleted, and every row of a table that
+    deletes nothing."""
+    if issubclass(model, SoftDeleteMixin):
+        return model.deleted_at.is_(None)
+    return true()
 
 
 def _bit(value: bool) -> str:
@@ -75,11 +91,7 @@ class SpaceModulesService:
         shell's read of the modules, which every page asks, so it is one round trip and
         not one per table."""
         columns = [
-            select(func.count())
-            .select_from(model)
-            .where(model.deleted_at.is_(None))
-            .scalar_subquery()
-            .label(key)
+            select(func.count()).select_from(model).where(_live(model)).scalar_subquery().label(key)
             for key, model in _RECORDS.items()
         ]
         row = self.session.execute(select(*columns)).one()

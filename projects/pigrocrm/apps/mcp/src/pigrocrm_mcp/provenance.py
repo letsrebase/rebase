@@ -97,6 +97,11 @@ FREE_TEXT_TOOLS: frozenset[str] = frozenset(
         "get_due_item",
         "settle_due_item",
         "reverse_settlement",
+        # Staff: names and the collective agreement, typed by whoever recorded them.
+        "create_staff_member",
+        "update_staff_member",
+        "get_staff_member",
+        "list_staff",
         # Time, costs and to-dos: descriptions and notes.
         "log_time",
         "update_time_entry",

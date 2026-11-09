@@ -70,7 +70,14 @@ def test_a_space_with_no_profile_has_every_module_on(logged_in: TestClient) -> N
     body = logged_in.get("/api/settings/modules").json()
 
     assert body["profile"] is None
-    assert [m["key"] for m in body["modules"]] == ["deals", "contracts", "time", "costs", "taxes"]
+    assert [m["key"] for m in body["modules"]] == [
+        "deals",
+        "contracts",
+        "time",
+        "costs",
+        "taxes",
+        "staff",
+    ]
     assert all(m["enabled"] and m["stored"] is None for m in body["modules"])
 
 
@@ -319,6 +326,7 @@ def test_the_profile_answers_the_diff_and_applies_nothing_without_confirmation(
     assert {c["module"]: (c["was"], c["becomes"]) for c in body["changes"]} == {
         "deals": (True, False),
         "time": (True, False),
+        "staff": (True, False),
     }
     assert next(c for c in body["changes"] if c["module"] == "deals")["records"] == 1
     after = logged_in.get("/api/settings/modules").json()
@@ -344,6 +352,7 @@ def test_confirming_a_profile_writes_a_row_for_every_module_and_touches_no_recor
         "time": False,
         "costs": True,
         "taxes": True,
+        "staff": False,
     }
     assert {k: m["enabled"] for k, m in modules.items()} == {
         "deals": False,
@@ -351,6 +360,7 @@ def test_confirming_a_profile_writes_a_row_for_every_module_and_touches_no_recor
         "time": False,
         "costs": True,
         "taxes": True,
+        "staff": False,
     }
     # Switched on again by the admin, the deal is exactly as it was.
     assert _switch(logged_in, on=["deals"]).status_code == 200

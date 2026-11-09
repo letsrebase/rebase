@@ -55,6 +55,7 @@ from pigrocrm_api.routers import (
     slack,
     space_modules,
     space_settings,
+    staff,
     templates,
     tenants,
     time_entries,
@@ -172,6 +173,8 @@ def create_app() -> FastAPI:
         notes,
         # REB-967: the amounts that fall due and what settles them, core in every space.
         due_items,
+        # REB-977: employees and directors with their pay, behind the `staff` module.
+        staff,
     ):
         app.include_router(module.router)
 

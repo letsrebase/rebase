@@ -33,6 +33,7 @@ export const MODULE_LABELS: Record<ModuleKey, string> = {
   time: 'Ore',
   costs: 'Costi',
   taxes: 'Tasse',
+  staff: "Persone dell'azienda",
 }
 
 /**

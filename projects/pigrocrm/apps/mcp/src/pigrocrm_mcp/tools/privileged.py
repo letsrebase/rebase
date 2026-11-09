@@ -44,10 +44,11 @@ decoration: it is the only warning an agent reads.
 from collections.abc import Callable
 from dataclasses import asdict
 from datetime import date
-from typing import Any
+from typing import Any, cast
 from uuid import UUID
 
 from mcp.server import MCPServer
+from pydantic import TypeAdapter
 
 from pigrocrm.core.analytics.schemas import BindTimeRequest
 from pigrocrm.core.analytics.service import AnalyticsService
@@ -69,6 +70,13 @@ from pigrocrm.core.invoices.service import InvoiceService
 from pigrocrm.core.modules import ModuleKey, Profile
 from pigrocrm.core.modules.schemas import SpaceModulesSet, SpaceProfileSet
 from pigrocrm.core.modules.service import SpaceModulesService
+from pigrocrm.core.staff.schemas import (
+    Kind,
+    StaffListQuery,
+    StaffMemberCreate,
+    StaffMemberUpdate,
+)
+from pigrocrm.core.staff.service import StaffService
 from pigrocrm.core.timetracking.billing import TimeBilling
 from pigrocrm.core.timetracking.categories import CostCategoryService
 from pigrocrm.core.timetracking.locks import PeriodLockService
@@ -84,8 +92,8 @@ from pigrocrm.core.timetracking.service import TimeEntryService
 from pigrocrm_mcp.annotations import ADDITIVE, DESTRUCTIVE, READ_ONLY
 from pigrocrm_mcp.context import McpContext
 from pigrocrm_mcp.provenance import marked_items
-from pigrocrm_mcp.tools.changes import refuse_nothing_given
-from pigrocrm_mcp.tools.params import parse_legal_entity_id
+from pigrocrm_mcp.tools.changes import refuse_empty, refuse_nothing_given, report
+from pigrocrm_mcp.tools.params import BoundedLimit, StaffFields, parse_legal_entity_id
 
 
 def _day(value: str | None) -> date | None:
@@ -548,6 +556,80 @@ def register(
                 year, context.actor, legal_entity_id=parse_legal_entity_id(legal_entity_id)
             )
             .model_dump(mode="json")
+        )
+
+    # ---- staff and directors, with their pay ----------------------------------------
+
+    @mcp.tool(annotations=ADDITIVE)
+    @guard
+    def create_staff_member(
+        legal_entity_id: str,
+        kind: Kind,
+        name: str,
+        start_date: str,
+        details: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Records an employee or a director with their pay, admin only. `details` takes the
+        fields of `update_staff_member`: an employee needs `gross_annual_pay` and
+        `monthly_payments` (13 or 14), a director `annual_fee`. Directors only on a company,
+        no staff abroad.
+        """
+        data = TypeAdapter(StaffMemberCreate).validate_python(
+            {
+                **(details or {}),
+                "legal_entity_id": parse_legal_entity_id(legal_entity_id),
+                "kind": kind,
+                "name": name,
+                "start_date": start_date,
+            }
+        )
+        return (
+            StaffService(context.session)
+            .create_staff_member(data, context.actor)
+            .model_dump(mode="json")
+        )
+
+    @mcp.tool(annotations=DESTRUCTIVE)
+    @guard
+    def update_staff_member(staff_member_id: UUID, changes: StaffFields) -> dict[str, Any]:
+        """Changes a staff member, admin only. `null` empties an optional field;
+        `pay_day` and `pay_month_offset` go together.
+        """
+        service = StaffService(context.session)
+        data = StaffMemberUpdate(**changes)
+        refuse_empty(changes)
+        before = service.get_staff_member(staff_member_id, context.actor)
+        return report(before, service.update_staff_member(staff_member_id, data, context.actor))
+
+    @mcp.tool(annotations=READ_ONLY)
+    @guard
+    def get_staff_member(staff_member_id: UUID) -> dict[str, Any]:
+        """One staff member with pay and pay day, admin only."""
+        return (
+            StaffService(context.session)
+            .get_staff_member(staff_member_id, context.actor)
+            .model_dump(mode="json")
+        )
+
+    @mcp.tool(annotations=READ_ONLY)
+    @guard
+    def list_staff(
+        legal_entity_id: str | None = None,
+        kind: Kind | None = None,
+        include_ended: bool = False,
+        limit: BoundedLimit = 50,
+        cursor: UUID | None = None,
+    ) -> dict[str, Any]:
+        """Staff and directors with their pay, admin only; by default who is in service."""
+        query = StaffListQuery(
+            legal_entity_id=parse_legal_entity_id(legal_entity_id),
+            kind=kind,
+            include_ended=include_ended,
+            limit=cast(int, limit),
+            cursor=cursor,
+        )
+        return (
+            StaffService(context.session).list_staff(query, context.actor).model_dump(mode="json")
         )
 
     # ---- Gmail ---------------------------------------------------------------------

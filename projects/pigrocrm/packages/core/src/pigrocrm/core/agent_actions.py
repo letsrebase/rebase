@@ -207,6 +207,15 @@ FULL_ACCESS_ACTIONS: frozenset[str] = frozenset(
         "settle_outgoing_due_item",
         "reverse_outgoing_settlement",
         "read_fiscal_due_items",
+        # Staff and directors with their pay (spec 2026-11-09, staff, payroll and expenses,
+        # § 4): the most personal data the product holds. Reading it and writing it are an
+        # administrator's act and, for an agent, a `full_access` token's, nothing less; the
+        # four are the design's tool table. The legal entity's pay day has no tool and is
+        # person-only below.
+        "create_staff_member",
+        "update_staff_member",
+        "get_staff_member",
+        "list_staff",
     }
 )
 
@@ -269,6 +278,9 @@ PERSON_ONLY_ACTIONS: frozenset[str] = frozenset(
         "deactivate_legal_entity",
         "update_azienda_assets",
         "update_document",
+        # The day net pay leaves, for every staff member of a legal entity without an
+        # override of their own (staff design § 4: its tools are the four of `FULL_ACCESS`).
+        "set_payroll_pay_day",
         # Reads of the configuration's own history, and the register's PDF (it archives a
         # document).
         "read_user_timeline",
@@ -308,6 +320,11 @@ ACTION_LABELS: dict[str, str] = {
     "share_organization": "condividere un'anagrafica fra le aziende",
     "list_duplicate_organizations": "elencare le anagrafiche con la stessa partita IVA",
     "skip_space_onboarding": "rimandare le domande su come lavora lo spazio",
+    "create_staff_member": "registrare una persona dell'azienda con il suo compenso",
+    "update_staff_member": "modificare una persona dell'azienda o il suo compenso",
+    "get_staff_member": "leggere il compenso di una persona dell'azienda",
+    "list_staff": "leggere l'elenco delle persone dell'azienda e i loro compensi",
+    "set_payroll_pay_day": "impostare il giorno di paga dell'azienda",
 }
 
 

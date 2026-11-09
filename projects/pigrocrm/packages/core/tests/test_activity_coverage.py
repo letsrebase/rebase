@@ -126,6 +126,9 @@ _READS: dict[Method, str] = {
     ("SlackService", "channels"): "asks Slack, writes nothing",
     ("SlackService", "health"): "reads the workspace and the matches",
     ("SpaceSettingsService", "read"): "reads the settings",
+    ("StaffService", "get_staff_member"): "reads a member; the role check only keeps pay private",
+    ("StaffService", "list_staff"): "reads the members; the role check only keeps pay private",
+    ("StaffService", "get_payroll_pay_day"): "reads the pay day; the role check only gates it",
     ("UserService", "list"): "reads the members",
 }
 

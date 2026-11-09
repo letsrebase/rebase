@@ -105,6 +105,11 @@ TOOL_MODULES: Mapping[str, tuple[ModuleKey, ...]] = {
     # The raw figures are `taxes` alone; `deal_id` and `contract_id` are references into
     # their modules, refused by `ID_REFERENCES` below only when the call carries one.
     "simulate_ceiling": ("taxes",),
+    # staff: employees and directors with their pay.
+    "create_staff_member": ("staff",),
+    "update_staff_member": ("staff",),
+    "get_staff_member": ("staff",),
+    "list_staff": ("staff",),
     # Across modules: all of them, or the tool is not there.
     "convert_deal_to_contract": ("deals", "contracts"),
     "preview_deal_contract": ("deals", "contracts"),

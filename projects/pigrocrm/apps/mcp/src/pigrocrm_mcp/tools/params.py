@@ -31,6 +31,7 @@ from pigrocrm.core.errors import ValidationFailed
 from pigrocrm.core.organizations.schemas import OrganizationUpdate
 from pigrocrm.core.people.schemas import PersonUpdate
 from pigrocrm.core.search.schemas import PER_CLASS_LIMIT
+from pigrocrm.core.staff.schemas import StaffMemberUpdate
 from pigrocrm.core.tasks.schemas import TaskUpdate
 from pigrocrm.core.timetracking.schemas import YEAR_MAX, YEAR_MIN, CostUpdate, TimeEntryUpdate
 
@@ -118,6 +119,38 @@ ContractExpenseChanges = Annotated[
 TimeEntryChanges = Annotated[dict[str, Any], WithJsonSchema(TimeEntryUpdate.model_json_schema())]
 CostChanges = Annotated[dict[str, Any], WithJsonSchema(CostUpdate.model_json_schema())]
 TaskChanges = Annotated[dict[str, Any], WithJsonSchema(TaskUpdate.model_json_schema())]
+
+
+def _compact(node: Any) -> Any:
+    """A model's JSON schema reduced to what an agent needs to name a field and give it a
+    value: the type, its format and its allowed values. Titles, defaults, text and bounds go
+    (the service refuses a bound with a sentence), and so does the `null` arm of an optional;
+    a number that may also be written as a string is a number."""
+    if isinstance(node, dict):
+        kept = {
+            key: _compact(value)
+            for key, value in node.items()
+            if key in {"type", "format", "enum", "anyOf", "additionalProperties"}
+        }
+        if "properties" in node:
+            # The keys here are field names, not schema keywords: none is filtered.
+            kept["properties"] = {name: _compact(sub) for name, sub in node["properties"].items()}
+        arms = kept.get("anyOf")
+        if arms is not None:
+            arms = [arm for arm in arms if arm != {"type": "null"}]
+            kept.pop("anyOf")
+            kept.update(arms[0])
+        return kept
+    if isinstance(node, list):
+        return [_compact(item) for item in node]
+    return node
+
+
+# A staff member's own fields: the update model's names and types, compacted, because the tool
+# surface has a byte budget and pay has many fields (`test_mcp_tool_annotations.py`).
+StaffFields = Annotated[
+    dict[str, Any], WithJsonSchema(_compact(StaffMemberUpdate.model_json_schema()))
+]
 
 # A date: a `str | None` at runtime, `format: date` in the listing.
 IsoDateStr = Annotated[

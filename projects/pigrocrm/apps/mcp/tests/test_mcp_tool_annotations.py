@@ -64,6 +64,9 @@ SURFACES: dict[str, dict[str, Any]] = {
 DEFAULT_BUDGET_BYTES = 99_400
 # REB-957: 111.9 KB, up from 111.6 KB, for `skip_space_onboarding` (a full-access
 # administrator's), measured at 111,786 bytes; `describe_space`'s `onboarding` fits the default.
+# REB-977: 114.7 KB, up from 111.9 KB, for `create_staff_member`, `update_staff_member`,
+# `get_staff_member` and `list_staff` (a full-access administrator's, 2.8 KB): pay has a dozen
+# fields, and `update_staff_member` lists them by name and type, which is how an agent learns them.
 FULL_ACCESS_BUDGET_BYTES = 113_400
 
 # A name starting with one of these reads. The tools that read without such a name are
