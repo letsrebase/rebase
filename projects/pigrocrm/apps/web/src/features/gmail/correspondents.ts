@@ -22,12 +22,12 @@ export const correspondentKeys = {
  * is a sentence to show (no domain on the customer, a lapsed consent) rather than a
  * glitch to hide.
  */
-export function useCustomerCorrespondents(customerId: string, enabled: boolean) {
+export function useOrganizationCorrespondents(customerId: string, enabled: boolean) {
   return useQuery({
     queryKey: correspondentKeys.customer(customerId),
     queryFn: () =>
       unwrap(
-        api.GET('/api/gmail/customers/{customer_id}/correspondents', {
+        api.GET('/api/gmail/organizations/{customer_id}/correspondents', {
           params: { path: { customer_id: customerId } },
         }),
       ),
@@ -63,8 +63,8 @@ export function useAddCorrespondent(customerId: string) {
   return useMutation({
     mutationFn: (body: { address: string; name: string }) =>
       unwrap(
-        api.POST('/api/customers/{customer_id}/people-from-mail', {
-          params: { path: { customer_id: customerId } },
+        api.POST('/api/organizations/{organization_id}/people-from-mail', {
+          params: { path: { organization_id: customerId } },
           body,
         }),
       ),

@@ -500,7 +500,7 @@ class InvoiceRead(BaseModel):
     # must not pay per page.
     expected_due_date: dt.date | None = None
     # The customer's `legal_name`, denormalised onto the read shape exactly as
-    # `DealRead.customer_legal_name` is (ORB-98): the name lives on `customers` and
+    # `DealRead.customer_legal_name` is (ORB-98): the name lives on `organizations` and
     # renaming a customer must not need a second write here. `InvoiceService._read`
     # fills it from one batched lookup per page (`InvoiceRepository.customer_names`),
     # which is why the default is `None` -- a bare `model_validate(invoice)` reads an
@@ -573,7 +573,7 @@ class InvoiceForExport(BaseModel):
     """Everything `InvoicePaExporter` reads, and nothing else.
 
     A distinct type rather than `InvoiceRead` plus its lines, because the exporter must
-    be provably unable to read `legal_entities`, `customers` or `fiscal_profile`: what
+    be provably unable to read `legal_entities`, `organizations` or `fiscal_profile`: what
     it can see is what was frozen. That is what makes a re-export reproducible and
     what lets the whole generator be tested with no database at all.
     """

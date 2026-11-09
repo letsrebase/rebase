@@ -29,7 +29,7 @@ Postgres matches ordering pathkeys *including* nulls placement, and it does not 
 of an ascending index yields `DESC NULLS FIRST`; asking for `DESC NULLS LAST` therefore
 matches no index at all, and the planner sequentially scans the table and sorts it --
 measured on `postgres:17-alpine` at 50 000 rows, with `ORDER BY ragione_sociale DESC, id
-DESC` over the same rows taking `Index Scan Backward using ix_customers_ragione_sociale_id`.
+DESC` over the same rows taking `Index Scan Backward using ix_organizations_ragione_sociale_id`.
 On a column that cannot be null the two orderings are identical by construction, because
 there are no nulls to place; so `SortSpec.nullable` decides whether `nulls_last()` is
 emitted, and that is the only thing it decides.
@@ -84,7 +84,7 @@ SortKind = Literal["text", "date", "datetime"]
 # guessed -- the brief's 512 was a guess and it was wrong by a factor of four, which the
 # test named after this constant caught.
 #
-# The longest whitelisted sort column is `customers.legal_name`, String(255). The
+# The longest whitelisted sort column is `organizations.legal_name`, String(255). The
 # worst case per character is a control character, which JSON must escape to `\uXXXX`
 # (6 bytes); 255 * 6 = 1530, plus roughly 80 bytes of envelope (`{"i":"<uuid>","k":
 # "<key>","v":""}`) is about 1610 bytes, which base64 expands to about 2148 characters.
@@ -93,7 +93,7 @@ SortKind = Literal["text", "date", "datetime"]
 #
 # A bound below the longest cursor the encoder can *produce* would be worse than no bound
 # at all: it would make the last page of an ordered scan unreachable, and only for
-# customers with long accented names.
+# organizations with long accented names.
 CURSOR_MAX_LENGTH = 4096
 
 _ENTITY = "cursor"

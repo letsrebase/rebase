@@ -17,8 +17,8 @@ from pigrocrm.core.validation import SafeStr
 # Mirror Person's column widths (models.py). Without these, an over-length value
 # sails past Pydantic, reaches flush(), and comes back as a raw sqlalchemy.exc.DataError
 # (StringDataRightTruncation) -- not a subclass of IntegrityError, so no handler catches
-# it, and it poisons the session. The same gap CustomerCreate's own *_MAX_LENGTH
-# constants close on Customer (customers/schemas.py); this project has hit the class of
+# it, and it poisons the session. The same gap OrganizationCreate's own *_MAX_LENGTH
+# constants close on Organization (organizations/schemas.py); this project has hit the class of
 # bug often enough that it is now a standing global constraint, not a one-off fix.
 #
 # `note` is deliberately absent: it is the text of the person's first note, a row of the
@@ -95,7 +95,7 @@ class PersonRead(BaseModel):
     contact_points: list[ContactPointRead]
     customer_id: UUID | None
     # The person's "azienda di riferimento", denormalised onto the read shape: it is not
-    # a column on `people` and never becomes one -- the name lives on `customers` and
+    # a column on `people` and never becomes one -- the name lives on `organizations` and
     # renaming a customer must not need a second write here. `PersonService` fills it
     # from one batched lookup per page (`PersonRepository.customer_names`), which is why
     # the default is `None`: `model_validate(person)` reads a `Person` that has no such
@@ -112,7 +112,7 @@ class PersonRead(BaseModel):
     updated_at: datetime
 
 
-# Residuo R9. Mirrors CUSTOMER_SORTS (customers/schemas.py) -- see there for why three
+# Residuo R9. Mirrors ORGANIZATION_SORTS (organizations/schemas.py) -- see there for why three
 # keys and why `created_at` is the default.
 PERSON_SORTS = SortWhitelist(
     specs=(
@@ -131,13 +131,13 @@ PERSON_SORTS = SortWhitelist(
 
 
 class PersonListQuery(BaseModel):
-    # See CustomerListQuery for why every free-text parameter here is `SafeStr` and why
+    # See OrganizationListQuery for why every free-text parameter here is `SafeStr` and why
     # `cursor` is an opaque bounded string rather than a UUID.
     search: SafeStr | None = None
     customer_id: UUID | None = None
     custom: dict[str, Any] | None = None
     # Upper-bounded so a caller (an MCP agent especially) cannot request an
-    # unbounded page; matches CustomerListQuery.limit exactly.
+    # unbounded page; matches OrganizationListQuery.limit exactly.
     limit: int = Field(default=50, ge=1, le=200)
     cursor: str | None = Field(default=None, max_length=CURSOR_MAX_LENGTH)
     sort: SafeStr | None = None

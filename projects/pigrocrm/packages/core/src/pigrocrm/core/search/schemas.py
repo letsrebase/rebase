@@ -18,12 +18,12 @@ from pigrocrm.core.validation import SafeStr
 
 # Spec §8.3: a trigram index cannot serve a pattern from which no trigram can be
 # extracted, so below three characters the search would be a sequential scan; and a
-# two-character term on 50 000 customers returns thousands of rows, which is not an answer
+# two-character term on 50 000 organizations returns thousands of rows, which is not an answer
 # either. The palette says "continua a scrivere" and issues no request; this bound is the
 # server-side half of the same rule.
 MIN_TERM_LENGTH = 3
 # A term longer than this is not a search, and the column being searched is at most 320
-# characters anyway (`customers.email`).
+# characters anyway (`organizations.email`).
 MAX_TERM_LENGTH = 100
 # Spec §8.5: the palette does not paginate. Five per class plus the real count.
 PER_CLASS_LIMIT = 5
@@ -31,7 +31,7 @@ PER_CLASS_LIMIT = 5
 # with `LIMIT 201`: exact when exactness matters, cheap when it does not, never a lie.
 COUNT_CEILING = 200
 
-SearchEntity = Literal["customer", "person", "deal", "document", "invoice", "task"]
+SearchEntity = Literal["organization", "person", "deal", "document", "invoice", "task"]
 
 
 class SearchQuery(BaseModel):
@@ -39,7 +39,7 @@ class SearchQuery(BaseModel):
 
     term: SafeStr = Field(min_length=MIN_TERM_LENGTH, max_length=MAX_TERM_LENGTH)
     limit: int = Field(default=PER_CLASS_LIMIT, ge=1, le=20)
-    # One legal entity's records (REB-623): customers, deals, documents and invoices by their
+    # One legal entity's records (REB-623): organizations, deals, documents and invoices by their
     # own column, people through their customer. `None` is every legal entity.
     legal_entity_id: UUID | None = None
 

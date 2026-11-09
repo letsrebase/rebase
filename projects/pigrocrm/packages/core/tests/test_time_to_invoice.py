@@ -497,7 +497,7 @@ def test_an_entry_from_another_deal_is_refused(
     budgeted_deal: Callable[..., UUID],
 ) -> None:
     """A selection is checked against the deal it is being invoiced under, not trusted:
-    two deals can belong to two different customers, and an invoice carries one."""
+    two deals can belong to two different organizations, and an invoice carries one."""
     other = budgeted_deal(
         budgeted_hours=None,
         budgeted_value=None,

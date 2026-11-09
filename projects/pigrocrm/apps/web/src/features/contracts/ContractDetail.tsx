@@ -31,7 +31,7 @@ import { RenewalSection } from '@/features/contracts/RenewalSection'
 import { RenewContractButton } from '@/features/contracts/RenewContractDialog'
 import { RenewalChain } from '@/features/contracts/RenewalChain'
 import { useContract, type Contract } from '@/features/contracts/queries'
-import { useCustomer } from '@/features/customers/queries'
+import { useOrganization } from '@/features/organizations/queries'
 import { formatDate } from '@/features/invoices/format'
 import { toProblem } from '@/lib/api'
 import { useCan } from '@/lib/auth'
@@ -69,7 +69,7 @@ export function ContractDetail() {
   const canEdit = useCan('update_contract')
   const [editing, setEditing] = useState(false)
   const contract = useContract(contractId)
-  const customer = useCustomer(contract.data?.customer_id ?? '')
+  const customer = useOrganization(contract.data?.customer_id ?? '')
   const modules = useModules()
 
   if (contract.isLoading) return <Skeleton className="m-8 h-96" />
@@ -114,8 +114,8 @@ export function ContractDetail() {
                   <span className="text-muted-foreground">Cliente</span>
                   <Link
                     className="text-right underline underline-offset-4"
-                    to="/app/customers/$customerId"
-                    params={{ customerId: row.customer_id }}
+                    to="/app/organizations/$organizationId"
+                    params={{ organizationId: row.customer_id }}
                   >
                     {customer.data?.legal_name ?? EMPTY}
                   </Link>

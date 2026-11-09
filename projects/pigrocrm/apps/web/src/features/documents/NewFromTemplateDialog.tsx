@@ -49,7 +49,7 @@ export function variablesToFields(variables: TemplateVariable[]): FieldDefinitio
  * template's declared variables, which travel inside `variables`. The split is
  * decided once, when the dialog seeds itself from the chosen template, and is never
  * re-derived at submit from the currently-described variable list. Re-deriving it is
- * the bug `CustomerFormValues` documents: a variable that disappears from the
+ * the bug `OrganizationFormValues` documents: a variable that disappears from the
  * description between seed and submit would be reclassified as a document field and
  * sent at the top level, where `DocumentFromTemplate` would reject it.
  */

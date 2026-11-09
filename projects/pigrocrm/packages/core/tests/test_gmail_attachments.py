@@ -5,11 +5,11 @@ from uuid import UUID, uuid4
 import pytest
 from sqlalchemy.orm import Session
 
-from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.documents.models import Document, DocumentVersion
 from pigrocrm.core.documents.schemas import ALLOWED_CONTENT_TYPES
 from pigrocrm.core.errors import NotFound, ValidationFailed
 from pigrocrm.core.gmail.attach import describe_attachments, resolve_attachments
+from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.storage.local import LocalFileStorage
 
 MB = 1024 * 1024
@@ -52,7 +52,7 @@ def storage(tmp_path: Path) -> LocalFileStorage:
 
 @pytest.fixture
 def document(db_session: Session) -> Document:
-    customer = Customer(legal_name=f"ACME {uuid4()}")
+    customer = Organization(legal_name=f"ACME {uuid4()}")
     db_session.add(customer)
     db_session.flush()
     document = Document(

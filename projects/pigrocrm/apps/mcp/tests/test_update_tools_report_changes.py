@@ -17,7 +17,7 @@ from sqlalchemy.orm import Session
 
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.contracts.models import Contract
-from pigrocrm.core.customers.models import Customer
+from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.pipeline.service import PipelineService
 from pigrocrm.core.timetracking.models import CostCategory
 from pigrocrm_mcp.tools.changes import report
@@ -35,7 +35,7 @@ def _ids(*names: str) -> dict[str, str]:
 # Every update tool that takes a `changes` object, with the identifiers it needs. The ids are
 # made up: the refusal comes before anything is read, which is the point of it.
 CHANGES_TOOLS: list[tuple[str, dict[str, str]]] = [
-    ("update_customer", _ids("customer_id")),
+    ("update_organization", _ids("organization_id")),
     ("update_person", _ids("person_id")),
     ("update_deal", _ids("deal_id")),
     ("update_contract", _ids("contract_id")),
@@ -123,7 +123,7 @@ async def _create(client: Client, tool: str, arguments: dict[str, Any]) -> dict[
 async def _customer(client: Client) -> dict[str, Any]:
     return await _create(
         client,
-        "create_customer",
+        "create_organization",
         {
             "legal_name": "ACME Srl",
             "certified_email": "acme@pec.example.test",
@@ -162,8 +162,8 @@ async def test_clearing_a_customer_field_is_reported_with_the_value_it_held(
         was = customer[field]
         result = await _create(
             client,
-            "update_customer",
-            {"customer_id": customer["id"], "changes": {field: None}},
+            "update_organization",
+            {"organization_id": customer["id"], "changes": {field: None}},
         )
 
     assert result[field] is None
@@ -176,8 +176,8 @@ async def test_clearing_the_contact_points_reports_the_derived_fields_it_emptied
         customer = await _customer(client)
         result = await _create(
             client,
-            "update_customer",
-            {"customer_id": customer["id"], "changes": {"contact_points": []}},
+            "update_organization",
+            {"organization_id": customer["id"], "changes": {"contact_points": []}},
         )
 
     assert result["contact_points"] == []
@@ -292,7 +292,7 @@ async def test_detaching_a_person_from_a_customer_is_reported_as_cleared(server)
 async def test_clearing_a_contract_field_is_reported(
     server, mcp_session: Session, field: str
 ) -> None:
-    customer = Customer(legal_name="ACME Srl")
+    customer = Organization(legal_name="ACME Srl")
     mcp_session.add(customer)
     mcp_session.flush()
     contract = Contract(
@@ -420,7 +420,8 @@ async def test_custom_fields_emptied_by_a_client_that_drops_nulls_is_refused(ser
     drops the nulls of a nested object: it names nothing, and is told so."""
     async with Client(server) as client:
         result = await client.call_tool(
-            "update_customer", {"customer_id": str(uuid4()), "changes": {"custom_fields": {}}}
+            "update_organization",
+            {"organization_id": str(uuid4()), "changes": {"custom_fields": {}}},
         )
 
     assert result.is_error

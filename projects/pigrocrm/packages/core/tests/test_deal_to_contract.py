@@ -16,13 +16,13 @@ from pigrocrm.core.contracts.renewal_service import ContractRenewalService
 from pigrocrm.core.contracts.schemas import ContractFromDeal, ContractRenew
 from pigrocrm.core.contracts.service import ContractService
 from pigrocrm.core.contracts.value import value_summary
-from pigrocrm.core.customers.schemas import CustomerCreate
-from pigrocrm.core.customers.service import CustomerService
 from pigrocrm.core.deals.schemas import DealCreate, DealDetailRead, DealUpdate, DealValueLineIn
 from pigrocrm.core.deals.service import DealService
 from pigrocrm.core.errors import Conflict, NotFound, PermissionDenied, ValidationFailed
 from pigrocrm.core.fields.schemas import FieldDefinitionCreate
 from pigrocrm.core.fields.service import FieldDefinitionService
+from pigrocrm.core.organizations.schemas import OrganizationCreate
+from pigrocrm.core.organizations.service import OrganizationService
 from pigrocrm.core.pipeline.service import PipelineService
 
 ADMIN = Actor(id=None, type="system", role="admin")
@@ -31,7 +31,7 @@ ADMIN = Actor(id=None, type="system", role="admin")
 @pytest.fixture
 def customer_id(db_session: Session) -> UUID:
     PipelineService(db_session).seed_defaults(ADMIN)
-    return CustomerService(db_session).create(CustomerCreate(legal_name="ACME"), ADMIN).id
+    return OrganizationService(db_session).create(OrganizationCreate(legal_name="ACME"), ADMIN).id
 
 
 def _won_stage(db_session: Session) -> UUID:

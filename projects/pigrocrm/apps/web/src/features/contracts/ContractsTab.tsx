@@ -6,7 +6,7 @@ import { Button } from '@rebase/ui/button'
 import { useCan } from '@/lib/auth'
 import { buildContractColumns } from './columns'
 import { ContractForm } from './ContractForm'
-import { useCustomerContracts } from './queries'
+import { useOrganizationContracts } from './queries'
 
 /**
  * The Contracts tab on a customer's page (REB-741): the customer's contracts, newest
@@ -17,7 +17,7 @@ import { useCustomerContracts } from './queries'
 export function ContractsTab({ customerId }: { customerId: string }) {
   const navigate = useNavigate()
   const canCreate = useCan('create_contract')
-  const contracts = useCustomerContracts(customerId)
+  const contracts = useOrganizationContracts(customerId)
   const [creating, setCreating] = useState(false)
 
   return (

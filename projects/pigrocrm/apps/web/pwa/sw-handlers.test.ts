@@ -110,7 +110,7 @@ describe('sw/index.ts', () => {
     await done
     fetchMock.mockRejectedValue(new TypeError('Failed to fetch'))
 
-    const answer = await dispatch(listeners, { url: `${SCOPE}/customers`, mode: 'navigate' })
+    const answer = await dispatch(listeners, { url: `${SCOPE}/organizations`, mode: 'navigate' })
     expect(answer?.status).toBe(503)
     expect(await answer?.text()).toBe(`body of ${OFFLINE_URL}`)
     expect(answer?.headers.get('Cache-Control')).toBe('no-store')
@@ -118,8 +118,8 @@ describe('sw/index.ts', () => {
 
   it('never answers an API call, a write or another origin: they are the browser\'s', async () => {
     const { listeners, fetchMock } = await load()
-    expect(await dispatch(listeners, { url: `${ORIGIN}/studio/api/customers` })).toBeUndefined()
-    expect(await dispatch(listeners, { url: `${SCOPE}/customers`, mode: 'navigate', method: 'POST' })).toBeUndefined()
+    expect(await dispatch(listeners, { url: `${ORIGIN}/studio/api/organizations` })).toBeUndefined()
+    expect(await dispatch(listeners, { url: `${SCOPE}/organizations`, mode: 'navigate', method: 'POST' })).toBeUndefined()
     expect(await dispatch(listeners, { url: 'https://eu.i.posthog.com/e' })).toBeUndefined()
     expect(fetchMock).not.toHaveBeenCalled()
   })
@@ -137,7 +137,7 @@ describe('sw/index.ts', () => {
     const versioned = await dispatch(listeners, { url: `${ORIGIN}/app/assets/offline-A.js?v=1` })
     expect(await versioned?.text()).toBe(`body of ${ORIGIN}/app/assets/offline-A.js`)
     fetchMock.mockResolvedValue(new Response('{"nome":"Rossi"}'))
-    await dispatch(listeners, { url: `${ORIGIN}/studio/api/customers` })
+    await dispatch(listeners, { url: `${ORIGIN}/studio/api/organizations` })
     await dispatch(listeners, { url: `${SCOPE}`, mode: 'navigate' })
 
     expect([...(stored.values().next().value?.keys() ?? [])].sort()).toEqual(before)

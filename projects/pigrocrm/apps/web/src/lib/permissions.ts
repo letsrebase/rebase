@@ -45,9 +45,9 @@ const RANK: Record<Role, 0 | 1 | 2> = { readonly: 0, collaborator: 1, admin: 2 }
  */
 export const MIN_ROLE = {
   // Vendite
-  create_customer: 'collaborator',
-  update_customer: 'collaborator',
-  delete_customer: 'collaborator',
+  create_organization: 'collaborator',
+  update_organization: 'collaborator',
+  delete_organization: 'collaborator',
   // Who answers for a customer, and so who the reminders about it go to (REB-773).
   change_customer_owner: 'admin',
   create_person: 'collaborator',

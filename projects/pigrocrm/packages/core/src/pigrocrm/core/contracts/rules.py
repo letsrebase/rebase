@@ -8,7 +8,7 @@ from pigrocrm.core.errors import ValidationFailed
 from pigrocrm.core.fields.schemas import EntityType
 
 # Typed as the fields module's own EntityType (not a bare `str`), matching
-# CustomerService.ENTITY/DealService.ENTITY exactly -- see those classes for why a
+# OrganizationService.ENTITY/DealService.ENTITY exactly -- see those classes for why a
 # plain `str` would fail mypy strict at `specs_for`'s own call site.
 ENTITY: EntityType = "contract"
 

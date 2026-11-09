@@ -211,10 +211,10 @@ def test_no_words_are_the_machine_path_itself() -> None:
 
 def test_a_missing_record_reads_in_italian_and_keeps_its_code_and_details() -> None:
     identifier = uuid4()
-    err = NotFound("customer", identifier)
+    err = NotFound("organization", identifier)
     assert err.message == f"cliente {identifier} non trovato"
     assert err.code == "not_found"
-    assert err.details == {"entity": "customer", "identifier": str(identifier)}
+    assert err.details == {"entity": "organization", "identifier": str(identifier)}
 
     assert NotFound("invoice", "x").message == "fattura x non trovata"
     assert NotFound("fiscal_profile", "x").message == "profilo fiscale x non trovato"
@@ -261,7 +261,7 @@ def test_every_entity_a_not_found_names_has_its_noun() -> None:
     entities = _not_found_entities()
     assert len(entities) > 30
     # The records a note, a mail draft and a task reference by a variable: the parents.
-    entities |= {"customer", "person", "deal", "contract"}
+    entities |= {"organization", "person", "deal", "contract"}
     assert sorted(entity for entity in entities if entity not in ENTITY_NOUN) == []
 
 

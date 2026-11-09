@@ -17,13 +17,13 @@ from sqlalchemy.orm import Session
 
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.contracts.models import Contract, RateCard
-from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.documents.schemas import DocumentCreate
 from pigrocrm.core.documents.service import DocumentService
 from pigrocrm.core.invoices.models import Invoice, InvoiceLine
 from pigrocrm.core.invoices.service import InvoiceService
 from pigrocrm.core.legal_entities.models import LegalEntity
 from pigrocrm.core.legal_entities.repository import LegalEntityRepository
+from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.storage import LocalFileStorage
 from pigrocrm.core.work_units.models import WorkUnit
 
@@ -35,7 +35,7 @@ ADMIN = Actor(id=None, type="user", role="admin")
 # what makes the fixture "outgoing" for the account holder.
 SUPPLIER_VAT_NUMBER = "01234567890"
 SUPPLIER_CF = "BNCCHR85M41H501Z"
-# The fixture's own `CessionarioCommittente` -- matching this on a `Customer` is
+# The fixture's own `CessionarioCommittente` -- matching this on a `Organization` is
 # what resolves `matched_customer_id`, the day-mapping proposal's own prerequisite.
 CUSTOMER_VAT_NUMBER = "09876543210"
 # The fixture's own single line: 5 giorni at EUR 200.00/giorno, EUR 1000.00 total.
@@ -57,7 +57,7 @@ def _legal_entity(session: Session) -> LegalEntity:
     return profile
 
 
-def _customer(session: Session, **overrides: object) -> Customer:
+def _customer(session: Session, **overrides: object) -> Organization:
     base: dict[str, object] = {
         "legal_name": "Esempio Servizi S.r.l.",
         "vat_number": CUSTOMER_VAT_NUMBER,
@@ -68,13 +68,13 @@ def _customer(session: Session, **overrides: object) -> Customer:
         "country": "IT",
     }
     base.update(overrides)
-    customer = Customer(**base)
+    customer = Organization(**base)
     session.add(customer)
     session.flush()
     return customer
 
 
-def _document(session: Session, storage: LocalFileStorage, customer: Customer) -> UUID:
+def _document(session: Session, storage: LocalFileStorage, customer: Organization) -> UUID:
     service = DocumentService(session, storage)
     document = service.create(
         DocumentCreate(customer_id=customer.id, title="Fattura ricevuta"), ADMIN
@@ -83,7 +83,7 @@ def _document(session: Session, storage: LocalFileStorage, customer: Customer) -
     return document.id
 
 
-def _contract(session: Session, customer: Customer, **overrides: object) -> Contract:
+def _contract(session: Session, customer: Organization, **overrides: object) -> Contract:
     payload: dict[str, object] = {
         "customer_id": customer.id,
         "title": "Consulenza",

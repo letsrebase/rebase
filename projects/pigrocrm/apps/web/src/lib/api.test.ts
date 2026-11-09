@@ -10,7 +10,7 @@ const PROBLEM = {
   status: 422,
   detail: 'customer.partita_iva: deve essere di 11 cifre',
   code: 'validation_failed',
-  entity: 'customer',
+  entity: 'organization',
   field: 'vat_number',
   reason: 'deve essere di 11 cifre',
   expected: '11 cifre numeriche',
@@ -386,7 +386,7 @@ describe('the typed client', () => {
 
   /** A second, *differently shaped* payload, so a test asserting on the response of
    *  the second call in a burst cannot pass by accident on the first call's. */
-  const CUSTOMERS = {
+  const ORGANIZATIONS = {
     items: [{ id: '22222222-2222-2222-2222-222222222222', legal_name: 'Rossi SRL' }],
     next_cursor: null,
   }
@@ -424,13 +424,13 @@ describe('the typed client', () => {
         return Promise.resolve(new Response(null, { status: 200 }))
       }
       if (refreshes === 0) return Promise.resolve(unauthenticated())
-      return Promise.resolve(json(url.endsWith('/api/customers') ? CUSTOMERS : ME))
+      return Promise.resolve(json(url.endsWith('/api/organizations') ? ORGANIZATIONS : ME))
     })
     vi.stubGlobal('fetch', fetchMock)
 
     const [a, b] = await Promise.all([
       unwrap(api.GET('/api/auth/me', { baseUrl: BASE })),
-      unwrap(api.GET('/api/customers', { baseUrl: BASE })),
+      unwrap(api.GET('/api/organizations', { baseUrl: BASE })),
     ])
 
     expect(refreshes).toBe(1)
@@ -553,7 +553,7 @@ describe('the typed client', () => {
       payment_end_of_month: false,
       custom_fields: {},
     }
-    await unwrap(api.POST('/api/customers', { baseUrl: BASE, body }))
+    await unwrap(api.POST('/api/organizations', { baseUrl: BASE, body }))
 
     const [first, , retried] = fetchMock.mock.calls.map(([input]) => input as Request)
     expect(retried?.method).toBe('POST')

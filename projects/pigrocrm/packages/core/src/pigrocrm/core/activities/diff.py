@@ -1,9 +1,9 @@
 """Builds the `changed`/`before`/`after` shape shared by every configuration audit.
 
-Configuration is not entity data. `CustomerService.update` records only
+Configuration is not entity data. `OrganizationService.update` records only
 `{"changed": sorted(changes)}` -- the *values* of a customer are the row itself, and
 copying them into the timeline would make `activities` a slow, unbounded duplicate of
-`customers` full of the same personal data. Configuration is the opposite case: the
+`organizations` full of the same personal data. Configuration is the opposite case: the
 whole question an audit of a field definition, a pipeline stage or a user has to
 answer six months later is "who turned this off, and what was it before?", and a bare
 list of touched key names cannot answer it. The values here are small, bounded and
@@ -13,7 +13,7 @@ nothing and is the entire point.
 `changed` is the *real* delta, not the set of keys the caller happened to send. A
 patch that sets `required` to the value it already had is not a change, and recording
 it as one would fill an administrator's timeline with events that never happened --
-the same reasoning behind `CustomerService.restore` only recording "restored" when the
+the same reasoning behind `OrganizationService.restore` only recording "restored" when the
 row really was deleted. Callers use the empty result to skip recording entirely.
 """
 

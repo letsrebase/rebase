@@ -88,7 +88,7 @@ export function PipelinePanel() {
     // /api/pipeline-stages/{id}` is a hard delete (`PipelineRepository.delete`
     // calls `session.delete`, not a soft-delete flag), and there is no "undelete"
     // endpoint the way there is `unarchive` for a field. A plain confirm is the
-    // same cheap misclick guard `CustomerDetail`/`PersonDetail` already use before
+    // same cheap misclick guard `OrganizationDetail`/`PersonDetail` already use before
     // their own (reversible) archive -- here it matters even more, since this one
     // truly cannot be undone from the UI.
     const confirmed = window.confirm(
@@ -103,7 +103,7 @@ export function PipelinePanel() {
         // stage -- `PipelineService.delete`'s own docstring. The server's
         // sentence already says what to do about it (move them to another
         // stage before deleting it); the count riding along in `deals` is
-        // appended the same way `CustomerDetail.archive` appends its own
+        // appended the same way `OrganizationDetail.archive` appends its own
         // `active_deals`, rather than left to disappear even though the server
         // reported it.
         const failed = toProblem(error)

@@ -39,11 +39,11 @@ from sqlalchemy.orm import Session
 from pigrocrm.core.activities.models import Activity
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.auth.models import User
-from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.errors import Conflict
 from pigrocrm.core.gmail.account import CONSENT_WARNING_HOURS, GoogleAccountService
 from pigrocrm.core.gmail.errors import ConsentExpired, CredentialRevoked, ScopeMissing
 from pigrocrm.core.gmail.schemas import SCOPE_EMAIL, SCOPE_READONLY, SCOPE_SEND
+from pigrocrm.core.organizations.models import Organization
 
 
 def _service(session: Session, *, unverified: bool = False) -> GoogleAccountService:
@@ -55,7 +55,7 @@ def _service(session: Session, *, unverified: bool = False) -> GoogleAccountServ
 
 def _with_a_correspondent(session: Session) -> None:
     """A non-empty roster, so a cycle actually reaches the token refresh."""
-    session.add(Customer(legal_name="Acme", contact_points=points(email="info@acme.it")))
+    session.add(Organization(legal_name="Acme", contact_points=points(email="info@acme.it")))
     session.flush()
 
 

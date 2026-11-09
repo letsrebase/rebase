@@ -2,7 +2,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { act, renderHook, waitFor } from '@testing-library/react'
 import type { ReactNode } from 'react'
 import { beforeEach, describe, expect, it, vi, type Mock } from 'vitest'
-import { useCustomers } from '@/features/customers/queries'
+import { useOrganizations } from '@/features/organizations/queries'
 import { useTimeEntries } from '@/features/time/queries'
 import {
   LegalEntityContext,
@@ -178,13 +178,13 @@ describe('useLegalEntityScope', () => {
     const { result } = renderHook(
       () => ({
         plain: useLegalEntityScope({ search: 'acme' }),
-        ofCustomer: useLegalEntityScope({ customer_id: 'c1' }),
+        ofOrganization: useLegalEntityScope({ customer_id: 'c1' }),
         ofDeal: useLegalEntityScope({ deal_id: 'd1' }),
       }),
       { wrapper: withSelection('a2') },
     )
     expect(result.current.plain).toEqual({ search: 'acme', legal_entity_id: 'a2' })
-    expect(result.current.ofCustomer).toEqual({ customer_id: 'c1' })
+    expect(result.current.ofOrganization).toEqual({ customer_id: 'c1' })
     expect(result.current.ofDeal).toEqual({ deal_id: 'd1' })
   })
 
@@ -200,17 +200,17 @@ describe('useLegalEntityScope', () => {
   it('reaches the request of a list hook, and not of an owned one', async () => {
     renderHook(
       () => {
-        useCustomers({ limit: 200 })
+        useOrganizations({ limit: 200 })
         useTimeEntries({ deal_id: 'd1' })
       },
       { wrapper: withSelection('a2') },
     )
     await waitFor(() => expect(GET).toHaveBeenCalledTimes(2))
     const calls = GET.mock.calls as [string, { params: { query: unknown } }][]
-    const customers = calls.find(([path]) => path === '/api/customers')
+    const organizations = calls.find(([path]) => path === '/api/organizations')
     const hours = calls.find(([path]) => path === '/api/time-entries')
-    if (customers === undefined || hours === undefined) throw new Error('one of the two reads is missing')
-    expect(customers[1].params.query).toMatchObject({ limit: 200, legal_entity_id: 'a2' })
+    if (organizations === undefined || hours === undefined) throw new Error('one of the two reads is missing')
+    expect(organizations[1].params.query).toMatchObject({ limit: 200, legal_entity_id: 'a2' })
     expect(hours[1].params.query).not.toHaveProperty('legal_entity_id')
   })
 

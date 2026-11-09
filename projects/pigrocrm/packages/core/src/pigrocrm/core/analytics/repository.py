@@ -30,11 +30,11 @@ from pigrocrm.core.analytics.filters import (
 )
 from pigrocrm.core.analytics.schemas import CashBase, RevenueBase
 from pigrocrm.core.contracts.models import RATE_CARD_DAY_HOUR_TYPES, Contract, RateCard
-from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.deals.models import Deal
 from pigrocrm.core.invoices.models import Invoice, InvoiceLine
 from pigrocrm.core.legal_entities.models import LegalEntity
 from pigrocrm.core.money import ZERO_MONEY, line_value, round_money, share, sum_hours, sum_money
+from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.timetracking.models import Cost, TimeEntry
 from pigrocrm.core.work_units.models import WORK_UNIT_COMMITTED_STATUSES, WorkUnit
 
@@ -614,27 +614,27 @@ class AnalyticsRepository:
         stmt = (
             select(
                 Invoice.legal_entity_id,
-                Customer.id,
-                Customer.legal_name,
+                Organization.id,
+                Organization.legal_name,
                 revenue,
                 func.count(Invoice.id),
             )
-            .join(Customer, Customer.id == Invoice.customer_id)
+            .join(Organization, Organization.id == Invoice.customer_id)
             .join(LegalEntity, LegalEntity.id == Invoice.legal_entity_id)
             .where(Invoice.year == year, *revenue_filter(), *invoice_legal_entity(legal_entity_id))
             .group_by(
                 Invoice.legal_entity_id,
                 LegalEntity.is_default,
                 LegalEntity.name,
-                Customer.id,
-                Customer.legal_name,
+                Organization.id,
+                Organization.legal_name,
             )
             .order_by(
                 LegalEntity.is_default.desc(),
                 LegalEntity.name,
                 Invoice.legal_entity_id,
                 revenue.desc(),
-                Customer.legal_name,
+                Organization.legal_name,
             )
         )
         lines: list[RevenueByCustomerRow] = []
@@ -658,7 +658,7 @@ class AnalyticsRepository:
     def count_over_concentration_threshold(
         self, year: int, threshold: float, legal_entity_id: UUID | None = None
     ) -> int:
-        """How many customers cross `threshold`, a configured preferred-share threshold
+        """How many organizations cross `threshold`, a configured preferred-share threshold
         (`Settings.preferred_concentration_threshold`, §3 and §5 item 2 of
         `docs/superpowers/specs/2026-09-23-forecasting-and-analytics-from-mastro-design.md`):
         the COUNT `OperationalDashboard`'s fourth signal reads (REB-371).
@@ -670,7 +670,7 @@ class AnalyticsRepository:
         drill-through discipline `count_deals_invoiced_not_won` and its siblings apply
         with their own filtered lists.
 
-        In «tutte» (REB-630) the count is of distinct customers over the threshold in
+        In «tutte» (REB-630) the count is of distinct organizations over the threshold in
         any legal entity, each share read against its own legal entity's revenue: never a
         space-wide share, which would hide the customer who is a third of one legal entity
         and a tenth of the whole, and never twice for a customer two legal entities both
@@ -780,15 +780,15 @@ class AnalyticsRepository:
 
     def year_invoices(
         self, year: int, legal_entity_id: UUID
-    ) -> list[tuple[Invoice, Customer | None]]:
+    ) -> list[tuple[Invoice, Organization | None]]:
         """Every invoice of the year's register, in register order: `year`, one legal entity,
         and `revenue_filter`'s definition of an invoice that is revenue, so the list and
         `annual_revenue` can never read a different universe. The customer is an outer
         join: a member scoped to this legal entity cannot read a customer who moved to another
         one, and an invoice they can read must not drop out of the register for it."""
         rows = self.session.execute(
-            select(Invoice, Customer)
-            .outerjoin(Customer, Customer.id == Invoice.customer_id)
+            select(Invoice, Organization)
+            .outerjoin(Organization, Organization.id == Invoice.customer_id)
             .where(Invoice.year == year, *revenue_filter(), *invoice_legal_entity(legal_entity_id))
             .order_by(Invoice.number)
         ).all()

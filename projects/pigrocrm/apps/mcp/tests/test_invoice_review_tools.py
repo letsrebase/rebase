@@ -19,12 +19,12 @@ from sqlalchemy.orm import Session
 
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.config import Settings
-from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.documents.schemas import DocumentCreate
 from pigrocrm.core.documents.service import DocumentService
 from pigrocrm.core.invoices.models import Invoice
 from pigrocrm.core.legal_entities.schemas import LegalEntityUpsert
 from pigrocrm.core.legal_entities.service import LegalEntityService
+from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.storage import LocalFileStorage
 from pigrocrm_mcp.server import build_server
 
@@ -109,7 +109,7 @@ async def test_review_matches_the_customer_and_never_writes_and_is_idempotent(
     mcp_session: Session, tmp_path: Path, seeded_customer_id: str
 ) -> None:
     _seed_legal_entity(mcp_session)
-    customer = mcp_session.get(Customer, UUID(seeded_customer_id))
+    customer = mcp_session.get(Organization, UUID(seeded_customer_id))
     assert customer is not None
     customer.vat_number = CUSTOMER_VAT_NUMBER
     mcp_session.flush()

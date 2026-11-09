@@ -117,7 +117,7 @@ def _detection(
 
 def _resolver(ctx: DetectorContext, contracts: list[Contract]) -> LinkResolver:
     resolver = LinkResolver(ctx.session)
-    resolver.preload(customers=(contract.customer_id for contract in contracts))
+    resolver.preload(organizations=(contract.customer_id for contract in contracts))
     return resolver
 
 

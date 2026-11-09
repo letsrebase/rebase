@@ -19,13 +19,13 @@ vi.mock('@tanstack/react-router', async (importOriginal) => {
 })
 
 // `api.GET` is spied on directly (not `vi.mock('@/lib/api', ...)`), mirroring
-// `PersonForm.test.tsx`: `DealForm` mounts `CustomerPicker` (for the "Cliente"
-// picker), which calls `useCustomers` through the real `unwrap`, so what is under test is this form's own
+// `PersonForm.test.tsx`: `DealForm` mounts `OrganizationPicker` (for the "Cliente"
+// picker), which calls `useOrganizations` through the real `unwrap`, so what is under test is this form's own
 // handling of what that hook returns, not a reimplementation of it.
 const mockGet = vi.spyOn(api, 'GET')
 const mockPost = vi.spyOn(api, 'POST')
 
-function customerPage(items: { id: string; legal_name: string }[]) {
+function organizationPage(items: { id: string; legal_name: string }[]) {
   return Promise.resolve({
     data: { items, next_cursor: null },
     response: new Response(null, { status: 200 }),
@@ -34,7 +34,7 @@ function customerPage(items: { id: string; legal_name: string }[]) {
 
 beforeEach(() => {
   mockGet.mockReset()
-  mockGet.mockReturnValue(customerPage([]))
+  mockGet.mockReturnValue(organizationPage([]))
   mockPost.mockReset()
   mockPost.mockImplementation((() =>
     Promise.resolve({
@@ -122,7 +122,7 @@ describe('DealForm', () => {
   })
 
   /**
-   * The defect this guards, identical in shape to `CustomerForm`/`PersonForm`'s
+   * The defect this guards, identical in shape to `OrganizationForm`/`PersonForm`'s
    * own (reproduced live there first): archive a field definition while a
    * record still carries a value for it, open Edit, press Save with
    * nothing else changed. A flat form state would re-derive "is this key
@@ -329,9 +329,9 @@ describe('DealForm', () => {
      * customer request itself ran unconditionally at `DealForm`'s own top
      * level -- so every deal detail page (which mounts `DealForm` behind
      * `open={false}` for as long as it is simply being viewed) fired a
-     * `GET /api/customers` nobody could ever see the result of. The picker is
-     * its own component (`CustomerPicker`), mounted -- and therefore only ever
-     * searching customers -- inside the same `{isCreate && ...}` branch the
+     * `GET /api/organizations` nobody could ever see the result of. The picker is
+     * its own component (`OrganizationPicker`), mounted -- and therefore only ever
+     * searching organizations -- inside the same `{isCreate && ...}` branch the
      * previous test already covers visually; this test covers the network side
      * of the identical branch.
      */
@@ -349,12 +349,12 @@ describe('DealForm', () => {
       expect(mockGet).not.toHaveBeenCalled()
     })
 
-    it('asks the server for a few customers on create, not for all of them', () => {
+    it('asks the server for a few organizations on create, not for all of them', () => {
       renderWithClient(
         <DealForm title="Nuovo deal" open onOpenChange={vi.fn()} customFields={[]} onSubmit={vi.fn()} />,
       )
       expect(mockGet).toHaveBeenCalledWith(
-        '/api/customers',
+        '/api/organizations',
         expect.objectContaining({ params: expect.objectContaining({ query: expect.objectContaining({ limit: 8 }) }) }),
       )
     })
@@ -373,7 +373,7 @@ describe('DealForm', () => {
     })
 
     it('sends the chosen customer_id on create', async () => {
-      mockGet.mockReturnValue(customerPage([{ id: 'cust-1', legal_name: 'ACME Srl' }]))
+      mockGet.mockReturnValue(organizationPage([{ id: 'cust-1', legal_name: 'ACME Srl' }]))
       const onSubmit = vi.fn()
       renderWithClient(
         <DealForm title="Nuovo deal" open onOpenChange={vi.fn()} customFields={[]} onSubmit={onSubmit} />,

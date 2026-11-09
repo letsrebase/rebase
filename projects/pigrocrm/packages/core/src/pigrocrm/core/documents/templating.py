@@ -8,8 +8,6 @@ from uuid import UUID
 from sqlalchemy.exc import IntegrityError
 
 from pigrocrm.core.actor import Actor
-from pigrocrm.core.customers.models import Customer
-from pigrocrm.core.customers.schemas import CustomerRead
 from pigrocrm.core.db.clock import today_local
 from pigrocrm.core.documents.context import ENTITY, DocumentContext
 from pigrocrm.core.documents.models import Document, DocumentVersion
@@ -23,6 +21,8 @@ from pigrocrm.core.documents.uploads import DocumentUploads
 from pigrocrm.core.errors import Conflict, NotFound, ValidationFailed
 from pigrocrm.core.labels import DOCUMENT_TYPE, TEMPLATE_TYPE, label
 from pigrocrm.core.legal_entities.assets import logo_file_in
+from pigrocrm.core.organizations.models import Organization
+from pigrocrm.core.organizations.schemas import OrganizationRead
 from pigrocrm.core.render.pdf import build_header, render_pdf
 from pigrocrm.core.templates.models import Template
 from pigrocrm.core.templates.renderer import render_template
@@ -74,7 +74,7 @@ class DocumentTemplating:
 
     def template_scope(
         self,
-        customer: Customer | None,
+        customer: Organization | None,
         legal_entity_id: UUID,
         variables: dict[str, Any],
         actor: Actor,
@@ -96,7 +96,7 @@ class DocumentTemplating:
         ]
         scope["cliente"] = (
             italian_keys(
-                CustomerRead.model_validate(customer).model_dump(mode="json"), CUSTOMER_KEYS
+                OrganizationRead.model_validate(customer).model_dump(mode="json"), CUSTOMER_KEYS
             )
             if customer
             else {}

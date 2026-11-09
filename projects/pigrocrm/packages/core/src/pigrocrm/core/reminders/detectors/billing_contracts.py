@@ -179,7 +179,7 @@ def detect_period_closed(ctx: DetectorContext) -> list[Detection]:
     contracts = _live_contracts(ctx, _PERIODIC, _has_unbilled_days())
     unbilled = _unbilled_by_contract(ctx, _PERIODIC)
     resolver = LinkResolver(ctx.session)
-    resolver.preload(customers=(contract.customer_id for contract in contracts.values()))
+    resolver.preload(organizations=(contract.customer_id for contract in contracts.values()))
     found: list[Detection] = []
     for contract_id, days in unbilled.items():
         contract = contracts[contract_id]
@@ -237,11 +237,11 @@ def _not_days_only() -> ColumnElement[bool]:
 
 
 def _latest_invoice_by_customer(
-    ctx: DetectorContext, customers: Collection[UUID], *, beyond_days: bool = False
+    ctx: DetectorContext, organizations: Collection[UUID], *, beyond_days: bool = False
 ) -> dict[UUID, date]:
-    """The date of the most recent issued fattura of each of these customers; with
+    """The date of the most recent issued fattura of each of these organizations; with
     `beyond_days`, only those that are not made of worked days alone."""
-    if not customers:
+    if not organizations:
         return {}
     extra = (_not_days_only(),) if beyond_days else ()
     return {
@@ -253,7 +253,7 @@ def _latest_invoice_by_customer(
                 Invoice.type == "invoice",
                 Invoice.status == "issued",
                 Invoice.issue_date.is_not(None),
-                Invoice.customer_id.in_(customers),
+                Invoice.customer_id.in_(organizations),
                 *extra,
             )
             .group_by(Invoice.customer_id)
@@ -325,10 +325,10 @@ def detect_fixed_fee(ctx: DetectorContext) -> list[Detection]:
             cards[card.contract_id].append(card)
     latest = _latest_invoice_by_customer(ctx, {c.customer_id for c in contracts.values()})
     resolver = LinkResolver(ctx.session)
-    resolver.preload(customers=(contract.customer_id for contract in contracts.values()))
+    resolver.preload(organizations=(contract.customer_id for contract in contracts.values()))
     day_billers = _bills_days(ctx, list(contracts))
-    customers = {c.customer_id for c in contracts.values()}
-    latest_fee = _latest_invoice_by_customer(ctx, customers, beyond_days=True)
+    organizations = {c.customer_id for c in contracts.values()}
+    latest_fee = _latest_invoice_by_customer(ctx, organizations, beyond_days=True)
     found: list[Detection] = []
     for contract in contracts.values():
         months = _periodic(contract)
@@ -387,12 +387,12 @@ def detect_on_completion(ctx: DetectorContext) -> list[Detection]:
             )
         ):
             cards[card.contract_id].append(card)
-    customers = {c.customer_id for c in contracts.values()}
-    latest = _latest_invoice_by_customer(ctx, customers)
-    latest_fee = _latest_invoice_by_customer(ctx, customers, beyond_days=True)
+    organizations = {c.customer_id for c in contracts.values()}
+    latest = _latest_invoice_by_customer(ctx, organizations)
+    latest_fee = _latest_invoice_by_customer(ctx, organizations, beyond_days=True)
     day_billers = _bills_days(ctx, list(contracts))
     resolver = LinkResolver(ctx.session)
-    resolver.preload(customers=(contract.customer_id for contract in contracts.values()))
+    resolver.preload(organizations=(contract.customer_id for contract in contracts.values()))
     found: list[Detection] = []
     for contract in contracts.values():
         assert contract.end is not None

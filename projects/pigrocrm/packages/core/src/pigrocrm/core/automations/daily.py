@@ -68,7 +68,6 @@ from pigrocrm.core.automations.schemas import (
     TaskRule,
 )
 from pigrocrm.core.config import Settings, get_settings
-from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.db import today_local
 from pigrocrm.core.db.scope import bind_scope
 from pigrocrm.core.deals.models import Deal
@@ -76,6 +75,7 @@ from pigrocrm.core.documents.models import Document
 from pigrocrm.core.invoices.models import Invoice
 from pigrocrm.core.invoices.naming import number_complete
 from pigrocrm.core.modules import enabled_modules
+from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.pipeline.models import PipelineStage
 from pigrocrm.core.space_settings.service import SpaceSettingsService
 from pigrocrm.core.tasks.models import Task
@@ -294,12 +294,15 @@ class AutomationPass:
                 Document.title,
                 Document.status_since,
                 Document.deal_id,
-                Customer.id,
-                Customer.legal_name,
-                func.coalesce(Deal.owner_id, Customer.owner_id),
+                Organization.id,
+                Organization.legal_name,
+                func.coalesce(Deal.owner_id, Organization.owner_id),
             )
             .outerjoin(Deal, Deal.id == Document.deal_id)
-            .join(Customer, Customer.id == func.coalesce(Document.customer_id, Deal.customer_id))
+            .join(
+                Organization,
+                Organization.id == func.coalesce(Document.customer_id, Deal.customer_id),
+            )
             .where(
                 Document.deleted_at.is_(None),
                 Document.type == "offer",
@@ -308,7 +311,7 @@ class AutomationPass:
                 Document.status_since <= sent_before,
                 Document.status_since >= sent_after,
                 or_(Document.deal_id.is_(None), Deal.deleted_at.is_(None)),
-                Customer.deleted_at.is_(None),
+                Organization.deleted_at.is_(None),
             )
             .order_by(Document.status_since, Document.id)
         ).all()
@@ -353,15 +356,15 @@ class AutomationPass:
             select(
                 Deal.id,
                 Deal.name,
-                func.coalesce(Deal.owner_id, Customer.owner_id),
+                func.coalesce(Deal.owner_id, Organization.owner_id),
                 since_day,
             )
             .join(PipelineStage, PipelineStage.id == Deal.pipeline_stage_id)
-            .join(Customer, Customer.id == Deal.customer_id)
+            .join(Organization, Organization.id == Deal.customer_id)
             .where(
                 Deal.deleted_at.is_(None),
                 PipelineStage.type == "open",
-                Customer.deleted_at.is_(None),
+                Organization.deleted_at.is_(None),
                 since_day <= today - timedelta(days=threshold),
             )
             .order_by(Deal.created_at, Deal.id)
@@ -386,10 +389,10 @@ class AutomationPass:
                 Invoice.id,
                 Invoice.year,
                 Invoice.number,
-                Customer.legal_name,
-                func.coalesce(Deal.owner_id, Customer.owner_id),
+                Organization.legal_name,
+                func.coalesce(Deal.owner_id, Organization.owner_id),
             )
-            .join(Customer, Customer.id == Invoice.customer_id)
+            .join(Organization, Organization.id == Invoice.customer_id)
             .outerjoin(Deal, Deal.id == Invoice.deal_id)
             .where(
                 Invoice.deleted_at.is_(None),
@@ -398,7 +401,7 @@ class AutomationPass:
                 Invoice.payment_status == "unpaid",
                 Invoice.due_date.is_not(None),
                 Invoice.due_date < today,
-                Customer.deleted_at.is_(None),
+                Organization.deleted_at.is_(None),
             )
             .order_by(Invoice.due_date, Invoice.id)
         ).all()

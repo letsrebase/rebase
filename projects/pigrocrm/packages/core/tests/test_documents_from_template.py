@@ -6,7 +6,6 @@ from frozen_clock import TODAY_IN_ITALY, freeze
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.actor import Actor
-from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.documents import service as documents_service_module
 from pigrocrm.core.documents.schemas import (
     DocumentCreate,
@@ -17,6 +16,7 @@ from pigrocrm.core.documents.service import OFFER_TRANSITIONS, DocumentService
 from pigrocrm.core.errors import Conflict, NotFound, ValidationFailed
 from pigrocrm.core.legal_entities.schemas import LegalEntityUpsert
 from pigrocrm.core.legal_entities.service import LegalEntityService
+from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.storage import LocalFileStorage
 from pigrocrm.core.templates.escaping import escape_markdown, escape_typst
 from pigrocrm.core.templates.schemas import TemplateCreate, TemplateVariable
@@ -47,7 +47,7 @@ Oggetto: {{offerta.oggetto}}
 
 
 @pytest.fixture
-def setup(db_session: Session, tmp_path: Path) -> tuple[DocumentService, Customer, object]:
+def setup(db_session: Session, tmp_path: Path) -> tuple[DocumentService, Organization, object]:
     LegalEntityService(db_session).upsert_default(
         LegalEntityUpsert(legal_name="Studio Rossi", vat_number="01234567890"),
         ADMIN,
@@ -63,13 +63,13 @@ def setup(db_session: Session, tmp_path: Path) -> tuple[DocumentService, Custome
         ),
         ADMIN,
     )
-    customer = Customer(legal_name="ACME S.r.l.")
+    customer = Organization(legal_name="ACME S.r.l.")
     db_session.add(customer)
     db_session.flush()
     return DocumentService(db_session, LocalFileStorage(tmp_path)), customer, template
 
 
-def _payload(customer: Customer, template: object, **overrides: object) -> DocumentFromTemplate:
+def _payload(customer: Organization, template: object, **overrides: object) -> DocumentFromTemplate:
     values: dict[str, object] = {
         "template_id": template.id,  # type: ignore[attr-defined]
         "customer_id": customer.id,
@@ -327,7 +327,7 @@ def test_today_defaults_to_italys_own_day_not_the_processs(
         ),
         ADMIN,
     )
-    customer = Customer(legal_name="ACME S.r.l.")
+    customer = Organization(legal_name="ACME S.r.l.")
     db_session.add(customer)
     db_session.flush()
     service = DocumentService(db_session, LocalFileStorage(tmp_path))

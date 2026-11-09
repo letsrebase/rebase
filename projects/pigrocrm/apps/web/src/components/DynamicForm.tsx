@@ -76,7 +76,7 @@ export function DynamicForm({ fields, values, onChange, problem, mode }: Props) 
   // absent checkbox as "No", identically to a stored `false`, in the table and in the
   // detail view, and the control here draws it as an unchecked box either way. A
   // checkbox the user actually toggles is a different thing entirely and is sent as
-  // whatever they chose, `false` included -- `isBlank` (CustomerForm) treats `false`
+  // whatever they chose, `false` included -- `isBlank` (OrganizationForm) treats `false`
   // as a value, never as a blank.
   //
   // Idempotent by construction: once the value is present this loop calls nothing, so
@@ -84,7 +84,7 @@ export function DynamicForm({ fields, values, onChange, problem, mode }: Props) 
   // effect and not a render-time computation because the value belongs to the
   // caller's state -- this component is controlled and owns none of it -- and it has
   // to re-run when `values` changes rather than only on mount, because a dialog that
-  // stays mounted across opens (see CustomerForm) resets its values without ever
+  // stays mounted across opens (see OrganizationForm) resets its values without ever
   // unmounting this form.
   useEffect(() => {
     if (mode !== 'create') return

@@ -210,7 +210,7 @@ export function useInvoicesForOwner(owner: InvoiceOwner): InvoicesListResult {
 
 export function useInvoice(invoiceId: string) {
   return useQuery({
-    // B1: an empty id must not produce a request at all. `useCustomer('')` once
+    // B1: an empty id must not produce a request at all. `useOrganization('')` once
     // redirected to the list endpoint with an absolute URL, bypassing the Vite proxy.
     enabled: invoiceId !== '',
     queryKey: queryKeys.invoice(invoiceId),

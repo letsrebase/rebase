@@ -19,13 +19,13 @@ import pytest
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.actor import Actor
-from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.fiscal.schemas import FiscalProfileUpsert
 from pigrocrm.core.fiscal.service import FiscalProfileService
 from pigrocrm.core.invoices.schemas import InvoiceCreate, InvoiceIssue, InvoiceLineIn
 from pigrocrm.core.invoices.service import InvoiceService
 from pigrocrm.core.legal_entities.schemas import LegalEntityUpsert
 from pigrocrm.core.legal_entities.service import LegalEntityService
+from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.storage.local import LocalFileStorage
 
 # Two different actors on purpose: the agent's work and the human's must be
@@ -61,7 +61,7 @@ def configured(db_session: Session, storage: LocalFileStorage) -> InvoiceService
 
 @pytest.fixture
 def customer_id(db_session: Session) -> UUID:
-    customer = Customer(
+    customer = Organization(
         legal_name="Acme S.r.l.",
         vat_number="98765432109",
         sdi_code="ABCDEFG",

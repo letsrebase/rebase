@@ -9,7 +9,6 @@ from sqlalchemy.orm import Session
 from pigrocrm.core.activities.service import ActivityService
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.auth.models import User
-from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.db import SoftDeleteMixin
 from pigrocrm.core.deals.models import Deal
 from pigrocrm.core.errors import NoteNotChangeable, NotFound, ValidationFailed
@@ -28,15 +27,16 @@ from pigrocrm.core.notes.writer import (
     display_name,
     may_change,
 )
+from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.people.models import Person
 
 ENTITY = "note"
 # The parent table per `entity_type`: what a write looks up first, so a note can never
 # point at a row that is not there, is archived, or is outside the caller's legal entities (the
 # row-level policy of the parent answers «not there» for it).
-_PARENTS: dict[str, type[Deal | Customer | Person]] = {
+_PARENTS: dict[str, type[Deal | Organization | Person]] = {
     "deal": Deal,
-    "customer": Customer,
+    "organization": Organization,
     "person": Person,
 }
 

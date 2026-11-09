@@ -12,7 +12,7 @@ def _me(client: TestClient) -> str:
 def test_a_customer_created_over_http_is_owned_by_its_creator(
     collaborator_client: TestClient,
 ) -> None:
-    created = collaborator_client.post("/api/customers", json={"legal_name": "ACME Srl"})
+    created = collaborator_client.post("/api/organizations", json={"legal_name": "ACME Srl"})
 
     assert created.status_code == 201
     assert created.json()["owner_id"] == _me(collaborator_client)
@@ -23,19 +23,21 @@ def test_a_member_is_refused_the_change_and_an_admin_makes_it(
 ) -> None:
     member_id = _me(collaborator_client)
     customer_id = collaborator_client.post(
-        "/api/customers", json={"legal_name": "ACME Srl"}
+        "/api/organizations", json={"legal_name": "ACME Srl"}
     ).json()["id"]
 
     refused = collaborator_client.patch(
-        f"/api/customers/{customer_id}", json={"owner_id": str(admin_user.id)}
+        f"/api/organizations/{customer_id}", json={"owner_id": str(admin_user.id)}
     )
     assert refused.status_code == 403, refused.text
-    assert collaborator_client.get(f"/api/customers/{customer_id}").json()["owner_id"] == member_id
+    assert (
+        collaborator_client.get(f"/api/organizations/{customer_id}").json()["owner_id"] == member_id
+    )
 
     login = client.post(
         "/api/auth/login", json={"email": "admin@pigro.it", "password": "supersegreta1"}
     )
     assert login.status_code == 200, login.text
-    moved = client.patch(f"/api/customers/{customer_id}", json={"owner_id": str(admin_user.id)})
+    moved = client.patch(f"/api/organizations/{customer_id}", json={"owner_id": str(admin_user.id)})
     assert moved.status_code == 200, moved.text
     assert moved.json()["owner_id"] == str(admin_user.id)

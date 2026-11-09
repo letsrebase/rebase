@@ -55,7 +55,6 @@ from pigrocrm.core.actor import Actor
 from pigrocrm.core.auth.repository import UserRepository
 from pigrocrm.core.auth.scope import actor_for, scope_of
 from pigrocrm.core.config import Settings
-from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.db.scope import bind_scope
 from pigrocrm.core.deals.models import Deal
 from pigrocrm.core.digest.models import Digest
@@ -63,6 +62,7 @@ from pigrocrm.core.digest.schemas import WeeklyDigest
 from pigrocrm.core.digest.service import DigestService, iso_week
 from pigrocrm.core.invoices.models import Invoice
 from pigrocrm.core.mail import EmailSender, digest_mail
+from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.tasks.models import Task
 from pigrocrm.core.telemetry import Tracker
 from pigrocrm.core.timetracking.models import TimeEntry
@@ -215,7 +215,7 @@ class DigestRun:
         # the question `_space_empty` asks is the space's, and each recipient's mail is
         # built inside that recipient's scope below. Bound before the first read of a
         # policied table (REB-634): the cron opens this session as the application
-        # role, and an unbound probe of `customers` would answer «vuoto» for every
+        # role, and an unbound probe of `organizations` would answer «vuoto» for every
         # space, for ever; bound to a scoped owner's legal entities it would answer «vuoto»
         # for everyone else's (Greptile on PR #513).
         actor = actor_for(owner, "system").model_copy(update={"legal_entities": None})
@@ -407,7 +407,7 @@ class DigestRun:
                 select(model.id).where(model.deleted_at.is_(None)).limit(1)
             ).first()
             is None
-            for model in (Customer, Deal, Invoice, TimeEntry)
+            for model in (Organization, Deal, Invoice, TimeEntry)
         )
         if not empty:
             return False

@@ -7,7 +7,6 @@ from sqlalchemy import ColumnElement, Numeric, and_, case, delete, func, literal
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.contracts.models import Contract
-from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.dashboard.schemas import ClosedInPeriod, PipelineStageSummary
 from pigrocrm.core.db import decode_cursor, escape_like, keyset_predicate, order_by, today_local
 from pigrocrm.core.deals.models import Deal, DealValueLine
@@ -16,6 +15,7 @@ from pigrocrm.core.deals.value import line_term, summarize
 from pigrocrm.core.invoices.models import Invoice
 from pigrocrm.core.invoices.receivables import invoiced_not_won_predicate
 from pigrocrm.core.money import percentage_of, round_money
+from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.pipeline.models import PipelineStage
 from pigrocrm.core.timetracking.models import TimeEntry
 from pigrocrm.core.timetracking.repository import won_with_unbilled_hours_predicate
@@ -76,7 +76,7 @@ class DealRepository:
         after the limit.
 
         No `deleted_at` filter, deliberately -- and here it costs nothing, because a live
-        deal's customer is always live: `CustomerService.soft_delete` refuses while the
+        deal's customer is always live: `OrganizationService.soft_delete` refuses while the
         customer has active deals, `DealService.create` rejects an archived customer, and
         `DealService.restore` raises a conflict ("il cliente e' archiviato") rather than
         handing back a deal whose customer is gone. Filtering would therefore only add a
@@ -90,7 +90,9 @@ class DealRepository:
         if not customer_ids:
             return {}
         rows = self.session.execute(
-            select(Customer.id, Customer.legal_name).where(Customer.id.in_(customer_ids))
+            select(Organization.id, Organization.legal_name).where(
+                Organization.id.in_(customer_ids)
+            )
         ).all()
         return {row[0]: row[1] for row in rows}
 
@@ -422,7 +424,7 @@ class DealRepository:
             # trailing "\" combines with the wildcard just after it into an
             # accidental escape sequence that swallows the match entirely. escape="\\"
             # states explicitly which character escape_like used, rather than relying
-            # on ILIKE's default. Mirrors CustomerRepository.list/PersonRepository.list
+            # on ILIKE's default. Mirrors OrganizationRepository.list/PersonRepository.list
             # exactly.
             like = f"%{escape_like(query.search.lower())}%"
             stmt = stmt.where(Deal.name.ilike(like, escape="\\"))
@@ -468,7 +470,7 @@ class DealRepository:
                 )
             )
 
-        # Residuo R9 -- see `CustomerRepository.list` for the reasoning.
+        # Residuo R9 -- see `OrganizationRepository.list` for the reasoning.
         spec = DEAL_SORTS.resolve(query.sort)
         if query.cursor:
             value, row_id = decode_cursor(spec, query.cursor)

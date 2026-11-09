@@ -10,8 +10,6 @@ from sqlalchemy.orm import Session
 
 from pigrocrm.core.activities.models import Activity
 from pigrocrm.core.actor import Actor
-from pigrocrm.core.customers.schemas import CustomerCreate
-from pigrocrm.core.customers.service import CustomerService
 from pigrocrm.core.deals.models import DealValueLine
 from pigrocrm.core.deals.schemas import (
     DealCreate,
@@ -22,6 +20,8 @@ from pigrocrm.core.deals.schemas import (
 )
 from pigrocrm.core.deals.service import DealService
 from pigrocrm.core.errors import ValidationFailed
+from pigrocrm.core.organizations.schemas import OrganizationCreate
+from pigrocrm.core.organizations.service import OrganizationService
 from pigrocrm.core.pipeline.service import PipelineService
 
 ADMIN = Actor(id=None, type="system", role="admin")
@@ -52,7 +52,7 @@ def line(
 @pytest.fixture
 def customer_id(db_session: Session) -> UUID:
     PipelineService(db_session).seed_defaults(ADMIN)
-    return CustomerService(db_session).create(CustomerCreate(legal_name="ACME"), ADMIN).id
+    return OrganizationService(db_session).create(OrganizationCreate(legal_name="ACME"), ADMIN).id
 
 
 def create(db_session: Session, customer_id: UUID, *lines: DealValueLineIn, **fields):  # type: ignore[no-untyped-def]

@@ -8,7 +8,7 @@ export type GoogleAccountRead = components['schemas']['GoogleAccountRead']
 export type GmailMessageRead = components['schemas']['GmailMessageRead']
 export type SyncReport = components['schemas']['SyncReport']
 
-export type GmailEntityType = 'customer' | 'person' | 'deal'
+export type GmailEntityType = 'organization' | 'person' | 'deal'
 
 /** The scope without which nothing is read at all. Named here rather than in a
  *  component, because both the settings panel and the sync notice have to agree on
@@ -30,7 +30,7 @@ export const GMAIL_OAUTH_START = `${tenantPrefix}/api/gmail/oauth/start`
  * Keyed locally rather than in `lib/query.ts`'s central `queryKeys`, which is where
  * every other feature's keys live. The prefix matters more than the location here:
  * `['gmail', 'messages', ...]` lets a sync invalidate every entity's Email tab at once
- * without enumerating which customers happen to be cached, and that only works if the
+ * without enumerating which organizations happen to be cached, and that only works if the
  * two keys share a root nobody else writes under.
  */
 export const gmailKeys = {

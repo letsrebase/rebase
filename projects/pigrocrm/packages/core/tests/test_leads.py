@@ -27,9 +27,6 @@ from pigrocrm.core.activities.models import Activity
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.config import Settings
 from pigrocrm.core.contact_points.schemas import MAX_CONTACT_POINTS, ContactPointIn
-from pigrocrm.core.customers.models import Customer
-from pigrocrm.core.customers.schemas import CustomerCreate
-from pigrocrm.core.customers.service import CustomerService
 from pigrocrm.core.db import session_factory
 from pigrocrm.core.db.sidecar import drop_database
 from pigrocrm.core.deals.models import Deal, DealValueLine
@@ -48,6 +45,9 @@ from pigrocrm.core.engagements.leads import (
 )
 from pigrocrm.core.engagements.schemas import LeadRead, LeadUpsert
 from pigrocrm.core.errors import ValidationFailed
+from pigrocrm.core.organizations.models import Organization
+from pigrocrm.core.organizations.schemas import OrganizationCreate
+from pigrocrm.core.organizations.service import OrganizationService
 from pigrocrm.core.people.models import Person
 from pigrocrm.core.people.schemas import PersonCreate, PersonUpdate
 from pigrocrm.core.people.service import PersonService
@@ -136,12 +136,12 @@ def _space(door: Door) -> Iterator[Session]:
         engine.dispose()
 
 
-def _count(space: Session, model: type[Customer] | type[Person] | type[Deal]) -> int:
+def _count(space: Session, model: type[Organization] | type[Person] | type[Deal]) -> int:
     return space.scalar(select(func.count()).select_from(model)) or 0
 
 
 def _customer(space: Session, name: str = "Rossi Costruzioni S.r.l.") -> UUID:
-    return CustomerService(space).create(CustomerCreate(legal_name=name), Actor.system()).id
+    return OrganizationService(space).create(OrganizationCreate(legal_name=name), Actor.system()).id
 
 
 def _person(
@@ -180,12 +180,12 @@ def test_first_call_files_customer_person_and_deal(door: Door) -> None:
     assert answer.created is True
     assert answer.deal_url == f"https://pigro.test/{SLUG}/app/deal/{answer.deal_id}"
     with _space(door) as space:
-        customer = space.get(Customer, answer.customer_id)
+        customer = space.get(Organization, answer.customer_id)
         person = space.get(Person, answer.person_id)
         deal = space.get(Deal, answer.deal_id)
         assert customer is not None and person is not None and deal is not None
         assert customer.legal_name == "Acme S.r.l."
-        [customer_note] = texts(space, "customer", customer.id)
+        [customer_note] = texts(space, "organization", customer.id)
         assert "hub" in customer_note
         assert (person.first_name, person.last_name, person.email) == ("Maria", "Rossi", MARIA)
         assert person.phone == "+39 02 1234567"
@@ -528,7 +528,7 @@ def test_a_person_with_the_address_as_primary_is_preferred_to_one_who_has_it_as_
 
     assert (answer.customer_id, answer.person_id) == (customer_b, b)
     with _space(door) as space:
-        assert _count(space, Customer) == 2 and _count(space, Person) == 2
+        assert _count(space, Organization) == 2 and _count(space, Person) == 2
         assert _points(space, b)[-1] == ("email", "b2@corp-b.it", False)
         assert [p[1] for p in _points(space, a)] == ["a@corp-a.it", MARIA]
 
@@ -712,7 +712,7 @@ def test_every_write_is_recorded_as_rebase(door: Door) -> None:
         ids = {answer.customer_id, answer.person_id, answer.deal_id}
         rows = [r for r in space.scalars(select(Activity)).all() if r.entity_id in ids]
         assert {(r.entity_type, r.kind) for r in rows} >= {
-            ("customer", "created"),
+            ("organization", "created"),
             ("person", "created"),
             ("deal", "created"),
             ("deal", KIND_FILED),
@@ -737,7 +737,11 @@ def test_a_second_put_for_the_request_writes_nothing(door: Door) -> None:
         first.deal_id,
     )
     with _space(door) as space:
-        assert (_count(space, Customer), _count(space, Person), _count(space, Deal)) == (1, 1, 1)
+        assert (_count(space, Organization), _count(space, Person), _count(space, Deal)) == (
+            1,
+            1,
+            1,
+        )
         assert space.scalar(select(func.count()).select_from(Activity)) == before
 
 
@@ -755,7 +759,7 @@ def test_an_existing_person_is_reused_whatever_the_case_of_the_address(door: Doo
     assert answer.created is True
     assert (answer.customer_id, answer.person_id) == (customer_id, person_id)
     with _space(door) as space:
-        assert _count(space, Customer) == 2 and _count(space, Person) == 2
+        assert _count(space, Organization) == 2 and _count(space, Person) == 2
         deal = space.get(Deal, answer.deal_id)
         assert deal is not None and deal.customer_id == customer_id
 
@@ -791,14 +795,14 @@ def test_an_archived_customer_gives_a_new_customer_and_moves_the_person(door: Do
     with _space(door) as space:
         old_customer = _customer(space)
         person_id = _person(space, MARIA, old_customer)
-        CustomerService(space).soft_delete(old_customer, Actor.system())
+        OrganizationService(space).soft_delete(old_customer, Actor.system())
 
     answer = door.service().file(uuid4(), _body())
 
     assert answer.person_id == person_id
     assert answer.customer_id != old_customer
     with _space(door) as space:
-        assert _count(space, Customer) == 2 and _count(space, Person) == 1
+        assert _count(space, Organization) == 2 and _count(space, Person) == 1
         person = space.get(Person, person_id)
         assert person is not None and person.customer_id == answer.customer_id
 
@@ -811,7 +815,7 @@ def test_a_person_with_no_customer_is_attached_to_a_new_one(door: Door) -> None:
 
     assert answer.person_id == person_id
     with _space(door) as space:
-        assert _count(space, Customer) == 1 and _count(space, Person) == 1
+        assert _count(space, Organization) == 1 and _count(space, Person) == 1
         person = space.get(Person, person_id)
         assert person is not None and person.customer_id == answer.customer_id
 
@@ -825,7 +829,7 @@ def test_an_archived_person_is_not_reused(door: Door) -> None:
 
     assert answer.person_id != person_id
     with _space(door) as space:
-        assert _count(space, Customer) == 2
+        assert _count(space, Organization) == 2
 
 
 def test_the_same_email_and_another_request_is_a_second_deal_on_the_same_customer(
@@ -838,7 +842,11 @@ def test_the_same_email_and_another_request_is_a_second_deal_on_the_same_custome
     assert second.deal_id != first.deal_id
     assert (second.customer_id, second.person_id) == (first.customer_id, first.person_id)
     with _space(door) as space:
-        assert (_count(space, Customer), _count(space, Person), _count(space, Deal)) == (1, 1, 2)
+        assert (_count(space, Organization), _count(space, Person), _count(space, Deal)) == (
+            1,
+            1,
+            2,
+        )
 
 
 def test_a_new_deal_is_made_even_when_the_customer_has_an_open_one(door: Door) -> None:
@@ -863,7 +871,7 @@ def test_a_customer_is_never_matched_by_name(door: Door) -> None:
     answer = door.service().file(uuid4(), _body(company="Acme S.r.l."))
 
     with _space(door) as space:
-        assert _count(space, Customer) == 2
+        assert _count(space, Organization) == 2
         deal = space.get(Deal, answer.deal_id)
         assert deal is not None
         assert deal.customer_id == answer.customer_id
@@ -874,7 +882,7 @@ def test_an_explicit_deal_is_linked_with_an_activity_and_nothing_is_created(door
         customer_id = _customer(space)
         person_id = _person(space, MARIA, customer_id)
         deal_id = _deal(space, customer_id, note="Trattativa in corso con Rossi.")
-        counts = (_count(space, Customer), _count(space, Person), _count(space, Deal))
+        counts = (_count(space, Organization), _count(space, Person), _count(space, Deal))
     request_id = uuid4()
 
     answer = door.service().file(request_id, _body(deal_id=str(deal_id)))
@@ -886,7 +894,7 @@ def test_an_explicit_deal_is_linked_with_an_activity_and_nothing_is_created(door
         deal_id,
     )
     with _space(door) as space:
-        assert (_count(space, Customer), _count(space, Person), _count(space, Deal)) == counts
+        assert (_count(space, Organization), _count(space, Person), _count(space, Deal)) == counts
         deal = space.get(Deal, deal_id)
         assert deal is not None
         # The deal's own note is left as it was; the request's sentence is added to the
@@ -923,7 +931,11 @@ def test_an_explicit_deal_that_is_not_in_the_space_is_refused(door: Door) -> Non
     assert refused.value.details["field"] == "deal_id"
     assert refused.value.details["reason"] == NO_SUCH_DEAL
     with _space(door) as space:
-        assert (_count(space, Customer), _count(space, Person), _count(space, Deal)) == (0, 0, 0)
+        assert (_count(space, Organization), _count(space, Person), _count(space, Deal)) == (
+            0,
+            0,
+            0,
+        )
 
 
 def test_an_archived_explicit_deal_is_refused(door: Door) -> None:
@@ -974,7 +986,7 @@ def test_a_held_lock_times_out_as_busy(door: Door, monkeypatch: pytest.MonkeyPat
     assert refused.value.args == (BUSY,)
     assert MARIA not in str(refused.value)
     with _space(door) as space:
-        assert (_count(space, Customer), _count(space, Deal)) == (0, 0)
+        assert (_count(space, Organization), _count(space, Deal)) == (0, 0)
 
 
 def test_two_requests_of_one_person_at_once_make_one_customer_and_two_deals(door: Door) -> None:
@@ -1001,7 +1013,11 @@ def test_two_requests_of_one_person_at_once_make_one_customer_and_two_deals(door
     assert len({a.person_id for a in answers}) == 1
     assert len({a.deal_id for a in answers}) == 2
     with _space(door) as space:
-        assert (_count(space, Customer), _count(space, Person), _count(space, Deal)) == (1, 1, 2)
+        assert (_count(space, Organization), _count(space, Person), _count(space, Deal)) == (
+            1,
+            1,
+            2,
+        )
 
 
 def test_the_lock_is_released_after_a_refusal(door: Door) -> None:

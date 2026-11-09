@@ -50,9 +50,6 @@ from pigrocrm.core.contact_points.service import (
     lock_owner,
     prepare,
 )
-from pigrocrm.core.customers.repository import CustomerRepository
-from pigrocrm.core.customers.schemas import CustomerCreate
-from pigrocrm.core.customers.service import CustomerService
 from pigrocrm.core.db import session_factory, today_local
 from pigrocrm.core.deals.repository import DealRepository
 from pigrocrm.core.deals.schemas import DealCreate
@@ -65,6 +62,9 @@ from pigrocrm.core.engagements.service import (
 )
 from pigrocrm.core.errors import NotFound, ValidationFailed
 from pigrocrm.core.notes.writer import append_first_note
+from pigrocrm.core.organizations.repository import OrganizationRepository
+from pigrocrm.core.organizations.schemas import OrganizationCreate
+from pigrocrm.core.organizations.service import OrganizationService
 from pigrocrm.core.people.models import Person
 from pigrocrm.core.people.schemas import PersonCreate
 from pigrocrm.core.people.service import PersonService
@@ -287,7 +287,7 @@ class LeadService:
         no-commit variant): a crash between the two leaves a deal with no such entry,
         and its retry, finding the marker, does not write it."""
         actor = Actor.rebase()
-        customers = CustomerRepository(space)
+        organizations = OrganizationRepository(space)
         people = self._people_with_email(space, email)
         # Only the tier the address is primary in, when there is one: a person who keeps it as
         # a second point is not the contact while somebody has it as theirs.
@@ -296,7 +296,7 @@ class LeadService:
             (
                 person
                 for person in people
-                if person.customer_id is not None and customers.get(person.customer_id)
+                if person.customer_id is not None and organizations.get(person.customer_id)
             ),
             None,
         )
@@ -305,13 +305,13 @@ class LeadService:
             customer_id = reused.customer_id
             person_id: UUID = reused.id
             self._add_points(space, reused, data, actor)
-            customer = customers.get(customer_id)
+            customer = organizations.get(customer_id)
             known_name = customer.legal_name if customer is not None else None
         else:
             customer_id = (
-                CustomerService(space)
+                OrganizationService(space)
                 ._insert(
-                    CustomerCreate(
+                    OrganizationCreate(
                         legal_name=data.company,
                         note=(
                             "Creato da rebase dalla richiesta di un'azienda sull'hub il "

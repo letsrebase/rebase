@@ -11,8 +11,6 @@ from pigrocrm.core.actor import Actor
 from pigrocrm.core.auth.models import User
 from pigrocrm.core.auth.schemas import UserCreate
 from pigrocrm.core.auth.service import UserService
-from pigrocrm.core.customers.schemas import CustomerCreate
-from pigrocrm.core.customers.service import CustomerService
 from pigrocrm.core.deals.models import Deal
 from pigrocrm.core.deals.repository import DealRepository
 from pigrocrm.core.deals.schemas import (
@@ -29,6 +27,8 @@ from pigrocrm.core.deals.service import DealService
 from pigrocrm.core.errors import Conflict, NotFound, PermissionDenied, ValidationFailed
 from pigrocrm.core.fields.schemas import FieldDefinitionCreate
 from pigrocrm.core.fields.service import FieldDefinitionService
+from pigrocrm.core.organizations.schemas import OrganizationCreate
+from pigrocrm.core.organizations.service import OrganizationService
 from pigrocrm.core.pipeline.service import PipelineService
 
 ADMIN = Actor(id=None, type="system", role="admin")
@@ -43,7 +43,7 @@ def lump(price: Decimal | str) -> DealValueLineIn:
 
 @pytest.fixture
 def customer_id(db_session: Session):
-    return CustomerService(db_session).create(CustomerCreate(legal_name="ACME"), ADMIN).id
+    return OrganizationService(db_session).create(OrganizationCreate(legal_name="ACME"), ADMIN).id
 
 
 @pytest.fixture
@@ -76,7 +76,7 @@ def test_a_deal_requires_a_customer(db_session: Session, customer_id, stages) ->
 def test_a_deal_for_a_missing_customer_is_rejected(db_session: Session, stages) -> None:
     with pytest.raises(NotFound) as exc:
         DealService(db_session).create(DealCreate(name="X", customer_id=uuid4()), ADMIN)
-    assert exc.value.details["entity"] == "customer"
+    assert exc.value.details["entity"] == "organization"
 
 
 def test_a_new_deal_lands_in_the_first_stage_by_default(
@@ -167,7 +167,7 @@ def test_moving_to_a_lost_stage_sets_probability_to_zero(
 def test_list_can_be_filtered_by_customer_and_by_stage(
     db_session: Session, customer_id, stages
 ) -> None:
-    other = CustomerService(db_session).create(CustomerCreate(legal_name="Beta"), ADMIN).id
+    other = OrganizationService(db_session).create(OrganizationCreate(legal_name="Beta"), ADMIN).id
     service = DealService(db_session)
     service.create(DealCreate(name="Mio", customer_id=customer_id), ADMIN)
     service.create(DealCreate(name="Altro", customer_id=other), ADMIN)
@@ -200,13 +200,13 @@ def test_a_customer_with_active_deals_cannot_be_deleted(
     """Deleting must not cascade silently; the error says how many deals are in the way.
 
     This is one of the two Conflict paths that go live for the first time now that
-    `Deal` is registered: `CustomerRepository.count_active_deals` has queried the
+    `Deal` is registered: `OrganizationRepository.count_active_deals` has queried the
     `deals` table through `Base.metadata` since Task 10, always returning 0 because
     the table did not exist. It exists now.
     """
     DealService(db_session).create(DealCreate(name="X", customer_id=customer_id), ADMIN)
     with pytest.raises(Conflict) as exc:
-        CustomerService(db_session).soft_delete(customer_id, ADMIN)
+        OrganizationService(db_session).soft_delete(customer_id, ADMIN)
     assert exc.value.details["active_deals"] == 1
 
 
@@ -216,10 +216,10 @@ def test_deleting_the_deal_first_then_the_customer_works(
     service = DealService(db_session)
     deal = service.create(DealCreate(name="X", customer_id=customer_id), ADMIN)
     service.soft_delete(deal.id, ADMIN)
-    CustomerService(db_session).soft_delete(customer_id, ADMIN)
+    OrganizationService(db_session).soft_delete(customer_id, ADMIN)
 
     with pytest.raises(NotFound):
-        CustomerService(db_session).get(customer_id, ADMIN)
+        OrganizationService(db_session).get(customer_id, ADMIN)
 
 
 def test_readonly_cannot_move_a_deal(db_session: Session, customer_id, stages) -> None:
@@ -240,7 +240,7 @@ def test_update_changes_name_and_records_it(db_session: Session, customer_id, st
 
 
 def test_name_over_the_column_width_is_rejected_on_create() -> None:
-    """Mirrors CustomerCreate/PersonCreate's own *_MAX_LENGTH bounds: without a
+    """Mirrors OrganizationCreate/PersonCreate's own *_MAX_LENGTH bounds: without a
     matching Pydantic bound, an over-length value sails past validation, reaches
     flush(), and comes back as a raw sqlalchemy.exc.DataError
     (StringDataRightTruncation) -- not a subclass of IntegrityError, so nothing in
@@ -353,7 +353,7 @@ def test_archived_custom_field_value_survives_unrelated_updates_and_can_still_be
     archived key still sitting in custom_fields would make every future update -- even
     one that never mentions that key -- fail with "campo non definito". update() must
     validate only the keys the caller actually supplies, never the union with what is
-    already stored. Mirrors the identical fix on Customers and People exactly."""
+    already stored. Mirrors the identical fix on Organizations and People exactly."""
     fields = FieldDefinitionService(db_session)
     industry = fields.create(
         FieldDefinitionCreate(
@@ -521,7 +521,7 @@ def test_restore_on_a_deal_that_was_never_deleted_does_not_log_a_restored_entry(
 ) -> None:
     """Unconditionally logging "restored" -- even for a deal that was never
     soft-deleted -- would write a timeline entry claiming a recovery that never
-    happened. Mirrors the identical guard on CustomerService.restore and
+    happened. Mirrors the identical guard on OrganizationService.restore and
     PersonService.restore."""
     from pigrocrm.core.activities.service import ActivityService
 
@@ -605,7 +605,7 @@ def test_a_pipeline_stage_with_deals_cannot_be_deleted(
 def test_soft_deleting_the_deal_does_not_free_its_pipeline_stage_for_deletion(
     db_session: Session, customer_id, stages
 ) -> None:
-    """Unlike `CustomerRepository.count_active_deals` -- `soft_delete` on a customer
+    """Unlike `OrganizationRepository.count_active_deals` -- `soft_delete` on a customer
     is itself a soft operation on the *customer* row, so excluding already-archived
     deals from that count is correct -- `PipelineService.delete` performs a real,
     hard `session.delete()` on the stage row. `pipeline_stage_id` is NOT NULL with no
@@ -640,7 +640,7 @@ def test_moving_the_deal_out_of_the_stage_then_deleting_it_works(
     assert stages["Lead"].id not in {s.id for s in PipelineService(db_session).list()}
 
 
-# --- Parity with Customers/People's shipped shape -------------------------------
+# --- Parity with Organizations/People's shipped shape -------------------------------
 
 
 def test_get_missing_deal_raises_not_found(db_session: Session) -> None:
@@ -942,7 +942,7 @@ def test_restoring_a_deal_whose_customer_is_now_archived_is_refused(
     service = DealService(db_session)
     deal = service.create(DealCreate(name="X", customer_id=customer_id), ADMIN)
     service.soft_delete(deal.id, ADMIN)
-    CustomerService(db_session).soft_delete(customer_id, ADMIN)
+    OrganizationService(db_session).soft_delete(customer_id, ADMIN)
 
     with pytest.raises(Conflict) as exc:
         service.restore(deal.id, ADMIN)
@@ -956,9 +956,9 @@ def test_restoring_the_customer_first_then_the_deal_works(
     service = DealService(db_session)
     deal = service.create(DealCreate(name="X", customer_id=customer_id), ADMIN)
     service.soft_delete(deal.id, ADMIN)
-    CustomerService(db_session).soft_delete(customer_id, ADMIN)
+    OrganizationService(db_session).soft_delete(customer_id, ADMIN)
 
-    CustomerService(db_session).restore(customer_id, ADMIN)
+    OrganizationService(db_session).restore(customer_id, ADMIN)
     service.restore(deal.id, ADMIN)
 
     assert service.get(deal.id, ADMIN).id == deal.id
@@ -992,13 +992,13 @@ def test_every_read_path_names_the_deal_s_customer(
 
 def test_the_customer_name_costs_one_query_for_the_whole_page(db_session: Session, stages) -> None:
     """The reason the name is resolved in one batched lookup and not per row: a page of
-    50 deals across 50 customers must not become 51 queries. Counted, not reasoned
+    50 deals across 50 organizations must not become 51 queries. Counted, not reasoned
     about -- an N+1 reintroduced by a later refactor is invisible to every other
     assertion in this file. Same shape as `test_people.py`'s own counting test."""
-    customers = CustomerService(db_session)
+    organizations = OrganizationService(db_session)
     service = DealService(db_session)
     for index in range(3):
-        customer = customers.create(CustomerCreate(legal_name=f"ACME {index}"), ADMIN)
+        customer = organizations.create(OrganizationCreate(legal_name=f"ACME {index}"), ADMIN)
         service.create(DealCreate(name=f"Progetto {index}", customer_id=customer.id), ADMIN)
 
     statements: list[str] = []
@@ -1046,7 +1046,7 @@ def test_find_by_rebase_ref_is_the_live_deal_carrying_it_under_any_customer(
     service.soft_delete(archived.id, ADMIN)
     assert repo.find_by_rebase_ref(marker) is None
 
-    other = CustomerService(db_session).create(CustomerCreate(legal_name="Beta"), ADMIN)
+    other = OrganizationService(db_session).create(OrganizationCreate(legal_name="Beta"), ADMIN)
     ours = service.create(
         DealCreate(name="Lettera n. 3/2026", customer_id=other.id, note="Creato da rebase."),
         ADMIN,

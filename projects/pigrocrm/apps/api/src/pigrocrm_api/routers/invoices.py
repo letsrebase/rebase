@@ -175,14 +175,14 @@ def confirm_import(
     document's own stored bytes -- never trusts an earlier `/import/review` call
     -- and writes the register through `import_issued` itself for every invoice
     that classifies `"ready"`: never a second, independently-maintained write
-    path. `create_customer` (REB-367) creates the matched party as a new
-    `Customer` inside that same write when no `customer_id` is given and no
+    path. `create_organization` (REB-367) creates the matched party as a new
+    `Organization` inside that same write when no `customer_id` is given and no
     exact tax-id match exists."""
     lines = _service(session, storage, settings).confirm_import(
         data.document_id,
         actor,
         customer_id=data.customer_id,
-        create_customer=data.create_customer,
+        create_organization=data.create_organization,
     )
     return InvoiceConfirmResult(lines=lines)
 
@@ -209,7 +209,7 @@ _UPLOAD_BODY: dict[str, Any] = {
                         "type": "string",
                         "description": (
                             'On the confirmation: `{"clienti": {"<party_key>": '
-                            '{"create_customer": true}}}`.'
+                            '{"create_organization": true}}}`.'
                         ),
                     },
                 },
@@ -275,8 +275,8 @@ async def confirm_import_upload(
     each file is parsed and classified from its own bytes against the register as it is
     now, never from the review, and written by the same code `/import/confirm` runs. A
     single-invoice file's XML is archived as a document of the invoice's customer.
-    `decisioni` is the JSON `{"clienti": {"<party_key>": {"create_customer": true}}}`:
-    per customer, a `customer_id` to attach or `create_customer`, as on
+    `decisioni` is the JSON `{"clienti": {"<party_key>": {"create_organization": true}}}`:
+    per customer, a `customer_id` to attach or `create_organization`, as on
     `/import/confirm`."""
     actor.require_admin(CONFIRM_ACTION)
     files, decisions = await _uploaded(request)

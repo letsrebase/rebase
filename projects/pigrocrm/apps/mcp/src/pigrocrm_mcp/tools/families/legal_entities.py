@@ -26,7 +26,7 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
     @guard
     def list_members() -> list[dict[str, Any]]:
         """The active people in the space: `id`, `name`, `role` and `email` (only for an
-        admin, otherwise `null`). Use it to find the id for `owner_id` (customers and deals)
+        admin, otherwise `null`). Use it to find the id for `owner_id` (organizations and deals)
         and `assigned_to` (tasks).
         """
         directory = UserService(context.session).directory(context.actor)
@@ -83,7 +83,7 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
     @mcp.tool(annotations=ADDITIVE)
     @guard
     def create_legal_entity(data: dict[str, Any], tax_profile: dict[str, Any]) -> dict[str, Any]:
-        """Open a second legal entity with its fiscal profile in one call: customers can be
+        """Open a second legal entity with its fiscal profile in one call: organizations can be
         assigned to it, its invoices have their own register and documents carry its
         header. Admin only, after the data is confirmed: once an invoice is issued, a legal entity
         can no longer be deleted, only deactivated. It does not become the default, unless the space

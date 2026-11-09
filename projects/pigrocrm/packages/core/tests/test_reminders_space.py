@@ -21,7 +21,6 @@ from pigrocrm.core.auth.models import User
 from pigrocrm.core.auth.scope import apply_scope
 from pigrocrm.core.config import Settings
 from pigrocrm.core.contracts.models import Contract
-from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.documents.models import Document
 from pigrocrm.core.drive.models import GoogleDriveAccount
 from pigrocrm.core.fiscal.models import FiscalProfile
@@ -32,6 +31,7 @@ from pigrocrm.core.gmail.models import GoogleAccount
 from pigrocrm.core.gmail.schemas import SCOPE_READONLY, SCOPE_SEND
 from pigrocrm.core.invoices.models import Invoice
 from pigrocrm.core.legal_entities.models import LegalEntity
+from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.proposals.models import Proposal
 from pigrocrm.core.reminders.catalogue import LADDER_MAX, REMINDER_TYPES, Severity
 from pigrocrm.core.reminders.detectors import DETECTORS
@@ -96,7 +96,7 @@ class Space:
         deleted: bool = False,
     ) -> Invoice:
         """An issued fattura of `year`: paid in June, or unpaid and due in December."""
-        customer = Customer(legal_name=f"Acme {uuid4().hex[:6]}")
+        customer = Organization(legal_name=f"Acme {uuid4().hex[:6]}")
         self.session.add(customer)
         self.session.flush()
         taxable_amount = Decimal(amount)
@@ -351,7 +351,7 @@ def test_the_projected_overrun_of_next_year_is_a_new_occurrence(space: Space) ->
 def test_the_projection_is_the_cash_overviews_and_counts_drafts_and_proformas(
     space: Space,
 ) -> None:
-    customer = Customer(legal_name="Acme Bozze")
+    customer = Organization(legal_name="Acme Bozze")
     space.session.add(customer)
     space.session.flush()
     for type, status in (("invoice", "draft"), ("proforma", "confirmed")):
@@ -477,7 +477,7 @@ def test_the_month_subject_carries_the_month_and_goes_to_unscoped_admins_only(
 def _proposal(
     space: Space, *, age_days: int, contract: Contract | None = None, status: str = "pending"
 ) -> Proposal:
-    customer = Customer(legal_name=f"Acme {uuid4().hex[:6]}")
+    customer = Organization(legal_name=f"Acme {uuid4().hex[:6]}")
     space.session.add(customer)
     space.session.flush()
     document = Document(type="contract", title="Documento archiviato", customer_id=customer.id)
@@ -499,7 +499,7 @@ def _proposal(
 
 
 def _contract(space: Space, legal_entity: UUID | None = None) -> Contract:
-    customer = Customer(legal_name="Acme Contratti")
+    customer = Organization(legal_name="Acme Contratti")
     space.session.add(customer)
     space.session.flush()
     contract = Contract(

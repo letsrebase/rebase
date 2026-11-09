@@ -26,11 +26,11 @@ import pytest
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.actor import Actor
-from pigrocrm.core.customers.schemas import CustomerCreate, CustomerUpdate
-from pigrocrm.core.customers.service import CustomerService
 from pigrocrm.core.deals.schemas import DealUpdate
 from pigrocrm.core.deals.service import DealService
 from pigrocrm.core.errors import NotFound, ValidationFailed
+from pigrocrm.core.organizations.schemas import OrganizationCreate, OrganizationUpdate
+from pigrocrm.core.organizations.service import OrganizationService
 from pigrocrm.core.timetracking.costs import CostService
 from pigrocrm.core.timetracking.schemas import CostCreate, CostUpdate, TimeEntryUpdate
 from pigrocrm.core.timetracking.service import TimeEntryService
@@ -78,9 +78,9 @@ def test_a_key_supplied_as_null_clears_a_date_column(
 def test_empty_string_still_clears_a_text_column(db_session: Session, seeded_deal_id: UUID) -> None:
     """Unchanged, and it must stay unchanged: plan 1B's form contract is built on it and
     every existing form sends `""` for a cleared native text field."""
-    service = CustomerService(db_session)
-    customer = service.create(CustomerCreate(legal_name="ACME", city="Roma"), WRITER)
-    assert service.update(customer.id, CustomerUpdate(city=""), WRITER).city == ""
+    service = OrganizationService(db_session)
+    customer = service.create(OrganizationCreate(legal_name="ACME", city="Roma"), WRITER)
+    assert service.update(customer.id, OrganizationUpdate(city=""), WRITER).city == ""
 
 
 def test_a_nullable_foreign_key_is_still_validated_when_supplied(

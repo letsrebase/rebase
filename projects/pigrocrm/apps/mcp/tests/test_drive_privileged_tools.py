@@ -55,7 +55,6 @@ from pigrocrm.core.actor import Actor
 from pigrocrm.core.auth.models import User
 from pigrocrm.core.config import Settings
 from pigrocrm.core.crypto import seal
-from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.documents.models import Document, DocumentVersion
 from pigrocrm.core.documents.schemas import TITLE_MAX_LENGTH
 from pigrocrm.core.drive import reader as reader_module
@@ -65,6 +64,7 @@ from pigrocrm.core.drive.reader import drive_reader_for
 from pigrocrm.core.drive.schemas import DRIVE_SCOPE_FILE, DRIVE_SCOPE_READONLY
 from pigrocrm.core.drive.transport import DriveTransport
 from pigrocrm.core.errors import AgentForbidden, ValidationFailed
+from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.storage import LocalFileStorage
 from pigrocrm.core.text import PROVENANCE
 from pigrocrm_mcp.server import build_server
@@ -510,7 +510,7 @@ async def test_import_drive_file_files_the_document_and_records_where_it_came_fr
     """A PDF nobody in this CRM produced has to be able to answer "where did this come
     from?" years later, and "a file was uploaded" is not that answer -- so `origin`
     carries the Drive id, the mime and the file's own name on Drive."""
-    customer = Customer(legal_name="ACME S.r.l.")
+    customer = Organization(legal_name="ACME S.r.l.")
     mcp_session.add(customer)
     mcp_session.flush()
 
@@ -558,7 +558,7 @@ async def test_import_drive_file_does_not_move_or_delete_anything_on_drive(
     rename, no move, no delete, not even a `PATCH` of an `appProperties` marker. The
     reader has no writing method at all, and this is the assertion that says so about
     the traffic rather than about the code."""
-    customer = Customer(legal_name="ACME S.r.l.")
+    customer = Organization(legal_name="ACME S.r.l.")
     mcp_session.add(customer)
     mcp_session.flush()
 
@@ -584,7 +584,7 @@ async def test_import_drive_file_refuses_a_file_outside_the_configured_roots(
     connected_drive: GoogleDriveAccount,
     fake_drive: FakeDrive,
 ) -> None:
-    customer = Customer(legal_name="ACME S.r.l.")
+    customer = Organization(legal_name="ACME S.r.l.")
     mcp_session.add(customer)
     mcp_session.flush()
 
@@ -805,7 +805,7 @@ async def test_import_drive_file_refuses_a_type_the_crm_does_not_store_before_do
     so a type the CRM starts storing becomes importable in the same commit rather than
     being fetched and then rejected.
     """
-    customer = Customer(legal_name="ACME S.r.l.")
+    customer = Organization(legal_name="ACME S.r.l.")
     mcp_session.add(customer)
     mcp_session.flush()
 
@@ -837,7 +837,7 @@ async def test_import_drive_file_leaves_a_folder_to_the_readers_own_sentence(
     """A folder is not an unsupported content type, and answering it with a list of
     content types would replace advice an agent can act on -- «elencane i figli» -- with
     a dead end. The reader owns that sentence, and refuses before any download too."""
-    customer = Customer(legal_name="ACME S.r.l.")
+    customer = Organization(legal_name="ACME S.r.l.")
     mcp_session.add(customer)
     mcp_session.flush()
 

@@ -31,7 +31,7 @@ export const RESERVED_SLUGS = new Set([
   'mcp',
 ])
 
-/** `"/studio"` for `/studio/app/customers`, `""` for `/app/customers` or anything else. */
+/** `"/studio"` for `/studio/app/organizations`, `""` for `/app/organizations` or anything else. */
 export function tenantPrefixFrom(pathname: string): string {
   const match = /^\/([a-z0-9][a-z0-9-]{1,30}[a-z0-9])\/app(?:\/|$)/.exec(pathname)
   if (!match) return ''

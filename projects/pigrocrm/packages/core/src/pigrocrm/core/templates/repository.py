@@ -32,7 +32,7 @@ class TemplateRepository:
     # `list` stays the last method defined in this class: naming a method `list`
     # rebinds that name in the class namespace, so any later method with a bare
     # `-> list[...]` return annotation would resolve `list` to this method instead of
-    # the builtin and fail at import time (see `CustomerRepository.list`'s identical
+    # the builtin and fail at import time (see `OrganizationRepository.list`'s identical
     # rule, and `FieldDefinitionService.specs_for`'s docstring).
     def list(self, query: TemplateListQuery) -> list[Template]:
         stmt = select(Template)
@@ -43,7 +43,7 @@ class TemplateRepository:
         if query.search:
             # escape_like neutralizes "%"/"_"/"\" in the user's own term before it is
             # wrapped in the wildcard this method builds -- see
-            # `CustomerRepository.list`'s identical comment for why.
+            # `OrganizationRepository.list`'s identical comment for why.
             like = f"%{escape_like(query.search.lower())}%"
             stmt = stmt.where(Template.name.ilike(like, escape="\\"))
         if query.cursor:

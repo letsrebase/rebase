@@ -10,7 +10,7 @@ import { readAndClearRegisterHandoffEmail } from '@/lib/registerHandoff'
 import { LegalEntityContext, type LegalEntityRecord, type LegalEntityValue } from '@/lib/legalEntity'
 import { AppShell } from './AppShell'
 
-const mockRoute = vi.hoisted(() => ({ pathname: '/app/customers', search: '' }))
+const mockRoute = vi.hoisted(() => ({ pathname: '/app/organizations', search: '' }))
 
 /**
  * `Link` is substituted rather than mounted in a router, as everywhere else in this
@@ -159,7 +159,7 @@ beforeEach(() => {
   setViewport(true)
   mockAuth.role = 'admin'
   mockAuth.id = undefined
-  mockRoute.pathname = '/app/customers'
+  mockRoute.pathname = '/app/organizations'
   mockRoute.search = ''
   localStorage.clear()
   sessionStorage.clear()
@@ -354,7 +354,7 @@ describe('AppShell', () => {
   })
 
   it('keeps a sub-item marked while its list carries a filter in the URL', () => {
-    mockRoute.pathname = '/app/customers'
+    mockRoute.pathname = '/app/organizations'
     mockRoute.search = '?q=acme'
     renderShell()
     expect(sidebar().getByRole('link', { name: 'Clienti' })).toHaveAttribute(
@@ -817,7 +817,7 @@ describe('AppShell', () => {
    * four work reads (`useSpaceHasData`), so a customer, a deal, an hour or a document is
    * what turns the entry on.
    */
-  const WORK_PATHS = ['/api/customers', '/api/deals', '/api/time-entries', '/api/documents']
+  const WORK_PATHS = ['/api/organizations', '/api/deals', '/api/time-entries', '/api/documents']
   function answerWork(has: string | null) {
     GET.mockImplementation((path: string) =>
       Promise.resolve({
@@ -833,7 +833,7 @@ describe('AppShell', () => {
     'offers «Primi passi» to a %s in the profile menu once the space has data',
     async (role) => {
       mockAuth.role = role
-      answerWork('/api/customers')
+      answerWork('/api/organizations')
       renderShell()
 
       await userEvent.click(screen.getByRole('button', { name: 'Menu del profilo' }))

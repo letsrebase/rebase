@@ -51,7 +51,7 @@ const CONTRACT = {
 function mockApi(contract: ReturnType<typeof ok> | ReturnType<typeof failed>) {
   mockGet.mockImplementation(((path: string) => {
     if (path === '/api/contracts/{contract_id}') return contract
-    if (path === '/api/customers/{customer_id}') return ok({ id: 'cust-1', legal_name: 'ACME Srl' })
+    if (path === '/api/organizations/{organization_id}') return ok({ id: 'cust-1', legal_name: 'ACME Srl' })
     if (path === '/api/work-units') return ok({ items: [], truncated: false })
     if (path === '/api/schema/{entity_type}') {
       return ok({ entity_type: 'contract', native_fields: [], custom_fields: [] })

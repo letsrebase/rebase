@@ -26,7 +26,7 @@ describe('isInstallablePage', () => {
   })
 
   it('is true on the root installation when it is served without a slug', () => {
-    expect(isInstallablePage('/app/customers', '')).toBe(true)
+    expect(isInstallablePage('/app/organizations', '')).toBe(true)
     expect(isInstallablePage('/app/', '')).toBe(true)
   })
 

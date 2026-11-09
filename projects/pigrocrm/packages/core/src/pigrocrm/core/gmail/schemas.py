@@ -144,7 +144,7 @@ class GmailHealth(BaseModel):
 class DiscoveredCorrespondent(BaseModel):
     """One address at the customer's domain that the connected mailbox has actually
     exchanged mail with. A suggestion, not a record: nothing is written until a person
-    puts the address on a Person or the Customer."""
+    puts the address on a Person or the Organization."""
 
     model_config = ConfigDict(frozen=True)
 
@@ -172,10 +172,10 @@ class SuggestedPerson(BaseModel):
     already_in_directory: bool
 
 
-class SuggestedCustomer(BaseModel):
+class SuggestedOrganization(BaseModel):
     """One domain the connected mailbox has corresponded with, proposed as a customer
     (spec 2026-09-16 §5, REB-223). A proposal, not a record: nothing is written until a
-    person ticks it and `POST /api/customers/from-suggestions` creates it."""
+    person ticks it and `POST /api/organizations/from-suggestions` creates it."""
 
     model_config = ConfigDict(frozen=True)
 
@@ -215,7 +215,7 @@ class GmailBackfillRequest(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    entity_type: Literal["person", "customer"]
+    entity_type: Literal["person", "organization"]
     entity_id: UUID
     full: bool = False
 
@@ -273,7 +273,7 @@ EDITABLE_SEND_STATES: frozenset[str] = frozenset({"draft", "failed"})
 class EmailDraftCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    entity_type: Literal["customer", "person", "deal"]
+    entity_type: Literal["organization", "person", "deal"]
     entity_id: UUID
     to_addresses: list[Annotated[SafeStr, Field(max_length=EMAIL_ADDRESS_MAX_LENGTH)]] = Field(
         max_length=MAX_RECIPIENTS
@@ -380,7 +380,7 @@ class EmailDraftRead(BaseModel):
 class EmailDraftListQuery(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    entity_type: Literal["customer", "person", "deal"] | None = None
+    entity_type: Literal["organization", "person", "deal"] | None = None
     entity_id: UUID | None = None
     send_state: SendState | None = None
     # Everything but `sent`: the drafts a person still has to act on (REB-415). A

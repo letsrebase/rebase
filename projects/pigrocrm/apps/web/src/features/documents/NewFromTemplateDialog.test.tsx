@@ -26,7 +26,7 @@ const DESCRIPTION: TemplateDescription = {
     { name: 'subject', label: 'Oggetto', type: 'text', required: true, options: [] },
     { name: 'urgente', label: 'Urgente', type: 'checkbox', required: false, options: [] },
   ],
-  used_journeys: [['subject'], ['customer', 'legal_name']],
+  used_journeys: [['subject'], ['organization', 'legal_name']],
   variables_not_used: [],
 }
 

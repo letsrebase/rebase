@@ -28,7 +28,6 @@ import pytest
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.actor import Actor
-from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.errors import ValidationFailed
 from pigrocrm.core.fiscal.schemas import FiscalProfileUpsert
 from pigrocrm.core.fiscal.service import FiscalProfileService
@@ -36,6 +35,7 @@ from pigrocrm.core.invoices.repository import InvoiceRepository
 from pigrocrm.core.invoices.schemas import MAX_LINES, InvoiceCreate, InvoiceLineIn
 from pigrocrm.core.invoices.service import InvoiceService
 from pigrocrm.core.invoices.totals import MONEY_MAX_EXCLUSIVE
+from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.storage.local import LocalFileStorage
 
 ADMIN = Actor(id=None, type="system", role="admin")
@@ -59,7 +59,7 @@ def service(db_session: Session, storage: LocalFileStorage) -> InvoiceService:
 
 @pytest.fixture
 def customer_id(db_session: Session) -> UUID:
-    customer = Customer(
+    customer = Organization(
         legal_name="Acme S.r.l.",
         vat_number="12345678901",
         sdi_code="ABCDEFG",

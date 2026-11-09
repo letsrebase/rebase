@@ -8,7 +8,6 @@ from sqlalchemy.orm import Session
 from pigrocrm.core.activities.service import ActivityService
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.auth.models import User
-from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.db import encode_cursor, today_local
 from pigrocrm.core.deals.models import Deal
 from pigrocrm.core.errors import Conflict, NotFound, ValidationFailed
@@ -16,6 +15,7 @@ from pigrocrm.core.fields.schemas import EntityType
 from pigrocrm.core.fields.service import FieldDefinitionService
 from pigrocrm.core.fields.validator import validate_custom_fields
 from pigrocrm.core.invoices.models import Invoice
+from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.people.models import Person
 from pigrocrm.core.schemas import reject_cleared_columns, supplied_changes
 from pigrocrm.core.tasks.models import Task
@@ -42,8 +42,8 @@ CLOSED = frozenset({"completed", "cancelled"})
 
 # Which table each reference column points at, so `_check_reference` is a loop and not
 # four near-identical blocks. The order is `REFERENCES`'s.
-_TABLES: dict[str, type[Customer] | type[Person] | type[Deal] | type[Invoice]] = {
-    "customer_id": Customer,
+_TABLES: dict[str, type[Organization] | type[Person] | type[Deal] | type[Invoice]] = {
+    "customer_id": Organization,
     "person_id": Person,
     "deal_id": Deal,
     "invoice_id": Invoice,

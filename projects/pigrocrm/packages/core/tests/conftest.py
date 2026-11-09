@@ -13,10 +13,10 @@ from tax_period import TODAY
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.auth.models import User
 from pigrocrm.core.config import Settings
-from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.db import create_engine_from_settings, session_factory
 from pigrocrm.core.deals.models import Deal
 from pigrocrm.core.fiscal.repository import FiscalProfileRepository
+from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.pipeline.models import PipelineStage
 from pigrocrm.core.storage.local import LocalFileStorage
 from pigrocrm.core.timetracking.models import CostCategory, TimeEntry
@@ -89,7 +89,7 @@ def seeded_won_stage_id(db_session: Session) -> UUID:
 
 @pytest.fixture
 def seeded_deal_id(db_session: Session, seeded_open_stage_id: UUID) -> UUID:
-    customer = Customer(legal_name=f"Cliente {uuid4()}")
+    customer = Organization(legal_name=f"Cliente {uuid4()}")
     db_session.add(customer)
     db_session.flush()
     deal = Deal(
@@ -297,7 +297,7 @@ def _invoice_service(session: Session, storage: LocalFileStorage) -> Any:
 
 def _fiscal_customer_id(session: Session) -> UUID:
     """A customer with enough identity to appear on an issued document."""
-    customer = Customer(
+    customer = Organization(
         legal_name=f"Acme {uuid4()}",
         vat_number="12345678901",
         sdi_code="ABCDEFG",

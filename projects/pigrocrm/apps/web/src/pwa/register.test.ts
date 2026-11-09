@@ -60,7 +60,7 @@ describe('startPwa', () => {
 
     // Signed in: the same document, now on the application.
     startPwa({ ...env, pathname: '/app/' })
-    startPwa({ ...env, pathname: '/app/customers' })
+    startPwa({ ...env, pathname: '/app/organizations' })
     expect(register).toHaveBeenCalledTimes(1)
     expect(document.head.querySelectorAll('link[rel="manifest"]')).toHaveLength(1)
   })

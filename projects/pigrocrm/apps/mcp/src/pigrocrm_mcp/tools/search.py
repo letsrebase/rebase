@@ -1,6 +1,6 @@
 """The thin half. Everything that matters happened in `SearchService`.
 
-Shaped exactly like `tools/customers.py`: resolve the service on the context's session, call
+Shaped exactly like `tools/organizations.py`: resolve the service on the context's session, call
 it, `model_dump(mode="json")`.
 
 What keeps the score out of an agent's context as `0.6000000238418579` is

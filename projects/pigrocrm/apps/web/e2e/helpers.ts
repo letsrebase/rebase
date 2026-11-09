@@ -69,9 +69,9 @@ export async function loginAsAdmin(page: Page): Promise<void> {
  * so a run against a stack kept alive does not grow a row per spec.
  */
 export async function ensureSpaceHasWork(page: Page): Promise<void> {
-  const list = (await (await page.request.get('/api/customers?limit=1')).json()) as { items: unknown[] }
+  const list = (await (await page.request.get('/api/organizations?limit=1')).json()) as { items: unknown[] }
   if (list.items.length > 0) return
-  const created = await page.request.post('/api/customers', {
+  const created = await page.request.post('/api/organizations', {
     data: { legal_name: `Home ${Date.now()} Srl` },
   })
   expect(created.status()).toBe(201)
@@ -178,14 +178,14 @@ export async function dragDealToStage(page: Page, dealName: string, stageName: s
 }
 
 /**
- * Creates a customer through the real UI (`/app/customers` → "Nuovo cliente"), the
+ * Creates a customer through the real UI (`/app/organizations` → "Nuovo cliente"), the
  * same form flow `crm.spec.ts`'s own customer-creation test drives, and returns the
  * generated, timestamp-suffixed name so a caller can find the row it just made
  * without racing any other customer already on screen.
  */
-export async function createCustomer(page: Page): Promise<string> {
+export async function createOrganization(page: Page): Promise<string> {
   const name = `Documenti ${Date.now()}`
-  await page.goto('/app/customers')
+  await page.goto('/app/organizations')
   await page.getByRole('button', { name: /nuovo cliente/i }).click()
   await page.getByLabel('Ragione sociale').fill(name)
   await page.getByRole('button', { name: 'Salva' }).click()
@@ -327,7 +327,7 @@ export async function seedDealWithRate(
     customer: customerOverrides,
   }: { name: string; rate: string; customer?: Record<string, string> },
 ): Promise<{ dealId: string; customerId: string }> {
-  const customerResponse = await request.post('/api/customers', {
+  const customerResponse = await request.post('/api/organizations', {
     // Merged over the default, never replacing it: `time-tracking.spec.ts` needs
     // nothing but a name, and `economics.spec.ts` needs a customer complete enough to
     // be *invoiced* -- `check_party_exportable` and `check_recipient_routing` both run
@@ -359,7 +359,7 @@ export async function seedDealWithRate(
 }
 
 /**
- * Seeds `count` customers through the real API, in parallel batches.
+ * Seeds `count` organizations through the real API, in parallel batches.
  *
  * Through the API and not through the UI: 500 rows via forms would take minutes and
  * would be testing the form, not the palette. Through `page.request` and a relative URL,
@@ -372,13 +372,13 @@ export async function seedDealWithRate(
  * spec that made them; a generic term would make an assertion pass or fail depending on
  * which spec ran first.
  */
-export async function seedCustomers(page: Page, prefix: string, count: number): Promise<void> {
+export async function seedOrganizations(page: Page, prefix: string, count: number): Promise<void> {
   const BATCH = 25
   for (let start = 0; start < count; start += BATCH) {
     const size = Math.min(BATCH, count - start)
     const responses = await Promise.all(
       Array.from({ length: size }, (_, offset) =>
-        page.request.post('/api/customers', {
+        page.request.post('/api/organizations', {
           data: { legal_name: `${prefix} ${String(start + offset).padStart(4, '0')} Srl` },
         }),
       ),
@@ -425,7 +425,7 @@ export interface CycleFixture {
  * `vinto`, and the stale offer stops counting. One down — because the deal was repaired,
  * which is the only thing this signal ever asks anyone to do.
  *
- * Seeded through the API for the same reason `seedCustomers` is: driving the customer form,
+ * Seeded through the API for the same reason `seedOrganizations` is: driving the customer form,
  * the deal form and the upload dropzone first would make a failure in any of them read as a
  * failure of the cycle. Those flows are asserted, once, in `crm.spec.ts` and
  * `documents.spec.ts`.
@@ -447,7 +447,7 @@ export async function seedCycleFixture(page: Page): Promise<CycleFixture> {
   const dealName = `Ciclo rifacimento impianti ${suffix}`
   const documentTitle = `Ciclo offerta impianti ${suffix}`
 
-  const customer = await page.request.post('/api/customers', {
+  const customer = await page.request.post('/api/organizations', {
     data: { legal_name: customerName, vat_number: vatNumber },
   })
   expect(customer.status(), await customer.text()).toBe(201)

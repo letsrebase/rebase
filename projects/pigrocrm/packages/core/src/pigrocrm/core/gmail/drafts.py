@@ -32,7 +32,6 @@ from sqlalchemy.orm import Session
 from pigrocrm.core.activities.service import ActivityService
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.config import Settings
-from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.deals.models import Deal
 from pigrocrm.core.documents.models import DocumentVersion
 from pigrocrm.core.errors import Conflict, NotFound, ValidationFailed
@@ -50,6 +49,7 @@ from pigrocrm.core.gmail.schemas import (
     EmailDraftUpdate,
 )
 from pigrocrm.core.legal_entities.models import LegalEntity
+from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.people.models import Person
 
 ENTITY = "email_draft"
@@ -66,8 +66,8 @@ _ALREADY_GONE = "questa email è già inviata o in invio: duplicala per modifica
 # against "some row with this id": `entity_id` carries no foreign key (it points at one
 # of three tables), so this mapping is the only thing standing between a caller's UUID
 # and a draft filed against a row of the wrong kind.
-_ENTITY_TABLES: dict[str, type[Customer] | type[Person] | type[Deal]] = {
-    "customer": Customer,
+_ENTITY_TABLES: dict[str, type[Organization] | type[Person] | type[Deal]] = {
+    "organization": Organization,
     "person": Person,
     "deal": Deal,
 }
@@ -361,7 +361,7 @@ class EmailDraftService:
         return self._get(draft_id)
 
     # `list` must stay the last method defined in this class -- the same unconditional
-    # rule as `CustomerService.list`: defining a method named `list` rebinds that name in
+    # rule as `OrganizationService.list`: defining a method named `list` rebinds that name in
     # the class namespace, so any later method annotated `-> list[...]` would resolve
     # `list` to this method instead of the builtin and fail at import time.
     def list(self, query: EmailDraftListQuery, actor: Actor) -> EmailDraftPage:

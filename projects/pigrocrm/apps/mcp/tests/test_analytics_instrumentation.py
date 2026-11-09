@@ -139,7 +139,7 @@ async def test_with_a_key_a_tool_call_reaches_posthog_with_the_actor(
 
     async with Client(mcp) as agent:
         tools = await agent.list_tools()
-        await agent.call_tool("describe_schema", {"entity_type": "customer"})
+        await agent.call_tool("describe_schema", {"entity_type": "organization"})
 
     names = [event.get("event") for event in events]
     assert "$mcp_tool_call" in names, names
@@ -172,7 +172,7 @@ async def test_with_a_key_the_tools_are_the_ones_the_server_without_one_advertis
     async def surface(server: Any) -> tuple[list[dict[str, Any]], list[dict[str, Any]], Any]:
         async with Client(server) as agent:
             listed = await agent.list_tools()
-            result = await agent.call_tool("describe_schema", {"entity_type": "customer"})
+            result = await agent.call_tool("describe_schema", {"entity_type": "organization"})
         tools = [tool.model_dump(mode="json", by_alias=True) for tool in listed.tools]
         content = [block.model_dump(mode="json", by_alias=True) for block in result.content]
         return tools, content, result.structured_content
@@ -217,7 +217,7 @@ async def test_a_refused_call_keeps_its_message_and_counts_as_an_error(
 
     async def refused(server: Any) -> str:
         async with Client(server) as agent:
-            result = await agent.call_tool("get_customer", {"customer_id": missing})
+            result = await agent.call_tool("get_organization", {"organization_id": missing})
             assert result.is_error
         return " ".join(getattr(block, "text", "") for block in result.content)
 
@@ -263,11 +263,11 @@ async def test_no_event_carries_what_the_agent_sent_or_got_back(
 
     async with Client(server) as agent:
         created = await agent.call_tool(
-            "create_customer", {"legal_name": name, "vat_number": tax_id}
+            "create_organization", {"legal_name": name, "vat_number": tax_id}
         )
         customer_id = (created.structured_content or json.loads(created.content[0].text))["id"]
-        await agent.call_tool("get_customer", {"customer_id": customer_id})
-        refused = await agent.call_tool("get_customer", {"customer_id": missing})
+        await agent.call_tool("get_organization", {"organization_id": customer_id})
+        refused = await agent.call_tool("get_organization", {"organization_id": missing})
         assert refused.is_error
 
     calls = [e for e in events if e.get("event") == "$mcp_tool_call"]
@@ -277,9 +277,9 @@ async def test_no_event_carries_what_the_agent_sent_or_got_back(
         assert properties["$groups"] == {"space": "studio"}
         assert "$mcp_duration_ms" in properties and "$mcp_is_error" in properties
     assert [c["properties"]["$mcp_tool_name"] for c in calls] == [
-        "create_customer",
-        "get_customer",
-        "get_customer",
+        "create_organization",
+        "get_organization",
+        "get_organization",
     ]
     assert calls[2]["properties"]["$mcp_is_error"] is True
     serialized = json.dumps(events, default=str)

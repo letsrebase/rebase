@@ -28,14 +28,14 @@ def _assert_guidance(message: str) -> None:
 
 async def test_a_missing_parameter_names_it_and_lists_what_the_tool_takes(server) -> None:
     async with Client(server) as client:
-        result = await client.call_tool("get_customer", {})
+        result = await client.call_tool("get_organization", {})
 
     assert result.is_error
     message = result.content[0].text
     _assert_guidance(message)
-    assert "customer_id" in message
+    assert "organization_id" in message
     assert "required field missing" in message
-    assert "get_customer" in message
+    assert "get_organization" in message
 
 
 async def test_a_parameter_the_tool_does_not_have_is_refused_with_the_closest_name(
@@ -45,19 +45,21 @@ async def test_a_parameter_the_tool_does_not_have_is_refused_with_the_closest_na
     the one an agent that has just read a deal reaches for. On a tool without the alias
     the misspelling is named and the right name offered."""
     async with Client(server) as client:
-        result = await client.call_tool("get_customer", {"customer_id": str(uuid4()), "id": "x"})
+        result = await client.call_tool(
+            "get_organization", {"organization_id": str(uuid4()), "id": "x"}
+        )
 
     assert result.is_error
     message = result.content[0].text
     _assert_guidance(message)
     assert "parameter not recognized" in message
     assert "`id`" in message or "input.id" in message
-    assert "customer_id" in message
+    assert "organization_id" in message
 
 
 async def test_a_misspelt_search_parameter_is_no_longer_silently_ignored(server) -> None:
     async with Client(server) as client:
-        result = await client.call_tool("search_customers", {"limite": 5})
+        result = await client.call_tool("search_organizations", {"limite": 5})
 
     assert result.is_error
     message = result.content[0].text
@@ -95,7 +97,7 @@ async def test_move_deal_accepts_the_deals_own_field_name(server, mcp_session: S
     PipelineService(mcp_session).seed_defaults(Actor(id=None, type="system", role="admin"))
     async with Client(server) as client:
         customer = (
-            await client.call_tool("create_customer", {"legal_name": "ACME"})
+            await client.call_tool("create_organization", {"legal_name": "ACME"})
         ).structured_content
         deal = (
             await client.call_tool("create_deal", {"name": "X", "customer_id": customer["id"]})
@@ -128,10 +130,10 @@ async def test_move_deal_with_two_different_destinations_is_refused(server) -> N
 @pytest.mark.parametrize(
     ("tool", "arguments", "field"),
     [
-        ("search_customers", {"cursor": 5}, "cursor"),
+        ("search_organizations", {"cursor": 5}, "cursor"),
         ("describe_schema", {"entity_type": "fattura"}, "entity_type"),
         ("describe_schema", {"entity_type": 7}, "entity_type"),
-        ("update_customer", {"customer_id": str(uuid4()), "changes": "note"}, "changes"),
+        ("update_organization", {"organization_id": str(uuid4()), "changes": "note"}, "changes"),
         ("search_everything", {"term": "ab"}, "term"),
     ],
 )
@@ -153,7 +155,7 @@ async def test_a_wrong_enum_value_lists_the_allowed_ones(server) -> None:
 
     message = result.content[0].text
     assert "non è uno dei valori ammessi" in message
-    assert "`customer`" in message
+    assert "`organization`" in message
 
 
 async def test_a_short_search_text_is_asked_for_in_italian(server) -> None:

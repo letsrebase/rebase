@@ -15,7 +15,7 @@ def escape_like(term: str) -> str:
     character is also backslash, but stating it explicitly keeps this correct even if
     that default is ever overridden per-call.
 
-    Shared across every entity offering free-text search (Customers today, People and
+    Shared across every entity offering free-text search (Organizations today, People and
     Deals next) -- kept here once rather than reimplemented per domain.
     """
     return term.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")

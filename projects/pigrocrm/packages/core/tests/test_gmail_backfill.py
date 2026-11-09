@@ -30,10 +30,10 @@ from sqlalchemy.orm import Session
 
 from pigrocrm.core.activities.models import Activity
 from pigrocrm.core.actor import Actor
-from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.errors import Conflict, NotFound, PermissionDenied, ValidationFailed
 from pigrocrm.core.gmail.models import GmailKnownAddress, GmailMessage
 from pigrocrm.core.gmail.repository import GmailRepository
+from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.people.models import Person
 
 _ADDRESS_CLAUSE = re.compile(r"\b(?:from|to|cc|bcc|rfc822msgid):([^\s)]+)")
@@ -95,7 +95,7 @@ def _stored(session: Session) -> set[str]:
 
 
 def _person_of_new_customer(session: Session, email: str) -> Person:
-    customer = Customer(legal_name=f"Acme {uuid4().hex[:6]}", contact_points=points(email=None))
+    customer = Organization(legal_name=f"Acme {uuid4().hex[:6]}", contact_points=points(email=None))
     session.add(customer)
     session.flush()
     person = Person(
@@ -146,7 +146,7 @@ def test_the_second_cycle_asks_only_from_the_watermark(db_session: Session) -> N
     """The backfill happens once. A cycle that re-derived "new" from the roster alone
     would re-read three months of mail every fifteen minutes, forever."""
     account = connected_account(db_session)
-    db_session.add(Customer(legal_name="Acme", contact_points=points(email="info@acme.it")))
+    db_session.add(Organization(legal_name="Acme", contact_points=points(email="info@acme.it")))
     db_session.flush()
 
     fake = FakeGmail()
@@ -181,7 +181,7 @@ def test_an_address_added_later_is_backfilled_while_the_others_are_not(
     established correspondent must not be re-read over three months just because a
     colleague was added to the CRM this morning."""
     account = connected_account(db_session)
-    db_session.add(Customer(legal_name="Acme", contact_points=points(email="info@acme.it")))
+    db_session.add(Organization(legal_name="Acme", contact_points=points(email="info@acme.it")))
     db_session.flush()
 
     fake = FakeGmail()
@@ -310,7 +310,7 @@ def test_a_customer_backfill_covers_the_people_who_work_there(db_session: Sessio
     the company record would silently miss every message from the person one actually
     writes to."""
     account = connected_account(db_session)
-    customer = Customer(legal_name="Acme", contact_points=points(email="info@acme.it"))
+    customer = Organization(legal_name="Acme", contact_points=points(email="info@acme.it"))
     db_session.add(customer)
     db_session.flush()
     db_session.add(
@@ -336,7 +336,7 @@ def test_a_customer_backfill_covers_the_people_who_work_there(db_session: Sessio
     fake.messages["daAda"] = _message("daAda", frm="ada@acme.it", when_ms=_ms(45))
     fake.messages["daInfo"] = _message("daInfo", frm="info@acme.it", when_ms=_ms(45))
     report = sync_service(db_session, fake).backfill(
-        "customer", customer.id, full=False, actor=actor_for(account)
+        "organization", customer.id, full=False, actor=actor_for(account)
     )
 
     assert report.messages_stored == 2
@@ -398,12 +398,12 @@ def test_backfill_on_an_entity_with_no_address_refuses_clearly(db_session: Sessi
     """Silence would be the worst answer: the user pressed a button, waited, and got a
     report of zero because there was never an address to look for."""
     account = connected_account(db_session)
-    customer = Customer(legal_name="Acme", contact_points=points(email=None))
+    customer = Organization(legal_name="Acme", contact_points=points(email=None))
     db_session.add(customer)
     db_session.flush()
     with pytest.raises(Conflict, match="nessun indirizzo"):
         sync_service(db_session, FakeGmail()).backfill(
-            "customer", customer.id, full=False, actor=actor_for(account)
+            "organization", customer.id, full=False, actor=actor_for(account)
         )
 
 
@@ -412,7 +412,7 @@ def test_backfill_on_an_unknown_entity_is_a_not_found(db_session: Session) -> No
     db_session.flush()
     with pytest.raises(NotFound):
         sync_service(db_session, FakeGmail()).backfill(
-            "customer", uuid4(), full=False, actor=actor_for(account)
+            "organization", uuid4(), full=False, actor=actor_for(account)
         )
 
 

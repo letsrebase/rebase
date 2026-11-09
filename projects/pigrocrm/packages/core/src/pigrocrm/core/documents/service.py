@@ -287,7 +287,7 @@ class DocumentService:
         rows = self.repo.list(query)
         has_more = len(rows) > query.limit
         items = rows[: query.limit]
-        # See `CustomerService.list` for why the cursor carries the sort value as well
+        # See `OrganizationService.list` for why the cursor carries the sort value as well
         # as the id.
         spec = DOCUMENT_SORTS.resolve(query.sort)
         next_cursor = (

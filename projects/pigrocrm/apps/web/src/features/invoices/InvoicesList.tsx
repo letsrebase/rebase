@@ -57,7 +57,7 @@ const Receipts = Object.entries(PAYMENT_STATE_LABELS).map(([value, label]) => ({
 /**
  * Exported so `index.test.tsx` can render the list without a router: the route
  * component below is what reads `overdue` out of the URL, and this is what draws the
- * page. The split is the same one `CustomersPage`/`PeoplePage` already make for their
+ * page. The split is the same one `OrganizationsPage`/`PeoplePage` already make for their
  * own `?search=` term.
  */
 export function InvoicesList({ overdue }: { overdue?: boolean }) {

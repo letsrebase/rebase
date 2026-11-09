@@ -59,7 +59,6 @@ from sqlalchemy import Engine, delete, select, text
 
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.analytics.service import AnalyticsService
-from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.dashboard import service as dashboard_service
 from pigrocrm.core.dashboard.schemas import (
     CommercialDashboard,
@@ -74,6 +73,7 @@ from pigrocrm.core.db.base import uuid7
 from pigrocrm.core.deals.models import Deal
 from pigrocrm.core.deals.repository import DealRepository
 from pigrocrm.core.invoices.models import Invoice
+from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.pipeline.models import PipelineStage
 from pigrocrm.core.pipeline.schemas import PipelineStageRead
 from pigrocrm.core.pipeline.service import PipelineService
@@ -103,7 +103,7 @@ def seeded(db_engine: Engine) -> Iterator[Seeded]:
     with factory() as session:
         legal_entity_id = committed_default_legal_entity(session)
         stages = {s.code: s for s in PipelineService(session).seed_defaults(SEED) if s.code}
-        customer = Customer(legal_name=f"{_PREFIX} Cliente", country="IT", custom_fields={})
+        customer = Organization(legal_name=f"{_PREFIX} Cliente", country="IT", custom_fields={})
         session.add(customer)
         session.flush()
         customer_id = customer.id
@@ -131,12 +131,14 @@ def seeded(db_engine: Engine) -> Iterator[Seeded]:
             session.execute(
                 delete(Invoice).where(
                     Invoice.customer_id.in_(
-                        select(Customer.id).where(Customer.legal_name.like(f"{_PREFIX} %"))
+                        select(Organization.id).where(Organization.legal_name.like(f"{_PREFIX} %"))
                     )
                 )
             )
             session.execute(delete(Deal).where(Deal.name.like(f"{_PREFIX} %")))
-            session.execute(delete(Customer).where(Customer.legal_name.like(f"{_PREFIX} %")))
+            session.execute(
+                delete(Organization).where(Organization.legal_name.like(f"{_PREFIX} %"))
+            )
             session.execute(delete(PipelineStage))
             remove_legal_entity(session, legal_entity_id)
             session.commit()

@@ -75,7 +75,7 @@ export function CostForm({
   const update = useUpdateCost(costId ?? '')
   const remove = useDeleteCost()
 
-  // Same "reset synchronously when `open` toggles" pattern as CustomerForm/DealForm/
+  // Same "reset synchronously when `open` toggles" pattern as OrganizationForm/DealForm/
   // TimeEntryForm: this component stays mounted across dialog opens, so a plain
   // useState initializer would only ever run once.
   const [wasOpen, setWasOpen] = useState(open)

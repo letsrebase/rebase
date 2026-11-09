@@ -27,11 +27,11 @@ from pigrocrm.core.contracts.schemas import (
     RenewalAssumptionUpsert,
 )
 from pigrocrm.core.contracts.service import ContractService
-from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.errors import Conflict, NotFound, ValidationFailed
 from pigrocrm.core.fields.schemas import FieldDefinitionCreate
 from pigrocrm.core.fields.service import FieldDefinitionService
 from pigrocrm.core.invoices.models import Invoice
+from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.timetracking.models import CostCategory
 
 ADMIN = Actor(id=None, type="system", role="admin")
@@ -204,7 +204,7 @@ def test_an_overlap_conflict_leaves_the_callers_other_pending_work_alone(
         _daily_payload(valid_from=date(2026, 1, 1), valid_to=date(2026, 6, 30)),
         ADMIN,
     )
-    pending = Customer(legal_name="Pending S.r.l.")
+    pending = Organization(legal_name="Pending S.r.l.")
     db_session.add(pending)
 
     with pytest.raises(Conflict):
@@ -216,7 +216,7 @@ def test_an_overlap_conflict_leaves_the_callers_other_pending_work_alone(
 
     assert pending in db_session
     db_session.flush()
-    assert db_session.get(Customer, pending.id) is not None
+    assert db_session.get(Organization, pending.id) is not None
 
 
 def test_rate_card_create_rejects_minimum_hours_outside_hourly_with_to_clean_validation_error(
@@ -278,7 +278,7 @@ def test_concentration_cap_computes_the_clients_share_of_the_anniversary_year(
     year: an invoice dated before that anniversary is out of the window even though
     it falls inside the same `issue_date.year`."""
     customer = make_customer(db_session)
-    other = Customer(legal_name="Altro Cliente")
+    other = Organization(legal_name="Altro Cliente")
     db_session.add(other)
     db_session.flush()
     contract = ContractService(db_session).create(
@@ -327,7 +327,7 @@ def test_concentration_cap_reports_the_currency_the_invoices_are_in_not_the_cont
     page cannot label them as dollars. Invoices in another currency are their own row
     and never summed into the euro figure."""
     customer = make_customer(db_session)
-    other = Customer(legal_name="Altro Cliente")
+    other = Organization(legal_name="Altro Cliente")
     db_session.add(other)
     db_session.flush()
     contract = ContractService(db_session).create(
@@ -353,7 +353,7 @@ def test_concentration_cap_reports_the_currency_the_invoices_are_in_not_the_cont
 
 def test_concentration_cap_reports_whether_a_threshold_is_exceeded(db_session: Session) -> None:
     customer = make_customer(db_session)
-    other = Customer(legal_name="Altro Cliente")
+    other = Organization(legal_name="Altro Cliente")
     db_session.add(other)
     db_session.flush()
     contract = ContractService(db_session).create(_create_payload(customer.id), ADMIN)
@@ -974,7 +974,7 @@ def test_an_expense_policy_the_trigger_cannot_read_is_refused_on_create(
         _create_payload(customer.id, expense_policy=policy)
 
 
-def test_a_customers_and_a_legal_entities_contracts_are_filtered_in_sql(
+def test_a_organizations_and_a_legal_entities_contracts_are_filtered_in_sql(
     db_session: Session,
 ) -> None:
     first = make_customer(db_session)

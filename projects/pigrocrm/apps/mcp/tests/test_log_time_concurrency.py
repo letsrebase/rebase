@@ -23,9 +23,9 @@ from sqlalchemy.orm import Session
 
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.auth.models import User
-from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.db import session_factory
 from pigrocrm.core.deals.models import Deal
+from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.pipeline.models import PipelineStage
 from pigrocrm_mcp.context import McpContext, ScopedSessionProvider
 from pigrocrm_mcp.tools import timetracking
@@ -39,7 +39,7 @@ def _seed_committed_deal_and_user(mcp_engine: Engine) -> tuple[UUID, UUID, UUID,
         stage = PipelineStage(
             name=f"Aperto {uuid4()}", position=0, default_probability=10, type="open"
         )
-        customer = Customer(legal_name=f"Cliente concorrenza {uuid4()}")
+        customer = Organization(legal_name=f"Cliente concorrenza {uuid4()}")
         user = User(email=f"worker-{uuid4()}@example.test", password_hash="x", name="Worker")
         session.add_all([stage, customer, user])
         session.flush()
@@ -68,7 +68,7 @@ def _remove_committed_rows(
             "DELETE FROM activities WHERE actor_id = :user",
             "DELETE FROM time_entries WHERE deal_id = :deal",
             "DELETE FROM deals WHERE id = :deal",
-            "DELETE FROM customers WHERE id = :customer",
+            "DELETE FROM organizations WHERE id = :customer",
             "DELETE FROM pipeline_stages WHERE id = :stage",
             "DELETE FROM users WHERE id = :user",
         ):

@@ -16,7 +16,7 @@ function DocumentDetail() {
   const legal_entity = useLegalEntity()
 
   if (document.isError) {
-    // A real 404 keeps its own honest wording, the same way CustomerDetail's own
+    // A real 404 keeps its own honest wording, the same way OrganizationDetail's own
     // isError branch splits a genuine 404 from every other failure -- collapsing
     // both into the generic banner would tell the user a deleted/unknown document
     // "could not be reached" when the truth is simpler.

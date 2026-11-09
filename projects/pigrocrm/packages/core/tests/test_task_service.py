@@ -17,8 +17,8 @@ from sqlalchemy.orm import Session
 
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.auth.models import User
-from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.errors import Conflict, NotFound, PermissionDenied, ValidationFailed
+from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.tasks.models import Task
 from pigrocrm.core.tasks.schemas import (
     TaskCreate,
@@ -39,7 +39,7 @@ def service(db_session: Session) -> TaskService:
 
 @pytest.fixture
 def customer_id(db_session: Session) -> UUID:
-    row = Customer(legal_name=f"Cliente {uuid4()}")
+    row = Organization(legal_name=f"Cliente {uuid4()}")
     db_session.add(row)
     db_session.flush()
     return row.id

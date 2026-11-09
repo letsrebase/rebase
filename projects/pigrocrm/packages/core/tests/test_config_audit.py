@@ -31,14 +31,14 @@ from pigrocrm.core.auth.pat_service import PAT_PREFIX, PatRead, PatService, _dig
 from pigrocrm.core.auth.repository import UserRepository
 from pigrocrm.core.auth.schemas import UserCreate, UserRead, UserUpdate
 from pigrocrm.core.auth.service import UserService
-from pigrocrm.core.customers.schemas import CustomerCreate
-from pigrocrm.core.customers.service import CustomerService
 from pigrocrm.core.deals.schemas import DealCreate
 from pigrocrm.core.deals.service import DealService
 from pigrocrm.core.errors import Conflict, NotFound, ValidationFailed
 from pigrocrm.core.fields.repository import FieldDefinitionRepository
 from pigrocrm.core.fields.schemas import FieldDefinitionCreate, FieldDefinitionUpdate
 from pigrocrm.core.fields.service import FieldDefinitionService
+from pigrocrm.core.organizations.schemas import OrganizationCreate
+from pigrocrm.core.organizations.service import OrganizationService
 from pigrocrm.core.pipeline.schemas import PipelineStageCreate, PipelineStageUpdate
 from pigrocrm.core.pipeline.service import DEFAULT_STAGES, PipelineService
 
@@ -48,7 +48,7 @@ SYSTEM = Actor(id=None, type="system", role="admin")
 def _deal_in_stage(db_session: Session, stage_id: UUID) -> None:
     """A stage with a deal in it cannot be deleted, which is the path this fixture
     exists to reach."""
-    customer = CustomerService(db_session).create(CustomerCreate(legal_name="ACME"), SYSTEM)
+    customer = OrganizationService(db_session).create(OrganizationCreate(legal_name="ACME"), SYSTEM)
     DealService(db_session).create(
         DealCreate(name="Un deal", customer_id=customer.id, pipeline_stage_id=stage_id), SYSTEM
     )
@@ -166,7 +166,7 @@ def test_a_datetime_in_a_payload_is_stored_as_iso_text(db_session: Session) -> N
 
 def _field(db_session: Session, key: str = "settore", **overrides: Any) -> Any:
     data = {
-        "entity_type": "customer",
+        "entity_type": "organization",
         "key": key,
         "label": "Settore",
         "field_type": "text",
@@ -184,7 +184,7 @@ def test_creating_a_field_definition_records_what_was_created(db_session: Sessio
     entry = _entries(db_session, "field_definition", field.id)[0]
     assert entry.kind == "created"
     assert entry.payload == {
-        "entity_type": "customer",
+        "entity_type": "organization",
         "key": "settore",
         "label": "Settore",
         "field_type": "text",
@@ -267,7 +267,7 @@ def test_archiving_records_the_definition_and_unarchiving_records_the_return(
 
 
 def test_archiving_an_already_archived_definition_records_nothing(db_session: Session) -> None:
-    """The same discipline `CustomerService.restore` applies: an entry for a state
+    """The same discipline `OrganizationService.restore` applies: an entry for a state
     change that did not happen is a lie the timeline cannot be talked out of later."""
     field = _field(db_session)
     service = FieldDefinitionService(db_session)
@@ -296,7 +296,7 @@ def test_a_field_definition_is_not_created_when_its_audit_entry_cannot_be(
         _field(db_session, "mai_creato")
     db_session.rollback()
 
-    assert FieldDefinitionRepository(db_session).get_by_key("customer", "mai_creato") is None
+    assert FieldDefinitionRepository(db_session).get_by_key("organization", "mai_creato") is None
 
 
 # --- pipeline stages -----------------------------------------------------------------

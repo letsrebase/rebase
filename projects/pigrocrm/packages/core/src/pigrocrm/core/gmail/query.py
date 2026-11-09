@@ -252,7 +252,7 @@ def build_list_queries(
     """One query per batch of addresses. An empty roster yields **no** queries -- not
     one unfiltered query, which is the whole point.
 
-    Duplicates are collapsed, in order: the roster is assembled from customers, people
+    Duplicates are collapsed, in order: the roster is assembled from organizations, people
     and deals, so the same address arrives more than once routinely, and three
     identical clauses would spend a third of the `q`'s length limit on nothing.
 

@@ -12,19 +12,19 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.contracts.schemas import ContractCreate
-from pigrocrm.core.customers.schemas import CustomerCreate
 from pigrocrm.core.deals.schemas import DealCreate
 from pigrocrm.core.documents.schemas import DocumentCreate
 from pigrocrm.core.fields.dynamic import describe_specs
 from pigrocrm.core.fields.schemas import EntityType
 from pigrocrm.core.fields.service import FieldDefinitionService
 from pigrocrm.core.invoices.schemas import InvoiceCreate
+from pigrocrm.core.organizations.schemas import OrganizationCreate
 from pigrocrm.core.people.schemas import PersonCreate
 from pigrocrm.core.tasks.schemas import TaskCreate
 from pigrocrm.core.timetracking.schemas import CostCreate, TimeEntryCreate
 
 ENTITY_TYPES: tuple[EntityType, ...] = (
-    "customer",
+    "organization",
     "person",
     "deal",
     "document",
@@ -36,7 +36,7 @@ ENTITY_TYPES: tuple[EntityType, ...] = (
 )
 
 CREATE_MODELS: dict[str, type[BaseModel]] = {
-    "customer": CustomerCreate,
+    "organization": OrganizationCreate,
     "person": PersonCreate,
     "deal": DealCreate,
     "document": DocumentCreate,
@@ -62,7 +62,7 @@ CREATE_MODELS: dict[str, type[BaseModel]] = {
 # definition, closing A13 for every entity listed here, including the fiscal columns
 # `InvoiceCreate` itself never declares.
 EXTRA_NATIVE_FIELDS: dict[str, tuple[str, ...]] = {
-    "customer": (),
+    "organization": (),
     "person": (),
     # Derived by the service from `value_lines`: `DealCreate` no longer takes it, but the name
     # is still a column no custom field may take.
@@ -119,7 +119,7 @@ EXTRA_NATIVE_FIELDS: dict[str, tuple[str, ...]] = {
 # may be called `note` (`reserved_field_names`), since a form's first-note control and the
 # MCP's `create_*` read that name.
 NOT_COLUMNS: dict[str, tuple[str, ...]] = {
-    "customer": ("note",),
+    "organization": ("note",),
     "person": ("note",),
     "deal": ("note",),
 }

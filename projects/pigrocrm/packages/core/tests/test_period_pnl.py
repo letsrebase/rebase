@@ -346,13 +346,13 @@ def _won_deal_with_period_invoice(
     """A closed-won deal whose single invoice is issued **today** for **last month's**
     work; with `type="proforma"` the document is a dated, confirmed proforma instead,
     which is not revenue under any reading (slice 3 §5: it never touches the register)."""
-    from pigrocrm.core.customers.models import Customer
     from pigrocrm.core.fiscal.schemas import FiscalProfileUpsert
     from pigrocrm.core.fiscal.service import FiscalProfileService
     from pigrocrm.core.invoices.schemas import InvoiceCreate, InvoiceIssue, InvoiceLineIn
     from pigrocrm.core.invoices.service import InvoiceService
     from pigrocrm.core.legal_entities.schemas import LegalEntityUpsert
     from pigrocrm.core.legal_entities.service import LegalEntityService
+    from pigrocrm.core.organizations.models import Organization
     from pigrocrm.core.pipeline.models import PipelineStage
 
     admin = Actor(id=None, type="system", role="admin")
@@ -369,7 +369,7 @@ def _won_deal_with_period_invoice(
         ),
         admin,
     )
-    customer = Customer(
+    customer = Organization(
         legal_name=f"Acme {uuid4()}",
         vat_number="12345678901",
         sdi_code="ABCDEFG",

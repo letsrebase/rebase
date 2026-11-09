@@ -46,12 +46,12 @@ function results(
     term: 'rossi',
     groups: [
       {
-        entity: 'customer',
+        entity: 'organization',
         total: overrides.total ?? 1,
         total_is_minimum: overrides.total_is_minimum ?? false,
         hits: [
           {
-            entity: 'customer',
+            entity: 'organization',
             id: CUSTOMER_ID,
             label: 'Rossi Ingegneria Srl',
             subtitle: '01234567890',
@@ -148,8 +148,8 @@ describe('CommandPalette', () => {
     await user.click(await screen.findByRole('option', { name: /Rossi Ingegneria Srl/ }))
 
     expect(navigate).toHaveBeenCalledWith({
-      to: '/app/customers/$customerId',
-      params: { customerId: CUSTOMER_ID },
+      to: '/app/organizations/$organizationId',
+      params: { organizationId: CUSTOMER_ID },
     })
     expect(onOpenChange).toHaveBeenCalledWith(false)
   })
@@ -218,7 +218,7 @@ describe('CommandPalette', () => {
     // The term travels in the URL, or the list the user lands on is not the list the
     // palette was describing.
     expect(navigate).toHaveBeenCalledWith({
-      to: '/app/customers',
+      to: '/app/organizations',
       search: { search: 'rossi' },
     })
   })

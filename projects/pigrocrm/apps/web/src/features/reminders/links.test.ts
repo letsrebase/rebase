@@ -10,7 +10,7 @@ describe('recordLink', () => {
   it.each([
     ['task', { to: '/app/activities', search: { open: ID } }],
     ['deal', { to: '/app/deal/$dealId', params: { dealId: ID } }],
-    ['customer', { to: '/app/customers/$customerId', params: { customerId: ID } }],
+    ['organization', { to: '/app/organizations/$organizationId', params: { organizationId: ID } }],
     ['invoice', { to: '/app/invoices/$invoiceId', params: { invoiceId: ID } }],
     ['proforma', { to: '/app/invoices/$invoiceId', params: { invoiceId: ID } }],
     ['contract', { to: '/app/contracts/$contractId', params: { contractId: ID } }],

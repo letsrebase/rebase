@@ -33,7 +33,7 @@ function serving(shown = proposal(), timeline: unknown[] = []) {
   vi.mocked(api.GET).mockImplementation(((path: string) => {
     if (path === '/api/proposals/{proposal_id}') return Promise.resolve(ok(shown))
     if (path === '/api/proposals/{proposal_id}/timeline') return Promise.resolve(ok(timeline))
-    if (path === '/api/customers/{customer_id}') {
+    if (path === '/api/organizations/{organization_id}') {
       return Promise.resolve(ok({ id: CUSTOMER_ID, legal_name: 'Studio Rossi & Associati' }))
     }
     if (path === '/api/contracts/{contract_id}') {
@@ -80,7 +80,7 @@ describe('a proposal waiting for a decision', () => {
     serving(CONTRACT_PROPOSAL)
     renderWithQuery(<ProposalDetail proposalId="p2" />)
     const link = await screen.findByRole('link', { name: 'Studio Rossi & Associati' })
-    expect(link).toHaveAttribute('href', `/app/customers/${CUSTOMER_ID}`)
+    expect(link).toHaveAttribute('href', `/app/organizations/${CUSTOMER_ID}`)
   })
 
   it('accepts as proposed, in the reader’s name, and goes back to the queue', async () => {
@@ -251,7 +251,7 @@ describe('a proposal already decided', () => {
     const outcome = await screen.findByRole('region', { name: 'Esito' })
     expect(within(outcome).getByRole('link', { name: 'Vai al cliente' })).toHaveAttribute(
       'href',
-      `/app/customers/${CUSTOMER_ID}`,
+      `/app/organizations/${CUSTOMER_ID}`,
     )
   })
 

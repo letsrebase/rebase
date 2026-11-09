@@ -35,12 +35,12 @@ from pigrocrm.core.activities.models import Activity
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.auth.models import User
 from pigrocrm.core.contact_points.models import ContactPoint
-from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.db import session_factory
 from pigrocrm.core.gmail.errors import CredentialRevoked
 from pigrocrm.core.gmail.models import GmailMessage
 from pigrocrm.core.gmail.repository import GmailRepository
 from pigrocrm.core.gmail.schemas import SyncReport
+from pigrocrm.core.organizations.models import Organization
 
 
 def _ms(days_ago: float) -> int:
@@ -74,7 +74,7 @@ def test_a_second_overlapping_sync_answers_instead_of_failing(
     """Spec 13, criterion 4. A user who presses the button twice must see a response,
     not an error -- and the second press must not double the requests."""
     account = connected_account(db_session)
-    db_session.add(Customer(legal_name="Acme", contact_points=points(email="info@acme.it")))
+    db_session.add(Organization(legal_name="Acme", contact_points=points(email="info@acme.it")))
     db_session.flush()
     fake = FakeGmail()
     fake.messages["m1"] = _message(1, frm="info@acme.it", to=MAILBOX, thread="t1")
@@ -146,7 +146,7 @@ def test_a_completed_cycle_leaves_the_lock_free(db_session: Session, db_engine: 
     *next* cycle answer "already running" forever, which is the same undiagnosable
     screen as a hung job."""
     account = connected_account(db_session)
-    db_session.add(Customer(legal_name="Acme", contact_points=points(email="info@acme.it")))
+    db_session.add(Organization(legal_name="Acme", contact_points=points(email="info@acme.it")))
     db_session.flush()
     fake = FakeGmail()
     fake.messages["m1"] = _message(1, frm="info@acme.it", to=MAILBOX, thread="t1")
@@ -171,7 +171,7 @@ def test_the_lock_is_released_even_when_the_cycle_raises(
     is proof the lock was held and then given back.
     """
     account = connected_account(db_session)
-    db_session.add(Customer(legal_name="Acme", contact_points=points(email="info@acme.it")))
+    db_session.add(Organization(legal_name="Acme", contact_points=points(email="info@acme.it")))
     db_session.flush()
 
     fake = FakeGmail(revoked=True)  # the refresh fails, so the cycle raises
@@ -322,7 +322,7 @@ def committed_account(db_engine: Engine) -> Iterator[tuple[UUID, UUID, str]]:
     address = f"lock-{uuid4().hex[:8]}@acme.it"
     with factory() as session:
         account = connected_account(session)
-        customer = Customer(
+        customer = Organization(
             legal_name=f"Lock {uuid4().hex[:6]}", contact_points=points(email=address)
         )
         session.add(customer)
@@ -337,8 +337,8 @@ def committed_account(db_engine: Engine) -> Iterator[tuple[UUID, UUID, str]]:
             # whatever state the test left it in.
             session.execute(delete(User).where(User.id == ids[0]))
             session.execute(
-                delete(Customer).where(
-                    Customer.id.in_(
+                delete(Organization).where(
+                    Organization.id.in_(
                         select(ContactPoint.customer_id).where(ContactPoint.normalized == address)
                     )
                 )

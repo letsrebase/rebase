@@ -34,7 +34,6 @@ from pigrocrm.core.analytics.schemas import CeilingSimulationQuery, PeriodPnlQue
 from pigrocrm.core.analytics.service import AnalyticsService
 from pigrocrm.core.auth.models import User
 from pigrocrm.core.config import Settings
-from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.dashboard.schemas import OperationalDashboard, PeriodQuery
 from pigrocrm.core.dashboard.service import DashboardService
 from pigrocrm.core.db import session_factory, today_local
@@ -49,6 +48,7 @@ from pigrocrm.core.invoices.models import Invoice
 from pigrocrm.core.legal_entities.models import LegalEntity
 from pigrocrm.core.legal_entities.repository import LegalEntityRepository
 from pigrocrm.core.legal_entities.service import LegalEntityService
+from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.pipeline.models import PipelineStage
 from pigrocrm.core.timetracking.models import Cost, CostCategory, TimeEntry
 
@@ -121,13 +121,13 @@ def corpus(db_engine: Engine) -> Iterator[Corpus]:
         )
         session.add_all([foreign, open, won, user])
         session.flush()
-        customer_p = Customer(
+        customer_p = Organization(
             legal_name=f"{_PREFIX} Cliente studio",
             country="IT",
             custom_fields={},
             legal_entity_id=studio.id,
         )
-        customer_and = Customer(
+        customer_and = Organization(
             legal_name=f"{_PREFIX} Cliente estero",
             country="GB",
             custom_fields={},
@@ -136,7 +136,7 @@ def corpus(db_engine: Engine) -> Iterator[Corpus]:
         session.add_all([customer_p, customer_and])
         session.flush()
 
-        def _deal(name: str, customer: Customer, stage: PipelineStage, value: str) -> Deal:
+        def _deal(name: str, customer: Organization, stage: PipelineStage, value: str) -> Deal:
             deal = Deal(
                 name=f"{_PREFIX} {name}",
                 customer_id=customer.id,
@@ -152,7 +152,7 @@ def corpus(db_engine: Engine) -> Iterator[Corpus]:
             return deal
 
         def _invoice(
-            customer: Customer,
+            customer: Organization,
             deal: Deal,
             *,
             number: int,
@@ -273,7 +273,9 @@ def corpus(db_engine: Engine) -> Iterator[Corpus]:
         yield ids
     finally:
         with factory() as session:
-            customers = select(Customer.id).where(Customer.legal_name.like(f"{_PREFIX} %"))
+            organizations = select(Organization.id).where(
+                Organization.legal_name.like(f"{_PREFIX} %")
+            )
             session.execute(
                 delete(TimeEntry).where(
                     TimeEntry.deal_id.in_(select(Deal.id).where(Deal.name.like(f"{_PREFIX} %")))
@@ -281,9 +283,11 @@ def corpus(db_engine: Engine) -> Iterator[Corpus]:
             )
             session.execute(delete(Cost).where(Cost.description.like(f"{_PREFIX} %")))
             session.execute(delete(CostCategory).where(CostCategory.name.like(f"{_PREFIX} %")))
-            session.execute(delete(Invoice).where(Invoice.customer_id.in_(customers)))
+            session.execute(delete(Invoice).where(Invoice.customer_id.in_(organizations)))
             session.execute(delete(Deal).where(Deal.name.like(f"{_PREFIX} %")))
-            session.execute(delete(Customer).where(Customer.legal_name.like(f"{_PREFIX} %")))
+            session.execute(
+                delete(Organization).where(Organization.legal_name.like(f"{_PREFIX} %"))
+            )
             session.execute(delete(PipelineStage).where(PipelineStage.name.like(f"{_PREFIX} %")))
             session.execute(delete(User).where(User.name == f"{_PREFIX} operatore"))
             session.execute(
@@ -547,7 +551,7 @@ def test_the_concentration_signal_counts_to_customer_billed_by_two_legal_entitie
     factory = session_factory(corpus.engine)
     with factory() as session:
         customer = session.execute(
-            select(Customer).where(Customer.legal_name == f"{_PREFIX} Cliente studio")
+            select(Organization).where(Organization.legal_name == f"{_PREFIX} Cliente studio")
         ).scalar_one()
         # The studio's customer, billed by the foreign company for more than everything
         # the foreign company billed its own customer: over 50% on both sides.

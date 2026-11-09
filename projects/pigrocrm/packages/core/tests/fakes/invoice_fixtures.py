@@ -29,8 +29,8 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from fakes.contacts import points
-from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.invoices.models import Invoice
+from pigrocrm.core.organizations.models import Organization
 
 # Per-process, so two invoices in one test never collide on `uq_invoices_year_number`.
 # It only has to be unique within a test's own transaction, but a shared counter costs
@@ -45,7 +45,7 @@ def unpaid_invoice(
     number: int | None = None,
     year: int | None = None,
     total: Decimal = Decimal("1220.00"),
-    customer: Customer | None = None,
+    customer: Organization | None = None,
     email: str | None = "info@acme.it",
 ) -> Invoice:
     """An `issued` `invoice` with a number, a due date and nothing collected against it.
@@ -54,7 +54,7 @@ def unpaid_invoice(
     names an amount must name what was issued, never a sum recomputed at reminder time.
     """
     if customer is None:
-        customer = Customer(
+        customer = Organization(
             legal_name=f"Acme {uuid4().hex[:8]}", contact_points=points(email=email)
         )
         session.add(customer)

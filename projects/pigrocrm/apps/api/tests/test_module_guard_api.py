@@ -40,7 +40,7 @@ def _by_key(client: TestClient) -> dict[str, dict[str, Any]]:
 
 
 def _deal(client: TestClient) -> dict[str, Any]:
-    customer = client.post("/api/customers", json={"legal_name": "ACME Srl"})
+    customer = client.post("/api/organizations", json={"legal_name": "ACME Srl"})
     assert customer.status_code == 201, customer.text
     created = client.post("/api/deals", json={"name": "Sito", "customer_id": customer.json()["id"]})
     assert created.status_code == 201, created.text
@@ -527,7 +527,7 @@ def test_the_offer_state_and_a_deals_notes_belong_to_the_deals_module(
         assert refused.status_code == 404, refused.text
         assert refused.json()["code"] == "module_off"
     # A customer's own thread is the core's.
-    customer = f"/api/customers/{deal['customer_id']}/notes"
+    customer = f"/api/organizations/{deal['customer_id']}/notes"
     assert logged_in.get(customer).status_code == 200
 
 
@@ -681,6 +681,6 @@ def test_the_backlog_splits_between_time_and_contracts_and_a_gmail_kind_follows_
     assert created.status_code == 404, created.text
     ok = logged_in.get(
         "/api/gmail/messages",
-        params={"entity_type": "customer", "entity_id": deal["customer_id"]},
+        params={"entity_type": "organization", "entity_id": deal["customer_id"]},
     )
     assert ok.status_code != 404, ok.text

@@ -47,7 +47,7 @@ const DRILL_THROUGH_OPTIONS = DRILL_THROUGHS.map((filter) => ({
 
 /**
  * Exported so `list.test.tsx` can render the list without a router; the route
- * component below is what reads the URL. Same split as `CustomersPage`/`PeoplePage`.
+ * component below is what reads the URL. Same split as `OrganizationsPage`/`PeoplePage`.
  */
 export function DealsList({
   initialSearch,
@@ -65,7 +65,7 @@ export function DealsList({
   const deals = useDeals({ search: settled || undefined, ...filters })
   const active = DRILL_THROUGHS.filter((candidate) => filters[candidate.key] === true)
 
-  // Recomputed every render, not memoised -- same call as `CustomersPage`/
+  // Recomputed every render, not memoised -- same call as `OrganizationsPage`/
   // `PeoplePage`'s identical line: not worth a `useMemo` whose dependency array
   // would just repeat the schema query's own result.
   const columns = buildDealColumns(schema.data?.custom_fields ?? [])

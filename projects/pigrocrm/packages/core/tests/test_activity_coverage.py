@@ -42,12 +42,12 @@ from pigrocrm.core.activities.models import Activity
 from pigrocrm.core.activities.service import ActivityService
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.auth.models import User
-from pigrocrm.core.customers.schemas import CustomerCreate, CustomerUpdate
-from pigrocrm.core.customers.service import CustomerService
 from pigrocrm.core.deals.schemas import DealCreate, DealUpdate
 from pigrocrm.core.deals.service import DealService
 from pigrocrm.core.notes.schemas import NoteCreate, NoteUpdate
 from pigrocrm.core.notes.service import NoteService
+from pigrocrm.core.organizations.schemas import OrganizationCreate, OrganizationUpdate
+from pigrocrm.core.organizations.service import OrganizationService
 from pigrocrm.core.people.schemas import PersonCreate, PersonUpdate
 from pigrocrm.core.people.service import PersonService
 from pigrocrm.core.reminders.preferences import (
@@ -113,7 +113,7 @@ _READS: dict[Method, str] = {
     ("DueItemService", "list"): "reads items; the role check only gates the fiscal kinds",
     ("GmailAttachmentService", "attachment_text"): "reads an attachment and stores nothing",
     ("GmailSyncService", "discover"): "asks Gmail, writes nothing",
-    ("GmailSyncService", "suggest_customers"): "asks Gmail, writes nothing",
+    ("GmailSyncService", "suggest_organizations"): "asks Gmail, writes nothing",
     ("InvitationService", "list"): "reads the invitations",
     ("DocumentTemplating", "render_to_pdf"): (
         "commits only to release the read transaction before the Typst compile; writes nothing"
@@ -138,7 +138,7 @@ _DELEGATION: dict[Method, str] = {
     ),
     ("ContractEmailService", "prepare"): "`EmailDraftService.create` records the draft",
     ("ContractRegisterService", "render_pdf"): "`DocumentService.create_from_template` records",
-    ("CustomerService", "add_person_from_mail"): "`PersonService._insert` records `created`",
+    ("OrganizationService", "add_person_from_mail"): "`PersonService._insert` records `created`",
     ("NoteService", "add"): (
         "`append_note` records `note_added` on the parent, the one function the creating "
         "services write a first note with as well"
@@ -257,9 +257,9 @@ UNRECORDED_WRITERS = sorted(m for m, (writes, records) in SWEEP.items() if write
 def test_the_sweep_finds_writers_that_record_and_writers_that_do_not() -> None:
     """The guard on the guard: an empty sweep (a moved directory, a renamed convention)
     would make every assertion below pass while checking nothing."""
-    assert SWEEP[("CustomerService", "update")] == (True, True)
+    assert SWEEP[("OrganizationService", "update")] == (True, True)
     assert SWEEP[("DocumentUploads", "add_version")] == (True, True)  # through `_add_version_row`
-    assert SWEEP[("CustomerService", "get")][0] is False
+    assert SWEEP[("OrganizationService", "get")][0] is False
     assert SWEEP[("ApprovalService", "record")] == (True, True)  # the approval's own row
     assert SWEEP[("TimerService", "start")] == (True, False)
     assert len([m for m, (w, r) in SWEEP.items() if w and r]) > 100
@@ -320,39 +320,39 @@ def _actors(members: dict[str, User]) -> dict[str, Actor]:
 
 
 def _customer(session: Session, actor: Actor, ctx: dict[str, UUID]) -> tuple[str, UUID]:
-    created = CustomerService(session).create(CustomerCreate(legal_name="ACME"), actor)
-    ctx["customer"] = created.id
-    return "customer", created.id
+    created = OrganizationService(session).create(OrganizationCreate(legal_name="ACME"), actor)
+    ctx["organization"] = created.id
+    return "organization", created.id
 
 
 def _customer_update(session: Session, actor: Actor, ctx: dict[str, UUID]) -> tuple[str, UUID]:
     _customer(session, actor, ctx)
-    CustomerService(session).update(
-        ctx["customer"], CustomerUpdate(contact_points=points_in(phone="02 1234567")), actor
+    OrganizationService(session).update(
+        ctx["organization"], OrganizationUpdate(contact_points=points_in(phone="02 1234567")), actor
     )
-    return "customer", ctx["customer"]
+    return "organization", ctx["organization"]
 
 
 def _customer_archive_restore(
     session: Session, actor: Actor, ctx: dict[str, UUID]
 ) -> tuple[str, UUID]:
     _customer(session, actor, ctx)
-    CustomerService(session).soft_delete(ctx["customer"], actor)
-    CustomerService(session).restore(ctx["customer"], actor)
-    return "customer", ctx["customer"]
+    OrganizationService(session).soft_delete(ctx["organization"], actor)
+    OrganizationService(session).restore(ctx["organization"], actor)
+    return "organization", ctx["organization"]
 
 
 def _customer_notes(session: Session, actor: Actor, ctx: dict[str, UUID]) -> tuple[str, UUID]:
     """A first note on creation, then one added, edited and deleted: four entries, the first
     from the creating service and the rest from `NoteService`."""
-    created = CustomerService(session).create(
-        CustomerCreate(legal_name="ACME", note="Prima nota"), actor
+    created = OrganizationService(session).create(
+        OrganizationCreate(legal_name="ACME", note="Prima nota"), actor
     )
     service = NoteService(session)
-    added = service.add("customer", created.id, NoteCreate(text="Seconda nota"), actor)
+    added = service.add("organization", created.id, NoteCreate(text="Seconda nota"), actor)
     service.update(added.id, NoteUpdate(text="Seconda nota, corretta"), actor)
     service.delete(added.id, actor)
-    return "customer", created.id
+    return "organization", created.id
 
 
 def _person(session: Session, actor: Actor, ctx: dict[str, UUID]) -> tuple[str, UUID]:
@@ -539,8 +539,8 @@ def test_the_timeline_names_the_member_and_keeps_naming_a_deactivated_one(
     db_session.flush()
 
     service = ActivityService(db_session)
-    (web_entry,) = service.timeline("customer", web_id)
-    (mcp_entry,) = service.timeline("customer", mcp_id)
+    (web_entry,) = service.timeline("organization", web_id)
+    (mcp_entry,) = service.timeline("organization", mcp_id)
 
     assert (web_entry.actor_name, web_entry.actor_type) == ("Giulia Bianchi", "user")
     assert (mcp_entry.actor_name, mcp_entry.actor_type) == ("Marco Verdi", "mcp")
@@ -549,11 +549,11 @@ def test_the_timeline_names_the_member_and_keeps_naming_a_deactivated_one(
 def test_a_row_with_no_member_behind_it_has_no_name(db_session: Session) -> None:
     service = ActivityService(db_session)
     entity = uuid4()
-    service.record("customer", entity, "created", Actor.system())
-    service.record("customer", entity, "updated", Actor.rebase())
-    service.record("customer", entity, "restored", Actor(id=uuid4(), type="user", role="admin"))
+    service.record("organization", entity, "created", Actor.system())
+    service.record("organization", entity, "updated", Actor.rebase())
+    service.record("organization", entity, "restored", Actor(id=uuid4(), type="user", role="admin"))
 
-    entries = service.timeline("customer", entity)
+    entries = service.timeline("organization", entity)
 
     assert [e.actor_name for e in entries] == [None, None, None]
 

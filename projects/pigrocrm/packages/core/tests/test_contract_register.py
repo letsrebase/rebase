@@ -14,7 +14,6 @@ from sqlalchemy.orm import Session
 
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.contracts.models import Contract, RateCard
-from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.documents.models import Document
 from pigrocrm.core.errors import NotFound, ValidationFailed
 from pigrocrm.core.invoices.models import Invoice, InvoiceLine
@@ -22,6 +21,7 @@ from pigrocrm.core.invoices.schemas import InvoiceIssue
 from pigrocrm.core.invoices.service import InvoiceService
 from pigrocrm.core.legal_entities.schemas import LegalEntityUpsert
 from pigrocrm.core.legal_entities.service import LegalEntityService
+from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.storage.local import LocalFileStorage
 from pigrocrm.core.work_units.invoicing import assemble_unbilled_work_units_into_new_invoice
 from pigrocrm.core.work_units.models import Approval, WorkUnit
@@ -34,7 +34,7 @@ ADMIN = Actor(id=None, type="system", role="admin")
 
 
 def _contract(db_session: Session) -> Contract:
-    customer = Customer(
+    customer = Organization(
         legal_name=f"Acme {uuid4()} S.r.l.",
         vat_number="12345678901",
         sdi_code="ABCDEFG",

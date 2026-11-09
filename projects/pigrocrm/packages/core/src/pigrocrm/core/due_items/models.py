@@ -169,10 +169,10 @@ class DueItem(Base, PrimaryKeyMixin, TimestampMixin):
     state: Mapped[str] = mapped_column(String(10), nullable=False)
     counterparty_type: Mapped[str] = mapped_column(String(20), nullable=False)
     # The organisation owed or owing. Named for what it is and not for the table it points at
-    # today (`customers`, which the organisations rename takes over): a supplier is a row of
+    # today (`organizations`, which the organisations rename takes over): a supplier is a row of
     # the same table.
     organization_id: Mapped[UUID | None] = mapped_column(
-        ForeignKey("customers.id"), default=None, index=True
+        ForeignKey("organizations.id"), default=None, index=True
     )
     # Which tax, for the tax office (`vat`, `withholding`, ...): the counterparty of a tax
     # item is the office *and* the tax it is for.

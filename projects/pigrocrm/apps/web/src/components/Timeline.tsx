@@ -146,7 +146,7 @@ const GENERIC_FROM_TO_KINDS: Record<string, true> = {
  * never seen can still carry a shape it recognises (or, worst case, falls through
  * to the generic dump below, never a crash, never `undefined`).
  *
- *  - `updated` writes `{"changed": [...]}` (customers/people/deals `service.py`).
+ *  - `updated` writes `{"changed": [...]}` (organizations/people/deals `service.py`).
  *  - `stage_changed` (deals only) writes `{"from": ..., "to": ...}`. Read by
  *    name, not by object key order: Postgres JSONB does not preserve insertion
  *    order (confirmed live -- the real API returned `{"to": ..., "from": ...}`
@@ -218,10 +218,10 @@ const TIMELINE_FETCHERS: Record<
   TimelineEntityType,
   (entityId: string, limit: number) => Promise<ActivityEntry[]>
 > = {
-  customer: (entityId, limit) =>
+  organization: (entityId, limit) =>
     unwrap(
-      api.GET('/api/customers/{customer_id}/timeline', {
-        params: { path: { customer_id: entityId }, query: { limit } },
+      api.GET('/api/organizations/{organization_id}/timeline', {
+        params: { path: { organization_id: entityId }, query: { limit } },
       }),
     ),
   person: (entityId, limit) =>
@@ -260,7 +260,7 @@ interface TimelineProps {
   entityType: TimelineEntityType
   entityId: string
   /**
-   * The backend's own bound (routers/{customers,people,deals}.py's shared
+   * The backend's own bound (routers/{organizations,people,deals}.py's shared
    * `Query(ge=1, le=200)`, mirrored again in `ActivityService.timeline` itself so
    * the MCP `get_timeline` tool -- which calls that method directly, with no REST
    * schema in between -- cannot bypass it either): asking for more than 200 or

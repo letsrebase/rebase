@@ -1,7 +1,7 @@
 import { Link } from '@tanstack/react-router'
 import { Badge } from '@rebase/ui/badge'
 import { StatusPill, type StatusTone } from '@/components/StatusPill'
-import { useCustomer } from '@/features/customers/queries'
+import { useOrganization } from '@/features/organizations/queries'
 import {
   BAND_LABELS,
   StatusLabels,
@@ -67,7 +67,7 @@ export function ProposalSubject({
   /** Words that belong to the name and so vanish with it: «Per il cliente ». */
   prefix?: string
 }) {
-  const customer = useCustomer(description.customerId ?? '', { enabled: description.customerId !== null })
+  const customer = useOrganization(description.customerId ?? '', { enabled: description.customerId !== null })
   const contract = useProposalContract(description.contractId)
   if (description.customerId !== null && customer.data) {
     const name = customer.data.legal_name
@@ -75,8 +75,8 @@ export function ProposalSubject({
       <>
         {prefix}
         <Link
-          to="/app/customers/$customerId"
-          params={{ customerId: description.customerId }}
+          to="/app/organizations/$organizationId"
+          params={{ organizationId: description.customerId }}
           className="text-foreground underline underline-offset-4"
         >
           {name}

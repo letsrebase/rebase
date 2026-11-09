@@ -46,7 +46,7 @@ def owner_backfill(
         print(f"{slug}: skipped ({type(exc).__name__})", file=sys.stderr)
         return 1
 
-    label = {"customer": "customer", "deal": "deal"}
+    label = {"organization": "organization", "deal": "deal"}
     for assignment in plan.assignments:
         print(f"{slug}: {label[assignment.entity]} «{assignment.label}» -> {assignment.owner_name}")
     for listed in plan.listed:
@@ -55,7 +55,7 @@ def owner_backfill(
             f"{slug}: {label[listed.entity]} «{listed.label}» left without an owner: "
             f"{listed.reason}{who}"
         )
-    for entity in ("customer", "deal"):
+    for entity in ("organization", "deal"):
         print(
             f"{slug}: {label[entity]}: {plan.assigned(entity)} to assign, "
             f"{plan.left(entity)} left, {plan.already_owned[entity]} already owned"

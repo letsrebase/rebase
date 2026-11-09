@@ -37,12 +37,12 @@ from sqlalchemy.orm import Session
 
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.contracts.models import Contract
-from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.db.clock import today_local
 from pigrocrm.core.documents.schemas import DocumentFromTemplate, DocumentRead
 from pigrocrm.core.documents.service import DocumentService
 from pigrocrm.core.errors import NotFound, ValidationFailed
 from pigrocrm.core.invoices.models import Invoice, InvoiceLine
+from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.render import ASSETS_DIR
 from pigrocrm.core.storage import DocumentStorage
 from pigrocrm.core.templates.models import Template
@@ -152,7 +152,7 @@ class ContractRegisterService:
         contract = self.session.get(Contract, contract_id)
         if contract is None or contract.deleted_at is not None:
             raise NotFound("contract", contract_id)
-        customer = self.session.get(Customer, contract.customer_id)
+        customer = self.session.get(Organization, contract.customer_id)
 
         query = (
             select(WorkUnit, Approval, Invoice.year, Invoice.number)

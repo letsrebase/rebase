@@ -7,7 +7,7 @@ from pigrocrm.core.notes.service import NoteService
 from pigrocrm_mcp.context import McpContext
 
 # How many notes of a deal, a customer or a person `get_deal` and its two siblings carry:
-# the latest ones, newest first. The whole thread is in the `deal://`, `customer://` and
+# the latest ones, newest first. The whole thread is in the `deal://`, `organization://` and
 # `person://` resources. The cap is stated in each tool's description, like `get_contract`'s
 # `note_clauses`.
 THREAD_LIMIT = 50
@@ -26,7 +26,7 @@ def add(
         entity_type: entity_id
         for entity_type, entity_id in (
             ("deal", deal_id),
-            ("customer", customer_id),
+            ("organization", customer_id),
             ("person", person_id),
         )
         if entity_id
@@ -73,7 +73,7 @@ def thread(context: McpContext, entity_type: str, entity_id: UUID) -> dict[str, 
 
 
 def refuse_note_in_changes(data: dict[str, Any], add_tool: str) -> None:
-    """A `note` in the `changes` of an `update_deal`, `update_customer` or `update_person`:
+    """A `note` in the `changes` of an `update_deal`, `update_organization` or `update_person`:
     the record has a thread now, and the schema's own «campo non riconosciuto» would not
     say where the note goes."""
     if "note" in data:

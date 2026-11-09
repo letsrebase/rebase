@@ -113,7 +113,7 @@ class DocumentVersionRead(BaseModel):
     created_at: datetime
 
 
-# Residuo R9. Mirrors CUSTOMER_SORTS (customers/schemas.py) -- see there for why three
+# Residuo R9. Mirrors ORGANIZATION_SORTS (organizations/schemas.py) -- see there for why three
 # keys and why `created_at` is the default.
 DOCUMENT_SORTS = SortWhitelist(
     specs=(

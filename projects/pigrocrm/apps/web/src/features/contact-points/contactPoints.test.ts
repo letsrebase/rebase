@@ -262,7 +262,7 @@ describe('the errors the editor shows', () => {
       status: 422,
       code: 'validation_failed',
       detail: `customer.${field}: ${reason}`,
-      entity: 'customer',
+      entity: 'organization',
       field,
       reason,
       ...(expected ? { expected } : {}),

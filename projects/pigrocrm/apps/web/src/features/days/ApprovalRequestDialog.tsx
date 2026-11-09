@@ -17,7 +17,7 @@ import { Loader } from '@rebase/ui/loader'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@rebase/ui/select'
 import { toast } from '@rebase/ui/sonner'
 import { Textarea } from '@rebase/ui/textarea'
-import { useCustomer } from '@/features/customers/queries'
+import { useOrganization } from '@/features/organizations/queries'
 import { useGmailConfigured } from '@/features/gmail/queries'
 import { useSendDraft } from '@/features/gmail/draftQueries'
 import { api, toProblem, unwrap } from '@/lib/api'
@@ -82,7 +82,7 @@ export function ApprovalRequestDialog({
   customerId: string
 }) {
   const gmail = useGmailConfigured()
-  const customer = useCustomer(customerId, { enabled: open })
+  const customer = useOrganization(customerId, { enabled: open })
   const preview = usePreviewRequest(contractId)
   const prepare = usePrepareRequest(contractId)
   const send = useSendDraft()
@@ -354,8 +354,8 @@ export function ApprovalRequestDialog({
             ) : null}
             <p>
               <Link
-                to="/app/customers/$customerId"
-                params={{ customerId }}
+                to="/app/organizations/$organizationId"
+                params={{ organizationId: customerId }}
                 className="underline underline-offset-4"
               >
                 Apri il cliente

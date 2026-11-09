@@ -15,8 +15,6 @@ from sqlalchemy.orm import Session
 
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.config import Settings
-from pigrocrm.core.customers.schemas import CustomerCreate, CustomerUpdate
-from pigrocrm.core.customers.service import CustomerService
 from pigrocrm.core.deals.schemas import DealCreate
 from pigrocrm.core.deals.service import DealService
 from pigrocrm.core.documents import templating as documents_templating_module
@@ -35,6 +33,8 @@ from pigrocrm.core.invoices.service import InvoiceService
 from pigrocrm.core.legal_entities.assets import LegalEntityAssets
 from pigrocrm.core.legal_entities.models import LegalEntity
 from pigrocrm.core.legal_entities.repository import LegalEntityRepository
+from pigrocrm.core.organizations.schemas import OrganizationCreate, OrganizationUpdate
+from pigrocrm.core.organizations.service import OrganizationService
 from pigrocrm.core.people.models import Person
 from pigrocrm.core.render.pdf import BLANK_PNG
 from pigrocrm.core.storage.local import LocalFileStorage
@@ -81,8 +81,10 @@ def _fiscal(session: Session, legal_entity_id: UUID, iban: str) -> None:
 
 def _customer_of(session: Session, legal_entity_id: UUID, name: str = "Overseas") -> UUID:
     return (
-        CustomerService(session)
-        .create(CustomerCreate(legal_name=f"{name} S.r.l.", legal_entity_id=legal_entity_id), ADMIN)
+        OrganizationService(session)
+        .create(
+            OrganizationCreate(legal_name=f"{name} S.r.l.", legal_entity_id=legal_entity_id), ADMIN
+        )
         .id
     )
 
@@ -209,15 +211,15 @@ def test_to_mail_speaks_for_the_legal_entity_of_its_record(
     db_session.add_all([person, loose])
     db_session.flush()
     repo = GmailRepository(db_session)
-    assert repo.legal_entity_for("customer", customer_id).id == second.id  # type: ignore[union-attr]
+    assert repo.legal_entity_for("organization", customer_id).id == second.id  # type: ignore[union-attr]
     assert repo.legal_entity_for("deal", deal.id).id == second.id  # type: ignore[union-attr]
     assert repo.legal_entity_for("person", person.id).id == second.id  # type: ignore[union-attr]
     # A contact with no customer, and a record that does not exist: the default's name.
     assert repo.legal_entity_for("person", loose.id).id == default.id  # type: ignore[union-attr]
-    assert repo.legal_entity_for("customer", uuid4()).id == default.id  # type: ignore[union-attr]
+    assert repo.legal_entity_for("organization", uuid4()).id == default.id  # type: ignore[union-attr]
 
     drafts = EmailDraftService(db_session, settings=SETTINGS)
-    assert drafts._domain("customer", customer_id) == "rebase.example"
+    assert drafts._domain("organization", customer_id) == "rebase.example"
     # The default legal entity's site for a record with none; the admitted fallback without.
     default.website = None
     db_session.flush()
@@ -259,15 +261,15 @@ def test_to_reminder_s_draft_speaks_for_the_invoice_s_legal_entity_even_after_th
         ADMIN,
     )
     assert invoice.legal_entity_id == default.id
-    CustomerService(db_session).update(
-        customer_id, CustomerUpdate(legal_entity_id=second.id), ADMIN
+    OrganizationService(db_session).update(
+        customer_id, OrganizationUpdate(legal_entity_id=second.id), ADMIN
     )
 
     reminder = PaymentReminder(invoice_id=invoice.id, sequence=1)
     db_session.add(reminder)
     db_session.flush()
     draft = EmailDraft(
-        entity_type="customer",
+        entity_type="organization",
         entity_id=customer_id,
         subject="Sollecito",
         body_markdown="…",
@@ -279,19 +281,19 @@ def test_to_reminder_s_draft_speaks_for_the_invoice_s_legal_entity_even_after_th
     db_session.flush()
     repo = GmailRepository(db_session)
     # The customer is legal entity B's now; the reminder still signs as A, who issued.
-    assert repo.legal_entity_for("customer", customer_id).id == second.id  # type: ignore[union-attr]
+    assert repo.legal_entity_for("organization", customer_id).id == second.id  # type: ignore[union-attr]
     assert repo.legal_entity_for_draft(draft).id == default.id  # type: ignore[union-attr]
     # And the Message-ID domain the reminder's draft is minted with is A's site.
     default.website = "https://studio.example"
     db_session.flush()
     drafts = EmailDraftService(db_session, settings=SETTINGS)
-    assert drafts._domain("customer", customer_id, default.id) == "studio.example"
-    assert drafts._domain("customer", customer_id) == "rebase.example"
+    assert drafts._domain("organization", customer_id, default.id) == "studio.example"
+    assert drafts._domain("organization", customer_id) == "rebase.example"
     # And the draft a reminder creates, handed the invoice's legal entity as the reminder
     # does, stores a Message-ID under that legal entity's domain.
     created = drafts.create(
         EmailDraftCreate(
-            entity_type="customer",
+            entity_type="organization",
             entity_id=customer_id,
             to_addresses=["cliente@example.com"],
             subject="Sollecito",

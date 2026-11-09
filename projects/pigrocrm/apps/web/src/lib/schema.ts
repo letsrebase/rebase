@@ -78,7 +78,7 @@ export function clearedNativeValue(fields: readonly FieldDefinition[], key: stri
 }
 
 export type EntityType =
-  | 'customer'
+  | 'organization'
   | 'person'
   | 'deal'
   | 'document'

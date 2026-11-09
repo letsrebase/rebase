@@ -24,7 +24,7 @@ from corpus import SMALL, build_corpus
 from sqlalchemy import event, insert
 from sqlalchemy.orm import Session
 
-from pigrocrm.core.customers.models import Customer
+from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.search.repository import SearchRepository
 from pigrocrm.core.search.schemas import COUNT_CEILING, PER_CLASS_LIMIT, SearchGroup
 
@@ -34,7 +34,7 @@ from pigrocrm.core.search.schemas import COUNT_CEILING, PER_CLASS_LIMIT, SearchG
 # keeps it on the trigram one.
 _Pick = Callable[[SearchRepository], Callable[[str, int], SearchGroup]]
 _BRANCHES: dict[str, tuple[str, _Pick]] = {
-    "customers": ("Ingegneria", lambda repo: repo.customers),
+    "organizations": ("Ingegneria", lambda repo: repo.organizations),
     "people": ("persona", lambda repo: repo.people),
     "deals": ("Ingegneria", lambda repo: repo.deals),
     "documents": ("Ingegneria", lambda repo: repo.documents),
@@ -87,13 +87,13 @@ def test_the_page_holds_the_best_rows_and_not_the_first_ones(db_session: Session
     """The server orders before it cuts: the exact match is written last, after twelve rows
     that only start with the term, and is still the one row of a page of one."""
     db_session.execute(
-        insert(Customer),
+        insert(Organization),
         [{"legal_name": f"Vulcano Impianti {n} Srl"} for n in range(12)]
         + [{"legal_name": "Vulcano"}],
     )
     db_session.flush()
 
-    group = SearchRepository(db_session).customers("Vulcano", 1)
+    group = SearchRepository(db_session).organizations("Vulcano", 1)
 
     assert [hit.label for hit in group.hits] == ["Vulcano"]
     assert group.total == 13
@@ -104,14 +104,14 @@ def test_a_count_past_the_ceiling_is_the_ceiling_and_says_so(db_session: Session
     at the ceiling and the result is declared a minimum, so a client reads "at least 200"
     and not a number nobody counted."""
     db_session.execute(
-        insert(Customer),
+        insert(Organization),
         [{"legal_name": f"Cliente {n} Srl"} for n in range(COUNT_CEILING + 1)],
     )
     db_session.flush()
     repo = SearchRepository(db_session)
 
     group, counts = _rows_returned(
-        db_session, lambda: repo.customers(_TERM_PAST_THE_CEILING, PER_CLASS_LIMIT)
+        db_session, lambda: repo.organizations(_TERM_PAST_THE_CEILING, PER_CLASS_LIMIT)
     )
 
     assert group.total == COUNT_CEILING, group

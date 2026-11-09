@@ -100,16 +100,16 @@ export default defineConfig([
     },
   },
   {
-    // Same shape again: `customerToFormValues` builds the exact `initial` shape
-    // `CustomerForm` expects, walking the same `NATIVE_FIELD_KEYS` this file
+    // Same shape again: `organizationToFormValues` builds the exact `initial` shape
+    // `OrganizationForm` expects, walking the same `NATIVE_FIELD_KEYS` this file
     // derives from its own `NATIVE_FIELDS` -- the two are coupled by construction
     // (add a native field here and both need to agree on it), so splitting them
     // across files would not remove the coupling, only hide it. Persons and Deals
     // are expected to need the identical override once their own forms copy this
     // file's shape.
-    files: ['src/features/customers/CustomerForm.tsx'],
+    files: ['src/features/organizations/OrganizationForm.tsx'],
     rules: {
-      'react-refresh/only-export-components': ['error', { allowExportNames: ['customerToFormValues'] }],
+      'react-refresh/only-export-components': ['error', { allowExportNames: ['organizationToFormValues'] }],
     },
   },
   {
@@ -123,7 +123,7 @@ export default defineConfig([
   {
     // Deals' own copy of the same override: `dealToFormValues` and `DealForm`
     // are coupled by construction in exactly the same way as the two overrides
-    // above -- anticipated in this file's own comment on the `CustomerForm.tsx`
+    // above -- anticipated in this file's own comment on the `OrganizationForm.tsx`
     // entry ("Persons and Deals are expected to need the identical override
     // once their own forms copy this file's shape").
     files: ['src/features/deals/DealForm.tsx'],
@@ -136,7 +136,7 @@ export default defineConfig([
     // plain, exported function so it is directly testable without simulating a
     // real pointer gesture through jsdom (see its own docstring in
     // KanbanBoard.tsx). Coupled to `KanbanBoard` by construction the same way
-    // `customerToFormValues`/`personToFormValues`/`dealToFormValues` are coupled
+    // `organizationToFormValues`/`personToFormValues`/`dealToFormValues` are coupled
     // to their own forms -- one file, not split purely to satisfy this rule.
     files: ['src/features/deals/KanbanBoard.tsx'],
     rules: {
@@ -149,7 +149,7 @@ export default defineConfig([
     // PascalCase export built by a call as a possible HOC, so a route file passed the
     // rule whether it kept its page component local (`app.tsx`, `calendar.tsx`: the
     // shape that keeps a route code-split) or exported it beside `Route` so a test can
-    // render it without a router (`customers/$customerId.tsx`, `login.tsx`). 0.5 only
+    // render it without a router (`organizations/$organizationId.tsx`, `login.tsx`). 0.5 only
     // counts `memo`, `forwardRef`, `lazy` and what `extraHOCs` names, so both shapes
     // failed, eighteen errors in seventeen files.
     //
@@ -174,7 +174,7 @@ export default defineConfig([
     // `variablesToFields` maps `TemplateDescription.variables` onto the exact
     // `FieldDefinition[]` shape `NewFromTemplateDialog` feeds to `DynamicForm` --
     // coupled to this component by construction the same way
-    // `customerToFormValues`/`personToFormValues`/`dealToFormValues` are coupled to
+    // `organizationToFormValues`/`personToFormValues`/`dealToFormValues` are coupled to
     // their own forms above, and tested directly (`NewFromTemplateDialog.test.tsx`)
     // for the same reason those are: to check the mapping without rendering the
     // whole dialog.

@@ -2,7 +2,7 @@
 2026-09-25 § 2.3), and the report of a match's hours it reads back (§ 2.4); and the body
 and answer of the leads route (spec 2026-10-30 § 2, § 3).
 
-The bounds are the CRM's own rules for a customer (`CustomerService._check_fiscal`) and
+The bounds are the CRM's own rules for a customer (`OrganizationService._check_fiscal`) and
 the hub's for a name, applied at the door, so a value the space would refuse is a 422
 naming the field, never a customer that half exists.
 """
@@ -63,7 +63,7 @@ class EngagementRebase(BaseModel):
     tax_code: SafeStr | None = Field(default=None, max_length=16)
     address: SafeStr | None = Field(default=None, max_length=255)
     certified_email: EmailStr | None = None
-    # `SafeStr` like `CustomerCreate.sdi_code`: a NUL byte is a 422 here, not a
+    # `SafeStr` like `OrganizationCreate.sdi_code`: a NUL byte is a 422 here, not a
     # driver error in the space.
     sdi_code: SafeStr | None = Field(default=None, min_length=7, max_length=7)
 
@@ -146,7 +146,7 @@ class EngagementReport(BaseModel):
     invoices: list[ReportInvoice]
 
 
-# The bounds below are the CRM's own: `customers.legal_name` 255, `people` 120/40/255,
+# The bounds below are the CRM's own: `organizations.legal_name` 255, `people` 120/40/255,
 # `deals.name` 255 and the value lines' own bounds. The hub cuts or drops what
 # does not fit before sending (spec 2026-10-30 § 3), so a value past them is a 422 naming
 # the field, never a request that half exists.

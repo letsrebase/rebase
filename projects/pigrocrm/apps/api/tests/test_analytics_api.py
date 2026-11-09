@@ -21,9 +21,9 @@ from legal_entities_helpers import legal_entity_url
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.contracts.models import Contract
-from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.db.clock import today_local
 from pigrocrm.core.invoices.models import Invoice
+from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.work_units.models import WorkUnit
 
 # Never a literal year: `check_issue_date` refuses a `issue_date` outside the
@@ -104,7 +104,7 @@ def _seed_deal_and_user(
     all the way to `issued`), one deal, one collaborator to log hours against."""
     assert logged_in.post("/api/pipeline-stages/seed").status_code == 200
     customer = logged_in.post(
-        "/api/customers",
+        "/api/organizations",
         json={
             "legal_name": "Acme S.r.l.",
             "vat_number": "12345678901",
@@ -426,7 +426,7 @@ def test_the_simulator_is_readable_by_a_readonly_actor(
 def _deal_with_a_monthly_fee(logged_in: TestClient) -> str:
     """A saved deal with one open-ended fee of 1.000 a month, from 1 October of the year."""
     assert logged_in.post("/api/pipeline-stages/seed").status_code == 200
-    customer = logged_in.post("/api/customers", json={"legal_name": "Acme S.r.l."})
+    customer = logged_in.post("/api/organizations", json={"legal_name": "Acme S.r.l."})
     assert customer.status_code == 201, customer.text
     deal = logged_in.post(
         "/api/deals",
@@ -774,7 +774,7 @@ def _paid_invoice(session: Session, legal_entity_id: str, number: int, amount: s
     """One paid invoice of `amount` on its own customer, written by row on the test's
     session: enough to move every sum the routes below read, without the whole issue
     flow, which is not what these tests are about."""
-    customer = Customer(legal_name=f"Cliente {legal_entity_id[:8]} {number}", country="IT")
+    customer = Organization(legal_name=f"Cliente {legal_entity_id[:8]} {number}", country="IT")
     customer.legal_entity_id = legal_entity_id  # type: ignore[assignment]
     session.add(customer)
     session.flush()
@@ -934,7 +934,7 @@ def test_the_days_route_answers_by_month_and_state_and_takes_one_legal_entity(
     bounds or neither, and another azienda's filter leaves the figure out. What the
     figures mean is proven in `test_days_analysis.py`."""
     default = logged_in.get("/api/legal-entities").json()[0]["id"]
-    customer = Customer(legal_name="Acme S.r.l.")
+    customer = Organization(legal_name="Acme S.r.l.")
     api_session.add(customer)
     api_session.flush()
     contract = Contract(

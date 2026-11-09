@@ -77,20 +77,20 @@ def test_only_an_admin_creates_an_legal_entity(readonly_client: TestClient) -> N
     assert len(readonly_client.get("/api/legal-entities").json()) == 1
 
 
-def test_a_deactivation_answers_how_many_customers_still_point_at_the_row(
+def test_a_deactivation_answers_how_many_organizations_still_point_at_the_row(
     logged_in: TestClient,
 ) -> None:
     second = logged_in.post("/api/legal-entities", json=LTD).json()["id"]
     for name in ("Uno Ltd", "Due Ltd"):
         customer = logged_in.post(
-            "/api/customers",
+            "/api/organizations",
             json={"legal_name": name, "country": "GB", "legal_entity_id": second},
         )
         assert customer.status_code == 201, customer.text
     gone = logged_in.delete(f"/api/legal-entities/{second}")
     assert gone.status_code == 200, gone.text
     assert gone.json()["active"] is False
-    assert gone.json()["linked_customers"] == 2
+    assert gone.json()["linked_organizations"] == 2
 
 
 def test_the_old_routes_are_gone_with_no_alias(logged_in: TestClient) -> None:

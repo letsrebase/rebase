@@ -8,7 +8,7 @@ import { useCursorPages } from '@/lib/useCursorPages'
 /**
  * Wire shape of one person, taken directly from the generated OpenAPI schema
  * (`components['schemas']['PersonRead']`) rather than hand-declared -- same
- * reasoning as `customers/queries.ts`'s `Customer` alias: the single source of
+ * reasoning as `organizations/queries.ts`'s `Organization` alias: the single source of
  * truth is `PersonRead` in packages/core/src/pigrocrm/core/people/schemas.py, and
  * this alias tracks it through `pnpm generate:api` automatically.
  */
@@ -28,7 +28,7 @@ interface PeopleListParams {
  * `/api/people`, never the bare `/people`: every router in
  * apps/api/src/pigrocrm_api/routers/*.py declares its own "/api" prefix, and the
  * shared client (lib/api.ts) is built with `baseUrl: ''` to match -- confirmed
- * live for the identical case on `/api/customers` (see that file's own comment).
+ * live for the identical case on `/api/organizations` (see that file's own comment).
  *
  * The Persone list walks the pages: the first on arrival and one more per `loadMore()`,
  * so a space with more people than a page holds is not cut at the first page. Under the
@@ -67,7 +67,7 @@ export function usePerson(personId: string, options: { enabled?: boolean } = {})
 /**
  * `body` arrives as the loosely-typed `Record<string, unknown>` that
  * `PersonForm.submit` builds from whatever `DynamicForm` (plus the dedicated
- * customer picker) collected -- the same idiom `customers/queries.ts` uses for
+ * customer picker) collected -- the same idiom `organizations/queries.ts` uses for
  * the identical reason: a dynamic mix of native columns and tenant-defined
  * custom fields that no fixed interface can describe. `asBody` is where that is
  * said, once.
@@ -80,9 +80,9 @@ export function useCreatePerson() {
     onSuccess: () => {
       // `queryKeys.people()` (params defaulting to `{}`) partially matches every
       // cached people query, search/customer_id/limit combination alike -- same
-      // wildcard-invalidation trick `useCreateCustomer` uses, and it also covers
-      // `useCustomerPeople`'s own cache entries (`queryKeys.people({customer_id})`)
-      // in `features/customers/queries.ts`, so creating a person here keeps that
+      // wildcard-invalidation trick `useCreateOrganization` uses, and it also covers
+      // `useOrganizationPeople`'s own cache entries (`queryKeys.people({customer_id})`)
+      // in `features/organizations/queries.ts`, so creating a person here keeps that
       // Collegamenti preview list in sync too.
       void queryClient.invalidateQueries({ queryKey: queryKeys.people() })
     },
@@ -109,12 +109,12 @@ export function useUpdatePerson(personId: string) {
 
 /**
  * `DELETE /api/people/{id}` is a soft delete: the server sets `deleted_at`, and,
- * unlike `CustomerService.soft_delete`, `PersonService.soft_delete` raises no
+ * unlike `OrganizationService.soft_delete`, `PersonService.soft_delete` raises no
  * conflict for anything that still references this person -- no entity in this
  * slice has a foreign key to a person (`Deal` only ever references `customer_id`,
  * confirmed by reading packages/core/src/pigrocrm/core/deals/schemas.py). There is
  * therefore no active-deals-style count to surface here, unlike
- * `useDeleteCustomer`'s docstring on the identical-looking call.
+ * `useDeleteOrganization`'s docstring on the identical-looking call.
  */
 export function useDeletePerson() {
   const queryClient = useQueryClient()

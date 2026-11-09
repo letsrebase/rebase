@@ -18,7 +18,6 @@ from sqlalchemy.orm import Session
 
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.contracts.models import Contract
-from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.documents.models import Document, DocumentVersion
 from pigrocrm.core.errors import (
     AgentForbidden,
@@ -28,6 +27,7 @@ from pigrocrm.core.errors import (
     ValidationFailed,
 )
 from pigrocrm.core.gmail.models import GmailMessage, GmailMessageLink
+from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.storage.local import LocalFileStorage
 from pigrocrm.core.work_units.models import Approval
 from pigrocrm.core.work_units.schemas import ApprovalRecord, WorkUnitCreate
@@ -39,7 +39,7 @@ READER = Actor(id=None, type="user", role="readonly")
 
 
 def _contract(session: Session, *, requires_prior_approval: bool = True) -> Contract:
-    customer = Customer(legal_name=f"ACME {uuid4()}")
+    customer = Organization(legal_name=f"ACME {uuid4()}")
     session.add(customer)
     session.flush()
     contract = Contract(
@@ -237,7 +237,7 @@ def test_a_synced_email_is_filed_as_a_document_of_the_contract(
     db_session.flush()
     db_session.add(
         GmailMessageLink(
-            gmail_message_id=message.id, entity_type="customer", entity_id=contract.customer_id
+            gmail_message_id=message.id, entity_type="organization", entity_id=contract.customer_id
         )
     )
     db_session.flush()
@@ -284,7 +284,7 @@ def test_an_email_of_another_customer_cannot_be_the_proof(db_session: Session, t
     db_session.flush()
     db_session.add(
         GmailMessageLink(
-            gmail_message_id=message.id, entity_type="customer", entity_id=other.customer_id
+            gmail_message_id=message.id, entity_type="organization", entity_id=other.customer_id
         )
     )
     db_session.flush()
@@ -320,7 +320,7 @@ def test_an_email_whose_body_was_not_stored_cannot_be_the_proof(
     db_session.flush()
     db_session.add(
         GmailMessageLink(
-            gmail_message_id=message.id, entity_type="customer", entity_id=contract.customer_id
+            gmail_message_id=message.id, entity_type="organization", entity_id=contract.customer_id
         )
     )
     db_session.flush()

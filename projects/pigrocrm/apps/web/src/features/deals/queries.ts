@@ -11,8 +11,8 @@ import { queryKeys } from '@/lib/query'
 
 /**
  * Wire shape of one deal and one pipeline stage, taken directly from the generated
- * OpenAPI schema rather than hand-declared -- the same reasoning as `Customer`/
- * `Person`'s own aliases (features/customers/queries.ts, features/people/
+ * OpenAPI schema rather than hand-declared -- the same reasoning as `Organization`/
+ * `Person`'s own aliases (features/organizations/queries.ts, features/people/
  * queries.ts): the single source of truth is `DealRead`/`PipelineStageRead` in
  * packages/core/src/pigrocrm/core/{deals,pipeline}/schemas.py, and these track it
  * through `pnpm generate:api` automatically.
@@ -137,7 +137,7 @@ export function useStages() {
 
 export function useDeal(dealId: string, options: { enabled?: boolean } = {}) {
   return useQuery({
-    // See `useCustomer`: the proforma dialog reads the deal's azienda only when it has to.
+    // See `useOrganization`: the proforma dialog reads the deal's azienda only when it has to.
     enabled: (options.enabled ?? true) && dealId !== '',
     queryKey: queryKeys.deal(dealId),
     queryFn: () =>
@@ -247,7 +247,7 @@ export function useUpdateDeal(dealId: string) {
  *
  * `getQueriesData`/`setQueryData` are typed as `DealsResult` for this hook's own
  * purposes, but the same `['deals', ...]` key prefix also matches `features/
- * customers/queries.ts`'s `useCustomerDeals` (a plain wire `DealPage`). Both
+ * organizations/queries.ts`'s `useOrganizationDeals` (a plain wire `DealPage`). Both
  * shapes carry `.items: Deal[]`, which is all this hook ever reads or rewrites,
  * so touching that cache entry too is harmless -- and `onSettled`'s invalidation
  * below refreshes it correctly regardless.
@@ -308,7 +308,7 @@ export function useMoveDeal() {
 
 /**
  * `DELETE /api/deals/{id}` is a soft delete: the server sets `deleted_at`. Unlike
- * `CustomerService.soft_delete`, `DealService.soft_delete` raises no conflict --
+ * `OrganizationService.soft_delete`, `DealService.soft_delete` raises no conflict --
  * nothing else in this slice holds a foreign key to a deal -- so there is no
  * active-dependents count to surface here.
  */

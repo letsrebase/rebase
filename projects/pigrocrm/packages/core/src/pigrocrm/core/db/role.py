@@ -24,8 +24,8 @@ from sqlalchemy.engine import URL, make_url
 DEFINER_FUNCTIONS = (
     "payment_reminder_of_message(uuid, text)",
     "invoice_type_of_pdf(uuid)",
-    "active_deals_of_customer(uuid)",
-    "customer_archived(uuid)",
+    "active_deals_of_organization(uuid)",
+    "organization_archived(uuid)",
 )
 
 # The role name and the password travel as transaction-local settings into one plpgsql

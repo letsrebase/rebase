@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { createCustomer, loginAsAdmin } from './helpers'
+import { createOrganization, loginAsAdmin } from './helpers'
 
 // The brief this spec was drafted from called `login(page)` with a single
 // argument; the real helper (`helpers.ts`) takes `(page, email, password)`, and
@@ -8,7 +8,7 @@ import { createCustomer, loginAsAdmin } from './helpers'
 test.describe('Documenti', () => {
   test('una tab Documenti compare su un cliente e accetta un caricamento', async ({ page }) => {
     await loginAsAdmin(page)
-    const customerName = await createCustomer(page)
+    const customerName = await createOrganization(page)
 
     await page.getByText(customerName).click()
     await page.getByRole('tab', { name: 'Documenti' }).click()
@@ -26,7 +26,7 @@ test.describe('Documenti', () => {
 
   test('un file di tipo non ammesso mostra il messaggio del server', async ({ page }) => {
     await loginAsAdmin(page)
-    const customerName = await createCustomer(page)
+    const customerName = await createOrganization(page)
     await page.getByText(customerName).click()
     await page.getByRole('tab', { name: 'Documenti' }).click()
 

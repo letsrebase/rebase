@@ -20,9 +20,9 @@ from pigrocrm.core.actor import Actor
 from pigrocrm.core.auth.models import User, UserLegalEntity
 from pigrocrm.core.config import Settings
 from pigrocrm.core.contracts.models import Contract
-from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.documents.models import Document
 from pigrocrm.core.legal_entities.models import LegalEntity
+from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.reminders.catalogue import reminder_key
 from pigrocrm.core.reminders.engine import Evaluation, ReminderEngine
 from pigrocrm.core.reminders.preferences import ReminderPreferenceService
@@ -59,7 +59,7 @@ class World:
     session: Session
     owner: User
     carol: User  # owns the customer
-    customer: Customer
+    customer: Organization
     legal_entity: UUID
 
     def contract(
@@ -70,7 +70,7 @@ class World:
         end: date | None = None,
         renewal_type: str = "none",
         notice: int | None = None,
-        customer: Customer | None = None,
+        customer: Organization | None = None,
         status: str = "draft",
     ) -> Contract:
         row = Contract(
@@ -160,7 +160,7 @@ def world(db_session: Session) -> World:
         db_session.add(user)
         users[name] = user
     db_session.flush()
-    customer = Customer(
+    customer = Organization(
         legal_name="ACME Srl", legal_entity_id=legal_entity, owner_id=users["carol"].id
     )
     db_session.add(customer)
@@ -273,7 +273,7 @@ def test_contract_expiring_reads_the_end_date_each_pass(world: World) -> None:
     assert world.severity("contract_expiring", contract.id) is None, "the cause was fixed"
 
 
-def test_contract_expiring_goes_to_the_customers_owner_scoped_to_the_legal_entity(
+def test_contract_expiring_goes_to_the_organizations_owner_scoped_to_the_legal_entity(
     world: World,
 ) -> None:
     contract = world.contract(end=_ahead(20))
@@ -590,7 +590,7 @@ def test_a_withdrawn_or_archived_day_outside_the_term_is_not_raised(world: World
     assert world.raised() == {} and revoked.id
 
 
-def test_a_day_outside_the_term_is_told_to_the_customers_owner(world: World) -> None:
+def test_a_day_outside_the_term_is_told_to_the_organizations_owner(world: World) -> None:
     contract = world.contract(start=_ago(30), end=_ago(10))
     unit = world.day(contract, _ago(5))
 

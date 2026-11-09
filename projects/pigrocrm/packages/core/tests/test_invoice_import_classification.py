@@ -20,7 +20,6 @@ from uuid import uuid4
 import pytest
 from sqlalchemy.orm import Session
 
-from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.errors import ValidationFailed
 from pigrocrm.core.invoices.fatturapa_import import parse
 from pigrocrm.core.invoices.import_classification import classify_parsed_invoice
@@ -33,6 +32,7 @@ from pigrocrm.core.invoices.import_schemas import ParsedInvoiceParty
 from pigrocrm.core.invoices.models import Invoice
 from pigrocrm.core.invoices.repository import InvoiceRepository
 from pigrocrm.core.legal_entities.models import LegalEntity
+from pigrocrm.core.organizations.models import Organization
 
 FIXTURES = Path(__file__).parent / "fixtures" / "fatturapa"
 CONSULTING = "fpr-12-march-consulting.xml"
@@ -183,8 +183,8 @@ def test_a_numbered_invoice_with_no_stored_hash_is_always_conflict_never_already
 # --- InvoiceRepository.existing_by_number: the natural-key lookup the check needs -
 
 
-def _customer(session: Session) -> Customer:
-    customer = Customer(
+def _customer(session: Session) -> Organization:
+    customer = Organization(
         legal_name=f"Acme {uuid4()}",
         address="Corso Italia 5",
         postal_code="00100",

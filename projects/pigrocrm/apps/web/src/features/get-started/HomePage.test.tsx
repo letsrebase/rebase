@@ -58,7 +58,7 @@ vi.mock('@/features/dashboard/SoloHome', () => ({
 const EMPTY_PAGE = { items: [], next_cursor: null }
 const ONE = (id: string) => ({ items: [{ id }], next_cursor: null })
 const EMPTY: Record<string, unknown> = {
-  '/api/customers': EMPTY_PAGE,
+  '/api/organizations': EMPTY_PAGE,
   '/api/deals': EMPTY_PAGE,
   '/api/time-entries': EMPTY_PAGE,
   '/api/documents': EMPTY_PAGE,
@@ -127,7 +127,7 @@ describe('the Home', () => {
   })
 
   it('is the dashboard with «Completa lo spazio» once a customer exists', async () => {
-    answers({ '/api/customers': ONE('c1') })
+    answers({ '/api/organizations': ONE('c1') })
     renderHome()
     expect(await screen.findByTestId('dashboard')).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Completa lo spazio' })).toBeInTheDocument()
@@ -137,7 +137,7 @@ describe('the Home', () => {
   })
 
   it('opens a solo space on the solo Home, with the same notices above it', async () => {
-    answers({ '/api/customers': ONE('c1'), '/api/settings/modules': spaceModules([], 'solo') })
+    answers({ '/api/organizations': ONE('c1'), '/api/settings/modules': spaceModules([], 'solo') })
     renderHome()
     expect(await screen.findByTestId('solo-home')).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Completa lo spazio' })).toBeInTheDocument()
@@ -145,21 +145,21 @@ describe('the Home', () => {
   })
 
   it('opens a company space on the dashboard tabs', async () => {
-    answers({ '/api/customers': ONE('c1'), '/api/settings/modules': spaceModules([], 'company') })
+    answers({ '/api/organizations': ONE('c1'), '/api/settings/modules': spaceModules([], 'company') })
     renderHome()
     expect(await screen.findByTestId('dashboard')).toBeInTheDocument()
     expect(screen.queryByTestId('solo-home')).toBeNull()
   })
 
   it('opens a space with no profile yet on the dashboard tabs', async () => {
-    answers({ '/api/customers': ONE('c1'), '/api/settings/modules': spaceModules([], null) })
+    answers({ '/api/organizations': ONE('c1'), '/api/settings/modules': spaceModules([], null) })
     renderHome()
     expect(await screen.findByTestId('dashboard')).toBeInTheDocument()
     expect(screen.queryByTestId('solo-home')).toBeNull()
   })
 
   it('opens on the dashboard tabs when the modules cannot be read', async () => {
-    answers({ '/api/customers': ONE('c1') }, { '/api/settings/modules': 500 })
+    answers({ '/api/organizations': ONE('c1') }, { '/api/settings/modules': 500 })
     renderHome()
     expect(await screen.findByTestId('dashboard')).toBeInTheDocument()
   })
@@ -177,7 +177,7 @@ describe('the Home', () => {
   it('is the dashboard alone once every step is done', async () => {
     answers({
       '/api/legal-entities': [LEGAL_ENTITY],
-      '/api/customers': ONE('c1'),
+      '/api/organizations': ONE('c1'),
       '/api/deals': ONE('d1'),
       '/api/documents': ONE('o1'),
     })
@@ -188,7 +188,7 @@ describe('the Home', () => {
 
   it('tells whoever can decide that proposals wait, above the dashboard tab', async () => {
     answers({
-      '/api/customers': ONE('c1'),
+      '/api/organizations': ONE('c1'),
       '/api/proposals': { items: [{ id: 'p1' }, { id: 'p2' }] },
     })
     renderHome()
@@ -198,7 +198,7 @@ describe('the Home', () => {
 
   it('says nothing of proposals to a readonly user, and does not even read them', async () => {
     auth.user.role = 'readonly'
-    answers({ '/api/customers': ONE('c1'), '/api/proposals': { items: [{ id: 'p1' }] } })
+    answers({ '/api/organizations': ONE('c1'), '/api/proposals': { items: [{ id: 'p1' }] } })
     renderHome()
     expect(await screen.findByTestId('dashboard')).toBeInTheDocument()
     // The page has settled (the dashboard is drawn); a notice would have asked by now.
@@ -209,7 +209,7 @@ describe('the Home', () => {
 
   it('does not ask a collaboratore to complete the one step only an admin can do', async () => {
     auth.user.role = 'collaborator'
-    answers({ '/api/customers': ONE('c1'), '/api/deals': ONE('d1'), '/api/documents': ONE('o1') })
+    answers({ '/api/organizations': ONE('c1'), '/api/deals': ONE('d1'), '/api/documents': ONE('o1') })
     renderHome()
     expect(await screen.findByTestId('dashboard')).toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: 'Completa lo spazio' })).toBeNull()
@@ -217,7 +217,7 @@ describe('the Home', () => {
 
   it('does not ask a readonly user to complete anything', async () => {
     auth.user.role = 'readonly'
-    answers({ '/api/customers': ONE('c1') })
+    answers({ '/api/organizations': ONE('c1') })
     renderHome()
     expect(await screen.findByTestId('dashboard')).toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: 'Completa lo spazio' })).toBeNull()
@@ -233,7 +233,7 @@ describe('the Home', () => {
     expect(await screen.findByDisplayValue('pgc_x')).toBeInTheDocument()
     // The assistant, asked by a step's prompt, has created the first customer; the reads
     // refresh, as they do when the person comes back to the tab.
-    answers({ '/api/customers': ONE('c1'), '/api/tokens': [{ id: 't2' }] })
+    answers({ '/api/organizations': ONE('c1'), '/api/tokens': [{ id: 't2' }] })
     await client.invalidateQueries()
     await waitFor(() => expect(screen.getByText(/1 di 4/)).toBeInTheDocument())
     expect(screen.getByDisplayValue('pgc_x')).toBeInTheDocument()
@@ -243,11 +243,11 @@ describe('the Home', () => {
   it('does not decide on a cached «empty» that a refetch is about to replace', async () => {
     // The first customer was just created on its own page: the four reads are cached as
     // «nothing» and invalidated, and the Home mounts while they refetch.
-    answers({ '/api/customers': ONE('c1') })
+    answers({ '/api/organizations': ONE('c1') })
     const SCOPE = { scope: 'first-steps', limit: 1 }
     renderHome(SEARCH, (client) => {
       for (const key of [
-        queryKeys.customers(SCOPE),
+        queryKeys.organizations(SCOPE),
         queryKeys.deals(SCOPE),
         queryKeys.timeEntries(SCOPE),
         queryKeys.documents(SCOPE),
@@ -262,7 +262,7 @@ describe('the Home', () => {
   })
 
   it('shows the Gmail outcome on the dashboard too, if the two sides read the space differently', async () => {
-    answers({ '/api/customers': ONE('c1') })
+    answers({ '/api/organizations': ONE('c1') })
     renderHome({ ...SEARCH, outcome: 'connected' })
     expect(await screen.findByTestId('dashboard')).toBeInTheDocument()
     expect(screen.getByText('Casella Google collegata.')).toBeInTheDocument()
@@ -272,9 +272,9 @@ describe('the Home', () => {
     let calls = 0
     const base = vi.mocked(api.GET).getMockImplementation()
     vi.mocked(api.GET).mockImplementation(((path: string, init?: unknown) => {
-      // Only the first-steps probe (`limit: 1`): the invoice door reads the customers too.
+      // Only the first-steps probe (`limit: 1`): the invoice door reads the organizations too.
       const probe = (init as { params?: { query?: { limit?: number } } } | undefined)?.params?.query?.limit === 1
-      if (path === '/api/customers' && probe && calls++ === 0) {
+      if (path === '/api/organizations' && probe && calls++ === 0) {
         return Promise.resolve({ error: { detail: 'boom' }, response: new Response(null, { status: 502 }) })
       }
       return (base as (p: string, i?: unknown) => unknown)(path, init)
@@ -291,7 +291,7 @@ describe('the Home', () => {
   })
 
   it('does not hold a choice made on a failed read: the next read that succeeds decides', async () => {
-    answers({}, { '/api/customers': 500 })
+    answers({}, { '/api/organizations': 500 })
     const client = renderHome()
     expect(await screen.findByTestId('dashboard')).toBeInTheDocument()
     answers()
@@ -301,7 +301,7 @@ describe('the Home', () => {
   })
 
   it('falls back to the dashboard when a read fails, rather than guess the space is empty', async () => {
-    answers({}, { '/api/customers': 500 })
+    answers({}, { '/api/organizations': 500 })
     renderHome()
     expect(await screen.findByTestId('dashboard')).toBeInTheDocument()
   })

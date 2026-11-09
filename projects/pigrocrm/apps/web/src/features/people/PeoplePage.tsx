@@ -9,8 +9,8 @@ import { PageHeader } from '@/components/PageHeader'
 import { Button } from '@rebase/ui/button'
 import { Input } from '@rebase/ui/input'
 import { Popover, PopoverContent, PopoverTrigger } from '@rebase/ui/popover'
-import { CustomerPicker } from '@/features/customers/CustomerPicker'
-import { useCustomer } from '@/features/customers/queries'
+import { OrganizationPicker } from '@/features/organizations/OrganizationPicker'
+import { useOrganization } from '@/features/organizations/queries'
 import { buildPersonColumns } from '@/features/people/columns'
 import { PersonForm } from '@/features/people/PersonForm'
 import { useCreatePerson, usePeoplePages } from '@/features/people/queries'
@@ -26,7 +26,7 @@ import { useEntitySchema } from '@/lib/schema'
  *
  * A search and not a dropdown of every customer: the list of companies is as long as the
  * space's customer list, and a `Select` of the first 200 silently stopped at the 200th.
- * The label is read from the chosen id (`useCustomer`) rather than from a list, so a
+ * The label is read from the chosen id (`useOrganization`) rather than from a list, so a
  * company from the URL is named whether or not it is among any page of matches. A
  * company that cannot be read says so instead of leaving the trigger blank.
  */
@@ -38,7 +38,7 @@ function CompanyFilter({
   onChange: (customerId: string | undefined) => void
 }) {
   const [open, setOpen] = useState(false)
-  const company = useCustomer(customerId ?? '')
+  const company = useOrganization(customerId ?? '')
   const label =
     customerId === undefined
       ? 'Tutte le aziende'
@@ -53,7 +53,7 @@ function CompanyFilter({
         </Button>
       </PopoverTrigger>
       <PopoverContent align="start" className="w-96">
-        <CustomerPicker
+        <OrganizationPicker
           id="filter-legal-entity"
           value={customerId ?? null}
           ariaLabel="Cerca un'azienda"
@@ -70,7 +70,7 @@ function CompanyFilter({
 
 /**
  * Exported so `index.test.tsx` can render the list without a router -- the same split
- * `CustomersPage` makes next door.
+ * `OrganizationsPage` makes next door.
  *
  * `customerId` is a controlled prop, not local state: unlike the search box, the
  * «Azienda» filter has to navigate (see `CompanyFilter` above), because `customer_id` is
@@ -97,7 +97,7 @@ export function PeoplePage({
   const people = usePeoplePages({ search: settled || undefined, customer_id: customerId })
   const create = useCreatePerson()
 
-  // Recomputed every render, not memoised -- same call as `CustomersPage`'s
+  // Recomputed every render, not memoised -- same call as `OrganizationsPage`'s
   // identical line: `schema.data?.custom_fields` only changes when the schema
   // query itself refetches, and building a handful of plain objects is not
   // worth a `useMemo` whose dependency array would just repeat the query result.

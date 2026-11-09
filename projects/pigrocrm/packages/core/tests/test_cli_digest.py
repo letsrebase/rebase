@@ -38,13 +38,13 @@ import pigrocrm.core.cli.cron as cli_cron
 from pigrocrm.core import telemetry
 from pigrocrm.core.auth.models import User
 from pigrocrm.core.config import Settings
-from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.db import session_factory, today_local
 from pigrocrm.core.db.sidecar import create_database_if_missing, drop_database
 from pigrocrm.core.digest.run import SEND_REJECTED, DigestOutcome, DigestRun
 from pigrocrm.core.digest.service import iso_week
 from pigrocrm.core.invoices.models import Invoice
 from pigrocrm.core.mail import Mail, RecordingSender
+from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.reminders.run import ROOT_LABEL
 from pigrocrm.core.tenants import (
     TenantService,
@@ -225,7 +225,7 @@ def _write_invoice(engine: Engine, week: tuple[date, date]) -> None:
     date_from, date_to = week
     try:
         with session_factory(engine)() as session:
-            customer = Customer(legal_name="Cliente Uno", country="IT", custom_fields={})
+            customer = Organization(legal_name="Cliente Uno", country="IT", custom_fields={})
             session.add(customer)
             session.flush()
             session.add(

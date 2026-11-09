@@ -2,8 +2,8 @@
 
 A note is signed and dated by the CRM from the token and the clock, so no tool takes an
 author or a date; an agent edits and deletes only what its token owner may (their own notes,
-or any for an admin, and never one the system or rebase wrote); `get_deal`, `get_customer`
-and `get_person` carry the latest 50, newest first; the `deal://`, `customer://` and
+or any for an admin, and never one the system or rebase wrote); `get_deal`, `get_organization`
+and `get_person` carry the latest 50, newest first; the `deal://`, `organization://` and
 `person://` resources render the whole thread; a `create_*` with `note` writes the record's
 first note; an `update_*` no longer takes one; the timeline names the member.
 """
@@ -35,10 +35,10 @@ from pigrocrm_mcp.server import build_server
 from pigrocrm_mcp.tools.notes import THREAD_LIMIT
 
 SYSTEM = Actor.system()
-ADD_KEYS = {"deal": "deal_id", "customer": "customer_id", "person": "person_id"}
+ADD_KEYS = {"deal": "deal_id", "organization": "customer_id", "person": "person_id"}
 GET_TOOLS = {
     "deal": ("get_deal", "deal_id"),
-    "customer": ("get_customer", "customer_id"),
+    "organization": ("get_organization", "organization_id"),
     "person": ("get_person", "person_id"),
 }
 
@@ -104,7 +104,7 @@ def records(mcp_session: Session, seeded_customer_id: str) -> dict[str, UUID]:
         DealCreate(name="Progetto", customer_id=customer), SYSTEM
     )
     person = PersonService(mcp_session).create(PersonCreate(first_name="Anna"), SYSTEM)
-    return {"deal": deal.id, "customer": customer, "person": person.id}
+    return {"deal": deal.id, "organization": customer, "person": person.id}
 
 
 async def _note(client: Client, entity_type: str, entity_id: UUID, text: str) -> dict[str, Any]:
@@ -125,7 +125,7 @@ async def _thread(client: Client, entity_type: str, entity_id: UUID) -> dict[str
 # --- the three add tools ------------------------------------------------------------
 
 
-@pytest.mark.parametrize("entity_type", ["deal", "customer", "person"])
+@pytest.mark.parametrize("entity_type", ["deal", "organization", "person"])
 async def test_a_note_is_signed_with_the_token_owner_and_the_mcp_channel(
     entity_type: str, marco_server: Any, marco: User, records: dict[str, UUID]
 ) -> None:
@@ -236,10 +236,10 @@ async def test_a_member_cannot_edit_or_delete_a_note_of_another_member(
     records: dict[str, UUID],
 ) -> None:
     async with Client(marco_server) as client:
-        added = await _note(client, "customer", records["customer"], "Di Marco")
+        added = await _note(client, "organization", records["organization"], "Di Marco")
 
     async with Client(giulia_server) as client:
-        seen = (await _thread(client, "customer", records["customer"]))["note"]
+        seen = (await _thread(client, "organization", records["organization"]))["note"]
         edit = await client.call_tool("update_note", {"note_id": added["id"], "text": "Di Giulia"})
         delete = await client.call_tool("delete_note", {"note_id": added["id"]})
 
@@ -331,7 +331,7 @@ def _write_thread(session: Session, entity_type: str, entity_id: UUID, count: in
     session.flush()
 
 
-@pytest.mark.parametrize("entity_type", ["deal", "customer", "person"])
+@pytest.mark.parametrize("entity_type", ["deal", "organization", "person"])
 async def test_get_carries_the_latest_notes_newest_first_and_says_how_many_there_are(
     entity_type: str, marco_server: Any, mcp_session: Session, records: dict[str, UUID]
 ) -> None:
@@ -353,7 +353,7 @@ async def test_get_carries_the_latest_notes_newest_first_and_says_how_many_there
     assert "note_total" in description
 
 
-@pytest.mark.parametrize("entity_type", ["deal", "customer", "person"])
+@pytest.mark.parametrize("entity_type", ["deal", "organization", "person"])
 async def test_the_resource_renders_the_whole_thread_newest_first_with_its_provenance(
     entity_type: str,
     marco_server: Any,
@@ -384,13 +384,22 @@ async def test_a_note_from_before_the_thread_is_shown_as_such(
     marco_server: Any, mcp_session: Session, records: dict[str, UUID]
 ) -> None:
     mcp_session.add(
-        Note(entity_type="customer", entity_id=records["customer"], text="Vecchia", source=None)
+        Note(
+            entity_type="organization",
+            entity_id=records["organization"],
+            text="Vecchia",
+            source=None,
+        )
     )
     mcp_session.flush()
 
     async with Client(marco_server) as client:
-        text = (await client.read_resource(f"customer://{records['customer']}")).contents[0].text
-        thread = (await _thread(client, "customer", records["customer"]))["note"]
+        text = (
+            (await client.read_resource(f"organization://{records['organization']}"))
+            .contents[0]
+            .text
+        )
+        thread = (await _thread(client, "organization", records["organization"]))["note"]
 
     assert "Earlier note" in text
     assert (thread[0]["source"], thread[0]["author"]) == (None, None)
@@ -419,7 +428,7 @@ async def test_create_with_a_note_makes_it_the_first_note_signed_by_the_token_ow
     async with Client(marco_server) as client:
         customer = _payload(
             await client.call_tool(
-                "create_customer", {"legal_name": "ACME", "note": "Cliente storico"}
+                "create_organization", {"legal_name": "ACME", "note": "Cliente storico"}
             )
         )
         deal = _payload(
@@ -434,14 +443,14 @@ async def test_create_with_a_note_makes_it_the_first_note_signed_by_the_token_ow
             )
         )
         threads = {
-            "customer": await _thread(client, "customer", UUID(customer["id"])),
+            "organization": await _thread(client, "organization", UUID(customer["id"])),
             "deal": await _thread(client, "deal", UUID(deal["id"])),
             "person": await _thread(client, "person", UUID(person["id"])),
         }
 
     assert "note" not in customer and "note" not in deal and "note" not in person
     expected = {
-        "customer": "Cliente storico",
+        "organization": "Cliente storico",
         "deal": "In trattativa",
         "person": "Referente tecnico",
     }
@@ -453,13 +462,13 @@ async def test_create_with_a_note_makes_it_the_first_note_signed_by_the_token_ow
 
 async def test_create_without_a_note_writes_none(marco_server: Any) -> None:
     async with Client(marco_server) as client:
-        customer = _payload(await client.call_tool("create_customer", {"legal_name": "ACME"}))
-        thread = await _thread(client, "customer", UUID(customer["id"]))
+        customer = _payload(await client.call_tool("create_organization", {"legal_name": "ACME"}))
+        thread = await _thread(client, "organization", UUID(customer["id"]))
 
     assert thread["note"] == [] and thread["note_total"] == 0
 
 
-@pytest.mark.parametrize("entity_type", ["deal", "customer", "person"])
+@pytest.mark.parametrize("entity_type", ["deal", "organization", "person"])
 async def test_update_no_longer_takes_a_note_and_says_where_it_goes(
     entity_type: str, marco_server: Any, records: dict[str, UUID]
 ) -> None:
@@ -481,12 +490,12 @@ async def test_the_creating_tools_still_advertise_a_note(marco_server: Any) -> N
     async with Client(marco_server) as client:
         tools = {tool.name: tool for tool in (await client.list_tools()).tools}
 
-    for name in ("create_deal", "create_customer", "create_person"):
+    for name in ("create_deal", "create_organization", "create_person"):
         assert "note" in tools[name].input_schema["properties"], name
         assert "first note" in tools[name].description, name
 
 
-@pytest.mark.parametrize("entity_type", ["deal", "customer", "person"])
+@pytest.mark.parametrize("entity_type", ["deal", "organization", "person"])
 async def test_describe_schema_no_longer_lists_note_as_a_native_field(
     entity_type: str, marco_server: Any
 ) -> None:

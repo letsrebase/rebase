@@ -13,8 +13,8 @@ from pigrocrm.core.validation import SafeStr
 # Mirrors Deal's column width (models.py). Without this, an over-length value sails
 # past Pydantic, reaches flush(), and comes back as a raw sqlalchemy.exc.DataError
 # (StringDataRightTruncation) -- not a subclass of IntegrityError, so no handler
-# catches it, and it poisons the session. The same gap CustomerCreate's own
-# *_MAX_LENGTH constants (customers/schemas.py) and PersonCreate's own (people/
+# catches it, and it poisons the session. The same gap OrganizationCreate's own
+# *_MAX_LENGTH constants (organizations/schemas.py) and PersonCreate's own (people/
 # schemas.py) close -- this project has hit the class of bug often enough that it is
 # now a standing global constraint, not a one-off fix.
 #
@@ -57,8 +57,8 @@ MAX_DURATION_MONTHS = 600
 
 # No Pydantic `ge`/`le` bound on `probability` below, unlike `position`/`position`
 # elsewhere in this sweep -- see the final-review item on bounding every Integer
-# column. The reason is the same one documented on `CustomerCreate.vat_number`
-# (customers/schemas.py) for why that field has no `max_length` either: the
+# column. The reason is the same one documented on `OrganizationCreate.vat_number`
+# (organizations/schemas.py) for why that field has no `max_length` either: the
 # service's own `_check_numbers` already requires `0 <= probabilita <= 100` on every
 # create and update, which structurally rejects any value Postgres's `Integer`
 # column could not hold, including `2**40` -- there is no gap left for a schema
@@ -111,7 +111,7 @@ class DealCreate(BaseModel):
     expected_close_date: date | None = None
     # Validated against `users` by `DealService` (`create`/`update` both call
     # `_owner_for`; omitted on create it is the creator), the same way `customer_id` is
-    # validated against `customers`: a real foreign key with no schema-level way to bound
+    # validated against `organizations`: a real foreign key with no schema-level way to bound
     # it further than "a UUID".
     owner_id: UUID | None = None
     note: SafeStr | None = Field(default=None, max_length=NOTE_MAX_LENGTH)
@@ -181,7 +181,7 @@ class DealRead(BaseModel):
     closed_at: date | None
     # The customer's `legal_name`, denormalised onto the read shape exactly as
     # `PersonRead.customer_legal_name` is (see that field's own comment): the name
-    # lives on `customers` and renaming a customer must not need a second write here.
+    # lives on `organizations` and renaming a customer must not need a second write here.
     # `DealService` fills it from one batched lookup per page
     # (`DealRepository.customer_names`), which is why the default is `None` -- a bare
     # `model_validate(deal)` reads a `Deal` that has no such attribute at all, so without
@@ -226,7 +226,7 @@ class ValuePreviewRead(BaseModel):
     monthly_recurring_value: Decimal | None
 
 
-# Residuo R9. Mirrors CUSTOMER_SORTS (customers/schemas.py) -- see there for why three
+# Residuo R9. Mirrors ORGANIZATION_SORTS (organizations/schemas.py) -- see there for why three
 # keys and why `created_at` is the default.
 DEAL_SORTS = SortWhitelist(
     specs=(
@@ -239,7 +239,7 @@ DEAL_SORTS = SortWhitelist(
 
 
 class DealListQuery(BaseModel):
-    # See CustomerListQuery for why every free-text parameter here is `SafeStr` and why
+    # See OrganizationListQuery for why every free-text parameter here is `SafeStr` and why
     # `cursor` is an opaque bounded string rather than a UUID.
     search: SafeStr | None = None
     customer_id: UUID | None = None
@@ -254,7 +254,7 @@ class DealListQuery(BaseModel):
     invoiced_unwon: bool = False
     to_invoice: bool = False
     # Upper-bounded so a caller (an MCP agent especially) cannot request an
-    # unbounded page; matches CustomerListQuery.limit/PersonListQuery.limit exactly.
+    # unbounded page; matches OrganizationListQuery.limit/PersonListQuery.limit exactly.
     limit: int = Field(default=50, ge=1, le=200)
     cursor: str | None = Field(default=None, max_length=CURSOR_MAX_LENGTH)
     sort: SafeStr | None = None

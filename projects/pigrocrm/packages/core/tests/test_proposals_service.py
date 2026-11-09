@@ -23,11 +23,11 @@ from test_text import minimal_pdf
 
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.contracts.models import Contract, RateCard
-from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.documents.models import Document
 from pigrocrm.core.documents.schemas import DocumentCreate
 from pigrocrm.core.documents.service import DocumentService
 from pigrocrm.core.errors import Conflict, NotFound, ValidationFailed
+from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.proposals.models import Proposal
 from pigrocrm.core.proposals.schemas import (
     ProposalAccept,
@@ -554,7 +554,7 @@ def test_to_refused_work_unit_accept_keeps_what_the_caller_had_pending(db_sessio
     with pytest.raises(Conflict):
         service.accept(proposal.id, ProposalAccept(), ADMIN)
 
-    assert db_session.get(Customer, pending.id) is not None
+    assert db_session.get(Organization, pending.id) is not None
     assert service.get(proposal.id, ADMIN).status == "pending"
 
 

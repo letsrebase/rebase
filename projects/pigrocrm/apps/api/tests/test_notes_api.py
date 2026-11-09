@@ -1,4 +1,4 @@
-"""The notes thread over HTTP (REB-879): `GET/POST /api/{deals|customers|people}/{id}/notes`,
+"""The notes thread over HTTP (REB-879): `GET/POST /api/{deals|organizations|people}/{id}/notes`,
 `PATCH` and `DELETE /api/notes/{id}`, and the three records without a `note` of their own."""
 
 import pytest
@@ -11,7 +11,7 @@ from pigrocrm.core.auth.service import UserService
 from pigrocrm.core.pipeline.service import PipelineService
 
 PASSWORD = "supersegreta1"
-COLLECTIONS = ["deals", "customers", "people"]
+COLLECTIONS = ["deals", "organizations", "people"]
 
 
 @pytest.fixture(autouse=True)
@@ -21,13 +21,13 @@ def _stages(api_session: Session) -> None:
 
 
 def _records(client: TestClient) -> dict[str, str]:
-    customer = client.post("/api/customers", json={"legal_name": "ACME Srl"})
+    customer = client.post("/api/organizations", json={"legal_name": "ACME Srl"})
     deal = client.post("/api/deals", json={"name": "Sito", "customer_id": customer.json()["id"]})
     person = client.post("/api/people", json={"first_name": "Anna"})
     for response in (customer, deal, person):
         assert response.status_code == 201, response.text
     return {
-        "customers": customer.json()["id"],
+        "organizations": customer.json()["id"],
         "deals": deal.json()["id"],
         "people": person.json()["id"],
     }
@@ -82,8 +82,8 @@ def test_a_note_on_a_record_that_is_not_there_is_a_404(logged_in: TestClient) ->
 def test_a_collaborator_reads_the_admins_note_and_cannot_change_it(
     logged_in: TestClient, api_session: Session
 ) -> None:
-    record = _records(logged_in)["customers"]
-    note = logged_in.post(f"/api/customers/{record}/notes", json={"text": "Dell'admin"}).json()
+    record = _records(logged_in)["organizations"]
+    note = logged_in.post(f"/api/organizations/{record}/notes", json={"text": "Dell'admin"}).json()
     UserService(api_session).create(
         UserCreate(
             email="collega@pigro.it", password=PASSWORD, name="Collega", role="collaborator"
@@ -95,12 +95,12 @@ def test_a_collaborator_reads_the_admins_note_and_cannot_change_it(
     )
     assert logged.status_code == 200, logged.text
 
-    seen = logged_in.get(f"/api/customers/{record}/notes").json()
+    seen = logged_in.get(f"/api/organizations/{record}/notes").json()
     assert [(n["text"], n["editable"]) for n in seen] == [("Dell'admin", False)]
     refused = logged_in.patch(f"/api/notes/{note['id']}", json={"text": "Mia"})
     assert refused.status_code == 403 and refused.json()["code"] == "permission_denied"
     assert logged_in.delete(f"/api/notes/{note['id']}").status_code == 403
-    own = logged_in.post(f"/api/customers/{record}/notes", json={"text": "Del collega"}).json()
+    own = logged_in.post(f"/api/organizations/{record}/notes", json={"text": "Del collega"}).json()
     assert own["editable"] is True and own["author"] == "Collega"
     assert logged_in.patch(f"/api/notes/{own['id']}", json={"text": "Cambiata"}).status_code == 200
 
@@ -109,14 +109,14 @@ def test_create_takes_a_note_as_the_first_note_and_the_records_no_longer_carry_o
     logged_in: TestClient,
 ) -> None:
     customer = logged_in.post(
-        "/api/customers", json={"legal_name": "Beta", "note": "Cliente da una mail"}
+        "/api/organizations", json={"legal_name": "Beta", "note": "Cliente da una mail"}
     )
     deal = logged_in.post(
         "/api/deals",
         json={"name": "Sito", "customer_id": customer.json()["id"], "note": "Primo contatto"},
     )
     person = logged_in.post("/api/people", json={"first_name": "Anna", "note": "Referente"})
-    for response, collection in ((customer, "customers"), (deal, "deals"), (person, "people")):
+    for response, collection in ((customer, "organizations"), (deal, "deals"), (person, "people")):
         assert response.status_code == 201, response.text
         assert "note" not in response.json()
         [note] = logged_in.get(f"/api/{collection}/{response.json()['id']}/notes").json()
@@ -168,7 +168,7 @@ def test_the_revisions_of_a_note_keep_each_text_it_had_whole(logged_in: TestClie
 
 
 def test_a_custom_field_cannot_be_called_note(logged_in: TestClient) -> None:
-    for entity in ("deal", "customer", "person"):
+    for entity in ("deal", "organization", "person"):
         response = logged_in.post(
             "/api/field-definitions",
             json={"entity_type": entity, "key": "note", "label": "Note", "field_type": "text"},

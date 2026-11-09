@@ -29,7 +29,7 @@ OVERDUE = REMINDER_TYPES["task_overdue"]
 def _detections(ctx: DetectorContext, rows: list[Task], type_key: str) -> list[Detection]:
     resolver = LinkResolver(ctx.session)
     resolver.preload(
-        customers=(row.customer_id for row in rows),
+        organizations=(row.customer_id for row in rows),
         people=(row.person_id for row in rows),
         deals=(row.deal_id for row in rows),
         invoices=(row.invoice_id for row in rows),

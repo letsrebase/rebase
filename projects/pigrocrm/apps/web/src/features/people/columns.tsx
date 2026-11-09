@@ -10,7 +10,7 @@ const EMPTY = '—'
 
 /**
  * `null` and `""` both mean "nothing here" for a native text column -- identical
- * reasoning to `displayNative` in `features/customers/columns.tsx`: a native
+ * reasoning to `displayNative` in `features/organizations/columns.tsx`: a native
  * column has no field type that could make `0`/`false` a legitimate value to
  * preserve (that is `renderFieldValue`'s job, for a dynamic custom field), so the
  * wider check is safe here and `??` alone is not. `PersonUpdate.model_dump(
@@ -18,9 +18,9 @@ const EMPTY = '—'
  * through `PersonForm` sends an explicit `""`, never `null` -- see that file's
  * own `submit` for why -- and `??` alone would render that legitimately-cleared
  * value as a blank cell instead of the same dash every other absent value gets.
- * Defined locally rather than imported from `features/customers/columns`: the two
- * features are not coupled today (Customer's own file has no reciprocal import
- * from this one), and this is the same four-line helper `features/customers/
+ * Defined locally rather than imported from `features/organizations/columns`: the two
+ * features are not coupled today (Organization's own file has no reciprocal import
+ * from this one), and this is the same four-line helper `features/organizations/
  * columns.tsx` itself keeps local to its own file rather than lifting into a
  * shared module.
  */
@@ -59,7 +59,7 @@ function fullName(person: Person): string {
 /**
  * TanStack Table v9 (pinned exactly in package.json): `ColumnDef` takes
  * `<TFeatures, TData, TValue>`, not v8's `<TData, TValue>` -- see
- * `features/customers/columns.tsx`'s identical comment for how this was
+ * `features/organizations/columns.tsx`'s identical comment for how this was
  * confirmed against `@tanstack/table-core`'s own types rather than assumed.
  * `DataTableFeatures` (`DataTable.tsx`'s own export) is the same `TFeatures`
  * every table in this product is instantiated with.
@@ -114,8 +114,8 @@ export function buildPersonColumns(
         if (!customer_id || label === EMPTY) return label
         return (
           <Link
-            to="/app/customers/$customerId"
-            params={{ customerId: customer_id }}
+            to="/app/organizations/$organizationId"
+            params={{ organizationId: customer_id }}
             className="underline underline-offset-2"
             // The whole row is already clickable (`DataTable`'s `onRowClick` sends it
             // to the person), so without this the company link fires two navigations
@@ -136,7 +136,7 @@ export function buildPersonColumns(
   // Prefixed `custom_` id so a tenant-defined key can never collide with a
   // native column's own id -- identical reasoning (and identical residual gap:
   // `FieldDefinitionService.create` does not itself guard against this) as
-  // `features/customers/columns.tsx`.
+  // `features/organizations/columns.tsx`.
   const custom: ColumnDef<DataTableFeatures, Person>[] = customFields.map((field) => ({
     header: field.label,
     id: `custom_${field.key}`,

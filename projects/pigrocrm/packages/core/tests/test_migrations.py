@@ -34,7 +34,7 @@ HAND_MAINTAINED_INDEXES = {
     "uq_legal_entities_vat_number",
     "uq_legal_entities_tax_code",
     "uq_pipeline_stage_code",
-    "ix_customers_custom_fields",
+    "ix_organizations_custom_fields",
     "ix_people_custom_fields",
     "ix_deals_custom_fields",
     "uq_invoices_legal_entity_year_number",
@@ -52,9 +52,9 @@ HAND_MAINTAINED_INDEXES = {
     # Slice 6, migration 0021. A *partial* GIN index over an operator class is a fourth
     # shape autogenerate handles poorly, and nine trigram indexes omitted in silence are
     # nine sequential scans that come back a month later.
-    "ix_customers_legal_name_trgm",
-    "ix_customers_vat_number_trgm",
-    "ix_customers_tax_code_trgm",
+    "ix_organizations_legal_name_trgm",
+    "ix_organizations_vat_number_trgm",
+    "ix_organizations_tax_code_trgm",
     "ix_people_name_trgm",
     "ix_people_last_name_trgm",
     "ix_deals_name_trgm",
@@ -66,9 +66,9 @@ HAND_MAINTAINED_INDEXES = {
     # silence is the same sequential scan as a GIN index dropped in silence, and the
     # thirteenth is an expression index over `DESC NULLS LAST` that autogenerate cannot
     # compare at all.
-    "ix_customers_created_at_id",
-    "ix_customers_updated_at_id",
-    "ix_customers_legal_name_id",
+    "ix_organizations_created_at_id",
+    "ix_organizations_updated_at_id",
+    "ix_organizations_legal_name_id",
     "ix_people_created_at_id",
     "ix_people_updated_at_id",
     "ix_people_last_name_id",
@@ -163,7 +163,7 @@ def test_every_table_the_slice_needs_exists() -> None:
         "field_definitions",
         "pipeline_stages",
         "activities",
-        "customers",
+        "organizations",
         "people",
         "deals",
         "fiscal_profile",
@@ -216,7 +216,7 @@ def test_hand_maintained_indexes_survive_the_migration(pigrocrm_postgres: Any) -
     )
 
     for gin_index in (
-        "ix_customers_custom_fields",
+        "ix_organizations_custom_fields",
         "ix_people_custom_fields",
         "ix_deals_custom_fields",
         "ix_time_entries_custom_fields",
@@ -497,9 +497,9 @@ def test_every_trigram_index_is_a_partial_gin_index_over_gin_trgm_ops(
 # thirteen exist to avoid. Pinned as text because the *order* of the members and the
 # `DESC NULLS LAST` qualifier are observable nowhere else.
 SORT_INDEX_BODIES: dict[str, str] = {
-    "ix_customers_created_at_id": "(created_at, id)",
-    "ix_customers_updated_at_id": "(updated_at, id)",
-    "ix_customers_legal_name_id": "(legal_name, id)",
+    "ix_organizations_created_at_id": "(created_at, id)",
+    "ix_organizations_updated_at_id": "(updated_at, id)",
+    "ix_organizations_legal_name_id": "(legal_name, id)",
     "ix_people_created_at_id": "(created_at, id)",
     "ix_people_updated_at_id": "(updated_at, id)",
     "ix_people_last_name_id": "(last_name, id)",
@@ -2920,6 +2920,10 @@ def test_0073_carries_legacy_free_text_and_an_owner_holding_it_saves_unchanged(
         seen = capfd.readouterr().err.splitlines()
         lines = [m for m in seen if "legacy phone" in m]
         assert len(lines) == 1 and orphan in lines[0] and "chiedere in portineria" in lines[0]
+
+        # The service below reads through today's models, which name `organizations`: bring
+        # the database on to head (REB-969) now that the log line of 0073 has been read.
+        upgrade(config, "head")
 
         engine = create_engine(url)
         with Session(engine) as session:

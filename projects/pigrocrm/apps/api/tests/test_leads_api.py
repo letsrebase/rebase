@@ -17,11 +17,11 @@ from sqlalchemy.orm import Session
 
 import pigrocrm.core.engagements.leads as leads_module
 from pigrocrm.core.config import Settings, get_settings
-from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.db import session_factory
 from pigrocrm.core.db.sidecar import drop_database
 from pigrocrm.core.deals.models import Deal
 from pigrocrm.core.engagements.leads import BUSY, NOT_CONFIGURED
+from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.people.models import Person
 from pigrocrm.core.tenants import TenantService, TenantSignup, ensure_tenants_database
 from pigrocrm.core.tenants.database import tenant_database_name, tenant_database_url
@@ -117,7 +117,7 @@ def _counts(settings: Settings) -> tuple[int, int, int]:
     with _space(settings) as space:
         return tuple(  # type: ignore[return-value]
             space.scalar(select(func.count()).select_from(model)) or 0
-            for model in (Customer, Person, Deal)
+            for model in (Organization, Person, Deal)
         )
 
 

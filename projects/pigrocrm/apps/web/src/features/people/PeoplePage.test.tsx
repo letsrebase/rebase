@@ -1,6 +1,6 @@
 /**
  * The people list's header and filter row (design spec §4). Same three assertions as
- * `customers/index.test.tsx`, on the page next to it: the title and «Nuova persona» come
+ * `organizations/index.test.tsx`, on the page next to it: the title and «Nuova persona» come
  * from `PageHeader`, and the search box lives in the filter row above the table. The
  * «Azienda» filter is new: it navigates rather than filtering locally (same reasoning
  * as `deal/list.test.tsx`'s chips) because `customer_id` is a real API filter
@@ -26,7 +26,7 @@ vi.mock('@/lib/auth', () => ({ useCanWrite: () => true }))
 
 const mockGet = vi.spyOn(api, 'GET')
 
-function customerPage(items: { id: string; legal_name: string }[]) {
+function organizationPage(items: { id: string; legal_name: string }[]) {
   return Promise.resolve({
     data: { items, next_cursor: null },
     response: new Response(null, { status: 200 }),
@@ -37,13 +37,13 @@ beforeEach(() => {
   navigate.mockReset()
   mockGet.mockReset()
   mockGet.mockImplementation(((path: string) => {
-    if (path === '/api/customers') {
-      return customerPage([
+    if (path === '/api/organizations') {
+      return organizationPage([
         { id: 'cust-zeta', legal_name: 'Zeta Srl' },
         { id: 'cust-acme', legal_name: 'ACME Srl' },
       ])
     }
-    if (path === '/api/customers/{customer_id}') {
+    if (path === '/api/organizations/{organization_id}') {
       return Promise.resolve({
         data: { id: 'cust-acme', legal_name: 'ACME Srl' },
         response: new Response(null, { status: 200 }),
@@ -119,7 +119,7 @@ describe('the people list', () => {
 
     expect(await screen.findByRole('button', { name: 'ACME Srl' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Zeta Srl' })).toBeInTheDocument()
-    const asked = mockGet.mock.calls.find((call) => call[0] === '/api/customers')?.[1] as unknown as {
+    const asked = mockGet.mock.calls.find((call) => call[0] === '/api/organizations')?.[1] as unknown as {
       params: { query: Record<string, unknown> }
     }
     expect(asked.params.query.limit).toBeLessThan(200)
@@ -162,7 +162,7 @@ describe('the people list', () => {
 describe('the trigger label with a customer_id in the URL', () => {
   it('shows a loading label rather than blank while the customer is being read', async () => {
     mockGet.mockImplementation(((path: string) =>
-      path === '/api/customers/{customer_id}'
+      path === '/api/organizations/{organization_id}'
         ? new Promise(() => {})
         : Promise.resolve({
             data: { items: [], next_cursor: null, custom_fields: [] },
@@ -176,7 +176,7 @@ describe('the trigger label with a customer_id in the URL', () => {
 
   it('shows an error label rather than blank when the customer cannot be read, permanently', async () => {
     mockGet.mockImplementation(((path: string) =>
-      path === '/api/customers/{customer_id}'
+      path === '/api/organizations/{organization_id}'
         ? Promise.resolve({
             error: { detail: 'boom' },
             response: new Response(null, { status: 500 }),
@@ -226,7 +226,7 @@ describe('validateSearch', () => {
 describe('a garbage customer_id in the URL', () => {
   it('turns into no filter at all, «Tutte le aziende» shown', async () => {
     const { customer_id } = parsePeopleSearch({
-      customer_id: 'cust-acme;DROP TABLE customers',
+      customer_id: 'cust-acme;DROP TABLE organizations',
     })
 
     renderPage(customer_id)

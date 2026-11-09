@@ -28,19 +28,19 @@ from sqlalchemy.orm import Session
 
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.analytics.repository import AnalyticsRepository
-from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.db import today_local
 from pigrocrm.core.deals.models import Deal
 from pigrocrm.core.invoices.models import Invoice
 from pigrocrm.core.invoices.repository import InvoiceRepository
+from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.pipeline.service import PipelineService
 
 ADMIN = Actor(id=None, type="system", role="admin")
 
 
 @pytest.fixture
-def customer(db_session: Session) -> Customer:
-    row = Customer(legal_name="Cliente Srl", country="IT", custom_fields={})
+def customer(db_session: Session) -> Organization:
+    row = Organization(legal_name="Cliente Srl", country="IT", custom_fields={})
     db_session.add(row)
     db_session.flush()
     return row
@@ -48,7 +48,7 @@ def customer(db_session: Session) -> Customer:
 
 def _invoice(
     db_session: Session,
-    customer: Customer,
+    customer: Organization,
     *,
     type: str = "invoice",
     status: str = "issued",
@@ -98,7 +98,7 @@ def _invoice(
 
 
 def test_unpaid_sums_total_over_issued_unpaid_invoices(
-    db_session: Session, customer: Customer
+    db_session: Session, customer: Organization
 ) -> None:
     _invoice(db_session, customer, taxable_amount="1000.00", total="1220.00")
     _invoice(db_session, customer, taxable_amount="500.00", total="610.00")
@@ -115,7 +115,7 @@ def test_an_empty_register_is_zero_with_two_decimal_places(db_session: Session) 
 
 
 def test_unpaid_follows_total_while_revenue_follows_taxable_amount(
-    db_session: Session, customer: Customer
+    db_session: Session, customer: Organization
 ) -> None:
     """The two figures over the *same* rows, read through the two aggregates that own them.
 
@@ -136,13 +136,13 @@ def test_unpaid_follows_total_while_revenue_follows_taxable_amount(
     assert receivable != revenue
 
 
-def test_a_paid_invoice_is_not_a_receivable(db_session: Session, customer: Customer) -> None:
+def test_a_paid_invoice_is_not_a_receivable(db_session: Session, customer: Organization) -> None:
     _invoice(db_session, customer, payment_status="paid")
     assert InvoiceRepository(db_session).sum_unpaid() == Decimal("0.00")
 
 
 def test_a_draft_or_annulled_invoice_is_not_a_receivable(
-    db_session: Session, customer: Customer
+    db_session: Session, customer: Organization
 ) -> None:
     """An annulled invoice keeps its number and loses its claim: the struck-through page of
     a paper register. A draft was never a claim at all."""
@@ -151,7 +151,7 @@ def test_a_draft_or_annulled_invoice_is_not_a_receivable(
     assert InvoiceRepository(db_session).sum_unpaid() == Decimal("0.00")
 
 
-def test_a_proforma_is_not_a_receivable(db_session: Session, customer: Customer) -> None:
+def test_a_proforma_is_not_a_receivable(db_session: Session, customer: Organization) -> None:
     """A proforma is not a fiscal document and nobody owes anything on it, `confirmed`
     included -- the state closest to an emission that is not one (slice 3 §5)."""
     _invoice(db_session, customer, type="proforma", status="confirmed")
@@ -159,7 +159,7 @@ def test_a_proforma_is_not_a_receivable(db_session: Session, customer: Customer)
 
 
 def test_a_soft_deleted_invoice_is_not_a_receivable(
-    db_session: Session, customer: Customer
+    db_session: Session, customer: Organization
 ) -> None:
     row = _invoice(db_session, customer)
     row.deleted_at = datetime.now(UTC)
@@ -170,7 +170,9 @@ def test_a_soft_deleted_invoice_is_not_a_receivable(
 # --- scaduto ------------------------------------------------------------------------
 
 
-def test_expired_is_the_subset_past_its_due_date(db_session: Session, customer: Customer) -> None:
+def test_expired_is_the_subset_past_its_due_date(
+    db_session: Session, customer: Organization
+) -> None:
     """§5.2: "Scaduto" is a **subset** of "Da incassare", shown as one -- indented beneath
     it, never as a second addable line."""
     yesterday = today_local() - timedelta(days=1)
@@ -184,14 +186,16 @@ def test_expired_is_the_subset_past_its_due_date(db_session: Session, customer: 
     assert repo.sum_expired() <= repo.sum_unpaid()
 
 
-def test_an_invoice_due_today_is_not_yet_overdue(db_session: Session, customer: Customer) -> None:
+def test_an_invoice_due_today_is_not_yet_overdue(
+    db_session: Session, customer: Organization
+) -> None:
     """`data_scadenza < oggi`, strictly. Due today is due today."""
     _invoice(db_session, customer, due_date=today_local())
     assert InvoiceRepository(db_session).sum_expired() == Decimal("0.00")
 
 
 def test_an_invoice_with_no_due_date_is_never_overdue(
-    db_session: Session, customer: Customer
+    db_session: Session, customer: Organization
 ) -> None:
     """`due_date` is nullable. `NULL < today` is NULL, not true -- but relying on
     three-valued logic silently is how the opposite gets implemented by accident, so it
@@ -201,7 +205,7 @@ def test_an_invoice_with_no_due_date_is_never_overdue(
 
 
 def test_to_paid_invoice_past_its_due_date_is_not_expired(
-    db_session: Session, customer: Customer
+    db_session: Session, customer: Organization
 ) -> None:
     """ "Scaduto" is a subset of "Da incassare", which means it carries every one of that
     figure's filters and not only the date -- money already in the bank is nobody's
@@ -216,7 +220,7 @@ def test_to_paid_invoice_past_its_due_date_is_not_expired(
 
 
 def test_overdue_is_measured_against_the_emitters_day(
-    db_session: Session, customer: Customer, monkeypatch: pytest.MonkeyPatch
+    db_session: Session, customer: Organization, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The one clock, asserted at the instant where the three candidate clocks disagree.
 
@@ -245,7 +249,7 @@ def test_overdue_is_measured_against_the_emitters_day(
 
 
 def test_count_issued_in_period_counts_by_issue_date(
-    db_session: Session, customer: Customer
+    db_session: Session, customer: Organization
 ) -> None:
     _invoice(db_session, customer, issue_date=date(2026, 3, 10))
     _invoice(db_session, customer, issue_date=date(2026, 3, 31))
@@ -257,7 +261,7 @@ def test_count_issued_in_period_counts_by_issue_date(
 
 
 def test_count_issued_in_period_counts_the_same_set_revenue_sums(
-    db_session: Session, customer: Customer
+    db_session: Session, customer: Organization
 ) -> None:
     """A count and a sum that describe different sets is the defect §5.2 is guarding
     against: "6 fatture emesse" beside a revenue figure that includes a seventh, or a
@@ -284,7 +288,7 @@ def _seeded_stages(db_session: Session) -> dict[str, UUID]:
     return {s.code: s.id for s in service.list() if s.code is not None}
 
 
-def _deal(db_session: Session, customer: Customer, name: str, stage_id: UUID) -> Deal:
+def _deal(db_session: Session, customer: Organization, name: str, stage_id: UUID) -> Deal:
     deal = Deal(
         name=name,
         customer_id=customer.id,
@@ -298,7 +302,7 @@ def _deal(db_session: Session, customer: Customer, name: str, stage_id: UUID) ->
 
 
 def test_the_signal_counts_deals_invoiced_but_still_open(
-    db_session: Session, customer: Customer
+    db_session: Session, customer: Organization
 ) -> None:
     """§6.2's second signal. A `COUNT` across a join, which §3 permits; and it counts
     **deals**, not invoices, because the drill-through lists deals -- so two invoices on one
@@ -315,7 +319,7 @@ def test_the_signal_counts_deals_invoiced_but_still_open(
 
 
 def test_the_signal_ignores_an_invoice_that_never_became_a_document(
-    db_session: Session, customer: Customer
+    db_session: Session, customer: Organization
 ) -> None:
     """A draft on an open deal is the ordinary state of a deal being worked, not an
     inconsistency. Only an *issued* invoice makes "fatturato ma non vinto" true."""
@@ -328,7 +332,7 @@ def test_the_signal_ignores_an_invoice_that_never_became_a_document(
 
 
 def test_the_signal_ignores_a_deleted_deal_and_a_deleted_invoice(
-    db_session: Session, customer: Customer
+    db_session: Session, customer: Organization
 ) -> None:
     stages = _seeded_stages(db_session)
     gone = _deal(db_session, customer, "Cancellato", stages["lead"])
@@ -344,7 +348,7 @@ def test_the_signal_ignores_a_deleted_deal_and_a_deleted_invoice(
 
 
 def test_the_signal_is_about_open_deals_and_not_lost_ones(
-    db_session: Session, customer: Customer
+    db_session: Session, customer: Organization
 ) -> None:
     """`tipo = 'open'`, not `tipo <> 'won'`. The drill-through is a list of deals to go and
     win -- "the stage you forgot to move" -- and an invoiced deal parked on `perso` is a
@@ -357,7 +361,9 @@ def test_the_signal_is_about_open_deals_and_not_lost_ones(
     assert InvoiceRepository(db_session).count_deals_invoiced_not_won() == 0
 
 
-def test_an_invoice_with_no_deal_is_not_a_signal(db_session: Session, customer: Customer) -> None:
+def test_an_invoice_with_no_deal_is_not_a_signal(
+    db_session: Session, customer: Organization
+) -> None:
     """`deal_id` is nullable and most invoices in a real register carry one; an inner join
     is what keeps the unlinked ones out, and a left join added later would count them all.
     """
@@ -365,7 +371,7 @@ def test_an_invoice_with_no_deal_is_not_a_signal(db_session: Session, customer: 
     assert InvoiceRepository(db_session).count_deals_invoiced_not_won() == 0
 
 
-def test_the_overdue_signal_counts_invoices(db_session: Session, customer: Customer) -> None:
+def test_the_overdue_signal_counts_invoices(db_session: Session, customer: Organization) -> None:
     """§6.2's fourth signal. It counts and **sends nothing** -- it is the candidate list of
     slice 5 §7.1's reminders, counted."""
     yesterday = today_local() - timedelta(days=1)
@@ -375,7 +381,7 @@ def test_the_overdue_signal_counts_invoices(db_session: Session, customer: Custo
 
 
 def test_the_overdue_signal_and_the_overdue_sum_are_one_predicate(
-    db_session: Session, customer: Customer
+    db_session: Session, customer: Organization
 ) -> None:
     """The card and its drill-through are the same predicate, not two calculations. Here
     the two are a count and a sum over the same rows, so the cheapest way to keep them
@@ -396,7 +402,7 @@ def test_the_overdue_signal_and_the_overdue_sum_are_one_predicate(
 
 
 def test_unpaid_for_customer_returns_the_rows_unpaid_sums(
-    db_session: Session, customer: Customer
+    db_session: Session, customer: Organization
 ) -> None:
     """The list and the total describe the same set, which is the whole reason this method
     shares `_receivable_filter()` rather than restating it.
@@ -417,11 +423,11 @@ def test_unpaid_for_customer_returns_the_rows_unpaid_sums(
     assert len(rows) == 2
 
 
-def test_unpaid_for_customer_excludes_another_customers_invoice(db_session: Session) -> None:
+def test_unpaid_for_customer_excludes_another_organizations_invoice(db_session: Session) -> None:
     """The one clause `sum_unpaid` does not have. Without it the briefing for one
     customer would open with somebody else's unpaid invoices."""
-    mine = Customer(legal_name="Mio Cliente", country="IT", custom_fields={})
-    theirs = Customer(legal_name="Altro Cliente", country="IT", custom_fields={})
+    mine = Organization(legal_name="Mio Cliente", country="IT", custom_fields={})
+    theirs = Organization(legal_name="Altro Cliente", country="IT", custom_fields={})
     db_session.add_all([mine, theirs])
     db_session.flush()
     _invoice(db_session, mine, total="1220.00")
@@ -432,7 +438,7 @@ def test_unpaid_for_customer_excludes_another_customers_invoice(db_session: Sess
 
 
 def test_unpaid_for_customer_excludes_a_soft_deleted_invoice(
-    db_session: Session, customer: Customer
+    db_session: Session, customer: Organization
 ) -> None:
     row = _invoice(db_session, customer, total="1220.00")
     row.deleted_at = datetime.now(UTC)
@@ -441,7 +447,7 @@ def test_unpaid_for_customer_excludes_a_soft_deleted_invoice(
 
 
 def test_unpaid_for_customer_orders_by_deadline_with_the_undated_row_last(
-    db_session: Session, customer: Customer
+    db_session: Session, customer: Organization
 ) -> None:
     """Oldest deadline first, and the one with no deadline at the bottom.
 
@@ -463,7 +469,7 @@ def test_unpaid_for_customer_orders_by_deadline_with_the_undated_row_last(
     ]
 
 
-def test_unpaid_for_customer_honours_its_limit(db_session: Session, customer: Customer) -> None:
+def test_unpaid_for_customer_honours_its_limit(db_session: Session, customer: Organization) -> None:
     """The limit is required and has no default: this list is rendered into an MCP prompt,
     and its cost is paid in the model's context window on every render. A method that
     defaulted it would be spending a budget nobody set."""
@@ -481,7 +487,7 @@ def test_unpaid_for_customer_honours_its_limit(db_session: Session, customer: Cu
 
 
 def test_the_week_reads_split_issued_collected_and_due(
-    db_session: Session, customer: Customer
+    db_session: Session, customer: Organization
 ) -> None:
     """The four lists and the sum §3.2 adds for the weekly report's "to collect",
     "issued this week", "collected this week" and "due in the next

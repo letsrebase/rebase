@@ -20,10 +20,10 @@ from uuid import UUID
 from sqlalchemy import Date, Select, cast, func, literal, select
 from sqlalchemy.sql import ColumnElement
 
-from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.deals.models import Deal
 from pigrocrm.core.gmail.models import GmailMessage, GmailMessageLink
 from pigrocrm.core.mail import day_short
+from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.pipeline.models import PipelineStage
 from pigrocrm.core.reminders.catalogue import REMINDER_TYPES
 from pigrocrm.core.reminders.detect import Detection, Detector, DetectorContext
@@ -39,11 +39,11 @@ _NEVER = date(1970, 1, 1)
 
 def _open_deals() -> Select[Deal, str | None, UUID | None]:
     return (
-        select(Deal, Customer.legal_name, Customer.owner_id)
+        select(Deal, Organization.legal_name, Organization.owner_id)
         .join(PipelineStage, PipelineStage.id == Deal.pipeline_stage_id)
         # Outer: a deal stays readable when its customer is not, which happens once a
         # customer moves to another legal entity and the deal's owner is scoped to the old one.
-        .outerjoin(Customer, Customer.id == Deal.customer_id)
+        .outerjoin(Organization, Organization.id == Deal.customer_id)
         .where(PipelineStage.type == "open", Deal.deleted_at.is_(None))
     )
 

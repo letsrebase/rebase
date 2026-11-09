@@ -53,7 +53,7 @@ export const SECTIONS = [
     id: 'vendite',
     caption: 'Vendite',
     items: [
-      { to: '/app/customers', label: 'Clienti', icon: Building2 },
+      { to: '/app/organizations', label: 'Clienti', icon: Building2 },
       { to: '/app/people', label: 'Persone', icon: Users },
       { to: '/app/deal', label: 'Deal', icon: Handshake },
     ],

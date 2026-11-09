@@ -22,8 +22,6 @@ from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.actor import Actor
-from pigrocrm.core.customers.models import Customer
-from pigrocrm.core.customers.repository import CustomerRepository
 from pigrocrm.core.documents.schemas import DocumentCreate
 from pigrocrm.core.documents.service import DocumentService
 from pigrocrm.core.errors import AgentForbidden, PermissionDenied, ValidationFailed
@@ -44,6 +42,8 @@ from pigrocrm.core.invoices.repository import InvoiceRepository
 from pigrocrm.core.invoices.service import InvoiceService
 from pigrocrm.core.legal_entities.models import LegalEntity
 from pigrocrm.core.legal_entities.repository import LegalEntityRepository
+from pigrocrm.core.organizations.models import Organization
+from pigrocrm.core.organizations.repository import OrganizationRepository
 from pigrocrm.core.storage import LocalFileStorage
 
 FIXTURES = Path(__file__).parent / "fixtures" / "fatturapa"
@@ -112,7 +112,7 @@ def _document(
     content: bytes,
     *,
     content_type: str = "application/xml",
-    owner: Customer | None = None,
+    owner: Organization | None = None,
 ) -> UUID:
     owner = owner if owner is not None else make_customer_with_address(session)
     service = DocumentService(session, storage)
@@ -326,7 +326,7 @@ def test_an_explicit_customer_id_overrides_the_automatic_match(
     db_session: Session, local_storage: LocalFileStorage
 ) -> None:
     """The human decision always wins over the automatic tax-id match: `customer_id`
-    is exactly how a reviewer says which `Customer` this invoice attaches to, even
+    is exactly how a reviewer says which `Organization` this invoice attaches to, even
     when one already matches on its own."""
     service = _svc(db_session, local_storage)
     matched = make_customer_with_address(db_session, vat_number=CUSTOMER_VAT_NUMBER)
@@ -449,12 +449,12 @@ def test_the_automatic_match_never_attaches_to_customer_of_another_legal_entity(
     assert reviewed.outcome == "needs_customer_confirmation"
     assert reviewed.matched_customer_id is None
 
-    [row] = service.confirm_import(document_id, ADMIN, create_customer=True)
+    [row] = service.confirm_import(document_id, ADMIN, create_organization=True)
 
     assert row.outcome == "imported"
     assert row.invoice is not None
     assert row.invoice.customer_id != foreign.id
-    created = db_session.get(Customer, row.invoice.customer_id)
+    created = db_session.get(Organization, row.invoice.customer_id)
     assert created is not None
     assert created.legal_entity_id == row.legal_entity_id
 
@@ -463,24 +463,28 @@ def test_create_customer_makes_exactly_one_new_customer_for_a_brand_new_counterp
     db_session: Session, local_storage: LocalFileStorage
 ) -> None:
     """Design record §7 item 5's own acceptance: a batch (a `Lotto`) from a brand-new
-    counterparty produces exactly one new `Customer` row, with every invoice in
+    counterparty produces exactly one new `Organization` row, with every invoice in
     that batch attached to it -- never one per invoice, even though `invoice.
     customer` is parsed fresh for each `FatturaElettronicaBody` in the file."""
     service = _svc(db_session, local_storage)
     document_id = _document(db_session, local_storage, _fixture(LOTTO))
-    before_customers = db_session.execute(select(func.count()).select_from(Customer)).scalar_one()
+    before_organizations = db_session.execute(
+        select(func.count()).select_from(Organization)
+    ).scalar_one()
 
-    rows = service.confirm_import(document_id, ADMIN, create_customer=True)
+    rows = service.confirm_import(document_id, ADMIN, create_organization=True)
 
     assert [row.outcome for row in rows] == ["imported", "imported"]
     customer_ids = {row.invoice.customer_id for row in rows if row.invoice is not None}
     assert len(customer_ids) == 1
-    after_customers = db_session.execute(select(func.count()).select_from(Customer)).scalar_one()
+    after_organizations = db_session.execute(
+        select(func.count()).select_from(Organization)
+    ).scalar_one()
     # The document's own owner customer (the `_document` baseline) plus exactly one
     # new row for the counterparty every invoice in the batch shares.
-    assert after_customers == before_customers + 1
+    assert after_organizations == before_organizations + 1
     [customer_id] = customer_ids
-    created = CustomerRepository(db_session).get(customer_id)
+    created = OrganizationRepository(db_session).get(customer_id)
     assert created is not None
     assert created.legal_name == "Esempio Servizi S.r.l."
     assert created.vat_number == CUSTOMER_VAT_NUMBER
@@ -501,19 +505,21 @@ def test_a_register_failure_after_the_customer_insert_leaves_neither_committed(
     )
     document_id = _document(db_session, local_storage, _fixture(CONSULTING))
     before_invoices = _invoice_count(db_session)
-    before_customers = db_session.execute(select(func.count()).select_from(Customer)).scalar_one()
+    before_organizations = db_session.execute(
+        select(func.count()).select_from(Organization)
+    ).scalar_one()
 
-    [row] = service.confirm_import(document_id, ADMIN, create_customer=True)
+    [row] = service.confirm_import(document_id, ADMIN, create_organization=True)
 
     assert row.outcome == "conflict"
     assert row.invoice is None
     assert _invoice_count(db_session) == before_invoices
     assert (
-        db_session.execute(select(func.count()).select_from(Customer)).scalar_one()
-        == before_customers
+        db_session.execute(select(func.count()).select_from(Organization)).scalar_one()
+        == before_organizations
     )
     assert (
-        CustomerRepository(db_session).match_by_fiscal_id(
+        OrganizationRepository(db_session).match_by_fiscal_id(
             vat_number=CUSTOMER_VAT_NUMBER, tax_code=None
         )
         is None
@@ -534,19 +540,23 @@ def test_a_conflict_on_the_customer_creating_invoice_does_not_poison_the_rest_of
         InvoiceRegisterGap(year=2026, number=6, reason="annullata prima della trasmissione")
     )
     document_id = _document(db_session, local_storage, _fixture(LOTTO))
-    before_customers = db_session.execute(select(func.count()).select_from(Customer)).scalar_one()
+    before_organizations = db_session.execute(
+        select(func.count()).select_from(Organization)
+    ).scalar_one()
 
-    rows = service.confirm_import(document_id, ADMIN, create_customer=True)
+    rows = service.confirm_import(document_id, ADMIN, create_organization=True)
 
     assert [row.outcome for row in rows] == ["conflict", "imported"]
     assert rows[0].invoice is None
     assert rows[1].invoice is not None
     assert rows[1].invoice.number == 7
-    after_customers = db_session.execute(select(func.count()).select_from(Customer)).scalar_one()
+    after_organizations = db_session.execute(
+        select(func.count()).select_from(Organization)
+    ).scalar_one()
     # Exactly one new customer survives: the one invoice 6's own rollback undid,
     # plus the one invoice 7 created for itself.
-    assert after_customers == before_customers + 1
-    created = CustomerRepository(db_session).match_by_fiscal_id(
+    assert after_organizations == before_organizations + 1
+    created = OrganizationRepository(db_session).match_by_fiscal_id(
         vat_number=CUSTOMER_VAT_NUMBER, tax_code=None
     )
     assert created is not None

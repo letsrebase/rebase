@@ -71,7 +71,7 @@ describe('ModuleGate (REB-953)', () => {
   })
 
   it('lets the core through whatever is off', () => {
-    route.pathname = '/app/customers'
+    route.pathname = '/app/organizations'
     renderGate(['deals', 'contracts', 'time', 'costs', 'taxes'])
     expect(screen.getByText('La pagina')).toBeInTheDocument()
   })
@@ -96,7 +96,7 @@ describe('ModuleGate (REB-953)', () => {
   })
 
   it('never waits on a page of the core', () => {
-    route.pathname = '/app/customers'
+    route.pathname = '/app/organizations'
     GET.mockReturnValue(new Promise(() => {}))
     renderGate('unknown')
     expect(screen.getByText('La pagina')).toBeInTheDocument()

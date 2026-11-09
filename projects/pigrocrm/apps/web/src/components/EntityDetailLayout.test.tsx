@@ -34,7 +34,7 @@ function renderLayout(overrides: Partial<Parameters<typeof EntityDetailLayout>[0
       icon={Building2}
       title="ACME Srl"
       subtitle="Cliente"
-      entityType="customer"
+      entityType="organization"
       entityId="abc"
       overview={<p>panoramica</p>}
       links={<p>collegamenti</p>}

@@ -100,7 +100,7 @@ class FiscalProfile(Base, PrimaryKeyMixin, TimestampMixin):
     # existing row to leave unanswered, and a nullable pair would only invent one (an
     # undefined ceiling evaluation the day someone reads it before someone else sets
     # it). `server_default`, not only a Python-side one, the same reasoning
-    # `Customer.payment_end_of_month` (REB-326) already uses: it is what keeps every
+    # `Organization.payment_end_of_month` (REB-326) already uses: it is what keeps every
     # row this table already holds valid without depending on the ORM path that
     # inserted it.
     pack_id: Mapped[str] = mapped_column(

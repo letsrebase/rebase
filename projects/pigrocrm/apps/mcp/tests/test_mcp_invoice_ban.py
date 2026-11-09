@@ -108,9 +108,9 @@ FORBIDDEN = (
     # this list rather than on `FORBIDDEN_GMAIL` because, unlike those two, the
     # installation *can* opt in: the same switch that hands an agent the fiscal acts.
     "discover_gmail_correspondents",
-    # The customers the connected mailbox proposes (REB-223): discovery's question over a
+    # The organizations the connected mailbox proposes (REB-223): discovery's question over a
     # year of sent mail, so the same quota, the same consent and the same switch.
-    "suggest_customers_from_gmail",
+    "suggest_organizations_from_gmail",
     # Not fiscal either: the text of an attachment of an archived mail. The CRM keeps an
     # attachment's name, type and size and never its bytes (spec 5.4), so the tool fetches
     # it from Google at call time -- the owner's quota and consent, content written by an
@@ -229,7 +229,7 @@ FULL_ACCESS_BY_THE_RECORD: dict[str, tuple[str, ...]] = {
 FORBIDDEN_NEEDING_GMAIL = frozenset(
     {
         "discover_gmail_correspondents",
-        "suggest_customers_from_gmail",
+        "suggest_organizations_from_gmail",
         "read_gmail_attachment",
         "list_drive_files",
         "read_drive_file",
@@ -258,9 +258,9 @@ FORBIDDEN_SERVICE_CALLS = (
     "bind_to_invoice",
     "get_fiscal_estimate",
     "discover",
-    # `GmailSyncService.suggest_customers`, behind `suggest_customers_from_gmail`
+    # `GmailSyncService.suggest_organizations`, behind `suggest_organizations_from_gmail`
     # (REB-223): the same family as `discover`.
-    "suggest_customers",
+    "suggest_organizations",
     # `GmailAttachmentService.attachment_text`: fetches from Gmail, at call time, the file
     # that sync never saved (spec 5.4 keeps name, type and size and nothing else). Same
     # family as `discover` -- the owner's quota and consent, bytes written by an outside
@@ -516,7 +516,7 @@ def test_the_ast_walk_actually_finds_the_registered_tools() -> None:
     names = _registered_tool_names()
     assert "list_invoices" in names
     assert "get_invoice" in names
-    assert "create_customer" in names
+    assert "create_organization" in names
     assert len(names) > 20
 
 
@@ -534,7 +534,7 @@ def test_the_source_scan_actually_reads_more_than_one_file() -> None:
     # read right past until the 9C final review. Anchored on two of the four so that a
     # sweep silently narrowing back to `tools/` fails here instead of leaving every ban
     # below green over a directory it no longer looks at.
-    assert "def status_customer(" in source  # prompts/customer.py
+    assert "def status_organization(" in source  # prompts/customer.py
     assert "def closing_month(" in source  # prompts/dashboards.py
 
 
@@ -545,7 +545,7 @@ def test_the_registration_scan_reads_every_module_and_not_only_the_first() -> No
     bans below would pass while checking a file that contains none of them."""
     names = _registered_tool_names()
     assert "list_gmail_messages" in names  # tools/gmail.py
-    assert "create_customer" in names  # tools/families/customers.py
+    assert "create_organization" in names  # tools/families/organizations.py
 
 
 @pytest.mark.parametrize("forbidden", FORBIDDEN)
@@ -891,7 +891,7 @@ def _agent_reachable_source() -> str:
     """Every line of `apps/mcp` an agent can reach on a default installation.
 
     Wider than `_tools_source()` on purpose, and the width is the point: agent-reachable
-    code is not only `tools/`. `resources/entities.py` renders the `customer://`,
+    code is not only `tools/`. `resources/entities.py` renders the `organization://`,
     `person://` and `deal://` templates, `prompts/` holds §10's four prompts, and
     `server.py` itself carries three inline `@mcp.resource` bodies plus
     `describe_schema` -- all registered unconditionally, none of them
@@ -923,9 +923,9 @@ def test_the_wide_scan_really_reads_the_resources_the_prompts_and_the_server() -
     Drive-reader ban below green while no longer looking at the three places it was
     widened for."""
     source = _agent_reachable_source()
-    assert "def render_customer(" in source  # resources/entities.py
-    assert "def customer_resource(" in source  # server.py's inline @mcp.resource
-    assert "def status_customer(" in source  # prompts/customer.py
+    assert "def render_organization(" in source  # resources/entities.py
+    assert "def organization_resource(" in source  # server.py's inline @mcp.resource
+    assert "def status_organization(" in source  # prompts/customer.py
     assert "def review_pipeline(" in source  # prompts/dashboards.py
     assert "def search_everything(" in source  # tools/families/shared.py, i.e. the old width
 

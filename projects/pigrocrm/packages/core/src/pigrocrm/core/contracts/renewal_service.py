@@ -14,10 +14,10 @@ from pigrocrm.core.contracts.renewal import RenewalRefused, carried_cards, renew
 from pigrocrm.core.contracts.repository import ContractRepository, RateCardRepository
 from pigrocrm.core.contracts.rules import ENTITY
 from pigrocrm.core.contracts.schemas import ContractRead, ContractRenew
-from pigrocrm.core.customers.repository import CustomerRepository
 from pigrocrm.core.db.transactions import savepoint
 from pigrocrm.core.errors import Conflict, NotFound, ValidationFailed
 from pigrocrm.core.legal_entities.service import LegalEntityService
+from pigrocrm.core.organizations.repository import OrganizationRepository
 
 # The columns a renewal does not copy from the contract it renews: the row's own identity
 # and bookkeeping, the term (which the renewal decides), the state (the successor is
@@ -42,7 +42,7 @@ class ContractRenewalService:
     def __init__(self, session: Session) -> None:
         self.session = session
         self.repo = ContractRepository(session)
-        self.customers = CustomerRepository(session)
+        self.organizations = OrganizationRepository(session)
         self.activities = ActivityService(session)
         self.legal_entity = LegalEntityService(session)
 
@@ -97,9 +97,9 @@ class ContractRenewalService:
         # The legal entity of the customer as it is now, as `create` takes it, and never a
         # deactivated one: a customer moved since the contract began renews on the legal entity
         # it has moved to, and an archived customer has nothing to renew for.
-        customer = self.customers.get(contract.customer_id)
+        customer = self.organizations.get(contract.customer_id)
         if customer is None:
-            raise NotFound("customer", contract.customer_id)
+            raise NotFound("organization", contract.customer_id)
         legal_entity_id = self.legal_entity.inherited(customer.legal_entity_id, ENTITY)
 
         carried = {

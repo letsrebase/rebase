@@ -58,7 +58,7 @@ class Invoice(Base, PrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
     __tablename__ = "invoices"
 
     customer_id: Mapped[UUID] = mapped_column(
-        ForeignKey("customers.id"), nullable=False, index=True
+        ForeignKey("organizations.id"), nullable=False, index=True
     )
     deal_id: Mapped[UUID | None] = mapped_column(ForeignKey("deals.id"), default=None, index=True)
     # The legal entity that issues, or issued, this document (REB-619, spec 2026-10-03 §1.4):

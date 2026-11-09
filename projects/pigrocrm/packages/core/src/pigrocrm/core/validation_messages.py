@@ -13,7 +13,7 @@ from pigrocrm.core.errors import ValidationFailed
 # error type (pydantic-core's own `type` string, see `ValidationError.errors()`) ->
 # (reason in Italian, expected value in Italian). Covers the shapes this project's
 # own MCP tool arguments can actually produce: every native field on
-# Customer/Person/DealCreate|Update is int, float, Decimal, bool, date, UUID, or a
+# Organization/Person/DealCreate|Update is int, float, Decimal, bool, date, UUID, or a
 # plain string -- there is no exotic pydantic type in this schema surface that
 # would fall outside this table and need its own entry.
 _PYDANTIC_REASON_BY_TYPE: dict[str, tuple[str, str | None]] = {

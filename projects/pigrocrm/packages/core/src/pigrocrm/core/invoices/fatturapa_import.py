@@ -259,7 +259,7 @@ def _map_supplier(supplier: etree._Element) -> ParsedInvoiceParty:
 def _map_customer(buyer: etree._Element) -> ParsedInvoiceParty:
     """Unlike the supplier, `IdFiscaleIVA` is optional for the customer (an
     individual buyer may carry only a `CodiceFiscale`); mirrors mastro's
-    `mapCustomer` (`map.ts:83-106`), including its refusal when the document
+    `mapOrganization` (`map.ts:83-106`), including its refusal when the document
     carries neither identifier.
     """
     master_data = _required_child(buyer, "DatiAnagrafici", context="CessionarioCommittente")

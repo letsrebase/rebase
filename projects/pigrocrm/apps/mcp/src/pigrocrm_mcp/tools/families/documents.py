@@ -55,7 +55,7 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
         limit: BoundedLimit = 50,
         cursor: str | None = None,
         sort: str | None = None,
-        # `str`, not a Literal -- see `search_customers`.
+        # `str`, not a Literal -- see `search_organizations`.
         dir: str = "asc",
     ) -> dict[str, Any]:
         """List the documents of a customer or a deal. `search` filters by title; `sort`:
@@ -72,7 +72,7 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
                 status=literal_arg("status", status, OfferState),
                 search=search,
                 limit=cast(int, limit),
-                # An opaque string since slice 6 -- see `search_customers`.
+                # An opaque string since slice 6 -- see `search_organizations`.
                 cursor=cursor,
                 sort=sort,
                 dir=cast(SortDirection, dir),

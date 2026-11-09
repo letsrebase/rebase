@@ -1,4 +1,4 @@
-"""REB-797: customers and deals take the owner their creation entry names, once.
+"""REB-797: organizations and deals take the owner their creation entry names, once.
 
 The rule is the card's: a live record without an owner is given the user in its earliest
 `created` entry; a record created by the system, by an account named generic, by a
@@ -22,10 +22,10 @@ import pigrocrm.core.cli as cli
 from pigrocrm.core.activities.models import Activity
 from pigrocrm.core.auth.models import User
 from pigrocrm.core.config import Settings
-from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.db import session_factory
 from pigrocrm.core.db.sidecar import create_database_if_missing, drop_database
 from pigrocrm.core.deals.models import Deal
+from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.owner_backfill import apply_owner_backfill, plan_owner_backfill
 from pigrocrm.core.pipeline.models import PipelineStage
 from pigrocrm.core.tenants.service import migrate_to_head
@@ -71,11 +71,11 @@ def _created(
 
 def _customer(
     session: Session, name: str, creator: User | None, *, actor_type: str = "mcp"
-) -> Customer:
-    customer = Customer(legal_name=name, country="IT", custom_fields={})
+) -> Organization:
+    customer = Organization(legal_name=name, country="IT", custom_fields={})
     session.add(customer)
     session.flush()
-    _created(session, "customer", customer.id, creator, actor_type=actor_type)
+    _created(session, "organization", customer.id, creator, actor_type=actor_type)
     return customer
 
 
@@ -88,7 +88,7 @@ def _stage(session: Session) -> PipelineStage:
     return stage
 
 
-def _deal(session: Session, name: str, customer: Customer, creator: User | None) -> Deal:
+def _deal(session: Session, name: str, customer: Organization, creator: User | None) -> Deal:
     deal = Deal(
         name=name,
         customer_id=customer.id,
@@ -111,7 +111,7 @@ def test_a_record_takes_the_user_who_created_it(db_session: Session) -> None:
     changed = apply_owner_backfill(db_session, plan)
 
     assert {(item.entity, item.label, item.owner_name) for item in plan.assignments} == {
-        ("customer", "ACME Srl", "Ada Lovelace"),
+        ("organization", "ACME Srl", "Ada Lovelace"),
         ("deal", "Sito ACME", "Ada Lovelace"),
     }
     assert changed == 2
@@ -125,7 +125,9 @@ def test_the_earliest_creation_entry_decides(db_session: Session) -> None:
     ada = _user(db_session, "Ada Lovelace")
     grace = _user(db_session, "Grace Hopper")
     customer = _customer(db_session, "ACME Srl", ada)
-    _created(db_session, "customer", customer.id, grace, at=datetime.now(UTC) + timedelta(hours=1))
+    _created(
+        db_session, "organization", customer.id, grace, at=datetime.now(UTC) + timedelta(hours=1)
+    )
 
     plan = plan_owner_backfill(db_session)
 
@@ -140,7 +142,7 @@ def test_what_cannot_be_decided_is_listed_and_not_written(db_session: Session) -
     by_generic = _customer(db_session, "Generico Srl", generic)
     by_system = _customer(db_session, "Sistema Srl", None, actor_type="system")
     by_gone = _customer(db_session, "Ex Srl", gone)
-    no_entry = Customer(legal_name="Senza storia Srl", country="IT", custom_fields={})
+    no_entry = Organization(legal_name="Senza storia Srl", country="IT", custom_fields={})
     db_session.add(no_entry)
     db_session.flush()
 
@@ -184,7 +186,7 @@ def test_an_owner_already_set_and_a_deleted_record_are_left_alone(db_session: Se
 
     assert plan.assignments == []
     assert plan.listed == []
-    assert plan.already_owned == {"customer": 1, "deal": 0}
+    assert plan.already_owned == {"organization": 1, "deal": 0}
     apply_owner_backfill(db_session, plan)
     db_session.refresh(owned)
     assert owned.owner_id == grace.id
@@ -261,7 +263,7 @@ def root_settings(db_engine: Engine) -> Iterator[Settings]:
 
 @pytest.fixture
 def root(root_settings: Settings, monkeypatch: pytest.MonkeyPatch) -> Iterator[Root]:
-    """The root installation with two customers: Ada's, and one made by the generic account."""
+    """The root installation with two organizations: Ada's, and one made by the generic account."""
     monkeypatch.setattr(cli, "get_settings", lambda: root_settings)
     engine = create_engine(root_settings.database_url, future=True)
     try:
@@ -275,7 +277,7 @@ def root(root_settings: Settings, monkeypatch: pytest.MonkeyPatch) -> Iterator[R
         yield Root(root_settings, generic_email)
         with engine.begin() as connection:
             connection.execute(text("delete from activities"))
-            connection.execute(text("delete from customers"))
+            connection.execute(text("delete from organizations"))
             connection.execute(text("delete from users"))
     finally:
         engine.dispose()
@@ -287,7 +289,7 @@ def _owners(settings: Settings) -> dict[str, str | None]:
         with engine.connect() as connection:
             rows = connection.execute(
                 text(
-                    "select c.legal_name, u.name from customers c "
+                    "select c.legal_name, u.name from organizations c "
                     "left join users u on u.id = c.owner_id"
                 )
             ).all()
@@ -304,9 +306,9 @@ def test_the_command_writes_nothing_without_apply(
     assert cli.main(argv) == 0
 
     out = capsys.readouterr().out
-    assert "root: customer «ACME Srl» -> Ada Lovelace" in out
+    assert "root: organization «ACME Srl» -> Ada Lovelace" in out
     assert "«Generico Srl» left without an owner: generic_account (created by rebase)" in out
-    assert "root: customer: 1 to assign, 1 left, 0 already owned" in out
+    assert "root: organization: 1 to assign, 1 left, 0 already owned" in out
     assert "dry run, nothing written" in out
     assert _owners(root.settings) == {"ACME Srl": None, "Generico Srl": None}
 
@@ -322,7 +324,7 @@ def test_the_command_applies_with_apply_and_a_second_run_has_nothing_left(
 
     assert cli.main(argv) == 0
     out = capsys.readouterr().out
-    assert "root: customer: 0 to assign, 1 left, 1 already owned" in out
+    assert "root: organization: 0 to assign, 1 left, 1 already owned" in out
     assert "written 0" in out
 
 
@@ -337,18 +339,18 @@ def test_a_change_committed_between_the_plan_and_the_apply_is_respected(root: Ro
             with engine.begin() as other:
                 other.execute(
                     text(
-                        "update customers set owner_id = "
+                        "update organizations set owner_id = "
                         "(select id from users where name = 'rebase') "
                         "where legal_name = 'ACME Srl'"
                     )
                 )
             assert apply_owner_backfill(session, plan) == 0
         with engine.begin() as other:
-            other.execute(text("update customers set owner_id = null"))
+            other.execute(text("update organizations set owner_id = null"))
         with session_factory(engine)() as session:
             plan = plan_owner_backfill(session)
             with engine.begin() as other:
-                other.execute(text("update customers set deleted_at = now()"))
+                other.execute(text("update organizations set deleted_at = now()"))
             assert apply_owner_backfill(session, plan) == 0
         assert _owners(root.settings) == {"ACME Srl": None, "Generico Srl": None}
         with engine.connect() as connection:

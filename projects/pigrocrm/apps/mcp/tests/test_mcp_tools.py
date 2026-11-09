@@ -28,11 +28,11 @@ async def test_every_tool_from_the_spec_is_exposed(server) -> None:
 
     assert {
         "describe_schema",
-        "create_customer",
-        "update_customer",
-        "get_customer",
-        "search_customers",
-        "archive_customer",
+        "create_organization",
+        "update_organization",
+        "get_organization",
+        "search_organizations",
+        "archive_organization",
         "create_person",
         "update_person",
         "get_person",
@@ -67,7 +67,7 @@ async def test_the_full_journey_an_agent_would_take(server, mcp_session: Session
     custom field nobody hardcoded."""
     FieldDefinitionService(mcp_session).create(
         FieldDefinitionCreate(
-            entity_type="customer",
+            entity_type="organization",
             key="settore",
             label="Settore",
             field_type="select",
@@ -78,12 +78,14 @@ async def test_the_full_journey_an_agent_would_take(server, mcp_session: Session
     PipelineService(mcp_session).seed_defaults(SETUP)
 
     async with Client(server) as client:
-        schema = _payload(await client.call_tool("describe_schema", {"entity_type": "customer"}))
+        schema = _payload(
+            await client.call_tool("describe_schema", {"entity_type": "organization"})
+        )
         assert [f["key"] for f in schema["custom_fields"]] == ["settore"]
 
         customer = _payload(
             await client.call_tool(
-                "create_customer",
+                "create_organization",
                 {
                     "legal_name": "ACME Srl",
                     "vat_number": "12345678901",
@@ -128,7 +130,7 @@ async def test_an_invalid_custom_value_returns_guidance_naming_the_options(
 ) -> None:
     FieldDefinitionService(mcp_session).create(
         FieldDefinitionCreate(
-            entity_type="customer",
+            entity_type="organization",
             key="settore",
             label="Settore",
             field_type="select",
@@ -138,7 +140,7 @@ async def test_an_invalid_custom_value_returns_guidance_naming_the_options(
     )
     async with Client(server) as client:
         result = await client.call_tool(
-            "create_customer",
+            "create_organization",
             {"legal_name": "Beta", "custom_fields": {"settore": "Altro"}},
         )
 
@@ -161,18 +163,18 @@ async def test_a_permission_error_tells_the_agent_to_ask_the_user(mcp_session: S
     )
 
     async with Client(server) as client:
-        result = await client.call_tool("create_customer", {"legal_name": "ACME"})
+        result = await client.call_tool("create_organization", {"legal_name": "ACME"})
 
     assert result.is_error
     message = result.content[0].text
     assert "readonly" in message
 
 
-async def test_an_agent_names_a_customers_owner_when_it_creates_it_and_when_it_updates_it(
+async def test_an_agent_names_a_organizations_owner_when_it_creates_it_and_when_it_updates_it(
     server, mcp_session: Session
 ) -> None:
-    """REB-773: `create_customer` takes `owner_id`, and `update_customer` takes it in
-    `changes` (its schema is `CustomerUpdate`'s). The agent here is an admin's."""
+    """REB-773: `create_organization` takes `owner_id`, and `update_organization` takes it in
+    `changes` (its schema is `OrganizationUpdate`'s). The agent here is an admin's."""
     from pigrocrm.core.auth.models import User
 
     first = User(email=f"a-{uuid4()}@example.test", password_hash="x", name="A", role="admin")
@@ -183,14 +185,14 @@ async def test_an_agent_names_a_customers_owner_when_it_creates_it_and_when_it_u
     async with Client(server) as client:
         created = _payload(
             await client.call_tool(
-                "create_customer", {"legal_name": "ACME", "owner_id": str(first.id)}
+                "create_organization", {"legal_name": "ACME", "owner_id": str(first.id)}
             )
         )
         assert created["owner_id"] == str(first.id)
         moved = _payload(
             await client.call_tool(
-                "update_customer",
-                {"customer_id": created["id"], "changes": {"owner_id": str(second.id)}},
+                "update_organization",
+                {"organization_id": created["id"], "changes": {"owner_id": str(second.id)}},
             )
         )
         assert moved["owner_id"] == str(second.id)
@@ -236,7 +238,7 @@ async def test_server_survives_a_raw_database_error_and_serves_the_next_call(
         # this keeps the test's intent unambiguous even if that changes later.
         monkeypatch.undo()
 
-        ok = await client.call_tool("describe_schema", {"entity_type": "customer"})
+        ok = await client.call_tool("describe_schema", {"entity_type": "organization"})
 
     assert not ok.is_error, ok.content[0].text
 

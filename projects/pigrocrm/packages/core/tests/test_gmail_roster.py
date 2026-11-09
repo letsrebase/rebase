@@ -5,9 +5,9 @@ from fakes.contacts import points
 from sqlalchemy import event, inspect
 from sqlalchemy.orm import Session
 
-from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.deals.models import Deal
 from pigrocrm.core.gmail.roster import AddressRoster, EntityRef, address_key
+from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.people.models import Person
 
 
@@ -15,8 +15,8 @@ def _resolve(session: Session, address: str) -> tuple[EntityRef, ...]:
     return AddressRoster(session).resolve_many([address]).get(address_key(address), ())
 
 
-def _customer(session: Session, *, legal_name: str, email: str | None) -> Customer:
-    customer = Customer(legal_name=legal_name, contact_points=points(email=email))
+def _customer(session: Session, *, legal_name: str, email: str | None) -> Organization:
+    customer = Organization(legal_name=legal_name, contact_points=points(email=email))
     session.add(customer)
     session.flush()
     return customer
@@ -87,7 +87,7 @@ def test_resolving_returns_every_entity_the_address_touches(
     # foreign keys: a single FK would force a choice the data does not support.
     assert set(_resolve(db_session, "Ada@Acme.it")) == {
         EntityRef("person", person.id),
-        EntityRef("customer", customer.id),
+        EntityRef("organization", customer.id),
         EntityRef("deal", deal.id),
     }
 
@@ -119,7 +119,7 @@ def test_resolving_ignores_soft_deleted_entities(
     db_session.add(dead_deal)
     db_session.flush()
 
-    assert _resolve(db_session, "shared@acme.it") == (EntityRef("customer", live_customer.id),)
+    assert _resolve(db_session, "shared@acme.it") == (EntityRef("organization", live_customer.id),)
 
 
 def test_resolving_does_not_reach_a_deleted_customer_through_a_live_person(
@@ -221,7 +221,7 @@ def test_resolving_many_addresses_costs_a_fixed_number_of_queries(
     for person in people:
         refs = set(resolved[address_key(person.email or "")])
         assert EntityRef("person", person.id) in refs
-        assert EntityRef("customer", customer.id) in refs
+        assert EntityRef("organization", customer.id) in refs
     assert resolved["p0@acme.it"] != resolved["p1@acme.it"]
 
 

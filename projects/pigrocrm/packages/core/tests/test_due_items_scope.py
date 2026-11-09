@@ -20,7 +20,6 @@ from sqlalchemy.exc import DBAPIError
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.actor import Actor, Role
-from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.db import session_factory
 from pigrocrm.core.db.role import ensure_application_role
 from pigrocrm.core.db.scope import bind_scope
@@ -30,6 +29,7 @@ from pigrocrm.core.due_items.service import DueItemService
 from pigrocrm.core.errors import NotFound
 from pigrocrm.core.legal_entities.models import LegalEntity
 from pigrocrm.core.legal_entities.repository import LegalEntityRepository
+from pigrocrm.core.organizations.models import Organization
 
 TAG = "DUESCOPE"
 APP_ROLE = "pigrocrm_app_test"
@@ -109,7 +109,7 @@ def world(db_engine: Engine) -> Iterator[World]:
             session.execute(
                 delete(DueItem).where(DueItem.id.in_([ids.studio_item, ids.foreign_item]))
             )
-            session.execute(delete(Customer).where(Customer.legal_name.like(f"{TAG} %")))
+            session.execute(delete(Organization).where(Organization.legal_name.like(f"{TAG} %")))
             session.execute(delete(LegalEntity).where(LegalEntity.id == ids.foreign))
             remove_legal_entity(session, inserted)
             session.commit()

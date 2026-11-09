@@ -36,7 +36,7 @@ function failed(error: unknown, status: number) {
   return Promise.resolve({ error, response: new Response(null, { status }) }) as never
 }
 
-const CUSTOMERS = [
+const ORGANIZATIONS = [
   { id: 'cust-1', legal_name: 'ACME Srl', legal_entity_id: 'a1' },
   { id: 'cust-2', legal_name: 'Beta Snc', legal_entity_id: 'a2' },
 ]
@@ -53,12 +53,12 @@ const DEALS = [
  *  page has to carry an explicit `next_cursor: null` or it would loop. */
 function mockGets() {
   vi.mocked(api.GET).mockImplementation(((path: string) => {
-    if (path === '/api/customers') return ok({ items: CUSTOMERS, next_cursor: null })
+    if (path === '/api/organizations') return ok({ items: ORGANIZATIONS, next_cursor: null })
     if (path === '/api/deals') return ok({ items: DEALS, next_cursor: null })
     // The two single-record reads the *fixed* variants make, to name in words what the
     // pickers would otherwise have offered as a choice. Both are cache hits in the app
     // -- the page that opened the dialog has already read them.
-    if (path === '/api/customers/{customer_id}') return ok(CUSTOMERS[0])
+    if (path === '/api/organizations/{organization_id}') return ok(ORGANIZATIONS[0])
     if (path === '/api/deals/{deal_id}') return ok(DEALS[0])
     return ok({ items: [], next_cursor: null })
   }) as never)
@@ -110,7 +110,7 @@ async function open(props: ButtonProps = {}) {
   await screen.findByRole('dialog')
 }
 
-async function chooseCustomer(name: string) {
+async function chooseOrganization(name: string) {
   // The customer picker is a search: its matches are buttons under the box.
   await userEvent.click(await screen.findByRole('button', { name }))
 }
@@ -129,7 +129,7 @@ function setDate(label: string | RegExp, value: string) {
 
 /** The shortest complete form, so a test about one field is not mostly about the rest. */
 async function fillMinimum() {
-  await chooseCustomer('ACME Srl')
+  await chooseOrganization('ACME Srl')
   await userEvent.type(screen.getByLabelText(/^Causale/), 'Consulenza agosto')
   await userEvent.type(screen.getByLabelText('Descrizione riga 1'), 'Analisi')
   await userEvent.type(screen.getByLabelText('Prezzo unitario riga 1'), '150.00')
@@ -166,7 +166,7 @@ describe('NewProformaButton', () => {
 
   it('refuses to post without a causale', async () => {
     await open()
-    await chooseCustomer('ACME Srl')
+    await chooseOrganization('ACME Srl')
     await userEvent.type(screen.getByLabelText('Descrizione riga 1'), 'Analisi')
     await userEvent.type(screen.getByLabelText('Prezzo unitario riga 1'), '150.00')
     await userEvent.click(screen.getByRole('button', { name: 'Crea proforma' }))
@@ -180,7 +180,7 @@ describe('NewProformaButton', () => {
     // discover it on the detail page. The API accepts it (`lines` defaults to empty);
     // this form does not offer it.
     await open()
-    await chooseCustomer('ACME Srl')
+    await chooseOrganization('ACME Srl')
     await userEvent.type(screen.getByLabelText(/^Causale/), 'Consulenza settembre')
     await userEvent.click(screen.getByRole('button', { name: 'Crea proforma' }))
 
@@ -193,7 +193,7 @@ describe('NewProformaButton', () => {
   it('creates the proforma and goes to it, so it can be confirmed and issued', async () => {
     vi.mocked(api.POST).mockReturnValue(ok({ id: 'inv-9', type: 'proforma', status: 'draft' }))
     await open()
-    await chooseCustomer('ACME Srl')
+    await chooseOrganization('ACME Srl')
     await userEvent.type(screen.getByLabelText(/^Causale/), 'Consulenza settembre')
     await userEvent.type(screen.getByLabelText('Descrizione riga 1'), 'Analisi')
     await userEvent.clear(screen.getByLabelText('Quantità riga 1'))
@@ -218,7 +218,7 @@ describe('NewProformaButton', () => {
   it('sends the chosen deal, and offers only that customer’s deals', async () => {
     vi.mocked(api.POST).mockReturnValue(ok({ id: 'inv-9' }))
     await open()
-    await chooseCustomer('ACME Srl')
+    await chooseOrganization('ACME Srl')
 
     // The deal picker asks the API for that customer's deals rather than filtering a
     // full list in the browser: `DealListQuery` has `customer_id`, and the repository
@@ -271,7 +271,7 @@ describe('NewProformaButton', () => {
       ),
     )
     await open()
-    await chooseCustomer('ACME Srl')
+    await chooseOrganization('ACME Srl')
     await userEvent.type(screen.getByLabelText(/^Causale/), 'Consulenza')
     await userEvent.type(screen.getByLabelText('Descrizione riga 1'), 'Analisi')
     await userEvent.type(screen.getByLabelText('Prezzo unitario riga 1'), '150')
@@ -425,10 +425,10 @@ describe('NewProformaButton, opened from a record that already answers the quest
 
     // `DealRead.customer_legal_name` carries the name, and the deal page has
     // already read the deal -- so the dialog opens with both parties named and never
-    // touches `/api/customers/{customer_id}`, which from that page would be a cold read
+    // touches `/api/organizations/{organization_id}`, which from that page would be a cold read
     // behind a «…» placeholder.
     expect(await screen.findByText('ACME Srl')).toBeInTheDocument()
-    expect(api.GET).not.toHaveBeenCalledWith('/api/customers/{customer_id}', expect.anything())
+    expect(api.GET).not.toHaveBeenCalledWith('/api/organizations/{organization_id}', expect.anything())
   })
 
   it('fixes the deal too, and starts from the deal’s own name and expected value', async () => {
@@ -504,11 +504,11 @@ describe('«Emessa da» (REB-626)', () => {
 
   it('names the customer\'s azienda once a customer is chosen, and the deal\'s once a deal is', async () => {
     twoLegalEntities()
-    // `GET /api/customers/{customer_id}` answers the first customer, whose azienda is
+    // `GET /api/organizations/{organization_id}` answers the first customer, whose azienda is
     // humancraft; the chosen deal below belongs to rebase, which then takes over.
     await open()
     expect(screen.queryByText('Emessa da')).not.toBeInTheDocument()
-    await chooseCustomer('ACME Srl')
+    await chooseOrganization('ACME Srl')
     expect(await screen.findByText('Emessa da')).toBeInTheDocument()
     expect(await screen.findByText('humancraft')).toBeInTheDocument()
 
@@ -519,8 +519,8 @@ describe('«Emessa da» (REB-626)', () => {
 
   it('says nothing in a one-legal-entity space', async () => {
     await open()
-    await chooseCustomer('ACME Srl')
+    await chooseOrganization('ACME Srl')
     expect(screen.queryByText('Emessa da')).not.toBeInTheDocument()
-    expect(vi.mocked(api.GET)).not.toHaveBeenCalledWith('/api/customers/{customer_id}', expect.anything())
+    expect(vi.mocked(api.GET)).not.toHaveBeenCalledWith('/api/organizations/{organization_id}', expect.anything())
   })
 })

@@ -32,7 +32,7 @@ describe('modulesOfPath', () => {
     expect(modulesOfPath('/app/settings/cost-categories')).toEqual(['costs'])
     expect(modulesOfPath('/app/settings/rates')).toEqual(['time'])
     expect(modulesOfPath('/app/settings/pipeline')).toEqual(['deals'])
-    for (const core of ['/app', '/app/customers', '/app/invoices', '/app/settings/fiscal']) {
+    for (const core of ['/app', '/app/organizations', '/app/invoices', '/app/settings/fiscal']) {
       expect(modulesOfPath(core)).toEqual([])
     }
   })

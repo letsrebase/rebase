@@ -45,7 +45,7 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
     def search_everything(
         term: str, limit: SearchLimit = PER_CLASS_LIMIT, legal_entity_id: str | None = None
     ) -> dict[str, Any]:
-        """Search the whole CRM in one call: customers (company name, VAT number, tax code,
+        """Search the whole CRM in one call: organizations (company name, VAT number, tax code,
         contact points), people (first name, last name, contact points), deals (name),
         documents (title), invoices (description, number) and tasks (title and notes, closed
         ones too). It also accepts a fragment in the middle of a word («34567» finds the VAT
@@ -54,9 +54,10 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
 
         At least 3 characters are required. It returns up to `limit` results per class and the real
         count; if `total_is_minimum` is true the count is a minimum and the rest is in the
-        entity's own list. `legal_entity_id` restricts customers, people (via the customer), deals,
-        documents and invoices to that company, but not tasks, which have none; if omitted, it
-        searches the whole space. It does not search contracts, costs, proposals or mail.
+        entity's own list. `legal_entity_id` restricts organizations, people (via the
+        customer), deals, documents and invoices to that company, but not tasks, which have
+        none; if omitted, it searches the whole space. It does not search contracts, costs,
+        proposals or mail.
         """
         # `term` is a bare `str` with no `Annotated` bound, following the
         # runtime-permissive / schema-only-strict convention of `tools/params.py`: the

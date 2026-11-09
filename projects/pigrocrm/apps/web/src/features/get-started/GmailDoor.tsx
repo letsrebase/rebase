@@ -15,8 +15,8 @@
  *   while the space is empty (`routers/gmail.py::_back`).
  * - **Connected, consent lapsed** (`expired`, `revoked`): the server's own sentence and
  *   the same anchor to give it again.
- * - **Connected**: the mailbox, and under it the customers it proposes, to tick and
- *   import (`SuggestedCustomers`, REB-223).
+ * - **Connected**: the mailbox, and under it the organizations it proposes, to tick and
+ *   import (`SuggestedOrganizations`, REB-223).
  *
  * Connecting is `require_write` in the service, and a mailbox is its owner's own
  * (`account_for_user`), so a readonly person reads why there is no button rather than
@@ -30,7 +30,7 @@ import { useAuth, useCanWrite } from '@/lib/auth'
 import { ConsentOutcome } from '@/components/ConsentOutcome'
 import { consentOutcome } from '@/features/consent/outcome'
 import { GMAIL_OAUTH_START, useGmailHealth } from '@/features/gmail/queries'
-import { SuggestedCustomers } from '@/features/gmail/SuggestedCustomers'
+import { SuggestedOrganizations } from '@/features/gmail/SuggestedOrganizations'
 
 export function GmailDoor({ outcome }: { outcome?: string }) {
   return (
@@ -95,7 +95,7 @@ function DoorState() {
           <p className="font-medium">Casella collegata</p>
           <p className="text-muted-foreground">{account.email_address}</p>
         </div>
-        {canWrite ? <SuggestedCustomers /> : null}
+        {canWrite ? <SuggestedOrganizations /> : null}
       </div>
     )
   }

@@ -6,7 +6,6 @@ from sqlalchemy.orm import Session
 from pigrocrm.core.activities.service import ActivityService
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.contact_points.service import prepare, write_points
-from pigrocrm.core.customers.repository import CustomerRepository
 from pigrocrm.core.db import encode_cursor
 from pigrocrm.core.errors import Conflict, NotFound
 from pigrocrm.core.fields.custom import merge_custom
@@ -14,6 +13,7 @@ from pigrocrm.core.fields.schemas import EntityType
 from pigrocrm.core.fields.service import FieldDefinitionService
 from pigrocrm.core.fields.validator import validate_custom_fields
 from pigrocrm.core.notes.writer import append_first_note
+from pigrocrm.core.organizations.repository import OrganizationRepository
 from pigrocrm.core.people.models import Person
 from pigrocrm.core.people.repository import PersonRepository
 from pigrocrm.core.people.schemas import (
@@ -27,8 +27,8 @@ from pigrocrm.core.people.schemas import (
 from pigrocrm.core.schemas import reject_cleared_columns, supplied_changes
 
 # Typed as the fields module's own EntityType (not a bare `str`), matching
-# CustomerService.ENTITY exactly: passing a plain `str` into `specs_for` fails mypy
-# strict, which requires the narrower `Literal["customer", "person", "deal"]`.
+# OrganizationService.ENTITY exactly: passing a plain `str` into `specs_for` fails mypy
+# strict, which requires the narrower `Literal["organization", "person", "deal"]`.
 ENTITY: EntityType = "person"
 
 
@@ -36,18 +36,18 @@ class PersonService:
     def __init__(self, session: Session) -> None:
         self.session = session
         self.repo = PersonRepository(session)
-        self.customers = CustomerRepository(session)
+        self.organizations = OrganizationRepository(session)
         self.fields = FieldDefinitionService(session)
         self.activities = ActivityService(session)
 
     def _check_customer(self, customer_id: UUID | None) -> None:
         """`None` is always accepted -- see `Person`'s own docstring: a contact may
         exist with no customer at all. A supplied id that does not resolve to a live
-        row -- absent, or itself soft-deleted, since `CustomerRepository.get` treats
+        row -- absent, or itself soft-deleted, since `OrganizationRepository.get` treats
         both the same unless `include_deleted=True` -- is rejected: a dangling FK is
         worse than no FK."""
-        if customer_id is not None and self.customers.get(customer_id) is None:
-            raise NotFound("customer", customer_id)
+        if customer_id is not None and self.organizations.get(customer_id) is None:
+            raise NotFound("organization", customer_id)
 
     def _read(self, person: Person) -> PersonRead:
         """One person's read shape, company name included.
@@ -85,8 +85,8 @@ class PersonService:
     def _insert(self, data: PersonCreate, actor: Actor) -> Person:
         """The write half of `create`, without the commit: the row flushed and its
         "created" activity recorded on `self.session`, the commit left to a caller that
-        writes more in the same transaction (`CustomerService.create_from_suggestions`,
-        REB-223), the shape `CustomerService._insert` already has."""
+        writes more in the same transaction (`OrganizationService.create_from_suggestions`,
+        REB-223), the shape `OrganizationService._insert` already has."""
         actor.require_write("create_person")
         payload = data.model_dump()
         # Not a column: the first note of the person, written below by the creating actor.
@@ -206,7 +206,7 @@ class PersonService:
             raise NotFound(ENTITY, person_id)
 
         if person.customer_id is not None:
-            customer = self.customers.get(person.customer_id, include_deleted=True)
+            customer = self.organizations.get(person.customer_id, include_deleted=True)
             if customer is not None and customer.deleted_at is not None:
                 raise Conflict(
                     ENTITY,
@@ -217,7 +217,7 @@ class PersonService:
         # Recorded only when the person really was deleted: unconditionally logging
         # "restored" here -- even for a person that was never soft-deleted -- would
         # write a timeline entry claiming a recovery that never happened. Mirrors the
-        # identical guard on CustomerService.restore.
+        # identical guard on OrganizationService.restore.
         was_deleted = person.deleted_at is not None
         person.deleted_at = None
         if was_deleted:
@@ -227,7 +227,7 @@ class PersonService:
 
     # `list` must stay the last method defined in this class -- an unconditional
     # project rule (see `FieldDefinitionService.specs_for`'s docstring and
-    # `CustomerService`'s own ordering): defining a method named `list` rebinds that
+    # `OrganizationService`'s own ordering): defining a method named `list` rebinds that
     # name in the *class* namespace, so any later method whose own return annotation is
     # a bare `list[...]` would resolve `list` to this method instead of the builtin and
     # fail at import time. No method in this class has that shape today, but the rule
@@ -237,7 +237,7 @@ class PersonService:
         rows = self.repo.list(query)
         has_more = len(rows) > query.limit
         items = rows[: query.limit]
-        # See `CustomerService.list` for why the cursor carries the sort value as well
+        # See `OrganizationService.list` for why the cursor carries the sort value as well
         # as the id. Here the value can legitimately be `None` -- `last_name` is
         # nullable -- which is the whole reason the cursor is opaque rather than a
         # query parameter a client could compose.

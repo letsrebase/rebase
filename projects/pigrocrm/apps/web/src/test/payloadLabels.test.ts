@@ -317,7 +317,7 @@ describe('the timeline words against migration 0068', () => {
    * Every column renamed on an entity with a timeline must have its word.
    */
   const TIMELINE_TABLES = [
-    'customers',
+    'customers', // the table as migration 0068 renamed its columns; REB-969 renamed the table later
     'people',
     'deals',
     'documents',

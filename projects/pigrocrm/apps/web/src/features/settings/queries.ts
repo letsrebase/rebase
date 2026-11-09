@@ -14,7 +14,7 @@ type FieldDefinitionUpdateBody = components['schemas']['FieldDefinitionUpdate']
 
 /**
  * `include_archived: true`, always -- unlike `useEntitySchema` (lib/schema.ts),
- * which only needs what Customers/Persons/Deals currently render and excludes
+ * which only needs what Organizations/Persons/Deals currently render and excludes
  * archived fields by design, this admin screen's job is to also show what has
  * been archived, with a way back (`FieldsPanel`'s "Ripristina").
  */
@@ -32,7 +32,7 @@ export function useFieldDefinitions(entityType: EntityType) {
 
 /** Invalidates both this admin list and `queryKeys.schema` -- the second is
  *  what makes a field created/archived/restored/edited here show up (or
- *  disappear) on Customers/Persons/Deals immediately. Keyed off the response's
+ *  disappear) on Organizations/Persons/Deals immediately. Keyed off the response's
  *  own `entity_type`, never a caller-supplied one. */
 function invalidateFieldQueries(queryClient: QueryClient, entityType: string) {
   void queryClient.invalidateQueries({ queryKey: queryKeys.fields(entityType) })

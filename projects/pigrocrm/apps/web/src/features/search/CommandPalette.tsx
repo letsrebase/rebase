@@ -81,8 +81,8 @@ export function CommandPalette({
   function openHit(hit: SearchHit) {
     close()
     switch (hit.entity) {
-      case 'customer':
-        return void navigate({ to: '/app/customers/$customerId', params: { customerId: hit.id } })
+      case 'organization':
+        return void navigate({ to: '/app/organizations/$organizationId', params: { organizationId: hit.id } })
       case 'person':
         return void navigate({ to: '/app/people/$personId', params: { personId: hit.id } })
       case 'deal':
@@ -107,8 +107,8 @@ export function CommandPalette({
    */
   function seeAll(entity: SearchEntity, term: string): (() => void) | null {
     switch (entity) {
-      case 'customer':
-        return () => void navigate({ to: '/app/customers', search: { search: term } })
+      case 'organization':
+        return () => void navigate({ to: '/app/organizations', search: { search: term } })
       case 'person':
         return () => void navigate({ to: '/app/people', search: { search: term } })
       case 'deal':

@@ -39,11 +39,11 @@ from pigrocrm.core.automations.schemas import (
     TaskRule,
 )
 from pigrocrm.core.config import get_settings
-from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.db import session_factory, today_local
 from pigrocrm.core.deals.models import Deal
 from pigrocrm.core.documents.models import Document
 from pigrocrm.core.invoices.models import Invoice
+from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.pipeline.models import PipelineStage
 from pigrocrm.core.tasks.models import Task
 from pigrocrm.core.tasks.service import TaskService
@@ -61,8 +61,8 @@ def _local_noon(days_ago: int) -> datetime:
     return datetime.combine(day, time(12, 0), tzinfo=ZoneInfo(get_settings().timezone))
 
 
-def _customer(session: Session, name: str = "Acme S.r.l.") -> Customer:
-    customer = Customer(legal_name=name, country="IT", custom_fields={})
+def _customer(session: Session, name: str = "Acme S.r.l.") -> Organization:
+    customer = Organization(legal_name=name, country="IT", custom_fields={})
     session.add(customer)
     session.flush()
     return customer
@@ -95,7 +95,7 @@ def _owner(session: Session, *, active: bool = True) -> User:
 
 def _deal(
     session: Session,
-    customer: Customer,
+    customer: Organization,
     stage: PipelineStage,
     *,
     name: str = "Sito Acme",
@@ -122,7 +122,7 @@ def _offer(
     session: Session,
     *,
     deal: Deal | None = None,
-    customer: Customer | None = None,
+    customer: Organization | None = None,
     sent_days_ago: int,
     title: str = "Offerta sito",
     status: str = "sent",
@@ -144,7 +144,7 @@ def _offer(
 
 def _invoice(
     session: Session,
-    customer: Customer,
+    customer: Organization,
     *,
     deal: Deal | None = None,
     overdue_days: int = 3,
@@ -396,7 +396,7 @@ def test_closing_the_task_lets_the_next_pass_open_to_new_one(db_session: Session
     assert len(_rows(db_session, "overdue_invoice")) == 3
 
 
-def test_a_deal_without_an_owner_falls_back_to_the_customers_owner(db_session: Session) -> None:
+def test_a_deal_without_an_owner_falls_back_to_the_organizations_owner(db_session: Session) -> None:
     owner = _owner(db_session)
     customer = _customer(db_session)
     customer.owner_id = owner.id
@@ -553,7 +553,7 @@ def committed_overdue_invoice(db_engine: Engine) -> Iterator[UUID]:
             session.execute(delete(Activity).where(Activity.entity_type == "task"))
             session.execute(delete(Task).where(Task.invoice_id.in_(ids)))
             session.execute(delete(Invoice).where(Invoice.id == invoice_id))
-            session.execute(delete(Customer).where(Customer.id == customer_id))
+            session.execute(delete(Organization).where(Organization.id == customer_id))
             session.execute(delete(AutomationConfig))
             session.commit()
 

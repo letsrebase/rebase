@@ -23,7 +23,7 @@ from pigrocrm.core.legal_entities.models import default_legal_entity_id
 
 
 class Deal(Base, PrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
-    """The last core CRM entity: a sales opportunity tied to exactly one `Customer`
+    """The last core CRM entity: a sales opportunity tied to exactly one `Organization`
     and sitting in exactly one `PipelineStage`.
 
     `customer_id` is **required**, unlike `Person.customer_id`: a deal without a
@@ -33,7 +33,7 @@ class Deal(Base, PrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
     caller does not supply one, so no deal is ever without a stage.
 
     Both foreign key column names are load-bearing beyond this module:
-    `CustomerRepository.count_active_deals` and `PipelineRepository.count_deals_in_stage`
+    `OrganizationRepository.count_active_deals` and `PipelineRepository.count_deals_in_stage`
     name them as columns of a bare `deals` table, which a rename would break at run time.
 
     `budgeted_hours`/`budgeted_value` are written now but not read until the
@@ -41,7 +41,7 @@ class Deal(Base, PrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
     column onto a live `deals` table later would be far more disruptive than adding
     it while the table is brand new.
 
-    `custom_fields` copies `Customer`/`Person`'s own JSONB column and GIN index, for
+    `custom_fields` copies `Organization`/`Person`'s own JSONB column and GIN index, for
     the same reason: `list()`'s containment filter (`custom_fields @> {...}`) must
     never fall back to a full table scan.
     """
@@ -50,7 +50,7 @@ class Deal(Base, PrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
     __table_args__ = (
         Index("ix_deals_custom_fields", "custom_fields", postgresql_using="gin"),
         # `DealRepository.list` searches `name` and nothing else -- see
-        # `Customer.__table_args__` for why the index is partial on `deleted_at IS NULL`
+        # `Organization.__table_args__` for why the index is partial on `deleted_at IS NULL`
         # with no `lower()` in the expression.
         Index(
             "ix_deals_name_trgm",
@@ -59,7 +59,7 @@ class Deal(Base, PrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
             postgresql_ops={"name": "gin_trgm_ops"},
             postgresql_where=text("deleted_at IS NULL"),
         ),
-        # Residuo R9. See `customers/models.py` for why each admitted sort key costs a
+        # Residuo R9. See `organizations/models.py` for why each admitted sort key costs a
         # `(column, id)` B-tree and why none of them is partial.
         Index("ix_deals_created_at_id", "created_at", "id"),
         Index("ix_deals_updated_at_id", "updated_at", "id"),
@@ -77,7 +77,7 @@ class Deal(Base, PrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     # Required: see the class docstring above.
     customer_id: Mapped[UUID] = mapped_column(
-        ForeignKey("customers.id"), nullable=False, index=True
+        ForeignKey("organizations.id"), nullable=False, index=True
     )
     # The legal entity the deal was born under: the customer's at creation (REB-623, §1.7),
     # kept whatever the customer does afterwards. The column default serves a row built

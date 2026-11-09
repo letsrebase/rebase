@@ -32,12 +32,12 @@ from pigrocrm.core.contracts.rules import (
     check_rate_card_shape,
     check_renewal_notice,
 )
-from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.db.transactions import savepoint
 from pigrocrm.core.documents.repository import DocumentRepository
 from pigrocrm.core.errors import Conflict, NotFound, ValidationFailed
 from pigrocrm.core.labels import PROPOSAL_STATUS, label
 from pigrocrm.core.legal_entities.service import LegalEntityService
+from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.proposals.models import Proposal
 from pigrocrm.core.proposals.repository import ProposalRepository
 from pigrocrm.core.proposals.schemas import (
@@ -122,8 +122,8 @@ class ProposalService:
                     expected="assente quando target_type = 'contract'",
                 )
             fields = self._parse_contract_fields(data.proposed_fields)
-            if self.session.get(Customer, fields.contract.customer_id) is None:
-                raise NotFound("customer", fields.contract.customer_id)
+            if self.session.get(Organization, fields.contract.customer_id) is None:
+                raise NotFound("organization", fields.contract.customer_id)
         else:
             if data.contract_id is None:
                 raise ValidationFailed(
@@ -255,9 +255,9 @@ class ProposalService:
         re-points the originating document's ownership at it -- spec §10, §11's own
         "widen at accept time, not at archive time" ordering."""
         fields = self._parse_contract_fields(raw)
-        customer = self.session.get(Customer, fields.contract.customer_id)
+        customer = self.session.get(Organization, fields.contract.customer_id)
         if customer is None:
-            raise NotFound("customer", fields.contract.customer_id)
+            raise NotFound("organization", fields.contract.customer_id)
 
         contract_payload = fields.contract.model_dump()
         check_payment_terms_together(contract_payload)

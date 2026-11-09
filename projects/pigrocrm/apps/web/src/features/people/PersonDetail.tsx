@@ -9,7 +9,7 @@ import { QueryErrorBanner } from '@/components/QueryErrorBanner'
 import { Button } from '@rebase/ui/button'
 import { Card, CardContent } from '@rebase/ui/card'
 import { Skeleton } from '@rebase/ui/skeleton'
-import { useCustomer } from '@/features/customers/queries'
+import { useOrganization } from '@/features/organizations/queries'
 import { EmailTab } from '@/features/gmail/EmailTab'
 import { useGmailConfigured } from '@/features/gmail/queries'
 import { ContactPointsList } from '@/features/contact-points/ContactPointsList'
@@ -30,25 +30,25 @@ function Row({ label, value }: { label: string; value: string }) {
 }
 
 /**
- * Split into its own component so `useCustomer` is only ever mounted -- and
+ * Split into its own component so `useOrganization` is only ever mounted -- and
  * therefore only ever called -- with a real id. `person.customer_id` is `null`
  * for most people (`PersonService._check_customer`'s own docstring: a contact
- * may exist with no customer at all), and `useCustomer('')` is not a safe
- * stand-in for "don't fetch": `/api/customers/{customer_id}` with an empty path
+ * may exist with no customer at all), and `useOrganization('')` is not a safe
+ * stand-in for "don't fetch": `/api/organizations/{organization_id}` with an empty path
  * segment does not match that route at all, and Starlette's default
- * trailing-slash redirect then lands the request on plain `/api/customers` --
+ * trailing-slash redirect then lands the request on plain `/api/organizations` --
  * the *list* endpoint -- which still resolves 200. Nothing would throw or log,
  * but every visit to a customer-less person would silently re-fetch the entire
- * customer list for a value that is then never even used (`CustomerPage` has no
+ * customer list for a value that is then never even used (`OrganizationPage` has no
  * `legal_name` at its top level, so the card would just show '…' forever
  * regardless of the response). A conditionally *rendered* component, rather than
- * a conditionally *called* hook, keeps `useCustomer` itself untouched -- no
- * change needed in `features/customers/queries.ts` -- and only ever queries when
+ * a conditionally *called* hook, keeps `useOrganization` itself untouched -- no
+ * change needed in `features/organizations/queries.ts` -- and only ever queries when
  * there is a real customer to look up. The parent only renders this at all
  * inside the `person.customer_id ? ... : ...` branch below.
  */
-function LinkedCustomerRow({ customerId }: { customerId: string }) {
-  const customer = useCustomer(customerId)
+function LinkedOrganizationRow({ customerId }: { customerId: string }) {
+  const customer = useOrganization(customerId)
   return <Row label="Ragione sociale" value={customer.data?.legal_name ?? '…'} />
 }
 
@@ -67,7 +67,7 @@ export function PersonDetail() {
   const gmailConfigured = useGmailConfigured()
 
   if (isLoading) return <Skeleton className="m-8 h-96" />
-  // See `routes/app/customers/$customerId.tsx`'s identical guard for the full
+  // See `routes/app/organizations/$organizationId.tsx`'s identical guard for the full
   // reasoning: without this, a 500/502/dropped connection reads as "Persona non
   // trovata." exactly like a genuine 404 does, since both leave `person`
   // undefined once loading ends. `toProblem(error).status` is the one place that
@@ -90,10 +90,10 @@ export function PersonDetail() {
     // No visible undo in the UI (restoring today means calling
     // `POST /api/people/{id}/restore` directly, not a button here) -- a plain
     // confirm is a cheap guard against a misclick, not a client-side
-    // re-implementation of any server rule. Unlike `CustomerService.soft_delete`,
+    // re-implementation of any server rule. Unlike `OrganizationService.soft_delete`,
     // `PersonService.soft_delete` never refuses (no entity in this slice holds a
     // foreign key to a person), so there is no conflict count to fold into this
-    // copy the way `CustomerDetail`'s own `archive` does.
+    // copy the way `OrganizationDetail`'s own `archive` does.
     const confirmed = window.confirm(
       `Archiviare ${fullName}? La persona non comparirà più negli elenchi, ma i dati restano e l'operazione è reversibile.`,
     )
@@ -172,7 +172,7 @@ export function PersonDetail() {
             <CardContent className="pt-6">
               <h2 className="mb-3 font-semibold">Cliente</h2>
               {person.customer_id ? (
-                <LinkedCustomerRow customerId={person.customer_id} />
+                <LinkedOrganizationRow customerId={person.customer_id} />
               ) : (
                 <p className="text-muted-foreground">
                   Questa persona non è associata a un cliente.

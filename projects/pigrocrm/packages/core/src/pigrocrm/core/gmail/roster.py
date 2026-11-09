@@ -19,10 +19,10 @@ from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.contact_points.models import ContactPoint
-from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.db import escape_like
 from pigrocrm.core.deals.models import Deal
 from pigrocrm.core.gmail.query import customer_domain, is_provider_domain
+from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.people.models import Person
 
 
@@ -42,7 +42,7 @@ class AddressRoster:
         self.session = session
 
     def known_addresses(self) -> tuple[str, ...]:
-        """Every email point of a live Person or Customer, lowercased, deduplicated and
+        """Every email point of a live Person or Organization, lowercased, deduplicated and
         sorted: the primary and every other address of each, so mail from a personal address
         lands on the person too. Sorted because the batching in `gmail/query.py` must be
         stable: an unstable order means two consecutive syncs issue different `q` strings for
@@ -52,19 +52,19 @@ class AddressRoster:
             .join(Person, Person.id == ContactPoint.person_id)
             .where(ContactPoint.kind == "email", Person.deleted_at.is_(None))
         )
-        customers = (
+        organizations = (
             select(ContactPoint.normalized)
-            .join(Customer, Customer.id == ContactPoint.customer_id)
-            .where(ContactPoint.kind == "email", Customer.deleted_at.is_(None))
+            .join(Organization, Organization.id == ContactPoint.customer_id)
+            .where(ContactPoint.kind == "email", Organization.deleted_at.is_(None))
         )
-        rows = self.session.execute(people.union(customers)).scalars().all()
+        rows = self.session.execute(people.union(organizations)).scalars().all()
         # `if address` drops the empty string: a point saved with "" is not an address, and an
         # empty clause in the Gmail `q` would match on nothing while still costing length budget.
         return tuple(sorted(address for address in rows if address))
 
     def known_among(self, addresses: Iterable[str]) -> frozenset[str]:
         """Which of these candidate addresses are an email point of a live Person or
-        Customer, lowercased.
+        Organization, lowercased.
 
         What a caller that already holds its candidates asks, instead of loading the whole
         roster (`known_addresses`) to test a handful of them: the lookup is
@@ -82,16 +82,16 @@ class AddressRoster:
                 Person.deleted_at.is_(None),
             )
         )
-        customers = (
+        organizations = (
             select(ContactPoint.normalized)
-            .join(Customer, Customer.id == ContactPoint.customer_id)
+            .join(Organization, Organization.id == ContactPoint.customer_id)
             .where(
                 ContactPoint.kind == "email",
                 ContactPoint.normalized.in_(needles),
-                Customer.deleted_at.is_(None),
+                Organization.deleted_at.is_(None),
             )
         )
-        return frozenset(self.session.execute(people.union(customers)).scalars().all())
+        return frozenset(self.session.execute(people.union(organizations)).scalars().all())
 
     def domains_taken(self, domains: Iterable[str]) -> frozenset[str]:
         """Which of these candidate domains the CRM already files under a customer: each
@@ -107,11 +107,11 @@ class AddressRoster:
         if not candidates:
             return frozenset()
         websites = self.session.execute(
-            select(Customer.website).where(
-                Customer.deleted_at.is_(None),
+            select(Organization.website).where(
+                Organization.deleted_at.is_(None),
                 or_(
                     *(
-                        Customer.website.ilike(f"%{escape_like(domain)}%", escape="\\")
+                        Organization.website.ilike(f"%{escape_like(domain)}%", escape="\\")
                         for domain in candidates
                     )
                 ),
@@ -119,10 +119,10 @@ class AddressRoster:
         ).scalars()
         customer_emails = self.session.execute(
             select(ContactPoint.normalized)
-            .join(Customer, Customer.id == ContactPoint.customer_id)
+            .join(Organization, Organization.id == ContactPoint.customer_id)
             .where(
                 ContactPoint.kind == "email",
-                Customer.deleted_at.is_(None),
+                Organization.deleted_at.is_(None),
                 or_(
                     *(
                         ContactPoint.normalized.like(f"%{escape_like(domain)}%", escape="\\")
@@ -134,11 +134,11 @@ class AddressRoster:
         people_emails = self.session.execute(
             select(ContactPoint.normalized)
             .join(Person, Person.id == ContactPoint.person_id)
-            .join(Customer, Customer.id == Person.customer_id)
+            .join(Organization, Organization.id == Person.customer_id)
             .where(
                 ContactPoint.kind == "email",
                 Person.deleted_at.is_(None),
-                Customer.deleted_at.is_(None),
+                Organization.deleted_at.is_(None),
                 or_(
                     *(
                         ContactPoint.normalized.like(f"%@{escape_like(domain)}", escape="\\")
@@ -176,23 +176,23 @@ class AddressRoster:
             )
         ).all()
         direct_rows = self.session.execute(
-            select(ContactPoint.normalized, Customer.id)
-            .join(Customer, Customer.id == ContactPoint.customer_id)
+            select(ContactPoint.normalized, Organization.id)
+            .join(Organization, Organization.id == ContactPoint.customer_id)
             .where(
                 ContactPoint.kind == "email",
                 ContactPoint.normalized.in_(needles),
-                Customer.deleted_at.is_(None),
+                Organization.deleted_at.is_(None),
             )
         ).all()
-        # A live person may point at a soft-deleted customer, so the customers reached
+        # A live person may point at a soft-deleted customer, so the organizations reached
         # through `people.customer_id` are re-checked here rather than trusted: filing
         # a message against an archived row would produce a link nothing can display.
         via_people = {customer_id for _, _, customer_id in person_rows if customer_id is not None}
         live_via_people = (
             set(
                 self.session.execute(
-                    select(Customer.id).where(
-                        Customer.id.in_(via_people), Customer.deleted_at.is_(None)
+                    select(Organization.id).where(
+                        Organization.id.in_(via_people), Organization.deleted_at.is_(None)
                     )
                 )
                 .scalars()
@@ -203,29 +203,29 @@ class AddressRoster:
         )
 
         persons: dict[str, list[UUID]] = {}
-        customers: dict[str, set[UUID]] = {}
+        organizations: dict[str, set[UUID]] = {}
         for needle, person_id, customer_id in person_rows:
             persons.setdefault(needle, []).append(person_id)
             if customer_id in live_via_people:
-                customers.setdefault(needle, set()).add(customer_id)
+                organizations.setdefault(needle, set()).add(customer_id)
         for needle, customer_id in direct_rows:
-            customers.setdefault(needle, set()).add(customer_id)
+            organizations.setdefault(needle, set()).add(customer_id)
 
-        all_customers = {customer_id for ids in customers.values() for customer_id in ids}
+        all_organizations = {customer_id for ids in organizations.values() for customer_id in ids}
         deals: dict[UUID, list[UUID]] = {}
-        if all_customers:
+        if all_organizations:
             for customer_id, deal_id in self.session.execute(
                 select(Deal.customer_id, Deal.id).where(
-                    Deal.customer_id.in_(all_customers), Deal.deleted_at.is_(None)
+                    Deal.customer_id.in_(all_organizations), Deal.deleted_at.is_(None)
                 )
             ).all():
                 deals.setdefault(customer_id, []).append(deal_id)
 
         resolved: dict[str, tuple[EntityRef, ...]] = {}
-        for needle in persons.keys() | customers.keys():
+        for needle in persons.keys() | organizations.keys():
             refs = [EntityRef("person", person_id) for person_id in persons.get(needle, [])]
-            customer_ids = sorted(customers.get(needle, ()))
-            refs.extend(EntityRef("customer", customer_id) for customer_id in customer_ids)
+            customer_ids = sorted(organizations.get(needle, ()))
+            refs.extend(EntityRef("organization", customer_id) for customer_id in customer_ids)
             for customer_id in customer_ids:
                 refs.extend(EntityRef("deal", deal_id) for deal_id in deals.get(customer_id, []))
             # Deduplicated because a customer reached through two of its own people is one
@@ -248,7 +248,7 @@ def _domains_of(
     customer_emails: Iterable[str],
     people_emails: Iterable[str],
 ) -> frozenset[str]:
-    """The domains a set of customers' websites, customers' addresses and people's addresses
+    """The domains a set of organizations' websites, organizations' addresses and people's addresses
     stand for."""
     domains: set[str] = set()
     # Both a website and an address: a customer whose website is acme.com and whose email is

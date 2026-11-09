@@ -10,7 +10,6 @@ from sqlalchemy.orm import Session
 from pigrocrm.core.activities.service import ActivityService
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.auth.repository import UserRepository
-from pigrocrm.core.customers.repository import CustomerRepository
 from pigrocrm.core.db import encode_cursor, today_local
 from pigrocrm.core.deals.models import Deal, DealValueLine
 from pigrocrm.core.deals.repository import DealRepository
@@ -43,14 +42,15 @@ from pigrocrm.core.fields.validator import validate_custom_fields
 from pigrocrm.core.legal_entities.service import LegalEntityService
 from pigrocrm.core.money import HOURS_QUANT, MONEY_QUANT
 from pigrocrm.core.notes.writer import append_first_note
+from pigrocrm.core.organizations.repository import OrganizationRepository
 from pigrocrm.core.pipeline.schemas import PipelineStageRead
 from pigrocrm.core.pipeline.service import PipelineService
 from pigrocrm.core.schemas import reject_cleared_columns, supplied_changes
 
 # Typed as the fields module's own EntityType (not a bare `str`), matching
-# CustomerService.ENTITY/PersonService.ENTITY exactly: passing a plain `str` into
+# OrganizationService.ENTITY/PersonService.ENTITY exactly: passing a plain `str` into
 # `specs_for` fails mypy strict, which requires the narrower
-# Literal["customer", "person", "deal"].
+# Literal["organization", "person", "deal"].
 ENTITY: EntityType = "deal"
 
 
@@ -172,7 +172,7 @@ def _check_numbers(values: dict[str, Any]) -> None:
     of the money/hours fields can be negative. Values arriving here are already
     Decimal/int (or None) courtesy of the Pydantic schemas -- this only checks range,
     it does not coerce or normalize anything, unlike `_check_fiscal`/`_check_email`
-    in the Customer/Person services."""
+    in the Organization/Person services."""
     probability = values.get("probability")
     if probability is not None and not 0 <= probability <= 100:
         raise ValidationFailed(ENTITY, "probability", "fuori intervallo", expected="0-100")
@@ -242,7 +242,7 @@ class DealService:
     def __init__(self, session: Session) -> None:
         self.session = session
         self.repo = DealRepository(session)
-        self.customers = CustomerRepository(session)
+        self.organizations = OrganizationRepository(session)
         self.users = UserRepository(session)
         self.pipeline = PipelineService(session)
         self.fields = FieldDefinitionService(session)
@@ -393,9 +393,9 @@ class DealService:
 
         # A deal without a customer has no economic meaning -- see Deal's own
         # docstring. Unlike Person.customer_id (optional), this is never skipped.
-        customer = self.customers.get(payload["customer_id"])
+        customer = self.organizations.get(payload["customer_id"])
         if customer is None:
-            raise NotFound("customer", payload["customer_id"])
+            raise NotFound("organization", payload["customer_id"])
         payload["owner_id"] = self._owner_for(payload.get("owner_id"), actor, creating=True)
         # The customer's legal entity at this moment, kept from now on (REB-623, spec §1.7);
         # refused when that legal entity is deactivated, since nothing new is born on one.
@@ -599,7 +599,7 @@ class DealService:
         instruction from an agent must be reversible.
 
         Refuses while the deal still carries live hours, exactly as
-        `CustomerService.soft_delete` refuses while a customer still has active deals. The
+        `OrganizationService.soft_delete` refuses while a customer still has active deals. The
         invariant is the same one level down -- **no live child hangs off an archived
         parent** -- and it is what keeps slice 6 criterion 2 true for every figure computed
         over `time_entries`.
@@ -658,10 +658,10 @@ class DealService:
         # Past the row-level policies (REB-634): the customer may sit in a legal entity the
         # deal's reader cannot see, and «not found» must not read as «not archived».
         archived = self.session.execute(
-            text("SELECT customer_archived(:customer_id)"), {"customer_id": deal.customer_id}
+            text("SELECT organization_archived(:customer_id)"), {"customer_id": deal.customer_id}
         ).scalar_one_or_none()
         if archived is None:
-            raise NotFound("customer", deal.customer_id)
+            raise NotFound("organization", deal.customer_id)
         if archived:
             raise Conflict(
                 ENTITY,
@@ -672,7 +672,7 @@ class DealService:
         # Recorded only when the deal really was deleted: unconditionally logging
         # "restored" here -- even for a deal that was never soft-deleted -- would
         # write a timeline entry claiming a recovery that never happened. Mirrors the
-        # identical guard on CustomerService.restore/PersonService.restore.
+        # identical guard on OrganizationService.restore/PersonService.restore.
         was_deleted = deal.deleted_at is not None
         deal.deleted_at = None
         if was_deleted:
@@ -682,7 +682,7 @@ class DealService:
 
     # `list` must stay the last method defined in this class -- an unconditional
     # project rule (see `FieldDefinitionService.specs_for`'s docstring and
-    # `CustomerService`/`PersonService`'s own ordering): defining a method named
+    # `OrganizationService`/`PersonService`'s own ordering): defining a method named
     # `list` rebinds that name in the *class* namespace, so any later method whose
     # own return annotation is a bare `list[...]` would resolve `list` to this method
     # instead of the builtin and fail at import time. No method in this class has
@@ -692,7 +692,7 @@ class DealService:
         rows = self.repo.list(query)
         has_more = len(rows) > query.limit
         items = rows[: query.limit]
-        # See `CustomerService.list` for why the cursor carries the sort value as well
+        # See `OrganizationService.list` for why the cursor carries the sort value as well
         # as the id.
         spec = DEAL_SORTS.resolve(query.sort)
         next_cursor = (

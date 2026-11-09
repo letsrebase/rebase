@@ -29,7 +29,7 @@ from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.contact_points.models import ContactPoint
-from pigrocrm.core.customers.models import Customer
+from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.search.repository import points_text
 from pigrocrm.core.search.scoring import (
     SCORE_EXACT,
@@ -46,14 +46,14 @@ from pigrocrm.core.search.scoring import (
     row_score,
 )
 
-_NAME = ScoredField(name="legal_name", column=Customer.legal_name, weight=WEIGHT_IDENTIFYING)
-_CONTACTS = points_text(Customer.id, ContactPoint.customer_id)
+_NAME = ScoredField(name="legal_name", column=Organization.legal_name, weight=WEIGHT_IDENTIFYING)
+_CONTACTS = points_text(Organization.id, ContactPoint.customer_id)
 _EMAIL = ScoredField(name="email", column=_CONTACTS, weight=WEIGHT_EMAIL)
 _FIELDS = (_NAME, _EMAIL)
 
 
-def _add(session: Session, legal_name: str, email: str | None = None) -> Customer:
-    row = Customer(
+def _add(session: Session, legal_name: str, email: str | None = None) -> Organization:
+    row = Organization(
         legal_name=legal_name, contact_points=points(email=email), country="IT", custom_fields={}
     )
     session.add(row)
@@ -63,11 +63,11 @@ def _add(session: Session, legal_name: str, email: str | None = None) -> Custome
 
 def _score(
     session: Session,
-    row: Customer,
+    row: Organization,
     term: str,
     fields: Sequence[ScoredField] = _FIELDS,
 ) -> Decimal:
-    value = session.scalar(select(row_score(fields, term)).where(Customer.id == row.id))
+    value = session.scalar(select(row_score(fields, term)).where(Organization.id == row.id))
     # Never `None`: a NULL row score would sort *ahead* of every real hit under
     # `ORDER BY … DESC` in Postgres, so "did not match" has to be a number.
     assert value is not None
@@ -119,7 +119,7 @@ def test_the_row_score_is_the_maximum_and_not_the_sum(db_session: Session) -> No
 def test_best_field_names_the_column_that_produced_the_score(db_session: Session) -> None:
     by_email = _add(db_session, "Altra Societa Srl", email="vulcano@example.it")
     name = db_session.scalar(
-        select(best_field(_FIELDS, "Vulcano")).where(Customer.id == by_email.id)
+        select(best_field(_FIELDS, "Vulcano")).where(Organization.id == by_email.id)
     )
     assert name == "email"
 
@@ -138,13 +138,13 @@ def test_best_field_resolves_a_tie_to_the_earlier_field(db_session: Session) -> 
 
     scores = db_session.execute(
         select(*(field_score(field, "Vulcano") for field in equal_weight)).where(
-            Customer.id == row.id
+            Organization.id == row.id
         )
     ).one()
     assert scores[0] == scores[1], "the fixture no longer produces a tie"
 
     name = db_session.scalar(
-        select(best_field(equal_weight, "Vulcano")).where(Customer.id == row.id)
+        select(best_field(equal_weight, "Vulcano")).where(Organization.id == row.id)
     )
     assert name == "legal_name"
 
@@ -158,7 +158,9 @@ def test_matches_any_is_true_only_for_a_row_that_contains_the_term(
     # filtered out rather than silently included.
     miss = _add(db_session, "Quadrifoglio Logistica Spa")
 
-    found = set(db_session.scalars(select(Customer.id).where(matches_any(_FIELDS, "ingegn"))).all())
+    found = set(
+        db_session.scalars(select(Organization.id).where(matches_any(_FIELDS, "ingegn"))).all()
+    )
     assert hit.id in found
     assert miss.id not in found
 
@@ -187,7 +189,7 @@ def test_matches_any_leaves_the_column_unwrapped_and_keeps_its_escape(
 
 
 def test_a_null_column_never_wins_and_never_raises(db_session: Session) -> None:
-    """`customers.email` is nullable. `GREATEST` in Postgres ignores NULLs, but
+    """`organizations.email` is nullable. `GREATEST` in Postgres ignores NULLs, but
     `similarity(NULL, 'x')` is NULL and a CASE that returned NULL for every field would
     make the row score NULL -- which would sort unpredictably rather than not matching."""
     row = _add(db_session, "Rossi Ingegneria Srl", email=None)
@@ -198,7 +200,7 @@ def test_a_null_column_never_wins_and_never_raises(db_session: Session) -> None:
     assert _score(db_session, nothing, "zzqqxxww") == Decimal("0")
 
     # Scored against the nullable column *alone*, which is the only shape that reaches
-    # the `coalesce`: with `customers.legal_name` in the list, `GREATEST` hides a
+    # the `coalesce`: with `organizations.legal_name` in the list, `GREATEST` hides a
     # NULL behind the non-null field's own zero and the miss branch is never observed.
     # Some entity's searched columns are all nullable -- an invoice's `memo` is --
     # and that row must score zero rather than heading the palette.
@@ -239,9 +241,9 @@ def test_the_ranking_happens_in_the_database(db_session: Session) -> None:
 
     top_two = list(
         db_session.scalars(
-            select(Customer.id)
+            select(Organization.id)
             .where(matches_any(_FIELDS, "Ingegn"))
-            .order_by(row_score(_FIELDS, "Ingegn").desc(), Customer.id)
+            .order_by(row_score(_FIELDS, "Ingegn").desc(), Organization.id)
             .limit(2)
         ).all()
     )
@@ -300,7 +302,7 @@ def test_a_short_fragment_of_a_middle_word_survives_the_floor(db_session: Sessio
     function for a term matched against an *extent* of a string, and with it every literal
     containment clears the floor while every non-containment still scores exactly zero.
 
-    If this ever goes red, the palette has silently stopped finding customers by a
+    If this ever goes red, the palette has silently stopped finding organizations by a
     fragment of their VAT number, which is 6A's stated reason to exist.
     """
     long_name = _add(db_session, "Grande Ingegneria Lombarda Srl")

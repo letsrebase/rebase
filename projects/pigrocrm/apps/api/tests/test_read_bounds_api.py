@@ -11,8 +11,8 @@ ANY_ID = "00000000-0000-0000-0000-000000000000"
 @pytest.mark.parametrize(
     ("path", "params"),
     [
-        (f"/api/customers/{ANY_ID}/notes", {"limit": 0}),
-        (f"/api/customers/{ANY_ID}/notes", {"limit": 201}),
+        (f"/api/organizations/{ANY_ID}/notes", {"limit": 0}),
+        (f"/api/organizations/{ANY_ID}/notes", {"limit": 201}),
         ("/api/reminders", {"limit": 0}),
         ("/api/reminders", {"limit": 201}),
         ("/api/work-units", {"contract_id": ANY_ID, "limit": 201}),
@@ -27,13 +27,13 @@ def test_a_read_past_its_ceiling_is_a_422(
 
 
 def test_the_notes_thread_honours_its_limit(logged_in: TestClient) -> None:
-    customer = logged_in.post("/api/customers", json={"legal_name": "ACME"}).json()["id"]
+    customer = logged_in.post("/api/organizations", json={"legal_name": "ACME"}).json()["id"]
     for text in ("uno", "due", "tre"):
-        added = logged_in.post(f"/api/customers/{customer}/notes", json={"text": text})
+        added = logged_in.post(f"/api/organizations/{customer}/notes", json={"text": text})
         assert added.status_code == 201, added.text
 
-    everything = logged_in.get(f"/api/customers/{customer}/notes").json()
-    capped = logged_in.get(f"/api/customers/{customer}/notes", params={"limit": 2}).json()
+    everything = logged_in.get(f"/api/organizations/{customer}/notes").json()
+    capped = logged_in.get(f"/api/organizations/{customer}/notes", params={"limit": 2}).json()
 
     assert len(everything) == 3
     assert [note["id"] for note in capped] == [note["id"] for note in everything[:2]]

@@ -41,7 +41,7 @@ export const MODULE_LABELS: Record<ModuleKey, string> = {
  * and a deal's own page. An entry needing several modules exists only when all are on
  * (a surface spanning modules, spec A2).
  *
- * Only what a module owns is listed: the core (customers, people, activities, calendar,
+ * Only what a module owns is listed: the core (organizations, people, activities, calendar,
  * reminders, proposals, invoices, documents, agents, the settings that are not a module's)
  * has no row, and `modulesOfPath` answers `[]` for it.
  */

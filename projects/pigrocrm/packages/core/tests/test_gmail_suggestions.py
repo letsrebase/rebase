@@ -1,4 +1,4 @@
-"""The customers a connected mailbox proposes, and importing the ones a person ticks
+"""The organizations a connected mailbox proposes, and importing the ones a person ticks
 (spec 2026-09-16 §5, REB-223).
 
 Against the recording `FakeGmail`, so the assertions are about what was asked of
@@ -20,10 +20,6 @@ from sqlalchemy.orm import Session
 
 from pigrocrm.core.activities.models import Activity
 from pigrocrm.core.actor import Actor
-from pigrocrm.core.customers.models import Customer
-from pigrocrm.core.customers.repository import CUSTOMERS_LOCK_NAMESPACE, CustomerRepository
-from pigrocrm.core.customers.schemas import CustomersFromSuggestions
-from pigrocrm.core.customers.service import CustomerService
 from pigrocrm.core.errors import AgentForbidden, Conflict, PermissionDenied, ValidationFailed
 from pigrocrm.core.gmail import sync as sync_module
 from pigrocrm.core.gmail.errors import GmailUnavailable, GoogleCallFailed, UpstreamFailure
@@ -31,6 +27,13 @@ from pigrocrm.core.gmail.models import GmailMessage
 from pigrocrm.core.gmail.query import sent_since_query, thread_metadata_url
 from pigrocrm.core.gmail.roster import AddressRoster
 from pigrocrm.core.gmail.sync import company_name_from_domain
+from pigrocrm.core.organizations.models import Organization
+from pigrocrm.core.organizations.repository import (
+    ORGANIZATIONS_LOCK_NAMESPACE,
+    OrganizationRepository,
+)
+from pigrocrm.core.organizations.schemas import OrganizationsFromSuggestions
+from pigrocrm.core.organizations.service import OrganizationService
 from pigrocrm.core.people.models import Person
 
 OWN = MAILBOX  # io@example.it: the mailbox's own domain is example.it
@@ -99,7 +102,7 @@ def test_the_proposals_group_the_sent_conversations_by_domain(db_session: Sessio
     account = connected_account(db_session)
     fake = _mailbox()
 
-    proposals = sync_service(db_session, fake).suggest_customers(actor=actor_for(account))
+    proposals = sync_service(db_session, fake).suggest_organizations(actor=actor_for(account))
 
     assert [proposal.domain for proposal in proposals] == ["acme.it", "studio-rossi.it"]
     acme, rossi = proposals
@@ -123,7 +126,7 @@ def test_what_names_nobody_to_import_is_left_out(db_session: Session) -> None:
     in, what is older than the period, and a draft nobody was sent."""
     account = connected_account(db_session)
 
-    proposals = sync_service(db_session, _mailbox()).suggest_customers(actor=actor_for(account))
+    proposals = sync_service(db_session, _mailbox()).suggest_organizations(actor=actor_for(account))
 
     domains = {proposal.domain for proposal in proposals}
     for absent in (
@@ -144,7 +147,7 @@ def test_google_is_asked_for_the_sent_mail_of_the_period_and_headers_only(
     account = connected_account(db_session)
     fake = _mailbox()
 
-    sync_service(db_session, fake).suggest_customers(actor=actor_for(account), months=6)
+    sync_service(db_session, fake).suggest_organizations(actor=actor_for(account), months=6)
 
     listings = [request for request in fake.requests if request.is_messages_list]
     assert len(listings) == 1
@@ -168,10 +171,10 @@ def test_google_is_asked_for_the_sent_mail_of_the_period_and_headers_only(
 def test_a_proposal_stores_nothing_and_moves_no_watermark(db_session: Session) -> None:
     account = connected_account(db_session)
 
-    sync_service(db_session, _mailbox()).suggest_customers(actor=actor_for(account))
+    sync_service(db_session, _mailbox()).suggest_organizations(actor=actor_for(account))
 
     assert db_session.execute(select(func.count()).select_from(GmailMessage)).scalar_one() == 0
-    assert db_session.execute(select(func.count()).select_from(Customer)).scalar_one() == 0
+    assert db_session.execute(select(func.count()).select_from(Organization)).scalar_one() == 0
     db_session.refresh(account)
     assert account.sync_watermark is None
 
@@ -182,8 +185,8 @@ def test_a_domain_already_filed_under_a_customer_is_not_proposed_again(
     """By the customer's website, and by a person of a customer whose record carries no
     domain of its own. A person already in the address book is marked, not dropped."""
     account = connected_account(db_session)
-    db_session.add(Customer(legal_name="Acme S.r.l.", website="https://www.acme.it"))
-    rossi = Customer(legal_name="Studio Rossi")
+    db_session.add(Organization(legal_name="Acme S.r.l.", website="https://www.acme.it"))
+    rossi = Organization(legal_name="Studio Rossi")
     db_session.add(rossi)
     db_session.flush()
     db_session.add(
@@ -199,7 +202,7 @@ def test_a_domain_already_filed_under_a_customer_is_not_proposed_again(
     db_session.add(Person(first_name="Luca", contact_points=points(email="Luca@Nuovo.it")))
     db_session.flush()
 
-    proposals = sync_service(db_session, fake).suggest_customers(actor=actor_for(account))
+    proposals = sync_service(db_session, fake).suggest_organizations(actor=actor_for(account))
 
     assert [proposal.domain for proposal in proposals] == ["nuovo.it"]
     assert [(p.address, p.already_in_directory) for p in proposals[0].people] == [
@@ -215,7 +218,7 @@ def test_a_long_year_is_read_as_its_most_recent_conversations(
     account = connected_account(db_session)
     fake = _mailbox()
 
-    sync_service(db_session, fake).suggest_customers(actor=actor_for(account))
+    sync_service(db_session, fake).suggest_organizations(actor=actor_for(account))
 
     reads = [request for request in fake.requests if "/threads/" in request.path]
     assert len(reads) == 2
@@ -226,22 +229,22 @@ def test_the_period_is_bounded(db_session: Session) -> None:
     service = sync_service(db_session, _mailbox())
     for months in (0, 25):
         with pytest.raises(ValidationFailed):
-            service.suggest_customers(actor=actor_for(account), months=months)
+            service.suggest_organizations(actor=actor_for(account), months=months)
 
 
 def test_a_readonly_person_and_a_plain_agent_are_refused(db_session: Session) -> None:
     account = connected_account(db_session)
     service = sync_service(db_session, _mailbox())
     with pytest.raises(PermissionDenied):
-        service.suggest_customers(actor=Actor(id=account.user_id, type="user", role="readonly"))
+        service.suggest_organizations(actor=Actor(id=account.user_id, type="user", role="readonly"))
     with pytest.raises(AgentForbidden):
-        service.suggest_customers(actor=Actor(id=account.user_id, type="mcp", role="admin"))
+        service.suggest_organizations(actor=Actor(id=account.user_id, type="mcp", role="admin"))
 
 
 def test_nobody_connected_is_a_conflict(db_session: Session) -> None:
     account = connected_account(db_session, status="disconnected")
     with pytest.raises(Conflict):
-        sync_service(db_session, _mailbox()).suggest_customers(actor=actor_for(account))
+        sync_service(db_session, _mailbox()).suggest_organizations(actor=actor_for(account))
 
 
 def test_a_conversation_gone_before_its_read_is_skipped(
@@ -260,7 +263,7 @@ def test_a_conversation_gone_before_its_read_is_skipped(
         return real(thread_id, token)
 
     monkeypatch.setattr(service, "_thread_headers", vanished)
-    proposals = service.suggest_customers(actor=actor_for(account))
+    proposals = service.suggest_organizations(actor=actor_for(account))
     assert [proposal.domain for proposal in proposals] == ["acme.it"]
 
 
@@ -275,7 +278,7 @@ def test_gmail_failing_is_a_sentence_to_retry_not_a_server_error(
     service._access_token = lambda _account: "ya29.token"  # type: ignore[method-assign]
     fake.fail_with = [(503, b"{}", {})] * 10
     with pytest.raises(GmailUnavailable):
-        service.suggest_customers(actor=actor_for(account))
+        service.suggest_organizations(actor=actor_for(account))
 
 
 def test_a_read_that_finished_in_time_counts_even_behind_a_slow_one(
@@ -294,7 +297,7 @@ def test_a_read_that_finished_in_time_counts_even_behind_a_slow_one(
         return real(thread_id, token)
 
     monkeypatch.setattr(service, "_thread_headers", first_is_slow)
-    proposals = service.suggest_customers(actor=actor_for(account))
+    proposals = service.suggest_organizations(actor=actor_for(account))
 
     # t1 (Acme, with Sara) missed the budget; t2 (Acme) and t3 (Studio Rossi) did not.
     assert {proposal.domain for proposal in proposals} == {"acme.it", "studio-rossi.it"}
@@ -318,7 +321,7 @@ def test_a_slow_gmail_gives_a_shorter_list_not_a_timeout(
 
     monkeypatch.setattr(service, "_thread_headers", slow)
     started = time.monotonic()
-    proposals = service.suggest_customers(actor=actor_for(account))
+    proposals = service.suggest_organizations(actor=actor_for(account))
 
     assert proposals == []
     # It answered at the budget, without waiting for the reads it dropped.
@@ -358,9 +361,9 @@ def test_the_query_builders_refuse_what_they_should() -> None:
 ADMIN = Actor(id=None, type="user", role="admin")
 
 
-def _import(**overrides: object) -> CustomersFromSuggestions:
-    customers: object = overrides.get(
-        "customers",
+def _import(**overrides: object) -> OrganizationsFromSuggestions:
+    organizations: object = overrides.get(
+        "organizations",
         [
             {
                 "domain": "acme.it",
@@ -373,11 +376,11 @@ def _import(**overrides: object) -> CustomersFromSuggestions:
             {"domain": "studio-rossi.it", "legal_name": "  Studio Rossi  ", "people": []},
         ],
     )
-    return CustomersFromSuggestions.model_validate({"customers": customers})
+    return OrganizationsFromSuggestions.model_validate({"organizations": organizations})
 
 
-def test_ticked_proposals_become_customers_and_people_in_one_go(db_session: Session) -> None:
-    created = CustomerService(db_session).create_from_suggestions(_import(), ADMIN)
+def test_ticked_proposals_become_organizations_and_people_in_one_go(db_session: Session) -> None:
+    created = OrganizationService(db_session).create_from_suggestions(_import(), ADMIN)
 
     assert [customer.legal_name for customer in created] == ["Acme S.r.l.", "Studio Rossi"]
     assert [customer.website for customer in created] == ["acme.it", "studio-rossi.it"]
@@ -391,24 +394,27 @@ def test_ticked_proposals_become_customers_and_people_in_one_go(db_session: Sess
     kinds = db_session.execute(
         select(Activity.entity_type, Activity.kind).order_by(Activity.entity_type)
     ).all()
-    assert kinds.count(("customer", "created")) == 2
+    assert kinds.count(("organization", "created")) == 2
     assert kinds.count(("person", "created")) == 2
 
 
 def test_a_domain_that_is_already_a_customer_refuses_the_whole_import(
     db_session: Session,
 ) -> None:
-    db_session.add(Customer(legal_name="Rossi", website="studio-rossi.it"))
+    db_session.add(Organization(legal_name="Rossi", website="studio-rossi.it"))
     db_session.flush()
-    before = db_session.execute(select(func.count()).select_from(Customer)).scalar_one()
+    before = db_session.execute(select(func.count()).select_from(Organization)).scalar_one()
 
     with pytest.raises(Conflict) as caught:
-        CustomerService(db_session).create_from_suggestions(_import(), ADMIN)
+        OrganizationService(db_session).create_from_suggestions(_import(), ADMIN)
     assert "studio-rossi.it" in caught.value.message
     db_session.rollback()
     # Nothing of Acme either: all of them or none.
-    assert db_session.execute(select(func.count()).select_from(Customer)).scalar_one() <= before
-    assert db_session.execute(select(Customer).where(Customer.website == "acme.it")).first() is None
+    assert db_session.execute(select(func.count()).select_from(Organization)).scalar_one() <= before
+    assert (
+        db_session.execute(select(Organization).where(Organization.website == "acme.it")).first()
+        is None
+    )
 
 
 def test_the_same_domain_twice_is_one_customer_not_two(db_session: Session) -> None:
@@ -417,7 +423,7 @@ def test_the_same_domain_twice_is_one_customer_not_two(db_session: Session) -> N
         {"domain": "acme.it", "legal_name": "Acme di nuovo", "people": []},
     ]
     with pytest.raises(Conflict):
-        CustomerService(db_session).create_from_suggestions(_import(customers=twice), ADMIN)
+        OrganizationService(db_session).create_from_suggestions(_import(organizations=twice), ADMIN)
 
 
 def test_a_person_outside_the_domain_or_a_webmail_domain_is_refused(db_session: Session) -> None:
@@ -429,17 +435,21 @@ def test_a_person_outside_the_domain_or_a_webmail_domain_is_refused(db_session: 
         }
     ]
     with pytest.raises(ValidationFailed):
-        CustomerService(db_session).create_from_suggestions(_import(customers=stranger), ADMIN)
+        OrganizationService(db_session).create_from_suggestions(
+            _import(organizations=stranger), ADMIN
+        )
     webmail = [{"domain": "gmail.com", "legal_name": "Gmail", "people": []}]
     with pytest.raises(ValidationFailed):
-        CustomerService(db_session).create_from_suggestions(_import(customers=webmail), ADMIN)
+        OrganizationService(db_session).create_from_suggestions(
+            _import(organizations=webmail), ADMIN
+        )
 
 
 def test_a_person_already_in_the_address_book_is_left_where_it_is(db_session: Session) -> None:
     db_session.add(Person(first_name="Marco", contact_points=points(email="marco@acme.it")))
     db_session.flush()
 
-    CustomerService(db_session).create_from_suggestions(_import(), ADMIN)
+    OrganizationService(db_session).create_from_suggestions(_import(), ADMIN)
 
     marcos = [p for p in db_session.execute(select(Person)).scalars() if p.email == "marco@acme.it"]
     assert len(marcos) == 1
@@ -452,7 +462,7 @@ def test_a_refusal_half_way_through_leaves_nothing_behind(db_session: Session) -
 
     db_session.add(
         FieldDefinition(
-            entity_type="customer",
+            entity_type="organization",
             key="settore",
             label="Settore",
             field_type="text",
@@ -462,9 +472,9 @@ def test_a_refusal_half_way_through_leaves_nothing_behind(db_session: Session) -
     db_session.flush()
 
     with pytest.raises(ValidationFailed):
-        CustomerService(db_session).create_from_suggestions(_import(), ADMIN)
+        OrganizationService(db_session).create_from_suggestions(_import(), ADMIN)
 
-    assert db_session.execute(select(func.count()).select_from(Customer)).scalar_one() == 0
+    assert db_session.execute(select(func.count()).select_from(Organization)).scalar_one() == 0
     assert db_session.execute(select(func.count()).select_from(Person)).scalar_one() == 0
 
 
@@ -476,7 +486,7 @@ def test_a_display_name_longer_than_a_person_holds_is_clipped(db_session: Sessio
             "people": [{"address": "marco@acme.it", "name": "M" * 130 + " " + "B" * 124}],
         }
     ]
-    CustomerService(db_session).create_from_suggestions(_import(customers=long), ADMIN)
+    OrganizationService(db_session).create_from_suggestions(_import(organizations=long), ADMIN)
     person = db_session.execute(select(Person)).scalar_one()
     assert len(person.first_name) == 120
     assert person.last_name is not None and len(person.last_name) == 120
@@ -488,10 +498,10 @@ def test_an_import_holds_the_lock_a_concurrent_one_waits_on(
     """Two imports of the same proposal at once (a double click, two tabs) must not
     both see the domain free: each takes the same transaction lock first, so the
     second waits for the first to commit and then refuses the domain."""
-    CustomerRepository(db_session).lock_imports()
+    OrganizationRepository(db_session).lock_imports()
     with db_engine.connect() as other:
         free = other.execute(
-            text("SELECT pg_try_advisory_xact_lock(:ns, 1)"), {"ns": CUSTOMERS_LOCK_NAMESPACE}
+            text("SELECT pg_try_advisory_xact_lock(:ns, 1)"), {"ns": ORGANIZATIONS_LOCK_NAMESPACE}
         ).scalar_one()
     assert free is False
 
@@ -500,10 +510,10 @@ def test_the_import_takes_the_lock_before_it_reads(
     db_session: Session, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     calls: list[str] = []
-    real_lock = CustomerRepository.lock_imports
+    real_lock = OrganizationRepository.lock_imports
     real_domains = AddressRoster.domains_taken
 
-    def lock(self: CustomerRepository) -> None:
+    def lock(self: OrganizationRepository) -> None:
         calls.append("lock")
         real_lock(self)
 
@@ -511,14 +521,14 @@ def test_the_import_takes_the_lock_before_it_reads(
         calls.append("read")
         return real_domains(self, candidates)
 
-    monkeypatch.setattr(CustomerRepository, "lock_imports", lock)
+    monkeypatch.setattr(OrganizationRepository, "lock_imports", lock)
     monkeypatch.setattr(AddressRoster, "domains_taken", domains)
-    CustomerService(db_session).create_from_suggestions(_import(), ADMIN)
+    OrganizationService(db_session).create_from_suggestions(_import(), ADMIN)
     assert calls[:2] == ["lock", "read"]
 
 
 def test_a_readonly_person_imports_nothing(db_session: Session) -> None:
     with pytest.raises(PermissionDenied):
-        CustomerService(db_session).create_from_suggestions(
+        OrganizationService(db_session).create_from_suggestions(
             _import(), Actor(id=None, type="user", role="readonly")
         )

@@ -6,7 +6,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from pigrocrm.core.db import Base, PrimaryKeyMixin, SoftDeleteMixin
 
-NOTE_ENTITY_TYPES: tuple[str, ...] = ("deal", "customer", "person")
+NOTE_ENTITY_TYPES: tuple[str, ...] = ("deal", "organization", "person")
 # Where a note came from, derived from the `Actor` that wrote it and never from the caller:
 # `web` a member in the browser, `mcp` an agent holding a member's token, `system` a job
 # of the space, `rebase` the engagements door. A note moved over from the old `note`
@@ -39,7 +39,7 @@ class Note(Base, PrimaryKeyMixin, SoftDeleteMixin):
         # The thread of one record, newest first: the only way a note is read.
         Index("ix_notes_entity", "entity_type", "entity_id", "created_at"),
         CheckConstraint(
-            "entity_type IN ('deal', 'customer', 'person')", name="ck_notes_entity_type"
+            "entity_type IN ('deal', 'organization', 'person')", name="ck_notes_entity_type"
         ),
         CheckConstraint(
             "source IS NULL OR source IN ('web', 'mcp', 'system', 'rebase')",

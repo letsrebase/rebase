@@ -10,7 +10,7 @@ from fastapi.testclient import TestClient
 
 
 def _customer_id(logged_in: TestClient) -> str:
-    response = logged_in.post("/api/customers", json={"legal_name": "ACME Srl"})
+    response = logged_in.post("/api/organizations", json={"legal_name": "ACME Srl"})
     assert response.status_code == 201, response.text
     return response.json()["id"]
 

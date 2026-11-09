@@ -86,7 +86,7 @@ _RECENT_ACTIVITIES_FILTERED = 15
 # reads untrusted text, and the feed would hand it addresses and token ids to relay.
 _BUSINESS_ENTITIES: frozenset[str] = frozenset(
     {
-        "customer",
+        "organization",
         "person",
         "deal",
         "document",
@@ -117,10 +117,10 @@ _EXPIRED_LINK = "/app/invoices?overdue=true"
 # The concentration signal's own drill-through (REB-371): the economic tab, where
 # every customer's share of the year's revenue is listed
 # (`EconomicOverview.customer_concentration`). Unlike the other three signals there is
-# no separate filtered list of "customers over the threshold" to point at instead --
+# no separate filtered list of "organizations over the threshold" to point at instead --
 # the concentration table itself is the rows behind this count.
 _CONCENTRATION_LINK = "/app?tab=economic"
-_CUSTOMERS_SHOWN = 10
+_ORGANIZATIONS_SHOWN = 10
 _OVERDUE_SHOWN = 50
 
 
@@ -356,7 +356,7 @@ class DashboardService:
         `self.settings.preferred_concentration_threshold` -- that comparison stays in the
         repository, never here. Its link is the only one of the four that is not a
         matching filtered list: it points at the economic tab's own concentration table,
-        because no separate "customers over the threshold" list exists to filter.
+        because no separate "organizations over the threshold" list exists to filter.
 
         None of the four is stored and none is a flag on a row -- they are predicates,
         evaluated on request. A stored signal is §1's second source of truth in disguise,
@@ -383,7 +383,7 @@ class DashboardService:
         count, and the links do not carry it: each drill-through list already follows
         the sidebar's selection on its own. The concentration signal is the one count
         whose «tutte» is not a plain sum: `count_over_concentration_threshold` reads
-        each share against its own legal entity's revenue and counts the distinct customers
+        each share against its own legal entity's revenue and counts the distinct organizations
         over the threshold in any of them, so a customer who is a third of the SRL and
         a tenth of the whole still counts. The recent feed stays the space's: an
         activity row has no legal entity.
@@ -475,7 +475,7 @@ class DashboardService:
             by_customer=[
                 ExposureCustomer(**row._asdict())
                 for row in self._invoices.receivables_by_customer(
-                    today, _CUSTOMERS_SHOWN, legal_entity_id
+                    today, _ORGANIZATIONS_SHOWN, legal_entity_id
                 )
             ],
             overdue=overdue,

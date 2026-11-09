@@ -10,7 +10,6 @@ from pigrocrm_mcp.tools.families import (
     analytics,
     automations,
     contracts,
-    customers,
     dashboard,
     deals,
     documents,
@@ -19,6 +18,7 @@ from pigrocrm_mcp.tools.families import (
     invoices,
     legal_entities,
     notes,
+    organizations,
     people,
     proposals,
     shared,
@@ -29,7 +29,7 @@ from pigrocrm_mcp.tools.families import (
 
 # The order is the order `list_tools` answers in.
 FAMILIES = (
-    customers,
+    organizations,
     people,
     deals,
     notes,

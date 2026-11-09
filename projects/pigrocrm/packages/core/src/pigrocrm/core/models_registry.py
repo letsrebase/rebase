@@ -19,7 +19,6 @@ from pigrocrm.core.contracts.models import (  # noqa: F401
     RateCard,
     RenewalAssumption,
 )
-from pigrocrm.core.customers.models import Customer  # noqa: F401
 from pigrocrm.core.deals.models import Deal  # noqa: F401
 from pigrocrm.core.digest.models import Digest  # noqa: F401
 from pigrocrm.core.documents.models import Document, DocumentVersion  # noqa: F401
@@ -45,6 +44,7 @@ from pigrocrm.core.invoices.models import (  # noqa: F401
 )
 from pigrocrm.core.legal_entities.models import LegalEntity  # noqa: F401
 from pigrocrm.core.notes.models import Note, NoteRevision  # noqa: F401
+from pigrocrm.core.organizations.models import Organization  # noqa: F401
 from pigrocrm.core.people.models import Person  # noqa: F401
 from pigrocrm.core.pipeline.models import PipelineStage  # noqa: F401
 from pigrocrm.core.proposals.models import Proposal  # noqa: F401

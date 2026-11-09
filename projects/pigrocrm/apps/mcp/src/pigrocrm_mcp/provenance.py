@@ -27,13 +27,13 @@ PROVENANCE_TEXT_FREE = (
 # registered tool, and `FREE_TEXT_KEYS` below still catches a field this list did not think of.
 FREE_TEXT_TOOLS: frozenset[str] = frozenset(
     {
-        # Customers, people, deals and their notes (the `archive_*` tools answer an id and a
+        # Organizations, people, deals and their notes (the `archive_*` tools answer an id and a
         # status, no text, and are not here).
-        "create_customer",
-        "update_customer",
-        "get_customer",
-        "search_customers",
-        "restore_customer",
+        "create_organization",
+        "update_organization",
+        "get_organization",
+        "search_organizations",
+        "restore_organization",
         "create_person",
         "update_person",
         "get_person",
@@ -115,7 +115,7 @@ FREE_TEXT_TOOLS: frozenset[str] = frozenset(
         "list_gmail_messages",
         "list_payment_reminder_candidates",
         "discover_gmail_correspondents",
-        "suggest_customers_from_gmail",
+        "suggest_organizations_from_gmail",
         "read_gmail_attachment",
         "list_drive_files",
         "read_drive_file",

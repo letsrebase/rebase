@@ -1,6 +1,6 @@
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query'
 import { useCallback, useMemo } from 'react'
-import { useCustomer } from '@/features/customers/queries'
+import { useOrganization } from '@/features/organizations/queries'
 import { useDeal } from '@/features/deals/queries'
 import { useInvoice } from '@/features/invoices/queries'
 import { usePerson } from '@/features/people/queries'
@@ -26,14 +26,14 @@ export function useRecordLabel(link: LinkValue | null): string | undefined {
   const dealsOn = useModules().on('deals')
   const is = (kind: LinkKind) => link?.kind === kind
   const id = link?.id ?? ''
-  const customer = useCustomer(id, { enabled: is('customer') })
+  const customer = useOrganization(id, { enabled: is('organization') })
   const person = usePerson(id, { enabled: is('person') })
   const deal = useDeal(id, { enabled: is('deal') && dealsOn })
   const invoice = useInvoice(is('invoice') ? id : '')
 
   if (link === null) return undefined
   switch (link.kind) {
-    case 'customer':
+    case 'organization':
       return customer.data?.legal_name
     case 'person':
       return person.data ? [person.data.first_name, person.data.last_name].filter(Boolean).join(' ') : undefined

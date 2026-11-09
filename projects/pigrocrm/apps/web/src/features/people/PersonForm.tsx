@@ -9,7 +9,7 @@ import {
   DialogTitle,
 } from '@rebase/ui/dialog'
 import { Label } from '@rebase/ui/label'
-import { CustomerPicker } from '@/features/customers/CustomerPicker'
+import { OrganizationPicker } from '@/features/organizations/OrganizationPicker'
 import { EmailSyncNotice } from '@/features/gmail/EmailSyncNotice'
 import { ContactPointsEditor } from '@/features/contact-points/ContactPointsEditor'
 import {
@@ -107,7 +107,7 @@ export function PersonForm({
 }: Props) {
   const [values, setValues] = useState<PersonFormValues>(initial ?? DEFAULT_CREATE_VALUES)
 
-  // Same "reset synchronously when `open` toggles" pattern as `CustomerForm`,
+  // Same "reset synchronously when `open` toggles" pattern as `OrganizationForm`,
   // for the identical reason: this component stays mounted across dialog opens
   // (`Dialog`'s own `open` prop toggles visibility, not this component's mount
   // state, or Radix's closing animation would break), so a plain
@@ -168,7 +168,7 @@ export function PersonForm({
     // reaches `PersonService.update`'s generic assignment at all -- the field is in
     // that method's `supplied_changes(exclude=...)` set, and stayed there when task
     // 4B-1 closed A14, precisely so the two spellings cannot disagree (read
-    // people/schemas.py and people/service.py -- Customer has no equivalent
+    // people/schemas.py and people/service.py -- Organization has no equivalent
     // relationship to generalise this from). The wire schema instead carries a
     // dedicated `detach: bool` for exactly this, checked first in
     // `PersonService.update` and winning outright over any `customer_id` also
@@ -212,10 +212,10 @@ export function PersonForm({
               it, which is why the parenthesis stays rather than the word being replaced.
               The value written is still `customer_id`; only the label changed. Rendered
               here, inside `DialogContent`: Radix mounts none of it while the dialog is
-              closed, so the Persone list and every person's page do not search customers
+              closed, so the Persone list and every person's page do not search organizations
               for a picker nobody has opened. */}
           <Label htmlFor="customer">Azienda (cliente)</Label>
-          <CustomerPicker
+          <OrganizationPicker
             id="customer"
             value={(values.native.customer_id as string | null | undefined) ?? null}
             onChange={(customer) => change('customer_id', customer?.id ?? null)}
@@ -254,7 +254,7 @@ export function PersonForm({
             watermark, so repeating "at the next sync" on every edit would train the
             reader to ignore the one time it means something. `EmailSyncNotice` itself
             stays silent unless a cycle is really going to run -- see its docstring.
-            Rendered here, inside `DialogContent`, for the same reason `CustomerPicker`
+            Rendered here, inside `DialogContent`, for the same reason `OrganizationPicker`
             is: Radix mounts none of these children while the dialog is closed, so the
             health query is not read by every Persone list page. */}
         {emailIsNew ? <EmailSyncNotice /> : null}

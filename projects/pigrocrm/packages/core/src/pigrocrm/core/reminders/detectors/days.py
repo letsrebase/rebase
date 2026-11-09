@@ -95,7 +95,7 @@ def _detect(
     detail: Any,
 ) -> list[Detection]:
     resolver = LinkResolver(ctx.session)
-    resolver.preload(customers=(contract.customer_id for _, contract in rows))
+    resolver.preload(organizations=(contract.customer_id for _, contract in rows))
     found: list[Detection] = []
     for unit, contract in rows:
         links = resolver.resolve(customer_id=contract.customer_id)

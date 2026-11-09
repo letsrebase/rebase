@@ -173,7 +173,7 @@ class InvoicePaExporter:
 
     def _directory(self, parent: etree._Element, party: PartySnapshot, entity: str) -> None:
         """`Anagrafica/Denominazione`, even for a natural person with only a fiscal
-        code: FPR12 allows `Nome`/`Cognome` instead, but `customers` has a single
+        code: FPR12 allows `Nome`/`Cognome` instead, but `organizations` has a single
         `legal_name`, so there is no choice to make."""
         directory = etree.SubElement(parent, "Anagrafica")
         self._text(

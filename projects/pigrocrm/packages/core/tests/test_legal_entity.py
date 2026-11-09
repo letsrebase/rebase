@@ -438,24 +438,24 @@ def test_single_resolves_the_only_legal_entity_and_never_picks_between_two(
     assert service.require_single(None, entity="analytics").id == first.id
 
 
-def test_deactivate_answers_how_many_customers_still_point_at_the_row(
+def test_deactivate_answers_how_many_organizations_still_point_at_the_row(
     db_session: Session,
 ) -> None:
-    from pigrocrm.core.customers.models import Customer
+    from pigrocrm.core.organizations.models import Organization
 
     service = LegalEntityService(db_session)
     service.upsert_default(_upsert(), ADMIN)
     second = service.create(_create(), ADMIN)
     db_session.add_all(
         [
-            Customer(legal_name="Cliente uno", country="GB", legal_entity_id=second.id),
-            Customer(legal_name="Cliente due", country="GB", legal_entity_id=second.id),
+            Organization(legal_name="Cliente uno", country="GB", legal_entity_id=second.id),
+            Organization(legal_name="Cliente due", country="GB", legal_entity_id=second.id),
         ]
     )
     db_session.flush()
     deactivated = service.deactivate(second.id, ADMIN)
     assert deactivated.active is False
-    assert deactivated.linked_customers == 2
+    assert deactivated.linked_organizations == 2
 
 
 # ---- the version check (REB-622, spec 2026-10-03 §11) ----------------------------------

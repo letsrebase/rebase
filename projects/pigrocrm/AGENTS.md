@@ -249,7 +249,7 @@ table `notes` (`core/notes/`) holds one row per remark, signed by the actor that
 member's id and name, the door it came through (`source`: `web` for a browser session, `mcp` for
 a token, `system` for a job, `rebase` for the engagements door, NULL for a note moved over from
 the old column, shown «Nota precedente») and the moment. A caller never passes an author, a
-date or a source. `CustomerCreate`, `PersonCreate` and `DealCreate` still accept `note`, which
+date or a source. `OrganizationCreate`, `PersonCreate` and `DealCreate` still accept `note`, which
 becomes the record's first note, written in the creation's own transaction by `append_note`
 (`notes/writer.py`, a function and not a `NoteService` method so the MCP coverage sweep does not
 ask a tool for it); the Update and Read schemas have no `note`, and it is not a native field

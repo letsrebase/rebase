@@ -40,7 +40,7 @@ class LegalEntityFields(BaseModel):
     service derives it from `legal_name` (cut to the column width) when it is
     missing, which is also what the migration did for the row every space already had.
 
-    `vat_number` and `sdi_code` carry no `max_length`, exactly as `CustomerCreate`
+    `vat_number` and `sdi_code` carry no `max_length`, exactly as `OrganizationCreate`
     does: the service's `_check_fiscal` already requires an exact 11-digit / 7-character
     match, which is stricter, and adding a Pydantic bound would make a 12-digit input
     raise pydantic's own `ValidationError` instead of this project's `ValidationFailed`
@@ -141,11 +141,11 @@ class LegalEntityRead(BaseModel):
 
 class LegalEntityDeactivated(LegalEntityRead):
     """What `DELETE /api/aziende/{id}` answers (spec §3): the row, switched off, and
-    how many live customers still point at it. Nothing new is born under such a
+    how many live organizations still point at it. Nothing new is born under such a
     customer until it is moved («sposta prima il cliente su un'azienda attiva»), so the
     count is the work the person has left to do, said once, in the same answer."""
 
-    linked_customers: int
+    linked_organizations: int
 
 
 # The fields `as_template_values` and the MCP `describe` leave out: identity, state and

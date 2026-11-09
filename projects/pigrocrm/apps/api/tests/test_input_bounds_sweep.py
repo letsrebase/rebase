@@ -18,9 +18,9 @@ The field lists below are maintained by hand, not derived from the schemas via
 introspection: `SafeStr`'s `Annotated` wrapping makes `model_fields[...].annotation`
 an unreliable signal for "is this a plain string field" (confirmed while writing
 this module -- an introspection-based version silently matched only 2 of 15
-`CustomerCreate` fields). A hand-maintained list next to a schema that itself
+`OrganizationCreate` fields). A hand-maintained list next to a schema that itself
 documents every field is the same trade-off this project already made deliberately
-for customers/people/deals duplicating each other's shape (see progress.md's ruling)
+for organizations/people/deals duplicating each other's shape (see progress.md's ruling)
 rather than a gap.
 """
 
@@ -30,15 +30,15 @@ NUL = "\x00"
 
 
 def _seed_customer(logged_in: TestClient) -> str:
-    created = logged_in.post("/api/customers", json={"legal_name": "ACME"})
+    created = logged_in.post("/api/organizations", json={"legal_name": "ACME"})
     assert created.status_code == 201, created.text
     return created.json()["id"]
 
 
 # --- Item 1 (CRITICAL): a NUL byte in any native string/text field ---------------
 
-# Every plain `str`/`str | None` field on CustomerCreate (customers/schemas.py).
-CUSTOMER_STRING_FIELDS = [
+# Every plain `str`/`str | None` field on OrganizationCreate (organizations/schemas.py).
+ORGANIZATION_STRING_FIELDS = [
     "legal_name",
     "vat_number",
     "tax_code",
@@ -56,9 +56,9 @@ CUSTOMER_STRING_FIELDS = [
 
 
 def test_a_nul_byte_in_any_customer_field_is_rejected_not_500(logged_in: TestClient) -> None:
-    for field in CUSTOMER_STRING_FIELDS:
+    for field in ORGANIZATION_STRING_FIELDS:
         body = {"legal_name": "ACME", field: NUL}
-        response = logged_in.post("/api/customers", json=body)
+        response = logged_in.post("/api/organizations", json=body)
         assert response.status_code == 422, f"{field}: {response.status_code} {response.text}"
 
 
@@ -79,7 +79,7 @@ def test_a_nul_byte_in_a_contact_point_is_rejected_not_500(logged_in: TestClient
         broken = {**point, field: f"x{NUL}"}
         for route, body in (
             ("/api/people", {"first_name": "Mario", "contact_points": [broken]}),
-            ("/api/customers", {"legal_name": "ACME", "contact_points": [broken]}),
+            ("/api/organizations", {"legal_name": "ACME", "contact_points": [broken]}),
         ):
             response = logged_in.post(route, json=body)
             assert response.status_code == 422, f"{route} {field}: {response.text}"
@@ -100,7 +100,7 @@ def test_a_nul_byte_in_any_deal_field_is_rejected_not_500(logged_in: TestClient)
 
 
 def test_a_nul_byte_in_a_field_definitions_label_is_rejected_not_500(logged_in: TestClient) -> None:
-    body = {"entity_type": "customer", "key": "x", "label": NUL, "field_type": "text"}
+    body = {"entity_type": "organization", "key": "x", "label": NUL, "field_type": "text"}
     response = logged_in.post("/api/field-definitions", json=body)
     assert response.status_code == 422, response.text
 
@@ -110,7 +110,7 @@ def test_a_nul_byte_inside_a_field_definitions_option_is_rejected_not_500(
 ) -> None:
     """`options` is a list, not a scalar string -- the fix has to reach into it."""
     body = {
-        "entity_type": "customer",
+        "entity_type": "organization",
         "key": "settore",
         "label": "Settore",
         "field_type": "select",
@@ -149,7 +149,7 @@ def test_field_definition_position_far_beyond_the_bound_is_422_not_500(
     logged_in: TestClient,
 ) -> None:
     body = {
-        "entity_type": "customer",
+        "entity_type": "organization",
         "key": "x",
         "label": "X",
         "field_type": "text",
@@ -184,17 +184,17 @@ def test_a_users_name_over_the_column_width_is_422_not_500(logged_in: TestClient
 
 
 def test_a_nul_byte_in_customer_search_is_422_not_500(logged_in: TestClient) -> None:
-    response = logged_in.get("/api/customers", params={"search": NUL})
+    response = logged_in.get("/api/organizations", params={"search": NUL})
     assert response.status_code == 422, response.text
 
 
 def test_to_nul_byte_in_customer_status_is_422_not_500(logged_in: TestClient) -> None:
-    response = logged_in.get("/api/customers", params={"status": NUL})
+    response = logged_in.get("/api/organizations", params={"status": NUL})
     assert response.status_code == 422, response.text
 
 
 def test_a_nul_byte_in_customer_custom_filter_is_422_not_500(logged_in: TestClient) -> None:
-    response = logged_in.get("/api/customers", params={"custom": f"settore:{NUL}"})
+    response = logged_in.get("/api/organizations", params={"custom": f"settore:{NUL}"})
     assert response.status_code == 422, response.text
 
 
@@ -218,7 +218,7 @@ def test_a_nul_byte_in_deal_custom_filter_is_422_not_500(logged_in: TestClient) 
     assert response.status_code == 422, response.text
 
 
-def test_ordinary_search_status_and_custom_values_still_work_on_customers(
+def test_ordinary_search_status_and_custom_values_still_work_on_organizations(
     logged_in: TestClient,
 ) -> None:
     """Regression guard: the SafeStr annotation on the query parameter must not
@@ -226,14 +226,14 @@ def test_ordinary_search_status_and_custom_values_still_work_on_customers(
     logged_in.post(
         "/api/field-definitions",
         json={
-            "entity_type": "customer",
+            "entity_type": "organization",
             "key": "settore",
             "label": "Settore",
             "field_type": "text",
         },
     )
     created = logged_in.post(
-        "/api/customers",
+        "/api/organizations",
         json={
             "legal_name": "ACME Srl",
             "status": "active",
@@ -243,7 +243,7 @@ def test_ordinary_search_status_and_custom_values_still_work_on_customers(
     assert created.status_code == 201, created.text
 
     response = logged_in.get(
-        "/api/customers",
+        "/api/organizations",
         params={"search": "ACME", "status": "active", "custom": "settore:IT"},
     )
     assert response.status_code == 200, response.text

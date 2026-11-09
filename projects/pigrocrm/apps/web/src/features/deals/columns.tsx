@@ -18,7 +18,7 @@ const number = new Intl.NumberFormat('it-IT', { useGrouping: 'always' })
 
 /**
  * `null` and `""` both mean "nothing here" for a native text column -- identical
- * reasoning to `features/customers/columns.tsx`/`features/people/columns.tsx`'s
+ * reasoning to `features/organizations/columns.tsx`/`features/people/columns.tsx`'s
  * own `displayNative` (see either file's docstring for the live bug this guards).
  * Both spellings reach a cell: a cleared native *text* column holds `""`, and since
  * task 4B-1 a cleared numeric or date column holds `null` -- see
@@ -109,12 +109,12 @@ export function sumExpectedValue(deals: Deal[]): string {
 /**
  * TanStack Table v9 (pinned exactly in package.json): `ColumnDef` takes
  * `<TFeatures, TData, TValue>`, not v8's `<TData, TValue>` -- see `features/
- * customers/columns.tsx`'s identical comment for how this was confirmed against
+ * organizations/columns.tsx`'s identical comment for how this was confirmed against
  * `@tanstack/table-core`'s own types. `DataTableFeatures` (`DataTable.tsx`'s own
  * export) is the same `TFeatures` every table in this product is instantiated
  * with.
  *
- * Native columns first, then one per custom field, matching Customer/Person's
+ * Native columns first, then one per custom field, matching Organization/Person's
  * own convention: a field defined at runtime through `POST /api/field-
  * definitions` shows up here with no code change. `customFields` already
  * excludes archived definitions (`useEntitySchema`/`describe_specs`), so there is
@@ -172,7 +172,7 @@ export function buildDealColumns(
   // Prefixed `custom_` id so a tenant-defined key can never collide with a
   // native column's own id -- identical reasoning (and identical residual gap:
   // `FieldDefinitionService.create` does not itself guard against this) as
-  // `features/customers/columns.tsx`/`features/people/columns.tsx`.
+  // `features/organizations/columns.tsx`/`features/people/columns.tsx`.
   const custom: ColumnDef<DataTableFeatures, Deal>[] = customFields.map((field) => ({
     header: field.label,
     id: `custom_${field.key}`,

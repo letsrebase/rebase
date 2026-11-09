@@ -27,7 +27,7 @@ const VALIDATION_PROBLEM: ProblemDetail = {
   status: 422,
   detail: 'customer.partita_iva: deve essere di 11 cifre',
   code: 'validation_failed',
-  entity: 'customer',
+  entity: 'organization',
   field: 'vat_number',
   reason: 'deve essere di 11 cifre',
   expected: '11 cifre numeriche',
@@ -111,7 +111,7 @@ describe('DynamicForm', () => {
   })
 
   /**
-   * The invisible half of the archived-field defect (see CustomerForm.test.tsx for
+   * The invisible half of the archived-field defect (see OrganizationForm.test.tsx for
    * the other half): the server names a field, this form renders no such control, and
    * the message used to be dropped on the floor -- the user pressed Salva and nothing
    * whatsoever happened, forever. `field: 'settore'` for a key no longer in the

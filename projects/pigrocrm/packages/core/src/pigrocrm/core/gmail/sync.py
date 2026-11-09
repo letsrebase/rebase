@@ -48,8 +48,6 @@ from pigrocrm.core.activities.service import ActivityService
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.config import Settings, require_gmail_configured
 from pigrocrm.core.contact_points.service import company_email_addresses, email_addresses
-from pigrocrm.core.customers.models import Customer
-from pigrocrm.core.customers.schemas import LEGAL_NAME_MAX_LENGTH
 from pigrocrm.core.errors import Conflict, NotFound, ValidationFailed
 from pigrocrm.core.gmail.account import GoogleAccountService
 from pigrocrm.core.gmail.errors import CredentialRevoked, GmailUnavailable, GoogleCallFailed
@@ -71,7 +69,7 @@ from pigrocrm.core.gmail.schemas import (
     SCOPE_READONLY,
     DiscoveredCorrespondent,
     DiscoveryReport,
-    SuggestedCustomer,
+    SuggestedOrganization,
     SuggestedPerson,
     SyncReport,
 )
@@ -79,6 +77,8 @@ from pigrocrm.core.gmail.send import reconcile_only
 from pigrocrm.core.gmail.tokens import GoogleTokenClient
 from pigrocrm.core.gmail.transport import GmailTransport
 from pigrocrm.core.google.credential import open_refresh_token
+from pigrocrm.core.organizations.models import Organization
+from pigrocrm.core.organizations.schemas import LEGAL_NAME_MAX_LENGTH
 from pigrocrm.core.people.models import Person
 
 
@@ -110,7 +110,7 @@ _WHAT_THREAD = "lettura di una conversazione"
 # The customer proposals (spec 2026-09-16 §5, REB-223). The action is also the name
 # `FULL_ACCESS_ACTIONS` lists, for the reason `discover` is there: it spends the
 # owner's Gmail quota under the owner's consent.
-_SUGGEST_ACTION = "suggest_customers_from_gmail"
+_SUGGEST_ACTION = "suggest_organizations_from_gmail"
 SUGGEST_MAX_MONTHS = 24
 # How many of the most recent conversations one proposal reads, each one Gmail call for
 # its headers. A year of a freelancer's sent mail is a few hundred threads, and the
@@ -132,7 +132,7 @@ _SUGGEST_FETCH_WORKERS = 2
 SUGGEST_READ_BUDGET_SECONDS = 35.0
 # Gmail's own ceiling for one page of `messages.list`: fewer pages for a long year.
 _SUGGEST_PAGE_SIZE = 500
-SUGGEST_MAX_CUSTOMERS = 50
+SUGGEST_MAX_ORGANIZATIONS = 50
 # Addresses that answer for a system, not a person: nobody to put on a customer.
 _ROBOT_LOCAL_PART = re.compile(
     r"^(?:no-?reply|do-?not-?reply|mailer-daemon|postmaster|bounces?|notifications?)(?:[+.\-].*)?$"
@@ -422,9 +422,9 @@ class GmailSyncService:
         actor.require_write(_DISCOVER_ACTION)
         account = self._account(actor)
         self.accounts.usable(actor, scope=SCOPE_READONLY, feature="la ricerca dei corrispondenti")
-        customer = self.session.get(Customer, customer_id)
+        customer = self.session.get(Organization, customer_id)
         if customer is None or customer.deleted_at is not None:
-            raise NotFound("customer", customer_id)
+            raise NotFound("organization", customer_id)
         domain = customer_domain(
             website=customer.website,
             email=customer.email,
@@ -487,9 +487,11 @@ class GmailSyncService:
         ]
         return report
 
-    def suggest_customers(self, *, actor: Actor, months: int = 12) -> list[SuggestedCustomer]:
+    def suggest_organizations(
+        self, *, actor: Actor, months: int = 12
+    ) -> list[SuggestedOrganization]:
         """The organisations the connected mailbox has corresponded with over the last
-        `months` months, proposed as customers (spec 2026-09-16 §5, REB-223).
+        `months` months, proposed as organizations (spec 2026-09-16 §5, REB-223).
 
         Read from the mail the owner sent (`sent_since_query`): each conversation the
         owner wrote in, as its headers only, and every address it names grouped by
@@ -497,10 +499,10 @@ class GmailSyncService:
         Left out: the mailbox's own domain, mail providers and PEC domains
         (`is_provider_domain`), addresses that answer for a system, and domains the CRM
         already files under a customer (`AddressRoster.domains_taken`). The busiest
-        come first, at most `SUGGEST_MAX_CUSTOMERS`.
+        come first, at most `SUGGEST_MAX_ORGANIZATIONS`.
 
         Stores nothing and moves no watermark, like `discover`: a proposal becomes a
-        customer only through `CustomerService.create_from_suggestions`, and the mirror
+        customer only through `OrganizationService.create_from_suggestions`, and the mirror
         widens only when those people are in the address book.
         """
         require_gmail_configured(self.settings)
@@ -555,7 +557,7 @@ class GmailSyncService:
             address for entry in tally.values() for address in entry.people
         )
         proposals = [
-            SuggestedCustomer(
+            SuggestedOrganization(
                 domain=domain,
                 name=company_name_from_domain(domain),
                 conversations=len(entry.threads),
@@ -576,7 +578,7 @@ class GmailSyncService:
                 proposal.domain,
             )
         )
-        return proposals[:SUGGEST_MAX_CUSTOMERS]
+        return proposals[:SUGGEST_MAX_ORGANIZATIONS]
 
     # ---- internals ---------------------------------------------------------------
 
@@ -675,10 +677,10 @@ class GmailSyncService:
             if person is None or person.deleted_at is not None:
                 raise NotFound("person", entity_id)
             return email_addresses(person)
-        if entity_type == "customer":
-            customer = self.session.get(Customer, entity_id)
+        if entity_type == "organization":
+            customer = self.session.get(Organization, entity_id)
             if customer is None or customer.deleted_at is not None:
-                raise NotFound("customer", entity_id)
+                raise NotFound("organization", entity_id)
             addresses = email_addresses(customer)
             for person in self.session.scalars(
                 select(Person)
@@ -693,7 +695,7 @@ class GmailSyncService:
             "gmail_backfill",
             "entity_type",
             "il backfill si esegue su una persona o su un cliente",
-            expected="person | customer",
+            expected="person | organization",
         )
 
     def _ingest(

@@ -26,7 +26,7 @@ interface EntityDetailLayoutProps {
    * user to look for something that does not exist for this entity.
    */
   documents?: ReactNode
-  /** Optional, like `documents`: only customers and deals have invoices, and a person
+  /** Optional, like `documents`: only organizations and deals have invoices, and a person
    *  never will. An absent prop means the tab is not rendered at all, rather than a tab
    *  that opens onto an empty explanation of why it is empty. */
   invoices?: ReactNode
@@ -38,7 +38,7 @@ interface EntityDetailLayoutProps {
   /**
    * The Ore tab's contents. Optional because only a Deal has hours: an hour is
    * attached to a deal, always and only (`time_entries.deal_id` is required), so
-   * neither a Customer nor a Person can have this tab. Absent means the tab is not
+   * neither an Organization nor a Person can have this tab. Absent means the tab is not
    * rendered at all rather than rendered empty -- an empty tab invites the user to look
    * for something that does not exist for this entity.
    */
@@ -50,7 +50,7 @@ interface EntityDetailLayoutProps {
    */
   costs?: ReactNode
   /**
-   * The Economia tab's contents -- a Deal's own profit and loss, or a Customer's as the
+   * The Economia tab's contents -- a Deal's own profit and loss, or an Organization's as the
    * sum of their deals. Filled by slice 4B; absent for the whole of 4A, which is why it
    * is optional rather than required. A tab showing zeros is worse than no tab: the
    * user understands "not yet", and cannot tell a real zero from a missing feature.
@@ -86,7 +86,7 @@ interface EntityDetailLayoutProps {
 }
 
 /**
- * One layout for Customer, Person and Deal: the same *Overview · Timeline ·
+ * One layout for Organization, Person and Deal: the same *Overview · Timeline ·
  * Links* shape for all three, so the product is predictable to learn.
  * Three similar pages drift apart from each other over time; one shared
  * component cannot. Later slices add Documents, Tasks and Invoices as further

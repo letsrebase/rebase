@@ -37,7 +37,6 @@ from sqlalchemy.orm import Session
 from pigrocrm.core.activities.models import Activity
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.auth.models import User
-from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.db import session_factory
 from pigrocrm.core.documents.models import Document, DocumentVersion
 from pigrocrm.core.errors import Conflict, PermissionDenied, ValidationFailed
@@ -57,6 +56,7 @@ from pigrocrm.core.gmail.schemas import (
 )
 from pigrocrm.core.gmail.send import EmailSendService
 from pigrocrm.core.legal_entities.repository import LegalEntityRepository
+from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.people.models import Person
 from pigrocrm.core.storage.local import LocalFileStorage
 
@@ -66,11 +66,11 @@ MB = 1024 * 1024
 
 
 def _draft(
-    session: Session, account: GoogleAccount, customer: Customer | None = None, **overrides: Any
+    session: Session, account: GoogleAccount, customer: Organization | None = None, **overrides: Any
 ) -> EmailDraftRead:
     owner = customer if customer is not None else make_customer(session, email="info@acme.it")
     payload = EmailDraftCreate(
-        entity_type="customer",
+        entity_type="organization",
         entity_id=owner.id,
         to_addresses=["ada@acme.it"],
         subject=SUBJECT,
@@ -283,7 +283,7 @@ def test_the_sent_message_is_filed_against_the_people_it_actually_concerns(
     filed = set(
         db_session.execute(select(GmailMessageLink.entity_type, GmailMessageLink.entity_id)).all()
     )
-    assert ("customer", customer.id) in filed
+    assert ("organization", customer.id) in filed
     assert ("person", person.id) in filed
 
 
@@ -541,7 +541,7 @@ def _cleanup(engine: Engine, *, customer_id: UUID, user_id: UUID, account_id: UU
     with session_factory(engine)() as session:
         session.execute(delete(EmailDraft).where(EmailDraft.entity_id == customer_id))
         session.execute(delete(Activity).where(Activity.entity_id.in_([customer_id, account_id])))
-        session.execute(delete(Customer).where(Customer.id == customer_id))
+        session.execute(delete(Organization).where(Organization.id == customer_id))
         session.execute(delete(User).where(User.id == user_id))
         session.commit()
 

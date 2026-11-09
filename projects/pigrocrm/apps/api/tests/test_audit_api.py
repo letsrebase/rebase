@@ -96,7 +96,7 @@ def test_a_field_definitions_rename_is_readable_and_distinguishable_from_its_arc
     field = logged_in.post(
         "/api/field-definitions",
         json={
-            "entity_type": "customer",
+            "entity_type": "organization",
             "key": "settore",
             "label": "Settore",
             "field_type": "text",
@@ -122,7 +122,7 @@ def test_a_collaborator_cannot_read_a_field_definitions_timeline(logged_in: Test
     field = logged_in.post(
         "/api/field-definitions",
         json={
-            "entity_type": "customer",
+            "entity_type": "organization",
             "key": "riservato",
             "label": "Riservato",
             "field_type": "text",

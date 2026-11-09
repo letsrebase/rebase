@@ -33,9 +33,9 @@ from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.config import Settings, get_settings
-from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.gmail.models import EmailDraft, GoogleAccount
 from pigrocrm.core.gmail.schemas import REQUESTED_SCOPES
+from pigrocrm.core.organizations.models import Organization
 
 # 32 bytes of "k", base64. Literal rather than imported from `fakes.gmail_fixtures`:
 # that package lives under `packages/core/tests`, which is only on `sys.path` once a
@@ -69,7 +69,7 @@ def gmail_ready(client: TestClient) -> Iterator[TestClient]:
 
 @pytest.fixture
 def customer_id(api_session: Session) -> str:
-    customer = Customer(legal_name="Acme S.r.l.", contact_points=points(email="ada@acme.it"))
+    customer = Organization(legal_name="Acme S.r.l.", contact_points=points(email="ada@acme.it"))
     api_session.add(customer)
     api_session.flush()
     return str(customer.id)
@@ -77,7 +77,7 @@ def customer_id(api_session: Session) -> str:
 
 def _create(client: TestClient, customer_id: str, **overrides: Any) -> dict[str, Any]:
     body: dict[str, Any] = {
-        "entity_type": "customer",
+        "entity_type": "organization",
         "entity_id": customer_id,
         "to_addresses": ["ada@acme.it"],
         "subject": "Accompagnamento offerta",
@@ -98,7 +98,7 @@ def _row_draft(session: Session, customer_id: str) -> EmailDraft:
     anyway: what is being refused is the actor, not the row.
     """
     draft = EmailDraft(
-        entity_type="customer",
+        entity_type="organization",
         entity_id=customer_id,
         to_addresses=["ada@acme.it"],
         cc_addresses=[],
@@ -184,7 +184,7 @@ def test_a_readonly_actor_cannot_create_a_draft(
     response = readonly_client.post(
         DRAFTS,
         json={
-            "entity_type": "customer",
+            "entity_type": "organization",
             "entity_id": customer_id,
             "to_addresses": ["ada@acme.it"],
             "subject": "Offerta",
@@ -202,7 +202,7 @@ def test_a_draft_filed_against_a_row_of_the_wrong_kind_is_a_404(logged_in: TestC
     response = logged_in.post(
         DRAFTS,
         json={
-            "entity_type": "customer",
+            "entity_type": "organization",
             "entity_id": str(uuid4()),
             "to_addresses": ["ada@acme.it"],
             "subject": "Offerta",

@@ -7,10 +7,10 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.contracts.models import Contract
-from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.deals.models import Deal
 from pigrocrm.core.invoices.models import Invoice
 from pigrocrm.core.money import round_hours
+from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.timetracking.models import TimeEntry
 from pigrocrm.core.work_units.models import WorkUnit
 
@@ -83,8 +83,8 @@ class CalendarRepository:
         if not deal_ids:
             return {}
         rows = self.session.execute(
-            select(Deal.id, Deal.name, Customer.legal_name)
-            .join(Customer, Customer.id == Deal.customer_id, isouter=True)
+            select(Deal.id, Deal.name, Organization.legal_name)
+            .join(Organization, Organization.id == Deal.customer_id, isouter=True)
             .where(Deal.id.in_(deal_ids))
         ).all()
         return {row[0]: (row[1], row[2]) for row in rows}
@@ -104,8 +104,8 @@ class CalendarRepository:
         between reads.
         """
         rows = self.session.execute(
-            select(Invoice, Customer.legal_name)
-            .join(Customer, Customer.id == Invoice.customer_id, isouter=True)
+            select(Invoice, Organization.legal_name)
+            .join(Organization, Organization.id == Invoice.customer_id, isouter=True)
             .where(
                 Invoice.deleted_at.is_(None),
                 Invoice.type == "invoice",
@@ -138,9 +138,9 @@ class CalendarRepository:
         every contract read does (REB-623).
         """
         stmt = (
-            select(WorkUnit, Contract.title, Customer.legal_name)
+            select(WorkUnit, Contract.title, Organization.legal_name)
             .join(Contract, Contract.id == WorkUnit.contract_id)
-            .join(Customer, Customer.id == Contract.customer_id)
+            .join(Organization, Organization.id == Contract.customer_id)
             .where(
                 WorkUnit.date >= date_from,
                 WorkUnit.date <= date_to,

@@ -99,7 +99,7 @@ class MonthRow(NamedTuple):
     share: float
 
 
-class CustomerRow(NamedTuple):
+class OrganizationRow(NamedTuple):
     customer_id: UUID
     legal_name: str
     amount: Decimal

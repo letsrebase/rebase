@@ -81,7 +81,7 @@ def suggest_legal_entity(
 ) -> LegalEntityRead:
     """The legal entity a new customer of `country` would be billed by when nobody picks one
     (REB-624, spec 2026-10-03 §1.6). The form and an agent both ask here, so the rule
-    lives in the service once; `POST /api/customers` applies the same one
+    lives in the service once; `POST /api/organizations` applies the same one
     when `legal_entity_id` is left out."""
     return LegalEntityRead.model_validate(LegalEntityService(session).propose(country))
 
@@ -117,7 +117,7 @@ def deactivate_legal_entity(
 ) -> LegalEntityDeactivated:
     """Deactivation, never a row delete: a legal entity that issued an invoice stays
     readable forever. Refused on the default; move the default first. The answer says
-    how many customers still point at the row (`linked_customers`): nothing new is
+    how many organizations still point at the row (`linked_organizations`): nothing new is
     born under them until they are moved to an active legal entity."""
     return LegalEntityService(session).deactivate(legal_entity_id, actor)
 

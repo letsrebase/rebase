@@ -9,11 +9,11 @@ from sqlalchemy.orm import Session
 
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.contact_points.schemas import ContactPointIn
-from pigrocrm.core.customers.schemas import CustomerCreate
-from pigrocrm.core.customers.service import CustomerService
 from pigrocrm.core.errors import Conflict, NotFound, PermissionDenied, ValidationFailed
 from pigrocrm.core.fields.schemas import FieldDefinitionCreate
 from pigrocrm.core.fields.service import FieldDefinitionService
+from pigrocrm.core.organizations.schemas import OrganizationCreate
+from pigrocrm.core.organizations.service import OrganizationService
 from pigrocrm.core.people.models import Person
 from pigrocrm.core.people.schemas import (
     LAST_NAME_MAX_LENGTH,
@@ -31,13 +31,13 @@ READONLY = Actor(id=None, type="user", role="readonly")
 
 
 def test_a_person_can_exist_without_a_customer(db_session: Session) -> None:
-    """Forcing the association produces phantom customers called 'Freelance vari'."""
+    """Forcing the association produces phantom organizations called 'Freelance vari'."""
     person = PersonService(db_session).create(PersonCreate(first_name="Mario"), ADMIN)
     assert person.customer_id is None
 
 
 def test_a_person_can_be_attached_to_a_customer(db_session: Session) -> None:
-    customer = CustomerService(db_session).create(CustomerCreate(legal_name="ACME"), ADMIN)
+    customer = OrganizationService(db_session).create(OrganizationCreate(legal_name="ACME"), ADMIN)
     person = PersonService(db_session).create(
         PersonCreate(first_name="Mario", last_name="Rossi", customer_id=customer.id), ADMIN
     )
@@ -49,7 +49,7 @@ def test_attaching_to_a_missing_customer_is_rejected(db_session: Session) -> Non
         PersonService(db_session).create(
             PersonCreate(first_name="Mario", customer_id=uuid4()), ADMIN
         )
-    assert exc.value.details["entity"] == "customer"
+    assert exc.value.details["entity"] == "organization"
 
 
 def test_reattaching_to_a_missing_customer_is_rejected(db_session: Session) -> None:
@@ -62,7 +62,7 @@ def test_reattaching_to_a_missing_customer_is_rejected(db_session: Session) -> N
 
     with pytest.raises(NotFound) as exc:
         service.update(person.id, PersonUpdate(customer_id=uuid4()), ADMIN)
-    assert exc.value.details["entity"] == "customer"
+    assert exc.value.details["entity"] == "organization"
 
 
 def test_invalid_email_is_rejected(db_session: Session) -> None:
@@ -124,7 +124,7 @@ def test_a_blank_contact_point_is_refused_not_stored_as_an_empty_string(
     ],
 )
 def test_string_fields_are_bounded_to_their_column_width_on_create(field: str, limit: int) -> None:
-    """Mirrors `CustomerCreate`'s own `*_MAX_LENGTH` bounds (customers/schemas.py):
+    """Mirrors `OrganizationCreate`'s own `*_MAX_LENGTH` bounds (organizations/schemas.py):
     without a matching Pydantic bound, an over-length value sails past validation,
     reaches `flush()`, and comes back as a raw `sqlalchemy.exc.DataError`
     (`StringDataRightTruncation`) -- not a subclass of `IntegrityError`, so nothing
@@ -177,7 +177,7 @@ def test_archived_custom_field_value_survives_unrelated_updates_and_can_still_be
     definito". `update()` must validate only the keys the caller actually supplies,
     never the union with what is already stored. Mirrors
     `test_archived_custom_field_value_survives_unrelated_updates_and_can_still_be_cleared`
-    in test_customers.py exactly."""
+    in test_organizations.py exactly."""
     fields = FieldDefinitionService(db_session)
     industry = fields.create(
         FieldDefinitionCreate(
@@ -354,7 +354,7 @@ def test_collaborator_can_create(db_session: Session) -> None:
 
 
 def test_update_can_detach_a_person_from_a_customer(db_session: Session) -> None:
-    customer = CustomerService(db_session).create(CustomerCreate(legal_name="ACME"), ADMIN)
+    customer = OrganizationService(db_session).create(OrganizationCreate(legal_name="ACME"), ADMIN)
     service = PersonService(db_session)
     person = service.create(PersonCreate(first_name="Mario", customer_id=customer.id), ADMIN)
 
@@ -370,8 +370,8 @@ def test_detach_wins_over_a_valid_customer_id_supplied_in_the_same_update(
     state alongside an "unlink" action is not exotic) must not be silently
     honoured instead, nor interact with the detach at all -- the person ends up
     detached regardless of what `customer_id` said."""
-    original = CustomerService(db_session).create(CustomerCreate(legal_name="ACME"), ADMIN)
-    other = CustomerService(db_session).create(CustomerCreate(legal_name="Beta"), ADMIN)
+    original = OrganizationService(db_session).create(OrganizationCreate(legal_name="ACME"), ADMIN)
+    other = OrganizationService(db_session).create(OrganizationCreate(legal_name="Beta"), ADMIN)
     service = PersonService(db_session)
     person = service.create(PersonCreate(first_name="Mario", customer_id=original.id), ADMIN)
 
@@ -385,7 +385,7 @@ def test_detach_succeeds_even_with_a_nonexistent_customer_id_in_the_same_update(
     """The detach's own success must not depend on `customer_id` being valid, or
     even resolvable at all: `_check_customer` must never run when `detach=True`,
     since the caller's intent to unlink does not depend on that field."""
-    customer = CustomerService(db_session).create(CustomerCreate(legal_name="ACME"), ADMIN)
+    customer = OrganizationService(db_session).create(OrganizationCreate(legal_name="ACME"), ADMIN)
     service = PersonService(db_session)
     person = service.create(PersonCreate(first_name="Mario", customer_id=customer.id), ADMIN)
 
@@ -427,7 +427,7 @@ def test_soft_delete_then_restore(db_session: Session) -> None:
 def test_restore_on_a_person_that_was_never_deleted_does_not_log_a_restored_entry(
     db_session: Session,
 ) -> None:
-    """Mirrors the identical guard on `CustomerService.restore` (customers/
+    """Mirrors the identical guard on `OrganizationService.restore` (organizations/
     service.py): unconditionally logging "restored" -- even for a person who was
     never soft-deleted -- would write a timeline entry claiming a recovery that
     never happened."""
@@ -448,7 +448,7 @@ def test_get_missing_person_raises_not_found(db_session: Session) -> None:
 
 
 def test_list_can_be_filtered_by_customer(db_session: Session) -> None:
-    customer = CustomerService(db_session).create(CustomerCreate(legal_name="ACME"), ADMIN)
+    customer = OrganizationService(db_session).create(OrganizationCreate(legal_name="ACME"), ADMIN)
     service = PersonService(db_session)
     service.create(PersonCreate(first_name="Dentro", customer_id=customer.id), ADMIN)
     service.create(PersonCreate(first_name="Fuori"), ADMIN)
@@ -518,7 +518,7 @@ def test_list_query_limit_is_bounded() -> None:
 
 def test_filter_by_custom_field_uses_jsonb_containment(db_session: Session) -> None:
     """Mirrors `test_filter_by_custom_field_uses_jsonb_containment` in
-    test_customers.py -- coverage Deals will also need once it copies this shape,
+    test_organizations.py -- coverage Deals will also need once it copies this shape,
     even though nothing here is currently broken."""
     FieldDefinitionService(db_session).create(
         FieldDefinitionCreate(
@@ -536,7 +536,7 @@ def test_filter_by_custom_field_uses_jsonb_containment(db_session: Session) -> N
 
 def test_pagination_returns_a_cursor_and_does_not_repeat_rows(db_session: Session) -> None:
     """Mirrors `test_pagination_returns_a_cursor_and_does_not_repeat_rows` in
-    test_customers.py."""
+    test_organizations.py."""
     service = PersonService(db_session)
     for index in range(5):
         service.create(PersonCreate(first_name=f"Persona {index:02d}"), ADMIN)
@@ -550,7 +550,7 @@ def test_pagination_returns_a_cursor_and_does_not_repeat_rows(db_session: Sessio
 
 
 def test_last_page_has_no_cursor(db_session: Session) -> None:
-    """Mirrors `test_last_page_has_no_cursor` in test_customers.py."""
+    """Mirrors `test_last_page_has_no_cursor` in test_organizations.py."""
     service = PersonService(db_session)
     service.create(PersonCreate(first_name="Solo"), ADMIN)
     assert service.list(PersonListQuery(limit=10), ADMIN).next_cursor is None
@@ -587,11 +587,11 @@ def test_restoring_a_person_whose_customer_is_now_archived_is_refused(
     still points at it (soft_delete on a customer only ever counted active deals,
     never people) -- but restoring a person onto an archived customer is still the
     operation this fix closes, mirroring DealService.restore exactly."""
-    customer = CustomerService(db_session).create(CustomerCreate(legal_name="ACME"), ADMIN)
+    customer = OrganizationService(db_session).create(OrganizationCreate(legal_name="ACME"), ADMIN)
     service = PersonService(db_session)
     person = service.create(PersonCreate(first_name="Mario", customer_id=customer.id), ADMIN)
     service.soft_delete(person.id, ADMIN)
-    CustomerService(db_session).soft_delete(customer.id, ADMIN)
+    OrganizationService(db_session).soft_delete(customer.id, ADMIN)
 
     with pytest.raises(Conflict) as exc:
         service.restore(person.id, ADMIN)
@@ -600,13 +600,13 @@ def test_restoring_a_person_whose_customer_is_now_archived_is_refused(
 
 
 def test_restoring_the_customer_first_then_the_person_works(db_session: Session) -> None:
-    customer = CustomerService(db_session).create(CustomerCreate(legal_name="ACME"), ADMIN)
+    customer = OrganizationService(db_session).create(OrganizationCreate(legal_name="ACME"), ADMIN)
     service = PersonService(db_session)
     person = service.create(PersonCreate(first_name="Mario", customer_id=customer.id), ADMIN)
     service.soft_delete(person.id, ADMIN)
-    CustomerService(db_session).soft_delete(customer.id, ADMIN)
+    OrganizationService(db_session).soft_delete(customer.id, ADMIN)
 
-    CustomerService(db_session).restore(customer.id, ADMIN)
+    OrganizationService(db_session).restore(customer.id, ADMIN)
     service.restore(person.id, ADMIN)
 
     assert service.get(person.id, ADMIN).id == person.id
@@ -628,7 +628,9 @@ def test_every_read_path_names_the_person_s_company(db_session: Session) -> None
     owner actually reads: `customer_id` alone forces every caller to look the name up
     again, one request per row. Asserted on all four read paths at once because they
     must agree -- a person's company cannot depend on which endpoint asked."""
-    customer = CustomerService(db_session).create(CustomerCreate(legal_name="ACME Srl"), ADMIN)
+    customer = OrganizationService(db_session).create(
+        OrganizationCreate(legal_name="ACME Srl"), ADMIN
+    )
     service = PersonService(db_session)
 
     created = service.create(PersonCreate(first_name="Mario", customer_id=customer.id), ADMIN)
@@ -653,7 +655,9 @@ def test_a_person_with_no_customer_has_no_company_name(db_session: Session) -> N
 
 
 def test_detaching_a_person_clears_the_company_name_too(db_session: Session) -> None:
-    customer = CustomerService(db_session).create(CustomerCreate(legal_name="ACME Srl"), ADMIN)
+    customer = OrganizationService(db_session).create(
+        OrganizationCreate(legal_name="ACME Srl"), ADMIN
+    )
     service = PersonService(db_session)
     person = service.create(PersonCreate(first_name="Mario", customer_id=customer.id), ADMIN)
 
@@ -670,12 +674,12 @@ def test_an_archived_customer_still_names_the_company(db_session: Session) -> No
     archiviato") that tells the owner the customer is gone, not an empty cell in the
     Persone list. Mirrors `SearchRepository._with_customer_names`, whose own join
     carries no `deleted_at` filter for the identical reason."""
-    customers = CustomerService(db_session)
-    customer = customers.create(CustomerCreate(legal_name="ACME Srl"), ADMIN)
+    organizations = OrganizationService(db_session)
+    customer = organizations.create(OrganizationCreate(legal_name="ACME Srl"), ADMIN)
     service = PersonService(db_session)
     person = service.create(PersonCreate(first_name="Mario", customer_id=customer.id), ADMIN)
 
-    customers.soft_delete(customer.id, ADMIN)
+    organizations.soft_delete(customer.id, ADMIN)
 
     assert service.get(person.id, ADMIN).customer_legal_name == "ACME Srl"
     page = service.list(PersonListQuery(customer_id=customer.id), ADMIN)
@@ -687,10 +691,10 @@ def test_the_company_name_costs_one_query_for_the_whole_page(db_session: Session
     50 people from 50 different companies must not become 51 queries. Counted, not
     reasoned about -- an N+1 reintroduced by a later refactor is invisible to every
     other assertion in this file."""
-    customers = CustomerService(db_session)
+    organizations = OrganizationService(db_session)
     service = PersonService(db_session)
     for index in range(3):
-        customer = customers.create(CustomerCreate(legal_name=f"ACME {index}"), ADMIN)
+        customer = organizations.create(OrganizationCreate(legal_name=f"ACME {index}"), ADMIN)
         service.create(PersonCreate(first_name=f"Mario {index}", customer_id=customer.id), ADMIN)
 
     statements: list[str] = []
@@ -711,4 +715,4 @@ def test_the_company_name_costs_one_query_for_the_whole_page(db_session: Session
         "ACME 1",
         "ACME 2",
     ]
-    assert sum(1 for statement in statements if "FROM customers" in statement) == 1
+    assert sum(1 for statement in statements if "FROM organizations" in statement) == 1

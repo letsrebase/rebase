@@ -22,14 +22,14 @@ from mcp import Client
 from sqlalchemy import insert
 from sqlalchemy.orm import Session
 
-from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.db.base import uuid7
+from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.search.schemas import COUNT_CEILING
 
 # Five, and the order is fixed: a palette whose sections move between keystrokes
 # cannot be driven with the keyboard. `invoice` is last, added by Task C12 with the
 # branch that finally makes `SearchEntity`'s fifth member true.
-_ENTITIES = ["customer", "person", "deal", "document", "invoice", "task"]
+_ENTITIES = ["organization", "person", "deal", "document", "invoice", "task"]
 
 # The example the tool's own docstring gives an agent, and the one spec §17 names as 6A's
 # reason to exist.
@@ -50,7 +50,7 @@ async def test_search_everything_is_registered(server: Any) -> None:
 async def test_search_everything_returns_the_four_groups(
     server: Any, seeded_customer_id: str, mcp_session: Session
 ) -> None:
-    customer = mcp_session.get(Customer, UUID(seeded_customer_id))
+    customer = mcp_session.get(Organization, UUID(seeded_customer_id))
     assert customer is not None
 
     async with Client(server) as client:
@@ -90,7 +90,7 @@ async def test_the_docstring_example_actually_works(server: Any, mcp_session: Se
     this is the test that keeps the docstring honest if anyone ever changes it back.
     """
     mcp_session.execute(
-        insert(Customer),
+        insert(Organization),
         [
             {
                 "id": uuid7(),
@@ -106,10 +106,10 @@ async def test_the_docstring_example_actually_works(server: Any, mcp_session: Se
     async with Client(server) as client:
         result = await client.call_tool("search_everything", {"term": _DOCSTRING_FRAGMENT})
 
-    customers = _payload(result)["groups"][0]
-    assert [hit["label"] for hit in customers["hits"]] == ["Frammento Srl"]
-    assert customers["hits"][0]["field"] == "vat_number"
-    assert customers["hits"][0]["subtitle"] == _DOCSTRING_VAT_NUMBER
+    organizations = _payload(result)["groups"][0]
+    assert [hit["label"] for hit in organizations["hits"]] == ["Frammento Srl"]
+    assert organizations["hits"][0]["field"] == "vat_number"
+    assert organizations["hits"][0]["subtitle"] == _DOCSTRING_VAT_NUMBER
 
 
 async def test_the_docstring_promises_the_example_it_is_tested_against(server: Any) -> None:
@@ -160,7 +160,7 @@ async def test_a_truncated_count_is_declared_to_the_agent_as_a_minimum(
     """The agent gets §8.6's second state in the same shape a person does. An agent told
     "200" when the answer is "at least 200" will report a number that is not true."""
     mcp_session.execute(
-        insert(Customer),
+        insert(Organization),
         [
             {
                 "id": uuid7(),
@@ -176,15 +176,15 @@ async def test_a_truncated_count_is_declared_to_the_agent_as_a_minimum(
     async with Client(server) as client:
         result = await client.call_tool("search_everything", {"term": "Moltissimi"})
 
-    customers = _payload(result)["groups"][0]
-    assert customers["total"] == COUNT_CEILING
-    assert customers["total_is_minimum"] is True
-    assert len(customers["hits"]) == 5
+    organizations = _payload(result)["groups"][0]
+    assert organizations["total"] == COUNT_CEILING
+    assert organizations["total_is_minimum"] is True
+    assert len(organizations["hits"]) == 5
 
 
 async def test_the_limit_argument_is_honoured(server: Any, mcp_session: Session) -> None:
     mcp_session.execute(
-        insert(Customer),
+        insert(Organization),
         [
             {
                 "id": uuid7(),
@@ -200,15 +200,15 @@ async def test_the_limit_argument_is_honoured(server: Any, mcp_session: Session)
     async with Client(server) as client:
         result = await client.call_tool("search_everything", {"term": "Limitabile", "limit": 3})
 
-    customers = _payload(result)["groups"][0]
-    assert len(customers["hits"]) == 3
-    assert customers["total"] == 12
+    organizations = _payload(result)["groups"][0]
+    assert len(organizations["hits"]) == 3
+    assert organizations["total"] == 12
 
 
 async def test_a_phone_typed_as_digits_finds_the_customer_and_the_hit_says_phone(
     server: Any, mcp_session: Session
 ) -> None:
-    """REB-948: the palette and the tool find a number in any form, like `search_customers`,
+    """REB-948: the palette and the tool find a number in any form, like `search_organizations`,
     and `field` names the kind of the point that matched (it used to say `email`)."""
     from pigrocrm.core.contact_points.models import ContactPoint
     from pigrocrm.core.contact_points.schemas import ContactPointIn
@@ -226,7 +226,7 @@ async def test_a_phone_typed_as_digits_finds_the_customer_and_the_hit_says_phone
         )
         for position, point in enumerate(
             prepare(
-                "customer",
+                "organization",
                 [
                     ContactPointIn(kind="phone", value="+39 02 1234567"),
                     ContactPointIn(kind="phone", value="+39 388 871 3657", label="other"),
@@ -235,14 +235,14 @@ async def test_a_phone_typed_as_digits_finds_the_customer_and_the_hit_says_phone
         )
     ]
     mcp_session.add(
-        Customer(legal_name="Numero Srl", country="IT", custom_fields={}, contact_points=owned)
+        Organization(legal_name="Numero Srl", country="IT", custom_fields={}, contact_points=owned)
     )
     mcp_session.flush()
 
     async with Client(server) as client:
         for term in ("3888713657", "+393888713657", "388-871-3657", "388 871 3657"):
-            customers = _payload(await client.call_tool("search_everything", {"term": term}))[
+            organizations = _payload(await client.call_tool("search_everything", {"term": term}))[
                 "groups"
             ][0]
-            assert [hit["label"] for hit in customers["hits"]] == ["Numero Srl"], term
-            assert customers["hits"][0]["field"] == "phone", term
+            assert [hit["label"] for hit in organizations["hits"]] == ["Numero Srl"], term
+            assert organizations["hits"][0]["field"] == "phone", term

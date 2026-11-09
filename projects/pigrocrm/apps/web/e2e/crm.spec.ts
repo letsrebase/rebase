@@ -40,7 +40,7 @@ test('typing a field label one keystroke at a time still derives the whole key, 
   // live (strict-mode violation, two matches) before adding this.
   await expect(page.getByText('Settore', { exact: true })).toBeVisible()
 
-  await page.goto('/app/customers')
+  await page.goto('/app/organizations')
   await page.getByRole('button', { name: /nuovo cliente/i }).click()
   await expect(page.getByLabel('Settore')).toBeVisible()
 })
@@ -48,7 +48,7 @@ test('typing a field label one keystroke at a time still derives the whole key, 
 test('creating a customer, a person and a deal, then moving it across the board', async ({ page }) => {
   const name = `ACME ${Date.now()}`
 
-  await page.goto('/app/customers')
+  await page.goto('/app/organizations')
   await page.getByRole('button', { name: /nuovo cliente/i }).click()
   await page.getByLabel('Ragione sociale').fill(name)
   await page.getByLabel('P.IVA').fill('12345678901')
@@ -111,7 +111,7 @@ test('creating a customer, a person and a deal, then moving it across the board'
 })
 
 test('an invalid VAT number surfaces the API message on the field', async ({ page }) => {
-  await page.goto('/app/customers')
+  await page.goto('/app/organizations')
   await page.getByRole('button', { name: /nuovo cliente/i }).click()
   await page.getByLabel('Ragione sociale').fill('Test IVA')
   await page.getByLabel('P.IVA').fill('123')
@@ -123,7 +123,7 @@ test('an invalid VAT number surfaces the API message on the field', async ({ pag
 
 test('the timeline records what happened', async ({ page }) => {
   const name = `Timeline ${Date.now()}`
-  await page.goto('/app/customers')
+  await page.goto('/app/organizations')
   await page.getByRole('button', { name: /nuovo cliente/i }).click()
   await page.getByLabel('Ragione sociale').fill(name)
   await page.getByRole('button', { name: 'Salva' }).click()

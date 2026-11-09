@@ -34,11 +34,11 @@ from pigrocrm.core.automations.schemas import (
     AutomationConfigUpdate,
     AutomationSkipReason,
 )
-from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.db.base import uuid7
 from pigrocrm.core.deals.models import Deal
 from pigrocrm.core.deals.service import DealService
 from pigrocrm.core.documents.models import Document
+from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.pipeline.models import PipelineStage
 from pigrocrm.core.pipeline.schemas import PipelineStageRead
 from pigrocrm.core.pipeline.service import PipelineService
@@ -55,7 +55,7 @@ def stages(db_session: Session) -> dict[str, PipelineStageRead]:
 
 @pytest.fixture
 def deal(db_session: Session, stages: dict[str, PipelineStageRead]) -> Deal:
-    customer = Customer(legal_name="Cliente Srl", country="IT", custom_fields={})
+    customer = Organization(legal_name="Cliente Srl", country="IT", custom_fields={})
     db_session.add(customer)
     db_session.flush()
     row = Deal(
@@ -153,7 +153,7 @@ def test_to_1_ignores_to_transition_that_is_not_sent_to_accepted(
 
 
 def test_a1_on_an_offer_without_a_deal_does_nothing(db_session: Session) -> None:
-    customer = Customer(legal_name="Cliente Srl", country="IT", custom_fields={})
+    customer = Organization(legal_name="Cliente Srl", country="IT", custom_fields={})
     db_session.add(customer)
     db_session.flush()
     document = Document(

@@ -16,7 +16,7 @@ from pigrocrm.core.errors import NotFound
 from pigrocrm.core.gmail.repository import GmailRepository
 from pigrocrm.core.gmail.schemas import GmailMessageRead
 
-LinkedEntityType = Literal["customer", "person", "deal"]
+LinkedEntityType = Literal["organization", "person", "deal"]
 
 
 class GmailMessageService:

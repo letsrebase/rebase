@@ -31,7 +31,7 @@ ENTITY = "legal_entity"
 # `.fullmatch()`, not `.match()`: `$` matches before a trailing newline, so
 # "01234567890\n" -- 12 characters, one more than the String(11) column -- would pass
 # a `.match()` check and reach flush() as a raw, session-poisoning DataError. The same
-# defect this project has already paid for once on `customers.vat_number`.
+# defect this project has already paid for once on `organizations.vat_number`.
 VAT_NUMBER_RE = re.compile(r"\d{11}")
 # The column's width (`emitter/models.py`). A foreign VAT number keeps its own shape
 # through `normalise_foreign_fiscal_id`, and one longer than the column would reach the
@@ -404,7 +404,7 @@ class LegalEntityService:
         stays readable forever, and a row that is gone cannot be the `emittente` a
         snapshot was frozen from. The default is refused, since every implicit read
         resolves to it; move the default first. The answer carries how many live
-        customers still point at the row (spec §3): each of them refuses a new deal,
+        organizations still point at the row (spec §3): each of them refuses a new deal,
         document or proforma until it is moved, so the count is the work left."""
         actor.require_unscoped_admin("deactivate_legal_entity")
         row = self.resolve(legal_entity_id)
@@ -426,7 +426,7 @@ class LegalEntityService:
             raise Conflict(ENTITY, "l'azienda e' diventata la predefinita nel frattempo") from exc
         return LegalEntityDeactivated(
             **LegalEntityRead.model_validate(row).model_dump(),
-            linked_customers=self.repo.count_customers(row.id),
+            linked_organizations=self.repo.count_organizations(row.id),
         )
 
     @staticmethod

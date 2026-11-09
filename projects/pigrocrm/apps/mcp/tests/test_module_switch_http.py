@@ -76,7 +76,7 @@ async def test_a_switch_reaches_the_tool_list_within_the_cache_window_and_back(
     clock["now"] += 2
     after = await _tool_names(cached, url, raw)
     assert not {"create_deal", "get_deal", "log_time", "convert_deal_to_contract"} & set(after)
-    assert {"create_customer", "create_contract", "describe_space"} <= set(after)
+    assert {"create_organization", "create_contract", "describe_space"} <= set(after)
     # Other spaces are untouched by it.
     assert "create_deal" in await _tool_names(
         cached, "http://prova/spazio-due/mcp", spaces["spazio-due"][0]

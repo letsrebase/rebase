@@ -26,7 +26,7 @@ import {
   type ApprovalChannel,
   type GmailMessage,
 } from './approvals'
-import { useCustomerMessages, useFileProof, useRecordApproval } from './approvalQueries'
+import { useOrganizationMessages, useFileProof, useRecordApproval } from './approvalQueries'
 import { quantityLabel, statusLabel } from './labels'
 import { useApprovalCandidates, useDayContractOptions } from './queries'
 
@@ -84,7 +84,7 @@ export function ApprovalForm({
   const contract = options.find((candidate) => candidate.id === contractId)
   const candidates = useApprovalCandidates(contractId, initialDayIds)
   const days = candidates.days.filter(canReceiveApproval)
-  const messages = useCustomerMessages(contract?.customer_id, gmail)
+  const messages = useOrganizationMessages(contract?.customer_id, gmail)
   const inbound = (messages.data ?? []).filter((message) => message.direction === 'inbound')
   const chosenMessage = inbound.find((message) => message.id === messageId)
 

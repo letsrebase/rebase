@@ -264,7 +264,7 @@ class DocumentRepository:
             )
             stmt = stmt.where(*_accepted_with_unwon_deal_predicate())
 
-        # Residuo R9 -- see `CustomerRepository.list` for the reasoning.
+        # Residuo R9 -- see `OrganizationRepository.list` for the reasoning.
         spec = DOCUMENT_SORTS.resolve(query.sort)
         if query.cursor:
             value, row_id = decode_cursor(spec, query.cursor)

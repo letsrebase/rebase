@@ -26,9 +26,9 @@ from pydantic import WithJsonSchema
 
 from pigrocrm.core.contract_expenses.schemas import ContractExpenseUpdate
 from pigrocrm.core.contracts.schemas import ClauseNoteUpdate, ContractUpdate, RateCardUpdate
-from pigrocrm.core.customers.schemas import CustomerUpdate
 from pigrocrm.core.deals.schemas import DealUpdate, DealValueLineIn
 from pigrocrm.core.errors import ValidationFailed
+from pigrocrm.core.organizations.schemas import OrganizationUpdate
 from pigrocrm.core.people.schemas import PersonUpdate
 from pigrocrm.core.search.schemas import PER_CLASS_LIMIT
 from pigrocrm.core.tasks.schemas import TaskUpdate
@@ -102,8 +102,8 @@ def _deal_changes_schema() -> dict[str, Any]:
 # listing, so an agent sees the field names (`update_task` included, with the two
 # `*_da_rimuovere` flags that clear a field). The model is built inside the call, in
 # `tools/<family>.py`.
-CustomerChanges = Annotated[
-    dict[str, Any], WithJsonSchema(_contact_changes_schema(CustomerUpdate.model_json_schema()))
+OrganizationChanges = Annotated[
+    dict[str, Any], WithJsonSchema(_contact_changes_schema(OrganizationUpdate.model_json_schema()))
 ]
 PersonChanges = Annotated[
     dict[str, Any], WithJsonSchema(_contact_changes_schema(PersonUpdate.model_json_schema()))
@@ -181,7 +181,7 @@ OfferStateArg = Annotated[
 ]
 
 # The three kinds of record a mail, a draft or a note is filed against.
-LinkedEntityType = Literal["customer", "person", "deal"]
+LinkedEntityType = Literal["organization", "person", "deal"]
 LinkedEntityTypeArg = Annotated[
     str,
     WithJsonSchema({"type": "string", "enum": list(get_args(LinkedEntityType))}),

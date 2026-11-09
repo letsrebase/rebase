@@ -108,9 +108,9 @@ def test_the_database_name_is_an_unquoted_identifier() -> None:
 
 
 def test_the_prefix_splitter_recognises_the_api_segments_by_default() -> None:
-    assert split_tenant_prefix("/studio/api/customers") == ("studio", "/api/customers")
+    assert split_tenant_prefix("/studio/api/organizations") == ("studio", "/api/organizations")
     assert split_tenant_prefix("/studio/health") == ("studio", "/health")
-    assert split_tenant_prefix("/api/customers") == (None, "/api/customers")
+    assert split_tenant_prefix("/api/organizations") == (None, "/api/organizations")
     assert split_tenant_prefix("/app/api/x") == (None, "/app/api/x")  # reserved word
     assert split_tenant_prefix("/studio/app/login") == (None, "/studio/app/login")
     assert split_tenant_prefix("/Studio/api/x") == (None, "/Studio/api/x")  # not a slug
@@ -169,7 +169,7 @@ def test_provisioning_creates_a_migrated_database_with_one_admin(
                 assert head is not None and head >= "0027"
                 users = connection.execute(text("select email, role, active from users")).all()
                 assert users == [("ada@studio.it", "admin", True)]
-                assert connection.execute(text("select count(*) from customers")).scalar() == 0
+                assert connection.execute(text("select count(*) from organizations")).scalar() == 0
                 # Born ready (spec 2026-09-12 §6.5): the first deal, the first offer and
                 # the first cost need nothing from Impostazioni.
                 assert (

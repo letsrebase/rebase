@@ -1,4 +1,4 @@
-"""The paged, sorted and filtered reads of customers, people, deals and documents."""
+"""The paged, sorted and filtered reads of organizations, people, deals and documents."""
 
 import json
 from uuid import UUID, uuid4
@@ -18,11 +18,11 @@ def _payload(result) -> dict:
     return result.structured_content or json.loads(result.content[0].text)
 
 
-async def test_search_customers_finds_by_free_text(server, mcp_session: Session) -> None:
+async def test_search_organizations_finds_by_free_text(server, mcp_session: Session) -> None:
     async with Client(server) as client:
-        await client.call_tool("create_customer", {"legal_name": "ACME Srl"})
-        await client.call_tool("create_customer", {"legal_name": "Beta Spa"})
-        found = _payload(await client.call_tool("search_customers", {"search": "acme"}))
+        await client.call_tool("create_organization", {"legal_name": "ACME Srl"})
+        await client.call_tool("create_organization", {"legal_name": "Beta Spa"})
+        found = _payload(await client.call_tool("search_organizations", {"search": "acme"}))
 
     assert [c["legal_name"] for c in found["items"]] == ["ACME Srl"]
 
@@ -31,21 +31,23 @@ async def test_search_customers_finds_by_free_text(server, mcp_session: Session)
 # --- indexed and service-tested, but no MCP tool passed it. --------------------
 
 
-async def test_search_customers_filters_by_a_custom_field(server, mcp_session: Session) -> None:
+async def test_search_organizations_filters_by_a_custom_field(server, mcp_session: Session) -> None:
     FieldDefinitionService(mcp_session).create(
         FieldDefinitionCreate(
-            entity_type="customer", key="settore", label="Settore", field_type="text"
+            entity_type="organization", key="settore", label="Settore", field_type="text"
         ),
         SETUP,
     )
     async with Client(server) as client:
         await client.call_tool(
-            "create_customer", {"legal_name": "A", "custom_fields": {"settore": "IT"}}
+            "create_organization", {"legal_name": "A", "custom_fields": {"settore": "IT"}}
         )
         await client.call_tool(
-            "create_customer", {"legal_name": "B", "custom_fields": {"settore": "Retail"}}
+            "create_organization", {"legal_name": "B", "custom_fields": {"settore": "Retail"}}
         )
-        found = _payload(await client.call_tool("search_customers", {"custom": {"settore": "IT"}}))
+        found = _payload(
+            await client.call_tool("search_organizations", {"custom": {"settore": "IT"}})
+        )
 
     assert [c["legal_name"] for c in found["items"]] == ["A"]
 
@@ -78,7 +80,7 @@ async def test_search_deals_filters_by_a_custom_field(server, mcp_session: Sessi
         SETUP,
     )
     async with Client(server) as client:
-        customer = _payload(await client.call_tool("create_customer", {"legal_name": "ACME"}))
+        customer = _payload(await client.call_tool("create_organization", {"legal_name": "ACME"}))
         await client.call_tool(
             "create_deal",
             {"name": "A", "customer_id": customer["id"], "custom_fields": {"source": "referral"}},
@@ -96,24 +98,26 @@ async def test_search_deals_filters_by_a_custom_field(server, mcp_session: Sessi
 # --- no way to pass it back in -- an agent could never reach page 2. -----------
 
 
-async def test_search_customers_can_walk_a_second_page_via_cursor(
+async def test_search_organizations_can_walk_a_second_page_via_cursor(
     server, mcp_session: Session
 ) -> None:
-    """Before this fix, `search_customers` took no `cursor` parameter at all: the
+    """Before this fix, `search_organizations` took no `cursor` parameter at all: the
     SDK silently drops an argument a tool's signature does not declare, so passing
     `next_cursor` back returned page 1 again, with `is_error=False` -- an agent
     could never reach a record beyond the first page, and nothing in the response
     said so."""
     async with Client(server) as client:
         for index in range(3):
-            await client.call_tool("create_customer", {"legal_name": f"Cliente {index:02d}"})
+            await client.call_tool("create_organization", {"legal_name": f"Cliente {index:02d}"})
 
-        first = _payload(await client.call_tool("search_customers", {"limit": 2}))
+        first = _payload(await client.call_tool("search_organizations", {"limit": 2}))
         assert len(first["items"]) == 2
         assert first["next_cursor"] is not None
 
         second = _payload(
-            await client.call_tool("search_customers", {"limit": 2, "cursor": first["next_cursor"]})
+            await client.call_tool(
+                "search_organizations", {"limit": 2, "cursor": first["next_cursor"]}
+            )
         )
 
     first_ids = {c["id"] for c in first["items"]}
@@ -141,7 +145,7 @@ async def test_search_people_can_walk_a_second_page_via_cursor(server) -> None:
 async def test_search_deals_can_walk_a_second_page_via_cursor(server, mcp_session: Session) -> None:
     PipelineService(mcp_session).seed_defaults(SETUP)
     async with Client(server) as client:
-        customer = _payload(await client.call_tool("create_customer", {"legal_name": "ACME"}))
+        customer = _payload(await client.call_tool("create_organization", {"legal_name": "ACME"}))
         for index in range(3):
             await client.call_tool(
                 "create_deal", {"name": f"Deal {index:02d}", "customer_id": customer["id"]}
@@ -158,11 +162,11 @@ async def test_search_deals_can_walk_a_second_page_via_cursor(server, mcp_sessio
     assert first_ids.isdisjoint(second_ids)
 
 
-async def test_search_customers_with_a_malformed_cursor_produces_guidance_not_a_crash(
+async def test_search_organizations_with_a_malformed_cursor_produces_guidance_not_a_crash(
     server,
 ) -> None:
     async with Client(server) as client:
-        result = await client.call_tool("search_customers", {"cursor": "not-a-uuid"})
+        result = await client.call_tool("search_organizations", {"cursor": "not-a-uuid"})
 
     assert result.is_error
     message = result.content[0].text
@@ -172,7 +176,7 @@ async def test_search_customers_with_a_malformed_cursor_produces_guidance_not_a_
     assert "cursor" in message.lower()
 
 
-async def test_search_customers_accepts_sort_and_dir(server) -> None:
+async def test_search_organizations_accepts_sort_and_dir(server) -> None:
     """The tool's JSON Schema gained two parameters, and the SDK silently drops an
     argument a signature does not declare -- which is exactly how `cursor` shipped
     broken once already (see the cursor test above). Asserting the *order* rather than
@@ -181,23 +185,23 @@ async def test_search_customers_accepts_sort_and_dir(server) -> None:
 
     Scoped by a per-run token rather than asserting on the whole table: at least one
     test in this suite commits a customer outside the rolled-back transaction, so a bare
-    `search_customers` here sees rows it did not create. That made this test pass alone
+    `search_organizations` here sees rows it did not create. That made this test pass alone
     and fail in the suite, which is the worst of both.
     """
     token = f"zz{uuid4().hex[:8]}"
     async with Client(server) as client:
         for name in ("Gamma", "Alfa", "Beta"):
-            await client.call_tool("create_customer", {"legal_name": f"{token} {name}"})
+            await client.call_tool("create_organization", {"legal_name": f"{token} {name}"})
 
         ascending = _payload(
             await client.call_tool(
-                "search_customers",
+                "search_organizations",
                 {"search": token, "sort": "legal_name", "dir": "asc", "limit": 10},
             )
         )
         descending = _payload(
             await client.call_tool(
-                "search_customers",
+                "search_organizations",
                 {"search": token, "sort": "legal_name", "dir": "desc", "limit": 10},
             )
         )
@@ -214,13 +218,13 @@ async def test_search_customers_accepts_sort_and_dir(server) -> None:
     ]
 
 
-async def test_search_customers_with_an_unknown_sort_key_produces_guidance(server) -> None:
+async def test_search_organizations_with_an_unknown_sort_key_produces_guidance(server) -> None:
     """`sort` is a plain `str` at the tool boundary on purpose: the whitelist answers
     with this project's own `ValidationFailed`, which `_guard` renders as readable
     guidance naming the field and listing the admissible keys. A `Literal` here would
     have been rejected by the SDK ahead of the guard, in raw English pydantic text."""
     async with Client(server) as client:
-        result = await client.call_tool("search_customers", {"sort": "note"})
+        result = await client.call_tool("search_organizations", {"sort": "note"})
 
     assert result.is_error
     message = result.content[0].text
@@ -228,11 +232,11 @@ async def test_search_customers_with_an_unknown_sort_key_produces_guidance(serve
     assert "legal_name" in message
 
 
-async def test_search_customers_with_an_unknown_direction_produces_guidance(server) -> None:
+async def test_search_organizations_with_an_unknown_direction_produces_guidance(server) -> None:
     """`dir` is `str` at the boundary and cast at the call, so an out-of-range value is
-    rejected by `CustomerListQuery`'s own `SortDirection` *inside* the guard."""
+    rejected by `OrganizationListQuery`'s own `SortDirection` *inside* the guard."""
     async with Client(server) as client:
-        result = await client.call_tool("search_customers", {"dir": "sideways"})
+        result = await client.call_tool("search_organizations", {"dir": "sideways"})
 
     assert result.is_error
     message = result.content[0].text
@@ -248,7 +252,7 @@ async def test_list_documents_accepts_a_search_term(
     bytes), so there is no tool call that would put rows here.
 
     The search term carries a per-run token for the same reason
-    `test_search_customers_accepts_sort_and_dir` does: this suite's schema is shared and
+    `test_search_organizations_accepts_sort_and_dir` does: this suite's schema is shared and
     not every row in it belongs to the running test."""
     from pigrocrm.core.documents.models import Document
 

@@ -44,7 +44,7 @@ from pigrocrm.core.timetracking.schemas import (
 )
 
 # Typed as the fields module's own EntityType (not a bare `str`), matching
-# CustomerService.ENTITY/DealService.ENTITY exactly: passing a plain `str` into
+# OrganizationService.ENTITY/DealService.ENTITY exactly: passing a plain `str` into
 # `specs_for` fails mypy strict, which requires the narrower Literal type.
 ENTITY: EntityType = "time_entry"
 

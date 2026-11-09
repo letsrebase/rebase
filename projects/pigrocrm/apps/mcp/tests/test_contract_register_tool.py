@@ -9,13 +9,13 @@ from mcp import Client
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.contracts.models import Contract
-from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.invoices.models import Invoice, InvoiceLine
+from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.work_units.models import WorkUnit
 
 
 def _contract(mcp_session: Session) -> Contract:
-    customer = Customer(legal_name="ACME Srl")
+    customer = Organization(legal_name="ACME Srl")
     mcp_session.add(customer)
     mcp_session.flush()
     contract = Contract(

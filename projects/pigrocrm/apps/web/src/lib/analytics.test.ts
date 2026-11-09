@@ -39,8 +39,8 @@ describe('the funnel table', () => {
     ['POST', '/api/users/invites', 'invitation_sent'],
     ['POST', '/api/users/invites/i1/resend', 'invitation_sent'],
     ['DELETE', '/api/users/invites/i1', 'invitation_revoked'],
-    ['POST', '/api/customers', 'customer_created'],
-    ['POST', '/api/customers/from-suggestions', 'customers_imported'],
+    ['POST', '/api/organizations', 'customer_created'],
+    ['POST', '/api/organizations/from-suggestions', 'customers_imported'],
     ['POST', '/api/deals', 'deal_created'],
     ['POST', '/api/documents', 'document_created'],
     ['POST', '/api/documents/from-template', 'document_created'],
@@ -68,7 +68,7 @@ describe('the funnel table', () => {
   })
 
   it.each([400, 401, 409, 422, 500, 503])('a %i is not an event', async (status) => {
-    await answered('POST', '/api/customers', status)
+    await answered('POST', '/api/organizations', status)
     await answered('PUT', '/api/legal-entities/01994c3e-0000-7000-8000-000000000001', status)
     expect(capture).not.toHaveBeenCalled()
   })
@@ -80,8 +80,8 @@ describe('the funnel table', () => {
     // `/versions`) pin that only the listed routes match: a lax trailing segment
     // would double-count their event on every action a document or invoice takes
     // after it already exists.
-    await answered('GET', '/api/customers', 200)
-    await answered('PUT', '/api/customers/c1', 200)
+    await answered('GET', '/api/organizations', 200)
+    await answered('PUT', '/api/organizations/c1', 200)
     await answered('POST', '/api/deals/d1/stage', 200)
     await answered('POST', '/api/invoices/import', 201)
     await answered('POST', '/api/invoices/inv-1/artifacts', 201)
@@ -95,22 +95,22 @@ describe('the funnel table', () => {
   })
 
   it('reads the path under a space with the prefix removed', async () => {
-    await answered('POST', '/studio/api/customers', 201, '/studio')
+    await answered('POST', '/studio/api/organizations', 201, '/studio')
     expect(capture).toHaveBeenCalledWith('customer_created')
   })
 
   it('does not mistake another space for this one', async () => {
     // Only this space's own prefix is removed: another slug is left in the path and
-    // matches nothing, rather than counting as `/api/customers` here.
-    await answered('POST', '/studio-rossi/api/customers', 201, '/studio')
+    // matches nothing, rather than counting as `/api/organizations` here.
+    await answered('POST', '/studio-rossi/api/organizations', 201, '/studio')
     expect(capture).not.toHaveBeenCalled()
   })
 
   it('ignores a trailing slash either way', () => {
     expect(eventFor('POST', '/api/tenants', '')).toBe('space_created')
     expect(eventFor('POST', '/api/tenants/', '')).toBe('space_created')
-    expect(eventFor('POST', '/api/customers/', '')).toBe('customer_created')
-    expect(eventFor('post', '/studio/api/customers/', '/studio')).toBe('customer_created')
+    expect(eventFor('POST', '/api/organizations/', '')).toBe('customer_created')
+    expect(eventFor('post', '/studio/api/organizations/', '/studio')).toBe('customer_created')
   })
 })
 
@@ -125,8 +125,8 @@ describe('on the real client', () => {
     const client = createClient<paths>({ baseUrl: `${ORIGIN}/studio`, fetch: fetchMock })
     client.use(analyticsMiddleware('/studio'))
 
-    await client.POST('/api/customers', { body: { legal_name: 'Ada' } as never })
-    await client.GET('/api/customers')
+    await client.POST('/api/organizations', { body: { legal_name: 'Ada' } as never })
+    await client.GET('/api/organizations')
 
     expect(fetchMock).toHaveBeenCalledTimes(2)
     expect(capture).toHaveBeenCalledTimes(1)
@@ -143,7 +143,7 @@ describe('on the real client', () => {
     const client = createClient<paths>({ baseUrl: ORIGIN, fetch: fetchMock })
     client.use(analyticsMiddleware(''))
 
-    await client.POST('/api/customers', { body: { legal_name: '' } as never })
+    await client.POST('/api/organizations', { body: { legal_name: '' } as never })
 
     expect(capture).not.toHaveBeenCalled()
   })

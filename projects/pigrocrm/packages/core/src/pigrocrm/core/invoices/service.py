@@ -83,7 +83,7 @@ class InvoiceService:
         self.documents = self.ctx.documents
         self.fiscal = self.ctx.fiscal
         self.legal_entity = self.ctx.legal_entity
-        self.customers = self.ctx.customers
+        self.organizations = self.ctx.organizations
         self.fields = self.ctx.fields
         self.activities = self.ctx.activities
         self.drafting = InvoiceDrafting(self.ctx)
@@ -207,10 +207,10 @@ class InvoiceService:
         actor: Actor,
         *,
         customer_id: UUID | None = None,
-        create_customer: bool = False,
+        create_organization: bool = False,
     ) -> list[ConfirmedInvoiceRead]:
         return self.importer.confirm_import(
-            document_id, actor, customer_id=customer_id, create_customer=create_customer
+            document_id, actor, customer_id=customer_id, create_organization=create_organization
         )
 
     def review_upload(

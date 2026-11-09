@@ -39,8 +39,8 @@ INSTRUCTIONS = """PigroCRM: a CRM for Italian freelancers and small startups.
 
 Before creating or updating an entity, call `describe_schema` to learn the custom fields
 defined by the user: they are not hard-coded in the tools and change over time.
-To read the full context use the `customer://`, `person://` and `deal://` resources.
-The notes of deals, customers and people are a thread that the CRM signs and dates itself: add
+To read the full context use the `organization://`, `person://` and `deal://` resources.
+The notes of deals, organizations and people are a thread that the CRM signs and dates itself: add
 them with `add_note`, with no date or author in the text.
 Nothing is ever physically deleted: archive operations are reversible.
 The only exception is `discard_proforma`, which cannot be restored: if you need a discarded
@@ -74,7 +74,7 @@ objects `{kind: email|phone|linkedin, value, label: work|personal|billing|other,
 is_primary}`: a write sends the whole list, which replaces the stored one, with one primary per
 kind (the first of a kind when none is flagged). `email`, `phone` and `linkedin` in a reply are
 the primary of each kind, and the CRM's mail goes to the primary email. The searches
-(`search_customers`, `search_people`, `search_everything`) find an owner by any of its points,
+(`search_organizations`, `search_people`, `search_everything`) find an owner by any of its points,
 a phone in any form, and a `search_everything` hit's `field` is the kind that matched.
 """
 
@@ -222,11 +222,11 @@ def _register_core(
         """
         return entity_schema(context, entity_type)
 
-    @mcp.resource("customer://{customer_id}")
+    @mcp.resource("organization://{organization_id}")
     @protocol_guard
-    def customer_resource(customer_id: str) -> str:
+    def organization_resource(organization_id: str) -> str:
         """Full record of a customer: tax data, contacts, deals and timeline."""
-        return entities.render_customer(context, UUID(customer_id))
+        return entities.render_organization(context, UUID(organization_id))
 
     @mcp.resource("person://{person_id}")
     @protocol_guard

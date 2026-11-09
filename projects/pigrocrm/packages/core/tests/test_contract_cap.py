@@ -23,23 +23,23 @@ from pigrocrm.core.analytics.service import AnalyticsService
 from pigrocrm.core.contracts.models import Contract
 from pigrocrm.core.contracts.schemas import ContractUpdate
 from pigrocrm.core.contracts.service import ContractService
-from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.deals.models import Deal, DealValueLine
 from pigrocrm.core.errors import NotFound, ValidationFailed
 from pigrocrm.core.fiscal.schemas import FiscalProfileUpsert
 from pigrocrm.core.fiscal.service import FiscalProfileService
 from pigrocrm.core.legal_entities.models import LegalEntity
+from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.pipeline.service import PipelineService
 
 ADMIN = Actor(id=None, type="system", role="admin")
 
 
-def _world(db_session: Session, *, cap: str | None = "50.00") -> tuple[Customer, Contract]:
+def _world(db_session: Session, *, cap: str | None = "50.00") -> tuple[Organization, Contract]:
     """A customer of 300 euros out of 1,000 invoiced over the contract's first year, which
     starts on 10 March: 30% of the legal entity's revenue, a 9,000 invoice before the
     anniversary left out of the window."""
     customer = make_customer(db_session)
-    other = Customer(legal_name="Altro Cliente")
+    other = Organization(legal_name="Altro Cliente")
     db_session.add(other)
     db_session.flush()
     contract = ContractService(db_session).create(

@@ -65,7 +65,7 @@ const ACCOUNT = {
 /** A space that has done nothing yet: every list empty, no emitter, no token, and no
  *  Google client, which is where every space starts. */
 const EMPTY: Record<string, unknown> = {
-  '/api/customers': EMPTY_PAGE,
+  '/api/organizations': EMPTY_PAGE,
   '/api/deals': EMPTY_PAGE,
   '/api/time-entries': EMPTY_PAGE,
   '/api/documents': EMPTY_PAGE,
@@ -172,10 +172,10 @@ describe('the Gmail door', () => {
     )
   })
 
-  it('shows a connected mailbox with the customers it proposes under it (REB-223)', async () => {
+  it('shows a connected mailbox with the organizations it proposes under it (REB-223)', async () => {
     answers({
       '/api/gmail/account': { ...GMAIL_READY, account: ACCOUNT },
-      '/api/gmail/customer-suggestions': [
+      '/api/gmail/organization-suggestions': [
         { domain: 'acme.it', name: 'Acme', conversations: 3, last_message: null, people: [] },
       ],
     })
@@ -327,7 +327,7 @@ describe('the manual steps', () => {
       'href',
       '/app/settings/legal-entities',
     )
-    expect(steps.getByRole('link', { name: 'A mano: Clienti' })).toHaveAttribute('href', '/app/customers')
+    expect(steps.getByRole('link', { name: 'A mano: Clienti' })).toHaveAttribute('href', '/app/organizations')
     expect(steps.getAllByRole('link', { name: 'A mano: Deal' })).toHaveLength(2)
     expect(steps.getAllByRole('button', { name: 'Chiedilo all’assistente' })).toHaveLength(4)
     // Each action is described by its step, so four identical names still read apart.
@@ -357,7 +357,7 @@ describe('the manual steps', () => {
   it('counts a step done when the thing exists, and only then', async () => {
     answers({
       '/api/legal-entities': [{ legal_name: 'Ada', vat_number: '01234567890', tax_code: null }],
-      '/api/customers': { items: [{ id: 'c1' }], next_cursor: null },
+      '/api/organizations': { items: [{ id: 'c1' }], next_cursor: null },
     })
     renderPage()
     expect(await screen.findByText(/2 di 4/)).toBeInTheDocument()
@@ -381,7 +381,7 @@ describe('the manual steps', () => {
   })
 
   it('counts a step it could not read as done rather than nag about a broken request', async () => {
-    answers({}, { '/api/customers': 500 })
+    answers({}, { '/api/organizations': 500 })
     renderPage()
     expect(await screen.findByText(/1 di 4/)).toBeInTheDocument()
     expect(screen.queryByRole('link', { name: 'A mano: Clienti' })).toBeNull()
@@ -390,7 +390,7 @@ describe('the manual steps', () => {
   it('keeps the steps, all ticked, once everything is done', async () => {
     answers({
       '/api/legal-entities': [{ legal_name: 'Ada', vat_number: null, tax_code: 'RSSMRA80A01H501U' }],
-      '/api/customers': { items: [{ id: 'c1' }], next_cursor: null },
+      '/api/organizations': { items: [{ id: 'c1' }], next_cursor: null },
       '/api/time-entries': { items: [{ id: 't1' }], next_cursor: null },
       '/api/documents': { items: [{ id: 'd1' }], next_cursor: null },
       '/api/tokens': [{ id: 'k1' }],

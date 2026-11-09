@@ -71,7 +71,7 @@ def legal_entity(logged_in: TestClient) -> dict[str, Any]:
 @pytest.fixture
 def customer(logged_in: TestClient) -> dict[str, Any]:
     response = logged_in.post(
-        "/api/customers",
+        "/api/organizations",
         json={
             "legal_name": "Acme S.r.l.",
             "vat_number": "12345678901",

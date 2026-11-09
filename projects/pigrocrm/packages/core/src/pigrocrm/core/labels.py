@@ -222,7 +222,7 @@ ENTITY_NOUN: dict[str, tuple[str, str]] = {
     "contract_expense": ("spesa del contratto", "a"),
     "cost": ("costo", "o"),
     "cost_category": ("categoria di costo", "a"),
-    "customer": ("cliente", "o"),
+    "organization": ("cliente", "o"),
     "deal": ("deal", "o"),
     "document": ("documento", "o"),
     "document_blob": ("file del documento", "o"),

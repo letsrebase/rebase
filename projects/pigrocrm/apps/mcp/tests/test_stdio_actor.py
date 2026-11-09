@@ -96,7 +96,7 @@ async def test_a_token_refused_meanwhile_is_the_tool_s_answer_not_a_crash(
         Settings(_env_file=None),  # type: ignore[call-arg]
     )
     async with Client(server) as client:
-        end = await client.call_tool("describe_schema", {"entity_type": "customer"})
+        end = await client.call_tool("describe_schema", {"entity_type": "organization"})
         assert not end.is_error
         with session_factory(owner.engine)() as session:
             row = session.execute(
@@ -104,7 +104,7 @@ async def test_a_token_refused_meanwhile_is_the_tool_s_answer_not_a_crash(
             ).scalar_one()
             session.delete(row)
             session.commit()
-        refused = await client.call_tool("describe_schema", {"entity_type": "customer"})
+        refused = await client.call_tool("describe_schema", {"entity_type": "organization"})
     assert refused.is_error
     text = json.dumps([getattr(c, "text", "") for c in refused.content])
     assert "token" in text.lower()

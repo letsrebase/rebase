@@ -51,10 +51,10 @@ from sqlalchemy.orm import sessionmaker
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.analytics.schemas import PeriodPnlQuery
 from pigrocrm.core.analytics.service import AnalyticsService
-from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.db import month_bounds, session_factory, today_local
 from pigrocrm.core.deals.models import Deal
 from pigrocrm.core.documents.models import Document
+from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.pipeline.models import PipelineStage
 from pigrocrm.core.storage import LocalFileStorage
 from pigrocrm_mcp.context import ScopedSessionProvider
@@ -135,7 +135,7 @@ def cycle_server(mcp_engine: Engine, tmp_path: Path) -> Iterator[Corpus]:
         won = PipelineStage(
             name=STAGE_WON, position=921, default_probability=100, type="won", code=None
         )
-        customer = Customer(
+        customer = Organization(
             legal_name=CUSTOMER, vat_number=VAT_NUMBER, country="IT", custom_fields={}
         )
         session.add_all([open, won, customer])
@@ -195,7 +195,9 @@ def cycle_server(mcp_engine: Engine, tmp_path: Path) -> Iterator[Corpus]:
             # a wholesale delete would take another file's committed rows with it.
             session.execute(delete(Document).where(Document.title.like(f"{_PREFIX} %")))
             session.execute(delete(Deal).where(Deal.name.like(f"{_PREFIX} %")))
-            session.execute(delete(Customer).where(Customer.legal_name.like(f"{_PREFIX} %")))
+            session.execute(
+                delete(Organization).where(Organization.legal_name.like(f"{_PREFIX} %"))
+            )
             session.execute(delete(PipelineStage).where(PipelineStage.name.like(f"{_PREFIX} %")))
             session.commit()
     # `automation_config` is deliberately left alone: `describe_automations` creates the
@@ -246,11 +248,11 @@ async def test_the_agent_runs_the_weekly_review_end_to_end(cycle_server: Corpus)
         assert VAT_FRAGMENT not in briefing
         found = await client.call_tool("search_everything", {"term": VAT_FRAGMENT})
         assert not found.is_error, str(found.content)
-        customers = next(
-            group for group in _payload(found)["groups"] if group["entity"] == "customer"
+        organizations = next(
+            group for group in _payload(found)["groups"] if group["entity"] == "organization"
         )
-        assert CUSTOMER in [hit["label"] for hit in customers["hits"]]
-        assert str(cycle_server.customer_id) in [hit["id"] for hit in customers["hits"]]
+        assert CUSTOMER in [hit["label"] for hit in organizations["hits"]]
+        assert str(cycle_server.customer_id) in [hit["id"] for hit in organizations["hits"]]
 
         # 5. And the review ends where §11.1 says it must: with no tool to change what the
         #    system will do next. Asserted as the **absence of a tool** rather than as a

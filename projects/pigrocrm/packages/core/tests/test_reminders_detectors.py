@@ -18,11 +18,11 @@ from sqlalchemy.orm import Session
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.auth.models import User, UserLegalEntity
 from pigrocrm.core.config import Settings
-from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.deals.models import Deal
 from pigrocrm.core.gmail.models import GmailMessage, GmailMessageLink, GoogleAccount
 from pigrocrm.core.invoices.models import Invoice
 from pigrocrm.core.legal_entities.models import LegalEntity
+from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.pipeline.models import PipelineStage
 from pigrocrm.core.reminders.catalogue import REMINDER_TYPES, reminder_key
 from pigrocrm.core.reminders.detect import DetectorContext
@@ -59,7 +59,7 @@ class World:
     alice: User  # assigns things
     bob: User  # owns the deal
     carol: User  # owns the customer
-    customer: Customer
+    customer: Organization
     deal: Deal
     open_stage: PipelineStage
     legal_entity: UUID
@@ -118,7 +118,7 @@ def world(db_session: Session) -> World:
     stage = PipelineStage(name=f"Aperto {uuid4()}", position=0, default_probability=10, type="open")
     db_session.add(stage)
     db_session.flush()
-    customer = Customer(
+    customer = Organization(
         legal_name="ACME Srl", legal_entity_id=legal_entity, owner_id=users["carol"].id
     )
     db_session.add(customer)
@@ -357,7 +357,7 @@ def test_to_lead_time_raises_to_due_task_early_for_the_person_who_asked(world: W
     )
 
 
-def test_an_task_linked_to_to_person_or_invoice_reaches_the_customers_owner(
+def test_an_task_linked_to_to_person_or_invoice_reaches_the_organizations_owner(
     world: World,
 ) -> None:
     from pigrocrm.core.people.models import Person

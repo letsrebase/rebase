@@ -36,10 +36,10 @@ const EVENTS: ReadonlyArray<readonly [string, string]> = [
   ['POST /api/users/invites', 'invitation_sent'],
   ['POST /api/users/invites/{invitation_id}/resend', 'invitation_sent'],
   ['DELETE /api/users/invites/{invitation_id}', 'invitation_revoked'],
-  ['POST /api/customers', 'customer_created'],
+  ['POST /api/organizations', 'customer_created'],
   // The Gmail proposals a person ticked (REB-223): one event for the batch, not one
   // `customer_created` per customer, so the funnel can tell an import from typing.
-  ['POST /api/customers/from-suggestions', 'customers_imported'],
+  ['POST /api/organizations/from-suggestions', 'customers_imported'],
   ['POST /api/deals', 'deal_created'],
   ['POST /api/documents', 'document_created'],
   ['POST /api/documents/from-template', 'document_created'],

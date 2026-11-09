@@ -17,7 +17,6 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.actor import Actor
-from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.errors import Conflict, NotFound
 from pigrocrm.core.fiscal.schemas import (
     DEFAULT_LEGAL_REFERENCE,
@@ -30,6 +29,7 @@ from pigrocrm.core.invoices.schemas import InvoiceCreate, InvoiceIssue, InvoiceL
 from pigrocrm.core.invoices.service import InvoiceService
 from pigrocrm.core.legal_entities.schemas import LegalEntityUpsert
 from pigrocrm.core.legal_entities.service import LegalEntityService
+from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.storage.local import LocalFileStorage
 
 ADMIN = Actor(id=None, type="system", role="admin")
@@ -62,7 +62,7 @@ def service(db_session: Session, storage: LocalFileStorage) -> InvoiceService:
 
 @pytest.fixture
 def customer_id(db_session: Session) -> UUID:
-    customer = Customer(
+    customer = Organization(
         legal_name="Acme S.r.l.",
         vat_number="12345678901",
         sdi_code="ABCDEFG",
@@ -318,7 +318,7 @@ def test_the_hostile_customer_name_survives_the_whole_round_trip(
 ) -> None:
     """Criterion 2, end to end through storage rather than in memory."""
     hostile = 'Rossi & C. <IdCodice>999</IdCodice> "#$@\\ ]]>'
-    customer = Customer(
+    customer = Organization(
         legal_name=hostile,
         vat_number="12345678901",
         sdi_code="ABCDEFG",
@@ -345,7 +345,7 @@ def test_the_hostile_customer_name_survives_the_whole_round_trip(
 
 
 def _non_resident_customer(db_session: Session, country: str = "GB") -> UUID:
-    customer = Customer(
+    customer = Organization(
         legal_name="Example Ltd",
         vat_number="GB123456789",
         address="1 Old Street",

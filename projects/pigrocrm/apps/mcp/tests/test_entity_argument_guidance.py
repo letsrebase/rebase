@@ -19,11 +19,11 @@ def _payload(result) -> dict:
 async def test_update_customer_schema_lists_the_real_modifiable_fields(server) -> None:
     """A model calling list_tools() must see the actual field names it can send in
     `changes`, not an opaque `{"type": "object"}` it has to guess or infer from
-    create_customer's sibling schema."""
+    create_organization's sibling schema."""
     async with Client(server) as client:
         tools = {tool.name: tool for tool in (await client.list_tools()).tools}
 
-    changes_schema = tools["update_customer"].input_schema["properties"]["changes"]
+    changes_schema = tools["update_organization"].input_schema["properties"]["changes"]
     assert "legal_name" in changes_schema["properties"]
     assert "vat_number" in changes_schema["properties"]
 
@@ -52,7 +52,7 @@ async def test_update_person_schema_documents_what_detach_does(server) -> None:
     detach_schema = changes_schema["properties"]["detach"]
     description = detach_schema.get("description", "").lower()
     assert description
-    assert "client" in description or "customer" in description
+    assert "client" in description or "organization" in description
 
 
 async def test_create_deal_documents_the_expected_date_format(server) -> None:
@@ -70,7 +70,7 @@ async def test_a_malformed_identifier_produces_guidance_not_a_stack_trace(
     raises a bare `ValueError` with an English, unstructured message; the guard
     must render it the same way as every other domain error."""
     async with Client(server) as client:
-        result = await client.call_tool("get_customer", {"customer_id": "not-a-uuid"})
+        result = await client.call_tool("get_organization", {"organization_id": "not-a-uuid"})
 
     assert result.is_error
     message = result.content[0].text
@@ -86,7 +86,7 @@ async def test_a_wrong_typed_value_inside_changes_produces_guidance(
     guard's rendering, not as a raw pydantic dump with a errors.pydantic.dev link."""
     PipelineService(mcp_session).seed_defaults(SETUP)
     async with Client(server) as client:
-        customer = _payload(await client.call_tool("create_customer", {"legal_name": "ACME"}))
+        customer = _payload(await client.call_tool("create_organization", {"legal_name": "ACME"}))
         deal = _payload(
             await client.call_tool("create_deal", {"name": "X", "customer_id": customer["id"]})
         )
@@ -104,7 +104,7 @@ async def test_a_limit_out_of_range_produces_guidance_naming_the_range(
     server, mcp_session: Session
 ) -> None:
     async with Client(server) as client:
-        result = await client.call_tool("search_customers", {"limit": 500})
+        result = await client.call_tool("search_organizations", {"limit": 500})
 
     assert result.is_error
     message = result.content[0].text
@@ -126,7 +126,7 @@ async def test_a_wrong_typed_limit_produces_guidance_not_a_raw_pydantic_dump(
     errors.pydantic.dev link, because the SDK's own pre-call coercion for a bare
     `limit: int` parameter rejected "molti" before `_guard` ever ran."""
     async with Client(server) as client:
-        result = await client.call_tool("search_customers", {"limit": "molti"})
+        result = await client.call_tool("search_organizations", {"limit": "molti"})
 
     assert result.is_error
     message = result.content[0].text
@@ -139,7 +139,7 @@ async def test_to_wrong_typed_probability_on_create_deal_produces_guidance(
 ) -> None:
     PipelineService(mcp_session).seed_defaults(SETUP)
     async with Client(server) as client:
-        customer = _payload(await client.call_tool("create_customer", {"legal_name": "ACME"}))
+        customer = _payload(await client.call_tool("create_organization", {"legal_name": "ACME"}))
         result = await client.call_tool(
             "create_deal",
             {"name": "X", "customer_id": customer["id"], "probability": "molto alta"},
@@ -156,7 +156,7 @@ async def test_a_wrong_typed_money_field_on_create_deal_produces_guidance(
 ) -> None:
     PipelineService(mcp_session).seed_defaults(SETUP)
     async with Client(server) as client:
-        customer = _payload(await client.call_tool("create_customer", {"legal_name": "ACME"}))
+        customer = _payload(await client.call_tool("create_organization", {"legal_name": "ACME"}))
         result = await client.call_tool(
             "create_deal",
             {"name": "X", "customer_id": customer["id"], "budgeted_value": "un sacco"},
@@ -173,7 +173,7 @@ async def test_create_deal_refuses_expected_value_and_points_at_value_lines(
 ) -> None:
     PipelineService(mcp_session).seed_defaults(SETUP)
     async with Client(server) as client:
-        customer = _payload(await client.call_tool("create_customer", {"legal_name": "ACME"}))
+        customer = _payload(await client.call_tool("create_organization", {"legal_name": "ACME"}))
         result = await client.call_tool(
             "create_deal",
             {"name": "X", "customer_id": customer["id"], "expected_value": "un sacco"},
@@ -192,7 +192,7 @@ async def test_create_deal_still_accepts_to_normal_numeric_probability(
     """The permissive `int | str` type must not regress the ordinary path."""
     PipelineService(mcp_session).seed_defaults(SETUP)
     async with Client(server) as client:
-        customer = _payload(await client.call_tool("create_customer", {"legal_name": "ACME"}))
+        customer = _payload(await client.call_tool("create_organization", {"legal_name": "ACME"}))
         deal = _payload(
             await client.call_tool(
                 "create_deal",
@@ -214,10 +214,10 @@ async def test_get_timeline_rejects_a_negative_limit_with_guidance_not_a_crash(
     raw as `psycopg.errors.InvalidRowCountInLimitClause` -- an exception `_guard`
     did not (and, per item 6, could not fully) recover from cleanly."""
     async with Client(server) as client:
-        customer = _payload(await client.call_tool("create_customer", {"legal_name": "ACME"}))
+        customer = _payload(await client.call_tool("create_organization", {"legal_name": "ACME"}))
         result = await client.call_tool(
             "get_timeline",
-            {"entity_type": "customer", "entity_id": customer["id"], "limit": -1},
+            {"entity_type": "organization", "entity_id": customer["id"], "limit": -1},
         )
 
     assert result.is_error
@@ -233,10 +233,10 @@ async def test_get_timeline_rejects_an_oversized_limit_matching_rest_exactly(
     the same request outright -- a parity divergence between the two adapters, not
     only a crash risk."""
     async with Client(server) as client:
-        customer = _payload(await client.call_tool("create_customer", {"legal_name": "ACME"}))
+        customer = _payload(await client.call_tool("create_organization", {"legal_name": "ACME"}))
         result = await client.call_tool(
             "get_timeline",
-            {"entity_type": "customer", "entity_id": customer["id"], "limit": 10**9},
+            {"entity_type": "organization", "entity_id": customer["id"], "limit": 10**9},
         )
 
     assert result.is_error
@@ -246,11 +246,11 @@ async def test_get_timeline_rejects_an_oversized_limit_matching_rest_exactly(
 
 async def test_get_timeline_still_accepts_an_in_range_limit(server, mcp_session: Session) -> None:
     async with Client(server) as client:
-        customer = _payload(await client.call_tool("create_customer", {"legal_name": "ACME"}))
+        customer = _payload(await client.call_tool("create_organization", {"legal_name": "ACME"}))
         result = _payload(
             await client.call_tool(
                 "get_timeline",
-                {"entity_type": "customer", "entity_id": customer["id"], "limit": 50},
+                {"entity_type": "organization", "entity_id": customer["id"], "limit": 50},
             )
         )
 

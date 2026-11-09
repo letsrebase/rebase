@@ -173,7 +173,7 @@ export function useLegalEntitiesToName(): LegalEntityRecord[] | undefined {
 
 /**
  * The legal entity `country` proposes for a new customer (REB-626, spec 2026-10-03 §1.6), read
- * from the server so the form shows what `POST /api/customers` would pick: the rule lives
+ * from the server so the form shows what `POST /api/organizations` would pick: the rule lives
  * in `LegalEntityService.propose` once. `enabled` is the caller's: the customer form asks only
  * from the second legal entity on, while creating, and until the person picks one by hand. A
  * nation is two letters, so a half-typed one asks nothing rather than flipping the picker

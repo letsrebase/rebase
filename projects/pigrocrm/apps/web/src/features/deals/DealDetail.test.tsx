@@ -33,7 +33,7 @@ vi.mock('@/lib/auth', () => ({
   useAuth: () => ({ user: { id: 'u-me', name: 'Io' } }),
 }))
 
-// `api.GET` is spied on directly, mirroring `customers/$customerId.test.tsx`: what
+// `api.GET` is spied on directly, mirroring `organizations/$organizationId.test.tsx`: what
 // is under test is this route's own handling of what the real `unwrap` produces,
 // not a reimplementation of it. `DealDetail` also mounts `useEntitySchema` and
 // `useStages` unconditionally -- both resolve to a harmless empty success below,
@@ -219,13 +219,13 @@ describe('DealDetail', () => {
       expect(within(dialog).getByLabelText('Descrizione riga 1')).toHaveValue('Sito vetrina')
       expect(within(dialog).getByLabelText('Prezzo unitario riga 1')).toHaveValue('4500.00')
       // Both parties named out of the deal this page has already read: no second
-      // request, and no «…» to watch resolve. `DealCustomerCard`'s own `useCustomer`
+      // request, and no «…» to watch resolve. `DealCustomerCard`'s own `useOrganization`
       // is no help here -- it lives in the Collegamenti tab, still unmounted.
       // Scoped to the dialog since the Pipedrive-shaped page (2026-09-09) also names the
       // customer in its own Riepilogo: an unscoped query would match twice and say
       // "found multiple" about a dialog that is in fact correct.
       expect(within(dialog).getByText('ACME Srl')).toBeInTheDocument()
-      expect(mockGet).not.toHaveBeenCalledWith('/api/customers/{customer_id}', expect.anything())
+      expect(mockGet).not.toHaveBeenCalledWith('/api/organizations/{organization_id}', expect.anything())
     })
 
     it('is not offered to a reader', async () => {

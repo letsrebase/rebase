@@ -35,7 +35,6 @@ from pigrocrm.core.activities.service import ActivityService
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.config import Settings
 from pigrocrm.core.contact_points.service import email_addresses
-from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.db.clock import today_local
 from pigrocrm.core.errors import Conflict, NotFound
 from pigrocrm.core.fiscal.repository import FiscalProfileRepository
@@ -52,12 +51,13 @@ from pigrocrm.core.invoices.models import Invoice
 from pigrocrm.core.invoices.naming import number_complete
 from pigrocrm.core.legal_entities.service import LegalEntityService
 from pigrocrm.core.money import round_money
+from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.people.models import Person
 
 # What `_query` yields per row: the invoice, its customer, how many reminder rows exist,
 # how many of them were actually sent, when the last one left, and when the last one was
 # either sent or prepared.
-CandidateRow = tuple[Invoice, Customer, int, int, datetime | None, datetime | None]
+CandidateRow = tuple[Invoice, Organization, int, int, datetime | None, datetime | None]
 
 # The one state in `invoices.payment_status` that means the money arrived. Compared
 # positively -- `!= 'incassato'` -- rather than against a list of the others, so a value
@@ -225,9 +225,9 @@ class PaymentRemindersService:
             raise NotFound(INVOICE_ENTITY, invoice_id)
         self._require_chaseable(invoice)
 
-        customer = self.session.get(Customer, invoice.customer_id)
+        customer = self.session.get(Organization, invoice.customer_id)
         if customer is None or customer.deleted_at is not None:
-            raise NotFound("customer", invoice.customer_id)
+            raise NotFound("organization", invoice.customer_id)
         recipients = self._recipients(customer)
         if not recipients:
             raise Conflict(
@@ -298,7 +298,7 @@ class PaymentRemindersService:
 
         draft = EmailDraftService(self.session, settings=self.settings).create(
             EmailDraftCreate(
-                entity_type="customer",
+                entity_type="organization",
                 entity_id=customer.id,
                 to_addresses=recipients,
                 subject=f"Sollecito pagamento – {self._number(invoice)}",
@@ -327,7 +327,7 @@ class PaymentRemindersService:
         # Last before the commit, per `ActivityService.record`. The payload names the
         # invoice and the position, never the recipient and never the body.
         self.activities.record(
-            "customer",
+            "organization",
             customer.id,
             "gmail.payment_reminder_prepared",
             actor,
@@ -465,7 +465,7 @@ class PaymentRemindersService:
             )
         return iban
 
-    def _recipients(self, customer: Customer) -> list[str]:
+    def _recipients(self, customer: Organization) -> list[str]:
         """The customer's primary address if it has one; otherwise the primary address of
         every live person on it.
 
@@ -516,13 +516,13 @@ class PaymentRemindersService:
         return (
             select(
                 Invoice,
-                Customer,
+                Organization,
                 func.coalesce(reminders.c.lines, 0),
                 func.coalesce(reminders.c.sent, 0),
                 reminders.c.last,
                 reminders.c.last_task,
             )
-            .join(Customer, Customer.id == Invoice.customer_id)
+            .join(Organization, Organization.id == Invoice.customer_id)
             .outerjoin(reminders, reminders.c.invoice_id == Invoice.id)
             .where(
                 # Only an issued fiscal invoice. A `draft` never left the building and a
@@ -543,7 +543,7 @@ class PaymentRemindersService:
                 #    later edit.
                 Invoice.due_date.is_not(None),
                 Invoice.due_date < grace_cutoff,
-                Customer.deleted_at.is_(None),
+                Organization.deleted_at.is_(None),
             )
             .order_by(Invoice.due_date)
         )
@@ -564,7 +564,7 @@ class PaymentRemindersService:
         return self.repo.any_account()
 
     def _replied_on(
-        self, account: GoogleAccount | None, invoice: Invoice, customer: Customer
+        self, account: GoogleAccount | None, invoice: Invoice, customer: Organization
     ) -> date | None:
         """When this client last wrote back about this invoice, or `None`.
 
@@ -588,7 +588,7 @@ class PaymentRemindersService:
         )
         return reply.internal_date.date() if reply is not None else None
 
-    def _addresses_of(self, customer: Customer) -> list[str]:
+    def _addresses_of(self, customer: Organization) -> list[str]:
         """Every address of the customer and of every live person on it.
 
         All of them, and not just the primary: on a small company the person who answers is

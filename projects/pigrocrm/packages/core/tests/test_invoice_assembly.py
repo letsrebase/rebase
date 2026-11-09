@@ -9,7 +9,6 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.actor import Actor
-from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.errors import NotFound
 from pigrocrm.core.fiscal.schemas import FiscalProfileUpsert
 from pigrocrm.core.fiscal.service import FiscalProfileService
@@ -19,6 +18,7 @@ from pigrocrm.core.invoices.schemas import InvoiceCreate, InvoiceIssue, InvoiceL
 from pigrocrm.core.invoices.service import InvoiceService
 from pigrocrm.core.legal_entities.schemas import LegalEntityUpsert
 from pigrocrm.core.legal_entities.service import LegalEntityService
+from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.storage.local import LocalFileStorage
 
 ADMIN = Actor(id=None, type="system", role="admin")
@@ -46,7 +46,7 @@ def service(db_session: Session, tmp_path) -> InvoiceService:  # type: ignore[no
 
 @pytest.fixture
 def customer_id(db_session: Session) -> UUID:
-    customer = Customer(
+    customer = Organization(
         legal_name="Acme S.r.l.",
         vat_number="12345678901",
         sdi_code="ABCDEFG",
@@ -113,7 +113,7 @@ def test_bind_receives_the_line_ids_in_line_order_and_everything_commits_once(
 def test_a_failing_bind_leaves_no_draft_and_keeps_the_callers_other_pending_work(
     service: InvoiceService, db_session: Session, customer_id: UUID
 ) -> None:
-    other = Customer(legal_name="Pending Srl")
+    other = Organization(legal_name="Pending Srl")
     db_session.add(other)
     db_session.flush()
     invoices_before = _count(db_session, Invoice)
@@ -130,7 +130,7 @@ def test_a_failing_bind_leaves_no_draft_and_keeps_the_callers_other_pending_work
     assert _count(db_session, InvoiceLine) == lines_before
     # The caller's own pending work survived the failure: it was never rolled back.
     assert other in db_session
-    assert db_session.get(Customer, other.id) is not None
+    assert db_session.get(Organization, other.id) is not None
 
 
 def test_a_refused_draft_leaves_nothing_behind_and_never_calls_bind(

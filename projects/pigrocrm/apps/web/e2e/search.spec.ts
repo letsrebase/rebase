@@ -19,7 +19,7 @@
  * response carries four groups, not five.
  */
 import { expect, test, type Page } from '@playwright/test'
-import { loginAsAdmin, seedCustomers } from './helpers'
+import { loginAsAdmin, seedOrganizations } from './helpers'
 
 /**
  * Opens the palette with the shortcut and hands back its input.
@@ -48,7 +48,7 @@ test.describe('ricerca globale', () => {
   test('si apre con Cmd/Ctrl+K da qualunque schermata', async ({ page }) => {
     // Not the dashboard: the palette is mounted by the shell, so it has to answer on a
     // screen that has a search box of its own competing for the shortcut.
-    await page.goto('/app/customers')
+    await page.goto('/app/organizations')
     await openPalette(page)
   })
 
@@ -77,7 +77,7 @@ test.describe('ricerca globale', () => {
     // 500 real rows through the real API is the slow part, and it is the point: the
     // count ceiling is a property of the SQL, not of a fixture that claims a number.
     test.setTimeout(180_000)
-    await seedCustomers(page, 'Truncato', 500)
+    await seedOrganizations(page, 'Truncato', 500)
     const input = await openPalette(page)
     await input.fill('Truncato')
 
@@ -93,16 +93,16 @@ test.describe('ricerca globale', () => {
   })
 
   test("«vedi tutti» porta all'elenco filtrato con lo stesso termine", async ({ page }) => {
-    await seedCustomers(page, 'Elenco', 12)
+    await seedOrganizations(page, 'Elenco', 12)
     const input = await openPalette(page)
     await input.fill('Elenco')
     await page.getByRole('option', { name: /vedi tutti/i }).click()
 
-    await expect(page).toHaveURL(/\/app\/customers\?search=Elenco/)
+    await expect(page).toHaveURL(/\/app\/organizations\?search=Elenco/)
     // The URL carrying the term is only half of the promise: the list has to be the one
     // the palette was describing. Stated as "every row but the header is an Elenco row"
     // rather than as an exact count, because the seeded rows are the only ones this
-    // assertion owns -- an unfiltered list would put fifty other customers here.
+    // assertion owns -- an unfiltered list would put fifty other organizations here.
     const rows = page.getByRole('row')
     await expect(rows.filter({ hasNotText: 'Elenco' })).toHaveCount(1)
     expect(await rows.filter({ hasText: 'Elenco' }).count()).toBeGreaterThanOrEqual(12)
@@ -156,12 +156,12 @@ test.describe('ricerca globale', () => {
   test('un frammento di partita IVA trova il cliente', async ({ page }) => {
     // Unique per run, name and number both: this database is not truncated between
     // invocations, and a fixed P.IVA would make the second run of this spec match two
-    // customers and fail on a duplicate that is the fixture's fault, not the search's.
+    // organizations and fail on a duplicate that is the fixture's fault, not the search's.
     const vatNumber = String(Date.now()).slice(-11)
     // The name deliberately carries no digits: the only place the searched fragment can
     // be found is the P.IVA, which is a column this row does not display.
     const legalName = `Rossi Ingegneria ${Date.now().toString(36).replace(/[0-9]/g, 'x')} Srl`
-    const created = await page.request.post('/api/customers', {
+    const created = await page.request.post('/api/organizations', {
       data: { legal_name: legalName, vat_number: vatNumber },
     })
     expect(created.status(), await created.text()).toBe(201)

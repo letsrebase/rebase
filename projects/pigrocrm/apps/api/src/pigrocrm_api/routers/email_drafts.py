@@ -98,10 +98,10 @@ def list_drafts(
     actor: ActorDep,
     settings: SettingsDep,
     # Spelled out as query parameters and hand-assembled below, the same shape as
-    # `routers/customers.py`. No `SafeStr` is needed here and its absence is the point:
+    # `routers/organizations.py`. No `SafeStr` is needed here and its absence is the point:
     # every filter on this list is a closed set or an id, so there is no free text on the
     # surface at all -- which is also why nothing here can become a Gmail search string.
-    entity_type: Annotated[Literal["customer", "person", "deal"] | None, Query()] = None,
+    entity_type: Annotated[Literal["organization", "person", "deal"] | None, Query()] = None,
     entity_id: Annotated[UUID | None, Query()] = None,
     send_state: Annotated[SendState | None, Query()] = None,
     unsent: Annotated[bool, Query()] = False,

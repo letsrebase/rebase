@@ -80,8 +80,8 @@ function ConcentrationTable({
           <TableRow key={`${row.legal_entity_id}:${row.customer_id}`}>
             <TableCell>
               <Link
-                to="/app/customers/$customerId"
-                params={{ customerId: row.customer_id }}
+                to="/app/organizations/$organizationId"
+                params={{ organizationId: row.customer_id }}
                 className="underline-offset-4 hover:underline"
               >
                 {row.legal_name}

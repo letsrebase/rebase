@@ -13,9 +13,9 @@ export function RecordLink({ link }: { link: LinkValue }) {
   )
   const className = 'underline underline-offset-4'
   switch (link.kind) {
-    case 'customer':
+    case 'organization':
       return (
-        <Link to="/app/customers/$customerId" params={{ customerId: link.id }} className={className}>
+        <Link to="/app/organizations/$organizationId" params={{ organizationId: link.id }} className={className}>
           {text}
         </Link>
       )

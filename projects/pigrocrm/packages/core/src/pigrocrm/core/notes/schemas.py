@@ -6,7 +6,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from pigrocrm.core.validation import SafeStr
 
-NoteEntityType = Literal["deal", "customer", "person"]
+NoteEntityType = Literal["deal", "organization", "person"]
 NoteSource = Literal["web", "mcp", "system", "rebase"]
 
 NOTE_MAX_LENGTH = 10_000

@@ -23,7 +23,7 @@ import {
   TableHeader,
   TableRow,
 } from '@rebase/ui/table'
-import { CustomerPicker } from '@/features/customers/CustomerPicker'
+import { OrganizationPicker } from '@/features/organizations/OrganizationPicker'
 import { UploadDropzone } from '@/features/documents/UploadDropzone'
 import { toProblem, type ProblemDetail } from '@/lib/api'
 import { useCan } from '@/lib/auth'
@@ -35,7 +35,7 @@ import {
   countByOutcome,
   countConfirmed,
   countWrites,
-  customersOf,
+  organizationsOf,
   decisionsFor,
   newParties,
   REVIEW_OUTCOME_LABELS,
@@ -45,7 +45,7 @@ import {
   reviewedAsConfirmed,
   sortReviewRows,
   willBeWritten,
-  type ChosenCustomer,
+  type ChosenOrganization,
   type ConfirmRow,
   type ReviewRow,
 } from './importPlan'
@@ -98,10 +98,10 @@ function ImportInvoicesDialog({ onClose }: { onClose: () => void }) {
   const legal_entity = useLegalEntity()
   const [stage, setStage] = useState<Stage>({ kind: 'choose' })
   const [batches, setBatches] = useState<ReviewedBatch[]>([])
-  // The new customers the person unticked, by `partyKey`: unticked is the exception.
+  // The new organizations the person unticked, by `partyKey`: unticked is the exception.
   const [declined, setDeclined] = useState<ReadonlySet<string>>(new Set())
   // The existing customer picked by hand for a new party, by `partyKey`: absent is «create it».
-  const [chosen, setChosen] = useState<ReadonlyMap<string, ChosenCustomer>>(new Map())
+  const [chosen, setChosen] = useState<ReadonlyMap<string, ChosenOrganization>>(new Map())
   const [confirmed, setConfirmed] = useState<ConfirmRow[]>([])
   const [problem, setProblem] = useState<ProblemDetail | null>(null)
 
@@ -162,7 +162,7 @@ function ImportInvoicesDialog({ onClose }: { onClose: () => void }) {
         if (!mounted.current) break
         const result = await confirmImportFiles(batch.files, decisionsFor(batch.rows, declined, created, chosen))
         collected.push(...result)
-        for (const [party, customerId] of customersOf(result)) created.set(party, customerId)
+        for (const [party, customerId] of organizationsOf(result)) created.set(party, customerId)
         done += batch.files.length
         setStage({ kind: 'confirming', done, total })
       }
@@ -321,8 +321,8 @@ function ReviewPanel({
 }: {
   rows: ReviewRow[]
   declined: ReadonlySet<string>
-  chosen: ReadonlyMap<string, ChosenCustomer>
-  onChoose: (key: string, customer: ChosenCustomer | undefined) => void
+  chosen: ReadonlyMap<string, ChosenOrganization>
+  onChoose: (key: string, customer: ChosenOrganization | undefined) => void
   onToggleParty: (key: string) => void
 }) {
   const counts = countByOutcome(rows)
@@ -342,8 +342,8 @@ function ReviewPanel({
       </ul>
 
       {parties.length > 0 ? (
-        <section aria-labelledby="import-new-customers" className="space-y-2 border p-3">
-          <h3 id="import-new-customers" className="font-medium">
+        <section aria-labelledby="import-new-organizations" className="space-y-2 border p-3">
+          <h3 id="import-new-organizations" className="font-medium">
             Clienti da creare
           </h3>
           <p className="text-sm text-muted-foreground">
@@ -364,7 +364,7 @@ function ReviewPanel({
                   {plural(party.invoices, 'fattura', 'fatture')}
                 </span>
               </label>
-              <ExistingCustomerPicker
+              <ExistingOrganizationPicker
                 party={party.taxId !== '' ? `${party.name} (${party.taxId})` : party.name}
                 legalEntityId={party.legalEntityId}
                 mixedLegalEntities={party.mixedLegalEntities}
@@ -409,12 +409,12 @@ function ReviewPanel({
  * an Italian VAT number or tax code, so a customer without one (a foreign customer, a
  * private person with no tax code stated) is offered for creation on every import; this is
  * the way to say it is somebody already known. It is the app's customer search
- * (`CustomerPicker`), limited to the legal entity the invoice is written on: the server takes
+ * (`OrganizationPicker`), limited to the legal entity the invoice is written on: the server takes
  * any `customer_id` it is sent, and an invoice on one legal entity's register for another's
  * customer is a state nothing else in the product can produce. Left empty, the party is
  * created as a new customer, which is the default and the old behaviour.
  */
-function ExistingCustomerPicker({
+function ExistingOrganizationPicker({
   party,
   legalEntityId,
   mixedLegalEntities,
@@ -425,9 +425,9 @@ function ExistingCustomerPicker({
   party: string
   legalEntityId: string | null
   mixedLegalEntities: boolean
-  value: ChosenCustomer | undefined
+  value: ChosenOrganization | undefined
   disabled: boolean
-  onChange: (customer: ChosenCustomer | undefined) => void
+  onChange: (customer: ChosenOrganization | undefined) => void
 }) {
   const id = useId()
   return (
@@ -436,7 +436,7 @@ function ExistingCustomerPicker({
         Cliente
       </Label>
       <div className="w-72">
-        <CustomerPicker
+        <OrganizationPicker
           id={id}
           value={value?.id ?? null}
           selectedName={value?.name}
@@ -467,7 +467,7 @@ function ReviewTableRow({
 }: {
   row: ReviewRow
   declined: ReadonlySet<string>
-  chosen: ReadonlyMap<string, ChosenCustomer>
+  chosen: ReadonlyMap<string, ChosenOrganization>
 }) {
   const { invoice } = row
   const skipped =

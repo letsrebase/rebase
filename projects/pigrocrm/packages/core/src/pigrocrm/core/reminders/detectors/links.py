@@ -24,9 +24,9 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.deals.models import Deal
 from pigrocrm.core.invoices.models import Invoice
+from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.people.models import Person
 
 
@@ -47,7 +47,7 @@ class Links:
 
 
 @dataclass(frozen=True)
-class _Customer:
+class _Organization:
     id: UUID
     name: str
     owner_id: UUID | None
@@ -67,7 +67,7 @@ class LinkResolver:
 
     def __init__(self, session: Session) -> None:
         self.session = session
-        self._customers: dict[UUID, _Customer] = {}
+        self._organizations: dict[UUID, _Organization] = {}
         self._deals: dict[UUID, _Deal] = {}
         self._people: dict[UUID, UUID | None] = {}
         self._invoices: dict[UUID, tuple[UUID, UUID | None, UUID]] = {}
@@ -75,7 +75,7 @@ class LinkResolver:
     def preload(
         self,
         *,
-        customers: Iterable[UUID | None] = (),
+        organizations: Iterable[UUID | None] = (),
         people: Iterable[UUID | None] = (),
         deals: Iterable[UUID | None] = (),
         invoices: Iterable[UUID | None] = (),
@@ -107,7 +107,7 @@ class LinkResolver:
                     deal.id, deal.customer_id, deal.owner_id, deal.legal_entity_id
                 )
         customer_ids = (
-            {value for value in customers if value is not None}
+            {value for value in organizations if value is not None}
             | {value for value in self._people.values() if value is not None}
             | {deal.customer_id for deal in self._deals.values()}
             | {customer_id for customer_id, _, _ in self._invoices.values()}
@@ -115,10 +115,13 @@ class LinkResolver:
         if customer_ids:
             for row in self.session.execute(
                 select(
-                    Customer.id, Customer.legal_name, Customer.owner_id, Customer.legal_entity_id
-                ).where(Customer.id.in_(customer_ids))
+                    Organization.id,
+                    Organization.legal_name,
+                    Organization.owner_id,
+                    Organization.legal_entity_id,
+                ).where(Organization.id.in_(customer_ids))
             ):
-                self._customers[row.id] = _Customer(
+                self._organizations[row.id] = _Organization(
                     row.id, row.legal_name, row.owner_id, row.legal_entity_id
                 )
 
@@ -143,7 +146,7 @@ class LinkResolver:
         if deal is not None:
             customer_id = customer_id or deal.customer_id
             legal_entity_id = legal_entity_id or deal.legal_entity_id
-        customer = self._customers.get(customer_id) if customer_id is not None else None
+        customer = self._organizations.get(customer_id) if customer_id is not None else None
         if customer is not None:
             legal_entity_id = legal_entity_id or customer.legal_entity_id
         return Links(

@@ -26,8 +26,8 @@ def to_domain_error(exc: ValueError) -> DomainError:
     package is a plain `str`, converted by hand) and `pydantic.ValidationError`
     (raised when a tool constructs one of `pigrocrm.core`'s own Create/Update/
     ListQuery schemas from caller-supplied data -- e.g. `DealUpdate(**changes)`
-    inside `tools/deals.py`, or `CustomerListQuery(limit=...)` inside
-    `search_customers`).
+    inside `tools/deals.py`, or `OrganizationListQuery(limit=...)` inside
+    `search_organizations`).
 
     `pydantic.ValidationError` **is** a `ValueError` subclass -- confirmed against
     the installed pydantic, not assumed -- so it is checked first: a caller of
@@ -111,8 +111,8 @@ REMOVED_ARGUMENTS: dict[tuple[str, str], str] = {
         for tool, who, names in (
             ("create_person", "a person's emails, phones and LinkedIn profiles", PERSON_FLAT),
             ("update_person", "a person's emails, phones and LinkedIn profiles", PERSON_FLAT),
-            ("create_customer", "a customer's emails and phones", CUSTOMER_FLAT),
-            ("update_customer", "a customer's emails and phones", CUSTOMER_FLAT),
+            ("create_organization", "a customer's emails and phones", CUSTOMER_FLAT),
+            ("update_organization", "a customer's emails and phones", CUSTOMER_FLAT),
         )
         for name in names
     },

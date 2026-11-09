@@ -376,7 +376,7 @@ def refuse_off_kind(settings: Settings, kind: str | None) -> None:
 
 def _off_entity_type(
     settings: SettingsDep,
-    entity_type: Annotated[Literal["customer", "person", "deal"] | None, Query()] = None,
+    entity_type: Annotated[Literal["organization", "person", "deal"] | None, Query()] = None,
 ) -> None:
     refuse_off_kind(settings, entity_type)
 

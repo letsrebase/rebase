@@ -1,4 +1,4 @@
-"""The legal entity on customers, deals, contracts, documents and costs (REB-623, spec
+"""The legal entity on organizations, deals, contracts, documents and costs (REB-623, spec
 2026-10-03 §1.6, §1.7, §8 «Chain»).
 
 A new customer gets the legal entity its nation proposes; a deal, a contract, a document and
@@ -19,8 +19,6 @@ from pigrocrm.core.actor import Actor
 from pigrocrm.core.calendar.service import CalendarService
 from pigrocrm.core.contracts.schemas import ContractCreate, ContractListQuery
 from pigrocrm.core.contracts.service import ContractService
-from pigrocrm.core.customers.schemas import CustomerCreate, CustomerListQuery, CustomerUpdate
-from pigrocrm.core.customers.service import CustomerService
 from pigrocrm.core.deals.models import Deal
 from pigrocrm.core.deals.schemas import DealCreate, DealListQuery
 from pigrocrm.core.deals.service import DealService
@@ -34,6 +32,12 @@ from pigrocrm.core.invoices.service import InvoiceService
 from pigrocrm.core.legal_entities.models import LegalEntity
 from pigrocrm.core.legal_entities.repository import LegalEntityRepository
 from pigrocrm.core.legal_entities.service import LegalEntityService
+from pigrocrm.core.organizations.schemas import (
+    OrganizationCreate,
+    OrganizationListQuery,
+    OrganizationUpdate,
+)
+from pigrocrm.core.organizations.service import OrganizationService
 from pigrocrm.core.search.schemas import SearchQuery
 from pigrocrm.core.search.service import SearchService
 from pigrocrm.core.storage.local import LocalFileStorage
@@ -77,7 +81,7 @@ def _legal_entity(
 def _customer(session: Session, name: str = "Acme", **overrides: object) -> UUID:
     values: dict[str, object] = {"legal_name": f"{name} S.r.l.", "country": "IT"}
     values.update(overrides)
-    return CustomerService(session).create(CustomerCreate(**values), ADMIN).id  # type: ignore[arg-type]
+    return OrganizationService(session).create(OrganizationCreate(**values), ADMIN).id  # type: ignore[arg-type]
 
 
 def _contract(session: Session, customer_id: UUID) -> UUID:
@@ -145,18 +149,18 @@ def test_an_inactive_legal_entity_is_never_proposed(db_session: Session) -> None
 def test_to_customer_takes_the_proposal_or_the_legal_entity_named(db_session: Session) -> None:
     default = _default(db_session)
     british = _legal_entity(db_session, "rebase ltd", "GB", province=None)
-    service = CustomerService(db_session)
-    proposed = service.create(CustomerCreate(legal_name="Overseas", country="GB"), ADMIN)
+    service = OrganizationService(db_session)
+    proposed = service.create(OrganizationCreate(legal_name="Overseas", country="GB"), ADMIN)
     assert proposed.legal_entity_id == british.id
     named = service.create(
-        CustomerCreate(legal_name="Oltre", country="GB", legal_entity_id=default.id), ADMIN
+        OrganizationCreate(legal_name="Oltre", country="GB", legal_entity_id=default.id), ADMIN
     )
     assert named.legal_entity_id == default.id
     with pytest.raises(NotFound):
-        service.create(CustomerCreate(legal_name="X", legal_entity_id=uuid4()), ADMIN)
+        service.create(OrganizationCreate(legal_name="X", legal_entity_id=uuid4()), ADMIN)
     inactive = _legal_entity(db_session, "chiusa", active=False)
     with pytest.raises(ValidationFailed) as refused:
-        service.create(CustomerCreate(legal_name="X", legal_entity_id=inactive.id), ADMIN)
+        service.create(OrganizationCreate(legal_name="X", legal_entity_id=inactive.id), ADMIN)
     assert refused.value.details["field"] == "legal_entity_id"
 
 
@@ -191,8 +195,8 @@ def test_moving_a_customer_leaves_its_deals_documents_and_invoices_behind(
     assert {deal.legal_entity_id, document.legal_entity_id, before.legal_entity_id} == {default.id}
     assert ContractService(db_session).get(contract_id, ADMIN).legal_entity_id == default.id
 
-    moved = CustomerService(db_session).update(
-        customer_id, CustomerUpdate(legal_entity_id=second.id), ADMIN
+    moved = OrganizationService(db_session).update(
+        customer_id, OrganizationUpdate(legal_entity_id=second.id), ADMIN
     )
     assert moved.legal_entity_id == second.id
     assert DealService(db_session).get(deal.id, ADMIN).legal_entity_id == default.id
@@ -353,8 +357,8 @@ def test_every_list_narrows_to_one_legal_entity_and_the_sum_is_the_whole(
 
     pairs = [
         (
-            CustomerService(db_session),
-            lambda a: CustomerListQuery(legal_entity_id=a),
+            OrganizationService(db_session),
+            lambda a: OrganizationListQuery(legal_entity_id=a),
         ),
         (deals, lambda a: DealListQuery(legal_entity_id=a)),
         (ContractService(db_session), lambda a: ContractListQuery(legal_entity_id=a)),
@@ -385,21 +389,21 @@ def test_every_list_narrows_to_one_legal_entity_and_the_sum_is_the_whole(
     documents_group = next(g for g in narrowed.groups if g.entity == "document")
     assert [h.label for h in documents_group.hits] == ["Beta brief"]
     assert next(g for g in everyone.groups if g.entity == "document").total == 2
-    customers_group = next(
+    organizations_group = next(
         g
         for g in search.search_everything(
             SearchQuery(term="Acme", legal_entity_id=second.id), ADMIN
         ).groups
-        if g.entity == "customer"
+        if g.entity == "organization"
     )
-    assert customers_group.hits == []
+    assert organizations_group.hits == []
 
 
 def test_to_space_with_one_legal_entity_sees_nothing_change(
     db_session: Session, seeded_open_stage_id: UUID
 ) -> None:
     default = _default(db_session)
-    customer = CustomerService(db_session).create(CustomerCreate(legal_name="Solo"), ADMIN)
+    customer = OrganizationService(db_session).create(OrganizationCreate(legal_name="Solo"), ADMIN)
     deal = DealService(db_session).create(
         DealCreate(name="Solo", customer_id=customer.id, pipeline_stage_id=seeded_open_stage_id),
         ADMIN,
@@ -415,7 +419,7 @@ def test_nothing_new_is_born_under_to_customer_of_to_deactivated_legal_entity(
     db_session: Session, local_storage: LocalFileStorage, seeded_open_stage_id: UUID
 ) -> None:
     """Spec §3: the history of a closed legal entity stays readable, a deal, a contract, a
-    document or a proforma under one of its customers is refused in words."""
+    document or a proforma under one of its organizations is refused in words."""
     second = _legal_entity(db_session, "rebase")
     customer_id = _customer(db_session, legal_entity_id=second.id)
     second.active = False
@@ -444,8 +448,8 @@ def test_nothing_new_is_born_under_to_customer_of_to_deactivated_legal_entity(
             ADMIN,
         )
     # Moved to an active legal entity, the same customer works again.
-    CustomerService(db_session).update(
-        customer_id, CustomerUpdate(legal_entity_id=_default(db_session).id), ADMIN
+    OrganizationService(db_session).update(
+        customer_id, OrganizationUpdate(legal_entity_id=_default(db_session).id), ADMIN
     )
     assert (
         DealService(db_session)
