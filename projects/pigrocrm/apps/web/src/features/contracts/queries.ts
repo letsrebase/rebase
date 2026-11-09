@@ -363,6 +363,36 @@ export function useRenewContract(contractId: string) {
   })
 }
 
+/** The legal entity's active contracts, by title, every page (the solo Home's «Contratti
+ *  attivi» and the contracts its «Da fatturare» asks the ready days of). `legalEntityId` null
+ *  reads every legal entity's. Under the `contracts` key, so a contract written anywhere
+ *  refreshes it. */
+export function useActiveContracts(legalEntityId: string | null | undefined, enabled = true) {
+  return useQuery({
+    enabled,
+    queryKey: queryKeys.contracts({ legal_entity_id: legalEntityId ?? null, status: 'active' }),
+    queryFn: async () => {
+      const { items } = await fetchAllPages((cursor) =>
+        unwrap(
+          api.GET('/api/contracts', {
+            params: {
+              query: {
+                status: 'active',
+                ...(legalEntityId ? { legal_entity_id: legalEntityId } : {}),
+                limit: 200,
+                sort: 'title',
+                dir: 'asc',
+                cursor,
+              },
+            },
+          }),
+        ),
+      )
+      return items
+    },
+  })
+}
+
 // -- Cap sulla quota del customer -------------------------------------------------------
 
 /** The legal entity's active contracts that carry a cap on the customer's share (REB-761), for

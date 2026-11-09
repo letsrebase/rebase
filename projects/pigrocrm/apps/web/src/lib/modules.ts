@@ -20,6 +20,7 @@ import { queryKeys } from './query'
 export type ModuleKey = components['schemas']['ModuleRead']['key']
 export type ModuleRead = components['schemas']['ModuleRead']
 export type SpaceModules = components['schemas']['SpaceModulesRead']
+export type SpaceProfile = NonNullable<SpaceModules['profile']>
 
 /**
  * The module names as a person reads them, for the sentence a guard shows before the
@@ -88,6 +89,9 @@ export interface ModuleAccess {
   firstOff: (...keys: readonly ModuleKey[]) => ModuleKey | undefined
   /** The module's name as a person reads it. */
   label: (key: ModuleKey) => string
+  /** The space's profile (spec 2026-11-09, B1): `null` until chosen, and also while the
+   *  first read is on its way or when it failed, which the Home reads as «company». */
+  profile: SpaceProfile | null
   /** The first read is still on its way: a guard that would turn a page away waits for
    *  it, and a read that failed is not "loading" but "not known" (everything on). */
   loading: boolean
@@ -105,6 +109,7 @@ export function moduleAccess(data: SpaceModules | undefined, loading = false): M
     on: (...keys) => firstOff(...keys) === undefined,
     firstOff,
     label: (key) => data?.modules.find((module) => module.key === key)?.label ?? MODULE_LABELS[key],
+    profile: data?.profile ?? null,
     loading,
   }
 }

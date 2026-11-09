@@ -67,12 +67,15 @@ export function CeilingPanel({
   year,
   legalEntityId,
   title,
+  withSimulator = true,
 }: {
   year: number
   /** One legal entity's ceilings, by id; omitted, the sidebar's selection. */
   legalEntityId?: string
   /** Shown beside the year in the heading: the legal entity's name in «tutte». */
   title?: string
+  /** The «ci sta?» simulator under the ceilings; the solo Home draws the ceilings alone. */
+  withSimulator?: boolean
 }) {
   const headroom = useCeilingHeadroom(year, legalEntityId)
   // The legal entity the figures are of: the block's own, else the sidebar's. It keys the
@@ -84,7 +87,7 @@ export function CeilingPanel({
   // (REB-953): with `deals` off there is no simulator, and with `contracts` off no cap to
   // offer. The ceilings themselves stay, the panel is only drawn with `taxes` on.
   const modules = useModules()
-  const simulate = modules.on('deals')
+  const simulate = withSimulator && modules.on('deals')
   const readCaps = simulate && modules.on('contracts')
   const capped = useCappedContracts(legal_entity, readCaps)
 

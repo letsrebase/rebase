@@ -29,6 +29,8 @@ import { Button } from '@rebase/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@rebase/ui/card'
 import { useCanWrite } from '@/lib/auth'
 import { DashboardPage } from '@/features/dashboard/DashboardPage'
+import { SoloHome } from '@/features/dashboard/SoloHome'
+import { useModules } from '@/lib/modules'
 import { ConsentOutcome } from '@/components/ConsentOutcome'
 import { consentOutcome } from '@/features/consent/outcome'
 import type { DashboardSearch, HomeSearch } from '@/features/dashboard/search'
@@ -46,6 +48,7 @@ export function HomePage({
 }) {
   const state = useFirstSteps()
   const canWrite = useCanWrite()
+  const modules = useModules()
   // Held from the first settled answer on, for the reason the module docstring gives.
   // Set during render, React's pattern for state derived from a previous render: the
   // page never draws once with the choice still unmade.
@@ -54,23 +57,25 @@ export function HomePage({
   const chosen = startPage ?? state.spaceEmpty
   if (chosen === null) return null
   if (chosen) return <GetStartedPage outcome={search.outcome} />
-  return (
-    <DashboardPage
-      search={search}
-      onSearchChange={onSearchChange}
-      notice={
-        <>
-          {/* The consent flow comes back here only if the API read the space as empty
-              and this page did not (a read that failed counts as work): the outcome is
-              still the person's to read. */}
-          <ConsentOutcome {...consentOutcome('gmail', search.outcome)} className="mb-6" />
-          <RecordDayShortcut />
-          <PendingProposalsNotice />
-          {state.loading ? null : <CompleteSpaceCard state={state} canWrite={canWrite} />}
-        </>
-      }
-    />
+  // What sits under the title on either Home: the consent flow's outcome, the day shortcut,
+  // the proposals waiting and the «Completa lo spazio» card.
+  const notice = (
+    <>
+      {/* The consent flow comes back here only if the API read the space as empty
+          and this page did not (a read that failed counts as work): the outcome is
+          still the person's to read. */}
+      <ConsentOutcome {...consentOutcome('gmail', search.outcome)} className="mb-6" />
+      <RecordDayShortcut />
+      <PendingProposalsNotice />
+      {state.loading ? null : <CompleteSpaceCard state={state} canWrite={canWrite} />}
+    </>
   )
+  // The profile picks the Home (spec 2026-11-09 B5, REB-958): `solo` gets its own, every
+  // other space (`company`, not chosen yet, or a read that failed) the five tabs it always
+  // had. Not drawn before the profile is known, so a solo space never flashes the tabs.
+  if (modules.loading) return null
+  if (modules.profile === 'solo') return <SoloHome notice={notice} />
+  return <DashboardPage search={search} onSearchChange={onSearchChange} notice={notice} />
 }
 
 /**
