@@ -68,6 +68,17 @@ partial F24 forecast appears.
 The estimate gives the **cost** (on the P&L) and the **cash** (due items) separately, since
 they fall in different months.
 
+**As built (REB-1009).** `GET /api/staff/{id}/hourly-cost` answers the proposal and writes
+nothing; `POST` on the same path adopts the figure the person was shown. The hour is a month's
+cost (`PayrollService.reference_monthly_cost`: the estimate's cost, or an accepted payslip's gross)
+over the member's `hours_per_month`, rounded to the cent. The month is the current one, moved to
+the nearest month served whole, since a part month's cost is prorated and would understate the
+hour. It needs a linked user and the hours; a missing one is a 422 that names it. Adoption is
+refused (409) when the cost no longer gives the figure sent, so what is written is what was seen,
+and writes through `TimeEntryService.update_user_rates` (timeline entry included); hours already
+logged keep their cost. Both are `PERSON_ONLY_ACTIONS` (`propose_staff_hourly_cost`,
+`adopt_staff_hourly_cost`): no token reads or adopts it, and there is no tool.
+
 **On the P&L.** The period P&L (`analytics/pnl.py:171-176` values labour from
 `time_entries.applied_cost`) gains its own personnel line from payroll: accepted payslips, or
 the estimate before them. For a user linked to a staff member, the period P&L excludes that

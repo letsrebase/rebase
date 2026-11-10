@@ -65,6 +65,7 @@ from pigrocrm.core.staff.estimate import (
 from pigrocrm.core.staff.models import PayrollSettings, StaffMember, StaffPayslip
 from pigrocrm.core.staff.repository import StaffRepository
 from pigrocrm.core.staff.schemas import (
+    EstimateSource,
     MemberMonthRead,
     PayrollCashItemRead,
     PayrollCostRead,
@@ -135,6 +136,30 @@ class PayrollService:
             cost_total=sum((r.cost.total for r in rows if r.cost is not None), ZERO_MONEY),
             cash_total=sum((i.amount for r in rows for i in r.cash), ZERO_MONEY),
         )
+
+    def reference_monthly_cost(
+        self, member: StaffMember, today: dt.date
+    ) -> tuple[dt.date, EstimateSource, Decimal] | None:
+        """The month's cost an hourly cost is taken from: the current month, moved to the
+        nearest month the person was in service for the whole of it (a part month's cost is
+        prorated and would understate the hour). `None` when the pay inputs give no cost
+        there, or no whole month was served. An accepted payslip's gross counts as the cost
+        of its month, as everywhere else."""
+        first = first_of(member.start_date)
+        low = first if member.start_date == first else add_months(first, 1)
+        month = max(first_of(today), low)
+        if member.end_date is not None:
+            end_first = first_of(member.end_date)
+            ends_on_last = add_months(end_first, 1) - dt.timedelta(days=1) == member.end_date
+            high = end_first if ends_on_last else add_months(end_first, -1)
+            month = min(month, high)
+        if month < low:
+            return None
+        context = _Context.load(self.repo, member.legal_entity_id, [member])
+        estimate = context.estimate(member, month, cost_only=True)
+        if estimate.cost is None:
+            return None
+        return month, estimate.source, estimate.cost.total
 
     def personnel_cost_in_range(
         self, legal_entity_id: UUID | None, date_from: dt.date, date_to: dt.date

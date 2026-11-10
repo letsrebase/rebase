@@ -7,6 +7,8 @@ from pydantic import Field
 
 from pigrocrm.core.staff.payroll import PayrollService
 from pigrocrm.core.staff.schemas import (
+    HourlyCostAdopt,
+    HourlyCostProposalRead,
     Kind,
     PayDayRead,
     PayDayWrite,
@@ -97,6 +99,26 @@ def record_staff_payslip(
     stops being an estimate and the person's other months are estimated from its ratios. A
     person's act: no agent credential."""
     return StaffService(session).record_staff_payslip(staff_member_id, data, actor)
+
+
+@router.get("/{staff_member_id}/hourly-cost", response_model=HourlyCostProposalRead)
+def propose_staff_hourly_cost(
+    staff_member_id: UUID, session: SessionDep, actor: ActorDep
+) -> HourlyCostProposalRead:
+    """What an hour of this person costs, from a month's cost over their working hours a
+    month, next to the hourly cost their linked user has now. Writes nothing. A person's
+    read: no agent credential."""
+    return StaffService(session).propose_staff_hourly_cost(staff_member_id, actor)
+
+
+@router.post("/{staff_member_id}/hourly-cost", response_model=HourlyCostProposalRead)
+def adopt_staff_hourly_cost(
+    staff_member_id: UUID, data: HourlyCostAdopt, session: SessionDep, actor: ActorDep
+) -> HourlyCostProposalRead:
+    """Adopts the figure the person was shown as the linked user's default hourly cost, from
+    now on; hours already logged keep theirs. 409 if the cost no longer gives that figure. A
+    person's act: no agent credential."""
+    return StaffService(session).adopt_staff_hourly_cost(staff_member_id, data, actor)
 
 
 @router.get("/{staff_member_id}", response_model=StaffMemberRead)

@@ -5930,6 +5930,34 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/staff/{staff_member_id}/hourly-cost": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Propose Staff Hourly Cost
+         * @description What an hour of this person costs, from a month's cost over their working hours a
+         *     month, next to the hourly cost their linked user has now. Writes nothing. A person's
+         *     read: no agent credential.
+         */
+        get: operations["propose_staff_hourly_cost_api_staff__staff_member_id__hourly_cost_get"];
+        put?: never;
+        /**
+         * Adopt Staff Hourly Cost
+         * @description Adopts the figure the person was shown as the linked user's default hourly cost, from
+         *     now on; hours already logged keep theirs. 409 if the cost no longer gives that figure. A
+         *     person's act: no agent credential.
+         */
+        post: operations["adopt_staff_hourly_cost_api_staff__staff_member_id__hourly_cost_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/staff/{staff_member_id}": {
         parameters: {
             query?: never;
@@ -10615,6 +10643,50 @@ export interface components {
             email: string;
             /** Reachable */
             reachable: boolean;
+        };
+        /**
+         * HourlyCostAdopt
+         * @description The figure the person saw and confirms: adopted only if it is still what the cost
+         *     gives, so a change of pay between the screen and the click is never adopted unseen.
+         */
+        HourlyCostAdopt: {
+            /** Hourly Cost */
+            hourly_cost: number | string;
+        };
+        /**
+         * HourlyCostProposalRead
+         * @description What a staff member's hour costs, from what they cost (design § 5), and the hourly cost
+         *     the linked user has today. Read-only: nothing here has been written.
+         */
+        HourlyCostProposalRead: {
+            /**
+             * Staff Member Id
+             * Format: uuid
+             */
+            staff_member_id: string;
+            /**
+             * User Id
+             * Format: uuid
+             */
+            user_id: string;
+            /**
+             * Month
+             * Format: date
+             */
+            month: string;
+            /**
+             * Source
+             * @enum {string}
+             */
+            source: "estimate" | "payslip";
+            /** Monthly Cost */
+            monthly_cost: string;
+            /** Hours Per Month */
+            hours_per_month: string;
+            /** Hourly Cost */
+            hourly_cost: string;
+            /** Current Hourly Cost */
+            current_hourly_cost: string | null;
         };
         /**
          * IdentitySpace
@@ -60595,6 +60667,248 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PayslipRead"];
+                };
+            };
+            /** @description Permission denied: the actor does not have the required role. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The requested resource does not exist or was removed. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The request conflicts with the current state of the resource. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    propose_staff_hourly_cost_api_staff__staff_member_id__hourly_cost_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                staff_member_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HourlyCostProposalRead"];
+                };
+            };
+            /** @description Permission denied: the actor does not have the required role. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The requested resource does not exist or was removed. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The request conflicts with the current state of the resource. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    adopt_staff_hourly_cost_api_staff__staff_member_id__hourly_cost_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                staff_member_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["HourlyCostAdopt"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HourlyCostProposalRead"];
                 };
             };
             /** @description Permission denied: the actor does not have the required role. */

@@ -316,6 +316,51 @@ def test_an_administrator_records_a_payslip_and_reads_the_months_estimate(
     assert after["members"][0]["not_estimated"] == []
 
 
+def test_an_administrator_reads_the_hourly_cost_and_adopts_the_figure_they_saw(
+    logged_in: TestClient, api_session: Session, admin_user: Any
+) -> None:
+    """REB-1009 over HTTP: the proposal writes nothing; adopting writes the confirmed figure."""
+    entity = _entity(api_session, "it-standard", "std")
+    member = logged_in.post(
+        "/api/staff",
+        json=_employee(
+            entity,
+            part_time_percent="100",
+            employer_inps_rate="30.00",
+            employer_inail_rate="1.00",
+            hours_per_month="160",
+            user_id=str(admin_user.id),
+        ),
+    ).json()["id"]
+    proposed = logged_in.get(f"/api/staff/{member}/hourly-cost")
+    assert proposed.status_code == 200, proposed.text
+    body = proposed.json()
+    assert body["monthly_cost"] == "3275.00" and body["hourly_cost"] == "20.47"
+    assert body["current_hourly_cost"] is None
+    assert logged_in.get(f"/api/staff/{member}/hourly-cost").json()["current_hourly_cost"] is None
+
+    stale = logged_in.post(f"/api/staff/{member}/hourly-cost", json={"hourly_cost": "19.00"})
+    assert stale.status_code == 409, stale.text
+    adopted = logged_in.post(f"/api/staff/{member}/hourly-cost", json={"hourly_cost": "20.47"})
+    assert adopted.status_code == 200, adopted.text
+    assert adopted.json()["current_hourly_cost"] == "20.47"
+    assert logged_in.get(f"/api/staff/{member}/hourly-cost").json()["current_hourly_cost"] == (
+        "20.47"
+    )
+
+
+def test_a_collaborator_is_refused_the_hourly_cost(
+    collaborator_client: TestClient, api_session: Session
+) -> None:
+    assert collaborator_client.get(f"/api/staff/{uuid4()}/hourly-cost").status_code == 403
+    assert (
+        collaborator_client.post(
+            f"/api/staff/{uuid4()}/hourly-cost", json={"hourly_cost": "1.00"}
+        ).status_code
+        == 403
+    )
+
+
 def test_a_collaborator_reads_the_stipendi_aggregate_and_not_the_payroll_items(
     collaborator_client: TestClient, api_session: Session
 ) -> None:
