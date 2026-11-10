@@ -99,6 +99,18 @@ async def upload(
     actor: ActorDep,
     settings: SettingsDep,
     call: ModelCallDep,
+    read: Annotated[
+        bool,
+        Query(
+            description=(
+                "`false` stores the files and reads none: no classification, no model call, "
+                "and the items are answered as the upload made them (new, duplicate or "
+                "discarded). The caller files them itself, for example a receipt photo "
+                "that is only the justification of the purchase it registers. "
+                "Default `true`."
+            )
+        ),
+    ] = True,
 ) -> InboxUploadResult:
     """Puts every file of the request in the inbox, each one item: new, a duplicate of the item
     that came first, or discarded with its reason. A ZIP is kept as the parent of its entries.
@@ -106,7 +118,7 @@ async def upload(
     the body is not read before the role is checked. Every new item is then read once
     (`InboxClassifier`): a FatturaPA is routed, a PDF or a photo becomes a proposal when the
     space's model is on, and at most five files go to the model in one request:
-    `POST /api/inbox/classify` reads the rest."""
+    `POST /api/inbox/classify` reads the rest. With `read=false` none is read."""
     actor.require_write(UPLOAD_ACTION)
     form = await request.form()
     files = [
@@ -115,7 +127,7 @@ async def upload(
         if isinstance(part, StarletteUploadFile)
     ]
     return await run_in_threadpool(
-        _upload_and_classify, session, storage, settings, call, files, actor
+        _upload_and_classify, session, storage, settings, call, files, actor, read
     )
 
 
@@ -126,8 +138,11 @@ def _upload_and_classify(
     call: ModelCall,
     files: list[tuple[str, bytes]],
     actor: Actor,
+    read: bool,
 ) -> InboxUploadResult:
     uploaded = InboxUploads(session, storage).upload(files, actor)
+    if not read:
+        return uploaded
     classifier = InboxClassifier(session, storage, ModelGateway(session, settings, call))
     return classifier.classify_uploaded(uploaded, actor, model_budget=MODEL_READS_PER_UPLOAD)
 

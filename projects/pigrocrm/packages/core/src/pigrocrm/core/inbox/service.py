@@ -15,6 +15,7 @@ from pigrocrm.core.actor import Actor
 from pigrocrm.core.db.scope import widened
 from pigrocrm.core.errors import Conflict, NotFound, ValidationFailed
 from pigrocrm.core.inbox.access import ENTITY, visible_item, visible_to
+from pigrocrm.core.inbox.filing import withdraw_proposals
 from pigrocrm.core.inbox.models import InboxItem
 from pigrocrm.core.inbox.repository import InboxRepository
 from pigrocrm.core.inbox.schemas import (
@@ -28,8 +29,6 @@ from pigrocrm.core.inbox.schemas import (
 )
 from pigrocrm.core.legal_entities.repository import LegalEntityRepository
 from pigrocrm.core.proposals.models import Proposal
-from pigrocrm.core.proposals.schemas import ProposalReject
-from pigrocrm.core.proposals.service import ProposalService
 
 DISCARD_ACTION = "discard_inbox_item"
 DUPLICATE_ACTION = "mark_inbox_item_duplicate"
@@ -39,7 +38,6 @@ _WAITING = ("new", "proposed")
 _INVOICE_KINDS = ("sales_invoice", "supplier_invoice", "credit_note")
 _STATEMENT_FILES = ("csv", "xls", "xlsx", "camt053")
 _CERTAIN_KIND = "il tipo l'ha letto il file stesso, con dati certi: non si cambia"
-_WITHDRAWN = "Il documento e' stato rivisto da una persona"
 
 
 _STATE_WORDS = {
@@ -173,33 +171,6 @@ class InboxService:
         self.session.refresh(item)
         return attach_proposals(self.session, [InboxItemRead.model_validate(item)])[0]
 
-    def _withdraw_proposals(self, item: InboxItem, actor: Actor) -> None:
-        """What a person says about an item makes a proposal waiting on it moot: it is
-        rejected, as the person would have rejected it. An agent never decides a proposal
-        (REB-806), so it is told to leave the item to a person instead."""
-        pending = list(
-            self.session.execute(
-                select(Proposal.id).where(
-                    Proposal.inbox_item_id == item.id, Proposal.status == "pending"
-                )
-            )
-            .scalars()
-            .all()
-        )
-        if not pending:
-            return
-        if actor.type == "mcp":
-            raise Conflict(
-                ENTITY,
-                "ha una proposta in attesa: la decide una persona in Proposte",
-                item_id=str(item.id),
-            )
-        for proposal_id in pending:
-            ProposalService(self.session).reject_without_commit(
-                proposal_id, ProposalReject(reason=_WITHDRAWN), actor
-            )
-        self.session.refresh(item)
-
     def _require_waiting(self, item: InboxItem, what: str) -> None:
         if item.state not in _WAITING:
             raise Conflict(
@@ -217,7 +188,7 @@ class InboxService:
         if item.state == "discarded":
             return self._reads(item)
         self._require_waiting(item, "non si scarta")
-        self._withdraw_proposals(item, actor)
+        withdraw_proposals(self.session, item, actor)
         item.state = "discarded"
         item.reason = data.reason
         item.read_started_at = None
@@ -257,7 +228,7 @@ class InboxService:
                 duplicate_of_id=str(item.duplicate_of_id),
             )
         self._require_waiting(item, "non si segna come doppione")
-        self._withdraw_proposals(item, actor)
+        withdraw_proposals(self.session, item, actor)
         item.state = "duplicate"
         item.duplicate_of_id = original.id
         item.reason = f"Doppione di {original.original_name}, indicato {_by(actor)}"
@@ -307,7 +278,7 @@ class InboxService:
             return self._reads(item)
         previous = {"kind": item.kind, "legal_entity_id": _text(item.legal_entity_id)}
         if kind_changes:
-            self._withdraw_proposals(item, actor)
+            withdraw_proposals(self.session, item, actor)
             item.kind = data.kind
             item.state = "new"
             item.read_started_at = None

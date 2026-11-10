@@ -16,6 +16,7 @@ from pigrocrm.core.fields.service import FieldDefinitionService
 from pigrocrm.core.fields.validator import validate_custom_fields
 from pigrocrm.core.fiscal.pack import PACK_IT_FLAT_RATE
 from pigrocrm.core.fiscal.repository import FiscalProfileRepository
+from pigrocrm.core.inbox.filing import file_as_purchase
 from pigrocrm.core.inbox.models import InboxItem
 from pigrocrm.core.legal_entities.service import LegalEntityService
 from pigrocrm.core.money import ZERO_MONEY, round_money
@@ -504,6 +505,8 @@ class PurchaseService:
                 "deal_id": str(purchase.deal_id) if purchase.deal_id else None,
             },
         )
+        if purchase.inbox_item_id is not None:
+            file_as_purchase(self.session, purchase.inbox_item_id, purchase.id, actor)
         self.session.commit()
         return PurchaseRead.model_validate(purchase)
 
@@ -595,8 +598,12 @@ class PurchaseService:
             if current != data.vat_lines:
                 changed.append("vat_lines")
                 purchase.vat_lines = self._rows(data.vat_lines)
+        linked: UUID | None = changes.get("inbox_item_id")
+        newly_linked = linked if linked != purchase.inbox_item_id else None
         for key, value in changes.items():
             setattr(purchase, key, value)
+        if newly_linked is not None:
+            file_as_purchase(self.session, newly_linked, purchase.id, actor)
         self.activities.record(
             ENTITY,
             purchase.id,
