@@ -103,6 +103,8 @@ TOOL_MODULES: Mapping[str, tuple[ModuleKey, ...]] = {
     "create_recurring_expense": ("purchases",),
     "stop_recurring_expense": ("purchases",),
     "list_recurring_expenses": ("purchases",),
+    "list_iva_periods": ("purchases",),
+    "get_iva_register": ("purchases",),
     # taxes: the estimate, the ceilings and the year.
     "get_ceiling_headroom": ("taxes",),
     "get_year_overview": ("taxes",),

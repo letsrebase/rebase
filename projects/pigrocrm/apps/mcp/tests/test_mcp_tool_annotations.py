@@ -103,7 +103,9 @@ DEFAULT_BUDGET_BYTES = 106_800
 # REB-1021: 127.0 KB, up from 126.4 KB, for `list_iva_settlements` (a full-access
 # administrator's, a year and a company) and the profile's `iva_frequency`, measured at 126,947.
 # REB-1022: 128.5 KB, up from 127.0 KB, the same three tools, measured at 128,444.
-FULL_ACCESS_BUDGET_BYTES = 128_500
+# REB-1024: TBD KB, up from 128.5 KB, for `list_iva_periods` and `get_iva_register` (a full-access
+# administrator's: a year, a period, a register and a page), measured at 128,312.
+FULL_ACCESS_BUDGET_BYTES = 130_000
 
 # A name starting with one of these reads. The tools that read without such a name are
 # listed, so adding one is a decision somebody wrote down.
