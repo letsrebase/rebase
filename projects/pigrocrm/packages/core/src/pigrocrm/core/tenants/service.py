@@ -157,6 +157,15 @@ class TenantService:
         reason = self._reason(data.slug)
         if reason is not None:
             raise ValidationFailed("tenant", "slug", reason)
+        founder = data.founder_name
+        if not founder:
+            # The space's name is the space's, never a person's (REB-822): refused before
+            # the registry row, so nothing is left behind to undo.
+            raise ValidationFailed(
+                "tenant",
+                "first_name",
+                "indica il tuo nome: è quello con cui compari nello spazio",
+            )
         db_name = tenant_database_name(data.slug)
         tenant = Tenant(slug=data.slug, db_name=db_name, owner_email=data.email.lower())
         self.session.add(tenant)
@@ -183,7 +192,7 @@ class TenantService:
                     UserService(space).create(
                         # No password: the admin enters with a link by mail, and the first
                         # link proves the address (spec 2026-09-12 §6.4).
-                        UserCreate(email=data.email, password=None, name=data.name, role="admin"),
+                        UserCreate(email=data.email, password=None, name=founder, role="admin"),
                         Actor.system(),
                     )
                     # Born ready (spec 2026-09-12 §6.5): stages, templates and

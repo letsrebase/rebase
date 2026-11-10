@@ -32,11 +32,12 @@ import { SignupPage } from './SignupPage'
 const GET = api.GET as unknown as ReturnType<typeof vi.fn>
 const POST = api.POST as unknown as ReturnType<typeof vi.fn>
 
-const NOBODY = { member: false, has_spaces: false }
-const MEMBER = { member: true, has_spaces: false }
-const OWNER = { member: true, has_spaces: true }
+// `known_name`: whether the hub also has the person's name, so the wizard need not ask (REB-822).
+const NOBODY = { member: false, has_spaces: false, known_name: false }
+const MEMBER = { member: true, has_spaces: false, known_name: true }
+const OWNER = { member: true, has_spaces: true, known_name: true }
 // A late answer for another address: a non-member, so landing it would drop the greeting.
-const OTHER = { member: false, has_spaces: true }
+const OTHER = { member: false, has_spaces: true, known_name: false }
 
 /** `POST` answers by path: the member question, the link, the signup. */
 function answers(by: Record<string, unknown>) {
@@ -169,6 +170,7 @@ describe('the signup wizard', () => {
     render(<SignupPage />)
     await throughStepOne(user, 'bob@studio.it')
     await user.type(await screen.findByLabelText('Come si chiama il tuo spazio?'), 'Ada Lovelace')
+    await user.type(screen.getByLabelText('Come ti chiami?'), 'Bob')
     await waitFor(
       () => expect(screen.getByRole('button', { name: 'Crea lo spazio' })).toBeEnabled(),
       PROBE_TIMEOUT,
@@ -221,6 +223,7 @@ describe('the signup wizard', () => {
     // own, later budget rather than the wizard being dead-ended by one throttled probe.
     expect(screen.getByRole('button', { name: 'Crea lo spazio' })).toBeDisabled()
     await user.type(screen.getByLabelText('Come si chiama il tuo spazio?'), '2')
+    await user.type(screen.getByLabelText('Come ti chiami?'), 'Bob')
     await waitFor(
       () => expect(screen.getByRole('button', { name: 'Crea lo spazio' })).toBeEnabled(),
       PROBE_TIMEOUT,
@@ -234,6 +237,7 @@ describe('the signup wizard', () => {
     render(<SignupPage />)
     await throughStepOne(user, 'bob@studio.it')
     await user.type(await screen.findByLabelText('Come si chiama il tuo spazio?'), 'Ada Lovelace')
+    await user.type(screen.getByLabelText('Come ti chiami?'), 'Bob')
     // The generic Italian fallback, never the "still checking" ellipsis that used to
     // hang forever, alongside the address it is about, and the button is not held
     // hostage by an answer that never came: POST /api/tenants/ validates the slug
@@ -252,7 +256,14 @@ describe('the signup wizard', () => {
     await user.click(button)
     await waitFor(() =>
       expect(POST).toHaveBeenCalledWith('/api/tenants/', {
-        body: { slug: 'ada-lovelace', name: 'Ada Lovelace', email: 'bob@studio.it', member: false },
+        body: {
+          slug: 'ada-lovelace',
+          name: 'Ada Lovelace',
+          email: 'bob@studio.it',
+          member: false,
+          first_name: 'Bob',
+          last_name: null,
+        },
       }),
     )
   })
@@ -267,6 +278,7 @@ describe('the signup wizard', () => {
     render(<SignupPage />)
     await throughStepOne(user, 'bob@studio.it')
     await user.type(await screen.findByLabelText('Come si chiama il tuo spazio?'), 'Ada Lovelace')
+    await user.type(screen.getByLabelText('Come ti chiami?'), 'Bob')
     // The API's own sentence, not a generic one, alongside the address, and the
     // field is not marked invalid: a failed probe is not proof the slug itself is a
     // problem.
@@ -284,7 +296,14 @@ describe('the signup wizard', () => {
     await user.click(button)
     await waitFor(() =>
       expect(POST).toHaveBeenCalledWith('/api/tenants/', {
-        body: { slug: 'ada-lovelace', name: 'Ada Lovelace', email: 'bob@studio.it', member: false },
+        body: {
+          slug: 'ada-lovelace',
+          name: 'Ada Lovelace',
+          email: 'bob@studio.it',
+          member: false,
+          first_name: 'Bob',
+          last_name: null,
+        },
       }),
     )
   })
@@ -445,5 +464,73 @@ describe('the fast path (REB-488)', () => {
     await waitFor(() =>
       expect(screen.getByRole('button', { name: 'Crea lo spazio' })).toBeEnabled(),
     )
+  })
+
+  it('asks for the person\u2019s own name when the hub has none, and sends it apart from the space\u2019s', async () => {
+    answers({ '/api/tenants/member': NOBODY, '/api/tenants/': { slug: 'studio-bob' } })
+    const user = userEvent.setup()
+    render(<SignupPage />)
+    await throughStepOne(user, 'bob@studio.it')
+    await user.type(await screen.findByLabelText('Come si chiama il tuo spazio?'), 'Studio Bob')
+    await waitFor(
+      () => expect(screen.getByRole('status')).toHaveTextContent(/è libero/),
+      PROBE_TIMEOUT,
+    )
+    // Free slug, space named: still not enough without the person's name.
+    expect(screen.getByRole('button', { name: 'Crea lo spazio' })).toBeDisabled()
+    await user.type(screen.getByLabelText('Come ti chiami?'), 'Roberto')
+    await user.type(screen.getByLabelText('Cognome'), 'Rossi')
+    await user.click(screen.getByRole('button', { name: 'Crea lo spazio' }))
+    await waitFor(() =>
+      expect(POST).toHaveBeenCalledWith('/api/tenants/', {
+        body: {
+          slug: 'studio-bob',
+          name: 'Studio Bob',
+          email: 'bob@studio.it',
+          member: false,
+          first_name: 'Roberto',
+          last_name: 'Rossi',
+        },
+      }),
+    )
+  })
+
+  it('does not ask a person the hub already knows, and sends no name', async () => {
+    answers({ '/api/tenants/member': MEMBER })
+    const user = userEvent.setup()
+    render(<SignupPage />)
+    await throughStepOne(user)
+    await screen.findByLabelText('Come si chiama il tuo spazio?')
+    expect(screen.queryByLabelText('Come ti chiami?')).toBeNull()
+  })
+
+  it('asks for the name when the server could not find it at signup, keeping what was typed', async () => {
+    POST.mockImplementation(((path: string) =>
+      Promise.resolve(
+        path === '/api/tenants/member'
+          ? { data: MEMBER, response: { status: 200 } }
+          : {
+              error: {
+                code: 'validation_failed',
+                title: 'Dati non validi',
+                status: 422,
+                detail: 'indica il tuo nome',
+                field: 'first_name',
+              },
+              response: { status: 422 },
+            },
+      )) as never)
+    const user = userEvent.setup()
+    render(<SignupPage />)
+    await throughStepOne(user)
+    await user.type(await screen.findByLabelText('Come si chiama il tuo spazio?'), 'Ada Lovelace')
+    await waitFor(
+      () => expect(screen.getByRole('button', { name: 'Crea lo spazio' })).toBeEnabled(),
+      PROBE_TIMEOUT,
+    )
+    await user.click(screen.getByRole('button', { name: 'Crea lo spazio' }))
+    expect(await screen.findByLabelText('Come ti chiami?')).toBeInTheDocument()
+    expect(screen.getByLabelText('Come si chiama il tuo spazio?')).toHaveValue('Ada Lovelace')
+    expect(screen.getByRole('alert')).toHaveTextContent(/scrivilo qui sotto/)
   })
 })

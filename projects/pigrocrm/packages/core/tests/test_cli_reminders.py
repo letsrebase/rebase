@@ -102,7 +102,9 @@ def spaces(settings: Settings, registry: Engine) -> Iterator[None]:
     service = TenantService(session, settings)
     try:
         for slug in SPACES:
-            service.provision(TenantSignup(slug=slug, name=f"Studio {slug}", email=OWNERS[slug]))
+            service.provision(
+                TenantSignup(first_name="Ada", slug=slug, name=f"Studio {slug}", email=OWNERS[slug])
+            )
         yield
     finally:
         for slug in SPACES:
