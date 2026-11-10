@@ -240,8 +240,9 @@ def approve_monthly_report(
 def freelancer_availability(
     session: SessionDep, actor: ActorDep, params: Annotated[AvailabilityParams, Query()]
 ) -> FreelancerAvailability:
-    """The days a week a freelancer is committed to, by ISO week, from their active
-    engagements; `sconosciuta` where an engagement has no `days_per_week`."""
+    """The days a week a freelancer is committed to, by ISO week, from their live engagements
+    (draft, out for signature and active: the ones the overlap warning counts);
+    `sconosciuta` where an engagement has no `days_per_week`."""
     return FreelancerService(session).availability(
         actor,
         freelancer_id=params.freelancer_id,
