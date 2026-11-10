@@ -17409,6 +17409,8 @@ export interface components {
             as_of: string | null;
             /** Excluded Currencies */
             excluded_currencies: string[];
+            /** Accounts Without Balance */
+            accounts_without_balance: number;
         };
         /**
          * UnbilledBacklog
