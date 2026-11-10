@@ -254,6 +254,7 @@ ENTITY_NOUN: dict[str, tuple[str, str]] = {
     "declared_tax_figure": ("cifra dichiarata", "a"),
     "monthly_report": ("rendiconto mensile", "o"),
     "note": ("nota", "a"),
+    "payroll_month": ("mese di paga", "o"),
     "payroll_settings": ("impostazioni delle paghe", "a"),
     "period_lock": ("mese chiuso", "o"),
     "person": ("persona", "a"),

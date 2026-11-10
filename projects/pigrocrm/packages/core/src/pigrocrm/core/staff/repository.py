@@ -4,12 +4,18 @@ import datetime as dt
 from collections.abc import Iterable
 from uuid import UUID
 
-from sqlalchemy import or_, select
+from sqlalchemy import ColumnElement, or_, select
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.auth.models import User
 from pigrocrm.core.fiscal.models import FiscalProfile
-from pigrocrm.core.staff.models import PayrollSettings, StaffMember, StaffPayslip
+from pigrocrm.core.proposals.models import Proposal
+from pigrocrm.core.staff.models import (
+    PayrollMonthClosure,
+    PayrollSettings,
+    StaffMember,
+    StaffPayslip,
+)
 from pigrocrm.core.staff.schemas import StaffListQuery
 
 
@@ -80,6 +86,61 @@ class StaffRepository:
         self.session.add(payslip)
         self.session.flush()
         return payslip
+
+    def pending_payslip_proposals(
+        self, legal_entity_id: UUID, month: dt.date, visible: ColumnElement[bool]
+    ) -> dict[UUID, Proposal]:
+        """The payslip proposals waiting for a person for `month`, by the staff member they are
+        for (the oldest first, so a second one for the same person does not hide the first).
+        Only members of the legal entity count: a proposal's `staff_member_id` is checked against
+        the entity's own people when it is made, and read under the row policy here."""
+        ids = {
+            str(row)
+            for row in self.session.execute(
+                select(StaffMember.id).where(StaffMember.legal_entity_id == legal_entity_id)
+            ).scalars()
+        }
+        out: dict[UUID, Proposal] = {}
+        if not ids:
+            return out
+        rows = self.session.execute(
+            select(Proposal)
+            .where(
+                Proposal.target_type == "payslip",
+                Proposal.status == "pending",
+                Proposal.proposed_fields["period"].astext == month.isoformat(),
+                Proposal.proposed_fields["staff_member_id"].astext.in_(ids),
+                visible,
+            )
+            .order_by(Proposal.created_at.asc(), Proposal.id.asc())
+        ).scalars()
+        for row in rows:
+            out.setdefault(UUID(str(row.proposed_fields["staff_member_id"])), row)
+        return out
+
+    def closure(self, legal_entity_id: UUID, month: dt.date) -> PayrollMonthClosure | None:
+        return self.session.execute(
+            select(PayrollMonthClosure).where(
+                PayrollMonthClosure.legal_entity_id == legal_entity_id,
+                PayrollMonthClosure.month == month,
+            )
+        ).scalar_one_or_none()
+
+    def closed_months(
+        self, legal_entity_id: UUID | None
+    ) -> dict[tuple[UUID, dt.date], PayrollMonthClosure]:
+        """Every closed month of one legal entity, or of all the caller sees."""
+        stmt = select(PayrollMonthClosure)
+        if legal_entity_id is not None:
+            stmt = stmt.where(PayrollMonthClosure.legal_entity_id == legal_entity_id)
+        return {
+            (row.legal_entity_id, row.month): row for row in self.session.execute(stmt).scalars()
+        }
+
+    def add_closure(self, closure: PayrollMonthClosure) -> PayrollMonthClosure:
+        self.session.add(closure)
+        self.session.flush()
+        return closure
 
     def user_exists(self, user_id: UUID) -> bool:
         return self.session.get(User, user_id) is not None

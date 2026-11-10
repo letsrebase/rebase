@@ -83,6 +83,7 @@ export function AiModelPanel() {
   })
   const [edits, setEdits] = useState<Partial<Draft>>({})
   const [acknowledged, setAcknowledged] = useState(false)
+  const [payslipAcknowledged, setPayslipAcknowledged] = useState(false)
   const [tried, setTried] = useState<string | null>(null)
 
   const store = (state: AiModel) => queryClient.setQueryData(queryKeys.aiModel, state)
@@ -95,6 +96,7 @@ export function AiModelPanel() {
       store(state)
       setEdits({})
       setAcknowledged(false)
+      setPayslipAcknowledged(false)
       toast.success('Impostazioni del modello salvate')
     },
     onError: (error) => toast.error(toProblem(error).detail),
@@ -251,6 +253,38 @@ export function AiModelPanel() {
               </div>
               <Button disabled={!acknowledged || missing.length > 0 || dirty || save.isPending} onClick={turnOn}>
                 Accendi il modello
+              </Button>
+            </>
+          )}
+        </section>
+
+        <section aria-labelledby="ai-payslips" className="max-w-xl space-y-3 border-t pt-4">
+          <h3 id="ai-payslips" className="font-medium">
+            Lettura dei cedolini
+          </h3>
+          <p className="text-sm">{server.payslip_notice}</p>
+          {server.enabled ? null : (
+            <p className="text-sm text-muted-foreground">Funziona solo con il modello acceso.</p>
+          )}
+          {server.read_payslips ? (
+            <Button variant="outline" disabled={save.isPending} onClick={() => save.mutate({ read_payslips: false })}>
+              Spegni la lettura dei cedolini
+            </Button>
+          ) : (
+            <>
+              <div className="flex items-center gap-2">
+                <Checkbox
+                  id="ai-payslip-ack"
+                  checked={payslipAcknowledged}
+                  onCheckedChange={(checked) => setPayslipAcknowledged(checked === true)}
+                />
+                <Label htmlFor="ai-payslip-ack">Ho letto cosa riceve il modello di un cedolino</Label>
+              </div>
+              <Button
+                disabled={!payslipAcknowledged || save.isPending}
+                onClick={() => save.mutate({ read_payslips: true, privacy_acknowledged: payslipAcknowledged })}
+              >
+                Accendi la lettura dei cedolini
               </Button>
             </>
           )}

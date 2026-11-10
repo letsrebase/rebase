@@ -51,6 +51,22 @@ def privacy_notice(provider: str | None, model: str | None) -> str:
     )
 
 
+def payslip_notice(provider: str | None, model: str | None) -> str:
+    who = (
+        f"{PROVIDER_LABELS[provider]} (modello {model})"
+        if provider in PROVIDER_LABELS and model
+        else "il fornitore che sceglierai"
+    )
+    return (
+        "Se accendi anche la lettura dei cedolini, quando un amministratore carica un cedolino "
+        f"PigroCRM ne invia a {who} il testo, o il PDF se non ha testo, per leggerne il nome "
+        "della persona, il mese e le cifre (lordo, netto, ritenute). Sono i dati personali "
+        "piu' delicati che il prodotto tratta: se resta spenta, un cedolino non viene letto e "
+        "lo legge il tuo agente o le cifre le scrivi tu. Una persona accetta sempre la proposta, "
+        "e un cedolino caricato da chi non e' amministratore non viene mai letto."
+    )
+
+
 class AiModelService:
     def __init__(self, session: Session, settings: Settings, call: ModelCall) -> None:
         self.session = session
@@ -59,10 +75,12 @@ class AiModelService:
         self.activities = ActivityService(session)
 
     def _read(self, config: AiModelConfig | None) -> AiModelRead:
+        provider = config.provider if config else None
+        model = config.model if config else None
         return AiModelRead(
             enabled=bool(config and config.enabled),
-            provider=config.provider if config else None,  # type: ignore[arg-type]
-            model=config.model if config else None,
+            provider=provider,  # type: ignore[arg-type]
+            model=model,
             has_key=bool(config and config.api_key_sealed),
             daily_cap_eur=config.daily_cap_eur if config else None,
             input_eur_per_mtok=config.input_eur_per_mtok if config else None,
@@ -71,9 +89,9 @@ class AiModelService:
             spent_today_eur=self.gateway.spent_today(),
             privacy_acknowledged_at=config.privacy_acknowledged_at if config else None,
             privacy_acknowledged_by_id=config.privacy_acknowledged_by_id if config else None,
-            privacy_notice=privacy_notice(
-                config.provider if config else None, config.model if config else None
-            ),
+            privacy_notice=privacy_notice(provider, model),
+            read_payslips=bool(config and config.read_payslips),
+            payslip_notice=payslip_notice(provider, model),
         )
 
     def get(self, actor: Actor) -> AiModelRead:
@@ -121,6 +139,10 @@ class AiModelService:
             # consent.
             config.privacy_acknowledged_at = None
             config.privacy_acknowledged_by_id = None
+            if config.read_payslips:
+                # The payslip notice names them too.
+                config.read_payslips = False
+                changed.append("read_payslips")
         if (provider_or_model_changed or data.clear_api_key) and config.enabled:
             config.enabled = False
             changed.append("enabled")
@@ -135,6 +157,18 @@ class AiModelService:
         elif data.enabled is True and data.privacy_acknowledged:
             # Already on, and the same person says they have read the notice again.
             self._acknowledge(config, actor)
+
+        if data.read_payslips is not None and data.read_payslips != config.read_payslips:
+            if data.read_payslips and not data.privacy_acknowledged:
+                raise ValidationFailed(
+                    ENTITY,
+                    "privacy_acknowledged",
+                    "prima di accendere la lettura dei cedolini va letto cosa invia "
+                    "(payslip_notice)",
+                    expected="privacy_acknowledged = true",
+                )
+            config.read_payslips = data.read_payslips
+            changed.append("read_payslips")
 
         self.session.flush()
         self.activities.record(ENTITY, config.id, "updated", actor, {"changed": changed})

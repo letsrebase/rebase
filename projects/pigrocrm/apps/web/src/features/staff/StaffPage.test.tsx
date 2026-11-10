@@ -162,7 +162,7 @@ describe('«Persone dell\'azienda»', () => {
     renderPage()
     const table = await screen.findByRole('table')
     const giulia = within(table).getByText('Giulia Bianchi').closest('tr')!
-    expect(within(giulia).getByText('Cedolino accettato')).toBeInTheDocument()
+    expect(within(giulia).getByText('Cedolino accettato il 28/10/2026')).toBeInTheDocument()
     expect(within(giulia).getAllByText('Cedolino').length).toBeGreaterThanOrEqual(2)
     expect(within(giulia).getByText(/il 10\/11\/2026/)).toBeInTheDocument()
     expect(within(giulia).getByText('Accettato')).toBeInTheDocument()
@@ -378,5 +378,78 @@ describe('«Correggi il cedolino»', () => {
 
     await user.click(screen.getByText('Marco Rossi', { selector: 'p' }))
     expect(within(await screen.findByLabelText('Persona aperta')).queryByRole('button', { name: 'Correggi il cedolino' })).toBeNull()
+  })
+})
+
+describe('«Ricevuto» and «Chiuso» (REB-1045)', () => {
+  const RECEIVED = {
+    ...MARCO_ESTIMATE,
+    received: {
+      proposal_id: 'pr-1',
+      inbox_item_id: 'it-1',
+      gross: '2600.00',
+      net: '1800.00',
+      withholding: '330.00',
+      confidence: '0.92',
+      confidence_reason: null,
+      created_at: '2026-11-03T09:00:00Z',
+    },
+  }
+
+  it('reads «Ricevuto» on a person with a waiting payslip and accepts it by the proposal\'s own call', async () => {
+    answers['/api/staff/payroll/{legal_entity_id}'] = month([GIULIA_PAYSLIP, RECEIVED])
+    vi.mocked(api.POST).mockResolvedValue({ data: { id: 'pr-1', status: 'accepted' }, response: new Response(null, { status: 200 }) } as never)
+    const user = userEvent.setup()
+    renderPage()
+    const table = await screen.findByRole('table')
+    const marco = within(table).getByText('Marco Rossi').closest('tr')!
+    expect(within(marco).getByText('Ricevuto')).toBeInTheDocument()
+    expect(within(marco).getByText('Da accettare')).toBeInTheDocument()
+    expect(screen.getByText(/Da accettare: Marco Rossi/)).toBeInTheDocument()
+
+    await user.click(within(table).getByText('Marco Rossi'))
+    const panel = await screen.findByLabelText('Persona aperta')
+    expect(within(panel).getByRole('button', { name: 'Rifiuta…' })).toBeInTheDocument()
+    expect(within(panel).getByRole('button', { name: 'Apri il PDF' })).toBeInTheDocument()
+    await user.click(within(panel).getByRole('button', { name: 'Accetta il cedolino' }))
+    await waitFor(() =>
+      expect(api.POST).toHaveBeenCalledWith('/api/proposals/{proposal_id}/accept', {
+        params: { path: { proposal_id: 'pr-1' } },
+        body: {},
+      }),
+    )
+  })
+
+  it('reads «Chiuso» with a lock and who closed it, and offers no accept and no correction', async () => {
+    answers['/api/staff/payroll/{legal_entity_id}'] = {
+      ...month([GIULIA_PAYSLIP, RECEIVED]),
+      closed: { legal_entity_id: ENTITY, month: '2026-10-01', closed_at: '2026-11-05T10:00:00Z', closed_by: 'Admin' },
+    }
+    const user = userEvent.setup()
+    renderPage()
+    const table = await screen.findByRole('table')
+    expect(within(table).getAllByText('Chiuso')).toHaveLength(2)
+    expect(screen.getByText('Chiuso il 05/11/2026 da Admin')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Chiudi il mese' })).toBeNull()
+    await user.click(within(table).getByText('Giulia Bianchi'))
+    const panel = await screen.findByLabelText('Persona aperta')
+    expect(within(panel).queryByRole('button', { name: 'Correggi il cedolino' })).toBeNull()
+    expect(within(panel).queryByRole('button', { name: 'Accetta il cedolino' })).toBeNull()
+  })
+
+  it('asks before closing, names who is still «Stimato», and shows the server\'s refusal', async () => {
+    vi.mocked(api.POST).mockResolvedValue({ error: { detail: 'il mese di paga ottobre 2026 e\' gia\' chiuso' }, response: new Response(null, { status: 409 }) } as never)
+    const user = userEvent.setup()
+    renderPage()
+    await screen.findByRole('table')
+    await user.click(screen.getByRole('button', { name: 'Chiudi il mese' }))
+    const dialog = await screen.findByRole('dialog')
+    expect(dialog).toHaveTextContent('Marco Rossi')
+    await user.click(within(dialog).getByRole('button', { name: 'Chiudi il mese' }))
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent('gia\' chiuso')
+    expect(api.POST).toHaveBeenCalledWith('/api/staff/payroll/{legal_entity_id}/closures', {
+      params: { path: { legal_entity_id: ENTITY } },
+      body: { month: '2026-10-01' },
+    })
   })
 })

@@ -114,6 +114,7 @@ FREE_TEXT_TOOLS: frozenset[str] = frozenset(
         "get_staff_member",
         "list_staff",
         "get_payroll_month",
+        "close_payroll_month",
         # Bank accounts (a name typed by the owner) and what the bank wrote on a movement.
         "list_bank_accounts",
         "create_bank_account",
