@@ -185,6 +185,13 @@ describe('the acts on an item', () => {
     await waitFor(() => expect(toast.success).toHaveBeenCalledWith('Documento scartato.'))
   })
 
+  it('says that a proposal waiting on the document is rejected too, before it happens', async () => {
+    serving({ shown: detail({ id: 'i1', state: 'proposed', kind: 'receipt', proposal_id: 'p1' }) })
+    panel()
+    await userEvent.click(await screen.findByRole('button', { name: 'Scarta…' }))
+    expect(await screen.findByRole('note')).toHaveTextContent('proposta in attesa')
+  })
+
   it('keeps the dialog open with the server’s sentence when the item was decided meanwhile', async () => {
     serving({ shown: detail({ id: 'i1' }) })
     vi.mocked(api.POST).mockResolvedValue(refused(409, { detail: 'inbox_item: non si scarta: l’elemento è già registrato', code: 'conflict', title: 'x', status: 409, instance: '/' }) as never)

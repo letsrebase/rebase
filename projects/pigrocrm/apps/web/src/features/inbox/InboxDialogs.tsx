@@ -42,10 +42,13 @@ const REASON_MAX = 500
  */
 export function DiscardDialog({
   count,
+  withProposal = false,
   onConfirm,
   onClose,
 }: {
   count: number
+  /** Some of the documents have a proposal waiting: discarding rejects it, and the person is told. */
+  withProposal?: boolean
   onConfirm: (reason: string) => Promise<void>
   onClose: () => void
 }) {
@@ -62,6 +65,7 @@ export function DiscardDialog({
             nuovo viene riconosciuto come doppione e resta scartato.
           </DialogDescription>
         </DialogHeader>
+        {withProposal ? <ProposalNotice /> : null}
         {problem === null ? null : <QueryErrorBanner error={problem} />}
         <div className="space-y-2">
           <Label htmlFor="inbox-discard-reason">Motivo</Label>
@@ -95,6 +99,15 @@ export function DiscardDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  )
+}
+
+/** What a person's act does to the proposal waiting on a document, said before it happens. */
+function ProposalNotice() {
+  return (
+    <p role="note" className="border bg-paper px-3 py-2 text-sm">
+      C’è una proposta in attesa su questo documento: la rifiuti insieme a quello che stai facendo.
+    </p>
   )
 }
 
@@ -156,10 +169,11 @@ export function KindDialog({
         <DialogHeader>
           <DialogTitle>{item.kind === null ? 'Indica il tipo' : 'Cambia tipo'}</DialogTitle>
           <DialogDescription>
-            Il documento resta in «In arrivo» finché non c’è il modulo che registra quel tipo.
+            Il documento non viene registrato da nessuna parte: resta in «In arrivo».
             {certain ? ' Il tipo l’ha letto il file stesso, con dati certi: non si cambia.' : ''}
           </DialogDescription>
         </DialogHeader>
+        {item.state === 'proposed' && kindChanged ? <ProposalNotice /> : null}
         {setKind.error ? <QueryErrorBanner error={setKind.error} /> : null}
         <div className="space-y-2">
           <Label htmlFor="inbox-kind">Che cos’è</Label>
@@ -227,6 +241,7 @@ export function DuplicateDialog({ item, onClose }: { item: InboxItem; onClose: (
             Dice di quale file è una copia. Esce da «Da gestire» e resta in «Scartati e doppioni».
           </DialogDescription>
         </DialogHeader>
+        {item.state === 'proposed' ? <ProposalNotice /> : null}
         {mark.error ? <QueryErrorBanner error={mark.error} /> : null}
         {candidates.isError ? <QueryErrorBanner error={candidates.error} /> : null}
         <div className="space-y-2">

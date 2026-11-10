@@ -379,6 +379,22 @@ describe('the bulk bar', () => {
     await waitFor(() => expect(toast.success).toHaveBeenCalledWith('2 documenti scartati.'))
   })
 
+  it('keeps the dialog, the selection and the server’s sentence when every item is refused', async () => {
+    serving({ byState: { new: [NEW_RECEIPT] } })
+    vi.mocked(api.POST).mockResolvedValue(
+      refused(409, { detail: 'inbox_item: non si scarta: l’elemento è già registrato', code: 'conflict', title: 'x', status: 409, instance: '/' }) as never,
+    )
+    page()
+    await userEvent.click(await screen.findByRole('checkbox', { name: 'Scegli scontrino.pdf' }))
+    await userEvent.click(within(screen.getByRole('toolbar')).getByRole('button', { name: 'Scarta…' }))
+    const dialog = await screen.findByRole('dialog')
+    await userEvent.type(within(dialog).getByLabelText('Motivo'), 'x')
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Scarta' }))
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent('già registrato')
+    expect(dialog).toHaveTextContent('Scarta il documento')
+    expect(screen.getByRole('toolbar', { hidden: true })).toHaveTextContent('1 scelto')
+  })
+
   it('has no checkboxes and no bar on a tab where nothing waits', async () => {
     serving({ byState: { discarded: [item({ state: 'discarded', reason: 'Non è nostro' })] } })
     page('set_aside')

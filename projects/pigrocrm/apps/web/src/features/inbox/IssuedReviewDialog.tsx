@@ -40,9 +40,12 @@ export function IssuedReviewDialog({ item, onClose }: { item: InboxItem; onClose
   const refresh = useAfterUpload()
   const invalidateImport = useInvalidateAfterImport()
   const review = useQuery({
-    queryKey: ['inbox', 'issued-review', item.id],
-    // A review is read once per opening: a second one would show a state the first one wrote.
+    // Outside the `inbox` prefix a write invalidates: the item is `filed` once imported, and a
+    // second read of its review would answer 409 under the result. Read once per opening.
+    queryKey: ['issued-review', item.id],
     gcTime: 0,
+    staleTime: Infinity,
+    refetchOnWindowFocus: false,
     queryFn: () =>
       unwrap(
         api.GET('/api/inbox/items/{item_id}/issued-review', {

@@ -12,9 +12,12 @@ export interface UploadEvents {
   refused: (file: File, reason: string) => void
 }
 
-/** The refusal's sentence: the server's own when there is one, after «Non caricato:». */
+/** The refusal's sentence: the server's own when there is one, after «Non caricato:». A sentence
+ *  that opens with a plain word is lowered to read on from the colon; one that opens with a file
+ *  name («Fattura.pdf: ...») is left as it is. */
 export function refusal(detail: string): string {
-  return `Non caricato: ${detail.charAt(0).toLowerCase()}${detail.slice(1)}`
+  const plainWord = /^[A-Z][a-zàèéìòù]*( |$)/.test(detail)
+  return `Non caricato: ${plainWord ? detail.charAt(0).toLowerCase() + detail.slice(1) : detail}`
 }
 
 /**

@@ -229,27 +229,31 @@ export function InboxPage({
   /** One write for every selected item, sent one after the other: a refusal on one (it was
    *  decided meanwhile) does not stop the rest, and the toast says how it went. */
   async function forEach(ids: readonly string[], act: (id: string) => Promise<unknown>, done: string) {
-    let failed: string | null = null
+    let failure: unknown = null
     let count = 0
     for (const id of ids) {
       try {
         await act(id)
         count += 1
       } catch (error) {
-        failed ??= toProblem(error).detail
+        failure ??= error
       }
     }
-    setSelected([])
-    if (count > 0) toast.success(`${documents(count)} ${done}.`)
-    if (failed !== null) toast.error(failed)
-    if (count === 0 && failed !== null) throw new Error(failed)
+    if (count > 0) {
+      setSelected([])
+      toast.success(`${documents(count)} ${done}.`)
+      if (failure !== null) toast.error(toProblem(failure).detail)
+      return
+    }
+    // Nothing was done: the dialog stays open with the server's own sentence, and the selection.
+    if (failure !== null) throw failure
   }
 
   const header = (
     <PageHeader
       icon={FileInput}
       title="In arrivo"
-      description="I file arrivati nello spazio che aspettano una persona: guarda cosa è stato letto, poi archivia o scarta."
+      description="I file arrivati nello spazio che aspettano una persona: guarda cosa è stato letto, poi decidi cosa farne."
       actions={
         <>
           {modelReads && unread > 0 && canWrite ? (
@@ -362,6 +366,13 @@ export function InboxPage({
           <Upload className="mr-2 size-4" aria-hidden />
           Carica documenti
         </Button>
+      ) : null}
+      {list.hasMore ? (
+        <div className="mt-4 flex justify-center">
+          <Button variant="outline" size="sm" onClick={list.fetchMore} disabled={list.isFetchingMore}>
+            Mostra altri
+          </Button>
+        </div>
       ) : null}
     </div>
   ) : (
@@ -572,6 +583,7 @@ export function InboxPage({
       {bulk === 'discard' ? (
         <DiscardDialog
           count={chosen.length}
+          withProposal={items.some((candidate) => chosen.includes(candidate.id) && candidate.state === 'proposed')}
           onClose={() => setBulk(null)}
           onConfirm={(reason) =>
             forEach(chosen, (id) => discard.mutateAsync({ id, reason }), 'scartati')

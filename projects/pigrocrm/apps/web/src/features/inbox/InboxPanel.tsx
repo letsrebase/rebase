@@ -215,7 +215,9 @@ function Loaded({ item, onOpen }: { item: InboxItemDetail; onOpen: (id: string) 
         : 'Letto dal modello'
       : item.reason === 'Tipo indicato da una persona'
         ? 'Indicato da una persona'
-        : null
+        : item.reason === 'Tipo indicato dal tuo agente'
+          ? 'Indicato dal tuo agente'
+          : null
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -437,6 +439,7 @@ function Loaded({ item, onOpen }: { item: InboxItemDetail; onOpen: (id: string) 
       {dialog === 'discard' ? (
         <DiscardDialog
           count={1}
+          withProposal={item.state === 'proposed'}
           onClose={() => setDialog(null)}
           onConfirm={async (reason) => {
             await discard.mutateAsync({ id: item.id, reason })
