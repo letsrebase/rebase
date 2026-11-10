@@ -119,6 +119,20 @@ describe.each(Object.entries(configs))('%s', (_label, conf) => {
     expect(prefixed.length, 'no slug-prefixed location for the inbox upload').toBeGreaterThan(0)
   })
 
+  it("raises the limit for a bank statement's upload to the 10 MiB file plus its wrapper (REB-1025)", () => {
+    // One CAMT.053 or XLSX of at most 10 MiB (`STATEMENT_SIZE_MAX`) in a multipart body: under the
+    // 1m server default the upload would answer 413 before the API reads the role.
+    const blocks = [...conf.matchAll(/location [^\n]*api\/bank-accounts\/[^\n]*statements\$[^\n]*\{([\s\S]*?)\n {4}\}/g)]
+    expect(blocks.length, 'no location matching the statement upload').toBeGreaterThan(0)
+    for (const block of blocks) {
+      const directive = block[1]?.match(/^\s*client_max_body_size\s+(\S+);/m)
+      expect(directive, `no client_max_body_size in ${block[0].slice(0, 60)}`).toBeTruthy()
+      expect(bodySizeBytes(directive?.[1] ?? '')).toBeGreaterThanOrEqual(10 * 1024 * 1024)
+    }
+    const prefixed = blocks.filter((block) => /a-z0-9/.test(block[0].split('\n')[0] ?? ''))
+    expect(prefixed.length, 'no slug-prefixed location for the statement upload').toBeGreaterThan(0)
+  })
+
   it('gives the inbox classify routes a long read, bare and under a prefix (REB-972)', () => {
     // Reading a file is a call to the space's model that can take minutes, and a request reads up
     // to five: under nginx's 60 s default the person would get a 504 while the work went on.

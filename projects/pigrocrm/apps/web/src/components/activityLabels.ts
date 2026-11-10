@@ -31,6 +31,9 @@ const KIND_LABELS: Record<string, string> = {
   // tool it came out of: the provenance value is the CRM's own record, not copy (see
   // `invoices/models.py::Invoice.imported_from`).
   imported: 'Fattura importata',
+  // A bank statement's own history (REB-1025): `imported` above is its import too, read on the
+  // account; the account's `created`, `updated` and `archived` are the plain words.
+  reverted: 'Importazione annullata',
   // An inbox item a person registered as a purchase (REB-1023): the entry on the item.
   filed: 'Registrato come acquisto',
   // A contract's own history (REB-741..744): what each write on its page records.

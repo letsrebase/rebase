@@ -146,6 +146,15 @@ export const MIN_ROLE = {
   update_deal_rate: 'admin',
   close_period: 'admin',
   reopen_period: 'admin',
+  // Cassa (REB-1025): bank accounts, statements and movements are an administrator's to read
+  // and write (the balance discloses the same fact).
+  create_bank_account: 'admin',
+  update_bank_account: 'admin',
+  archive_bank_account: 'admin',
+  list_statements: 'admin',
+  list_bank_movements: 'admin',
+  import_statement: 'admin',
+  revert_statement: 'admin',
   // Contratti: the page's own writes (REB-741..744). `require_write` in the services.
   create_contract: 'collaborator',
   render_contract_register: 'collaborator',
