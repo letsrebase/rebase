@@ -54,6 +54,10 @@ from pigrocrm.core.proposals.schemas import (
     ReadDocumentFields,
     WorkUnitProposalFields,
 )
+from pigrocrm.core.staff.estimate import first_of
+from pigrocrm.core.staff.repository import StaffRepository
+from pigrocrm.core.staff.schemas import PayslipProposalFields
+from pigrocrm.core.staff.service import StaffService
 from pigrocrm.core.work_units.models import Approval, WorkUnit
 from pigrocrm.core.work_units.service import set_transition_context
 
@@ -71,6 +75,10 @@ _NO_FILING_MODULE: dict[str, str] = {
 }
 _PROPOSAL_ITEM_REASON = "Proposta in attesa di una persona"
 _REJECTED_ITEM_REASON = "Proposta rifiutata: l'elemento attende di essere riletto"
+_REJECTED_PAYSLIP_REASON = (
+    "Proposta rifiutata: il cedolino resta qui, da rileggere o da scrivere a mano"
+)
+_FILED_PAYSLIP_REASON = "Cedolino accettato"
 
 
 def _first_error(exc: PydanticValidationError) -> str:
@@ -142,6 +150,41 @@ class ProposalService:
             )
         return read
 
+    def _parse_payslip_fields(self, fields: dict[str, Any]) -> PayslipProposalFields:
+        try:
+            return PayslipProposalFields.model_validate(fields)
+        except PydanticValidationError as exc:
+            raise ValidationFailed(
+                ENTITY,
+                "proposed_fields",
+                _first_error(exc),
+                expected=(
+                    "staff_member_id, period, gross, net e withholding (net e withholding "
+                    "non superano gross)"
+                ),
+            ) from exc
+
+    def _payslip_proposal(self, data: ProposalCreate, item: InboxItem) -> dict[str, Any]:
+        """What a payslip proposal stores: the fields as parsed (the month as its first day, the
+        amounts as decimal strings), for a person of the legal entity the item is of. The item
+        that has no legal entity yet takes the person's, so the people of that entity are the
+        ones who see it (`inbox/access.py`)."""
+        fields = self._parse_payslip_fields(data.proposed_fields)
+        member = StaffRepository(self.session).get(fields.staff_member_id)
+        if member is None:
+            raise NotFound("staff_member", fields.staff_member_id)
+        if item.legal_entity_id is not None and item.legal_entity_id != member.legal_entity_id:
+            raise Conflict(
+                ENTITY,
+                "l'elemento di «In arrivo» e' di un'altra azienda rispetto alla persona del "
+                "cedolino",
+                inbox_item_id=str(item.id),
+            )
+        item.legal_entity_id = member.legal_entity_id
+        return fields.model_copy(update={"period": first_of(fields.period)}).model_dump(
+            mode="json", exclude_none=True
+        )
+
     # ---- create (the one proposal-creation step, reachable from any door) ---------
 
     def create(self, data: ProposalCreate, actor: Actor) -> ProposalRead:
@@ -154,6 +197,7 @@ class ProposalService:
         # One dispatch per target type, and no `else` that reads a kind this method does not
         # know as a day (REB-972): the source it reads from, then what it proposes.
         item: InboxItem | None = None
+        proposed_fields: dict[str, Any] = data.proposed_fields
         if data.target_type == "contract":
             self._require_document_source(data)
             if data.contract_id is not None:
@@ -187,6 +231,10 @@ class ProposalService:
             if self.session.get(Contract, data.contract_id) is None:
                 raise NotFound("contract", data.contract_id)
         elif data.target_type in INBOX_TARGET_TYPES:
+            if data.target_type == "payslip":
+                # Pay is read by an administrator (and an agent with `full_access`) only: before
+                # the item is looked up, so nobody else learns whether it exists.
+                actor.require_pay_reader("create_proposal")
             item = self._inbox_source(data, actor)
             if data.contract_id is not None:
                 raise ValidationFailed(
@@ -195,7 +243,10 @@ class ProposalService:
                     f"una proposta di tipo '{data.target_type}' non punta a un contratto",
                     expected="assente",
                 )
-            self._parse_read_fields(data.target_type, data.proposed_fields)
+            if data.target_type == "payslip":
+                proposed_fields = self._payslip_proposal(data, item)
+            else:
+                self._parse_read_fields(data.target_type, data.proposed_fields)
         else:
             raise ValidationFailed(
                 ENTITY,
@@ -224,7 +275,7 @@ class ProposalService:
                     inbox_item_id=data.inbox_item_id,
                     contract_id=data.contract_id,
                     target_type=data.target_type,
-                    proposed_fields=data.proposed_fields,
+                    proposed_fields=proposed_fields,
                     excerpt=data.excerpt,
                     excerpt_type=data.excerpt_type,
                     confidence=data.confidence,
@@ -294,7 +345,8 @@ class ProposalService:
                 "nuovo che conserva il suo file",
                 inbox_item_id=str(item.id),
             )
-        if item.kind is not None:
+        said_payslip = data.target_type == "payslip" and item.kind == "payslip"
+        if item.kind is not None and not said_payslip:
             # A certain file (a FatturaPA, a statement file) is already what it is, with its
             # parsed fields: a proposal is for what nobody has said what it is.
             raise Conflict(
@@ -368,8 +420,14 @@ class ProposalService:
             item = self.session.get(InboxItem, proposal.inbox_item_id)
             if item is not None and item.state == "proposed":
                 item.state = "new"
-                item.kind = None
-                item.reason = _REJECTED_ITEM_REASON
+                if proposal.target_type == "payslip":
+                    # The document stays what it is, and stays where only whoever may read pay
+                    # sees it (`inbox/access.py`): rejecting a reading is not saying the file is
+                    # not a payslip.
+                    item.reason = _REJECTED_PAYSLIP_REASON
+                else:
+                    item.kind = None
+                    item.reason = _REJECTED_ITEM_REASON
                 # Read again by a person or an agent, not by another paid run of the model.
                 item.read_attempts = MAX_READ_ATTEMPTS
         self.activities.record(
@@ -402,6 +460,8 @@ class ProposalService:
             result_id = self._accept_contract(proposal, accepted, actor)
         elif proposal.target_type == "work_unit":
             result_id = self._accept_work_unit(proposal, accepted, actor)
+        elif proposal.target_type == "payslip":
+            result_id = self._accept_payslip(proposal, accepted, actor)
         elif proposal.target_type in INBOX_TARGET_TYPES:
             result_id = self._accept_inbox_kind(proposal, accepted)
         else:
@@ -425,6 +485,30 @@ class ProposalService:
         )
         self.session.commit()
         return ProposalRead.model_validate(proposal)
+
+    def _accept_payslip(self, proposal: Proposal, raw: dict[str, Any], actor: Actor) -> UUID:
+        """Writes the payslip the person accepted (`StaffService.file_proposed_payslip`: the row
+        `record_staff_payslip` writes, the same due items and forecasts) and files the item its
+        PDF is: it stays, with its bytes, as the payslip's file. Refused whole, the proposal
+        still pending, for a month a person closed, one that already has its payslip or a
+        person not in service in it. Only an administrator, and a person (the caller checked
+        that): paying and withholding follow from what is accepted here."""
+        actor.require_admin("accept_payslip_proposal")
+        fields = self._parse_payslip_fields(raw)
+        payslip_id = StaffService(self.session).file_proposed_payslip(
+            fields, proposal.id, proposal.inbox_item_id, actor
+        )
+        if proposal.inbox_item_id is not None:
+            item = self.session.get(InboxItem, proposal.inbox_item_id)
+            if item is not None and item.state in ("new", "proposed"):
+                item.state = "filed"
+                item.kind = "payslip"
+                item.reason = _FILED_PAYSLIP_REASON
+                item.read_started_at = None
+                self.activities.record(
+                    "inbox_item", item.id, "filed", actor, {"payslip_id": str(payslip_id)}
+                )
+        return payslip_id
 
     def _accept_inbox_kind(self, proposal: Proposal, raw: dict[str, Any]) -> UUID:
         """A supplier invoice, a receipt or a statement read out of the inbox is filed by the

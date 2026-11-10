@@ -5,23 +5,14 @@ import { PageHeader } from '@/components/PageHeader'
 import { DownloadButton } from '@/components/DownloadButton'
 import { QueryErrorBanner } from '@/components/QueryErrorBanner'
 import { Button } from '@rebase/ui/button'
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@rebase/ui/dialog'
-import { Label } from '@rebase/ui/label'
 import { Loader } from '@rebase/ui/loader'
 import { toast } from '@rebase/ui/sonner'
-import { Textarea } from '@rebase/ui/textarea'
 import { toProblem } from '@/lib/api'
 import { useCanWrite } from '@/lib/auth'
 import { Confidence, ProposalStatusPill, ProposalSubject } from './ProposalBits'
 import { INBOX_TARGET_TYPES, decisionLine, describeProposal, type Proposal } from './fields'
-import { useAcceptProposal, useProposal, useProposalTimeline, useRejectProposal } from './queries'
+import { RejectProposalDialog } from './RejectProposalDialog'
+import { useAcceptProposal, useProposal, useProposalTimeline } from './queries'
 
 /**
  * One proposal, with everything a reviewer needs before deciding next to the buttons that
@@ -65,6 +56,7 @@ const PROPOSAL_KINDS: Record<string, string> = {
   supplier_invoice: 'Fattura di acquisto letta da un file in arrivo',
   receipt: 'Ricevuta letta da un file in arrivo',
   bank_statement: 'Estratto conto letto da un file in arrivo',
+  payslip: 'Cedolino letto da un file in arrivo',
 }
 
 function Loaded({ proposal }: { proposal: Proposal }) {
@@ -72,9 +64,7 @@ function Loaded({ proposal }: { proposal: Proposal }) {
   const canWrite = useCanWrite()
   const navigate = useNavigate()
   const accept = useAcceptProposal(proposal.id)
-  const reject = useRejectProposal(proposal.id)
   const [rejecting, setRejecting] = useState(false)
-  const [reason, setReason] = useState('')
   const pending = proposal.status === 'pending'
   // A document read from an «In arrivo» item is filed by a module that does not exist yet: there
   // is nothing to accept, only to refuse (and have it read again).
@@ -92,21 +82,10 @@ function Loaded({ proposal }: { proposal: Proposal }) {
               ? 'Proposta accettata: il contratto è stato creato'
               : proposal.target_type === 'work_unit'
                 ? 'Proposta accettata: la giornata è registrata'
-                : 'Proposta accettata',
+                : proposal.target_type === 'payslip'
+                  ? 'Cedolino accettato: prende il posto della stima'
+                  : 'Proposta accettata',
           )
-          backToQueue()
-        },
-      },
-    )
-  }
-
-  const onReject = () => {
-    reject.mutate(
-      { reason: reason.trim() === '' ? null : reason.trim() },
-      {
-        onSuccess: () => {
-          setRejecting(false)
-          toast.success('Proposta rifiutata')
           backToQueue()
         },
       },
@@ -128,17 +107,14 @@ function Loaded({ proposal }: { proposal: Proposal }) {
             <>
               <Button
                 variant="outline"
-                disabled={accept.isPending || reject.isPending}
-                onClick={() => {
-                  reject.reset()
-                  setRejecting(true)
-                }}
+                disabled={accept.isPending}
+                onClick={() => setRejecting(true)}
               >
                 <X className="mr-2 size-4" aria-hidden />
                 Rifiuta
               </Button>
               {nothingFilesIt ? null : (
-                <Button disabled={accept.isPending || reject.isPending} onClick={onAccept}>
+                <Button disabled={accept.isPending} onClick={onAccept}>
                   {accept.isPending ? <Loader className="mr-2 size-4" /> : <Check className="mr-2 size-4" aria-hidden />}
                   Accetta
                 </Button>
@@ -237,51 +213,15 @@ function Loaded({ proposal }: { proposal: Proposal }) {
         </section>
       </div>
 
-      <Dialog
+      <RejectProposalDialog
+        proposalId={proposal.id}
         open={rejecting}
-        onOpenChange={(open) => {
-          if (reject.isPending) return
-          // A refusal belongs to the attempt that met it: leaving the dialog forgets it.
-          if (!open) reject.reset()
-          setRejecting(open)
+        onOpenChange={setRejecting}
+        onRejected={() => {
+          toast.success('Proposta rifiutata')
+          backToQueue()
         }}
-      >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Rifiuta la proposta</DialogTitle>
-            <DialogDescription>
-              Non viene creato niente. Il motivo resta nella cronologia della proposta, per chi la rivede dopo.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-2">
-            <Label htmlFor="proposal-reason">Motivo (facoltativo)</Label>
-            <Textarea
-              id="proposal-reason"
-              value={reason}
-              onChange={(event) => setReason(event.target.value)}
-              placeholder="Per esempio: la data non è quella della mail."
-              rows={3}
-            />
-          </div>
-          {reject.error ? <QueryErrorBanner error={reject.error} /> : null}
-          <DialogFooter>
-            <Button
-              variant="outline"
-              disabled={reject.isPending}
-              onClick={() => {
-                reject.reset()
-                setRejecting(false)
-              }}
-            >
-              Annulla
-            </Button>
-            <Button variant="destructive" disabled={reject.isPending} onClick={onReject}>
-              {reject.isPending ? <Loader className="mr-2 size-4" /> : null}
-              Rifiuta la proposta
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      />
     </>
   )
 }

@@ -104,8 +104,8 @@ hours at the hourly cost, as an allocation to the deal.
   line**: what a fee is withheld at and the INPS «gestione separata» are «to verify» (frame A5,
   REB-975), so the estimate says `fee_withholding` and `gestione_separata`, not a number.
 - The **accepted payslip** is a row of `staff_payslips` (gross, net, withholding of one month),
-  typed by a person for now (`record_staff_payslip`, person-only); the inbox's proposal will
-  write the same row. Its month stops being an estimate for what it prints: the net pay and the
+  typed by a person (`record_staff_payslip`, person-only) or accepted from the inbox's proposal
+  (REB-1045), which writes the same row. Its month stops being an estimate for what it prints: the net pay and the
   withholding are `expected` due items with its figures, the cost is its gross, and the ratios of
   the latest payslip drive every other month. The INPS line and INAIL's premium are not on a
   payslip and stay forecasts.
@@ -122,6 +122,39 @@ hours at the hourly cost, as an allocation to the deal.
   `null` for a reader who may not read pay and with the module off; where it is read, the hours
   of a user linked to a staff member of the same legal entity leave the deals' labour. Everyone
   else reads payroll cash as one «Stipendi» line per date (`list_payroll_totals`), with no person.
+
+**As built (REB-1045).** A payslip reaches a person's month through the inbox: `payslip` is a target type of `proposals` read from an inbox item (`ck_proposals_source`),
+`proposed_fields` is `PayslipProposalFields` (the staff member, the month as its first day, gross, net,
+withholding and, for the reviewer, the name the document carries), and the proposal is created by
+whoever reads the file. The space's model reads one only when an unscoped administrator also switched
+on `ai_model_config.read_payslips` (off by default, with its own notice and consent beside the model's:
+a different provider or model switches it off), and only for an upload by whoever may read pay; the
+reader answers a name, a month and three figures, and the classifier matches the name (the same words
+in any order, accents and case aside) to exactly one person in service that month: with none, several or
+a missing figure the item waits as a `payslip` with the sentence saying what is missing, and a person
+types the figures. An agent with `full_access` proposes through `propose_inbox_item` with the person's
+id. **Pay is read by `Actor.reads_pay`** (an administrator, and an agent only with `full_access`): the
+kinds `payslip` and `tax_document` (`PAY_KINDS`) are visible only to it after classification and
+whatever the legal entity (`inbox/access.py`), a `payslip` proposal is listed, read and decided only by
+it (`proposals/access.py`), and saying an item is one of the two kinds is its act too. Accepting is the
+proposal's own `accept` (a person, an administrator; the agent is refused as for every proposal):
+`StaffService.file_proposed_payslip` writes the row `record_staff_payslip` writes through the same
+`_write_payslip` (the same checks, due items and forecasts) with the item as `staff_payslips.inbox_item_id`,
+the item becomes `filed` and keeps its bytes (the payslip's PDF, «Apri il PDF»), and a payslip for a closed
+month, one already recorded or a month the person was not in service in refuses the accept whole, the
+proposal still pending. Rejecting keeps the document: the item stays a `payslip`, hidden from whoever may
+not read pay. A person's month reads **«Ricevuto»** while a proposal waits (`MemberMonthRead.received`), the
+estimate beside it, with «Accetta il cedolino» (the proposal's accept), «Rifiuta…» (the shared
+`RejectProposalDialog`) and «Apri il PDF». **Closing** is `StaffService.close_payroll_month` (REST
+`POST /api/staff/payroll/{legal_entity_id}/closures`, the tool of the same name, an administrator's and a
+`full_access` token's): only a month that has ended, once, and it never reopens. The row
+(`payroll_month_closures`) keeps the month as `get_payroll_month` read it, so the month reads as it was
+closed whatever the pay inputs become, the forecasts it was closed with are not rewritten (they go like
+any forecast once their date passes), the period P&L reads its personnel cost from the snapshot, and a
+recording, a correction or an acceptance for it is a 409 that names the month. The page shows «Chiuso» with
+a lock and who closed it, «Chiudi il mese» asks first and names who is still «Stimato» or «Ricevuto». Not here:
+the consultant's F24 (`tax_document`) is a C6 tax document and waits for C6's F24 grouping: the kind is
+already pay-only, and nothing reads it into a proposal yet.
 
 **Replaced by the real thing.** The payroll consultant's payslips («cedolini») and the month's
 F24 arrive through the inbox (C2) as PDFs, under the inbox kinds `payslip` and `tax_document`;
@@ -166,7 +199,7 @@ person types the figures.
 - Names avoid the existing `contract_expenses`: the table is `expense_notes`, the tools
   `submit_expense_note` and `approve_expense_note`.
 
-**As built (REB-1046).** `core/expense_notes/`, table `expense_notes` (migration 0103), REST under
+**As built (REB-1046).** `core/expense_notes/`, table `expense_notes` (migration 0104), REST under
 `/api/expense-notes` and the tools `submit_expense_note`, `list_expense_notes` (every token's, the
 owner's own notes) and `approve_expense_note`, `reject_expense_note`, `reimburse_expense_note`
 (`full_access`), all behind `staff` **and** `purchases` (the module keeps `requires=()`: with
@@ -261,11 +294,11 @@ row, and a panel (a full-screen sheet on the phone) with the month's figures, th
 beside the estimate, the terms, the hourly cost (REB-1009) and «Modifica condizioni». Every
 figure and every reason is the server's (`not_estimated` read through one table of sentences);
 the browser only adds the totals the server does not send, with `sumDecimalStrings`. The legal
-entity is the sidebar's. The month's state is the least advanced person's. Not built, because
-there is no backend yet: «Ricevuto» (the inbox's payslip, accepted from the proposal), «Rifiuta…»
-and «Apri il PDF», «Chiuso» and «Chiudi il mese» (`close_payroll_month`), and «Note spese»
-(the expense-note data cards). The page opens on the current month, not on «the most recent month
-that is not closed», for the same reason.
+entity is the sidebar's. The month's state is the least advanced person's. «Ricevuto» (the
+inbox's payslip, accepted from the proposal), «Rifiuta…» and «Apri il PDF», «Chiuso» and «Chiudi il
+mese» (`close_payroll_month`) are REB-1045 (above). Not built, because there is no backend yet: «Note
+spese» (the expense-note data cards). The page opens on the current month, not on «the most recent month
+that is not closed»: no read lists the closed months, so a link or the stepper moves to a month.
 
 ## 7. What is tested
 

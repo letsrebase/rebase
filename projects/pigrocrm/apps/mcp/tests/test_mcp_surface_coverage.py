@@ -186,6 +186,10 @@ _FORBIDDEN: dict[Method, str] = {
     ),
     ("ExpenseNoteService", "reject_expense_note"): "REB-1046: same as `approve_expense_note`",
     ("ExpenseNoteService", "reimburse_expense_note"): "REB-1046: same as `approve_expense_note`",
+    ("StaffService", "close_payroll_month"): (
+        "REB-1045: closing a payroll month locks its payslips and estimates (staff design § 4); "
+        "the tool exists only on an administrator's `full_access` token"
+    ),
     ("BankAccountService", "list_bank_accounts"): (
         "REB-1025: the company's accounts and balances (cash design § 2); the tool exists only "
         "on an administrator's `full_access` token"
@@ -425,6 +429,13 @@ _INTERNE: dict[Method, str] = {
     ("PayrollService", "restate_payslip_items"): (
         "REB-1030: the writer's half: `correct_staff_payslip`, a person's act, restates the "
         "items the payslip wrote; no actor, `StaffService` authorises"
+    ),
+    ("PayrollService", "live_month"): (
+        "REB-1045: the month as the inputs say now, with no role check: `StaffService` freezes "
+        "it when a person closes the month, and `get_payroll_month` starts from it after its own"
+    ),
+    ("PayrollService", "closure_read"): (
+        "REB-1045: shapes a closure the staff service already authorised and wrote"
     ),
     ("PayrollService", "personnel_cost_in_range"): (
         "the P&L's own read; the actor is checked by `period_pnl`, a tool"
@@ -768,6 +779,10 @@ _CONFIGURATION: dict[Method, str] = {
     ("StaffService", "correct_staff_payslip"): (
         "REB-1030: correcting a recorded payslip is the same person's act as recording it, from "
         "the staff page; a token reads the month's figures and never rewrites a payslip"
+    ),
+    ("StaffService", "file_proposed_payslip"): (
+        "REB-1045: accepting the payslip the inbox read is a person's act (frame A4): "
+        "`ProposalService.accept` (person-only) calls it, and no token reaches it"
     ),
     ("StaffService", "propose_staff_hourly_cost"): (
         "REB-1009, staff design § 5: the hourly cost a person's pay gives is offered to an "

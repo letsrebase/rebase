@@ -129,10 +129,10 @@ DEFAULT_BUDGET_BYTES = 109_900
 # REB-1042: 138.4 KB, up from 137.1 KB, for `get_bank_movement` and `propose_movement_match` (a
 # full-access administrator's: a movement with its ranked candidates, and a proposal of a list of
 # items), measured at 138,315.
-# REB-1046: 141.8 KB, up from 138.4 KB, for the two tools above and `approve_expense_note`,
-# `reject_expense_note` and `reimburse_expense_note` (a full-access administrator's), measured at
-# 141,702 bytes.
-FULL_ACCESS_BUDGET_BYTES = 141_800
+# REB-1045: 138.9 KB, up from 138.4 KB, for `close_payroll_month` (a full-access administrator's).
+# REB-1046: 142.3 KB, up from 138.9 KB, for the two default tools and `approve_expense_note`,
+# `reject_expense_note` and `reimburse_expense_note` (a full-access administrator's).
+FULL_ACCESS_BUDGET_BYTES = 142_300
 
 # A name starting with one of these reads. The tools that read without such a name are
 # listed, so adding one is a decision somebody wrote down.

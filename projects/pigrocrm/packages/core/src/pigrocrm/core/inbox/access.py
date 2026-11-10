@@ -5,16 +5,21 @@ and to whoever uploaded it. After classification the usual entity scope applies.
 scope itself is Postgres's (`legal_entity_scope` on `inbox_items`, migration 0074); the rule
 that an unclassified item is nobody else's is a role, which a row-level policy cannot read,
 so it is this clause, added to every read.
+
+A second role rule rides on the same clause (staff design § 4, REB-1045): an item of a kind that
+carries pay (`PAY_KINDS`, a payslip or the consultant's F24) is visible only to whoever may read
+pay (`Actor.reads_pay`: an administrator, and an agent only with `full_access`), whatever its
+legal entity and whoever uploaded it.
 """
 
 from uuid import UUID
 
-from sqlalchemy import ColumnElement, or_, select
+from sqlalchemy import ColumnElement, and_, or_, select
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.errors import NotFound
-from pigrocrm.core.inbox.models import InboxItem
+from pigrocrm.core.inbox.models import PAY_KINDS, InboxItem
 
 ENTITY = "inbox_item"
 
@@ -22,10 +27,14 @@ ENTITY = "inbox_item"
 def visible_to(actor: Actor) -> ColumnElement[bool] | None:
     """The clause every read of items carries, or `None` for an actor who sees every row
     the policy lets through (an administrator with no entity scope, a system actor)."""
+    pay = (
+        None if actor.reads_pay else or_(InboxItem.kind.is_(None), InboxItem.kind.not_in(PAY_KINDS))
+    )
     if actor.can_administer and not actor.scoped:
-        return None
+        return pay
     own = InboxItem.uploaded_by_id == actor.id if actor.id is not None else InboxItem.id.is_(None)
-    return or_(InboxItem.legal_entity_id.is_not(None), own)
+    role = or_(InboxItem.legal_entity_id.is_not(None), own)
+    return role if pay is None else and_(role, pay)
 
 
 def visible_item(session: Session, item_id: UUID, actor: Actor) -> InboxItem:

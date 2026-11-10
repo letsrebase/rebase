@@ -13,24 +13,36 @@ export const KIND_LABELS: Record<StaffMember['kind'], string> = {
   director: 'Amministratore',
 }
 
-/** Where a person's month stands. «Ricevuto» (a payslip the inbox read and nobody accepted)
- *  and «Chiuso» (a locked month) have no data behind them yet, so they are not drawn. */
-export type MonthState = 'estimated' | 'accepted'
+/** Where a person's month stands: «Stimato» (nothing arrived), «Ricevuto» (the inbox read a payslip
+ *  and nobody accepted it), «Accettato» (a person did) and «Chiuso» (the month was locked). */
+export type MonthState = 'estimated' | 'received' | 'accepted' | 'closed'
 
 export const STATE_LABELS: Record<MonthState, string> = {
   estimated: 'Stimato',
+  received: 'Ricevuto',
   accepted: 'Accettato',
+  closed: 'Chiuso',
 }
 
 export const STATE_TONES: Record<MonthState, StatusTone> = {
   estimated: 'muted',
+  received: 'gold',
   accepted: 'ink',
+  closed: 'ink',
 }
 
 /** One line under the pill. */
 export const STATE_LINES: Record<MonthState, string> = {
   estimated: 'In attesa del cedolino',
+  received: 'Da accettare',
   accepted: 'Cedolino accettato',
+  closed: 'Mese chiuso',
+}
+
+/** The line under a person's pill: an accepted payslip says when it was accepted. */
+export function stateLine(month: MemberMonth | undefined, state: MonthState): string {
+  if (state === 'accepted' && month?.payslip != null) return `Cedolino accettato il ${formatDay(month.payslip.created_at.slice(0, 10))}`
+  return STATE_LINES[state]
 }
 
 /** What each cash item is called. */
@@ -128,8 +140,9 @@ export function missingReason(month: MemberMonth | undefined): string | null {
 }
 
 
-export const stateOf = (month: MemberMonth | undefined): MonthState | null =>
-  month === undefined ? null : month.source === 'payslip' ? 'accepted' : 'estimated'
+/** The state of a person's month: a closed month is «Chiuso» for everyone in it, whatever they were. */
+export const stateOf = (month: MemberMonth | undefined, closed = false): MonthState | null =>
+  month === undefined ? null : closed ? 'closed' : month.source === 'payslip' ? 'accepted' : month.received != null ? 'received' : 'estimated'
 
 /** «A», «A e B», «A, B e un altro», «A, B e altri 3»: at most two names, then how many more. */
 export function namesList(names: readonly string[]): string {

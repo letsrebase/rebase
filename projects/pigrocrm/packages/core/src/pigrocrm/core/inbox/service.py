@@ -16,7 +16,7 @@ from pigrocrm.core.db.scope import widened
 from pigrocrm.core.errors import Conflict, NotFound, ValidationFailed
 from pigrocrm.core.inbox.access import ENTITY, visible_item, visible_to
 from pigrocrm.core.inbox.filing import withdraw_proposals
-from pigrocrm.core.inbox.models import InboxItem
+from pigrocrm.core.inbox.models import PAY_KINDS, InboxItem
 from pigrocrm.core.inbox.repository import InboxRepository
 from pigrocrm.core.inbox.schemas import (
     InboxDiscard,
@@ -254,6 +254,10 @@ class InboxService:
         FatturaPA decided by itself is certain data and does not change; its legal entity
         may be chosen. Idempotent."""
         actor.require_write(KIND_ACTION)
+        if data.kind in PAY_KINDS:
+            # A payslip or an F24 carries pay: only whoever may read it says an item is one,
+            # since the item vanishes from every other reader's view once it is.
+            actor.require_pay_reader(KIND_ACTION)
         item = self._locked(item_id, actor)
         self._require_waiting(item, "non si cambia il tipo")
         if data.kind == "sales_invoice" and item.file_type not in ("xml", "p7m"):

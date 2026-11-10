@@ -119,6 +119,8 @@ export const MIN_ROLE = {
   get_payroll_month: 'admin',
   record_staff_payslip: 'admin',
   correct_staff_payslip: 'admin',
+  close_payroll_month: 'admin',
+  accept_payslip_proposal: 'admin',
   propose_staff_hourly_cost: 'admin',
   adopt_staff_hourly_cost: 'admin',
   // Expense notes (REB-1046, design § 3 and § 4): the staff member (a collaborator) or an

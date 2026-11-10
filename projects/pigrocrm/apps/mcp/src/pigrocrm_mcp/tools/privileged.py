@@ -103,6 +103,7 @@ from pigrocrm.core.modules.service import SpaceModulesService
 from pigrocrm.core.staff.payroll import PayrollService
 from pigrocrm.core.staff.schemas import (
     Kind,
+    PayrollMonthClose,
     StaffListQuery,
     StaffMemberCreate,
     StaffMemberUpdate,
@@ -891,9 +892,29 @@ def register(
         return (
             PayrollService(context.session)
             .get_payroll_month(entity, required_iso_date(month, "month"), context.actor)
-            # The payslip's own figures and id are the staff page's (a person corrects it from
-            # there): a token reads the cost and the cash lines, as before.
-            .model_dump(mode="json", exclude={"members": {"__all__": {"payslip"}}})
+            # The payslip's own figures and id, and a waiting proposal's, are the staff page's (a
+            # person corrects or accepts them from there): a token reads the cost and the cash
+            # lines, as before.
+            .model_dump(mode="json", exclude={"members": {"__all__": {"payslip", "received"}}})
+        )
+
+    @mcp.tool(annotations=DESTRUCTIVE)
+    @guard
+    def close_payroll_month(legal_entity_id: str, month: str) -> dict[str, Any]:
+        """Closes a payroll month that has ended (any date of it), admin only: its payslips and
+        estimates are locked, so no payslip is recorded or corrected for it and the month
+        reads as it was closed. There is no way back from here.
+        """
+        entity = parse_legal_entity_id(legal_entity_id)
+        assert entity is not None
+        return (
+            StaffService(context.session)
+            .close_payroll_month(
+                entity,
+                PayrollMonthClose(month=required_iso_date(month, "month")),
+                context.actor,
+            )
+            .model_dump(mode="json")
         )
 
     @mcp.tool(annotations=READ_ONLY)

@@ -57,6 +57,9 @@ ITEM_KINDS: tuple[str, ...] = (
 """The design's kinds, and `archive` for an item that is a container (a ZIP) and carries no
 document of its own. Upload decides only `archive` and, for an envelope it cannot open,
 `other`: the rest is the classifier's."""
+PAY_KINDS: tuple[str, ...] = ("payslip", "tax_document")
+"""The kinds only whoever may read pay sees (`Actor.reads_pay`, staff design § 4): a payslip and
+the consultant's F24 carry pay. `inbox/access.py` leaves them out of every other reader's view."""
 ITEM_STATES: tuple[str, ...] = ("new", "proposed", "filed", "duplicate", "discarded")
 
 FILE_NAME_MAX_LENGTH = 255

@@ -69,6 +69,28 @@ describe('PageHeader', () => {
     expect(screen.getByText('filtri')).toBeInTheDocument()
   })
 
+  /* --- The gap under the tab rule (REB-1055) ---
+     `Anagrafiche` and `In arrivo` drew their search box and their selects straight against
+     the rule, because the children slot sits inside the header, out of reach of the Tabs
+     root's `gap-2` that keeps a sibling body away. Asserted through classes for the reason
+     above: no layout in jsdom. */
+  it('gives the children slot the air a body has under the tab rule, and none without tabs', () => {
+    const { unmount } = render(
+      <PageHeader icon={LayoutDashboard} title="Anagrafiche" tabs={<a href="/app">Clienti</a>}>
+        <p>filtri</p>
+      </PageHeader>,
+    )
+    expect(screen.getByText('filtri').parentElement!.className).toContain('pt-8')
+    unmount()
+
+    render(
+      <PageHeader icon={LayoutDashboard} title="Fatture">
+        <p>filtri</p>
+      </PageHeader>,
+    )
+    expect(screen.getByText('filtri').parentElement!.className).not.toContain('pt-8')
+  })
+
   /* --- How it holds up narrow (visual pass of 2026-09-08, screenshots at 390) ---
      On a phone the icon, a 24px title and a primary button cannot share a row: the title
      came out as «F…» and «D…» and the description as one word per line, because the

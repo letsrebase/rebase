@@ -154,8 +154,8 @@ export function PipelinePanel() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-start justify-between gap-4">
-        <div>
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div className="min-w-64 flex-1">
           <h2 className="font-semibold">Stati della pipeline</h2>
           <p className="text-sm text-muted-foreground">
             Il tipo dice al sistema cosa significa uno stato: le dashboard riconoscono

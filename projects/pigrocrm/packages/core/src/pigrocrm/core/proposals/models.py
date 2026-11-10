@@ -30,13 +30,15 @@ PROPOSAL_TARGET_TYPES: tuple[str, ...] = (
     "supplier_invoice",
     "receipt",
     "bank_statement",
+    "payslip",
 )
 # What a proposal of each target type reads from (design 2026-11-09, incoming documents inbox,
 # § 3.5): a contract or a day from an archived document, which `accept` re-points at the row it
 # creates; a document read out of the inbox from the inbox item, which has no customer, deal
 # or contract to own a `Document` and so is no `Document` until the module that files it exists.
+# A `payslip` (REB-1045) reads from its inbox item too, and is filed by the staff module.
 DOCUMENT_TARGET_TYPES: tuple[str, ...] = ("contract", "work_unit")
-INBOX_TARGET_TYPES: tuple[str, ...] = ("supplier_invoice", "receipt", "bank_statement")
+INBOX_TARGET_TYPES: tuple[str, ...] = ("supplier_invoice", "receipt", "bank_statement", "payslip")
 # mastro's `excerptKind` (`proposal.ts:21-43`): `quoted` is a span the application
 # located in the document's own text; `transcribed` exists only for a scanned page with
 # no text layer, and is never rendered as a quotation for the same reason mastro's own

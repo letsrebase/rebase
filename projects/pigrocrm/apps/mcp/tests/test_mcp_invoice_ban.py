@@ -133,6 +133,7 @@ FORBIDDEN = (
     "approve_expense_note",
     "reject_expense_note",
     "reimburse_expense_note",
+    "close_payroll_month",
     # The first that is not fiscal: asking Gmail who at a customer's
     # domain the owner has corresponded with. Not irreversible -- it stores nothing --
     # but it spends the owner's Gmail quota under the owner's OAuth consent, which is
@@ -367,6 +368,7 @@ FORBIDDEN_SERVICE_CALLS = (
     "approve_expense_note",
     "reject_expense_note",
     "reimburse_expense_note",
+    "close_payroll_month",
     # `BankAccountService`'s four and the two reads of `BankStatementReadService`, named uniquely
     # for this scan (REB-1025).
     "list_bank_accounts",

@@ -165,8 +165,7 @@ export function TodayView({
           )
         }
       >
-        {/* Under the tab strip's rule now, so it gets the air the title row has above it. */}
-        <FilterRow className="pt-4">
+        <FilterRow>
           <AssigneeSelect value={assignee} onChange={onAssigneeChange} />
         </FilterRow>
       </PageHeader>

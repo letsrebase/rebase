@@ -32,6 +32,14 @@ class AiModelUpdate(BaseModel):
     output_eur_per_mtok: Decimal | None = Field(default=None, ge=0, max_digits=10, decimal_places=4)
     enabled: bool | None = None
     privacy_acknowledged: bool = False
+    read_payslips: bool | None = Field(
+        default=None,
+        description=(
+            "Whether the model also reads the figures of a payslip (default off). Switching it "
+            "on needs `privacy_acknowledged` in the same request: the notice names what a "
+            "payslip sends"
+        ),
+    )
 
 
 class AiModelRead(BaseModel):
@@ -49,6 +57,10 @@ class AiModelRead(BaseModel):
     privacy_acknowledged_at: datetime | None
     privacy_acknowledged_by_id: UUID | None
     privacy_notice: str = Field(description="What the model receives, in the words a person reads")
+    read_payslips: bool = Field(description="Whether the model also reads payslips")
+    payslip_notice: str = Field(
+        description="What reading a payslip sends, in the words a person reads"
+    )
 
 
 class AiModelTestResult(BaseModel):

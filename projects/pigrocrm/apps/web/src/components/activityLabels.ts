@@ -132,6 +132,7 @@ const KIND_LABELS: Record<string, string> = {
   expense_note_rejected: 'Nota spese rifiutata',
   expense_note_way_chosen: 'Modo di rimborso scelto',
   expense_note_reimbursed: 'Nota spese rimborsata',
+  payroll_month_closed: 'Mese di paga chiuso',
   declared_tax_figure_set: 'Cifre della dichiarazione registrate',
   accountant_export_built: 'Esportazione per il commercialista preparata',
   accountant_export_deleted: 'Esportazione per il commercialista eliminata',

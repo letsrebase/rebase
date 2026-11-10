@@ -193,7 +193,7 @@ tables is the plain `legal_entity_visible(legal_entity_id)`. A source kind is a 
 code (`SOURCE_KINDS`), never a CHECK.
 
 **An expense note is `ExpenseNoteService`'s and it owns no figure: its purchase does (REB-1046).** `core/expense_notes/` holds
-`expense_notes` (migration 0103): `submitted`, `approved`, `rejected`, `reimbursed`, no draft. Approving writes one purchase of kind
+`expense_notes` (migration 0104): `submitted`, `approved`, `rejected`, `reimbursed`, no draft. Approving writes one purchase of kind
 `expense_note` (`PurchaseService.register_expense_note`, the writer's half with no actor; `purchases.staff_member_id`; the purchase is
 never edited, cancelled or archived from the purchases, and `PurchaseCreate` refuses the kind) and the one outgoing due item to the
 person (source `purchase`, counterparty `staff_member`): a purchases due-item writer must skip this kind. Reimbursing is a second act,
@@ -406,6 +406,28 @@ REST `PATCH /api/staff/{id}/payslips/{payslip_id}`, «Correggi il cedolino» in 
 withholding due items it wrote follow (`restate_payslip_items`; a payment already recorded on one that would move is a
 409 and nothing is written, an item an administrator dropped stays dropped), the forecasts are refreshed and the
 timeline entry `staff_payslip_corrected` says who and which month, never the figures.
+**A payslip from the inbox is a `payslip` proposal a person accepts, and pay is read only by `Actor.reads_pay` (REB-1045).**
+`Actor.reads_pay` is an administrator, and an agent only with `full_access`. The inbox kinds `payslip` and `tax_document`
+(`inbox/models.py::PAY_KINDS`) are visible only to it after classification, whatever the legal entity (`inbox/access.py`:
+the same clause every read carries), a proposal with the target type `payslip` is listed, read and decided only by it
+(`proposals/access.py`), and saying an item is one of the two kinds (`set_inbox_item_kind`) needs it too
+(`Actor.require_pay_reader`, checked before the item is looked up). A `payslip` proposal reads from an inbox item like
+the other three, its `proposed_fields` are `staff/schemas.py::PayslipProposalFields` (stored as parsed: the month as its first
+day, the amounts as decimal strings) and creating one sets the item's legal entity to the person's. The space's model asks for
+the figures only when `ai_model_config.read_payslips` is on (a second consent, `payslip_notice`, switched off by a different
+provider or model) **and** the upload is an administrator's: otherwise a payslip is `other` to it, as before
+(`InboxClassifier._reads_payslips`, `ai/reader.py::PAYSLIP_ADDENDUM`). `staff/matching.py` finds the one person in service
+whose name is the document's; none, several or a missing figure leaves the item a `payslip` with a sentence and no proposal.
+Accepting is `ProposalService.accept` (a person, never a token): `StaffService.file_proposed_payslip` and
+`record_staff_payslip` are the same `_write_payslip` (checks, row, due items, forecasts), the item becomes `filed` and keeps its
+bytes as `staff_payslips.inbox_item_id` (the payslip's PDF), and a refusal (a closed month, a month already recorded, a person
+not in service) leaves the proposal pending. Rejecting keeps the item a `payslip`, still hidden from whoever may not read pay.
+`MemberMonthRead.received` is what makes a month «Ricevuto». **Closing a month** is `StaffService.close_payroll_month` (REST
+`POST /api/staff/payroll/{legal_entity_id}/closures`, the tool of the same name, `full_access`): only a month that has ended,
+once, never reopened. `payroll_month_closures.snapshot` is the month as `get_payroll_month` read it, so a closed month reads
+as it was closed whatever the pay inputs become (`PayrollService.live_month` is what is frozen), the forecasts it was closed with
+are left alone until their date passes (`_sync_forecasts`), the period P&L reads its personnel cost from the snapshot
+(`personnel_cost_in_range`), and a recording, a correction or an acceptance for it is a 409 that names the month.
 **A declared tax figure is typed, never computed, and it outranks the estimate (REB-1006).**
 `declared_tax_figures` holds, per legal entity, tax (`DeclaredTax`: `irpef`, `substitute_tax`, `ires`, `irap`, `inps`)
 and year, what the accountant's return says: tax due, balance (signed) and advances, any of which may be left out

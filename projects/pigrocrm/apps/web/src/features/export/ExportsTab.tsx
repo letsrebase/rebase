@@ -166,7 +166,7 @@ export function ExportsTab({
   const years = Array.from({ length: YEARS_SHOWN }, (_, back) => thisYear - back)
 
   const filters = (
-    <FilterRow className="grid grid-cols-2 sm:flex sm:flex-wrap">
+    <FilterRow className="grid grid-cols-2 pt-6 sm:flex sm:flex-wrap">
       {several ? (
         <Select
           value={company ?? ANY}

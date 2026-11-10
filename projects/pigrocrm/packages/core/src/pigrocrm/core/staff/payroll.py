@@ -45,6 +45,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.actor import Actor
+from pigrocrm.core.auth.models import User
 from pigrocrm.core.db import today_local
 from pigrocrm.core.due_items.models import PAYROLL_SOURCE_KIND, DueItem
 from pigrocrm.core.due_items.schemas import DueItemCreate
@@ -54,6 +55,8 @@ from pigrocrm.core.fiscal.law import PayrollLaw
 from pigrocrm.core.fiscal.pack import resolve_pack
 from pigrocrm.core.legal_entities.models import LegalEntity
 from pigrocrm.core.money import ZERO_MONEY, round_money
+from pigrocrm.core.proposals.access import visible_to as proposals_visible_to
+from pigrocrm.core.proposals.models import Proposal
 from pigrocrm.core.staff.estimate import (
     CashItem,
     CashKind,
@@ -66,13 +69,20 @@ from pigrocrm.core.staff.estimate import (
     first_of,
     ratios_of,
 )
-from pigrocrm.core.staff.models import PayrollSettings, StaffMember, StaffPayslip
+from pigrocrm.core.staff.models import (
+    PayrollMonthClosure,
+    PayrollSettings,
+    StaffMember,
+    StaffPayslip,
+)
 from pigrocrm.core.staff.repository import StaffRepository
 from pigrocrm.core.staff.schemas import (
     MemberMonthRead,
     PayrollCashItemRead,
+    PayrollClosureRead,
     PayrollCostRead,
     PayrollMonthRead,
+    PayslipProposalRead,
     PayslipRead,
 )
 
@@ -122,11 +132,29 @@ class PayrollService:
     ) -> PayrollMonthRead:
         """The estimate of `month` (any day of it) for every staff member of the legal entity:
         cost and cash apart, each cash item with its date, a month an accepted payslip fixed
-        marked `payslip`."""
+        marked `payslip`, and a person whose payslip the inbox read and nobody accepted marked
+        `received`. A month a person closed is read as it was closed (`closed` says when and
+        by whom), whatever the pay inputs are now."""
         actor.require_admin("get_payroll_month")
         if self.session.get(LegalEntity, legal_entity_id) is None:
             raise NotFound("legal_entity", legal_entity_id)
         month = first_of(month)
+        closure = self.repo.closure(legal_entity_id, month)
+        if closure is not None:
+            return self._closed_read(closure)
+        read = self.live_month(legal_entity_id, month)
+        waiting = self.repo.pending_payslip_proposals(
+            legal_entity_id, month, proposals_visible_to(actor)
+        )
+        for row in read.members:
+            proposal = waiting.get(row.staff_member_id)
+            if proposal is not None:
+                row.received = _received(proposal)
+        return read
+
+    def live_month(self, legal_entity_id: UUID, month: dt.date) -> PayrollMonthRead:
+        """The month as the inputs and the accepted payslips say now, with no role check and no
+        waiting proposals: what a closing freezes, and what `get_payroll_month` starts from."""
         members = self.repo.members_of(legal_entity_id)
         context = _Context.load(self.repo, legal_entity_id, members)
         rows: list[MemberMonthRead] = []
@@ -142,6 +170,22 @@ class PayrollService:
             members=rows,
             cost_total=sum((r.cost.total for r in rows if r.cost is not None), ZERO_MONEY),
             cash_total=sum((i.amount for r in rows for i in r.cash), ZERO_MONEY),
+        )
+
+    def _closed_read(self, closure: PayrollMonthClosure) -> PayrollMonthRead:
+        read = PayrollMonthRead.model_validate(closure.snapshot)
+        read.closed = self.closure_read(closure)
+        return read
+
+    def closure_read(self, closure: PayrollMonthClosure) -> PayrollClosureRead:
+        user = (
+            None if closure.closed_by_id is None else self.session.get(User, closure.closed_by_id)
+        )
+        return PayrollClosureRead(
+            legal_entity_id=closure.legal_entity_id,
+            month=closure.month,
+            closed_at=closure.closed_at,
+            closed_by=None if user is None else (user.name or user.email),
         )
 
     def reference_monthly_cost(
@@ -170,24 +214,30 @@ class PayrollService:
         self, legal_entity_id: UUID | None, date_from: dt.date, date_to: dt.date
     ) -> Decimal:
         """The personnel cost of the window: each month's cost, in proportion to the days of
-        the member's service in that month that the window covers. No actor: whoever calls it
-        has decided the reader may know the figure (`analytics/pnl.py`), and it carries no
-        person."""
+        the member's service in that month that the window covers. A month a person closed
+        counts as it was closed. No actor: whoever calls it has decided the reader may know the
+        figure (`analytics/pnl.py`), and it carries no person."""
         members = self.repo.members_of(legal_entity_id)
         if not members:
             return ZERO_MONEY
         context = _Context.load(self.repo, legal_entity_id, members)
+        closed = self.repo.closed_months(legal_entity_id)
         total = ZERO_MONEY
         month = first_of(date_from)
         while month <= date_to:
             last = add_months(month, 1) - dt.timedelta(days=1)
             for member in members:
-                cost = context.estimate(member, month, cost_only=True).cost
+                closure = closed.get((member.legal_entity_id, month))
+                if closure is not None:
+                    cost = _closed_cost(closure, member.id)
+                else:
+                    estimated = context.estimate(member, month, cost_only=True).cost
+                    cost = None if estimated is None else estimated.total
                 served = days_in_service(member, month, last)
                 if cost is None or served == 0:
                     continue
                 covered = days_in_service(member, max(month, date_from), min(last, date_to))
-                total += cost.total * covered / served
+                total += cost * covered / served
             month = add_months(month, 1)
         return round_money(total)
 
@@ -238,6 +288,8 @@ class PayrollService:
         if not members:
             return
         context = _Context.load(self.repo, legal_entity_id, members)
+        # A month a person closed keeps the forecasts it was closed with (`_sync_forecasts`).
+        closed = {month for (_, month) in self.repo.closed_months(legal_entity_id)}
         start = add_months(first_of(today), -LOOKBACK_MONTHS)
         months = [add_months(start, i) for i in range(LOOKBACK_MONTHS + HORIZON_MONTHS + 1)]
         for member in members:
@@ -247,12 +299,14 @@ class PayrollService:
             fixed = {slip.period for slip in slips}
             desired: dict[str, CashItem] = {}
             for month in months:
+                if month in closed:
+                    continue
                 for item in context.estimate(member, month).cash:
                     if month in fixed and item.kind in PAYSLIP_KINDS:
                         continue
                     if item.due_date >= today:
                         desired[_key(item)] = item
-            self._sync_forecasts(member, desired)
+            self._sync_forecasts(member, desired, closed, today)
 
     def _write_payslip_items(
         self, member: StaffMember, slip: StaffPayslip, context: "_Context"
@@ -266,10 +320,24 @@ class PayrollService:
                 continue
             self.dues.create(self._data(member, item, state="expected", source_id=slip.id))
 
-    def _sync_forecasts(self, member: StaffMember, desired: dict[str, CashItem]) -> None:
+    def _sync_forecasts(
+        self,
+        member: StaffMember,
+        desired: dict[str, CashItem],
+        closed: set[dt.date],
+        today: dt.date,
+    ) -> None:
         kept: set[str] = set()
         for existing in self.dues.repo.items_of_source(PAYROLL_SOURCE_KIND, member.id):
             if existing.state != "forecast" or existing.source_rule is None:
+                continue
+            if (
+                _rule_month(existing.source_rule) in closed
+                and existing.own_date is not None
+                and existing.own_date >= today
+            ):
+                # The month was closed with this forecast: the pay inputs moving later do not
+                # rewrite it. Once its date passes it goes like any forecast.
                 continue
             item = desired.get(existing.source_rule)
             unchanged = (
@@ -324,6 +392,37 @@ def _identity(item: DueItem) -> str:
 
 def _kind_identity(kind: CashKind) -> str:
     return TAX_OF.get(kind, "net_pay")
+
+
+def _rule_month(rule: str) -> dt.date | None:
+    """The payroll month a forecast's `source_rule` (`_key`) belongs to."""
+    try:
+        return dt.date.fromisoformat(f"{rule.split(':')[1]}-01")
+    except (IndexError, ValueError):
+        return None
+
+
+def _closed_cost(closure: PayrollMonthClosure, member_id: UUID) -> Decimal | None:
+    """What a month cost one person as it was closed, `None` for a person it had no cost for."""
+    for row in closure.snapshot.get("members", []):
+        if row.get("staff_member_id") == str(member_id):
+            cost = row.get("cost")
+            return None if cost is None else Decimal(str(cost["total"]))
+    return None
+
+
+def _received(proposal: Proposal) -> PayslipProposalRead:
+    fields = proposal.proposed_fields
+    return PayslipProposalRead(
+        proposal_id=proposal.id,
+        inbox_item_id=proposal.inbox_item_id,
+        gross=Decimal(str(fields["gross"])),
+        net=Decimal(str(fields["net"])),
+        withholding=Decimal(str(fields["withholding"])),
+        confidence=proposal.confidence,
+        confidence_reason=proposal.confidence_reason,
+        created_at=proposal.created_at,
+    )
 
 
 class _Context:

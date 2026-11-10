@@ -64,6 +64,7 @@ def _every_route(entity: str, member: str) -> list[tuple[str, str, dict[str, Any
         ("GET", f"/api/staff/pay-days/{entity}", None),
         ("PUT", f"/api/staff/pay-days/{entity}", {"pay_day": 27, "pay_month_offset": 0}),
         ("GET", f"/api/staff/payroll/{entity}?month=2026-03-01", None),
+        ("POST", f"/api/staff/payroll/{entity}/closures", {"month": "2026-03-01"}),
         (
             "POST",
             f"/api/staff/{member}/payslips",

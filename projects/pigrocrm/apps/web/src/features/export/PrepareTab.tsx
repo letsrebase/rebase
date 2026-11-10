@@ -99,7 +99,7 @@ export function PrepareTab({ onCreate }: { onCreate: (target: BuildTarget) => vo
   // (an administrator's page reached on a stale link), which the parts read already carries.
   if (!mayBuild) {
     return (
-      <div className="max-w-3xl px-8 pb-6 pt-4">
+      <div className="max-w-3xl px-8 pb-6 pt-6">
         {parts.isError ? (
           <QueryErrorBanner error={parts.error} />
         ) : (
@@ -129,7 +129,7 @@ export function PrepareTab({ onCreate }: { onCreate: (target: BuildTarget) => vo
   return (
     <form
       aria-label="Prepara l’esportazione"
-      className="max-w-3xl space-y-4 px-8 pb-6 pt-4"
+      className="max-w-3xl space-y-4 px-8 pb-6 pt-6"
       onSubmit={(event) => {
         event.preventDefault()
         submit()

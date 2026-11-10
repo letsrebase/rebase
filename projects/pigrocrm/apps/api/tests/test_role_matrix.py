@@ -181,6 +181,12 @@ ROWS: list[Row] = [
     ),
     Row(
         "POST",
+        "/api/staff/payroll/{legal_entity_id}/closures",
+        admin_only=True,
+        body={"month": "2026-01-01"},
+    ),
+    Row(
+        "POST",
         "/api/staff/{staff_member_id}/hourly-cost",
         admin_only=True,
         body={"hourly_cost": "20.47"},
