@@ -10,6 +10,8 @@ is a missing file, not a failed export.
 Files are placed by the document date, the date printed on the invoice.
 """
 
+from pydantic import ValidationError as PydanticValidationError
+
 from pigrocrm.core.accountant_export.parts import (
     BundleFile,
     IndexEntry,
@@ -18,10 +20,12 @@ from pigrocrm.core.accountant_export.parts import (
     PartOutput,
 )
 from pigrocrm.core.accountant_export.repository import ExportRepository
-from pigrocrm.core.errors import Conflict, NotFound
+from pigrocrm.core.errors import Conflict, NotFound, ValidationFailed
 from pigrocrm.core.invoices.artifacts import InvoiceArtifacts
 from pigrocrm.core.invoices.schemas import ArtifactKind
 from pigrocrm.core.invoices.service import InvoiceService
+
+FROZEN_UNREADABLE = "i dati congelati della fattura non si leggono"
 
 
 def build_invoice_files(ctx: PartContext) -> PartOutput:
@@ -42,8 +46,14 @@ def build_invoice_files(ctx: PartContext) -> PartOutput:
                 data, _, filename = invoices.download(invoice.id, kind, ctx.actor)
             except NotFound:
                 output.missing.append(MissingFile(label, kind.upper(), "il file non è archiviato"))
-            except Conflict as refusal:
+            except (Conflict, ValidationFailed) as refusal:
                 output.missing.append(MissingFile(label, kind.upper(), refusal.message))
+            except PydanticValidationError:
+                output.missing.append(
+                    MissingFile(
+                        label, kind.upper(), "i dati congelati della fattura non si leggono"
+                    )
+                )
             else:
                 output.files.append(BundleFile(filename, data))
     output.entries.append(IndexEntry("", len(output.files), "files"))

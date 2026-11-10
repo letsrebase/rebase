@@ -57,9 +57,10 @@ def download_export(
     actor: ActorDep,
     params: Annotated[ExportParams, Query()],
 ) -> Response:
-    """One ZIP for the accountant: the sales register with its VAT columns, the issued
-    invoices' files, the open due items and the payments of the period, and an index naming
-    every part with its row count and every part left out with its reason."""
+    """One ZIP for the accountant: the sales register with its VAT columns, the invoices
+    issued and received with their files, the receipts and expenses, the open due items and
+    the payments of the period, and an index naming every part with its row count, every part
+    left out with its reason and every part whose source does not exist yet."""
     export = AccountantExportService(session, storage, settings).build(
         Period(params.date_from, params.date_to),
         actor,

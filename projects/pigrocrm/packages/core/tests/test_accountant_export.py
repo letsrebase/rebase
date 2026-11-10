@@ -14,7 +14,7 @@ import datetime as dt
 import io
 import zipfile
 from decimal import Decimal
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from sqlalchemy.orm import Session
@@ -32,6 +32,7 @@ from pigrocrm.core.accountant_export.registry import PARTS, UNAVAILABLE
 from pigrocrm.core.accountant_export.service import AccountantExportService
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.config import get_settings
+from pigrocrm.core.documents.service import DocumentService
 from pigrocrm.core.due_items.schemas import SettlementCreate
 from pigrocrm.core.due_items.service import DueItemService
 from pigrocrm.core.errors import (
@@ -53,6 +54,8 @@ from pigrocrm.core.invoices.service import InvoiceService
 from pigrocrm.core.legal_entities.models import LegalEntity
 from pigrocrm.core.legal_entities.repository import LegalEntityRepository
 from pigrocrm.core.organizations.models import Organization
+from pigrocrm.core.purchases.schemas import PurchaseCreate, VatLine
+from pigrocrm.core.purchases.service import PurchaseService
 from pigrocrm.core.storage.local import LocalFileStorage
 
 D = dt.date
@@ -271,8 +274,11 @@ def test_a_vat_invoice_gets_a_row_per_rate_with_the_vat_of_each(
         ("0,00", "N4", "100,00", "0,00"),
         ("10,00", "", "100,00", "10,00"),
         ("22,00", "", "100,00", "22,00"),
+        # The document says 46,00 of VAT and its lines make 32,00: the register still adds up
+        # to the stored total, with the difference on a row of its own.
+        ("", "Differenza rispetto ai totali del documento", "0,00", "14,00"),
     ]
-    assert rows[-1][9:11] == ["300,00", "32,00"]
+    assert rows[-1][9:11] == ["300,00", "46,00"]
     # No snapshot to read a customer from: said so, not guessed.
     assert rows[0][2] == "Cliente non disponibile"
 
@@ -416,6 +422,8 @@ def test_the_sales_register_is_omitted_for_a_company_outside_italy_and_the_index
     ]
     assert {line.key for line in export.index.parts if line.status == "included"} == {
         "issued_invoice_files",
+        "received_invoice_files",
+        "receipts_and_expenses",
         "open_due_items",
         "settlements",
     }
@@ -476,7 +484,7 @@ def test_an_all_entities_export_has_a_folder_per_entity_and_one_index(
     assert "rebase-ltd/pagamenti/pagamenti.csv" in names
     assert names.count("indice.csv") == 1
     sections = {line.section for line in export.index.parts}
-    assert sections == {"Studio Rossi", "Rebase Ltd"}
+    assert sections == {"Studio Rossi", "Rebase Ltd", "Acquisti condivisi"}
 
 
 def test_a_space_with_two_entities_asks_which_one(
@@ -548,3 +556,257 @@ def test_equal_inputs_make_the_same_bytes(
     _issue(invoices, _customer(db_session), "100.00", D(2026, 2, 1))
 
     assert exports.build(Q1, ADMIN, now=NOW).content == exports.build(Q1, ADMIN, now=NOW).content
+
+
+# --- what the space bought -------------------------------------------------------------
+
+PDF = b"%PDF-1.4\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF"
+
+
+def _supplier(session: Session) -> Organization:
+    supplier = Organization(legal_name="Vendor Srl", country="IT", roles=["supplier"])
+    session.add(supplier)
+    session.flush()
+    return supplier
+
+
+def _document(session: Session, storage: LocalFileStorage, owner: Organization, title: str) -> UUID:
+    return (
+        DocumentService(session, storage, get_settings())
+        .import_bytes(
+            customer_id=owner.id,
+            type="document",
+            title=title,
+            data=PDF,
+            content_type="application/pdf",
+            actor=ADMIN,
+            origin={"source": "test"},
+        )
+        .id
+    )
+
+
+def _buy(
+    session: Session,
+    category_id: UUID,
+    entity_id: UUID | None,
+    day: dt.date,
+    **overrides: object,
+):
+    values: dict[str, object] = {
+        "category_id": category_id,
+        "legal_entity_id": entity_id,
+        "date": day,
+        "amount": Decimal("12.20"),
+        "description": "Biglietto",
+        "merchant_name": "Trenitalia",
+        "kind": "expense",
+    }
+    values.update(overrides)
+    return PurchaseService(session).create(PurchaseCreate(**values), ADMIN)  # type: ignore[arg-type]
+
+
+def test_receipts_and_expenses_are_listed_with_their_files_and_received_invoices_are_filed(
+    db_session: Session,
+    local_storage: LocalFileStorage,
+    exports: AccountantExportService,
+    seeded_category_id: UUID,
+) -> None:
+    entity = LegalEntityRepository(db_session).default()
+    assert entity is not None
+    supplier = _supplier(db_session)
+    receipt_doc = _document(db_session, local_storage, supplier, "Scontrino")
+    invoice_doc = _document(db_session, local_storage, supplier, "Fattura FA/12")
+    _buy(
+        db_session,
+        seeded_category_id,
+        entity.id,
+        D(2026, 2, 3),
+        kind="receipt",
+        document_id=receipt_doc,
+    )
+    _buy(db_session, seeded_category_id, entity.id, D(2026, 2, 9))  # an expense with no file
+    _buy(db_session, seeded_category_id, entity.id, D(2026, 5, 1))  # next quarter
+    _buy(
+        db_session,
+        seeded_category_id,
+        entity.id,
+        D(2026, 3, 5),
+        kind="invoice",
+        supplier_id=supplier.id,
+        number="FA/12",
+        amount=Decimal("122.00"),
+        vat_lines=[
+            VatLine(
+                rate=Decimal("22.00"), taxable_amount=Decimal("100.00"), vat_amount=Decimal("22.00")
+            )
+        ],
+        document_id=invoice_doc,
+    )
+
+    export = exports.build(Q1, ADMIN, now=NOW)
+    archive = _open(export.content)
+    names = archive.namelist()
+
+    listing = _tables(_text(archive, "ricevute-e-spese/elenco.csv"))[0]
+    assert listing[0][:3] == ["Data", "Tipo", "Fornitore o esercente"]
+    assert [(row[0], row[1], row[2], row[6], row[10]) for row in listing[1:]] == [
+        ("2026-02-03", "Ricevuta", "Trenitalia", "12,20", listing[1][10]),
+        ("2026-02-09", "Spesa", "Trenitalia", "12,20", ""),
+    ]
+    assert listing[1][10].startswith("2026-02-03-") and listing[1][10] in [
+        name.removeprefix("ricevute-e-spese/") for name in names
+    ]
+    assert [name for name in names if name.startswith("fatture-ricevute/")] == [
+        next(name for name in names if name.startswith("fatture-ricevute/2026-03-05-FA-12-"))
+    ]
+    missing = [
+        (item.missing.document.split()[0], item.missing.kind, item.missing.reason)
+        for item in export.index.missing
+    ]
+    assert missing == [("2026-02-09", "Spesa", "nessun documento allegato")]
+    entries = {line.entry.path: line.entry.count for line in export.index.parts if line.entry}
+    assert entries["ricevute-e-spese/elenco.csv"] == 2
+    assert entries["ricevute-e-spese/"] == 1 and entries["fatture-ricevute/"] == 1
+
+
+def test_a_shared_purchase_is_in_the_all_entities_export_only(
+    db_session: Session,
+    exports: AccountantExportService,
+    seeded_category_id: UUID,
+) -> None:
+    entity = LegalEntityRepository(db_session).default()
+    assert entity is not None
+    _buy(db_session, seeded_category_id, entity.id, D(2026, 2, 3), description="Dell'azienda")
+    _buy(db_session, seeded_category_id, None, D(2026, 2, 4), description="Condivisa")
+
+    one = _open(exports.build(Q1, ADMIN, now=NOW).content)
+    everything = exports.build(Q1, ADMIN, all_entities=True, now=NOW)
+    all_of_them = _open(everything.content)
+
+    assert "Condivisa" not in _text(one, "ricevute-e-spese/elenco.csv")
+    assert "condivisi/ricevute-e-spese/elenco.csv" in all_of_them.namelist()
+    shared = _text(all_of_them, "condivisi/ricevute-e-spese/elenco.csv")
+    assert "Condivisa" in shared and "Dell'azienda" not in shared
+    assert "Dell'azienda" in _text(all_of_them, "studio-di-prova/ricevute-e-spese/elenco.csv")
+    shared_lines = [line for line in everything.index.parts if line.section == "Acquisti condivisi"]
+    assert {line.key for line in shared_lines if line.status == "included"} == {
+        "received_invoice_files",
+        "receipts_and_expenses",
+    }
+    assert {line.key for line in shared_lines if line.status == "unavailable"} == {
+        "purchase_register"
+    }
+
+
+def test_a_cancelled_purchase_counts_nowhere(
+    db_session: Session,
+    exports: AccountantExportService,
+    seeded_category_id: UUID,
+) -> None:
+    entity = LegalEntityRepository(db_session).default()
+    assert entity is not None
+    purchase = _buy(db_session, seeded_category_id, entity.id, D(2026, 2, 3))
+    PurchaseService(db_session).cancel(purchase.id, ADMIN)
+
+    listing = _tables(
+        _text(_open(exports.build(Q1, ADMIN, now=NOW).content), "ricevute-e-spese/elenco.csv")
+    )[0]
+
+    assert len(listing) == 1  # the header only
+
+
+def test_the_purchase_parts_are_omitted_when_the_purchases_module_is_off(
+    db_session: Session, local_storage: LocalFileStorage
+) -> None:
+    settings = get_settings().model_copy(update={"module_purchases": False})
+    export = AccountantExportService(db_session, local_storage, settings).build(Q1, ADMIN, now=NOW)
+
+    omitted = {line.key: line.reason for line in export.index.parts if line.status == "omitted"}
+    assert omitted == {
+        "received_invoice_files": "il modulo «purchases» è spento",
+        "receipts_and_expenses": "il modulo «purchases» è spento",
+    }
+    assert not any(name.startswith("ricevute-e-spese") for name in _open(export.content).namelist())
+
+
+def test_each_declared_gap_is_listed_in_exactly_one_of_two_monthly_exports(
+    db_session: Session, exports: AccountantExportService
+) -> None:
+    acme = _customer(db_session)
+    entity = LegalEntityRepository(db_session).default()
+    assert entity is not None
+    for number, day in ((1, D(2026, 1, 20)), (2, D(2026, 1, 25)), (5, D(2026, 2, 10))):
+        db_session.add(
+            Invoice(
+                customer_id=acme.id,
+                type="invoice",
+                status="issued",
+                year=2026,
+                number=number,
+                issue_date=day,
+                taxable_amount=Decimal("10.00"),
+                total=Decimal("10.00"),
+            )
+        )
+    for number in (3, 4):
+        db_session.add(
+            InvoiceRegisterGap(
+                legal_entity_id=entity.id, year=2026, number=number, reason="numero saltato"
+            )
+        )
+    db_session.flush()
+
+    def struck(period: Period) -> list[str]:
+        archive = _open(exports.build(period, ADMIN, now=NOW).content)
+        rows = _tables(_text(archive, "vendite/numeri-annullati-e-non-usati.csv"))[0]
+        return [row[0] for row in rows[1:]]
+
+    assert struck(Period(D(2026, 1, 1), D(2026, 1, 31))) == []
+    assert struck(Period(D(2026, 2, 1), D(2026, 2, 28))) == ['="2026/3"', '="2026/4"']
+
+
+def test_an_open_item_is_read_as_of_the_period_end_whatever_happened_to_it_after(
+    db_session: Session, invoices: InvoiceService, exports: AccountantExportService
+) -> None:
+    from pigrocrm.core.due_items.schemas import DueItemCreate
+
+    entity = LegalEntityRepository(db_session).default()
+    assert entity is not None
+    acme = _customer(db_session)
+    service = DueItemService(db_session)
+
+    def item(amount: str, **fields: object):
+        values: dict[str, object] = {
+            "legal_entity_id": entity.id,
+            "direction": "out",
+            "organization_id": acme.id,
+            "amount": Decimal(amount),
+            "source_kind": "recurring_expense",
+            "source_id": uuid4(),
+            "own_date": D(2026, 2, 10),
+            "description": "x",
+        }
+        values.update(fields)
+        return service.create(DueItemCreate(**values))  # type: ignore[arg-type]
+
+    partly = item("100.00", description="pagata a metà")
+    reversed_later = item("50.00", description="pagata e stornata dopo")
+    later = item("70.00", description="di aprile", own_date=D(2026, 4, 10))
+    service.settle(
+        partly.id, SettlementCreate(amount=Decimal("40.00"), settled_on=D(2026, 3, 1)), ADMIN
+    )
+    paid = service.settle(
+        reversed_later.id,
+        SettlementCreate(amount=Decimal("50.00"), settled_on=D(2026, 3, 2)),
+        ADMIN,
+    )
+    service.reverse_settlement(paid.settlements[0].id, "errore", ADMIN)
+    assert later.id
+
+    archive = _open(exports.build(Q1, ADMIN, now=NOW).content)
+    rows = _tables(_text(archive, "scadenze/scadenze-aperte.csv"))[0][2:]
+
+    # Paid and reversed after the quarter: it was paid at the quarter's end. Written after
+    # the quarter by its own date: not there yet. Only the half-paid one was open.
+    assert [(row[3], row[7], row[8]) for row in rows] == [("pagata a metà", "40,00", "60,00")]

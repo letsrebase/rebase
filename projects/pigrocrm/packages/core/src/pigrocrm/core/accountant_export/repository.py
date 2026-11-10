@@ -5,13 +5,15 @@ from collections import defaultdict
 from decimal import Decimal
 from uuid import UUID
 
-from sqlalchemy import and_, or_, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.due_items.models import DueItem, DueItemSettlement
 from pigrocrm.core.due_items.sales import SALES_INVOICE
 from pigrocrm.core.invoices.models import Invoice, InvoiceLine, InvoiceRegisterGap
 from pigrocrm.core.organizations.models import Organization
+from pigrocrm.core.purchases.models import Purchase
+from pigrocrm.core.timetracking.models import CostCategory
 
 
 class ExportRepository:
@@ -51,19 +53,35 @@ class ExportRepository:
             grouped[line.invoice_id].append(line)
         return grouped
 
+    def last_number_before(self, legal_entity_id: UUID, year: int, before: dt.date) -> int:
+        """The highest number of `year` on a numbered invoice dated before `before`, 0 when
+        there is none."""
+        return int(
+            self.session.scalar(
+                select(func.coalesce(func.max(Invoice.number), 0)).where(
+                    Invoice.legal_entity_id == legal_entity_id,
+                    Invoice.type == "invoice",
+                    Invoice.status.in_(("issued", "cancelled")),
+                    Invoice.deleted_at.is_(None),
+                    Invoice.year == year,
+                    Invoice.issue_date < before,
+                )
+            )
+            or 0
+        )
+
     def declared_gaps(
-        self, legal_entity_id: UUID, year: int, first: int, last: int
+        self, legal_entity_id: UUID, year: int, after: int, up_to: int
     ) -> list[InvoiceRegisterGap]:
-        """The numbers of `year` declared as never used, between two numbers the period
-        carries."""
+        """The numbers of `year` declared as never used, above `after` and up to `up_to`."""
         return list(
             self.session.scalars(
                 select(InvoiceRegisterGap)
                 .where(
                     InvoiceRegisterGap.legal_entity_id == legal_entity_id,
                     InvoiceRegisterGap.year == year,
-                    InvoiceRegisterGap.number >= first,
-                    InvoiceRegisterGap.number <= last,
+                    InvoiceRegisterGap.number > after,
+                    InvoiceRegisterGap.number <= up_to,
                 )
                 .order_by(InvoiceRegisterGap.number)
             )
@@ -92,13 +110,19 @@ class ExportRepository:
                 DueItem.legal_entity_id == legal_entity_id,
                 DueItem.state.in_(("expected", "settled")),
                 # Born by the end of the period: a sale by the date of its invoice, every
-                # other item by the day it was written.
+                # other item by the date its document states, or by the day it was written
+                # when it states none.
                 or_(
                     and_(Invoice.id.is_not(None), Invoice.issue_date <= date_to),
-                    and_(Invoice.id.is_(None), DueItem.created_at < end_of_day),
+                    and_(Invoice.id.is_(None), DueItem.own_date <= date_to),
+                    and_(
+                        Invoice.id.is_(None),
+                        DueItem.own_date.is_(None),
+                        DueItem.created_at < end_of_day,
+                    ),
                 ),
             )
-            .order_by(DueItem.due_date.asc().nulls_last(), DueItem.created_at)
+            .order_by(DueItem.due_date.asc().nulls_last(), DueItem.created_at, DueItem.id)
         ).all()
         settled: dict[UUID, Decimal] = defaultdict(lambda: Decimal("0.00"))
         ids = [item.id for item, _ in items]
@@ -130,6 +154,40 @@ class ExportRepository:
                 DueItemSettlement.settled_on >= date_from,
                 DueItemSettlement.settled_on <= date_to,
             )
-            .order_by(DueItemSettlement.settled_on, DueItemSettlement.created_at)
+            .order_by(
+                DueItemSettlement.settled_on, DueItemSettlement.created_at, DueItemSettlement.id
+            )
         ).all()
         return [(settlement, item, name) for settlement, item, name in rows]
+
+    def purchases(
+        self,
+        legal_entity_id: UUID | None,
+        kinds: tuple[str, ...],
+        date_from: dt.date,
+        date_to: dt.date,
+    ) -> list[tuple[Purchase, str | None, str]]:
+        """The registered purchases of `kinds` dated in the period, oldest first:
+        `(purchase, supplier name, category name)`. `legal_entity_id=None` is the purchases of
+        no legal entity, the shared ones; a legal entity's export never carries them. A
+        cancelled or archived purchase counts nowhere."""
+        where = (
+            Purchase.legal_entity_id.is_(None)
+            if legal_entity_id is None
+            else Purchase.legal_entity_id == legal_entity_id
+        )
+        rows = self.session.execute(
+            select(Purchase, Organization.legal_name, CostCategory.name)
+            .join(CostCategory, CostCategory.id == Purchase.category_id)
+            .outerjoin(Organization, Organization.id == Purchase.supplier_id)
+            .where(
+                where,
+                Purchase.kind.in_(kinds),
+                Purchase.status == "registered",
+                Purchase.deleted_at.is_(None),
+                Purchase.date >= date_from,
+                Purchase.date <= date_to,
+            )
+            .order_by(Purchase.date, Purchase.created_at, Purchase.id)
+        ).all()
+        return [(purchase, supplier, category) for purchase, supplier, category in rows]

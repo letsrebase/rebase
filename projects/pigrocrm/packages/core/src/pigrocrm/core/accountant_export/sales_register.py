@@ -3,15 +3,16 @@ the numbers that were annulled or never used (spec accountant export § 1, C3 §
 
 Rows are placed by the date printed on the document, which for a sale is its IVA period.
 One row per invoice and per `(rate, nature)` group, the grouping and the rounding the XML
-carries (`build_recap`), so an invoice's rows add up to its taxable amount and its VAT. A
-credit note is a row of its own document type (`TD04`), with the amounts the document
-carries.
+carries (`build_recap`), so an invoice's rows add up to its taxable amount and its VAT. The
+row prints the document type the invoice stored. An invoice whose stored totals differ from
+its lines (an import brings the totals it was issued with) gets one more row with the
+difference, so the register adds up to the figures the year register sums.
 
 The annulled numbers and the declared gaps sit in a second file: an annulled invoice keeps
 its number and counts for nothing, a gap is a number the register will never carry (spec 9
-§ 3.2), and the accountant asks about both when a number is missing. A gap is placed
-between the first and the last number of its year that the period carries; a period with no
-document carries none.
+§ 3.2), and the accountant asks about both when a number is missing. A gap is placed in the
+period that holds the next number after it, so a run of monthly exports lists each gap once;
+a period with no document lists none.
 """
 
 from collections import defaultdict
@@ -57,6 +58,7 @@ REGISTER_COLUMNS = (
 STRUCK_COLUMNS = ("Numero", "Data emissione", "Stato", "Data annullamento", "Motivo")
 ANNULLED = "Annullata"
 NOT_USED = "Non usato"
+RECONCILIATION = "Differenza rispetto ai totali del documento"
 
 
 def _computed(line: InvoiceLine) -> ComputedLine:
@@ -90,8 +92,7 @@ def _number(invoice: Invoice) -> str:
 def _register_rows(
     invoice: Invoice, lines: list[InvoiceLine]
 ) -> list[tuple[list[str], Decimal, Decimal]]:
-    """The invoice's rows with the taxable amount and the VAT each carries. A document with
-    no lines (nothing a register can group) is one row from the totals it stored."""
+    """The invoice's rows with the taxable amount and the VAT each carries."""
     name, vat_number, tax_code = _party(invoice)
     head = [
         _number(invoice),
@@ -105,23 +106,7 @@ def _register_rows(
         PAYMENT.get(invoice.payment_status, invoice.payment_status),
         invoice.payment_date.isoformat() if invoice.payment_date else "",
     ]
-    if not lines:
-        return [
-            (
-                [
-                    *head,
-                    "",
-                    "",
-                    "",
-                    amount_cell(invoice.taxable_amount),
-                    amount_cell(invoice.vat_amount),
-                    *tail,
-                ],
-                invoice.taxable_amount,
-                invoice.vat_amount,
-            )
-        ]
-    return [
+    rows = [
         (
             [
                 *head,
@@ -137,6 +122,29 @@ def _register_rows(
         )
         for group in build_recap([_computed(line) for line in lines])
     ]
+    # The document's stored totals are what the year register sums. An invoice written here
+    # agrees with its lines by construction; one imported from elsewhere carries the totals it
+    # was issued with, and a difference is shown as a row of its own so the register still
+    # adds up to them.
+    taxable_gap = invoice.taxable_amount - sum_money(taxable for _, taxable, _ in rows)
+    vat_gap = invoice.vat_amount - sum_money(vat for _, _, vat in rows)
+    if taxable_gap or vat_gap:
+        rows.append(
+            (
+                [
+                    *head,
+                    "",
+                    text_cell(RECONCILIATION),
+                    "",
+                    amount_cell(taxable_gap),
+                    amount_cell(vat_gap),
+                    *tail,
+                ],
+                taxable_gap,
+                vat_gap,
+            )
+        )
+    return rows
 
 
 def build_sales_register(ctx: PartContext) -> PartOutput:
@@ -216,7 +224,10 @@ def _struck_file(
             )
         )
     for year, present in numbers.items():
-        for gap in repo.declared_gaps(legal_entity.id, year, min(present), max(present)):
+        # From the last number the period before this one carried, so every declared gap
+        # lands in exactly one period: the one that holds the next number after it.
+        after = repo.last_number_before(legal_entity.id, year, ctx.period.date_from)
+        for gap in repo.declared_gaps(legal_entity.id, year, after, max(present)):
             entries.append(
                 (
                     year,

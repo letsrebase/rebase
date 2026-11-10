@@ -9,6 +9,10 @@ part is never both built and declared missing.
 from pigrocrm.core.accountant_export.due_items import build_open_items, build_settlements
 from pigrocrm.core.accountant_export.invoice_files import build_invoice_files
 from pigrocrm.core.accountant_export.parts import PartDefinition, UnavailablePart
+from pigrocrm.core.accountant_export.purchases import (
+    build_receipts_and_expenses,
+    build_received_invoice_files,
+)
 from pigrocrm.core.accountant_export.sales_register import build_sales_register
 from pigrocrm.core.fiscal.pack import PACK_NON_IT
 
@@ -30,6 +34,24 @@ PARTS: tuple[PartDefinition, ...] = (
         build=build_invoice_files,
     ),
     PartDefinition(
+        key="received_invoice_files",
+        folder="fatture-ricevute",
+        label="Fatture ricevute: file originali",
+        date_rule="per data del documento",
+        build=build_received_invoice_files,
+        scopes=("entity", "shared"),
+        requires_modules=("purchases",),
+    ),
+    PartDefinition(
+        key="receipts_and_expenses",
+        folder="ricevute-e-spese",
+        label="Ricevute e spese: elenco e file originali",
+        date_rule="per data del documento",
+        build=build_receipts_and_expenses,
+        scopes=("entity", "shared"),
+        requires_modules=("purchases",),
+    ),
+    PartDefinition(
         key="open_due_items",
         folder="scadenze",
         label="Scadenze aperte a fine periodo",
@@ -49,7 +71,9 @@ PARTS: tuple[PartDefinition, ...] = (
 # rather than left out of it, so the accountant never wonders whether a part was forgotten.
 _NOT_BUILT = "la fonte non è ancora disponibile in PigroCRM"
 UNAVAILABLE: tuple[UnavailablePart, ...] = (
-    UnavailablePart("purchase_register", "Registro degli acquisti", _NOT_BUILT),
+    UnavailablePart(
+        "purchase_register", "Registro degli acquisti", _NOT_BUILT, scopes=("entity", "shared")
+    ),
     UnavailablePart("iva_settlements", "Liquidazioni IVA del periodo", _NOT_BUILT),
     UnavailablePart("integration_documents", "Documenti di integrazione", _NOT_BUILT),
     UnavailablePart("bank_movements", "Movimenti di banca con ciò che hanno saldato", _NOT_BUILT),

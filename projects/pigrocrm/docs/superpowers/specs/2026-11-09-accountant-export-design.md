@@ -162,3 +162,16 @@ Filed once the design is approved: the purchase register and settlement CSVs; th
 its index; storage, parts and retention; the readiness checklist; delivery to Drive; the share
 link; payroll parts and the «variazioni paghe» export; the MCP tools; the brief for the export
 page; that page.
+
+### Built (REB-1011)
+
+The bundle and its index exist as `core/accountant_export/`, behind `GET
+/api/accountant-export` (an admin; `all_entities` for an unscoped one). Parts are
+`PartDefinition`s in `registry.py`; a project that ships a source adds its definition and
+removes its row from `UNAVAILABLE`, and the ZIP and the index carry it. Today: the sales
+register with VAT columns, the annulled and unused numbers, the issued invoices' files, the
+received invoices' files, the receipts and expenses with their files, the open due items at
+the period's end and the payments booked in it. Everything else in § 1 is listed in the index
+as «non disponibile». A sale is placed by its issue date (its IVA period); a declared gap in
+the period that holds the next number after it. Storage, retention, the checklist, the share
+link and the MCP tools stay their own cards.

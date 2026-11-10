@@ -89,7 +89,9 @@ class PartDefinition:
     # The date that places a row in the period, in the words the index prints.
     date_rule: str
     build: Callable[[PartContext], PartOutput]
-    scope: Scope = "entity"
+    # Where the part runs: for one legal entity, for the purchases of no legal entity (the
+    # «all entities» export only), or both.
+    scopes: tuple[Scope, ...] = ("entity",)
     # Every module listed must be on, or the part is omitted.
     requires_modules: tuple[ModuleKey, ...] = ()
     # Packs the part does not apply to (no IVA register for `non-it`).
@@ -112,4 +114,4 @@ class UnavailablePart:
     key: str
     label: str
     reason: str
-    scope: Scope = "entity"
+    scopes: tuple[Scope, ...] = ("entity",)

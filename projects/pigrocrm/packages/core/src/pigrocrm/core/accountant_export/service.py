@@ -187,10 +187,10 @@ class AccountantExportService:
     ) -> list[BundleFile]:
         ctx = self._context(actor, period, legal_entity)
         files = self._run(
-            [part for part in PARTS if part.scope == "entity"], ctx, prefix, section, index
+            [part for part in PARTS if "entity" in part.scopes], ctx, prefix, section, index
         )
         for missing in UNAVAILABLE:
-            if missing.scope == "entity":
+            if "entity" in missing.scopes:
                 index.parts.append(
                     PartLine(section, missing.key, missing.label, "unavailable", "", missing.reason)
                 )
@@ -199,14 +199,14 @@ class AccountantExportService:
     def _shared_parts(self, actor: Actor, period: Period, index: ExportIndex) -> list[BundleFile]:
         ctx = self._context(actor, period, None)
         files = self._run(
-            [part for part in PARTS if part.scope == "shared"],
+            [part for part in PARTS if "shared" in part.scopes],
             ctx,
             f"{SHARED_FOLDER}/",
             SHARED_SECTION,
             index,
         )
         for missing in UNAVAILABLE:
-            if missing.scope == "shared":
+            if "shared" in missing.scopes:
                 index.parts.append(
                     PartLine(
                         SHARED_SECTION,
@@ -251,7 +251,7 @@ class AccountantExportService:
         """The entity's folder in an all-entities bundle: its name, made unique by the start
         of its id when two entities slug alike."""
         slug = _slug(legal_entity.name)
-        clash = sum(1 for other in entities if _slug(other.name) == slug) > 1
+        clash = slug == SHARED_FOLDER or sum(1 for o in entities if _slug(o.name) == slug) > 1
         return f"{slug}-{str(legal_entity.id)[:8]}" if clash else slug
 
     @staticmethod
