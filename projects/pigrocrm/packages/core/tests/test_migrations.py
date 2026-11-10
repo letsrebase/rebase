@@ -3869,3 +3869,43 @@ def test_0092_adds_the_letter_columns_and_downgrade_removes_them(pigrocrm_postgr
         assert _letters_shape(url) == (False, False, False, False)
         upgrade(config, "0092")
         assert _letters_shape(url)[0] is True
+
+
+def _forecast_schema(url: str) -> dict[str, bool]:
+    engine = create_engine(url)
+    try:
+        with engine.connect() as connection:
+
+            def exists(sql: str) -> bool:
+                return bool(connection.execute(text(sql)).scalar_one())
+
+            return {
+                "line_columns": exists(
+                    "SELECT count(*) = 2 FROM information_schema.columns WHERE "
+                    "table_name = 'invoice_lines' AND column_name IN "
+                    "('rate_card_id', 'period_start')"
+                ),
+                "line_check": exists(
+                    "SELECT count(*) > 0 FROM pg_constraint WHERE "
+                    "conname = 'ck_invoice_lines_rate_card_with_period'"
+                ),
+            }
+    finally:
+        engine.dispose()
+
+
+def test_0093_adds_the_billed_period_to_invoice_lines_and_downgrade_removes_it(
+    pigrocrm_postgres: Any,
+) -> None:
+    """REB-997: nullable columns and a both-or-neither check."""
+    with pigrocrm_postgres.fresh_container() as container:
+        url = container.get_connection_url()
+        config = _alembic_config(url)
+        upgrade(config, "0092")
+        assert not any(_forecast_schema(url).values())
+        upgrade(config, "0093")
+        assert all(_forecast_schema(url).values())
+        downgrade(config, "0092")
+        assert not any(_forecast_schema(url).values())
+        upgrade(config, "0093")
+        assert all(_forecast_schema(url).values())

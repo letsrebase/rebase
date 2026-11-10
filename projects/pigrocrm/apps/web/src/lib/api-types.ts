@@ -10842,6 +10842,10 @@ export interface components {
             discount_amount?: number | string | null;
             /** Vat Rate */
             vat_rate?: number | string | null;
+            /** Rate Card Id */
+            rate_card_id?: string | null;
+            /** Period Start */
+            period_start?: string | null;
         };
         /** InvoiceLineRead */
         InvoiceLineRead: {
@@ -10877,6 +10881,10 @@ export interface components {
             vat_nature: string | null;
             /** Legal Reference */
             legal_reference: string | null;
+            /** Rate Card Id */
+            rate_card_id?: string | null;
+            /** Period Start */
+            period_start?: string | null;
         };
         /**
          * InvoiceLinesBody

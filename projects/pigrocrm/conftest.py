@@ -177,18 +177,27 @@ def _legal_entity_scope_statements() -> list[str]:
 
 # Test-only DDL, never a migration: a test that builds an issued invoice as a row gets its due item
 # from `fakes/hand_built_invoices.py`, and the many tests that clean up by deleting their invoices
-# by hand would otherwise leave the item behind and block the deletion of its organization
-# (REB-968). Production never deletes an issued invoice.
+# or contracts by hand would otherwise leave the item behind, with the forecasts of a draft or a
+# contract (REB-997), and block the deletion of its organization (REB-968). Production never
+# deletes an issued invoice.
 _DROP_INVOICE_DUE_ITEMS_SQL = """
 CREATE FUNCTION test_drop_invoice_due_items() RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
     DELETE FROM due_item_settlements WHERE due_item_id IN (
         SELECT id FROM due_items WHERE source_kind = 'sales_invoice' AND source_id = OLD.id);
-    DELETE FROM due_items WHERE source_kind = 'sales_invoice' AND source_id = OLD.id;
+    DELETE FROM due_items WHERE source_kind IN ('sales_invoice', 'sales_draft')
+        AND source_id = OLD.id;
     RETURN OLD;
 END $$;
 CREATE TRIGGER test_drop_invoice_due_items AFTER DELETE ON invoices
     FOR EACH ROW EXECUTE FUNCTION test_drop_invoice_due_items();
+CREATE FUNCTION test_drop_contract_due_items() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+    DELETE FROM due_items WHERE source_kind = 'contract_occurrence' AND source_id = OLD.id;
+    RETURN OLD;
+END $$;
+CREATE TRIGGER test_drop_contract_due_items AFTER DELETE ON contracts
+    FOR EACH ROW EXECUTE FUNCTION test_drop_contract_due_items();
 """
 
 

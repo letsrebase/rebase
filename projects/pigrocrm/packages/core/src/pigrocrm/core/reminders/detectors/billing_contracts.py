@@ -51,9 +51,9 @@ from uuid import UUID, uuid5
 
 from sqlalchemy import ColumnElement, exists, func, or_, select
 
+from pigrocrm.core.contracts.cadence import PERIOD_MONTHS, period_end, period_months, period_start
 from pigrocrm.core.contracts.models import RATE_CARD_DAY_HOUR_TYPES, Contract, RateCard
 from pigrocrm.core.contracts.projection import RECURRING_FEE_TYPE
-from pigrocrm.core.db.clock import month_bounds
 from pigrocrm.core.due_items.sales import join_sales_item, still_owed
 from pigrocrm.core.invoices.models import Invoice, InvoiceLine
 from pigrocrm.core.invoices.naming import number_complete
@@ -69,34 +69,16 @@ FIXED_FEE = REMINDER_TYPES["fixed_fee_period_unbilled"]
 ON_COMPLETION = REMINDER_TYPES["on_completion_unbilled"]
 UNLINKED = REMINDER_TYPES["invoice_days_unlinked"]
 
-# The months of a period, by the words a contract's cadence uses for it.
-_PERIOD_MONTHS = {"monthly": 1, "quarterly": 3, "annual": 12}
+
 _BILLABLE_DAY = "worked"
 # The rate card of a fee billed once, on completion (`contracts/models.py` `RATE_CARD_TIPI`).
 ONE_OFF_FEE_TYPE = "one_off"
 # A contract's cadence as the periodic words read it, in SQL so each detector loads only its own.
-_PERIODIC = func.lower(func.trim(Contract.billing_cadence)).in_(tuple(_PERIOD_MONTHS))
+_PERIODIC = func.lower(func.trim(Contract.billing_cadence)).in_(tuple(PERIOD_MONTHS))
 
 # How far back `invoice_days_unlinked` looks: an issued invoice older than this is history,
 # and one still unlinked after three months is not going to be linked by being raised again.
 UNLINKED_LOOKBACK_DAYS = 90
-
-
-def period_months(cadence: str) -> int | None:
-    """The months in one period of `cadence`, or `None` for a cadence billed on completion."""
-    return _PERIOD_MONTHS.get(cadence.strip().lower())
-
-
-def period_start(months: int, day: date) -> date:
-    """The first day of the calendar month, quarter or year `day` falls in."""
-    first = ((day.month - 1) // months) * months + 1
-    return date(day.year, first, 1)
-
-
-def period_end(months: int, day: date) -> date:
-    """The last day of the calendar month, quarter or year `day` falls in."""
-    last = ((day.month - 1) // months) * months + months
-    return month_bounds(day.year, last)[1]
 
 
 def _periodic(contract: Contract) -> int | None:

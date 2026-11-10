@@ -108,6 +108,41 @@ class DueItemRepository:
             ).scalars()
         )
 
+    def live_forecasts(self, source_kind: str, source_id: UUID) -> list[DueItem]:
+        """The forecasts of one source that are still live, by key. Fresh, and locked: the
+        writer that revises or drops one has read the row it is about to change."""
+        return list(
+            self.session.execute(
+                select(DueItem)
+                .where(
+                    DueItem.source_kind == source_kind,
+                    DueItem.source_id == source_id,
+                    DueItem.state == "forecast",
+                )
+                .order_by(DueItem.forecast_key, DueItem.id)
+                .with_for_update(),
+                execution_options={"populate_existing": True},
+            ).scalars()
+        )
+
+    def source_ids_with_live_forecasts(self, source_kind: str) -> list[UUID]:
+        """The sources that still have a live forecast of `source_kind`, so a job can visit one
+        whose own row no longer asks for it."""
+        return [
+            source_id
+            for source_id in self.session.execute(
+                select(DueItem.source_id)
+                .where(
+                    DueItem.source_kind == source_kind,
+                    DueItem.state == "forecast",
+                    DueItem.source_id.is_not(None),
+                )
+                .distinct()
+                .order_by(DueItem.source_id)
+            ).scalars()
+            if source_id is not None
+        ]
+
     def lock_invoice(self, invoice_id: UUID) -> None:
         """Takes the invoice's row lock. A sales item is settled from two doors, the invoice's
         and the item's; both take the invoice first, so they queue rather than deadlock."""

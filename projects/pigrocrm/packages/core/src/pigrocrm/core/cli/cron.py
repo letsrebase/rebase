@@ -36,6 +36,7 @@ from pigrocrm.core.db import session_factory
 from pigrocrm.core.db.clock import today_local
 from pigrocrm.core.digest.run import DigestOutcome, DigestRun
 from pigrocrm.core.digest.service import previous_week, week_containing
+from pigrocrm.core.due_items.forecast import ForecastReport, refresh_forecasts
 from pigrocrm.core.fiscal.year_roll import FiscalYearRoll, YearRollReport
 from pigrocrm.core.mail import sender_from_settings
 from pigrocrm.core.reminders.jobs import AUTOMATIONS_JOB, DIGEST_JOB, REMINDER_PASS_JOB
@@ -281,6 +282,9 @@ def automations(settings: Settings, *, slug: str | None, day: date | None, dry_r
             try:
                 with session_factory(engine)() as space:
                     report = AutomationPass(space, settings).run(today=day, dry_run=dry_run)
+                    # The forecasts of money in are materialised with the other daily rules
+                    # (spec 2026-11-09, due items, § 1.2); the pass bound the system scope.
+                    forecasts = refresh_forecasts(space, today=day, dry_run=dry_run)
                 if not dry_run and not record_job(engine, AUTOMATIONS_JOB, target.label, None):
                     failed = True
             except Exception as exc:  # noqa: BLE001 - one space must not stop the others
@@ -305,7 +309,8 @@ def automations(settings: Settings, *, slug: str | None, day: date | None, dry_r
                     file=sys.stderr,
                 )
                 failed = True
-        _print_automation_report(target.label, report, dry_run=dry_run)
+        failed = failed or forecasts.failed > 0
+        _print_automation_report(target.label, report, forecasts, dry_run=dry_run)
         if report.payroll_failed:
             print(
                 f"{target.label}: payroll forecasts not refreshed {report.payroll_failed} "
@@ -331,7 +336,9 @@ def _print_year_roll(slug: str, roll: YearRollReport, *, dry_run: bool) -> bool:
     return roll.failed > 0
 
 
-def _print_automation_report(slug: str, report: PassReport, *, dry_run: bool) -> None:
+def _print_automation_report(
+    slug: str, report: PassReport, forecasts: ForecastReport, *, dry_run: bool
+) -> None:
     """One line per rule, counters only. A rule that is switched off says so rather than
     printing zeros, which would read as «looked, found nothing»."""
     suffix = " (dry run)" if dry_run else ""
@@ -344,3 +351,10 @@ def _print_automation_report(slug: str, report: PassReport, *, dry_run: bool) ->
             )
     if report.payroll_refreshed:
         print(f"{slug}: payroll forecasts refreshed {report.payroll_refreshed}{suffix}")
+    print(
+        f"{slug}: forecasts created {forecasts.created}, revised {forecasts.revised}, "
+        f"dropped {forecasts.dropped}{suffix}"
+    )
+    if forecasts.failed:
+        # To `stderr`, so the exit status says a contract or a draft kept its old forecast.
+        print(f"{slug}: forecasts failed for {forecasts.failed} sources", file=sys.stderr)

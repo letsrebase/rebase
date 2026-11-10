@@ -230,6 +230,36 @@ document prints. The exporter reads the stored figures: `DatiRitenuta` and `Rite
 customer's frozen kind (`PartySnapshot.customer_kind`). A service to a business abroad on the ordinary regime is `N2.1`
 (`_ordinary.resolve_line_vat`); a consumer abroad is refused until its own card. The pension fund and the INPS surcharge
 (`DatiCassaPrevidenziale`) are not computed or exported: their rule is «to verify» in the frame's A5 register and waits for the accountant.
+follows the boot's convention (a line on stderr, exit 0).
+
+**Forecasts of money in are stored due items in the state `forecast`, replaced by their document and never
+added to it (REB-997).** `due_items/forecast.py` (`ForecastService`) materialises three rules: an active
+contract's `fixed_recurring` occurrences (`contract_recurring_fee`, source kind `contract_occurrence`,
+`source_id` the contract), its `worked` days on no line grouped by billing period (`contract_worked_days`,
+priced by `work_units/gathering.py`, the same gather the draft uses), and every draft, draft proforma and
+confirmed proforma (`draft_invoice`, kind `sales_draft`, `source_id` the invoice; its own kind so no reader
+that joins `sales_invoice` to its invoice meets it). `forecast_key` is a uuid5 of the kind, the rate card or
+contract and the period, unique among live forecasts by a partial index. An invoice line created from a
+contract carries `rate_card_id` and `period_start` (`InvoiceLineIn`, both or neither; `bind_work_units`
+sets them, and `InvoiceContext.check_billed_cards` refuses a card of another customer's contract), and a
+line covers the occurrence whose span (to the next occurrence) holds its `period_start`. The date is
+`due_date_for_customer`, the arithmetic `InvoiceContext.due_date_from_terms` calls, from the occurrence
+(fee) or from the later of today and the period's end (days); never `Contract.payment_days`. A contract
+billed on completion with no `end` has an undated forecast. The amount is the invoice's gross total by the
+same regime; withholding and split payment come with the real invoice. Renewal, deals and contracts that are
+not `active` are not forecast, nor are other currencies or a legal entity with no fiscal profile. Every
+writer takes the **contract row first** (`refresh_contract`, `lock_contracts`), and a writer of a worked day
+(`transition`, `create`, an approval, `bind_work_units`, deleting or annulling a draft that billed days)
+takes its contract before the day, an invoice before its contracts, so a job, an issue and a day's move
+queue and never wait for one another; `sync_invoice` runs in the transaction that creates, edits, deletes,
+issues or annuls an invoice (`replace_lines` hands it the contracts the old lines billed), and
+`refresh_contract` in the one that changes a contract, a rate card, a day or an approval. The daily job is
+`refresh_forecasts`, run by `pigrocrm automations` after the task rules: it drops a forecast whose date has
+passed, counts a contract or a draft it could not read in `failed` (a line on stderr and exit 1, the others
+go on), and `--dry-run` rolls it back. A change to a customer's terms or to the profile's `due_days` waits
+for the next pass. No code bills a recurring fee yet: a fee invoice replaces its forecast only when its
+line names the card and the period (`InvoiceLineIn`), otherwise the forecast stands until its date passes.
+The test-only triggers in the root `conftest.py` delete the forecasts of a hand-deleted invoice or contract.
 **Staff and directors are written by `StaffService`, and pay is an administrator's before anything else
 (REB-977).** `staff_members` and `payroll_settings` belong to the module `staff` (default off for both
 profiles, on for a space with no profile): REST `/api/staff` carries `module_guard("staff")` and the

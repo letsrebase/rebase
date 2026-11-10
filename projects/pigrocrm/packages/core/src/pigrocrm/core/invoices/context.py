@@ -10,11 +10,13 @@ from collections.abc import Callable, Sequence
 from datetime import date
 from uuid import UUID
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.activities.service import ActivityService
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.config import Settings, get_settings
+from pigrocrm.core.contracts.models import Contract, RateCard
 from pigrocrm.core.db.clock import today_local
 from pigrocrm.core.deals.models import Deal
 from pigrocrm.core.documents.service import DocumentService
@@ -27,10 +29,10 @@ from pigrocrm.core.fiscal.schemas import FiscalSnapshot
 from pigrocrm.core.fiscal.service import FiscalProfileService
 from pigrocrm.core.invoices.checks import is_editable
 from pigrocrm.core.invoices.constants import ENTITY
-from pigrocrm.core.invoices.due_date import due_date_from_terms
+from pigrocrm.core.invoices.due_date import due_date_for_customer, due_date_from_terms
 from pigrocrm.core.invoices.models import Invoice
 from pigrocrm.core.invoices.repository import InvoiceRepository
-from pigrocrm.core.invoices.schemas import InvoiceRead
+from pigrocrm.core.invoices.schemas import InvoiceLineIn, InvoiceRead
 from pigrocrm.core.legal_entities.models import LegalEntity
 from pigrocrm.core.legal_entities.service import LegalEntityService
 from pigrocrm.core.organizations.models import Organization
@@ -114,6 +116,30 @@ class InvoiceContext:
             )
         return customer
 
+    def check_billed_cards(self, lines: Sequence[InvoiceLineIn], customer_id: UUID) -> None:
+        """A line that bills a period of a contract names a rate card of a live contract of the
+        document's own customer (REB-997): one that does not would drop the forecast of
+        somebody else's contract when the document is issued."""
+        card_ids = {line.rate_card_id for line in lines if line.rate_card_id is not None}
+        if not card_ids:
+            return
+        owners = {
+            card_id: owner
+            for card_id, owner in self.session.execute(
+                select(RateCard.id, Contract.customer_id)
+                .join(Contract, Contract.id == RateCard.contract_id)
+                .where(RateCard.id.in_(card_ids), Contract.deleted_at.is_(None))
+            )
+        }
+        for card_id in sorted(card_ids, key=str):
+            if owners.get(card_id) != customer_id:
+                raise ValidationFailed(
+                    ENTITY,
+                    "lines",
+                    "la scheda tariffa indicata non e' di un contratto di questo cliente",
+                    expected="una scheda tariffa di un contratto del cliente del documento",
+                )
+
     # ---- fiscal and legal entity ---------------------------------------------------
 
     def regime(self, legal_entity_id: UUID | None = None) -> tuple[RegimeStrategy, FiscalSnapshot]:
@@ -163,10 +189,7 @@ class InvoiceContext:
         """The due date the customer's terms give from `issue_date` (REB-326). The
         customer's days when it has them, the profile's otherwise; the end-of-month slide
         is the customer's alone. One arithmetic, `due_date_from_terms`, for every caller."""
-        days, month_end = self.repo.payment_terms({customer_id}).get(customer_id, (None, False))
-        return due_date_from_terms(
-            issue_date, profile_days if days is None else days, month_end=month_end
-        )
+        return due_date_for_customer(self.repo, issue_date, customer_id, profile_days)
 
     def expected_due_date(self, invoice: Invoice) -> date | None:
         """`expected_due_date` of an editable document (REB-326): the date `issue` would

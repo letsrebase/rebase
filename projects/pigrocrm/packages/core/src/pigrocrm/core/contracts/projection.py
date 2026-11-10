@@ -40,7 +40,7 @@ from pigrocrm.core.money import ZERO_MONEY, round_money
 # The disbursement periods that repeat -- see RateCard.periodo_erogazione
 # (contracts/models.py) for the full closed set, which also admits 'una_tantum'
 # (handled separately below: one occurrence, not a step).
-_PERIOD_STEP_MONTHS: dict[str, int] = {"monthly": 1, "quarterly": 3, "annual": 12}
+PERIOD_STEP_MONTHS: dict[str, int] = {"monthly": 1, "quarterly": 3, "annual": 12}
 
 RECURRING_FEE_TYPE = "fixed_recurring"
 
@@ -107,7 +107,7 @@ def generate_recurring_fee_occurrences(
             continue
 
         for occurrence_date in stepped_dates(
-            card.valid_from, bound, _PERIOD_STEP_MONTHS[card.delivery_period]
+            card.valid_from, bound, PERIOD_STEP_MONTHS[card.delivery_period]
         ):
             occurrences.append(RecurringFeeOccurrence(date=occurrence_date, amount=card.amount))
     return occurrences

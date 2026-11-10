@@ -60,6 +60,9 @@ SOURCE_KINDS: tuple[str, ...] = (
     "recurring_expense",
     "cash_basis_vat",
     "engagement",
+    # A draft invoice, or a draft or confirmed proforma, before it has a number: a forecast
+    # in, replaced by the issued invoice (§ 1.2).
+    "sales_draft",
 )
 # The source of what staff cost and when it leaves (`staff/payroll.py`).
 PAYROLL_SOURCE_KIND = "payroll"

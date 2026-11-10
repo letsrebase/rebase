@@ -25,6 +25,7 @@ from pigrocrm.core.db.transactions import savepoint
 from pigrocrm.core.documents.models import Document
 from pigrocrm.core.documents.schemas import TITLE_MAX_LENGTH
 from pigrocrm.core.documents.service import DocumentService
+from pigrocrm.core.due_items.forecast import ForecastService
 from pigrocrm.core.errors import Conflict, DomainError, NotFound, ValidationFailed
 from pigrocrm.core.gmail.repository import GmailRepository
 from pigrocrm.core.labels import WORK_UNIT_STATUS, label
@@ -170,6 +171,7 @@ class WorkUnitService:
             )
         if ContractRepository(self.session).get(data.contract_id) is None:
             raise NotFound("contract", data.contract_id)
+        ForecastService(self.session).lock_contracts([data.contract_id])
         set_transition_context(self.session, actor, reason)
 
         def refuse(exc: IntegrityError) -> DomainError | IntegrityError:
@@ -214,6 +216,7 @@ class WorkUnitService:
             actor,
             {"work_unit": work_unit.date.isoformat(), "status": work_unit.status},
         )
+        ForecastService(self.session).refresh_contract(work_unit.contract_id)
         if commit:
             self.session.commit()
         return WorkUnitRead.model_validate(work_unit)
@@ -228,6 +231,8 @@ class WorkUnitService:
         work_unit = self.repo.get(work_unit_id)
         if work_unit is None:
             raise NotFound(WORK_UNIT_ENTITY, work_unit_id)
+        # The contract before the day, as a draft that binds days takes them (REB-997).
+        ForecastService(self.session).lock_contracts([work_unit.contract_id])
         origin = work_unit.status
         if new_status != origin and new_status not in WORK_UNIT_TRANSITIONS.get(
             origin, frozenset()
@@ -262,6 +267,7 @@ class WorkUnitService:
                 actor,
                 {"work_unit": work_unit.date.isoformat(), "from": origin, "to": work_unit.status},
             )
+        ForecastService(self.session).refresh_contract(work_unit.contract_id)
         self.session.commit()
         return WorkUnitRead.model_validate(work_unit)
 
@@ -422,6 +428,8 @@ class ApprovalService:
         contract = ContractRepository(self.session).get(data.contract_id)
         if contract is None:
             raise NotFound("contract", data.contract_id)
+        # The contract before its days, as every writer of a forecast takes them (REB-997).
+        ForecastService(self.session).lock_contracts([data.contract_id])
         days = self._days_to_approve(data)
         document = self._proof(data, contract.customer_id, actor)
 
@@ -471,6 +479,7 @@ class ApprovalService:
             actor,
             {"days": len(days), "channel": data.channel},
         )
+        ForecastService(self.session).refresh_contract(data.contract_id)
         self.session.commit()
         return ApprovalRecorded(approval=detail, work_units=recorded)
 

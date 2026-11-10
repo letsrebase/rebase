@@ -34,16 +34,16 @@ read back and round-tripped through a second, independent line replacement would
 silently lose the very fields that make it a social security surcharge line.
 """
 
-from collections import defaultdict
 from datetime import date
 from decimal import Decimal
 from uuid import UUID
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.actor import Actor
-from pigrocrm.core.contracts.models import RATE_CARD_DAY_HOUR_TYPES, Contract, RateCard
-from pigrocrm.core.contracts.repository import RateCardRepository
+from pigrocrm.core.contracts.models import Contract
+from pigrocrm.core.due_items.forecast import ForecastService
 from pigrocrm.core.errors import Conflict, NotFound, ValidationFailed
 from pigrocrm.core.invoices.assembly import assemble_draft
 from pigrocrm.core.invoices.schemas import CURRENCY, InvoiceCreate, InvoiceLineIn, InvoiceRead
@@ -51,8 +51,8 @@ from pigrocrm.core.invoices.service import InvoiceService
 from pigrocrm.core.labels import RATE_CARD_UNIT, label
 from pigrocrm.core.money import round_money
 from pigrocrm.core.storage.base import DocumentStorage
-from pigrocrm.core.timetracking.locks import period_label
 from pigrocrm.core.work_units.billing_schemas import BillableDays, BillableLine
+from pigrocrm.core.work_units.gathering import gather, line_in, ordered, quantity_of
 from pigrocrm.core.work_units.models import WorkUnit
 from pigrocrm.core.work_units.repository import WorkUnitRepository
 from pigrocrm.core.work_units.service import set_transition_context
@@ -64,10 +64,6 @@ BILL_ACTION = "bill_contract_days"
 # What the day's own history says about why it moved: read by a person on the day's page,
 # so in the words the page uses.
 BOUND_REASON = "inserita in una bozza di fattura"
-
-# The groups a contract's ready days fall into: `(rate_card, year, month)`, in the order
-# the lines come out.
-_GroupKey = tuple[UUID, int, int]
 
 
 def _require_contract(session: Session, contract_id: UUID) -> Contract:
@@ -89,57 +85,6 @@ def _currency_block(contract: Contract) -> str | None:
     )
 
 
-def _gather(
-    session: Session, contract_id: UUID, date_from: date | None, date_to: date | None
-) -> tuple[dict[_GroupKey, list[WorkUnit]], list[WorkUnit], dict[UUID, RateCard]]:
-    """`(groups, uncovered, cards)`: the ready days grouped by the rate card in force on
-    their own date and by month, the days no card covers, and the contract's cards by id."""
-    work_units = WorkUnitRepository(session).unbilled_for_contract(
-        contract_id, date_from=date_from, date_to=date_to
-    )
-    cards = RateCardRepository(session).list_for_contract(contract_id)
-
-    groups: dict[_GroupKey, list[WorkUnit]] = defaultdict(list)
-    uncovered: list[WorkUnit] = []
-    for work_unit in work_units:
-        card = next(
-            (
-                c
-                for c in cards
-                if c.type in RATE_CARD_DAY_HOUR_TYPES
-                and c.valid_from <= work_unit.date
-                and (c.valid_to is None or work_unit.date <= c.valid_to)
-            ),
-            None,
-        )
-        if card is None:
-            uncovered.append(work_unit)
-            continue
-        groups[(card.id, work_unit.date.year, work_unit.date.month)].append(work_unit)
-    return groups, uncovered, {card.id: card for card in cards}
-
-
-def _ordered(groups: dict[_GroupKey, list[WorkUnit]]) -> list[tuple[_GroupKey, list[WorkUnit]]]:
-    return sorted(groups.items(), key=lambda item: (item[0][1], item[0][2], str(item[0][0])))
-
-
-def _quantity(members: list[WorkUnit]) -> Decimal:
-    return sum((m.quantity for m in members), start=Decimal("0"))
-
-
-def _line_in(card: RateCard, year: int, month: int, quantity: Decimal) -> InvoiceLineIn:
-    unit = label(RATE_CARD_UNIT, card.unit)
-    return InvoiceLineIn(
-        description=f"Attività {period_label(year, month)} - {quantity} {unit}",
-        quantity=quantity,
-        unit_of_measure=unit,
-        unit_price=card.amount,
-        # `vat_rate` deliberately omitted: `None` means "the regime's
-        # answer" -- `vat_nature`/`legal_reference` are not on this schema
-        # at all (see the module docstring).
-    )
-
-
 def unbilled_work_unit_lines(
     session: Session, contract_id: UUID, date_from: date | None = None, date_to: date | None = None
 ) -> tuple[list[InvoiceLineIn], list[list[UUID]]]:
@@ -154,7 +99,7 @@ def unbilled_work_unit_lines(
     `date` -- inventing a price here would be a commercial decision this step does
     not own, the same refusal `bind_to_invoice` gives an unpriced `TimeEntry`.
     """
-    grouped, uncovered, cards = _gather(session, contract_id, date_from, date_to)
+    grouped, uncovered, cards = gather(session, contract_id, date_from, date_to)
     if uncovered:
         raise ValidationFailed(
             ENTITY,
@@ -166,8 +111,8 @@ def unbilled_work_unit_lines(
 
     lines: list[InvoiceLineIn] = []
     groups: list[list[UUID]] = []
-    for (card_id, year, month), members in _ordered(grouped):
-        lines.append(_line_in(cards[card_id], year, month, _quantity(members)))
+    for (card_id, year, month), members in ordered(grouped):
+        lines.append(line_in(cards[card_id], year, month, quantity_of(members)))
         groups.append([m.id for m in members])
     return lines, groups
 
@@ -180,16 +125,16 @@ def billable_days(
     way `unbilled_work_unit_lines` does, but names the days it cannot price instead of
     refusing, so the page can say which to fix."""
     contract = _require_contract(session, contract_id)
-    groups, uncovered, cards = _gather(session, contract_id, date_from, date_to)
+    groups, uncovered, cards = gather(session, contract_id, date_from, date_to)
 
     lines: list[BillableLine] = []
-    for (card_id, year, month), members in _ordered(groups):
+    for (card_id, year, month), members in ordered(groups):
         card = cards[card_id]
-        quantity = _quantity(members)
+        quantity = quantity_of(members)
         lines.append(
             BillableLine(
                 month=f"{year:04d}-{month:02d}",
-                description=_line_in(card, year, month, quantity).description,
+                description=line_in(card, year, month, quantity).description,
                 work_units=len(members),
                 quantity=quantity,
                 unit_of_measure=label(RATE_CARD_UNIT, card.unit),
@@ -234,6 +179,18 @@ def bind_work_units(
     keeps its state, so this is what makes the loser fail instead of leaving the first
     draft with lines whose days moved away."""
     set_transition_context(session, actor, reason)
+    forecasts = ForecastService(session)
+    # The contracts before their days, as every writer of a worked day takes them (REB-997).
+    forecasts.lock_contracts(
+        set(
+            session.scalars(
+                select(WorkUnit.contract_id).where(
+                    WorkUnit.id.in_([work_unit_id for group in groups for work_unit_id in group])
+                )
+            )
+        )
+    )
+    contract_ids: set[UUID] = set()
     for member_ids, line_id in zip(groups, line_ids, strict=True):
         for work_unit_id in member_ids:
             work_unit = session.get(
@@ -249,7 +206,12 @@ def bind_work_units(
                 )
             work_unit.invoice_line_id = line_id
             work_unit.status = "invoiced"
+            contract_ids.add(work_unit.contract_id)
     session.flush()
+    # The days are on a line now, so the forecast of money in that counted them as unbilled is
+    # replaced by the draft's own (REB-997).
+    for contract_id in sorted(contract_ids, key=str):
+        forecasts.refresh_contract(contract_id)
 
 
 def assemble_unbilled_work_units_into_new_invoice(
