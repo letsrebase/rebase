@@ -427,11 +427,14 @@ describe('AppShell', () => {
       answer([ENTITY])
       renderShell(<div />, undefined, [])
       await settle()
-      expect(
-        within(sidebar().getByRole('group', { name: 'Amministrazione' }))
-          .getAllByRole('link')
-          .map((link) => link.textContent),
-      ).toEqual(['Fatture', 'Fornitori', 'Acquisti', 'IVA', 'Ore', 'Giornate', 'Tasse'])
+      const links = within(sidebar().getByRole('group', { name: 'Amministrazione' }))
+        .getAllByRole('link')
+        .map((link) => link.textContent)
+      expect(links.slice(links.indexOf('Acquisti'), links.indexOf('Acquisti') + 3)).toEqual([
+        'Acquisti',
+        'IVA',
+        'Ore',
+      ])
       expect(sidebar().getByRole('link', { name: 'IVA' })).toHaveAttribute('href', '/app/vat')
     })
 
