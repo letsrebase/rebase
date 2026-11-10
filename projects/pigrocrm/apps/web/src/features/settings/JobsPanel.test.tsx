@@ -10,6 +10,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { JobsPanel } from './JobsPanel'
 import { api } from '@/lib/api'
 
+vi.mock('@tanstack/react-router', () => ({
+  Link: ({ children, to, ...props }: { children: React.ReactNode; to: string }) => (
+    <a href={to} {...props}>
+      {children}
+    </a>
+  ),
+}))
+
 vi.mock('@/lib/api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/api')>()
   return { ...actual, api: { GET: vi.fn() } }
@@ -172,5 +180,23 @@ describe('JobsPanel', () => {
 
     expect(await screen.findByRole('alert')).toHaveTextContent('Serve il ruolo admin')
     expect(screen.queryByRole('heading', { level: 3 })).toBeNull()
+  })
+
+  it('links «Impostazioni → Caselle» to the mailboxes tab when a refused password says so', async () => {
+    vi.mocked(api.GET).mockResolvedValue(
+      ok({
+        jobs: [
+          {
+            ...JOBS[0],
+            state: 'failed',
+            last_failure_at: '2026-10-27T06:00:00Z',
+            failure: 'MailboxAuthFailed',
+          },
+        ],
+      }),
+    )
+    renderPanel()
+    const link = await screen.findByRole('link', { name: 'Impostazioni → Caselle' })
+    expect(link).toHaveAttribute('href', '/app/settings/mailboxes')
   })
 })
