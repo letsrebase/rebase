@@ -16,8 +16,12 @@ TENANT_DATABASE_PREFIX = "pigro_t_"
 
 # Columns added to a registry table after it existed: `create_all` never alters a table, and the
 # registry has no migrations, so each is added here, idempotently, at every boot.
-REGISTRY_COLUMN_UPGRADES: tuple[str, ...] = (
-    "ALTER TABLE rebase_engagements ADD COLUMN IF NOT EXISTS contract_id uuid",
+REGISTRY_COLUMN_UPGRADES: tuple[tuple[str, str, str], ...] = (
+    (
+        "rebase_engagements",
+        "contract_id",
+        "ALTER TABLE rebase_engagements ADD COLUMN IF NOT EXISTS contract_id uuid",
+    ),
 )
 
 

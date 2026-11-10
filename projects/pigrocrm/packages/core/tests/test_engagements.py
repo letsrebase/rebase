@@ -429,6 +429,30 @@ def test_a_retry_writes_the_contract_once_and_resumes_one_left_without_its_card(
     assert door.service().ensure(match_id, _upsert()).contract_id == first.contract_id
 
 
+def test_a_retry_activates_a_contract_a_call_left_in_draft(door: Door) -> None:
+    from pigrocrm.core.contracts.models import Contract
+
+    match_id = uuid4()
+    first = door.service().ensure(match_id, _upsert(letter={"end_date": None}))
+    with _space(door, "ada-lovelace") as space:
+        space.execute(update(Contract).values(status="draft"))
+        space.commit()
+    with session_factory(door.registry)() as registry:
+        registry.execute(
+            update(RebaseEngagement)
+            .where(RebaseEngagement.match_id == match_id)
+            .values(deal_id=None, contract_id=None)
+        )
+        registry.commit()
+
+    again = door.service().ensure(match_id, _upsert(letter={"end_date": None}))
+
+    assert again.contract_id == first.contract_id
+    with _space(door, "ada-lovelace") as space:
+        contract = space.get(Contract, first.contract_id)
+        assert contract is not None and contract.status == "active" and contract.end is None
+
+
 def test_booting_against_a_registry_without_contract_id_adds_the_column(door: Door) -> None:
     with door.registry.begin() as connection:
         connection.execute(text("ALTER TABLE rebase_engagements DROP COLUMN contract_id"))

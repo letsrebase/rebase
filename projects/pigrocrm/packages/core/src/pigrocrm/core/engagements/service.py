@@ -689,6 +689,11 @@ class EngagementService:
             None,
         )
         contract = found or _new_contract(space, data, customer_id, title)
+        if contract.status == "draft":
+            # A call that stopped between the creation and the activation.
+            ContractService(space).set_state(
+                contract.id, ContractStateChange(status="active"), Actor.rebase()
+            )
         if not RateCardRepository(space).list_for_contract(contract.id):
             RateCardService(space).create(contract.id, rate_card_of(letter), Actor.rebase())
         return contract.id

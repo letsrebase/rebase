@@ -114,20 +114,25 @@ def _assert_columns(engine: Engine, metadata: MetaData) -> None:
 
 
 def ensure_sidecar_database(
-    settings: Settings, target: URL, metadata: MetaData, upgrades: Sequence[str] = ()
+    settings: Settings,
+    target: URL,
+    metadata: MetaData,
+    upgrades: Sequence[tuple[str, str, str]] = (),
 ) -> Engine:
     """Idempotent. Returns an engine bound to a database that exists and has the tables,
     with every column the code declares (`SidecarSchemaOutdated` otherwise). `upgrades` are
-    idempotent statements (`ALTER TABLE ... ADD COLUMN IF NOT EXISTS`) run after
-    `create_all` and before the column check, so a column added to an existing table
-    arrives with the boot instead of by hand."""
+    `(table, column, statement)` triples: the statement (`ALTER TABLE ... ADD COLUMN IF NOT
+    EXISTS`) runs after `create_all` and before the column check, only when the column is
+    missing (an `ALTER` takes an exclusive lock even when it changes nothing), so a column
+    added to an existing table arrives with the boot instead of by hand."""
     create_database_if_missing(settings, target)
     engine = create_engine(target, pool_pre_ping=True, future=True)
     try:
         metadata.create_all(engine)
-        if upgrades:
-            with engine.begin() as connection:
-                for statement in upgrades:
+        inspector = inspect(engine)
+        for table, column, statement in upgrades:
+            if column not in {c["name"] for c in inspector.get_columns(table)}:
+                with engine.begin() as connection:
                     connection.execute(text(statement))
         _assert_columns(engine, metadata)
     except Exception:
