@@ -301,6 +301,7 @@ async def test_the_report_is_a_read_and_no_tool_records_or_approves_a_monthly_re
             raise NotFound("engagement", "x")
 
     monkeypatch.setattr(days_report, "EngagementService", NotSetUp)
+    monkeypatch.setattr(days_report.DaysReportService, "_check_owner", lambda *_: None)
     who = _freelancer(mcp_session)
     made = EngagementService(mcp_session).create(
         EngagementCreate.model_validate(_args(who)), PERSON
