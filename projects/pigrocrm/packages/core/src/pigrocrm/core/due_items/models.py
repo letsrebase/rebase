@@ -42,9 +42,9 @@ STATES: tuple[str, ...] = ("forecast", "expected", "settled", "dropped")
 OPEN_STATES: tuple[str, ...] = ("forecast", "expected")
 
 # The counterparty is an organisation (a customer today; a supplier or a freelancer once
-# they are roles of the same record, spec 2026-11-09 suppliers § 1), or the tax office with
-# the tax it is for. A staff member joins with the payroll project, which adds its column.
-COUNTERPARTY_TYPES: tuple[str, ...] = ("organization", "tax_office")
+# they are roles of the same record, spec 2026-11-09 suppliers § 1), the tax office with the tax
+# it is for, or a staff member (the net pay and the 13th and 14th payments, REB-1008).
+COUNTERPARTY_TYPES: tuple[str, ...] = ("organization", "tax_office", "staff_member")
 
 # Where an item comes from. The column is a plain string, never a CHECK: a later project adds
 # its kind here and in `RESTRICTED_SOURCE_KINDS` when it needs the fiscal gate.
@@ -61,6 +61,8 @@ SOURCE_KINDS: tuple[str, ...] = (
     "cash_basis_vat",
     "engagement",
 )
+# The source of what staff cost and when it leaves (`staff/payroll.py`).
+PAYROLL_SOURCE_KIND = "payroll"
 # The kinds only an administrator reads and settles, and an agent only with `full_access`:
 # what the tax, IVA, withholding and payroll sources disclose is the fiscal position (spec §
 # 5, which names the source's own permission). Everything else is read by any member.
@@ -70,7 +72,7 @@ RESTRICTED_SOURCE_KINDS: frozenset[str] = frozenset(
         "iva_settlement",
         "withholding",
         "tax_instalment",
-        "payroll",
+        PAYROLL_SOURCE_KIND,
         "cash_basis_vat",
     }
 )
@@ -118,8 +120,11 @@ class DueItem(Base, PrimaryKeyMixin, TimestampMixin):
         ),
         CheckConstraint(
             "(counterparty_type = 'organization' AND organization_id IS NOT NULL "
-            "AND tax IS NULL) OR "
-            "(counterparty_type = 'tax_office' AND tax IS NOT NULL AND organization_id IS NULL)",
+            "AND tax IS NULL AND staff_member_id IS NULL) OR "
+            "(counterparty_type = 'tax_office' AND tax IS NOT NULL AND organization_id IS NULL "
+            "AND staff_member_id IS NULL) OR "
+            "(counterparty_type = 'staff_member' AND staff_member_id IS NOT NULL "
+            "AND organization_id IS NULL AND tax IS NULL)",
             name="ck_due_items_counterparty_columns",
         ),
         CheckConstraint("amount <> 0", name="ck_due_items_amount_not_zero"),
@@ -181,6 +186,10 @@ class DueItem(Base, PrimaryKeyMixin, TimestampMixin):
     # the same table.
     organization_id: Mapped[UUID | None] = mapped_column(
         ForeignKey("organizations.id"), default=None, index=True
+    )
+    # The staff member paid, for a net pay or a 13th or 14th payment.
+    staff_member_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("staff_members.id"), default=None, index=True
     )
     # Which tax, for the tax office (`vat`, `withholding`, ...): the counterparty of a tax
     # item is the office *and* the tax it is for.

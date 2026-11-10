@@ -1,13 +1,18 @@
+import datetime as dt
 from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, status
 from pydantic import Field
 
+from pigrocrm.core.staff.payroll import PayrollService
 from pigrocrm.core.staff.schemas import (
     Kind,
     PayDayRead,
     PayDayWrite,
+    PayrollMonthRead,
+    PayslipFigures,
+    PayslipRead,
     StaffListQuery,
     StaffMemberCreate,
     StaffMemberRead,
@@ -67,6 +72,31 @@ def set_pay_day(
     """Sets the day net pay leaves for every staff member of the legal entity without an
     override of their own. A person's act: no agent credential."""
     return StaffService(session).set_payroll_pay_day(legal_entity_id, data, actor)
+
+
+@router.get("/payroll/{legal_entity_id}", response_model=PayrollMonthRead)
+def get_payroll_month(
+    legal_entity_id: UUID,
+    session: SessionDep,
+    actor: ActorDep,
+    month: Annotated[dt.date, Query(description="Any date of the month to estimate")],
+) -> PayrollMonthRead:
+    """What the legal entity's staff cost in a month and when that money leaves: per person the
+    cost and each cash item with its date, apart. Without an accepted payslip a person has no
+    net pay and no withholding, and no F24 line of any kind."""
+    return PayrollService(session).get_payroll_month(legal_entity_id, month, actor)
+
+
+@router.post(
+    "/{staff_member_id}/payslips", response_model=PayslipRead, status_code=status.HTTP_201_CREATED
+)
+def record_staff_payslip(
+    staff_member_id: UUID, data: PayslipFigures, session: SessionDep, actor: ActorDep
+) -> PayslipRead:
+    """Records the figures of an accepted payslip (gross, net, income tax withheld): that month
+    stops being an estimate and the person's other months are estimated from its ratios. A
+    person's act: no agent credential."""
+    return StaffService(session).record_staff_payslip(staff_member_id, data, actor)
 
 
 @router.get("/{staff_member_id}", response_model=StaffMemberRead)

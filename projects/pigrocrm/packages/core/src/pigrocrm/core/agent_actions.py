@@ -245,6 +245,8 @@ FULL_ACCESS_ACTIONS: frozenset[str] = frozenset(
         "update_staff_member",
         "get_staff_member",
         "list_staff",
+        # The month's estimate per staff member (REB-1008): cost and cash, so pay.
+        "get_payroll_month",
         # Engagements: creating one draws a letter number a cancellation never gives back,
         # ending or sending one acts on a legal document, and the tax data is personal data
         # printed on contracts (collaborators design § 6). The hub id is a freelancer's identity.
@@ -327,6 +329,9 @@ PERSON_ONLY_ACTIONS: frozenset[str] = frozenset(
         # The day net pay leaves, for every staff member of a legal entity without an
         # override of their own (staff design § 4: its tools are the four of `FULL_ACCESS`).
         "set_payroll_pay_day",
+        # The figures of an accepted payslip: accepting is a person's act (frame § A4), so a
+        # person types them (REB-1008); the inbox's proposal is the other way in, later.
+        "record_staff_payslip",
         # Reads of the configuration's own history, and the register's PDF (it archives a
         # document).
         "read_user_timeline",
@@ -391,6 +396,8 @@ ACTION_LABELS: dict[str, str] = {
     "list_staff": "leggere l'elenco delle persone dell'azienda e i loro compensi",
     "set_declared_tax_figure": "registrare le cifre della dichiarazione dei redditi",
     "set_payroll_pay_day": "impostare il giorno di paga dell'azienda",
+    "record_staff_payslip": "registrare le cifre di un cedolino",
+    "get_payroll_month": "leggere la stima del mese per le persone dell'azienda",
 }
 
 

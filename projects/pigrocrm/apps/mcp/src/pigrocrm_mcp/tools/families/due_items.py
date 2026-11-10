@@ -44,6 +44,14 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
 
     @mcp.tool(annotations=READ_ONLY)
     @guard
+    def list_payroll_totals(
+        legal_entity_id: str | None = None, due_from: IsoDateStr = None, due_to: IsoDateStr = None
+    ) -> dict[str, Any]:
+        """Open payroll cash per date as one «Stipendi» amount, no person; any token may read it."""
+        return due_items.payroll_totals(context, legal_entity_id, due_from, due_to)
+
+    @mcp.tool(annotations=READ_ONLY)
+    @guard
     def get_due_item(due_item_id: str) -> dict[str, Any]:
         """One due item with every settlement, reversed ones included."""
         return due_items.get(context, due_item_id)

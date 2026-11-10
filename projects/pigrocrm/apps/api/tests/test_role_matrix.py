@@ -162,6 +162,17 @@ ROWS: list[Row] = [
         admin_only=True,
         body={"pay_day": 27, "pay_month_offset": 0},
     ),
+    Row(
+        "POST",
+        "/api/staff/{staff_member_id}/payslips",
+        admin_only=True,
+        body={
+            "period": "2026-01-01",
+            "gross": "2000.00",
+            "net": "1500.00",
+            "withholding": "300.00",
+        },
+    ),
     # --- declared tax figures (REB-1006): admin, before any lookup -------------------------
     Row(
         "PUT",

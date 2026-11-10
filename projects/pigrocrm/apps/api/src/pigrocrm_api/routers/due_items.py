@@ -10,6 +10,8 @@ from pigrocrm.core.due_items.schemas import (
     DueItemDetail,
     DueItemListQuery,
     DueItemPage,
+    PayrollTotals,
+    PayrollTotalsQuery,
     SettlementCreate,
     SettlementReversal,
     State,
@@ -55,6 +57,22 @@ def list_due_items(
 ) -> DueItemPage:
     """The amounts that fall due, in date order with the undated last."""
     return DueItemService(session).list(params.to_query(DueItemListQuery), actor)
+
+
+@router.get("/payroll-totals", response_model=PayrollTotals)
+def list_payroll_totals(
+    session: SessionDep,
+    actor: ActorDep,
+    legal_entity_id: Annotated[
+        UUID | None, Query(description=LEGAL_ENTITY_QUERY_DESCRIPTION)
+    ] = None,
+    due_from: Annotated[date | None, Query(description="Due on or after this day")] = None,
+    due_to: Annotated[date | None, Query(description="Due on or before this day")] = None,
+) -> PayrollTotals:
+    """The open payroll cash as one «Stipendi» line per due date, with no person and no item:
+    what any member reads in place of the payroll items only an administrator sees."""
+    query = PayrollTotalsQuery(legal_entity_id=legal_entity_id, due_from=due_from, due_to=due_to)
+    return DueItemService(session).list_payroll_totals(query, actor)
 
 
 @router.get("/{item_id}", response_model=DueItemDetail)

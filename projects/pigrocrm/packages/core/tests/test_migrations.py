@@ -3756,3 +3756,57 @@ def test_0090_adds_the_forecast_key_and_lets_a_waiting_item_carry_its_offset(
         assert waiting_strict in check
         upgrade(config, "0090")
         assert _forecast_key_state(url)[:2] == (True, True)
+
+
+def _payroll_columns(url: str) -> set[str]:
+    """Which of the columns 0099 adds exist."""
+    engine = create_engine(url)
+    try:
+        with engine.connect() as connection:
+            return {
+                f"{row[0]}.{row[1]}"
+                for row in connection.execute(
+                    text(
+                        "SELECT table_name, column_name FROM information_schema.columns WHERE "
+                        "(table_name = 'staff_members' AND column_name IN "
+                        "('employee_inps_rate', 'thirteenth_month', 'fourteenth_month')) OR "
+                        "(table_name = 'due_items' AND column_name = 'staff_member_id')"
+                    )
+                )
+            }
+    finally:
+        engine.dispose()
+
+
+_PAYROLL_COLUMNS = {
+    "staff_members.employee_inps_rate",
+    "staff_members.thirteenth_month",
+    "staff_members.fourteenth_month",
+    "due_items.staff_member_id",
+}
+
+
+def test_0099_adds_the_payroll_inputs_the_payslips_and_the_staff_counterparty(
+    pigrocrm_postgres: Any,
+) -> None:
+    """REB-1008: three nullable staff columns, the payslip table under the forced row policy
+    and a staff counterparty on due items; the downgrade removes all of it, and a due item owed
+    to a person goes with it rather than surviving in a shape that cannot hold it."""
+    with pigrocrm_postgres.fresh_container() as container:
+        url = container.get_connection_url()
+        config = _alembic_config(url)
+        upgrade(config, "0090")
+        assert _payroll_columns(url) == set()
+        assert _tables_shape(url, {"staff_payslips"}) == (set(), set(), set())
+        upgrade(config, "0099")
+        assert _payroll_columns(url) == _PAYROLL_COLUMNS
+        assert _tables_shape(url, {"staff_payslips"}) == (
+            {"staff_payslips"},
+            {"staff_payslips"},
+            {"staff_payslips"},
+        )
+        downgrade(config, "0090")
+        assert _payroll_columns(url) == set()
+        assert _tables_shape(url, {"staff_payslips"}) == (set(), set(), set())
+        upgrade(config, "0099")
+        assert _payroll_columns(url) == _PAYROLL_COLUMNS

@@ -42,6 +42,9 @@ from pigrocrm.core.due_items.schemas import (
     DueItemListQuery,
     DueItemPage,
     DueItemRead,
+    PayrollTotalLine,
+    PayrollTotals,
+    PayrollTotalsQuery,
     SettlementCreate,
     SettlementRead,
 )
@@ -111,6 +114,8 @@ class DueItemService:
             raise NotFound("legal_entity", data.legal_entity_id)
         if data.organization_id is not None:
             self._require_organization_of(data.organization_id, data.legal_entity_id)
+        if data.staff_member_id is not None:
+            self._require_staff_member_of(data.staff_member_id, data.legal_entity_id)
 
         anchor: Anchor | None = None
         if data.rule.depends_on is not None:
@@ -143,6 +148,7 @@ class DueItemService:
                 state=data.state,
                 counterparty_type=data.counterparty_type,
                 organization_id=data.organization_id,
+                staff_member_id=data.staff_member_id,
                 tax=data.tax,
                 amount=data.amount,
                 currency=data.currency,
@@ -542,6 +548,23 @@ class DueItemService:
         self.session.commit()
         return self._detail(item)
 
+    def list_payroll_totals(self, query: PayrollTotalsQuery, actor: Actor) -> PayrollTotals:
+        """The one «Stipendi» line per date a reader who may not see payroll gets in its
+        place (staff design § 4): the open payroll items of the date added up, with nothing
+        that says whose pay it is, what it is for or how many people it covers. Anyone who
+        may list due items reads it, an administrator included."""
+        actor.require_agent_allowed("list_due_items")
+        rows = self.repo.payroll_totals(
+            legal_entity_id=query.legal_entity_id, due_from=query.due_from, due_to=query.due_to
+        )
+        return PayrollTotals(
+            items=[
+                PayrollTotalLine(due_date=day, amount=total, forecast=forecast)
+                for day, total, forecast in rows
+                if total != 0
+            ]
+        )
+
     def get(self, item_id: UUID, actor: Actor) -> DueItemDetail:
         actor.require_agent_allowed("get_due_item")
         item = self.repo.get(item_id)
@@ -614,6 +637,18 @@ class DueItemService:
                 expected="un'organizzazione della stessa azienda della scadenza",
             )
 
+    def _require_staff_member_of(self, staff_member_id: UUID, legal_entity_id: UUID) -> None:
+        owner = self.repo.staff_member_legal_entity(staff_member_id)
+        if owner is None:
+            raise NotFound("staff_member", staff_member_id)
+        if owner != legal_entity_id:
+            raise ValidationFailed(
+                ENTITY,
+                "staff_member_id",
+                "la persona e' di un'altra azienda",
+                expected="una persona della stessa azienda della scadenza",
+            )
+
     def _anchor(self, dependency: DueItem) -> Anchor:
         settled_on = (
             self.repo.totals(dependency.id).last_settled_on
@@ -674,6 +709,7 @@ class DueItemService:
                 "counterparty_type": item.counterparty_type,
                 "organization_id": item.organization_id,
                 "organization_name": name,
+                "staff_member_id": item.staff_member_id,
                 "tax": item.tax,
                 "amount": item.amount,
                 "currency": item.currency,

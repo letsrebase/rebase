@@ -1,7 +1,7 @@
 """staff payroll estimate: the inputs it needs, accepted payslips, and a staff counterparty
 
 Revision ID: 0099
-Revises: 0088
+Revises: 0089
 
 REB-1008 (spec 2026-11-09, staff, payroll and expenses, § 2). Three changes, no backfill.
 
@@ -33,7 +33,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = "0099"
-down_revision: str | Sequence[str] | None = "0088"
+down_revision: str | Sequence[str] | None = "0089"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

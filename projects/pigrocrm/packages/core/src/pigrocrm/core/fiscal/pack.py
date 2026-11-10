@@ -44,6 +44,7 @@ from pigrocrm.core.fiscal.law import (
     CompanyTaxLaw,
     IncomeTaxAdvanceLaw,
     MonthDay,
+    PayrollLaw,
     TaxCalendarLaw,
     TaxDateRule,
     TaxYearLaw,
@@ -359,6 +360,15 @@ _IT_FLAT_RATE_CALENDAR_2026 = TaxCalendarLaw(
     ),
 )
 
+# The payroll dates every Italian employer follows (A5 rows «Payroll withholding is paid on
+# the 16th of the month after the payment», «INPS contributions are paid on the 16th of the
+# month after the month worked», «INAIL's yearly premium is paid by 16 February», all verified
+# 2026-11-10). A flat-rate taxpayer is a withholding agent on employees (L. 190/2014, art. 1
+# c. 69, A5), so it follows them too.
+ITALIAN_PAYROLL = PayrollLaw(
+    withholding_day=16, contributions_day=16, inail_settlement=MonthDay(month=2, day=16)
+)
+
 # it-flat-rate.ts:127-180: two ceilings, both `cash_received_calendar_year` /
 # `all_clients`. €85,000 loses the regime from the *following* fiscal year
 # (comma 54, l. 190/2014); €100,000 loses it *immediately*, in the same year
@@ -413,7 +423,17 @@ IT_FLAT_RATE_PACK = FiscalPack(
     # substitute rate, the profitability coefficients, the INPS rates and their minimums,
     # the cash basis of the revenue). No advance rule: the flat-rate regime's substitute tax
     # advances are not in the register (A5 row added by REB-974, TO VERIFY).
-    laws=(TaxYearLaw(from_year=2015, contribution_base="taxable_amount_net_of_substitute_tax"),),
+    laws=(
+        TaxYearLaw(
+            from_year=2015,
+            contribution_base="taxable_amount_net_of_substitute_tax",
+            # The payroll dates are those of every employer: the sources were read in 2026 and
+            # the provisions are older (D.Lgs. 241/1997 art. 18, now art. 32 and 8 of D.Lgs.
+            # 33/2025), so the entry does not wait for 2026. A reading frozen under this entry
+            # keeps its `law_year` of 2015, which a second entry would have moved.
+            payroll=ITALIAN_PAYROLL,
+        ),
+    ),
     calendars=(_IT_FLAT_RATE_CALENDAR_2026,),
 )
 
@@ -461,6 +481,7 @@ IT_STANDARD_PACK = FiscalPack(
                 deferral_surcharge_percent=Decimal("0.40"),
                 deferral_window_days=30,
             ),
+            payroll=ITALIAN_PAYROLL,
         ),
     ),
     calendars=(_IT_STANDARD_CALENDAR_2026,),
@@ -499,6 +520,7 @@ IT_COMPANY_PACK = FiscalPack(
                 irap_ordinary_rate=Decimal("3.90"),
                 irap_regional_variation_max_points=Decimal("0.92"),
             ),
+            payroll=ITALIAN_PAYROLL,
         ),
     ),
 )
@@ -542,6 +564,7 @@ def known_charge_markers() -> frozenset[str]:
 __all__ = [
     "IT_COMPANY_PACK",
     "IT_FLAT_RATE_PACK",
+    "ITALIAN_PAYROLL",
     "IT_STANDARD_PACK",
     "NON_IT_PACK",
     "PACK_IT_COMPANY",

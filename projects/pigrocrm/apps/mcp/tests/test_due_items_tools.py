@@ -25,7 +25,13 @@ from pigrocrm.core.storage import LocalFileStorage
 from pigrocrm_mcp.server import build_server
 
 D = dt.date
-TOOLS = {"list_due_items", "get_due_item", "settle_due_item", "reverse_settlement"}
+TOOLS = {
+    "list_due_items",
+    "get_due_item",
+    "settle_due_item",
+    "reverse_settlement",
+    "list_payroll_totals",
+}
 
 
 def _server(session: Session, tmp_path: Path, *, full_access: bool = False, **settings: Any) -> Any:
@@ -195,3 +201,29 @@ async def test_a_token_without_full_access_is_refused_money_going_out_and_the_fi
     assert not paid.is_error, paid.content
     assert not read_tax.is_error and not paid_tax.is_error
     assert tax in {item["id"] for item in listed_full["items"]}
+
+
+async def test_a_token_without_full_access_reads_payroll_as_one_stipendi_line_per_date(
+    mcp_session: Session, tmp_path: Path
+) -> None:
+    """REB-1008: payroll items are `full_access` reads, and what a default token reads in their
+    place is the aggregate: a date and an amount, no kind, no tax and no person."""
+    for amount, tax in (("100.00", "payroll_inps"), ("40.00", "payroll_withholding")):
+        _item(
+            mcp_session,
+            direction="out",
+            counterparty_type="tax_office",
+            organization_id=None,
+            tax=tax,
+            source_kind="payroll",
+            amount=Decimal(amount),
+            own_date=D(2026, 4, 16),
+        )
+    async with Client(_server(mcp_session, tmp_path)) as plain:
+        listed = _payload(await plain.call_tool("list_due_items", {}))
+        totals = await plain.call_tool("list_payroll_totals", {})
+    assert not [i for i in listed["items"] if i["source_kind"] == "payroll"]
+    assert not totals.is_error, totals.content
+    assert _payload(totals)["items"] == [
+        {"label": "Stipendi", "due_date": "2026-04-16", "amount": "140.00", "forecast": False}
+    ]

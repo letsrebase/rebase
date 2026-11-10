@@ -1,6 +1,7 @@
 """Staff and directors over REST (REB-977): an administrator keeps them, and a collaborator, a
 readonly member and a token without `full_access` are refused every pay read and write."""
 
+import datetime as _dt
 from decimal import Decimal
 from typing import Any
 from uuid import UUID, uuid4
@@ -62,6 +63,12 @@ def _every_route(entity: str, member: str) -> list[tuple[str, str, dict[str, Any
         ("PATCH", f"/api/staff/{member}", {"gross_annual_pay": "1.00"}),
         ("GET", f"/api/staff/pay-days/{entity}", None),
         ("PUT", f"/api/staff/pay-days/{entity}", {"pay_day": 27, "pay_month_offset": 0}),
+        ("GET", f"/api/staff/payroll/{entity}?month=2026-03-01", None),
+        (
+            "POST",
+            f"/api/staff/{member}/payslips",
+            {"period": "2026-03-01", "gross": "2000.00", "net": "1500.00", "withholding": "300.00"},
+        ),
     ]
 
 
@@ -249,3 +256,106 @@ def test_the_default_legal_entity_without_a_fiscal_profile_is_refused(
     assert refused.status_code == 422, refused.text
     assert "profilo fiscale" in refused.json()["detail"]
     assert isinstance(UUID(str(default.id)), UUID)
+
+
+def test_an_administrator_records_a_payslip_and_reads_the_months_estimate(
+    logged_in: TestClient, api_session: Session
+) -> None:
+    """REB-1008 over HTTP: cost and cash apart, with their dates; no net pay before a payslip."""
+    entity = _entity(api_session, "it-standard", "std")
+    member = logged_in.post(
+        "/api/staff",
+        json=_employee(
+            entity,
+            part_time_percent="100",
+            employer_inps_rate="30.00",
+            employee_inps_rate="9.19",
+            employer_inail_rate="1.00",
+            thirteenth_month=12,
+            fourteenth_month=6,
+        ),
+    ).json()["id"]
+    assert (
+        logged_in.put(
+            f"/api/staff/pay-days/{entity}", json={"pay_day": 27, "pay_month_offset": 0}
+        ).status_code
+        == 200
+    )
+    before = logged_in.get(f"/api/staff/payroll/{entity}", params={"month": "2026-03-10"})
+    assert before.status_code == 200, before.text
+    row = before.json()["members"][0]
+    assert row["cost"]["total"] == "3275.00"
+    assert row["cash"] == [] and "accepted_payslip" in row["not_estimated"]
+
+    recorded = logged_in.post(
+        f"/api/staff/{member}/payslips",
+        json={
+            "period": "2026-01-15",
+            "gross": "2142.86",
+            "net": "1607.15",
+            "withholding": "321.43",
+        },
+    )
+    assert recorded.status_code == 201, recorded.text
+    assert recorded.json()["period"] == "2026-01-01"
+    duplicate = logged_in.post(
+        f"/api/staff/{member}/payslips",
+        json={"period": "2026-01-01", "gross": "1.00", "net": "1.00", "withholding": "0.00"},
+    )
+    assert duplicate.status_code == 409, duplicate.text
+    bad = logged_in.post(
+        f"/api/staff/{member}/payslips",
+        json={"period": "2026-02-01", "gross": "100.00", "net": "90.00", "withholding": "20.00"},
+    )
+    assert bad.status_code == 422, bad.text
+
+    after = logged_in.get(f"/api/staff/payroll/{entity}", params={"month": "2026-03-01"}).json()
+    cash = {item["kind"]: item for item in after["members"][0]["cash"]}
+    assert cash["net_pay"]["due_date"] == "2026-03-27"
+    assert cash["withholding"]["due_date"] == "2026-04-16"
+    assert after["members"][0]["not_estimated"] == []
+
+
+def test_a_collaborator_reads_the_stipendi_aggregate_and_not_the_payroll_items(
+    logged_in: TestClient, collaborator_client: TestClient, api_session: Session
+) -> None:
+    entity = _entity(api_session, "it-standard", "std")
+    member = logged_in.post(
+        "/api/staff",
+        json=_employee(
+            entity,
+            part_time_percent="100",
+            employer_inps_rate="30.00",
+            employee_inps_rate="9.19",
+            thirteenth_month=12,
+            fourteenth_month=6,
+        ),
+    ).json()["id"]
+    logged_in.put(f"/api/staff/pay-days/{entity}", json={"pay_day": 27, "pay_month_offset": 0})
+    from pigrocrm.core.db import today_local
+
+    this_month = today_local().replace(day=1)
+    logged_in.post(
+        f"/api/staff/{member}/payslips",
+        json={
+            "period": max(this_month, _dt.date(2026, 1, 1)).isoformat(),
+            "gross": "2142.86",
+            "net": "1607.15",
+            "withholding": "321.43",
+        },
+    )
+    items = logged_in.get("/api/due-items", params={"source_kind": "payroll", "limit": 200})
+    assert items.status_code == 200 and items.json()["items"]
+
+    refused = collaborator_client.get("/api/due-items", params={"source_kind": "payroll"})
+    assert refused.status_code == 403
+    page = collaborator_client.get("/api/due-items", params={"limit": 200}).json()
+    assert not [i for i in page["items"] if i["source_kind"] == "payroll"]
+
+    totals = collaborator_client.get(
+        "/api/due-items/payroll-totals", params={"legal_entity_id": entity}
+    )
+    assert totals.status_code == 200, totals.text
+    lines = totals.json()["items"]
+    assert lines and all(set(line) == {"label", "due_date", "amount", "forecast"} for line in lines)
+    assert {line["label"] for line in lines} == {"Stipendi"}
