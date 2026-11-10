@@ -23,6 +23,9 @@ from pigrocrm.core.storage.base import DocumentStorage
 
 # A part of the entity's own books, or of the purchases that belong to no legal entity.
 Scope = Literal["entity", "shared"]
+# Why a part is left out: its module is off (the page never names it) or the entity's pack
+# does not carry it (the page names the part).
+OmissionCause = Literal["module", "pack"]
 
 
 @dataclass(frozen=True)
@@ -128,6 +131,8 @@ class PartDefinition:
     label: str
     # The date that places a row in the period, in the words the index prints.
     date_rule: str
+    # What the part is made of, in the words the export page prints beside it.
+    contents: str
     build: Callable[[PartContext], PartOutput]
     # Where the part runs: for one legal entity, for the purchases of no legal entity (the
     # «all entities» export only), or both.
@@ -137,12 +142,22 @@ class PartDefinition:
     # Packs the part does not apply to (no IVA register for `non-it`).
     not_for_packs: tuple[str, ...] = ()
 
+    def omission_cause(self, ctx: PartContext) -> OmissionCause | None:
+        """Why this part is left out, as a kind: a module that is off, or a pack it does not
+        apply to. `None` when it is built."""
+        if missing_modules(ctx.settings, self.requires_modules):
+            return "module"
+        if ctx.pack_id is not None and ctx.pack_id in self.not_for_packs:
+            return "pack"
+        return None
+
     def omission(self, ctx: PartContext) -> str | None:
         """Why this part is left out of the export, `None` when it is built."""
-        off = missing_modules(ctx.settings, self.requires_modules)
-        if off:
+        cause = self.omission_cause(ctx)
+        if cause == "module":
+            off = missing_modules(ctx.settings, self.requires_modules)
             return f"il modulo «{off[0]}» è spento"
-        if ctx.pack_id is not None and ctx.pack_id in self.not_for_packs:
+        if cause == "pack":
             return f"non si applica al regime dell'azienda ({ctx.pack_id})"
         return None
 

@@ -35,3 +35,15 @@ class ExportRead(BaseModel):
     checklist: dict[str, object] = Field(
         description="The index as it was when the export was built"
     )
+
+
+class ExportListRead(BaseModel):
+    items: list[ExportRead]
+    total_count: int = Field(description="How many stored exports match, whatever the page")
+
+
+class PartPreviewRead(BaseModel):
+    key: str
+    label: str = Field(description="The part as the index names it")
+    date_rule: str = Field(description="Which date places a row in the period")
+    contents: str = Field(description="What the part is made of: a CSV list, original files")
