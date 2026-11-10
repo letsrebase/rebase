@@ -3950,7 +3950,7 @@ def _entity_visible_has(url: str, entity_type: str) -> bool:
         engine.dispose()
 
 
-def test_0099_adds_the_engagement_monthly_reports_table_and_downgrade_removes_it(
+def test_0095_adds_the_engagement_monthly_reports_table_and_downgrade_removes_it(
     pigrocrm_postgres: Any,
 ) -> None:
     """REB-1002: one table with the forced row-level policy; its checks keep a month on its first
@@ -3961,7 +3961,7 @@ def test_0099_adds_the_engagement_monthly_reports_table_and_downgrade_removes_it
         config = _alembic_config(url)
         upgrade(config, "0094")
         assert _tables_shape(url, tables) == (set(), set(), set())
-        upgrade(config, "0099")
+        upgrade(config, "0095")
         assert _tables_shape(url, tables) == (tables, tables, tables)
 
         engine = create_engine(url)
@@ -4021,5 +4021,5 @@ def test_0099_adds_the_engagement_monthly_reports_table_and_downgrade_removes_it
 
         downgrade(config, "0094")
         assert _tables_shape(url, tables) == (set(), set(), set())
-        upgrade(config, "0099")
+        upgrade(config, "0095")
         assert _tables_shape(url, tables)[0] == tables

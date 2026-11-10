@@ -1,6 +1,6 @@
 """engagement_monthly_reports: the monthly «Rendiconto» of an engagement as an approval request
 
-Revision ID: 0099
+Revision ID: 0095
 Revises: 0094
 
 REB-1002, § 4 of `2026-11-09-collaborators-in-the-crm-design.md` («What makes a day payable»).
@@ -20,7 +20,7 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql
 
-revision: str = "0099"
+revision: str = "0095"
 down_revision: str | Sequence[str] | None = "0094"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
