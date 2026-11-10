@@ -5,7 +5,7 @@ from collections import defaultdict
 from decimal import Decimal
 from uuid import UUID
 
-from sqlalchemy import and_, func, or_, select
+from sqlalchemy import and_, false, func, or_, select
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.due_items.models import DueItem, DueItemSettlement
@@ -166,15 +166,21 @@ class ExportRepository:
         kinds: tuple[str, ...],
         date_from: dt.date,
         date_to: dt.date,
+        *,
+        with_shared: bool = False,
     ) -> list[tuple[Purchase, str | None, str]]:
         """The registered purchases of `kinds` dated in the period, oldest first:
         `(purchase, supplier name, category name)`. `legal_entity_id=None` is the purchases of
-        no legal entity, the shared ones; a legal entity's export never carries them. A
-        cancelled or archived purchase counts nowhere."""
+        no legal entity, the shared ones. A legal entity's export leaves them out unless
+        `with_shared`, which is for a space where they can only be that entity's. A cancelled
+        or archived purchase counts nowhere."""
         where = (
             Purchase.legal_entity_id.is_(None)
             if legal_entity_id is None
-            else Purchase.legal_entity_id == legal_entity_id
+            else or_(
+                Purchase.legal_entity_id == legal_entity_id,
+                Purchase.legal_entity_id.is_(None) if with_shared else false(),
+            )
         )
         rows = self.session.execute(
             select(Purchase, Organization.legal_name, CostCategory.name)

@@ -136,8 +136,8 @@ def _register_rows(
                 [
                     *head,
                     "",
-                    text_cell(RECONCILIATION),
                     "",
+                    text_cell(RECONCILIATION),
                     amount_cell(taxable_gap),
                     amount_cell(vat_gap),
                     *tail,

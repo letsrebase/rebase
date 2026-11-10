@@ -270,14 +270,19 @@ def test_a_vat_invoice_gets_a_row_per_rate_with_the_vat_of_each(
     archive = _open(exports.build(Q1, ADMIN, now=NOW).content)
     rows = _tables(_text(archive, "vendite/registro-vendite.csv"))[0][2:]
 
-    assert [(row[6], row[7], row[9], row[10]) for row in rows[:-1]] == [
+    assert [(row[6], row[7], row[9], row[10]) for row in rows[:-2]] == [
         ("0,00", "N4", "100,00", "0,00"),
         ("10,00", "", "100,00", "10,00"),
         ("22,00", "", "100,00", "22,00"),
-        # The document says 46,00 of VAT and its lines make 32,00: the register still adds up
-        # to the stored total, with the difference on a row of its own.
-        ("", "Differenza rispetto ai totali del documento", "0,00", "14,00"),
     ]
+    # The document says 46,00 of VAT and its lines make 32,00: the register still adds up to
+    # the stored total, with the difference on a row of its own and no invented Natura.
+    assert (rows[-2][6], rows[-2][7], rows[-2][8]) == (
+        "",
+        "",
+        "Differenza rispetto ai totali del documento",
+    )
+    assert rows[-2][9:11] == ["0,00", "14,00"]
     assert rows[-1][9:11] == ["300,00", "46,00"]
     # No snapshot to read a customer from: said so, not guessed.
     assert rows[0][2] == "Cliente non disponibile"
@@ -679,8 +684,9 @@ def test_a_shared_purchase_is_in_the_all_entities_export_only(
     assert entity is not None
     _buy(db_session, seeded_category_id, entity.id, D(2026, 2, 3), description="Dell'azienda")
     _buy(db_session, seeded_category_id, None, D(2026, 2, 4), description="Condivisa")
+    _second_entity(db_session)  # with two entities «shared» belongs to neither
 
-    one = _open(exports.build(Q1, ADMIN, now=NOW).content)
+    one = _open(exports.build(Q1, ADMIN, entity.id, now=NOW).content)
     everything = exports.build(Q1, ADMIN, all_entities=True, now=NOW)
     all_of_them = _open(everything.content)
 
@@ -810,3 +816,56 @@ def test_an_open_item_is_read_as_of_the_period_end_whatever_happened_to_it_after
     # Paid and reversed after the quarter: it was paid at the quarter's end. Written after
     # the quarter by its own date: not there yet. Only the half-paid one was open.
     assert [(row[3], row[7], row[8]) for row in rows] == [("pagata a metà", "40,00", "60,00")]
+
+
+def test_in_a_space_with_one_legal_entity_the_shared_purchases_are_that_entitys(
+    db_session: Session, exports: AccountantExportService, seeded_category_id: UUID
+) -> None:
+    """`PurchaseService` leaves a receipt with no deal and no entity «shared», and with one
+    legal entity that can only mean it: its export carries the receipt, and the all-entities
+    export carries it once, in the shared section."""
+    _buy(db_session, seeded_category_id, None, D(2026, 2, 4), description="Senza azienda")
+
+    one = _open(exports.build(Q1, ADMIN, now=NOW).content)
+    everything = _open(exports.build(Q1, ADMIN, all_entities=True, now=NOW).content)
+
+    assert "Senza azienda" in _text(one, "ricevute-e-spese/elenco.csv")
+    assert "Senza azienda" in _text(everything, "condivisi/ricevute-e-spese/elenco.csv")
+    assert "Senza azienda" not in _text(everything, "studio-di-prova/ricevute-e-spese/elenco.csv")
+
+
+def test_two_received_invoices_with_one_number_and_one_title_keep_both_files(
+    db_session: Session,
+    local_storage: LocalFileStorage,
+    exports: AccountantExportService,
+    seeded_category_id: UUID,
+) -> None:
+    entity = LegalEntityRepository(db_session).default()
+    assert entity is not None
+    for name in ("Vendor A Srl", "Vendor B Srl"):
+        supplier = Organization(legal_name=name, country="IT", roles=["supplier"])
+        db_session.add(supplier)
+        db_session.flush()
+        _buy(
+            db_session,
+            seeded_category_id,
+            entity.id,
+            D(2026, 3, 5),
+            kind="invoice",
+            supplier_id=supplier.id,
+            number="1",
+            amount=Decimal("122.00"),
+            vat_lines=[
+                VatLine(
+                    rate=Decimal("22.00"),
+                    taxable_amount=Decimal("100.00"),
+                    vat_amount=Decimal("22.00"),
+                )
+            ],
+            document_id=_document(db_session, local_storage, supplier, "Fattura"),
+        )
+
+    names = _open(exports.build(Q1, ADMIN, now=NOW).content).namelist()
+
+    assert len(set(names)) == len(names)
+    assert len([name for name in names if name.startswith("fatture-ricevute/")]) == 2

@@ -129,7 +129,11 @@ class AccountantExportService:
             section = legal_entity.name
             if all_entities:
                 prefix = f"{self._folder(legal_entity, entities)}/"
-            files.extend(self._entity_parts(legal_entity, actor, period, prefix, section, index))
+            files.extend(
+                self._entity_parts(
+                    legal_entity, actor, period, prefix, section, index, all_entities=all_entities
+                )
+            )
         if all_entities:
             files.extend(self._shared_parts(actor, period, index))
 
@@ -160,12 +164,18 @@ class AccountantExportService:
             )
 
     def _context(
-        self, actor: Actor, period: Period, legal_entity: LegalEntity | None
+        self,
+        actor: Actor,
+        period: Period,
+        legal_entity: LegalEntity | None,
+        *,
+        all_entities: bool = False,
     ) -> PartContext:
         pack_id: str | None = None
         if legal_entity is not None:
             profile = FiscalProfileRepository(self.session).get(legal_entity.id)
             pack_id = profile.pack_id if profile is not None else PACK_IT_FLAT_RATE
+        only = self.legal_entities.single() if legal_entity is not None else None
         return PartContext(
             session=self.session,
             storage=self.storage,
@@ -174,6 +184,12 @@ class AccountantExportService:
             period=period,
             legal_entity=legal_entity,
             pack_id=pack_id,
+            owns_shared_purchases=(
+                not all_entities
+                and legal_entity is not None
+                and only is not None
+                and only.id == legal_entity.id
+            ),
         )
 
     def _entity_parts(
@@ -184,8 +200,10 @@ class AccountantExportService:
         prefix: str,
         section: str,
         index: ExportIndex,
+        *,
+        all_entities: bool,
     ) -> list[BundleFile]:
-        ctx = self._context(actor, period, legal_entity)
+        ctx = self._context(actor, period, legal_entity, all_entities=all_entities)
         files = self._run(
             [part for part in PARTS if "entity" in part.scopes], ctx, prefix, section, index
         )
@@ -248,11 +266,11 @@ class AccountantExportService:
 
     @staticmethod
     def _folder(legal_entity: LegalEntity, entities: list[LegalEntity]) -> str:
-        """The entity's folder in an all-entities bundle: its name, made unique by the start
+        """The entity's folder in an all-entities bundle: its name, made unique by the end
         of its id when two entities slug alike."""
         slug = _slug(legal_entity.name)
         clash = slug == SHARED_FOLDER or sum(1 for o in entities if _slug(o.name) == slug) > 1
-        return f"{slug}-{str(legal_entity.id)[:8]}" if clash else slug
+        return f"{slug}-{legal_entity.id.hex[-8:]}" if clash else slug
 
     @staticmethod
     def _filename(entities: list[LegalEntity], all_entities: bool, period: Period) -> str:

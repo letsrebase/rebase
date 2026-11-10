@@ -175,4 +175,6 @@ the period's end and the payments booked in it. Everything else in § 1 is liste
 as «non disponibile». A sale is placed by its issue date, which is not called an IVA period
 until the frame's A5 row on the IVA period date for sales is verified; a declared gap in
 the period that holds the next number after it. Storage, retention, the checklist, the share
-link and the MCP tools stay their own cards.
+link and the MCP tools stay their own cards. In a space with a single legal entity the shared
+purchases are that entity's (`PurchaseService` reads «shared» that way there), so its export
+carries them; with several, only the all-entities export does.

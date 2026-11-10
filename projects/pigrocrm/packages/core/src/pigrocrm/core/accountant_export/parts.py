@@ -43,6 +43,9 @@ class PartContext:
     legal_entity: LegalEntity | None
     # The pack of the entity's fiscal profile, `None` for the shared section.
     pack_id: str | None
+    # The purchases of no legal entity belong to this entity's export: the space has only one
+    # legal entity and no all-entities export is being built, so «shared» can only mean it.
+    owns_shared_purchases: bool = False
 
 
 @dataclass(frozen=True)

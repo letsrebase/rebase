@@ -49,11 +49,7 @@ def build_invoice_files(ctx: PartContext) -> PartOutput:
             except (Conflict, ValidationFailed) as refusal:
                 output.missing.append(MissingFile(label, kind.upper(), refusal.message))
             except PydanticValidationError:
-                output.missing.append(
-                    MissingFile(
-                        label, kind.upper(), "i dati congelati della fattura non si leggono"
-                    )
-                )
+                output.missing.append(MissingFile(label, kind.upper(), FROZEN_UNREADABLE))
             else:
                 output.files.append(BundleFile(filename, data))
     output.entries.append(IndexEntry("", len(output.files), "files"))

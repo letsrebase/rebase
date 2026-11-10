@@ -3,7 +3,9 @@ and credit notes received, and the receipts and expenses, with their original fi
 
 Files and rows are placed by the document's date. A legal entity's export carries its own
 purchases; the shared ones (no legal entity) go in the section of their own an «all
-entities» export has, through the same builders. A purchase with no document attached is a
+entities» export has, through the same builders. In a space with a single legal entity there
+is no other to share with (`PurchaseService` reads «shared» as that entity there), so its
+export carries them. A purchase with no document attached is a
 missing file in the index, by its number or its date and description, not a silent gap.
 """
 
@@ -20,7 +22,7 @@ from pigrocrm.core.accountant_export.parts import (
 from pigrocrm.core.accountant_export.repository import ExportRepository
 from pigrocrm.core.csv_cells import BOM, amount_cell, factor_cell, row_line, text_cell
 from pigrocrm.core.documents.service import DocumentService
-from pigrocrm.core.errors import Conflict, NotFound
+from pigrocrm.core.errors import Conflict, NotFound, ValidationFailed
 from pigrocrm.core.purchases.models import Purchase
 
 RECEIVED_KINDS = ("invoice", "credit_note")
@@ -53,9 +55,15 @@ def _safe(name: str) -> str:
     return re.sub(r"[^A-Za-z0-9._-]+", "-", ascii_name).strip("-.") or "documento"
 
 
+def _short_id(purchase: Purchase) -> str:
+    """The random end of the id: the start of a UUID v7 is a timestamp, equal for two rows
+    written in the same millisecond."""
+    return purchase.id.hex[-8:]
+
+
 def _label(purchase: Purchase) -> str:
     """How the index names a purchase: its number, else its date and the start of its id."""
-    return purchase.number or f"{purchase.date.isoformat()} {str(purchase.id)[:8]}"
+    return purchase.number or f"{purchase.date.isoformat()} {_short_id(purchase)}"
 
 
 def _file(
@@ -75,10 +83,12 @@ def _file(
             MissingFile(_label(purchase), KIND[purchase.kind], "il file non è archiviato")
         )
         return None
-    except Conflict as refusal:
+    except (Conflict, ValidationFailed) as refusal:
         output.missing.append(MissingFile(_label(purchase), KIND[purchase.kind], refusal.message))
         return None
-    reference = _safe(purchase.number or str(purchase.id)[:8])
+    # The start of the id keeps two documents with the same number and title apart.
+    short_id = _short_id(purchase)
+    reference = f"{_safe(purchase.number)}-{short_id}" if purchase.number else short_id
     name = f"{purchase.date.isoformat()}-{reference}-{_safe(filename)}"
     output.files.append(BundleFile(name, data))
     return name
@@ -89,7 +99,11 @@ def build_received_invoice_files(ctx: PartContext) -> PartOutput:
     documents = DocumentService(ctx.session, ctx.storage, ctx.settings)
     legal_entity_id = ctx.legal_entity.id if ctx.legal_entity is not None else None
     for purchase, _, _ in ExportRepository(ctx.session).purchases(
-        legal_entity_id, RECEIVED_KINDS, ctx.period.date_from, ctx.period.date_to
+        legal_entity_id,
+        RECEIVED_KINDS,
+        ctx.period.date_from,
+        ctx.period.date_to,
+        with_shared=ctx.owns_shared_purchases,
     ):
         _file(ctx, purchase, output, documents)
     output.entries.append(IndexEntry("", len(output.files), "files"))
@@ -103,7 +117,11 @@ def build_receipts_and_expenses(ctx: PartContext) -> PartOutput:
     out = [BOM, row_line([text_cell(column) for column in LIST_COLUMNS])]
     rows = 0
     for purchase, supplier, category in ExportRepository(ctx.session).purchases(
-        legal_entity_id, LIST_KINDS, ctx.period.date_from, ctx.period.date_to
+        legal_entity_id,
+        LIST_KINDS,
+        ctx.period.date_from,
+        ctx.period.date_to,
+        with_shared=ctx.owns_shared_purchases,
     ):
         name = _file(ctx, purchase, output, documents)
         out.append(
