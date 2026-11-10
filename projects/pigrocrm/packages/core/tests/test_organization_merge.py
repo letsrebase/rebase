@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 
 from pigrocrm.core.activities.models import Activity
 from pigrocrm.core.actor import Actor
+from pigrocrm.core.bank.models import OrganizationIban
 from pigrocrm.core.collaborators.models import Engagement
 from pigrocrm.core.contact_points.models import ContactPoint
 from pigrocrm.core.contracts.models import Contract
@@ -539,3 +540,38 @@ def test_a_field_the_survivor_has_is_never_overwritten_or_emptied(db_session: Se
     assert row.vat_number == "01234567897", "the loser's number is not lost with the loser"
     assert (row.customer_kind, row.sdi_code) == ("public_body", "ABC123")
     assert "payment_days" not in done.filled_fields
+
+
+def test_the_loser_s_ibans_move_unless_the_survivor_has_them(db_session: Session) -> None:
+    survivor = make_customer(db_session, vat_number="01234567897")
+    loser = make_customer(db_session, vat_number="01234567897")
+    shared, only_loser, only_survivor = (
+        "IT60X0542811101000000123456",
+        "DE89370400440532013000",
+        "FR1420041010050500013M02606",
+    )
+    for owner, iban, state in (
+        (survivor, shared, "proposed"),
+        (survivor, only_survivor, "accepted"),
+        (loser, shared, "accepted"),
+        (loser, only_loser, "proposed"),
+    ):
+        db_session.add(
+            OrganizationIban(organization_id=owner.id, iban=iban, source="manual", state=state)
+        )
+    db_session.flush()
+
+    preview = OrganizationService(db_session).merge(survivor.id, loser.id, ADMIN)
+    assert preview.moved["organization_ibans"] == 1
+    assert preview.dropped["organization_ibans"] == 1
+    OrganizationService(db_session).merge(survivor.id, loser.id, ADMIN, dry_run=False)
+
+    db_session.expire_all()
+    rows = {
+        r.iban: r.state
+        for r in db_session.scalars(
+            select(OrganizationIban).where(OrganizationIban.organization_id == survivor.id)
+        )
+    }
+    assert rows == {shared: "accepted", only_loser: "proposed", only_survivor: "accepted"}
+    assert _count(db_session, OrganizationIban, "organization_id", loser.id) == 0
