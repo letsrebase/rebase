@@ -81,6 +81,7 @@ _LEGAL_FORMS = frozenset(
 _WORD = re.compile(r"[a-z0-9]+")
 _MIN_NAME_LETTERS = 4
 _MIN_NUMBER_LENGTH = 3
+_MIN_DIGITS_ONLY = 4
 
 
 def _ascii(text: str) -> str:
@@ -121,27 +122,39 @@ def invoice_number(year: int, number: int) -> str:
     return f"{year}/{number}"
 
 
-def invoice_reference(year: int, number: int) -> re.Pattern[str]:
-    """The ways a payer writes invoice 2026/35 in a description: `2026/35`, `35/2026`, with a
-    slash, a dash or a dot and leading zeros, and never inside a longer number."""
+def invoice_mentioned(text: str, year: int, number: int) -> bool:
+    """Whether the bank's text names invoice `year/number` in the ways a payer writes it:
+    `2026/35`, `35/2026`, with a slash, a dash or a dot and leading zeros, never inside a longer
+    number and never as part of a date («10/05/2026» is not invoice 2026/5, «2026-05-10» is not
+    either)."""
     separator = r"\s*[/\-.]\s*"
-    return re.compile(
-        rf"(?<![0-9]){year}{separator}0*{number}(?![0-9])"
-        rf"|(?<![0-9])0*{number}{separator}{year}(?![0-9])"
-    )
+    forward = re.compile(rf"(?<![0-9]){year}{separator}0*{number}(?![0-9])")
+    reverse = re.compile(rf"(?<![0-9])0*{number}{separator}{year}(?![0-9])")
+    for hit in forward.finditer(text):
+        if re.match(rf"{separator}[0-9]", text[hit.end() :]):
+            continue  # `2026-05-10`: the year of an ISO date
+        return True
+    for hit in reverse.finditer(text):
+        if re.search(rf"[0-9]{{1,2}}{separator}$", text[: hit.start()]):
+            continue  # `10/05/2026`: the month and year of a date
+        return True
+    return False
 
 
 def text_mentions(bank_text: str, document_number: str | None) -> bool:
-    """Whether a document's own number (a supplier's `FT-1042/A`) is in the bank's text. The
-    comparison ignores case and punctuation, and a number shorter than three characters is not
+    """Whether a document's own number (a supplier's `FT-1042/A`) is in the bank's text, as whole
+    words: case and punctuation do not matter, but «104» is not found inside «21042026». A number
+    shorter than three characters, or of fewer than four digits when it has no letter, is not
     evidence: «1» is in every description."""
     if not document_number:
         return False
-    needle = "".join(_WORD.findall(_ascii(document_number)))
-    if len(needle) < _MIN_NUMBER_LENGTH:
+    words = _WORD.findall(_ascii(document_number))
+    needle = "".join(words)
+    if len(needle) < _MIN_NUMBER_LENGTH or (needle.isdigit() and len(needle) < _MIN_DIGITS_ONLY):
         return False
-    haystack = "".join(_WORD.findall(_ascii(bank_text)))
-    return needle in haystack
+    haystack = " ".join(_WORD.findall(_ascii(bank_text)))
+    pattern = r"(?<![a-z0-9])" + r"\s".join(re.escape(word) for word in words) + r"(?![a-z0-9])"
+    return re.search(pattern, haystack) is not None
 
 
 @dataclass(frozen=True)

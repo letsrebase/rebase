@@ -220,6 +220,9 @@ class BankStatementService:
             )
             .correlate(BankMovement)
         )
+        # The carried movements are locked first: a confirmation racing this revert queues behind
+        # it (or ahead of it, and then the check below sees the match) instead of meeting a delete.
+        self.session.execute(select(BankMovement.id).where(*only_here).with_for_update())
         decided = self.session.scalar(
             select(
                 exists().where(*only_here, or_(BankMovement.state != "unmatched", exists(traced)))

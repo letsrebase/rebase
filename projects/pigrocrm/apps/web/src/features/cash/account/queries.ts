@@ -5,6 +5,7 @@ import {
   useQueryClient,
   type QueryClient,
 } from '@tanstack/react-query'
+import { useInvoiceInvalidation } from '@/features/invoices/queries'
 import { api, fetchWithRefresh, toProblem, unwrap } from '@/lib/api'
 import type { components } from '@/lib/api-types'
 import { queryKeys } from '@/lib/query'
@@ -266,20 +267,43 @@ export function useMatchPreview(movementId: string, dueItemIds: readonly string[
   })
 }
 
+/**
+ * What a settlement or its undoing changes beyond the account: the invoice's and the purchase's own
+ * payment state, which their lists, the year's register and the ceilings read. Mirrors what
+ * marking an item paid from the schedule refreshes.
+ */
+function useRefreshSources() {
+  const queryClient = useQueryClient()
+  const invalidateInvoice = useInvoiceInvalidation()
+  return (items: readonly MatchItem[]) => {
+    for (const item of items) {
+      if (item.source_kind === 'sales_invoice') {
+        invalidateInvoice(item.source_id ?? undefined)
+      } else if (item.source_kind === 'purchase') {
+        void queryClient.invalidateQueries({ queryKey: queryKeys.purchases() })
+        if (item.source_id) void queryClient.invalidateQueries({ queryKey: queryKeys.purchase(item.source_id) })
+      }
+    }
+  }
+}
+
 export function useConfirmMatch(movementId: string) {
   const queryClient = useQueryClient()
+  const refreshSources = useRefreshSources()
   return useMutation({
     mutationFn: (body: { due_item_ids: string[]; accept_partial: boolean }) =>
       unwrap(api.POST('/api/bank-movements/{movement_id}/match', { params: { path: { movement_id: movementId } }, body })),
     onSuccess: (detail) => {
       queryClient.setQueryData(keys.detail(movementId), detail)
       refreshAll(queryClient)
+      refreshSources(detail.movement.match?.items ?? [])
     },
   })
 }
 
 export function useUnmatch() {
   const queryClient = useQueryClient()
+  const refreshSources = useRefreshSources()
   return useMutation({
     mutationFn: ({ movementId, reason }: { movementId: string; reason?: string }) =>
       unwrap(
@@ -291,6 +315,7 @@ export function useUnmatch() {
     onSuccess: (detail, { movementId }) => {
       queryClient.setQueryData(keys.detail(movementId), detail)
       refreshAll(queryClient)
+      refreshSources(detail.history.at(-1)?.items ?? [])
     },
   })
 }

@@ -242,6 +242,7 @@ class MovementMatch(Base, PrimaryKeyMixin, TimestampMixin):
             name="ck_movement_matches_closed",
         ),
         Index("ix_movement_matches_legal_entity_id", "legal_entity_id"),
+        Index("ix_movement_matches_bank_movement_id", "bank_movement_id"),
         Index(
             "uq_movement_matches_live",
             "bank_movement_id",

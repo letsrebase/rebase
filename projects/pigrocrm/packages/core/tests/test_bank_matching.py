@@ -757,17 +757,27 @@ def test_names_are_compared_by_their_identifying_words() -> None:
 
 
 def test_an_invoice_number_is_found_in_the_ways_a_payer_writes_it() -> None:
-    pattern = rank.invoice_reference(2026, 35)
     for text in ("Fattura 2026/35", "FT 35/2026", "n. 0035-2026", "2026 / 35 saldo", "2026.35"):
-        assert pattern.search(text), text
+        assert rank.invoice_mentioned(text, 2026, 35), text
     for text in ("Fattura 2026/350", "135/2026", "2026/3", "12026/35"):
-        assert not pattern.search(text), text
+        assert not rank.invoice_mentioned(text, 2026, 35), text
+
+
+def test_a_date_in_the_bank_text_is_not_an_invoice_number() -> None:
+    assert not rank.invoice_mentioned("Bonifico 10/05/2026", 2026, 5)
+    assert not rank.invoice_mentioned("del 31.12.2026 saldo", 2026, 12)
+    assert not rank.invoice_mentioned("data 2026-05-10", 2026, 5)
+    assert rank.invoice_mentioned("Bonifico 10/05/2026 fattura 5/2026", 2026, 5)
+    assert rank.invoice_mentioned("Fattura 2026/5 del 10/05/2026", 2026, 5)
 
 
 def test_a_suppliers_own_number_is_evidence_only_when_it_is_long_enough() -> None:
     assert rank.text_mentions("Saldo fattura F-77 del mese", "F-77")
     assert rank.text_mentions("ft 1042/a", "FT-1042/A")
     assert not rank.text_mentions("Fattura 1", "1")
+    assert not rank.text_mentions("Pagato il 21/04/2026", "104")
+    assert not rank.text_mentions("FT123 saldo", "FT12")
+    assert not rank.text_mentions("fattura 104", "104")
     assert not rank.text_mentions("x", None)
 
 
@@ -783,3 +793,38 @@ def test_a_split_is_searched_among_one_counterpartys_items() -> None:
     ]
     assert rank.split_combinations(fits, Decimal("7.00")) == []
     assert rank.score(["exact_amount", "document_number"]) == 9
+
+
+def test_one_import_proposes_an_item_to_one_movement_only(
+    db_session: Session, world: CashWorld, account: BankAccount
+) -> None:
+    _, item = _invoice_item(db_session, world, number=12)
+    first = _movement(
+        db_session, account, "1220.00", description="Fattura 12/2026", counterparty="Acme"
+    )
+    second = _movement(
+        db_session, account, "1220.00", description="Fattura 12/2026", counterparty="Acme"
+    )
+    service, _ = _services(db_session)
+
+    assert service.propose_for_import([first.id, second.id]) == 1
+    proposed = db_session.scalars(select(MovementMatch)).all()
+    assert len(proposed) == 1 and proposed[0].state == "proposed"
+    assert {row.due_item_id for row in service._items(proposed[0])} == {item.id}
+
+
+def test_the_movement_attaches_to_the_hand_payment_nearest_its_booking(
+    db_session: Session, world: CashWorld, account: BankAccount
+) -> None:
+    _, item = _invoice_item(db_session, world, number=12, total="2440.00")
+    service, due = _services(db_session)
+    for days in (60, 3):
+        due.settle(
+            item.id,
+            SettlementCreate(amount=Decimal("1220.00"), settled_on=TODAY - dt.timedelta(days=days)),
+            COLLABORATOR,
+        )
+    movement = _movement(db_session, account, "1220.00", description="Fattura 12/2026")
+    service.confirm(movement.id, MatchConfirm(due_item_ids=[item.id]), ADMIN)
+    evidenced = [s for s in due.repo.settlements(item.id) if s.bank_movement_id == movement.id]
+    assert [s.settled_on for s in evidenced] == [TODAY - dt.timedelta(days=3)]

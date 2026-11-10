@@ -615,12 +615,22 @@ class DueItemService:
         if item.state not in ("expected", "settled"):
             raise Conflict(ENTITY, "la scadenza non e' piu' aperta ne' saldata", id=str(item.id))
         magnitude = abs(movement.amount)
-        for settlement in self.repo.live_settlements(item.id):
-            if settlement.bank_movement_id is None and abs(settlement.amount) == magnitude:
-                settlement.bank_movement_id = movement.id
-                self.session.flush()
-                self._record("due_item_settlement_evidenced", item, settlement, actor)
-                return settlement
+        # Of several payments of that amount the one dated nearest the booking is the one the
+        # movement proves.
+        nearest = sorted(
+            (
+                settlement
+                for settlement in self.repo.live_settlements(item.id)
+                if settlement.bank_movement_id is None and abs(settlement.amount) == magnitude
+            ),
+            key=lambda row: abs((row.settled_on - movement.booking_date).days),
+        )
+        if nearest:
+            settlement = nearest[0]
+            settlement.bank_movement_id = movement.id
+            self.session.flush()
+            self._record("due_item_settlement_evidenced", item, settlement, actor)
+            return settlement
         raise Conflict(
             ENTITY,
             "nessun pagamento segnato a mano per questo importo da collegare al movimento",

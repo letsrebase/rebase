@@ -33,6 +33,7 @@ from sqlalchemy.orm import Session
 from pigrocrm.core.activities.service import ActivityService
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.bank import match_rank as rank
+from pigrocrm.core.bank.constants import ADOPT_WINDOW_DAYS
 from pigrocrm.core.bank.match_reads import (
     SALES_INVOICE,
     ItemFacts,
@@ -63,6 +64,10 @@ from pigrocrm.core.due_items.sales import remaining_amount
 from pigrocrm.core.due_items.schedule_queries import kinds_of_modules_off
 from pigrocrm.core.due_items.service import DueItemService
 from pigrocrm.core.errors import Conflict, NotFound, ValidationFailed
+from pigrocrm.core.invoices.models import Invoice
+from pigrocrm.core.organizations.models import Organization
+from pigrocrm.core.purchases.models import Purchase
+from pigrocrm.core.staff.models import StaffMember
 
 ENTITY = "bank_movement"
 MATCH_ENTITY = "movement_match"
@@ -74,9 +79,6 @@ CANDIDATE_LIMIT = 3
 POOL_MAX = 1000
 OPEN_ITEMS_LIMIT_DEFAULT = 20
 OPEN_ITEMS_LIMIT_MAX = 50
-# A payment marked by hand and the movement that proves it are within this many days of each
-# other: a movement months away from a payment of the same amount is a coincidence.
-ADOPT_WINDOW_DAYS = 45
 
 
 @dataclass(frozen=True)
@@ -142,6 +144,39 @@ def _direction_clause(movement: BankMovement) -> ColumnElement[bool]:
     )
 
 
+def _search_clause(needle: str) -> ColumnElement[bool]:
+    """In SQL, the items whose description, counterparty, tax or document number contains
+    `needle`, before the pool is capped: a search must reach an item past the first thousand."""
+    return or_(
+        DueItem.description.icontains(needle, autoescape=True),
+        DueItem.tax.icontains(needle, autoescape=True),
+        DueItem.organization_id.in_(
+            select(Organization.id).where(
+                Organization.legal_name.icontains(needle, autoescape=True)
+            )
+        ),
+        DueItem.staff_member_id.in_(
+            select(StaffMember.id).where(StaffMember.name.icontains(needle, autoescape=True))
+        ),
+        and_(
+            DueItem.source_kind == SALES_INVOICE,
+            DueItem.source_id.in_(
+                select(Invoice.id).where(
+                    func.concat(Invoice.year, "/", Invoice.number).icontains(
+                        needle, autoescape=True
+                    )
+                )
+            ),
+        ),
+        and_(
+            DueItem.source_kind == "purchase",
+            DueItem.source_id.in_(
+                select(Purchase.id).where(Purchase.number.icontains(needle, autoescape=True))
+            ),
+        ),
+    )
+
+
 def _earliest(fact: ItemFacts) -> tuple[bool, dt.date, str]:
     return (fact.item.due_date is None, fact.item.due_date or dt.date.max, str(fact.item.id))
 
@@ -187,8 +222,8 @@ class MovementMatchService:
                 expected=f"1-{OPEN_ITEMS_LIMIT_MAX}",
             )
         movement = self._movement(movement_id)
-        facts = self._open_pool(movement, modules)
         needle = (search or "").strip().casefold()
+        facts = self._open_pool(movement, modules, search=needle or None)
         if needle:
             facts = [
                 fact
@@ -360,15 +395,24 @@ class MovementMatchService:
         actor = Actor.system()
         written = 0
         pools: dict[tuple[UUID, str], list[ItemFacts]] = {}
+        taken: set[UUID] = set()
         for movement in movements:
             key = (movement.legal_entity_id, movement.currency)
             if key not in pools:
                 pools[key] = self._open_pool(movement, modules, directional=False)
             pool = [fact for fact in pools[key] if _fits_direction(movement, fact.item)]
             candidates = self._rank(movement, pool, self._adoptable(movement, modules))
+            # An item already proposed to an earlier movement of this import is not offered again:
+            # the importer's guarantee is that nothing competes for what it proposes.
+            candidates = [
+                plan
+                for plan in candidates
+                if not {a.fact.item.id for a in plan.allocations} & taken
+            ]
             chosen = self._certain(candidates)
             if chosen is None:
                 continue
+            taken.update(fact.item.id for fact in chosen)
             plan = self._plan_of(movement, chosen)
             match = self._add_match(movement, plan, "proposed", actor)
             self._record_match("match_proposed", movement, match, plan, actor)
@@ -469,7 +513,7 @@ class MovementMatchService:
             return False
         if fact.item.source_kind == SALES_INVOICE:
             year, _, number = fact.document_number.partition("/")
-            return rank.invoice_reference(int(year), int(number)).search(text) is not None
+            return rank.invoice_mentioned(text, int(year), int(number))
         return rank.text_mentions(text, fact.document_number)
 
     def _context(self, movement: BankMovement) -> _Context:
@@ -616,6 +660,7 @@ class MovementMatchService:
         modules: AbstractSet[str] | None,
         *,
         directional: bool = True,
+        search: str | None = None,
     ) -> list[ItemFacts]:
         """The open items of the movement's legal entity and currency (and direction), earliest
         due first. Their facts are read in the four queries `facts_for_items` runs."""
@@ -627,6 +672,8 @@ class MovementMatchService:
         )
         if directional:
             stmt = stmt.where(_direction_clause(movement))
+        if search:
+            stmt = stmt.where(_search_clause(search))
         off = kinds_of_modules_off(modules)
         if off:
             stmt = stmt.where(DueItem.source_kind.not_in(off))

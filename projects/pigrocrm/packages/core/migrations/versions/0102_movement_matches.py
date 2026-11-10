@@ -27,7 +27,8 @@ by composite foreign key.
 The two tables carry the `legal_entity_scope` policy, forced, as the bank tables do.
 `statements()` is what the test template applies after `create_all`.
 
-`downgrade` drops the two tables and the column: the payments stay, without their evidence.
+`downgrade` drops the two tables and the column and sets the movements it had matched back to
+`unmatched`: the payments stay, without their evidence.
 """
 
 from collections.abc import Sequence
@@ -131,6 +132,7 @@ def upgrade() -> None:
         ),
     )
     op.create_index("ix_movement_matches_legal_entity_id", MATCHES, ["legal_entity_id"])
+    op.create_index("ix_movement_matches_bank_movement_id", MATCHES, ["bank_movement_id"])
     op.create_index(
         "uq_movement_matches_live",
         MATCHES,
@@ -174,6 +176,9 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    # Nothing before this revision set `matched`: every such movement was matched by what is
+    # being dropped, and the previous release has no way to take it back.
+    op.execute("UPDATE bank_movements SET state = 'unmatched' WHERE state = 'matched'")
     op.drop_table(ITEMS)
     op.drop_table(MATCHES)
     op.drop_index(EVIDENCE_INDEX, table_name=SETTLEMENTS)
