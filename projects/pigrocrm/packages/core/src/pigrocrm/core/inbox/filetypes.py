@@ -84,6 +84,12 @@ def basename(name: str) -> str:
     return name.replace("\\", "/").rsplit("/", 1)[-1]
 
 
+def is_accepted_name(name: str) -> bool:
+    """Whether the extension of `name` is one of the inbox's: what a mail reader asks before it
+    fetches an attachment, so that no part of another kind is ever downloaded."""
+    return extension_of(name) in _BY_EXTENSION
+
+
 def extension_of(name: str) -> str:
     segment = basename(name).lower()
     dot = segment.rfind(".")

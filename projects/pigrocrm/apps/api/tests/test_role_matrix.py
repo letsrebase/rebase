@@ -287,6 +287,13 @@ ROWS: list[Row] = [
     # The draft is `require_admin` (the rung `bind_time_to_invoice` sits on); the register's
     # PDF is a document written, so `require_write`. Both before any lookup.
     Row("POST", "/api/contracts/{contract_id}/invoice-days", body={}, admin_only=True),
+    # REB-1032: the recurring fee's draft is the same rung (`bill_contract_fee`).
+    Row(
+        "POST",
+        "/api/contracts/{contract_id}/invoice-fee",
+        body={"rate_card_id": "__FAKE__", "period_start": "2026-10-01"},
+        admin_only=True,
+    ),
     Row(
         "POST",
         "/api/contracts/{contract_id}/register/pdf",
@@ -651,6 +658,13 @@ ROWS: list[Row] = [
     Row("POST", "/api/engagements/{engagement_id}/letter", admin_only=True, body={}),
     Row("POST", "/api/engagements/{engagement_id}/letter/preview", admin_only=True, body={}),
     Row("POST", "/api/engagements/{engagement_id}/letter/preview/pdf", admin_only=True, body={}),
+    # --- signing (REB-1019): `require_admin`, before any lookup of the document ------------------
+    Row("POST", "/api/engagements/{engagement_id}/send", admin_only=True),
+    Row("POST", "/api/documents/{document_id}/signature/refresh", admin_only=True),
+    Row("POST", "/api/documents/{document_id}/signature/resend-mail", admin_only=True),
+    Row("POST", "/api/documents/{document_id}/signature/cancel", admin_only=True),
+    Row("POST", "/api/documents/{document_id}/signature/notice", admin_only=True),
+    Row("POST", "/api/documents/{document_id}/signed-copy", admin_only=True, multipart=True),
     Row("POST", "/api/freelancers/{freelancer_id}/framework-agreement", admin_only=True, body={}),
     Row(
         "POST",
@@ -852,6 +866,7 @@ ROWS: list[Row] = [
         body={"date_from": "2026-01-01", "date_to": "2026-03-31"},
     ),
     Row("GET", "/api/accountant-export/exports", admin_only=True),
+    Row("GET", "/api/accountant-export/parts", admin_only=True),
     Row("GET", "/api/accountant-export/exports/{export_id}", admin_only=True),
     Row("GET", "/api/accountant-export/exports/{export_id}/parts/{part}", admin_only=True),
 ]
@@ -913,6 +928,13 @@ PUBLIC_ROUTES: dict[tuple[str, str], str] = {
         "actor to check, and the space it writes to is the installation's own setting. "
         "None of the three role clients holds that bearer, so the sweep would only ever see "
         "the door's own 404/401."
+    ),
+    ("POST", "/api/documenso/webhook"): (
+        "Documenso's own delivery (REB-1019), authenticated by the `X-Documenso-Secret` header "
+        "against `PIGROCRM_DOCUMENSO_WEBHOOK_SECRET`, not by a role: the caller is Documenso, "
+        "with no session and no actor, and the route answers on the root installation only. "
+        "None of the three role clients holds that secret, so the sweep would only ever see the "
+        "door's own 401/503. `test_documenso_webhook_api.py` walks it."
     ),
     ("POST", "/api/identity/logout"): (
         "Root-scoped and deliberately ungated (design 2026-09-23 §2/§3, REB-376): the "
@@ -1260,6 +1282,10 @@ AGENT_REACHABLE: frozenset[tuple[str, str]] = frozenset(
         ("POST", "/api/engagements/{engagement_id}/letter/preview"),
         ("POST", "/api/engagements/{engagement_id}/letter/preview/pdf"),
         ("POST", "/api/freelancers/{freelancer_id}/framework-agreement/preview"),
+        # REB-1019: asking Documenso where a document stands only reads its state, as the webhook
+        # does; sending, mailing again, cancelling and a notice need `full_access`, and the hand
+        # signed upload is a person's alone.
+        ("POST", "/api/documents/{document_id}/signature/refresh"),
     }
 )
 

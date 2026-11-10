@@ -72,6 +72,9 @@ This file is the single mapping from the Italian word to the English identifier.
 | costo imputato | `cost_amount` | What a purchase costs once the VAT it recovers is out, frozen when it is registered |
 | inversione contabile | `reverse_charge` | The buyer accounts for the VAT; a person decides it for a foreign supplier |
 | scissione dei pagamenti | `split_payment` | The VAT is paid to the tax office and not to the supplier |
+| liquidazione IVA | `settlement` (`IvaSettlement`, `iva_settlements`) | The period's IVA computed from its two registers: sales VAT less deductible purchase VAT, less the credit carried in |
+| esigibilità | `exigibility` (`immediate`, `split_payment`) | When a sale's VAT falls due; on a split-payment sale it is not owed by the seller |
+| registro vendite, registro acquisti | sales register, purchase register (`IvaRegisterService`) | The documents behind a settlement line, read by period and legal entity, never a second copy |
 | ricavi | revenue |  |
 | preventivato | budgeted | Estimated in the offer (`ore_preventivate` is `budgeted_hours`) |
 | previsto | expected | Forecast (`valore_previsto` is `expected_value`) |
@@ -218,6 +221,7 @@ Persisted values get English values. The most common ones:
 | nuovo / contattato / in_corso / chiuso | new / contacted / in_progress / closed | hub company status |
 | bozza / in_firma / attivo / concluso / annullato | draft / awaiting_signature / active / concluded / cancelled | hub match status |
 | generato / in_attesa / inviato / firmato / annullato / disdetto | generated / pending / sent / signed / cancelled / notice_served | hub contract document status |
+| stato della firma / busta / copia firmata a mano | `signature_state` / `envelope_id` / `upload_signed_copy` | REB-1019: the hub's contract document status, now columns of `documents` for a framework agreement or an engagement letter; `signed_by_hand` says the signed PDF was uploaded and not sealed by Documenso. |
 | da_collegare / collegato / errore / rifiutato | to_link / linked / error / rejected | hub CRM and Pigro link status |
 | bozza / programmata / in_invio / inviata / annullata | draft / scheduled / sending / sent / cancelled | hub campaign status |
 | in_coda / inviata / saltata / fallita | queued / sent / skipped / failed | campaign recipient status |

@@ -51,7 +51,9 @@ test('creating a customer, a person and a deal, then moving it across the board'
   await page.goto('/app/organizations')
   await page.getByRole('button', { name: /nuovo cliente/i }).click()
   await page.getByLabel('Ragione sociale').fill(name)
-  await page.getByLabel('P.IVA').fill('12345678901')
+  // Its own number per run: a VAT number is one organization's (REB-970), so a fixed one would
+  // meet the record an earlier attempt of this test created.
+  await page.getByLabel('P.IVA').fill(String(Date.now()).slice(-11))
   await page.getByRole('button', { name: 'Salva' }).click()
   await expect(page.getByText(name)).toBeVisible()
 

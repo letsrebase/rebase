@@ -22,6 +22,7 @@ is not the bare XML it signs, and which one is wanted is not for the inbox to sa
 import contextlib
 from collections.abc import Sequence
 from dataclasses import dataclass
+from datetime import datetime
 from uuid import UUID
 
 from sqlalchemy.orm import Session
@@ -61,6 +62,20 @@ _SAME_INVOICE = "Stessa fattura (emittente, numero e data) di un file gia' arriv
 _ORIGINAL_DISCARDED = ", che era stato scartato"
 
 
+@dataclass(frozen=True, slots=True)
+class MailOrigin:
+    """The message a batch of files came in (design § 2.2): which mailbox, which message, and the
+    three things about it the item keeps. Never its body."""
+
+    mailbox_id: UUID
+    uidvalidity: int
+    uid: int
+    message_id: str
+    sender: str
+    subject: str
+    date: datetime
+
+
 @dataclass(slots=True)
 class _Entry:
     """One file to write: a loose upload or one entry of a ZIP."""
@@ -96,6 +111,10 @@ def _clean_name(name: str) -> str:
     return cleaned[-FILE_NAME_MAX_LENGTH:]
 
 
+def _clean_text(text: str) -> str:
+    return "".join(ch for ch in text if ch.isprintable()).strip()
+
+
 def _refuse(reason: str, *, expected: str | None = None) -> ValidationFailed:
     return ValidationFailed(ENTITY, "files", reason, expected=expected)
 
@@ -113,6 +132,48 @@ class InboxUploads:
         self.session = session
         self.storage = storage
         self.repo = InboxRepository(session)
+        self._origin: MailOrigin | None = None
+        self.written_keys: list[str] = []
+
+    def _stamp(self, item: InboxItem) -> None:
+        """What a file that came by mail says about its message, on every item it makes (a
+        ZIP's entries too)."""
+        origin = self._origin
+        if origin is None:
+            return
+        item.source = "mailbox"
+        item.mailbox_id = origin.mailbox_id
+        item.mail_uidvalidity = origin.uidvalidity
+        item.mail_uid = origin.uid
+        # Header text is somebody else's: a NUL or a lone surrogate would fail the insert, and a
+        # message that always fails would stall its mailbox.
+        item.mail_message_id = _clean_text(origin.message_id)[:998] or None
+        item.mail_sender = _clean_text(origin.sender)[:320] or None
+        item.mail_subject = _clean_text(origin.subject)[:998] or None
+        item.mail_date = origin.date
+
+    def record_refused(self, name: str, size: int, reason: str, origin: MailOrigin) -> InboxItem:
+        """A file of a message that the inbox will not take (too big, a type its bytes disagree
+        with): kept as a discarded item with its reason and no bytes, so that nothing a message
+        carried goes unaccounted for. Joins the caller's transaction and never commits."""
+        self._origin = origin
+        try:
+            self.repo.lock_for_dedup()
+            item = InboxItem(
+                id=uuid7(),
+                source="mailbox",
+                original_name=_clean_name(name),
+                file_type=None,
+                size_bytes=size,
+                sha256=sha256_of(b""),
+                content_sha256=sha256_of(b""),
+                state="discarded",
+                reason=reason,
+            )
+            self._stamp(item)
+            return self.repo.add(item)
+        finally:
+            self._origin = None
 
     # ---- checking, with nothing written --------------------------------------------
 
@@ -239,6 +300,7 @@ class InboxUploads:
             item.reason = self._duplicate_reason(original, reading)
             # The original's bytes are the same file's, unless it never kept any.
             keep_bytes = keep_bytes and (digest != original.sha256 or original.storage_key is None)
+        self._stamp(item)
         self.repo.add(item)
         if keep_bytes:
             self._put(item, entry, written)
@@ -291,12 +353,25 @@ class InboxUploads:
             items.append(self._file(member, actor, written, parent.id))
         return items
 
-    def upload(self, files: Sequence[tuple[str, bytes]], actor: Actor) -> InboxUploadResult:
+    def upload(
+        self,
+        files: Sequence[tuple[str, bytes]],
+        actor: Actor,
+        *,
+        origin: MailOrigin | None = None,
+        commit: bool = True,
+    ) -> InboxUploadResult:
         """`(name, bytes)` for every file of the request. Refused whole, with nothing written,
         for a request or a loose file the inbox does not take; otherwise every file ends as an
-        item, however it ended (new, duplicate, discarded)."""
+        item, however it ended (new, duplicate, discarded).
+
+        `origin` is the message the files came in, for the `billing` read of a mailbox: every item
+        is stamped with it and has source `mailbox`. `commit=False` leaves the transaction to the
+        caller, which then owns the bytes written (`written_keys`): a mailbox read keeps its own
+        lock for the whole cycle and so cannot let this commit it."""
         actor.require_write(UPLOAD_ACTION)
         uploads = self._prepare(files)
+        self._origin = origin
         written: list[str] = []
         items: list[InboxItem] = []
         try:
@@ -307,15 +382,31 @@ class InboxUploads:
                 else:
                     items.append(self._file(upload.entry, actor, written, None))
             result = InboxUploadResult(items=[InboxItemRead.model_validate(i) for i in items])
-            self.session.commit()
+            if commit:
+                self.session.commit()
+            else:
+                self.written_keys.extend(written)
         except BaseException:
-            self.session.rollback()
+            if commit:
+                # With `commit=False` the transaction is the caller's, which rolls back or
+                # releases a savepoint as it sees fit; only the bytes are this method's.
+                self.session.rollback()
             for key in written:
                 # The failure being handled is the one to raise, not a cleanup's.
                 with contextlib.suppress(Exception):
                     self.storage.delete(key)
             raise
+        finally:
+            self._origin = None
         return result
+
+    def discard_written(self) -> None:
+        """Deletes the bytes a `commit=False` upload wrote, for a caller whose transaction was
+        rolled back. Best effort: the rollback being handled is the failure to raise."""
+        for key in self.written_keys:
+            with contextlib.suppress(Exception):
+                self.storage.delete(key)
+        self.written_keys.clear()
 
     def download(self, item_id: UUID, actor: Actor) -> tuple[bytes, str, str]:
         """`(bytes, content type, file name)` of an item the actor may see. An item that holds

@@ -5,6 +5,7 @@ import { BrandMark } from '@rebase/ui/brand-mark'
 import { Button } from '@rebase/ui/button'
 import { cn } from '@rebase/ui/cn'
 import { useWaitingCount } from '@/features/inbox/queries'
+import { useNavGates } from '@/features/iva/queries'
 import { useOverdueCount } from '@/features/tasks/queries'
 import { useUnreadCount } from '@/features/reminders/queries'
 import { useAuth } from '@/lib/auth'
@@ -27,6 +28,7 @@ import { NavGroup, SubItem } from './NavGroup'
 import { NavLeaf } from './NavLeaf'
 import { ProfileMenu } from './ProfileMenu'
 import { FOCUS } from './sidebarStyles'
+import { useRegistryView } from './useRegistryView'
 
 // `metaKey` on Apple platforms, `ctrlKey` elsewhere. Read once at module scope from the
 // platform hint rather than sniffing the user agent string: this only decides which glyph
@@ -55,7 +57,7 @@ export function Sidebar({
   const { user } = useAuth()
   const { location } = useRouterState()
   // The registry's view, which is what tells «Clienti» from «Fornitori» (both open one page).
-  const registryRole = (location.search as { role?: string } | undefined)?.role
+  const registryRole = useRegistryView()
   // The sidebar's unread count (REB-734): the reminders still open for this person. The
   // Avvisi page reads the same query, so a snooze there moves this number at once.
   const unread = useUnreadCount()
@@ -67,6 +69,7 @@ export function Sidebar({
   const waiting = useWaitingCount()
   // An entry of a module the space has switched off is not drawn (REB-953).
   const modules = useModules()
+  const gates = useNavGates()
 
   // The «Impostazioni» sub-items this reader may see (REB-294): the same
   // `canSeeSettingsTab` the settings page filters its own tabs with, so sidebar and
@@ -175,7 +178,7 @@ export function Sidebar({
       >
         <div className="space-y-1">
           <NavLeaf {...HOME} rail={rail} />
-          {visibleSections(modules).map((section) => (
+          {visibleSections(modules, user?.role, gates).map((section) => (
             // A group named by its caption, not a control: nothing opens or closes, so the
             // caption is a plain line of text above its entries. In the rail it is a thin
             // separator, and the group keeps its name for a screen reader either way.

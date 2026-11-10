@@ -4,6 +4,8 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, Response, status
 
+from pigrocrm.core.contracts.fee_billing import FeeBillingService
+from pigrocrm.core.contracts.fee_schemas import FeeBilled, FeeBillRequest, FeeOccurrences
 from pigrocrm.core.documents.schemas import DocumentRead
 from pigrocrm.core.invoices.schemas import InvoiceRead
 from pigrocrm.core.work_units.billing_schemas import BillableDays, InvoiceDaysRequest
@@ -61,6 +63,66 @@ def invoice_days(
     return assemble_unbilled_work_units_into_new_invoice(
         session, storage, contract_id, actor, data.date_from, data.date_to
     )
+
+
+@router.get("/{contract_id}/fee-occurrences", response_model=FeeOccurrences)
+def get_fee_occurrences(
+    contract_id: UUID,
+    session: SessionDep,
+    date_from: Annotated[
+        date | None,
+        Query(
+            alias="from",
+            description="From the day, inclusive. Default: 90 days ago, the occurrences somebody "
+            "may have forgotten to bill",
+        ),
+    ] = None,
+    date_to: Annotated[
+        date | None,
+        Query(
+            alias="to",
+            description="To the day, inclusive. Default: 180 days ahead, as far as the forecasts "
+            "are drawn. At most 800 days after `from`",
+        ),
+    ] = None,
+) -> FeeOccurrences:
+    """The occurrences of the contract's recurring fee rate cards in the window, each with the
+    draft, proforma or issued invoice that bills it (`state` is `to_bill`, `drafted` or
+    `issued`). `billable` and `block_reason` say whether this contract can be billed from here at
+    all. Read-only."""
+    return FeeBillingService(session).occurrences(contract_id, date_from=date_from, date_to=date_to)
+
+
+@router.post(
+    "/{contract_id}/invoice-fee",
+    response_model=FeeBilled,
+    status_code=status.HTTP_201_CREATED,
+    responses={
+        status.HTTP_200_OK: {
+            "description": "The occurrence was already on a draft invoice or a proforma: that "
+            "document is answered and nothing was created (`created` is false)",
+            "model": FeeBilled,
+        }
+    },
+)
+def invoice_fee(
+    contract_id: UUID,
+    data: FeeBillRequest,
+    response: Response,
+    session: SessionDep,
+    actor: ActorDep,
+    storage: StorageDep,
+) -> FeeBilled:
+    """Creates the draft invoice that bills one occurrence of the contract's recurring fee: one
+    line with the rate card's fee, the card and the occurrence date (`period_start`) on it, so
+    issuing the draft replaces that occurrence's forecast. It issues nothing. A second call for
+    the same occurrence answers the draft or proforma that already bills it with status 200; an
+    occurrence on an issued invoice is a 409 naming the invoice. Admin only, and an agent needs
+    `full_access`: what is on a draft decides what issuing will freeze."""
+    billed = FeeBillingService(session, storage).bill(contract_id, data, actor)
+    if not billed.created:
+        response.status_code = status.HTTP_200_OK
+    return billed
 
 
 @router.get("/{contract_id}/register", response_model=ContractRegister)

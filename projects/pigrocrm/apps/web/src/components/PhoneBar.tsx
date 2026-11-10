@@ -4,9 +4,10 @@ import { useState } from 'react'
 import { cn } from '@rebase/ui/cn'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@rebase/ui/sheet'
 import { useWaitingCount } from '@/features/inbox/queries'
+import { useNavGates } from '@/features/iva/queries'
 import { useUnreadCount } from '@/features/reminders/queries'
 import { useOverdueCount } from '@/features/tasks/queries'
-import { useCanWrite } from '@/lib/auth'
+import { useAuth, useCanWrite } from '@/lib/auth'
 import { useModules } from '@/lib/modules'
 import { LegalEntitySelect } from './LegalEntitySelect'
 import {
@@ -26,6 +27,7 @@ import {
 import { ProfileMenu } from './ProfileMenu'
 import { QuickAdd } from './QuickAdd'
 import { FOCUS } from './sidebarStyles'
+import { useRegistryView } from './useRegistryView'
 
 /** The bar's height without the home indicator's inset: the page keeps this much clear. */
 export const PHONE_BAR_HEIGHT = '4rem'
@@ -189,12 +191,14 @@ function More({
   go: (url: string) => void
 }) {
   const modules = useModules()
+  const { user } = useAuth()
+  const gates = useNavGates()
   const unread = useUnreadCount()
   const waiting = useWaitingCount()
   const { location } = useRouterState()
-  const registryRole = (location.search as { role?: string } | undefined)?.role
+  const registryRole = useRegistryView()
   const items: readonly NavItem[] = [
-    ...phoneMoreItems(modules),
+    ...phoneMoreItems(modules, user?.role, gates),
     { to: Agents.to, label: Agents.label, icon: Agents.icon },
     { to: SETTINGS_PATHS.profile, label: SETTINGS.label, icon: SETTINGS.icon },
   ]
@@ -236,6 +240,10 @@ function More({
                 to={to}
                 search={item.search}
                 onClick={() => onOpenChange(false)}
+                // The registry page serves two entries, so the router's own «active» (a path
+                // prefix, with a search that matches anything) would mark both: the caller
+                // decides below, as `NavLeaf` does for the sidebar.
+                activeOptions={to === REGISTRY_PATH ? { exact: true, includeSearch: true } : undefined}
                 aria-current={
                   (to === REGISTRY_PATH
                     ? isNavItemActive(item, location.pathname, registryRole)

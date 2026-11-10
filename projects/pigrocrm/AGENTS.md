@@ -286,8 +286,9 @@ issues or annuls an invoice (`replace_lines` hands it the contracts the old line
 `refresh_forecasts`, run by `pigrocrm automations` after the task rules: it drops a forecast whose date has
 passed, counts a contract or a draft it could not read in `failed` (a line on stderr and exit 1, the others
 go on), and `--dry-run` rolls it back. A change to a customer's terms or to the profile's `due_days` waits
-for the next pass. No code bills a recurring fee yet: a fee invoice replaces its forecast only when its
-line names the card and the period (`InvoiceLineIn`), otherwise the forecast stands until its date passes.
+for the next pass. A fee invoice replaces its forecast only when its line names the card and the
+period (`InvoiceLineIn`), otherwise the forecast stands until its date passes; the action that writes
+such an invoice is `FeeBillingService.bill` (REB-1032, next paragraph).
 The test-only triggers in the root `conftest.py` delete the forecasts of a hand-deleted invoice or contract.
 **Recurring expenses forecast money out from a rule due items owns (REB-1022).** `RecurringExpense`
 (`recurring_expenses`, migration 0098, behind `module_guard("purchases")`) is a supplier, a total
@@ -337,6 +338,20 @@ and the one-line band both use (`CashBand`). Every figure is the server's string
 server owns: the horizon options, `stale_days`, `unmatched_days`, `is_overdue_unmatched`, the grace and `oldest_days` are read
 from the response. A balance the viewer may not read is `null` in the response and absent on screen, never «0,00 €».
 The matching of a movement to a due item is not built (its card comes next): movements are a read-only queue.
+
+**«Fattura il canone» bills one occurrence of a recurring fee as a draft (REB-1032).** `contracts/fee_billing.py`:
+`bill` makes the draft invoice with the card's fee on one line, `rate_card_id` and `period_start` (the
+occurrence date) on it and the covered days in its words, under the contract's customer and legal entity, and
+issues nothing; `occurrences` lists a contract's occurrences with the document that bills each (`to_bill`,
+`drafted`, `issued`), by default the last 90 days and the forecasts' horizon ahead. The occurrence span and the
+covering rule are `occurrence_spans` and `period_covered` in `due_items/forecast.py`, the forecasts' own, so the
+two cannot drift. A date that is not one of the card's occurrences is refused naming the ones that are; an
+occurrence a draft invoice or a proforma already bills answers that document (`created` false, status 200 on
+REST), one an issued invoice bills is a 409 naming it, and a deleted draft or an annulled invoice frees it. The
+contract row is locked first, so a double click queues. It is an administrator's act (`bill_contract_fee`, in
+`FULL_ACCESS_ACTIONS` beside `bill_contract_days`): REST `POST /api/contracts/{id}/invoice-fee` and `GET
+.../fee-occurrences`, the MCP tools `bill_contract_fee` (privileged) and `list_fee_occurrences` (every token's), and
+the «Canoni» section of the contract's page. A contract still a draft, or not in euros, is not billed from here.
 **Staff and directors are written by `StaffService`, and pay is an administrator's before anything else
 (REB-977).** `staff_members` and `payroll_settings` belong to the module `staff` (default off for both
 profiles, on for a space with no profile): REST `/api/staff` carries `module_guard("staff")` and the
@@ -399,8 +414,26 @@ period of the current year, which recomputes every earlier one, and keeps the pr
 pack's annual-return date. It is idempotent, isolated per legal entity (savepoint, failure counted by class name,
 stderr, exit 1), and a period whose due item already has a payment is reported on stderr and left as it was, not
 raised. `GET /api/iva-settlements?year=` and the MCP tool `list_iva_settlements` (`full_access`) read what it wrote;
-`settle_iva_period` stays a service call. Not here: the December advance, the IVA period lock, cash-basis IVA, the
-page, the srl's IVA dates (the `it-company` pack has no calendar yet).
+`settle_iva_period` stays a service call. Not here: the December advance, the IVA period lock, cash-basis IVA,
+the srl's IVA dates (the `it-company` pack carries a calendar but no `iva` law, so it has no periodic settlement).
+
+**«IVA» draws what the server reads and adds nothing (REB-1024).** `IvaRegisterService` (`core/fiscal/iva_register.py`) is
+the read: `list_periods` answers a year's periods with the ladder (the stored settlement, or for a period not settled
+yet the running figures from `compute_figures` and the previous period's stored result, `null` when that carry-over is
+unknown: the previous period is not stored while an earlier one is) and the state (`open` to the last day included),
+and `read_sales_register` and `read_purchase_register` list one period's documents, 50 at a time by `offset`, with the
+summary by rate and the period's totals. The registers select with `iva_settlement.sales_conditions` and
+`purchase_conditions` and total with `sales_vat` and `purchase_vat`, the settlement's own, so a register adds up to its
+line to the cent; a sale is placed by its issue date, a purchase by its `iva_period`, a declared register gap sits in the
+period of the invoice before it, and a split-payment sale is listed with its VAT and counted as `vat_due` zero. REST is
+`GET /api/iva-periods`, `/api/iva-periods/entities` (the legal entities whose pack settles IVA by period) and
+`/api/iva-registers/{sales,purchases}`, the MCP tools `list_iva_periods` and `get_iva_register`; all an administrator's
+(`full_access` for a token) under the `purchases` module. The page is `/app/vat` (`features/iva/`, under
+`no-browser-arithmetic.test.ts`): it opens on the period running now, one legal entity at a time (the page's own «Azienda»
+select under «Tutte le aziende» with several), the sidebar entry is drawn by a `NavGate` (`useNavGates`: an administrator,
+`purchases` on, at least one eligible entity) and a figure the server did not send reads «non calcolabile». Closing and
+reopening a period, and the «Integrazioni» chip, wait for the IVA period lock and the integration documents, which do
+not exist: the page has no control for them.
 
 **An IMAP or PEC mailbox is `mailboxes/imap_*` and its password is sealed with its own key (REB-1015).**
 `ImapReader` (`imap_client.py`) is the only code that opens an IMAP socket: TLS or STARTTLS only, the host
@@ -413,6 +446,47 @@ is `require_person`, so a token is refused whatever it carries. Tests use `tests
 fake server on the loopback with a real TLS handshake: pass `resolve=loopback` and `fake.client_context()`,
 never a flag in production code. `mail-sync` reads IMAP beside Gmail; a sink per purpose (`MessageSink`) is
 how REB-1016 plugs in.
+
+**«Esporta per il commercialista» is `/app/export` and draws what the server says (REB-1028).** `features/export/` is an
+administrator's page (the entry names `action: 'build_accountant_export'` in `components/nav.ts`, so the sidebar and «Altro» hide it
+from other roles by the `lib/permissions.ts` table, which `permissions.test.ts` pins to the core's `require_admin` strings; the first
+entry gated by role) with the tab and the open export in the URL (`?tab=prepare|exports&export=`). «Prepara» is the form: company (a
+field from the second company on, preset from the sidebar, «Tutte le aziende» a separate option never preselected and absent for a
+scoped admin), period (the calendar month, quarter or year, opening on the last complete period of the company's IVA frequency) and
+«Cosa contiene», which is `GET /api/accountant-export/parts` (the parts that apply to the company's modules and pack, in the index's
+order). «Esportazioni» reads `GET /exports?legal_entity_id=&year=&offset=&limit=` (`items` and `total_count`, 50 rows at a time) and its
+panel reads the snapshot the build kept in `checklist`: the parts with their counts, the documents that could not be attached (the
+«N aperti» of the list; gold, never danger, and never recomputed after the build) and the download of each ZIP. The snapshot keeps the
+`cause` of each part left out: a part the company's **pack** carries not is named in the panel, one a **module** switched off is never
+drawn, and a part whose source is not built (`unavailable`) is drawn nowhere, since the page may not name a module that is off or not
+built. A build is synchronous: the page shows its row («In preparazione») while the request runs, a refusal stays as a row with the
+reason and «Riprova» (which makes a new export, since an export is never replaced), and the mutation's own `onSuccess` refreshes the
+list so an admin who left finds it done. The share link, the Drive copy, the readiness checklist, the payroll parts and the tab
+«Link condivisi» have no data yet and are drawn nowhere; each joins with its own card. The folder is under `no-browser-arithmetic.test.ts`.
+
+**A space mailbox's attachments reach the inbox through `BillingSink` and nothing else (REB-1016).** `inbox/mail_intake.py`
+decides from BODYSTRUCTURE which parts to fetch (an accepted extension, not inline, not a small image, not the
+mailbox's own mail), fetches them with `ImapReader.fetch_part` and files them with `InboxUploads.upload(origin=...,
+commit=False)`: the items are `source = 'mailbox'` with the message's sender, subject and date and never its body, and
+they stay when the mailbox is disconnected. A personal mailbox cannot hold `billing` and the sink refuses one anyway.
+A sink never commits and `discard` undoes its bytes; the tests use the fake IMAP server with `Part(content=...)`.
+
+**Signing a letter is `SigningService`, and it is off unless the installation has a Documenso (REB-1019).**
+`core/documenso/` is the API v2 client (`client.py`), its no-redirect transport and `routing.py`;
+`core/collaborators/signing.py` sends (`send_engagement`: the framework agreement first when the freelancer has none
+active, the letter waits `pending` and is released when it is signed; a draft text never leaves; **only the freelancer
+signs**), and `signing_recovery.py` confirms, stores the sealed PDF as the document's next version, mails both copies and
+releases letters. The state is columns of the `documents` row (`signature_state`, `envelope_id`, `signed_version`...,
+migration 0099), null on every other document. `PIGROCRM_DOCUMENSO_URL` and `PIGROCRM_DOCUMENSO_API_TOKEN` together switch
+signing on, `PIGROCRM_DOCUMENSO_WEBHOOK_SECRET` the root route `POST /api/documenso/webhook`; empty (the compose default) the
+app boots as before, a send answers 503 `signing_unavailable`, and a letter is downloaded, signed by hand and its PDF uploaded
+(`upload_signed_copy`, a person's act). A new envelope's `externalId` is `<tenant id>:<document id>` (`root:` for the root
+installation): Documenso takes any string there (v2.18.0 `z.string().trim().max(255)`, no index). The webhook routes by it
+(`routing.route_envelope`) and **ignores** an envelope whose `externalId` is not this installation's own, a bare hub document
+id included unless the leads space holds it. Cancelling an engagement must go through `SigningService.engagement_service()`,
+or a letter out for signature refuses it. The signature recovery is a step of the daily `pigrocrm automations` pass
+(`cli/signing.py::sweep_space`), isolated per space; `contracts-check` and `documenso-check` are commands. The MCP container has
+no mail key by design, so the MCP send tools answer 503 there until that is decided.
 
 **A router authenticates with `dependencies=[Depends(get_actor)]`, not per handler.** A
 handler that never names the actor is still behind it, and `test_routes_authenticate.py`

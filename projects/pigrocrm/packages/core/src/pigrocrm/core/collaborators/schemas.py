@@ -370,3 +370,54 @@ class EngagementDaysReport(BaseModel):
     payable_quantity: Decimal
     held_quantity: Decimal
     payable_amount: Decimal | None
+
+
+# ---- signature (design § 2, REB-1019) -------------------------------------------------------
+
+SignatureState = Literal["generated", "pending", "sent", "signed", "cancelled", "notice_served"]
+
+
+class SignatureRead(BaseModel):
+    """Where a framework agreement or a letter stands once it has left: its state, when it went
+    out and was signed, why it was cancelled, and whether the signed PDF is stored. A framework
+    agreement says whether it is active and the next renewal and last day for a notice (the twelve
+    months of article 9.1); the signing link is a capability and is never in a read."""
+
+    document_id: UUID
+    kind: str = Field(description="framework_agreement | engagement_letter")
+    letter_type: str | None
+    engagement_id: UUID | None
+    number: str | None
+    text_version: str | None
+    state: SignatureState
+    sent_at: datetime | None
+    signed_at: datetime | None
+    notice_at: datetime | None
+    cancel_reason: str | None
+    has_signed_copy: bool
+    signed_by_hand: bool = Field(
+        description="The signed PDF was uploaded, not sealed by the signing site"
+    )
+    active: bool = Field(description="A framework agreement that is signed and has no notice")
+    renewal: dt.date | None
+    last_notice_day: dt.date | None
+
+
+class SendReport(BaseModel):
+    """What «send for signature» did. `sent` is the kind of the document that left (the framework
+    agreement first when the freelancer has none active, else the letter) and `None` when the
+    letter waits for an agreement already out. `mail_sent` says the link reached the mail
+    provider: `False` leaves the document `sent` for «resend the mail»."""
+
+    engagement: EngagementRead
+    sent: str | None
+    mail_sent: bool | None
+    documents: list[SignatureRead]
+
+
+class SignedCopyRequest(BaseModel):
+    """The day the document was signed, for a signed PDF uploaded by hand (default today)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    signed_on: dt.date | None = None

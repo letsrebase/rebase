@@ -74,12 +74,54 @@ def test_building_twice_keeps_both_and_lists_them(
     second = logged_in.post("/api/accountant-export/exports", json=QUARTER).json()
 
     listed = logged_in.get("/api/accountant-export/exports").json()
-    assert {item["id"] for item in listed} == {first["id"], second["id"]}
+    assert {item["id"] for item in listed["items"]} == {first["id"], second["id"]}
+    assert listed["total_count"] == 2
     assert (
         logged_in.get(f"/api/accountant-export/exports/{first['id']}").json()["id"] == first["id"]
     )
     assert _download(logged_in, first)
     assert _download(logged_in, second)
+
+
+def test_the_list_pages_and_filters_by_year_and_says_how_many_there_are(
+    logged_in: TestClient,
+) -> None:
+    built = [
+        logged_in.post("/api/accountant-export/exports", json=QUARTER).json() for _ in range(3)
+    ]
+
+    page = logged_in.get("/api/accountant-export/exports", params={"limit": 2}).json()
+    rest = logged_in.get("/api/accountant-export/exports", params={"limit": 2, "offset": 2}).json()
+    other_year = logged_in.get("/api/accountant-export/exports", params={"year": 2025}).json()
+
+    assert (len(page["items"]), page["total_count"]) == (2, 3)
+    assert {item["id"] for item in page["items"] + rest["items"]} == {b["id"] for b in built}
+    assert other_year == {"items": [], "total_count": 0}
+    assert logged_in.get("/api/accountant-export/exports", params={"limit": 0}).status_code == 422
+
+
+def test_the_parts_a_build_would_hold_are_listed_with_what_they_are_made_of(
+    logged_in: TestClient, api_session: Session
+) -> None:
+    entity = LegalEntityRepository(api_session).default()
+    assert entity is not None
+
+    parts = logged_in.get("/api/accountant-export/parts").json()
+    named = logged_in.get(
+        "/api/accountant-export/parts", params={"legal_entity_id": str(entity.id)}
+    ).json()
+    everything = logged_in.get("/api/accountant-export/parts", params={"all_entities": True})
+
+    assert parts == named and parts[0]["key"] == "sales_register"
+    assert set(parts[0]) == {"key", "label", "date_rule", "contents"}
+    assert everything.status_code == 200
+    assert (
+        logged_in.get(
+            "/api/accountant-export/parts",
+            params={"legal_entity_id": str(entity.id), "all_entities": True},
+        ).status_code
+        == 422
+    )
 
 
 def test_a_part_that_does_not_exist_is_not_found(logged_in: TestClient) -> None:
@@ -133,8 +175,10 @@ def test_a_collaborator_and_a_reader_are_refused(
         assert refused.status_code == 403
         assert refused.json()["code"] == "permission_denied"
         assert client.get("/api/accountant-export/exports").status_code == 403
+        assert client.get("/api/accountant-export/parts").status_code == 403
 
 
 def test_a_visitor_with_no_session_is_refused(client: TestClient) -> None:
     assert client.post("/api/accountant-export/exports", json=QUARTER).status_code == 401
     assert client.get("/api/accountant-export/exports").status_code == 401
+    assert client.get("/api/accountant-export/parts").status_code == 401

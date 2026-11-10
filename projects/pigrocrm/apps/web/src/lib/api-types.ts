@@ -2603,6 +2603,88 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/iva-periods/entities": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Iva Entities
+         * @description The legal entities whose pack settles IVA by period: the ones that have registers.
+         */
+        get: operations["list_iva_entities_api_iva_periods_entities_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/iva-periods": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Iva Periods
+         * @description Every period of `year` with its ladder and state; empty when the entity's pack settles no
+         *     IVA by period in that year.
+         */
+        get: operations["list_iva_periods_api_iva_periods_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/iva-registers/sales": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read Sales Register
+         * @description One period's sales register, by number, with the summary by rate and the period's totals.
+         */
+        get: operations["read_sales_register_api_iva_registers_sales_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/iva-registers/purchases": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read Purchase Register
+         * @description One period's purchase register at each group's deductible share, with the summary by
+         *     rate and the period's totals.
+         */
+        get: operations["read_purchase_register_api_iva_registers_purchases_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/legal-entities": {
         parameters: {
             query?: never;
@@ -4372,6 +4454,54 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/contracts/{contract_id}/fee-occurrences": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Fee Occurrences
+         * @description The occurrences of the contract's recurring fee rate cards in the window, each with the
+         *     draft, proforma or issued invoice that bills it (`state` is `to_bill`, `drafted` or
+         *     `issued`). `billable` and `block_reason` say whether this contract can be billed from here at
+         *     all. Read-only.
+         */
+        get: operations["get_fee_occurrences_api_contracts__contract_id__fee_occurrences_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/contracts/{contract_id}/invoice-fee": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Invoice Fee
+         * @description Creates the draft invoice that bills one occurrence of the contract's recurring fee: one
+         *     line with the rate card's fee, the card and the occurrence date (`period_start`) on it, so
+         *     issuing the draft replaces that occurrence's forecast. It issues nothing. A second call for
+         *     the same occurrence answers the draft or proforma that already bills it with status 200; an
+         *     occurrence on an issued invoice is a 409 naming the invoice. Admin only, and an agent needs
+         *     `full_access`: what is on a draft decides what issuing will freeze.
+         */
+        post: operations["invoice_fee_api_contracts__contract_id__invoice_fee_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/contracts/{contract_id}/register": {
         parameters: {
             query?: never;
@@ -5129,7 +5259,8 @@ export interface paths {
         /**
          * Change Engagement State
          * @description Moves an engagement along draft, awaiting_signature, active and concluded, or cancels
-         *     it from draft or awaiting_signature. `ended_on` is for concluding.
+         *     it from draft or awaiting_signature. `ended_on` is for concluding. Cancelling also cancels
+         *     the letter's envelope on Documenso, so the link the freelancer got stops working.
          */
         post: operations["change_engagement_state_api_engagements__engagement_id__state_post"];
         delete?: never;
@@ -5345,6 +5476,179 @@ export interface paths {
          *     freelancer holds one of each regime.
          */
         post: operations["create_framework_agreement_api_freelancers__freelancer_id__framework_agreement_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/engagements/{engagement_id}/send": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Send Engagement
+         * @description Sends the engagement for signature. At most one document leaves at a time: the freelancer's
+         *     framework agreement when they have no active one (the letter waits for it), else the letter.
+         *     Only the freelancer signs. Answers 503 `signing_unavailable` on an installation without
+         *     Documenso or mail, where the letter is downloaded, signed by hand and uploaded instead.
+         */
+        post: operations["send_engagement_api_engagements__engagement_id__send_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/documents/{document_id}/signature": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Signature
+         * @description Where a framework agreement or a letter stands: its signing state, the dates and whether
+         *     the signed PDF is stored. The signing link is never in the answer.
+         */
+        get: operations["get_signature_api_documents__document_id__signature_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/documents/{document_id}/signature/refresh": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Refresh Signature
+         * @description Asks Documenso where the envelope stands and applies its answer, the way the webhook does,
+         *     then finishes what a signature leaves to do (the sealed copy, the mails).
+         */
+        post: operations["refresh_signature_api_documents__document_id__signature_refresh_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/documents/{document_id}/signature/resend-mail": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Resend Signing Mail
+         * @description Mails the freelancer the same signing link again, for a document that still waits for the
+         *     signature.
+         */
+        post: operations["resend_signing_mail_api_documents__document_id__signature_resend_mail_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/documents/{document_id}/signature/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Cancel Framework Agreement
+         * @description Cancels a framework agreement that is not signed yet, its envelope on Documenso included.
+         *     A letter is cancelled with its engagement (`POST /engagements/{id}/state`), not here.
+         */
+        post: operations["cancel_framework_agreement_api_documents__document_id__signature_cancel_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/documents/{document_id}/signature/notice": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Record Framework Notice
+         * @description Records a notice or a withdrawal on an active framework agreement: from now the freelancer
+         *     has none active and their next engagement writes a new one.
+         */
+        post: operations["record_framework_notice_api_documents__document_id__signature_notice_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/documents/{document_id}/signed-copy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Upload Signed Copy
+         * @description Records a document signed by hand: the signed PDF becomes its next version and the document
+         *     is `signed`. A person's act (an agent never records a signature), and only for a document that
+         *     never went out through Documenso. The path sits under `/api/documents` so the proxy's upload
+         *     limit covers it. The role is checked before the body is read (`uploads.py`); the service
+         *     checks it again.
+         */
+        post: operations["upload_signed_copy_api_documents__document_id__signed_copy_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/documenso/webhook": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Documenso Webhook
+         * @description Applies a signature, a refusal or a cancellation Documenso reports for an envelope this
+         *     installation wrote. Answers 200 to every well-formed delivery, handled or not.
+         */
+        post: operations["documenso_webhook_api_documenso_webhook_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -6035,7 +6339,8 @@ export interface paths {
         };
         /**
          * List Exports
-         * @description The stored exports, newest first. One past 13 months stays listed, with no files.
+         * @description The stored exports, newest first, with how many there are in all. One past 13 months
+         *     stays listed, with no files.
          */
         get: operations["list_exports_api_accountant_export_exports_get"];
         put?: never;
@@ -6049,6 +6354,27 @@ export interface paths {
          *     exports; each is deleted after 13 months.
          */
         post: operations["build_export_api_accountant_export_exports_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/accountant-export/parts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Describe Parts
+         * @description The parts a build for this company would hold, from its modules and fiscal pack, in
+         *     the order of the index. With `all_entities`, a part that applies to any company.
+         */
+        get: operations["describe_parts_api_accountant_export_parts_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -10567,6 +10893,16 @@ export interface components {
              */
             all_entities: boolean;
         };
+        /** ExportListRead */
+        ExportListRead: {
+            /** Items */
+            items: components["schemas"]["ExportRead"][];
+            /**
+             * Total Count
+             * @description How many stored exports match, whatever the page
+             */
+            total_count: number;
+        };
         /** ExportPartRead */
         ExportPartRead: {
             /**
@@ -10667,6 +11003,121 @@ export interface components {
             expired: string;
             /** Share */
             share: number;
+        };
+        /** FeeBillRequest */
+        FeeBillRequest: {
+            /**
+             * Rate Card Id
+             * Format: uuid
+             * @description The recurring fee rate card of the contract to bill
+             */
+            rate_card_id: string;
+            /**
+             * Period Start
+             * Format: date
+             * @description The occurrence to bill, as the date `GET .../fee-occurrences` lists it
+             */
+            period_start: string;
+        };
+        /** FeeBilled */
+        FeeBilled: {
+            /**
+             * Created
+             * @description True when this call made the draft, false when the occurrence was already on a draft or proforma, which is the one answered
+             */
+            created: boolean;
+            invoice: components["schemas"]["InvoiceRead"];
+        };
+        /** FeeOccurrence */
+        FeeOccurrence: {
+            /**
+             * Rate Card Id
+             * Format: uuid
+             */
+            rate_card_id: string;
+            /**
+             * Period Start
+             * Format: date
+             * @description The day the occurrence falls on
+             */
+            period_start: string;
+            /**
+             * Period End
+             * @description The last day the fee covers: the day before the next occurrence, or the end of the card or the contract when that comes first. Empty for a one-off fee
+             */
+            period_end: string | null;
+            /**
+             * Delivery Period
+             * @description `monthly`, `quarterly`, `annual` or `one_off`
+             */
+            delivery_period: string;
+            /**
+             * Amount
+             * @description The fee of the rate card, before VAT
+             */
+            amount: string;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "to_bill" | "drafted" | "issued";
+            /** @description The draft, proforma or issued invoice that bills it; empty when `to_bill` */
+            invoice: components["schemas"]["FeeOccurrenceInvoice"] | null;
+        };
+        /**
+         * FeeOccurrenceInvoice
+         * @description The document that bills an occurrence.
+         */
+        FeeOccurrenceInvoice: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Type */
+            type: string;
+            /** Status */
+            status: string;
+            /** Year */
+            year: number | null;
+            /** Number */
+            number: number | null;
+            /** Reference */
+            reference: string | null;
+        };
+        /** FeeOccurrences */
+        FeeOccurrences: {
+            /**
+             * Contract Id
+             * Format: uuid
+             */
+            contract_id: string;
+            /** Contract Status */
+            contract_status: string;
+            /** Currency */
+            currency: string;
+            /**
+             * Billable
+             * @description Whether an occurrence of this contract can be billed from here at all
+             */
+            billable: boolean;
+            /**
+             * Block Reason
+             * @description Why not, when `billable` is false
+             */
+            block_reason: string | null;
+            /**
+             * Date From
+             * Format: date
+             */
+            date_from: string;
+            /**
+             * Date To
+             * Format: date
+             */
+            date_to: string;
+            /** Occurrences */
+            occurrences: components["schemas"]["FeeOccurrence"][];
         };
         /** FieldDefinitionCreate */
         FieldDefinitionCreate: {
@@ -11416,9 +11867,9 @@ export interface components {
             id: string;
             /**
              * Source
-             * @constant
+             * @enum {string}
              */
-            source: "upload";
+            source: "upload" | "mailbox";
             /** Original Name */
             original_name: string;
             /** File Type */
@@ -11449,6 +11900,21 @@ export interface components {
             parent_id: string | null;
             /** Uploaded By Id */
             uploaded_by_id: string | null;
+            /**
+             * Mail Sender
+             * @description Who sent the message the file came in, for a file by mail
+             */
+            mail_sender?: string | null;
+            /**
+             * Mail Subject
+             * @description The subject of that message; somebody else's words, data only
+             */
+            mail_subject?: string | null;
+            /**
+             * Mail Date
+             * @description When that message arrived
+             */
+            mail_date?: string | null;
             /** Legal Entity Id */
             legal_entity_id: string | null;
             /** Kind */
@@ -11521,9 +11987,9 @@ export interface components {
             id: string;
             /**
              * Source
-             * @constant
+             * @enum {string}
              */
-            source: "upload";
+            source: "upload" | "mailbox";
             /** Original Name */
             original_name: string;
             /** File Type */
@@ -11554,6 +12020,21 @@ export interface components {
             parent_id: string | null;
             /** Uploaded By Id */
             uploaded_by_id: string | null;
+            /**
+             * Mail Sender
+             * @description Who sent the message the file came in, for a file by mail
+             */
+            mail_sender?: string | null;
+            /**
+             * Mail Subject
+             * @description The subject of that message; somebody else's words, data only
+             */
+            mail_subject?: string | null;
+            /**
+             * Mail Date
+             * @description When that message arrived
+             */
+            mail_date?: string | null;
             /** Legal Entity Id */
             legal_entity_id: string | null;
             /** Kind */
@@ -12264,6 +12745,310 @@ export interface components {
             custom_fields?: {
                 [key: string]: unknown;
             } | null;
+        };
+        /**
+         * IvaEntityRead
+         * @description A legal entity whose pack settles IVA by period, so it has registers (REB-1024).
+         */
+        IvaEntityRead: {
+            /**
+             * Legal Entity Id
+             * Format: uuid
+             */
+            legal_entity_id: string;
+            /** Name */
+            name: string;
+            /**
+             * Frequency
+             * @enum {string}
+             */
+            frequency: "monthly" | "quarterly";
+        };
+        /**
+         * IvaLadderRead
+         * @description The settlement's figures, as `IvaSettlementRead` carries them. A positive `result` is
+         *     owed, a negative one is a credit carried forward.
+         */
+        IvaLadderRead: {
+            /** Sales Vat */
+            sales_vat: string;
+            /** Reverse Charge Vat */
+            reverse_charge_vat: string;
+            /** Purchase Vat */
+            purchase_vat: string;
+            /** Credit In */
+            credit_in: string;
+            /** Debit In */
+            debit_in: string;
+            /** Surcharge */
+            surcharge: string;
+            /** Result */
+            result: string;
+            /**
+             * Outcome
+             * @enum {string}
+             */
+            outcome: "due" | "carried" | "credit" | "nil";
+        };
+        /**
+         * IvaPeriodRead
+         * @description One period of a legal entity's IVA cycle (REB-1024). `ladder` is the stored settlement's
+         *     when `settled`, otherwise the running figures of the period computed with the same code
+         *     from the previous period's stored result, and `None` when the server cannot know them: a
+         *     period that has not started, or one whose previous period is not settled while an earlier one
+         *     is (its carry-over would be a guess). `state` is `open` until the period's last day
+         *     included. The payment date is the pack's calendar's and `payment_state` the due item's;
+         *     `carry_forward_limit` is the pack's limit under which a small debit waits.
+         */
+        IvaPeriodRead: {
+            /**
+             * Legal Entity Id
+             * Format: uuid
+             */
+            legal_entity_id: string;
+            /**
+             * Frequency
+             * @enum {string}
+             */
+            frequency: "monthly" | "quarterly";
+            /** Year */
+            year: number;
+            /** Number */
+            number: number;
+            /** Label */
+            label: string;
+            /**
+             * Period Start
+             * Format: date
+             */
+            period_start: string;
+            /**
+             * Period End
+             * Format: date
+             */
+            period_end: string;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "future" | "open" | "ended";
+            /** Settled */
+            settled: boolean;
+            ladder: components["schemas"]["IvaLadderRead"] | null;
+            /** Payment Due On */
+            payment_due_on: string | null;
+            /** Due Item Id */
+            due_item_id: string | null;
+            /** Payment State */
+            payment_state: ("expected" | "settled") | null;
+            /** Registers Changed */
+            registers_changed: boolean;
+            /** Carry Forward Limit */
+            carry_forward_limit: string | null;
+        };
+        /** IvaPurchaseGroupRead */
+        IvaPurchaseGroupRead: {
+            /** Rate */
+            rate: string;
+            /** Nature */
+            nature: string | null;
+            /** Taxable Amount */
+            taxable_amount: string;
+            /** Vat Amount */
+            vat_amount: string;
+            /** Deductible Share */
+            deductible_share: string;
+            /** Deductible Vat */
+            deductible_vat: string;
+        };
+        /** IvaPurchaseRegisterRead */
+        IvaPurchaseRegisterRead: {
+            /** Items */
+            items: components["schemas"]["IvaPurchaseRowRead"][];
+            /** Total Count */
+            total_count: number;
+            /** Next Offset */
+            next_offset: number | null;
+            /** Summary */
+            summary: components["schemas"]["IvaPurchaseSummaryLine"][];
+            totals: components["schemas"]["IvaPurchaseTotals"];
+        };
+        /**
+         * IvaPurchaseRowRead
+         * @description A line of the purchase register: a registered invoice or credit note placed in the period
+         *     by its `iva_period`, with its groups at their deductible share.
+         */
+        IvaPurchaseRowRead: {
+            /**
+             * Purchase Id
+             * Format: uuid
+             */
+            purchase_id: string;
+            /**
+             * Registered On
+             * Format: date
+             */
+            registered_on: string;
+            /**
+             * Document Date
+             * Format: date
+             */
+            document_date: string;
+            /** Number */
+            number: string | null;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "invoice" | "credit_note";
+            /** Supplier Id */
+            supplier_id: string | null;
+            /** Supplier Name */
+            supplier_name: string | null;
+            /** Reverse Charge */
+            reverse_charge: boolean;
+            /** Split Payment */
+            split_payment: boolean;
+            /** Groups */
+            groups: components["schemas"]["IvaPurchaseGroupRead"][];
+            /** Taxable Amount */
+            taxable_amount: string;
+            /** Vat Amount */
+            vat_amount: string;
+            /** Deductible Vat */
+            deductible_vat: string;
+            /** Total */
+            total: string;
+        };
+        /** IvaPurchaseSummaryLine */
+        IvaPurchaseSummaryLine: {
+            /** Rate */
+            rate: string;
+            /** Nature */
+            nature: string | null;
+            /** Deductible Share */
+            deductible_share: string;
+            /** Taxable Amount */
+            taxable_amount: string;
+            /** Vat Amount */
+            vat_amount: string;
+            /** Deductible Vat */
+            deductible_vat: string;
+        };
+        /**
+         * IvaPurchaseTotals
+         * @description The period's. `deductible_vat` and `reverse_charge_vat` are the settlement's lines.
+         */
+        IvaPurchaseTotals: {
+            /** Taxable Amount */
+            taxable_amount: string;
+            /** Vat Amount */
+            vat_amount: string;
+            /** Deductible Vat */
+            deductible_vat: string;
+            /** Reverse Charge Vat */
+            reverse_charge_vat: string;
+            /** Total */
+            total: string;
+        };
+        /**
+         * IvaRateGroupRead
+         * @description One VAT recap group of a document: a rate (and its nature at zero), the taxable amount
+         *     and the VAT.
+         */
+        IvaRateGroupRead: {
+            /** Rate */
+            rate: string;
+            /** Nature */
+            nature: string | null;
+            /** Taxable Amount */
+            taxable_amount: string;
+            /** Vat Amount */
+            vat_amount: string;
+        };
+        /** IvaSalesRegisterRead */
+        IvaSalesRegisterRead: {
+            /** Items */
+            items: components["schemas"]["IvaSalesRowRead"][];
+            /** Total Count */
+            total_count: number;
+            /** Next Offset */
+            next_offset: number | null;
+            /** Summary */
+            summary: components["schemas"]["IvaSalesSummaryLine"][];
+            totals: components["schemas"]["IvaSalesTotals"];
+        };
+        /**
+         * IvaSalesRowRead
+         * @description A line of the sales register: an issued or annulled invoice, or a number the legal
+         *     entity declared its register will never carry (`kind` `gap`, with its reason). The VAT of
+         *     a document under split payment is shown and is not owed (`exigibility`).
+         */
+        IvaSalesRowRead: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "invoice" | "gap";
+            /** Invoice Id */
+            invoice_id: string | null;
+            /** Year */
+            year: number;
+            /** Number */
+            number: number;
+            /** Issue Date */
+            issue_date: string | null;
+            /** Customer Id */
+            customer_id: string | null;
+            /** Customer Name */
+            customer_name: string | null;
+            /** Status */
+            status: ("issued" | "cancelled") | null;
+            /** Document Type */
+            document_type: string | null;
+            /** Exigibility */
+            exigibility: ("immediate" | "split_payment") | null;
+            /** Groups */
+            groups: components["schemas"]["IvaRateGroupRead"][];
+            /** Taxable Amount */
+            taxable_amount: string | null;
+            /** Vat Amount */
+            vat_amount: string | null;
+            /** Total */
+            total: string | null;
+            /** Gap Reason */
+            gap_reason: string | null;
+        };
+        /** IvaSalesSummaryLine */
+        IvaSalesSummaryLine: {
+            /** Rate */
+            rate: string;
+            /** Nature */
+            nature: string | null;
+            /**
+             * Exigibility
+             * @enum {string}
+             */
+            exigibility: "immediate" | "split_payment";
+            /** Taxable Amount */
+            taxable_amount: string;
+            /** Vat Amount */
+            vat_amount: string;
+        };
+        /**
+         * IvaSalesTotals
+         * @description The period's, over every issued document and not the page's. `vat_due` is the sales VAT
+         *     of the settlement: the VAT of the documents not under split payment.
+         */
+        IvaSalesTotals: {
+            /** Taxable Amount */
+            taxable_amount: string;
+            /** Vat Amount */
+            vat_amount: string;
+            /** Vat Due */
+            vat_due: string;
+            /** Total */
+            total: string;
         };
         /**
          * IvaSettlementRead
@@ -13874,6 +14659,26 @@ export interface components {
             id_transmitter: string;
             /** Send Sequential */
             send_sequential: string;
+        };
+        /** PartPreviewRead */
+        PartPreviewRead: {
+            /** Key */
+            key: string;
+            /**
+             * Label
+             * @description The part as the index names it
+             */
+            label: string;
+            /**
+             * Date Rule
+             * @description Which date places a row in the period
+             */
+            date_rule: string;
+            /**
+             * Contents
+             * @description What the part is made of: a CSV list, original files
+             */
+            contents: string;
         };
         /** PatRead */
         PatRead: {
@@ -16028,6 +16833,22 @@ export interface components {
             groups: components["schemas"]["SearchGroup"][];
         };
         /**
+         * SendReport
+         * @description What «send for signature» did. `sent` is the kind of the document that left (the framework
+         *     agreement first when the freelancer has none active, else the letter) and `None` when the
+         *     letter waits for an agreement already out. `mail_sent` says the link reached the mail
+         *     provider: `False` leaves the document `sent` for «resend the mail».
+         */
+        SendReport: {
+            engagement: components["schemas"]["pigrocrm__core__collaborators__schemas__EngagementRead"];
+            /** Sent */
+            sent: string | null;
+            /** Mail Sent */
+            mail_sent: boolean | null;
+            /** Documents */
+            documents: components["schemas"]["SignatureRead"][];
+        };
+        /**
          * SettlementCreate
          * @description One payment against a due item. `amount` is in the item's currency and has the item's
          *     sign; a payment in another currency says what left the account too.
@@ -16125,6 +16946,62 @@ export interface components {
             count: number;
             /** Link */
             link: string | null;
+        };
+        /**
+         * SignatureRead
+         * @description Where a framework agreement or a letter stands once it has left: its state, when it went
+         *     out and was signed, why it was cancelled, and whether the signed PDF is stored. A framework
+         *     agreement says whether it is active and the next renewal and last day for a notice (the twelve
+         *     months of article 9.1); the signing link is a capability and is never in a read.
+         */
+        SignatureRead: {
+            /**
+             * Document Id
+             * Format: uuid
+             */
+            document_id: string;
+            /**
+             * Kind
+             * @description framework_agreement | engagement_letter
+             */
+            kind: string;
+            /** Letter Type */
+            letter_type: string | null;
+            /** Engagement Id */
+            engagement_id: string | null;
+            /** Number */
+            number: string | null;
+            /** Text Version */
+            text_version: string | null;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "generated" | "pending" | "sent" | "signed" | "cancelled" | "notice_served";
+            /** Sent At */
+            sent_at: string | null;
+            /** Signed At */
+            signed_at: string | null;
+            /** Notice At */
+            notice_at: string | null;
+            /** Cancel Reason */
+            cancel_reason: string | null;
+            /** Has Signed Copy */
+            has_signed_copy: boolean;
+            /**
+             * Signed By Hand
+             * @description The signed PDF was uploaded, not sealed by the signing site
+             */
+            signed_by_hand: boolean;
+            /**
+             * Active
+             * @description A framework agreement that is signed and has no notice
+             */
+            active: boolean;
+            /** Renewal */
+            renewal: string | null;
+            /** Last Notice Day */
+            last_notice_day: string | null;
         };
         /** SlackChannelRead */
         SlackChannelRead: {
@@ -17719,6 +18596,50 @@ export interface components {
             deductible_share: string;
             /** Position */
             position: number;
+        };
+        /** WebhookAck */
+        WebhookAck: {
+            /**
+             * Ok
+             * @default true
+             */
+            ok: boolean;
+        };
+        /**
+         * WebhookBody
+         * @description What Documenso POSTs (probe § 5): the event, upper case, and the envelope. The rest of the
+         *     body (`createdAt`, `webhookEndpoint`, the numeric `id`, the recipients' tokens) is read by
+         *     nobody.
+         */
+        WebhookBody: {
+            /** Event */
+            event: string;
+            payload: components["schemas"]["WebhookEnvelope"];
+        };
+        /** WebhookEnvelope */
+        WebhookEnvelope: {
+            /** Envelopeid */
+            envelopeId: string;
+            /** Externalid */
+            externalId?: string | null;
+            /** Status */
+            status?: string | null;
+            /** Completedat */
+            completedAt?: string | null;
+            /** Recipients */
+            recipients?: components["schemas"]["WebhookRecipient"][];
+        };
+        /** WebhookRecipient */
+        WebhookRecipient: {
+            /**
+             * Role
+             * @default SIGNER
+             */
+            role: string;
+            /** Signedat */
+            signedAt?: string | null;
+            /** Rejectionreason */
+            rejectionReason?: string | null;
         };
         /**
          * WeekHours
@@ -38454,6 +39375,494 @@ export interface operations {
             };
         };
     };
+    list_iva_entities_api_iva_periods_entities_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IvaEntityRead"][];
+                };
+            };
+            /** @description Permission denied: the actor does not have the required role. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The requested resource does not exist or was removed. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The request conflicts with the current state of the resource. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_iva_periods_api_iva_periods_get: {
+        parameters: {
+            query: {
+                year: number;
+                /** @description The legal entity to read: required when the space has more than one (a 422 response names `legal_entity_id`), otherwise it is the only one. */
+                legal_entity_id?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IvaPeriodRead"][];
+                };
+            };
+            /** @description Permission denied: the actor does not have the required role. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The requested resource does not exist or was removed. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The request conflicts with the current state of the resource. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    read_sales_register_api_iva_registers_sales_get: {
+        parameters: {
+            query: {
+                year: number;
+                /** @description The month or the quarter, by the entity's frequency */
+                number: number;
+                /** @description The legal entity to read: required when the space has more than one (a 422 response names `legal_entity_id`), otherwise it is the only one. */
+                legal_entity_id?: string | null;
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IvaSalesRegisterRead"];
+                };
+            };
+            /** @description Permission denied: the actor does not have the required role. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The requested resource does not exist or was removed. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The request conflicts with the current state of the resource. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    read_purchase_register_api_iva_registers_purchases_get: {
+        parameters: {
+            query: {
+                year: number;
+                /** @description The month or the quarter, by the entity's frequency */
+                number: number;
+                /** @description The legal entity to read: required when the space has more than one (a 422 response names `legal_entity_id`), otherwise it is the only one. */
+                legal_entity_id?: string | null;
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IvaPurchaseRegisterRead"];
+                };
+            };
+            /** @description Permission denied: the actor does not have the required role. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The requested resource does not exist or was removed. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The request conflicts with the current state of the resource. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_legal_entities_api_legal_entities_get: {
         parameters: {
             query?: {
@@ -51542,6 +52951,262 @@ export interface operations {
             };
         };
     };
+    get_fee_occurrences_api_contracts__contract_id__fee_occurrences_get: {
+        parameters: {
+            query?: {
+                /** @description From the day, inclusive. Default: 90 days ago, the occurrences somebody may have forgotten to bill */
+                from?: string | null;
+                /** @description To the day, inclusive. Default: 180 days ahead, as far as the forecasts are drawn. At most 800 days after `from` */
+                to?: string | null;
+            };
+            header?: never;
+            path: {
+                contract_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FeeOccurrences"];
+                };
+            };
+            /** @description Permission denied: the actor does not have the required role. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The requested resource does not exist or was removed. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The request conflicts with the current state of the resource. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    invoice_fee_api_contracts__contract_id__invoice_fee_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                contract_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FeeBillRequest"];
+            };
+        };
+        responses: {
+            /** @description The occurrence was already on a draft invoice or a proforma: that document is answered and nothing was created (`created` is false) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FeeBilled"];
+                };
+            };
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FeeBilled"];
+                };
+            };
+            /** @description Permission denied: the actor does not have the required role. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The requested resource does not exist or was removed. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The request conflicts with the current state of the resource. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_register_api_contracts__contract_id__register_get: {
         parameters: {
             query: {
@@ -57988,6 +59653,999 @@ export interface operations {
             };
         };
     };
+    send_engagement_api_engagements__engagement_id__send_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                engagement_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SendReport"];
+                };
+            };
+            /** @description Permission denied: the actor does not have the required role. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The requested resource does not exist or was removed. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The request conflicts with the current state of the resource. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_signature_api_documents__document_id__signature_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                document_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SignatureRead"];
+                };
+            };
+            /** @description Permission denied: the actor does not have the required role. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The requested resource does not exist or was removed. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The request conflicts with the current state of the resource. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    refresh_signature_api_documents__document_id__signature_refresh_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                document_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SignatureRead"];
+                };
+            };
+            /** @description Permission denied: the actor does not have the required role. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The requested resource does not exist or was removed. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The request conflicts with the current state of the resource. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    resend_signing_mail_api_documents__document_id__signature_resend_mail_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                document_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SignatureRead"];
+                };
+            };
+            /** @description Permission denied: the actor does not have the required role. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The requested resource does not exist or was removed. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The request conflicts with the current state of the resource. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    cancel_framework_agreement_api_documents__document_id__signature_cancel_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                document_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SignatureRead"];
+                };
+            };
+            /** @description Permission denied: the actor does not have the required role. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The requested resource does not exist or was removed. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The request conflicts with the current state of the resource. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    record_framework_notice_api_documents__document_id__signature_notice_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                document_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SignatureRead"];
+                };
+            };
+            /** @description Permission denied: the actor does not have the required role. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The requested resource does not exist or was removed. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The request conflicts with the current state of the resource. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    upload_signed_copy_api_documents__document_id__signed_copy_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                document_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": {
+                    /**
+                     * Format: binary
+                     * @description The signed PDF.
+                     */
+                    file: string;
+                    /**
+                     * Format: date
+                     * @description The day it was signed, `YYYY-MM-DD`. Default: today.
+                     */
+                    signed_on?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SignatureRead"];
+                };
+            };
+            /** @description Permission denied: the actor does not have the required role. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The requested resource does not exist or was removed. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The request conflicts with the current state of the resource. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    documenso_webhook_api_documenso_webhook_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-documenso-secret"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WebhookBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WebhookAck"];
+                };
+            };
+            /** @description The `X-Documenso-Secret` header is missing, empty or wrong. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        detail: string;
+                    };
+                };
+            };
+            /** @description Permission denied: the actor does not have the required role. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The requested resource does not exist or was removed. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The request conflicts with the current state of the resource. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description The installation has no `PIGROCRM_DOCUMENSO_WEBHOOK_SECRET`: the webhook is off. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        detail: string;
+                    };
+                };
+            };
+        };
+    };
     upload_api_inbox_upload_post: {
         parameters: {
             query?: {
@@ -62609,6 +65267,9 @@ export interface operations {
         parameters: {
             query?: {
                 legal_entity_id?: string | null;
+                /** @description Only exports whose period starts that year */
+                year?: number | null;
+                offset?: number;
                 limit?: number;
             };
             header?: never;
@@ -62623,7 +65284,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ExportRead"][];
+                    "application/json": components["schemas"]["ExportListRead"];
                 };
             };
             /** @description Permission denied: the actor does not have the required role. */
@@ -62745,6 +65406,126 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ExportRead"];
+                };
+            };
+            /** @description Permission denied: the actor does not have the required role. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The requested resource does not exist or was removed. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The request conflicts with the current state of the resource. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    describe_parts_api_accountant_export_parts_get: {
+        parameters: {
+            query?: {
+                legal_entity_id?: string | null;
+                all_entities?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PartPreviewRead"][];
                 };
             };
             /** @description Permission denied: the actor does not have the required role. */

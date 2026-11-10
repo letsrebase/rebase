@@ -46,6 +46,10 @@ const SCOPED_ROOTS = [
   join(__dirname, '..', 'features', 'taxes'),
   // «Cassa» (REB-1025): every balance, difference and count is the server's.
   join(__dirname, '..', 'features', 'cash'),
+  // «Esporta per il commercialista» (REB-1028): no figure is parsed from the API; sizes and the counts of parts and open points are read off the lists the server sends.
+  join(__dirname, '..', 'features', 'export'),
+  // «IVA» (REB-1024): every figure, rate, share and date is a field the server sent.
+  join(__dirname, '..', 'features', 'iva'),
 ]
 const SCOPED_FILES = [join(__dirname, '..', 'routes', 'app', 'index.tsx')]
 const FORBIDDEN_CALLS = new Set(['Number', 'parseFloat', 'parseInt'])

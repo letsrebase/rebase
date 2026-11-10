@@ -10,7 +10,8 @@ from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Path, Query, Request, Response, status
-from pydantic import BaseModel, Field
+from fastapi.concurrency import run_in_threadpool
+from pydantic import BaseModel, Field, ValidationError
 from sqlalchemy import Engine
 
 from pigrocrm.core.collaborators.days_report import DaysReportService
@@ -35,8 +36,13 @@ from pigrocrm.core.collaborators.schemas import (
     MonthlyReportPage,
     MonthlyReportRead,
     MonthlyReportRequest,
+    SendReport,
+    SignatureRead,
+    SignedCopyRequest,
 )
 from pigrocrm.core.collaborators.service import EngagementService, FreelancerService
+from pigrocrm.core.documents.schemas import SIZE_MAX
+from pigrocrm.core.errors import ValidationFailed
 from pigrocrm.core.organizations.schemas import OrganizationRead
 from pigrocrm.core.validation import SafeStr
 from pigrocrm_api.deps import (
@@ -50,7 +56,9 @@ from pigrocrm_api.deps import (
 )
 from pigrocrm_api.errors import PROBLEM_RESPONSES
 from pigrocrm_api.query_params import KeysetParams
+from pigrocrm_api.signing import SigningDep
 from pigrocrm_api.tenancy import tenant_slug
+from pigrocrm_api.uploads import read_upload_with_fields, single_file_body
 
 router = APIRouter(
     prefix="/api",
@@ -119,13 +127,20 @@ def update_engagement(
 
 @router.post("/engagements/{engagement_id}/state", response_model=EngagementRead)
 def change_engagement_state(
-    engagement_id: UUID, data: EngagementStateChange, session: SessionDep, actor: ActorDep
+    engagement_id: UUID,
+    data: EngagementStateChange,
+    session: SessionDep,
+    actor: ActorDep,
+    signing: SigningDep,
 ) -> EngagementRead:
     """Moves an engagement along draft, awaiting_signature, active and concluded, or cancels
-    it from draft or awaiting_signature. `ended_on` is for concluding."""
-    return EngagementService(session).transition(
-        engagement_id, data.state, actor, ended_on=data.ended_on
+    it from draft or awaiting_signature. `ended_on` is for concluding. Cancelling also cancels
+    the letter's envelope on Documenso, so the link the freelancer got stops working."""
+    # Only a cancellation reaches an envelope; every other state needs no Documenso.
+    service = (
+        signing.engagement_service() if data.state == "cancelled" else EngagementService(session)
     )
+    return service.transition(engagement_id, data.state, actor, ended_on=data.ended_on)
 
 
 class ReportParams(BaseModel):
@@ -319,4 +334,100 @@ def create_framework_agreement(
     freelancer holds one of each regime."""
     return LetterService(session, storage, settings).create_framework_agreement(
         freelancer_id, data.letter_type, actor
+    )
+
+
+# ---- signing (REB-1019): the documents go out through Documenso and come back signed ----------
+
+
+@router.post("/engagements/{engagement_id}/send", response_model=SendReport)
+def send_engagement(engagement_id: UUID, signing: SigningDep, actor: ActorDep) -> SendReport:
+    """Sends the engagement for signature. At most one document leaves at a time: the freelancer's
+    framework agreement when they have no active one (the letter waits for it), else the letter.
+    Only the freelancer signs. Answers 503 `signing_unavailable` on an installation without
+    Documenso or mail, where the letter is downloaded, signed by hand and uploaded instead."""
+    return signing.send_engagement(engagement_id, actor)
+
+
+@router.get("/documents/{document_id}/signature", response_model=SignatureRead)
+def get_signature(document_id: UUID, signing: SigningDep, actor: ActorDep) -> SignatureRead:
+    """Where a framework agreement or a letter stands: its signing state, the dates and whether
+    the signed PDF is stored. The signing link is never in the answer."""
+    return signing.get(document_id, actor)
+
+
+@router.post("/documents/{document_id}/signature/refresh", response_model=SignatureRead)
+def refresh_signature(document_id: UUID, signing: SigningDep, actor: ActorDep) -> SignatureRead:
+    """Asks Documenso where the envelope stands and applies its answer, the way the webhook does,
+    then finishes what a signature leaves to do (the sealed copy, the mails)."""
+    return signing.refresh(document_id, actor)
+
+
+@router.post("/documents/{document_id}/signature/resend-mail", response_model=SignatureRead)
+def resend_signing_mail(document_id: UUID, signing: SigningDep, actor: ActorDep) -> SignatureRead:
+    """Mails the freelancer the same signing link again, for a document that still waits for the
+    signature."""
+    return signing.resend_mail(document_id, actor)
+
+
+@router.post("/documents/{document_id}/signature/cancel", response_model=SignatureRead)
+def cancel_framework_agreement(
+    document_id: UUID, signing: SigningDep, actor: ActorDep
+) -> SignatureRead:
+    """Cancels a framework agreement that is not signed yet, its envelope on Documenso included.
+    A letter is cancelled with its engagement (`POST /engagements/{id}/state`), not here."""
+    return signing.cancel_framework_agreement(document_id, actor)
+
+
+@router.post("/documents/{document_id}/signature/notice", response_model=SignatureRead)
+def record_framework_notice(
+    document_id: UUID, signing: SigningDep, actor: ActorDep
+) -> SignatureRead:
+    """Records a notice or a withdrawal on an active framework agreement: from now the freelancer
+    has none active and their next engagement writes a new one."""
+    return signing.record_framework_notice(document_id, actor)
+
+
+def _signed_on(raw: str | None) -> dt.date | None:
+    """The `signed_on` part of the upload, a day as `YYYY-MM-DD`; absent or empty is today."""
+    try:
+        return SignedCopyRequest.model_validate({"signed_on": raw or None}).signed_on
+    except ValidationError as error:
+        raise ValidationFailed(
+            "document", "signed_on", "il giorno della firma è una data", expected="AAAA-MM-GG"
+        ) from error
+
+
+@router.post(
+    "/documents/{document_id}/signed-copy",
+    response_model=SignatureRead,
+    openapi_extra=single_file_body(
+        "The signed PDF.",
+        {
+            "signed_on": {
+                "type": "string",
+                "format": "date",
+                "description": "The day it was signed, `YYYY-MM-DD`. Default: today.",
+            }
+        },
+    ),
+)
+async def upload_signed_copy(
+    document_id: UUID, request: Request, signing: SigningDep, actor: ActorDep
+) -> SignatureRead:
+    """Records a document signed by hand: the signed PDF becomes its next version and the document
+    is `signed`. A person's act (an agent never records a signature), and only for a document that
+    never went out through Documenso. The path sits under `/api/documents` so the proxy's upload
+    limit covers it. The role is checked before the body is read (`uploads.py`); the service
+    checks it again."""
+    actor.require_admin("upload_signed_document")
+    data, content_type, fields = await read_upload_with_fields(request, SIZE_MAX, "signed_on")
+    signed_on = _signed_on(fields.get("signed_on"))
+    return await run_in_threadpool(
+        signing.upload_signed_copy,
+        document_id,
+        data,
+        content_type or "application/octet-stream",
+        signed_on,
+        actor,
     )

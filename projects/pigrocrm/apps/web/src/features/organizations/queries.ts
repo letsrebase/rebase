@@ -127,7 +127,10 @@ export function useOrganizationCount(role: RegistryRole, enabled = true): number
 export function useOrganizationsByVat(term: string, enabled: boolean) {
   return useQuery({
     enabled: enabled && term !== '',
-    queryKey: queryKeys.organizations({ vat_lookup: term }),
+    // Not under the `organizations` prefix every write invalidates: saving the form this lookup
+    // belongs to would refetch it while the dialog is still closing, find the record just
+    // created and draw «Esiste già: <itself>». A reopened form asks again on mount.
+    queryKey: ['organization-vat-lookup', term] as const,
     queryFn: () => fetchOrganizationsPage({ search: term, role: 'any', limit: 10 }),
   })
 }

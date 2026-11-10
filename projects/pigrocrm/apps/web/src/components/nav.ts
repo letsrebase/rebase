@@ -7,10 +7,13 @@ import {
   Clock,
   FileInput,
   Handshake,
+  IdCard,
   Inbox,
   Landmark,
   LayoutDashboard,
   ListChecks,
+  PackageOpen,
+  Percent,
   Receipt,
   Settings,
   ShoppingCart,
@@ -20,7 +23,7 @@ import {
 } from 'lucide-react'
 import { SETTINGS_GROUPS, type SettingsTabValue } from '@/features/settings/tabs'
 import { modulesOfPath, type ModuleAccess, type ModuleKey } from '@/lib/modules'
-import { canSeeSettingsTab, type Role } from '@/lib/permissions'
+import { can, canSeeSettingsTab, type Action, type Role } from '@/lib/permissions'
 
 /**
  * The sidebar's navigation tables: what it links to, in the order of the brief Lorenzo
@@ -38,9 +41,11 @@ export const HOME = { to: '/app', label: 'Home', icon: LayoutDashboard, exact: t
  * tasks (late ones counted beside it), the calendar that draws the dated ones by day,
  * the reminders still unread (REB-734), the files that arrived and wait for a person
  * («In arrivo», REB-984) and the proposals an agent left for a decision (REB-750). «Amministrazione» reads in the order the money is supposed to move: the
- * register, the hours the next invoice is built from, the contract days (REB-745), then the taxes (REB-1026), which every role sees and only an administrator reads. None of
- * it is admin-gated: every write behind these pages is gated at the service, where the
- * refusal belongs. The Payment reminders page left the menu on 2026-09-09 at Ivan's request; its
+ * register, the hours the next invoice is built from, the contract days (REB-745), then the taxes (REB-1026), which every role sees and only an administrator reads, and last
+ * «Esporta per il commercialista» (REB-1028), which is the one entry only an administrator sees: it
+ * names the action that decides (`action`), pinned against the core by `lib/permissions.ts`, and
+ * the filter below reads that table. Every other entry is open to every role, and every write
+ * behind those pages is gated at the service, where the refusal belongs. The Payment reminders page left the menu on 2026-09-09 at Ivan's request; its
  * API and MCP tools remain.
  */
 export const SECTIONS = [
@@ -81,27 +86,53 @@ export const SECTIONS = [
         icon: Building2,
       },
       { to: '/app/purchases', label: 'Acquisti', icon: ShoppingCart },
+      // After «Acquisti», the order the money moves (the approved brief, 2026-11-10): shown to an
+      // administrator whose space has a legal entity that settles IVA by period (`gate`).
+      { to: '/app/vat', label: 'IVA', icon: Percent, action: 'list_iva_periods', gate: 'iva' },
       { to: '/app/hours', label: 'Ore', icon: Clock },
       { to: '/app/days', label: 'Giornate', icon: CalendarCheck },
       { to: '/app/taxes', label: 'Tasse', icon: Landmark },
       // The cash schedule and the bank accounts (the approved brief, 2026-11-10): the last place
       // the money reaches, after the register, the hours, the days and the taxes.
       { to: '/app/cash', label: 'Cassa', icon: Wallet },
+      // The people the company pays (the approved brief of 2026-11-10, REB-1027): pay is an
+      // administrator's, so the entry is theirs alone, as the service is.
+      { to: '/app/staff', action: 'list_staff', label: "Persone dell'azienda", icon: IdCard },
+      // The archive of a period for the accountant (REB-1028): an administrator's, in the sidebar
+      // and in «Altro». It belongs to no module, since the registers it reads are the core's.
+      {
+        to: '/app/export',
+        action: 'build_accountant_export',
+        label: 'Esporta per il commercialista',
+        icon: PackageOpen,
+      },
     ],
   },
 ] as const
 
 /** One entry of a section: `to` and `search` are where it links, `modules` overrides the
  *  modules the path alone would need (an entry that opens a core page on a module's view),
- *  and `id` tells apart two entries that open the same page. */
+ *  `action` hides it from a role that may not do it, and `id` tells apart two entries that open the same page. */
 export interface NavItem {
   readonly id?: string
+  /** A condition the module table cannot say: the entry is drawn only when the caller's gate
+   *  set holds it (`useNavGates`). */
+  readonly gate?: NavGate
   readonly to: LinkTo
   readonly search?: { readonly role: 'supplier' }
   readonly modules?: readonly ModuleKey[]
+  /** The action that decides who sees the entry, a row of `lib/permissions.ts`'s table. An entry
+   *  with none is open to every role. */
+  readonly action?: Action
   readonly label: string
   readonly icon: LucideIcon
 }
+
+/** What an entry may ask beyond its module: `iva` is an administrator's, with at least one
+ *  legal entity whose pack settles IVA by period (REB-1024). */
+export type NavGate = 'iva'
+
+const NO_GATES: ReadonlySet<NavGate> = new Set()
 
 /** The registry's page, which two entries open (`?role=` tells them apart). */
 export const REGISTRY_PATH = '/app/organizations'
@@ -112,12 +143,13 @@ export const navKey = (item: NavItem) => item.id ?? item.to
 /**
  * Whether an entry is the one the reader is on. The registry page serves two entries, so the
  * path is not enough there: «Fornitori» is the page on `?role=supplier` and «Clienti» the same
- * page on any other view (and a customer's own page), the way the sidebar always read it.
+ * page on any other view. `role` is the registry view (`useRegistryView`): the URL's `?role=` on
+ * the list, the organization's own roles on its page, so a supplier's page is «Fornitori» (REB-1038).
  */
 export function isNavItemActive(item: NavItem, pathname: string, role: string | undefined) {
   if (!isUnder(pathname, item.to)) return false
   if (item.to !== REGISTRY_PATH) return true
-  const onSuppliers = pathname === item.to && role === 'supplier'
+  const onSuppliers = role === 'supplier'
   return item.search?.role === 'supplier' ? onSuppliers : !onSuppliers
 }
 
@@ -125,13 +157,21 @@ export function isNavItemActive(item: NavItem, pathname: string, role: string | 
  * The sections as one space sees them (REB-953, spec 2026-11-09 B4): an entry whose module
  * is off is gone, and a section left with no entry goes with it. Which module owns which
  * entry is not written here: it is `ROUTE_MODULES`, the table the route guard reads too,
- * so a link and the page it leads to cannot disagree.
+ * so a link and the page it leads to cannot disagree. An entry that names an `action` is gone
+ * for a role that may not do it (REB-1028); while the role is not known, it is gone too.
  */
-export function visibleSections(access: ModuleAccess) {
+export function visibleSections(
+  access: ModuleAccess,
+  role: Role | undefined,
+  gates: ReadonlySet<NavGate> = NO_GATES,
+) {
   return SECTIONS.map((section) => ({
     ...section,
-    items: (section.items as readonly NavItem[]).filter((item) =>
-      access.on(...(item.modules ?? modulesOfPath(item.to))),
+    items: (section.items as readonly NavItem[]).filter(
+      (item) =>
+        access.on(...(item.modules ?? modulesOfPath(item.to))) &&
+        (item.action === undefined || (role !== undefined && can(role, item.action))) &&
+        (item.gate === undefined || gates.has(item.gate)),
     ),
   })).filter((section) => section.items.length > 0)
 }
@@ -154,9 +194,13 @@ export function phoneThirdPlace(access: ModuleAccess): typeof PHONE_DEALS | type
  * What «Altro» lists: every place the space has on that the bar itself does not draw. The
  * same `visibleSections` the sidebar reads, so a module that is off is gone from both.
  */
-export function phoneMoreItems(access: ModuleAccess) {
+export function phoneMoreItems(
+  access: ModuleAccess,
+  role: Role | undefined,
+  gates: ReadonlySet<NavGate> = NO_GATES,
+) {
   const drawn = new Set<string>([HOME.to, '/app/activities', phoneThirdPlace(access)?.to ?? ''])
-  const items = visibleSections(access).flatMap((section) =>
+  const items = visibleSections(access, role, gates).flatMap((section) =>
     section.items.filter((item) => !drawn.has(item.to)),
   )
   // «In arrivo» leads «Altro» (the inbox brief, REB-973): the phone has no sidebar to carry its

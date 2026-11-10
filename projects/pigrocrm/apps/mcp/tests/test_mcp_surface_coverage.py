@@ -126,7 +126,23 @@ _FORBIDDEN: dict[Method, str] = {
         "IvaSettlementService",
         "list_iva_settlements",
     ): "REB-1021: the tax position, as `get_tax_calendar`",
+    (
+        "IvaRegisterService",
+        "list_periods",
+    ): "REB-1024: the tax position, as `list_iva_settlements`",
+    (
+        "IvaRegisterService",
+        "read_sales_register",
+    ): "REB-1024: the tax position, as `list_iva_settlements`",
+    (
+        "IvaRegisterService",
+        "read_purchase_register",
+    ): "REB-1024: the tax position, as `list_iva_settlements`",
     ("AnalyticsService", "get_tax_calendar"): "REB-1004: tax position, like the estimate",
+    ("FeeBillingService", "bill"): (
+        "REB-1032: `bill_contract_fee`, the draft of a contract's recurring fee: the bridge from "
+        "a contract to an invoice line, as `bind_time_to_invoice`, so a `full_access` token's"
+    ),
     ("GmailSyncService", "discover"): (
         "interroga Gmail sul dominio del cliente a carico della quota e del consenso "
         "del titolare, come `sync` e `backfill`; a differenza loro l'installazione puo' "
@@ -929,6 +945,14 @@ _COVERED_OR_HUMAN: dict[Method, str] = {
         "needs from `build_accountant_export`, and the download path from "
         "`get_export_download_url`"
     ),
+    (
+        "AccountantExportService",
+        "count_exports",
+    ): "REB-1028: the export page's list says how many there are; same as `list_exports`",
+    ("AccountantExportService", "describe_parts"): (
+        "REB-1028: the export page lists the parts a build would hold before it is made; an agent "
+        "reads the index of the export it built, which names every part and every omission"
+    ),
     ("ProposalService", "accept"): "REB-806: deciding a proposal is a person's act. The "
     "token that read the mail (text written by somebody else) would also have proposed it, "
     "and proposing then accepting in one turn closes the chain. `Actor.require_person` "
@@ -1025,10 +1049,89 @@ _COVERED_OR_HUMAN: dict[Method, str] = {
     ),
     ("LetterService", "create_letter"): (
         "REB-1018: writes the engagement's letter as a legal document after a person has reviewed "
-        "the preview; an agent's route to it is `send_engagement_for_signature` (a later card)"
+        "the preview; an agent's route to it is `send_engagement_for_signature` (REB-1019)"
     ),
     ("LetterService", "create_framework_agreement"): (
         "REB-1018: same as `create_letter`, for the freelancer's framework agreement"
+    ),
+    ("LetterService", "freelancer"): (
+        "REB-1019: the freelancer's organization row, read by the signing service for the letter "
+        "it sends: a lookup inside `send_engagement_for_signature`, no act of its own"
+    ),
+    ("LetterService", "template"): (
+        "REB-1019: the text a document is written from, read by the signing service to refuse a "
+        "draft before anything leaves: a step of `send_engagement_for_signature`"
+    ),
+    ("LetterService", "require_party_data"): (
+        "REB-1019: refuses a send while a party's data is blank: a step of "
+        "`send_engagement_for_signature`, whose refusal an agent reads"
+    ),
+    ("LetterService", "render_for_signing"): (
+        "REB-1019: typesets the document as it leaves, a step of "
+        "`send_engagement_for_signature` and of the webhook; it writes no document by itself"
+    ),
+    ("SigningService", "get"): (
+        "REB-1019: one document's signature state: `refresh_document_signature` answers the same "
+        "`SignatureRead` and `send_engagement_for_signature` the state of every document of the "
+        "engagement, so no separate read tool is spent on it"
+    ),
+    ("SigningService", "upload_signed_copy"): (
+        "REB-1019: records a signature no signing site witnessed (a letter signed by hand, its PDF "
+        "uploaded): a person's act (`upload_signed_document` is person-only, collaborators design "
+        "§ 2), no tool with or without `full_access`"
+    ),
+    ("SigningService", "apply"): (
+        "REB-1019: the outcome of an envelope applied to its document, run by Documenso's webhook, "
+        "the sweep and `refresh_document_signature`, never asked for by name"
+    ),
+    ("SigningService", "cancel_letters_of"): (
+        "REB-1019: the hook of `EngagementService`'s cancellation that cancels the engagement's "
+        "letters and their envelopes: `cancel_engagement` is the tool, this is the step behind it"
+    ),
+    ("SigningService", "dispatch"): (
+        "REB-1019: hands one typeset document to Documenso inside the caller's transaction, a step "
+        "of `send_engagement_for_signature` and of the sweep that releases waiting letters"
+    ),
+    ("SigningService", "refuse_drafts"): (
+        "REB-1019: refuses a text still marked draft before anything leaves: a step of "
+        "`send_engagement_for_signature`"
+    ),
+    ("SigningService", "mail_signing_request"): (
+        "REB-1019: the mail with the signing link, sent by `send_engagement_for_signature` and "
+        "`resend_signing_mail` after their commit, never a tool of its own"
+    ),
+    ("SigningService", "freelancer_contact"): (
+        "REB-1019: whom the signing mail goes to, read by the steps that mail the freelancer"
+    ),
+    ("SigningService", "issuer_of"): (
+        "REB-1019: who issued a document, as the signing mails and the signing site name it: a "
+        "lookup behind the steps that mail the freelancer"
+    ),
+    ("SigningService", "number_of"): (
+        "REB-1019: a document's letter number for the signature read: a lookup behind "
+        "`refresh_document_signature` and `send_engagement_for_signature`"
+    ),
+    ("SigningService", "document"): (
+        "REB-1019: loads a framework agreement or a letter by id for the steps above: a lookup, "
+        "reached through every signing tool"
+    ),
+    ("SigningService", "read"): (
+        "REB-1019: the `SignatureRead` of a document with no actor check, called by the steps that "
+        "have already checked it and by the webhook: `refresh_document_signature` is the tool"
+    ),
+    ("SigningService", "lock_document"): (
+        "REB-1019: row lock inside the steps that move a document: a transaction detail"
+    ),
+    ("SigningService", "lock_engagement"): (
+        "REB-1019: row lock inside the steps that move an engagement: a transaction detail"
+    ),
+    ("SigningService", "require_documenso"): (
+        "REB-1019: refuses with `signing_unavailable` when the installation has no Documenso: a "
+        "precondition of every signing tool, not an operation"
+    ),
+    ("SigningService", "require_sender"): (
+        "REB-1019: refuses with `signing_unavailable` when the installation has no mail provider: "
+        "a precondition of the tools that mail the freelancer, not an operation"
     ),
     ("EngagementService", "ensure"): (
         "the engagements door another product, the hub, calls under its own "
@@ -1063,6 +1166,11 @@ _COVERED_OR_HUMAN: dict[Method, str] = {
         "for an agent in the space: the deal's own hours are already `list_time_entries`, "
         "and this route reads nothing else of the space -- not its organizations, not its "
         "other deals, not an invoice these hours do not sit on"
+    ),
+    ("TenantService", "get_by_id"): (
+        "REB-1019: the registry's lookup of a space by id, which the Documenso webhook runs on the "
+        "envelope's `externalId` to find the space it belongs to, before any actor exists: "
+        "the registry of spaces is not a space's own surface"
     ),
     ("TenantService", "count_for_owner"): (
         "il registro degli spazi non e' superficie di uno spazio: lo legge la registrazione "

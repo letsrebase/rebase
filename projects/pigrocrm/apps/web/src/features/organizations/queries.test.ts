@@ -1,7 +1,11 @@
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { renderHook } from '@testing-library/react'
+import { createElement, type ReactNode } from 'react'
 import { describe, expect, it } from 'vitest'
+import { queryKeys } from '@/lib/query'
 import { buildOrganizationColumns } from './columns'
 import type { FieldDefinition } from '@/lib/schema'
-import type { Organization } from './queries'
+import { useOrganizationsByVat, type Organization } from './queries'
 
 /**
  * Reads a native column's cell value the same way `DataTable` does internally --
@@ -107,5 +111,22 @@ describe('buildOrganizationColumns', () => {
     expect(cellValue(vipColumn!, { ...BASE_CUSTOMER, custom_fields: {} })).toBe('No')
     expect(cellValue(vipColumn!, { ...BASE_CUSTOMER, custom_fields: { vip: false } })).toBe('No')
     expect(cellValue(vipColumn!, { ...BASE_CUSTOMER, custom_fields: { vip: true } })).toBe('Sì')
+  })
+})
+
+describe('useOrganizationsByVat', () => {
+  it('is not refetched by the writes that invalidate the organizations, so a saved form never finds itself', () => {
+    // Saving the form refetched this lookup while the dialog was still closing and it found the
+    // record just created: «Esiste già: <itself>» (the e2e suite caught it).
+    const client = new QueryClient()
+    const wrapper = ({ children }: { children: ReactNode }) =>
+      createElement(QueryClientProvider, { client }, children)
+    renderHook(() => useOrganizationsByVat('12345678901', false), { wrapper })
+
+    void client.invalidateQueries({ queryKey: queryKeys.organizations() })
+
+    const lookup = client.getQueryCache().find({ queryKey: ['organization-vat-lookup', '12345678901'] })
+    expect(lookup).toBeDefined()
+    expect(lookup?.state.isInvalidated).toBe(false)
   })
 })

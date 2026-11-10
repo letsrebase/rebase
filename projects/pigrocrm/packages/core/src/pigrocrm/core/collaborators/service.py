@@ -8,10 +8,12 @@ with the administrator's token, and creating, cancelling, closing or setting tax
 """
 
 import datetime as dt
+from collections.abc import Callable
 from decimal import Decimal
 from typing import Any
 from uuid import UUID
 
+from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -39,7 +41,8 @@ from pigrocrm.core.collaborators.schemas import (
 from pigrocrm.core.contracts.models import Contract
 from pigrocrm.core.db import today_local
 from pigrocrm.core.deals.models import Deal
-from pigrocrm.core.errors import Conflict, NotFound, ValidationFailed
+from pigrocrm.core.documents.models import Document
+from pigrocrm.core.errors import Conflict, NotFound, SigningUnavailable, ValidationFailed
 from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.organizations.schemas import OrganizationRead, OrganizationUpdate
 from pigrocrm.core.organizations.service import OrganizationService
@@ -59,11 +62,21 @@ def _days(value: Decimal) -> str:
     return text.replace(".", ",")
 
 
+# What a cancellation does about the engagement's letter, handed in by whoever can reach Documenso
+# (`SigningService.cancel_letters_of`): it runs inside the cancellation's transaction and answers
+# what is left to do after the commit (the freelancer's mail).
+CancelHook = Callable[["Engagement", Actor], Callable[[], None]]
+
+
 class EngagementService:
-    def __init__(self, session: Session) -> None:
+    def __init__(self, session: Session, on_cancel: CancelHook | None = None) -> None:
+        """`on_cancel` is how an adapter that can reach Documenso cancels the engagement's letter
+        with it. Without one, a letter that was never sent is cancelled here, and one that is out
+        for signature refuses the cancellation: its link would stay alive."""
         self.session = session
         self.repo = EngagementRepository(session)
         self.activities = ActivityService(session)
+        self.on_cancel = on_cancel
 
     # ---- reads ----------------------------------------------------------------------------
 
@@ -219,6 +232,7 @@ class EngagementService:
             raise ValidationFailed(
                 ENTITY, "ended_on", "la data di fine si da' solo chiudendo un incarico attivo"
             )
+        after = self._cancel_letter(engagement, actor) if state == "cancelled" else None
         engagement.state = state
         self.session.flush()
         # Signed or closed, the engagement owes the freelancer its forecasts; cancelled, none.
@@ -227,10 +241,37 @@ class EngagementService:
             ENTITY, engagement.id, "state_changed", actor, {"from": previous, "to": state}
         )
         self.session.commit()
+        if after is not None:
+            after()
         return self._read(engagement)
 
     def cancel(self, engagement_id: UUID, actor: Actor) -> EngagementRead:
         return self.transition(engagement_id, "cancelled", actor)
+
+    def _cancel_letter(self, engagement: Engagement, actor: Actor) -> Callable[[], None] | None:
+        """The engagement's letter goes with it (collaborators design § 2: a cancelled document is
+        cancelled on Documenso too). With the hook, it does all of that; without one, a letter that
+        never left is cancelled here and one that is out for signature refuses the cancellation."""
+        if self.on_cancel is not None:
+            return self.on_cancel(engagement, actor)
+        letters = list(
+            self.session.scalars(
+                select(Document).where(
+                    Document.engagement_id == engagement.id,
+                    Document.deleted_at.is_(None),
+                    Document.signature_state.in_(("generated", "pending", "sent")),
+                )
+            )
+        )
+        if any(letter.signature_state == "sent" for letter in letters):
+            raise SigningUnavailable(
+                "La lettera di questo incarico è già partita per la firma: va annullata dal "
+                "servizio di firma, che qui non è raggiungibile."
+            )
+        for letter in letters:
+            letter.signature_state = "cancelled"
+            letter.cancel_reason = "Annullato con il suo incarico."
+        return None
 
     def close(
         self, engagement_id: UUID, actor: Actor, ended_on: dt.date | None = None

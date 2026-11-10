@@ -109,6 +109,17 @@ export const MIN_ROLE = {
   reverse_settlement: 'collaborator',
   settle_outgoing_due_item: 'admin',
   reverse_outgoing_settlement: 'admin',
+  // Staff and their pay (REB-977, REB-1008, REB-1009): every read and write is an
+  // administrator's, and the service refuses anyone else before it looks anything up.
+  list_staff: 'admin',
+  get_staff_member: 'admin',
+  create_staff_member: 'admin',
+  update_staff_member: 'admin',
+  set_payroll_pay_day: 'admin',
+  get_payroll_month: 'admin',
+  record_staff_payslip: 'admin',
+  propose_staff_hourly_cost: 'admin',
+  adopt_staff_hourly_cost: 'admin',
   // Engagements with freelancers (REB-976): every read and write is an administrator's, as the
   // hub's matches were. No screen consults them yet; the rows are here so that the one that
   // does finds the minimum already pinned against the service.
@@ -118,6 +129,11 @@ export const MIN_ROLE = {
   cancel_engagement: 'admin',
   close_engagement: 'admin',
   send_engagement_for_signature: 'admin',
+  resend_signing_mail: 'admin',
+  refresh_document_signature: 'admin',
+  cancel_framework_agreement: 'admin',
+  record_framework_notice: 'admin',
+  upload_signed_document: 'admin',
   activate_engagement: 'admin',
   read_engagement_report: 'admin',
   record_monthly_report: 'admin',
@@ -135,6 +151,8 @@ export const MIN_ROLE = {
   mark_transmitted_externally: 'admin',
   bind_time_to_invoice: 'admin',
   bill_contract_days: 'admin',
+  // The draft of a contract's recurring fee (REB-1032), the same rung as the days'.
+  bill_contract_fee: 'admin',
   // Registering an invoice issued elsewhere: the start page's invoice door (REB-224) is
   // the admin's, because the import its handoff asks the assistant for is.
   import_issued_invoice: 'admin',
@@ -201,6 +219,12 @@ export const MIN_ROLE = {
   get_fiscal_estimate: 'admin',
   // The tax calendar (REB-1004) is the same fiscal position as the estimate: an administrator's.
   get_tax_calendar: 'admin',
+  // The accountant's period export (REB-1028): every fiscal figure of a company, so the page, its
+  // entry in the menu and the download are an administrator's, as the core guards them.
+  build_accountant_export: 'admin',
+  get_export_download_url: 'admin',
+  // The IVA periods and the registers behind them (REB-1024), the same position again.
+  list_iva_periods: 'admin',
   create_cost_category: 'admin',
   update_cost_category: 'admin',
   archive_cost_category: 'admin',

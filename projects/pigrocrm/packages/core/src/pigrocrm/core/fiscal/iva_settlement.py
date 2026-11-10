@@ -37,7 +37,7 @@ from dataclasses import dataclass
 from decimal import Decimal
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import ColumnElement, func, select
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.activities.service import ActivityService
@@ -123,6 +123,79 @@ def compute_figures(
     else:
         outcome = "due"
     return Figures(surcharge, result, outcome)
+
+
+def carry_in(previous: IvaSettlement | None) -> tuple[Decimal, Decimal]:
+    """`(credit, small debit)` the previous period leaves to this one."""
+    credit = (
+        -previous.result if previous is not None and previous.outcome == "credit" else ZERO_MONEY
+    )
+    debit = (
+        previous.result if previous is not None and previous.outcome == "carried" else ZERO_MONEY
+    )
+    return credit, debit
+
+
+def deductible_vat(vat: Decimal, share: Decimal) -> Decimal:
+    """The part of one purchase line's VAT the register deducts."""
+    return round_money(vat * share / _HUNDRED)
+
+
+def sales_conditions(legal_entity_id: UUID, bounds: Bounds) -> list[ColumnElement[bool]]:
+    """Which invoices are the sales register of a period: the legal entity's invoices (never a
+    proforma) dated in it, a sale being placed by its issue date and not its operation date
+    (module docstring). The status is the caller's: the settlement counts the issued ones, the
+    register also lists the annulled numbers."""
+    return [
+        Invoice.legal_entity_id == legal_entity_id,
+        Invoice.type == "invoice",
+        Invoice.deleted_at.is_(None),
+        Invoice.issue_date >= bounds.start,
+        Invoice.issue_date <= bounds.end,
+    ]
+
+
+def purchase_conditions(legal_entity_id: UUID, bounds: Bounds) -> list[ColumnElement[bool]]:
+    """Which purchases are the purchase register of a period: the legal entity's registered
+    invoices and credit notes whose `iva_period` falls in it."""
+    return [
+        Purchase.legal_entity_id == legal_entity_id,
+        Purchase.kind.in_(VAT_KINDS),
+        Purchase.status == "registered",
+        Purchase.deleted_at.is_(None),
+        Purchase.iva_period >= bounds.start,
+        Purchase.iva_period <= bounds.end,
+    ]
+
+
+def sales_vat(session: Session, legal_entity_id: UUID, bounds: Bounds) -> Decimal:
+    """The IVA due on the sales issued in the period. A sale under split payment owes none: the
+    buyer pays it to the tax office itself (art. 17-ter c. 1 DPR 633/72, A5)."""
+    rows = session.execute(
+        select(Invoice.vat_amount).where(
+            *sales_conditions(legal_entity_id, bounds),
+            Invoice.status == "issued",
+            Invoice.split_payment.is_(False),
+        )
+    ).scalars()
+    return sum_money(rows)
+
+
+def purchase_vat(
+    session: Session, legal_entity_id: UUID, bounds: Bounds
+) -> tuple[Decimal, Decimal]:
+    """`(reverse-charge VAT owed, deductible VAT)` of the purchases registered in the period,
+    each line at its deductible share."""
+    rows = session.execute(
+        select(
+            Purchase.reverse_charge, PurchaseVatLine.vat_amount, PurchaseVatLine.deductible_share
+        )
+        .join(PurchaseVatLine, PurchaseVatLine.purchase_id == Purchase.id)
+        .where(*purchase_conditions(legal_entity_id, bounds))
+    ).all()
+    owed = sum_money(vat for reverse, vat, _ in rows if reverse)
+    deductible = sum_money(deductible_vat(vat, share) for _, vat, share in rows)
+    return owed, deductible
 
 
 def payment_date(pack: FiscalPack, frequency: str, year: int, number: int) -> CalendarDate | None:
@@ -422,18 +495,9 @@ class IvaSettlementService:
                 "il calendario fiscale non ha la scadenza di questo periodo",
                 expected="un periodo di un anno di cui il calendario ha le date",
             )
-        sales = self._sales_vat(legal_entity_id, bounds)
-        reverse_charge, deductible = self._purchase_vat(legal_entity_id, bounds)
-        credit_in = (
-            -previous.result
-            if previous is not None and previous.outcome == "credit"
-            else ZERO_MONEY
-        )
-        debit_in = (
-            previous.result
-            if previous is not None and previous.outcome == "carried"
-            else ZERO_MONEY
-        )
+        sales = sales_vat(self.session, legal_entity_id, bounds)
+        reverse_charge, deductible = purchase_vat(self.session, legal_entity_id, bounds)
+        credit_in, debit_in = carry_in(previous)
         figures = compute_figures(
             law,
             frequency=frequency,
@@ -501,48 +565,6 @@ class IvaSettlementService:
             return
         self.due_items.restate(item.id, amount=row.result, own_date=row.payment_due_on)
 
-    # ---- the registers ---------------------------------------------------------------------
-
-    def _sales_vat(self, legal_entity_id: UUID, bounds: Bounds) -> Decimal:
-        """The IVA due on the sales issued in the period. A sale under split payment owes
-        none: the buyer pays it to the tax office itself (art. 17-ter c. 1 DPR 633/72, A5). A
-        sale is placed by its issue date, not its operation date (module docstring)."""
-        rows = self.session.execute(
-            select(Invoice.vat_amount).where(
-                Invoice.legal_entity_id == legal_entity_id,
-                Invoice.type == "invoice",
-                Invoice.status == "issued",
-                Invoice.deleted_at.is_(None),
-                Invoice.split_payment.is_(False),
-                Invoice.issue_date >= bounds.start,
-                Invoice.issue_date <= bounds.end,
-            )
-        ).scalars()
-        return sum_money(rows)
-
-    def _purchase_vat(self, legal_entity_id: UUID, bounds: Bounds) -> tuple[Decimal, Decimal]:
-        """`(reverse-charge VAT owed, deductible VAT)` of the purchases registered in the
-        period, each line at its deductible share."""
-        rows = self.session.execute(
-            select(
-                Purchase.reverse_charge,
-                PurchaseVatLine.vat_amount,
-                PurchaseVatLine.deductible_share,
-            )
-            .join(PurchaseVatLine, PurchaseVatLine.purchase_id == Purchase.id)
-            .where(
-                Purchase.legal_entity_id == legal_entity_id,
-                Purchase.kind.in_(VAT_KINDS),
-                Purchase.status == "registered",
-                Purchase.deleted_at.is_(None),
-                Purchase.iva_period >= bounds.start,
-                Purchase.iva_period <= bounds.end,
-            )
-        ).all()
-        owed = sum_money(vat for reverse, vat, _ in rows if reverse)
-        deductible = sum_money(round_money(vat * share / _HUNDRED) for _, vat, share in rows)
-        return owed, deductible
-
     # ---- plumbing --------------------------------------------------------------------------
 
     def _first_year(self, legal_entity_id: UUID, from_year: int, target_year: int) -> int:
@@ -588,8 +610,14 @@ __all__ = [
     "Figures",
     "IvaSettlementService",
     "annual_return_date",
+    "carry_in",
     "compute_figures",
+    "deductible_vat",
     "label",
     "payment_date",
     "period_bounds",
+    "purchase_conditions",
+    "purchase_vat",
+    "sales_conditions",
+    "sales_vat",
 ]

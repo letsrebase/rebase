@@ -22,6 +22,7 @@ PARTS: tuple[PartDefinition, ...] = (
         folder="vendite",
         label="Registro delle vendite",
         date_rule="per data di emissione",
+        contents="Elenco CSV",
         build=build_sales_register,
         # No IVA register for a company outside Italy (§ 1, « Which parts exist »).
         not_for_packs=(PACK_NON_IT,),
@@ -31,6 +32,7 @@ PARTS: tuple[PartDefinition, ...] = (
         folder="fatture-emesse",
         label="Fatture emesse: file originali",
         date_rule="per data del documento",
+        contents="File originali",
         build=build_invoice_files,
     ),
     PartDefinition(
@@ -38,6 +40,7 @@ PARTS: tuple[PartDefinition, ...] = (
         folder="fatture-ricevute",
         label="Fatture ricevute: file originali",
         date_rule="per data del documento",
+        contents="File originali",
         build=build_received_invoice_files,
         scopes=("entity", "shared"),
         requires_modules=("purchases",),
@@ -47,6 +50,7 @@ PARTS: tuple[PartDefinition, ...] = (
         folder="ricevute-e-spese",
         label="Ricevute e spese: elenco e file originali",
         date_rule="per data del documento",
+        contents="Elenco CSV e file originali",
         build=build_receipts_and_expenses,
         scopes=("entity", "shared"),
         requires_modules=("purchases",),
@@ -56,6 +60,7 @@ PARTS: tuple[PartDefinition, ...] = (
         folder="scadenze",
         label="Scadenze aperte a fine periodo",
         date_rule="aperte all'ultimo giorno del periodo",
+        contents="Elenco CSV",
         build=build_open_items,
     ),
     PartDefinition(
@@ -63,6 +68,7 @@ PARTS: tuple[PartDefinition, ...] = (
         folder="pagamenti",
         label="Pagamenti registrati",
         date_rule="per data di pagamento",
+        contents="Elenco CSV",
         build=build_settlements,
     ),
 )

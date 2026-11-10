@@ -163,6 +163,12 @@ export const queryKeys = {
   // «tutte» the economic tab holds one entry per legal entity at once.
   fiscalEstimate: (year: number, legalEntityId: string | null = null) =>
     ['fiscal-estimate', year, legalEntityId] as const,
+  // The IVA cycle of one legal entity (REB-1024): the entities that have it, a year's periods and
+  // a period's register. `entityId` is the legal entity the page reads, never a sum.
+  ivaEntities: () => ['iva-entities'] as const,
+  ivaPeriods: (year: number, entityId: string | null) => ['iva-periods', year, entityId] as const,
+  ivaRegister: (kind: 'sales' | 'purchases', year: number, number: number, entityId: string | null) =>
+    ['iva-register', kind, year, number, entityId] as const,
   // The tax calendar is one legal entity's and one calendar year's (REB-1026).
   taxCalendar: (year: number, legalEntityId: string | null = null) =>
     ['tax-calendar', year, legalEntityId] as const,
@@ -230,6 +236,10 @@ export const queryKeys = {
   reminderPreferences: ['reminder-preferences'] as const,
   contractBillableDays: (id: string, params?: unknown) =>
     ['contract', id, 'billable-days', params ?? {}] as const,
+  // The occurrences of a contract's recurring fees (REB-1032), under the contract's own key so
+  // anything that invalidates the contract reads them again.
+  contractFeeOccurrences: (id: string, params?: unknown) =>
+    ['contract', id, 'fee-occurrences', params ?? {}] as const,
   contractRegister: (id: string, params?: unknown) =>
     ['contract', id, 'register', params ?? {}] as const,
   // Web push (REB-738): whether this installation can send it and the key a browser

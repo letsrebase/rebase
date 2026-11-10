@@ -44,5 +44,6 @@ export function useCursorPages<T>({
     hasMore: query.hasNextPage,
     isFetchingMore: query.isFetchingNextPage,
     loadMore: () => void query.fetchNextPage(),
+    refetch: () => void query.refetch(),
   }
 }

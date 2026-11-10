@@ -194,3 +194,24 @@ class NoteNotChangeable(DomainError):
             action="change_note",
             note_id=str(note_id),
         )
+
+
+class SigningUnavailable(DomainError):
+    """Signing cannot run here: the installation has no Documenso, or no way to mail the link.
+    The API answers 503 with the sentence, which says what the installation is missing, so the
+    person is told to send the document by hand instead of waiting on a retry."""
+
+    code = "signing_unavailable"
+
+
+class DocumensoFailed(DomainError):
+    """Documenso refused a call, did not answer, or answered something this code does not read.
+    `message` is the sentence for a person (Documenso's own `message` and never its stack
+    trace); `detail` is what the log needs to tell a 404 from a DNS failure, and is kept out of
+    `details` so that it never reaches a response."""
+
+    code = "documenso_failed"
+
+    def __init__(self, message: str, detail: str | None = None) -> None:
+        super().__init__(message)
+        self.detail = detail

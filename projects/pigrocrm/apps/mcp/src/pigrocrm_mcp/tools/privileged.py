@@ -44,7 +44,7 @@ decoration: it is the only warning an agent reads.
 from collections.abc import Callable
 from dataclasses import asdict
 from datetime import date
-from typing import Any, cast
+from typing import Any, Literal, cast
 from uuid import UUID
 
 from mcp.server import MCPServer
@@ -65,8 +65,11 @@ from pigrocrm.core.bank.schemas import (
 )
 from pigrocrm.core.bank.statements import BankStatementReadService
 from pigrocrm.core.config import Settings, gmail_configured
+from pigrocrm.core.contracts.fee_billing import FeeBillingService
+from pigrocrm.core.contracts.fee_schemas import FeeBillRequest
 from pigrocrm.core.errors import ValidationFailed
 from pigrocrm.core.fiscal.declared import DeclaredTaxFigureService
+from pigrocrm.core.fiscal.iva_register import IvaRegisterService
 from pigrocrm.core.fiscal.iva_settlement import IvaSettlementService
 from pigrocrm.core.fiscal.schemas import DeclaredTax, DeclaredTaxFigureSet
 from pigrocrm.core.gmail.attachment_text import GmailAttachmentService
@@ -586,6 +589,35 @@ def register(
             .model_dump(mode="json")
         )
 
+    @mcp.tool(annotations=ADDITIVE)
+    @guard
+    def bill_contract_fee(contract_id: str, rate_card_id: str, period_start: str) -> dict[str, Any]:
+        """Creates the **draft** invoice that bills one occurrence of a contract's recurring fee:
+        one line with the rate card's fee, the card and the occurrence date on it, under the
+        contract's customer. It issues nothing and consumes no numbers: read the draft with
+        `get_invoice` and, if right, pass it to `issue_invoice`; issuing it replaces that
+        occurrence's forecast.
+
+        `period_start` (`YYYY-MM-DD`) must be a date the rate card's schedule produces, as
+        `list_fee_occurrences` lists them.
+        A second call for the same occurrence changes nothing and answers the draft or proforma
+        that already bills it (`created: false`); one on an issued invoice is refused, naming
+        the invoice. The contract has to be active, expired or terminated, and in euros.
+        """
+        return (
+            # `context.storage`, never the default, for the reason `bind_time_to_invoice` gives.
+            FeeBillingService(context.session, context.storage)
+            .bill(
+                UUID(contract_id),
+                FeeBillRequest(
+                    rate_card_id=UUID(rate_card_id),
+                    period_start=required_iso_date(period_start, "period_start"),
+                ),
+                context.actor,
+            )
+            .model_dump(mode="json")
+        )
+
     @mcp.tool(annotations=READ_ONLY)
     @guard
     def get_fiscal_estimate(year: int, legal_entity_id: str | None = None) -> dict[str, Any]:
@@ -633,6 +665,46 @@ def register(
             year, context.actor, legal_entity_id=parse_legal_entity_id(legal_entity_id)
         )
         return {"settlements": [row.model_dump(mode="json") for row in settlements]}
+
+    @mcp.tool(annotations=READ_ONLY)
+    @guard
+    def list_iva_periods(year: int, legal_entity_id: str | None = None) -> dict[str, Any]:
+        """The IVA periods of a company's year (months or quarters, by its frequency), each with its
+        ladder: sales VAT, deductible purchase VAT, the credit carried in and the result (positive
+        is owed, negative a credit), the state (`open` runs until its last day, its figures are
+        running) and the payment date. With several companies pass `legal_entity_id`.
+        """
+
+        periods = IvaRegisterService(context.session).list_periods(
+            year, context.actor, legal_entity_id=parse_legal_entity_id(legal_entity_id)
+        )
+        return {"periods": [row.model_dump(mode="json") for row in periods]}
+
+    @mcp.tool(annotations=READ_ONLY)
+    @guard
+    def get_iva_register(
+        year: int,
+        number: int,
+        register: Literal["sales", "purchases"],
+        legal_entity_id: str | None = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> dict[str, Any]:
+        """One IVA period's sales or purchase register: the documents with their VAT groups
+        (the purchase register at each group's deductible share), a summary by rate and the totals
+        of the whole period, `limit` rows from `offset`. `number` is the month or the quarter.
+        With several companies pass `legal_entity_id`.
+        """
+
+        service = IvaRegisterService(context.session)
+        parsed = parse_legal_entity_id(legal_entity_id)
+        if register == "sales":
+            return service.read_sales_register(
+                year, number, context.actor, legal_entity_id=parsed, limit=limit, offset=offset
+            ).model_dump(mode="json")
+        return service.read_purchase_register(
+            year, number, context.actor, legal_entity_id=parsed, limit=limit, offset=offset
+        ).model_dump(mode="json")
 
     @mcp.tool(annotations=DESTRUCTIVE)
     @guard
@@ -962,6 +1034,45 @@ def register(
     def cancel_engagement(engagement_id: str) -> dict[str, Any]:
         """Cancel a draft or an engagement out for signature. Needs a full-access admin token."""
         return collaborators.cancel(context, engagement_id)
+
+    @mcp.tool(annotations=ADDITIVE)
+    @guard
+    def send_engagement_for_signature(engagement_id: str) -> dict[str, Any]:
+        """Send an engagement's letter to the freelancer to sign on the signing site, with the
+        mail that carries the link. Only the freelancer signs. When the freelancer has no active
+        framework agreement of the letter's regime it goes first (written now if there is none)
+        and the letter follows once it is signed. A letter still a draft text, an engagement not
+        in draft or awaiting signature, or a party's data still blank is refused naming it. The
+        answer says what `sent` and the state of each document. Needs signing set up on the
+        installation and a full-access admin token.
+        """
+        return collaborators.send_for_signature(context, engagement_id)
+
+    @mcp.tool(annotations=ADDITIVE)
+    @guard
+    def resend_signing_mail(document_id: str) -> dict[str, Any]:
+        """Send the freelancer the signing mail again, with the same link, for a document still
+        waiting for the signature. Needs a full-access admin token.
+        """
+        return collaborators.resend_signing_mail(context, document_id)
+
+    @mcp.tool(annotations=DESTRUCTIVE)
+    @guard
+    def cancel_framework_agreement(document_id: str) -> dict[str, Any]:
+        """Cancel a framework agreement not signed yet, on the signing site too, so the link the
+        freelancer got stops working. A letter is cancelled with its engagement
+        (`cancel_engagement`). Needs a full-access admin token.
+        """
+        return collaborators.cancel_framework_agreement(context, document_id)
+
+    @mcp.tool(annotations=DESTRUCTIVE)
+    @guard
+    def record_framework_notice(document_id: str) -> dict[str, Any]:
+        """Record a notice of termination or a withdrawal on an active framework agreement: the
+        freelancer has none active from then on, and their next engagement writes a new one. Needs
+        a full-access admin token.
+        """
+        return collaborators.record_framework_notice(context, document_id)
 
     @mcp.tool(annotations=DESTRUCTIVE)
     @guard

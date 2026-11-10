@@ -481,7 +481,7 @@ def test_a_part_whose_module_is_off_is_omitted_with_the_module_named(
     def build(ctx: PartContext) -> PartOutput:
         return PartOutput([BundleFile("a.csv", b"x")], [IndexEntry("a.csv", 1, "rows")])
 
-    part = PartDefinition("p", "p", "Parte", "per data", build, requires_modules=("deals",))
+    part = PartDefinition("p", "p", "Parte", "per data", "CSV", build, requires_modules=("deals",))
     entity = LegalEntityRepository(db_session).default()
     assert entity is not None
 
@@ -955,6 +955,10 @@ def test_a_build_leaves_a_trace_and_a_snapshot_of_its_index(
     assert row is not None
     assert row.expires_at == dt.datetime(2027, 5, 2, 9, 30, tzinfo=dt.UTC)
     assert {line["key"] for line in row.checklist["parts"]} >= {"sales_register"}
+    omitted = {
+        line["key"]: line["cause"] for line in row.checklist["parts"] if line["status"] == "omitted"
+    }
+    assert omitted == {}
     kinds = [a.kind for a in db_session.query(Activity).filter_by(entity_id=row.id)]
     assert kinds == ["accountant_export_built"]
 
@@ -1203,3 +1207,107 @@ def test_a_partly_deleted_export_is_finished_by_the_next_pass(
     for key in keys:
         with pytest.raises(NotFound):
             local_storage.get(key)
+
+
+# --- what the page reads before a build: the parts, the list's year and count -----------
+
+
+def test_the_parts_that_apply_follow_the_modules_and_the_pack(
+    db_session: Session, local_storage: LocalFileStorage, invoices: InvoiceService
+) -> None:
+    service = AccountantExportService(db_session, local_storage, get_settings())
+    keys = [part.key for part in service.describe_parts(ADMIN)]
+    assert keys == [part.key for part in PARTS]
+    sales = service.describe_parts(ADMIN)[0]
+    assert (sales.label, sales.date_rule, sales.contents) == (
+        "Registro delle vendite",
+        "per data di emissione",
+        "Elenco CSV",
+    )
+
+    off = get_settings().model_copy(update={"module_purchases": False})
+    without_purchases = AccountantExportService(db_session, local_storage, off)
+    assert "received_invoice_files" not in [p.key for p in without_purchases.describe_parts(ADMIN)]
+
+    entity = LegalEntityRepository(db_session).default()
+    assert entity is not None
+    profile = db_session.query(FiscalProfile).filter_by(legal_entity_id=entity.id).one()
+    profile.pack_id = "non-it"
+    db_session.flush()
+    assert "sales_register" not in [part.key for part in service.describe_parts(ADMIN)]
+
+
+def test_the_parts_read_follows_the_builds_rules_about_who_asks_for_what(
+    db_session: Session, local_storage: LocalFileStorage
+) -> None:
+    service = AccountantExportService(db_session, local_storage, get_settings())
+    default = LegalEntityRepository(db_session).default()
+    assert default is not None
+    _second_entity(db_session)
+    scoped = Actor(id=uuid4(), type="user", role="admin", legal_entities=(default.id,))
+
+    with pytest.raises(PermissionDenied):
+        service.describe_parts(COLLABORATOR, default.id)
+    with pytest.raises(ScopedAdmin):
+        service.describe_parts(scoped, all_entities=True)
+    with pytest.raises(NotFound):
+        service.describe_parts(scoped, uuid4())
+    with pytest.raises(ValidationFailed):
+        service.describe_parts(ADMIN, default.id, all_entities=True)
+    assert service.describe_parts(ADMIN, all_entities=True)
+
+
+def test_a_part_left_out_says_whether_a_module_or_the_pack_did_it(
+    db_session: Session, local_storage: LocalFileStorage, invoices: InvoiceService
+) -> None:
+    settings = get_settings().model_copy(update={"module_purchases": False})
+    export = Exports(AccountantExportService(db_session, local_storage, settings)).build(
+        Q1, ADMIN, now=NOW
+    )
+    causes = {
+        line["key"]: line["cause"]
+        for line in db_session.get(AccountantExportRow, export.stored.id).checklist["parts"]  # type: ignore[union-attr]
+        if line["status"] == "omitted"
+    }
+    assert causes == {"received_invoice_files": "module", "receipts_and_expenses": "module"}
+
+    entity = LegalEntityRepository(db_session).default()
+    assert entity is not None
+    db_session.query(FiscalProfile).filter_by(legal_entity_id=entity.id).one().pack_id = "non-it"
+    db_session.flush()
+    again = Exports(AccountantExportService(db_session, local_storage, get_settings())).build(
+        Q1, ADMIN, now=NOW
+    )
+    packed = {
+        line["key"]: line["cause"]
+        for line in db_session.get(AccountantExportRow, again.stored.id).checklist["parts"]  # type: ignore[union-attr]
+        if line["status"] == "omitted"
+    }
+    assert packed == {"sales_register": "pack"}
+
+
+def test_the_list_pages_by_offset_and_filters_by_the_year_the_period_starts(
+    db_session: Session, exports: Exports, local_storage: LocalFileStorage
+) -> None:
+    service = exports.service
+    first = exports.build(Q1, ADMIN, now=NOW)
+    second = exports.build(Q1, ADMIN, now=NOW + dt.timedelta(minutes=1))
+    last_year = exports.build(
+        Period(D(2025, 10, 1), D(2025, 12, 31)), ADMIN, now=NOW + dt.timedelta(minutes=2)
+    )
+
+    assert [e.id for e in service.list_exports(ADMIN)] == [
+        last_year.stored.id,
+        second.stored.id,
+        first.stored.id,
+    ]
+    assert [e.id for e in service.list_exports(ADMIN, offset=1, limit=1)] == [second.stored.id]
+    assert [e.id for e in service.list_exports(ADMIN, year=2026)] == [
+        second.stored.id,
+        first.stored.id,
+    ]
+    assert service.count_exports(ADMIN) == 3
+    assert service.count_exports(ADMIN, year=2025) == 1
+    assert service.count_exports(ADMIN, year=2024) == 0
+    with pytest.raises(PermissionDenied):
+        service.count_exports(COLLABORATOR)

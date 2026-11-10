@@ -14,6 +14,7 @@ import { ContractDays } from '@/features/days/ContractDays'
 import { ContractEmailSection } from '@/features/contracts/ContractEmailSection'
 import { ContractStateActions } from '@/features/contracts/ContractStateActions'
 import { DaysToInvoiceSection } from '@/features/contracts/DaysToInvoiceSection'
+import { FeeOccurrencesSection } from '@/features/contracts/FeeOccurrencesSection'
 import { ExpensesSection } from '@/features/contracts/ExpensesSection'
 import {
   EXPENSE_POLICY_LABELS,
@@ -168,6 +169,9 @@ export function ContractDetail() {
             <div className="lg:col-span-2">
               <RateCardsSection contractId={row.id} currency={row.currency} />
             </div>
+            {/* A card of its own in the grid, not a wrapper around one: a contract with no
+                recurring fee draws nothing, and an empty grid item would still take its gap. */}
+            <FeeOccurrencesSection contractId={row.id} currency={row.currency} />
             <div className="lg:col-span-2">
               <ContractDays
                 contractId={row.id}

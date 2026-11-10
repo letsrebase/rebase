@@ -467,10 +467,194 @@ class IvaSettlementRead(BaseModel):
     due_item_id: UUID | None = None
 
 
+IvaPeriodState = Literal["future", "open", "ended"]
+IvaPaymentState = Literal["expected", "settled"]
+IvaExigibility = Literal["immediate", "split_payment"]
+IvaSalesRowKind = Literal["invoice", "gap"]
+IvaSalesStatus = Literal["issued", "cancelled"]
+
+
+class IvaEntityRead(BaseModel):
+    """A legal entity whose pack settles IVA by period, so it has registers (REB-1024)."""
+
+    legal_entity_id: UUID
+    name: str
+    frequency: IvaFrequency
+
+
+class IvaLadderRead(BaseModel):
+    """The settlement's figures, as `IvaSettlementRead` carries them. A positive `result` is
+    owed, a negative one is a credit carried forward."""
+
+    sales_vat: Decimal
+    reverse_charge_vat: Decimal
+    purchase_vat: Decimal
+    credit_in: Decimal
+    debit_in: Decimal
+    surcharge: Decimal
+    result: Decimal
+    outcome: IvaOutcome
+
+
+class IvaPeriodRead(BaseModel):
+    """One period of a legal entity's IVA cycle (REB-1024). `ladder` is the stored settlement's
+    when `settled`, otherwise the running figures of the period computed with the same code
+    from the previous period's stored result, and `None` when the server cannot know them: a
+    period that has not started, or one whose previous period is not settled while an earlier one
+    is (its carry-over would be a guess). `state` is `open` until the period's last day
+    included. The payment date is the pack's calendar's and `payment_state` the due item's;
+    `carry_forward_limit` is the pack's limit under which a small debit waits."""
+
+    legal_entity_id: UUID
+    frequency: IvaFrequency
+    year: int
+    number: int
+    label: str
+    period_start: date
+    period_end: date
+    state: IvaPeriodState
+    settled: bool
+    ladder: IvaLadderRead | None
+    payment_due_on: date | None
+    due_item_id: UUID | None
+    payment_state: IvaPaymentState | None
+    # A settled period whose registers now add up to other lines than the stored ones.
+    registers_changed: bool
+    carry_forward_limit: Decimal | None
+
+
+class IvaRateGroupRead(BaseModel):
+    """One VAT recap group of a document: a rate (and its nature at zero), the taxable amount
+    and the VAT."""
+
+    rate: Decimal
+    nature: str | None
+    taxable_amount: Decimal
+    vat_amount: Decimal
+
+
+class IvaPurchaseGroupRead(IvaRateGroupRead):
+    deductible_share: Decimal
+    deductible_vat: Decimal
+
+
+class IvaSalesRowRead(BaseModel):
+    """A line of the sales register: an issued or annulled invoice, or a number the legal
+    entity declared its register will never carry (`kind` `gap`, with its reason). The VAT of
+    a document under split payment is shown and is not owed (`exigibility`)."""
+
+    kind: IvaSalesRowKind
+    invoice_id: UUID | None
+    year: int
+    number: int
+    issue_date: date | None
+    customer_id: UUID | None
+    customer_name: str | None
+    status: IvaSalesStatus | None
+    document_type: str | None
+    exigibility: IvaExigibility | None
+    groups: list[IvaRateGroupRead]
+    taxable_amount: Decimal | None
+    vat_amount: Decimal | None
+    total: Decimal | None
+    gap_reason: str | None
+
+
+class IvaSalesSummaryLine(BaseModel):
+    rate: Decimal
+    nature: str | None
+    exigibility: IvaExigibility
+    taxable_amount: Decimal
+    vat_amount: Decimal
+
+
+class IvaSalesTotals(BaseModel):
+    """The period's, over every issued document and not the page's. `vat_due` is the sales VAT
+    of the settlement: the VAT of the documents not under split payment."""
+
+    taxable_amount: Decimal
+    vat_amount: Decimal
+    vat_due: Decimal
+    total: Decimal
+
+
+class IvaSalesRegisterRead(BaseModel):
+    items: list[IvaSalesRowRead]
+    total_count: int
+    next_offset: int | None
+    summary: list[IvaSalesSummaryLine]
+    totals: IvaSalesTotals
+
+
+class IvaPurchaseRowRead(BaseModel):
+    """A line of the purchase register: a registered invoice or credit note placed in the period
+    by its `iva_period`, with its groups at their deductible share."""
+
+    purchase_id: UUID
+    registered_on: date
+    document_date: date
+    number: str | None
+    kind: Literal["invoice", "credit_note"]
+    supplier_id: UUID | None
+    supplier_name: str | None
+    reverse_charge: bool
+    split_payment: bool
+    groups: list[IvaPurchaseGroupRead]
+    taxable_amount: Decimal
+    vat_amount: Decimal
+    deductible_vat: Decimal
+    total: Decimal
+
+
+class IvaPurchaseSummaryLine(BaseModel):
+    rate: Decimal
+    nature: str | None
+    deductible_share: Decimal
+    taxable_amount: Decimal
+    vat_amount: Decimal
+    deductible_vat: Decimal
+
+
+class IvaPurchaseTotals(BaseModel):
+    """The period's. `deductible_vat` and `reverse_charge_vat` are the settlement's lines."""
+
+    taxable_amount: Decimal
+    vat_amount: Decimal
+    deductible_vat: Decimal
+    reverse_charge_vat: Decimal
+    total: Decimal
+
+
+class IvaPurchaseRegisterRead(BaseModel):
+    items: list[IvaPurchaseRowRead]
+    total_count: int
+    next_offset: int | None
+    summary: list[IvaPurchaseSummaryLine]
+    totals: IvaPurchaseTotals
+
+
 __all__ = [
+    "IvaEntityRead",
+    "IvaExigibility",
     "IvaFrequency",
+    "IvaLadderRead",
     "IvaOutcome",
+    "IvaPaymentState",
     "IvaPeriod",
+    "IvaPeriodRead",
+    "IvaPeriodState",
+    "IvaPurchaseGroupRead",
+    "IvaPurchaseRegisterRead",
+    "IvaPurchaseRowRead",
+    "IvaPurchaseSummaryLine",
+    "IvaPurchaseTotals",
+    "IvaRateGroupRead",
+    "IvaSalesRegisterRead",
+    "IvaSalesRowKind",
+    "IvaSalesRowRead",
+    "IvaSalesStatus",
+    "IvaSalesSummaryLine",
+    "IvaSalesTotals",
     "IvaSettlementRead",
     "REGIME_CODE_ORDINARY",
     "REGIME_CODE_RE",

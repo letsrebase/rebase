@@ -31,12 +31,21 @@ TOOLS = {
     "cancel_engagement",
     "close_engagement",
     "get_freelancer_availability",
+    "send_engagement_for_signature",
+    "resend_signing_mail",
+    "refresh_document_signature",
+    "cancel_framework_agreement",
+    "record_framework_notice",
     "set_freelancer_tax_data",
 }
 PRIVILEGED = {
     "create_engagement",
     "cancel_engagement",
     "close_engagement",
+    "send_engagement_for_signature",
+    "resend_signing_mail",
+    "cancel_framework_agreement",
+    "record_framework_notice",
     "set_freelancer_tax_data",
 }
 PERSON = Actor(id=uuid4(), type="user", role="admin")

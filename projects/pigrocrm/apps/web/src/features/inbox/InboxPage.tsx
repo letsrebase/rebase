@@ -510,8 +510,8 @@ export function InboxPage({
           label={`Mostra altri (${list.total} in tutto)`}
           message={`Mostrati ${list.items.length} di ${documents(list.total)}.`}
           isFetchingMore={list.isFetchingMore}
-          hasError={false}
-          error={null}
+          hasError={list.isFetchMoreError}
+          error={list.fetchMoreError}
           onLoadMore={list.fetchMore}
         />
       ) : null}

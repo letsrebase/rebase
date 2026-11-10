@@ -36,7 +36,7 @@ from pigrocrm.core.errors import ValidationFailed
 from pigrocrm_api.deps import ActorDep, SessionDep, get_actor, module_guard
 from pigrocrm_api.errors import PROBLEM_RESPONSES
 from pigrocrm_api.query_params import LEGAL_ENTITY_QUERY_DESCRIPTION, ListParams
-from pigrocrm_api.uploads import read_upload_fields, single_file_body
+from pigrocrm_api.uploads import read_upload_with_fields, single_file_body
 
 router = APIRouter(
     prefix="/api",
@@ -127,7 +127,7 @@ def list_statements(
         "The statement: a CAMT.053 XML or the Banco BPM «Saldo e movimenti» XLSX, "
         f"at most {STATEMENT_SIZE_MAX} bytes. `period_from` and `period_to` (form fields, "
         "both or none) say the period a file that does not state one covers.",
-        fields={
+        text_fields={
             "period_from": {"type": "string", "format": "date"},
             "period_to": {"type": "string", "format": "date"},
         },
@@ -141,7 +141,9 @@ async def import_statement(
     needs `period_from` and `period_to` as form fields. The role is checked before the body
     is read."""
     actor.require_admin("import_statement")
-    data, fields = await read_upload_fields(request, STATEMENT_SIZE_MAX)
+    data, _content_type, fields = await read_upload_with_fields(
+        request, STATEMENT_SIZE_MAX, "period_from", "period_to"
+    )
     period_from = _day(fields.get("period_from"), "period_from")
     period_to = _day(fields.get("period_to"), "period_to")
     return await run_in_threadpool(

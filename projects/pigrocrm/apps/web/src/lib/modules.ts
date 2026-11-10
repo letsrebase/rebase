@@ -62,12 +62,18 @@ export const ROUTE_MODULES: ReadonlyArray<{ path: string; modules: readonly Modu
   // taxes: the page of the legal entity's taxes, their readings and dates (REB-1026). The
   // ceiling and the year register stay where they are, on the Home.
   { path: '/app/taxes', modules: ['taxes'] },
+  // staff: the people the company pays and what they cost (REB-1027).
+  { path: '/app/staff', modules: ['staff'] },
   // purchases: the purchases register, its pages and the cost categories. A deal's own
   // «Acquisti» block stays on its Ore tab, `time` and `purchases` together.
   { path: '/app/purchases', modules: ['purchases'] },
   // cash: the schedule's page and the bank accounts under it (REB-1025). The tab «Scadenziario»
   // is the core's and has no row in `TAB_MODULES`.
   { path: '/app/cash', modules: ['cash'] },
+  // The IVA cycle is part of `purchases` (suppliers design § 8): its settlement sums the purchase
+  // register, so the page follows the module whole (the brief's «sales register alone» is an
+  // open point, not an answer).
+  { path: '/app/vat', modules: ['purchases'] },
   { path: '/app/settings/cost-categories', modules: ['purchases'] },
 ]
 

@@ -12,13 +12,15 @@ from uuid import uuid4
 from fastapi.testclient import TestClient
 
 # Routes with their own door, each decided where it is declared: the session mechanics, the
-# space signup and the identity cookie, the service-token engagements, the OAuth callbacks
+# space signup and the identity cookie, the service-token engagements, Documenso's webhook (its
+# own secret header), the OAuth callbacks
 # (a browser navigation that answers with a page, never a 401), the probes and the docs.
 OPEN_PREFIXES = (
     "/api/auth/",
     "/api/identity/",
     "/api/tenants",
     "/api/rebase/",
+    "/api/documenso/",
     "/health",
     "/openapi.json",
     "/docs",

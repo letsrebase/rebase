@@ -16,18 +16,26 @@ a final text only and from the freelancer's complete tax data. Sending for signa
 the lifecycle of a signed letter are the next card.
 """
 
+import datetime as dt
 import re
 from collections.abc import Mapping
+from dataclasses import dataclass
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.collaborators import letters, rules
-from pigrocrm.core.collaborators.letter_pdf import RenderedLetter, compile_text, typeset
+from pigrocrm.core.collaborators.letter_pdf import (
+    RenderedLetter,
+    SignatureBlank,
+    compile_text,
+    signature_blanks,
+    typeset,
+)
 from pigrocrm.core.collaborators.letter_templates import SCOPE_ROOTS
 from pigrocrm.core.collaborators.models import Engagement
 from pigrocrm.core.collaborators.repository import EngagementRepository
@@ -40,7 +48,7 @@ from pigrocrm.core.collaborators.schemas import (
 from pigrocrm.core.config import Settings
 from pigrocrm.core.db import today_local
 from pigrocrm.core.documents.context import DocumentContext
-from pigrocrm.core.documents.models import Document
+from pigrocrm.core.documents.models import Document, DocumentVersion
 from pigrocrm.core.documents.schemas import DocumentRead
 from pigrocrm.core.documents.uploads import DocumentUploads
 from pigrocrm.core.errors import Conflict, NotFound, ValidationFailed
@@ -62,6 +70,18 @@ def _issued_by(issuer: str, day: str) -> str:
     """What the issuer's signature blank prints, since the issuer does not sign: the legal entity
     that issued the document, and when."""
     return f"Documento emesso da {issuer} il {day}"
+
+
+@dataclass(frozen=True)
+class SigningCopy:
+    """What `render_for_signing` answers: the text it came from, the typeset copy, where the
+    signing blanks sit, and the values it printed (the new version's `variables`)."""
+
+    template: Template
+    rendered: RenderedLetter
+    blanks: list[SignatureBlank]
+    variables: dict[str, Any]
+    legal_entity_id: UUID
 
 
 class LetterService:
@@ -147,6 +167,56 @@ class LetterService:
             )
         return self._store(letters.FRAMEWORK_AGREEMENT, regime, freelancer, None, {}, actor)
 
+    # ---- the copy that leaves for signature -----------------------------------------------------
+
+    def render_for_signing(
+        self, document: Document, actor: Actor, *, framework_signed_on: dt.date | None
+    ) -> "SigningCopy":
+        """The document as it leaves for signature (`SigningService.dispatch`): written again from
+        the space's active text of its kind and regime with the parties as they are today, the day
+        it leaves in the issuer's blank (`Documento emesso da ... il ...`) and the labels under
+        the blanks the signing site fills laid out and not drawn (`signing=True`). The fields the
+        administrator wrote when the letter was stored are read back from its first version. A text
+        still in draft never leaves. Nothing is stored and nothing commits: the caller holds the
+        row locks and keeps them until the envelope exists.
+
+        `framework_signed_on` is the day the agreement the letter stands on was signed, printed in
+        the letter's subtitle; a framework agreement has none."""
+        if document.customer_id is None:
+            raise NotFound("document", document.id)
+        freelancer = self._freelancer(document.customer_id)
+        engagement = (
+            self.engagements.get(document.engagement_id) if document.engagement_id else None
+        )
+        if document.engagement_id is not None and engagement is None:
+            raise NotFound("engagement", document.engagement_id)
+        regime = document.letter_type or "ordinary"
+        template = self._template(document.type, regime)
+        letters.refuse_draft(template.body_markdown, template.name)
+        written = self.session.scalars(
+            select(DocumentVersion.variables)
+            .where(DocumentVersion.document_id == document.id)
+            .order_by(DocumentVersion.number)
+            .limit(1)
+        ).first()
+        variables = {
+            key: value
+            for key, value in (written or {}).items()
+            if key not in SCOPE_ROOTS and isinstance(value, str)
+        }
+        scope, legal_entity_id = self._scope(
+            freelancer, engagement, variables, actor, framework_signed_on
+        )
+        compiled = compile_text(template.body_markdown, scope)
+        issuer = scope["emittente"].get("ragione_sociale") or ""
+        return SigningCopy(
+            template=template,
+            rendered=typeset(compiled, issuer, self.ctx.settings, signing=True),
+            blanks=signature_blanks(compiled, issuer, self.ctx.settings, signing=True),
+            variables={key: value for key, value in scope.items() if key not in SCOPE_ROOTS},
+            legal_entity_id=UUID(legal_entity_id),
+        )
+
     # ---- the work ---------------------------------------------------------------------------
 
     def _engagement(
@@ -162,6 +232,20 @@ class LetterService:
             # cannot see the engagement either (`EngagementService._read` redacts them).
             raise NotFound("engagement", engagement_id)
         return engagement, self._freelancer(engagement.freelancer_id)
+
+    # ---- for the signing service: what it reads of the letters' own rules --------------------
+
+    def freelancer(self, freelancer_id: UUID) -> Organization:
+        """The live organization with the role `freelancer`."""
+        return self._freelancer(freelancer_id)
+
+    def template(self, kind: str, regime: str) -> Template:
+        """The space's active text of `kind` and `regime`."""
+        return self._template(kind, regime)
+
+    def require_party_data(self, freelancer: Organization, regime: str) -> None:
+        """The tax data a stored letter prints, or a refusal that names what is missing."""
+        self._require_party_data(freelancer, regime)
 
     def _freelancer(self, freelancer_id: UUID) -> Organization:
         freelancer = self.engagements.organization(freelancer_id)
@@ -201,6 +285,14 @@ class LetterService:
             stmt = stmt.where(Document.engagement_id.is_(None))
         if regime is not None:
             stmt = stmt.where(Document.letter_type == regime)
+        if kind == letters.FRAMEWORK_AGREEMENT:
+            # A cancelled agreement, or one a notice ended, does not stand in a new one's way.
+            stmt = stmt.where(
+                or_(
+                    Document.signature_state.is_(None),
+                    Document.signature_state.not_in(("cancelled", "notice_served")),
+                )
+            )
         return self.session.execute(stmt).scalars().first()
 
     def _variables(self, variables: Mapping[str, str | None]) -> dict[str, Any]:
@@ -244,6 +336,7 @@ class LetterService:
         engagement: Engagement | None,
         variables: Mapping[str, str | None],
         actor: Actor,
+        framework_signed_on: dt.date | None = None,
     ) -> tuple[dict[str, Any], str]:
         """What the text reads, and the legal entity that issues it. The administrator's fields
         go in first and the records' own second, so a field cannot shadow `emittente`,
@@ -266,7 +359,9 @@ class LetterService:
             "domicilio": seat(party.address, party.postal_code, party.city, party.province),
         }
         scope["cliente"] = self._client(engagement)
-        scope["incarico"] = self._engagement_values(engagement) if engagement else {}
+        scope["incarico"] = (
+            self._engagement_values(engagement, framework_signed_on) if engagement else {}
+        )
         scope["firma"] = {
             "luogo": SIGNED_ELECTRONICALLY,
             "data": None,
@@ -296,7 +391,9 @@ class LetterService:
         }
 
     @staticmethod
-    def _engagement_values(engagement: Engagement) -> dict[str, Any]:
+    def _engagement_values(
+        engagement: Engagement, framework_signed_on: dt.date | None = None
+    ) -> dict[str, Any]:
         """What the engagement says, checked again by the rules that refused it when it was
         written: a fee above zero, ordered dates and a payment term within the law. A value the
         engagement does not hold is `None`, which prints as a blank line."""
@@ -312,7 +409,9 @@ class LetterService:
         )
         return {
             "numero": engagement.letter_number,
-            "data_contratto_quadro": None,
+            "data_contratto_quadro": (
+                letters.italian_date(framework_signed_on) if framework_signed_on else None
+            ),
             "ruolo": engagement.role,
             "data_inizio": letters.italian_date(engagement.starts_on),
             "data_fine": letters.italian_date(engagement.ends_on) if engagement.ends_on else None,
@@ -419,6 +518,7 @@ class LetterService:
                     title=self._title(kind, scope, number),
                     letter_type=regime,
                     text_version=rendered.version,
+                    signature_state="generated",
                 )
             )
         except IntegrityError as exc:
