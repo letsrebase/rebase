@@ -215,6 +215,18 @@ annulled it after the item existed), idempotently. The old API keeps serving whi
 `pigrocrm reconcile-due-items` runs the same step again as the api container starts (compose `command`),
 after the old one is gone, and may run from cron; it answers 1 when a space failed, while the boot step
 follows the boot's convention (a line on stderr, exit 0).
+**What a customer pays is `net_receivable`, and what a sale carries beyond its lines is `invoices/charges.py` (REB-994).**
+`compute_charges` is the one place that decides, from the stored lines, the frozen profile and the customer
+(`customer_kind`, `is_withholding_agent`, `country`), the withholding (the pack's `SalesWithholding`: 20%, only on the
+`it-standard` pack and only for a withholding agent in Italy), the split payment (a public body that does not withhold, where
+there is VAT) and the net (`total` minus the withholding minus the VAT of a split payment). `apply_totals` stores it on a draft
+and `issue` stores it again from the customer as it is then; an import declares `withholding_amount` and `split_payment` and the
+net follows. `net_receivable` is what the due item's amount, `monthly_paid` and `monthly_unpaid` read; `total` stays what the
+document prints. The exporter reads the stored figures: `DatiRitenuta` and `Ritenuta` `SI` from the withholding,
+`EsigibilitaIVA` `S` from the split payment, `ImportoPagamento` from the net, and `FPA12` with the 6-character IPA code from the
+customer's frozen kind (`PartySnapshot.customer_kind`). A service to a business abroad on the ordinary regime is `N2.1`
+(`_ordinary.resolve_line_vat`); a consumer abroad is refused until its own card. The pension fund and the INPS surcharge
+(`DatiCassaPrevidenziale`) are not computed or exported: their rule is «to verify» in the frame's A5 register and waits for the accountant.
 **Staff and directors are written by `StaffService`, and pay is an administrator's before anything else
 (REB-977).** `staff_members` and `payroll_settings` belong to the module `staff` (default off for both
 profiles, on for a space with no profile): REST `/api/staff` carries `module_guard("staff")` and the

@@ -155,6 +155,7 @@ def _invoice(
         vat_amount=vat_amount,
         stamp_duty=Decimal(stamp_duty),
         total=total,
+        net_receivable=total,
         memo=memo,
         accrual_from=accrual[0] if accrual else None,
         accrual_to=accrual[1] if accrual else None,

@@ -212,6 +212,8 @@ def map_parsed_invoice_to_import(
         vat_amount=invoice.vat_amount,
         stamp_duty=invoice.stamp_duty if invoice.stamp_duty is not None else Decimal("0.00"),
         total=invoice.total,
+        withholding_amount=invoice.withholding_amount,
+        split_payment=invoice.split_payment,
     )
 
 

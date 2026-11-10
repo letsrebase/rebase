@@ -731,11 +731,8 @@ async def test_status_customer_prints_what_is_still_owed_on_a_partly_paid_invoic
             "organization-status", {"organization_id": str(seeded_customer.id)}
         )
     )
-    assert (
-        f"- {_YEAR}/9001 — 3000,00 € still owed of 4000,00 € (total incl. VAT), "
-        f"due {_YEAR}-03-31" in text_block
-    )
-    assert f"- {_YEAR}/9002 — 750,00 € (total incl. VAT), due no due date" in text_block
+    assert f"- {_YEAR}/9001 — 3000,00 € still owed of 4000,00 €, due {_YEAR}-03-31" in text_block
+    assert f"- {_YEAR}/9002 — 750,00 € (to collect), due no due date" in text_block
 
 
 async def test_status_customer_lists_the_unpaid_invoices_with_their_deadline(
@@ -748,8 +745,8 @@ async def test_status_customer_lists_the_unpaid_invoices_with_their_deadline(
             "organization-status", {"organization_id": str(seeded_customer.id)}
         )
     )
-    assert f"- {_YEAR}/9001 — 4000,00 € (total incl. VAT), due {_YEAR}-03-31" in text_block
-    assert f"- {_YEAR}/9002 — 750,00 € (total incl. VAT), due no due date" in text_block
+    assert f"- {_YEAR}/9001 — 4000,00 € (to collect), due {_YEAR}-03-31" in text_block
+    assert f"- {_YEAR}/9002 — 750,00 € (to collect), due no due date" in text_block
 
 
 @pytest.mark.parametrize("mode", ["auto", "legacy"])

@@ -131,6 +131,26 @@ class StatutoryCharge:
 
 
 @dataclass(frozen=True)
+class SalesWithholding:
+    """What a withholding agent keeps from a professional's invoice (REB-994).
+
+    Every figure is a row of the frame's A5 register: the rate is Agenzia delle Entrate's
+    «F24 Ritenute reddito lavoro autonomo», «Aliquote» (20% on work by an independent worker
+    resident in Italy, by way of advance), the base («Importi su cui si applica la ritenuta»)
+    is the fee and the expenses refunded at cost, and the payment reason `A` is the
+    Certificazione Unica 2026 instructions' «prestazioni di lavoro autonomo rientranti
+    nell'esercizio di arte o professione abituale». `taxpayer_type` is FPR12's `RT01`, the
+    withholding on a natural person: the ordinary regime of this pack is a person's. Whether
+    the issuer is an independent worker at all is not modelled: the accountant's list (REB-975)
+    has the question, and the ordinary regime is read as one, as the design says.
+    """
+
+    rate: Decimal
+    payment_reason: str
+    taxpayer_type: str
+
+
+@dataclass(frozen=True)
 class FiscalPack:
     """A jurisdiction pack: its ceilings, its statutory charges and its tax law -- mastro's
     `FiscalPack` (`pack.ts:297-350`), trimmed to the sections this port needs.
@@ -148,6 +168,10 @@ class FiscalPack:
     # The tax dates, one entry per change, oldest first (`TaxCalendarLaw`, REB-1004). Empty
     # for a regime with no date of its own (`non-it`).
     calendars: tuple[TaxCalendarLaw, ...] = ()
+    # The withholding an invoice to a withholding agent carries; `None` for a regime whose
+    # invoices carry none (the flat-rate regime is not withheld, L. 190/2014 art. 1 c. 67,
+    # and a company abroad issues no FatturaPA).
+    sales_withholding: SalesWithholding | None = None
 
     def __post_init__(self) -> None:
         years = [law.from_year for law in self.laws]
@@ -420,6 +444,9 @@ IT_STANDARD_PACK = FiscalPack(
     version="1",
     ceilings=(),
     charges=(),
+    sales_withholding=SalesWithholding(
+        rate=Decimal("20.00"), payment_reason="A", taxpayer_type="RT01"
+    ),
     laws=(
         TaxYearLaw(
             from_year=2026,
@@ -495,6 +522,15 @@ def resolve_pack(pack_id: str, pack_version: str) -> FiscalPack:
         raise KeyError(f"unknown fiscal pack {pack_id!r} version {pack_version!r}") from None
 
 
+def current_pack(pack_id: str) -> FiscalPack:
+    """The newest version of a pack, for a caller that holds only the id: an invoice's frozen
+    profile names the pack and not its version (`FiscalSnapshot.pack_id`)."""
+    versions = [pack for (known, _), pack in _PACKS.items() if known == pack_id]
+    if not versions:
+        raise KeyError(f"unknown fiscal pack {pack_id!r}")
+    return max(versions, key=lambda pack: int(pack.version))
+
+
 def known_charge_markers() -> frozenset[str]:
     """The `description_line` of every statutory charge any shipped pack declares. What a
     register reads to tell a charge's line from a fee's, whatever pack the legal entity is on
@@ -521,10 +557,12 @@ __all__ = [
     "FiscalPack",
     "IncomeTaxAdvanceLaw",
     "MonthDay",
+    "SalesWithholding",
     "StatutoryCharge",
     "TaxCalendarLaw",
     "TaxDateRule",
     "TaxYearLaw",
+    "current_pack",
     "known_charge_markers",
     "resolve_pack",
 ]

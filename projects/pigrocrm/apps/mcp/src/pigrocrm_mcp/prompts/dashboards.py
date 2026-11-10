@@ -235,7 +235,7 @@ def closing_month(context: McpContext, year: int, month: int) -> list[dict[str, 
         ]
     lines += [
         f"- Invoices issued in the period: {economic.issued_invoices}",
-        f"- To collect (total incl. VAT, no period): {_euro(economic.unpaid)}",
+        f"- To collect (incl. VAT, net of withholding, no period): {_euro(economic.unpaid)}",
         f"- Of which **overdue**: {_euro(economic.expired)}",
         "",
         f"Period closed: {'yes' if pnl.closed_period else 'no'}."

@@ -55,6 +55,9 @@
     [#text(size: 9pt, fill: muted)[Imponibile]], [#text(size: 9pt)[{{fattura.imponibile}}]],
     [#text(size: 9pt, fill: muted)[Imposta]], [#text(size: 9pt)[{{fattura.imposta}}]],
     [#text(size: 10pt, weight: "bold")[Totale documento]], [#text(size: 10pt, weight: "bold")[{{fattura.totale}}]],
+    {{#if fattura.ritenuta}}[#text(size: 9pt, fill: muted)[Ritenuta d'acconto]], [#text(size: 9pt)[-{{fattura.ritenuta}}]],{{/if}}
+    {{#if fattura.iva_scissione}}[#text(size: 9pt, fill: muted)[IVA versata dal cliente (scissione dei pagamenti)]], [#text(size: 9pt)[-{{fattura.iva_scissione}}]],{{/if}}
+    {{#if fattura.mostra_netto}}[#text(size: 10pt, weight: "bold")[Netto a pagare]], [#text(size: 10pt, weight: "bold")[{{fattura.netto}}]],{{/if}}
   )
 ]
 {{/if}}
@@ -75,7 +78,7 @@
   [#text(size: 9pt)[{{pagamento.codice}}]],
   [#text(size: 9pt)[{{pagamento.dettagli}}]],
   [#text(size: 9pt)[{{fattura.data_scadenza}}]],
-  [#text(size: 9pt)[{{fattura.totale}}]],
+  [#text(size: 9pt)[{{fattura.netto}}]],
 )
 
 #v(18pt)

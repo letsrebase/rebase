@@ -121,6 +121,13 @@ class PartySnapshot(BaseModel):
     email: str | None
     phone: str | None
     website: str | None
+    # What a sale to the customer involves (REB-994): its kind and whether it is a withholding
+    # agent, frozen with the rest because they decide the withholding, the split payment and
+    # the transmission format (`FPA12` for a public body). Defaulted like `FiscalSnapshot`'s
+    # newer keys, so a snapshot frozen before they existed reads as «not said»; the issuer's
+    # own snapshot never sets them.
+    customer_kind: str | None = None
+    is_withholding_agent: bool = False
 
 
 class InvoiceSnapshot(BaseModel):
@@ -401,6 +408,14 @@ class InvoiceImport(BaseModel):
     vat_amount: Decimal = Field(max_digits=MONEY_MAX_DIGITS, decimal_places=MONEY_DECIMAL_PLACES)
     stamp_duty: Decimal = Field(max_digits=MONEY_MAX_DIGITS, decimal_places=MONEY_DECIMAL_PLACES)
     total: Decimal = Field(max_digits=MONEY_MAX_DIGITS, decimal_places=MONEY_DECIMAL_PLACES)
+    # What the original document withheld from the customer's payment (REB-994): the
+    # withholding it declared and whether its VAT was a split payment. Both default to
+    # «none», the previous system's invoices having carried neither; the net receivable
+    # is derived from them, never declared.
+    withholding_amount: Decimal = Field(
+        default=Decimal("0.00"), max_digits=MONEY_MAX_DIGITS, decimal_places=MONEY_DECIMAL_PLACES
+    )
+    split_payment: bool = False
     payment_status: PaymentStatus = "unpaid"
     payment_date: dt.date | None = None
     transmitted_externally_at: dt.date | None = None
@@ -479,6 +494,13 @@ class InvoiceRead(BaseModel):
     vat_amount: Decimal
     stamp_duty: Decimal
     total: Decimal
+    # What the customer pays (REB-994): `total` minus the withholding it keeps and, on a
+    # split payment, the VAT it pays to the tax office. The figure the due items, the cash
+    # views and the receivables read; `total` stays what the document prints.
+    net_receivable: Decimal
+    withholding_amount: Decimal
+    withholding_rate: Decimal | None
+    split_payment: bool
     memo: str | None
     payment_status: str
     payment_date: dt.date | None
@@ -606,5 +628,18 @@ class InvoiceForExport(BaseModel):
     purchase_order_date: dt.date | None = None
     purchase_order_tender_code: str | None = Field(default=None, max_length=ORDER_CODE_MAX_LENGTH)
     purchase_order_project_code: str | None = Field(default=None, max_length=ORDER_CODE_MAX_LENGTH)
+    # The withholding and the split payment the document was issued with (REB-994), read off
+    # the row: the exporter writes `DatiRitenuta` and the `S` of `EsigibilitaIVA` from these.
+    # `net_receivable` is what the payment block says the customer pays.
+    withholding_amount: Decimal = Field(
+        default=Decimal("0.00"), max_digits=MONEY_MAX_DIGITS, decimal_places=MONEY_DECIMAL_PLACES
+    )
+    withholding_rate: Decimal | None = Field(
+        default=None, max_digits=RATE_MAX_DIGITS, decimal_places=RATE_DECIMAL_PLACES
+    )
+    split_payment: bool = False
+    net_receivable: Decimal = Field(
+        max_digits=MONEY_MAX_DIGITS, decimal_places=MONEY_DECIMAL_PLACES
+    )
     snapshot: InvoiceSnapshot
     lines: tuple[InvoiceLineRead, ...]

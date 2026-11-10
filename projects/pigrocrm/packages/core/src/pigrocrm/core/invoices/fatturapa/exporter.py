@@ -1,4 +1,4 @@
-"""The FatturaPA FPR12 generator.
+"""The FatturaPA FPR12 and FPA12 generator.
 
 Built as an `lxml` element tree and serialised exactly once. There is no point in this
 module where a fragment of XML exists as a string, which is what makes markup
@@ -36,6 +36,8 @@ from decimal import Decimal
 from lxml import etree
 
 from pigrocrm.core.errors import ValidationFailed
+from pigrocrm.core.fiscal.pack import current_pack
+from pigrocrm.core.invoices.charges import PUBLIC_BODY, italian
 from pigrocrm.core.invoices.fatturapa.checks import (
     check_party_exportable,
     check_recipient_identity,
@@ -48,6 +50,7 @@ from pigrocrm.core.invoices.fatturapa.constants import (
     CODE_PROJECT_CODE_MAX,
     CODE_RECIPIENT_FALLBACK,
     CODE_RECIPIENT_FOREIGN,
+    CODE_RECIPIENT_IPA_RE,
     CODE_RECIPIENT_RE,
     CODE_TENDER_CODE_MAX,
     COUNTRY_RE,
@@ -59,6 +62,7 @@ from pigrocrm.core.invoices.fatturapa.constants import (
     EMAIL_PATTERN_EXPECTED,
     EMAIL_RE,
     FORMAT_TRANSMISSION,
+    FORMAT_TRANSMISSION_PA,
     FPR12_NAMESPACE,
     IBAN_RE,
     ID_CODE_MAX,
@@ -75,7 +79,9 @@ from pigrocrm.core.invoices.fatturapa.constants import (
     STAMP_DUTY_VIRTUAL,
     TYPE_PAYMENT_RE,
     UNIT_OF_MEASURE_MAX,
+    VAT_COLLECTABILITY_SPLIT,
     VAT_COLLECTABILITY_VAT,
+    WITHHOLDING_SUBJECT,
 )
 from pigrocrm.core.invoices.fatturapa.normalise import (
     address_xml,
@@ -98,6 +104,16 @@ from pigrocrm.core.invoices.totals import (
 class InvoicePaExporter:
     """`InvoiceForExport` in, `bytes` out. No database, no profile lookup, no clock."""
 
+    @staticmethod
+    def format_of(invoice: InvoiceForExport) -> str:
+        """`FPA12` for an invoice to a public body in Italy, `FPR12` for every other
+        recipient (Specifiche tecniche v1.4, § 3.2, where `FormatoTrasmissione` names the
+        two). The body's own kind, frozen with the customer."""
+        customer = invoice.snapshot.customer
+        if customer.customer_kind == PUBLIC_BODY and italian(customer.country):
+            return FORMAT_TRANSMISSION_PA
+        return FORMAT_TRANSMISSION
+
     def to_bytes(self, invoice: InvoiceForExport) -> bytes:
         if not invoice.lines:
             raise ValidationFailed(
@@ -119,7 +135,7 @@ class InvoicePaExporter:
         # stub is simply incomplete for the write side. `NSMAP` has no `None` key in
         # this module, so this is a stub gap, not a real type mismatch.
         root = etree.Element(f"{{{FPR12_NAMESPACE}}}FatturaElettronica", nsmap=NSMAP)  # type: ignore[arg-type]
-        root.set("versione", FORMAT_TRANSMISSION)
+        root.set("versione", self.format_of(invoice))
 
         header = etree.SubElement(root, "FatturaElettronicaHeader")
         self._transmission_data(header, invoice)
@@ -303,10 +319,23 @@ class InvoicePaExporter:
 
         format = etree.SubElement(block, "FormatoTrasmissione")
         # Not redundant with the root's own `versione` attribute: the SdI reads it here.
-        format.text = FORMAT_TRANSMISSION
+        format.text = self.format_of(invoice)
 
         sdi_code = (customer.sdi_code or "").strip().upper()
-        if (customer.country or "").strip().upper() != "IT":
+        if self.format_of(invoice) == FORMAT_TRANSMISSION_PA:
+            # A public body is reached by its billing office's IPA code and by nothing else:
+            # no PEC, and no fall-back to `0000000` (`PECDestinatario` is for a recipient other
+            # than a public body, Specifiche tecniche v1.4, § 1.1).
+            self._text(
+                block,
+                "CodiceDestinatario",
+                sdi_code,
+                entity="customer",
+                field="sdi_code",
+                pattern=CODE_RECIPIENT_IPA_RE,
+                pattern_expected="il codice IPA dell'ufficio, di 6 caratteri",
+            )
+        elif (customer.country or "").strip().upper() != "IT":
             # Checked before the SDI code, not after: a foreign customer that happens to
             # carry one — copied in by hand, or left behind by a country change — is
             # still a foreign customer, and routing the file to an Italian recipient's
@@ -349,7 +378,11 @@ class InvoicePaExporter:
                 pattern=EMAIL_CONTACTS_RE,
                 pattern_expected=EMAIL_PATTERN_EXPECTED,
             )
-        if not sdi_code and (customer.certified_email or "").strip():
+        if (
+            self.format_of(invoice) == FORMAT_TRANSMISSION
+            and not sdi_code
+            and (customer.certified_email or "").strip()
+        ):
             self._text(
                 block,
                 "PECDestinatario",
@@ -508,6 +541,8 @@ class InvoicePaExporter:
         number = etree.SubElement(document, "Numero")
         number.text = number_complete(invoice.year, invoice.number)
 
+        self._withholding_data(document, invoice)
+
         if invoice.stamp_duty > Decimal("0.00"):
             stamp_duty = etree.SubElement(document, "DatiBollo")
             virtual = etree.SubElement(stamp_duty, "BolloVirtuale")
@@ -518,7 +553,9 @@ class InvoicePaExporter:
         total = etree.SubElement(document, "ImportoTotaleDocumento")
         # The stamp duty is not part of the total: `DatiBollo` declares that the
         # issuer settled it virtually, and charging it back would need a line with
-        # `Natura N1` -- explicitly out of scope.
+        # `Natura N1` -- explicitly out of scope. The withholding is not taken off it
+        # either, nor the VAT of a split payment: the total is what the document prints,
+        # and what the customer pays is `ImportoPagamento`.
         total.text = format_amount_2(invoice.total)
 
         if (invoice.memo or "").strip():
@@ -532,6 +569,52 @@ class InvoicePaExporter:
             )
 
         self._purchase_order_data(general, invoice)
+
+    def _withholding_data(self, document: etree._Element, invoice: InvoiceForExport) -> None:
+        """Sequence (`DatiRitenutaType`): TipoRitenuta, ImportoRitenuta, AliquotaRitenuta,
+        CausalePagamento. One block, only when the invoice carries a withholding
+        (REB-994). The type and the reason are the pack's own, the amount and the rate the
+        row's, frozen at issue."""
+        if invoice.withholding_amount <= Decimal("0.00"):
+            return
+        law = current_pack(invoice.snapshot.tax.pack_id).sales_withholding
+        if law is None or invoice.withholding_rate is None:
+            raise ValidationFailed(
+                "invoice",
+                "withholding_amount",
+                "la fattura porta una ritenuta ma non ne dichiara l'aliquota: "
+                "non si esporta una ritenuta che il regime non conosce",
+                expected="una ritenuta con la sua aliquota",
+                in_words=True,
+            )
+        block = etree.SubElement(document, "DatiRitenuta")
+        withholding_type = etree.SubElement(block, "TipoRitenuta")
+        withholding_type.text = law.taxpayer_type
+        amount = etree.SubElement(block, "ImportoRitenuta")
+        amount.text = format_amount_2(invoice.withholding_amount)
+        rate = etree.SubElement(block, "AliquotaRitenuta")
+        rate.text = format_rate(invoice.withholding_rate)
+        reason = etree.SubElement(block, "CausalePagamento")
+        reason.text = law.payment_reason
+
+    @staticmethod
+    def _computed(invoice: InvoiceForExport) -> list[ComputedLine]:
+        return [
+            ComputedLine(
+                line_number=r.line_number,
+                description=r.description,
+                quantity=r.quantity,
+                unit_of_measure=r.unit_of_measure,
+                unit_price=r.unit_price,
+                discount_percentage=r.discount_percentage,
+                discount_amount=r.discount_amount,
+                total_price=r.total_price,
+                vat_rate=r.vat_rate,
+                vat_nature=r.vat_nature,
+                legal_reference=r.legal_reference,
+            )
+            for r in invoice.lines
+        ]
 
     def _purchase_order_data(self, general: etree._Element, invoice: InvoiceForExport) -> None:
         """Sequence (`DatiDocumentiCorrelatiType`): RiferimentoNumeroLinea*, IdDocumento,
@@ -581,25 +664,8 @@ class InvoicePaExporter:
         goods = etree.SubElement(body, "DatiBeniServizi")
         for invoice_line in invoice.lines:
             self._detail_line(goods, invoice_line, invoice)
-        for group in build_recap(
-            [
-                ComputedLine(
-                    line_number=r.line_number,
-                    description=r.description,
-                    quantity=r.quantity,
-                    unit_of_measure=r.unit_of_measure,
-                    unit_price=r.unit_price,
-                    discount_percentage=r.discount_percentage,
-                    discount_amount=r.discount_amount,
-                    total_price=r.total_price,
-                    vat_rate=r.vat_rate,
-                    vat_nature=r.vat_nature,
-                    legal_reference=r.legal_reference,
-                )
-                for r in invoice.lines
-            ]
-        ):
-            self._summary_data(goods, group)
+        for group in build_recap(self._computed(invoice)):
+            self._summary_data(goods, group, split_payment=invoice.split_payment)
 
     def _detail_line(
         self, parent: etree._Element, invoice_line: InvoiceLineRead, invoice: InvoiceForExport
@@ -658,11 +724,19 @@ class InvoicePaExporter:
         total.text = format_amount_2(invoice_line.total_price)
         rate = etree.SubElement(line, "AliquotaIVA")
         rate.text = format_rate(invoice_line.vat_rate)
+        if invoice.withholding_amount > Decimal("0.00"):
+            # Every line of an invoice with a withholding is part of its base: the fee and
+            # the expenses refunded at cost are (A5), and the ordinary regime writes no line
+            # that is not one of the two.
+            withheld = etree.SubElement(line, "Ritenuta")
+            withheld.text = WITHHOLDING_SUBJECT
         if invoice_line.vat_nature:
             vat_nature = etree.SubElement(line, "Natura")
             vat_nature.text = invoice_line.vat_nature
 
-    def _summary_data(self, parent: etree._Element, group: RecapGroup) -> None:
+    def _summary_data(
+        self, parent: etree._Element, group: RecapGroup, *, split_payment: bool
+    ) -> None:
         """Sequence: AliquotaIVA, VAT nature?, SpeseAccessorie?, Arrotondamento?,
         ImponibileImporto, Imposta, EsigibilitaIVA?, RiferimentoNormativo?."""
         recap = etree.SubElement(parent, "DatiRiepilogo")
@@ -676,7 +750,14 @@ class InvoicePaExporter:
         vat_amount = etree.SubElement(recap, "Imposta")
         vat_amount.text = format_amount_2(group.vat_amount)
         vat_collectability = etree.SubElement(recap, "EsigibilitaIVA")
-        vat_collectability.text = VAT_COLLECTABILITY_VAT
+        # `S` only where there is VAT for the customer to pay: a group with no VAT
+        # (a service to a business abroad) stays `I`, which is what the lines of a split
+        # payment invoice that carry none say.
+        vat_collectability.text = (
+            VAT_COLLECTABILITY_SPLIT
+            if split_payment and group.vat_rate > Decimal("0.00")
+            else VAT_COLLECTABILITY_VAT
+        )
         if group.vat_nature and group.legal_reference:
             # A real normative reference, from the profile. The previous system sent the
             # *description of the code* ("N2.2 (non soggette - altri casi)") in this field.
@@ -716,7 +797,9 @@ class InvoicePaExporter:
             due_date = etree.SubElement(detail, "DataScadenzaPagamento")
             due_date.text = self._iso(invoice.due_date)
         amount = etree.SubElement(detail, "ImportoPagamento")
-        amount.text = format_amount_2(invoice.total)
+        # What the customer pays: the total less the withholding it keeps and, on a split
+        # payment, the VAT it pays to the tax office itself (`net_receivable`).
+        amount.text = format_amount_2(invoice.net_receivable)
         if (tax.iban or "").strip():
             self._text(
                 detail,

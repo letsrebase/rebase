@@ -22,6 +22,7 @@ from typing import Any
 from uuid import UUID
 
 from sqlalchemy import (
+    Boolean,
     CheckConstraint,
     Date,
     DateTime,
@@ -36,6 +37,7 @@ from sqlalchemy import (
     text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.engine.default import DefaultExecutionContext
 from sqlalchemy.orm import Mapped, mapped_column
 
 from pigrocrm.core.db import Base, PrimaryKeyMixin, SoftDeleteMixin, TimestampMixin
@@ -49,6 +51,13 @@ PROFORMA_SEQUENCE_NAME = "proforma_reference_seq"
 # in production -- which is the worst of the two, because the difference only shows up
 # the first time something calls `nextval`. Declaring it here emits it on both paths.
 PROFORMA_SEQUENCE = Sequence(PROFORMA_SEQUENCE_NAME, start=1, increment=1, metadata=Base.metadata)
+
+
+def _net_receivable_default(context: DefaultExecutionContext) -> Decimal:
+    """What a row built without a net receivable is owed: the gross total. A row that carries
+    a withholding or a split payment states its net; every other row, the hand-built ones of
+    the tests among them, is owed what it printed."""
+    return context.get_current_parameters()["total"]
 
 
 class Invoice(Base, PrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
@@ -120,6 +129,23 @@ class Invoice(Base, PrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
         Numeric(12, 2), nullable=False, default=Decimal("0.00")
     )
     total: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False, default=Decimal("0.00"))
+    # What the customer pays (REB-994, suppliers design § 2 «Money net of withholding and
+    # split payment»): the gross `total` minus the withholding the customer keeps and, on a
+    # split payment, the VAT it pays to the tax office itself. Stored when the document is
+    # written (a draft, an emission, an import) and read by the due items and the cash
+    # figures; `total` stays what the document prints.
+    net_receivable: Mapped[Decimal] = mapped_column(
+        Numeric(12, 2), nullable=False, default=_net_receivable_default
+    )
+    # The withholding the customer keeps (`DatiRitenuta`) with its rate. `0.00` when there is
+    # none; the rate is absent on an imported invoice that declares the amount alone.
+    withholding_amount: Mapped[Decimal] = mapped_column(
+        Numeric(12, 2), nullable=False, default=Decimal("0.00")
+    )
+    withholding_rate: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), default=None)
+    # VAT shown on the invoice and paid by the customer to the tax office (art. 17-ter
+    # DPR 633/72): `EsigibilitaIVA` `S` on the groups that carry VAT.
+    split_payment: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     memo: Mapped[str | None] = mapped_column(String(200), default=None)
     # Both parties' identity and the fiscal parameters as they were at emission.
     # `NULL` on a draft and on a proforma.
@@ -171,6 +197,10 @@ class Invoice(Base, PrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
         CheckConstraint(
             "(year IS NULL) = (number IS NULL)", name="ck_invoices_year_number_together"
         ),
+        # The withholding is never negative. A split payment and a withholding are not
+        # exclusive here: the law keeps them apart for what this product issues
+        # (`invoices/charges.py`), and an invoice another system issued is registered as it is.
+        CheckConstraint("withholding_amount >= 0", name="ck_invoices_withholding_not_negative"),
         CheckConstraint(
             "number IS NULL OR (type = 'invoice' AND status <> 'draft')",
             name="ck_invoices_number_requires_issued_invoice",

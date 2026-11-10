@@ -6,10 +6,12 @@ asks the fiscal pack one question once.
 """
 
 from collections.abc import Sequence
+from decimal import Decimal
 
 from pigrocrm.core.errors import ValidationFailed
 from pigrocrm.core.fiscal.regime import RegimeStrategy
 from pigrocrm.core.fiscal.schemas import FiscalSnapshot
+from pigrocrm.core.invoices.charges import SalesCharges, SalesCustomer, compute_charges
 from pigrocrm.core.invoices.constants import ENTITY
 from pigrocrm.core.invoices.models import Invoice, InvoiceLine
 from pigrocrm.core.invoices.repository import InvoiceRepository
@@ -17,10 +19,8 @@ from pigrocrm.core.invoices.schemas import InvoiceLineIn
 from pigrocrm.core.invoices.totals import (
     MONEY_MAX_EXCLUSIVE,
     ComputedLine,
-    build_recap,
     line_total,
     overflows_money_column,
-    sum_totals,
 )
 
 
@@ -30,6 +30,7 @@ def compute_lines(
     strategy: RegimeStrategy,
     *,
     country_customer: str,
+    customer_kind: str | None = None,
 ) -> tuple[ComputedLine, ...]:
     """Caller input plus the regime's answer, renumbered from 1.
 
@@ -39,12 +40,13 @@ def compute_lines(
 
     `country_customer` is the customer's country as it is *now*: the `Natura` is
     decided when the lines are computed and copied unchanged by `issue`, so a
-    proforma whose customer changed country is repaired by replacing its lines.
+    proforma whose customer changed country is repaired by replacing its lines. The same holds
+    for `customer_kind`, which tells a business abroad from a consumer abroad.
     """
     computed: list[ComputedLine] = []
     for index, line in enumerate(lines, start=1):
         rate, vat_nature, reference = strategy.resolve_line_vat(
-            line.vat_rate, profile, country_customer=country_customer
+            line.vat_rate, profile, country_customer=country_customer, customer_kind=customer_kind
         )
         total_price = line_total(
             quantity=line.quantity,
@@ -110,25 +112,35 @@ def apply_totals(
     computed: Sequence[ComputedLine],
     profile: FiscalSnapshot,
     strategy: RegimeStrategy,
+    customer: SalesCustomer,
 ) -> None:
     """Compute and **store**. Never recomputed by a client: a total computed in the
     browser is the structural defect inherited from the previous system, and on an
-    invoice it costs more."""
-    recap = build_recap(computed)
-    taxable_amount, vat_amount, total = sum_totals(recap)
+    invoice it costs more.
+
+    The totals are `invoices/charges.py`'s: the lines' own, with the withholding, the split
+    payment and the net receivable the customer's facts decide. A draft carries them as it
+    will print them, and `issue` computes them again from the customer as it is then."""
+    charges = compute_charges(computed, tax=profile, customer=customer)
     # The stamp duty is stored but does not enter the total: `DatiBollo` declares that
     # the issuer settled it virtually (spec 7.2).
-    stamp_duty = strategy.stamp_duty(recap, profile)
+    stamp_duty = strategy.stamp_duty(charges.recap, profile)
+    check_storable(charges, stamp_duty)
+    store_charges(invoice, charges, stamp_duty)
 
-    # Summation reaches the same overflow with no oversized line anywhere:
-    # `InvoiceCreate.lines` admits `MAX_LINES` of them, and two hundred lines of fifty
-    # million each are two hundred ordinary amounts whose sum is not. Checked before a
-    # single attribute is assigned, so a refused invoice leaves no unstorable value on a
-    # mapped object for the next autoflush to find.
+
+def check_storable(charges: SalesCharges, stamp_duty: Decimal) -> None:
+    """Summation reaches the money column's overflow with no oversized line anywhere:
+    `InvoiceCreate.lines` admits `MAX_LINES` of them, and two hundred lines of fifty
+    million each are two hundred ordinary amounts whose sum is not. Checked before a
+    single attribute is assigned, so a refused invoice leaves no unstorable value on a
+    mapped object for the next autoflush to find."""
     for field, value in (
-        ("taxable_amount", taxable_amount),
-        ("vat_amount", vat_amount),
-        ("total", total),
+        ("taxable_amount", charges.taxable_amount),
+        ("vat_amount", charges.vat_amount),
+        ("total", charges.total),
+        ("net_receivable", charges.net_receivable),
+        ("withholding_amount", charges.withholding_amount),
         ("stamp_duty", stamp_duty),
     ):
         if overflows_money_column(value):
@@ -139,10 +151,17 @@ def apply_totals(
                 expected=f"un importo con valore assoluto inferiore a {MONEY_MAX_EXCLUSIVE}",
             )
 
-    invoice.taxable_amount = taxable_amount
-    invoice.vat_amount = vat_amount
-    invoice.total = total
+
+def store_charges(invoice: Invoice, charges: SalesCharges, stamp_duty: Decimal) -> None:
+    """Write the figures of `charges` on the row."""
+    invoice.taxable_amount = charges.taxable_amount
+    invoice.vat_amount = charges.vat_amount
+    invoice.total = charges.total
     invoice.stamp_duty = stamp_duty
+    invoice.net_receivable = charges.net_receivable
+    invoice.withholding_amount = charges.withholding_amount
+    invoice.withholding_rate = charges.withholding_rate
+    invoice.split_payment = charges.split_payment
 
 
 def persist_lines(

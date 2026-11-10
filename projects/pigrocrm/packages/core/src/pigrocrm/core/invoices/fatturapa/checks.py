@@ -10,6 +10,7 @@ from pigrocrm.core.invoices.fatturapa.constants import (
     BASIC_LATIN_RE,
     CITY_MAX,
     CODE_PROJECT_CODE_MAX,
+    CODE_RECIPIENT_IPA_RE,
     CODE_TENDER_CODE_MAX,
     COUNTRY_RE,
     DENOMINATION_MAX,
@@ -444,6 +445,22 @@ def check_recipient_routing(party: PartySnapshot) -> None:
         # specification reserves for exactly this, and `_transmission_data` writes it.
         # Demanding a code here would make a foreign invoice impossible to issue, which
         # is what used to happen one function up.
+        return
+    if party.customer_kind == "public_body":
+        # A public body is reached by its billing office's IPA code, of 6 characters, and by
+        # nothing else: a PEC is no address for `FPA12` and a 7-character code is refused
+        # beside it (SdI control 00427). Checked before the number is spent, with the shape
+        # the writer holds it to.
+        code = (party.sdi_code or "").strip().upper()
+        if not CODE_RECIPIENT_IPA_RE.fullmatch(code):
+            raise ValidationFailed(
+                "customer",
+                "sdi_code",
+                "un ente pubblico si raggiunge con il codice IPA dell'ufficio di fatturazione, "
+                "di 6 caratteri: la PEC non basta",
+                expected="il codice IPA dell'ufficio, di 6 caratteri",
+                in_words=True,
+            )
         return
     if not (party.sdi_code or "").strip() and not (party.certified_email or "").strip():
         raise ValidationFailed(

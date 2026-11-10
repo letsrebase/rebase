@@ -1,6 +1,7 @@
 """`import_issued`: register a fattura another system issued (slice 9 §3)."""
 
 from datetime import date
+from decimal import Decimal
 from uuid import UUID
 
 from sqlalchemy.exc import IntegrityError
@@ -32,6 +33,7 @@ from pigrocrm.core.invoices.schemas import (
 )
 from pigrocrm.core.invoices.snapshot import build_snapshot
 from pigrocrm.core.legal_entities.models import LegalEntity
+from pigrocrm.core.money import round_money
 from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.text import PDF_MIME
 
@@ -331,6 +333,15 @@ class IssuedInvoiceImporter:
                 vat_amount=data.vat_amount,
                 stamp_duty=data.stamp_duty,
                 total=data.total,
+                # What the customer pays: derived from what the original declared it
+                # withheld, never declared itself (REB-994).
+                withholding_amount=data.withholding_amount,
+                split_payment=data.split_payment,
+                net_receivable=round_money(
+                    data.total
+                    - data.withholding_amount
+                    - (data.vat_amount if data.split_payment else Decimal("0.00"))
+                ),
                 # Born unpaid: the due item below settles it, and `DueItemService` is the
                 # only writer of the two columns from here on (§ 1.1).
                 payment_status="unpaid",

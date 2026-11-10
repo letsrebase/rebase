@@ -337,6 +337,7 @@ def _map_recap(recap: etree._Element) -> ParsedInvoiceTaxSummary:
             _required_text(recap, "Imposta", context="DatiRiepilogo"),
             context="DatiRiepilogo.Imposta",
         ),
+        vat_collectability=_text(recap, "EsigibilitaIVA"),
     )
 
 
@@ -496,6 +497,17 @@ def _map_body(header: etree._Element, body: etree._Element) -> ParsedInvoice:
             if data_stamp_duty is not None
             else None
         ),
+        withholding_amount=sum(
+            (
+                _decimal(
+                    _required_text(withholding, "ImportoRitenuta", context="DatiRitenuta"),
+                    context="DatiRitenuta.ImportoRitenuta",
+                )
+                for withholding in _children(document, "DatiRitenuta")
+            ),
+            start=Decimal("0.00"),
+        ),
+        split_payment=any(r.vat_collectability == "S" for r in recaps),
         social_security_pension_fund=[
             _map_pension_fund(pension_fund)
             for pension_fund in _children(document, "DatiCassaPrevidenziale")
