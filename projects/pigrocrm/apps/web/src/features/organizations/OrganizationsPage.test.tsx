@@ -209,15 +209,39 @@ describe('the page', () => {
     ])
   })
 
-  it('lists an organization with both roles on both pages, each page asking only for its role', async () => {
+  it('lists an organization with both roles on both pages, each page asking for its own list', async () => {
     const both = organization({ id: 'b1', legal_name: 'Zanetti Impianti S.r.l.', roles: ['customer', 'supplier'] })
     answering({ organizations: () => ({ items: [both], next_cursor: null, total: 1 }) })
-    for (const role of ['customer', 'supplier'] as const) {
-      const { unmount } = renderPage(role)
+    for (const [page, asked] of [
+      ['customer', 'customer_or_neither'],
+      ['supplier', 'supplier'],
+    ] as const) {
+      const { unmount } = renderPage(page)
       expect(await screen.findByText('Zanetti Impianti S.r.l.')).toBeInTheDocument()
-      expect(listRequests().at(-1)![1]).toMatchObject({ params: { query: { role } } })
+      expect(listRequests().at(-1)![1]).toMatchObject({ params: { query: { role: asked } } })
       unmount()
     }
+  })
+
+  it('«Clienti» also lists an organization that is neither a customer nor a supplier, so it stays reachable', async () => {
+    const freelancer = organization({ id: 'f1', legal_name: 'Giulia Verdi', roles: ['freelancer'] })
+    answering({
+      organizations: (role) =>
+        role === 'customer_or_neither'
+          ? { items: [...CUSTOMERS, freelancer], next_cursor: null, total: 3 }
+          : { items: SUPPLIERS, next_cursor: null, total: 2 },
+    })
+    const { unmount } = renderPage('customer')
+    expect(await screen.findByText('Giulia Verdi')).toBeInTheDocument()
+    // The row count «Carica altri» would say is read for the same list.
+    expect(countRequests().map(([, init]) => (init as { params: { query: Query } }).params.query.role)).toEqual([
+      'customer_or_neither',
+    ])
+    unmount()
+    // «Fornitori» keeps the suppliers only.
+    renderPage('supplier')
+    expect(await screen.findByText('Cloudstore Inc.')).toBeInTheDocument()
+    expect(screen.queryByText('Giulia Verdi')).toBeNull()
   })
 
   it('asks the server for the role of the view, each view keeping its own list', async () => {
@@ -265,7 +289,7 @@ describe('the page', () => {
     await user.type(await screen.findByPlaceholderText(/cerca per ragione sociale/i), 'zanetti')
     await waitFor(() =>
       expect(listRequests().at(-1)![1]).toMatchObject({
-        params: { query: { role: 'customer', search: 'zanetti' } },
+        params: { query: { role: 'customer_or_neither', search: 'zanetti' } },
       }),
     )
   })

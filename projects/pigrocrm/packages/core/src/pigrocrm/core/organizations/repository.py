@@ -1,7 +1,7 @@
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import ColumnElement, Select, column, func, or_, select, table, text
+from sqlalchemy import ColumnElement, Select, column, func, not_, or_, select, table, text
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.contact_points.models import ContactPoint
@@ -134,8 +134,19 @@ class OrganizationRepository:
 
     @staticmethod
     def _with_role(stmt: Select[Any], role: RoleFilter) -> Select[Any]:
-        """Narrow a select of `Organization` to one role; `any` leaves it as it is."""
-        return stmt if role == "any" else stmt.where(Organization.roles.contains([role]))
+        """Narrow a select of `Organization` to one role; `any` leaves it as it is, and
+        `customer_or_neither` keeps the customers and whatever is not a supplier either (an
+        organization has at least one role, so that is the customers plus the freelancer-only)."""
+        if role == "any":
+            return stmt
+        if role == "customer_or_neither":
+            return stmt.where(
+                or_(
+                    Organization.roles.contains(["customer"]),
+                    not_(Organization.roles.contains(["supplier"])),
+                )
+            )
+        return stmt.where(Organization.roles.contains([role]))
 
     def _filtered(self, query: OrganizationListQuery) -> Select[Any]:
         """The rows a query selects before it is paged: what the page and its total both read."""

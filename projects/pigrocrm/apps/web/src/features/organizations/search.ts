@@ -6,6 +6,16 @@
  */
 export type RegistryPage = 'customer' | 'supplier'
 
+/**
+ * The `role` each page asks `GET /api/organizations` for. «Fornitori» is the suppliers; «Clienti» is
+ * the customers and every organization that is neither a customer nor a supplier (a freelancer-only
+ * record), so no organization is on no list.
+ */
+export const REGISTRY_API_ROLE = {
+  customer: 'customer_or_neither',
+  supplier: 'supplier',
+} as const satisfies Record<RegistryPage, string>
+
 /** The path each registry page lives at. */
 export const REGISTRY_PAGE_PATHS = {
   customer: '/app/customers',
@@ -32,9 +42,8 @@ export function legacyRegistryPage(search: Record<string, unknown>): RegistryPag
 
 /**
  * The list an organization is read as: «Fornitori» for one that is a supplier and not a customer,
- * and only while `purchases` is on (the page is that module's); «Clienti» for every other. This
- * names the sidebar entry an organization's own page lights (REB-1038, REB-1053), not a list it is
- * on: `GET /api/organizations?role=customer` returns only the rows that carry that role.
+ * and only while `purchases` is on (the page is that module's); «Clienti» for every other, a
+ * freelancer-only record included, which «Clienti» lists (REB-1038, REB-1053).
  */
 export function registryPageOf(roles: readonly string[], purchasesOn: boolean): RegistryPage {
   return purchasesOn && roles.includes('supplier') && !roles.includes('customer')

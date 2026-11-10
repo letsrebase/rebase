@@ -165,8 +165,9 @@ sections. A core read that spans modules (search, the calendar, the customer car
 **«Clienti», «Fornitori» and «Acquisti» are pages of the registry and the purchases, not new data (REB-1023, REB-1053).** The
 registry has a page per role, `/app/customers` and `/app/suppliers` (REB-1053 reversed the single «Anagrafiche» page of REB-1023:
 `DECISIONS.md`, 2026-11-10), each its own title, strong button and list with no tab between them; one component,
-`features/organizations/OrganizationsPage.tsx`, renders both over `GET /api/organizations?role=`, and an organization with both roles
-is on both. An organization's own page stays `/app/organizations/<id>`; `/app/organizations` and `/app/clienti` are redirect stubs
+`features/organizations/OrganizationsPage.tsx`, renders both over `GET /api/organizations?role=` (`REGISTRY_API_ROLE`: «Fornitori» asks
+`supplier`, «Clienti» asks `customer_or_neither`, the customers plus every organization that is neither a customer nor a supplier, so no
+record is on no list), and an organization with both roles is on both. An organization's own page stays `/app/organizations/<id>`; `/app/organizations` and `/app/clienti` are redirect stubs
 (`?role=supplier` goes to «Fornitori», anything else to «Clienti»; `features/organizations/search.ts`). `/app/suppliers` is the
 `purchases` module's by `ROUTE_MODULES`, like every other page of a module, and a `NavItem` (`components/nav.ts`) reads its modules
 from its path alone; `registry` marks the two lists so an organization's own page lights the one it is read as
