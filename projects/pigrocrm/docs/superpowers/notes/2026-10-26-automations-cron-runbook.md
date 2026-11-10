@@ -29,8 +29,8 @@ Once a day, in `crontab -e` of the user that owns the deploy. Production's `DEPL
 gets its own line and its own log:
 
 ```
-0 6 * * * cd /opt/pigrocrm/projects/pigrocrm && docker compose --env-file ../../.env exec -T api uv run --no-sync pigrocrm automations >> /var/log/pigrocrm-automations.log 2>&1
-0 6 * * * cd /opt/pigrocrm-preview/projects/pigrocrm && docker compose --env-file ../../.env exec -T api uv run --no-sync pigrocrm automations >> /var/log/pigrocrm-preview-automations.log 2>&1
+0 6 * * * cd /opt/pigrocrm/projects/pigrocrm && docker compose -p pigrocrm --env-file ../../.env exec -T api uv run --no-sync pigrocrm automations >> /var/log/pigrocrm-automations.log 2>&1
+0 6 * * * cd /opt/pigrocrm-preview/projects/pigrocrm && docker compose -p pigrocrm-preview --env-file ../../.env exec -T api uv run --no-sync pigrocrm automations >> /var/log/pigrocrm-preview-automations.log 2>&1
 ```
 
 **The crontab line does not change when a space is added.** The hour is only «before the
@@ -54,7 +54,7 @@ Period one day, grace period a few hours:
 
 ```
 PIGROCRM_AUTOMATIONS_PING_URL=<the check's ping URL, as healthchecks.io shows it>
-0 6 * * * cd /opt/pigrocrm/projects/pigrocrm && docker compose --env-file ../../.env exec -T api uv run --no-sync pigrocrm automations >> /var/log/pigrocrm-automations.log 2>&1 && curl -fsS -m 10 --retry 3 -o /dev/null "$PIGROCRM_AUTOMATIONS_PING_URL"
+0 6 * * * cd /opt/pigrocrm/projects/pigrocrm && docker compose -p pigrocrm --env-file ../../.env exec -T api uv run --no-sync pigrocrm automations >> /var/log/pigrocrm-automations.log 2>&1 && curl -fsS -m 10 --retry 3 -o /dev/null "$PIGROCRM_AUTOMATIONS_PING_URL"
 ```
 
 ## 2. Trying it, before waiting for tomorrow
@@ -63,7 +63,7 @@ PIGROCRM_AUTOMATIONS_PING_URL=<the check's ping URL, as healthchecks.io shows it
 ones a real run would print, nothing is written, and every counter line carries `(prova)` (a `disattivata` line says no more than it always does):
 
 ```
-cd /opt/pigrocrm/projects/pigrocrm && docker compose --env-file ../../.env exec -T api uv run --no-sync pigrocrm automations --dry-run; echo "uscita: $?"
+cd /opt/pigrocrm/projects/pigrocrm && docker compose -p pigrocrm --env-file ../../.env exec -T api uv run --no-sync pigrocrm automations --dry-run; echo "uscita: $?"
 ```
 
 `--slug studio-rossi` visits one space (`--slug root` the root installation alone, without
@@ -110,7 +110,7 @@ above still watches the host from outside, which is what catches a cron that nev
 To read it by hand:
 
 ```
-docker compose --env-file ../../.env exec -T db psql -U pigrocrm -d <the space's database> -c "select job, ran_at, failed_at, failure from reminder_job_run where job = 'automations'"
+docker compose -p pigrocrm --env-file ../../.env exec -T db psql -U pigrocrm -d <the space's database> -c "select job, ran_at, failed_at, failure from reminder_job_run where job = 'automations'"
 ```
 
 ## 4. Why a second run opens nothing, and when the next one does

@@ -21,10 +21,11 @@ mattina scrive a chi l'ha chiesto, uno spazio alla volta.
 
 Una riga in `crontab -e` dell'utente che possiede il deploy (quello che può parlare con
 il socket di Docker). `$DEPLOY_PATH` è la directory di deploy configurata
-sull'ambiente (la radice del checkout del repository su quel server):
+sull'ambiente (la radice del checkout del repository su quel server). The line is
+production's; on the preview it is `-p pigrocrm-preview` (the details below say why):
 
 ```
-*/15 * * * * cd $DEPLOY_PATH/projects/pigrocrm && docker compose --env-file ../../.env exec -T api uv run --no-sync pigrocrm gmail-sync >> /var/log/pigrocrm-gmail-sync.log 2>&1
+*/15 * * * * cd $DEPLOY_PATH/projects/pigrocrm && docker compose -p pigrocrm --env-file ../../.env exec -T api uv run --no-sync pigrocrm gmail-sync >> /var/log/pigrocrm-gmail-sync.log 2>&1
 ```
 
 Quattro dettagli della riga non sono decorativi:
@@ -35,6 +36,12 @@ Quattro dettagli della riga non sono decorativi:
   accanto al compose file, e compose cerca `.env` nella *propria* directory. Senza
   questo, ogni interpolazione risulta vuota (è lo stesso motivo del commit `84a4c2d`,
   ed è la stessa opzione che serve a ogni altro comando compose su questo server).
+- **`-p pigrocrm`**: the compose project, `pigrocrm` on production and `pigrocrm-preview` on
+  the preview, as the deploy passes it (`_deploy-compose.yml`). Without it compose names the
+  project after the directory, and both checkouts end in `projects/pigrocrm`: a command run
+  from `/opt/pigrocrm-preview` without `-p pigrocrm-preview` acts on production's
+  containers. On 2026-11-10 an `up -d api` run that way recreated production's stack from
+  the preview's files (REB-980). Every compose command on this server names its project.
 - **`exec -T api`**: `exec` e non `run`, perché il container `api` è già in piedi e un
   `run` ne avvierebbe un secondo con la stessa configurazione ogni quarto d'ora. `-T`
   disattiva la pseudo-TTY, che cron non ha.
@@ -51,7 +58,7 @@ synchronised, the registry or a space that could not be read, or no connected ma
 found. Every line is printed either way.
 
 ```
-cd $DEPLOY_PATH/projects/pigrocrm && docker compose --env-file ../../.env exec -T api uv run --no-sync pigrocrm gmail-sync; echo "uscita: $?"
+cd $DEPLOY_PATH/projects/pigrocrm && docker compose -p pigrocrm --env-file ../../.env exec -T api uv run --no-sync pigrocrm gmail-sync; echo "uscita: $?"
 ```
 
 Since REB-404 the one line synchronises **every** connected mailbox, of the root
@@ -134,7 +141,7 @@ where it reaches only your terminal and no file. This is a real cycle: when it s
 it synchronises the mailbox, exactly as the cron would have.
 
 ```
-cd /opt/pigrocrm/projects/pigrocrm && docker compose --env-file ../../.env exec api uv run --no-sync python
+cd /opt/pigrocrm/projects/pigrocrm && docker compose -p pigrocrm --env-file ../../.env exec api uv run --no-sync python
 ```
 
 ```python
@@ -230,7 +237,7 @@ the mailbox's own `last_sync_at`, and not as `job_late`: one cause, one reminder
 the row by hand:
 
 ```
-docker compose --env-file ../../.env exec -T db psql -U pigrocrm -d <the space's database> -c "select job, ran_at, failed_at, failure from reminder_job_run"
+docker compose -p pigrocrm --env-file ../../.env exec -T db psql -U pigrocrm -d <the space's database> -c "select job, ran_at, failed_at, failure from reminder_job_run"
 ```
 
 ## 3. Il banner smette di prevedere
@@ -273,7 +280,7 @@ il deploy. Il percorso è scritto per esteso come lo si incolla; se la directory
 di questo server non è `/opt/pigrocrm`, è il `$DEPLOY_PATH` del §1 e va sostituito:
 
 ```
-0 8 * * 1 cd /opt/pigrocrm/projects/pigrocrm && docker compose --env-file ../../.env exec -T api uv run --no-sync pigrocrm digest >> /var/log/pigrocrm-digest.log 2>&1
+0 8 * * 1 cd /opt/pigrocrm/projects/pigrocrm && docker compose -p pigrocrm --env-file ../../.env exec -T api uv run --no-sync pigrocrm digest >> /var/log/pigrocrm-digest.log 2>&1
 ```
 
 I quattro dettagli del §1 valgono identici qui (`cd`, `--env-file ../../.env`,
@@ -310,7 +317,7 @@ chiusa da ore, e il contenuto sarebbe identico anche eseguendolo il lunedì sera
 le sezioni, conta i destinatari — e **non manda niente e non scrive niente**:
 
 ```
-cd /opt/pigrocrm/projects/pigrocrm && docker compose --env-file ../../.env exec -T api uv run --no-sync pigrocrm digest --dry-run; echo "uscita: $?"
+cd /opt/pigrocrm/projects/pigrocrm && docker compose -p pigrocrm --env-file ../../.env exec -T api uv run --no-sync pigrocrm digest --dry-run; echo "uscita: $?"
 ```
 
 Le righe della prova portano `(prova)` in fondo proprio perché nel log non si confondano
@@ -359,7 +366,7 @@ tutte e due le opzioni, la data di **un giorno qualsiasi** di quella settimana e
 permesso esplicito di riscriverla:
 
 ```
-docker compose --env-file ../../.env exec -T api uv run --no-sync pigrocrm digest --slug studio-rossi --forza --data 2026-09-07
+docker compose -p pigrocrm --env-file ../../.env exec -T api uv run --no-sync pigrocrm digest --slug studio-rossi --forza --data 2026-09-07
 ```
 
 La riga della settimana non viene duplicata: viene aggiornata con i nuovi destinatari e

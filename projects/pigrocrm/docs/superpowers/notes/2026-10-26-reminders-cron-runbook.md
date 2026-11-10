@@ -19,8 +19,8 @@ One line per environment, in `crontab -e` of the user that owns the deploy. Prod
 own `.env` and its own compose project, so each gets its own line and its own log:
 
 ```
-*/15 * * * * cd /opt/pigrocrm/projects/pigrocrm && docker compose --env-file ../../.env exec -T api uv run --no-sync pigrocrm reminders >> /var/log/pigrocrm-reminders.log 2>&1
-*/15 * * * * cd /opt/pigrocrm-preview/projects/pigrocrm && docker compose --env-file ../../.env exec -T api uv run --no-sync pigrocrm reminders >> /var/log/pigrocrm-preview-reminders.log 2>&1
+*/15 * * * * cd /opt/pigrocrm/projects/pigrocrm && docker compose -p pigrocrm --env-file ../../.env exec -T api uv run --no-sync pigrocrm reminders >> /var/log/pigrocrm-reminders.log 2>&1
+*/15 * * * * cd /opt/pigrocrm-preview/projects/pigrocrm && docker compose -p pigrocrm-preview --env-file ../../.env exec -T api uv run --no-sync pigrocrm reminders >> /var/log/pigrocrm-preview-reminders.log 2>&1
 ```
 
 **The crontab line does not change when a space is added.** Fifteen minutes is the
@@ -49,7 +49,7 @@ failed (exit `1`, below) sends none:
 
 ```
 PIGROCRM_REMINDERS_PING_URL=<the check's ping URL, as healthchecks.io shows it>
-*/15 * * * * cd /opt/pigrocrm/projects/pigrocrm && docker compose --env-file ../../.env exec -T api uv run --no-sync pigrocrm reminders >> /var/log/pigrocrm-reminders.log 2>&1 && curl -fsS -m 10 --retry 3 -o /dev/null "$PIGROCRM_REMINDERS_PING_URL"
+*/15 * * * * cd /opt/pigrocrm/projects/pigrocrm && docker compose -p pigrocrm --env-file ../../.env exec -T api uv run --no-sync pigrocrm reminders >> /var/log/pigrocrm-reminders.log 2>&1 && curl -fsS -m 10 --retry 3 -o /dev/null "$PIGROCRM_REMINDERS_PING_URL"
 ```
 
 The check is created by hand on the account `ciao@letsrebase.com`; its period is fifteen
@@ -62,7 +62,7 @@ writes nothing, not even the job clock, and every line carries `(prova)` so the 
 confuse it with a real pass:
 
 ```
-cd /opt/pigrocrm/projects/pigrocrm && docker compose --env-file ../../.env exec -T api uv run --no-sync pigrocrm reminders --dry-run; echo "uscita: $?"
+cd /opt/pigrocrm/projects/pigrocrm && docker compose -p pigrocrm --env-file ../../.env exec -T api uv run --no-sync pigrocrm reminders --dry-run; echo "uscita: $?"
 ```
 
 `--slug studio-rossi` visits one space (`--slug root` the root installation alone, without
@@ -121,7 +121,7 @@ All of it in the space's own database, nothing across spaces (spec §9.3):
   reads, what Impostazioni → Esecuzioni shows, and what answers «did it run»:
 
 ```
-docker compose --env-file ../../.env exec -T db psql -U pigrocrm -d <the space's database> -c "select job, ran_at, failed_at, failure from reminder_job_run"
+docker compose -p pigrocrm --env-file ../../.env exec -T db psql -U pigrocrm -d <the space's database> -c "select job, ran_at, failed_at, failure from reminder_job_run"
 ```
 
 ## 5. When a pass looks stuck
@@ -137,7 +137,7 @@ stuck pass included, and releases its connections (the API is back in seconds, a
 boot command migrates what is behind):
 
 ```
-cd /opt/pigrocrm/projects/pigrocrm && docker compose --env-file ../../.env restart api
+cd /opt/pigrocrm/projects/pigrocrm && docker compose -p pigrocrm --env-file ../../.env restart api
 ```
 
 ## 6. What it does not do
