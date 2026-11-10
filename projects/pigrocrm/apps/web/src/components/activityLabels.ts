@@ -101,6 +101,7 @@ const KIND_LABELS: Record<string, string> = {
   staff_member_created: "Persona dell'azienda aggiunta",
   staff_member_updated: "Persona dell'azienda modificata",
   payroll_pay_day_set: 'Giorno di paga impostato',
+  declared_tax_figure_set: 'Cifre della dichiarazione registrate',
   pat_first_used: 'Token usato per la prima volta',
   pat_revoked: 'Token revocato',
   pat_used_after_revocation: 'Token usato dopo la revoca',
