@@ -56,15 +56,21 @@ export function ProfileMenu({ rail, go }: { rail: boolean; go: (url: string) => 
               FOCUS,
               rail && 'justify-center px-0',
             )}
-            aria-label="Menu del profilo"
+            // WCAG 2.5.3 (axe `label-content-name-mismatch`): the name has to contain what
+            // the button shows, initials first, name and role after, so a voice user
+            // saying what they read finds it. «menu del profilo» stays at the end: it is
+            // what the control is, and how the tests and `e2e/helpers.ts` find it.
+            aria-label={`${initials} ${user?.name ?? ''} ${user ? roleLabel(user.role) : ''}, menu del profilo`}
           >
             <Avatar className="size-8 shrink-0">
               <AvatarFallback className="bg-sidebar-accent text-xs text-sidebar-foreground">
                 {initials}
               </AvatarFallback>
             </Avatar>
+            {/* The spaces between the three texts are not drawn (flex items), but they are
+                in the text a checker reads as what the button shows. */}{' '}
             <div className={cn('min-w-0 flex-1', rail && 'sr-only')}>
-              <p className="truncate text-sm font-medium">{user?.name}</p>
+              <p className="truncate text-sm font-medium">{user?.name}</p>{' '}
               {/* The role in words: «admin» is what the API stores, not what the
                   product writes (spec §5.5). */}
               <p className="truncate text-xs text-sidebar-foreground/70">
