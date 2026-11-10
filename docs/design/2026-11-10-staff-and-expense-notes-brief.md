@@ -1,7 +1,9 @@
 # Brief: «Persone dell'azienda» and «Note spese» (PigroCRM)
 
-Status: awaiting Lorenzo's answers on the artifact `pigrocrm-staff-and-expenses`; draft
-2026-11-10. Card: REB-1010. Design:
+Status: approved by Lorenzo on 2026-11-10, on the artifact `pigrocrm-staff-and-expenses`
+(«possiamo andare con i tuoi consigli per tutto»: every question takes the recommended option,
+A on 1, 2, 3, 4 and 6, B on 5). Card:
+REB-1010. Design:
 `projects/pigrocrm/docs/superpowers/specs/2026-11-09-staff-payroll-and-expenses-design.md`
 § 1 to § 4 and § 6 (REB-965); frame:
 `2026-11-09-space-profiles-modules-and-the-money-picture-design.md` § A2 to § A5 (modules,
@@ -9,9 +11,9 @@ money that falls due, proposals, the register of fiscal rules «to verify»), §
 surface passes this gate) and § B6 (the phone shell). Code read for this brief: the staff
 service and model that REB-977 put on main
 (`projects/pigrocrm/packages/core/src/pigrocrm/core/staff/`), `apps/web/src/lib/permissions.ts`,
-`apps/web/src/components/nav.ts` and `apps/web/src/lib/modules.ts`. When Lorenzo has answered,
-the orchestrator writes the rows of `docs/design/DECISIONS.md`; the build cards read this file
-and those rows, never the artifact.
+`apps/web/src/components/nav.ts` and `apps/web/src/lib/modules.ts`. The rule this brief creates
+is the last row of `docs/design/DECISIONS.md` dated 2026-11-10; the build cards read this file
+and that row, never the artifact, which stays open until the orchestrator closes it.
 
 Everything here is drawn on `shared/ui/tokens.css` and the primitives of `@rebase/ui`:
 squared, 1px ink lines, Outfit, Prussian sidebar, Watermelon Deep only on the primary action
@@ -51,16 +53,17 @@ service returns and never computes one.
 ## Questions for Lorenzo
 
 Six questions, each with two options drawn at the same scale on the artifact, desktop and
-phone. Each answer is one letter.
+phone. Lorenzo, 2026-11-10: «possiamo andare con i tuoi consigli per tutto», so each one below
+is decided as recommended.
 
-| # | Question | A | B | Recommendation |
+| # | Question | A | B | Decision (Lorenzo, 2026-11-10, approved the recommendations) |
 |---|---|---|---|---|
-| 1 | Is «Persone dell'azienda» one table for the month, or a roster and a month apart? | One table for the month (cost, cash, state) with the pay terms in the panel | Two tabs: «Persone» (the roster and its terms) and «Paghe di ottobre» (the month) | A: the card asks for cost, cash and state in one list, and the month is what is opened for; B puts terms nobody reads daily first |
-| 2 | Which month does the page's month mean? | The month worked: cost, state and the dates its cash leaves (net on the 10th, F24 on the 16th) | The month of cash: what leaves in November, of whatever payroll month | A: the payslip, its state and the closing all belong to the month worked, and cash by calendar month is the schedule's job (C4); B shows two months in one row |
-| 3 | Where is a received payslip accepted? | In the person's panel, the estimate beside the payslip, with «Accetta il cedolino» | Only in «Proposte»; the staff page links to it | A: the only thing to judge the payslip against is the estimate; B sends the admin to a page that does not have it |
-| 4 | On the phone, how does a note start? | Photo, then one screen with the fields, «Invia»; no drafts | The photo alone saves a draft «Da completare», to finish later | A: the design's states start at «Inviata»; B adds a state and a list of half-notes for a few seconds saved |
-| 5 | When is the way of reimbursing chosen? | At approval: «Approva e rimborsa con bonifico» or «in busta paga» | Approval is yes or no; a tab «Da rimborsare» chooses the way, several notes of one person together | B: approving judges the expense, reimbursing decides when money leaves and in which payslip, each where its facts are |
-| 6 | Mileage and a trip: kinds of note, or lines in one note? | Three kinds after «Nota spese»: «Una spesa», «Chilometri», «Una trasferta» | One kind: a note is a list of lines (receipt, kilometres, allowance) | A: the common case is a lunch, one receipt and one short form; the trip, which needs lines, gets its own form |
+| 1 | Is «Persone dell'azienda» one table for the month, or a roster and a month apart? | One table for the month (cost, cash, state) with the pay terms in the panel | Two tabs: «Persone» (the roster and its terms) and «Paghe di ottobre» (the month) | **A.** The card asks for cost, cash and state in one list, and the month is what is opened for |
+| 2 | Which month does the page's month mean? | The month worked: cost, state and the dates its cash leaves (net on the 10th, F24 on the 16th) | The month of cash: what leaves in November, of whatever payroll month | **A.** The payslip, its state and the closing all belong to the month worked; cash by calendar month is the schedule's job (C4) |
+| 3 | Where is a received payslip accepted? | In the person's panel, the estimate beside the payslip, with «Accetta il cedolino» | Only in «Proposte»; the staff page links to it | **A.** The only thing to judge the payslip against is the estimate |
+| 4 | On the phone, how does a note start? | Photo, then one screen with the fields, «Invia»; no drafts | The photo alone saves a draft «Da completare», to finish later | **A.** The design's states start at «Inviata»; no draft state |
+| 5 | When is the way of reimbursing chosen? | At approval: «Approva e rimborsa con bonifico» or «in busta paga» | Approval is yes or no; a tab «Da rimborsare» chooses the way, several notes of one person together | **B.** Approving judges the expense; reimbursing decides when money leaves and in which payslip, each where its facts are |
+| 6 | Mileage and a trip: kinds of note, or lines in one note? | Three kinds after «Nota spese»: «Una spesa», «Chilometri», «Una trasferta» | One kind: a note is a list of lines (receipt, kilometres, allowance) | **A.** The common case is a lunch, one receipt and one short form; the trip, which needs lines, gets its own form |
 
 ## «Persone dell'azienda»
 
@@ -107,7 +110,10 @@ Then the table: «Persona» (name over kind, agreement and level, part-time shar
 the date), «Stato della paga» (the pill and one line). The month's F24 is one row at the foot,
 not one per person (design § 2: grouped in the month's F24), with its date and, while any person
 lacks an accepted payslip, no amount and the reason. The panel (330 px) opens on a row: the
-month's figures for that person, «Condizioni» tagged «Solo amministratori» (the contract, gross
+month's figures for that person (on a «Ricevuto» person, the «Stima» and the «Cedolino» side by
+side, line by line, with «Accetta il cedolino», «Rifiuta…» and «Apri il PDF»: the payslip is
+accepted here, by the same call and the same decision component as in «Proposte»),
+«Condizioni» tagged «Solo amministratori» (the contract, gross
 pay, payments, part-time, the employer rates marked «digitate», the pay day and whether it is the
 legal entity's or an override), a «Costo orario» block (design § 5: the monthly cost over the
 working hours, «Non viene scritto finché non lo adotti», and the button «Adotta il costo orario»
@@ -129,7 +135,7 @@ condizioni». No bulk action, no table.
 | Error | `QueryErrorBanner` and nothing under it. |
 | Many | 50 at a time with «Mostra altri (N in tutto)»; a 60-character name is ellipsised in the cell with the full value on hover. |
 | Stimato | Muted pill; the cost with «Stima». With an earlier accepted payslip, the net is a «Stima» computed from the ratios of the last accepted one (design § 2). |
-| Ricevuto | Gold pill and «Da accettare». The estimate stays until the payslip is accepted. A payslip that could not be read stays «Ricevuto» with «Non riesco a leggerlo: scrivi le cifre a mano» (design § 2: or a person types the figures). |
+| Ricevuto | Gold pill and «Da accettare». The estimate stays until the payslip is accepted, and the panel and the phone's full-screen card show it beside the payslip with «Accetta il cedolino». A payslip that could not be read stays «Ricevuto» with «Non riesco a leggerlo: scrivi le cifre a mano» (design § 2: or a person types the figures). |
 | Accettato | Ink pill and «Cedolino accettato il 07/11/2026»; the figures say «Cedolino». |
 | Chiuso | Ink pill and a lock; the month's figures are fixed, with no «Accetta» and no edit. The closing and who closed it are one line. |
 | First month of a person | Cost with «Stima»; net «-» and «Serve il primo cedolino accettato»; the month's F24 row has no amount and says whose payslip it waits for (design § 2 and § 7). |
@@ -165,25 +171,31 @@ Non-goals    The deductibility values of a category (settings, C3); the purchase
 ```
 
 **Desktop.** `PageHeader` with the `Wallet` icon and «Note spese». For an admin: tabs «Da
-approvare» (with its count), «Da rimborsare» (only if Lorenzo answers B on question 5) and
+approvare» (with its count), «Da rimborsare» and
 «Chiuse»; filters «Persona», «Categoria», «Azienda» (the last only from the second legal entity
 on). The table: «Nota» (description over person and date), «Categoria», «Importo», «Stato». The
 panel: the receipt, the details, and the actions: «Approva» (primary) and «Rifiuta…» (asks for a
-reason, as `ProposalDetail` does). On a «Da rimborsare» row of option B, «Rimborsa…» per person: one
+reason, as `ProposalDetail` does). On «Da rimborsare», a table by person with the way and
+«Rimborsa…»: one
 bank transfer for the notes of one person, or «In busta paga di novembre», which tells the
 consultant through the «variazioni paghe» export and creates no second payment (design § 3). For
 a staff member: their own notes only, no «Persona» column, the status filter, and «Nuova nota
 spese» as the one strong button (a dense dialog).
 
 **Phone.** For the staff member, the centre «+» gains «Nota spese» between «Nota» and «Carica un
-documento» (frame § B6; shown only to a user linked to a staff member, inferred). The form is
+documento» (frame § B6; shown only to a user linked to a staff member, inferred). It asks
+«Cosa vuoi farti rimborsare?» with «Una spesa», «Chilometri» and «Una trasferta». A spesa is
 full screen: the photo (the camera or a file, as the inbox's «+» offers), the date (today), the
-amount, the category, what it is, and a sticky «Invia». After it, the list with a toast. The list
+amount, the category, what it is, and a sticky «Invia»; there is no draft, so a note that was not
+sent does not exist. «Chilometri» takes the date, from, to, kilometres and the rate the person
+types; «Una trasferta» takes the place, the dates, how it is refunded and lines for receipts,
+kilometres and allowance. After «Invia», the list with a toast. The list
 leads with a figure («In attesa di rimborso») and then one card per note. For the approver, the
 list is under «Altro» (the entry carries the count of notes waiting): a segmented «Da approvare /
-Chiuse» (with «Da rimborsare» on option B of question 5), a card opens full screen with the
-receipt and a sticky «Rifiuta…» and «Approva». The strong action is «Invia» for the one, «Approva» for
-the other.
+Da rimborsare / Chiuse», a card opens full screen with the
+receipt and a sticky «Rifiuta…» and «Approva» (approving is yes or no; «Da rimborsare» holds a
+card per person with the way and a sticky «Rimborsa…»). The strong action is «Invia» for the one,
+«Approva» for the other.
 
 | State | What is drawn |
 |---|---|
@@ -192,7 +204,7 @@ the other.
 | Error | `QueryErrorBanner`, nothing under it. |
 | Many / long | 50 at a time with «Mostra altri»; a 120-character description is ellipsised with the full text in the panel; a long category name wraps on the phone card. |
 | Inviata | Gold pill. For the staff member: «Aspetta un amministratore». |
-| Approvata | Gold pill and how it will be paid once decided: «Bonifico del 10/11/2026» or «In busta paga di novembre». Reimbursed in a payslip, it becomes «Rimborsata» when that payslip is accepted (design § 3). |
+| Approvata | Gold pill and «Da rimborsare» until the way is chosen; then how it will be paid: «Bonifico del 10/11/2026» or «In busta paga di novembre». Reimbursed in a payslip, it becomes «Rimborsata» when that payslip is accepted (design § 3). |
 | Rifiutata | Danger pill and the approver's reason, in one line, on the staff member's card too. Final: a corrected note is a new note (inferred). |
 | Rimborsata | Ink pill, the date and the way. |
 | Own note | An admin who is also a staff member: «Non puoi approvare una tua nota: la approva un altro amministratore.» In a space with one admin: «Sei l'unico amministratore: la approvi tu e resta segnata come autoapprovata nell'esportazione.» (design § 3). The sentence is shown, never only a disabled button. |
@@ -204,8 +216,7 @@ the other.
 
 ## What a component can violate
 
-Proposed, as every rule below is, until Lorenzo has answered; the ones that depend on a
-question say which.
+Decided on 2026-11-10 (see the questions table). Each rule is checkable by a test or a render.
 
 - No pay figure (an amount, a rate, a gross or net pay, a fee, an F24 line) is rendered for a
   member with the collaborator or readonly role, in a page, a panel, a toast or a count. The
@@ -228,14 +239,16 @@ question say which.
 - A staff member's own «Note spese» never lists another person's note. A rejected note always
   shows its reason, on the staff member's side too.
 - An admin never gets «Approva» on their own note without the sentence of design § 3.
-- A note the staff member has not sent does not exist in the list (depends on question 4:
-  option A).
-- Approving a note does not choose the way to reimburse it (depends on question 5: option B);
-  under option A, the way is part of the one act and never a default the approver did not see.
+- A note the staff member has not sent does not exist in the list: no draft state (question 4).
+- Approving a note does not choose the way to reimburse it: «Da rimborsare» does, per person,
+  with the way shown to the admin who chooses it (question 5).
 - The staff page shows the month worked as its axis and gives the date its cash leaves
-  (depends on question 2: option A).
+  (question 2); one table for the month with the terms in its panel (question 1).
 - A payslip is accepted by the same service call and the same decision component wherever the
-  button is drawn (depends on question 3: option A), and only by a person.
+  button is drawn (question 3), and only by a person.
+- «Nota spese» offers three kinds, «Una spesa», «Chilometri» and «Una trasferta» (question 6);
+  a mileage or allowance amount is typed or the product of typed values, with no exempt
+  threshold and no deductibility shown.
 - No emoji, no hex, no `Skeleton`; money `1.464,00 €`, dates `02/11/2026`, strings from locale
   keys with `en` and `it` identical.
 
@@ -267,8 +280,7 @@ back on any.
   amount while any person of the month lacks an accepted payslip.
 - A director follows the same states as an employee (design § 2 speaks of a payslip per
   person). A director with no payslip history has no net estimate, like a new employee.
-- A rejected note is final; a new one is made from scratch. No draft state exists unless
-  Lorenzo answers B on question 4.
+- A rejected note is final; a new one is made from scratch. No draft state exists (question 4).
 - The «+» item reads «Nota spese» (frame § B6 says «an expense once `purchases` or `staff`
   exists»); a purchase receipt of a space with no staff goes through «Carica un documento».
 - The words and pieces the design does not name: «Chiudi il mese», «Adotta il costo orario»,
@@ -279,33 +291,50 @@ back on any.
   admin's (design § 4), so the form does not claim «Letto dal modello».
 - «Approvata, in busta paga di novembre» assumes the next open payroll month of that person.
 
-## Gaps in the design and the code
+## Open points
 
-Reported, not papered over.
+Gaps, contradictions and unresolved items found while writing the brief, so that the cards for
+the pages inherit them. None was shown to Lorenzo as a question.
 
 1. Design § 6 names the month's four states; § 2 gives a payslip to a person and § 4 closes a
-   month. Whether the state is per person or per month is not written.
-2. «No partial F24 forecast appears» (§ 2) can mean the whole month's F24 waits or only that
-   person's lines do; the brief draws the first, the safer one.
-3. `reimburse_expense_note` (§ 4, tools table) does not say whether it records the way (bank
-   transfer or payslip) or marks the money paid. Question 5 asks where the way is chosen, but
-   the service's meaning of the act is for the build card.
-4. Frame § B6 puts an expense on the «+» when `purchases` or `staff` exists; the staff design
-   needs both. The «+» item shows only to a linked user of a space with both.
-5. `StaffMember` has current values and no effective date (`staff/models.py:68`): a change of
-   gross pay moves every open month's estimate, and only a closed month keeps its figures.
-6. Design § 3 has a «flat daily allowance» and says its exempt thresholds are pack data, but not
-   who sets the amount a company grants. The mockup types it; the build card needs the answer.
-7. `apps/web/src/lib/permissions.ts` has no row for the staff actions (`list_staff`,
-   `get_staff_member`, `create_staff_member`, `update_staff_member`, `set_payroll_pay_day`),
-   which the engagements rows (`read_engagements`, `permissions.ts:111`) show how to add, and
-   `ROUTE_MODULES` (`lib/modules.ts:50`) has no row for either route. Nothing consults them yet.
-8. The sidebar already has «Persone» (the CRM's contacts, `nav.ts`) in «Vendite», and the module
-   label is «Persone dell'azienda» (`modules.ts:36`): two entries two sections apart with
-   nearly the same word. The design names the second; flagged for Lorenzo's eye.
-9. A collaborator's «am I linked to a staff member» has no endpoint that does not disclose staff
-   (`StaffService` refuses non-admins before anything else): the web needs one, or it learns it
-   from the notes' own answer.
+   month. Whether the state is per person or per month is not written
+   (`2026-11-09-staff-payroll-and-expenses-design.md:182-189`, `:77-82`, `:167`). The brief
+   draws a per-person pill and an aggregate for the month.
+2. «No partial F24 forecast appears» (`...-staff-payroll-and-expenses-design.md:56-57`, `:197-198`)
+   can mean the whole month's F24 waits or only that person's lines do; the brief draws the
+   first, the safer one.
+3. `reimburse_expense_note` (design § 4, tools table, `:163`) does not say whether it records
+   the way (bank transfer or payslip) or marks the money paid. Question 5 decided where the way
+   is chosen («Da rimborsare»), not what the service act means; that is for the build card.
+4. Frame § B6 puts an expense on the «+» when `purchases` or `staff` exists
+   (`...-space-profiles-modules-and-the-money-picture-design.md:394-396`); the staff design
+   needs both (`...-staff-payroll-and-expenses-design.md:184-186`). The «+» item shows only to
+   a linked user of a space with both.
+5. `StaffMember` has current values and no effective date
+   (`projects/pigrocrm/packages/core/src/pigrocrm/core/staff/models.py:68`): a change of gross
+   pay moves every open month's estimate, and only a closed month keeps its figures.
+6. Design § 3 has a «flat daily allowance» and says its exempt thresholds are pack data
+   (`...-staff-payroll-and-expenses-design.md:105-108`), but not who sets the amount a company
+   grants. The mockup types it; the build card needs the answer.
+7. `projects/pigrocrm/apps/web/src/lib/permissions.ts` has no row for the staff actions
+   (`list_staff`, `get_staff_member`, `create_staff_member`, `update_staff_member`,
+   `set_payroll_pay_day`), which the engagements rows (`read_engagements`,
+   `permissions.ts:111`) show how to add, and `ROUTE_MODULES`
+   (`projects/pigrocrm/apps/web/src/lib/modules.ts:50`) has no row for either route. Nothing
+   consults them yet.
+8. The sidebar already has «Persone» (the CRM's contacts, `apps/web/src/components/nav.ts:59`)
+   in «Vendite», and the module label is «Persone dell'azienda» (`modules.ts:36`): two entries
+   two sections apart with nearly the same word. The design names the second.
+9. A collaborator's «am I linked to a staff member» has no endpoint that does not disclose
+   staff (`staff/service.py:4`: `StaffService` refuses non-admins before anything else): the
+   web needs one, or it learns it from the notes' own answer.
+10. The module `staff` requires nothing yet, because its `time` and `purchases` features are
+    not built (`projects/pigrocrm/packages/core/src/pigrocrm/core/modules/registry.py:93`); the
+    build of «Note spese» must add the dependency on `purchases` when that module exists.
+11. Not verified: no `axe` run or dark-theme render of the artifact (one light scheme); the
+    desktop frames scroll sideways inside their box at 390 px; every figure in the mockups is
+    invented. The «Chiuso» state, its lock and a readonly linked user are described here but
+    not drawn on the artifact.
 
 ## Not in this brief
 
