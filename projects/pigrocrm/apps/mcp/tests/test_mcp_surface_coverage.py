@@ -1059,10 +1059,6 @@ _COVERED_OR_HUMAN: dict[Method, str] = {
         "item pays for; an agent reads the same items with `list_due_items` (`source_kind` "
         "engagement and `source_id`, a full-access administrator's, as any fiscal due item)"
     ),
-    ("DueItemService", "of_source"): (
-        "REB-1035: what `list_due_items` answers for one `source_kind` and `source_id`, in every "
-        "state but dropped, for a page that lists one record's payments"
-    ),
     ("OwnEngagementService", "for_contract"): (
         "REB-1035: a freelancer reads their own engagement with rebase across spaces, a person's "
         "read (`read_rebase_engagement` is person-only): the engagement is rebase's data, and an "

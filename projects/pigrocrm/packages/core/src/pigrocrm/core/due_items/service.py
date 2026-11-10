@@ -637,19 +637,6 @@ class DueItemService:
             actor.require_admin("read_fiscal_due_items")
         return self._detail(item)
 
-    def of_source(self, source_kind: str, source_id: UUID, actor: Actor) -> list[DueItemRead]:
-        """Every item one record wrote, oldest first, a dropped one (a forecast something
-        replaced) left out: what an engagement or an invoice page lists as its payments. A
-        fiscal kind is an administrator's, as in `get`."""
-        actor.require_agent_allowed("list_due_items")
-        if source_kind in RESTRICTED_SOURCE_KINDS:
-            actor.require_admin("read_fiscal_due_items")
-        return [
-            self._read(item)
-            for item in self.repo.items_of_source(source_kind, source_id)
-            if item.state != "dropped"
-        ]
-
     # `list` stays the last method in this class -- the unconditional project rule (a
     # `def list(...)` would rebind `list` in the class namespace).
     def list(self, query: DueItemListQuery, actor: Actor) -> DueItemPage:

@@ -1,6 +1,5 @@
 import { useState } from 'react'
 import { QueryErrorBanner } from '@/components/QueryErrorBanner'
-import { toIsoDate } from '@/lib/dates'
 import { Button } from '@rebase/ui/button'
 import {
   Dialog,
@@ -24,14 +23,16 @@ import { useChangeEngagementState } from './queries'
 export function CloseEngagementDialog({
   engagementId,
   mode,
+  today,
   onClose,
 }: {
   engagementId: string
   mode: 'conclude' | 'cancel'
+  today: string
   onClose: () => void
 }) {
   const change = useChangeEngagementState(engagementId)
-  const [endedOn, setEndedOn] = useState(() => toIsoDate(new Date()))
+  const [endedOn, setEndedOn] = useState(today)
   const concluding = mode === 'conclude'
   return (
     <Dialog open onOpenChange={(next) => !next && !change.isPending && onClose()}>

@@ -163,6 +163,9 @@ class EngagementRead(BaseModel):
     freelancer_name: str | None = None
     client_name: str | None = None
     letter_document_id: UUID | None = None
+    # The CRM's day, which decides what is late, what has ended and whether a start is still ahead:
+    # a screen never asks the browser's clock.
+    today: dt.date | None = None
     created_at: datetime
     updated_at: datetime
 

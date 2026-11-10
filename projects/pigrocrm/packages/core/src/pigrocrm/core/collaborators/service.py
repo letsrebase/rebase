@@ -360,6 +360,7 @@ class EngagementService:
             read = EngagementRead.model_validate(engagement)
             read.freelancer_name = names.get(engagement.freelancer_id)
             read.letter_document_id = letter_of.get(engagement.id)
+            read.today = today
             client = engagement.client_organization_id
             if client is not None and client not in names:
                 # A freelancer shared across legal entities, an engagement for a client this
