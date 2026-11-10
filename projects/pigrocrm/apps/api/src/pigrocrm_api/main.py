@@ -23,6 +23,7 @@ from pigrocrm_api.routers import (
     auth,
     automations,
     bank_accounts,
+    bank_movements,
     calendar,
     cash,
     collaborators,
@@ -206,6 +207,8 @@ def create_app() -> FastAPI:
         recurring_expenses,
         # REB-1025: bank accounts, statements and movements, behind the `cash` module.
         bank_accounts,
+        # REB-1042: matching a movement to the due items it pays, behind the `cash` module.
+        bank_movements,
         # REB-1025: the cash schedule, the payables mirror and the phone's money figures, core.
         cash,
     ):

@@ -123,7 +123,10 @@ DEFAULT_BUDGET_BYTES = 108_200
 # REB-1036: 137.1 KB, up from 136.0 KB after the merge with main, for `close_iva_period` and
 # `reopen_iva_period` (a full-access administrator's) and the `closed` words of `list_iva_periods`,
 # measured at 137,072.
-FULL_ACCESS_BUDGET_BYTES = 137_100
+# REB-1042: 138.4 KB, up from 137.1 KB, for `get_bank_movement` and `propose_movement_match` (a
+# full-access administrator's: a movement with its ranked candidates, and a proposal of a list of
+# items), measured at 138,315.
+FULL_ACCESS_BUDGET_BYTES = 138_400
 
 # A name starting with one of these reads. The tools that read without such a name are
 # listed, so adding one is a decision somebody wrote down.

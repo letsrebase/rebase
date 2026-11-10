@@ -149,6 +149,8 @@ TOOL_MODULES: Mapping[str, tuple[ModuleKey, ...]] = {
     "archive_bank_account": ("cash",),
     "list_statements": ("cash",),
     "list_bank_movements": ("cash",),
+    "get_bank_movement": ("cash",),
+    "propose_movement_match": ("cash",),
     # Across modules: all of them, or the tool is not there.
     "convert_deal_to_contract": ("deals", "contracts"),
     "preview_deal_contract": ("deals", "contracts"),
