@@ -29,6 +29,7 @@ import {
   STATE_TONES,
   formatDay,
   missingReason,
+  NOT_IN_SERVICE,
   monthName,
   monthOnly,
   namesList,
@@ -55,30 +56,35 @@ interface Row {
   month: MemberMonth | undefined
 }
 
-/** The pill of a month: the least advanced person's state, with the line naming who set it. */
-function monthState(rows: Row[]): { state: MonthState; line: string } | null {
-  const served = rows.filter((row) => row.month !== undefined)
-  if (served.length === 0) return null
-  const waiting = served.filter((row) => stateOf(row.month) === 'estimated')
+/** The pill of a month: the least advanced person's state, with the line naming who set it.
+ *  Read from the server's month, which carries everyone in service, not from the pages of the list. */
+function monthState(members: MemberMonth[]): { state: MonthState; line: string } | null {
+  if (members.length === 0) return null
+  const waiting = members.filter((row) => stateOf(row) === 'estimated')
   if (waiting.length === 0) return { state: 'accepted', line: 'Ogni cedolino è accettato' }
-  return { state: 'estimated', line: `Lo tiene a «Stimato»: ${namesList(waiting.map((row) => row.member.name))}` }
+  return { state: 'estimated', line: `Lo tiene a «Stimato»: ${namesList(waiting.map((row) => row.name))}` }
 }
 
-function Figures({ rows, payroll }: { rows: Row[]; payroll: PayrollMonth; month: string }) {
-  const served = rows.filter((row) => row.month?.cost != null)
-  const fromPayslip = served.filter((row) => row.month?.source === 'payslip').length
-  const net = rows.flatMap((row) => netItems(row.month))
+function Figures({ payroll }: { payroll: PayrollMonth }) {
+  const members = payroll.members
+  const served = members.filter((row) => row.cost !== null)
+  const fromPayslip = served.filter((row) => row.source === 'payslip').length
+  const net = members.flatMap((row) => netItems(row))
   const dates = [...new Set(net.map((item) => item.due_date))].sort()
-  const withoutNet = served.filter((row) => netItems(row.month).length === 0).length
-  const state = monthState(rows)
+  const withoutNet = served.filter((row) => netItems(row).length === 0).length
+  const state = monthState(members)
   const leaving = dates.length === 0 ? null : monthOnly(dates[0]!.slice(0, 7))
+  // A total is a payslip's only when nothing in it is still an estimate.
+  const allPayslips = served.length > 0 && fromPayslip === served.length
   return (
-    <dl className="grid gap-x-8 gap-y-4 px-8 pb-4 sm:grid-cols-3">
+    <dl className="grid grid-cols-2 gap-x-8 gap-y-4 px-8 pb-4 sm:grid-cols-3">
       <div>
         <dt className="text-sm text-muted-foreground">Costo di {monthOnly(payroll.month.slice(0, 7))}</dt>
         <dd className="text-2xl font-semibold tabular-nums">{formatMoneyValue(payroll.cost_total)}</dd>
         <dd className="text-sm text-muted-foreground">
-          {served.length === 0 ? 'Nessuno in servizio' : `${fromPayslip} su ${served.length} da cedolino`}
+          {served.length === 0
+            ? 'Nessuno in servizio'
+            : `${allPayslips ? 'Lordo da cedolino' : 'Stima'}, ${fromPayslip} su ${served.length} da cedolino`}
         </dd>
       </div>
       <div>
@@ -90,11 +96,11 @@ function Figures({ rows, payroll }: { rows: Row[]; payroll: PayrollMonth; month:
           {withoutNet === 0
             ? dates.length === 0
               ? 'Nessuno stipendio in questo mese'
-              : `il ${dates.map(formatDay).join(', ')}`
-            : `Manca per ${withoutNet} ${withoutNet === 1 ? 'persona' : 'persone'}: ${rows.map((row) => missingReason(row.month)).find((reason) => reason !== null) ?? 'senza date'}`}
+              : `${withoutNet === 0 && members.every((row) => row.source === 'payslip') ? 'Cedolino' : 'Stima'}, il ${dates.map(formatDay).join(', ')}`
+            : `Manca per ${withoutNet} ${withoutNet === 1 ? 'persona' : 'persone'}: ${members.map((row) => missingReason(row)).find((reason) => reason !== null) ?? 'senza date'}`}
         </dd>
       </div>
-      <div>
+      <div className="col-span-2 sm:col-span-1">
         <dt className="text-sm text-muted-foreground">Il mese</dt>
         <dd className="pt-1">
           {state === null ? (
@@ -110,13 +116,12 @@ function Figures({ rows, payroll }: { rows: Row[]; payroll: PayrollMonth; month:
 }
 
 /** The month's F24: one line for the whole month and not one per person, with no amount while
- *  anyone lacks an accepted payslip. */
-function F24Row({ rows }: { rows: Row[] }) {
-  const served = rows.filter((row) => row.month !== undefined)
-  const items = served.flatMap((row) => row.month?.cash.filter((item) => F24_KINDS.has(item.kind)) ?? [])
-  const waiting = served.filter((row) => stateOf(row.month) !== 'accepted')
+ *  anyone lacks an accepted payslip. The contributions stay an estimate even then (design § 2). */
+function F24Row({ members }: { members: MemberMonth[] }) {
+  const items = members.flatMap((row) => row.cash.filter((item) => F24_KINDS.has(item.kind)))
+  const waiting = members.filter((row) => stateOf(row) !== 'accepted')
   const dates = [...new Set(items.map((item) => item.due_date))].sort()
-  if (served.length === 0) return null
+  if (members.length === 0) return null
   return (
     <div aria-label="F24 del mese" className="mt-4 flex flex-wrap items-start justify-between gap-x-6 gap-y-1 border bg-card p-4 text-sm">
       <div>
@@ -124,14 +129,17 @@ function F24Row({ rows }: { rows: Row[] }) {
         <p className="text-muted-foreground">Ritenute, INPS e INAIL di tutti, in un unico versamento.</p>
       </div>
       {waiting.length === 0 && items.length > 0 ? (
-        <span className="tabular-nums font-semibold">
-          {formatMoneyValue(sumDecimalStrings(items.map((item) => item.amount), MONEY_SCALE))}
+        <span className="inline-flex flex-col items-end">
+          <span className="font-semibold tabular-nums">
+            {formatMoneyValue(sumDecimalStrings(items.map((item) => item.amount), MONEY_SCALE))}
+          </span>
+          <span className="text-xs text-muted-foreground underline decoration-dotted underline-offset-2">Stima</span>
         </span>
       ) : (
         <Absent
           reason={
             waiting.length > 0
-              ? `Serve il cedolino accettato di ${namesList(waiting.map((row) => row.member.name))}`
+              ? `Serve il cedolino accettato di ${namesList(waiting.map((row) => row.name))}`
               : null
           }
         />
@@ -157,16 +165,16 @@ function StateCell({ row }: { row: Row }) {
   const state = stateOf(row.month)
   if (state === null) return <span className="text-sm text-muted-foreground">Non in servizio</span>
   return (
-    <div className="space-y-1">
+    <span className="block space-y-1">
       <StatusPill tone={STATE_TONES[state]}>{STATE_LABELS[state]}</StatusPill>
-      <p className="whitespace-normal text-xs text-muted-foreground">{STATE_LINES[state]}</p>
-    </div>
+      <span className="block whitespace-normal text-xs text-muted-foreground">{STATE_LINES[state]}</span>
+    </span>
   )
 }
 
 function costCell(row: Row) {
   const month = row.month
-  if (month === undefined) return <Absent reason={null} />
+  if (month === undefined) return <Absent reason={NOT_IN_SERVICE} />
   return month.cost === null ? <Absent reason={missingReason(month)} /> : <Figure value={month.cost.total} from={month.source} />
 }
 
@@ -199,17 +207,23 @@ function PersonCard({ row, onOpen }: { row: Row; onOpen: () => void }) {
   return (
     <li>
       <button type="button" onClick={onOpen} className="block w-full space-y-2 border bg-card p-4 text-left">
-        <div className="flex items-start justify-between gap-3">
-          <p className="min-w-0 break-words font-medium">{row.member.name}</p>
-          <div className="shrink-0 text-right">{costCell(row)}</div>
-        </div>
-        <p className="text-sm text-muted-foreground">{termsLine(row.member)}</p>
-        <div className="flex flex-wrap items-center justify-between gap-2">
+        <span className="flex items-start justify-between gap-3">
+          <span className="min-w-0 break-words font-medium">{row.member.name}</span>
+          <span className="shrink-0 text-right">{costCell(row)}</span>
+        </span>
+        <span className="block text-sm text-muted-foreground">{termsLine(row.member)}</span>
+        <span className="flex flex-wrap items-center justify-between gap-2">
           <StateCell row={row} />
-          <p className="text-sm tabular-nums">
-            {net === undefined ? <span className="text-muted-foreground">—</span> : `esce ${formatMoneyValue(net.amount)} il ${formatDay(net.due_date)}`}
-          </p>
-        </div>
+          <span className="text-sm tabular-nums">
+            {net === undefined ? (
+              <span className="text-muted-foreground">
+                {row.month === undefined ? '—' : (missingReason(row.month) ?? '—')}
+              </span>
+            ) : (
+              `esce ${formatMoneyValue(net.amount)} il ${formatDay(net.due_date)}, ${row.month?.source === 'payslip' ? 'cedolino' : 'stima'}`
+            )}
+          </span>
+        </span>
       </button>
     </li>
   )
@@ -223,7 +237,9 @@ function StaffMonth({ entity, entityName }: { entity: string; entityName: string
   const inline = useMediaQuery(INLINE_PANEL)
   const month = search.month ?? thisMonth()
   const ended = search.ended === true
-  const staff = useStaffList(entity, ended)
+  // Someone who has left was in service in a past month: that month lists them, or its total would
+  // count people the table does not show.
+  const staff = useStaffList(entity, ended || month < thisMonth())
   const payroll = usePayrollMonth(entity, month)
   const payDay = usePayDay(entity)
   // Directors exist only on a company pack (design § 1); the server says so too, in words.
@@ -255,13 +271,13 @@ function StaffMonth({ entity, entityName }: { entity: string; entityName: string
   )
 
   let body
-  if (failed && rows.length === 0) {
+  if (failed) {
     body = (
       <QueryErrorBanner
         error={staff.error ?? payroll.error}
         onRetry={() => {
+          staff.refetch()
           void payroll.refetch()
-          window.location.reload()
         }}
       />
     )
@@ -296,7 +312,7 @@ function StaffMonth({ entity, entityName }: { entity: string; entityName: string
 
   const panel =
     open === null ? null : (
-      <StaffPanel member={open.member} month={open.month} monthKey={month} onEdit={() => setEditing(true)} />
+      <StaffPanel key={open.member.id} member={open.member} month={open.month} monthKey={month} onEdit={() => setEditing(true)} showEdit={inline} />
     )
 
   return (
@@ -328,13 +344,13 @@ function StaffMonth({ entity, entityName }: { entity: string; entityName: string
             Giorno di paga
           </Button>
         </div>
-        {payroll.data === undefined || rows.length === 0 ? null : <Figures rows={rows} payroll={payroll.data} month={month} />}
+        {payroll.data === undefined || failed || rows.length === 0 ? null : <Figures payroll={payroll.data} />}
       </PageHeader>
 
       <div className={cn('flex gap-6 px-8 pb-8 pt-2', inline ? 'items-start' : '')}>
         <div className="min-w-0 flex-1">
           {body}
-          {rows.length > 0 && payroll.data !== undefined ? <F24Row rows={rows} /> : null}
+          {rows.length > 0 && payroll.data !== undefined && !failed ? <F24Row members={payroll.data.members} /> : null}
           {staff.hasMore ? (
             <LoadMore
               label="Mostra altri"
@@ -360,10 +376,15 @@ function StaffMonth({ entity, entityName }: { entity: string; entityName: string
 
       {open !== null && !inline ? (
         <Sheet open onOpenChange={(next) => !next && setOpenId(null)}>
-          <SheetContent side="right" closeLabel="Chiudi" className="gap-0 overflow-y-auto data-[side=right]:w-full data-[side=right]:sm:max-w-none">
+          <SheetContent side="right" closeLabel="Chiudi" className="gap-0 data-[side=right]:w-full data-[side=right]:sm:max-w-none">
             <SheetTitle className="sr-only">Persona aperta</SheetTitle>
             <SheetDescription className="sr-only">Il mese, il cedolino, le condizioni e il costo orario.</SheetDescription>
-            <div className="pt-12">{panel}</div>
+            <div className="min-h-0 flex-1 overflow-y-auto pt-12">{panel}</div>
+            <div className="sticky bottom-0 border-t bg-background p-3">
+              <Button className="w-full" onClick={() => setEditing(true)}>
+                Modifica condizioni
+              </Button>
+            </div>
           </SheetContent>
         </Sheet>
       ) : null}

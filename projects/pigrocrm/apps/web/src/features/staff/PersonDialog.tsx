@@ -159,9 +159,20 @@ export function PersonDialog({ open, onOpenChange, legalEntityId, legalEntityNam
     setValues((previous) => ({ ...previous, [key]: value }))
   }
 
-  const fields = [...COMMON, ...(kind === 'employee' ? EMPLOYEE_FIELDS : DIRECTOR_FIELDS)]
+  // A fourteenth month belongs to fourteen payments: with thirteen it is not asked, and a stored
+  // one is emptied on an edit (the server refuses it otherwise).
+  const fourteenth = kind === 'employee' && values.monthly_payments === '14'
+  const fields = [
+    ...COMMON,
+    ...(kind === 'employee' ? EMPLOYEE_FIELDS : DIRECTOR_FIELDS),
+  ].filter((field) => field !== 'fourteenth_month' || fourteenth || editing)
 
   function submit() {
+    const notWhole = fields.find((field) => INTEGERS.has(field) && !/^\d{0,2}$/.test((values[field] as string).trim()))
+    if (notWhole !== undefined) {
+      setMissing(notWhole)
+      return
+    }
     const empty = fields.find((field) => REQUIRED.has(field) && wire(field, values) === null)
     if (empty !== undefined) {
       setMissing(empty)
@@ -175,7 +186,11 @@ export function PersonDialog({ open, onOpenChange, legalEntityId, legalEntityNam
       const before = from(member)
       const body: Record<string, unknown> = {}
       for (const field of fields) {
-        if (before[field] !== values[field]) body[field] = wire(field, values)
+        if (field === 'fourteenth_month' && !fourteenth) {
+          if (before[field] !== '') body[field] = null
+        } else if (before[field] !== values[field]) {
+          body[field] = wire(field, values)
+        }
       }
       if (Object.keys(body).length === 0) {
         onOpenChange(false)
@@ -327,7 +342,11 @@ export function PersonDialog({ open, onOpenChange, legalEntityId, legalEntityNam
             )}
           </div>
 
-          {missing !== null ? <p role="alert" className="text-sm text-destructive">Compila i campi con l’asterisco.</p> : null}
+          {missing !== null ? (
+            <p role="alert" className="text-sm text-destructive">
+              {INTEGERS.has(missing as keyof Values) ? 'Scrivi un numero intero, da 1 a 14.' : 'Compila i campi con l’asterisco.'}
+            </p>
+          ) : null}
           {problem !== null && fieldError === null ? (
             <p role="alert" className="border border-destructive/50 bg-destructive/10 px-3 py-2 text-sm text-destructive">
               {problem.detail}

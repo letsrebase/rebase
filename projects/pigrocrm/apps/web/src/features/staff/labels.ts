@@ -138,3 +138,5 @@ export function namesList(names: readonly string[]): string {
   const rest = short.length - 2
   return `${short.slice(0, 2).join(', ')} e ${rest === 1 ? 'un altro' : `altri ${rest}`}`
 }
+
+export const NOT_IN_SERVICE = 'Non in servizio in questo mese'

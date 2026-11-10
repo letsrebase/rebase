@@ -58,13 +58,21 @@ function MonthFigures({ month }: { month: MemberMonth }) {
     <Section title="Il mese">
       <Rows
         rows={[
-          { label: 'Costo', value: cost === null ? <Absent reason={missingReason(month)} /> : <Figure value={cost.total} from={month.source} /> },
+          {
+            label: 'Costo',
+            value:
+              cost === null ? (
+                <Absent reason={missingReason(month)} />
+              ) : (
+                <Figure value={cost.total} from={month.source} tag={month.source === 'payslip' ? 'Lordo da cedolino' : undefined} />
+              ),
+          },
           ...(cost === null
             ? []
             : [
-                { label: 'Lordo', value: formatMoneyValue(cost.gross) },
-                { label: 'INPS a carico azienda', value: cost.employer_inps === null ? <Absent reason={reasonOf('employer_inps_rate')} /> : formatMoneyValue(cost.employer_inps) },
-                { label: 'INAIL', value: cost.employer_inail === null ? <Absent reason={reasonOf('employer_inail_rate')} /> : formatMoneyValue(cost.employer_inail) },
+                { label: 'Lordo', value: <Figure value={cost.gross} from={month.source} /> },
+                { label: 'INPS a carico azienda', value: cost.employer_inps === null ? <Absent reason={reasonOf('employer_inps_rate')} /> : <Figure value={cost.employer_inps} from="estimate" /> },
+                { label: 'INAIL', value: cost.employer_inail === null ? <Absent reason={reasonOf('employer_inail_rate')} /> : <Figure value={cost.employer_inail} from="estimate" /> },
               ]),
         ]}
       />
@@ -211,9 +219,14 @@ function HourlyCost({ member }: { member: StaffMember }) {
         <>
           <Rows
             rows={[
-              { label: `Costo di ${monthName(data.month.slice(0, 7))}`, value: formatMoneyValue(data.monthly_cost) },
+              { label: `Costo di ${monthName(data.month.slice(0, 7))}`, value: <Figure value={data.monthly_cost} from="estimate" /> },
               { label: 'Ore al mese', value: formatItalianQuantity(data.hours_per_month) },
-              { label: 'Costo orario', value: <span className="tabular-nums">{formatMoneyValue(data.hourly_cost)}/h</span> },
+              { label: 'Costo orario', value: (
+                  <span className="inline-flex flex-col items-end">
+                    <span className="tabular-nums">{formatMoneyValue(data.hourly_cost)}/h</span>
+                    <span className="text-xs text-muted-foreground underline decoration-dotted underline-offset-2">Stima</span>
+                  </span>
+                ) },
               {
                 label: 'Quello di adesso',
                 value: data.current_hourly_cost === null ? '—' : `${formatMoneyValue(data.current_hourly_cost)}/h`,
@@ -246,11 +259,14 @@ export function StaffPanel({
   month,
   monthKey,
   onEdit,
+  showEdit,
 }: {
   member: StaffMember
   month: MemberMonth | undefined
   monthKey: string
   onEdit: () => void
+  /** The button sits in the panel on a wide screen; on the phone the sheet's sticky bar carries it. */
+  showEdit: boolean
 }) {
   const state = stateOf(month)
   return (
@@ -269,13 +285,17 @@ export function StaffPanel({
       </div>
 
       {month === undefined ? null : <MonthFigures month={month} />}
-      {month !== undefined && month.source === 'estimate' ? <PayslipForm member={member} month={month} monthKey={monthKey} /> : null}
+      {month !== undefined && month.source === 'estimate' ? (
+        <PayslipForm key={`${member.id}:${monthKey}`} member={member} month={month} monthKey={monthKey} />
+      ) : null}
 
       <Section title="Condizioni" tag="Solo amministratori">
         <Terms member={member} />
-        <Button variant="outline" onClick={onEdit}>
-          Modifica condizioni
-        </Button>
+        {showEdit ? (
+          <Button variant="outline" onClick={onEdit}>
+            Modifica condizioni
+          </Button>
+        ) : null}
       </Section>
 
       <HourlyCost member={member} />

@@ -4,7 +4,17 @@ import { CASH_LABELS, MONTHS_PLACEHOLDER, formatDay, missingReason, netItems } f
 import type { MemberMonth } from './queries'
 
 /** Every amount says what it is: «Stima» (dotted underline) or «Cedolino» (ink weight). */
-export function Figure({ value, from }: { value: string; from: MemberMonth['source'] }) {
+export function Figure({
+  value,
+  from,
+  tag,
+}: {
+  value: string
+  from: MemberMonth['source']
+  /** A word of its own where the figure is only partly what `from` says (the total of a month
+   *  whose gross comes from a payslip and whose contributions are still estimated). */
+  tag?: string
+}) {
   return (
     <span className="inline-flex flex-col items-end">
       <span className={cn('tabular-nums', from === 'payslip' && 'font-semibold')}>{formatMoneyValue(value)}</span>
@@ -14,7 +24,7 @@ export function Figure({ value, from }: { value: string; from: MemberMonth['sour
           from === 'payslip' ? 'font-medium text-foreground' : 'text-muted-foreground underline decoration-dotted underline-offset-2',
         )}
       >
-        {from === 'payslip' ? 'Cedolino' : 'Stima'}
+        {tag ?? (from === 'payslip' ? 'Cedolino' : 'Stima')}
       </span>
     </span>
   )

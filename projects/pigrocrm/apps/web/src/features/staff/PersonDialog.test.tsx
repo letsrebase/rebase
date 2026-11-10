@@ -107,6 +107,30 @@ describe('PersonDialog', () => {
     )
   })
 
+  it('refuses a month that is not a whole number before anything is sent', async () => {
+    const user = userEvent.setup()
+    draw({ member })
+    await user.type(screen.getByLabelText(/^Mese della tredicesima/), '1a')
+    await user.click(screen.getByRole('button', { name: 'Salva le condizioni' }))
+    expect(screen.getByRole('alert')).toHaveTextContent('Scrivi un numero intero')
+    expect(api.PATCH).not.toHaveBeenCalled()
+  })
+
+  it('empties a stored fourteenth month when the payments go back to thirteen', async () => {
+    vi.mocked(api.PATCH).mockResolvedValue({ data: {}, response: new Response(null, { status: 200 }) } as never)
+    const user = userEvent.setup()
+    draw({ member: { ...member, monthly_payments: 14, fourteenth_month: 6 } as StaffMember })
+    await user.click(screen.getByLabelText(/^Mensilità/))
+    await user.click(await screen.findByRole('option', { name: '13' }))
+    await user.click(screen.getByRole('button', { name: 'Salva le condizioni' }))
+    await waitFor(() =>
+      expect(api.PATCH).toHaveBeenCalledWith('/api/staff/{staff_member_id}', {
+        params: { path: { staff_member_id: 'm-1' } },
+        body: { monthly_payments: 13, fourteenth_month: null },
+      }),
+    )
+  })
+
   it('shows the server\'s refusal as it says it', async () => {
     vi.mocked(api.POST).mockResolvedValue({ error: { detail: 'l\'azienda non ha ancora un profilo fiscale' }, response: new Response(null, { status: 422 }) } as never)
     const user = userEvent.setup()

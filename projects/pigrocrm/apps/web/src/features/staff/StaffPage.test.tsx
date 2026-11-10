@@ -166,7 +166,7 @@ describe('«Persone dell\'azienda»', () => {
   it('names the month\'s state after the least advanced person, and who holds it', async () => {
     renderPage()
     await screen.findByRole('table')
-    expect(screen.getByText('1 su 2 da cedolino')).toBeInTheDocument()
+    expect(screen.getByText('Stima, 1 su 2 da cedolino')).toBeInTheDocument()
     expect(screen.getByText(/Lo tiene a «Stimato»: Marco Rossi/)).toBeInTheDocument()
   })
 
@@ -205,6 +205,26 @@ describe('«Persone dell\'azienda»', () => {
         body: { period: '2026-10-01', gross: '2500.00', net: '1850.50', withholding: '300' },
       }),
     )
+  })
+
+  it('never carries figures typed for one person over to another', async () => {
+    answers['/api/staff'] = { items: [MARCO, member('m-5', 'Anna Verdi')], next_cursor: null }
+    answers['/api/staff/payroll/{legal_entity_id}'] = month([MARCO_ESTIMATE, { ...MARCO_ESTIMATE, staff_member_id: 'm-5', name: 'Anna Verdi' }])
+    const user = userEvent.setup()
+    renderPage()
+    await user.click(await screen.findByText('Marco Rossi', { selector: 'p' }))
+    const panel = await screen.findByLabelText('Persona aperta')
+    await user.type(within(panel).getByLabelText('Lordo (€)'), '2500')
+    await user.click(screen.getByText('Anna Verdi', { selector: 'p' }))
+    expect(within(await screen.findByLabelText('Persona aperta')).getByLabelText('Lordo (€)')).toHaveValue('')
+  })
+
+  it('shows the error, not a table of people who seem to be out of service, when the month fails', async () => {
+    answers['/api/staff/payroll/{legal_entity_id}'] = new Error('Non riesco a stimare il mese')
+    renderPage()
+    expect(await screen.findByRole('alert')).toHaveTextContent('Non riesco a stimare il mese')
+    expect(screen.queryByRole('table')).toBeNull()
+    expect(screen.queryByText('Non in servizio')).toBeNull()
   })
 
   it('offers no payslip form for a month a payslip already fixed', async () => {
