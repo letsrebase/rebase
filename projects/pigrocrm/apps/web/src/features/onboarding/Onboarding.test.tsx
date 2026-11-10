@@ -33,7 +33,7 @@ const ok = (data: unknown) => ({ data, response: { status: 200 } })
 function mod(key: string, enabled = true, records = 0, requires: string[] = []) {
   return {
     key,
-    label: { deals: 'Deal', contracts: 'Contratti', time: 'Ore', costs: 'Costi', taxes: 'Tasse' }[key],
+    label: { deals: 'Deal', contracts: 'Contratti', time: 'Ore', purchases: 'Acquisti', taxes: 'Tasse' }[key],
     description: `descrizione ${key}`,
     requires,
     enabled,
@@ -60,7 +60,7 @@ function proposal(dealRecords = 0): Proposal {
         mod('deals', true, dealRecords),
         mod('contracts'),
         mod('time', true, 0, ['deals']),
-        mod('costs'),
+        mod('purchases'),
         mod('taxes'),
       ],
     },

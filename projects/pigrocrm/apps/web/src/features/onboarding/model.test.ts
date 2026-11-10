@@ -30,7 +30,7 @@ const proposal: Proposal = {
       module('deals', true, 4),
       module('contracts', true),
       module('time', true),
-      module('costs', true),
+      module('purchases', true),
       module('taxes', true),
     ],
   },
@@ -42,7 +42,7 @@ describe('the onboarding model', () => {
       deals: false,
       contracts: true,
       time: false,
-      costs: true,
+      purchases: true,
       taxes: true,
     })
   })

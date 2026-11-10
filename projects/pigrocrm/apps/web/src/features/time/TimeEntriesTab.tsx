@@ -6,7 +6,7 @@ import { QueryErrorBanner } from '@/components/QueryErrorBanner'
 import { Badge } from '@rebase/ui/badge'
 import { Button } from '@rebase/ui/button'
 import { Card, CardContent } from '@rebase/ui/card'
-import { CostsPanel } from '@/features/costs/CostsPanel'
+import { PurchasesPanel } from '@/features/purchases/PurchasesPanel'
 import { useCanWrite } from '@/lib/auth'
 import { dealStatusLabel } from '@/lib/dealStatus'
 import { useEntitySchema } from '@/lib/schema'
@@ -28,12 +28,12 @@ function Figure({ label, value, hint }: { label: string; value: string; hint?: s
 
 export function TimeEntriesTab({
   dealId,
-  withCosts = true,
+  withPurchases = true,
 }: {
   dealId: string
   /** The deal's costs under the hours: the `costs` module's part of this tab, left out when
    *  that module is off (REB-953). */
-  withCosts?: boolean
+  withPurchases?: boolean
 }) {
   const entries = useTimeEntries({ deal_id: dealId })
   const summary = useDealTimeSummary(dealId)
@@ -125,7 +125,7 @@ export function TimeEntriesTab({
       {/* Costs sit on the Ore tab in 4A rather than on an «Economia» tab because that
           tab does not exist until 4B, and a cost with nowhere to be entered is a cost
           nobody records. */}
-      {withCosts && <CostsPanel dealId={dealId} />}
+      {withPurchases && <PurchasesPanel dealId={dealId} />}
 
       <TimeEntryForm
         open={creating}

@@ -20,7 +20,7 @@ describe('availableTabs (REB-953)', () => {
   })
 
   it('keeps «Economica» and «Scadenziario», the core’s, with every module off', () => {
-    expect(ids(['deals', 'contracts', 'time', 'costs', 'taxes'])).toEqual(['economic', 'receivables'])
+    expect(ids(['deals', 'contracts', 'time', 'purchases', 'taxes'])).toEqual(['economic', 'receivables'])
   })
 })
 

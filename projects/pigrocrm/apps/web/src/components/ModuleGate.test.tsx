@@ -55,7 +55,7 @@ describe('ModuleGate (REB-953)', () => {
     ['/app/days/new', ['contracts'], 'Contratti'],
     ['/app/approvals/new', ['contracts'], 'Contratti'],
     ['/app/hours', ['time'], 'Ore'],
-    ['/app/settings/cost-categories', ['costs'], 'Costi'],
+    ['/app/settings/cost-categories', ['purchases'], 'Acquisti'],
   ] as const)('turns %s away when %j is off', (pathname, off, label) => {
     route.pathname = pathname
     renderGate(off)
@@ -72,7 +72,7 @@ describe('ModuleGate (REB-953)', () => {
 
   it('lets the core through whatever is off', () => {
     route.pathname = '/app/organizations'
-    renderGate(['deals', 'contracts', 'time', 'costs', 'taxes'])
+    renderGate(['deals', 'contracts', 'time', 'purchases', 'taxes'])
     expect(screen.getByText('La pagina')).toBeInTheDocument()
   })
 

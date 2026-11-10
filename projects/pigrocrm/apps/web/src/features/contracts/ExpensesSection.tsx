@@ -23,7 +23,7 @@ import {
   SelectValue,
 } from '@rebase/ui/select'
 import { LoadingState } from '@/components/LoadingState'
-import { useCostCategories } from '@/features/costs/queries'
+import { useCostCategories } from '@/features/purchases/queries'
 import { formatDate } from '@/features/invoices/format'
 import { fieldErrorFrom, toProblem, type ProblemDetail } from '@/lib/api'
 import { useCan } from '@/lib/auth'

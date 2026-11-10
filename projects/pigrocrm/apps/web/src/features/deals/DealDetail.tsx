@@ -41,7 +41,7 @@ import { useGmailConfigured } from '@/features/gmail/queries'
 import { InvoicesTab } from '@/features/invoices/InvoicesTab'
 import { NewProformaButton } from '@/features/invoices/NewProformaDialog'
 import { NotesSection } from '@/features/notes/NotesSection'
-import { CostsPanel } from '@/features/costs/CostsPanel'
+import { PurchasesPanel } from '@/features/purchases/PurchasesPanel'
 import { TimeEntriesTab } from '@/features/time/TimeEntriesTab'
 import { toProblem, type ProblemDetail } from '@/lib/api'
 import { useCanWrite } from '@/lib/auth'
@@ -216,10 +216,10 @@ export function DealDetail() {
   // Shares the shell banner's cached health row -- see `useGmailConfigured`.
   const gmailConfigured = useGmailConfigured()
   // The tabs of a module the space has switched off are not drawn (REB-953): the hours are
-  // `time`, a deal's costs `costs`, and its economics read both.
+  // `time`, a deal's purchases `purchases`, and its economics read both.
   const modules = useModules()
   const timeOn = modules.on('time')
-  const costsOn = modules.on('costs')
+  const purchasesOn = modules.on('purchases')
 
   if (isLoading) return <LoadingState className="m-8" />
   // See `routes/app/organizations/$organizationId.tsx`'s identical guard for the full
@@ -294,9 +294,9 @@ export function DealDetail() {
         entityId={dealId}
         documents={<DocumentsTab owner={{ dealId }} />}
         invoices={<InvoicesTab owner={{ dealId }} />}
-        hours={timeOn ? <TimeEntriesTab dealId={dealId} withCosts={costsOn} /> : undefined}
-        costs={!timeOn && costsOn ? <CostsPanel dealId={dealId} /> : undefined}
-        economics={timeOn && costsOn ? <EconomicsTab dealId={dealId} /> : undefined}
+        hours={timeOn ? <TimeEntriesTab dealId={dealId} withPurchases={purchasesOn} /> : undefined}
+        purchases={!timeOn && purchasesOn ? <PurchasesPanel dealId={dealId} /> : undefined}
+        economics={timeOn && purchasesOn ? <EconomicsTab dealId={dealId} /> : undefined}
         tasks={<EntityTask link={{ kind: 'deal', id: dealId }} />}
         emails={gmailConfigured ? <EmailTab entityType="deal" entityId={dealId} /> : undefined}
         actions={

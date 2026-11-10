@@ -168,7 +168,7 @@ describe('CalendarPage', () => {
     await screen.findByRole('grid')
 
     // `as unknown as` on the way out of `mock.calls`, the house pattern in every test
-    // that reads an `api` call back (`CostsPanel.test.tsx`, `InvoiceActions.test.tsx`):
+    // that reads an `api` call back (`PurchasesPanel.test.tsx`, `InvoiceActions.test.tsx`):
     // the mock is a bare `vi.fn()`, so its recorded arguments are typed `never` and a
     // plain cast is the one thing tsc refuses. Only `tsc --noEmit` sees this at all --
     // vitest transpiles without typechecking, so the suite was green while the build

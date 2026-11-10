@@ -128,7 +128,7 @@ export function PeriodsPanel() {
                   disabled: reopen.isPending,
                   onSelect: () => {
                     const confirmed = window.confirm(
-                      `Riaprire ${label(lock.year, lock.month)}? Le ore e i costi di quel mese tornano modificabili, e la riapertura viene registrata.`,
+                      `Riaprire ${label(lock.year, lock.month)}? Le ore e gli acquisti di quel mese tornano modificabili, e la riapertura viene registrata.`,
                     )
                     if (!confirmed) return
                     setProblem(null)

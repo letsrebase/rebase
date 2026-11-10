@@ -31,7 +31,7 @@ export const MODULE_LABELS: Record<ModuleKey, string> = {
   deals: 'Deal',
   contracts: 'Contratti',
   time: 'Ore',
-  costs: 'Costi',
+  purchases: 'Acquisti',
   taxes: 'Tasse',
   staff: "Persone dell'azienda",
   collaborators: 'Collaboratori',
@@ -58,9 +58,9 @@ export const ROUTE_MODULES: ReadonlyArray<{ path: string; modules: readonly Modu
   // time: the hours register, the timer and the rates the hours are priced with.
   { path: '/app/hours', modules: ['time'] },
   { path: '/app/settings/rates', modules: ['time'] },
-  // costs: the cost categories (the costs themselves live on a deal's Ore tab, `time` and
-  // `costs` together).
-  { path: '/app/settings/cost-categories', modules: ['costs'] },
+  // purchases: the cost categories (the purchases themselves live on a deal's Ore tab, `time`
+  // and `purchases` together).
+  { path: '/app/settings/cost-categories', modules: ['purchases'] },
 ]
 
 /** The modules a path needs; `[]` for a page of the core. */

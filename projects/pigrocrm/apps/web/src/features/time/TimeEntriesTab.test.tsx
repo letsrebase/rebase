@@ -143,7 +143,7 @@ describe('TimeEntriesTab', () => {
         ? ok(EMPTY_SCHEMA)
         : failed({ detail: 'Boom' }, 500)) as never)
     renderTab()
-    // `waitFor` on the settled state, not `findByRole`: the costs panel now mounted
+    // `waitFor` on the settled state, not `findByRole`: the purchases panel now mounted
     // under the hours table reads the same failing `api.GET` and renders its own
     // banner, which can appear a tick before this tab's early return replaces the whole
     // tree with its one. `findByRole` resolves on that first, doomed node and then

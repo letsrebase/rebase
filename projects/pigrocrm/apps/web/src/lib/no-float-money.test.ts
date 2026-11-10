@@ -52,6 +52,8 @@ const ECONOMIC_FIELDS = new Set([
   'default_hourly_cost',
   'work_cost',
   'direct_costs',
+  'cost_amount',
+  'vat_amount',
   'revenue',
   'gross_margin',
   'percentage_margin',

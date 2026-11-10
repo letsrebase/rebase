@@ -4,11 +4,13 @@ import type { ReactNode } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { api } from '@/lib/api'
 import {
+  useCancelPurchase,
   useCostCategories,
-  useCosts,
-  useCreateCost,
-  useDeleteCost,
-  useUpdateCost,
+  useCreatePurchase,
+  useDeletePurchase,
+  usePurchases,
+  useRestorePurchase,
+  useUpdatePurchase,
 } from './queries'
 
 // Same reason as `features/time/queries.test.tsx`: the shared `api` client closed over
@@ -39,14 +41,14 @@ function harness() {
   return { wrapper, invalidate }
 }
 
-describe('useCosts', () => {
+describe('usePurchases', () => {
   it('forwards its filters and asks for a full page', async () => {
     const { wrapper } = harness()
     mockGet.mockReturnValueOnce(ok({ items: [], next_cursor: null }))
-    renderHook(() => useCosts({ deal_id: 'd-1', only_general: false }), { wrapper })
+    renderHook(() => usePurchases({ deal_id: 'd-1', only_general: false }), { wrapper })
     await waitFor(() => expect(mockGet).toHaveBeenCalled())
     expect(mockGet).toHaveBeenCalledWith(
-      '/api/costs',
+      '/api/purchases',
       expect.objectContaining({
         params: { query: { deal_id: 'd-1', only_general: false, limit: 200 } },
       }),
@@ -78,53 +80,84 @@ describe('useCostCategories', () => {
   })
 })
 
-describe('useCreateCost', () => {
+describe('useCreatePurchase', () => {
   it("refreshes the list and the deal's own summary", async () => {
     const { wrapper, invalidate } = harness()
     mockPost.mockReturnValueOnce(ok({ id: 'c-1', deal_id: 'd-1' }))
-    const { result } = renderHook(() => useCreateCost(), { wrapper })
+    const { result } = renderHook(() => useCreatePurchase(), { wrapper })
     result.current.mutate({ deal_id: 'd-1', amount: '10.00' })
     await waitFor(() => expect(result.current.isSuccess).toBe(true))
-    expect(invalidate).toHaveBeenCalledWith({ queryKey: ['costs', {}] })
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ['purchases', {}] })
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ['deal-time-summary', 'd-1'] })
   })
 
-  it('leaves the deal summaries alone for a general expense, which belongs to no deal', async () => {
+  it('leaves the deal summaries alone for a general purchase, which belongs to no deal', async () => {
     const { wrapper, invalidate } = harness()
     mockPost.mockReturnValueOnce(ok({ id: 'c-2', deal_id: null }))
-    const { result } = renderHook(() => useCreateCost(), { wrapper })
+    const { result } = renderHook(() => useCreatePurchase(), { wrapper })
     result.current.mutate({ amount: '10.00' })
     await waitFor(() => expect(result.current.isSuccess).toBe(true))
-    expect(invalidate).toHaveBeenCalledWith({ queryKey: ['costs', {}] })
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ['purchases', {}] })
     expect(invalidate).toHaveBeenCalledTimes(1)
   })
 })
 
-describe('useUpdateCost', () => {
-  it('patches the cost it was built for', async () => {
+describe('useUpdatePurchase', () => {
+  it('patches the purchase it was built for', async () => {
     const { wrapper } = harness()
     mockPatch.mockReturnValueOnce(ok({ id: 'c-1', deal_id: 'd-1' }))
-    const { result } = renderHook(() => useUpdateCost('c-1'), { wrapper })
+    const { result } = renderHook(() => useUpdatePurchase('c-1'), { wrapper })
     result.current.mutate({ amount: '12.00' })
     await waitFor(() => expect(result.current.isSuccess).toBe(true))
     expect(mockPatch).toHaveBeenCalledWith(
-      '/api/costs/{cost_id}',
-      expect.objectContaining({ params: { path: { cost_id: 'c-1' } }, body: { amount: '12.00' } }),
+      '/api/purchases/{purchase_id}',
+      expect.objectContaining({ params: { path: { purchase_id: 'c-1' } }, body: { amount: '12.00' } }),
     )
   })
 })
 
-describe('useDeleteCost', () => {
+describe('useDeletePurchase', () => {
   it('deletes by id and refreshes the list', async () => {
     const { wrapper, invalidate } = harness()
     mockDelete.mockReturnValueOnce(ok(undefined))
-    const { result } = renderHook(() => useDeleteCost(), { wrapper })
+    const { result } = renderHook(() => useDeletePurchase(), { wrapper })
     result.current.mutate('c-1')
     await waitFor(() => expect(result.current.isSuccess).toBe(true))
     expect(mockDelete).toHaveBeenCalledWith(
-      '/api/costs/{cost_id}',
-      expect.objectContaining({ params: { path: { cost_id: 'c-1' } } }),
+      '/api/purchases/{purchase_id}',
+      expect.objectContaining({ params: { path: { purchase_id: 'c-1' } } }),
     )
-    expect(invalidate).toHaveBeenCalledWith({ queryKey: ['costs', {}] })
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ['purchases', {}] })
+  })
+})
+
+describe('useRestorePurchase', () => {
+  it('posts to the restore route and refreshes the list and the deal summary', async () => {
+    const { wrapper, invalidate } = harness()
+    mockPost.mockReturnValueOnce(ok({ id: 'c-1', deal_id: 'd-1' }))
+    const { result } = renderHook(() => useRestorePurchase(), { wrapper })
+    result.current.mutate('c-1')
+    await waitFor(() => expect(result.current.isSuccess).toBe(true))
+    expect(mockPost).toHaveBeenCalledWith(
+      '/api/purchases/{purchase_id}/restore',
+      expect.objectContaining({ params: { path: { purchase_id: 'c-1' } } }),
+    )
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ['purchases', {}] })
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ['deal-time-summary', 'd-1'] })
+  })
+})
+
+describe('useCancelPurchase', () => {
+  it('posts to the cancel route and refreshes the list', async () => {
+    const { wrapper, invalidate } = harness()
+    mockPost.mockReturnValueOnce(ok({ id: 'c-1', deal_id: null }))
+    const { result } = renderHook(() => useCancelPurchase(), { wrapper })
+    result.current.mutate('c-1')
+    await waitFor(() => expect(result.current.isSuccess).toBe(true))
+    expect(mockPost).toHaveBeenCalledWith(
+      '/api/purchases/{purchase_id}/cancel',
+      expect.objectContaining({ params: { path: { purchase_id: 'c-1' } } }),
+    )
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ['purchases', {}] })
   })
 })

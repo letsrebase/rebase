@@ -10,7 +10,7 @@
  *
  * Generalised from `features/deals/columns.tsx`'s own private
  * `centsFromDecimalString`, which now imports from here: three features need it at
- * once (the week grid's row and column totals, the costs panel, the deals Kanban), and
+ * once (the week grid's row and column totals, the purchases panel, the deals Kanban), and
  * a fourth copy is how they start disagreeing.
  *
  * **This is the only arithmetic permitted in the browser in this slice**, and only for
