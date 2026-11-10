@@ -317,41 +317,51 @@ def test_an_administrator_records_a_payslip_and_reads_the_months_estimate(
 
 
 def test_a_collaborator_reads_the_stipendi_aggregate_and_not_the_payroll_items(
-    logged_in: TestClient, collaborator_client: TestClient, api_session: Session
+    collaborator_client: TestClient, api_session: Session
 ) -> None:
-    entity = _entity(api_session, "it-standard", "std")
-    member = logged_in.post(
-        "/api/staff",
-        json=_employee(
-            entity,
-            part_time_percent="100",
-            employer_inps_rate="30.00",
-            employee_inps_rate="9.19",
-            thirteenth_month=12,
-            fourteenth_month=6,
-        ),
-    ).json()["id"]
-    logged_in.put(f"/api/staff/pay-days/{entity}", json={"pay_day": 27, "pay_month_offset": 0})
     from pigrocrm.core.db import today_local
+    from pigrocrm.core.due_items.schemas import DueItemListQuery
+    from pigrocrm.core.due_items.service import DueItemService
+    from pigrocrm.core.staff.schemas import PayDayWrite, PayslipFigures
 
-    this_month = today_local().replace(day=1)
-    logged_in.post(
-        f"/api/staff/{member}/payslips",
-        json={
-            "period": max(this_month, _dt.date(2026, 1, 1)).isoformat(),
-            "gross": "2142.86",
-            "net": "1607.15",
-            "withholding": "321.43",
-        },
+    entity = _entity(api_session, "it-standard", "std")
+    staff = StaffService(api_session)
+    system = Actor.system()
+    staff.set_payroll_pay_day(UUID(entity), PayDayWrite(pay_day=27, pay_month_offset=0), system)
+    body = _employee(
+        entity,
+        part_time_percent="100",
+        employer_inps_rate="30.00",
+        employee_inps_rate="9.19",
+        employer_inail_rate="1.00",
+        thirteenth_month=12,
+        fourteenth_month=6,
     )
-    items = logged_in.get("/api/due-items", params={"source_kind": "payroll", "limit": 200})
-    assert items.status_code == 200 and items.json()["items"]
+    member = staff.create_staff_member(
+        EmployeeCreate(**{k: v for k, v in body.items() if k != "kind"}), system
+    )
+    staff.record_staff_payslip(
+        member.id,
+        PayslipFigures(
+            period=max(today_local().replace(day=1), _dt.date(2026, 1, 1)),
+            gross=Decimal("2142.86"),
+            net=Decimal("1607.15"),
+            withholding=Decimal("321.43"),
+        ),
+        system,
+    )
+    assert (
+        DueItemService(api_session)
+        .list(DueItemListQuery(source_kind="payroll", limit=200), system)
+        .items
+    )
 
-    refused = collaborator_client.get("/api/due-items", params={"source_kind": "payroll"})
-    assert refused.status_code == 403
+    assert (
+        collaborator_client.get("/api/due-items", params={"source_kind": "payroll"}).status_code
+        == 403
+    )
     page = collaborator_client.get("/api/due-items", params={"limit": 200}).json()
     assert not [i for i in page["items"] if i["source_kind"] == "payroll"]
-
     totals = collaborator_client.get(
         "/api/due-items/payroll-totals", params={"legal_entity_id": entity}
     )

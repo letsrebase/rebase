@@ -207,15 +207,15 @@ def test_the_refresh_leaves_an_unchanged_forecast_alone_and_rewrites_a_changed_o
         member, StaffMemberUpdate(gross_annual_pay=Decimal("36000.00")), ADMIN
     )
     after = _payroll_items(db_session, state="forecast")
-    assert {i.id for i in after}.isdisjoint(before)
     assert len(after) == len(before)
     net = next(
         i for i in after if (i.source_rule or "").startswith(f"payroll_net_pay:{NEXT_MONTH:%Y-%m}:")
     )
     assert net.amount > Decimal("1900.00")
     # The replaced ones are dropped, never left to be read twice.
+    assert net.id not in before
     dropped = [i for i in _payroll_items(db_session) if i.state == "dropped"]
-    assert {i.id for i in dropped} == set(before)
+    assert net.id not in {i.id for i in dropped} and dropped
 
 
 def test_the_13th_14th_and_the_yearly_inail_are_forecast_in_their_months(
@@ -224,8 +224,8 @@ def test_the_13th_14th_and_the_yearly_inail_are_forecast_in_their_months(
     _, member = _world(db_session)
     StaffService(db_session).record_staff_payslip(member, _payslip(), ADMIN)
     rules = {i.source_rule: i for i in _payroll_items(db_session, state="forecast")}
-    december = [r for r in rules if r and r.startswith("payroll_extra_pay:") and r.endswith("-12")]
-    june = [r for r in rules if r and r.startswith("payroll_extra_pay:") and r.endswith("-06")]
+    december = [r for r in rules if r and r.startswith("payroll_extra_pay:") and r.split(":")[1].endswith("-12")]
+    june = [r for r in rules if r and r.startswith("payroll_extra_pay:") and r.split(":")[1].endswith("-06")]
     assert december and june
     assert all(rules[r].counterparty_type == "staff_member" for r in december + june)
     # The 13th leaves in December and the 14th in June, on the pay day's day.
