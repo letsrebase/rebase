@@ -138,11 +138,11 @@ def world(db_session: Session) -> World:
     return World(db_session)
 
 
-def _items(session: Session, purchase_id: UUID) -> list[DueItem]:
+def _items(session: Session, note_id: UUID) -> list[DueItem]:
     return list(
         session.execute(
             select(DueItem).where(
-                DueItem.source_kind == "purchase", DueItem.source_id == purchase_id
+                DueItem.source_kind == "expense_note", DueItem.source_id == note_id
             )
         ).scalars()
     )
@@ -314,7 +314,7 @@ def test_another_administrator_approves_and_the_note_is_a_purchase_with_one_due_
     assert purchase.category_id == world.category and purchase.date == TODAY
     assert purchase.vat_lines == [] and purchase.supplier_id is None
 
-    (item,) = _items(world.session, purchase.id)
+    (item,) = _items(world.session, read.id)
     assert item.id == read.due_item_id
     assert (item.direction, item.state, item.counterparty_type) == (
         "out",
@@ -333,7 +333,7 @@ def test_another_administrator_approves_and_the_note_is_a_purchase_with_one_due_
     # Approving twice is a 409 and writes nothing more.
     with pytest.raises(Conflict, match="gia' stata decisa"):
         service.approve_expense_note(note_id, world.other_admin)
-    assert len(_items(world.session, purchase.id)) == 1
+    assert len(_items(world.session, read.id)) == 1
 
 
 def test_an_administrator_is_refused_approval_of_their_own_note(world: World) -> None:
@@ -508,7 +508,7 @@ def test_a_transfer_is_dated_settled_like_any_due_item_and_reimburses_once(world
         service.reimburse_expense_note(
             approved.id, ExpenseNoteReimburse(method="transfer", date=TODAY), world.admin
         )
-    assert len(_items(world.session, approved.purchase_id)) == 1  # type: ignore[arg-type]
+    assert len(_items(world.session, approved.id)) == 1
 
     # Taking the payment back reopens the note, with its way.
     settlement = DueItemService(world.session).get(approved.due_item_id, world.admin).settlements[0]  # type: ignore[arg-type]
@@ -627,9 +627,9 @@ def test_a_payslip_settles_the_notes_item_and_adds_no_second_due_item(world: Wor
     assert read.reimbursed_on is not None and read.reimbursed_on <= TODAY
     item = world.session.get(DueItem, approved.due_item_id)
     assert item is not None and item.state == "settled"
-    # No second due item for the reimbursement: the purchase still owns exactly one, and the
+    # No second due item for the reimbursement: the note still has exactly one, and the
     # payslip's own items are the net pay and the withholding, never a reimbursement.
-    assert len(_items(world.session, approved.purchase_id)) == 1  # type: ignore[arg-type]
+    assert len(_items(world.session, approved.id)) == 1
     written = set(world.session.execute(select(DueItem.id)).scalars().all()) - set(
         purchase_items_before
     )
@@ -637,7 +637,7 @@ def test_a_payslip_settles_the_notes_item_and_adds_no_second_due_item(world: Wor
         row.source_kind
         for row in world.session.execute(select(DueItem).where(DueItem.id.in_(written))).scalars()
     }
-    assert "purchase" not in kinds
+    assert "expense_note" not in kinds
     # And the note cannot be reimbursed again.
     with pytest.raises(Conflict, match="gia' rimborsata"):
         service.reimburse_expense_note(
@@ -726,3 +726,49 @@ def test_the_author_cannot_pay_their_own_notes_due_item_through_the_generic_sett
         DueItemService(world.session).settle(approved.due_item_id, payment, world.admin)  # type: ignore[arg-type]
     DueItemService(world.session).settle(approved.due_item_id, payment, world.other_admin)  # type: ignore[arg-type]
     assert service.get_expense_note(note.id, world.other_admin).status == "reimbursed"
+
+
+def test_the_due_item_of_a_note_is_read_by_administrators_and_its_staff_member_only(
+    world: World,
+) -> None:
+    from pigrocrm.core.due_items.schedule import CashScheduleService
+    from pigrocrm.core.due_items.schedule_schemas import CashScheduleQuery
+    from pigrocrm.core.due_items.schemas import DueItemListQuery
+
+    approved = ExpenseNoteService(world.session).approve_expense_note(world.submit(), world.admin)
+    item_id = approved.due_item_id
+    assert item_id is not None
+    dues = DueItemService(world.session)
+    stranger = _actor(_user(world.session, "collaborator", "Estranea"))
+    readonly = _actor(_user(world.session, "readonly", "Lettore"))
+    token = Actor(id=world.admin_user.id, type="mcp", role="admin")
+    full = Actor(id=world.admin_user.id, type="mcp", role="admin", full_access=True)
+
+    def listed(actor: Actor) -> list[UUID]:
+        page = dues.list(DueItemListQuery(), actor)
+        return [row.id for row in page.items if row.source_kind == "expense_note"]
+
+    def scheduled(actor: Actor) -> Decimal:
+        page = CashScheduleService(world.session).get_schedule(
+            CashScheduleQuery(weeks=4), actor, profile="company"
+        )
+        return sum((week.out_expected for week in page.weeks), start=Decimal("0.00"))
+
+    # Administrators and a full-access token read it, in the lists, by id and in the schedule.
+    for reader in (world.admin, world.other_admin, full):
+        assert listed(reader) == [item_id]
+        assert dues.get(item_id, reader).id == item_id
+        assert scheduled(reader) == Decimal("42.50")
+    # The staff member it pays reads it in the lists and by id; the schedule is the company's.
+    assert listed(world.person) == [item_id]
+    assert dues.get(item_id, world.person).id == item_id
+    # Nobody else does: not a member, not a readonly one, not an administrator's plain token.
+    for actor in (stranger, readonly, token):
+        assert listed(actor) == [], actor
+        assert scheduled(actor) == Decimal("0.00"), actor
+        with pytest.raises((PermissionDenied, AgentForbidden)):
+            dues.get(item_id, actor)
+    for actor in (stranger, readonly, world.person):
+        assert scheduled(actor) == Decimal("0.00"), actor
+        with pytest.raises((PermissionDenied, AgentForbidden)):
+            dues.list(DueItemListQuery(source_kind="expense_note"), stranger)

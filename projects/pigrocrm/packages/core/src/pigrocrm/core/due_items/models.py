@@ -63,7 +63,12 @@ SOURCE_KINDS: tuple[str, ...] = (
     # A draft invoice, or a draft or confirmed proforma, before it has a number: a forecast
     # in, replaced by the issued invoice (§ 1.2).
     "sales_draft",
+    # What an approved expense note owes the staff member who paid (`expense_notes/service.py`):
+    # restricted, since it names a person and what they are paid back.
+    "expense_note",
 )
+# The source of an approved expense note's one due item (`expense_notes/service.py`).
+EXPENSE_NOTE_SOURCE_KIND = "expense_note"
 # The source of what staff cost and when it leaves (`staff/payroll.py`).
 PAYROLL_SOURCE_KIND = "payroll"
 # The kinds only an administrator reads and settles, and an agent only with `full_access`:
@@ -81,6 +86,9 @@ RESTRICTED_SOURCE_KINDS: frozenset[str] = frozenset(
         # What an engagement owes a freelancer names them and what they are paid (collaborators
         # design § 4): an administrator's, and a `full_access` agent's.
         "engagement",
+        # An approved expense note's reimbursement names the staff member and the amount: an
+        # administrator's, and the staff member's own (`DueItemService.get` and `list`).
+        EXPENSE_NOTE_SOURCE_KIND,
     }
 )
 

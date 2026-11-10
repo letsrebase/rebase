@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from pigrocrm.core.db import today_local
 from pigrocrm.core.due_items.models import (
+    EXPENSE_NOTE_SOURCE_KIND,
     OPEN_STATES,
     PAYROLL_SOURCE_KIND,
     RESTRICTED_SOURCE_KINDS,
@@ -251,7 +252,11 @@ class DueItemRepository:
     # `list_rows` stays the last method in this class -- the unconditional project rule (a
     # `def list(...)` would rebind `list` in the class namespace).
     def list_rows(
-        self, query: DueItemListQuery, *, restricted: bool
+        self,
+        query: DueItemListQuery,
+        *,
+        restricted: bool,
+        own_staff_member_id: UUID | None = None,
     ) -> list[tuple[DueItem, str | None, Decimal]]:
         """Open items by default, in `(due_date, id)` order with the undated ones last.
 
@@ -278,7 +283,19 @@ class DueItemRepository:
             .where(state_filter)
         )
         if not restricted:
-            stmt = stmt.where(DueItem.source_kind.not_in(sorted(RESTRICTED_SOURCE_KINDS)))
+            visible: ColumnElement[bool] = DueItem.source_kind.not_in(
+                sorted(RESTRICTED_SOURCE_KINDS)
+            )
+            if own_staff_member_id is not None:
+                # An approved expense note's item is its staff member's to read.
+                visible = or_(
+                    visible,
+                    and_(
+                        DueItem.source_kind == EXPENSE_NOTE_SOURCE_KIND,
+                        DueItem.staff_member_id == own_staff_member_id,
+                    ),
+                )
+            stmt = stmt.where(visible)
         if query.direction is not None:
             stmt = stmt.where(DueItem.direction == query.direction)
         if query.legal_entity_id is not None:
@@ -301,6 +318,10 @@ class DueItemRepository:
                 anchor is not None
                 and not restricted
                 and anchor.source_kind in RESTRICTED_SOURCE_KINDS
+                and not (
+                    anchor.source_kind == EXPENSE_NOTE_SOURCE_KIND
+                    and anchor.staff_member_id == own_staff_member_id
+                )
             ):
                 anchor = None
             if anchor is None:

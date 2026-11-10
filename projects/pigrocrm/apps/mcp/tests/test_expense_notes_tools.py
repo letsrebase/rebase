@@ -188,3 +188,30 @@ async def test_a_full_access_admin_decides_and_reimburses_but_never_on_its_own_n
         own = _payload(await client.call_tool("submit_expense_note", world.note()))
         refused = await client.call_tool("approve_expense_note", {"note_id": own["id"]})
         assert refused.is_error and "Non puoi approvare una tua nota" in str(refused.content)
+
+
+async def test_the_due_item_of_a_note_is_not_read_through_the_due_item_tools_by_other_members(
+    mcp_session: Session, tmp_path: Path
+) -> None:
+    world = World(mcp_session)
+    async with Client(_server(mcp_session, tmp_path, user=world.person)) as client:
+        note = _payload(await client.call_tool("submit_expense_note", world.note()))
+    async with Client(
+        _server(mcp_session, tmp_path, user=world.admin, full_access=True, role="admin")
+    ) as client:
+        approved = _payload(await client.call_tool("approve_expense_note", {"note_id": note["id"]}))
+        item_id = approved["due_item_id"]
+        seen = _payload(await client.call_tool("list_due_items", {"source_kind": "expense_note"}))
+        assert [row["id"] for row in seen["items"]] == [item_id]
+    # The staff member's own token reads it; another member's does not, by list or by id.
+    async with Client(_server(mcp_session, tmp_path, user=world.person)) as client:
+        own = _payload(await client.call_tool("list_due_items", {}))
+        assert item_id in [row["id"] for row in own["items"]]
+        assert not (await client.call_tool("get_due_item", {"due_item_id": item_id})).is_error
+    stranger = _user(mcp_session, "collaborator", "Estranea")
+    async with Client(_server(mcp_session, tmp_path, user=stranger)) as client:
+        other = _payload(await client.call_tool("list_due_items", {}))
+        assert item_id not in [row["id"] for row in other["items"]]
+        assert (await client.call_tool("get_due_item", {"due_item_id": item_id})).is_error
+        named = await client.call_tool("list_due_items", {"source_kind": "expense_note"})
+        assert named.is_error

@@ -117,9 +117,9 @@ def test_a_staff_member_submits_another_administrator_approves_and_it_is_reimbur
     again = logged_in.post(f"/api/expense-notes/{note['id']}/reimburse", json=way)
     assert again.status_code == 409, again.text
     items = logged_in.get(
-        "/api/due-items", params={"source_kind": "purchase", "state": "settled"}
+        "/api/due-items", params={"source_kind": "expense_note", "state": "settled"}
     ).json()["items"]
-    assert [item["source_id"] for item in items] == [approved.json()["purchase_id"]]
+    assert [item["source_id"] for item in items] == [note["id"]]
     counts = logged_in.get("/api/expense-notes/summary").json()
     assert (counts["to_approve"], counts["to_reimburse"], counts["closed"]) == (0, 0, 1)
 

@@ -196,7 +196,7 @@ code (`SOURCE_KINDS`), never a CHECK.
 `expense_notes` (migration 0104): `submitted`, `approved`, `rejected`, `reimbursed`, no draft. Approving writes one purchase of kind
 `expense_note` (`PurchaseService.register_expense_note`, the writer's half with no actor; `purchases.staff_member_id`; the purchase is
 never edited, cancelled or archived from the purchases, and `PurchaseCreate` refuses the kind) and the one outgoing due item to the
-person (source `purchase`, counterparty `staff_member`): a purchases due-item writer must skip this kind. Reimbursing is a second act,
+person (source kind `expense_note`, counterparty `staff_member`, in `RESTRICTED_SOURCE_KINDS`: an administrator's and the staff member's own to read): a purchases due-item writer must skip this kind of purchase. Reimbursing is a second act,
 once: a transfer dates the item (`paid` settles it), otherwise the item is settled like any other and `project_reimbursement`
 (called by `DueItemService._project`) turns the note `reimbursed` or back to `approved` when a payment is reversed; in a payslip,
 `record_staff_payslip` settles the same item through `settle_notes_in_payslip`, so no second due item exists. A note is own when

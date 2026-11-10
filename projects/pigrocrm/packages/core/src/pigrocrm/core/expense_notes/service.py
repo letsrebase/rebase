@@ -37,6 +37,7 @@ from sqlalchemy.orm import Session
 from pigrocrm.core.activities.service import ActivityService
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.db import today_local
+from pigrocrm.core.due_items.models import EXPENSE_NOTE_SOURCE_KIND
 from pigrocrm.core.due_items.repository import DueItemRepository
 from pigrocrm.core.due_items.schemas import DueItemCreate
 from pigrocrm.core.due_items.service import DueItemService
@@ -174,8 +175,8 @@ class ExpenseNoteService:
                 staff_member_id=note.staff_member_id,
                 amount=note.amount,
                 description=f"Rimborso nota spese: {note.description}"[:255],
-                source_kind="purchase",
-                source_id=purchase.id,
+                source_kind=EXPENSE_NOTE_SOURCE_KIND,
+                source_id=note.id,
                 own_date=today_local(),
             )
         )

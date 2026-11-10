@@ -65,11 +65,8 @@ _BRANCH = (
     "        "
 )
 _FUNCTION = "'public.entity_visible(text, uuid, boolean)'::regprocedure"
-# The due items an approval wrote: the purchases of kind `expense_note` are their source.
-_NOTE_ITEMS = (
-    "(SELECT id FROM due_items WHERE source_kind = 'purchase' AND source_id IN "
-    "(SELECT id FROM purchases WHERE kind = 'expense_note'))"
-)
+# The due items an approval wrote, source kind `expense_note`.
+_NOTE_ITEMS = "(SELECT id FROM due_items WHERE source_kind = 'expense_note')"
 
 
 def _rewrite_function(add: bool) -> str:
@@ -243,10 +240,7 @@ def downgrade() -> None:
         "AND m.state = 'confirmed')"
     )
     op.execute(f"DELETE FROM due_item_settlements WHERE due_item_id IN {_NOTE_ITEMS}")
-    op.execute(
-        "DELETE FROM due_items WHERE source_kind = 'purchase' AND source_id IN "
-        "(SELECT id FROM purchases WHERE kind = 'expense_note')"
-    )
+    op.execute("DELETE FROM due_items WHERE source_kind = 'expense_note'")
     op.execute("DELETE FROM purchases WHERE kind = 'expense_note'")
     op.drop_constraint(STAFF_CHECK, PURCHASES, type_="check")
     op.drop_index(STAFF_INDEX, table_name=PURCHASES)

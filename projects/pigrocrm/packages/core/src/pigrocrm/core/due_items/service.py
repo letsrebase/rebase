@@ -30,6 +30,7 @@ from pigrocrm.core.actor import Actor
 from pigrocrm.core.bank.models import BankMovement
 from pigrocrm.core.db import today_local
 from pigrocrm.core.due_items.models import (
+    EXPENSE_NOTE_SOURCE_KIND,
     OPEN_STATES,
     RESTRICTED_SOURCE_KINDS,
     SOURCE_KINDS,
@@ -58,7 +59,7 @@ from pigrocrm.core.errors import (
     PermissionDenied,
     ValidationFailed,
 )
-from pigrocrm.core.expense_notes.access import require_may_pay_item
+from pigrocrm.core.expense_notes.access import own_staff_member_id, require_may_pay_item
 from pigrocrm.core.expense_notes.projection import project_reimbursement
 from pigrocrm.core.invoices.models import Invoice
 from pigrocrm.core.legal_entities.models import LegalEntity
@@ -67,7 +68,6 @@ ENTITY = "due_item"
 SETTLEMENT_ENTITY = "due_item_settlement"
 ZERO = Decimal("0.00")
 SALES_INVOICE = "sales_invoice"
-PURCHASE_SOURCE = "purchase"
 
 
 def _is_fiscal(item: DueItem) -> bool:
@@ -512,7 +512,7 @@ class DueItemService:
         when nothing remains, dated by the latest live settlement. This is the only place that
         writes the two columns of an issued invoice (§ 1.1). A dropped item (an annulled
         invoice) leaves them as they were."""
-        if item.source_kind == PURCHASE_SOURCE and item.source_id is not None:
+        if item.source_kind == EXPENSE_NOTE_SOURCE_KIND:
             # An expense note's item (`expense_notes/projection.py`): the note reads reimbursed
             # when its item is settled in full.
             project_reimbursement(self.session, item, self.repo.totals(item.id).last_settled_on)
@@ -760,7 +760,7 @@ class DueItemService:
         item = self.repo.get(item_id)
         if item is None:
             raise NotFound(ENTITY, item_id)
-        if _is_fiscal(item):
+        if _is_fiscal(item) and not self._is_own_note_item(item, actor):
             actor.require_admin("read_fiscal_due_items")
         return self._detail(item)
 
@@ -772,7 +772,11 @@ class DueItemService:
         actor.require_agent_allowed("list_due_items")
         if query.source_kind in RESTRICTED_SOURCE_KINDS:
             actor.require_admin("read_fiscal_due_items")
-        rows = self.repo.list_rows(query, restricted=_may_read_fiscal(actor))
+        rows = self.repo.list_rows(
+            query,
+            restricted=_may_read_fiscal(actor),
+            own_staff_member_id=own_staff_member_id(self.session, actor),
+        )
         page = rows[: query.limit]
         return DueItemPage(
             items=[self._read(item, name, settled) for item, name, settled in page],
@@ -799,10 +803,18 @@ class DueItemService:
             payload["bank_movement_id"] = str(settlement.bank_movement_id)
         self.activities.record("legal_entity", item.legal_entity_id, kind, actor, payload)
 
+    def _is_own_note_item(self, item: DueItem, actor: Actor) -> bool:
+        """An expense note's item is its staff member's to read, as well as an administrator's."""
+        return (
+            item.source_kind == EXPENSE_NOTE_SOURCE_KIND
+            and item.staff_member_id is not None
+            and item.staff_member_id == own_staff_member_id(self.session, actor)
+        )
+
     def _require_may_pay_note(self, item: DueItem, actor: Actor) -> None:
         """Paying an expense note's item is reimbursing the note: not the author's to do
         (`expense_notes/access.py`)."""
-        if item.source_kind == PURCHASE_SOURCE and item.staff_member_id is not None:
+        if item.source_kind == EXPENSE_NOTE_SOURCE_KIND:
             require_may_pay_item(self.session, item.id, actor)
 
     @staticmethod
