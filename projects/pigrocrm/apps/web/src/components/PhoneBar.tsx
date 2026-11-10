@@ -3,6 +3,7 @@ import { Ellipsis, LayoutDashboard, ListChecks, Plus, Search } from 'lucide-reac
 import { useState } from 'react'
 import { cn } from '@rebase/ui/cn'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@rebase/ui/sheet'
+import { useEngagementsToDoCount } from '@/features/engagements/queries'
 import { useWaitingCount } from '@/features/inbox/queries'
 import { useNavGates } from '@/features/iva/queries'
 import { useUnreadCount } from '@/features/reminders/queries'
@@ -12,6 +13,7 @@ import { useModules } from '@/lib/modules'
 import { LegalEntitySelect } from './LegalEntitySelect'
 import {
   Agents,
+  ENGAGEMENTS_PATH,
   INBOX_PATH,
   REGISTRY_PATH,
   SETTINGS,
@@ -195,6 +197,7 @@ function More({
   const gates = useNavGates()
   const unread = useUnreadCount()
   const waiting = useWaitingCount()
+  const engagements = useEngagementsToDoCount(modules.on('collaborators'))
   const { location } = useRouterState()
   const registryRole = useRegistryView()
   const items: readonly NavItem[] = [
@@ -268,6 +271,12 @@ function More({
                   <span className="bg-sidebar-primary px-1.5 text-xs font-medium tabular-nums text-sidebar-primary-foreground">
                     <span aria-hidden="true">{waiting > 99 ? '99+' : waiting}</span>
                     <span className="sr-only">{`, ${waiting} da gestire`}</span>
+                  </span>
+                ) : null}
+                {to === ENGAGEMENTS_PATH && engagements > 0 ? (
+                  <span className="bg-sidebar-primary px-1.5 text-xs font-medium tabular-nums text-sidebar-primary-foreground">
+                    <span aria-hidden="true">{engagements > 99 ? '99+' : engagements}</span>
+                    <span className="sr-only">{`, ${engagements} da fare`}</span>
                   </span>
                 ) : null}
               </Link>

@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { BrandMark } from '@rebase/ui/brand-mark'
 import { Button } from '@rebase/ui/button'
 import { cn } from '@rebase/ui/cn'
+import { useEngagementsToDoCount } from '@/features/engagements/queries'
 import { useWaitingCount } from '@/features/inbox/queries'
 import { useNavGates } from '@/features/iva/queries'
 import { useOverdueCount } from '@/features/tasks/queries'
@@ -13,6 +14,7 @@ import { useModules } from '@/lib/modules'
 import { LegalEntitySelect } from './LegalEntitySelect'
 import {
   Agents,
+  ENGAGEMENTS_PATH,
   HOME,
   INBOX_PATH,
   REGISTRY_PATH,
@@ -70,6 +72,9 @@ export function Sidebar({
   // An entry of a module the space has switched off is not drawn (REB-953).
   const modules = useModules()
   const gates = useNavGates()
+  // The engagements that wait for a person (REB-1035): «Incarichi»'s own count, asked for an
+  // administrator of a space with the module on and for nobody else.
+  const engagements = useEngagementsToDoCount(modules.on('collaborators'))
 
   // The «Impostazioni» sub-items this reader may see (REB-294): the same
   // `canSeeSettingsTab` the settings page filters its own tabs with, so sidebar and
@@ -207,9 +212,21 @@ export function Sidebar({
                   }
                   rail={rail}
                   count={
-                    item.to === '/app/reminders' ? unread : item.to === INBOX_PATH ? waiting : 0
+                    item.to === '/app/reminders'
+                      ? unread
+                      : item.to === INBOX_PATH
+                        ? waiting
+                        : item.to === ENGAGEMENTS_PATH
+                          ? engagements
+                          : 0
                   }
-                  countLabel={item.to === INBOX_PATH ? 'da gestire' : undefined}
+                  countLabel={
+                    item.to === INBOX_PATH
+                      ? 'da gestire'
+                      : item.to === ENGAGEMENTS_PATH
+                        ? 'da fare'
+                        : undefined
+                  }
                   overdue={overdue}
                 />
               ))}

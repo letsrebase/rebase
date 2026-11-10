@@ -98,6 +98,19 @@ export const queryKeys = {
   inboxUnread: ['inbox', 'unread'] as const,
   inboxCopies: ['inbox', 'copies'] as const,
   inboxOriginals: ['inbox', 'originals'] as const,
+  // «Incarichi» (REB-1035): `engagements` is the prefix every write to an engagement or one of
+  // its months invalidates; under it the lists by tab and filters, the counts the entry draws,
+  // one engagement with its report, its payments and its availability.
+  engagements: ['engagements'] as const,
+  engagementList: (params: unknown) => ['engagements', 'list', params] as const,
+  engagementCounts: ['engagements', 'counts'] as const,
+  engagement: (id: string) => ['engagements', 'one', id] as const,
+  engagementReport: (id: string) => ['engagements', 'one', id, 'report'] as const,
+  engagementPayments: (id: string) => ['engagements', 'one', id, 'payments'] as const,
+  freelancerAvailability: (params: unknown) => ['engagements', 'availability', params] as const,
+  // The freelancer's own card on a contract: rebase's data in another space, so it is not under
+  // `engagements`, which belongs to rebase's own space.
+  ownEngagement: (contractId: string) => ['own-engagement', contractId] as const,
   proposal: (id: string) => ['proposal', id] as const,
   proposalTimeline: (id: string) => ['proposal-timeline', id] as const,
   proposalContract: (id: string) => ['proposal-contract', id] as const,
