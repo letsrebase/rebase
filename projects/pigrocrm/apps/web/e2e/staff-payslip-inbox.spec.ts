@@ -61,7 +61,7 @@ test('a payslip read from the inbox is received, accepted by a person, and the m
   await page.goto('/app/staff?month=2026-05')
   await page.getByText(name, { exact: true }).first().click()
   const panel = page.getByLabel('Persona aperta')
-  await expect(panel.getByText('Ricevuto')).toBeVisible()
+  await expect(panel.getByText('Ricevuto', { exact: true })).toBeVisible()
   await expect(panel.getByRole('button', { name: 'Rifiuta…' })).toBeVisible()
   await expect(panel.getByRole('button', { name: 'Apri il PDF' })).toBeVisible()
   await page.screenshot({ path: `${SHOTS}/staff-received-1440.png`, fullPage: true })
