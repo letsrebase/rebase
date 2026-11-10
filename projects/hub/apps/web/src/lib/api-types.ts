@@ -1809,6 +1809,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/hub/campaigns/confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Confirm Address
+         * @description The confirmation page's button (REB-911). A GET never confirms, since a mail scanner
+         *     opens every link: the page posts the token. A link that is not ours or is past its
+         *     deadline is a 410 with the sentence the page shows; the same link again is the same
+         *     answer as the first time.
+         */
+        post: operations["confirm_address_api_hub_campaigns_confirm_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/hub/campaigns": {
         parameters: {
             query?: never;
@@ -9940,6 +9963,37 @@ export interface operations {
         };
     };
     unsubscribe_api_hub_campaigns_unsubscribe_post: {
+        parameters: {
+            query: {
+                t: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Ack"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    confirm_address_api_hub_campaigns_confirm_post: {
         parameters: {
             query: {
                 t: string;

@@ -13,6 +13,7 @@ from sqlalchemy import ColumnElement, func, select
 from sqlalchemy.orm import Session
 
 from rebase_core.campaigns.actions import done_at_many
+from rebase_core.campaigns.confirmation import unconfirmed_emails
 from rebase_core.campaigns.schemas import CompaniesFilters, Filters, TalentsFilters
 from rebase_core.campaigns.states import Candidate, candidates_for_state, display_name
 from rebase_core.companies import CompanyService
@@ -33,6 +34,9 @@ REASON_ADMIN = "amministratore"
 REASON_NEVER = "«Non scrivere mai»"
 REASON_OPTOUT = "si è disiscritto"
 REASON_BOUNCED = "indirizzo rimbalzato"
+# REB-911: nobody proved the address (no login, no confirmation link), so a campaign
+# leaves it out until somebody does; `confirmation.request` asks for the one mail.
+REASON_UNCONFIRMED = "indirizzo non confermato"
 REASON_RECENT = "ha ricevuto un'altra campagna il {data}"
 REASON_DONE = "ha già fatto l'azione"
 REASON_NOT_LISTED = "non più in lista"
@@ -335,6 +339,7 @@ def exclusions(
             )
         )
     )
+    unconfirmed = unconfirmed_emails(session, emails)
     recent_q = (
         select(CampaignRecipient.email, func.max(CampaignRecipient.sent_at))
         .where(
@@ -359,6 +364,8 @@ def exclusions(
             reasons[email] = REASON_NEVER if optouts[email] == "admin" else REASON_OPTOUT
         elif email in bounced:
             reasons[email] = REASON_BOUNCED
+        elif email in unconfirmed:
+            reasons[email] = REASON_UNCONFIRMED
         elif email in recent:
             data = recent[email].astimezone(ROME).strftime("%d/%m")
             reasons[email] = REASON_RECENT.format(data=data)

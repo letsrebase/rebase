@@ -50,6 +50,7 @@ NOT_ADMIN: dict[Route, tuple[str, str]] = {
     ("GET", "/api/hub/referral-rates"): (PUBLIC, "the rates the landing and the guide show"),
     ("GET", "/api/hub/campaigns/unsubscribe"): (PUBLIC, "the unsubscribe page's token read"),
     ("POST", "/api/hub/campaigns/unsubscribe"): (PUBLIC, "the unsubscribe's one click"),
+    ("POST", "/api/hub/campaigns/confirm"): (PUBLIC, "the address confirmation's button"),
     # The one-click link in every mail sent before the rename keeps working.
     ("GET", "/api/hub/campagne/disiscrizione"): (PUBLIC, "the legacy unsubscribe page"),
     ("POST", "/api/hub/campagne/disiscrizione"): (PUBLIC, "the legacy unsubscribe click"),

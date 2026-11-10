@@ -62,6 +62,46 @@ def magic_link_mail(to: str, link: str, minutes: int, note: str | None = None) -
     )
 
 
+def confirmation_mail(to: str, link: str, days: int) -> Mail:
+    """The one mail that asks a person to confirm their address (REB-911), sent once before
+    the first campaign that would reach it. Same box and voice as the magic link; nothing
+    to sell, one link, and that ignoring it is fine."""
+    text = (
+        "Ciao,\n"
+        "\n"
+        "questo indirizzo è stato scritto nel modulo di rebase. Se è il tuo, confermalo da "
+        "qui:\n"
+        "\n"
+        f"{link}\n"
+        "\n"
+        f"Il link vale {days} giorni. Se non sei stato tu, ignora questa mail: non succede "
+        "niente e non ti scriveremo.\n"
+        "\n"
+        "Noi di rebase\n"
+    )
+    safe_link = html_escape.escape(link, quote=True)
+    paragraph = 'style="margin:24px 0 0 0;"'
+    small = f'style="margin:24px 0 0 0;font-size:13px;line-height:1.5;color:{INK_QUIET};'
+    rows = (
+        '<p style="margin:0 0 20px 0;">Ciao,</p>',
+        '<p style="margin:0 0 24px 0;">questo indirizzo è stato scritto nel modulo di '
+        "rebase. Se è il tuo, confermalo da qui.</p>",
+        button(safe_link, "Conferma l'indirizzo"),
+        f'<p {small}word-break:break-all;">'
+        "Se il bottone non si apre, copia questo indirizzo nel browser:<br>"
+        f"{quiet_link(safe_link, safe_link)}</p>",
+        f"<p {paragraph}>Il link vale {days} giorni. Se non sei stato tu, ignora questa "
+        "mail: non succede niente e non ti scriveremo.</p>",
+        f"<p {paragraph}>Noi di rebase</p>",
+    )
+    return Mail(
+        to=to,
+        subject="Conferma il tuo indirizzo su rebase",
+        text=text,
+        html=frame("Conferma il tuo indirizzo su rebase", "\n".join(rows)),
+    )
+
+
 LINKEDIN_PAGE = "https://www.linkedin.com/company/letsrebase"
 PIGROCRM_LINE = (
     "PigroCRM, gratis: preventivo, contratto, fattura, ore, con i dati fiscali già giusti."

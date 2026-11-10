@@ -131,6 +131,11 @@ class Settings(BaseSettings):
     # it: a login link is asked for by its owner and capped per person
     # (`magic_link_daily_per_user`). It must fit the reserve.
     public_mail_daily_budget: int = Field(default=10, ge=1)
+    # The confirmation mails (REB-911) a campaign's tick may send in a Rome day, one per
+    # address that was left out of a campaign for not being confirmed, and how long the
+    # link in them works. They spend the same reserve as the wizard's mails.
+    confirmation_mail_daily_budget: int = Field(default=10, ge=1)
+    confirmation_link_days: int = Field(default=30, ge=1)
     # Login links one person may ask for in a Rome day, from the login page or the wizard
     # (an admin is never refused, and an admin's promotion or the command line are not
     # counted). Past it the request is answered like any other and no mail is sent.
@@ -195,6 +200,10 @@ class Settings(BaseSettings):
         if self.public_mail_daily_budget > self.campaign_daily_reserve:
             raise ValueError(
                 "REBASE_PUBLIC_MAIL_DAILY_BUDGET must fit REBASE_CAMPAIGN_DAILY_RESERVE"
+            )
+        if self.confirmation_mail_daily_budget > self.campaign_daily_reserve:
+            raise ValueError(
+                "REBASE_CONFIRMATION_MAIL_DAILY_BUDGET must fit REBASE_CAMPAIGN_DAILY_RESERVE"
             )
         return self
 

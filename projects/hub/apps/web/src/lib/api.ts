@@ -1294,4 +1294,6 @@ export const cloud = {
 export const campaigns = {
   unsubscribe: (t: string) =>
     unwrap(client.POST('/api/hub/campaigns/unsubscribe', { params: { query: { t } } })),
+  confirmAddress: (t: string) =>
+    unwrap(client.POST('/api/hub/campaigns/confirm', { params: { query: { t } } })),
 }

@@ -53,10 +53,12 @@ from sqlalchemy.orm import Session
 
 from rebase_core.campaigns.actions import done_at
 from rebase_core.campaigns.audience import REASON_DONE, REASON_NOT_LISTED, candidates, exclusions
+from rebase_core.campaigns.confirmation import send_pending
 from rebase_core.campaigns.outcome import stamp_outcomes
 from rebase_core.campaigns.render import RenderTarget, render
 from rebase_core.campaigns.sender import QUOTA_MONTHLY, CampaignSender
 from rebase_core.config import Settings
+from rebase_core.mail import EmailSender
 from rebase_core.models import Campaign, CampaignRecipient
 from rebase_core.team_caps import ROME, rome_midnight
 
@@ -91,6 +93,7 @@ class TickResult:
     skipped: int = 0
     failed: int = 0
     stamped: int = 0
+    confirmations: int = 0
 
 
 def run_tick(
@@ -100,6 +103,7 @@ def run_tick(
     *,
     clock: Callable[[], datetime] = lambda: datetime.now(UTC),
     pause: Callable[[float], None] = time.sleep,
+    mailer: EmailSender | None = None,
 ) -> TickResult:
     result = TickResult()
     with session.get_bind().engine.connect() as lock_conn:
@@ -129,6 +133,16 @@ def run_tick(
                 except Exception as exc:  # one bad campaign must not wedge the rest (R14)
                     session.rollback()
                     _log.error("campaign %s failed this tick: %s", campaign_id, type(exc).__name__)
+            if mailer is not None:
+                # The one confirmation mail owed to whoever a campaign left out for an
+                # unproved address (REB-911): sent here so nobody has to remember it.
+                try:
+                    result.confirmations = send_pending(
+                        session, mailer, settings, clock=clock, pause=pause
+                    )
+                except Exception as exc:  # a confirmation must never stop a send (R14)
+                    session.rollback()
+                    _log.error("confirmation mails failed this tick: %s", type(exc).__name__)
             try:
                 result.stamped = stamp_outcomes(session, now=clock())
             except Exception as exc:  # the outcome must never stop a send (R14)

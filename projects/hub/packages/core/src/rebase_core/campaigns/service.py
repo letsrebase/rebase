@@ -17,7 +17,13 @@ from sqlalchemy.orm import Session
 
 from rebase_core.admin_tokens import AdminRead
 from rebase_core.campaigns.actions import snapshot
-from rebase_core.campaigns.audience import REASON_CANCELLED, build_audience, waiting_rows
+from rebase_core.campaigns.audience import (
+    REASON_CANCELLED,
+    REASON_UNCONFIRMED,
+    build_audience,
+    waiting_rows,
+)
+from rebase_core.campaigns.confirmation import request as request_confirmation
 from rebase_core.campaigns.links import LINK, button_problem
 from rebase_core.campaigns.render import RenderTarget, person_code, render
 from rebase_core.campaigns.schemas import (
@@ -375,14 +381,19 @@ class CampaignService:
         now = self.clock()
         when = self._when(data, now)
         unticked = set(data.excluded)  # already stripped and lowercased
-        rows = [
-            r
-            for r in build_audience(
-                self.session, campaign, now=now, gap_days=self.settings.campaign_gap_days
-            )
-            if r.excluded is None and r.candidate.email not in unticked
-        ]
+        audience = build_audience(
+            self.session, campaign, now=now, gap_days=self.settings.campaign_gap_days
+        )
+        # REB-911: whoever this campaign leaves out for an unproved address is owed the one
+        # confirmation mail, which the tick sends; they join the campaigns after it.
+        request_confirmation(
+            self.session,
+            [r.candidate.email for r in audience if r.excluded == REASON_UNCONFIRMED],
+            now=now,
+        )
+        rows = [r for r in audience if r.excluded is None and r.candidate.email not in unticked]
         if not rows:
+            self.session.commit()  # the confirmations asked for above stay asked for
             raise ValidationFailed(
                 ENTITY, "excluded", "La lista è vuota: nessuno riceverebbe la mail."
             )

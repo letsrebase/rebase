@@ -1,7 +1,8 @@
 """Campaigns over HTTP: the public unsubscribe (Task 14) and the admin routes (Task 17)."""
 
+import hashlib
 import re
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 from admins import an_admin
@@ -61,6 +62,44 @@ def test_the_one_click_post_opts_out_and_a_wrong_token_answers_the_same(
     assert tidy.get(CampaignOptout, "ada@studio.it") is not None
 
 
+def test_the_confirmation_button_confirms_once_and_a_wrong_link_is_refused(
+    client: TestClient,
+    tidy: Session,  # noqa: F811  (fixture)
+) -> None:
+    """REB-911: a GET never confirms (a mail scanner opens every link), the POST does, the
+    same link again answers the same, and anything else is a 410 with the page's sentence."""
+    tidy.add(
+        User(
+            email="ada@studio.it",
+            first_name="Ada",
+            last_name="Lovelace",
+            confirmation_token_hash=hashlib.sha256(b"good").hexdigest(),
+            confirmation_expires_at=datetime.now(UTC) + timedelta(days=1),
+        )
+    )
+    tidy.add(
+        User(
+            email="old@studio.it",
+            first_name="Old",
+            last_name="Link",
+            confirmation_token_hash=hashlib.sha256(b"old").hexdigest(),
+            confirmation_expires_at=datetime.now(UTC) - timedelta(days=1),
+        )
+    )
+    tidy.commit()
+    assert client.get("/api/hub/campaigns/confirm?t=good").status_code != 200
+    for _ in range(2):
+        assert client.post("/api/hub/campaigns/confirm?t=good").json() == {"ok": True}
+    for bad in ("nope", "old"):
+        refused = client.post(f"/api/hub/campaigns/confirm?t={bad}")
+        assert refused.status_code == 410
+        assert refused.json()["detail"] == "Il link non è valido o è scaduto."
+    tidy.expire_all()
+    confirmed = {u.email: u.email_confirmed_at for u in tidy.query(User).all()}
+    assert confirmed["ada@studio.it"] is not None
+    assert confirmed["old@studio.it"] is None
+
+
 def test_seven_one_click_posts_in_a_row_from_one_client_all_opt_out(
     client: TestClient,
     tidy: Session,  # noqa: F811  (fixture)
@@ -86,10 +125,15 @@ def login_admin(client: TestClient, sender: RecordingSender, session: Session) -
     assert client.post("/api/hub/auth/enter", json={"token": token}).status_code == 200
 
 
-def a_card_without_cv(session: Session, email: str) -> None:
+def a_card_without_cv(session: Session, email: str, *, confirmed: bool = True) -> None:
     from decimal import Decimal
 
-    user = User(email=email, first_name="Ada", last_name="L")
+    user = User(
+        email=email,
+        first_name="Ada",
+        last_name="L",
+        email_confirmed_at=datetime.now(UTC) if confirmed else None,
+    )
     session.add(user)
     session.flush()
     session.add(
@@ -163,6 +207,7 @@ def test_the_admin_drafts_tests_and_schedules_a_campaign(
     client.app.dependency_overrides[get_campaign_sender] = lambda: recording  # type: ignore[attr-defined]
     with_webhook(client)
     a_card_without_cv(tidy, "ada@studio.it")
+    a_card_without_cv(tidy, "gia@studio.it", confirmed=False)
     templates = client.get("/api/hub/campaigns/templates").json()
     cv = next(t for t in templates if t["journey_status"] == "missing_cv")
     created = client.post(
@@ -185,7 +230,11 @@ def test_the_admin_drafts_tests_and_schedules_a_campaign(
     )
     assert created.status_code == 201, created.text
     campaign_id = created.json()["id"]
-    assert client.get(f"/api/hub/campaigns/{campaign_id}/audience").json()["included"] == 1
+    preview = client.get(f"/api/hub/campaigns/{campaign_id}/audience").json()
+    assert preview["included"] == 1 and preview["excluded"] == 1
+    assert {line["email"]: line["excluded"] for line in preview["lines"]}["gia@studio.it"] == (
+        "indirizzo non confermato"
+    )
     refused = client.post(f"/api/hub/campaigns/{campaign_id}/schedule", json={"excluded": []})
     assert refused.status_code == 409 and "prova" in refused.json()["detail"]
     tested = client.post(f"/api/hub/campaigns/{campaign_id}/test").json()
