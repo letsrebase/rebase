@@ -4924,6 +4924,115 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/engagements": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Engagements
+         * @description The engagements with freelancers, newest first.
+         */
+        get: operations["list_engagements_api_engagements_get"];
+        put?: never;
+        /**
+         * Create Engagement
+         * @description A draft engagement. An overlap with another live engagement of the freelancer is
+         *     saved with a warning in the answer.
+         */
+        post: operations["create_engagement_api_engagements_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/engagements/{engagement_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Engagement */
+        get: operations["get_engagement_api_engagements__engagement_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Update Engagement
+         * @description A draft changes freely; once sent for signature only `days_per_week` and the client,
+         *     deal and contract change.
+         */
+        patch: operations["update_engagement_api_engagements__engagement_id__patch"];
+        trace?: never;
+    };
+    "/api/engagements/{engagement_id}/state": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Change Engagement State
+         * @description Moves an engagement along draft, awaiting_signature, active and concluded, or cancels
+         *     it from draft or awaiting_signature. `ended_on` is for concluding.
+         */
+        post: operations["change_engagement_state_api_engagements__engagement_id__state_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/freelancers/availability": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Freelancer Availability
+         * @description The days a week a freelancer is committed to, by ISO week, from their active
+         *     engagements; `sconosciuta` where an engagement has no `days_per_week`.
+         */
+        get: operations["freelancer_availability_api_freelancers_availability_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/freelancers/{freelancer_id}/tax-data": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Set Freelancer Tax Data
+         * @description The tax data the letters print, and the fiscal kind. Only what is sent changes.
+         */
+        put: operations["set_freelancer_tax_data_api_freelancers__freelancer_id__tax_data_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/inbox/upload": {
         parameters: {
             query?: never;
@@ -5837,6 +5946,41 @@ export interface components {
             rules: components["schemas"]["AutomationRuleDescription"][];
             /** Runs */
             runs: components["schemas"]["AutomationRun"][];
+        };
+        /**
+         * AvailabilityWeek
+         * @description One ISO week. `unknown` when an active engagement overlapping it has no
+         *     `days_per_week`: never `free`. `committed_days` then counts only the ones that have it.
+         */
+        AvailabilityWeek: {
+            /**
+             * Week
+             * @description ISO week, 2026-W46
+             */
+            week: string;
+            /**
+             * Starts On
+             * Format: date
+             */
+            starts_on: string;
+            /**
+             * Ends On
+             * Format: date
+             */
+            ends_on: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "free" | "committed" | "unknown";
+            /** Label */
+            label: string;
+            /** Committed Days */
+            committed_days: string;
+            /** Free Days */
+            free_days: string | null;
+            /** Engagement Ids */
+            engagement_ids: string[];
         };
         /**
          * BandDueDate
@@ -8952,6 +9096,72 @@ export interface components {
             /** Employer Inail Rate */
             employer_inail_rate?: number | string | null;
         };
+        /**
+         * EngagementCreate
+         * @description A new engagement is a draft. `days_per_week` is required (the service says so in words);
+         *     only an imported one may lack it. `letter_type` omitted follows the freelancer's fiscal kind:
+         *     `occasional` for an occasional freelancer, `ordinary` otherwise.
+         */
+        EngagementCreate: {
+            /**
+             * Freelancer Id
+             * Format: uuid
+             */
+            freelancer_id: string;
+            /** Hub Match Id */
+            hub_match_id?: string | null;
+            /** Client Organization Id */
+            client_organization_id?: string | null;
+            /** Deal Id */
+            deal_id?: string | null;
+            /** Contract Id */
+            contract_id?: string | null;
+            /** Role */
+            role: string;
+            /**
+             * Starts On
+             * Format: date
+             */
+            starts_on: string;
+            /** Ends On */
+            ends_on?: string | null;
+            /**
+             * Days Per Week
+             * @description From 0.5 to 5 days, in steps of 0.5; required
+             */
+            days_per_week?: number | string | null;
+            /** Fee */
+            fee: number | string;
+            /**
+             * Fee Unit
+             * @description day | hour | flat
+             */
+            fee_unit: string;
+            /**
+             * Expected Days
+             * @description For an hourly fee, the hours divided by 8
+             */
+            expected_days?: number | string | null;
+            /**
+             * Letter Type
+             * @description ordinary | occasional
+             */
+            letter_type?: string | null;
+            /**
+             * Payment Rule
+             * @description fixed_term (payment_days from the invoice) | on_collection (collection_days)
+             */
+            payment_rule: string;
+            /** Payment Days */
+            payment_days?: number | null;
+            /**
+             * Payment End Of Month
+             * @default false
+             */
+            payment_end_of_month: boolean;
+            /** Collection Days */
+            collection_days?: number | null;
+        };
         /** EngagementFreelancer */
         EngagementFreelancer: {
             /**
@@ -8984,35 +9194,12 @@ export interface components {
             /** Expected Days */
             expected_days?: number | null;
         };
-        /**
-         * EngagementRead
-         * @description What the door set up for a match: the space, the customer and the deal, with the
-         *     two links the hub shows. `created` says whether this call wrote the deal's row (201)
-         *     or found it already there (200); `space_created` whether the space was opened for
-         *     this match, said by the call that writes the row (a retry of a call that stopped on
-         *     the way included) and false on the calls after it.
-         */
-        EngagementRead: {
-            /** Slug */
-            slug: string;
-            /** Url */
-            url: string;
-            /**
-             * Customer Id
-             * Format: uuid
-             */
-            customer_id: string;
-            /**
-             * Deal Id
-             * Format: uuid
-             */
-            deal_id: string;
-            /** Deal Url */
-            deal_url: string;
-            /** Space Created */
-            space_created: boolean;
-            /** Created */
-            created: boolean;
+        /** EngagementPage */
+        EngagementPage: {
+            /** Items */
+            items: components["schemas"]["pigrocrm__core__collaborators__schemas__EngagementRead"][];
+            /** Next Cursor */
+            next_cursor: string | null;
         };
         /**
          * EngagementRebase
@@ -9056,6 +9243,51 @@ export interface components {
             /** Invoices */
             invoices: components["schemas"]["ReportInvoice"][];
         };
+        /** EngagementStateChange */
+        EngagementStateChange: {
+            /** State */
+            state: string;
+            /** Ended On */
+            ended_on?: string | null;
+        };
+        /**
+         * EngagementUpdate
+         * @description A draft can change any of these. Once it is out for signature or signed only
+         *     `days_per_week` and the client, deal and contract links can change: they are what an
+         *     imported engagement lacks, and none of them is printed on the letter.
+         */
+        EngagementUpdate: {
+            /** Client Organization Id */
+            client_organization_id?: string | null;
+            /** Deal Id */
+            deal_id?: string | null;
+            /** Contract Id */
+            contract_id?: string | null;
+            /** Role */
+            role?: string | null;
+            /** Starts On */
+            starts_on?: string | null;
+            /** Ends On */
+            ends_on?: string | null;
+            /** Days Per Week */
+            days_per_week?: number | string | null;
+            /** Fee */
+            fee?: number | string | null;
+            /** Fee Unit */
+            fee_unit?: string | null;
+            /** Expected Days */
+            expected_days?: number | string | null;
+            /** Letter Type */
+            letter_type?: string | null;
+            /** Payment Rule */
+            payment_rule?: string | null;
+            /** Payment Days */
+            payment_days?: number | null;
+            /** Payment End Of Month */
+            payment_end_of_month?: boolean | null;
+            /** Collection Days */
+            collection_days?: number | null;
+        };
         /**
          * EngagementUpsert
          * @description The body of `PUT /api/rebase/engagements/{match_id}`.
@@ -9064,6 +9296,23 @@ export interface components {
             freelancer: components["schemas"]["EngagementFreelancer"];
             letter: components["schemas"]["EngagementLetter"];
             rebase: components["schemas"]["EngagementRebase"];
+        };
+        /**
+         * EngagementWarning
+         * @description Something to know, not a refusal: the engagement is saved either way.
+         */
+        EngagementWarning: {
+            /**
+             * Code
+             * @enum {string}
+             */
+            code: "overlap" | "over_capacity";
+            /** Message */
+            message: string;
+            /** Engagement Ids */
+            engagement_ids: string[];
+            /** Peak Days Per Week */
+            peak_days_per_week: string | null;
         };
         /** EntitySchema */
         EntitySchema: {
@@ -9373,6 +9622,51 @@ export interface components {
              * @description The `updated_at` read on the profile this change starts from, `null` for a profile not yet saved: if someone else saved in the meantime, the request is rejected with 409 `stale_row`. Omitted, no check.
              */
             updated_at?: string | null;
+        };
+        /** FreelancerAvailability */
+        FreelancerAvailability: {
+            /**
+             * Freelancer Id
+             * Format: uuid
+             */
+            freelancer_id: string;
+            /** Hub Freelancer Id */
+            hub_freelancer_id: string | null;
+            /**
+             * Date From
+             * Format: date
+             */
+            date_from: string;
+            /**
+             * Date To
+             * Format: date
+             */
+            date_to: string;
+            /** Weeks */
+            weeks: components["schemas"]["AvailabilityWeek"][];
+        };
+        /**
+         * FreelancerTaxData
+         * @description The tax data the contracts print, and the fiscal kind (design § 1). Every field omitted
+         *     is left as it is.
+         */
+        FreelancerTaxData: {
+            /** Tax Code */
+            tax_code?: string | null;
+            /** Vat Number */
+            vat_number?: string | null;
+            /**
+             * Domicile
+             * @description Street address
+             */
+            domicile?: string | null;
+            /** Certified Email */
+            certified_email?: string | null;
+            /**
+             * Fiscal Kind
+             * @description professional | flat_rate | occasional
+             */
+            fiscal_kind?: string | null;
         };
         /** FullAccessRequest */
         FullAccessRequest: {
@@ -11187,6 +11481,8 @@ export interface components {
              * @default false
              */
             is_withholding_agent: boolean;
+            /** Hub Freelancer Id */
+            hub_freelancer_id?: string | null;
             /**
              * Custom Fields
              * @default {}
@@ -11276,6 +11572,8 @@ export interface components {
             customer_kind: string | null;
             /** Is Withholding Agent */
             is_withholding_agent: boolean;
+            /** Hub Freelancer Id */
+            hub_freelancer_id: string | null;
             /** Custom Fields */
             custom_fields: {
                 [key: string]: unknown;
@@ -11346,6 +11644,8 @@ export interface components {
             customer_kind?: string | null;
             /** Is Withholding Agent */
             is_withholding_agent?: boolean | null;
+            /** Hub Freelancer Id */
+            hub_freelancer_id?: string | null;
             /** Custom Fields */
             custom_fields?: {
                 [key: string]: unknown;
@@ -14984,6 +15284,100 @@ export interface components {
             lines: number;
             /** Revenue */
             revenue: string;
+        };
+        /** EngagementRead */
+        pigrocrm__core__collaborators__schemas__EngagementRead: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Hub Match Id */
+            hub_match_id: string | null;
+            /**
+             * Freelancer Id
+             * Format: uuid
+             */
+            freelancer_id: string;
+            /** Client Organization Id */
+            client_organization_id: string | null;
+            /** Deal Id */
+            deal_id: string | null;
+            /** Contract Id */
+            contract_id: string | null;
+            /** Role */
+            role: string;
+            /**
+             * Starts On
+             * Format: date
+             */
+            starts_on: string;
+            /** Ends On */
+            ends_on: string | null;
+            /** Days Per Week */
+            days_per_week: string | null;
+            /** Fee */
+            fee: string;
+            /** Fee Unit */
+            fee_unit: string;
+            /** Expected Days */
+            expected_days: string | null;
+            /** Letter Type */
+            letter_type: string;
+            /** Payment Rule */
+            payment_rule: string;
+            /** Payment Days */
+            payment_days: number | null;
+            /** Payment End Of Month */
+            payment_end_of_month: boolean;
+            /** Collection Days */
+            collection_days: number | null;
+            /** State */
+            state: string;
+            /** Missing */
+            missing: string[];
+            /** Warnings */
+            warnings?: components["schemas"]["EngagementWarning"][];
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /**
+         * EngagementRead
+         * @description What the door set up for a match: the space, the customer and the deal, with the
+         *     two links the hub shows. `created` says whether this call wrote the deal's row (201)
+         *     or found it already there (200); `space_created` whether the space was opened for
+         *     this match, said by the call that writes the row (a retry of a call that stopped on
+         *     the way included) and false on the calls after it.
+         */
+        pigrocrm__core__engagements__schemas__EngagementRead: {
+            /** Slug */
+            slug: string;
+            /** Url */
+            url: string;
+            /**
+             * Customer Id
+             * Format: uuid
+             */
+            customer_id: string;
+            /**
+             * Deal Id
+             * Format: uuid
+             */
+            deal_id: string;
+            /** Deal Url */
+            deal_url: string;
+            /** Space Created */
+            space_created: boolean;
+            /** Created */
+            created: boolean;
         };
         /** ValidationError */
         ValidationError: {
@@ -41910,7 +42304,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["EngagementRead"];
+                    "application/json": components["schemas"]["pigrocrm__core__engagements__schemas__EngagementRead"];
                 };
             };
             /** @description The space, the «rebase» customer and the letter's deal were created now, for the first time with this match. */
@@ -41919,7 +42313,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["EngagementRead"];
+                    "application/json": components["schemas"]["pigrocrm__core__engagements__schemas__EngagementRead"];
                 };
             };
             /** @description Permission denied: the actor does not have the required role. */
@@ -51774,6 +52168,868 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ScheduledJobsRead"];
+                };
+            };
+            /** @description Permission denied: the actor does not have the required role. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The requested resource does not exist or was removed. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The request conflicts with the current state of the resource. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_engagements_api_engagements_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+                cursor?: string | null;
+                /** @description Only this freelancer */
+                freelancer_id?: string | null;
+                /** @description draft | awaiting_signature | active | concluded | cancelled */
+                state?: string | null;
+                client_organization_id?: string | null;
+                deal_id?: string | null;
+                contract_id?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EngagementPage"];
+                };
+            };
+            /** @description Permission denied: the actor does not have the required role. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The requested resource does not exist or was removed. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The request conflicts with the current state of the resource. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_engagement_api_engagements_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EngagementCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["pigrocrm__core__collaborators__schemas__EngagementRead"];
+                };
+            };
+            /** @description Permission denied: the actor does not have the required role. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The requested resource does not exist or was removed. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The request conflicts with the current state of the resource. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_engagement_api_engagements__engagement_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                engagement_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["pigrocrm__core__collaborators__schemas__EngagementRead"];
+                };
+            };
+            /** @description Permission denied: the actor does not have the required role. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The requested resource does not exist or was removed. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The request conflicts with the current state of the resource. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_engagement_api_engagements__engagement_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                engagement_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EngagementUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["pigrocrm__core__collaborators__schemas__EngagementRead"];
+                };
+            };
+            /** @description Permission denied: the actor does not have the required role. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The requested resource does not exist or was removed. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The request conflicts with the current state of the resource. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    change_engagement_state_api_engagements__engagement_id__state_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                engagement_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EngagementStateChange"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["pigrocrm__core__collaborators__schemas__EngagementRead"];
+                };
+            };
+            /** @description Permission denied: the actor does not have the required role. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The requested resource does not exist or was removed. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The request conflicts with the current state of the resource. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    freelancer_availability_api_freelancers_availability_get: {
+        parameters: {
+            query?: {
+                /** @description The freelancer's organization */
+                freelancer_id?: string | null;
+                /** @description Or the freelancer's id in the hub; one of the two */
+                hub_freelancer_id?: string | null;
+                /** @description The week of this day is the first; default this week */
+                date_from?: string | null;
+                /** @description Default twelve weeks on; at most 104 weeks in all */
+                date_to?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FreelancerAvailability"];
+                };
+            };
+            /** @description Permission denied: the actor does not have the required role. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The requested resource does not exist or was removed. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The request conflicts with the current state of the resource. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_freelancer_tax_data_api_freelancers__freelancer_id__tax_data_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                freelancer_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FreelancerTaxData"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OrganizationRead"];
                 };
             };
             /** @description Permission denied: the actor does not have the required role. */

@@ -208,6 +208,8 @@ def test_rows_that_already_collide_do_not_fail_the_revision_and_the_index_waits_
         )
         assert _scalar(engine, "SELECT count(*) FROM organizations") == 6
 
+        # The ORM reads every column the models have now, so the later revisions go first.
+        upgrade(config, "head")
         with Session(engine) as session:
             (group,) = duplicate_vat_groups(session)
             assert [row.legal_name for row in group.organizations] == ["Beta", "Beta twin"]

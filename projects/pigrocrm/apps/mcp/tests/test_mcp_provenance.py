@@ -27,6 +27,7 @@ from pigrocrm_mcp.server import build_server
 ADMIN = Actor(id=None, type="mcp", role="admin")
 EVERYTHING_ON = {
     "mcp_full_access": True,
+    "module_collaborators": True,
     "google_client_id": "cid.apps.googleusercontent.com",
     "google_client_secret": "the-secret",
     "google_token_key": "k",

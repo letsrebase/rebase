@@ -15,9 +15,9 @@ The new table `engagements` is the CRM's name for the hub's match: the freelance
 until filled, which availability reads as «sconosciuta»), the fee and its unit, the letter
 type, the payment rule with its fields (the checks keep a fixed term and a collection wait
 apart, and put the 60-day limit in the schema) and the state. `hub_match_id` is unique: the
-import's idempotency key. The table carries no legal entity of its own and no policy: it is
-reached through the freelancer's organization, whose row-level policy decides what a scoped
-admin sees (the service joins it).
+import's idempotency key. The table carries no legal entity of its own: its row-level policy
+(`legal_entity_scope`, forced) reads the freelancer's organization through `organization_visible`,
+so a scoped admin sees the engagements of the freelancers they see.
 
 `downgrade` drops the table and the column; an engagement is lost with it.
 """
@@ -38,10 +38,20 @@ HUB_INDEX = "uq_organizations_hub_freelancer_id"
 HUB_CHECK = "ck_organizations_hub_freelancer_role"
 
 
+# An engagement is visible where its freelancer's organization is: the «all» fast path first,
+# then the parent's own row policy through `organization_visible`.
+POLICY_EXPRESSION = "scope_all() OR organization_visible(freelancer_id)"
+
+
 def statements() -> list[str]:
-    """No row-level security: the table reaches a legal entity only through the freelancer's
-    organization. Kept so the test template loads every revision the same way."""
-    return []
+    """The row-level security of `engagements`, applied after `create_all` by the test template
+    (`projects/pigrocrm/conftest.py`) exactly as `upgrade` applies it."""
+    return [
+        f"CREATE POLICY legal_entity_scope ON {ENGAGEMENTS} FOR ALL "
+        f"USING ({POLICY_EXPRESSION}) WITH CHECK ({POLICY_EXPRESSION})",
+        f"ALTER TABLE {ENGAGEMENTS} ENABLE ROW LEVEL SECURITY",
+        f"ALTER TABLE {ENGAGEMENTS} FORCE ROW LEVEL SECURITY",
+    ]
 
 
 def upgrade() -> None:
@@ -133,6 +143,8 @@ def upgrade() -> None:
     )
     op.create_index("ix_engagements_deal_id", ENGAGEMENTS, ["deal_id"])
     op.create_index("ix_engagements_contract_id", ENGAGEMENTS, ["contract_id"])
+    for statement in statements():
+        op.execute(statement)
 
 
 def downgrade() -> None:

@@ -128,6 +128,8 @@ export const PAYLOAD_KEY_LABELS: Record<string, string> = {
   supplier_supplies: 'Fornitura estera',
   customer_kind: 'Tipo di cliente',
   is_withholding_agent: "Sostituto d'imposta",
+  hub_freelancer_id: "Identità del freelance nell'hub",
+  freelancer_id: 'Freelance',
   payment_method: 'Modalità pagamento',
   payment_status: 'Stato pagamento',
   payment_terms: 'Condizioni pagamento',
