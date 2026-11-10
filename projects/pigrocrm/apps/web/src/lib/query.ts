@@ -180,6 +180,8 @@ export const queryKeys = {
   // a period's register. `entityId` is the legal entity the page reads, never a sum.
   ivaEntities: () => ['iva-entities'] as const,
   ivaPeriods: (year: number, entityId: string | null) => ['iva-periods', year, entityId] as const,
+  // Every year's periods of every legal entity, for the writes that change them (closing a period).
+  ivaPeriodsAll: () => ['iva-periods'] as const,
   ivaRegister: (kind: 'sales' | 'purchases', year: number, number: number, entityId: string | null) =>
     ['iva-register', kind, year, number, entityId] as const,
   // The tax calendar is one legal entity's and one calendar year's (REB-1026).

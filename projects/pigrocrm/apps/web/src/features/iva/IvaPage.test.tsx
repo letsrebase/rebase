@@ -8,7 +8,7 @@ import type { IvaSearch } from './search'
 
 vi.mock('@/lib/api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/api')>()
-  return { ...actual, api: { GET: vi.fn() } }
+  return { ...actual, api: { GET: vi.fn(), POST: vi.fn(), DELETE: vi.fn() } }
 })
 
 vi.mock('@tanstack/react-router', () => ({
@@ -36,6 +36,12 @@ let role = 'admin'
 vi.mock('@/lib/auth', () => ({
   useAuth: () => ({ user: { id: 'u1', role }, isLoading: false }),
   useCan: () => role === 'admin',
+}))
+
+// A person scoped to some legal entities cannot close a period (the service asks for the whole space).
+let scoped = false
+vi.mock('@/lib/legalEntity', () => ({
+  useLegalEntity: () => ({ selected: null, scoped }),
 }))
 
 const ENTITY = 'a0000000-0000-7000-8000-000000000001'
@@ -69,6 +75,9 @@ function period(number: number, overrides: Record<string, unknown> = {}) {
     payment_state: 'expected',
     registers_changed: false,
     carry_forward_limit: null,
+    closed: false,
+    closed_at: null,
+    closed_by: null,
     ...overrides,
   }
 }
@@ -239,6 +248,7 @@ interface Answers {
   periods?: unknown
   sales?: unknown
   purchases?: unknown
+  users?: unknown
 }
 
 function answering(answers: Answers = {}) {
@@ -251,6 +261,7 @@ function answering(answers: Answers = {}) {
     if (path === '/api/iva-periods') return Promise.resolve(answers.periods ?? ok(PERIODS))
     if (path === '/api/iva-registers/sales') return Promise.resolve(answers.sales ?? ok(SALES))
     if (path === '/api/iva-registers/purchases') return Promise.resolve(answers.purchases ?? ok(PURCHASES))
+    if (path === '/api/users') return Promise.resolve(answers.users ?? ok([{ id: 'u9', name: 'Giulia Ferri' }]))
     return Promise.resolve(ok([]))
   }) as never)
 }
@@ -263,8 +274,11 @@ function renderPage(search: IvaSearch = {}) {
 
 beforeEach(() => {
   vi.mocked(api.GET).mockReset()
+  vi.mocked(api.POST).mockReset()
+  vi.mocked(api.DELETE).mockReset()
   onSearch.mockReset()
   role = 'admin'
+  scoped = false
   viewport(1440)
   vi.useRealTimers()
 })
@@ -286,8 +300,9 @@ describe('«IVA» on a desk', () => {
     expect(within(ladder).getByText('Meno credito del periodo precedente')).toBeInTheDocument()
     expect(within(ladder).getByText('Più maggiorazione trimestrale')).toBeInTheDocument()
     expect(within(ladder).getByText(/Scadenza del versamento: 16\/03\/2027 · dal pacchetto fiscale/)).toBeInTheDocument()
-    // Nothing offers to close or reopen a period: the IVA period lock does not exist yet.
+    // The period that is running cannot be closed, and nothing is closed to be reopened.
     expect(screen.queryByRole('button', { name: /chiudi il periodo|riapri/i })).not.toBeInTheDocument()
+    expect(screen.queryByText(/Periodo chiuso il/)).not.toBeInTheDocument()
   })
 
   it('names each period with its result in the period select', async () => {
@@ -301,12 +316,12 @@ describe('«IVA» on a desk', () => {
     expect(screen.getByRole('option', { name: /^2° trimestre 2026 · -310,00\s€ · a credito$/ })).toBeInTheDocument()
     expect(screen.getByRole('option', { name: /^4° trimestre 2026 · 121,20\s€ · in corso$/ })).toBeInTheDocument()
     await user.click(screen.getByRole('option', { name: /2° trimestre 2026/ }))
-    expect(onSearch).toHaveBeenCalledWith({ period: 2 })
+    expect(onSearch).toHaveBeenCalledWith({ period: 2, frequency: 'quarterly' })
   })
 
   it('draws a credit period with its pill and the credit the next one carries in', async () => {
     answering()
-    renderPage({ period: 2 })
+    renderPage({ period: 2, frequency: 'quarterly' })
     expect(await screen.findByRole('heading', { level: 1, name: 'IVA · 2° trimestre 2026' })).toBeInTheDocument()
     const ladder = await screen.findByRole('region', { name: 'Liquidazione' })
     expect(within(ladder).getByText('A credito · 2° trimestre 2026')).toBeInTheDocument()
@@ -317,7 +332,7 @@ describe('«IVA» on a desk', () => {
 
   it('shows the pill of a paid period and its payment date from the pack', async () => {
     answering()
-    renderPage({ period: 1 })
+    renderPage({ period: 1, frequency: 'quarterly' })
     expect((await screen.findAllByText('Versato')).length).toBeGreaterThan(0)
     expect(await screen.findByText(/Scadenza del versamento: 18\/05\/2026 · dal pacchetto fiscale/)).toBeInTheDocument()
   })
@@ -502,7 +517,138 @@ describe('«IVA» states', () => {
     )
     await user.click(screen.getByRole('combobox', { name: 'Azienda' }))
     await user.click(await screen.findByRole('option', { name: 'Lumen Studio S.r.l.' }))
-    expect(onSearch).toHaveBeenCalledWith({ entity: ENTITY, period: undefined })
+    expect(onSearch).toHaveBeenCalledWith({ entity: ENTITY, period: undefined, frequency: undefined })
+  })
+})
+
+function closedPeriod(overrides: Record<string, unknown> = {}) {
+  return period(1, {
+    closed: true,
+    closed_at: '2026-11-16T10:30:00Z',
+    closed_by: 'u9',
+    payment_state: 'settled',
+    ...overrides,
+  })
+}
+
+describe('«IVA» period lock', () => {
+  it('draws a closed period with the pill «Chiuso», who closed it and when, and «Riapri»', async () => {
+    answering({ periods: ok([closedPeriod(), PERIODS[3]]) })
+    renderPage({ period: 1, frequency: 'quarterly' })
+
+    expect(await screen.findByText('Periodo chiuso il 16/11/2026 da Giulia Ferri', { exact: false })).toBeInTheDocument()
+    expect(screen.getAllByText('Chiuso').length).toBeGreaterThan(0)
+    expect(screen.getByRole('button', { name: 'Riapri' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Chiudi il periodo' })).not.toBeInTheDocument()
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('combobox', { name: 'Periodo' }))
+    expect(await screen.findByRole('option', { name: /^1° trimestre 2026 · 880,00\s€ · versato · chiuso$/ })).toBeInTheDocument()
+  })
+
+  it('leaves out the name of a member it cannot find, and never guesses one', async () => {
+    answering({ periods: ok([closedPeriod({ closed_by: 'gone' })]), users: ok([]) })
+    renderPage({ period: 1, frequency: 'quarterly' })
+    const band = await screen.findByText(/Periodo chiuso il 16\/11\/2026/)
+    expect(band).not.toHaveTextContent(' da ')
+  })
+
+  it('offers «Chiudi il periodo» on an ended period only, asks first and posts the legal entity', async () => {
+    answering({ periods: ok([period(3, { settled: false, due_item_id: null, payment_state: null }), PERIODS[3]]) })
+    vi.mocked(api.POST).mockResolvedValue(ok({ id: 'l1' }) as never)
+    renderPage({ period: 3, frequency: 'quarterly' })
+    const user = userEvent.setup()
+    await user.click(await screen.findByRole('button', { name: 'Chiudi il periodo' }))
+
+    const dialog = await screen.findByRole('dialog')
+    expect(
+      within(dialog).getByText(
+        'Chiudere il 3° trimestre 2026 per Lumen Studio S.r.l.? Dopo, nessuna registrazione di questo periodo si modifica. Un amministratore può riaprirlo.',
+      ),
+    ).toBeInTheDocument()
+    expect(api.POST).not.toHaveBeenCalled()
+    await user.click(within(dialog).getByRole('button', { name: 'Chiudi il periodo' }))
+    await waitFor(() =>
+      expect(api.POST).toHaveBeenCalledWith('/api/iva-period-locks', {
+        body: { year: 2026, number: 3, legal_entity_id: ENTITY },
+      }),
+    )
+  })
+
+  it('keeps the dialog open with the server’s sentence when the period cannot be closed', async () => {
+    answering({ periods: ok([period(3), PERIODS[3]]) })
+    vi.mocked(api.POST).mockResolvedValue(
+      refused(409, { detail: 'il pagamento registrato blocca la liquidazione', code: 'conflict' }) as never,
+    )
+    renderPage({ period: 3, frequency: 'quarterly' })
+    const user = userEvent.setup()
+    await user.click(await screen.findByRole('button', { name: 'Chiudi il periodo' }))
+    const dialog = await screen.findByRole('dialog')
+    await user.click(within(dialog).getByRole('button', { name: 'Chiudi il periodo' }))
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent('il pagamento registrato blocca la liquidazione')
+  })
+
+  it('reopens only after the question and sends the legal entity and the period', async () => {
+    answering({ periods: ok([closedPeriod()]) })
+    vi.mocked(api.DELETE).mockResolvedValue(ok(undefined) as never)
+    renderPage({ period: 1, frequency: 'quarterly' })
+    const user = userEvent.setup()
+    await user.click(await screen.findByRole('button', { name: 'Riapri' }))
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByText(/Riaprire il 1° trimestre 2026 per Lumen Studio S\.r\.l\.\?/)).toBeInTheDocument()
+    expect(api.DELETE).not.toHaveBeenCalled()
+    await user.click(within(dialog).getByRole('button', { name: 'Riapri il periodo' }))
+    await waitFor(() =>
+      expect(api.DELETE).toHaveBeenCalledWith('/api/iva-period-locks/{year}/{number}', {
+        params: { path: { year: 2026, number: 1 }, query: { legal_entity_id: ENTITY } },
+      }),
+    )
+  })
+
+  it('tells a scoped administrator why there is no button and offers no «Riapri» either', async () => {
+    scoped = true
+    answering({ periods: ok([period(3), closedPeriod({ number: 1 })]) })
+    renderPage({ period: 3, frequency: 'quarterly' })
+    expect(await screen.findByText('Solo un amministratore senza limiti all’azienda può chiudere il periodo.')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Chiudi il periodo' })).not.toBeInTheDocument()
+  })
+
+  it('shows a scoped administrator the closed band and no «Riapri»', async () => {
+    scoped = true
+    answering({ periods: ok([closedPeriod()]) })
+    renderPage({ period: 1, frequency: 'quarterly' })
+    expect(await screen.findByText(/Periodo chiuso il 16\/11\/2026/)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Riapri' })).not.toBeInTheDocument()
+  })
+})
+
+describe('«IVA» period in the URL', () => {
+  it('opens a period only of the frequency the URL names, and drops one of another', async () => {
+    // The sidebar switched to a monthly legal entity under `?period=3&frequency=quarterly`.
+    const months = Array.from({ length: 12 }, (_, index) =>
+      period(index + 1, {
+        frequency: 'monthly',
+        label: `mese ${index + 1}`,
+        state: index + 1 === 11 ? 'open' : 'ended',
+      }),
+    )
+    answering({ periods: ok(months) })
+    renderPage({ period: 3, frequency: 'quarterly' })
+
+    expect(await screen.findByRole('heading', { level: 1, name: 'IVA · mese 11' })).toBeInTheDocument()
+    await waitFor(() => expect(onSearch).toHaveBeenCalledWith({ period: undefined, frequency: undefined }))
+  })
+
+  it('does not honour a period that carries no frequency', async () => {
+    answering()
+    renderPage({ period: 2 })
+    expect(await screen.findByRole('heading', { level: 1, name: 'IVA · 4° trimestre 2026' })).toBeInTheDocument()
+  })
+
+  it('keeps a period of the right frequency and leaves the URL alone', async () => {
+    answering()
+    renderPage({ period: 2, frequency: 'quarterly' })
+    expect(await screen.findByRole('heading', { level: 1, name: 'IVA · 2° trimestre 2026' })).toBeInTheDocument()
+    expect(onSearch).not.toHaveBeenCalled()
   })
 })
 
@@ -525,5 +671,13 @@ describe('«IVA» on a phone', () => {
     // The summary is one card per rate on a phone, with the same figures.
     const summary = screen.getByRole('region', { name: 'Riepilogo per aliquota' })
     expect(within(summary).getAllByRole('listitem')).toHaveLength(1)
+  })
+
+  it('keeps «Chiudi il periodo» in a bar of its own, full width, on an ended period', async () => {
+    answering({ periods: ok([period(3), PERIODS[3]]) })
+    renderPage({ period: 3, frequency: 'quarterly' })
+    const button = await screen.findByRole('button', { name: 'Chiudi il periodo' })
+    expect(button).toHaveClass('w-full')
+    expect(button.parentElement).toHaveClass('sticky')
   })
 })
