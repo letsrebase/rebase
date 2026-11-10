@@ -26,7 +26,7 @@ def _fiscal_customer_id(session: Session) -> UUID:
     """
     customer = Organization(
         legal_name=f"Acme {uuid4()}",
-        vat_number="12345678901",
+        vat_number=f"{uuid4().int % 10**11:011d}",
         sdi_code="ABCDEFG",
         address="Corso Italia 5",
         postal_code="00100",

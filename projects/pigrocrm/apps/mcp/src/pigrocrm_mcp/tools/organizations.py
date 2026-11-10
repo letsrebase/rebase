@@ -60,3 +60,8 @@ def restore(context: McpContext, organization_id: str) -> dict[str, Any]:
         .restore(UUID(organization_id), context.actor)
         .model_dump(mode="json")
     )
+
+
+def duplicates(context: McpContext) -> dict[str, Any]:
+    groups = OrganizationService(context.session).duplicates(context.actor)
+    return {"groups": [group.model_dump(mode="json") for group in groups]}

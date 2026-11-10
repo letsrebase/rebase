@@ -24,7 +24,7 @@ from sqlalchemy.orm import Session
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.documents.schemas import DocumentCreate
 from pigrocrm.core.documents.service import DocumentService
-from pigrocrm.core.errors import AgentForbidden, PermissionDenied, ValidationFailed
+from pigrocrm.core.errors import AgentForbidden, Conflict, PermissionDenied, ValidationFailed
 from pigrocrm.core.fiscal.models import FiscalProfile
 from pigrocrm.core.fiscal.repository import FiscalProfileRepository
 from pigrocrm.core.invoices.import_confirm import map_parsed_invoice_to_import
@@ -428,35 +428,146 @@ def test_a_refusal_in_a_later_file_leaves_the_earlier_files_unwritten(
     assert _invoice_count(db_session) == before
 
 
-def test_the_automatic_match_never_attaches_to_customer_of_another_legal_entity(
-    db_session: Session, local_storage: LocalFileStorage
-) -> None:
-    """The same tax id on file under another legal entity is not this invoice's customer:
-    the review does not propose it, and a confirmation that creates the counterparty
-    makes one on the legal entity the file landed on instead of reusing the other's."""
-    service = _svc(db_session, local_storage)
+def _customer_of_another_legal_entity(session: Session) -> Organization:
+    """The invoice's customer, on file under a legal entity that is not the one the fixtures'
+    issuer resolves to."""
     other = LegalEntity(
         legal_name="Acme Ltd", vat_number="IE6388047V", country="IE", is_default=False
     )
-    db_session.add(other)
-    db_session.flush()
-    foreign = make_customer_with_address(
-        db_session, legal_entity_id=other.id, vat_number=CUSTOMER_VAT_NUMBER
+    session.add(other)
+    session.flush()
+    return make_customer_with_address(
+        session, legal_entity_id=other.id, vat_number=CUSTOMER_VAT_NUMBER
     )
+
+
+def test_a_customer_of_another_legal_entity_is_offered_for_sharing_and_never_matched_or_created(
+    db_session: Session, local_storage: LocalFileStorage
+) -> None:
+    """One company is one organization (REB-970). The same tax id on file under another legal
+    entity is not matched for this register, and not created a second time either: the review
+    and the confirmation say which organization it is, and nothing is written."""
+    service = _svc(db_session, local_storage)
+    foreign = _customer_of_another_legal_entity(db_session)
     document_id = _document(db_session, local_storage, _fixture(CONSULTING), owner=foreign)
 
     [reviewed] = service.review_import([document_id], ADMIN)
     assert reviewed.outcome == "needs_customer_confirmation"
     assert reviewed.matched_customer_id is None
+    assert reviewed.existing_organization_id == foreign.id
+
+    before = _invoice_count(db_session)
+    for create in (False, True):
+        [row] = service.confirm_import(document_id, ADMIN, create_organization=create)
+        assert row.outcome == "needs_customer_confirmation"
+        assert row.existing_organization_id == foreign.id
+    assert _invoice_count(db_session) == before
+    assert foreign.legal_entity_id is not None, "nothing was shared"
+
+
+def test_sharing_the_customer_attaches_the_invoice_to_the_one_organization(
+    db_session: Session, local_storage: LocalFileStorage
+) -> None:
+    service = _svc(db_session, local_storage)
+    foreign = _customer_of_another_legal_entity(db_session)
+    document_id = _document(db_session, local_storage, _fixture(CONSULTING), owner=foreign)
+    organizations = db_session.execute(select(func.count()).select_from(Organization)).scalar_one()
+
+    [row] = service.confirm_import(document_id, ADMIN, share_organization=True)
+
+    assert row.outcome == "imported"
+    assert row.invoice is not None and row.invoice.customer_id == foreign.id
+    db_session.refresh(foreign)
+    assert foreign.legal_entity_id is None, "shared across the legal entities"
+    assert db_session.execute(select(func.count()).select_from(Organization)).scalar_one() == (
+        organizations
+    )
+    updated = db_session.execute(
+        text(
+            "SELECT payload FROM activities WHERE entity_type = 'organization' "
+            "AND entity_id = :id AND kind = 'updated'"
+        ),
+        {"id": foreign.id},
+    ).scalars()
+    assert {"changed": ["legal_entity_id"]} in list(updated)
+
+
+def test_a_shared_organization_is_matched_by_every_legal_entity_and_accepted_by_id(
+    db_session: Session, local_storage: LocalFileStorage
+) -> None:
+    service = _svc(db_session, local_storage)
+    foreign = _customer_of_another_legal_entity(db_session)
+    foreign.legal_entity_id = None
+    db_session.flush()
+    document_id = _document(db_session, local_storage, _fixture(CONSULTING), owner=foreign)
+
+    [reviewed] = service.review_import([document_id], ADMIN)
+    assert reviewed.outcome == "ready"
+    assert reviewed.matched_customer_id == foreign.id
+    assert reviewed.existing_organization_id is None
+
+    [row] = service.confirm_import(document_id, ADMIN, customer_id=foreign.id)
+    assert row.outcome == "imported"
+
+
+def test_naming_the_other_legal_entitys_customer_still_needs_the_decision_to_share_it(
+    db_session: Session, local_storage: LocalFileStorage
+) -> None:
+    service = _svc(db_session, local_storage)
+    foreign = _customer_of_another_legal_entity(db_session)
+    document_id = _document(db_session, local_storage, _fixture(CONSULTING), owner=foreign)
+
+    with pytest.raises(ValidationFailed) as refused:
+        service.confirm_import(document_id, ADMIN, customer_id=foreign.id)
+    assert "altra azienda" in refused.value.message
+
+    [row] = service.confirm_import(
+        document_id, ADMIN, customer_id=foreign.id, share_organization=True
+    )
+    assert row.outcome == "imported"
+    db_session.refresh(foreign)
+    assert foreign.legal_entity_id is None
+
+
+def test_a_duplicate_tax_id_is_the_invoices_own_outcome_and_the_batch_goes_on(
+    db_session: Session,
+    local_storage: LocalFileStorage,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """When the counterparty cannot be created because its VAT number is on file (here the
+    review's lookup is blinded, as a request racing this one would), the invoice reports its
+    own outcome, and the organization it names, instead of a 409 for the whole request that
+    hides what was already committed."""
+    service = _svc(db_session, local_storage)
+    foreign = _customer_of_another_legal_entity(db_session)
+    document_id = _document(db_session, local_storage, _fixture(LOTTO), owner=foreign)
+    monkeypatch.setattr(
+        "pigrocrm.core.invoices.importing.organization_elsewhere", lambda *args, **kwargs: None
+    )
+
+    rows = service.confirm_import(document_id, ADMIN, create_organization=True)
+
+    assert [row.outcome for row in rows] == ["needs_customer_confirmation"] * len(rows)
+    assert {row.existing_organization_id for row in rows} == {foreign.id}
+
+
+def test_a_refusal_without_a_known_organization_is_a_conflict_row(
+    db_session: Session,
+    local_storage: LocalFileStorage,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = _svc(db_session, local_storage)
+    document_id = _document(db_session, local_storage, _fixture(CONSULTING))
+
+    def refuse(*_args: object, **_kwargs: object) -> None:
+        raise Conflict("organization", "esiste gia' un'anagrafica con questa partita IVA")
+
+    monkeypatch.setattr("pigrocrm.core.organizations.service.OrganizationService._insert", refuse)
 
     [row] = service.confirm_import(document_id, ADMIN, create_organization=True)
 
-    assert row.outcome == "imported"
-    assert row.invoice is not None
-    assert row.invoice.customer_id != foreign.id
-    created = db_session.get(Organization, row.invoice.customer_id)
-    assert created is not None
-    assert created.legal_entity_id == row.legal_entity_id
+    assert row.outcome == "conflict"
+    assert _invoice_count(db_session) == 0
 
 
 def test_create_customer_makes_exactly_one_new_customer_for_a_brand_new_counterparty_batch(

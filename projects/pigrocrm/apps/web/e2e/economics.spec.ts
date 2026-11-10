@@ -162,7 +162,7 @@ test.describe('economics', () => {
       name,
       rate: '100.000000',
       customer: {
-        vat_number: '12345678901',
+        vat_number: String(Date.now()).slice(-11),
         sdi_code: 'ABCDEFG',
         address: 'Corso Italia 5',
         postal_code: '00100',

@@ -1,13 +1,29 @@
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import Boolean, ForeignKey, Index, Integer, String, text
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy import Boolean, CheckConstraint, ForeignKey, Index, Integer, String, text
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from pigrocrm.core.contact_points.models import ContactPoint, primary_value
 from pigrocrm.core.db import Base, PrimaryKeyMixin, SoftDeleteMixin, TimestampMixin
 from pigrocrm.core.legal_entities.models import default_legal_entity_id
+from pigrocrm.core.organizations.roles import (
+    CUSTOMER_KINDS,
+    ORGANIZATION_ROLES,
+    SUPPLIER_AREAS,
+    SUPPLIER_KINDS,
+    SUPPLIER_SUPPLIES,
+    VAT_INDEX_PREDICATE,
+    VAT_NUMBER_MAX_LENGTH,
+    VAT_UNIQUE_INDEX,
+    country_key,
+    vat_key,
+)
+
+
+def _in(column: str, values: tuple[str, ...]) -> str:
+    return f"{column} IN ({', '.join(repr(value) for value in values)})"
 
 
 class Organization(Base, PrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
@@ -75,6 +91,43 @@ class Organization(Base, PrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
         Index("ix_organizations_created_at_id", "created_at", "id"),
         Index("ix_organizations_updated_at_id", "updated_at", "id"),
         Index("ix_organizations_legal_name_id", "legal_name", "id"),
+        # A role filter (REB-970, design 2026-11-09 suppliers § 1) is a containment test on
+        # the array, which this GIN index serves.
+        Index("ix_organizations_roles", "roles", postgresql_using="gin"),
+        # Two live rows of one country never share a VAT number, compared in its normalised
+        # form (`roles.normalise_vat`): one record per company, whatever it is to us. The
+        # service reads the same key to refuse a second one with a sentence, and this index is
+        # what holds when two requests race. A space whose existing rows already collide has
+        # no index until a person resolves them (`duplicates.py`).
+        Index(
+            VAT_UNIQUE_INDEX,
+            country_key(text("country")),
+            vat_key(text("vat_number")),
+            unique=True,
+            postgresql_where=text(VAT_INDEX_PREDICATE),
+        ),
+        CheckConstraint(
+            "cardinality(roles) >= 1 AND roles <@ ARRAY["
+            + ", ".join(repr(role) for role in ORGANIZATION_ROLES)
+            + "]::varchar[]",
+            name="ck_organizations_roles",
+        ),
+        CheckConstraint(
+            f"supplier_kind IS NULL OR {_in('supplier_kind', SUPPLIER_KINDS)}",
+            name="ck_organizations_supplier_kind",
+        ),
+        CheckConstraint(
+            f"supplier_area IS NULL OR {_in('supplier_area', SUPPLIER_AREAS)}",
+            name="ck_organizations_supplier_area",
+        ),
+        CheckConstraint(
+            f"supplier_supplies IS NULL OR {_in('supplier_supplies', SUPPLIER_SUPPLIES)}",
+            name="ck_organizations_supplier_supplies",
+        ),
+        CheckConstraint(
+            f"customer_kind IS NULL OR {_in('customer_kind', CUSTOMER_KINDS)}",
+            name="ck_organizations_customer_kind",
+        ),
     )
 
     legal_name: Mapped[str] = mapped_column(String(255), nullable=False)
@@ -83,9 +136,14 @@ class Organization(Base, PrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
     # contract, document and invoice born under the customer from then on; changing it
     # moves nothing already created (§1.7). The column default is the space's default
     # legal entity, for a row built without one; the service always names it.
-    legal_entity_id: Mapped[UUID] = mapped_column(
+    #
+    # `NULL` means shared across the legal entities of the space, as a cost's is (design
+    # 2026-11-09 suppliers § 1, «Scope», REB-970): one company used by two of them is one row,
+    # visible in every scope, and what is born under it takes the legal entity its own
+    # request names, the default one otherwise.
+    legal_entity_id: Mapped[UUID | None] = mapped_column(
         ForeignKey("legal_entities.id"),
-        nullable=False,
+        nullable=True,
         index=True,
         default=default_legal_entity_id,
     )
@@ -96,7 +154,19 @@ class Organization(Base, PrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
     # the reminders then give to the space's owner. Not `NOT NULL`: a user is archived,
     # never deleted, and a customer must not stop existing with them.
     owner_id: Mapped[UUID | None] = mapped_column(ForeignKey("users.id"), default=None, index=True)
-    vat_number: Mapped[str | None] = mapped_column(String(11), default=None, index=True)
+    # What this organization is to us: any of `ORGANIZATION_ROLES`, at least one. Every row
+    # that existed before roles is a customer, and so is a row built without saying.
+    roles: Mapped[list[str]] = mapped_column(
+        ARRAY(String(20)),
+        nullable=False,
+        default=lambda: ["customer"],
+        server_default=text("ARRAY['customer']::varchar[]"),
+    )
+    # Wide enough for a foreign number (`NL123456789B01`); the eleven digits of an Italian
+    # one are checked by the service, not by the column.
+    vat_number: Mapped[str | None] = mapped_column(
+        String(VAT_NUMBER_MAX_LENGTH), default=None, index=True
+    )
     tax_code: Mapped[str | None] = mapped_column(String(16), default=None)
     sdi_code: Mapped[str | None] = mapped_column(String(7), default=None)
     certified_email: Mapped[str | None] = mapped_column(String(320), default=None)
@@ -116,6 +186,26 @@ class Organization(Base, PrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
     # it.
     payment_days: Mapped[int | None] = mapped_column(Integer, default=None)
     payment_end_of_month: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=text("false")
+    )
+    # What it grants us as a supplier (design § 1): the same two terms, in the other direction.
+    # `payment_days` and `payment_end_of_month` above stay what it is given as a customer.
+    supplier_payment_days: Mapped[int | None] = mapped_column(Integer, default=None)
+    supplier_payment_end_of_month: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=text("false")
+    )
+    # What a payment to it involves: one of `SUPPLIER_KINDS`, read from the invoice XML when it
+    # says so and set by a person otherwise. A `foreign` supplier also says where it is
+    # (`supplier_area`) and what it supplies (`supplier_supplies`), which decide whether
+    # reverse charge applies. Null: not said.
+    supplier_kind: Mapped[str | None] = mapped_column(String(20), default=None)
+    supplier_area: Mapped[str | None] = mapped_column(String(20), default=None)
+    supplier_supplies: Mapped[str | None] = mapped_column(String(20), default=None)
+    # What a sale to it involves: one of `CUSTOMER_KINDS` (null: not said), and whether it is a
+    # withholding agent, which decides whether our professional invoices carry a withholding.
+    # For a public body `sdi_code` is its 6-character IPA code.
+    customer_kind: Mapped[str | None] = mapped_column(String(20), default=None)
+    is_withholding_agent: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default=text("false")
     )
     custom_fields: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)

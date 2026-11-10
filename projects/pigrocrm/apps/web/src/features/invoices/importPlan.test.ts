@@ -177,6 +177,27 @@ describe('what a confirmation would write', () => {
     })
   })
 
+  it('shares a customer another azienda already bills instead of creating it a second time', () => {
+    const elsewhere = [
+      row('needs_customer_confirmation', '1', {
+        party_key: 'AAA',
+        existing_organization_id: 'customer-7',
+      }),
+    ]
+
+    expect(decisionsFor(elsewhere, NONE)).toEqual({
+      organizations: { AAA: { share_organization: true } },
+    })
+    // A pick wins over the share, and unticking still skips the invoice.
+    const chosen = new Map([['AAA', { id: 'customer-9', name: 'Acme Ltd' }]])
+    expect(decisionsFor(elsewhere, NONE, new Map(), chosen)).toEqual({
+      organizations: { AAA: { customer_id: 'customer-9' } },
+    })
+    expect(decisionsFor(elsewhere, new Set(['AAA']))).toEqual({
+      organizations: { AAA: { skip: true } },
+    })
+  })
+
   it('names two organizations of one file separately, so unticking one leaves the other', () => {
     const two = [
       row('needs_customer_confirmation', '1', { party_key: 'AAA' }),

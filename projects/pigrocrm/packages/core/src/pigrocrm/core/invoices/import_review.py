@@ -83,6 +83,11 @@ class ReviewedInvoiceRead(BaseModel):
     # on an `incoming_skipped` or `unclaimed` row, which lands nowhere.
     legal_entity_id: UUID | None = None
     matched_customer_id: UUID | None = None
+    # REB-970: on a `needs_customer_confirmation` row, the organization this customer's tax id
+    # belongs to under another legal entity. It is not offered as the match (it is not on this
+    # register's legal entity); `share_organization` in the confirmation makes it shared and
+    # attaches the invoice to it, instead of creating a second row for one company.
+    existing_organization_id: UUID | None = None
     # REB-369: one entry per `invoice.lines`, positionally aligned -- never merged
     # into `ParsedInvoiceLine` itself, which stays "exactly as the document states
     # it" (its own docstring) and carries no computed field. `None` for the whole
@@ -173,6 +178,25 @@ def register_lookup(
     `classify_parsed_invoice` takes: the legal entity is the one argument left, since it
     is the one fact the classifier learns."""
     return lambda legal_entity: existing_for(session, invoice, legal_entity.id)
+
+
+def organization_elsewhere(
+    session: Session, customer: ParsedInvoiceParty, legal_entity_id: UUID | None
+) -> UUID | None:
+    """The organization `customer`'s tax id belongs to under *another* legal entity than
+    `legal_entity_id` (REB-970), which `match_customer` does not offer: one company is one
+    row, so the confirmation shares this one instead of creating a second. `None` when no
+    organization of another legal entity carries it, and for a shared one, which
+    `match_customer` already matches."""
+    if legal_entity_id is None:
+        return None
+    found = OrganizationRepository(session).match_by_fiscal_id(
+        vat_number=normalise_fiscal_id(customer.vat_number),
+        tax_code=normalise_fiscal_id(customer.tax_code),
+    )
+    if found is None or found.legal_entity_id in (None, legal_entity_id):
+        return None
+    return found.id
 
 
 def match_customer(
@@ -266,6 +290,7 @@ class ReviewedInvoice:
     invoice: ParsedInvoice | None = None
     legal_entity_id: UUID | None = None
     matched_customer_id: UUID | None = None
+    existing_organization_id: UUID | None = None
     days_mappings: list[WorkUnitDayMappingProposal | None] | None = None
     note: str | None = None
 
@@ -300,6 +325,7 @@ def review_invoices(
         )
         outcome: InvoiceReviewOutcome = classification
         matched_customer_id: UUID | None = None
+        existing_organization_id: UUID | None = None
         days_mappings: list[WorkUnitDayMappingProposal | None] | None = None
         if outcome == "ready":
             matched_customer_id = match_customer(
@@ -307,6 +333,9 @@ def review_invoices(
             )
             if matched_customer_id is None:
                 outcome = "needs_customer_confirmation"
+                existing_organization_id = organization_elsewhere(
+                    session, invoice.customer, legal_entity.id if legal_entity is not None else None
+                )
             else:
                 days_mappings = _propose_day_mappings(
                     session, contracts, invoice, matched_customer_id
@@ -317,6 +346,7 @@ def review_invoices(
                 invoice=invoice,
                 legal_entity_id=legal_entity.id if legal_entity is not None else None,
                 matched_customer_id=matched_customer_id,
+                existing_organization_id=existing_organization_id,
                 days_mappings=days_mappings,
             )
         )
@@ -338,6 +368,7 @@ def review_content(
             invoice=row.invoice,
             legal_entity_id=row.legal_entity_id,
             matched_customer_id=row.matched_customer_id,
+            existing_organization_id=row.existing_organization_id,
             days_mappings=row.days_mappings,
         )
         for row in review_invoices(session, content, legal_entities)

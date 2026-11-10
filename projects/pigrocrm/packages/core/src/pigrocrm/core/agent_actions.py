@@ -51,6 +51,7 @@ AGENT_ALLOWED_ACTIONS: frozenset[str] = frozenset(
         "delete_organization",
         "restore_organization",
         "change_customer_owner",
+        "list_duplicate_organizations",
         "create_person",
         "update_person",
         "delete_person",
@@ -176,6 +177,9 @@ FULL_ACCESS_ACTIONS: frozenset[str] = frozenset(
         "declare_invoice_register_gaps",
         "review_invoice_import",
         "confirm_invoice_import",
+        # Making an organization shared across the legal entities (REB-970): what an invoice
+        # import offers when a customer is billed by two of them.
+        "share_organization",
         # Slice 9 §4.2: reading the owner's Google Drive and copying a file from it, and
         # configuring the grant (which folders the CRM may read and write, connecting and
         # disconnecting the account). Settings operations have no MCP tool and never will;
@@ -301,6 +305,8 @@ ACTION_LABELS: dict[str, str] = {
     "settle_outgoing_due_item": "segnare come pagata una scadenza in uscita o fiscale",
     "reverse_outgoing_settlement": "annullare il pagamento di una scadenza in uscita o fiscale",
     "read_fiscal_due_items": "leggere le scadenze di imposte, IVA, ritenute e stipendi",
+    "share_organization": "condividere un'anagrafica fra le aziende",
+    "list_duplicate_organizations": "elencare le anagrafiche con la stessa partita IVA",
     "skip_space_onboarding": "rimandare le domande su come lavora lo spazio",
 }
 

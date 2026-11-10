@@ -18,7 +18,10 @@ export type ConfirmOutcome = ConfirmRow['outcome']
 /** What the confirmation takes: one decision per new customer, keyed by the `party_key`
  *  the review named (`UploadedInvoiceDecisions`). */
 export interface ImportDecisions {
-  organizations: Record<string, { create_organization?: true; customer_id?: string; skip?: true }>
+  organizations: Record<
+    string,
+    { create_organization?: true; customer_id?: string; share_organization?: true; skip?: true }
+  >
 }
 
 /** The words of each verdict. Typed on the API's own union, so a seventh outcome added
@@ -176,11 +179,16 @@ export function decisionsFor(
     if (row.outcome !== 'needs_customer_confirmation' || !row.party_key) continue
     const key = row.party_key
     const customerId = created.get(key) ?? chosen.get(key)?.id
+    // A customer another legal entity already bills is one company: it is shared, never
+    // created a second time (REB-970), unless the person picked or created another one.
+    const shared = row.existing_organization_id != null
     organizations[key] = declined.has(key)
       ? { skip: true }
-      : customerId === undefined
-        ? { create_organization: true }
-        : { customer_id: customerId }
+      : customerId !== undefined
+        ? { customer_id: customerId }
+        : shared
+          ? { share_organization: true }
+          : { create_organization: true }
   }
   return { organizations }
 }

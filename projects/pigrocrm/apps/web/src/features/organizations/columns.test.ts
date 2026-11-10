@@ -32,6 +32,14 @@ const BASE_CUSTOMER: Organization = {
   status: null,
   payment_days: null,
   payment_end_of_month: false,
+  supplier_payment_days: null,
+  supplier_payment_end_of_month: false,
+  roles: ['customer'],
+  supplier_kind: null,
+  supplier_area: null,
+  supplier_supplies: null,
+  customer_kind: null,
+  is_withholding_agent: false,
   custom_fields: {},
   created_at: '2026-08-06T00:00:00Z',
   updated_at: '2026-08-06T00:00:00Z',
@@ -87,5 +95,7 @@ describe('the «Azienda» column (REB-625)', () => {
     }
     expect(legal_entity.accessorFn({ ...BASE_CUSTOMER, legal_entity_id: 'a-2' }, 0)).toBe('rebase')
     expect(legal_entity.accessorFn({ ...BASE_CUSTOMER, legal_entity_id: 'gone' }, 0)).toBe('—')
+    // An organization shared across the legal entities has none of its own (REB-970).
+    expect(legal_entity.accessorFn({ ...BASE_CUSTOMER, legal_entity_id: null }, 0)).toBe('Tutte')
   })
 })

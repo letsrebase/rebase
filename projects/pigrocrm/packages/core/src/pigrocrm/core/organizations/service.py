@@ -3,6 +3,7 @@ from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.activities.service import ActivityService
@@ -20,10 +21,23 @@ from pigrocrm.core.gmail.query import customer_domain
 from pigrocrm.core.gmail.roster import AddressRoster
 from pigrocrm.core.legal_entities.service import LegalEntityService
 from pigrocrm.core.notes.writer import append_first_note
+from pigrocrm.core.organizations.duplicates import duplicate_vat_groups
 from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.organizations.repository import OrganizationRepository
+from pigrocrm.core.organizations.roles import (
+    CUSTOMER_KINDS,
+    ORGANIZATION_ROLES,
+    SUPPLIER_AREAS,
+    SUPPLIER_KINDS,
+    SUPPLIER_SUPPLIES,
+    VAT_NUMBER_MAX_LENGTH,
+    VAT_UNIQUE_INDEX,
+    normalise_vat,
+)
 from pigrocrm.core.organizations.schemas import (
     ORGANIZATION_SORTS,
+    DuplicateGroupRead,
+    DuplicateOrganizationRead,
     OrganizationCreate,
     OrganizationFromSuggestion,
     OrganizationListQuery,
@@ -57,10 +71,12 @@ ENTITY: EntityType = "organization"
 # consumed, which has no such exception. A pasted VAT number or an MCP agent's tool
 # call carrying a trailing newline is not a lab-only case.
 VAT_NUMBER_RE = re.compile(r"^\d{11}$")
+VAT_ASCII_RE = re.compile(r"[\x20-\x7e]+")
 SDI_CODE_LENGTH = 7
+IPA_CODE_LENGTH = 6
 
 
-def _check_fiscal(data: dict[str, Any], country: str) -> None:
+def _check_fiscal(data: dict[str, Any], country: str, *, customer_kind: str | None = None) -> None:
     """Mutates `data` in place: an empty string is normalized to `None` for both
     fiscal fields before either is checked. Without this, `if piva`/`if sdi` below are
     falsy on "", so an empty string skipped the check entirely and was stored as "" --
@@ -68,6 +84,9 @@ def _check_fiscal(data: dict[str, Any], country: str) -> None:
     future "has a VAT number" filter. Shared by `create` and `update`, so the
     normalization applies equally to a brand-new row and to a patch that clears the
     field with "".
+
+    `customer_kind` is the kind the row will have after this write: a public body's
+    `sdi_code` is its 6-character IPA code, every other recipient's is 7 characters.
     """
     if data.get("vat_number") == "":
         data["vat_number"] = None
@@ -75,6 +94,16 @@ def _check_fiscal(data: dict[str, Any], country: str) -> None:
         data["sdi_code"] = None
 
     vat_number = data.get("vat_number")
+    # ASCII only: the comparison key is computed by Python on the way in and by Postgres in the
+    # index, which fold the case of a letter like ß differently. Letters, digits and the
+    # punctuation a number is written with are all a VAT number holds.
+    if vat_number and not VAT_ASCII_RE.fullmatch(vat_number):
+        raise ValidationFailed(
+            ENTITY,
+            "vat_number",
+            "deve contenere solo lettere, cifre e punteggiatura ASCII",
+            expected="lettere A-Z, cifre, spazi e punteggiatura",
+        )
     # The eleven-digit rule is Italian, so it is applied to Italian organizations and to
     # nobody else. It used to apply to everyone, which made a foreign customer
     # unrepresentable: a UK company's VAT number ("123456789", nine digits, and GB VATs
@@ -90,11 +119,112 @@ def _check_fiscal(data: dict[str, Any], country: str) -> None:
         raise ValidationFailed(
             ENTITY, "vat_number", "deve essere di 11 cifre", expected="11 cifre numeriche"
         )
+    # Any other country: as long as the column, and with something to compare in it, since
+    # two organizations are the same company when their numbers are the same once the
+    # punctuation is gone.
+    if vat_number and country.upper() != "IT":
+        if len(vat_number) > VAT_NUMBER_MAX_LENGTH:
+            raise ValidationFailed(
+                ENTITY,
+                "vat_number",
+                f"deve essere di al massimo {VAT_NUMBER_MAX_LENGTH} caratteri",
+                expected=f"al massimo {VAT_NUMBER_MAX_LENGTH} caratteri",
+            )
+        if not normalise_vat(vat_number):
+            raise ValidationFailed(
+                ENTITY,
+                "vat_number",
+                "deve contenere lettere o cifre",
+                expected="una partita IVA estera, ad esempio NL123456789B01",
+            )
     sdi = data.get("sdi_code")
-    if sdi and len(sdi) != SDI_CODE_LENGTH:
+    if sdi and customer_kind == "public_body":
+        if len(sdi) != IPA_CODE_LENGTH:
+            raise ValidationFailed(
+                ENTITY,
+                "sdi_code",
+                "per un ente pubblico e' il codice IPA, di 6 caratteri",
+                expected="6 caratteri",
+            )
+    elif sdi and len(sdi) != SDI_CODE_LENGTH:
         raise ValidationFailed(
             ENTITY, "sdi_code", "deve essere di 7 caratteri", expected="7 caratteri"
         )
+
+
+def _one_of(field: str, value: str, allowed: tuple[str, ...]) -> None:
+    if value not in allowed:
+        raise ValidationFailed(
+            ENTITY,
+            field,
+            f"valore non valido: {value}",
+            expected=" | ".join(allowed),
+        )
+
+
+def _check_roles_and_kinds(data: dict[str, Any], current: Organization | None) -> None:
+    """The role set and the fiscal kinds of a write, against the row they will describe:
+    `current` is the stored row on an update and `None` on a create. Normalises `roles` in
+    place (no repeats, order kept).
+
+    A foreign supplier says where it is and what it supplies; a supplier of any other kind
+    does not, since those two answers only mean something for reverse charge (design § 1).
+    """
+    if "roles" in data:
+        roles = data["roles"]
+        if not roles:
+            raise ValidationFailed(
+                ENTITY,
+                "roles",
+                "serve almeno un ruolo",
+                expected=" | ".join(ORGANIZATION_ROLES),
+            )
+        for role in roles:
+            _one_of("roles", role, ORGANIZATION_ROLES)
+        data["roles"] = list(dict.fromkeys(roles))
+    for field, allowed in (
+        ("supplier_kind", SUPPLIER_KINDS),
+        ("supplier_area", SUPPLIER_AREAS),
+        ("supplier_supplies", SUPPLIER_SUPPLIES),
+        ("customer_kind", CUSTOMER_KINDS),
+    ):
+        if data.get(field) is not None:
+            _one_of(field, data[field], allowed)
+
+    def after(field: str) -> Any:
+        if field in data:
+            return data[field]
+        return getattr(current, field) if current is not None else None
+
+    if after("supplier_kind") != "foreign" and (
+        after("supplier_area") is not None or after("supplier_supplies") is not None
+    ):
+        raise ValidationFailed(
+            ENTITY,
+            "supplier_kind",
+            "area e tipo di fornitura valgono solo per un fornitore estero",
+            expected="foreign",
+        )
+
+
+def _vat_key(country: str, vat_number: str | None) -> tuple[str, str] | None:
+    """What two organizations are the same company by: the country and the VAT number
+    without case and punctuation. `None` when there is nothing to compare."""
+    normalised = normalise_vat(vat_number) if vat_number else ""
+    return (country.upper(), normalised) if normalised else None
+
+
+def _vat_taken(
+    country: str, vat_number: str, legal_name: str | None, existing_id: UUID | None
+) -> Conflict:
+    who = f" ({legal_name})" if legal_name else ""
+    return Conflict(
+        ENTITY,
+        f"esiste gia' un'anagrafica con la partita IVA {vat_number} ({country.upper()}){who}: "
+        "e' la stessa azienda, usa quella e aggiungi il ruolo che manca",
+        field="vat_number",
+        **({"existing_id": str(existing_id)} if existing_id is not None else {}),
+    )
 
 
 def _person_name(display: str, address: str) -> tuple[str, str | None]:
@@ -176,7 +306,11 @@ class OrganizationService:
         # now so that a refusal leaves nothing in the session.
         payload.pop("contact_points")
         prepare(ENTITY, data.contact_points)
-        _check_fiscal(payload, payload.get("country") or "IT")
+        _check_fiscal(
+            payload, payload.get("country") or "IT", customer_kind=payload.get("customer_kind")
+        )
+        _check_roles_and_kinds(payload, None)
+        self._check_vat_free(payload.get("country") or "IT", payload.get("vat_number"), None)
         payload["custom_fields"] = validate_custom_fields(
             ENTITY, self.fields.specs_for(ENTITY), payload.get("custom_fields") or {}
         )
@@ -185,13 +319,51 @@ class OrganizationService:
         )
         payload["owner_id"] = self._owner_for(payload.get("owner_id"), actor, creating=True)
 
-        customer = self.repo.add(Organization(**payload))
+        try:
+            # A savepoint: a refusal by the index (two requests racing for one number) leaves
+            # the caller's transaction, and whatever it wrote before this, standing.
+            with self.session.begin_nested():
+                customer = self.repo.add(Organization(**payload))
+        except IntegrityError as exc:
+            raise self._vat_refused(
+                exc, payload.get("country") or "IT", payload.get("vat_number")
+            ) from exc
         write_points(self.session, customer, data.contact_points)
         self.activities.record(
             ENTITY, customer.id, "created", actor, {"legal_name": customer.legal_name}
         )
         append_first_note(self.session, ENTITY, customer.id, first_note, actor)
         return customer
+
+    def _check_vat_free(self, country: str, vat_number: str | None, excluding: UUID | None) -> None:
+        """Refuses a VAT number a live organization of the same country already holds, in
+        any role: one record per company (design § 1). The unique index says the same when
+        two requests race, and `_vat_refused` turns its error into this one."""
+        if not vat_number:
+            return
+        found = self.repo.find_by_vat(country, vat_number, excluding=excluding)
+        if found is not None:
+            raise _vat_taken(country, vat_number, found.legal_name, found.id)
+
+    def _vat_refused(
+        self,
+        exc: IntegrityError,
+        country: str,
+        vat_number: str | None,
+        excluding: UUID | None = None,
+    ) -> Exception:
+        """What a database refusal of a write becomes: the sentence for the VAT number when
+        it is the unique index that refused, the original error otherwise. `country` and
+        `vat_number` are the ones the write attempted, and `excluding` the row it was for."""
+        if VAT_UNIQUE_INDEX not in str(exc.orig) or not vat_number:
+            return exc
+        found = self.repo.find_by_vat(country, vat_number, excluding=excluding)
+        return _vat_taken(
+            country,
+            vat_number,
+            found.legal_name if found else None,
+            found.id if found else None,
+        )
 
     def _legal_entity_for(self, legal_entity_id: UUID | None, country: str | None) -> UUID:
         """The legal entity a customer is billed by: the one named, which must exist and be
@@ -381,9 +553,36 @@ class OrganizationService:
         # confused with the field itself being absent -- see `merge_custom`.
         changes = supplied_changes(data, exclude={"custom_fields", "contact_points"})
         reject_cleared_columns(ENTITY, Organization, changes)
-        # The country after this patch, not merely the one it mentions.
-        _check_fiscal(changes, changes.get("country") or customer.country)
-        if changes.get("legal_entity_id") is not None:
+        # The country after this patch, not merely the one it mentions. A change of kind alone
+        # re-checks the stored recipient code against the length the new kind asks for.
+        fiscal = dict(changes)
+        if "customer_kind" in changes and "sdi_code" not in changes:
+            fiscal["sdi_code"] = customer.sdi_code
+        _check_fiscal(
+            fiscal,
+            changes.get("country") or customer.country,
+            customer_kind=changes.get("customer_kind", customer.customer_kind),
+        )
+        for key in ("vat_number", "sdi_code"):
+            if key in changes:
+                changes[key] = fiscal[key]
+        _check_roles_and_kinds(changes, customer)
+        # Only when the key the row is found by changes. A form resends the number and the
+        # country it loaded, and a row of a legacy pair (two rows, one number) must stay
+        # editable until a person resolves the pair.
+        attempted_country = changes.get("country") or customer.country
+        attempted_vat = changes.get("vat_number", customer.vat_number)
+        if _vat_key(attempted_country, attempted_vat) not in (
+            None,
+            _vat_key(customer.country, customer.vat_number),
+        ):
+            self._check_vat_free(attempted_country, attempted_vat, customer.id)
+        if "legal_entity_id" in changes and changes["legal_entity_id"] is None:
+            # An explicit `null` shares the organization across the legal entities (REB-970).
+            actor.require_admin("share_organization")
+            if customer.legal_entity_id is None:
+                del changes["legal_entity_id"]
+        elif changes.get("legal_entity_id") is not None:
             # Named, so no proposal: a move is a decision, and it moves nothing already
             # created under the customer (spec §1.7).
             changes["legal_entity_id"] = self._legal_entity_for(changes["legal_entity_id"], None)
@@ -397,8 +596,19 @@ class OrganizationService:
                 ENTITY, self.fields.specs_for(ENTITY), customer.custom_fields, data.custom_fields
             )
         changed = changed_keys(customer, changes)
-        for key, value in changes.items():
-            setattr(customer, key, value)
+        try:
+            # A savepoint taken before the first change (it flushes what is pending on entry,
+            # so a change made first would be flushed outside it), so a refusal by the index
+            # (two requests racing for one number) undoes this write only. The values it
+            # attempted are the ones named, read before the rollback expires the row.
+            with self.session.begin_nested():
+                for key, value in changes.items():
+                    setattr(customer, key, value)
+                self.session.flush()
+        except IntegrityError as exc:
+            raise self._vat_refused(
+                exc, attempted_country, attempted_vat, excluding=customer.id
+            ) from exc
         # `null` leaves the list alone, as every omitted field is left: an empty list clears it.
         if data.contact_points is not None and write_points(
             self.session, customer, data.contact_points
@@ -449,11 +659,62 @@ class OrganizationService:
         # "restored" here -- even for a customer that was never soft-deleted -- would
         # write a timeline entry claiming a recovery that never happened.
         was_deleted = customer.deleted_at is not None
+        if was_deleted:
+            # Its number may have been given to another organization while it was archived.
+            self._check_vat_free(customer.country, customer.vat_number, customer.id)
         customer.deleted_at = None
         if was_deleted:
             self.activities.record(ENTITY, customer.id, "restored", actor)
         self.session.commit()
         return OrganizationRead.model_validate(customer)
+
+    def _share(self, organization: Organization, actor: Actor) -> None:
+        """Make `organization` shared across the legal entities of the space, without the
+        commit (REB-970, design § 1 «Scope»): one company used by two of them is one row, and
+        the timeline says it was widened. Idempotent."""
+        if organization.legal_entity_id is None:
+            return
+        organization.legal_entity_id = None
+        self.activities.record(
+            ENTITY, organization.id, "updated", actor, {"changed": ["legal_entity_id"]}
+        )
+
+    def share(self, organization_id: UUID, actor: Actor) -> OrganizationRead:
+        """`legal_entity_id` to `NULL`: the organization stays one row and becomes visible in
+        every legal entity's scope. An administrator's decision, since it shows the company to
+        people who could not see it."""
+        actor.require_admin("share_organization")
+        organization = self.repo.get(organization_id)
+        if organization is None:
+            raise NotFound(ENTITY, organization_id)
+        self._share(organization, actor)
+        self.session.commit()
+        return OrganizationRead.model_validate(organization)
+
+    def duplicates(self, actor: Actor) -> list[DuplicateGroupRead]:
+        """The live organizations that share a country and a VAT number, in groups, for a
+        person to resolve by archiving one or correcting a number (design § 1). The whole
+        registry or nothing: a report read through a legal entity's scope would call a
+        group resolved that is not."""
+        actor.require_unscoped_admin("list_duplicate_organizations")
+        return [
+            DuplicateGroupRead(
+                country=group.country,
+                vat_key=group.vat_key,
+                organizations=[
+                    DuplicateOrganizationRead(
+                        id=row.id,
+                        legal_name=row.legal_name,
+                        vat_number=row.vat_number,
+                        roles=list(row.roles),
+                        legal_entity_id=row.legal_entity_id,
+                        created_at=row.created_at,
+                    )
+                    for row in group.organizations
+                ],
+            )
+            for group in duplicate_vat_groups(self.session)
+        ]
 
     # `list` must stay the last method defined in this class -- an unconditional
     # project rule (see `FieldDefinitionService.specs_for`'s docstring and

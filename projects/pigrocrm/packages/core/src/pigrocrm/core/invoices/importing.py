@@ -27,6 +27,7 @@ from pigrocrm.core.invoices.import_review import (
     detect_adapter,
     match_customer,
     natural_key,
+    organization_elsewhere,
     register_lookup,
     review_content,
     review_invoices,
@@ -44,14 +45,16 @@ from pigrocrm.core.invoices.naming import number_complete
 from pigrocrm.core.invoices.register import holes
 from pigrocrm.core.invoices.schemas import InvoiceRead
 from pigrocrm.core.legal_entities.models import LegalEntity
+from pigrocrm.core.organizations.models import Organization
 
 REVIEW_ACTION = "review_invoice_import"
 CONFIRM_ACTION = "confirm_invoice_import"
 
 # What a confirmation asks about the counterparty of an invoice: the customer id to
-# attach, whether to create the counterparty when none matches, and whether to leave the
-# invoice out altogether.
-OrganizationDecision = Callable[[ParsedInvoiceParty], tuple[UUID | None, bool, bool]]
+# attach, whether to create the counterparty when none matches, whether to leave the
+# invoice out altogether, and whether the organization another legal entity bills is shared
+# with this one (REB-970).
+OrganizationDecision = Callable[[ParsedInvoiceParty], tuple[UUID | None, bool, bool, bool]]
 
 
 class _Refused(Exception):
@@ -177,6 +180,7 @@ class InvoiceImporter:
                         reason=row.note,
                         legal_entity_id=row.legal_entity_id,
                         matched_customer_id=row.matched_customer_id,
+                        existing_organization_id=row.existing_organization_id,
                         days_mappings=row.days_mappings,
                     )
                 )
@@ -191,6 +195,7 @@ class InvoiceImporter:
         *,
         customer_id: UUID | None = None,
         create_organization: bool = False,
+        share_organization: bool = False,
     ) -> list[ConfirmedInvoiceRead]:
         """Confirm one already-reviewed document onto the register (REB-366, design
         record §4-5, §7 item 4): **re-reads and re-parses the document's own stored
@@ -235,8 +240,8 @@ class InvoiceImporter:
         legal_entities = self._importing_legal_entities()
         content, _content_type, _filename = self.ctx.documents.download(document_id, None, actor)
 
-        def decide(_party: ParsedInvoiceParty) -> tuple[UUID | None, bool, bool]:
-            return customer_id, create_organization, False
+        def decide(_party: ParsedInvoiceParty) -> tuple[UUID | None, bool, bool, bool]:
+            return customer_id, create_organization, False, share_organization
 
         self._refuse_chosen_organizations([content], legal_entities, decide)
         batch = _Batch(gaps=_GapTracker(self.ctx))
@@ -245,6 +250,7 @@ class InvoiceImporter:
                 document_id=document_id,
                 outcome=row.outcome,
                 legal_entity_id=row.legal_entity_id,
+                existing_organization_id=row.existing_organization_id,
                 invoice=row.invoice,
                 undeclared_gaps=row.undeclared_gaps,
             )
@@ -286,11 +292,16 @@ class InvoiceImporter:
         actor.require_admin(CONFIRM_ACTION)
         legal_entities = self._importing_legal_entities()
 
-        def decide(party: ParsedInvoiceParty) -> tuple[UUID | None, bool, bool]:
+        def decide(party: ParsedInvoiceParty) -> tuple[UUID | None, bool, bool, bool]:
             decision = decisions.get(party_key(party))
             if decision is None:
-                return None, False, False
-            return decision.customer_id, decision.create_organization, decision.skip
+                return None, False, False, False
+            return (
+                decision.customer_id,
+                decision.create_organization,
+                decision.skip,
+                decision.share_organization,
+            )
 
         uploaded = expand_uploads(files)
         self._refuse_chosen_organizations(
@@ -316,6 +327,7 @@ class InvoiceImporter:
                         party_key=row.party_key,
                         reason=row.note,
                         legal_entity_id=row.legal_entity_id,
+                        existing_organization_id=row.existing_organization_id,
                         invoice=row.invoice,
                         undeclared_gaps=row.undeclared_gaps,
                     )
@@ -350,10 +362,14 @@ class InvoiceImporter:
                 )
                 if classification != "ready" or legal_entity is None:
                     continue
-                customer_id, _create, skip = decide(invoice.customer)
+                customer_id, _create, skip, share = decide(invoice.customer)
                 if customer_id is not None and not skip:
                     check_import_customer(
-                        self.ctx, customer_id, legal_entity, invoice.customer.legal_name
+                        self.ctx,
+                        customer_id,
+                        legal_entity,
+                        invoice.customer.legal_name,
+                        sharing=share,
                     )
 
     def _confirm_content(
@@ -422,25 +438,36 @@ class InvoiceImporter:
                 invoice=ctx.get(existing.id) if existing is not None else None,
                 party_key=party,
             )
-        customer_id, create_organization, skip = decide(invoice.customer)
+        customer_id, create_organization, skip, share = decide(invoice.customer)
         if skip:
             # The person left this customer out: whatever the register would match now (a
             # customer created by somebody else since the review, say), the invoice is not
             # written.
             return self._needs_customer(legal_entity, party)
         if customer_id is not None:
-            check_import_customer(ctx, customer_id, legal_entity, invoice.customer.legal_name)
+            check_import_customer(
+                ctx, customer_id, legal_entity, invoice.customer.legal_name, sharing=share
+            )
         else:
             customer_id = match_customer(ctx.session, invoice.customer, legal_entity.id)
+            if customer_id is None:
+                # One company is one organization (REB-970): the one another legal entity
+                # bills is shared when the person says so, and never created a second time.
+                elsewhere = organization_elsewhere(ctx.session, invoice.customer, legal_entity.id)
+                if elsewhere is not None:
+                    if not share:
+                        return self._needs_customer(legal_entity, party, elsewhere)
+                    customer_id = elsewhere
         cached_id = batch.created_organizations.get((legal_entity.id, party))
         if customer_id is None and not create_organization:
             return self._needs_customer(legal_entity, party)
 
         new_customer_id: UUID | None = None
         try:
-            # One SAVEPOINT per invoice: a refusal rolls back the customer inserted for it
-            # and the XML archived for it, never an earlier invoice of the request (each
-            # of those is committed) nor the caller's other pending work.
+            # One SAVEPOINT per invoice: a refusal rolls back the customer inserted for it,
+            # the organization shared for it and the XML archived for it, never an earlier
+            # invoice of the request (each of those is committed) nor the caller's other
+            # pending work.
             with ctx.session.begin_nested():
                 if customer_id is None:
                     customer_id = cached_id
@@ -454,10 +481,30 @@ class InvoiceImporter:
                         actor,
                     )
                     customer_id = new_customer_id = new_customer.id
+                elif share:
+                    chosen = ctx.session.get(Organization, customer_id)
+                    if chosen is not None and chosen.legal_entity_id not in (
+                        None,
+                        legal_entity.id,
+                    ):
+                        ctx.organizations._share(chosen, actor)
                 written = self._write(invoice, year, number, customer_id, legal_entity, file, actor)
         except _Refused:
             return ConfirmedInvoice(
                 outcome="conflict", legal_entity_id=legal_entity.id, party_key=party
+            )
+        except Conflict as refused:
+            # The counterparty cannot be created (its VAT number is on file, and `elsewhere`
+            # could not see it, or a request raced this one): this invoice's own outcome, so
+            # the invoices before it, already committed, are still reported.
+            existing = refused.details.get("existing_id")
+            if existing is not None:
+                return self._needs_customer(legal_entity, party, UUID(existing))
+            return ConfirmedInvoice(
+                outcome="conflict",
+                legal_entity_id=legal_entity.id,
+                party_key=party,
+                note=refused.message,
             )
         ctx.session.commit()
         # Cached only now that the invoice it was created for is committed: a rolled-back
@@ -473,9 +520,14 @@ class InvoiceImporter:
         )
 
     @staticmethod
-    def _needs_customer(legal_entity: LegalEntity, party: str) -> ConfirmedInvoice:
+    def _needs_customer(
+        legal_entity: LegalEntity, party: str, existing_organization_id: UUID | None = None
+    ) -> ConfirmedInvoice:
         return ConfirmedInvoice(
-            outcome="needs_customer_confirmation", legal_entity_id=legal_entity.id, party_key=party
+            outcome="needs_customer_confirmation",
+            legal_entity_id=legal_entity.id,
+            party_key=party,
+            existing_organization_id=existing_organization_id,
         )
 
     def _write(

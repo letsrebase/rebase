@@ -814,6 +814,12 @@ _COVERED_OR_HUMAN: dict[Method, str] = {
         "stesse persone con `create_organization` e `create_person`, e il confine della "
         "transazione e' quello della lista di caselle, che un agente non ha"
     ),
+    ("OrganizationService", "share"): (
+        "makes an organization shared across the legal entities (REB-970): an agent with "
+        "`full_access` does it with `update_organization` and a null `legal_entity_id`, or "
+        "while confirming an invoice import; this is the person's button, and the service "
+        "refuses any other agent credential"
+    ),
     ("OrganizationService", "add_person_from_mail"): (
         "adds an address found at the customer's domain as a person of that customer "
         "(REB-766): an agent finds the same addresses with "

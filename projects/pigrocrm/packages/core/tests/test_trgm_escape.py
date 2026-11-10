@@ -173,15 +173,18 @@ def _isolated_plan(session: Session, index_name: str, predicate: str, table: str
     try:
         for sibling in _SIBLINGS[index_name]:
             session.execute(text(f"DROP INDEX {sibling}"))
-        if table == "contact_points":
-            # No `deleted_at`, and every other index of the table (its foreign keys, its
-            # unique ones, `(kind, normalized)`) is one more way to enumerate its rows.
+        if table in ("contact_points", "organizations"):
+            # Every other index of the table is one more way to enumerate its rows: the
+            # foreign keys and the unique ones of `contact_points` (it has no `deleted_at`),
+            # and on `organizations` the partial unique index on the VAT number, which a
+            # `vat_number ILIKE` predicate satisfies (REB-970) and which then wins as a whole
+            # index scan the planner finds cheaper than the trigram index being measured.
             for other in session.scalars(
                 text(
-                    "SELECT indexname FROM pg_indexes WHERE tablename = 'contact_points' "
+                    "SELECT indexname FROM pg_indexes WHERE tablename = :table "
                     "AND indexname NOT LIKE '%_pkey' AND indexname <> :name"
                 ),
-                {"name": index_name},
+                {"table": table, "name": index_name},
             ).all():
                 session.execute(text(f"DROP INDEX {other}"))
         session.execute(text("SET LOCAL enable_seqscan = off"))

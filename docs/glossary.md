@@ -40,8 +40,11 @@ This file is the single mapping from the Italian word to the English identifier.
 | Italian | English | Meaning |
 |---|---|---|
 | cliente | customer | Who is billed |
-| anagrafica | organization | A registry entry (company or person-as-company) with roles `customer`, `supplier`, `freelancer`. Since REB-969 it is the entity: table `organizations`, class `Organization`, `OrganizationService`, `/api/organizations`, MCP `create_organization` and `organization://`, web `/app/organizations`; the roles themselves arrive with REB-970 |
+| anagrafica | organization | A registry entry (company or person-as-company) with roles `customer`, `supplier`, `freelancer`. Since REB-969 it is the entity: table `organizations`, class `Organization`, `OrganizationService`, `/api/organizations`, MCP `create_organization` and `organization://`, web `/app/organizations`. The roles are an array column (`organizations.roles`), one record per company whatever it is to us (REB-970) |
 | fornitore | supplier (role) | An organisation we pay; a role of an `organization`, not a FatturaPA party |
+| tipo fiscale del fornitore | `supplier_kind` | What a payment to a supplier involves: `company` (società), `professional` (professionista in regime ordinario), `flat_rate` (forfettario), `occasional` (prestazione occasionale), `foreign` (estero, with `supplier_area` `eu` or `extra_eu` and `supplier_supplies` `goods` or `services`) |
+| tipo del cliente | `customer_kind` | What a sale to a customer involves: `business`, `consumer`, `public_body` (ente pubblico, whose `sdi_code` is its 6-character codice IPA) |
+| sostituto d'imposta | withholding agent (`is_withholding_agent`) | A customer that withholds tax on our professional invoices |
 | persona / persone | person / people | A contact |
 | recapito | contact_point | One way to reach a person, a customer or a hub user: kind (email, phone, linkedin), value, label (lavoro, personale, amministrazione, altro → work, personal, billing, other), note, primary flag |
 | deal | deal | Already English |

@@ -4,7 +4,9 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Query, status
 from pydantic import Field
 
+from pigrocrm.core.organizations.roles import RoleFilter
 from pigrocrm.core.organizations.schemas import (
+    DuplicateGroupRead,
     OrganizationCreate,
     OrganizationListQuery,
     OrganizationPage,
@@ -69,6 +71,11 @@ def add_person_from_mail(
 
 class OrganizationListParams(SortedParams, SearchParams, CustomParams):
     status: SafeStr | None = None
+    role: RoleFilter = Field(
+        default="customer",
+        description="One role (customer, supplier, freelancer), or `any` for the registry "
+        "across roles. Customers only when omitted.",
+    )
     legal_entity_id: UUID | None = Field(default=None, description=LEGAL_ENTITY_QUERY_DESCRIPTION)
     sort: SafeStr | None = sort_field("created_at", "updated_at", "legal_name")
 
@@ -78,6 +85,15 @@ def list_organizations(
     session: SessionDep, actor: ActorDep, params: Annotated[OrganizationListParams, Query()]
 ) -> OrganizationPage:
     return OrganizationService(session).list(params.to_query(OrganizationListQuery), actor)
+
+
+# Before `/{organization_id}`, which would take `duplicates` for an id.
+@router.get("/duplicates", response_model=list[DuplicateGroupRead])
+def list_duplicates(session: SessionDep, actor: ActorDep) -> list[DuplicateGroupRead]:
+    """The organizations that share a country and a VAT number, in groups. An administrator
+    of the whole space reads it, and resolves each group by archiving a row or correcting a
+    number."""
+    return OrganizationService(session).duplicates(actor)
 
 
 @router.get("/{organization_id}", response_model=OrganizationRead)

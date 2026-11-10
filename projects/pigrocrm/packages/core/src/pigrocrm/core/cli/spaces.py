@@ -19,6 +19,7 @@ from pigrocrm.core.identity.models import Identity
 from pigrocrm.core.identity.service import IdentityService
 from pigrocrm.core.modules.registry import ModuleKey, Profile
 from pigrocrm.core.modules.service import SpaceModulesService
+from pigrocrm.core.organizations.duplicates import ensure_vat_index
 from pigrocrm.core.reminders.run import ROOT_LABEL
 from pigrocrm.core.templates.service import TemplateService
 from pigrocrm.core.tenants import (
@@ -100,6 +101,7 @@ def ensure_space_defaults(settings: Settings) -> int:
     _furnish_registry(settings)
     _profile_root(settings)
     _reconcile_root(settings)
+    _vat_index_root(settings)
     return 0
 
 
@@ -137,9 +139,11 @@ def _furnish_registry(settings: Settings) -> None:
                 with session_factory(engine)() as space:
                     bind_scope(space, Actor.system())
                     report = ensure_defaults(space, name=slug)
+                    vat_index = ensure_vat_index(space)
             except Exception as exc:  # noqa: BLE001 - one space must not stop the others
                 print(f"{slug}: not furnished ({type(exc).__name__})", file=sys.stderr)
                 continue
+        _say_vat_index(slug, vat_index)
         if report.seeded:
             print(
                 f"{slug}: statuses {report.stages}, templates {report.templates}, "
@@ -147,6 +151,29 @@ def _furnish_registry(settings: Settings) -> None:
             )
         else:
             print(f"{slug}: already in place")
+
+
+def _say_vat_index(label: str, state: str) -> None:
+    if state == "created":
+        print(f"{label}: unique VAT number index built")
+    elif state == "blocked":
+        # Never a failure: the service refuses a duplicate itself until the index exists.
+        print(
+            f"{label}: unique VAT number index waiting for duplicates to be resolved "
+            f"(pigrocrm duplicate-organizations --slug {label})",
+            file=sys.stderr,
+        )
+
+
+def _vat_index_root(settings: Settings) -> None:
+    """The root installation's unique VAT number index, which no registry row visits: built
+    once its duplicates are gone (REB-970)."""
+    try:
+        with space_engine(settings.owner_database_url) as engine, session_factory(engine)() as root:
+            bind_scope(root, Actor.system())
+            _say_vat_index(ROOT_LABEL, ensure_vat_index(root))
+    except Exception as exc:  # noqa: BLE001 - the boot must not stop here
+        print(f"{ROOT_LABEL}: VAT number index not checked ({type(exc).__name__})", file=sys.stderr)
 
 
 def _hub_opened_slugs(settings: Settings) -> set[str]:

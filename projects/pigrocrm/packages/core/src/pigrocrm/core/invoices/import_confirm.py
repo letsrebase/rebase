@@ -80,6 +80,7 @@ class ConfirmedInvoice:
     undeclared_gaps: list[int] | None = None
     party_key: str | None = None
     note: str | None = None
+    existing_organization_id: UUID | None = None
 
 
 class ConfirmedInvoiceRead(BaseModel):
@@ -102,6 +103,9 @@ class ConfirmedInvoiceRead(BaseModel):
     # The legal entity the file landed on, or was checked against (REB-619, spec §1.5);
     # `None` for `incoming_skipped` and `unclaimed`, which land nowhere.
     legal_entity_id: UUID | None = None
+    # On a `needs_customer_confirmation` row: the organization this customer's tax id belongs
+    # to under another legal entity, to be shared with `share_organization` (REB-970).
+    existing_organization_id: UUID | None = None
     invoice: InvoiceRead | None = None
     undeclared_gaps: list[int] | None = None
 
@@ -131,6 +135,7 @@ class InvoiceConfirmRequest(BaseModel):
     document_id: UUID
     customer_id: UUID | None = None
     create_organization: bool = False
+    share_organization: bool = False
 
 
 class InvoiceConfirmResult(BaseModel):

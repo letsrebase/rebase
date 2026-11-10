@@ -26,6 +26,8 @@ interface OrganizationsListParams {
   search?: string
   limit?: number
   legal_entity_id?: string
+  /** One role, or `any` for the registry across roles; customers only when left out. */
+  role?: 'customer' | 'supplier' | 'freelancer' | 'any'
 }
 
 /**
@@ -42,6 +44,7 @@ function fetchOrganizationsPage(params: OrganizationsListParams, cursor?: string
           search: params.search,
           limit: params.limit,
           legal_entity_id: params.legal_entity_id,
+          role: params.role,
           cursor,
         },
       },

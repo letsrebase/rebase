@@ -273,7 +273,10 @@ def register(
     @mcp.tool(annotations=DESTRUCTIVE)
     @guard
     def confirm_invoice_import(
-        document_id: str, customer_id: str | None = None, create_organization: bool = False
+        document_id: str,
+        customer_id: str | None = None,
+        create_organization: bool = False,
+        share_organization: bool = False,
     ) -> dict[str, Any]:
         """Confirms on the register a document reviewed with `review_invoice_import`. It rereads the
         file and reclassifies against the current state, then records every `ready` invoice as
@@ -286,7 +289,8 @@ def register(
         `customer_id` chooses the customer; omitted, the automatic match by VAT number or
         tax code applies. Without a match the line is `needs_customer_confirmation` and does
         not write, unless `create_organization` = `true`: the document's counterparty becomes a new
-        customer (just one for all the invoices of a batch).
+        customer (just one for all the invoices of a batch). On a line with
+        `existing_organization_id`, `share_organization` = `true` shares that customer.
 
         For a document with a single invoice the line carries `xml_document_id` and
         `xml_hash_sha256` of the same document; for a batch they stay empty.
@@ -297,6 +301,7 @@ def register(
             context.actor,
             customer_id=UUID(customer_id) if customer_id is not None else None,
             create_organization=create_organization,
+            share_organization=share_organization,
         )
         return {"lines": [line.model_dump(mode="json") for line in lines]}
 

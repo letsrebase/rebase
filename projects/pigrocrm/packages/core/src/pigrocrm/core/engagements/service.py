@@ -56,7 +56,7 @@ from pigrocrm.core.mail import EmailSender
 from pigrocrm.core.modules.service import SpaceModulesService
 from pigrocrm.core.money import sum_hours
 from pigrocrm.core.organizations.repository import OrganizationRepository
-from pigrocrm.core.organizations.schemas import OrganizationCreate
+from pigrocrm.core.organizations.schemas import OrganizationCreate, OrganizationUpdate
 from pigrocrm.core.organizations.service import OrganizationService
 from pigrocrm.core.tenants.database import tenant_database_name, tenant_database_url
 from pigrocrm.core.tenants.models import Tenant
@@ -621,14 +621,25 @@ class EngagementService:
         it is: its fields are the freelancer's to edit."""
         rebase = data.rebase
         organizations = OrganizationRepository(space)
+        # Whatever role it holds: a company that is already a supplier here is the same
+        # company, and gets the customer role instead of a second row (one registry, one
+        # record per company, design 2026-11-09 suppliers § 1).
         found = (
-            organizations.match_by_fiscal_id(vat_number=rebase.vat_number, tax_code=None)
+            organizations.match_by_fiscal_id(
+                vat_number=rebase.vat_number, tax_code=None, role="any"
+            )
             if rebase.vat_number is not None
             else None
         )
         if found is None:
-            found = organizations.find_by_name(rebase.legal_name)
+            found = organizations.find_by_name(rebase.legal_name, role="any")
         if found is not None:
+            if "customer" not in found.roles:
+                OrganizationService(space).update(
+                    found.id,
+                    OrganizationUpdate(roles=[*found.roles, "customer"]),
+                    Actor.rebase(),
+                )
             return found.id
         created = OrganizationService(space).create(
             OrganizationCreate(

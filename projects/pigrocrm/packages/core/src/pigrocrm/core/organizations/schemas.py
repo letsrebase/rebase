@@ -12,6 +12,10 @@ from pigrocrm.core.contact_points.schemas import (
 from pigrocrm.core.db import CURSOR_MAX_LENGTH, SortDirection, SortSpec, SortWhitelist
 from pigrocrm.core.notes.schemas import NOTE_MAX_LENGTH
 from pigrocrm.core.organizations.models import Organization
+from pigrocrm.core.organizations.roles import (
+    ORGANIZATION_ROLES,
+    RoleFilter,
+)
 from pigrocrm.core.validation import SafeStr
 
 # Mirror Organization's column widths (models.py). Without these, an over-length value
@@ -22,8 +26,7 @@ from pigrocrm.core.validation import SafeStr
 # fourth time this project has hit it.
 #
 # `vat_number` is deliberately absent from this list -- see the comment on
-# `OrganizationCreate.vat_number` below for why bounding it here would be actively wrong,
-# not merely redundant.
+# `OrganizationCreate.vat_number` below for why bounding it here would be actively wrong.
 LEGAL_NAME_MAX_LENGTH = 255
 TAX_CODE_MAX_LENGTH = 16
 SDI_CODE_MAX_LENGTH = 7
@@ -39,6 +42,7 @@ STATUS_MAX_LENGTH = 40
 # The same bounds as the fiscal profile's `due_days` (REB-326).
 PAYMENT_DAYS_MIN = 0
 PAYMENT_DAYS_MAX = 365
+KIND_MAX_LENGTH = 20
 
 CONTACT_POINTS_DESCRIPTION = (
     "The customer's contact points (email, phone, linkedin), each with a label and an optional "
@@ -52,17 +56,11 @@ class OrganizationCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     legal_name: SafeStr = Field(max_length=LEGAL_NAME_MAX_LENGTH)
-    # No `max_length` here, unlike every other fiscal field below: the service's
-    # `_check_fiscal` already requires an exact `^\d{11}$` match on every create and
-    # update, which structurally rejects any value whose length is not 11 -- a stricter
-    # condition than `max_length=11` alone, which would accept a too-short digit string
-    # a Pydantic bound cannot distinguish from a valid one. Adding `max_length=11` here
-    # as well would not close any additional gap; it would instead intercept an
-    # over-length value *before* `_check_fiscal` runs and raise pydantic's own
-    # `ValidationError` instead of this project's `ValidationFailed` -- a regression a
-    # 12-digit input must not trigger. `SafeStr` still applies: it only rejects a NUL
-    # byte, an orthogonal concern to length that `_check_fiscal`'s digit-only regex
-    # would also reject, just as a domain `ValidationFailed` instead of a schema error.
+    # No `max_length` here, unlike the other fiscal fields below: `_check_fiscal` bounds it
+    # on every create and update (exactly eleven digits for an Italian number, at most
+    # `VAT_NUMBER_MAX_LENGTH` characters for any other), and answers a `ValidationFailed`
+    # a person can read. A pydantic bound would intercept an over-length value first and
+    # answer in pydantic's own error shape. `SafeStr` still rejects a NUL byte.
     vat_number: SafeStr | None = None
     tax_code: SafeStr | None = Field(default=None, max_length=TAX_CODE_MAX_LENGTH)
     # No `max_length` either, for the same reason as `vat_number`: `_check_fiscal`
@@ -92,6 +90,22 @@ class OrganizationCreate(BaseModel):
     # not one a customer can either.
     payment_days: int | None = Field(default=None, ge=PAYMENT_DAYS_MIN, le=PAYMENT_DAYS_MAX)
     payment_end_of_month: bool = False
+    # The same two terms in the other direction: what it grants us as a supplier.
+    supplier_payment_days: int | None = Field(
+        default=None, ge=PAYMENT_DAYS_MIN, le=PAYMENT_DAYS_MAX
+    )
+    supplier_payment_end_of_month: bool = False
+    # The role and fiscal-kind values are checked by the service, which answers in Italian
+    # and names the field, where a `Literal` here would answer with pydantic's own error.
+    roles: list[SafeStr] = Field(
+        default_factory=lambda: ["customer"],
+        max_length=len(ORGANIZATION_ROLES),
+    )
+    supplier_kind: SafeStr | None = Field(default=None, max_length=KIND_MAX_LENGTH)
+    supplier_area: SafeStr | None = Field(default=None, max_length=KIND_MAX_LENGTH)
+    supplier_supplies: SafeStr | None = Field(default=None, max_length=KIND_MAX_LENGTH)
+    customer_kind: SafeStr | None = Field(default=None, max_length=KIND_MAX_LENGTH)
+    is_withholding_agent: bool = False
     custom_fields: dict[str, Any] = {}
 
 
@@ -99,8 +113,7 @@ class OrganizationUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     legal_name: SafeStr | None = Field(default=None, max_length=LEGAL_NAME_MAX_LENGTH)
-    # See OrganizationCreate.partita_iva: _check_fiscal covers this field's length exactly,
-    # so no Pydantic bound is added here either.
+    # See OrganizationCreate.vat_number: _check_fiscal bounds this field, so no Pydantic bound.
     vat_number: SafeStr | None = None
     tax_code: SafeStr | None = Field(default=None, max_length=TAX_CODE_MAX_LENGTH)
     # See OrganizationCreate.codice_sdi: _check_fiscal covers this field's length exactly.
@@ -122,6 +135,16 @@ class OrganizationUpdate(BaseModel):
     status: SafeStr | None = Field(default=None, max_length=STATUS_MAX_LENGTH)
     payment_days: int | None = Field(default=None, ge=PAYMENT_DAYS_MIN, le=PAYMENT_DAYS_MAX)
     payment_end_of_month: bool | None = None
+    supplier_payment_days: int | None = Field(
+        default=None, ge=PAYMENT_DAYS_MIN, le=PAYMENT_DAYS_MAX
+    )
+    supplier_payment_end_of_month: bool | None = None
+    roles: list[SafeStr] | None = Field(default=None, max_length=len(ORGANIZATION_ROLES))
+    supplier_kind: SafeStr | None = Field(default=None, max_length=KIND_MAX_LENGTH)
+    supplier_area: SafeStr | None = Field(default=None, max_length=KIND_MAX_LENGTH)
+    supplier_supplies: SafeStr | None = Field(default=None, max_length=KIND_MAX_LENGTH)
+    customer_kind: SafeStr | None = Field(default=None, max_length=KIND_MAX_LENGTH)
+    is_withholding_agent: bool | None = None
     custom_fields: dict[str, Any] | None = None
 
 
@@ -129,7 +152,8 @@ class OrganizationRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
-    legal_entity_id: UUID
+    # `None`: shared across the legal entities of the space.
+    legal_entity_id: UUID | None
     owner_id: UUID | None
     legal_name: str
     vat_number: str | None
@@ -149,6 +173,14 @@ class OrganizationRead(BaseModel):
     status: str | None
     payment_days: int | None
     payment_end_of_month: bool
+    supplier_payment_days: int | None
+    supplier_payment_end_of_month: bool
+    roles: list[str]
+    supplier_kind: str | None
+    supplier_area: str | None
+    supplier_supplies: str | None
+    customer_kind: str | None
+    is_withholding_agent: bool
     custom_fields: dict[str, Any]
     created_at: datetime
     updated_at: datetime
@@ -182,6 +214,10 @@ class OrganizationListQuery(BaseModel):
     # One legal entity's organizations (REB-623); `None` is every legal entity the caller may see.
     legal_entity_id: UUID | None = None
     status: SafeStr | None = None
+    # One role, or `any` for the registry across roles. The default is `customer`: every
+    # existing read of the registry sees customers only, unless it says otherwise (design
+    # 2026-11-09 suppliers § 1, «Role-blind reads»).
+    role: RoleFilter = "customer"
     custom: dict[str, Any] | None = None
     # Upper-bounded so a caller (an MCP agent especially) cannot request an
     # unbounded page; the router will impose the same ceiling at the HTTP layer.
@@ -241,3 +277,25 @@ class OrganizationsFromSuggestions(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     organizations: list[OrganizationFromSuggestion] = Field(min_length=1, max_length=50)
+
+
+class DuplicateOrganizationRead(BaseModel):
+    """One row of a duplicate group: enough to tell which to keep (the oldest is first)."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    legal_name: str
+    vat_number: str
+    roles: list[str]
+    legal_entity_id: UUID | None
+    created_at: datetime
+
+
+class DuplicateGroupRead(BaseModel):
+    """Live organizations of one country that share a VAT number once it is normalised
+    (upper case, letters and digits only)."""
+
+    country: str
+    vat_key: str
+    organizations: list[DuplicateOrganizationRead]

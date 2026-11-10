@@ -6,6 +6,7 @@ from typing import Any, cast
 from mcp.server import MCPServer
 
 from pigrocrm.core.db import SortDirection
+from pigrocrm.core.organizations.roles import RoleFilter
 from pigrocrm.core.organizations.schemas import OrganizationListQuery
 from pigrocrm_mcp.annotations import ADDITIVE, DESTRUCTIVE, READ_ONLY
 from pigrocrm_mcp.context import McpContext
@@ -44,8 +45,12 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
         country: str | None = None,
         legal_entity_id: str | None = None,
         owner_id: str | None = None,
+        roles: list[str] | None = None,
     ) -> dict[str, Any]:
         """Create an organization.
+
+        `roles`: see the server instructions (`customer` if omitted); the supplier terms and the
+        fiscal kinds are set with `update_organization`.
 
         `owner_id` is who is responsible for it and receives reminders about invoices and
         contracts (id in `list_members`): if omitted, the creator; only an administrator
@@ -82,6 +87,7 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
                 **({"country": country} if country is not None else {}),
                 "legal_entity_id": parse_legal_entity_id(legal_entity_id),
                 "owner_id": owner_id,
+                **({"roles": roles} if roles is not None else {}),
             },
         )
 
@@ -115,6 +121,7 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
     def search_organizations(
         search: str | None = None,
         status: str | None = None,
+        role: str = "customer",
         custom: dict[str, Any] | None = None,
         legal_entity_id: str | None = None,
         limit: BoundedLimit = 50,
@@ -127,7 +134,8 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
         # `validate_arguments` where the message is not ours.
         dir: str = "asc",
     ) -> dict[str, Any]:
-        """Search organizations by legal name, VAT number, tax code or any email or phone. `sort`:
+        """Search organizations by legal name, VAT number, tax code or any email or phone. `role`:
+        `customer` (the default), `supplier`, `freelancer`, or `any` for all of them. `sort`:
         `created_at`, `updated_at`, `legal_name`. `legal_entity_id` filters by company.
         """
         return organizations.search(
@@ -135,6 +143,8 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
             OrganizationListQuery(
                 search=search,
                 status=status,
+                # cast: a plain `str` at runtime, the schema's literal is what enforces it.
+                role=cast(RoleFilter, role),
                 custom=custom,
                 legal_entity_id=parse_legal_entity_id(legal_entity_id),
                 # cast: limit is `int | str` at runtime for the SDK-bypass reason
@@ -153,6 +163,14 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
                 dir=cast(SortDirection, dir),
             ),
         )
+
+    @mcp.tool(annotations=READ_ONLY)
+    @guard
+    def list_duplicate_organizations() -> dict[str, Any]:
+        """Groups of organizations that share a country and a VAT number, oldest first. Needs
+        an administrator of the whole space. Reads only: resolve a group by hand.
+        """
+        return organizations.duplicates(context)
 
     @mcp.tool(annotations=ADDITIVE)
     @guard

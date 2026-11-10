@@ -75,7 +75,7 @@ def _setup(db_session: Session) -> Contract:
         FiscalProfileService(db_session).upsert(FiscalProfileUpsert(regime_code="RF19"), ADMIN)
     customer = Organization(
         legal_name=f"Acme {uuid4()} S.r.l.",
-        vat_number="12345678901",
+        vat_number=f"{uuid4().int % 10**11:011d}",
         sdi_code="ABCDEFG",
         address="Corso Italia 5",
         postal_code="00100",
