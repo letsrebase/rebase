@@ -87,19 +87,30 @@ export function isForeignCurrency(currency: unknown): boolean {
 }
 
 /**
+ * What the form shows of a document's optional parts. Every part defaults to shown, so a caller
+ * that knows nothing yet (the capabilities are still loading, the supplier is not read) hides
+ * nothing: a form that waits is a form nobody can fill in.
+ */
+export interface FieldVisibility {
+  /** The VAT recap and the VAT period. */
+  vatRecap?: boolean
+  /** The withholding block: bollo, ritenuta, cassa. */
+  withholding?: boolean
+  reverseCharge?: boolean
+  splitPayment?: boolean
+}
+
+/**
  * The native fields the form draws for a kind, in the order it draws them.
  *
  * What a kind does not take is not drawn, and `toPurchaseRequestBody` does not send it
- * either: the same list is both. The foreign-currency block appears when the currency is
- * not the euro -- all four values travel together or none does. The withholding block
- * (bollo, ritenuta, cassa) is drawn for a document whose supplier carries one
- * (`carriesWithholding`); `withholding` defaults to drawn so a caller that has no supplier
- * to ask about sees every column the kind takes.
+ * either: the same list is both, and so is what `shown` takes away. The foreign-currency block
+ * appears when the currency is not the euro -- all four values travel together or none does.
  */
 export function fieldsFor(
   kind: PurchaseKind,
   foreign: boolean,
-  withholding = true,
+  shown: FieldVisibility = {},
 ): FieldDefinition[] {
   const foreignBlock = foreign ? FOREIGN_KEYS.map((key) => F[key]) : []
   if (isDocumentKind(kind)) {
@@ -107,23 +118,23 @@ export function fieldsFor(
       F.number,
       F.date,
       F.received_on,
-      F.iva_period,
+      ...(shown.vatRecap === false ? [] : [F.iva_period]),
       F.description,
       F.amount,
       F.currency,
       ...foreignBlock,
-      ...(withholding
-        ? [
+      ...(shown.withholding === false
+        ? []
+        : [
             F.stamp_duty,
             F.withholding_rate,
             F.withholding_base,
             F.withholding_amount,
             F.fund_rate,
             F.fund_amount,
-          ]
-        : []),
-      F.split_payment,
-      F.reverse_charge,
+          ]),
+      ...(shown.splitPayment === false ? [] : [F.split_payment]),
+      ...(shown.reverseCharge === false ? [] : [F.reverse_charge]),
     ]
   }
   return [F.merchant_name, F.number, F.date, F.description, F.amount, F.currency, ...foreignBlock]
@@ -279,15 +290,15 @@ export function toPurchaseRequestBody(
   options: {
     initial?: PurchaseFormValues
     isRenderedCustomKey: (key: string) => boolean
-    /** Whether the withholding block was drawn; what is not drawn is not sent. Drawn when
-     *  left out. */
-    withholding?: boolean
+    /** What the form drew of a document's optional parts; what is not drawn is not sent. All
+     *  of it when left out. */
+    shown?: FieldVisibility
   },
 ): Record<string, unknown> {
   const kind = (values.native.kind as PurchaseKind | undefined) ?? 'expense'
   const foreign = isForeignCurrency(values.native.currency)
   const drawn = new Set(
-    fieldsFor(kind, foreign, options.withholding ?? true).map((field) => field.key),
+    fieldsFor(kind, foreign, options.shown).map((field) => field.key),
   )
   const document = isDocumentKind(kind)
 
@@ -327,7 +338,7 @@ export function toPurchaseRequestBody(
   if (options.initial === undefined) body.kind = kind
   else dropUnchanged(body, options.initial.native)
 
-  if (document) {
+  if (document && options.shown?.vatRecap !== false) {
     const lines = cleanVatLines(draftsOf(values.native.vat_lines))
     const before = cleanVatLines(draftsOf(initialNative?.vat_lines))
     if (options.initial === undefined || JSON.stringify(lines) !== JSON.stringify(before)) {

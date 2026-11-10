@@ -838,3 +838,160 @@ describe('permissions', () => {
     expect(screen.queryByRole('button', { name: 'Salva' })).not.toBeInTheDocument()
   })
 })
+
+describe('the rows of the form', () => {
+  const VIP = { key: 'rush', label: 'Urgente', type: 'checkbox', required: false, options: [] }
+
+  it('keeps every label a real label of its control, custom fields included', async () => {
+    serve({
+      '/api/schema/{entity_type}': () =>
+        ok({ entity_type: 'purchase', native_fields: [], custom_fields: [VIP] }),
+    })
+    renderPage()
+    await screen.findByLabelText('Esercente')
+    for (const name of ['Numero', 'Data documento', 'Importo (€)', 'Valuta']) {
+      expect(screen.getByLabelText(new RegExp(name.replace(/[()€]/g, '\\$&')))).toBeInTheDocument()
+    }
+    expect(screen.getByRole('checkbox', { name: 'Urgente' })).toBeInTheDocument()
+  })
+
+  it('answers an untouched custom checkbox «no» on create, as the other forms do', async () => {
+    serve({
+      '/api/schema/{entity_type}': () =>
+        ok({ entity_type: 'purchase', native_fields: [], custom_fields: [VIP] }),
+    })
+    vi.mocked(api.POST).mockImplementation((() => ok(purchase())) as never)
+    renderPage()
+    await fillCommon()
+    await userEvent.type(screen.getByLabelText(/importo \(€\)/i), '5')
+    await userEvent.click(screen.getByRole('button', { name: 'Registra' }))
+    await waitFor(() => expect(api.POST).toHaveBeenCalled())
+    expect(sent(api.POST).body).toMatchObject({ custom_fields: { rush: false } })
+  })
+})
+
+describe('what the buyer\'s pack lets a purchase carry', () => {
+  const caps = (overrides: Record<string, unknown> = {}) => ({
+    legal_entity_id: null,
+    vat_recap: true,
+    withholding: true,
+    reverse_charge: true,
+    split_payment: true,
+    ...overrides,
+  })
+
+  async function openInvoice(capabilities: () => Promise<never>, kind: string | null = 'professional') {
+    serve({
+      '/api/purchases/capabilities': capabilities,
+      '/api/organizations/{organization_id}': () => ok(supplier({ supplier_kind: kind })),
+    })
+    renderPage()
+    await screen.findByLabelText('Esercente')
+    await pickKind('Fattura')
+    await userEvent.click(await screen.findByRole('button', { name: 'Studio Rossi' }))
+    await waitFor(() =>
+      expect(api.GET).toHaveBeenCalledWith('/api/organizations/{organization_id}', expect.anything()),
+    )
+  }
+
+  it('shows everything while the capabilities load, and never blocks the form', async () => {
+    await openInvoice(() => new Promise<never>(() => {}))
+    expect(await screen.findByLabelText('Ritenuta (%)')).toBeInTheDocument()
+    expect(screen.getByText('Riepilogo IVA')).toBeInTheDocument()
+    expect(screen.getByLabelText(/periodo iva/i)).toBeInTheDocument()
+    expect(screen.getByRole('checkbox', { name: 'Inversione contabile' })).toBeInTheDocument()
+    expect(screen.getByRole('checkbox', { name: 'Scissione dei pagamenti' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Registra' })).toBeEnabled()
+  })
+
+  it('shows everything when the capabilities cannot be read', async () => {
+    await openInvoice(() => failed({ detail: 'Boom' }, 500))
+    expect(await screen.findByLabelText('Ritenuta (%)')).toBeInTheDocument()
+    expect(screen.getByText('Riepilogo IVA')).toBeInTheDocument()
+  })
+
+  it('hides the withholding block when the pack refuses it, even for a professional supplier', async () => {
+    await openInvoice(() => ok(caps({ withholding: false })))
+    await waitFor(() => expect(screen.queryByLabelText('Ritenuta (%)')).not.toBeInTheDocument())
+    expect(screen.queryByLabelText('Cassa previdenziale (%)')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Bollo (€)')).not.toBeInTheDocument()
+    expect(screen.getByText('Riepilogo IVA')).toBeInTheDocument()
+  })
+
+  it('keeps the block hidden for a supplier that carries none even when the pack allows it', async () => {
+    await openInvoice(() => ok(caps()), 'company')
+    await screen.findByRole('checkbox', { name: 'Scissione dei pagamenti' })
+    expect(screen.queryByLabelText('Ritenuta (%)')).not.toBeInTheDocument()
+  })
+
+  it('hides the recap, the VAT period and each flag the pack refuses, and sends none of them', async () => {
+    await openInvoice(() =>
+      ok(caps({ vat_recap: false, reverse_charge: false, split_payment: false })),
+    )
+    await waitFor(() => expect(screen.queryByText('Riepilogo IVA')).not.toBeInTheDocument())
+    expect(screen.queryByLabelText(/periodo iva/i)).not.toBeInTheDocument()
+    expect(screen.queryByRole('checkbox', { name: 'Inversione contabile' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('checkbox', { name: 'Scissione dei pagamenti' })).not.toBeInTheDocument()
+
+    vi.mocked(api.POST).mockImplementation((() => ok(purchase())) as never)
+    await fillCommon()
+    await userEvent.type(screen.getByLabelText(/importo \(€\)/i), '122')
+    await userEvent.click(screen.getByRole('button', { name: 'Registra' }))
+    await waitFor(() => expect(api.POST).toHaveBeenCalled())
+    const { body } = sent(api.POST)
+    for (const key of ['vat_lines', 'iva_period', 'reverse_charge', 'split_payment']) {
+      expect(body).not.toHaveProperty(key)
+    }
+    expect(body).toMatchObject({ kind: 'invoice', supplier_id: SUPPLIER_ID, amount: '122' })
+  })
+
+  it('does not hide the foreign-supplier sentence\'s checkbox from itself', async () => {
+    serve({
+      '/api/purchases/capabilities': () => ok(caps({ reverse_charge: false })),
+      '/api/organizations/{organization_id}': () => ok(supplier({ country: 'DE' })),
+    })
+    renderPage()
+    await screen.findByLabelText('Esercente')
+    await pickKind('Fattura')
+    await userEvent.click(await screen.findByRole('button', { name: 'Studio Rossi' }))
+    await screen.findByRole('checkbox', { name: 'Scissione dei pagamenti' })
+    await waitFor(() => expect(screen.queryByText(/Lo decidi tu/)).not.toBeInTheDocument())
+  })
+
+  it('asks for the deal\'s legal entity when the purchase is on a deal', async () => {
+    serve({
+      '/api/deals/{deal_id}': () => ok({ id: DEAL, name: 'Sito web Acme', legal_entity_id: 'e1' }),
+      '/api/purchases/capabilities': () => ok(caps()),
+    })
+    renderPage({ defaults: { deal_id: DEAL } })
+    await waitFor(() =>
+      expect(api.GET).toHaveBeenCalledWith('/api/purchases/capabilities', {
+        params: { query: { legal_entity_id: 'e1' } },
+      }),
+    )
+  })
+
+  it('asks for the legal entity chosen on the form, before the deal\'s', async () => {
+    const A = { id: 'a1', name: 'humancraft', active: true } as LegalEntityRecord
+    const B = { id: 'a2', name: 'rebase', active: true } as LegalEntityRecord
+    const TWO: LegalEntityValue = {
+      legal_entities: [A, B],
+      selected: null,
+      select: vi.fn(),
+      several: true,
+      scoped: false,
+      pinned: false,
+      loaded: true,
+      byId: (id) => [A, B].find((a) => a.id === id),
+    }
+    serve({ '/api/purchases/capabilities': () => ok(caps()) })
+    renderPage({}, TWO)
+    await userEvent.click(await screen.findByRole('combobox', { name: 'Azienda' }))
+    await userEvent.click(await screen.findByRole('option', { name: 'rebase' }))
+    await waitFor(() =>
+      expect(api.GET).toHaveBeenCalledWith('/api/purchases/capabilities', {
+        params: { query: { legal_entity_id: 'a2' } },
+      }),
+    )
+  })
+})

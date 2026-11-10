@@ -33,11 +33,23 @@ describe('the fields each kind draws', () => {
   })
 
   it('leaves the withholding block out when the supplier carries none, and keeps the flags', () => {
-    const drawn = fieldsFor('invoice', false, false).map((field) => field.key)
+    const drawn = fieldsFor('invoice', false, { withholding: false }).map((field) => field.key)
     for (const key of ['stamp_duty', 'withholding_rate', 'withholding_base', 'withholding_amount', 'fund_rate', 'fund_amount']) {
       expect(drawn).not.toContain(key)
     }
     expect(drawn).toEqual(expect.arrayContaining(['split_payment', 'reverse_charge', 'iva_period']))
+  })
+
+  it('takes away the VAT period, the recap flags and nothing else when the pack allows none', () => {
+    const drawn = fieldsFor('invoice', false, {
+      vatRecap: false,
+      reverseCharge: false,
+      splitPayment: false,
+    }).map((field) => field.key)
+    for (const key of ['iva_period', 'reverse_charge', 'split_payment']) {
+      expect(drawn).not.toContain(key)
+    }
+    expect(drawn).toEqual(expect.arrayContaining(['number', 'amount', 'withholding_rate']))
   })
 
   it('names the supplier kinds that carry a withholding', () => {
@@ -133,10 +145,32 @@ describe('toPurchaseRequestBody', () => {
   it('does not send a withholding column that was not drawn', () => {
     const body = toPurchaseRequestBody(
       values({ kind: 'invoice', supplier_id: 's1', withholding_rate: '20', stamp_duty: '2' }),
-      { isRenderedCustomKey: KEEP_ALL, withholding: false },
+      { isRenderedCustomKey: KEEP_ALL, shown: { withholding: false } },
     )
     expect(body).not.toHaveProperty('withholding_rate')
     expect(body).not.toHaveProperty('stamp_duty')
+  })
+
+  it('never sends a part the pack hides: no recap, no period, no flag', () => {
+    const body = toPurchaseRequestBody(
+      values({
+        kind: 'invoice',
+        supplier_id: 's1',
+        amount: '122.00',
+        iva_period: '2026-03-01',
+        reverse_charge: true,
+        split_payment: true,
+        vat_lines: [{ rate: '22', nature: '', taxable_amount: '100', vat_amount: '22', deductible_share: '100' }],
+      }),
+      {
+        isRenderedCustomKey: KEEP_ALL,
+        shown: { vatRecap: false, reverseCharge: false, splitPayment: false },
+      },
+    )
+    for (const key of ['vat_lines', 'iva_period', 'reverse_charge', 'split_payment']) {
+      expect(body).not.toHaveProperty(key)
+    }
+    expect(body).toMatchObject({ kind: 'invoice', supplier_id: 's1', amount: '122.00' })
   })
 
   it('names the credit-note correction only on a credit note', () => {

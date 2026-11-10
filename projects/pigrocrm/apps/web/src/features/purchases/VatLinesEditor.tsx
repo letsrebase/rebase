@@ -27,7 +27,7 @@ export function VatLinesEditor({
   }
 
   return (
-    <fieldset className="space-y-3">
+    <fieldset className="@container min-w-0 space-y-3">
       <legend className="text-sm font-medium">Riepilogo IVA</legend>
       {lines.map((line, index) => {
         const n = index + 1
@@ -36,7 +36,7 @@ export function VatLinesEditor({
           // end of an edit, so the position is the key.
           <div
             key={index}
-            className="grid grid-cols-2 items-end gap-3 sm:grid-cols-[6rem_1fr_1fr_6rem_auto]"
+            className="grid grid-cols-2 items-end gap-3 @xl:grid-cols-[6rem_minmax(0,1fr)_minmax(0,1fr)_6rem_auto]"
           >
             <div className="space-y-2">
               <Label htmlFor={`vat-rate-${n}`}>Aliquota (%)</Label>
@@ -82,14 +82,14 @@ export function VatLinesEditor({
               type="button"
               variant="ghost"
               size="icon-sm"
-              className="col-span-2 justify-self-end sm:col-span-1"
+              className="col-span-2 justify-self-end @xl:col-span-1"
               aria-label={`Rimuovi la riga IVA ${n}`}
               onClick={() => onChange(lines.filter((_, i) => i !== index))}
             >
               <X className="size-4" />
             </Button>
             {isZeroRate(line.rate) && (
-              <div className="col-span-2 space-y-2 sm:col-span-5">
+              <div className="col-span-2 space-y-2 @xl:col-span-5">
                 <Label htmlFor={`vat-nature-${n}`}>Natura (es. N2.2)</Label>
                 <Input
                   id={`vat-nature-${n}`}
