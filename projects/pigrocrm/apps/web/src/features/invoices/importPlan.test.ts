@@ -27,6 +27,8 @@ function invoice(overrides: Partial<ParsedInvoice['customer']> = {}): ParsedInvo
     taxable_amount: '1000.00',
     vat_amount: '0.00',
     total: '1000.00',
+    withholding_amount: '0.00',
+    split_payment: false,
     social_security_pension_fund: [],
     payment_terms: [],
     transmission: {} as ParsedInvoice['transmission'],

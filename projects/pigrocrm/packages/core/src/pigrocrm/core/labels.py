@@ -298,6 +298,7 @@ FIELD_PATH: dict[str, str] = {
     },
     "invoice.lines": "fattura, righe",
     "invoice.memo": "fattura, causale",
+    "invoice.withholding_amount": "fattura, ritenuta",
     "invoice.purchase_order_number": "fattura, numero dell'ordine",
     "invoice.purchase_order_project_code": "fattura, codice CUP",
     "invoice.purchase_order_tender_code": "fattura, codice CIG",

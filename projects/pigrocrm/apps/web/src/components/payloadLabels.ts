@@ -268,6 +268,7 @@ export const PAYLOAD_KEY_LABELS: Record<string, string> = {
   gmail_store_bodies: 'Conserva i testi delle email',
   gmail_thread_id: 'Conversazione Gmail',
   iban: 'IBAN',
+  net_receivable: 'Netto da incassare',
   fiscal_year_end_day: 'Giorno di chiusura dell’esercizio',
   fiscal_year_end_month: 'Mese di chiusura dell’esercizio',
   inps_category: 'Categoria INPS',

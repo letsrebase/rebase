@@ -3619,3 +3619,85 @@ def test_0088_creates_the_declared_tax_figures_table_under_the_scope_policy(
         assert _table_shape(url, "declared_tax_figures")[0] is False
         upgrade(config, "0088")
         assert _table_shape(url, "declared_tax_figures")[0] is True
+
+
+def _sales_charges_columns(url: str) -> set[str]:
+    """The columns 0089 adds to `invoices`, as present."""
+    engine = create_engine(url)
+    try:
+        with engine.connect() as connection:
+            rows = connection.execute(
+                text(
+                    "SELECT column_name FROM information_schema.columns WHERE "
+                    "table_name = 'invoices' AND column_name IN ('net_receivable', "
+                    "'withholding_amount', 'withholding_rate', 'split_payment')"
+                )
+            ).all()
+    finally:
+        engine.dispose()
+    return {column for (column,) in rows}
+
+
+def test_0089_backfills_the_net_receivable_with_the_total_and_downgrade_removes_the_columns(
+    pigrocrm_postgres: Any,
+) -> None:
+    """REB-994: an invoice that exists is owed what it printed, with no withholding and no split
+    payment; the check refuses a negative withholding."""
+    entity = "00000000-0000-7000-8000-0000000000e1"
+    customer = "00000000-0000-7000-8000-0000000000c1"
+    invoice = "00000000-0000-7000-8000-0000000000f1"
+    columns = {"net_receivable", "withholding_amount", "withholding_rate", "split_payment"}
+    with pigrocrm_postgres.fresh_container() as container:
+        url = container.get_connection_url()
+        config = _alembic_config(url)
+        upgrade(config, "0088")
+        assert _sales_charges_columns(url) == set()
+        engine: Engine = create_engine(url)
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    "INSERT INTO legal_entities (id, name, legal_name, country) "
+                    f"VALUES ('{entity}', 'E', 'E srl', 'IT')"
+                )
+            )
+            connection.execute(text("SELECT set_config('pigrocrm.legal_entities', '*', false)"))
+            connection.execute(
+                text(
+                    "INSERT INTO organizations (id, legal_name, country, custom_fields, "
+                    f"legal_entity_id) VALUES ('{customer}', 'C srl', 'IT', '{{}}', '{entity}')"
+                )
+            )
+            connection.execute(
+                text(
+                    "INSERT INTO invoices (id, customer_id, legal_entity_id, type, status, "
+                    "sdi_document_type, currency, taxable_amount, vat_amount, stamp_duty, total, "
+                    "payment_status, custom_fields) VALUES "
+                    f"('{invoice}', '{customer}', '{entity}', 'invoice', 'draft', 'TD01', 'EUR', "
+                    "100, 22, 0, 122, 'unpaid', '{}')"
+                )
+            )
+        engine.dispose()
+
+        upgrade(config, "0089")
+        assert _sales_charges_columns(url) == columns
+        engine = create_engine(url)
+        with engine.begin() as connection:
+            connection.execute(text("SELECT set_config('pigrocrm.legal_entities', '*', false)"))
+            row = connection.execute(
+                text(
+                    "SELECT net_receivable, withholding_amount, withholding_rate, split_payment "
+                    f"FROM invoices WHERE id = '{invoice}'"
+                )
+            ).one()
+        assert row == (Decimal("122.00"), Decimal("0.00"), None, False)
+        with pytest.raises(IntegrityError), engine.begin() as connection:
+            connection.execute(text("SELECT set_config('pigrocrm.legal_entities', '*', false)"))
+            connection.execute(
+                text(f"UPDATE invoices SET withholding_amount = -1 WHERE id = '{invoice}'")
+            )
+        engine.dispose()
+
+        downgrade(config, "0088")
+        assert _sales_charges_columns(url) == set()
+        upgrade(config, "0089")
+        assert _sales_charges_columns(url) == columns

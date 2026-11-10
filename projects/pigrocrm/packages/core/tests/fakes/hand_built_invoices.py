@@ -62,7 +62,7 @@ def _after_update(mapper: Mapper[Invoice], connection: Connection, invoice: Invo
 def _sync(connection: Connection, invoice: Invoice, *, create: bool) -> None:
     if not _ENABLED or invoice.type != "invoice" or invoice.status != "issued":
         return
-    if invoice.imported_from is not None or invoice.total == 0:
+    if invoice.imported_from is not None or invoice.net_receivable == 0:
         return
     item = connection.execute(
         select(DueItem.id, DueItem.state, DueItem.amount, DueItem.due_date).where(
@@ -80,7 +80,7 @@ def _sync(connection: Connection, invoice: Invoice, *, create: bool) -> None:
                 state="expected",
                 counterparty_type="organization",
                 organization_id=invoice.customer_id,
-                amount=invoice.total,
+                amount=invoice.net_receivable,
                 currency=invoice.currency or "EUR",
                 source_kind="sales_invoice",
                 source_id=invoice.id,
@@ -92,18 +92,22 @@ def _sync(connection: Connection, invoice: Invoice, *, create: bool) -> None:
             )
             .returning(DueItem.id)
         ).scalar_one()
-        state, amount = "expected", invoice.total
+        state, amount = "expected", invoice.net_receivable
     else:
         item_id, state, amount, due_date = item
-        if due_date != invoice.due_date or amount != invoice.total:
+        if due_date != invoice.due_date or amount != invoice.net_receivable:
             # A column the row's owner edited on the row (a service never does: the date is
             # frozen at issue): the item follows it.
             connection.execute(
                 update(DueItem)
                 .where(DueItem.id == item_id)
-                .values(due_date=invoice.due_date, own_date=invoice.due_date, amount=invoice.total)
+                .values(
+                    due_date=invoice.due_date,
+                    own_date=invoice.due_date,
+                    amount=invoice.net_receivable,
+                )
             )
-            amount = invoice.total
+            amount = invoice.net_receivable
     paid = invoice.payment_status == "paid"
     if paid and state == "expected":
         settled = connection.execute(_live_total(item_id)).scalar_one()

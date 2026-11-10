@@ -117,6 +117,9 @@ class InvoiceDrafting:
             vat_amount=ZERO,
             stamp_duty=ZERO,
             total=ZERO,
+            net_receivable=ZERO,
+            withholding_amount=ZERO,
+            split_payment=False,
             payment_status="unpaid",
             custom_fields=self._validated_custom(data.custom_fields or {}),
         )
@@ -132,8 +135,14 @@ class InvoiceDrafting:
             # `check_issue_date`'s limits apply, and the fattura born from this row takes
             # its own date at `issue` -- which is why any date is accepted.
             invoice.issue_date = data.issue_date or today
-        computed = compute_lines(data.lines, profile, strategy, country_customer=customer.country)
-        apply_totals(invoice, computed, profile, strategy)
+        computed = compute_lines(
+            data.lines,
+            profile,
+            strategy,
+            country_customer=customer.country,
+            customer_kind=customer.customer_kind,
+        )
+        apply_totals(invoice, computed, profile, strategy, customer)
         ctx.repo.add(invoice)
         persist_lines(ctx.repo, invoice, computed)
         ctx.activities.record(
@@ -233,8 +242,14 @@ class InvoiceDrafting:
             )
         customer = ctx.check_owner(invoice.customer_id, None)
         strategy, profile = ctx.regime(invoice.legal_entity_id)
-        computed = compute_lines(lines, profile, strategy, country_customer=customer.country)
-        apply_totals(invoice, computed, profile, strategy)
+        computed = compute_lines(
+            lines,
+            profile,
+            strategy,
+            country_customer=customer.country,
+            customer_kind=customer.customer_kind,
+        )
+        apply_totals(invoice, computed, profile, strategy, customer)
         persist_lines(ctx.repo, invoice, computed)
         ctx.activities.record(
             ENTITY,

@@ -293,9 +293,21 @@ def build_scope(export: InvoiceForExport, *, reference: str | None) -> dict[str,
             # ordinary one still shows its tax. The stamp is never a row here: the total
             # does not include it (`totals.py`) and the emitter bears it, so a `2,00 €`
             # line under Imposta would read as charged to the customer; the declaration
-            # under the rule is where it is stated. A `bool`, the one non-string in this
-            # scope, because only `{{#if}}` reads it.
-            "mostra_totali": export.vat_amount > Decimal("0.00"),
+            # under the rule is where it is stated. `mostra_totali` and `mostra_netto` are `bool`s,
+            # the only non-strings in this scope, because only `{{#if}}` reads them.
+            "mostra_totali": (
+                export.vat_amount > Decimal("0.00") or export.withholding_amount > Decimal("0.00")
+            ),
+            # What the document withholds beyond its lines (REB-994): each the whole figure or
+            # nothing, so the template prints a row only when there is one.
+            "ritenuta": (
+                format_euro(export.withholding_amount)
+                if export.withholding_amount > Decimal("0.00")
+                else _EMPTY
+            ),
+            "iva_scissione": (format_euro(export.vat_amount) if export.split_payment else _EMPTY),
+            "netto": format_euro(export.net_receivable),
+            "mostra_netto": export.net_receivable != export.total,
             "dichiarazione_bollo": stamp_duty_declaration,
             "dichiarazione_regime": _declaration_regime(export),
             "dichiarazione_proforma": PROFORMA_DECLARATION if proforma else _EMPTY,

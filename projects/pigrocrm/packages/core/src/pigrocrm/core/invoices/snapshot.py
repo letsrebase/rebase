@@ -89,6 +89,11 @@ def build_snapshot(
     return InvoiceSnapshot(
         version=SNAPSHOT_VERSION,
         legal_entity=party_snapshot(ctx.legal_entity.get(actor, legal_entity_id)),
-        customer=party_snapshot(customer),
+        customer=party_snapshot(customer).model_copy(
+            update={
+                "customer_kind": customer.customer_kind,
+                "is_withholding_agent": customer.is_withholding_agent,
+            }
+        ),
         tax=profile,
     )

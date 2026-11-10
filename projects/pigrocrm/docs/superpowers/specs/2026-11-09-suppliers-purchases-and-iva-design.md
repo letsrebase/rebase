@@ -228,15 +228,17 @@ not write today (`invoices/fatturapa/exporter.py`, `fiscal/regime.py:10`):
   the total minus the withholding, and the withholding is a tax credit the professional sees
   in C6;
 - **the «rivalsa INPS» (the social security surcharge) or the professional fund**
-  (`DatiCassaPrevidenziale`);
+  (`DatiCassaPrevidenziale`): **waits for the accountant** (REB-994, A5): whether the
+  contribution follows the VAT of the service and how it reaches the withholding base is not
+  settled by the sources, so nothing computes or exports it until REB-975 answers;
 - **split payment** on an invoice to a public body (`EsigibilitaIVA` `S`): the VAT is not
   collected. Professionals whose fees are subject to withholding are excluded from split
-  payment (A5, to verify), so the two are never both on one invoice;
+  payment (A5, verified: art. 17-ter c. 1-sexies), so the two are never both on one invoice;
 - **public bodies**: a customer of kind public body gets the format `FPA12`
-  (`invoices/fatturapa/constants.py:8` writes `FPR12` only) and its 6-character IPA code as
+  (shipped by REB-994; `constants.py` wrote `FPR12` only) and its 6-character IPA code as
   recipient code;
 - **foreign customers**: a business abroad is a non-taxable service (art. 7-ter DPR 633/72,
-  A5, to verify), as `_flat_rate` already assumes ("every foreign customer is a company",
+  A5, verified), as `_flat_rate` already assumed and `_ordinary` now writes (`N2.1`) ("every foreign customer is a company",
   `fiscal/regime.py`). A foreign consumer has its own branch (taxation and nature to verify,
   A5), told apart by `customer_kind`.
 

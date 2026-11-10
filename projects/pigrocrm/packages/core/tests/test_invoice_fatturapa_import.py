@@ -497,3 +497,28 @@ def test_a_batch_where_one_body_is_malformed_raises_rather_than_returning_partia
     batch = good[:body_end] + second_body + good[body_end:]
     with pytest.raises(InvoicePaFormatError, match="TipoDocumento"):
         parse(batch.encode("utf-8"))
+
+
+def test_the_withholding_and_the_split_payment_of_a_document_are_read() -> None:
+    """REB-994: what the customer keeps or pays to the tax office itself is part of what an
+    invoice we issued is owed, so the parser reads the `DatiRitenuta` amounts and the `S` of
+    `EsigibilitaIVA`; a document with neither reads as none."""
+    plain = parse(_fixture(CONSULTING))[0]
+    assert (plain.withholding_amount, plain.split_payment) == (Decimal("0.00"), False)
+
+    xml = _fixture(CONSULTING).decode("utf-8")
+    with_withholding = xml.replace(
+        "<Numero>2026/6</Numero>",
+        "<Numero>2026/6</Numero><DatiRitenuta><TipoRitenuta>RT01</TipoRitenuta>"
+        "<ImportoRitenuta>200.00</ImportoRitenuta><AliquotaRitenuta>20.00</AliquotaRitenuta>"
+        "<CausalePagamento>A</CausalePagamento></DatiRitenuta>"
+        "<DatiRitenuta><TipoRitenuta>RT04</TipoRitenuta><ImportoRitenuta>10.50</ImportoRitenuta>"
+        "<AliquotaRitenuta>8.50</AliquotaRitenuta><CausalePagamento>ZO</CausalePagamento>"
+        "</DatiRitenuta>",
+    )
+    assert with_withholding != xml
+    assert parse(with_withholding.encode("utf-8"))[0].withholding_amount == Decimal("210.50")
+
+    split = xml.replace("<EsigibilitaIVA>I</EsigibilitaIVA>", "<EsigibilitaIVA>S</EsigibilitaIVA>")
+    assert split != xml
+    assert parse(split.encode("utf-8"))[0].split_payment is True

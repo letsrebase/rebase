@@ -462,7 +462,8 @@ class AnalyticsRepository:
         self, year: int, base: CashBase = "accrual", legal_entity_id: UUID | None = None
     ) -> dict[int, Decimal]:
         """What was paid on revenue invoices, per month of `year` -- money in the bank, so
-        gross, as `sum_unpaid` reasons.
+        net of what the customer withheld or paid to the tax office itself (`net_receivable`,
+        REB-994), as `sum_unpaid` reasons.
 
         Under `collection`, each settlement's own amount by its own date (spec 2026-11-09,
         due items, § 1.1): an invoice paid in instalments is in each month for what arrived
@@ -486,7 +487,7 @@ class AnalyticsRepository:
         when = cash_date(base, func.coalesce(Invoice.payment_date, Invoice.issue_date))
         month = func.extract("month", when)
         rows = self.session.execute(
-            select(month, func.sum(Invoice.total))
+            select(month, func.sum(Invoice.net_receivable))
             .where(
                 *revenue_filter(),
                 *invoice_legal_entity(legal_entity_id),
@@ -503,7 +504,8 @@ class AnalyticsRepository:
         """What is still owed on revenue invoices, per month. Under `collection`, each due
         item's remaining amount by the month it falls due (issue date when no due date was
         set): the month the money is expected, and the part of a partly paid invoice that is
-        left. Under `accrual`, an unpaid invoice's total by the accrual period it declares."""
+        left. Under `accrual`, an unpaid invoice's net receivable by the accrual period it
+        declares."""
         if base == "collection":
             due = func.coalesce(DueItem.due_date, Invoice.issue_date)
             month = func.extract("month", due)
@@ -521,7 +523,7 @@ class AnalyticsRepository:
         when = cash_date(base, func.coalesce(Invoice.due_date, Invoice.issue_date))
         month = func.extract("month", when)
         rows = self.session.execute(
-            select(month, func.sum(Invoice.total))
+            select(month, func.sum(Invoice.net_receivable))
             .where(
                 *revenue_filter(),
                 *invoice_legal_entity(legal_entity_id),
@@ -535,7 +537,7 @@ class AnalyticsRepository:
     def monthly_drafts(
         self, year: int, base: CashBase = "accrual", legal_entity_id: UUID | None = None
     ) -> dict[int, Decimal]:
-        """`Σ totale` of what is written but not yet an issued invoice: draft invoices and
+        """`Σ net receivable` of what is written but not yet an issued invoice: draft invoices and
         live proformas (not the ones already turned into an invoice, which would count
         twice). By the accrual period the document declares; under `collection`, by the
         document's own date. Either way, the day it was created when it has neither.
@@ -550,7 +552,7 @@ class AnalyticsRepository:
         when = func.coalesce(cash_date(base, Invoice.issue_date), func.date(Invoice.created_at))
         month = func.extract("month", when)
         rows = self.session.execute(
-            select(month, func.sum(Invoice.total))
+            select(month, func.sum(Invoice.net_receivable))
             .where(
                 Invoice.deleted_at.is_(None),
                 *invoice_legal_entity(legal_entity_id),

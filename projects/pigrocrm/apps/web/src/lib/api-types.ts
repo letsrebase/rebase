@@ -10545,6 +10545,16 @@ export interface components {
             /** Total */
             total: number | string;
             /**
+             * Withholding Amount
+             * @default 0.00
+             */
+            withholding_amount: number | string;
+            /**
+             * Split Payment
+             * @default false
+             */
+            split_payment: boolean;
+            /**
              * Payment Status
              * @default unpaid
              * @enum {string}
@@ -10753,6 +10763,14 @@ export interface components {
             stamp_duty: string;
             /** Total */
             total: string;
+            /** Net Receivable */
+            net_receivable: string;
+            /** Withholding Amount */
+            withholding_amount: string;
+            /** Withholding Rate */
+            withholding_rate: string | null;
+            /** Split Payment */
+            split_payment: boolean;
             /** Memo */
             memo: string | null;
             /** Payment Status */
@@ -11874,6 +11892,16 @@ export interface components {
             total: string;
             /** Stamp Duty */
             stamp_duty?: string | null;
+            /**
+             * Withholding Amount
+             * @default 0.00
+             */
+            withholding_amount: string;
+            /**
+             * Split Payment
+             * @default false
+             */
+            split_payment: boolean;
             /** Social Security Pension Fund */
             social_security_pension_fund: components["schemas"]["ParsedInvoiceSocialCharge"][];
             /** Payment Terms */
@@ -12032,6 +12060,8 @@ export interface components {
             taxable_amount: string;
             /** Vat Amount */
             vat_amount: string;
+            /** Vat Collectability */
+            vat_collectability?: string | null;
         };
         /**
          * ParsedInvoiceTransmission

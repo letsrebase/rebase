@@ -248,14 +248,15 @@ class DueItemService:
         self, invoice: Invoice, *, paid_on: dt.date | None, actor: Actor
     ) -> DueItem | None:
         """The due item of an issued invoice, created once and left alone after that: the
-        amount is the invoice's receivable, the date is its frozen `due_date`, and an invoice
-        that arrives already collected (an import, a row of the previous release) is settled
-        in full on `paid_on`. Answers `None` for an invoice with nothing to collect. Flushes
+        amount is the invoice's receivable (its net of withholding and split payment, REB-994),
+        the date is its frozen `due_date`, and an invoice that arrives already collected (an
+        import, a row of the previous release) is settled in full on `paid_on`. Answers `None`
+        for an invoice with nothing to collect. Flushes
         and never commits: the caller's transaction is the invoice's."""
         existing = self.repo.by_source(SALES_INVOICE, invoice.id)
         if existing is not None:
             return existing
-        if invoice.total == 0:
+        if invoice.net_receivable == 0:
             return None
         item = self.repo.add(
             DueItem(
@@ -267,7 +268,7 @@ class DueItemService:
                 # contract's own legal entity, which a customer moved since no longer shares,
                 # and the invoice must still get its item.
                 organization_id=invoice.customer_id,
-                amount=invoice.total,
+                amount=invoice.net_receivable,
                 currency=invoice.currency,
                 source_kind=SALES_INVOICE,
                 source_id=invoice.id,

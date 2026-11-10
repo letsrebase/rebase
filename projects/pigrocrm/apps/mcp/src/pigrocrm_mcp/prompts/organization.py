@@ -60,15 +60,13 @@ def status_organization(context: McpContext, organization_id: str) -> list[dict[
             )
             due_date = row.due_date or "no due date"
             left = str(row.remaining).replace(".", ",")
-            if row.remaining == invoice.total:
-                lines.append(f"- {number} — {left} € (total incl. VAT), due {due_date}")
+            if row.remaining == invoice.net_receivable:
+                lines.append(f"- {number} — {left} € (to collect), due {due_date}")
             else:
-                # Partly paid: what is still owed, and the document's total beside it.
-                total = str(invoice.total).replace(".", ",")
-                lines.append(
-                    f"- {number} — {left} € still owed of {total} € (total incl. VAT), "
-                    f"due {due_date}"
-                )
+                # Partly paid: what is still owed, and what the customer owes in all, which is
+                # the total net of a withholding or a split payment (`net_receivable`).
+                owed = str(invoice.net_receivable).replace(".", ",")
+                lines.append(f"- {number} — {left} € still owed of {owed} €, due {due_date}")
         if truncated:
             lines += [
                 "",

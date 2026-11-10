@@ -13,6 +13,7 @@ from pigrocrm.core.due_items.service import DueItemService
 from pigrocrm.core.errors import Conflict, ImmutableField, ValidationFailed
 from pigrocrm.core.fiscal.regime import RegimeStrategy
 from pigrocrm.core.fiscal.schemas import FiscalSnapshot
+from pigrocrm.core.invoices.charges import compute_charges
 from pigrocrm.core.invoices.checks import (
     check_issuable,
     check_issue_date,
@@ -27,7 +28,12 @@ from pigrocrm.core.invoices.fatturapa.checks import (
     check_recipient_identity,
     check_recipient_routing,
 )
-from pigrocrm.core.invoices.lines import computed_from_stored, persist_lines
+from pigrocrm.core.invoices.lines import (
+    check_storable,
+    computed_from_stored,
+    persist_lines,
+    store_charges,
+)
 from pigrocrm.core.invoices.models import Invoice, InvoiceLine
 from pigrocrm.core.invoices.register import RegisterGaps
 from pigrocrm.core.invoices.schemas import (
@@ -41,7 +47,7 @@ from pigrocrm.core.invoices.schemas import (
     InvoiceTransmitted,
 )
 from pigrocrm.core.invoices.snapshot import build_snapshot
-from pigrocrm.core.invoices.totals import ComputedLine, build_recap, sum_totals
+from pigrocrm.core.invoices.totals import ComputedLine
 from pigrocrm.core.work_units.release import ANNULLED_INVOICE_REASON, release_days_of_invoice
 
 
@@ -144,9 +150,10 @@ class InvoiceEmission:
             check_recipient_identity(snapshot.customer)
         lines = self._issuable_lines(source, snapshot, profile, strategy, abroad=abroad)
         computed = computed_from_stored(lines)
-        recap = build_recap(computed)
-        taxable_amount, vat_amount, total = sum_totals(recap)
-        check_positive_total(total)
+        charges = compute_charges(computed, tax=profile, customer=snapshot.customer)
+        check_positive_total(charges.total)
+        stamp_duty = strategy.stamp_duty(charges.recap, profile)
+        check_storable(charges, stamp_duty)
         self._check_monotonic(source, year, issue_date)
 
         # Step 4. Increment, write, freeze. One SAVEPOINT: a unique-index hit (see
@@ -182,10 +189,7 @@ class InvoiceEmission:
             target.due_date = source.due_date or ctx.due_date_from_terms(
                 issue_date, source.customer_id, profile.due_days
             )
-            target.taxable_amount = taxable_amount
-            target.vat_amount = vat_amount
-            target.total = total
-            target.stamp_duty = strategy.stamp_duty(recap, profile)
+            store_charges(target, charges, stamp_duty)
             target.snapshot = snapshot.model_dump(mode="json")
             target.snapshot_version = SNAPSHOT_VERSION
             ctx.activities.record(
@@ -239,7 +243,10 @@ class InvoiceEmission:
         # is exempt by construction: its lines are declared, not computed.
         for r in lines:
             _, vat_nature_pending, reference_expected = strategy.resolve_line_vat(
-                r.vat_rate, profile, country_customer=snapshot.customer.country
+                r.vat_rate,
+                profile,
+                country_customer=snapshot.customer.country,
+                customer_kind=snapshot.customer.customer_kind,
             )
             if (r.vat_nature, r.legal_reference) != (vat_nature_pending, reference_expected):
                 raise ValidationFailed(
@@ -304,6 +311,9 @@ class InvoiceEmission:
                 vat_amount=ZERO,
                 stamp_duty=ZERO,
                 total=ZERO,
+                net_receivable=ZERO,
+                withholding_amount=ZERO,
+                split_payment=False,
                 payment_status="unpaid",
                 origin_proforma_id=source.id,
                 custom_fields=dict(source.custom_fields),

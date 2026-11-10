@@ -128,6 +128,9 @@ class ParsedInvoiceTaxSummary(BaseModel):
     legal_reference: SafeStr | None = None
     taxable_amount: Decimal
     vat_amount: Decimal
+    # `EsigibilitaIVA`: `I` immediate, `D` deferred, `S` split payment; absent when the
+    # document does not say.
+    vat_collectability: SafeStr | None = None
 
 
 class ParsedInvoiceSocialCharge(BaseModel):
@@ -217,6 +220,11 @@ class ParsedInvoice(BaseModel):
     vat_amount: Decimal
     total: Decimal
     stamp_duty: Decimal | None = None
+    # What the document says the customer keeps or pays to the tax office itself (REB-994):
+    # the sum of its `DatiRitenuta` amounts, and whether a `DatiRiepilogo` declares a split
+    # payment (`EsigibilitaIVA` `S`). An invoice we issued is owed its total minus the two.
+    withholding_amount: Decimal = Decimal("0.00")
+    split_payment: bool = False
     social_security_pension_fund: list[ParsedInvoiceSocialCharge]
     payment_terms: list[ParsedInvoicePaymentTerms]
     transmission: ParsedInvoiceTransmission

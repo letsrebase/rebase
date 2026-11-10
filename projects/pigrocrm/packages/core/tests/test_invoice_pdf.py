@@ -122,6 +122,7 @@ def _export(
         vat_amount=Decimal(vat_amount),
         stamp_duty=Decimal(stamp_duty),
         total=taxable_amount + Decimal(vat_amount),
+        net_receivable=taxable_amount + Decimal(vat_amount),
         memo="Consulenza",
         accrual_from=accrual[0] if accrual else None,
         accrual_to=accrual[1] if accrual else None,

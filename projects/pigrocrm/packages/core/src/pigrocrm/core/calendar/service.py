@@ -134,7 +134,9 @@ class CalendarService:
                     id=invoice.id,
                     number=_number(invoice.number, invoice.year),
                     customer=customer,
-                    total=invoice.total,
+                    # What the customer owes, net of a withholding or a split payment, like
+                    # every receivable (`net_receivable`).
+                    total=invoice.net_receivable,
                     due_date=due_date,
                     # `<`, like `_overdue_predicate`: due today is due today.
                     overdue=due_date < today,

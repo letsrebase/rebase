@@ -80,6 +80,14 @@ LEGAL_REFERENCE_EXTRA_UE = (
     "- regime forfettario"
 )
 
+# The ordinary regime's own annotations for a service to a business abroad (REB-994): the
+# same two readings of art. 21 c. 6-bis DPR 633/72 as above, without the flat-rate regime's
+# mention.
+LEGAL_REFERENCE_UE_ORDINARY = "Inversione contabile - art. 7-ter DPR 633/1972"
+LEGAL_REFERENCE_EXTRA_UE_ORDINARY = (
+    "Operazione non soggetta a IVA in Italia ai sensi dell'art. 7-ter DPR 633/1972"
+)
+
 # The 27 member states, ISO 3166-1 alpha-2 (Greece is `GR`, not the VAT prefix `EL`).
 # Italy is in the set because it is a member state; the strategy handles it first, so
 # membership here only ever decides between the two texts above for a foreign customer.
@@ -387,6 +395,8 @@ __all__ = [
     "VAT_NATURE_NOT_RESIDENT",
     "COUNTRIES_UE",
     "LEGAL_REFERENCE_EXTRA_UE",
+    "LEGAL_REFERENCE_EXTRA_UE_ORDINARY",
     "LEGAL_REFERENCE_UE",
+    "LEGAL_REFERENCE_UE_ORDINARY",
     "SafeStr",
 ]

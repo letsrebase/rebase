@@ -7,9 +7,11 @@ from `fiscal_profile` through one of these objects, so a different regime is a s
 object -- no new column, no migration -- and the rounding rules of `totals.py`, already
 written, simply start producing non-zero values.
 
-Deliberately out of scope and named rather than half-designed: withholding tax,
-social-security fund, split payment, reverse charge, deferred or cash-basis VAT
-liability. Each is a distinct XML block the flat-rate regime never exercises.
+Withholding and split payment are not a regime's decision: they depend on
+the customer as much as on the issuer and are computed from the stored lines by
+`invoices/charges.py`, on the data of the pack (`FiscalPack.sales_withholding`). Still out of
+scope and named rather than half-designed: reverse charge, deferred or cash-basis VAT
+liability.
 """
 
 from collections.abc import Sequence
@@ -27,7 +29,9 @@ from pigrocrm.core.fiscal.schemas import (
     COUNTRIES_UE,
     DEFAULT_LEGAL_REFERENCE,
     LEGAL_REFERENCE_EXTRA_UE,
+    LEGAL_REFERENCE_EXTRA_UE_ORDINARY,
     LEGAL_REFERENCE_UE,
+    LEGAL_REFERENCE_UE_ORDINARY,
     REGIME_CODE_RE,
     VAT_NATURE_NOT_RESIDENT,
     FiscalSnapshot,
@@ -51,7 +55,12 @@ class RegimeStrategy(Protocol):
     pack_ids: frozenset[str]
 
     def resolve_line_vat(
-        self, requested: Decimal | None, profile: FiscalSnapshot, *, country_customer: str
+        self,
+        requested: Decimal | None,
+        profile: FiscalSnapshot,
+        *,
+        country_customer: str,
+        customer_kind: str | None = None,
     ) -> tuple[Decimal, str | None, str | None]:
         """`(aliquota_iva, natura, riferimento_normativo)` for one line.
 
@@ -65,6 +74,11 @@ class RegimeStrategy(Protocol):
         of an untaxed operation depends on where the customer is established and not
         only on the issuer's regime (ORB-32). Keyword-only and without a default, so
         a caller cannot forget it and silently get the domestic answer.
+
+        `customer_kind` is the customer's kind (`organizations.customer_kind`, `None` when it
+        was not said): the ordinary regime tells a business abroad, whose service is outside
+        Italian VAT, from a consumer abroad, which has its own card and is refused for now.
+        The flat-rate regime has always read every foreign customer as a company.
         """
         ...
 
@@ -97,7 +111,12 @@ class _flat_rate:
     pack_ids = frozenset({PACK_IT_FLAT_RATE})
 
     def resolve_line_vat(
-        self, requested: Decimal | None, profile: FiscalSnapshot, *, country_customer: str
+        self,
+        requested: Decimal | None,
+        profile: FiscalSnapshot,
+        *,
+        country_customer: str,
+        customer_kind: str | None = None,
     ) -> tuple[Decimal, str | None, str | None]:
         if requested is not None and requested != ZERO:
             raise ValidationFailed(
@@ -131,11 +150,20 @@ class _flat_rate:
 
 class _ordinary:
     """`RF01`, the ordinary regime, on the `it-standard` pack (REB-760) and on `it-company`
-    (REB-1005), which invoice the same way. Every operation
-    is taxed at the rate entered, or the profile's default, and the invoice carries no
-    `Natura`, no `RiferimentoNormativo` and no stamp duty: there is no untaxed base for
-    the duty to be owed on. Its arithmetic is spec 6.1's, the rounding of `totals.py`
-    producing a VAT figure for every group (a 22% and a 10% line on one invoice).
+    (REB-1005), which invoice the same way. Every operation to a customer in Italy is taxed
+    at the rate entered, or the profile's default, and the invoice carries no `Natura`, no
+    `RiferimentoNormativo` and no stamp duty: there is
+    no untaxed base for the duty to be owed on. Its arithmetic is spec 6.1's, the rounding
+    of `totals.py` producing a VAT figure for every group (a 22% and a 10% line on one
+    invoice).
+
+    A service to a business established abroad is outside Italian VAT (REB-994): art. 7-ter
+    c. 1 DPR 633/72 makes a service territorial in Italy when it is rendered to a taxable
+    person established there, so one rendered to a taxable person established elsewhere is
+    not, and the invoice says so under art. 21 c. 6-bis (A5, verified): `N2.1` with
+    «inversione contabile» inside the EU and «operazione non soggetta» outside it. A consumer
+    abroad is another case (the same article's c. 1 lett. b) can tax it in Italy), told apart
+    by `customer_kind`, and has its own card: it is refused here.
     """
 
     code = "RF01"
@@ -143,11 +171,37 @@ class _ordinary:
     pack_ids = frozenset({PACK_IT_STANDARD, PACK_IT_COMPANY})
 
     def resolve_line_vat(
-        self, requested: Decimal | None, profile: FiscalSnapshot, *, country_customer: str
+        self,
+        requested: Decimal | None,
+        profile: FiscalSnapshot,
+        *,
+        country_customer: str,
+        customer_kind: str | None = None,
     ) -> tuple[Decimal, str | None, str | None]:
-        # The country is accepted and ignored: an ordinary regime taxes the operation
-        # whoever the customer is, and a foreign business customer would need the
-        # reverse-charge or non-taxable blocks this strategy deliberately does not have.
+        country = (country_customer or "").strip().upper() or "IT"
+        if country != "IT":
+            if customer_kind == "consumer":
+                raise ValidationFailed(
+                    "customer",
+                    "customer_kind",
+                    "una fattura a un consumatore estero non e' ancora supportata: "
+                    "la tassazione dipende dal tipo di servizio",
+                    expected="un cliente estero che sia un'impresa",
+                )
+            if requested is not None and requested != ZERO:
+                raise ValidationFailed(
+                    "invoice_line",
+                    "vat_rate",
+                    "un servizio a un'impresa estera non e' soggetto a IVA italiana "
+                    "(art. 7-ter DPR 633/72): l'aliquota deve essere zero",
+                    expected="0.00",
+                )
+            reference = (
+                LEGAL_REFERENCE_UE_ORDINARY
+                if country in COUNTRIES_UE
+                else LEGAL_REFERENCE_EXTRA_UE_ORDINARY
+            )
+            return ZERO, VAT_NATURE_NOT_RESIDENT, reference
         rate = requested if requested is not None else profile.default_vat_rate
         if rate == ZERO:
             # The table constraint requires a `vat_nature` whenever the rate is zero, and
@@ -163,10 +217,11 @@ class _ordinary:
         return rate, None, None
 
     def stamp_duty(self, recap: Sequence[RecapGroup], profile: FiscalSnapshot) -> Decimal:
-        # An ordinary regime taxes its operations, so there is no untaxed base for the
-        # duty to be owed on. Returning zero unconditionally is the honest answer, not
-        # a placeholder: an `RF01` invoice with an exempt line would need that line's
-        # own `Natura`, which this strategy refuses to invent (see resolve_line_vat).
+        # An ordinary regime taxes its operations to a customer in Italy, so there is no
+        # untaxed base for the duty to be owed on. The one untaxed line it writes, a service
+        # to a business abroad (`N2.1`), is not charged duty either: whether a document to a
+        # customer abroad owes it is not in the register (A5), so it is left to the
+        # accountant (REB-975) and not computed.
         return ZERO
 
 
@@ -187,7 +242,12 @@ class _foreign:
     pack_ids = frozenset({PACK_NON_IT})
 
     def resolve_line_vat(
-        self, requested: Decimal | None, profile: FiscalSnapshot, *, country_customer: str
+        self,
+        requested: Decimal | None,
+        profile: FiscalSnapshot,
+        *,
+        country_customer: str,
+        customer_kind: str | None = None,
     ) -> tuple[Decimal, str | None, str | None]:
         rate = requested if requested is not None else profile.default_vat_rate
         if rate == ZERO:

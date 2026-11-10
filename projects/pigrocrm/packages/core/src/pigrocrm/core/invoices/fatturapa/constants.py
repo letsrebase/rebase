@@ -6,6 +6,14 @@ FPR12_NAMESPACE = "http://ivaservizi.agenziaentrate.gov.it/docs/xsd/fatture/v1.2
 DS_NAMESPACE = "http://www.w3.org/2000/09/xmldsig#"
 XSI_NAMESPACE = "http://www.w3.org/2001/XMLSchema-instance"
 FORMAT_TRANSMISSION = "FPR12"
+# The format of an invoice to a public body (REB-994): the specifications' `FPA12`, with the
+# 6-character code of the body's billing office in the Indice PA (IPA) as `CodiceDestinatario`
+# (Specifiche tecniche v1.4, § 1.1; the Sistema di Interscambio refuses a 7-character code
+# beside `FPA12` and a 6-character one beside `FPR12`, control 00427, and a `versione` that
+# disagrees with `FormatoTrasmissione`, control 00428).
+FORMAT_TRANSMISSION_PA = "FPA12"
+# The withholding block's `TipoRitenuta` is the pack's (`FiscalPack.sales_withholding`).
+WITHHOLDING_SUBJECT = "SI"
 
 # All three prefixes are declared on the root, `ds:` and `xsi:` included even though
 # nothing in this file uses either. `ds:` becomes load-bearing only with the digital
@@ -30,6 +38,9 @@ CODE_RECIPIENT_FOREIGN = "XXXXXXX"
 POSTAL_CODE_FOREIGN = "00000"
 # Immediate VAT liability. The deferred and cash-basis variants are out of scope.
 VAT_COLLECTABILITY_VAT = "I"
+# Split payment (art. 17-ter DPR 633/72): the VAT is shown and the customer pays it to the tax
+# office, `EsigibilitaIVA` `S` (Specifiche tecniche v1.4, § 3.9.2).
+VAT_COLLECTABILITY_SPLIT = "S"
 STAMP_DUTY_VIRTUAL = "SI"
 
 # FPR12 widths. Every one is narrower than the Postgres column it comes from, so each
@@ -60,6 +71,7 @@ PROVINCE_RE = re.compile(r"[A-Z]{2}")
 COUNTRY_RE = re.compile(r"[A-Z]{2}")
 IBAN_RE = re.compile(r"[A-Z]{2}\d{2}[A-Za-z0-9]{11,30}")
 CODE_RECIPIENT_RE = re.compile(r"[A-Z0-9]{7}")
+CODE_RECIPIENT_IPA_RE = re.compile(r"[A-Z0-9]{6}")
 TYPE_PAYMENT_RE = re.compile(r"(TP|MP)\d{2}")
 # `EmailType`'s own pattern (REB-227), translated from the vendored XSD's
 # `xs:pattern` verbatim: a proper `local@domain` shape, not merely "contains an @".

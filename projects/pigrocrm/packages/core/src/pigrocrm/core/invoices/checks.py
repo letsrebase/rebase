@@ -225,3 +225,12 @@ def check_declared_totals(data: InvoiceImport) -> None:
             expected="totale uguale a imponibile + imposta",
         )
     check_positive_total(data.total)
+    if data.withholding_amount < ZERO or round_money(data.withholding_amount) > round_money(
+        data.total
+    ):
+        raise ValidationFailed(
+            ENTITY,
+            "withholding_amount",
+            f"la ritenuta dichiarata ({data.withholding_amount}) non e' tra zero e il totale",
+            expected="una ritenuta tra zero e il totale",
+        )
