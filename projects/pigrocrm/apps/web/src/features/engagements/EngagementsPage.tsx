@@ -246,9 +246,9 @@ export function EngagementsPage() {
         }
       >
         {wide ? (
-          <FilterRow className="pt-4">{controls(false)}</FilterRow>
+          <FilterRow>{controls(false)}</FilterRow>
         ) : (
-          <div role="search" aria-label="Filtra l’elenco" className="flex items-center gap-2 px-8 py-4">
+          <div role="search" aria-label="Filtra l’elenco" className="flex items-center gap-2 px-8 pb-4">
             <Button variant="outline" size="sm" onClick={() => setFiltersOpen(true)}>
               <SlidersHorizontal className="mr-2 size-4" aria-hidden />
               Filtri

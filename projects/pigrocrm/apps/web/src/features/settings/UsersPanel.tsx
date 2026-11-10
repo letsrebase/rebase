@@ -277,8 +277,8 @@ export function UsersPanel() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-start justify-between gap-4">
-        <div>
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div className="min-w-64 flex-1">
           <h2 className="font-semibold">Utenti</h2>
           <p className="text-sm text-muted-foreground">
             Non esiste registrazione pubblica: le persone entrano con un invito che mandi tu.
