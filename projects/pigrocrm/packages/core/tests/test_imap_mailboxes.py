@@ -123,8 +123,14 @@ class _Sink:
     def __init__(self) -> None:
         self.seen: list[MessageHead] = []
 
-    def accept(self, mailbox: Mailbox, heads: list[MessageHead]) -> None:
+    def accept(self, mailbox: Mailbox, heads: list[MessageHead], fetch: object) -> None:
         self.seen.extend(heads)
+
+    def committed(self) -> None:
+        pass
+
+    def discard(self) -> None:
+        pass
 
 
 def _sync(session: Session, fake: FakeImap, sinks: tuple[_Sink, ...] = ()) -> ImapSyncService:

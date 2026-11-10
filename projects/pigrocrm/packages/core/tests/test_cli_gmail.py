@@ -24,7 +24,9 @@ socket is replaced.
 """
 
 import base64
+import datetime as dt
 from collections.abc import Callable, Iterator
+from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 from uuid import UUID
@@ -317,8 +319,8 @@ def imap_server(monkeypatch: pytest.MonkeyPatch) -> Iterator[FakeImap]:
     monkeypatch.setattr(
         gmail_cli,
         "ImapSyncService",
-        lambda session, *, settings: ImapSyncService(
-            session, settings=settings, resolve=loopback, context=fake.client_context()
+        lambda session, *, settings, sinks=(): ImapSyncService(
+            session, settings=settings, sinks=sinks, resolve=loopback, context=fake.client_context()
         ),
     )
     yield fake
@@ -583,3 +585,59 @@ def test_a_session_that_cannot_be_opened_costs_one_mailbox_and_not_the_run(
     assert 'File "' in captured.err
     assert refusal not in captured.err
     assert f"mail-sync {ROOT_LABEL} " in captured.out
+
+
+def test_a_billing_mailbox_files_its_attachments_under_the_system_scope(
+    cli_gmail: FakeGmail,
+    imap_server: FakeImap,
+    imap_settings: None,
+    db_engine: Engine,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """REB-1016: the inbox is under row-level security and a system item has neither a legal
+    entity nor an uploader, so the cron must bind the system's scope. Run as the application role,
+    which has no bypass, the cycle files the item; without the binding the insert is refused."""
+    from fakes.fake_imap import Msg, Part
+    from sqlalchemy import create_engine
+
+    from pigrocrm.core.db.role import ensure_application_role
+    from pigrocrm.core.storage.local import LocalFileStorage
+
+    xml = b'<?xml version="1.0"?><p:F xmlns:p="x"/>'
+    imap_server.state.messages = [
+        Msg(
+            1,
+            dt.datetime.now(dt.UTC) - dt.timedelta(days=1),
+            parts=(Part("application/xml", "IT01_00001.xml", content=xml),),
+        )
+    ]
+    mailbox_id = _connect_imap(db_engine, imap_server)
+    with db_engine.begin() as connection:
+        connection.execute(
+            text(
+                "insert into mailbox_purposes (id, mailbox_id, space_owned, purpose) "
+                "values (gen_random_uuid(), :m, true, 'billing')"
+            ),
+            {"m": mailbox_id},
+        )
+    app_url = db_engine.url.set(username="pigrocrm_app_test", password="pigrocrm_app_test")
+    assert ensure_application_role(db_engine.url, app_url) is not None
+    app = create_engine(app_url, future=True)
+    monkeypatch.setattr(
+        gmail_cli, "storage_from_settings", lambda *a, **k: LocalFileStorage(tmp_path)
+    )
+    try:
+        outcome = gmail_cli._sync_imap(
+            session_factory(app), gmail_settings(mailbox_token_key=MAILBOX_KEY), "root", mailbox_id
+        )
+        with db_engine.connect() as connection:
+            rows = connection.execute(text("select source, state, mail_uid from inbox_items")).all()
+        assert outcome is None
+        assert [tuple(r) for r in rows] == [("mailbox", "new", 1)]
+    finally:
+        app.dispose()
+        with db_engine.begin() as connection:
+            connection.execute(text("delete from inbox_items"))
+            connection.execute(text("delete from mailbox_purposes"))
+        _forget_imap(db_engine)
