@@ -138,6 +138,10 @@ AGENT_ALLOWED_ACTIONS: frozenset[str] = frozenset(
         "get_due_item",
         "settle_due_item",
         "reverse_settlement",
+        # The cash schedule, the payables mirror and the phone's money figures (REB-1025): the
+        # ordinary kinds are any member's; what the schedule discloses of the fiscal kinds and
+        # of the bank accounts is gated by the two keys in the full-access set below.
+        "read_cash_schedule",
         # Engagements with freelancers (collaborators design § 6): the administrator's token reads
         # them, updates a draft and asks when a freelancer is free. Creating one, ending one and
         # the tax data are in the full-access set below.
@@ -250,6 +254,9 @@ FULL_ACCESS_ACTIONS: frozenset[str] = frozenset(
         "settle_outgoing_due_item",
         "reverse_outgoing_settlement",
         "read_fiscal_due_items",
+        # The bank accounts' balances: the schedule leaves them out of its answer for a token
+        # that lacks `full_access`, and the account reads need the same.
+        "read_bank_accounts",
         # Staff and directors with their pay (spec 2026-11-09, staff, payroll and expenses,
         # § 4): the most personal data the product holds. Reading it and writing it are an
         # administrator's act and, for an agent, a `full_access` token's, nothing less; the
@@ -425,6 +432,8 @@ ACTION_LABELS: dict[str, str] = {
     "activate_engagement": "registrare la firma di un incarico",
     "read_engagement_report": "leggere i giorni di un incarico e quali si pagano",
     "record_monthly_report": "registrare l'arrivo del rendiconto mensile di un incarico",
+    "read_cash_schedule": "leggere lo scadenziario di cassa",
+    "read_bank_accounts": "leggere i conti bancari e i loro saldi",
     "approve_monthly_report": "approvare il rendiconto mensile di un incarico",
     "set_freelancer_tax_data": "salvare i dati fiscali di un freelance",
     "set_organization_hub_freelancer": "collegare un'anagrafica a un freelance dell'hub",

@@ -102,6 +102,8 @@ FREE_TEXT_TOOLS: frozenset[str] = frozenset(
         "get_due_item",
         "settle_due_item",
         "reverse_settlement",
+        # The cash schedule: an account's name and bank, and a tax row's description.
+        "get_cash_schedule",
         # Recurring expenses: the description is typed by whoever wrote the rule.
         "list_recurring_expenses",
         "create_recurring_expense",

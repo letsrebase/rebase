@@ -255,7 +255,10 @@ REST_ONLY_FORBIDDEN = frozenset(
 FULL_ACCESS_BY_THE_RECORD: dict[str, tuple[str, ...]] = {
     "settle_outgoing_due_item": ("settle_due_item",),
     "reverse_outgoing_settlement": ("reverse_settlement",),
-    "read_fiscal_due_items": ("list_due_items", "get_due_item"),
+    "read_fiscal_due_items": ("list_due_items", "get_due_item", "get_cash_schedule"),
+    # REB-1025: the schedule is every token's; its balances, accounts and alerts are a
+    # `full_access` administrator's, which the service decides.
+    "read_bank_accounts": ("get_cash_schedule",),
     # REB-970: `update_organization` with a null `legal_entity_id` shares the organization across
     # the legal entities, which shows a company to people who could not see it: an
     # administrator's token with `full_access`, nothing less, as in the invoice import.

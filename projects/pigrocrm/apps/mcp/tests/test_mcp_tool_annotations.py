@@ -78,7 +78,9 @@ SURFACES: dict[str, dict[str, Any]] = {
 # REB-1022: 106.8 KB, up from 105.25 KB, for `list_recurring_expenses`, `create_recurring_expense`
 # and `stop_recurring_expense` (every token's, 1.5 KB): a rule has a supplier, a category, an
 # amount, a cadence and two dates, measured at 106,747.
-DEFAULT_BUDGET_BYTES = 106_800
+# REB-1025: 107.2 KB, up from 106.8 KB, for `get_cash_schedule` (every token's, 453 bytes): the
+# schedule is core and any token reads it, measured at 107,155.
+DEFAULT_BUDGET_BYTES = 107_200
 # REB-957: 111.9 KB, up from 111.6 KB, for `skip_space_onboarding` (a full-access
 # administrator's), measured at 111,786 bytes; `describe_space`'s `onboarding` fits the default.
 # REB-977: 116.2 KB, up from 113.4 KB, for `create_staff_member`, `update_staff_member`,

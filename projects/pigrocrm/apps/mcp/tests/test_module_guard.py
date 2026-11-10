@@ -113,6 +113,8 @@ CORE_TOOLS = frozenset(
         "get_due_item",
         "settle_due_item",
         "reverse_settlement",
+        # REB-1025: the schedule is core too (the module `cash` only adds the balances to it).
+        "get_cash_schedule",
         "create_proforma",
         "update_proforma",
         "replace_proforma_lines",

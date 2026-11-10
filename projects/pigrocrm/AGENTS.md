@@ -303,6 +303,21 @@ The legal entity's pay day is REST only and person-only (`set_payroll_pay_day`);
 of `update_staff_member`. Nothing is deleted: `end_date` is how someone leaves. The estimate, the payslips and the
 screens are later cards.
 **A declared tax figure is typed, never computed, and it outranks the estimate (REB-1006).**
+**The cash schedule, the payables mirror and the phone's figures are one read, `CashScheduleService` (REB-1025).**
+`due_items/schedule.py` answers `GET /api/cash/schedule`, `/payables` and `/summary` and the tool `get_cash_schedule`; they
+are core (no `module_guard`, `get_cash_schedule` is in `CORE_TOOLS`), and the module `cash` only adds the balances. Every
+figure is the **remaining** amount of an open EUR item (`schedule_queries.py`; another currency is in no figure and only
+keeps `has_open_items` true). Weeks start on Monday and the current one is whole: today and the days after count in it,
+earlier days and every item due before today are **late** (`expected` only: a forecast whose date passed is nobody's
+money any more and is in no figure), and an undated item is in no week and not late. Late money is never in the projected
+balance (`balance_end` = the EUR accounts' total plus each week's in less out, forecasts in). The balance part (accounts,
+`total_balance`, `balance_end`, the alerts about them) needs `cash` on and `read_bank_accounts` (an administrator; for a
+token `full_access`), and the kinds of `RESTRICTED_SOURCE_KINDS` need `read_fiscal_due_items`, both asked once in
+`schedule.py` and never in a route. A solo space has no outgoing figure and no balance by week, lists its own taxes
+(`TAX_SOURCE_KINDS`) in a table no balance subtracts, and gets zeros from `/payables`. The six payable bands are the
+receivables' (`BAND_LABELS`, same bounds), pinned by `test_cash_payables.py`, and `receivable.total` of the summary is
+`InvoiceRepository.sum_unpaid` to the cent (`test_cash_summary.py`). The schedule is read in the request's own session
+(no `REPEATABLE READ` snapshot, unlike the dashboards).
 `declared_tax_figures` holds, per legal entity, tax (`DeclaredTax`: `irpef`, `substitute_tax`, `ires`, `irap`, `inps`)
 and year, what the accountant's return says: tax due, balance (signed) and advances, any of which may be left out
 (never read as zero). `DeclaredTaxFigureService.set_declared_tax_figure` is the only writer: an administrator, or a

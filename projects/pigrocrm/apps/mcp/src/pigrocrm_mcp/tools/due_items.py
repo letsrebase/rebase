@@ -12,6 +12,8 @@ from uuid import UUID
 
 from pigrocrm.core.due_items.recurring import RecurringExpenseService
 from pigrocrm.core.due_items.recurring_schemas import Cadence, RecurringExpenseCreate
+from pigrocrm.core.due_items.schedule import CashScheduleService
+from pigrocrm.core.due_items.schedule_schemas import CashScheduleQuery
 from pigrocrm.core.due_items.schemas import (
     Direction,
     DueItemListQuery,
@@ -95,6 +97,19 @@ def payroll_totals(
     return (
         DueItemService(context.session)
         .list_payroll_totals(query, context.actor)
+        .model_dump(mode="json")
+    )
+
+
+def cash_schedule(context: McpContext, weeks: int, legal_entity_id: str | None) -> dict[str, Any]:
+    """The schedule is core, so it answers with the `cash` module off, without balances; the
+    balances, the account cards and the alerts about them are left out for a token without
+    `full_access`, and so are the restricted kinds."""
+    profile = None if context.settings is None else context.settings.space_profile
+    query = CashScheduleQuery(weeks=weeks, legal_entity_id=parse_legal_entity_id(legal_entity_id))
+    return (
+        CashScheduleService(context.session)
+        .get_schedule(query, context.actor, modules=context.modules, profile=profile)
         .model_dump(mode="json")
     )
 

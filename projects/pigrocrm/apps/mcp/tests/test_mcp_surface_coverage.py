@@ -1219,6 +1219,16 @@ _COVERED_OR_HUMAN: dict[Method, str] = {
 # that tool, so the method is now reachable and the row disappeared together with
 # its category -- the same deletion, not an update, that A11 applied to
 # `_IN_ATTESA_DI_DECISIONE`.
+    # REB-1025: the payables mirror and the phone's figures are screens over what the tools
+    # already return.
+    ("CashScheduleService", "get_payables"): (
+        "the payables card; an agent lists the same rows with `list_due_items` (`direction` "
+        "`out`) and reads the late payable figure in `get_cash_schedule`"
+    ),
+    ("CashScheduleService", "get_summary"): (
+        "the phone Home's figures, all of them in `get_cash_schedule` (balance, late figures, "
+        "alert) and `get_receivables_dashboard`"
+    ),
 # ha applicato a `_IN_ATTESA_DI_DECISIONE`.
 # Provisional, like `_IN_ATTESA_DI_DECISIONE`/`_IN_ATTESA_DI_DRIVE_T7` before it, REB-359
 # left one: `_IN_ATTESA_DI_REB_362`, seven entries on `WorkUnitService`/`ApprovalService`,
