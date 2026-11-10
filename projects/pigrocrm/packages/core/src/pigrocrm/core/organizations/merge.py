@@ -37,6 +37,7 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.activities.models import Activity
+from pigrocrm.core.bank.models import OrganizationIban
 from pigrocrm.core.collaborators.models import Engagement
 from pigrocrm.core.contact_points.models import ContactPoint
 from pigrocrm.core.contracts.models import Contract
@@ -91,6 +92,7 @@ LINKED: tuple[tuple[str, Any], ...] = (
 CONTACT_POINTS = "contact_points"
 TASKS = "tasks"
 GMAIL_LINKS = "gmail_message_links"
+IBANS = "organization_ibans"
 PROPOSALS = "proposals"
 
 # Foreign keys to `organizations.id` that the steps above and below cover, by `table.column`.
@@ -99,6 +101,7 @@ COVERED_COLUMNS: frozenset[str] = frozenset(
     | {
         f"{_col(ContactPoint, 'customer_id').table.name}.customer_id",
         f"{_col(Task, 'customer_id').table.name}.customer_id",
+        f"{_col(OrganizationIban, 'organization_id').table.name}.organization_id",
     }
 )
 
@@ -170,6 +173,7 @@ class OrganizationMerge:
             )
         self._tasks(outcome, loser_id, survivor_id, apply)
         self._contact_points(outcome, loser_id, survivor_id, apply)
+        self._ibans(outcome, loser_id, survivor_id, apply)
         self._gmail_links(outcome, loser_id, survivor_id, apply)
         for label, model in LINKED:
             self._move_linked(outcome, label, model, loser_id, survivor_id, apply)
@@ -280,6 +284,36 @@ class OrganizationMerge:
             self.session.flush()
         _note(outcome, "moved", CONTACT_POINTS, moved)
         _note(outcome, "dropped", CONTACT_POINTS, dropped)
+
+    def _ibans(self, outcome: MergeOutcome, loser_id: UUID, survivor_id: UUID, apply: bool) -> None:
+        """An account the survivor already has is not carried (`uq_organization_ibans_
+        organization_iban`); when the loser's copy was accepted and the survivor's still waits
+        for a person, the survivor's becomes accepted, since a person's yes is not lost."""
+        have = {
+            row.iban: row
+            for row in self.session.scalars(
+                select(OrganizationIban).where(OrganizationIban.organization_id == survivor_id)
+            )
+        }
+        moved = dropped = 0
+        for row in self.session.scalars(
+            select(OrganizationIban).where(OrganizationIban.organization_id == loser_id)
+        ):
+            twin = have.get(row.iban)
+            if twin is None:
+                moved += 1
+                if apply:
+                    row.organization_id = survivor_id
+                continue
+            dropped += 1
+            if apply:
+                if row.state == "accepted" and twin.state == "proposed":
+                    twin.state = "accepted"
+                self.session.delete(row)
+        if apply:
+            self.session.flush()
+        _note(outcome, "moved", IBANS, moved)
+        _note(outcome, "dropped", IBANS, dropped)
 
     # -- polymorphic rows ------------------------------------------------------------------
 
