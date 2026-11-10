@@ -32,6 +32,24 @@ const Toaster = ({ ...props }: ToasterProps) => {
           "--normal-text": "var(--popover-foreground)",
           "--normal-border": "var(--border)",
           "--border-radius": "var(--radius)",
+          // `richColors` paints success, info and warning from sonner's own hard-coded
+          // palette, and its success pair (#008a2e on #ecfdf3) measures 4.25:1, under AA
+          // for 13px text (REB-986). Every rich variant reads the tokens instead, so the
+          // pairs are the ones `tokens.test.ts` already measures: ink on the popover for
+          // success and info, ink on royal gold for warning, the destructive step on its
+          // own tint for an error. The icon, not a green fill, says which kind it is.
+          "--success-bg": "var(--popover)",
+          "--success-text": "var(--popover-foreground)",
+          "--success-border": "var(--border)",
+          "--info-bg": "var(--popover)",
+          "--info-text": "var(--popover-foreground)",
+          "--info-border": "var(--border)",
+          "--warning-bg": "var(--accent)",
+          "--warning-text": "var(--accent-foreground)",
+          "--warning-border": "var(--border)",
+          "--error-bg": "color-mix(in oklab, var(--destructive) 10%, var(--popover))",
+          "--error-text": "var(--destructive)",
+          "--error-border": "var(--destructive)",
         } as React.CSSProperties
       }
       toastOptions={{

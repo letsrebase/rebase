@@ -345,6 +345,18 @@ describe('AppShell', () => {
     expect(screen.getByRole('search', { name: 'Ricerca globale' })).toBeInTheDocument()
   })
 
+  it('names the search button by the words it shows, shortcut included (REB-986)', () => {
+    // WCAG 2.5.3, axe `label-content-name-mismatch`: an `aria-label` of «Cerca in tutto il
+    // CRM» did not contain the «Ctrl K» the button also shows, so a voice user saying what
+    // they read had no name to say. The name is the content, and it starts with «Cerca»;
+    // the landmark around it already says «Ricerca globale».
+    renderShell()
+    const button = within(screen.getByRole('search', { name: 'Ricerca globale' })).getByRole('button')
+    expect(button).not.toHaveAttribute('aria-label')
+    expect(button.textContent).toMatch(/^Cerca/)
+    expect(screen.getByRole('button', { name: /^Cerca/ })).toBe(button)
+  })
+
   it('keeps the current page marked while the URL carries search parameters', () => {
     // What the 1440 screenshot of this pass caught: on Home the sidebar's Home entry was
     // not highlighted at all, because the dashboard writes its tab and period into the
@@ -735,14 +747,14 @@ describe('AppShell', () => {
     // that shows a role writes it out (`features/settings/UsersPanel.tsx`), and the 1440
     // screenshot of this pass had the raw enum sitting under Ivan's name.
     renderShell()
-    expect(screen.getByRole('button', { name: 'Menu del profilo' })).toHaveTextContent(
+    expect(screen.getByRole('button', { name: /menu del profilo/i })).toHaveTextContent(
       'amministratore',
     )
   })
 
   it('keeps the profile menu', async () => {
     renderShell()
-    await userEvent.click(screen.getByRole('button', { name: 'Menu del profilo' }))
+    await userEvent.click(screen.getByRole('button', { name: /menu del profilo/i }))
     expect(await screen.findByRole('menuitem', { name: /esci/i })).toBeInTheDocument()
   })
 
@@ -764,7 +776,7 @@ describe('AppShell', () => {
       mockAuth.role = role
       renderShell()
 
-      await userEvent.click(screen.getByRole('button', { name: 'Menu del profilo' }))
+      await userEvent.click(screen.getByRole('button', { name: /menu del profilo/i }))
 
       const menu = within(await screen.findByRole('menu'))
       expect(menu.getByRole('link', { name: 'Profilo' })).toHaveAttribute(
@@ -785,7 +797,7 @@ describe('AppShell', () => {
     mockAuth.role = 'collaborator'
     renderShell()
 
-    await userEvent.click(screen.getByRole('button', { name: 'Menu del profilo' }))
+    await userEvent.click(screen.getByRole('button', { name: /menu del profilo/i }))
 
     const menu = within(await screen.findByRole('menu'))
     expect(menu.getByRole('link', { name: 'Google Drive' })).toHaveAttribute(
@@ -798,7 +810,7 @@ describe('AppShell', () => {
     mockAuth.role = role
     renderShell()
 
-    await userEvent.click(screen.getByRole('button', { name: 'Menu del profilo' }))
+    await userEvent.click(screen.getByRole('button', { name: /menu del profilo/i }))
 
     const menu = within(await screen.findByRole('menu'))
     expect(menu.getByRole('link', { name: 'Profilo' })).toBeInTheDocument()
@@ -809,7 +821,7 @@ describe('AppShell', () => {
     mockAuth.role = 'collaborator'
     renderShell()
 
-    await userEvent.click(screen.getByRole('button', { name: 'Menu del profilo' }))
+    await userEvent.click(screen.getByRole('button', { name: /menu del profilo/i }))
 
     const menu = within(await screen.findByRole('menu'))
     expect(menu.getByRole('link', { name: 'Profilo' })).toBeInTheDocument()
@@ -841,7 +853,7 @@ describe('AppShell', () => {
       answerWork('/api/organizations')
       renderShell()
 
-      await userEvent.click(screen.getByRole('button', { name: 'Menu del profilo' }))
+      await userEvent.click(screen.getByRole('button', { name: /menu del profilo/i }))
       const menu = within(await screen.findByRole('menu'))
       expect(await menu.findByRole('link', { name: 'Primi passi' })).toHaveAttribute(
         'href',
@@ -855,7 +867,7 @@ describe('AppShell', () => {
     async (path) => {
       answerWork(path)
       renderShell()
-      await userEvent.click(screen.getByRole('button', { name: 'Menu del profilo' }))
+      await userEvent.click(screen.getByRole('button', { name: /menu del profilo/i }))
       const menu = within(await screen.findByRole('menu'))
       expect(await menu.findByRole('link', { name: 'Primi passi' })).toBeInTheDocument()
     },
@@ -871,7 +883,7 @@ describe('AppShell', () => {
     }
     await settle()
 
-    await userEvent.click(screen.getByRole('button', { name: 'Menu del profilo' }))
+    await userEvent.click(screen.getByRole('button', { name: /menu del profilo/i }))
     const menu = within(await screen.findByRole('menu'))
     expect(menu.getByRole('link', { name: 'Profilo' })).toBeInTheDocument()
     expect(menu.queryByRole('link', { name: 'Primi passi' })).not.toBeInTheDocument()
@@ -892,7 +904,7 @@ describe('the space switcher', () => {
       response: { status: 200 },
     })
     renderShell()
-    await userEvent.click(screen.getByRole('button', { name: 'Menu del profilo' }))
+    await userEvent.click(screen.getByRole('button', { name: /menu del profilo/i }))
     const menu = within(await screen.findByRole('menu'))
     expect(await menu.findByRole('menuitem', { name: /altro/ })).toBeInTheDocument()
     expect(menu.queryByRole('menuitem', { name: /^studio/ })).not.toBeInTheDocument()
@@ -905,7 +917,7 @@ describe('the space switcher', () => {
       response: { status: 200 },
     })
     renderShell()
-    await userEvent.click(screen.getByRole('button', { name: 'Menu del profilo' }))
+    await userEvent.click(screen.getByRole('button', { name: /menu del profilo/i }))
     const menu = within(await screen.findByRole('menu'))
     await userEvent.click(await menu.findByRole('menuitem', { name: /altro/ }))
     await waitFor(() =>
@@ -923,7 +935,7 @@ describe('the space switcher', () => {
       response: { status: 404 },
     })
     renderShell()
-    await userEvent.click(screen.getByRole('button', { name: 'Menu del profilo' }))
+    await userEvent.click(screen.getByRole('button', { name: /menu del profilo/i }))
     const menu = within(await screen.findByRole('menu'))
     await userEvent.click(await menu.findByRole('menuitem', { name: /altro/ }))
     await waitFor(() =>
@@ -935,7 +947,7 @@ describe('the space switcher', () => {
 
   it('offers to create a new space from the menu, leaving the signed-in email in the handoff, not the URL', async () => {
     renderShell()
-    await userEvent.click(screen.getByRole('button', { name: 'Menu del profilo' }))
+    await userEvent.click(screen.getByRole('button', { name: /menu del profilo/i }))
     const menu = within(await screen.findByRole('menu'))
     await userEvent.click(await menu.findByRole('menuitem', { name: 'Crea un nuovo spazio' }))
     expect(mockGo).toHaveBeenCalledWith('/app/register')
@@ -958,7 +970,7 @@ describe('the space switcher', () => {
       return Promise.resolve({ data: { slug: null }, response: { status: 200 } })
     })
     renderShell()
-    await userEvent.click(screen.getByRole('button', { name: 'Menu del profilo' }))
+    await userEvent.click(screen.getByRole('button', { name: /menu del profilo/i }))
     const menu = within(await screen.findByRole('menu'))
     expect(await menu.findByRole('menuitem', { name: /altro/ })).toBeInTheDocument()
     expect(spacesCalls).toBeGreaterThanOrEqual(2)
@@ -972,7 +984,7 @@ describe('the space switcher', () => {
       response: { status: 200 },
     })
     renderShell()
-    await userEvent.click(screen.getByRole('button', { name: 'Menu del profilo' }))
+    await userEvent.click(screen.getByRole('button', { name: /menu del profilo/i }))
     const menu = within(await screen.findByRole('menu'))
     expect(await menu.findByRole('menuitem', { name: /rebase/ })).toHaveTextContent('Invito')
   })
@@ -987,7 +999,7 @@ describe('the space switcher', () => {
       response: { status: 200 },
     })
     renderShell()
-    await userEvent.click(screen.getByRole('button', { name: 'Menu del profilo' }))
+    await userEvent.click(screen.getByRole('button', { name: /menu del profilo/i }))
     const menu = within(await screen.findByRole('menu'))
     await userEvent.click(await menu.findByRole('menuitem', { name: /rebase/ }))
     await waitFor(() =>

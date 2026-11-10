@@ -90,10 +90,10 @@ export async function ensureSpaceHasWork(page: Page): Promise<void> {
  *
  * The menu is opened by its accessible name rather than by the user's initials: the
  * trigger shows an avatar, a name and a role, and all three change with whoever is
- * logged in, while `aria-label="Menu del profilo"` does not.
+ * logged in, while the «menu del profilo» at the end of its `aria-label` does not.
  */
 export async function logout(page: Page): Promise<void> {
-  await page.getByRole('button', { name: 'Menu del profilo' }).click()
+  await page.getByRole('button', { name: /menu del profilo/i }).click()
   await page.getByRole('menuitem', { name: 'Esci' }).click()
   await expect(page).toHaveURL(/\/app\/login$/)
 }

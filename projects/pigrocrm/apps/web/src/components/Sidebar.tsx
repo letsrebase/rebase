@@ -139,7 +139,7 @@ export function Sidebar({
         <button
           type="button"
           onClick={onSearch}
-          aria-label="Cerca in tutto il CRM"
+          aria-keyshortcuts="Control+K Meta+K"
           className={cn(
             'flex w-full items-center gap-2 border border-sidebar-border bg-sidebar-accent/50 px-3 py-2 text-sm text-sidebar-foreground/70 transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground',
             FOCUS,
