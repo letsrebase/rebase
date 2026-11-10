@@ -6301,6 +6301,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/staff/{staff_member_id}/payslips/{payslip_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Correct Staff Payslip
+         * @description Corrects the figures of a recorded payslip (gross, net, income tax withheld, all three):
+         *     the month's estimate, the net pay and withholding items it wrote and the forecasts they
+         *     feed follow, and the timeline records who did it. A person's act: no agent credential. An
+         *     item with a payment recorded that the figures would move is a 409: the payment is reversed
+         *     first.
+         */
+        patch: operations["correct_staff_payslip_api_staff__staff_member_id__payslips__payslip_id__patch"];
+        trace?: never;
+    };
     "/api/staff/{staff_member_id}/hourly-cost": {
         parameters: {
             query?: never;
@@ -13183,6 +13207,7 @@ export interface components {
             cash: components["schemas"]["PayrollCashItemRead"][];
             /** Not Estimated */
             not_estimated: string[];
+            payslip?: components["schemas"]["PayslipRead"] | null;
         };
         /**
          * MemberQuestion
@@ -14456,22 +14481,35 @@ export interface components {
             items: components["schemas"]["PayrollTotalLine"][];
         };
         /**
-         * PayslipFigures
-         * @description The figures of one accepted payslip. `period` is any day of the month it pays; gross,
-         *     net and the income-tax withheld are what the payslip prints, in euro.
+         * PayslipCorrection
+         * @description The figures a recorded payslip is corrected to, all three at once. The month is not
+         *     among them: a payslip of another month is another payslip.
          */
-        PayslipFigures: {
-            /**
-             * Period
-             * Format: date
-             */
-            period: string;
+        PayslipCorrection: {
             /** Gross */
             gross: number | string;
             /** Net */
             net: number | string;
             /** Withholding */
             withholding: number | string;
+        };
+        /**
+         * PayslipFigures
+         * @description The figures of one accepted payslip. `period` is any day of the month it pays; gross,
+         *     net and the income-tax withheld are what the payslip prints, in euro.
+         */
+        PayslipFigures: {
+            /** Gross */
+            gross: number | string;
+            /** Net */
+            net: number | string;
+            /** Withholding */
+            withholding: number | string;
+            /**
+             * Period
+             * Format: date
+             */
+            period: string;
         };
         /** PayslipRead */
         PayslipRead: {
@@ -64042,6 +64080,130 @@ export interface operations {
         responses: {
             /** @description Successful Response */
             201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PayslipRead"];
+                };
+            };
+            /** @description Permission denied: the actor does not have the required role. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The requested resource does not exist or was removed. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The request conflicts with the current state of the resource. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    correct_staff_payslip_api_staff__staff_member_id__payslips__payslip_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                staff_member_id: string;
+                payslip_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PayslipCorrection"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
                 headers: {
                     [name: string]: unknown;
                 };

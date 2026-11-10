@@ -9,7 +9,7 @@ or a month left out is «not stated», never a default: the payroll consultant v
 
 import datetime as dt
 from decimal import Decimal
-from typing import Annotated, Literal
+from typing import Annotated, Literal, Self
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -226,13 +226,11 @@ class StaffPage(BaseModel):
     next_cursor: UUID | None
 
 
-class PayslipFigures(BaseModel):
-    """The figures of one accepted payslip. `period` is any day of the month it pays; gross,
-    net and the income-tax withheld are what the payslip prints, in euro."""
+class _PayslipAmounts(BaseModel):
+    """What a payslip prints, in euro: the gross, the net pay and the income tax withheld."""
 
     model_config = ConfigDict(extra="forbid")
 
-    period: dt.date
     gross: _Money
     net: Annotated[Decimal, Field(ge=0, max_digits=MONEY_MAX_DIGITS, decimal_places=MONEY_SCALE)]
     withholding: Annotated[
@@ -240,10 +238,22 @@ class PayslipFigures(BaseModel):
     ]
 
     @model_validator(mode="after")
-    def _parts(self) -> "PayslipFigures":
+    def _parts(self) -> Self:
         if self.net + self.withholding > self.gross:
             raise ValueError("il netto e la ritenuta non possono superare il lordo")
         return self
+
+
+class PayslipFigures(_PayslipAmounts):
+    """The figures of one accepted payslip. `period` is any day of the month it pays; gross,
+    net and the income-tax withheld are what the payslip prints, in euro."""
+
+    period: dt.date
+
+
+class PayslipCorrection(_PayslipAmounts):
+    """The figures a recorded payslip is corrected to, all three at once. The month is not
+    among them: a payslip of another month is another payslip."""
 
 
 class PayslipRead(BaseModel):
@@ -314,6 +324,8 @@ class MemberMonthRead(BaseModel):
     cost: PayrollCostRead | None
     cash: list[PayrollCashItemRead]
     not_estimated: list[str]
+    # The payslip that fixed the month, with its id (what a correction names), or none.
+    payslip: PayslipRead | None = None
 
 
 class PayrollMonthRead(BaseModel):

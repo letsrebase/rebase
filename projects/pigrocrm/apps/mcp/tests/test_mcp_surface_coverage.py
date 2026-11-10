@@ -392,6 +392,13 @@ _INTERNE: dict[Method, str] = {
     ("PayrollService", "refresh_payroll_forecasts"): (
         "the writer's half: the staff service refreshes the payroll items it just changed"
     ),
+    ("PayrollService", "lock_legal_entity"): (
+        "REB-1030: the writer's half: takes the legal entity's row so payroll writers queue"
+    ),
+    ("PayrollService", "restate_payslip_items"): (
+        "REB-1030: the writer's half: `correct_staff_payslip`, a person's act, restates the "
+        "items the payslip wrote; no actor, `StaffService` authorises"
+    ),
     ("PayrollService", "personnel_cost_in_range"): (
         "the P&L's own read; the actor is checked by `period_pnl`, a tool"
     ),
@@ -721,6 +728,10 @@ _CONFIGURATION: dict[Method, str] = {
     ("StaffService", "record_staff_payslip"): (
         "REB-1008: accepting a payslip is a person's act (frame A4): a person types the figures "
         "on the staff page, and the inbox's proposal, later, is accepted by a person too"
+    ),
+    ("StaffService", "correct_staff_payslip"): (
+        "REB-1030: correcting a recorded payslip is the same person's act as recording it, from "
+        "the staff page; a token reads the month's figures and never rewrites a payslip"
     ),
     ("StaffService", "propose_staff_hourly_cost"): (
         "REB-1009, staff design § 5: the hourly cost a person's pay gives is offered to an "

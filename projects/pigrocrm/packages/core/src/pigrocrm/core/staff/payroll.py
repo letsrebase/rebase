@@ -26,7 +26,11 @@ It has three jobs:
 Refreshes happen when the inputs, the pay day or a payslip change, and every day in the
 automations pass (`AutomationPass._roll_payroll`), for the months from two back to twelve ahead
 of that day. The aggregate leaves out a forecast whose date passed, in case a day's pass is late.
-A payslip cannot be corrected once recorded: a correction is a later card.
+A recorded payslip is corrected by `StaffService.correct_staff_payslip` (a person's act): its
+figures are rewritten in place and `restate_payslip_items` brings the net pay and the
+withholding items it wrote to them, while nothing was paid on the item (a payment is reversed
+first, a person's decision, and an item an administrator dropped stays dropped). The refresh
+that follows rewrites every forecast the new figures move.
 
 Every payroll due item is of the restricted source kind `payroll`, so the schedule shows it to
 administrators and everyone else sees the aggregate «Stipendi» line
@@ -69,6 +73,7 @@ from pigrocrm.core.staff.schemas import (
     PayrollCashItemRead,
     PayrollCostRead,
     PayrollMonthRead,
+    PayslipRead,
 )
 
 # Months looked back and ahead from today when forecasts are refreshed: back, because a
@@ -93,6 +98,8 @@ DESCRIPTION_OF: dict[CashKind, str] = {
 # What a payslip prints and so fixes: the net pay and the income tax withheld. The INPS
 # contributions and INAIL's yearly premium are not on it.
 PAYSLIP_KINDS: frozenset[CashKind] = frozenset({"net_pay", "withholding"})
+# Why `restate_payslip_items` drops an item the corrected figures no longer owe.
+CORRECTION_DROP_REASON = "cedolino corretto"
 
 
 def _key(item: CashItem) -> str:
@@ -127,7 +134,8 @@ class PayrollService:
             estimate = context.estimate(member, month)
             if estimate.empty and not estimate.not_estimated:
                 continue
-            rows.append(_read(member, estimate))
+            slip = context.payslip(member, month)
+            rows.append(_read(member, estimate, slip))
         return PayrollMonthRead(
             legal_entity_id=legal_entity_id,
             month=month,
@@ -185,14 +193,46 @@ class PayrollService:
 
     # ---- the writer's half: no actor, no commit ---------------------------------------------
 
+    def lock_legal_entity(self, legal_entity_id: UUID) -> None:
+        """Takes the legal entity's row, so two writers of its payroll items queue."""
+        self.session.execute(
+            select(LegalEntity.id).where(LegalEntity.id == legal_entity_id).with_for_update()
+        ).first()
+
+    def restate_payslip_items(self, member: StaffMember, slip: StaffPayslip) -> None:
+        """After a payslip's figures changed: the net pay and the withholding items it wrote
+        owe what it prints now, the date each was written with. A figure the payslip no longer
+        owes drops its item, and a later correction that owes it again reopens the item this
+        dropped (by `CORRECTION_DROP_REASON`, never one an administrator dropped, which stays
+        dropped). An item with a payment recorded that would change is refused by the due
+        items' own rule: the payment is reversed first. A figure that was zero and is owed now
+        has no item yet, and the refresh writes it. Flushes, never commits."""
+        self.lock_legal_entity(member.legal_entity_id)
+        owed = {"net_pay": slip.net, TAX_OF["withholding"]: slip.withholding}
+        for listed in self.dues.repo.items_of_source(PAYROLL_SOURCE_KIND, slip.id):
+            # Locked and read afresh before it is judged: an administrator's drop that committed
+            # since the list was read must be seen, not reopened.
+            item = self.dues.repo.get_locked(listed.id)
+            if item is None:
+                continue
+            amount = owed[_identity(item)]
+            if item.state == "dropped":
+                if item.dropped_reason != CORRECTION_DROP_REASON or amount == 0:
+                    continue
+            elif amount == 0:
+                self.dues.drop(item.id, CORRECTION_DROP_REASON)
+                continue
+            elif item.amount == amount:
+                continue
+            assert item.own_date is not None  # written from a cash item, which has a date
+            self.dues.restate(item.id, amount=amount, own_date=item.own_date)
+
     def refresh_payroll_forecasts(self, legal_entity_id: UUID) -> None:
         """Brings the payroll due items of the legal entity in step with the inputs and the
         accepted payslips, as the module docstring says. Flushes, never commits. The legal
         entity's row is locked first, so two refreshes of one entity queue instead of both
         writing the same expected items."""
-        self.session.execute(
-            select(LegalEntity.id).where(LegalEntity.id == legal_entity_id).with_for_update()
-        ).first()
+        self.lock_legal_entity(legal_entity_id)
         today = today_local()
         members = self.repo.members_of(legal_entity_id)
         if not members:
@@ -338,13 +378,17 @@ class _Context:
         last = slips[-1]
         return ratios_of(last.gross, last.net, last.withholding)
 
+    def payslip(self, member: StaffMember, month: dt.date) -> StaffPayslip | None:
+        """The member's accepted payslip of `month` (its first day), when there is one."""
+        return next(
+            (slip for slip in self.payslips.get(member.id, []) if slip.period == month), None
+        )
+
     def estimate(
         self, member: StaffMember, month: dt.date, *, cost_only: bool = False
     ) -> MonthEstimate:
         month = first_of(month)
-        payslip = next(
-            (slip for slip in self.payslips.get(member.id, []) if slip.period == month), None
-        )
+        payslip = self.payslip(member, month)
         if cost_only:
             return estimate_month(
                 member, month, pay_day=None, law=None, ratios=None, payslip=payslip
@@ -359,7 +403,9 @@ class _Context:
         )
 
 
-def _read(member: StaffMember, estimate: MonthEstimate) -> MemberMonthRead:
+def _read(
+    member: StaffMember, estimate: MonthEstimate, payslip: StaffPayslip | None
+) -> MemberMonthRead:
     cost = estimate.cost
     return MemberMonthRead(
         staff_member_id=member.id,
@@ -384,6 +430,7 @@ def _read(member: StaffMember, estimate: MonthEstimate) -> MemberMonthRead:
             for item in sorted(estimate.cash, key=lambda i: (i.due_date, i.kind))
         ],
         not_estimated=list(estimate.not_estimated),
+        payslip=None if payslip is None else PayslipRead.model_validate(payslip),
     )
 
 

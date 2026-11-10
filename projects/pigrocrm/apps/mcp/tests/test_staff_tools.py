@@ -3,7 +3,9 @@
 the `staff` module is on, and even then an administrator's alone (spec 2026-11-09, staff,
 payroll and expenses, § 4)."""
 
+import datetime as dt
 import json
+from decimal import Decimal
 from pathlib import Path
 from typing import Any
 from uuid import UUID, uuid4
@@ -15,6 +17,8 @@ from pigrocrm.core.actor import Actor, Role
 from pigrocrm.core.config import Settings
 from pigrocrm.core.fiscal.models import FiscalProfile
 from pigrocrm.core.legal_entities.models import LegalEntity
+from pigrocrm.core.staff.schemas import EmployeeCreate, PayslipFigures
+from pigrocrm.core.staff.service import StaffService
 from pigrocrm.core.storage import LocalFileStorage
 from pigrocrm_mcp.server import build_server
 
@@ -233,3 +237,40 @@ async def test_a_full_access_admin_reads_a_months_estimate_and_a_collaborator_ca
         )
         assert refused.is_error
         assert "Unknown tool" not in str(refused.content)
+
+
+async def test_the_months_estimate_never_carries_the_payslip_a_person_corrects(
+    mcp_session: Session, tmp_path: Path
+) -> None:
+    """REB-1030: the payslip and its id are the staff page's; a token reads the cost and cash."""
+    entity = _entity(mcp_session, "it-standard")
+    admin = Actor(id=uuid4(), type="user", role="admin")
+    service = StaffService(mcp_session)
+    member = service.create_staff_member(
+        EmployeeCreate(
+            legal_entity_id=entity,
+            name="Giulia Bianchi",
+            start_date=dt.date(2026, 1, 1),
+            gross_annual_pay=Decimal("30000.00"),
+            monthly_payments=14,
+        ),
+        admin,
+    )
+    service.record_staff_payslip(
+        member.id,
+        PayslipFigures(
+            period=dt.date(2026, 3, 1),
+            gross=Decimal("2500.00"),
+            net=Decimal("1850.00"),
+            withholding=Decimal("300.00"),
+        ),
+        admin,
+    )
+    async with Client(_server(mcp_session, tmp_path)) as client:
+        month = await client.call_tool(
+            "get_payroll_month", {"legal_entity_id": str(entity), "month": "2026-03-10"}
+        )
+        assert not month.is_error, month.content
+        row = _payload(month)["members"][0]
+        assert row["source"] == "payslip" and row["cost"]["gross"] == "2500.00"
+        assert "payslip" not in row

@@ -66,6 +66,16 @@ class StaffRepository:
             )
         ).scalar_one_or_none()
 
+    def payslip_locked(self, payslip_id: UUID) -> StaffPayslip | None:
+        """The payslip under its row lock, read afresh: two corrections of one payslip queue,
+        and the second sees what the first wrote."""
+        return self.session.execute(
+            select(StaffPayslip)
+            .where(StaffPayslip.id == payslip_id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        ).scalar_one_or_none()
+
     def add_payslip(self, payslip: StaffPayslip) -> StaffPayslip:
         self.session.add(payslip)
         self.session.flush()

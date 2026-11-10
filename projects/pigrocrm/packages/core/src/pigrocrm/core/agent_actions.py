@@ -383,6 +383,8 @@ PERSON_ONLY_ACTIONS: frozenset[str] = frozenset(
         # The figures of an accepted payslip: accepting is a person's act (frame § A4), so a
         # person types them (REB-1008); the inbox's proposal is the other way in, later.
         "record_staff_payslip",
+        # Correcting one already recorded (REB-1030): the same act, so the same door.
+        "correct_staff_payslip",
         # What an hour costs, from what a person costs, and its adoption as the linked
         # user's hourly cost (REB-1009): a person reads it on the staff page and a person
         # confirms it. Adoption writes through `update_user_rates`, which stays `full_access`.
@@ -472,6 +474,7 @@ ACTION_LABELS: dict[str, str] = {
     "get_iva_register": "leggere il registro IVA vendite o acquisti di un periodo",
     "set_payroll_pay_day": "impostare il giorno di paga dell'azienda",
     "record_staff_payslip": "registrare le cifre di un cedolino",
+    "correct_staff_payslip": "correggere il cedolino di una persona",
     "propose_staff_hourly_cost": "proporre il costo orario di una persona",
     "adopt_staff_hourly_cost": "adottare il costo orario di una persona",
     "get_payroll_month": "leggere la stima del mese per le persone dell'azienda",

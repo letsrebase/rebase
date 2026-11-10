@@ -96,6 +96,16 @@ const GIULIA_PAYSLIP = {
   cost: cost('3275.00'),
   cash: [item('net_pay', '1742.00', '2026-11-10'), item('withholding', '321.43', '2026-11-16')],
   not_estimated: [],
+  payslip: {
+    id: 'p-1',
+    staff_member_id: 'm-1',
+    legal_entity_id: ENTITY,
+    period: '2026-10-01',
+    gross: '2500.00',
+    net: '1742.00',
+    withholding: '321.43',
+    created_at: '2026-10-28T09:00:00Z',
+  },
 }
 const MARCO_ESTIMATE = {
   staff_member_id: 'm-2',
@@ -134,6 +144,7 @@ beforeEach(() => {
   session.role = 'admin'
   navigate.mockReset()
   vi.mocked(api.POST).mockReset()
+  vi.mocked(api.PATCH).mockReset()
   answers = {
     '/api/staff': { items: [GIULIA, MARCO], next_cursor: null },
     '/api/staff/payroll/{legal_entity_id}': month([GIULIA_PAYSLIP, MARCO_ESTIMATE]),
@@ -308,5 +319,64 @@ describe('the month in the URL', () => {
   it('steps across a year', () => {
     expect(shiftMonth('2026-12', 1)).toBe('2027-01')
     expect(shiftMonth('2026-01', -1)).toBe('2025-12')
+  })
+})
+
+describe('«Correggi il cedolino»', () => {
+  async function openGiulia() {
+    const user = userEvent.setup()
+    renderPage()
+    await user.click(await screen.findByText('Giulia Bianchi'))
+    return { user, panel: await screen.findByLabelText('Persona aperta') }
+  }
+
+  it('shows what the payslip recorded and corrects it with the typed figures, by the person-only route', async () => {
+    vi.mocked(api.PATCH).mockResolvedValue({ data: {}, response: new Response(null, { status: 200 }) } as never)
+    const { user, panel } = await openGiulia()
+    expect(within(within(panel).getByLabelText('Cedolino')).getByText('Registrato')).toBeInTheDocument()
+    expect(within(panel).queryByRole('button', { name: 'Accetta il cedolino' })).toBeNull()
+
+    await user.click(within(panel).getByRole('button', { name: 'Correggi il cedolino' }))
+    const gross = within(panel).getByLabelText('Lordo (€)')
+    expect(gross).toHaveValue('2500.00')
+    expect(within(panel).getByRole('button', { name: 'Salva la correzione' })).toBeDisabled()
+
+    await user.clear(gross)
+    await user.type(gross, '2600,50')
+    await user.click(within(panel).getByRole('button', { name: 'Salva la correzione' }))
+    await waitFor(() =>
+      expect(api.PATCH).toHaveBeenCalledWith('/api/staff/{staff_member_id}/payslips/{payslip_id}', {
+        params: { path: { staff_member_id: 'm-1', payslip_id: 'p-1' } },
+        body: { gross: '2600.50', net: '1742.00', withholding: '321.43' },
+      }),
+    )
+    // Closed again once saved: the button is back.
+    expect(await within(panel).findByRole('button', { name: 'Correggi il cedolino' })).toBeInTheDocument()
+  })
+
+  it('says in the server\'s words why a correction is refused and keeps what was typed', async () => {
+    vi.mocked(api.PATCH).mockResolvedValue({
+      error: { detail: 'una scadenza con pagamenti registrati non si ricalcola: prima si annullano' },
+      response: new Response(null, { status: 409 }),
+    } as never)
+    const { user, panel } = await openGiulia()
+    await user.click(within(panel).getByRole('button', { name: 'Correggi il cedolino' }))
+    const net = within(panel).getByLabelText('Netto (€)')
+    await user.clear(net)
+    await user.type(net, '1700')
+    await user.click(within(panel).getByRole('button', { name: 'Salva la correzione' }))
+    expect(await within(panel).findByRole('alert')).toHaveTextContent('pagamenti registrati')
+    expect(within(panel).getByLabelText('Netto (€)')).toHaveValue('1700')
+  })
+
+  it('closes without writing, and offers no correction for a month that has no payslip', async () => {
+    const { user, panel } = await openGiulia()
+    await user.click(within(panel).getByRole('button', { name: 'Correggi il cedolino' }))
+    await user.click(within(panel).getByRole('button', { name: 'Annulla' }))
+    expect(within(panel).getByRole('button', { name: 'Correggi il cedolino' })).toBeInTheDocument()
+    expect(api.PATCH).not.toHaveBeenCalled()
+
+    await user.click(screen.getByText('Marco Rossi', { selector: 'p' }))
+    expect(within(await screen.findByLabelText('Persona aperta')).queryByRole('button', { name: 'Correggi il cedolino' })).toBeNull()
   })
 })

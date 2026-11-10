@@ -22,7 +22,7 @@ import {
   stateOf,
   termsLine,
 } from './labels'
-import { useAdoptHourlyCost, useHourlyCost, useRecordPayslip, type MemberMonth, type StaffMember } from './queries'
+import { useAdoptHourlyCost, useCorrectPayslip, useHourlyCost, useRecordPayslip, type MemberMonth, type StaffMember } from './queries'
 
 function Section({ title, tag, children }: { title: string; tag?: string; children: ReactNode }) {
   return (
@@ -102,6 +102,34 @@ function MonthFigures({ month }: { month: MemberMonth }) {
   )
 }
 
+type PayslipField = { id: 'gross' | 'net' | 'withholding'; label: string; value: string; set: (value: string) => void; hint: string }
+
+/** The three figures a payslip prints, each with what stands beside it: the estimate a new payslip
+ *  replaces, or the figure a correction replaces. */
+function PayslipFields({ fields }: { fields: PayslipField[] }) {
+  return (
+    <>
+      {fields.map((field) => (
+        <div key={field.id} className="grid grid-cols-[1fr_auto] items-end gap-3">
+          <div className="space-y-1.5">
+            <Label htmlFor={`payslip-${field.id}`}>{field.label} (€)</Label>
+            <Input id={`payslip-${field.id}`} inputMode="decimal" value={field.value} onChange={(event) => field.set(event.target.value)} />
+          </div>
+          <p className="pb-2 text-right text-xs text-muted-foreground">{field.hint}</p>
+        </div>
+      ))}
+    </>
+  )
+}
+
+function FormError({ error }: { error: Error | null }) {
+  return error === null ? null : (
+    <p role="alert" className="border border-destructive/50 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+      {toProblem(error).detail}
+    </p>
+  )
+}
+
 /** «Accetta il cedolino»: the figures the consultant printed, typed beside the estimate. A person's
  *  act; it replaces the estimate of this month and drives the other months' ratios. */
 function PayslipForm({ member, month, monthKey }: { member: StaffMember; month: MemberMonth; monthKey: string }) {
@@ -113,6 +141,7 @@ function PayslipForm({ member, month, monthKey }: { member: StaffMember; month: 
   const complete = figures.gross !== null && figures.net !== null && figures.withholding !== null
   const estimatedNet = month.cash.find((item) => item.kind === 'net_pay')
   const estimatedWithholding = month.cash.find((item) => item.kind === 'withholding')
+  const estimate = (amount: string | undefined) => (amount === undefined ? 'Nessuna stima' : `Stima ${formatMoneyValue(amount)}`)
 
   return (
     <Section title="Cedolino">
@@ -130,30 +159,97 @@ function PayslipForm({ member, month, monthKey }: { member: StaffMember; month: 
           )
         }}
       >
-        {[
-          { id: 'gross', label: 'Lordo', value: gross, set: setGross, estimate: month.cost?.gross },
-          { id: 'net', label: 'Netto', value: net, set: setNet, estimate: estimatedNet?.amount },
-          { id: 'withholding', label: 'Ritenute IRPEF', value: withholding, set: setWithholding, estimate: estimatedWithholding?.amount },
-        ].map((field) => (
-          <div key={field.id} className="grid grid-cols-[1fr_auto] items-end gap-3">
-            <div className="space-y-1.5">
-              <Label htmlFor={`payslip-${field.id}`}>{field.label} (€)</Label>
-              <Input id={`payslip-${field.id}`} inputMode="decimal" value={field.value} onChange={(event) => field.set(event.target.value)} />
-            </div>
-            <p className="pb-2 text-right text-xs text-muted-foreground">
-              {field.estimate === undefined ? 'Nessuna stima' : `Stima ${formatMoneyValue(field.estimate)}`}
-            </p>
-          </div>
-        ))}
-        {record.error === null ? null : (
-          <p role="alert" className="border border-destructive/50 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-            {toProblem(record.error).detail}
-          </p>
-        )}
+        <PayslipFields
+          fields={[
+            { id: 'gross', label: 'Lordo', value: gross, set: setGross, hint: estimate(month.cost?.gross) },
+            { id: 'net', label: 'Netto', value: net, set: setNet, hint: estimate(estimatedNet?.amount) },
+            { id: 'withholding', label: 'Ritenute IRPEF', value: withholding, set: setWithholding, hint: estimate(estimatedWithholding?.amount) },
+          ]}
+        />
+        <FormError error={record.error} />
         <Button type="submit" disabled={!complete || record.isPending} className="w-full sm:w-auto">
           {record.isPending ? 'Salvo…' : 'Accetta il cedolino'}
         </Button>
       </form>
+    </Section>
+  )
+}
+
+type Payslip = NonNullable<MemberMonth['payslip']>
+
+/** The form of «Correggi il cedolino»: the recorded figures, to be typed over. It is mounted only
+ *  while open, so each opening starts from what is recorded. */
+function PayslipCorrectionForm({ member, payslip, monthKey, onDone }: { member: StaffMember; payslip: Payslip; monthKey: string; onDone: () => void }) {
+  const [gross, setGross] = useState(payslip.gross)
+  const [net, setNet] = useState(payslip.net)
+  const [withholding, setWithholding] = useState(payslip.withholding)
+  const correct = useCorrectPayslip(member.id, payslip.id)
+  const figures = { gross: euroInput(gross), net: euroInput(net), withholding: euroInput(withholding) }
+  const complete = figures.gross !== null && figures.net !== null && figures.withholding !== null
+  const moved =
+    complete && (Number(figures.gross) !== Number(payslip.gross) || Number(figures.net) !== Number(payslip.net) || Number(figures.withholding) !== Number(payslip.withholding))
+  const recorded = (amount: string) => `Registrato ${formatMoneyValue(amount)}`
+
+  return (
+    <form
+      className="space-y-3"
+      onSubmit={(event) => {
+        event.preventDefault()
+        if (figures.gross === null || figures.net === null || figures.withholding === null) return
+        correct.mutate(
+          { gross: figures.gross, net: figures.net, withholding: figures.withholding },
+          {
+            onSuccess: () => {
+              toast.success('Cedolino corretto')
+              onDone()
+            },
+          },
+        )
+      }}
+    >
+      <p className="text-sm text-muted-foreground">
+        Scrivi le cifre giuste del cedolino di {monthName(monthKey)}: prendono il posto di quelle registrate e le stime degli altri mesi si aggiornano.
+      </p>
+      <PayslipFields
+        fields={[
+          { id: 'gross', label: 'Lordo', value: gross, set: setGross, hint: recorded(payslip.gross) },
+          { id: 'net', label: 'Netto', value: net, set: setNet, hint: recorded(payslip.net) },
+          { id: 'withholding', label: 'Ritenute IRPEF', value: withholding, set: setWithholding, hint: recorded(payslip.withholding) },
+        ]}
+      />
+      <FormError error={correct.error} />
+      <div className="flex flex-col gap-2 sm:flex-row">
+        <Button type="submit" disabled={!moved || correct.isPending} className="w-full sm:w-auto">
+          {correct.isPending ? 'Salvo…' : 'Salva la correzione'}
+        </Button>
+        <Button type="button" variant="outline" onClick={onDone} disabled={correct.isPending} className="w-full sm:w-auto">
+          Annulla
+        </Button>
+      </div>
+    </form>
+  )
+}
+
+/** The recorded payslip of the month and «Correggi il cedolino», a person's act like recording it:
+ *  an agent credential is refused by the server. */
+function PayslipRecorded({ member, payslip, monthKey }: { member: StaffMember; payslip: Payslip; monthKey: string }) {
+  const [editing, setEditing] = useState(false)
+  return (
+    <Section title="Cedolino" tag="Registrato">
+      <Rows
+        rows={[
+          { label: 'Lordo', value: formatMoneyValue(payslip.gross) },
+          { label: 'Netto', value: formatMoneyValue(payslip.net) },
+          { label: 'Ritenute IRPEF', value: formatMoneyValue(payslip.withholding) },
+        ]}
+      />
+      {editing ? (
+        <PayslipCorrectionForm member={member} payslip={payslip} monthKey={monthKey} onDone={() => setEditing(false)} />
+      ) : (
+        <Button variant="outline" onClick={() => setEditing(true)} className="w-full sm:w-auto">
+          Correggi il cedolino
+        </Button>
+      )}
     </Section>
   )
 }
@@ -287,6 +383,9 @@ export function StaffPanel({
       {month === undefined ? null : <MonthFigures month={month} />}
       {month !== undefined && month.source === 'estimate' ? (
         <PayslipForm key={`${member.id}:${monthKey}`} member={member} month={month} monthKey={monthKey} />
+      ) : null}
+      {month !== undefined && month.source === 'payslip' && month.payslip != null ? (
+        <PayslipRecorded key={`${member.id}:${monthKey}`} member={member} payslip={month.payslip} monthKey={monthKey} />
       ) : null}
 
       <Section title="Condizioni" tag="Solo amministratori">

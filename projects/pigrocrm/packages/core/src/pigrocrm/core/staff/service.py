@@ -52,6 +52,7 @@ from pigrocrm.core.staff.schemas import (
     HourlyCostProposalRead,
     PayDayRead,
     PayDayWrite,
+    PayslipCorrection,
     PayslipFigures,
     PayslipRead,
     StaffListQuery,
@@ -235,6 +236,47 @@ class StaffService:
             )
         )
         self.activities.record(ENTITY, member.id, "staff_payslip_recorded", actor)
+        self.payroll.refresh_payroll_forecasts(member.legal_entity_id)
+        self.session.commit()
+        self.session.refresh(payslip)
+        return PayslipRead.model_validate(payslip)
+
+    def correct_staff_payslip(
+        self, staff_member_id: UUID, payslip_id: UUID, data: PayslipCorrection, actor: Actor
+    ) -> PayslipRead:
+        """Corrects the figures of a recorded payslip: the month it pays, the net pay and the
+        withholding items it wrote and every forecast the figures feed (the ratios of the other
+        months, the INPS contributions) follow at once. A person's act, as recording is:
+        `correct_staff_payslip` is person-only in `agent_actions.py`, so no credential reaches
+        it, whatever it carries. The month never changes; an item of the payslip with a payment
+        recorded that the figures would move is refused, and nothing is written (the payment is
+        reversed first). The timeline entry says who and for which month, never the figures.
+        Correcting to the figures it already has writes nothing."""
+        actor.require_admin("correct_staff_payslip")
+        member = self._require(staff_member_id)
+        self.payroll.lock_legal_entity(member.legal_entity_id)
+        payslip = self.repo.payslip_locked(payslip_id)
+        if payslip is None or payslip.staff_member_id != member.id:
+            raise NotFound("staff_payslip", payslip_id)
+        if (payslip.gross, payslip.net, payslip.withholding) == (
+            data.gross,
+            data.net,
+            data.withholding,
+        ):
+            return PayslipRead.model_validate(payslip)
+        with self.session.begin_nested():
+            payslip.gross = data.gross
+            payslip.net = data.net
+            payslip.withholding = data.withholding
+            self.session.flush()
+            self.payroll.restate_payslip_items(member, payslip)
+        self.activities.record(
+            ENTITY,
+            member.id,
+            "staff_payslip_corrected",
+            actor,
+            {"period": payslip.period.isoformat()},
+        )
         self.payroll.refresh_payroll_forecasts(member.legal_entity_id)
         self.session.commit()
         self.session.refresh(payslip)
