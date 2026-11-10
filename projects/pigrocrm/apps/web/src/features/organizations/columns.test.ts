@@ -2,6 +2,7 @@ import { render, screen } from '@testing-library/react'
 import type { ReactElement } from 'react'
 import { describe, expect, it } from 'vitest'
 import { buildOrganizationColumns } from './columns'
+import type { FieldDefinition } from '@/lib/schema'
 import type { Organization } from './queries'
 
 /**
@@ -98,5 +99,108 @@ describe('the «Azienda» column (REB-625)', () => {
     expect(legal_entity.accessorFn({ ...BASE_CUSTOMER, legal_entity_id: 'gone' }, 0)).toBe('—')
     // An organization shared across the legal entities has none of its own (REB-970).
     expect(legal_entity.accessorFn({ ...BASE_CUSTOMER, legal_entity_id: null }, 0)).toBe('Tutte')
+  })
+})
+
+describe('the columns of each registry view (the approved brief of 2026-11-10)', () => {
+  const FOREIGN: Organization = {
+    ...BASE_CUSTOMER,
+    roles: ['supplier'],
+    country: 'US',
+    supplier_kind: 'foreign',
+    supplier_area: 'extra_eu',
+    supplier_supplies: 'services',
+    supplier_payment_days: 30,
+    supplier_payment_end_of_month: true,
+  }
+
+  function read(column: ReturnType<typeof buildOrganizationColumns>[number], row: Organization) {
+    if (!('accessorFn' in column) || typeof column.accessorFn !== 'function') {
+      throw new Error(`column "${String(column.header)}" has no accessorFn to read`)
+    }
+    return column.accessorFn(row, 0)
+  }
+
+  function renderCell(column: ReturnType<typeof buildOrganizationColumns>[number], row: Organization) {
+    if (typeof column.cell !== 'function') throw new Error('the column has no cell renderer')
+    return render(column.cell({ row: { original: row } } as never) as ReactElement)
+  }
+
+  it('Clienti is the default and keeps today\'s columns, custom fields included', () => {
+    expect(buildOrganizationColumns([]).map((column) => column.header)).toEqual(
+      buildOrganizationColumns([], { role: 'customer' }).map((column) => column.header),
+    )
+  })
+
+  it('Fornitori: name, P.IVA, tipo fiscale and pagamento, and no «Da pagare» until due items exist', () => {
+    const columns = buildOrganizationColumns([], { role: 'supplier' })
+    expect(columns.map((column) => column.header)).toEqual([
+      'Ragione sociale',
+      'P.IVA',
+      'Tipo fiscale',
+      'Pagamento',
+    ])
+  })
+
+  it('Fornitori does not take the customers\' custom fields', () => {
+    const fields: FieldDefinition[] = [
+      { key: 'settore', label: 'Settore', type: 'text', required: false, options: [] },
+    ]
+    expect(buildOrganizationColumns(fields, { role: 'supplier' }).map((column) => column.header)).not.toContain(
+      'Settore',
+    )
+  })
+
+  it('reads a foreign supplier as «Estero · extra UE · servizi» and a domestic one by its kind', () => {
+    const [, , kind] = buildOrganizationColumns([], { role: 'supplier' })
+    expect(read(kind!, FOREIGN)).toBe('Estero · extra UE · servizi')
+    expect(read(kind!, { ...FOREIGN, supplier_area: 'eu', supplier_supplies: 'goods' })).toBe('Estero · UE · beni')
+    expect(read(kind!, { ...BASE_CUSTOMER, supplier_kind: 'professional' })).toBe('Professionista')
+    expect(read(kind!, { ...BASE_CUSTOMER, supplier_kind: 'flat_rate' })).toBe('Forfettario')
+    expect(read(kind!, { ...BASE_CUSTOMER, supplier_kind: 'occasional' })).toBe('Occasionale')
+    // Nobody has said what it is yet.
+    expect(read(kind!, BASE_CUSTOMER)).toBe('—')
+  })
+
+  it('reads the terms the supplier grants as «30 gg» or «30 gg f.m.»', () => {
+    const [, , , terms] = buildOrganizationColumns([], { role: 'supplier' })
+    expect(read(terms!, FOREIGN)).toBe('30 gg f.m.')
+    expect(read(terms!, { ...FOREIGN, supplier_payment_end_of_month: false })).toBe('30 gg')
+    expect(read(terms!, { ...FOREIGN, supplier_payment_days: null })).toBe('—')
+  })
+
+  it('Tutte: name with the role chips, P.IVA, comune and email', () => {
+    const columns = buildOrganizationColumns([], { role: 'any' })
+    expect(columns.map((column) => column.header)).toEqual(['Ragione sociale', 'P.IVA', 'Comune', 'Email'])
+    renderCell(columns[0]!, { ...BASE_CUSTOMER, roles: ['supplier', 'customer', 'freelancer'] })
+    expect(screen.getAllByText(/^(Cliente|Fornitore|Freelance)$/).map((chip) => chip.textContent)).toEqual([
+      'Cliente',
+      'Fornitore',
+      'Freelance',
+    ])
+  })
+
+  it('«Azienda» follows the name on every view, from the second legal entity on', () => {
+    const entities = [{ id: 'a-1', name: 'humancraft' }] as NonNullable<
+      Parameters<typeof buildOrganizationColumns>[1]
+    >['legal_entities']
+    for (const role of ['customer', 'supplier', 'any'] as const) {
+      expect(
+        buildOrganizationColumns([], { role, legal_entities: entities })
+          .map((column) => column.header)
+          .slice(0, 2),
+      ).toEqual(['Ragione sociale', 'Azienda'])
+    }
+  })
+
+  it('gives the whole name as the title of the cell, which truncates it', () => {
+    const name = 'Consorzio Cooperative Artigiane del Nord Est Italia e Servizi S.r.l.'
+    for (const role of ['customer', 'supplier', 'any'] as const) {
+      const [first] = buildOrganizationColumns([], { role })
+      const { container, unmount } = renderCell(first!, { ...BASE_CUSTOMER, legal_name: name })
+      expect(container.querySelector(`[title="${name}"]`)).not.toBeNull()
+      expect(screen.getByText(name)).toHaveClass('truncate')
+      unmount()
+    }
   })
 })

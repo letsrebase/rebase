@@ -10,7 +10,12 @@ import { readAndClearRegisterHandoffEmail } from '@/lib/registerHandoff'
 import { LegalEntityContext, type LegalEntityRecord, type LegalEntityValue } from '@/lib/legalEntity'
 import { AppShell } from './AppShell'
 
-const mockRoute = vi.hoisted(() => ({ pathname: '/app/organizations', search: '' }))
+const mockRoute = vi.hoisted(() => ({
+  pathname: '/app/organizations',
+  search: '',
+  /** The registry's `?role=`: the router state's parsed search, which tells «Clienti» from «Fornitori». */
+  role: undefined as string | undefined,
+}))
 
 /**
  * `Link` is substituted rather than mounted in a router, as everywhere else in this
@@ -58,7 +63,12 @@ vi.mock('@tanstack/react-router', () => ({
       </a>
     )
   },
-  useRouterState: () => ({ location: { pathname: mockRoute.pathname } }),
+  useRouterState: () => ({
+    location: {
+      pathname: mockRoute.pathname,
+      search: mockRoute.role === undefined ? {} : { role: mockRoute.role },
+    },
+  }),
   // The command palette the shell mounts navigates; nothing here asserts on where.
   useNavigate: () => vi.fn(),
 }))
@@ -161,6 +171,7 @@ beforeEach(() => {
   mockAuth.id = undefined
   mockRoute.pathname = '/app/organizations'
   mockRoute.search = ''
+  mockRoute.role = undefined
   localStorage.clear()
   sessionStorage.clear()
   GET.mockReset()
@@ -226,6 +237,8 @@ describe('AppShell', () => {
       'Persone',
       'Deal',
       'Fatture',
+      'Fornitori',
+      'Acquisti',
       'Ore',
       'Giornate',
       'Tasse',
@@ -250,6 +263,8 @@ describe('AppShell', () => {
     ])
     expect(within(nav.getByRole('group', { name: 'Amministrazione' })).getAllByRole('link').map((l) => l.textContent)).toEqual([
       'Fatture',
+      'Fornitori',
+      'Acquisti',
       'Ore',
       'Giornate',
       'Tasse',
@@ -367,6 +382,23 @@ describe('AppShell', () => {
     mockRoute.search = '?tab=commerciale&da=2026-09-01&a=2026-09-30'
     renderShell()
     expect(sidebar().getByRole('link', { name: 'Home' })).toHaveAttribute('aria-current', 'page')
+  })
+
+  it('marks «Fornitori» and not «Clienti» on the registry\'s supplier view', () => {
+    mockRoute.pathname = '/app/organizations'
+    mockRoute.role = 'supplier'
+    renderShell()
+    expect(sidebar().getByRole('link', { name: 'Fornitori' })).toHaveAttribute('aria-current', 'page')
+    expect(sidebar().getByRole('link', { name: 'Clienti' })).not.toHaveAttribute('aria-current')
+  })
+
+  it('draws no «Fornitori» and no «Acquisti» with purchases off', () => {
+    renderShell(<div />, undefined, ['purchases'])
+    const links = sidebar().getAllByRole('link').map((link) => link.textContent)
+    expect(links).not.toContain('Fornitori')
+    expect(links).not.toContain('Acquisti')
+    expect(links).toContain('Clienti')
+    expect(links).toContain('Fatture')
   })
 
   it('keeps a sub-item marked while its list carries a filter in the URL', () => {
@@ -652,6 +684,8 @@ describe('AppShell', () => {
       'Persone',
       'Deal',
       'Fatture',
+      'Fornitori',
+      'Acquisti',
       'Ore',
       'Giornate',
       'Tasse',
@@ -1122,9 +1156,18 @@ describe('AppShell on a phone', () => {
       'NotaSu un cliente, una persona o un deal',
       'GiornataUn giorno lavorato su un contratto',
       'OreOre lavorate su un deal',
+      'SpesaUno scontrino o una spesa, in due tocchi',
       'Carica un documentoUna foto o un file, in In arrivo',
       'Chiudi',
     ])
+  })
+
+  it('offers no «Spesa» with purchases off', async () => {
+    renderShell(<div />, undefined, ['purchases'], 'company')
+    await userEvent.click(bar().getByRole('button', { name: 'Aggiungi' }))
+    const sheet = within(await screen.findByRole('dialog', { name: 'Aggiungi' }))
+    const names = sheet.getAllByRole('button').map((button) => button.textContent)
+    expect(names.some((name) => name?.startsWith('Spesa'))).toBe(false)
   })
 
   it('offers no hours with time off and no day with contracts off', async () => {

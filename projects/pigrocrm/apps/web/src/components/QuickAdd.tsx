@@ -1,8 +1,17 @@
 import { useRouterState } from '@tanstack/react-router'
-import { CalendarPlus, Clock, FileInput, ListChecks, StickyNote, type LucideIcon } from 'lucide-react'
+import {
+  CalendarPlus,
+  Clock,
+  FileInput,
+  ListChecks,
+  Receipt,
+  StickyNote,
+  type LucideIcon,
+} from 'lucide-react'
 import { useState } from 'react'
 import { DayForm } from '@/features/days/DayForm'
 import { QuickUpload } from '@/features/inbox/QuickUpload'
+import { QuickExpense } from '@/features/purchases/QuickExpense'
 import { TaskDialog } from '@/features/tasks/TaskDialog'
 import {
   Dialog,
@@ -22,13 +31,13 @@ import { useModules } from '@/lib/modules'
 import { QuickHours } from './QuickHours'
 import { QuickNote } from './QuickNote'
 
-type Action = 'task' | 'note' | 'day' | 'hours' | 'document'
+type Action = 'task' | 'note' | 'day' | 'hours' | 'expense' | 'document'
 
 /**
  * «+» of the phone's bottom bar (spec 2026-11-09 B6, REB-959): what can be added from
  * anywhere, without navigating. An activity and a note always; a worked day with `contracts`
- * on; hours with `time` on. An entry of a module the space has off is not drawn, the same
- * question (`useModules().on`) the sidebar and the route guard ask.
+ * on; hours with `time` on; an expense with `purchases` on. An entry of a module the space has
+ * off is not drawn, the same question (`useModules().on`) the sidebar and the route guard ask.
  *
  * The sheet only chooses. Each choice opens the dialog of the thing itself, the one the rest
  * of the app already uses, and the sheet closes behind it. The choice is remembered with the
@@ -65,6 +74,18 @@ export function QuickAdd({
       : []),
     ...(modules.on('time')
       ? [{ action: 'hours' as const, label: 'Ore', hint: 'Ore lavorate su un deal', icon: Clock }]
+      : []),
+    // A receipt or an expense, registered at once from a sheet (the brief of 2026-11-10): the
+    // purchases are a module, so the entry goes with it.
+    ...(modules.on('purchases')
+      ? [
+          {
+            action: 'expense' as const,
+            label: 'Spesa',
+            hint: 'Uno scontrino o una spesa, in due tocchi',
+            icon: Receipt,
+          },
+        ]
       : []),
     // The inbox is core, never behind a module: a photo or a PDF of a document goes in at once
     // and is read afterwards (REB-984).
@@ -121,6 +142,7 @@ export function QuickAdd({
         </DialogContent>
       </Dialog>
       <QuickHours open={action === 'hours'} onOpenChange={(next) => !next && close()} />
+      <QuickExpense open={action === 'expense'} onOpenChange={(next) => !next && close()} />
       <QuickUpload open={action === 'document'} onOpenChange={(next) => !next && close()} />
     </>
   )

@@ -147,6 +147,32 @@ def test_the_remaining_files_are_read_by_the_classify_route(
     assert again.status_code == 200 and again.json()["state"] == "proposed"
 
 
+def test_read_false_stores_the_files_and_reads_none(
+    logged_in: TestClient, model_call: ScriptedModel
+) -> None:
+    _switch_on(logged_in)  # the model is on and has no answer queued: reaching it fails the test
+
+    response = logged_in.post(
+        "/api/inbox/upload",
+        params={"read": "false"},
+        files=[
+            ("file", ("scontrino.pdf", _pdf("Totale 48,00"), "application/pdf")),
+            ("file", ("fattura.xml", INVOICE, "application/xml")),
+        ],
+    )
+
+    assert response.status_code == 201, response.text
+    receipt, xml = response.json()["items"]
+    # Stored as the upload made them: nothing classified, nothing proposed, not even the
+    # sales XML a default upload routes by itself.
+    assert (receipt["state"], receipt["kind"], receipt["proposal_id"]) == ("new", None, None)
+    assert (xml["state"], xml["kind"], xml["legal_entity_id"]) == ("new", None, None)
+    assert model_call.requests == []
+    assert logged_in.get(f"/api/inbox/items/{receipt['id']}/file").status_code == 200
+    waiting = {i["id"] for i in _listed(logged_in, classified="false")}
+    assert {receipt["id"], xml["id"]} <= waiting
+
+
 def test_a_collaborator_who_did_not_upload_an_unclassified_item_does_not_see_it(
     logged_in: TestClient, api_session: Session
 ) -> None:

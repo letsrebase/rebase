@@ -16,6 +16,7 @@ from pigrocrm.core.fields.service import FieldDefinitionService
 from pigrocrm.core.fields.validator import validate_custom_fields
 from pigrocrm.core.fiscal.pack import PACK_IT_FLAT_RATE
 from pigrocrm.core.fiscal.repository import FiscalProfileRepository
+from pigrocrm.core.inbox.filing import file_as_purchase, resolve_original
 from pigrocrm.core.inbox.models import InboxItem
 from pigrocrm.core.legal_entities.service import LegalEntityService
 from pigrocrm.core.money import ZERO_MONEY, round_money
@@ -463,6 +464,11 @@ class PurchaseService:
     def create(self, data: PurchaseCreate, actor: Actor) -> PurchaseRead:
         actor.require_write("create_purchase")
         self._check_refs(data.deal_id, data.document_id, data.inbox_item_id)
+        inbox_item_id = (
+            resolve_original(self.session, data.inbox_item_id, actor)
+            if data.inbox_item_id is not None
+            else None
+        )
         self.categories.require_active(data.category_id)
         self.locks.assert_writable(ENTITY, "date", data.date)
 
@@ -482,7 +488,7 @@ class PurchaseService:
                 merchant_name=data.merchant_name,
                 number=data.number,
                 description=data.description,
-                inbox_item_id=data.inbox_item_id,
+                inbox_item_id=inbox_item_id,
                 document_id=data.document_id,
                 buyer_pack_id=pack_id,
                 buyer_pack_version=pack_version,
@@ -504,6 +510,14 @@ class PurchaseService:
                 "deal_id": str(purchase.deal_id) if purchase.deal_id else None,
             },
         )
+        if purchase.inbox_item_id is not None:
+            file_as_purchase(
+                self.session,
+                purchase.inbox_item_id,
+                purchase.id,
+                actor,
+                purchase.legal_entity_id,
+            )
         self.session.commit()
         return PurchaseRead.model_validate(purchase)
 
@@ -587,6 +601,12 @@ class PurchaseService:
             changes["custom_fields"] = merge_custom(
                 ENTITY, self.fields.specs_for(ENTITY), purchase.custom_fields, data.custom_fields
             )
+        # The id the item resolves to, before the diff: a duplicate that resolves to the item
+        # already linked is no change, and the timeline must not say it was.
+        linked: UUID | None = changes.get("inbox_item_id")
+        if linked is not None:
+            linked = resolve_original(self.session, linked, actor)
+            changes["inbox_item_id"] = linked
         changed = changed_keys(purchase, changes)
         if data.vat_lines is not None:
             current = [
@@ -595,8 +615,13 @@ class PurchaseService:
             if current != data.vat_lines:
                 changed.append("vat_lines")
                 purchase.vat_lines = self._rows(data.vat_lines)
+        newly_linked = linked if linked != purchase.inbox_item_id else None
         for key, value in changes.items():
             setattr(purchase, key, value)
+        if newly_linked is not None:
+            file_as_purchase(
+                self.session, newly_linked, purchase.id, actor, purchase.legal_entity_id
+            )
         self.activities.record(
             ENTITY,
             purchase.id,
@@ -648,9 +673,12 @@ class PurchaseService:
         rows = self.repo.list(query)
         has_more = len(rows) > query.limit
         items = rows[: query.limit]
+        total_count, total_amount = self.repo.totals(query)
         return PurchasePage(
             items=[PurchaseRead.model_validate(row) for row in items],
             next_cursor=items[-1].id if has_more and items else None,
+            total_count=total_count,
+            total_amount=total_amount,
         )
 
 

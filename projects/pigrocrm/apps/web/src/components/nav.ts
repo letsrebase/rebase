@@ -13,10 +13,12 @@ import {
   ListChecks,
   Receipt,
   Settings,
+  ShoppingCart,
   Users,
+  type LucideIcon,
 } from 'lucide-react'
 import { SETTINGS_GROUPS, type SettingsTabValue } from '@/features/settings/tabs'
-import { modulesOfPath, type ModuleAccess } from '@/lib/modules'
+import { modulesOfPath, type ModuleAccess, type ModuleKey } from '@/lib/modules'
 import { canSeeSettingsTab, type Role } from '@/lib/permissions'
 
 /**
@@ -56,7 +58,7 @@ export const SECTIONS = [
     id: 'vendite',
     caption: 'Vendite',
     items: [
-      { to: '/app/organizations', label: 'Clienti', icon: Building2 },
+      { id: 'customers', to: '/app/organizations', label: 'Clienti', icon: Building2 },
       { to: '/app/people', label: 'Persone', icon: Users },
       { to: '/app/deal', label: 'Deal', icon: Handshake },
     ],
@@ -66,12 +68,54 @@ export const SECTIONS = [
     caption: 'Amministrazione',
     items: [
       { to: '/app/invoices', label: 'Fatture', icon: Receipt },
+      // The registry's supplier view (the approved brief, 2026-11-10): one page with two doors,
+      // «Clienti» in «Vendite» and «Fornitori» here, beside the purchases they are paid for.
+      // The page is the core's, so the module is named on the entry and not read from the path.
+      {
+        id: 'suppliers',
+        to: '/app/organizations',
+        search: { role: 'supplier' },
+        modules: ['purchases'],
+        label: 'Fornitori',
+        icon: Building2,
+      },
+      { to: '/app/purchases', label: 'Acquisti', icon: ShoppingCart },
       { to: '/app/hours', label: 'Ore', icon: Clock },
       { to: '/app/days', label: 'Giornate', icon: CalendarCheck },
       { to: '/app/taxes', label: 'Tasse', icon: Landmark },
     ],
   },
 ] as const
+
+/** One entry of a section: `to` and `search` are where it links, `modules` overrides the
+ *  modules the path alone would need (an entry that opens a core page on a module's view),
+ *  and `id` tells apart two entries that open the same page. */
+export interface NavItem {
+  readonly id?: string
+  readonly to: LinkTo
+  readonly search?: { readonly role: 'supplier' }
+  readonly modules?: readonly ModuleKey[]
+  readonly label: string
+  readonly icon: LucideIcon
+}
+
+/** The registry's page, which two entries open (`?role=` tells them apart). */
+export const REGISTRY_PATH = '/app/organizations'
+
+/** What tells one entry from another: its `id`, else its path. */
+export const navKey = (item: NavItem) => item.id ?? item.to
+
+/**
+ * Whether an entry is the one the reader is on. The registry page serves two entries, so the
+ * path is not enough there: «Fornitori» is the page on `?role=supplier` and «Clienti» the same
+ * page on any other view (and a customer's own page), the way the sidebar always read it.
+ */
+export function isNavItemActive(item: NavItem, pathname: string, role: string | undefined) {
+  if (!isUnder(pathname, item.to)) return false
+  if (item.to !== REGISTRY_PATH) return true
+  const onSuppliers = pathname === item.to && role === 'supplier'
+  return item.search?.role === 'supplier' ? onSuppliers : !onSuppliers
+}
 
 /**
  * The sections as one space sees them (REB-953, spec 2026-11-09 B4): an entry whose module
@@ -82,7 +126,9 @@ export const SECTIONS = [
 export function visibleSections(access: ModuleAccess) {
   return SECTIONS.map((section) => ({
     ...section,
-    items: section.items.filter((item) => access.on(...modulesOfPath(item.to))),
+    items: (section.items as readonly NavItem[]).filter((item) =>
+      access.on(...(item.modules ?? modulesOfPath(item.to))),
+    ),
   })).filter((section) => section.items.length > 0)
 }
 

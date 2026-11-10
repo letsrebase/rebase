@@ -119,4 +119,24 @@ describe('PageHeader', () => {
     // The icon repeats what the title already says; announcing it adds nothing.
     expect(container.querySelector('svg')).toHaveAttribute('aria-hidden', 'true')
   })
+
+  it('draws `titleAddon` under the heading and before the description, and nothing without it', () => {
+    const { unmount } = render(
+      <PageHeader
+        icon={LayoutDashboard}
+        title="Zanetti Impianti"
+        description="Cliente"
+        titleAddon={<span>Fornitore</span>}
+      />,
+    )
+    const heading = screen.getByRole('heading', { level: 1, name: 'Zanetti Impianti' })
+    const addon = screen.getByText('Fornitore')
+    const description = screen.getByText('Cliente')
+    expect(heading.compareDocumentPosition(addon) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(addon.compareDocumentPosition(description) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    unmount()
+
+    render(<PageHeader icon={LayoutDashboard} title="Zanetti Impianti" />)
+    expect(screen.queryByText('Fornitore')).not.toBeInTheDocument()
+  })
 })

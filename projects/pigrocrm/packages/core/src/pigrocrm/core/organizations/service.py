@@ -914,4 +914,5 @@ class OrganizationService:
         return OrganizationPage(
             items=[OrganizationRead.model_validate(c) for c in items],
             next_cursor=next_cursor,
+            total=self.repo.count(query),
         )

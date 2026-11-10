@@ -222,6 +222,9 @@ class OrganizationListQuery(BaseModel):
     # existing read of the registry sees customers only, unless it says otherwise (design
     # 2026-11-09 suppliers § 1, «Role-blind reads»).
     role: RoleFilter = "customer"
+    # One fiscal kind of supplier (`professional`, `foreign`, ...); the value is checked by
+    # the column's own CHECK, so an unknown one selects nothing.
+    supplier_kind: SafeStr | None = Field(default=None, max_length=KIND_MAX_LENGTH)
     custom: dict[str, Any] | None = None
     # Upper-bounded so a caller (an MCP agent especially) cannot request an
     # unbounded page; the router will impose the same ceiling at the HTTP layer.
@@ -243,6 +246,9 @@ class OrganizationListQuery(BaseModel):
 class OrganizationPage(BaseModel):
     items: list[OrganizationRead]
     next_cursor: str | None
+    total: int = Field(
+        description="How many organizations the filters match in all, cursor and limit left out"
+    )
 
 
 class PersonFromSuggestion(BaseModel):

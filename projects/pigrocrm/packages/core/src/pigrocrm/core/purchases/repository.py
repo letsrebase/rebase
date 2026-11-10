@@ -1,9 +1,12 @@
+from decimal import Decimal
+from typing import Any
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import Select, func, select
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.errors import ValidationFailed
+from pigrocrm.core.money import round_money
 from pigrocrm.core.purchases.models import Purchase
 from pigrocrm.core.purchases.schemas import PurchaseListQuery
 
@@ -28,8 +31,9 @@ class PurchaseRepository:
         self.session.flush()
         return purchase
 
-    # `list` stays the last method in this class.
-    def list(self, query: PurchaseListQuery) -> list[Purchase]:
+    @staticmethod
+    def _filtered(query: PurchaseListQuery) -> Select[Any]:
+        """The rows a query selects, before paging: what the page and its totals both read."""
         stmt = select(Purchase).where(Purchase.deleted_at.is_(None))
         if query.only_general:
             # `deal_id IS NULL` is a general expense (§7.4). A separate flag is needed
@@ -55,6 +59,22 @@ class PurchaseRepository:
             stmt = stmt.where(Purchase.date <= query.date_to)
         if query.custom:
             stmt = stmt.where(Purchase.custom_fields.contains(query.custom))
+        return stmt
+
+    def totals(self, query: PurchaseListQuery) -> tuple[int, Decimal]:
+        """How many purchases the filters select and the sum of their document totals (signed:
+        a credit note and a refund subtract), whatever page was asked for. The sum is the
+        document's total in euro, the figure a list column shows, and not what the purchase
+        costs."""
+        rows = self._filtered(query).subquery()
+        count, total = self.session.execute(
+            select(func.count(), func.coalesce(func.sum(rows.c.amount), 0))
+        ).one()
+        return int(count), round_money(Decimal(total))
+
+    # `list` stays the last method in this class.
+    def list(self, query: PurchaseListQuery) -> list[Purchase]:
+        stmt = self._filtered(query)
         if query.cursor is not None:
             anchor = self.session.get(Purchase, query.cursor)
             if anchor is None:

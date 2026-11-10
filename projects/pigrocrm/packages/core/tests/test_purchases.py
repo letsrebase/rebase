@@ -586,3 +586,33 @@ def test_a_cost_turned_into_an_invoice_takes_the_buyers_pack_and_entity(
     )
     assert invoice.legal_entity_id == buyer and invoice.buyer_pack_id == "it-standard"
     assert invoice.cost_amount == Decimal("100.00")
+
+
+def test_the_totals_count_a_cancelled_purchase_when_no_status_is_asked_and_never_a_deleted_one(
+    db_session: Session, seeded_category_id: UUID, seeded_deal_id: UUID
+) -> None:
+    from sqlalchemy import select
+
+    from pigrocrm.core.legal_entities.models import LegalEntity
+
+    entity = db_session.execute(
+        select(LegalEntity.id).where(LegalEntity.is_default.is_(True))
+    ).scalar_one()
+    service = PurchaseService(db_session)
+    _create(service, seeded_category_id, amount=Decimal("10.00"), legal_entity_id=entity)
+    cancelled = _create(service, seeded_category_id, amount=Decimal("20.00"))
+    deleted = _create(service, seeded_category_id, amount=Decimal("40.00"))
+    _create(service, seeded_category_id, amount=Decimal("80.00"), deal_id=seeded_deal_id)
+    service.cancel(cancelled.id, WRITER)
+    service.soft_delete(deleted.id, WRITER)
+
+    def totals(**filters):
+        page = service.list(PurchaseListQuery(**filters), READER)
+        return page.total_count, page.total_amount
+
+    assert totals() == (3, Decimal("110.00"))
+    assert totals(status="registered") == (2, Decimal("90.00"))
+    assert totals(only_general=True) == (2, Decimal("30.00"))
+    assert totals(only_general=True, status="registered") == (1, Decimal("10.00"))
+    # The deal's purchase follows the deal's legal entity; the shared ones answer none.
+    assert totals(legal_entity_id=entity) == (2, Decimal("90.00"))

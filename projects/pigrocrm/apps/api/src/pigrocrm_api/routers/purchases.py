@@ -4,8 +4,12 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, status
 from pydantic import Field
+from sqlalchemy.orm import Session
 
+from pigrocrm.core.actor import Actor
+from pigrocrm.core.purchases.capabilities import read_purchase_capabilities
 from pigrocrm.core.purchases.schemas import (
+    PurchaseCapabilitiesRead,
     PurchaseCreate,
     PurchaseKind,
     PurchaseListQuery,
@@ -18,6 +22,7 @@ from pigrocrm.core.purchases.service import PurchaseService
 from pigrocrm_api.deps import ActorDep, SessionDep, get_actor, module_guard
 from pigrocrm_api.errors import PROBLEM_RESPONSES
 from pigrocrm_api.query_params import CustomParams, KeysetParams
+from pigrocrm_api.timeline import timeline_router
 
 router = APIRouter(
     prefix="/api/purchases",
@@ -56,6 +61,24 @@ def list_purchases(
     return PurchaseService(session).list(params.to_query(PurchaseListQuery), actor)
 
 
+@router.get("/capabilities", response_model=PurchaseCapabilitiesRead)
+def capabilities(
+    session: SessionDep,
+    legal_entity_id: Annotated[
+        UUID | None,
+        Query(
+            description=(
+                "The buyer; omitted, the space's only active legal entity, the one a "
+                "supplier's document that names none is registered under"
+            )
+        ),
+    ] = None,
+) -> PurchaseCapabilitiesRead:
+    """What the buyer's fiscal pack lets a purchase carry, for the form to hide the rest.
+    Declared before `/{purchase_id}`, which would take `capabilities` for an id."""
+    return read_purchase_capabilities(session, legal_entity_id)
+
+
 @router.get("/{purchase_id}", response_model=PurchaseRead)
 def get(purchase_id: UUID, session: SessionDep, actor: ActorDep) -> PurchaseRead:
     return PurchaseService(session).get(purchase_id, actor)
@@ -81,3 +104,13 @@ def soft_delete(purchase_id: UUID, session: SessionDep, actor: ActorDep) -> None
 @router.post("/{purchase_id}/restore", response_model=PurchaseRead)
 def restore(purchase_id: UUID, session: SessionDep, actor: ActorDep) -> PurchaseRead:
     return PurchaseService(session).restore(purchase_id, actor)
+
+
+def _purchase_visible(session: Session, purchase_id: UUID, actor: Actor) -> None:
+    """The timeline of a purchase the caller cannot read (another legal entity's, an unknown
+    id) is a 404 and not an empty list: the history of a row is read with the row's own
+    visibility."""
+    PurchaseService(session).get(purchase_id, actor)
+
+
+router.include_router(timeline_router("purchase", id_param="purchase_id", guard=_purchase_visible))

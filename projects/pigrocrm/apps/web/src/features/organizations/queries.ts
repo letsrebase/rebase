@@ -7,6 +7,7 @@ import { asBody } from '@/lib/formValues'
 import { keepWhileTyping } from '@/lib/keepWhileTyping'
 import { queryKeys } from '@/lib/query'
 import { useCursorPages } from '@/lib/useCursorPages'
+import type { RegistryRole } from './search'
 
 /**
  * Wire shape of one customer, taken directly from the generated OpenAPI schema
@@ -28,6 +29,8 @@ interface OrganizationsListParams {
   legal_entity_id?: string
   /** One role, or `any` for the registry across roles; customers only when left out. */
   role?: 'customer' | 'supplier' | 'freelancer' | 'any'
+  /** A supplier's fiscal kind (`company`, `professional`, ...): the supplier view's «Tipo fiscale». */
+  supplier_kind?: string
 }
 
 /**
@@ -45,6 +48,7 @@ function fetchOrganizationsPage(params: OrganizationsListParams, cursor?: string
           limit: params.limit,
           legal_entity_id: params.legal_entity_id,
           role: params.role,
+          supplier_kind: params.supplier_kind,
           cursor,
         },
       },
@@ -81,11 +85,73 @@ export function useOrganizations(
  * customer write invalidates; `pages` in the key keeps its infinite-query data apart from
  * `useOrganizations`' single pages.
  */
-export function useOrganizationPages(params: Pick<OrganizationsListParams, 'search'> = {}) {
+export function useOrganizationPages(
+  params: Pick<OrganizationsListParams, 'search' | 'supplier_kind'> & { role?: RegistryRole } = {},
+) {
   const scoped = useLegalEntityScope(params)
-  return useCursorPages({
-    queryKey: queryKeys.organizations({ ...scoped, pages: true }),
+  const queryClient = useQueryClient()
+  // The role is in `scoped`, so each view keeps a cache of its own: a list of suppliers is
+  // never what the customers' tab shows while it loads.
+  const queryKey = queryKeys.organizations({ ...scoped, pages: true })
+  const pages = useCursorPages({
+    queryKey,
     fetchPage: (cursor) => fetchOrganizationsPage(scoped, cursor),
+  })
+  // «Riprova» on the error banner: the same walk, asked again from its first page.
+  return { ...pages, retry: () => void queryClient.invalidateQueries({ queryKey }) }
+}
+
+/**
+ * How many organizations a role has, for the number beside a tab: one request of one row that
+ * reads `total` (the whole registry for that role, the sidebar's legal entity honoured like
+ * the list does). Under the `['organizations']` prefix, so every organization write refreshes
+ * it. `undefined` while it is on its way or when it failed: a number that never arrived is
+ * not drawn, and never drawn as 0.
+ */
+export function useOrganizationCount(role: RegistryRole, enabled = true): number | undefined {
+  const scoped = useLegalEntityScope({ role })
+  const count = useQuery({
+    enabled,
+    queryKey: queryKeys.organizations({ ...scoped, count: true }),
+    queryFn: () => fetchOrganizationsPage({ ...scoped, limit: 1 }),
+  })
+  return typeof count.data?.total === 'number' ? count.data.total : undefined
+}
+
+/**
+ * The organizations, in any role, that a VAT number typed in the form may already belong to
+ * (design § 1: one record per company). Not scoped to the sidebar's legal entity: the unique
+ * index is across them, so a number held under another entity is still taken. Under the
+ * `['organizations']` prefix like every list, so a write refreshes it.
+ */
+export function useOrganizationsByVat(term: string, enabled: boolean) {
+  return useQuery({
+    enabled: enabled && term !== '',
+    queryKey: queryKeys.organizations({ vat_lookup: term }),
+    queryFn: () => fetchOrganizationsPage({ search: term, role: 'any', limit: 10 }),
+  })
+}
+
+/**
+ * «Aggiungi il ruolo Fornitore»: the roles of an organization that already exists, grown by
+ * one. The caller sends the union of what it has and the new role; a role is never taken away
+ * from here (the brief's non-goal).
+ */
+export function useAddOrganizationRole() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, roles }: { id: string; roles: string[] }) =>
+      unwrap(
+        api.PATCH('/api/organizations/{organization_id}', {
+          params: { path: { organization_id: id } },
+          body: asBody<OrganizationUpdateBody>({ roles }),
+        }),
+      ),
+    onSuccess: (updated) => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.customer(updated.id) })
+      void queryClient.invalidateQueries({ queryKey: queryKeys.organizations() })
+      void queryClient.invalidateQueries({ queryKey: queryKeys.timeline('organization', updated.id) })
+    },
   })
 }
 

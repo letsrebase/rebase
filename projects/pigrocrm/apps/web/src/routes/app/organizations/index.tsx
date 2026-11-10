@@ -1,5 +1,6 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { OrganizationsPage } from '@/features/organizations/OrganizationsPage'
+import { DEFAULT_REGISTRY_ROLE, parseOrganizationsSearch } from '@/features/organizations/search'
 
 /**
  * The `?search=` term is an entry point, not a live mirror of the box. The palette's
@@ -10,17 +11,19 @@ import { OrganizationsPage } from '@/features/organizations/OrganizationsPage'
  * back, which is how a fast typist loses characters.
  */
 function OrganizationsRoute() {
-  const { search } = Route.useSearch()
-  return <OrganizationsPage key={search ?? ''} initialSearch={search ?? ''} />
+  const { search, role } = Route.useSearch()
+  return (
+    <OrganizationsPage
+      key={search ?? ''}
+      initialSearch={search ?? ''}
+      role={role ?? DEFAULT_REGISTRY_ROLE}
+    />
+  )
 }
 
 export const Route = createFileRoute('/app/organizations/')({
   component: OrganizationsRoute,
-  // Declared so the palette can link here with a term (`navigate({ to, search })` is
-  // typed against this). An empty or non-string value is dropped rather than carried as
-  // `?search=`, so the URL never claims a filter that is not applied.
-  validateSearch: (search: Record<string, unknown>): { search?: string } => ({
-    search:
-      typeof search.search === 'string' && search.search.length > 0 ? search.search : undefined,
-  }),
+  // Declared so the palette can link here with a term and the sidebar with a view
+  // (`navigate({ to, search })` is typed against this).
+  validateSearch: parseOrganizationsSearch,
 })

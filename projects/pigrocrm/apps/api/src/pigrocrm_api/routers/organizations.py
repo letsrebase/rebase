@@ -78,6 +78,11 @@ class OrganizationListParams(SortedParams, SearchParams, CustomParams):
         description="One role (customer, supplier, freelancer), or `any` for the registry "
         "across roles. Customers only when omitted.",
     )
+    supplier_kind: SafeStr | None = Field(
+        default=None,
+        description="Only suppliers of this fiscal kind (company, professional, flat_rate, "
+        "occasional, foreign)",
+    )
     legal_entity_id: UUID | None = Field(default=None, description=LEGAL_ENTITY_QUERY_DESCRIPTION)
     sort: SafeStr | None = sort_field("created_at", "updated_at", "legal_name")
 

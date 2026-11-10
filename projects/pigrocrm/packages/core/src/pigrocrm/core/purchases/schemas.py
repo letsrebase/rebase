@@ -217,3 +217,22 @@ class PurchaseListQuery(BaseModel):
 class PurchasePage(BaseModel):
     items: list[PurchaseRead]
     next_cursor: UUID | None
+    # What the filters select as a whole, whatever page was asked for: the count, and the sum
+    # of the document totals in euro (signed, so a credit note subtracts). Summed here because
+    # no screen adds money up itself. `status` unset means every status: the totals then count
+    # the cancelled purchases too (intended; a soft-deleted one is never counted). The page sends
+    # `status=registered` for the figure a person reads.
+    total_count: int
+    total_amount: Decimal
+
+
+class PurchaseCapabilitiesRead(BaseModel):
+    """What the buyer's fiscal pack lets a purchase carry, so a form hides what the server would
+    refuse and nothing it would accept (`purchases/capabilities.py`). `legal_entity_id` is the
+    buyer these flags speak for, `None` when none could be resolved (every flag is then true)."""
+
+    legal_entity_id: UUID | None
+    vat_recap: bool
+    withholding: bool
+    reverse_charge: bool
+    split_payment: bool

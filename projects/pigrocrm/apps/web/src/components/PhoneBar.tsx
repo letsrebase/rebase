@@ -12,12 +12,16 @@ import { LegalEntitySelect } from './LegalEntitySelect'
 import {
   Agents,
   INBOX_PATH,
+  REGISTRY_PATH,
   SETTINGS,
   SETTINGS_PATHS,
+  isNavItemActive,
   isUnder,
+  navKey,
   phoneMoreItems,
   phoneThirdPlace,
   type LinkTo,
+  type NavItem,
 } from './nav'
 import { ProfileMenu } from './ProfileMenu'
 import { QuickAdd } from './QuickAdd'
@@ -188,11 +192,12 @@ function More({
   const unread = useUnreadCount()
   const waiting = useWaitingCount()
   const { location } = useRouterState()
-  const items = [
+  const registryRole = (location.search as { role?: string } | undefined)?.role
+  const items: readonly NavItem[] = [
     ...phoneMoreItems(modules),
     { to: Agents.to, label: Agents.label, icon: Agents.icon },
     { to: SETTINGS_PATHS.profile, label: SETTINGS.label, icon: SETTINGS.icon },
-  ] as const
+  ]
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -223,13 +228,18 @@ function More({
         </div>
         <LegalEntitySelect rail={false} />
         <ul className="px-3 pb-3">
-          {items.map(({ to, label, icon: Icon }) => (
-            <li key={to}>
+          {items.map((item) => {
+            const { to, label, icon: Icon } = item
+            return (
+            <li key={navKey(item)}>
               <Link
                 to={to}
+                search={item.search}
                 onClick={() => onOpenChange(false)}
                 aria-current={
-                  isUnder(location.pathname, to === SETTINGS_PATHS.profile ? SETTINGS.base : to)
+                  (to === REGISTRY_PATH
+                    ? isNavItemActive(item, location.pathname, registryRole)
+                    : isUnder(location.pathname, to === SETTINGS_PATHS.profile ? SETTINGS.base : to))
                     ? 'page'
                     : undefined
                 }
@@ -254,7 +264,8 @@ function More({
                 ) : null}
               </Link>
             </li>
-          ))}
+            )
+          })}
         </ul>
         <ProfileMenu rail={false} go={go} />
       </SheetContent>

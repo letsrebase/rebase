@@ -7,15 +7,18 @@ import { LegalEntityContext, type LegalEntityRecord, type LegalEntityValue } fro
 import { OrganizationForm, organizationToFormValues } from './OrganizationForm'
 import type { Organization } from './queries'
 import type { FieldDefinition } from '@/lib/schema'
+import type { ModuleKey } from '@/lib/modules'
+import { seedModules } from '@/lib/modules.testing'
 
 vi.mock('@/lib/api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/api')>()
-  return { ...actual, api: { GET: vi.fn() } }
+  return { ...actual, api: { GET: vi.fn(), PATCH: vi.fn() } }
 })
 
 import { api } from '@/lib/api'
 
 const GET = api.GET as unknown as Mock
+const PATCH = api.PATCH as unknown as Mock
 
 const BASE_CUSTOMER: Organization = {
   id: 'c1',
@@ -77,8 +80,11 @@ function submitted(onSubmit: ReturnType<typeof vi.fn>): Record<string, unknown> 
 
 /** The form mounts a query (the azienda proposal, disabled with one azienda), so every
  *  render needs a client even where no request is ever made. */
-function renderWithClient(ui: ReactElement) {
+function renderWithClient(ui: ReactElement, off: readonly ModuleKey[] = []) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  // The form asks which modules are on (the supplier role needs `purchases`): answered up front,
+  // so a test about what the form requests sees only its own requests.
+  seedModules(client, off)
   return render(<QueryClientProvider client={client}>{ui}</QueryClientProvider>)
 }
 
@@ -174,7 +180,10 @@ describe('OrganizationForm', () => {
     // rule: the unchecked box the user saw said "no", so "no" is what is sent.
     expect(submitted(onSubmit)).toEqual({
       country: 'IT',
+      roles: ['customer'],
       payment_end_of_month: false,
+      // The customer's own checkbox, drawn on a new customer, answers like the other one.
+      is_withholding_agent: false,
       custom_fields: { vip: false },
     })
   })
@@ -276,7 +285,7 @@ describe('OrganizationForm', () => {
     )
 
     await userEvent.clear(screen.getByLabelText('Comune'))
-    await userEvent.click(screen.getByRole('combobox'))
+    await userEvent.click(screen.getByRole('combobox', { name: 'Settore' }))
     await userEvent.click(screen.getByRole('option', { name: 'Nessuna selezione' }))
     await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
 
@@ -313,6 +322,7 @@ describe('the «Azienda» picker (REB-626)', () => {
 
   function renderWithLegalEntities(ui: ReactElement, value: LegalEntityValue = TWO) {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    seedModules(client)
     return render(
       <QueryClientProvider client={client}>
         <LegalEntityContext value={value}>{ui}</LegalEntityContext>
@@ -416,6 +426,7 @@ describe('a customer stranded on a deactivated azienda (REB-626, Greptile on PR 
     GET.mockReset()
     const onSubmit = vi.fn()
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    seedModules(client)
     render(
       <QueryClientProvider client={client}>
         <LegalEntityContext value={ONE_LEFT}>
@@ -441,6 +452,7 @@ describe('a customer stranded on a deactivated azienda (REB-626, Greptile on PR 
 
   it('draws nothing for a customer of the one active azienda', () => {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    seedModules(client)
     render(
       <QueryClientProvider client={client}>
         <LegalEntityContext value={ONE_LEFT}>
@@ -481,6 +493,7 @@ describe('the picker beside a custom field that happens to be named azienda_id (
     GET.mockReset()
     const onSubmit = vi.fn()
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    seedModules(client)
     render(
       <QueryClientProvider client={client}>
         <LegalEntityContext value={TWO}>
@@ -712,5 +725,254 @@ describe('the contact points of a customer', () => {
     expect(alerts).toHaveLength(1)
     expect(alerts[0]).toHaveTextContent('numero di telefono non valido')
     expect(screen.getByRole('group', { name: 'Recapito 2' })).toContainElement(alerts[0] as HTMLElement)
+  })
+})
+
+/** The registry's roles on the form (the approved brief of 2026-11-10). */
+describe('the roles and the supplier fields', () => {
+  const NONE = { data: { items: [], next_cursor: null }, response: new Response(null, { status: 200 }) }
+
+  function open(props: Partial<React.ComponentProps<typeof OrganizationForm>> = {}, off: readonly ModuleKey[] = []) {
+    const onSubmit = vi.fn()
+    renderWithClient(
+      <OrganizationForm
+        title="Nuovo fornitore"
+        open
+        onOpenChange={vi.fn()}
+        customFields={[]}
+        onSubmit={onSubmit}
+        {...props}
+      />,
+      off,
+    )
+    return onSubmit
+  }
+
+  beforeEach(() => {
+    GET.mockReset()
+    PATCH.mockReset()
+    GET.mockResolvedValue(NONE)
+  })
+
+  it('opens a supplier view as a supplier: its group, not the customer\'s', async () => {
+    const onSubmit = open({ defaultRoles: ['supplier'] })
+    expect(screen.getByRole('heading', { name: 'Come fornitore' })).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Come cliente' })).toBeNull()
+    expect(screen.queryByLabelText('Giorni di pagamento')).toBeNull()
+    expect(screen.getByRole('checkbox', { name: 'Fornitore' })).toBeChecked()
+    expect(screen.getByRole('checkbox', { name: 'Cliente' })).not.toBeChecked()
+
+    await userEvent.type(screen.getByLabelText(/Ragione sociale/), 'Zanetti Impianti S.r.l.')
+    await userEvent.type(screen.getByLabelText('Giorni concessi dal fornitore'), '30')
+    await userEvent.click(screen.getByLabelText('Fine mese (fornitore)'))
+    await userEvent.click(screen.getByRole('combobox', { name: 'Tipo fiscale' }))
+    await userEvent.click(screen.getByRole('option', { name: 'Professionista' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
+
+    expect(submitted(onSubmit)).toEqual({
+      legal_name: 'Zanetti Impianti S.r.l.',
+      country: 'IT',
+      roles: ['supplier'],
+      supplier_kind: 'professional',
+      supplier_payment_days: 30,
+      supplier_payment_end_of_month: true,
+      custom_fields: {},
+    })
+  })
+
+  it('asks where a foreign supplier is and what it supplies, and lets go of both when the kind changes', async () => {
+    const onSubmit = open({
+      defaultRoles: ['supplier'],
+      initial: organizationToFormValues({
+        ...BASE_CUSTOMER,
+        roles: ['supplier'],
+        supplier_kind: 'foreign',
+        supplier_area: 'extra_eu',
+        supplier_supplies: 'services',
+      }),
+    })
+    expect(screen.getByRole('combobox', { name: 'Area' })).toHaveTextContent('extra UE')
+    expect(screen.getByRole('combobox', { name: 'Fornitura' })).toHaveTextContent('servizi')
+
+    await userEvent.click(screen.getByRole('combobox', { name: 'Tipo fiscale' }))
+    await userEvent.click(screen.getByRole('option', { name: 'Società' }))
+    expect(screen.queryByRole('combobox', { name: 'Area' })).toBeNull()
+    await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
+
+    const payload = submitted(onSubmit)
+    expect(payload).toMatchObject({ supplier_kind: 'company', supplier_area: null, supplier_supplies: null })
+    // The roles did not change: not sent again.
+    expect(payload).not.toHaveProperty('roles')
+  })
+
+  it('draws no supplier role, group or field with the purchases module off, and sends nothing of them', async () => {
+    const onSubmit = open(
+      {
+        title: 'Modifica anagrafica',
+        initial: organizationToFormValues({
+          ...BASE_CUSTOMER,
+          roles: ['customer', 'supplier'],
+          supplier_kind: 'company',
+          supplier_payment_days: 45,
+        }),
+      },
+      ['purchases'],
+    )
+    expect(screen.queryByRole('heading', { name: 'Come fornitore' })).toBeNull()
+    expect(screen.queryByRole('group', { name: 'Ruoli' })).toBeNull()
+    expect(screen.getByRole('heading', { name: 'Come cliente' })).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
+    const payload = submitted(onSubmit)
+    expect(payload).not.toHaveProperty('supplier_kind')
+    expect(payload).not.toHaveProperty('supplier_payment_days')
+    expect(payload).not.toHaveProperty('roles')
+  })
+
+  it('adds a role from an edit and never takes one away', async () => {
+    const onSubmit = open({
+      title: 'Modifica anagrafica',
+      initial: organizationToFormValues(BASE_CUSTOMER),
+    })
+    expect(screen.getByRole('checkbox', { name: 'Cliente' })).toBeDisabled()
+    await userEvent.click(screen.getByRole('checkbox', { name: 'Fornitore' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
+    expect(submitted(onSubmit)).toMatchObject({ roles: ['customer', 'supplier'] })
+  })
+
+  it('names the server\'s refusal of a kind under the kind', async () => {
+    open({
+      defaultRoles: ['supplier'],
+      problem: {
+        type: 'x',
+        title: 'x',
+        status: 422,
+        code: 'validation_failed',
+        field: 'supplier_kind',
+        detail: 'valore non valido: x',
+        reason: 'un freelance e\' un professionista',
+      },
+    })
+    expect(screen.getByText('un freelance e\' un professionista')).toBeInTheDocument()
+    // Said once, under the control, and not a second time as a banner above the form.
+    expect(screen.queryAllByRole('alert')).toHaveLength(0)
+  })
+
+  describe('the duplicate catch under the VAT number', () => {
+    const ZANETTI = {
+      ...BASE_CUSTOMER,
+      id: 'z1',
+      legal_name: 'Zanetti Impianti S.r.l.',
+      vat_number: 'IT 01234567890',
+      roles: ['customer'],
+    }
+
+    function listing(...items: Organization[]) {
+      GET.mockResolvedValue({
+        data: { items, next_cursor: null },
+        response: new Response(null, { status: 200 }),
+      })
+    }
+
+    it('says who has the number and offers the role the form is for', async () => {
+      listing(ZANETTI)
+      open({ defaultRoles: ['supplier'] })
+      await userEvent.type(screen.getByLabelText('P.IVA'), 'it01234567890')
+
+      expect(await screen.findByText('Esiste già: Zanetti Impianti S.r.l. (cliente)')).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Aggiungi il ruolo Fornitore' })).toBeInTheDocument()
+      // The lookup is across every role, on what was typed.
+      expect(GET).toHaveBeenCalledWith(
+        '/api/organizations',
+        expect.objectContaining({
+          params: { query: expect.objectContaining({ role: 'any', search: 'it01234567890' }) },
+        }),
+      )
+      // A second record for the same company is not offered.
+      expect(screen.getByRole('button', { name: 'Salva' })).toBeDisabled()
+    })
+
+    it('adds the role to the existing organization and goes to it, saving nothing new', async () => {
+      listing(ZANETTI)
+      PATCH.mockResolvedValue({
+        data: { ...ZANETTI, roles: ['customer', 'supplier'] },
+        response: new Response(null, { status: 200 }),
+      })
+      const onOpenExisting = vi.fn()
+      const onOpenChange = vi.fn()
+      const onSubmit = open({ defaultRoles: ['supplier'], onOpenExisting, onOpenChange })
+      await userEvent.type(screen.getByLabelText('P.IVA'), 'IT01234567890')
+      await userEvent.click(await screen.findByRole('button', { name: 'Aggiungi il ruolo Fornitore' }))
+
+      await waitFor(() => expect(onOpenExisting).toHaveBeenCalledOnce())
+      expect(PATCH).toHaveBeenCalledWith('/api/organizations/{organization_id}', {
+        params: { path: { organization_id: 'z1' } },
+        body: { roles: ['customer', 'supplier'] },
+      })
+      expect(onOpenExisting.mock.calls[0]![0]).toMatchObject({ id: 'z1' })
+      expect(onOpenChange).toHaveBeenCalledWith(false)
+      expect(onSubmit).not.toHaveBeenCalled()
+    })
+
+    it('offers «Cliente» when the form is for a customer and the existing one is only a supplier', async () => {
+      listing({ ...ZANETTI, roles: ['supplier'] })
+      open({ defaultRoles: ['customer'] })
+      await userEvent.type(screen.getByLabelText('P.IVA'), 'IT01234567890')
+      expect(await screen.findByText('Esiste già: Zanetti Impianti S.r.l. (fornitore)')).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Aggiungi il ruolo Cliente' })).toBeInTheDocument()
+    })
+
+    it('offers to open the page when the existing organization already has the role', async () => {
+      listing({ ...ZANETTI, roles: ['customer', 'supplier'] })
+      const onOpenExisting = vi.fn()
+      open({ defaultRoles: ['supplier'], onOpenExisting })
+      await userEvent.type(screen.getByLabelText('P.IVA'), 'IT01234567890')
+      expect(
+        await screen.findByText('Esiste già: Zanetti Impianti S.r.l. (cliente e fornitore)'),
+      ).toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: /Aggiungi il ruolo/ })).toBeNull()
+      await userEvent.click(screen.getByRole('button', { name: 'Apri la scheda' }))
+      expect(onOpenExisting).toHaveBeenCalledOnce()
+    })
+
+    it('refuses to pick between two matches: no action, and nothing to save', async () => {
+      listing(ZANETTI, { ...ZANETTI, id: 'z2', legal_name: 'Zanetti Servizi S.r.l.' })
+      open({ defaultRoles: ['supplier'] })
+      await userEvent.type(screen.getByLabelText('P.IVA'), 'IT01234567890')
+      expect(await screen.findByText(/già su più anagrafiche/)).toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: /Aggiungi il ruolo/ })).toBeNull()
+      expect(screen.getByRole('button', { name: 'Salva' })).toBeDisabled()
+    })
+
+    it('compares the number without case or punctuation, and only inside the country', async () => {
+      listing({ ...ZANETTI, vat_number: 'DE 123.456.789', country: 'DE' })
+      open({ defaultRoles: ['supplier'] })
+      await userEvent.type(screen.getByLabelText('P.IVA'), 'de123456789')
+      // A German number is not an Italian company's: the country of the form is IT.
+      await waitFor(() => expect(GET).toHaveBeenCalled())
+      expect(screen.queryByText(/Esiste già/)).toBeNull()
+      expect(screen.getByRole('button', { name: 'Salva' })).toBeEnabled()
+    })
+
+    it('does not match a number that only starts like the typed one', async () => {
+      listing({ ...ZANETTI, vat_number: 'IT01234567890' })
+      open({ defaultRoles: ['supplier'] })
+      await userEvent.type(screen.getByLabelText('P.IVA'), 'IT0123456')
+      await waitFor(() => expect(GET).toHaveBeenCalled())
+      expect(screen.queryByText(/Esiste già/)).toBeNull()
+    })
+
+    it('leaves the organization being edited out of it, and asks nothing while the number is unchanged', async () => {
+      listing({ ...ZANETTI, id: 'c1' })
+      open({
+        title: 'Modifica anagrafica',
+        organizationId: 'c1',
+        initial: organizationToFormValues({ ...BASE_CUSTOMER, vat_number: 'IT 01234567890' }),
+      })
+      expect(GET).not.toHaveBeenCalledWith('/api/organizations', expect.anything())
+      await userEvent.type(screen.getByLabelText('P.IVA'), '1')
+      await userEvent.type(screen.getByLabelText('P.IVA'), '{Backspace}')
+      await waitFor(() => expect(screen.getByRole('button', { name: 'Salva' })).toBeEnabled())
+      expect(screen.queryByText(/Esiste già/)).toBeNull()
+    })
   })
 })

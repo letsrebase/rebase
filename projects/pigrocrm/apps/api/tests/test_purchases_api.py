@@ -165,6 +165,59 @@ def test_a_purchase_is_cancelled_over_http_and_leaves_the_registered_list(
     )
 
 
+def test_the_list_says_how_many_match_and_their_total_whatever_the_page(
+    logged_in: TestClient,
+) -> None:
+    category_id = _seed_category(logged_in)
+    for day, amount in (
+        ("2026-03-01", "100.00"),
+        ("2026-03-02", "50.50"),
+        ("2026-04-01", "-20.25"),
+    ):
+        created = logged_in.post(
+            "/api/purchases",
+            json={
+                "category_id": category_id,
+                "date": day,
+                "amount": amount,
+                "description": "x",
+            },
+        )
+        assert created.status_code == 201, created.text
+
+    everything = logged_in.get("/api/purchases", params={"limit": 1}).json()
+    assert len(everything["items"]) == 1
+    assert everything["total_count"] == 3
+    assert everything["total_amount"] == "130.25"
+
+    march = logged_in.get(
+        "/api/purchases", params={"from": "2026-03-01", "to": "2026-03-31"}
+    ).json()
+    assert march["total_count"] == 2 and march["total_amount"] == "150.50"
+
+    none = logged_in.get("/api/purchases", params={"from": "2027-01-01"}).json()
+    assert none["items"] == [] and none["total_count"] == 0 and none["total_amount"] == "0.00"
+
+
+def test_a_purchase_has_a_timeline_and_an_unknown_one_is_a_404(logged_in: TestClient) -> None:
+    category_id = _seed_category(logged_in)
+    created = logged_in.post(
+        "/api/purchases",
+        json={
+            "category_id": category_id,
+            "date": "2026-03-05",
+            "amount": "10.00",
+            "description": "x",
+        },
+    )
+    purchase_id = created.json()["id"]
+    timeline = logged_in.get(f"/api/purchases/{purchase_id}/timeline")
+    assert timeline.status_code == 200, timeline.text
+    assert [entry["kind"] for entry in timeline.json()] == ["created"]
+    missing = logged_in.get("/api/purchases/00000000-0000-4000-8000-000000000000/timeline")
+    assert missing.status_code == 404
+
+
 def test_no_cost_route_answers(logged_in: TestClient) -> None:
     assert logged_in.get("/api/costs").status_code == 404
     assert logged_in.post("/api/costs", json={}).status_code in (404, 405)
@@ -258,3 +311,36 @@ def test_a_collaborator_cannot_set_user_rates(logged_in: TestClient, admin_user)
         f"/api/users/{admin_user.id}/rates", json={"default_hourly_rate": "80.000000"}
     )
     assert response.status_code == 403
+
+
+def test_a_purchase_with_a_duplicate_photo_is_linked_to_the_original_and_its_file(
+    logged_in: TestClient,
+) -> None:
+    photo = b"\xff\xd8\xff\xe0" + b"\x01" * 32
+    category_id = _seed_category(logged_in)
+    ids = []
+    for name in ("uno.jpg", "due.jpg"):
+        response = logged_in.post(
+            "/api/inbox/upload?read=false", files=[("file", (name, photo, "image/jpeg"))]
+        )
+        assert response.status_code == 201, response.text
+        ids.append(response.json()["items"][0])
+    first, second = ids
+    assert second["state"] == "duplicate"
+
+    created = logged_in.post(
+        "/api/purchases",
+        json={
+            "category_id": category_id,
+            "date": "2026-03-05",
+            "amount": "12.50",
+            "description": "Bar Roma",
+            "inbox_item_id": second["id"],
+        },
+    )
+    assert created.status_code == 201, created.text
+    read = logged_in.get(f"/api/purchases/{created.json()['id']}")
+    assert read.json()["inbox_item_id"] == first["id"]
+    file = logged_in.get(f"/api/inbox/items/{read.json()['inbox_item_id']}/file")
+    assert file.status_code == 200 and file.content == photo
+    assert logged_in.get(f"/api/inbox/items/{second['id']}").json()["state"] == "duplicate"

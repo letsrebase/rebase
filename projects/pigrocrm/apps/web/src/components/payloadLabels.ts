@@ -172,6 +172,7 @@ export const PAYLOAD_KEY_LABELS: Record<string, string> = {
   proposed_fields: 'Campi proposti',
   province: 'Provincia',
   quantity: 'Quantità',
+  purchase_id: 'Acquisto',
   purchase_order_date: 'Ordine data',
   purchase_order_number: 'Ordine numero',
   purchase_order_project_code: 'Ordine cup',

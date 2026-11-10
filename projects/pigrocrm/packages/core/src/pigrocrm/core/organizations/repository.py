@@ -137,7 +137,8 @@ class OrganizationRepository:
         """Narrow a select of `Organization` to one role; `any` leaves it as it is."""
         return stmt if role == "any" else stmt.where(Organization.roles.contains([role]))
 
-    def list(self, query: OrganizationListQuery) -> list[Organization]:
+    def _filtered(self, query: OrganizationListQuery) -> Select[Any]:
+        """The rows a query selects before it is paged: what the page and its total both read."""
         stmt = select(Organization).where(Organization.deleted_at.is_(None))
 
         if query.search:
@@ -149,10 +150,17 @@ class OrganizationRepository:
             # states explicitly which character escape_like used, rather than relying
             # on ILIKE's default.
             like = f"%{escape_like(query.search.lower())}%"
+            # A VAT number is also found by its comparison form (upper case, letters and digits
+            # only): `NL123456789B01` finds a stored `NL 1234.56.789 B01` and the reverse, the
+            # way the unique index reads them.
+            compact = normalise_vat(query.search)
+            vat_matches = [Organization.vat_number.ilike(like, escape="\\")]
+            if len(compact) >= 5:
+                vat_matches.append(vat_key(Organization.vat_number).like(f"%{compact}%"))
             stmt = stmt.where(
                 or_(
                     Organization.legal_name.ilike(like, escape="\\"),
-                    Organization.vat_number.ilike(like, escape="\\"),
+                    *vat_matches,
                     Organization.id.in_(owners_matching(ContactPoint.customer_id, query.search)),
                     Organization.tax_code.ilike(like, escape="\\"),
                 )
@@ -162,9 +170,20 @@ class OrganizationRepository:
             stmt = stmt.where(Organization.status == query.status)
         if query.legal_entity_id:
             stmt = stmt.where(_of_legal_entity(query.legal_entity_id))
+        if query.supplier_kind:
+            stmt = stmt.where(Organization.supplier_kind == query.supplier_kind)
         if query.custom:
             # JSONB containment, served by the GIN index.
             stmt = stmt.where(Organization.custom_fields.contains(query.custom))
+        return stmt
+
+    def count(self, query: OrganizationListQuery) -> int:
+        """How many organizations the filters select in all, whatever page was asked for."""
+        rows = self._filtered(query).subquery()
+        return int(self.session.execute(select(func.count()).select_from(rows)).scalar_one())
+
+    def list(self, query: OrganizationListQuery) -> list[Organization]:
+        stmt = self._filtered(query)
 
         # Residuo R9: keyset pagination over a *whitelisted* column, ordered
         # `col <dir>, id <dir>` (`NULLS LAST` only where the column admits a null, which

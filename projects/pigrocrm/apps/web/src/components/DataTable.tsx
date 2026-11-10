@@ -83,6 +83,10 @@ interface DataTableProps<T extends RowData> {
   /** The query's own error, handed to `QueryErrorBanner` verbatim. Only read
    *  when `isError` is true. */
   error?: unknown
+  /** Draws «Riprova» on the error banner, asking the same query again. */
+  onRetry?: () => void
+  /** The sentence of the wait, naming what is read («Leggo le anagrafiche…»). */
+  loadingLabel?: string
   onRowClick?: (row: T) => void
   emptyMessage?: string
 }
@@ -119,6 +123,8 @@ export function DataTable<T extends RowData>({
   isLoading,
   isError,
   error,
+  onRetry,
+  loadingLabel,
   onRowClick,
   emptyMessage = 'Nessun risultato.',
 }: DataTableProps<T>) {
@@ -130,13 +136,13 @@ export function DataTable<T extends RowData>({
          lands. It is still a deliberately different *shape* -- the brand loader, no header
          -- because "something is happening" is not "here is your data". */
       <div data-slot="data-table" className="overflow-hidden border border-border bg-card px-4">
-        <LoadingState className="py-8" />
+        <LoadingState className="py-8" label={loadingLabel} />
       </div>
     )
   }
 
   if (isError && data.length === 0) {
-    return <QueryErrorBanner error={error} />
+    return <QueryErrorBanner error={error} onRetry={onRetry} />
   }
 
   // Enter/Space activate a clickable row from the keyboard, mirroring what

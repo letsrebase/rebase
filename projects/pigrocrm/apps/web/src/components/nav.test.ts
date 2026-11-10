@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { moduleAccess } from '@/lib/modules'
 import { spaceModules } from '@/lib/modules.testing'
 import type { ModuleKey } from '@/lib/modules'
-import { phoneMoreItems, phoneThirdPlace, visibleSections } from './nav'
+import { isNavItemActive, phoneMoreItems, phoneThirdPlace, visibleSections } from './nav'
 
 /** The labels the sidebar draws for a space whose modules in `off` are switched off. */
 function labels(off: readonly ModuleKey[]) {
@@ -23,6 +23,8 @@ describe('visibleSections (REB-953)', () => {
       'Persone',
       'Deal',
       'Fatture',
+      'Fornitori',
+      'Acquisti',
       'Ore',
       'Giornate',
       'Tasse',
@@ -39,6 +41,36 @@ describe('visibleSections (REB-953)', () => {
     expect(shown).not.toContain('Ore')
     expect(shown).toContain('Giornate')
     expect(shown).toContain('Clienti')
+  })
+
+  it('drops «Fornitori» and «Acquisti» with purchases off, and keeps «Clienti» and «Fatture»', () => {
+    const shown = labels(['purchases'])
+    expect(shown).not.toContain('Fornitori')
+    expect(shown).not.toContain('Acquisti')
+    expect(shown).toContain('Clienti')
+    expect(shown).toContain('Fatture')
+  })
+
+  it('sets «Fornitori» in «Amministrazione» before «Acquisti», and «Acquisti» after «Fatture»', () => {
+    const sections = visibleSections(moduleAccess(undefined))
+    expect(sections.find((section) => section.id === 'amministrazione')?.items.map((i) => i.label)).toEqual([
+      'Fatture',
+      'Fornitori',
+      'Acquisti',
+      'Ore',
+      'Giornate',
+      'Tasse',
+    ])
+    expect(sections.find((section) => section.id === 'vendite')?.items[0]?.label).toBe('Clienti')
+  })
+
+  it('opens the registry on the supplier view for «Fornitori» and on the default one for «Clienti»', () => {
+    const items = visibleSections(moduleAccess(undefined)).flatMap((section) => section.items)
+    expect(items.find((item) => item.label === 'Fornitori')).toMatchObject({
+      to: '/app/organizations',
+      search: { role: 'supplier' },
+    })
+    expect(items.find((item) => item.label === 'Clienti')?.search).toBeUndefined()
   })
 
   it('drops «Giornate» with contracts off and «Ore» with time off, nothing else', () => {
@@ -75,7 +107,7 @@ describe('visibleSections (REB-953)', () => {
     // loses two of its four, and keeps «Fatture» and «Tasse».
     const sections = visibleSections(moduleAccess(spaceModules(['deals', 'contracts'])))
     expect(sections.map((section) => section.id)).toEqual(['da-fare', 'vendite', 'amministrazione'])
-    expect(sections[2]?.items.map((item) => item.label)).toEqual(['Fatture', 'Tasse'])
+    expect(sections[2]?.items.map((item) => item.label)).toEqual(['Fatture', 'Fornitori', 'Acquisti', 'Tasse'])
   })
 })
 
@@ -107,6 +139,8 @@ describe('the phone bar (REB-959)', () => {
       'Persone',
       'Deal',
       'Fatture',
+      'Fornitori',
+      'Acquisti',
       'Ore',
       'Tasse',
     ])
@@ -118,7 +152,33 @@ describe('the phone bar (REB-959)', () => {
       'Clienti',
       'Persone',
       'Fatture',
+      'Fornitori',
+      'Acquisti',
       'Tasse',
     ])
+  })
+})
+
+describe('isNavItemActive: one registry page, two entries', () => {
+  const items = visibleSections(moduleAccess(undefined)).flatMap((section) => section.items)
+  const customers = items.find((item) => item.label === 'Clienti')!
+  const suppliers = items.find((item) => item.label === 'Fornitori')!
+
+  it('marks «Fornitori» on the supplier view and «Clienti» on every other view of the page', () => {
+    expect(isNavItemActive(suppliers, '/app/organizations', 'supplier')).toBe(true)
+    expect(isNavItemActive(customers, '/app/organizations', 'supplier')).toBe(false)
+    for (const role of [undefined, 'customer', 'any']) {
+      expect(isNavItemActive(customers, '/app/organizations', role)).toBe(true)
+      expect(isNavItemActive(suppliers, '/app/organizations', role)).toBe(false)
+    }
+  })
+
+  it('keeps «Clienti» on an organization\'s own page and never marks «Fornitori» there', () => {
+    expect(isNavItemActive(customers, '/app/organizations/abc', undefined)).toBe(true)
+    expect(isNavItemActive(suppliers, '/app/organizations/abc', 'supplier')).toBe(false)
+  })
+
+  it('marks nothing on another page', () => {
+    expect(isNavItemActive(customers, '/app/invoices', undefined)).toBe(false)
   })
 })

@@ -21,6 +21,7 @@ export function PageHeader({
   icon: Icon,
   title,
   description,
+  titleAddon,
   actions,
   aboveTabs,
   tabs,
@@ -30,6 +31,9 @@ export function PageHeader({
   icon: LucideIcon
   title: string
   description?: string
+  /** Something that belongs to the title and is not text (the roles of a record, as chips):
+   *  a wrapping row right under the `<h1>`, before the description. */
+  titleAddon?: ReactNode
   actions?: ReactNode
   aboveTabs?: ReactNode
   tabs?: ReactNode
@@ -59,6 +63,7 @@ export function PageHeader({
             {/* Truncated only where it shares the row with the actions; below `md` it has
                 a line to itself and wraps instead of losing its own name. */}
             <h1 className="text-2xl font-semibold tracking-tight md:truncate">{title}</h1>
+            {titleAddon && <div className="mt-2 flex flex-wrap items-center gap-1.5">{titleAddon}</div>}
             {description && <p className="mt-1 text-sm text-muted-foreground">{description}</p>}
           </div>
         </div>

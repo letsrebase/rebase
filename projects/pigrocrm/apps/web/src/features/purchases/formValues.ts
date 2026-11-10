@@ -6,7 +6,7 @@ import type { Purchase, PurchaseKind } from './queries'
 /**
  * The value layer behind `PurchaseForm`, split out of it for the reason
  * `features/time/formValues.ts` was: `react-refresh/only-export-components` is live on
- * `src/features/**`, so the dialog module exports its component and nothing else.
+ * `src/features/**`, so the form module exports its component and nothing else.
  *
  * Money stays a string from the input to the body: nothing here parses a decimal.
  */
@@ -57,9 +57,9 @@ const FIELD = (
 ): FieldDefinition => ({ key, label, type, required, options: [] })
 
 const F = {
-  merchant_name: FIELD('merchant_name', 'Fornitore', 'text'),
+  merchant_name: FIELD('merchant_name', 'Esercente', 'text'),
   number: FIELD('number', 'Numero', 'text'),
-  date: FIELD('date', 'Data', 'date', true),
+  date: FIELD('date', 'Data documento', 'date', true),
   received_on: FIELD('received_on', 'Ricevuta il', 'date'),
   iva_period: FIELD('iva_period', 'Periodo IVA (un giorno del periodo)', 'date'),
   description: FIELD('description', 'Descrizione', 'textarea', true),
@@ -87,35 +87,65 @@ export function isForeignCurrency(currency: unknown): boolean {
 }
 
 /**
- * The native fields the dialog draws for a kind, in the order it draws them.
+ * What the form shows of a document's optional parts. Every part defaults to shown, so a caller
+ * that knows nothing yet (the capabilities are still loading, the supplier is not read) hides
+ * nothing: a form that waits is a form nobody can fill in.
+ */
+export interface FieldVisibility {
+  /** The VAT recap and the VAT period. */
+  vatRecap?: boolean
+  /** The withholding block: bollo, ritenuta, cassa. */
+  withholding?: boolean
+  reverseCharge?: boolean
+  splitPayment?: boolean
+}
+
+/**
+ * The native fields the form draws for a kind, in the order it draws them.
  *
  * What a kind does not take is not drawn, and `toPurchaseRequestBody` does not send it
- * either: the same list is both. The foreign-currency block appears when the currency is
- * not the euro -- all four values travel together or none does.
+ * either: the same list is both, and so is what `shown` takes away. The foreign-currency block
+ * appears when the currency is not the euro -- all four values travel together or none does.
  */
-export function fieldsFor(kind: PurchaseKind, foreign: boolean): FieldDefinition[] {
+export function fieldsFor(
+  kind: PurchaseKind,
+  foreign: boolean,
+  shown: FieldVisibility = {},
+): FieldDefinition[] {
   const foreignBlock = foreign ? FOREIGN_KEYS.map((key) => F[key]) : []
   if (isDocumentKind(kind)) {
     return [
       F.number,
       F.date,
       F.received_on,
-      F.iva_period,
+      ...(shown.vatRecap === false ? [] : [F.iva_period]),
       F.description,
       F.amount,
       F.currency,
       ...foreignBlock,
-      F.stamp_duty,
-      F.withholding_rate,
-      F.withholding_base,
-      F.withholding_amount,
-      F.fund_rate,
-      F.fund_amount,
-      F.split_payment,
-      F.reverse_charge,
+      ...(shown.withholding === false
+        ? []
+        : [
+            F.stamp_duty,
+            F.withholding_rate,
+            F.withholding_base,
+            F.withholding_amount,
+            F.fund_rate,
+            F.fund_amount,
+          ]),
+      ...(shown.splitPayment === false ? [] : [F.split_payment]),
+      ...(shown.reverseCharge === false ? [] : [F.reverse_charge]),
     ]
   }
   return [F.merchant_name, F.number, F.date, F.description, F.amount, F.currency, ...foreignBlock]
+}
+
+/** The supplier kinds whose invoices can carry a withholding, a pension fund and a stamp
+ *  duty: a professional and an occasional worker. The API's `supplier_kind` is free text
+ *  (`null` for a company or a foreign supplier), so this is the one place that names the
+ *  two; no component compares a regime or a pack. */
+export function carriesWithholding(supplierKind: string | null | undefined): boolean {
+  return supplierKind === 'professional' || supplierKind === 'occasional'
 }
 
 /** Every native field of the form, whatever the kind: the clearing spelling of a column
@@ -161,6 +191,28 @@ export function defaultPurchaseFormValues(today: Date = new Date()): PurchaseFor
 }
 
 /**
+ * The starting state of «Nuovo acquisto». A supplier already chosen, or a file from «In arrivo»
+ * to register, is a document: it opens on an invoice with its first VAT row, since that is
+ * what a file from a supplier is; with neither it is the blank form, an expense.
+ */
+export function newPurchaseFormValues(
+  defaults: { supplier_id?: string; inbox_item_id?: string } = {},
+  today: Date = new Date(),
+): PurchaseFormValues {
+  const blank = defaultPurchaseFormValues(today)
+  if (defaults.supplier_id === undefined && defaults.inbox_item_id === undefined) return blank
+  return {
+    ...blank,
+    native: {
+      ...blank.native,
+      kind: 'invoice',
+      supplier_id: defaults.supplier_id ?? null,
+      vat_lines: [emptyVatLine()],
+    },
+  }
+}
+
+/**
  * The form's starting state from a purchase that already exists.
  *
  * Walks exactly `NATIVE_FIELD_KEYS` rather than spreading the row: a `PurchaseRead` also
@@ -195,6 +247,25 @@ export function cleanVatLines(lines: readonly VatLineDraft[]) {
     }))
 }
 
+/**
+ * On an edit, what the person did not change is not sent: a PATCH that echoes every column
+ * is one the server must read as «maybe a move», and a purchase whose period is closed
+ * refuses a write that touches a register column even when the value is the one it holds.
+ * The currency and its foreign block travel together or not at all, so one of them changing
+ * keeps the rest. `custom_fields` is left as `toRequestBody` built it.
+ */
+function dropUnchanged(body: Record<string, unknown>, initial: Record<string, unknown>) {
+  const changed = (key: string) => !(key in initial) || body[key] !== initial[key]
+  const currencyMoved = ['currency', ...FOREIGN_KEYS].some((key) => key in body && changed(key))
+  for (const key of Object.keys(body)) {
+    if (key === 'custom_fields') continue
+    if (currencyMoved && (key === 'currency' || (FOREIGN_KEYS as readonly string[]).includes(key))) {
+      continue
+    }
+    if (!changed(key)) delete body[key]
+  }
+}
+
 function draftsOf(value: unknown): VatLineDraft[] {
   return Array.isArray(value) ? (value as VatLineDraft[]) : []
 }
@@ -216,11 +287,19 @@ function draftsOf(value: unknown): VatLineDraft[] {
  */
 export function toPurchaseRequestBody(
   values: PurchaseFormValues,
-  options: { initial?: PurchaseFormValues; isRenderedCustomKey: (key: string) => boolean },
+  options: {
+    initial?: PurchaseFormValues
+    isRenderedCustomKey: (key: string) => boolean
+    /** What the form drew of a document's optional parts; what is not drawn is not sent. All
+     *  of it when left out. */
+    shown?: FieldVisibility
+  },
 ): Record<string, unknown> {
   const kind = (values.native.kind as PurchaseKind | undefined) ?? 'expense'
   const foreign = isForeignCurrency(values.native.currency)
-  const drawn = new Set(fieldsFor(kind, foreign).map((field) => field.key))
+  const drawn = new Set(
+    fieldsFor(kind, foreign, options.shown).map((field) => field.key),
+  )
   const document = isDocumentKind(kind)
 
   const sent = (key: string): boolean => {
@@ -248,7 +327,8 @@ export function toPurchaseRequestBody(
     { ...values, native },
     {
       fields: ALL_FIELDS,
-      ...options,
+      initial: options.initial,
+      isRenderedCustomKey: options.isRenderedCustomKey,
       skipNative: (key) => !sent(key) && !(initialNative && FOREIGN_KEYS.some((k) => k === key)),
       coerceNative: (key, value) =>
         key === 'currency' && typeof value === 'string' ? value.trim().toUpperCase() : value,
@@ -256,8 +336,9 @@ export function toPurchaseRequestBody(
   )
 
   if (options.initial === undefined) body.kind = kind
+  else dropUnchanged(body, options.initial.native)
 
-  if (document) {
+  if (document && options.shown?.vatRecap !== false) {
     const lines = cleanVatLines(draftsOf(values.native.vat_lines))
     const before = cleanVatLines(draftsOf(initialNative?.vat_lines))
     if (options.initial === undefined || JSON.stringify(lines) !== JSON.stringify(before)) {

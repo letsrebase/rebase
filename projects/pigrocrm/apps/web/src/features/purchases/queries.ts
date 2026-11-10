@@ -1,4 +1,10 @@
-import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query'
+import {
+  useInfiniteQuery,
+  useMutation,
+  useQuery,
+  useQueryClient,
+  type QueryClient,
+} from '@tanstack/react-query'
 import { useLegalEntityScope } from '@/lib/legalEntity'
 import { api, unwrap } from '@/lib/api'
 import type { components } from '@/lib/api-types'
@@ -10,6 +16,7 @@ import { queryKeys } from '@/lib/query'
 export type Purchase = components['schemas']['PurchaseRead']
 export type PurchaseKind = Purchase['kind']
 export type PurchaseStatus = Purchase['status']
+export type PurchasePage = components['schemas']['PurchasePage']
 export type CostCategory = components['schemas']['CostCategoryRead']
 
 type PurchaseCreateBody = components['schemas']['PurchaseCreate']
@@ -40,6 +47,62 @@ export function usePurchases(params: PurchasesListParams = {}, options: { enable
   })
 }
 
+/** The page size of «Acquisti»: the API accepts up to 200, a screen reads 50. */
+export const PURCHASES_PAGE_SIZE = 50
+
+/**
+ * The list of «Acquisti», a page at a time with the cursor, and the figures of the whole
+ * selection the server answers with (`total_count`, `total_amount`): never summed from the rows
+ * on screen, which are only the pages read so far.
+ *
+ * Its key carries `pages` so it can never share a cache entry with `usePurchases`, whose data
+ * is a single page and not a list of them; both sit under the `['purchases']` prefix, which a
+ * write invalidates.
+ */
+export function usePurchaseList(params: PurchasesListParams = {}) {
+  const scoped = useLegalEntityScope(params)
+  const query = useInfiniteQuery({
+    queryKey: queryKeys.purchases({ pages: scoped }),
+    queryFn: ({ pageParam }) =>
+      unwrap(
+        api.GET('/api/purchases', {
+          params: { query: { ...scoped, limit: PURCHASES_PAGE_SIZE, cursor: pageParam } },
+        }),
+      ),
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (lastPage) => lastPage.next_cursor ?? undefined,
+  })
+  const pages = query.data?.pages
+  const last = pages?.at(-1)
+  return {
+    items: pages?.flatMap((page) => page.items) ?? [],
+    /** Undefined until the first page lands, so a screen never draws a figure it has not got. */
+    totalCount: last?.total_count,
+    totalAmount: last?.total_amount,
+    isLoading: query.isLoading,
+    isError: query.isError,
+    error: query.error,
+    hasMore: query.hasNextPage,
+    isFetchingMore: query.isFetchingNextPage,
+    loadMore: () => void query.fetchNextPage(),
+    retry: () => void query.refetch(),
+  }
+}
+
+/** One purchase, for its own page and for the form that edits it. Empty id: no request. */
+export function usePurchase(purchaseId: string) {
+  return useQuery({
+    enabled: purchaseId !== '',
+    queryKey: queryKeys.purchase(purchaseId),
+    queryFn: () =>
+      unwrap(
+        api.GET('/api/purchases/{purchase_id}', {
+          params: { path: { purchase_id: purchaseId } },
+        }),
+      ),
+  })
+}
+
 export function useCostCategories(includeArchived = false) {
   return useQuery({
     queryKey: queryKeys.costCategories(includeArchived),
@@ -57,6 +120,8 @@ export function useCostCategories(includeArchived = false) {
  *  summary alone. */
 function invalidatePurchases(queryClient: QueryClient, dealId?: string | null) {
   void queryClient.invalidateQueries({ queryKey: queryKeys.purchases() })
+  // The page of a purchase reads it by its own key, which a list's prefix does not reach.
+  void queryClient.invalidateQueries({ queryKey: ['purchase'] })
   if (dealId) {
     void queryClient.invalidateQueries({ queryKey: queryKeys.dealTimeSummary(dealId) })
   }

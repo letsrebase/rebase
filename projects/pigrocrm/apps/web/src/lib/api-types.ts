@@ -2076,6 +2076,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/purchases/capabilities": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Capabilities
+         * @description What the buyer's fiscal pack lets a purchase carry, for the form to hide the rest.
+         *     Declared before `/{purchase_id}`, which would take `capabilities` for an id.
+         */
+        get: operations["capabilities_api_purchases_capabilities_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/purchases/{purchase_id}": {
         parameters: {
             query?: never;
@@ -2123,6 +2144,23 @@ export interface paths {
         put?: never;
         /** Restore */
         post: operations["restore_api_purchases__purchase_id__restore_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/purchases/{purchase_id}/timeline": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Timeline */
+        get: operations["timeline_api_purchases__purchase_id__timeline_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -5330,7 +5368,7 @@ export interface paths {
          *     the body is not read before the role is checked. Every new item is then read once
          *     (`InboxClassifier`): a FatturaPA is routed, a PDF or a photo becomes a proposal when the
          *     space's model is on, and at most five files go to the model in one request:
-         *     `POST /api/inbox/classify` reads the rest.
+         *     `POST /api/inbox/classify` reads the rest. With `read=false` none is read.
          */
         post: operations["upload_api_inbox_upload_post"];
         delete?: never;
@@ -12452,6 +12490,11 @@ export interface components {
             items: components["schemas"]["OrganizationRead"][];
             /** Next Cursor */
             next_cursor: string | null;
+            /**
+             * Total
+             * @description How many organizations the filters match in all, cursor and limit left out
+             */
+            total: number;
         };
         /** OrganizationRead */
         OrganizationRead: {
@@ -13692,6 +13735,24 @@ export interface components {
             /** Expected Quantity */
             expected_quantity?: string | null;
         };
+        /**
+         * PurchaseCapabilitiesRead
+         * @description What the buyer's fiscal pack lets a purchase carry, so a form hides what the server would
+         *     refuse and nothing it would accept (`purchases/capabilities.py`). `legal_entity_id` is the
+         *     buyer these flags speak for, `None` when none could be resolved (every flag is then true).
+         */
+        PurchaseCapabilitiesRead: {
+            /** Legal Entity Id */
+            legal_entity_id: string | null;
+            /** Vat Recap */
+            vat_recap: boolean;
+            /** Withholding */
+            withholding: boolean;
+            /** Reverse Charge */
+            reverse_charge: boolean;
+            /** Split Payment */
+            split_payment: boolean;
+        };
         /** PurchaseCreate */
         PurchaseCreate: {
             /**
@@ -13783,6 +13844,10 @@ export interface components {
             items: components["schemas"]["PurchaseRead"][];
             /** Next Cursor */
             next_cursor: string | null;
+            /** Total Count */
+            total_count: number;
+            /** Total Amount */
+            total_amount: string;
         };
         /** PurchaseRead */
         PurchaseRead: {
@@ -18278,6 +18343,8 @@ export interface operations {
                 status?: string | null;
                 /** @description One role (customer, supplier, freelancer), or `any` for the registry across roles. Customers only when omitted. */
                 role?: "customer" | "supplier" | "freelancer" | "any";
+                /** @description Only suppliers of this fiscal kind (company, professional, flat_rate, occasional, foreign) */
+                supplier_kind?: string | null;
                 /** @description Only this legal entity's rows; omitted, all of them */
                 legal_entity_id?: string | null;
             };
@@ -33649,6 +33716,126 @@ export interface operations {
             };
         };
     };
+    capabilities_api_purchases_capabilities_get: {
+        parameters: {
+            query?: {
+                /** @description The buyer; omitted, the space's only active legal entity, the one a supplier's document that names none is registered under */
+                legal_entity_id?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PurchaseCapabilitiesRead"];
+                };
+            };
+            /** @description Permission denied: the actor does not have the required role. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The requested resource does not exist or was removed. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The request conflicts with the current state of the resource. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_api_purchases__purchase_id__get: {
         parameters: {
             query?: never;
@@ -34145,6 +34332,127 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PurchaseRead"];
+                };
+            };
+            /** @description Permission denied: the actor does not have the required role. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The requested resource does not exist or was removed. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The request conflicts with the current state of the resource. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    timeline_api_purchases__purchase_id__timeline_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                purchase_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ActivityRead"][];
                 };
             };
             /** @description Permission denied: the actor does not have the required role. */
@@ -56454,7 +56762,10 @@ export interface operations {
     };
     upload_api_inbox_upload_post: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description `false` stores the files and reads none: no classification, no model call, and the items are answered as the upload made them (new, duplicate or discarded). The caller files them itself, for example a receipt photo that is only the justification of the purchase it registers. Default `true`. */
+                read?: boolean;
+            };
             header?: never;
             path?: never;
             cookie?: never;

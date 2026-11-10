@@ -101,10 +101,11 @@ export type EntityType =
  * widened *alongside* the endpoint, which is the rule this comment carried from the
  * day the alias was written.
  *
- * `time_entry`/`purchase` are excluded the same way now: `TIMELINE_FETCHERS` is a
+ * `time_entry` is excluded the same way: `TIMELINE_FETCHERS` is a
  * `Record<TimelineEntityType, ...>`, so a bare `= EntityType` alias would force an
- * entry for both the moment `EntityType` grew them, even though neither has a
- * timeline router yet. Widen this `Exclude` alongside the endpoint, not before it.
+ * entry for it the moment `EntityType` grew it, even though it has no timeline router
+ * yet. Widen this `Exclude` alongside the endpoint, not before it. `purchase` is back in
+ * since REB-1023, which added `GET /api/purchases/{id}/timeline` for the purchase's page.
  *
  * `task` joined them on 2026-09-09: slice 10 writes `activities` rows for every
  * closure of a commitment, so the timeline *data* exists, and
@@ -115,7 +116,7 @@ export type EntityType =
  * REB-741, which added `GET /api/contracts/{id}/timeline` for the contract page.
  */
 export type TimelineEntityType =
-  | Exclude<EntityType, 'time_entry' | 'purchase' | 'task'>
+  | Exclude<EntityType, 'time_entry' | 'task'>
   // The two settings that have a history but no row of their own to open (REB-828): the
   // space's Slack connection and its reminder defaults. Read from `GET /api/slack/timeline`
   // and `GET /api/reminders/defaults/timeline`, which take no id.

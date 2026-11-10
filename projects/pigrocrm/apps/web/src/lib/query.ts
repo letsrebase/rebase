@@ -151,6 +151,7 @@ export const queryKeys = {
   // so a single-id key would serve one user's rate for another's.
   dealRates: (dealId: string, userId: string) => ['deal-rates', dealId, userId] as const,
   purchases: (params?: unknown) => ['purchases', params ?? {}] as const,
+  purchase: (id: string) => ['purchase', id] as const,
   costCategories: (includeArchived: boolean) => ['cost-categories', includeArchived] as const,
   periodLocks: (year?: number) => ['period-locks', year ?? null] as const,
   dealPnl: (dealId: string) => ['deal-pnl', dealId] as const,

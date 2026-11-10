@@ -1,3 +1,4 @@
+import { Button } from '@rebase/ui/button'
 import { toProblem } from '@/lib/api'
 
 /**
@@ -20,13 +21,28 @@ import { toProblem } from '@/lib/api'
  * never a client-side rewording -- the same discipline `Timeline.tsx`'s
  * identical-looking error line already follows.
  */
-export function QueryErrorBanner({ error }: { error: unknown }) {
+export function QueryErrorBanner({ error, onRetry }: { error: unknown; onRetry?: () => void }) {
+  if (onRetry === undefined) {
+    return (
+      <p
+        role="alert"
+        className="border border-destructive/50 bg-destructive/10 px-3 py-2 text-sm text-destructive"
+      >
+        {toProblem(error).detail}
+      </p>
+    )
+  }
+  // «Riprova» when the caller can ask again (the registry and the purchases, whose briefs draw
+  // it): the sentence is the server's and the button asks for the same thing once more.
   return (
-    <p
+    <div
       role="alert"
-      className="border border-destructive/50 bg-destructive/10 px-3 py-2 text-sm text-destructive"
+      className="flex flex-wrap items-center justify-between gap-3 border border-destructive/50 bg-destructive/10 px-3 py-2 text-sm text-destructive"
     >
-      {toProblem(error).detail}
-    </p>
+      <span>{toProblem(error).detail}</span>
+      <Button type="button" variant="outline" size="sm" onClick={onRetry}>
+        Riprova
+      </Button>
+    </div>
   )
 }

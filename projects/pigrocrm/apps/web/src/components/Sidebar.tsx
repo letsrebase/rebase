@@ -14,9 +14,12 @@ import {
   Agents,
   HOME,
   INBOX_PATH,
+  REGISTRY_PATH,
   SETTINGS,
   SETTINGS_PATHS,
+  isNavItemActive,
   isUnder,
+  navKey,
   settingsSubItems,
   visibleSections,
 } from './nav'
@@ -51,6 +54,8 @@ export function Sidebar({
 }) {
   const { user } = useAuth()
   const { location } = useRouterState()
+  // The registry's view, which is what tells «Clienti» from «Fornitori» (both open one page).
+  const registryRole = (location.search as { role?: string } | undefined)?.role
   // The sidebar's unread count (REB-734): the reminders still open for this person. The
   // Avvisi page reads the same query, so a snooze there moves this number at once.
   const unread = useUnreadCount()
@@ -187,8 +192,16 @@ export function Sidebar({
               )}
               {section.items.map((item) => (
                 <NavLeaf
-                  key={item.to}
-                  {...item}
+                  key={navKey(item)}
+                  to={item.to}
+                  search={item.search}
+                  label={item.label}
+                  icon={item.icon}
+                  active={
+                    item.to === REGISTRY_PATH
+                      ? isNavItemActive(item, location.pathname, registryRole)
+                      : undefined
+                  }
                   rail={rail}
                   count={
                     item.to === '/app/reminders' ? unread : item.to === INBOX_PATH ? waiting : 0
