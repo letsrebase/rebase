@@ -80,7 +80,7 @@ test("a custom field's whole life: appears everywhere with no restart, and a cle
 
   // The detail row, holding both values just set.
   await page.getByText(name).click()
-  await expect(detailValueFor(page, 'Codice SDI')).toHaveText('ABC1234')
+  await expect(detailValueFor(page, 'Codice destinatario')).toHaveText('ABC1234')
   await expect(detailValueFor(page, 'Referente')).toHaveText('Giulia Bianchi')
 
   // Clear both...
@@ -95,7 +95,7 @@ test("a custom field's whole life: appears everywhere with no restart, and a cle
   // ship either spelling wrong (or the two swapped) and the old value is
   // still sitting in the database after this reload.
   await page.reload()
-  await expect(detailValueFor(page, 'Codice SDI')).toHaveText('—')
+  await expect(detailValueFor(page, 'Codice destinatario')).toHaveText('—')
   await expect(detailValueFor(page, 'Referente')).toHaveText('—')
 })
 
