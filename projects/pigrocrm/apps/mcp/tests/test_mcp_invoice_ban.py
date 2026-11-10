@@ -219,6 +219,10 @@ FULL_ACCESS_BY_THE_RECORD: dict[str, tuple[str, ...]] = {
     "settle_outgoing_due_item": ("settle_due_item",),
     "reverse_outgoing_settlement": ("reverse_settlement",),
     "read_fiscal_due_items": ("list_due_items", "get_due_item"),
+    # REB-970: `update_organization` with a null `legal_entity_id` shares the organization across
+    # the legal entities, which shows a company to people who could not see it: an
+    # administrator's token with `full_access`, nothing less, as in the invoice import.
+    "share_organization": ("update_organization",),
 }
 
 # The tools above that exist only on an installation where Google is configured as well:
