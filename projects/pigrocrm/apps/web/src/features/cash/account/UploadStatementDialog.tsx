@@ -26,7 +26,8 @@ const ACCEPTED_FORMATS =
   '.xml,.xlsx,application/xml,text/xml,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
 
 /** The server's ceiling for one statement (`STATEMENT_SIZE_MAX`); a larger file never leaves the browser. */
-const MAX_STATEMENT_BYTES = 10 * 1024 * 1024
+const MAX_STATEMENT_MIB = 10
+const MAX_STATEMENT_BYTES = MAX_STATEMENT_MIB * 1024 * 1024
 
 interface Props {
   open: boolean
@@ -99,7 +100,7 @@ export function UploadStatementDialog({ open, onOpenChange, accountId }: Props) 
         <DialogHeader>
           <DialogTitle>Carica estratto conto</DialogTitle>
           <DialogDescription>
-            Un file CAMT.053 (XML) o l’export «Saldo e movimenti» di Banco BPM (XLSX), fino a 10 MiB.
+            Un file CAMT.053 (XML) o l’export «Saldo e movimenti» di Banco BPM (XLSX), fino a {MAX_STATEMENT_MIB} MiB.
           </DialogDescription>
         </DialogHeader>
 
@@ -149,7 +150,7 @@ export function UploadStatementDialog({ open, onOpenChange, accountId }: Props) 
                 }}
                 aria-invalid={tooBig}
               />
-              {tooBig && <p className="text-sm text-destructive">Il file supera i 10 MiB.</p>}
+              {tooBig && <p className="text-sm text-destructive">Il file supera i {MAX_STATEMENT_MIB} MiB.</p>}
             </div>
 
             {asksPeriod && (

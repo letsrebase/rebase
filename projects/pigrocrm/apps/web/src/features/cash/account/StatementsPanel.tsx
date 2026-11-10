@@ -16,6 +16,8 @@ import { QueryErrorBanner } from '@/components/QueryErrorBanner'
 import { StatusPill } from '@/components/StatusPill'
 import { toProblem, type ProblemDetail } from '@/lib/api'
 import {
+  COVERAGE_STATE_LABELS,
+  COVERAGE_STATE_TONES,
   REVERT_SENTENCE,
   STATEMENT_STATE_LABELS,
   STATEMENT_STATE_TONES,
@@ -221,7 +223,7 @@ export function StatementsPanel({
                     </TableCell>
                     <TableCell />
                     <TableCell>
-                      <StatusPill tone="danger">Manca</StatusPill>
+                      <StatusPill tone={COVERAGE_STATE_TONES.missing}>{COVERAGE_STATE_LABELS.missing}</StatusPill>
                     </TableCell>
                     <TableCell>{upload}</TableCell>
                   </TableRow>
@@ -250,7 +252,7 @@ export function StatementsPanel({
               <li key={row.key} className="flex items-center justify-between gap-3 border bg-card p-4">
                 <div className="space-y-1">
                   <MissingTitle month={row.month} />
-                  <StatusPill tone="danger">Manca</StatusPill>
+                  <StatusPill tone={COVERAGE_STATE_TONES.missing}>{COVERAGE_STATE_LABELS.missing}</StatusPill>
                 </div>
                 {upload}
               </li>

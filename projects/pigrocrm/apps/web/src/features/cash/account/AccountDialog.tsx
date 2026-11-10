@@ -4,6 +4,7 @@ import { Button } from '@rebase/ui/button'
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -20,7 +21,7 @@ import {
 import { Textarea } from '@rebase/ui/textarea'
 import { fieldErrorFrom, toProblem, type ProblemDetail } from '@/lib/api'
 import { useLegalEntity } from '@/lib/legalEntity'
-import { ARRIVAL_LABELS, CADENCE_LABELS, groupIban } from './labels'
+import { ARRIVAL_LABELS, CADENCE_LABELS, decimalString, groupIban } from './labels'
 import {
   useArchiveBankAccount,
   useCreateBankAccount,
@@ -33,7 +34,8 @@ import {
 type Arrival = BankAccount['arrival']
 type Cadence = BankAccount['cadence']
 
-const ARRIVALS = Object.keys(ARRIVAL_LABELS) as Arrival[]
+/** Banking APIs are not built: «api» is listed only for an account that already has it. */
+const ARRIVALS = (Object.keys(ARRIVAL_LABELS) as Arrival[]).filter((arrival) => arrival !== 'api')
 const CADENCES = Object.keys(CADENCE_LABELS) as Cadence[]
 
 interface FormValues {
@@ -82,12 +84,6 @@ function parseSenders(text: string): string[] {
   return text.split(/[\s,;]+/).filter((part) => part !== '')
 }
 
-/** «1.234,50» or «1234.50» as the decimal string the API stores; the digits are the person's. */
-function decimalString(text: string): string {
-  const trimmed = text.trim().replace(/\s/g, '')
-  return trimmed.includes(',') ? trimmed.replace(/\./g, '').replace(',', '.') : trimmed
-}
-
 const FIELDS = [
   'name',
   'bank',
@@ -106,8 +102,6 @@ interface Props {
   onOpenChange: (open: boolean) => void
   /** The account being edited; absent, a new one is made. */
   account?: BankAccount
-  /** Called with the account a create made, so a page can open it. */
-  onCreated?: (account: BankAccount) => void
 }
 
 /**
@@ -115,7 +109,7 @@ interface Props {
  * bottom. On an existing account it also holds «Archivia il conto», the one way an account
  * leaves the lists; its movements stay.
  */
-export function AccountDialog({ open, onOpenChange, account, onCreated }: Props) {
+export function AccountDialog({ open, onOpenChange, account }: Props) {
   const isCreate = account === undefined
   const { legal_entities, several, selected } = useLegalEntity()
   const [values, setValues] = useState<FormValues>(EMPTY)
@@ -144,7 +138,12 @@ export function AccountDialog({ open, onOpenChange, account, onCreated }: Props)
   function submit() {
     setProblem(null)
     setLocal(null)
-    const balance = decimalString(values.opening_balance)
+    const parsed = decimalString(values.opening_balance)
+    if (parsed === null) {
+      setLocal('Il saldo iniziale non è chiaro: scrivilo come 12.400,00.')
+      return
+    }
+    const balance = parsed
     if ((balance === '') !== (values.opening_balance_date === '')) {
       setLocal('Il saldo iniziale e la sua data vanno indicati insieme.')
       return
@@ -162,10 +161,9 @@ export function AccountDialog({ open, onOpenChange, account, onCreated }: Props)
       opening_balance: balance === '' ? null : balance,
       opening_balance_date: values.opening_balance_date === '' ? null : values.opening_balance_date,
     }
-    const done = (message: string) => (saved: BankAccount) => {
+    const done = (message: string) => () => {
       onOpenChange(false)
       toast.success(message)
-      if (isCreate) onCreated?.(saved)
     }
     const failed = (error: unknown) => setProblem(toProblem(error))
     if (isCreate) {
@@ -215,6 +213,9 @@ export function AccountDialog({ open, onOpenChange, account, onCreated }: Props)
       <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>{isCreate ? 'Aggiungi un conto' : 'Modifica il conto'}</DialogTitle>
+          <DialogDescription>
+            Il saldo iniziale è quello che il conto aveva alla data indicata: da lì partono i movimenti.
+          </DialogDescription>
         </DialogHeader>
 
         <div className="grid gap-4 sm:grid-cols-2">
@@ -298,7 +299,7 @@ export function AccountDialog({ open, onOpenChange, account, onCreated }: Props)
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {ARRIVALS.map((arrival) => (
+                {(account?.arrival === 'api' ? [...ARRIVALS, 'api' as const] : ARRIVALS).map((arrival) => (
                   <SelectItem key={arrival} value={arrival}>
                     {ARRIVAL_LABELS[arrival]}
                   </SelectItem>

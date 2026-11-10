@@ -9,6 +9,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { api } from '@/lib/api'
 import type { components } from '@/lib/api-types'
 import { AccountDialog } from './AccountDialog'
+import { decimalString } from './labels'
 
 vi.mock('@/lib/api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/api')>()
@@ -36,6 +37,7 @@ const ACCOUNT: Account = {
   stale_days: null,
   is_stale: false,
   unmatched_count: 0,
+  below_zero: false,
   created_at: '2026-01-01T00:00:00Z',
 }
 
@@ -150,5 +152,35 @@ describe('AccountDialog', () => {
       ),
     )
     await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false))
+  })
+
+  it('reads Italian amounts, and refuses what it cannot tell', () => {
+    expect(decimalString('12.400')).toBe('12400')
+    expect(decimalString('12.400,50')).toBe('12400.50')
+    expect(decimalString('1.234.567')).toBe('1234567')
+    expect(decimalString('12.4')).toBe('12.4')
+    expect(decimalString('1234.50')).toBe('1234.50')
+    expect(decimalString('-250,5')).toBe('-250.5')
+    expect(decimalString('')).toBe('')
+    expect(decimalString('12.4567')).toBeNull()
+    expect(decimalString('abc')).toBeNull()
+  })
+
+  it('refuses an ambiguous opening balance with a message', async () => {
+    const user = userEvent.setup()
+    renderDialog()
+    await user.type(screen.getByLabelText('Saldo iniziale'), '12.4567')
+    await user.type(screen.getByLabelText('Alla data del'), '2026-01-01')
+    await user.click(screen.getByRole('button', { name: 'Aggiungi il conto' }))
+    expect(await screen.findByText('Il saldo iniziale non è chiaro: scrivilo come 12.400,00.')).toBeTruthy()
+    expect(api.POST).not.toHaveBeenCalled()
+  })
+
+  it('does not offer the banking API as a way for statements to arrive', async () => {
+    const user = userEvent.setup()
+    renderDialog()
+    await user.click(screen.getByRole('combobox', { name: 'Come arrivano gli estratti conto' }))
+    expect(await screen.findByRole('option', { name: 'Dalla casella email degli estratti conto' })).toBeTruthy()
+    expect(screen.queryByRole('option', { name: 'Collegamento con la banca' })).toBeNull()
   })
 })

@@ -50,6 +50,7 @@ const ACCOUNT: Account = {
   stale_days: 41,
   is_stale: true,
   unmatched_count: 3,
+  below_zero: false,
   created_at: '2026-01-01T00:00:00Z',
 }
 
@@ -72,6 +73,7 @@ const IMPORTED: Statement = {
   check: { ok: false, difference: '50.00', kind: 'balance' },
   created_at: '2026-10-02T08:00:00Z',
 }
+const SECOND: Statement = { ...IMPORTED, id: 'st-3', period_from: '2026-10-01', period_to: '2026-10-31', check: null }
 const REVERTED: Statement = { ...IMPORTED, id: 'st-2', period_from: '2026-08-01', period_to: '2026-08-31', state: 'reverted', check: null }
 
 const MOVEMENTS: Movement[] = [
@@ -215,6 +217,19 @@ describe('AccountPage', () => {
     expect(missing[0]!.className).toContain('border-dashed')
   })
 
+  it('says the balance below zero in words and in danger', async () => {
+    world.accounts = [{ ...ACCOUNT, balance: '-120.00', below_zero: true }]
+    renderPage()
+    const sign = await screen.findByText('sotto zero')
+    expect(sign.parentElement?.className).toContain('text-destructive')
+  })
+
+  it('writes «da 1 giorno» in the singular', async () => {
+    world.accounts = [{ ...ACCOUNT, stale_days: 1 }]
+    renderPage()
+    expect(await screen.findByText('al 30/09/2026, da 1 giorno')).toBeTruthy()
+  })
+
   it('lists the unmatched movements first, verbatim, signed, with the old one saying how long it waits', async () => {
     renderPage()
     const table = await screen.findByRole('table')
@@ -347,8 +362,9 @@ describe('AccountPage', () => {
     })
 
     it('a statement row filters the movements to that statement', async () => {
+      world.statements = [IMPORTED, SECOND]
       const user = await openStatements()
-      await user.click(await screen.findByRole('button', { name: 'Vedi i movimenti' }))
+      await user.click((await screen.findAllByRole('button', { name: 'Vedi i movimenti' }))[1]!)
       await waitFor(() => {
         expect(api.GET).toHaveBeenCalledWith(
           '/api/bank-accounts/{account_id}/movements',
@@ -358,6 +374,28 @@ describe('AccountPage', () => {
         )
       })
       expect(await screen.findByText('PRELIEVO')).toBeTruthy()
+    })
+
+    it('lets a filter lapse when its statement is no longer listed', async () => {
+      world.statements = [IMPORTED, SECOND]
+      vi.mocked(api.POST).mockImplementation((async () => {
+        world.statements = [{ ...IMPORTED, state: 'reverted' }, SECOND]
+        return { data: { ...IMPORTED, state: 'reverted' }, response: new Response() }
+      }) as never)
+      const user = await openStatements()
+      await user.click((await screen.findAllByRole('button', { name: 'Vedi i movimenti' }))[1]!)
+      await screen.findByText('PRELIEVO')
+      await user.click(screen.getByRole('tab', { name: 'Estratti conto' }))
+      await user.click((await screen.findAllByRole('button', { name: 'Annulla l’importazione' }))[1]!)
+      const dialog = await screen.findByRole('dialog')
+      await user.click(within(dialog).getByRole('button', { name: 'Annulla l’importazione' }))
+      await waitFor(() => expect(api.POST).toHaveBeenCalled())
+      await user.click(await screen.findByRole('tab', { name: 'Movimenti' }))
+      await waitFor(() => {
+        const last = vi.mocked(api.GET).mock.calls.filter((call) => call[0] === '/api/bank-accounts/{account_id}/movements').at(-1)!
+        const query = (last[1] as { params: { query: Record<string, unknown> } }).params.query
+        expect(query).not.toHaveProperty('statement_id')
+      })
     })
 
     it('reverts an import after a second look', async () => {

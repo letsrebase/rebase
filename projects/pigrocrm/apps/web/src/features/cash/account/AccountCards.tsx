@@ -33,8 +33,14 @@ export function BalanceCard({ account }: { account: BankAccount }) {
       {account.balance === null ? (
         <p className="mt-2 text-sm">Nessun saldo: indica il saldo iniziale o carica un estratto conto.</p>
       ) : (
-        <p className="mt-1 text-3xl font-semibold tracking-tight tabular-nums">
+        <p
+          className={cn(
+            'mt-1 text-3xl font-semibold tracking-tight tabular-nums',
+            account.below_zero && 'text-destructive',
+          )}
+        >
           {accountMoney(account.balance, account.currency)}
+          {account.below_zero && <span className="ml-2 text-sm font-normal">sotto zero</span>}
         </p>
       )}
       {date !== null && (
@@ -128,16 +134,22 @@ export function CoverageStrip({ coverage, wide }: { coverage: AccountCoverage; w
           <li
             key={month.month}
             data-state={month.state}
-            title={`${monthTitle(month.period_from)}: ${CELL_STATE_WORDS[month.state]}`}
             className={cn(
               'flex min-w-0 flex-col items-center justify-center border text-xs',
               wide ? 'h-14 gap-0.5' : 'h-6',
               CELL_STATE_STYLES[month.state],
             )}
           >
-            <span className={wide ? undefined : 'sr-only'}>{monthAbbreviation(month.period_from)}</span>
-            {wide && month.state === 'missing' && <span>manca</span>}
-            {!wide && (
+            {wide ? (
+              <>
+                <span>{monthAbbreviation(month.period_from)}</span>
+                {month.state === 'missing' ? (
+                  <span>{CELL_STATE_WORDS.missing}</span>
+                ) : (
+                  <span className="sr-only">{CELL_STATE_WORDS[month.state]}</span>
+                )}
+              </>
+            ) : (
               <span className="sr-only">
                 {monthTitle(month.period_from)}: {CELL_STATE_WORDS[month.state]}
               </span>

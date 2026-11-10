@@ -1,7 +1,7 @@
 import type { StatusTone } from '@/components/StatusPill'
 import { formatIsoDateItalian, formatIsoMonthYear } from '@/lib/dates'
 import { money } from '@/features/dashboard/format'
-import type { BankAccount, Movement, Statement } from './queries'
+import type { BankAccount, CoverageMonth, Movement, Statement } from './queries'
 
 /** The format a reader reports, as a person names it; a format nobody taught this build about
  *  is shown as the reader returned it (frame § A5: the readers' formats are «to verify»). */
@@ -26,6 +26,19 @@ export const STATEMENT_STATE_TONES: Record<Statement['state'], StatusTone> = {
   reverted: 'muted',
 }
 
+/** The pill of a month with no statement in the statements table, beside the other states. */
+export const COVERAGE_STATE_LABELS: Record<CoverageMonth['state'], string> = {
+  covered: 'In regola',
+  missing: 'Manca',
+  pending: 'Non ancora dovuto',
+}
+
+export const COVERAGE_STATE_TONES: Record<CoverageMonth['state'], StatusTone> = {
+  covered: 'ink',
+  missing: 'danger',
+  pending: 'muted',
+}
+
 export const MOVEMENT_STATE_LABELS: Record<Movement['state'], string> = {
   matched: 'Abbinato',
   unmatched: 'Da abbinare',
@@ -44,7 +57,7 @@ export const MOVEMENT_STATE_TONES: Record<Movement['state'], StatusTone> = {
  *  by the server's `unmatched_days` and flag, never by a constant of this build. */
 export function movementPill(movement: Movement): { tone: StatusTone; label: string } {
   if (movement.state === 'unmatched' && movement.is_overdue_unmatched && movement.unmatched_days !== null) {
-    return { tone: 'danger', label: `Da abbinare da ${movement.unmatched_days} giorni` }
+    return { tone: 'danger', label: `Da abbinare da ${daysCount(movement.unmatched_days)}` }
   }
   return { tone: MOVEMENT_STATE_TONES[movement.state], label: MOVEMENT_STATE_LABELS[movement.state] }
 }
@@ -92,7 +105,7 @@ export function accountMoney(amount: string, currency: string): string {
 export function balanceDateLine(account: Pick<BankAccount, 'balance_as_of' | 'is_stale' | 'stale_days'>): string | null {
   if (account.balance_as_of === null) return null
   const date = `al ${formatIsoDateItalian(account.balance_as_of)}`
-  return account.is_stale && account.stale_days !== null ? `${date}, da ${account.stale_days} giorni` : date
+  return account.is_stale && account.stale_days !== null ? `${date}, da ${daysCount(account.stale_days)}` : date
 }
 
 /** «01/10/2026 – 31/10/2026». */
@@ -116,6 +129,11 @@ export function checkSentence(check: Statement['check']): string | null {
   return `Il saldo dichiarato non torna${difference}`
 }
 
+/** «1 giorno», «41 giorni». */
+export function daysCount(count: number): string {
+  return count === 1 ? '1 giorno' : `${count} giorni`
+}
+
 /** «1 movimento», «41 movimenti». */
 export function movementsCount(count: number): string {
   return count === 1 ? '1 movimento' : `${count} movimenti`
@@ -129,3 +147,20 @@ export function importSentence(added: number, duplicates: number): string {
 }
 
 export const REVERT_SENTENCE = 'Rimuove i suoi movimenti e gli abbinamenti automatici'
+
+/**
+ * Italian input as the decimal string the API stores, or `null` when it is ambiguous. A comma is
+ * the decimal mark and dots are thousands («12.400,50»); without a comma, dots in groups of three
+ * are thousands («12.400» is twelve thousand four hundred) and a dot before one or two digits is
+ * a decimal point («12.4», «1234.50»). Anything else («12.4567») is refused rather than guessed.
+ */
+export function decimalString(text: string): string | null {
+  const trimmed = text.trim().replace(/\s/g, '')
+  if (trimmed === '') return ''
+  const plain = trimmed.includes(',')
+    ? trimmed.replace(/\./g, '').replace(',', '.')
+    : /^-?\d{1,3}(\.\d{3})+$/.test(trimmed)
+      ? trimmed.replace(/\./g, '')
+      : trimmed
+  return /^-?\d+(\.\d{1,2})?$/.test(plain) ? plain : null
+}

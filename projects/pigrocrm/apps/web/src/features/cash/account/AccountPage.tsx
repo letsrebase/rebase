@@ -90,6 +90,12 @@ function AccountBody({ accountId }: { accountId: string }) {
   const canUpload = !archived
   const segment: Segment = view === 'statements' ? 'statements' : filter
   const readable = statements.items.filter((statement) => statement.state !== 'reverted')
+  // A filter on a statement that is no longer listed (reverted) or that has no sibling to be
+  // told from (the select is not drawn for one) would be invisible and stuck: it lapses.
+  const activeStatement =
+    statementId !== null && readable.length > 1 && readable.some((statement) => statement.id === statementId)
+      ? statementId
+      : null
 
   function showStatement(id: string) {
     setStatementId(id)
@@ -111,7 +117,7 @@ function AccountBody({ accountId }: { accountId: string }) {
       account={account}
       filter={filter}
       onFilterChange={setFilter}
-      statementId={statementId}
+      statementId={activeStatement}
       onStatementChange={setStatementId}
       statements={readable}
       statementCount={statements.totalCount}
