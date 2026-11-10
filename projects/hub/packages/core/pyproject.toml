@@ -25,7 +25,7 @@ dependencies = [
   # The model seam (REB-831, `llm.py`): Pydantic AI, each provider called directly with
   # its own SDK (never a gateway), for the card writer and the team-proposal engine.
   # Pinned exactly; the provider SDKs come in through its extras.
-  "pydantic-ai-slim[anthropic,openai,google]==2.62.0",
+  "pydantic-ai-slim[anthropic,openai,google]==2.64.0",
   # AES-256-GCM for the model providers' keys at rest (`secrets.py`, REB-829): the same
   # pin as pigrocrm-core, whose `gmail/crypto.py` this was written after.
   "cryptography==50.0.1",
