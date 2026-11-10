@@ -6938,6 +6938,11 @@ export interface components {
             stale_days: number | null;
             /** Is Stale */
             is_stale: boolean;
+            /**
+             * Below Zero
+             * @description The balance is below zero, compared by the server
+             */
+            below_zero: boolean;
             /** Unmatched Count */
             unmatched_count: number;
             /**
@@ -7201,6 +7206,11 @@ export interface components {
             stale_days: number | null;
             /** Is Stale */
             is_stale: boolean;
+            /**
+             * Below Zero
+             * @description `balance` is below zero (the server compares)
+             */
+            below_zero: boolean;
         };
         /**
          * CashAlert
@@ -7406,6 +7416,11 @@ export interface components {
             balance_today: string | null;
             /** Balance As Of */
             balance_as_of: string | null;
+            /**
+             * Balance Below Zero
+             * @description `balance_today` is below zero (the server compares); false with no balance
+             */
+            balance_below_zero: boolean;
             receivable: components["schemas"]["OwedFigure"];
             payable: components["schemas"]["OwedFigure"] | null;
             next_7_days: components["schemas"]["Next7"];
@@ -13112,8 +13127,18 @@ export interface components {
         Next7: {
             /** In Total */
             in_total: string;
+            /**
+             * In Forecast
+             * @description The forecast part already inside `in_total`
+             */
+            in_forecast: string;
             /** Out Total */
             out_total: string | null;
+            /**
+             * Out Forecast
+             * @description The forecast part already inside `out_total`; null for a solo space
+             */
+            out_forecast: string | null;
         };
         /**
          * NoteCreate
@@ -17411,6 +17436,11 @@ export interface components {
             excluded_currencies: string[];
             /** Accounts Without Balance */
             accounts_without_balance: number;
+            /**
+             * Below Zero
+             * @description `amount` is below zero (the server compares)
+             */
+            below_zero: boolean;
         };
         /**
          * UnbilledBacklog
