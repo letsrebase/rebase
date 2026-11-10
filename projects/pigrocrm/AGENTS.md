@@ -162,11 +162,15 @@ sections. A core read that spans modules (search, the calendar, the customer car
 
 **A purchase is anything the space pays for, and `cost_amount` is the only number a reader sums (REB-993).** `core/purchases/` replaced the cost: the table `purchases` is the old `costs` table renamed with its rows (an old cost is kind `expense`, its free-text supplier `merchant_name`, `cost_amount = amount`), plus `purchase_vat_lines` for the VAT recap of an `invoice` or `credit_note`. `PurchaseService` is the one writer: it checks the document (supplier role, a recap that adds up to the total, a credit note negative and linked to an invoice of the same supplier, withholding refused to a flat-rate buyer, which is not a withholding agent, the foreign currency's rate) and **freezes what the purchase costs** from the buyer's pack (`purchases/cost.py`, the one function: ordinary buyer = total less deductible VAT, flat-rate buyer = total plus the integrated VAT on a reverse charge, shared or `non-it` = total) with the pack and regime. The profit and loss, the deal's profit and loss, the cash picture and the late-entry count read `cost_amount` of registered, live rows (`status = 'registered'`), by the document `date`; cancelled and archived rows count nowhere. The monthly `PeriodLock` governs `date` as it governed a cost's. The activity feed and the custom-field definitions say `purchase`, the module switch is `module_purchases`, and `entity_visible`'s branch and the policy follow the rename (`0086_purchases.py`; the test template applies its `rewrite()` to every earlier revision's statements, as it does for `0077`). A fiscal rule the code uses is in the frame's A5 register as verified with its source; one that is not stays out of the code.
 
-**«Anagrafiche» and «Acquisti» are pages of the registry and the purchases, not new data (REB-1023).** The registry is one
-page, `/app/organizations`, with the view in `?role=` (`customer` by default, `supplier`, `any`; `features/organizations/search.ts`):
-the sidebar has two doors to it («Clienti» in «Vendite», «Fornitori» in «Amministrazione»), so a `NavItem` (`components/nav.ts`)
-may carry `search` and `modules` and `isNavItemActive` tells the two apart; the supplier view is the `purchases` module's by the
-entry, not by the path. «Acquisti» is `/app/purchases` (the list; `new`, `edit/$purchaseId` and `$purchaseId` are siblings, the
+**«Clienti», «Fornitori» and «Acquisti» are pages of the registry and the purchases, not new data (REB-1023, REB-1053).** The
+registry has a page per role, `/app/customers` and `/app/suppliers` (REB-1053 reversed the single «Anagrafiche» page of REB-1023:
+`DECISIONS.md`, 2026-11-10), each its own title, strong button and list with no tab between them; one component,
+`features/organizations/OrganizationsPage.tsx`, renders both over `GET /api/organizations?role=`, and an organization with both roles
+is on both. An organization's own page stays `/app/organizations/<id>`; `/app/organizations` and `/app/clienti` are redirect stubs
+(`?role=supplier` goes to «Fornitori», anything else to «Clienti»; `features/organizations/search.ts`). `/app/suppliers` is the
+`purchases` module's by `ROUTE_MODULES`, like every other page of a module, and a `NavItem` (`components/nav.ts`) reads its modules
+from its path alone; `registry` marks the two lists so an organization's own page lights the one it is read as
+(`registryPageOf`). The engagements page is «Collaboratori» in the sidebar and as its title, after the module. «Acquisti» is `/app/purchases` (the list; `new`, `edit/$purchaseId` and `$purchaseId` are siblings, the
 purchase's page is not a layout), its figures come from `total_count` and `total_amount` of `GET /api/purchases` (what the filters
 select, summed by the server, never by the browser), and one component, `PurchaseFormPage`, is «Nuovo acquisto», the edit page and the
 page that registers a file with the file beside the form (`?inbox_item_id=`). The payment column, the «Da pagare» and «Scaduti»

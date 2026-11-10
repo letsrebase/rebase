@@ -218,7 +218,7 @@ describe('CommandPalette', () => {
     // The term travels in the URL, or the list the user lands on is not the list the
     // palette was describing.
     expect(navigate).toHaveBeenCalledWith({
-      to: '/app/organizations',
+      to: '/app/customers',
       search: { search: 'rossi' },
     })
   })

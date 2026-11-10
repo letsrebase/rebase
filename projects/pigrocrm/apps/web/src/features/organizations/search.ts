@@ -1,29 +1,43 @@
 /**
- * The registry's views: «Clienti», «Fornitori» and «Tutte», the `role` of
- * `GET /api/organizations` (the approved brief of 2026-11-10). One page serves all three;
- * the view is a search parameter, so the sidebar's two entries, the tabs and a bookmark all
- * say the same thing.
+ * The two registry pages (REB-1053): «Clienti» is `/app/customers` and «Fornitori» is
+ * `/app/suppliers`, each with its own list, the `role` of `GET /api/organizations`. An
+ * organization with both roles is on both. A read that wants every organization (the pickers,
+ * the duplicate check) asks the API for `role: 'any'` itself and is no page.
  */
-export type RegistryRole = 'customer' | 'supplier' | 'any'
+export type RegistryPage = 'customer' | 'supplier'
 
-export const REGISTRY_ROLES: readonly RegistryRole[] = ['customer', 'supplier', 'any']
+/** The path each registry page lives at. */
+export const REGISTRY_PAGE_PATHS = {
+  customer: '/app/customers',
+  supplier: '/app/suppliers',
+} as const satisfies Record<RegistryPage, string>
 
-/** The view a page is on when the URL names none: the customers, as the page always was. */
-export const DEFAULT_REGISTRY_ROLE: RegistryRole = 'customer'
-
-export function isRegistryRole(value: unknown): value is RegistryRole {
-  return typeof value === 'string' && (REGISTRY_ROLES as readonly string[]).includes(value)
-}
-
-/** The route's `validateSearch`: a term and a view, each dropped rather than carried when it
- *  is empty or not one of ours, so the URL never claims a filter that is not applied. */
-export function parseOrganizationsSearch(search: Record<string, unknown>): {
-  search?: string
-  role?: RegistryRole
-} {
+/** The route's `validateSearch` of a registry page: a term, dropped rather than carried when it
+ *  is empty, so the URL never claims a filter that is not applied. */
+export function parseRegistrySearch(search: Record<string, unknown>): { search?: string } {
   return {
     search:
       typeof search.search === 'string' && search.search.length > 0 ? search.search : undefined,
-    role: isRegistryRole(search.role) ? search.role : undefined,
   }
+}
+
+/**
+ * `/app/organizations` was one page with a view in `?role=` (REB-1023, reversed by REB-1053):
+ * a bookmark or a link already sent still carries it. `supplier` is «Fornitori»; every other
+ * value, `any` of the retired «Tutte» tab included, is «Clienti», the page the list always was.
+ */
+export function legacyRegistryPage(search: Record<string, unknown>): RegistryPage {
+  return search.role === 'supplier' ? 'supplier' : 'customer'
+}
+
+/**
+ * The list an organization is read as: «Fornitori» for one that is a supplier and not a customer,
+ * and only while `purchases` is on (the page is that module's); «Clienti» for every other. This
+ * names the sidebar entry an organization's own page lights (REB-1038, REB-1053), not a list it is
+ * on: `GET /api/organizations?role=customer` returns only the rows that carry that role.
+ */
+export function registryPageOf(roles: readonly string[], purchasesOn: boolean): RegistryPage {
+  return purchasesOn && roles.includes('supplier') && !roles.includes('customer')
+    ? 'supplier'
+    : 'customer'
 }

@@ -99,7 +99,7 @@ export const queryKeys = {
   inboxUnread: ['inbox', 'unread'] as const,
   inboxCopies: ['inbox', 'copies'] as const,
   inboxOriginals: ['inbox', 'originals'] as const,
-  // «Incarichi» (REB-1035): `engagements` is the prefix every write to an engagement or one of
+  // «Collaboratori» (REB-1035): `engagements` is the prefix every write to an engagement or one of
   // its months invalidates; under it the lists by tab and filters, the counts the entry draws,
   // one engagement with its report, its payments and its availability.
   engagements: ['engagements'] as const,

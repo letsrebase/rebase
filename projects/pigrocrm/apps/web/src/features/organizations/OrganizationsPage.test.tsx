@@ -1,8 +1,9 @@
 /**
- * «Anagrafiche», the registry page (the approved brief of 2026-11-10): the title is the same on
- * every view and the view is a tab (`?role=`), the one strong button, the columns and the
- * empty, loading and error states of each view, the phone's cards, the module-off sentence and
- * what a read-only member does not get.
+ * «Clienti» and «Fornitori», a page each over the one registry (REB-1053, which reversed the
+ * single «Anagrafiche» page of REB-996): each its own title, sentence and strong button and no tab
+ * between them, the columns and the empty, loading and error states of each, the phone's cards and
+ * what a read-only member does not get. The module-off sentence of «Fornitori» is the layout's
+ * (`ModuleGate.test.tsx`), not this page's.
  *
  * `api.GET` is spied on directly, mirroring `organizations/$organizationId.test.tsx`.
  */
@@ -15,7 +16,7 @@ import type { ModuleKey } from '@/lib/modules'
 import { seedModules } from '@/lib/modules.testing'
 import { OrganizationsPage } from './OrganizationsPage'
 import type { Organization } from './queries'
-import type { RegistryRole } from './search'
+import type { RegistryPage } from './search'
 
 const nav = vi.hoisted(() => ({ navigate: vi.fn() }))
 vi.mock('@tanstack/react-router', async (importOriginal) => {
@@ -109,7 +110,7 @@ type Answers = {
   gmail?: unknown
   /** What `/api/organizations` answers per `role`; a function to hold or fail it. */
   organizations?: (role: string, search: string | undefined) => unknown
-  /** `total` per role for the tab counts; the number of rows the answer holds when left out. */
+  /** `total` per role; the number of rows the answer holds when left out. */
   totals?: Partial<Record<string, number>>
 }
 
@@ -125,9 +126,9 @@ function answering({ gmail = NO_MAILBOX, organizations, totals }: Answers = {}) 
       const answer = organizations
         ? organizations(role, query.search)
         : {
-            items: role === 'supplier' ? SUPPLIERS : role === 'any' ? [...CUSTOMERS, ...SUPPLIERS] : CUSTOMERS,
+            items: role === 'supplier' ? SUPPLIERS : CUSTOMERS,
             next_cursor: null,
-            total: totals?.[role] ?? (role === 'supplier' ? 2 : role === 'any' ? 4 : 2),
+            total: totals?.[role] ?? 2,
           }
       return answer instanceof Promise ? answer : respond(answer)
     }
@@ -157,10 +158,10 @@ beforeEach(() => {
   answering()
 })
 
-function renderPage(role: RegistryRole = 'customer', off: readonly ModuleKey[] = [], initialSearch = '') {
+function renderPage(role: RegistryPage = 'customer', off: readonly ModuleKey[] = [], initialSearch = '') {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   seedModules(client, off)
-  render(
+  return render(
     <QueryClientProvider client={client}>
       <OrganizationsPage initialSearch={initialSearch} role={role} />
     </QueryClientProvider>,
@@ -172,7 +173,7 @@ function organizationRequests() {
   return (mockGet.mock.calls as unknown as unknown[][]).filter(([path]) => path === '/api/organizations')
 }
 const limitOf = ([, init]: unknown[]) => (init as { params: { query: Query } }).params.query.limit
-/** The reads of the rows, and apart from them the one-row reads that count a role for its tab. */
+/** The reads of the rows, and apart from them the one-row read that counts the role for «Carica altri». */
 function listRequests() {
   return organizationRequests().filter((call) => limitOf(call) !== 1)
 }
@@ -181,91 +182,42 @@ function countRequests() {
 }
 
 describe('the page', () => {
-  it.each(['customer', 'supplier', 'any'] as const)(
-    'is «Anagrafiche» with its one sentence on the %s view, the view being a tab and not a second title',
-    async (role) => {
-      renderPage(role)
-      expect(await screen.findByRole('heading', { level: 1, name: 'Anagrafiche' })).toBeInTheDocument()
-      expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1)
-      expect(
-        screen.getByText('Le aziende con cui lavori: clienti, fornitori o entrambi.'),
-      ).toBeInTheDocument()
-    },
-  )
-
-  it('draws the three views as tabs, the active one following `role`', async () => {
-    renderPage('supplier')
-    const tabs = within(await screen.findByRole('tablist'))
-    expect(tabs.getAllByRole('tab').map((tab) => tab.textContent?.replace(/,?\s*\d+$/, '').trim())).toEqual([
-      'Tutte',
-      'Clienti',
-      'Fornitori',
-    ])
-    expect(tabs.getByRole('tab', { name: /^Fornitori/ })).toHaveAttribute('aria-selected', 'true')
-    expect(tabs.getByRole('tab', { name: /^Clienti/ })).toHaveAttribute('aria-selected', 'false')
+  it.each([
+    ['customer', 'Clienti', 'Le aziende per cui lavori. Chi è anche fornitore compare anche in Fornitori.'],
+    ['supplier', 'Fornitori', 'Le aziende da cui compri. Chi è anche cliente compare anche in Clienti.'],
+  ] as const)('on %s is «%s» with its own sentence, one title and no «Anagrafiche»', async (role, title, sentence) => {
+    renderPage(role)
+    expect(await screen.findByRole('heading', { level: 1, name: title })).toBeInTheDocument()
+    expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1)
+    expect(screen.getByText(sentence)).toBeInTheDocument()
+    expect(screen.queryByText('Anagrafiche')).toBeNull()
   })
 
-  it('draws the count of each role beside its tab, from one one-row request per role', async () => {
-    answering({ totals: { any: 212, customer: 180, supplier: 32 } })
-    renderPage('customer')
-    expect(await screen.findByRole('tab', { name: /^Tutte,?\s*212$/ })).toBeInTheDocument()
-    expect(screen.getByRole('tab', { name: /^Clienti,?\s*180$/ })).toBeInTheDocument()
-    expect(screen.getByRole('tab', { name: /^Fornitori,?\s*32$/ })).toBeInTheDocument()
-    expect(countRequests().map(([, init]) => (init as { params: { query: Query } }).params.query.role).sort()).toEqual([
-      'any',
-      'customer',
+  it.each(['customer', 'supplier'] as const)('has no tab bar between the two pages on %s', async (role) => {
+    answering({ totals: { customer: 180, supplier: 32 } })
+    renderPage(role)
+    await screen.findByRole('heading', { level: 1 })
+    expect(screen.queryByRole('tablist')).toBeNull()
+    expect(screen.queryByRole('tab')).toBeNull()
+  })
+
+  it('reads one row to say how many there are in all, for its own role only', async () => {
+    renderPage('supplier')
+    await screen.findByText('Cloudstore Inc.')
+    expect(countRequests().map(([, init]) => (init as { params: { query: Query } }).params.query.role)).toEqual([
       'supplier',
     ])
   })
 
-  it('draws no count that never arrived, and never a 0 in its place', async () => {
-    answering({
-      organizations: (role) =>
-        role === 'supplier'
-          ? Promise.resolve({ error: { code: 'x', detail: 'no', status: 500, title: 'x', type: 'x' }, response: new Response(null, { status: 500 }) })
-          : { items: CUSTOMERS, next_cursor: null, total: 2 },
-    })
-    renderPage('customer')
-    expect(await screen.findByRole('tab', { name: /^Clienti,?\s*2$/ })).toBeInTheDocument()
-    expect(screen.getByRole('tab', { name: 'Fornitori' })).toBeInTheDocument()
-  })
-
-  it('does not count suppliers with the purchases module off', async () => {
-    renderPage('customer', ['purchases'])
-    await screen.findByRole('tab', { name: /^Clienti,?\s*2$/ })
-    expect(organizationRequests().some(([, init]) => (init as { params: { query: Query } }).params.query.role === 'supplier')).toBe(false)
-  })
-
-  it('changes the view through the URL, keeping the rest of it, «Clienti» being the page with no role', async () => {
-    const user = userEvent.setup()
-    renderPage('supplier')
-    const searchOf = () =>
-      (nav.navigate.mock.lastCall![0] as { search: (previous: Record<string, unknown>) => unknown }).search({
-        search: 'zanetti',
-      })
-    await user.click(await screen.findByRole('tab', { name: /^Tutte/ }))
-    expect(nav.navigate).toHaveBeenLastCalledWith(expect.objectContaining({ to: '/app/organizations' }))
-    expect(searchOf()).toEqual({ search: 'zanetti', role: 'any' })
-    await user.click(screen.getByRole('tab', { name: /^Clienti/ }))
-    expect(searchOf()).toEqual({ search: 'zanetti', role: undefined })
-  })
-
-  it('goes to «Fornitori» with its role named', async () => {
-    const user = userEvent.setup()
-    renderPage('customer')
-    await user.click(await screen.findByRole('tab', { name: /^Fornitori/ }))
-    const { search } = nav.navigate.mock.lastCall![0] as { search: (previous: object) => unknown }
-    expect(search({})).toEqual({ role: 'supplier' })
-  })
-
-  it('reads the count apart from the name, so a screen reader hears «Clienti, 12»', async () => {
-    answering({ totals: { customer: 12 } })
-    renderPage('customer')
-    await screen.findByText('12')
-    const tab = screen.getByRole('tab', { name: /^Clienti/ })
-    // The separator is for a screen reader only; the eye has the margin.
-    expect(tab.querySelector('.sr-only')).toHaveTextContent(',')
-    expect(tab.textContent).toBe('Clienti, 12')
+  it('lists an organization with both roles on both pages, each page asking only for its role', async () => {
+    const both = organization({ id: 'b1', legal_name: 'Zanetti Impianti S.r.l.', roles: ['customer', 'supplier'] })
+    answering({ organizations: () => ({ items: [both], next_cursor: null, total: 1 }) })
+    for (const role of ['customer', 'supplier'] as const) {
+      const { unmount } = renderPage(role)
+      expect(await screen.findByText('Zanetti Impianti S.r.l.')).toBeInTheDocument()
+      expect(listRequests().at(-1)![1]).toMatchObject({ params: { query: { role } } })
+      unmount()
+    }
   })
 
   it('asks the server for the role of the view, each view keeping its own list', async () => {
@@ -281,8 +233,8 @@ describe('the page', () => {
     expect(within(filters).getByRole('combobox', { name: 'Tipo fiscale' })).toBeInTheDocument()
   })
 
-  it('has no «Tipo fiscale» outside the supplier view', async () => {
-    renderPage('any')
+  it('has no «Tipo fiscale» on «Clienti»', async () => {
+    renderPage('customer')
     const filters = await screen.findByRole('search')
     expect(within(filters).queryByRole('combobox')).toBeNull()
   })
@@ -309,11 +261,11 @@ describe('the page', () => {
 
   it('sends the typed term with the role once it settles', async () => {
     const user = userEvent.setup()
-    renderPage('any')
+    renderPage('customer')
     await user.type(await screen.findByPlaceholderText(/cerca per ragione sociale/i), 'zanetti')
     await waitFor(() =>
       expect(listRequests().at(-1)![1]).toMatchObject({
-        params: { query: { role: 'any', search: 'zanetti' } },
+        params: { query: { role: 'customer', search: 'zanetti' } },
       }),
     )
   })
@@ -323,7 +275,6 @@ describe('the strong button follows the view', () => {
   it.each([
     ['customer', 'Nuovo cliente'],
     ['supplier', 'Nuovo fornitore'],
-    ['any', 'Nuova anagrafica'],
   ] as const)('on %s it reads «%s» and is the only one', async (role, label) => {
     renderPage(role)
     expect(await screen.findByRole('button', { name: label })).toBeInTheDocument()
@@ -384,18 +335,6 @@ describe('the columns of each view', () => {
     expect(screen.getByText('60 gg')).toBeInTheDocument()
   })
 
-  it('Tutte carries the roles as outlined chips beside the name', async () => {
-    renderPage('any')
-    await screen.findByText('Zanetti Impianti S.r.l.')
-    const headers = screen.getAllByRole('columnheader').map((header) => header.textContent)
-    expect(headers).toEqual(['Ragione sociale', 'P.IVA', 'Comune', 'Email'])
-    const row = screen.getByText('Zanetti Impianti S.r.l.').closest('tr')!
-    const chips = [...row.querySelectorAll('[data-slot="badge"]')]
-    expect(chips.map((chip) => chip.textContent)).toEqual(['Cliente', 'Fornitore'])
-    for (const chip of chips) expect(chip).toHaveAttribute('data-variant', 'outline')
-    expect(row.querySelector('[data-tone]')).toBeNull()
-  })
-
   it('truncates a 60-character name in the cell and keeps the whole of it as the title', async () => {
     renderPage('customer')
     const name = await screen.findByText(LONG_NAME)
@@ -419,7 +358,7 @@ describe('the phone', () => {
 
   it('draws one column of cards, not the table, and a card opens the organization', async () => {
     const user = userEvent.setup()
-    renderPage('any')
+    renderPage('supplier')
     const card = await screen.findByRole('button', { name: /Zanetti Impianti S\.r\.l\./ })
     expect(screen.queryByRole('table')).toBeNull()
     // Name, the roles, the fiscal kind and terms of a supplier.
@@ -452,7 +391,6 @@ describe('the states', () => {
   it.each([
     ['customer', 'Nessun cliente. Creane uno per iniziare.', 'Nuovo cliente'],
     ['supplier', 'Nessun fornitore. Compaiono quando registri una fattura passiva o ne crei uno.', 'Nuovo fornitore'],
-    ['any', 'Nessuna anagrafica. Creane una per iniziare.', 'Nuova anagrafica'],
   ] as const)('is empty on %s with its sentence and the one action', async (role, sentence, action) => {
     answering({ organizations: () => ({ items: [], next_cursor: null }) })
     renderPage(role)
@@ -550,29 +488,29 @@ describe('the states', () => {
 })
 
 describe('with the purchases module off', () => {
-  it('draws no «Fornitori» tab', async () => {
+  it('does not send the reader to a «Fornitori» page that is gone', async () => {
     renderPage('customer', ['purchases'])
-    await screen.findByText('Rossi Costruzioni')
-    expect(screen.getAllByRole('tab').map((tab) => tab.textContent?.replace(/,?\s*\d+$/, '').trim())).toEqual(['Tutte', 'Clienti'])
+    await screen.findByRole('heading', { level: 1, name: 'Clienti' })
+    expect(screen.getByText('Le aziende per cui lavori.')).toBeInTheDocument()
+    expect(screen.queryByText(/compare anche in Fornitori/)).toBeNull()
   })
 
-  it('answers a stale link to the supplier view with the sentence, and reads no list', async () => {
-    renderPage('supplier', ['purchases'])
-    expect(
-      await screen.findByText('Il modulo Acquisti è spento: un amministratore può accenderlo in Impostazioni → Moduli.'),
-    ).toBeInTheDocument()
-    expect(screen.getByRole('heading', { level: 1, name: 'Anagrafiche' })).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Nuovo fornitore' })).toBeNull()
-    expect(listRequests()).toHaveLength(0)
-  })
-
-  it('draws no supplier role in the form of a new organization', async () => {
+  it('does not count suppliers on «Clienti», and draws no supplier role in the form of a new customer', async () => {
     const user = userEvent.setup()
-    renderPage('any', ['purchases'])
-    await user.click(await screen.findByRole('button', { name: 'Nuova anagrafica' }))
+    renderPage('customer', ['purchases'])
+    await user.click(await screen.findByRole('button', { name: 'Nuovo cliente' }))
     const dialog = await screen.findByRole('dialog')
     expect(within(dialog).queryByRole('checkbox', { name: 'Fornitore' })).toBeNull()
     expect(within(dialog).queryByRole('heading', { name: 'Come fornitore' })).toBeNull()
+    expect(organizationRequests().some(([, init]) => (init as { params: { query: Query } }).params.query.role === 'supplier')).toBe(false)
+  })
+
+  it('shows no supplier line on a customer card, though the organization is also a supplier', async () => {
+    viewport(390)
+    answering({ organizations: () => ({ items: [SUPPLIERS[1]], next_cursor: null, total: 1 }) })
+    renderPage('customer', ['purchases'])
+    const card = await screen.findByRole('button', { name: /Zanetti Impianti S\.r\.l\./ })
+    expect(within(card).queryByText('Società · 60 gg')).toBeNull()
   })
 })
 

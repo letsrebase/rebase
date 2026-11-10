@@ -1,7 +1,7 @@
 import { STATE_LABELS, TABS, type EngagementBucket, type EngagementState } from './labels'
 
 /**
- * The search parameters of «Incarichi» (`/app/engagements`): the tab and the filters travel in the
+ * The search parameters of «Collaboratori» (`/app/engagements`): the tab and the filters travel in the
  * URL, so a bookmark or a link from another page (the registry, a count on the sidebar) lands on
  * the same view. A value that is empty or not one of ours is dropped, so the URL never claims a
  * filter that is not applied; the tab is a view, not a record, and falls back to «Da fare».

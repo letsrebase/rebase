@@ -74,11 +74,11 @@ beforeEach(() => {
   viewport(1280)
 })
 
-describe('«Incarichi» on a desk', () => {
+describe('«Collaboratori» on a desk', () => {
   it('draws the header with its sentence, one strong button, the rows and the counts on the tabs', async () => {
     answering([page([engagement()])])
     renderWithQuery(<EngagementsPage />)
-    expect(await screen.findByRole('heading', { level: 1, name: 'Incarichi' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { level: 1, name: 'Collaboratori' })).toBeInTheDocument()
     expect(
       screen.getByText(
         'Le lettere di incarico dei freelance: dalla bozza alla firma, i giorni e i pagamenti.',
@@ -208,7 +208,7 @@ describe('«Incarichi» on a desk', () => {
   })
 })
 
-describe('«Incarichi» for anyone who is not an administrator', () => {
+describe('«Collaboratori» for anyone who is not an administrator', () => {
   it('answers one sentence, no figure and no request', async () => {
     admin = false
     answering([page([engagement()])])
@@ -224,7 +224,7 @@ describe('«Incarichi» for anyone who is not an administrator', () => {
   })
 })
 
-describe('«Incarichi» on a phone', () => {
+describe('«Collaboratori» on a phone', () => {
   beforeEach(() => viewport(390))
 
   it('draws cards, a sticky «Nuovo incarico» and a «Filtri» button, with no table', async () => {
