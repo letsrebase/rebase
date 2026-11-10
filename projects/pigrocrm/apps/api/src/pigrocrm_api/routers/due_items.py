@@ -43,8 +43,8 @@ class DueItemListParams(KeysetParams):
         default=None,
         max_length=30,
         description=(
-            "Only this source kind. The fiscal kinds (tax, IVA, withholding, payroll) are "
-            "an administrator's; without them they are left out of every page"
+            "Only this source kind. The fiscal kinds (tax, IVA, withholding, payroll) and "
+            "engagement items are an administrator's; without them they are left out of every page"
         ),
     )
     due_from: date | None = Field(default=None, description="Due on or after this day")

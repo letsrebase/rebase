@@ -171,6 +171,7 @@ def list_monthly_reports(
     status_code=status.HTTP_201_CREATED,
 )
 def request_monthly_report(
+    request: Request,
     engagement_id: UUID,
     data: MonthlyReportRequest,
     session: SessionDep,
@@ -179,7 +180,9 @@ def request_monthly_report(
 ) -> MonthlyReportRead:
     """Records that the freelancer's report of a finished month reached rebase. With no reasoned
     objection within seven working days it counts as approved. A person's act, never an agent's."""
-    return MonthlyReportService(session, settings).request(engagement_id, data, actor)
+    return MonthlyReportService(session, settings, space_slug=tenant_slug(request)).request(
+        engagement_id, data, actor
+    )
 
 
 @router.post(
@@ -187,6 +190,7 @@ def request_monthly_report(
     response_model=MonthlyReportRead,
 )
 def approve_monthly_report(
+    request: Request,
     engagement_id: UUID,
     month: Annotated[str, Path(description="The month the report covers, 2026-10")],
     data: MonthlyReportApproval,
@@ -196,7 +200,9 @@ def approve_monthly_report(
 ) -> MonthlyReportRead:
     """Approves the month: its days read payable, except the `held_dates` the client contested
     (with the reason in `objection`). A person's act, never an agent's, whatever the token."""
-    return MonthlyReportService(session, settings).approve(engagement_id, month, data, actor)
+    return MonthlyReportService(session, settings, space_slug=tenant_slug(request)).approve(
+        engagement_id, month, data, actor
+    )
 
 
 @router.get("/freelancers/availability", response_model=FreelancerAvailability)

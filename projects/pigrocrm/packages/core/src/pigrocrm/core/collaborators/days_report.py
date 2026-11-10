@@ -66,13 +66,6 @@ def report_windows(date_from: dt.date, date_to: dt.date) -> list[tuple[dt.date, 
         start = end + dt.timedelta(days=1)
 
 
-def is_leads_space(settings: Settings, space_slug: str | None) -> bool:
-    """Whether the space named `space_slug` (`None` for the root without a prefix) is the one
-    `PIGROCRM_LEADS_SPACE` names."""
-    leads = settings.leads_space.strip()
-    return bool(leads) and (space_slug or settings.root_slug) == leads
-
-
 class DaysReportService:
     """On the session of rebase's own space; `registry_engine` is the registry's, borrowed from
     the request when there is one, otherwise one is opened for the call and disposed."""
@@ -115,12 +108,7 @@ class DaysReportService:
                 "la fine non puo' essere prima dell'inizio",
                 expected=">= date_from",
             )
-        if not is_leads_space(self.settings, self.space_slug):
-            raise Conflict(
-                ENTITY,
-                "i giorni dei freelance si leggono dallo spazio dei lead "
-                "(PIGROCRM_LEADS_SPACE): altrove non c'e' lettura fra spazi",
-            )
+        rules.require_leads_space(self.settings, self.space_slug)
         door: EngagementReport | None = None
         note: str | None = None
         if first <= last:

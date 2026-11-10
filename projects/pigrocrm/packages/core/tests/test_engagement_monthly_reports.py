@@ -148,7 +148,7 @@ def test_a_long_period_is_read_in_windows_of_800_days_that_touch() -> None:
 
 def test_a_person_records_a_month_and_the_tacit_date_follows(db_session: Session) -> None:
     engagement = _engagement(db_session)
-    made = MonthlyReportService(db_session).request(
+    made = MonthlyReportService(db_session, _settings()).request(
         engagement.id, MonthlyReportRequest(month="2026-10", received_on=D(2026, 11, 3)), ADMIN
     )
     assert (made.label, made.state, made.effective_state) == ("2026-10", "requested", "tacit")
@@ -156,10 +156,10 @@ def test_a_person_records_a_month_and_the_tacit_date_follows(db_session: Session
     assert made.counts_as_approved is True  # the clock is on the 20th: nobody objected
 
     with pytest.raises(Conflict, match="gia' registrato"):
-        MonthlyReportService(db_session).request(
+        MonthlyReportService(db_session, _settings()).request(
             engagement.id, MonthlyReportRequest(month="2026-10"), ADMIN
         )
-    page = MonthlyReportService(db_session).for_engagement(engagement.id, AGENT)
+    page = MonthlyReportService(db_session, _settings()).for_engagement(engagement.id, AGENT)
     assert [item.label for item in page.items] == ["2026-10"]
 
 
@@ -167,7 +167,7 @@ def test_the_month_a_report_covers_must_be_over_and_inside_the_engagement(
     db_session: Session,
 ) -> None:
     engagement = _engagement(db_session)
-    service = MonthlyReportService(db_session)
+    service = MonthlyReportService(db_session, _settings())
     with pytest.raises(ValidationFailed, match="non e' ancora finito"):
         service.request(engagement.id, MonthlyReportRequest(month="2026-11"), ADMIN)
     with pytest.raises(ValidationFailed, match="fuori dalle date"):
@@ -187,9 +187,31 @@ def test_the_month_a_report_covers_must_be_over_and_inside_the_engagement(
         service.request(uuid4(), MonthlyReportRequest(month="2026-10"), ADMIN)
 
 
+def test_recording_and_approving_a_month_are_refused_outside_the_leads_space(
+    db_session: Session,
+) -> None:
+    engagement = _engagement(db_session)
+    for elsewhere in (
+        MonthlyReportService(db_session, _settings(), space_slug="ada"),
+        MonthlyReportService(db_session, _settings(leads_space="")),
+    ):
+        with pytest.raises(Conflict, match="PIGROCRM_LEADS_SPACE"):
+            elsewhere.request(engagement.id, MonthlyReportRequest(month="2026-10"), ADMIN)
+        with pytest.raises(Conflict, match="PIGROCRM_LEADS_SPACE"):
+            elsewhere.approve(engagement.id, "2026-10", MonthlyReportApproval(), ADMIN)
+    # An agent is still told the act is a person's, before the space is looked at.
+    with pytest.raises(AgentForbidden):
+        MonthlyReportService(db_session, _settings(), space_slug="ada").request(
+            engagement.id, MonthlyReportRequest(month="2026-10"), AGENT
+        )
+    assert MonthlyReportService(db_session, _settings()).request(
+        engagement.id, MonthlyReportRequest(month="2026-10", received_on=D(2026, 11, 18)), ADMIN
+    )
+
+
 def test_an_agent_token_cannot_record_or_approve_a_month(db_session: Session) -> None:
     engagement = _engagement(db_session)
-    service = MonthlyReportService(db_session)
+    service = MonthlyReportService(db_session, _settings())
     for agent in (AGENT, AGENT_FULL):
         with pytest.raises(AgentForbidden):
             service.request(engagement.id, MonthlyReportRequest(month="2026-10"), agent)
@@ -209,7 +231,7 @@ def test_an_admin_approves_a_month_and_may_hold_the_days_the_client_contested(
     db_session: Session,
 ) -> None:
     engagement = _engagement(db_session)
-    service = MonthlyReportService(db_session)
+    service = MonthlyReportService(db_session, _settings())
     service.request(
         engagement.id, MonthlyReportRequest(month="2026-10", received_on=D(2026, 11, 18)), ADMIN
     )
@@ -252,7 +274,7 @@ def test_an_admin_approves_a_month_and_may_hold_the_days_the_client_contested(
 
 def test_a_day_cannot_be_held_once_the_tacit_date_passed(db_session: Session) -> None:
     engagement = _engagement(db_session)
-    service = MonthlyReportService(db_session)
+    service = MonthlyReportService(db_session, _settings())
     service.request(
         engagement.id, MonthlyReportRequest(month="2026-10", received_on=D(2026, 11, 3)), ADMIN
     )
@@ -280,7 +302,7 @@ def test_a_day_cannot_be_held_once_the_tacit_date_passed(db_session: Session) ->
 
 def test_deciding_again_keeps_the_first_decision_and_can_lift_a_hold(db_session: Session) -> None:
     engagement = _engagement(db_session)
-    service = MonthlyReportService(db_session)
+    service = MonthlyReportService(db_session, _settings())
     service.request(
         engagement.id, MonthlyReportRequest(month="2026-10", received_on=D(2026, 11, 18)), ADMIN
     )
@@ -372,12 +394,12 @@ def test_days_read_live_are_not_payable_until_their_month_is_approved(
     )
     assert october.monthly_report is None and not any(day.payable for day in before.days)
 
-    MonthlyReportService(db_session).request(
+    MonthlyReportService(db_session, _settings()).request(
         engagement.id, MonthlyReportRequest(month="2026-10", received_on=D(2026, 11, 18)), ADMIN
     )
     assert _month(reader.report(engagement.id, ADMIN), "2026-10").payable_quantity == 0
 
-    MonthlyReportService(db_session).approve(
+    MonthlyReportService(db_session, _settings()).approve(
         engagement.id, "2026-10", MonthlyReportApproval(), ADMIN
     )
     after = reader.report(engagement.id, ADMIN)
@@ -395,7 +417,7 @@ def test_a_month_with_no_objection_past_its_tacit_date_reads_payable(
 ) -> None:
     engagement = _engagement(db_session)
     fake_door.answer = _answer(days=[_unit(D(2026, 10, 5))])
-    MonthlyReportService(db_session).request(
+    MonthlyReportService(db_session, _settings()).request(
         engagement.id, MonthlyReportRequest(month="2026-10", received_on=D(2026, 11, 3)), ADMIN
     )
     october = _month(_reader(db_session).report(engagement.id, ADMIN), "2026-10")
@@ -409,7 +431,7 @@ def test_a_held_day_is_not_payable_while_the_rest_of_the_month_is(
 ) -> None:
     engagement = _engagement(db_session)
     fake_door.answer = _answer(days=[_unit(D(2026, 10, 5)), _unit(D(2026, 10, 6))])
-    service = MonthlyReportService(db_session)
+    service = MonthlyReportService(db_session, _settings())
     service.request(
         engagement.id, MonthlyReportRequest(month="2026-10", received_on=D(2026, 11, 18)), ADMIN
     )
@@ -442,7 +464,7 @@ def test_only_work_the_ledger_holds_as_done_and_inside_the_term_can_be_payable(
             _unit(D(2026, 10, 27), status="worked"),
         ]
     )
-    service = MonthlyReportService(db_session)
+    service = MonthlyReportService(db_session, _settings())
     service.request(
         engagement.id, MonthlyReportRequest(month="2026-10", received_on=D(2026, 11, 18)), ADMIN
     )
@@ -472,7 +494,7 @@ def test_an_hourly_letter_pays_approved_hours_and_old_entries_are_days_at_eight_
         date=D(2026, 10, 13), hours=Decimal("8.00"), description="no", billable=False, invoice=None
     )
     fake_door.answer = _answer(days=[_unit(D(2026, 10, 5), "6")], hours=[entry, unbillable])
-    service = MonthlyReportService(db_session)
+    service = MonthlyReportService(db_session, _settings())
     for engagement in (hourly, daily):
         service.request(
             engagement.id, MonthlyReportRequest(month="2026-10", received_on=D(2026, 11, 18)), ADMIN
@@ -508,7 +530,7 @@ def test_old_hours_become_days_without_rounding_each_entry(
         for day in (5, 6, 7)
     ]
     fake_door.answer = _answer(hours=entries)
-    service = MonthlyReportService(db_session)
+    service = MonthlyReportService(db_session, _settings())
     service.request(
         engagement.id, MonthlyReportRequest(month="2026-10", received_on=D(2026, 11, 18)), ADMIN
     )
@@ -623,10 +645,10 @@ def test_the_door_reads_the_work_units_of_the_contract_and_the_report_makes_them
     ]
     assert _month(report, "2026-10").quantity == Decimal("3.00")
 
-    MonthlyReportService(db_session).request(
+    MonthlyReportService(db_session, _settings()).request(
         engagement.id, MonthlyReportRequest(month="2026-10", received_on=D(2026, 11, 18)), ADMIN
     )
-    MonthlyReportService(db_session).approve(
+    MonthlyReportService(db_session, _settings()).approve(
         engagement.id, "2026-10", MonthlyReportApproval(), ADMIN
     )
     paid = reader.report(engagement.id, ADMIN)

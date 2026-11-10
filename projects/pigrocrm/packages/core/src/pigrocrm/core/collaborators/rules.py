@@ -22,7 +22,8 @@ from pigrocrm.core.collaborators.models import (
     PAYMENT_DAYS_LIMIT_MONTH_END,
     PAYMENT_RULES,
 )
-from pigrocrm.core.errors import ValidationFailed
+from pigrocrm.core.config import Settings
+from pigrocrm.core.errors import Conflict, ValidationFailed
 from pigrocrm.core.fiscal.calendar import is_non_working_day
 
 ENTITY: Final = "engagement"
@@ -366,3 +367,21 @@ def effective_state(state: str, tacit_on: dt.date, today: dt.date) -> str:
 
 def counts_as_approved(effective: str) -> bool:
     return effective in ("approved", "tacit")
+
+
+def is_leads_space(settings: Settings, space_slug: str | None) -> bool:
+    """Whether the space named `space_slug` (`None` for the root without a prefix) is the one
+    `PIGROCRM_LEADS_SPACE` names, the only one that holds engagements."""
+    leads = settings.leads_space.strip()
+    return bool(leads) and (space_slug or settings.root_slug) == leads
+
+
+def require_leads_space(settings: Settings, space_slug: str | None) -> None:
+    """The freelancers' days and monthly reports are the leads space's: another space has no
+    cross-space read, and no report to record or approve."""
+    if not is_leads_space(settings, space_slug):
+        raise Conflict(
+            ENTITY,
+            "i giorni e i rendiconti dei freelance sono dello spazio dei lead "
+            "(PIGROCRM_LEADS_SPACE): altrove non c'e' lettura fra spazi",
+        )
