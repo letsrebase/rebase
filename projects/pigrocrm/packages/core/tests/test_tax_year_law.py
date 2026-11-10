@@ -52,8 +52,8 @@ def test_the_ordinary_pack_carries_the_verified_advance_rules_and_no_estimate() 
     """Every figure is a verified row of the frame's A5 register, Agenzia delle Entrate,
     «Imposte sui redditi (Irpef, Ires)»: 100% of the base in 40/60 or 50/50 under ISA, no
     advance at or below 51.65, a single November payment below 257.52, 0.40% for paying
-    within 30 days after the deadline, instalments up to 16 December. The exact day of the
-    two dates is the one «to verify» row, and the pack's own comment says so."""
+    within 30 days after the deadline. Their dates are the pack's calendar
+    (`test_tax_calendar.py`)."""
     assert IT_STANDARD_PACK.law_for(2025) is None
     law = IT_STANDARD_PACK.law_for(2026)
     assert law is not None
@@ -67,9 +67,6 @@ def test_the_ordinary_pack_carries_the_verified_advance_rules_and_no_estimate() 
     assert advances.single_november_payment_below == Decimal("257.52")
     assert advances.deferral_surcharge_percent == Decimal("0.40")
     assert advances.deferral_window_days == 30
-    assert (advances.instalments_until.month, advances.instalments_until.day) == (12, 16)
-    assert advances.balance_and_first_advance_date.month == 6
-    assert advances.second_advance_date.month == 11
     # The advance percentages of each method add up to the whole base.
     assert advances.first_advance_percent + advances.second_advance_percent == HUNDRED
     assert advances.first_advance_percent_isa + advances.second_advance_percent_isa == HUNDRED
