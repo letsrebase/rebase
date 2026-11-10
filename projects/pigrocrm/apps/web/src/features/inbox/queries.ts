@@ -53,7 +53,10 @@ export function useInboxList(tab: InboxTab, kind: InboxKind | null) {
   const items: InboxItem[] = lists
     .flatMap((query) => query.data?.pages.flatMap((page) => page.items) ?? [])
     .sort((a, b) => (a.id < b.id ? 1 : a.id > b.id ? -1 : 0))
-  const failed = lists.find((query) => query.isError)
+  // A list that failed to load is `failed`; one whose later page failed keeps its rows and is
+  // `failedMore`, which the page says under them instead of replacing them.
+  const failed = lists.find((query) => query.isError && !query.isFetchNextPageError)
+  const failedMore = lists.find((query) => query.isFetchNextPageError)
   // What the filter matches in all: each state's own total, read off the page last fetched.
   const total = lists.reduce((sum, query) => sum + (query.data?.pages.at(-1)?.total ?? 0), 0)
   return {
@@ -62,6 +65,8 @@ export function useInboxList(tab: InboxTab, kind: InboxKind | null) {
     isLoading: lists.some((query) => query.isPending),
     isError: failed !== undefined,
     error: failed?.error,
+    isFetchMoreError: failedMore !== undefined,
+    fetchMoreError: failedMore?.error,
     hasMore: lists.some((query) => query.hasNextPage),
     isFetchingMore: lists.some((query) => query.isFetchingNextPage),
     fetchMore: () => {

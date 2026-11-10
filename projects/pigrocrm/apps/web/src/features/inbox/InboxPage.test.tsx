@@ -229,6 +229,26 @@ describe('the list of «In arrivo»', () => {
     await waitFor(() => expect(screen.getAllByRole('row')).toHaveLength(61))
   })
 
+  it('keeps the rows and says so under them when «Mostra altri» fails', async () => {
+    const many = Array.from({ length: 60 }, (_, index) =>
+      item({ id: `0199aaaa-0000-7000-8000-${String(1000 - index).padStart(12, '0')}`, original_name: `doc-${index}.pdf` }),
+    )
+    vi.mocked(api.GET).mockImplementation(((path: string, init?: { params?: { query?: Record<string, unknown> } }) => {
+      const query = init?.params?.query ?? {}
+      if (path !== '/api/inbox/items') return Promise.resolve(ok(undefined))
+      if (query.state !== 'new') return Promise.resolve(ok({ items: [], next_cursor: null, total: 0 }))
+      if (query.cursor !== undefined) return Promise.resolve(refused(500, { detail: 'Non riesco a leggere gli altri.' }))
+      return Promise.resolve(ok({ items: many.slice(0, 50), next_cursor: many[49]?.id, total: 60 }))
+    }) as never)
+    page()
+    await screen.findByText('doc-0.pdf')
+    await userEvent.click(screen.getByRole('button', { name: 'Mostra altri (60 in tutto)' }))
+    expect(await screen.findByText('Non riesco a leggere gli altri.')).toBeInTheDocument()
+    // The fifty rows are still there, and the button asks again.
+    expect(screen.getAllByRole('row')).toHaveLength(51)
+    expect(screen.getByRole('button', { name: 'Mostra altri (60 in tutto)' })).toBeEnabled()
+  })
+
   it('opens the item of a row through the router’s callback, from the mouse and the keyboard', async () => {
     serving({ byState: { new: [NEW_RECEIPT] } })
     const { onItemChange } = page()
