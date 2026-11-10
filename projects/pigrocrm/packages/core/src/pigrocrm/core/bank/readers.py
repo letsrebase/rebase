@@ -24,6 +24,9 @@ class ParsedMovement:
     counterparty_iban: str | None = None
     description: str | None = None
     bank_reference: str | None = None
+    # The payer's id for the instruction (SEPA `EndToEndId`), when the file or the description
+    # carries one; never a dedup key, since payers reuse them.
+    end_to_end_id: str | None = None
     balance_after: Decimal | None = None
 
 
