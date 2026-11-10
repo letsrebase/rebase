@@ -139,12 +139,13 @@ export const navKey = (item: NavItem) => item.id ?? item.to
 /**
  * Whether an entry is the one the reader is on. The registry page serves two entries, so the
  * path is not enough there: «Fornitori» is the page on `?role=supplier` and «Clienti» the same
- * page on any other view (and a customer's own page), the way the sidebar always read it.
+ * page on any other view. `role` is the registry view (`useRegistryView`): the URL's `?role=` on
+ * the list, the organization's own roles on its page, so a supplier's page is «Fornitori» (REB-1038).
  */
 export function isNavItemActive(item: NavItem, pathname: string, role: string | undefined) {
   if (!isUnder(pathname, item.to)) return false
   if (item.to !== REGISTRY_PATH) return true
-  const onSuppliers = pathname === item.to && role === 'supplier'
+  const onSuppliers = role === 'supplier'
   return item.search?.role === 'supplier' ? onSuppliers : !onSuppliers
 }
 

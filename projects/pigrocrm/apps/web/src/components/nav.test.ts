@@ -249,9 +249,11 @@ describe('isNavItemActive: one registry page, two entries', () => {
     }
   })
 
-  it('keeps «Clienti» on an organization\'s own page and never marks «Fornitori» there', () => {
+  it('follows the view on an organization\'s own page: «Clienti» by default, «Fornitori» for a supplier (REB-1038)', () => {
     expect(isNavItemActive(customers, '/app/organizations/abc', undefined)).toBe(true)
-    expect(isNavItemActive(suppliers, '/app/organizations/abc', 'supplier')).toBe(false)
+    expect(isNavItemActive(suppliers, '/app/organizations/abc', undefined)).toBe(false)
+    expect(isNavItemActive(suppliers, '/app/organizations/abc', 'supplier')).toBe(true)
+    expect(isNavItemActive(customers, '/app/organizations/abc', 'supplier')).toBe(false)
   })
 
   it('marks nothing on another page', () => {

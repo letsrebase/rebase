@@ -27,6 +27,7 @@ import {
 import { ProfileMenu } from './ProfileMenu'
 import { QuickAdd } from './QuickAdd'
 import { FOCUS } from './sidebarStyles'
+import { useRegistryView } from './useRegistryView'
 
 /** The bar's height without the home indicator's inset: the page keeps this much clear. */
 export const PHONE_BAR_HEIGHT = '4rem'
@@ -195,7 +196,7 @@ function More({
   const unread = useUnreadCount()
   const waiting = useWaitingCount()
   const { location } = useRouterState()
-  const registryRole = (location.search as { role?: string } | undefined)?.role
+  const registryRole = useRegistryView()
   const items: readonly NavItem[] = [
     ...phoneMoreItems(modules, user?.role, gates),
     { to: Agents.to, label: Agents.label, icon: Agents.icon },
@@ -239,6 +240,10 @@ function More({
                 to={to}
                 search={item.search}
                 onClick={() => onOpenChange(false)}
+                // The registry page serves two entries, so the router's own «active» (a path
+                // prefix, with a search that matches anything) would mark both: the caller
+                // decides below, as `NavLeaf` does for the sidebar.
+                activeOptions={to === REGISTRY_PATH ? { exact: true, includeSearch: true } : undefined}
                 aria-current={
                   (to === REGISTRY_PATH
                     ? isNavItemActive(item, location.pathname, registryRole)
