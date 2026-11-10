@@ -640,8 +640,8 @@ address and no key ever appears in these lines or anywhere else in the logs.
 **A daily ceiling holds the rest of a long list for the next day** (REB-779). Resend's
 free plan sends `REBASE_RESEND_DAILY_QUOTA` (default 100) mails a day, and the magic
 link and the member mails use the same key. A campaign may send that less
-`REBASE_CAMPAIGN_DAILY_RESERVE` (default 20, kept for the magic links, the member
-mails and the campaign test mails, which are not rows and are not counted), so 80.
+`REBASE_CAMPAIGN_DAILY_RESERVE` (default 25, kept for the magic links, the member
+mails and the campaign test mails, which are not rows and are not counted), so 75.
 `campaign_room` (`rebase_core.campaigns.tick`) counts the `campaign_recipients`
 sent since midnight in Rome by `sent_at`, across every campaign; right before
 each mail, at zero the pass stops that campaign with its rows still `in_coda` and no

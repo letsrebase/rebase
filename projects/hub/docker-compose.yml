@@ -61,7 +61,7 @@ x-hub-campaign: &hub-campaign
 # What a campaign pass may send in a day (Resend's quota, and the share kept back for other mail).
 x-hub-quota: &hub-quota
   REBASE_RESEND_DAILY_QUOTA: ${REBASE_RESEND_DAILY_QUOTA:-100}
-  REBASE_CAMPAIGN_DAILY_RESERVE: ${REBASE_CAMPAIGN_DAILY_RESERVE:-20}
+  REBASE_CAMPAIGN_DAILY_RESERVE: ${REBASE_CAMPAIGN_DAILY_RESERVE:-25}
 
 # The card and the proposal go through the provider chosen in «Modelli AI» (llm.py, REB-831),
 # whose key is in the database, sealed with this AES-256-GCM key (secrets.py, REB-829). May be

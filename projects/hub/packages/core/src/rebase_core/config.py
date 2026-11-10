@@ -126,7 +126,7 @@ class Settings(BaseSettings):
     # Of that quota, what a campaign never spends: the magic links, the member area's
     # mails and the campaign test mails (not rows, so not counted) all share the key. A
     # campaign may send `resend_daily_quota - campaign_daily_reserve` a day.
-    campaign_daily_reserve: int = Field(default=20, ge=0)
+    campaign_daily_reserve: int = Field(default=25, ge=0)
     # What the wizard's unsolicited «you already have a card» mails may spend of that
     # reserve in a day, one token row each, counted since midnight in Rome: a stranger
     # typing other people's addresses could otherwise burn the whole key. Once spent the
