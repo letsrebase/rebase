@@ -14,6 +14,7 @@ from pigrocrm_api.errors import (
     request_validation_handler,
 )
 from pigrocrm_api.routers import (
+    accountant_export,
     activities,
     ai_model,
     analytics,
@@ -181,6 +182,8 @@ def create_app() -> FastAPI:
         staff,
         # REB-972: the model PigroCRM reads documents with: settings, key, cap, «Prova».
         ai_model,
+        # REB-1011: the period bundle for the accountant.
+        accountant_export,
     ):
         app.include_router(module.router)
 
