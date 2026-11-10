@@ -576,10 +576,13 @@ class DueItemService:
         return item
 
     def _require_organization_of(self, organization_id: UUID, legal_entity_id: UUID) -> None:
-        owner = self.repo.organization_legal_entity(organization_id)
-        if owner is None:
+        row = self.repo.organization_legal_entity(organization_id)
+        if row is None:
             raise NotFound("organization", organization_id)
-        if owner != legal_entity_id:
+        owner = row[0]
+        # An organization shared across the legal entities (no legal entity of its own) is
+        # every legal entity's (REB-970).
+        if owner is not None and owner != legal_entity_id:
             raise ValidationFailed(
                 ENTITY,
                 "organization_id",

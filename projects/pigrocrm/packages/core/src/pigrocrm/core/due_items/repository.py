@@ -115,10 +115,14 @@ class DueItemRepository:
             ).scalars()
         )
 
-    def organization_legal_entity(self, organization_id: UUID) -> UUID | None:
-        return self.session.execute(
+    def organization_legal_entity(self, organization_id: UUID) -> tuple[UUID | None] | None:
+        """`None` for an organization that does not exist, and a one-element tuple holding its
+        legal entity otherwise: `(None,)` is one shared across the legal entities (REB-970),
+        which every legal entity's items may name."""
+        row = self.session.execute(
             select(Organization.legal_entity_id).where(Organization.id == organization_id)
-        ).scalar_one_or_none()
+        ).one_or_none()
+        return None if row is None else (row[0],)
 
     def organization_name(self, organization_id: UUID | None) -> str | None:
         if organization_id is None:

@@ -570,6 +570,11 @@ def test_the_counterparty_is_an_organization_of_the_same_legal_entity_or_the_tax
     assert refused.value.details["field"] == "organization_id"
     with pytest.raises(NotFound):
         world.item(organization_id=uuid4())
+    # An organization shared across the legal entities (REB-970) is every legal entity's.
+    shared = make_customer(db_session, legal_entity_id=other.id)
+    shared.legal_entity_id = None
+    db_session.flush()
+    assert world.item(organization_id=shared.id) is not None
     with pytest.raises(ValueError):
         DueItemCreate(
             legal_entity_id=world.entity,
