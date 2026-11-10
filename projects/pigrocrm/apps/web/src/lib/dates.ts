@@ -57,6 +57,15 @@ export function daysBetweenIso(from: string, to: string): number | null {
   return Math.round((Date.UTC(b.getFullYear(), b.getMonth(), b.getDate()) - Date.UTC(a.getFullYear(), a.getMonth(), a.getDate())) / day)
 }
 
+/**
+ * The year and the month (1 to 12) of an ISO `YYYY-MM-DD`, or `null` when it is not one. For a
+ * module under the no-browser-arithmetic rule, which may not call `Number` itself.
+ */
+export function isoYearMonth(value: string): { year: number; month: number } | null {
+  const local = localDateFromIso(value)
+  return local === null ? null : { year: local.getFullYear(), month: local.getMonth() + 1 }
+}
+
 /** Renders an ISO `YYYY-MM-DD` string as `gg/mm/aaaa`. */
 export function formatIsoDateItalian(value: string): string {
   const local = localDateFromIso(value)

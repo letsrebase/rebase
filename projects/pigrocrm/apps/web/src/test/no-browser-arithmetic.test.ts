@@ -40,7 +40,11 @@ import { join } from 'node:path'
 import ts from 'typescript'
 import { describe, expect, it } from 'vitest'
 
-const SCOPED_ROOTS = [join(__dirname, '..', 'features', 'dashboard')]
+const SCOPED_ROOTS = [
+  join(__dirname, '..', 'features', 'dashboard'),
+  // «Tasse» (REB-1026): every amount, total and date's net is the server's string.
+  join(__dirname, '..', 'features', 'taxes'),
+]
 const SCOPED_FILES = [join(__dirname, '..', 'routes', 'app', 'index.tsx')]
 const FORBIDDEN_CALLS = new Set(['Number', 'parseFloat', 'parseInt'])
 
@@ -98,6 +102,7 @@ describe('no number is born in the browser', () => {
     const files = scopedFiles()
     expect(files.some((path) => path.endsWith(join('features', 'dashboard', 'charts.tsx')))).toBe(true)
     expect(files.some((path) => path.endsWith(join('routes', 'app', 'index.tsx')))).toBe(true)
+    expect(files.some((path) => path.endsWith(join('features', 'taxes', 'labels.ts')))).toBe(true)
   })
 
   it('never coerces an API value to a JS number in a dashboard module', () => {

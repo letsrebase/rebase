@@ -228,6 +228,7 @@ describe('AppShell', () => {
       'Fatture',
       'Ore',
       'Giornate',
+      'Tasse',
       'Agenti',
     ])
     expect(nav.getAllByRole('group').map((group) => group.getAttribute('aria-label'))).toEqual([
@@ -251,6 +252,7 @@ describe('AppShell', () => {
       'Fatture',
       'Ore',
       'Giornate',
+      'Tasse',
     ])
     // Agents and Settings come after every section, Settings last.
     const lastLink = nav.getByRole('link', { name: 'Agenti' })
@@ -652,6 +654,7 @@ describe('AppShell', () => {
       'Fatture',
       'Ore',
       'Giornate',
+      'Tasse',
       'Agenti',
     ]) {
       expect(nav.getByRole('link', { name: label })).toBeInTheDocument()
@@ -1197,7 +1200,7 @@ describe('AppShell on a phone', () => {
     const sheet = within(await screen.findByRole('dialog', { name: 'Altro' }))
     const links = sheet.getAllByRole('link').map((link) => link.textContent)
     expect(links).toEqual(
-      expect.arrayContaining(['Calendario', 'Clienti', 'Persone', 'Fatture', 'Agenti', 'Impostazioni']),
+      expect.arrayContaining(['Calendario', 'Clienti', 'Persone', 'Fatture', 'Tasse', 'Agenti', 'Impostazioni']),
     )
     expect(links).not.toContain('Deal')
     expect(links).not.toContain('Ore')

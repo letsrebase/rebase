@@ -151,6 +151,9 @@ export const queryKeys = {
   // «tutte» the economic tab holds one entry per legal entity at once.
   fiscalEstimate: (year: number, legalEntityId: string | null = null) =>
     ['fiscal-estimate', year, legalEntityId] as const,
+  // The tax calendar is one legal entity's and one calendar year's (REB-1026).
+  taxCalendar: (year: number, legalEntityId: string | null = null) =>
+    ['tax-calendar', year, legalEntityId] as const,
   // The ceilings and the year register are one azienda's as well (REB-755, REB-757), and
   // the simulation is keyed on everything typed: the same deal against another date is
   // another answer.

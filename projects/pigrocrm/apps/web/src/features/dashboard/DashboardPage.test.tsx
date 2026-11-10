@@ -130,6 +130,22 @@ const BY_PATH: Record<string, unknown> = {
   // No active contract caps a customer's share: nor does that panel have anything to show.
   '/api/contracts': { items: [], next_cursor: null },
   '/api/analytics/year': EMPTY_YEAR,
+  // The pack's dates (REB-1026): the next two ride in a band under «Da fare», on every tab.
+  '/api/analytics/fiscal/calendar': {
+    year: new Date().getFullYear(),
+    legal_entity_id: 'a1',
+    pack_id: 'it-standard',
+    pack_version: '1',
+    dates: ['06-30', '11-30'].map((day) => ({
+      nominal_date: `${new Date().getFullYear() + 1}-${day}`,
+      due_date: `${new Date().getFullYear() + 1}-${day}`,
+      tax: 'income_tax',
+      kind: 'second_advance',
+      cadence: null,
+      covers: 'x',
+      source: 'Agenzia delle Entrate',
+    })),
+  },
   // Nothing late and nothing due today: the «Da fare» band is its one line (REB-874, and
   // `DaFareBand.test.tsx` for the rest).
   '/api/activities/today': {
@@ -283,6 +299,26 @@ describe('DashboardPage, the page intestazione', () => {
     expect(line.compareDocumentPosition(tab) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     const title = screen.getByRole('heading', { level: 1, name: 'Home' })
     expect(title.compareDocumentPosition(line) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  /** REB-1026: the next tax dates are a band of their own under «Da fare» and above the tabs,
+   *  on every tab and not inside one. */
+  it('draws the next tax dates between «Da fare» and the tabs, whichever tab is open', async () => {
+    renderPage({ ...SEARCH, tab: 'receivables' })
+    const band = await screen.findByRole('heading', { name: 'Prossime scadenze fiscali' })
+    const daFare = await screen.findByText('Niente in ritardo né in scadenza oggi.')
+    const tab = screen.getByRole('tab', { name: 'Scadenziario' })
+    expect(daFare.compareDocumentPosition(band) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(band.compareDocumentPosition(tab) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(await screen.findAllByText('Secondo acconto ' + (new Date().getFullYear() + 1))).toHaveLength(2)
+  })
+
+  it('draws no tax dates and asks for none for a collaborator', async () => {
+    session.role = 'collaborator'
+    renderPage()
+    await screen.findByText('Niente in ritardo né in scadenza oggi.')
+    expect(screen.queryByRole('heading', { name: 'Prossime scadenze fiscali' })).toBeNull()
+    expect(api.GET).not.toHaveBeenCalledWith('/api/analytics/fiscal/calendar', expect.anything())
   })
 })
 

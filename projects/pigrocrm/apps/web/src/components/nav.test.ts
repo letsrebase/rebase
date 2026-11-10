@@ -25,6 +25,7 @@ describe('visibleSections (REB-953)', () => {
       'Fatture',
       'Ore',
       'Giornate',
+      'Tasse',
     ]
     expect(labels([])).toEqual(everything)
     expect(visibleSections(moduleAccess(undefined)).flatMap((s) => s.items.map((i) => i.label))).toEqual(
@@ -47,6 +48,14 @@ describe('visibleSections (REB-953)', () => {
     expect(labels(['time'])).toContain('Deal')
   })
 
+  it('drops «Tasse» with taxes off and nothing else (REB-1026)', () => {
+    expect(labels([])).toContain('Tasse')
+    const shown = labels(['taxes'])
+    expect(shown).not.toContain('Tasse')
+    expect(shown).toContain('Giornate')
+    expect(shown).toContain('Fatture')
+  })
+
   it('keeps the entries of the core whatever is off', () => {
     const core = [
       'Attività',
@@ -63,10 +72,10 @@ describe('visibleSections (REB-953)', () => {
 
   it('drops a section left with no entry', () => {
     // Vendite keeps its organizations and people, so it stays; it is Amministrazione that
-    // loses two of its three, and keeps «Fatture».
+    // loses two of its four, and keeps «Fatture» and «Tasse».
     const sections = visibleSections(moduleAccess(spaceModules(['deals', 'contracts'])))
     expect(sections.map((section) => section.id)).toEqual(['da-fare', 'vendite', 'amministrazione'])
-    expect(sections[2]?.items.map((item) => item.label)).toEqual(['Fatture'])
+    expect(sections[2]?.items.map((item) => item.label)).toEqual(['Fatture', 'Tasse'])
   })
 })
 
@@ -99,6 +108,7 @@ describe('the phone bar (REB-959)', () => {
       'Deal',
       'Fatture',
       'Ore',
+      'Tasse',
     ])
     expect(more(['deals', 'time'], 'company')).toEqual([
       'In arrivo',
@@ -108,6 +118,7 @@ describe('the phone bar (REB-959)', () => {
       'Clienti',
       'Persone',
       'Fatture',
+      'Tasse',
     ])
   })
 })

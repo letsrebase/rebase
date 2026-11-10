@@ -19,6 +19,7 @@ import { BarRows, BigNumber, type BarRow } from './charts'
 import { CeilingPanel } from './CeilingPanel'
 import { FiscalPanel } from './FiscalPanel'
 import { money } from './format'
+import { HomeTaxDates } from '@/features/taxes/TaxDates'
 import { Freshness } from './Freshness'
 import { useCeilingHeadroom, useReceivablesDashboard } from './queries'
 
@@ -276,7 +277,9 @@ function FlatRateFigures({
  * the queries the company's tabs already use; a section whose module is off is not drawn
  * and asks for nothing (`contracts` for the first and third, `taxes` for the last).
  *
- * It draws nothing else: the design lists four blocks, and the day's tasks have their own
+ * Between the receivables and the contracts sit the next two tax dates (REB-1026, an
+ * administrator's, with `taxes` on and a pack that has dates). It draws nothing else: the design
+ * lists four blocks, and the day's tasks have their own
  * place in the navigation («Attività»).
  */
 export function SoloHome({ notice }: { notice?: ReactNode }) {
@@ -307,6 +310,8 @@ export function SoloHome({ notice }: { notice?: ReactNode }) {
         <Section title="Quando arrivano i soldi" hint="Fatture emesse e non incassate, per scadenza.">
           <MoneyIn />
         </Section>
+        {/* Money in, then money out (REB-1026): the next two tax dates, a block of their own. */}
+        <HomeTaxDates variant="block" />
         {contractsOn && (
           <Section title="Contratti attivi">
             {active.isError ? (

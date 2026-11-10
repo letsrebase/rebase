@@ -123,6 +123,16 @@ beforeEach(() => {
     '/api/dashboard/receivables': RECEIVABLES,
     '/api/analytics/ceilings': CEILINGS,
     '/api/analytics/fiscal': ESTIMATE,
+    '/api/analytics/fiscal/calendar': {
+      year: 2026,
+      legal_entity_id: 'le-1',
+      pack_id: 'it-flat-rate',
+      pack_version: '1',
+      dates: [
+        { nominal_date: '2026-11-30', due_date: '2026-11-30', tax: 'substitute_tax', kind: 'second_advance', cadence: null, covers: 'x', source: 'Agenzia delle Entrate' },
+        { nominal_date: '2026-12-16', due_date: '2026-12-16', tax: 'income_tax', kind: 'instalments_end', cadence: null, covers: 'x', source: 'Agenzia delle Entrate' },
+      ],
+    },
     '/api/reminders': [],
     '/api/activities/today': TODAY_TASKS,
     '/api/legal-entities': [],
@@ -224,6 +234,18 @@ describe('SoloHome', () => {
     expect(within(section).getByText('senza scadenza')).toBeInTheDocument()
   })
 
+  it('puts the next tax dates right after «Quando arrivano i soldi» (REB-1026)', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date(2026, 10, 9, 12, 0))
+    renderHome()
+    const money = await screen.findByRole('heading', { name: 'Quando arrivano i soldi' })
+    const taxes = await screen.findByRole('heading', { name: 'Prossime tasse' })
+    const contracts = screen.getByRole('heading', { name: 'Contratti attivi' })
+    expect(money.compareDocumentPosition(taxes) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(taxes.compareDocumentPosition(contracts) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(await screen.findByText('30/11/2026 · tra 21 giorni')).toBeInTheDocument()
+  })
+
   it('draws the ceilings and the tax estimate on the flat-rate pack', async () => {
     renderHome()
     expect(await screen.findByRole('group', { name: 'Soglia 85.000' })).toBeInTheDocument()
@@ -256,5 +278,7 @@ describe('SoloHome', () => {
     await new Promise((resolve) => setTimeout(resolve, 30))
     expect(api.GET).not.toHaveBeenCalledWith('/api/analytics/ceilings', expect.anything())
     expect(api.GET).not.toHaveBeenCalledWith('/api/analytics/fiscal', expect.anything())
+    expect(screen.queryByRole('heading', { name: 'Prossime tasse' })).toBeNull()
+    expect(api.GET).not.toHaveBeenCalledWith('/api/analytics/fiscal/calendar', expect.anything())
   })
 })

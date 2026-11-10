@@ -58,6 +58,9 @@ export const ROUTE_MODULES: ReadonlyArray<{ path: string; modules: readonly Modu
   // time: the hours register, the timer and the rates the hours are priced with.
   { path: '/app/hours', modules: ['time'] },
   { path: '/app/settings/rates', modules: ['time'] },
+  // taxes: the page of the legal entity's taxes, their readings and dates (REB-1026). The
+  // ceiling and the year register stay where they are, on the Home.
+  { path: '/app/taxes', modules: ['taxes'] },
   // purchases: the cost categories (the purchases themselves live on a deal's Ore tab, `time`
   // and `purchases` together).
   { path: '/app/settings/cost-categories', modules: ['purchases'] },
