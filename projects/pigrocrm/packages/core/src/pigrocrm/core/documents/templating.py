@@ -8,6 +8,7 @@ from uuid import UUID
 from sqlalchemy.exc import IntegrityError
 
 from pigrocrm.core.actor import Actor
+from pigrocrm.core.collaborators.letters import LETTER_TEMPLATE_TYPES
 from pigrocrm.core.db.clock import today_local
 from pigrocrm.core.documents.context import ENTITY, DocumentContext
 from pigrocrm.core.documents.models import Document, DocumentVersion
@@ -32,7 +33,12 @@ from pigrocrm.core.templates.scope import CUSTOMER_KEYS, italian_keys, with_seat
 # `DocumentType` itself, never retyped, so a value added there is covered here by
 # construction -- see `require_template` for why the two vocabularies stopped being
 # the same Literal.
-DOCUMENT_TYPES: frozenset[str] = frozenset(get_args(DocumentType))
+# Letters and framework agreements are written by `LetterService` alone: from a template here, an
+# agent could pass its own parties and engagement and store a legal document that skipped every
+# check.
+DOCUMENT_TYPES: frozenset[str] = frozenset(get_args(DocumentType)) - frozenset(
+    LETTER_TEMPLATE_TYPES
+)
 
 
 class DocumentTemplating:

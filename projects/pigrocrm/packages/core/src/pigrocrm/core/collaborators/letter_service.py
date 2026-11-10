@@ -33,6 +33,7 @@ from pigrocrm.core.collaborators.models import Engagement
 from pigrocrm.core.collaborators.repository import EngagementRepository
 from pigrocrm.core.collaborators.schemas import (
     LETTER_VARIABLE_MAX_LENGTH,
+    LETTER_VARIABLES_MAX,
     LetterPreview,
     LetterRead,
 )
@@ -154,6 +155,12 @@ class LetterService:
         engagement = self.engagements.get(engagement_id, lock=lock)
         if engagement is None:
             raise NotFound("engagement", engagement_id)
+        if engagement.client_organization_id is not None and (
+            self.engagements.visible_organization(engagement.client_organization_id) is None
+        ):
+            # The fee and the role are the client's business: a reader who cannot see the client
+            # cannot see the engagement either (`EngagementService._read` redacts them).
+            raise NotFound("engagement", engagement_id)
         return engagement, self._freelancer(engagement.freelancer_id)
 
     def _freelancer(self, freelancer_id: UUID) -> Organization:
@@ -199,6 +206,10 @@ class LetterService:
     def _variables(self, variables: Mapping[str, str | None]) -> dict[str, Any]:
         """The administrator's own fields: lowercase words with underscores, none of the roots the
         records fill, and text of a sane length. What they say is printed as given."""
+        if len(variables) > LETTER_VARIABLES_MAX:
+            raise ValidationFailed(
+                ENTITY, "variables", "troppi campi", expected=f"al massimo {LETTER_VARIABLES_MAX}"
+            )
         checked: dict[str, Any] = {}
         for name, value in variables.items():
             if not _VARIABLE_NAME.fullmatch(name):
@@ -215,6 +226,8 @@ class LetterService:
                     "questo dato viene dall'incarico e dalle anagrafiche: non si scrive qui",
                     expected="un campo che il testo dichiara",
                 )
+            if value is not None and "\x00" in value:
+                raise ValidationFailed(ENTITY, name, "il campo ha caratteri non ammessi")
             if value is not None and len(value) > LETTER_VARIABLE_MAX_LENGTH:
                 raise ValidationFailed(
                     ENTITY,
@@ -391,6 +404,11 @@ class LetterService:
         template, rendered, scope, legal_entity_id = self._render(
             kind, regime, freelancer, engagement, variables, actor
         )
+        if engagement is not None:
+            # The render released the row lock: the engagement may have left draft meanwhile.
+            self.session.refresh(engagement)
+            if engagement.state != "draft":
+                raise Conflict(ENTITY, "l'incarico non è più in bozza", state=engagement.state)
         try:
             document = self.ctx.repo.add(
                 Document(

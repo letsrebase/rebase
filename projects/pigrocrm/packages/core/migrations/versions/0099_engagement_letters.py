@@ -18,7 +18,8 @@ nullable or new and nothing is backfilled.
 - `legal_entities.legal_representative`: the person who signs for the entity, the `rebase-*`
   signer value the hub took from a server setting.
 
-`downgrade` drops all of it; a letter number already drawn is lost with its column.
+`downgrade` drops all of it, turning letter texts and documents into plain contracts; a letter
+number already drawn is lost with its column.
 """
 
 from collections.abc import Sequence
@@ -63,7 +64,7 @@ def upgrade() -> None:
         sa.CheckConstraint("last >= 1", name="ck_letter_counters_positive"),
         sa.PrimaryKeyConstraint("year"),
     )
-    op.add_column("engagements", sa.Column("letter_number", sa.String(length=8), nullable=True))
+    op.add_column("engagements", sa.Column("letter_number", sa.String(length=10), nullable=True))
     op.create_index(NUMBER_INDEX, "engagements", ["letter_number"], unique=True)
 
     op.add_column("documents", sa.Column("engagement_id", sa.Uuid(), nullable=True))
@@ -92,6 +93,14 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    # The two letter types do not exist below this revision: their texts and documents become
+    # plain contracts, so re-applying the revision finds rows its check accepts.
+    op.drop_constraint(TEMPLATE_CHECK, "templates", type_="check")
+    for table in ("templates", "documents"):
+        op.execute(
+            f"UPDATE {table} SET type = 'contract' "
+            "WHERE type IN ('framework_agreement', 'engagement_letter')"
+        )
     op.drop_column("legal_entities", "legal_representative")
 
     op.drop_index(FRAMEWORK_INDEX, table_name="documents")
@@ -107,5 +116,4 @@ def downgrade() -> None:
     op.drop_table("letter_counters")
 
     op.drop_index(TEMPLATE_INDEX, table_name="templates")
-    op.drop_constraint(TEMPLATE_CHECK, "templates", type_="check")
     op.drop_column("templates", "letter_type")

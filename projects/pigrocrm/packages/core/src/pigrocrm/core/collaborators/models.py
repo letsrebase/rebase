@@ -58,7 +58,7 @@ PAYMENT_DAYS_LIMIT_MONTH_END = 30
 COLLECTION_DAYS_LIMIT = 60
 
 ROLE_MAX_LENGTH = 200
-LETTER_NUMBER_LENGTH = 8
+LETTER_NUMBER_LENGTH = 10
 
 
 def _in(column: str, values: tuple[str, ...]) -> str:

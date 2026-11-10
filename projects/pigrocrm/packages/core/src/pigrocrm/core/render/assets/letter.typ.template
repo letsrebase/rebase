@@ -49,7 +49,7 @@
 }
 #let proposal(body) = highlight(fill: gold.lighten(45%), extent: 1pt, body)
 
-#set document(title: "$title$")
+#set document(title: [$title$])
 
 #set page(
   paper: "a4",
