@@ -72,7 +72,9 @@ class IncomeTaxAdvanceLaw:
 DeclaredTax = Literal["irpef", "substitute_tax", "ires", "irap", "inps"]
 
 # What a date of the calendar is the date of, and which tax it belongs to.
-TaxName = Literal["iva", "income_tax", "substitute_tax"]
+TaxName = Literal[
+    "iva", "income_tax", "substitute_tax", "ires", "irap", "withholding", "chamber_fee"
+]
 DateKind = Literal[
     "periodic_payment",
     "quarterly_payment",
@@ -81,6 +83,8 @@ DateKind = Literal[
     "balance_and_first_advance",
     "second_advance",
     "instalments_end",
+    "withholding_payment",
+    "annual_fee",
 ]
 # The IVA settlement cadence a date belongs to; `None` for a date that is no IVA settlement's.
 Cadence = Literal["monthly", "quarterly"]
@@ -101,6 +105,11 @@ class TaxDateRule:
     dates: tuple[MonthDay, ...]
     covers: str
     source: str
+    # The dates hold only for a legal entity whose fiscal year is the calendar year (it ends on
+    # 31 December): a company's income-tax dates follow its year end, not a fixed month, and
+    # the calendar says nothing for another year end rather than a date that is wrong
+    # (`fiscal/calendar.py::tax_calendar`).
+    calendar_year_only: bool = False
 
 
 @dataclass(frozen=True)

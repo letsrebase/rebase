@@ -22,12 +22,18 @@ const KIND_LABELS: Record<Kind, (year: number, month: number) => string> = {
   balance_and_first_advance: (year) => `Saldo ${year - 1} e primo acconto ${year}`,
   second_advance: (year) => `Secondo acconto ${year}`,
   instalments_end: (year) => `Ultima rata di saldo ${year - 1} e primo acconto ${year}`,
+  withholding_payment: (_year, month) => `Ritenute di ${monthName(month - 1)}`,
+  annual_fee: (year) => `Diritto annuale CCIAA ${year}`,
 }
 
 const TAX_NAMES: Record<TaxName, string> = {
   iva: 'IVA',
   income_tax: 'Imposte sui redditi',
   substitute_tax: 'Imposta sostitutiva',
+  ires: 'IRES',
+  irap: 'IRAP',
+  withholding: 'Ritenute',
+  chamber_fee: 'Camera di commercio',
 }
 
 const MONTHS = [
@@ -62,10 +68,13 @@ export function taxOfDate(entry: TaxCalendarEntry): string {
   return TAX_NAMES[entry.tax]
 }
 
+/** The taxes whose labels already say what they are: no suffix beside them. */
+export const NAMES_ITSELF: ReadonlySet<TaxName> = new Set<TaxName>(['iva', 'withholding', 'chamber_fee'])
+
 /** What a line says on the Home, where there is no column for the tax: the label, then the tax
  *  it belongs to unless the label already says IVA. */
 export function lineText(entry: TaxCalendarEntry): string {
-  return entry.tax === 'iva' ? dateLabel(entry) : `${dateLabel(entry)} · ${taxOfDate(entry)}`
+  return NAMES_ITSELF.has(entry.tax) ? dateLabel(entry) : `${dateLabel(entry)} · ${taxOfDate(entry)}`
 }
 
 /** One day on which something falls due, with the lines it holds. */

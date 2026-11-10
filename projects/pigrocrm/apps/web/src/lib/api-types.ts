@@ -15555,12 +15555,12 @@ export interface components {
              * Tax
              * @enum {string}
              */
-            tax: "iva" | "income_tax" | "substitute_tax";
+            tax: "iva" | "income_tax" | "substitute_tax" | "ires" | "irap" | "withholding" | "chamber_fee";
             /**
              * Kind
              * @enum {string}
              */
-            kind: "periodic_payment" | "quarterly_payment" | "annual_balance" | "advance" | "balance_and_first_advance" | "second_advance" | "instalments_end";
+            kind: "periodic_payment" | "quarterly_payment" | "annual_balance" | "advance" | "balance_and_first_advance" | "second_advance" | "instalments_end" | "withholding_payment" | "annual_fee";
             /** Cadence */
             cadence: ("monthly" | "quarterly") | null;
             /** Covers */

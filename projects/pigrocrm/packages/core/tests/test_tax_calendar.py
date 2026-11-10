@@ -16,9 +16,16 @@ from pigrocrm.core.analytics.service import AnalyticsService
 from pigrocrm.core.errors import AgentForbidden, NotFound, PermissionDenied
 from pigrocrm.core.fiscal.calendar import easter, next_working_day, tax_calendar
 from pigrocrm.core.fiscal.law import TaxCalendarLaw
-from pigrocrm.core.fiscal.pack import IT_FLAT_RATE_PACK, IT_STANDARD_PACK, NON_IT_PACK, FiscalPack
+from pigrocrm.core.fiscal.pack import (
+    IT_COMPANY_PACK,
+    IT_FLAT_RATE_PACK,
+    IT_STANDARD_PACK,
+    NON_IT_PACK,
+    FiscalPack,
+)
 from pigrocrm.core.fiscal.schemas import FiscalProfileUpsert
 from pigrocrm.core.fiscal.service import FiscalProfileService
+from pigrocrm.core.legal_entities.models import LegalEntity
 
 ADMIN = Actor(id=None, type="system", role="admin")
 
@@ -138,3 +145,58 @@ def test_only_an_administrator_reads_the_calendar(db_session: Session) -> None:
 def test_a_legal_entity_with_no_profile_is_not_found(db_session: Session) -> None:
     with pytest.raises(NotFound):
         AnalyticsService(db_session).get_tax_calendar(2026, ADMIN)
+
+
+def test_the_company_pack_carries_iva_ires_irap_withholding_and_the_chamber_fee() -> None:
+    pack = IT_COMPANY_PACK
+    # IVA is the ordinary regime's settlement: the same dates, the same rules.
+    assert _nominal(pack, 2026, "iva", "periodic_payment", "monthly") == _nominal(
+        IT_STANDARD_PACK, 2026, "iva", "periodic_payment", "monthly"
+    )
+    assert _nominal(pack, 2026, "iva", "advance", None) == [date(2026, 12, 27)]
+    for tax in ("ires", "irap"):
+        assert _nominal(pack, 2026, tax, "balance_and_first_advance", None) == [date(2026, 6, 30)]
+        assert _nominal(pack, 2026, tax, "second_advance", None) == [date(2026, 11, 30)]
+    assert _nominal(pack, 2026, "chamber_fee", "annual_fee", None) == [date(2026, 6, 30)]
+    withholding = _nominal(pack, 2026, "withholding", "withholding_payment", None)
+    assert [(d.month, d.day) for d in withholding] == [
+        (m, 20 if m == 8 else 16) for m in range(1, 13)
+    ]
+    # A year before the entry has no dates and never borrows another year's.
+    assert tax_calendar(pack, 2025) is None
+    # A Saturday moves the due date and never the nominal one: 30 November 2026 is a Monday and
+    # 16 May a Saturday.
+    due = {(e.tax, e.nominal_date): e.due_date for e in tax_calendar(pack, 2026) or []}
+    assert due[("ires", date(2026, 11, 30))] == date(2026, 11, 30)
+    assert due[("iva", date(2026, 5, 16))] == date(2026, 5, 18)
+    assert due[("withholding", date(2026, 8, 20))] == date(2026, 8, 20)
+
+
+def test_every_company_date_names_a_primary_source() -> None:
+    for entry in tax_calendar(IT_COMPANY_PACK, 2026) or []:
+        assert entry.source.startswith(
+            ("Agenzia delle Entrate", "Fisco Oggi", "Camere di commercio")
+        )
+        assert entry.covers
+
+
+def test_a_fiscal_year_that_is_not_the_calendar_year_loses_the_year_end_dates() -> None:
+    every = tax_calendar(IT_COMPANY_PACK, 2026) or []
+    other = tax_calendar(IT_COMPANY_PACK, 2026, calendar_year_end=False) or []
+    assert {e.tax for e in every} - {e.tax for e in other} == {"ires", "irap", "chamber_fee"}
+    assert {e.tax for e in other} == {"iva", "withholding"}
+    # A pack with no such rule answers the same either way.
+    assert tax_calendar(IT_STANDARD_PACK, 2026) == tax_calendar(
+        IT_STANDARD_PACK, 2026, calendar_year_end=False
+    )
+
+
+def test_the_service_reads_the_year_end_of_the_legal_entity(db_session: Session) -> None:
+    _profile(db_session, "it-company", "RF01")
+    taxes = {e.tax for e in AnalyticsService(db_session).get_tax_calendar(2026, ADMIN).dates}
+    assert {"ires", "irap", "chamber_fee", "iva", "withholding"} <= taxes
+    entity = db_session.query(LegalEntity).one()
+    entity.fiscal_year_end_month, entity.fiscal_year_end_day = 6, 30
+    db_session.flush()
+    taxes = {e.tax for e in AnalyticsService(db_session).get_tax_calendar(2026, ADMIN).dates}
+    assert taxes == {"iva", "withholding"}
