@@ -1,6 +1,8 @@
 import { QueryErrorBanner } from '@/components/QueryErrorBanner'
 import { StatusPill } from '@/components/StatusPill'
 import { LoadingState } from '@/components/LoadingState'
+import { Link } from '@tanstack/react-router'
+import type { ReactNode } from 'react'
 import { JOB_STATES, jobLine } from './jobs'
 import { useScheduledJobs } from './jobsQueries'
 
@@ -49,7 +51,7 @@ export function JobsPanel() {
                   <h3 className="text-sm font-medium">{job.label}</h3>
                   <StatusPill tone={state.tone}>{state.label}</StatusPill>
                 </div>
-                <p className="text-sm">{jobLine(job, now)}</p>
+                <p className="text-sm">{withMailboxesLink(jobLine(job, now))}</p>
                 <p className="text-xs text-muted-foreground">
                   <code>{job.command}</code> · {job.schedule}
                 </p>
@@ -59,5 +61,22 @@ export function JobsPanel() {
         </ul>
       )}
     </div>
+  )
+}
+
+const MAILBOXES_PLACE = 'Impostazioni → Caselle'
+
+/** The line of a job, with «Impostazioni → Caselle» a link to that tab (REB-1044) when it says so. */
+function withMailboxesLink(line: string): ReactNode {
+  const at = line.indexOf(MAILBOXES_PLACE)
+  if (at < 0) return line
+  return (
+    <>
+      {line.slice(0, at)}
+      <Link to="/app/settings/mailboxes" className="underline underline-offset-4">
+        {MAILBOXES_PLACE}
+      </Link>
+      {line.slice(at + MAILBOXES_PLACE.length)}
+    </>
   )
 }

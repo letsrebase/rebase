@@ -173,6 +173,59 @@ describe('visibleSections (REB-953)', () => {
   })
 })
 
+describe('«Giornate» in a company space (REB-1054)', () => {
+  const amministrazione = (profile: 'solo' | 'company' | null, off: readonly ModuleKey[] = []) =>
+    visibleSections(moduleAccess(spaceModules(off, profile)), 'admin')
+      .find((section) => section.id === 'amministrazione')
+      ?.items.map((item) => item.label)
+
+  it('keeps «Giornate» beside «Ore» for a solo space and for one with no profile yet', () => {
+    for (const profile of ['solo', null] as const) {
+      const shown = amministrazione(profile)
+      expect(shown?.[shown.indexOf('Ore') + 1]).toBe('Giornate')
+    }
+  })
+
+  it('moves «Giornate» to the foot of «Amministrazione» for a company, before the export, the rest in the same order', () => {
+    const solo = amministrazione('solo')!
+    const company = amministrazione('company')!
+    expect(company.at(-1)).toBe('Esporta per il commercialista')
+    expect(company.at(-2)).toBe('Giornate')
+    expect(company.filter((label) => label !== 'Giornate')).toEqual(solo.filter((label) => label !== 'Giornate'))
+  })
+
+  it('puts «Giornate» last when the export is not drawn, as for a collaborator', () => {
+    const items = visibleSections(moduleAccess(spaceModules([], 'company')), 'collaborator')
+      .find((section) => section.id === 'amministrazione')
+      ?.items.map((item) => item.label)
+    expect(items?.at(-1)).toBe('Giornate')
+  })
+
+  it('leaves the other sections of a company untouched', () => {
+    const sections = (profile: 'solo' | 'company') =>
+      visibleSections(moduleAccess(spaceModules([], profile)), 'admin')
+        .filter((section) => section.id !== 'amministrazione')
+        .map((section) => section.items.map((item) => item.label))
+    expect(sections('company')).toEqual(sections('solo'))
+  })
+
+  it('lists «Giornate» in «Altro» for a company, before the export', () => {
+    const more = phoneMoreItems(moduleAccess(spaceModules([], 'company')), 'admin').map((item) => item.label)
+    expect(more.at(-2)).toBe('Giornate')
+    expect(more.at(-1)).toBe('Esporta per il commercialista')
+  })
+
+  it('leaves «Giornate» to the bar for a company with deals off, the one place left for it', () => {
+    const access = moduleAccess(spaceModules(['deals'], 'company'))
+    expect(phoneThirdPlace(access)?.label).toBe('Giornate')
+    expect(phoneMoreItems(access, 'admin').map((item) => item.label)).not.toContain('Giornate')
+  })
+
+  it('still drops «Giornate» from a company with contracts off', () => {
+    expect(amministrazione('company', ['contracts'])).not.toContain('Giornate')
+  })
+})
+
 describe('the phone bar (REB-959)', () => {
   const third = (off: readonly ModuleKey[], profile: 'solo' | 'company' | null) =>
     phoneThirdPlace(moduleAccess(spaceModules(off, profile)))?.label ?? null

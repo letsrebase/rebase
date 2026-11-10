@@ -23,7 +23,7 @@ import {
   type LucideIcon,
 } from 'lucide-react'
 import { SETTINGS_GROUPS, type SettingsTabValue } from '@/features/settings/tabs'
-import { modulesOfPath, type ModuleAccess, type ModuleKey } from '@/lib/modules'
+import { daysInBackground, modulesOfPath, type ModuleAccess, type ModuleKey } from '@/lib/modules'
 import { can, canSeeSettingsTab, type Action, type Role } from '@/lib/permissions'
 
 /**
@@ -182,7 +182,28 @@ export function visibleSections(
         (item.action === undefined || (role !== undefined && can(role, item.action))) &&
         (item.gate === undefined || gates.has(item.gate)),
     ),
-  })).filter((section) => section.items.length > 0)
+  }))
+    .filter((section) => section.items.length > 0)
+    .map((section) => ({ ...section, items: demoteDays(section.items, access) }))
+}
+
+/** The contract days' page, which a `company` space keeps at the foot of its section (REB-1054). */
+const DAYS_PATH = '/app/days'
+
+/** The accountant export's page: the one entry that stays last in its section (REB-1028). */
+const EXPORT_PATH = '/app/export'
+
+/** In a `company` space «Giornate» sits at the foot of its section instead of beside «Ore», just
+ *  before «Esporta per il commercialista» when that one is drawn; every other entry keeps its
+ *  place, and any other profile is left as the table says. */
+function demoteDays(items: readonly NavItem[], access: ModuleAccess): readonly NavItem[] {
+  if (!daysInBackground(access)) return items
+  const days = items.filter((item) => item.to === DAYS_PATH)
+  const rest = items.filter((item) => item.to !== DAYS_PATH)
+  const exportAt = rest.findIndex((item) => item.to === EXPORT_PATH)
+  return exportAt === -1
+    ? [...rest, ...days]
+    : [...rest.slice(0, exportAt), ...days, ...rest.slice(exportAt)]
 }
 
 /**
@@ -253,6 +274,7 @@ export const SETTINGS_PATHS = {
   periods: '/app/settings/periods',
   gmail: '/app/settings/gmail',
   drive: '/app/settings/drive',
+  mailboxes: '/app/settings/mailboxes',
   slack: '/app/settings/slack',
   'ai-model': '/app/settings/ai-model',
   reminders: '/app/settings/reminders',

@@ -1267,7 +1267,7 @@ describe('AppShell on a phone', () => {
   })
 
   it('offers an activity and a note always, and a day and hours only with their modules on', async () => {
-    renderShell(<div />, undefined, [], 'company')
+    renderShell(<div />, undefined, [], 'solo')
     await userEvent.click(bar().getByRole('button', { name: 'Aggiungi' }))
     const sheet = within(await screen.findByRole('dialog', { name: 'Aggiungi' }))
     expect(sheet.getAllByRole('button').map((button) => button.textContent)).toEqual([
@@ -1277,6 +1277,21 @@ describe('AppShell on a phone', () => {
       'OreOre lavorate su un deal',
       'SpesaUno scontrino o una spesa, in due tocchi',
       'Carica un documentoUna foto o un file, in In arrivo',
+      'Chiudi',
+    ])
+  })
+
+  it('keeps «Giornata» last in the «+» of a company space (REB-1054)', async () => {
+    renderShell(<div />, undefined, [], 'company')
+    await userEvent.click(bar().getByRole('button', { name: 'Aggiungi' }))
+    const sheet = within(await screen.findByRole('dialog', { name: 'Aggiungi' }))
+    expect(sheet.getAllByRole('button').map((button) => button.textContent)).toEqual([
+      'AttivitàUna cosa da fare, con una scadenza',
+      'NotaSu un cliente, una persona o un deal',
+      'OreOre lavorate su un deal',
+      'SpesaUno scontrino o una spesa, in due tocchi',
+      'Carica un documentoUna foto o un file, in In arrivo',
+      'GiornataUn giorno lavorato su un contratto',
       'Chiudi',
     ])
   })

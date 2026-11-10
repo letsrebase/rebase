@@ -3,7 +3,7 @@ import { CalendarPlus } from 'lucide-react'
 import { useEffect, useRef } from 'react'
 import { Button } from '@rebase/ui/button'
 import { useCanWrite } from '@/lib/auth'
-import { useModules } from '@/lib/modules'
+import { daysInBackground, useModules } from '@/lib/modules'
 
 /** Whether a key press is meant for a field, a menu or a dialog and not for the page. */
 function isTypingTarget(target: EventTarget | null): boolean {
@@ -27,9 +27,11 @@ function isTypingTarget(target: EventTarget | null): boolean {
  */
 export function RecordDayShortcut() {
   // A readonly role has no day to record, and with `contracts` off there is no register to
-  // record it in (REB-953).
+  // record it in (REB-953). A company space records days rarely, so its Home does not lead
+  // with the button nor take the `N` key (REB-1054): the day form is one click away from the
+  // «+» sheet, the sidebar and the contract.
   const modules = useModules()
-  const canWrite = useCanWrite() && modules.on('contracts')
+  const canWrite = useCanWrite() && modules.on('contracts') && !daysInBackground(modules)
   // The key presses the button's own link, so the navigation is the router's own and this
   // component needs no router hook of its own.
   const link = useRef<HTMLAnchorElement>(null)
