@@ -1137,6 +1137,20 @@ _COVERED_OR_HUMAN: dict[Method, str] = {
         "REB-1002: the list of an engagement's monthly reports; `get_engagement_report` reads "
         "each month's report with the days it makes payable"
     ),
+    ("EngagementPaymentService", "for_engagement"): (
+        "REB-1035: the engagement page's read of what the engagement pays, with the month each "
+        "item pays for; an agent reads the same items with `list_due_items` (`source_kind` "
+        "engagement and `source_id`, a full-access administrator's, as any fiscal due item)"
+    ),
+    ("DueItemService", "of_source"): (
+        "REB-1035: what `list_due_items` answers for one `source_kind` and `source_id`, in every "
+        "state but dropped, for a page that lists one record's payments"
+    ),
+    ("OwnEngagementService", "for_contract"): (
+        "REB-1035: a freelancer reads their own engagement with rebase across spaces, a person's "
+        "read (`read_rebase_engagement` is person-only): the engagement is rebase's data, and an "
+        "agent in the freelancer's space has no reason to hold it"
+    ),
     ("EngagementService", "report"): (
         "reads a match's hours back for the same hub door (spec 2026-09-25 §2.4), never "
         "for an agent in the space: the deal's own hours are already `list_time_entries`, "

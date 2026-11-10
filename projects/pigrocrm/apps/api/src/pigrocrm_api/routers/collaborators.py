@@ -17,12 +17,16 @@ from sqlalchemy import Engine
 from pigrocrm.core.collaborators.days_report import DaysReportService
 from pigrocrm.core.collaborators.letter_service import LetterService
 from pigrocrm.core.collaborators.monthly_reports import MonthlyReportService
+from pigrocrm.core.collaborators.payment_read import EngagementPaymentService
 from pigrocrm.core.collaborators.schemas import (
     AVAILABILITY_MAX_WEEKS,
+    EngagementBucket,
+    EngagementCounts,
     EngagementCreate,
     EngagementDaysReport,
     EngagementListQuery,
     EngagementPage,
+    EngagementPaymentPage,
     EngagementRead,
     EngagementStateChange,
     EngagementUpdate,
@@ -78,6 +82,13 @@ class EngagementListParams(KeysetParams):
     client_organization_id: UUID | None = None
     deal_id: UUID | None = None
     contract_id: UUID | None = None
+    bucket: EngagementBucket | None = Field(
+        default=None,
+        description=(
+            "todo (waits for a person) | ongoing (out for signature or active, nothing waiting) "
+            "| closed (concluded or cancelled, nothing waiting)"
+        ),
+    )
 
 
 class AvailabilityParams(BaseModel):
@@ -92,6 +103,9 @@ class AvailabilityParams(BaseModel):
         default=None,
         description=f"Default twelve weeks on; at most {AVAILABILITY_MAX_WEEKS} weeks in all",
     )
+    excluding_engagement_id: UUID | None = Field(
+        default=None, description="Leave this engagement out, as its own page does for a draft"
+    )
 
 
 @router.get("/engagements", response_model=EngagementPage)
@@ -100,6 +114,13 @@ def list_engagements(
 ) -> EngagementPage:
     """The engagements with freelancers, newest first."""
     return EngagementService(session).list(params.to_query(EngagementListQuery), actor)
+
+
+@router.get("/engagements/counts", response_model=EngagementCounts)
+def count_engagements(session: SessionDep, actor: ActorDep) -> EngagementCounts:
+    """How many engagements wait for a person, are under way and are closed: the three tabs of
+    the list. The count on the «Incarichi» entry is `todo`."""
+    return EngagementService(session).counts(actor)
 
 
 @router.post("/engagements", response_model=EngagementRead, status_code=status.HTTP_201_CREATED)
@@ -114,6 +135,16 @@ def create_engagement(
 @router.get("/engagements/{engagement_id}", response_model=EngagementRead)
 def get_engagement(engagement_id: UUID, session: SessionDep, actor: ActorDep) -> EngagementRead:
     return EngagementService(session).get(engagement_id, actor)
+
+
+@router.get("/engagements/{engagement_id}/payments", response_model=EngagementPaymentPage)
+def engagement_payments(
+    engagement_id: UUID, session: SessionDep, actor: ActorDep
+) -> EngagementPaymentPage:
+    """What the engagement pays the freelancer, month by month: the due items it wrote, with
+    the month each pays for and the client's invoice a date still follows. Read-only: a payment
+    is settled on the due item."""
+    return EngagementPaymentService(session).for_engagement(engagement_id, actor)
 
 
 @router.patch("/engagements/{engagement_id}", response_model=EngagementRead)
@@ -232,6 +263,7 @@ def freelancer_availability(
         hub_freelancer_id=params.hub_freelancer_id,
         date_from=params.date_from,
         date_to=params.date_to,
+        excluding_engagement_id=params.excluding_engagement_id,
     )
 
 
