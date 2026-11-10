@@ -92,3 +92,16 @@ def storage_from_settings(
         # not a check made while the backend is being built.
         return LazyUserDriveStorage(session_factory, settings)
     return LocalFileStorage(Path(settings.storage_local_root))
+
+
+def space_storage_from_settings(
+    settings: Settings, slug: str | None, *, session_factory: SessionFactory | None = None
+) -> DocumentStorage:
+    """The storage of one space, the way the API writes to it and the cron commands must read
+    it. On disk a space's files live in their own folder beside the root's
+    (`<root>/tenants/<slug>`), never in the root's; on Drive the space resolves its own account
+    through `session_factory`, which must open that space's database. `slug` is `None` for the
+    root installation, whose storage is `storage_from_settings`'."""
+    if slug is not None and settings.storage_backend != "gdrive":
+        return LocalFileStorage(Path(settings.storage_local_root) / "tenants" / slug)
+    return storage_from_settings(settings, session_factory=session_factory)

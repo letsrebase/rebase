@@ -21,6 +21,7 @@ What they share, and the reason each differs from `gmail-sync`:
 
 import sys
 from datetime import UTC, date, datetime, time
+from functools import partial
 from zoneinfo import ZoneInfo
 
 from pigrocrm.core import telemetry
@@ -44,7 +45,7 @@ from pigrocrm.core.reminders.jobs import AUTOMATIONS_JOB, DIGEST_JOB, REMINDER_P
 from pigrocrm.core.reminders.push import push_sender_from_settings
 from pigrocrm.core.reminders.run import ReminderOutcome, ReminderRun
 from pigrocrm.core.slack.client import slack_client_for
-from pigrocrm.core.storage.factory import storage_from_settings
+from pigrocrm.core.storage.factory import space_storage_from_settings
 
 # Both forms of the same module, deliberately. `telemetry` as a module is what
 # `digest` calls `shutdown()` through, so the call resolves the attribute at run time and
@@ -290,8 +291,11 @@ def automations(settings: Settings, *, slug: str | None, day: date | None, dry_r
                 with session_factory(engine)() as space:
                     retention = ExportRetention(
                         space,
-                        lambda: storage_from_settings(
-                            settings, session_factory=session_factory(engine)
+                        partial(
+                            space_storage_from_settings,
+                            settings,
+                            target.slug,
+                            session_factory=session_factory(engine),
                         ),
                     ).run(now=datetime.now(UTC), dry_run=dry_run)
             except Exception as exc:  # noqa: BLE001 - reported below, the pass goes on
