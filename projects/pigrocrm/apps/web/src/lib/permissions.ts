@@ -151,6 +151,8 @@ export const MIN_ROLE = {
   mark_transmitted_externally: 'admin',
   bind_time_to_invoice: 'admin',
   bill_contract_days: 'admin',
+  // The draft of a contract's recurring fee (REB-1032), the same rung as the days'.
+  bill_contract_fee: 'admin',
   // Registering an invoice issued elsewhere: the start page's invoice door (REB-224) is
   // the admin's, because the import its handoff asks the assistant for is.
   import_issued_invoice: 'admin',

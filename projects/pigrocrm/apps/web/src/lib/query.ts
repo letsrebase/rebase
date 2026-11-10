@@ -236,6 +236,10 @@ export const queryKeys = {
   reminderPreferences: ['reminder-preferences'] as const,
   contractBillableDays: (id: string, params?: unknown) =>
     ['contract', id, 'billable-days', params ?? {}] as const,
+  // The occurrences of a contract's recurring fees (REB-1032), under the contract's own key so
+  // anything that invalidates the contract reads them again.
+  contractFeeOccurrences: (id: string, params?: unknown) =>
+    ['contract', id, 'fee-occurrences', params ?? {}] as const,
   contractRegister: (id: string, params?: unknown) =>
     ['contract', id, 'register', params ?? {}] as const,
   // Web push (REB-738): whether this installation can send it and the key a browser

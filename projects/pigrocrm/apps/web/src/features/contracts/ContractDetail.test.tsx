@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { api } from '@/lib/api'
 import { ContractDetail } from './ContractDetail'
@@ -48,6 +48,9 @@ const CONTRACT = {
   custom_fields: {},
 }
 
+// The occurrences the contract's recurring fees draw; a contract with none shows no «Canoni».
+let feeOccurrences: unknown[] = []
+
 function mockApi(contract: ReturnType<typeof ok> | ReturnType<typeof failed>) {
   mockGet.mockImplementation(((path: string) => {
     if (path === '/api/contracts/{contract_id}') return contract
@@ -72,6 +75,18 @@ function mockApi(contract: ReturnType<typeof ok> | ReturnType<typeof failed>) {
         period_from: '2026-01-01',
         period_to: '2026-12-31',
         currencies: [{ currency: 'EUR', customer_revenue: '0.00', total_revenue: '0.00', share: 0 }],
+      })
+    }
+    if (path.endsWith('/fee-occurrences')) {
+      return ok({
+        contract_id: 'c1',
+        contract_status: 'active',
+        currency: 'EUR',
+        billable: true,
+        block_reason: null,
+        date_from: '2026-08-12',
+        date_to: '2027-05-09',
+        occurrences: feeOccurrences,
       })
     }
     if (path.endsWith('/billable-days')) {
@@ -115,6 +130,7 @@ function renderPage() {
 
 beforeEach(() => {
   mockGet.mockReset()
+  feeOccurrences = []
   auth.canWrite = true
 })
 
@@ -137,6 +153,31 @@ describe('ContractDetail', () => {
     // The contract's days (REB-745): its own section, with the empty state of a contract that has none.
     expect(screen.getByRole('heading', { name: 'Giornate' })).toBeInTheDocument()
     expect(await screen.findByText('Nessuna giornata su questo contratto')).toBeInTheDocument()
+  })
+
+  it('draws the fee occurrences only for a contract that has a recurring fee', async () => {
+    mockApi(ok(CONTRACT))
+    const without = renderPage()
+    expect(await screen.findByRole('heading', { name: 'Tariffe' })).toBeInTheDocument()
+    await waitFor(() => expect(mockGet).toHaveBeenCalledWith('/api/contracts/{contract_id}/fee-occurrences', expect.anything()))
+    expect(screen.queryByRole('heading', { name: 'Canoni' })).not.toBeInTheDocument()
+    without.unmount()
+
+    feeOccurrences = [
+      {
+        rate_card_id: 'card-1',
+        period_start: '2026-11-10',
+        period_end: '2026-12-09',
+        delivery_period: 'monthly',
+        amount: '1200.00',
+        state: 'to_bill',
+        invoice: null,
+      },
+    ]
+    renderPage()
+
+    expect(await screen.findByRole('heading', { name: 'Canoni' })).toBeInTheDocument()
+    expect(await screen.findByRole('button', { name: 'Fattura il canone del 10/11/2026' })).toBeInTheDocument()
   })
 
   it('shows the cap on the customer’s share in the billing card, or says there is none', async () => {
