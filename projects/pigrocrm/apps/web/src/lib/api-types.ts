@@ -3540,9 +3540,9 @@ export interface paths {
         get?: never;
         /**
          * Upsert Engagement
-         * @description Creates or finds the freelancer's space, the «rebase» client and the letter's
-         *     deal for this hub match, under the bearer of `PIGROCRM_ENGAGEMENTS_TOKEN`
-         *     that only the hub holds.
+         * @description Creates or finds the freelancer's space, the «rebase» client, the letter's deal
+         *     and its contract with a rate card (`fee_unit` day, hour or flat) for this hub match,
+         *     under the bearer of `PIGROCRM_ENGAGEMENTS_TOKEN` that only the hub holds.
          */
         put: operations["upsert_engagement_api_rebase_engagements__match_id__put"];
         post?: never;
@@ -9216,6 +9216,12 @@ export interface components {
             end_date?: string | null;
             /** Fee */
             fee: number | string;
+            /**
+             * Fee Unit
+             * @default day
+             * @enum {string}
+             */
+            fee_unit: "day" | "hour" | "flat";
             /** Expected Days */
             expected_days?: number | null;
         };
@@ -15466,8 +15472,8 @@ export interface components {
         };
         /**
          * EngagementRead
-         * @description What the door set up for a match: the space, the customer and the deal, with the
-         *     two links the hub shows. `created` says whether this call wrote the deal's row (201)
+         * @description What the door set up for a match: the space, the customer, the deal and the contract,
+         *     with the two links the hub shows. `created` says whether this call wrote the deal's row (201)
          *     or found it already there (200); `space_created` whether the space was opened for
          *     this match, said by the call that writes the row (a retry of a call that stopped on
          *     the way included) and false on the calls after it.
@@ -15489,6 +15495,8 @@ export interface components {
             deal_id: string;
             /** Deal Url */
             deal_url: string;
+            /** Contract Id */
+            contract_id?: string | null;
             /** Space Created */
             space_created: boolean;
             /** Created */
@@ -42545,7 +42553,7 @@ export interface operations {
                     "application/json": components["schemas"]["pigrocrm__core__engagements__schemas__EngagementRead"];
                 };
             };
-            /** @description The space, the «rebase» customer and the letter's deal were created now, for the first time with this match. */
+            /** @description The space, the «rebase» customer, the letter's deal and its contract with a rate card were created now, for the first time with this match. */
             201: {
                 headers: {
                     [name: string]: unknown;

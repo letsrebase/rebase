@@ -344,7 +344,116 @@ def test_a_space_the_door_opens_is_solo_with_its_deal_on(door: Door) -> None:
             space, space_base_settings(door.settings, "ada-lovelace")
         ).describe()
     assert state.profile == "solo"
-    assert {m.key: (m.stored, m.enabled) for m in state.modules}["deals"] == (True, True)
+    modules = {m.key: (m.stored, m.enabled) for m in state.modules}
+    assert modules["deals"] == (True, True)
+    assert modules["contracts"] == (True, True)
+
+
+@pytest.mark.parametrize(
+    ("unit", "card_type", "quantity", "period", "valid_to"),
+    [
+        ("day", "daily", Decimal("40.00"), "one_off", date(2026, 12, 31)),
+        ("hour", "hourly", Decimal("320.00"), "one_off", date(2026, 12, 31)),
+        ("flat", "one_off", None, None, date(2026, 12, 31)),
+    ],
+)
+def test_activating_writes_an_active_contract_with_a_rate_card_of_the_letters_unit(
+    door: Door,
+    unit: str,
+    card_type: str,
+    quantity: Decimal | None,
+    period: str | None,
+    valid_to: date,
+) -> None:
+    from pigrocrm.core.contracts.models import Contract, RateCard
+
+    match_id = uuid4()
+    answer = door.service().ensure(match_id, _upsert(letter={"fee_unit": unit}))
+
+    assert answer.contract_id is not None
+    with _space(door, "ada-lovelace") as space:
+        contract = space.get(Contract, answer.contract_id)
+        assert contract is not None
+        assert (contract.customer_id, contract.title) == (answer.customer_id, DEAL_NAME)
+        assert (contract.status, contract.renewal_type) == ("active", "none")
+        assert (contract.start, contract.end) == (date(2026, 10, 1), date(2026, 12, 31))
+        card = space.scalars(select(RateCard).where(RateCard.contract_id == contract.id)).one()
+        assert (card.type, card.unit, card.amount) == (card_type, unit, Decimal("400.00"))
+        assert (card.valid_from, card.valid_to) == (date(2026, 10, 1), valid_to)
+        assert (card.expected_quantity, card.delivery_period) == (quantity, period)
+        actors = space.scalars(
+            select(Activity.actor_type).where(Activity.entity_id == contract.id)
+        ).all()
+        assert set(actors) == {"rebase"}
+
+        deal = space.get(Deal, answer.deal_id)
+        assert deal is not None
+        assert (
+            deal.hourly_rate
+            == {
+                "day": Decimal("50"),
+                "hour": Decimal("400"),
+                "flat": None,
+            }[unit]
+        )
+
+    row = _row(door, match_id)
+    assert row is not None and row.contract_id == answer.contract_id
+
+
+def test_a_retry_writes_the_contract_once_and_resumes_one_left_without_its_card(
+    door: Door,
+) -> None:
+    from pigrocrm.core.contracts.models import Contract, RateCard
+
+    match_id = uuid4()
+    first = door.service().ensure(match_id, _upsert())
+    # A call that stopped after the contract and before the card and the row's ids.
+    with _space(door, "ada-lovelace") as space:
+        space.execute(RateCard.__table__.delete())
+        space.commit()
+    with session_factory(door.registry)() as registry:
+        registry.execute(
+            update(RebaseEngagement)
+            .where(RebaseEngagement.match_id == match_id)
+            .values(deal_id=None, contract_id=None)
+        )
+        registry.commit()
+
+    second = door.service().ensure(match_id, _upsert())
+
+    assert (second.deal_id, second.contract_id) == (first.deal_id, first.contract_id)
+    with _space(door, "ada-lovelace") as space:
+        assert space.scalar(select(func.count()).select_from(Contract)) == 1
+        assert space.scalar(select(func.count()).select_from(RateCard)) == 1
+    assert door.service().ensure(match_id, _upsert()).contract_id == first.contract_id
+
+
+def test_a_row_written_before_contracts_keeps_its_deal_and_gains_no_contract(
+    door: Door,
+) -> None:
+    from pigrocrm.core.contracts.models import Contract, RateCard
+
+    match_id = uuid4()
+    first = door.service().ensure(match_id, _upsert())
+    with _space(door, "ada-lovelace") as space:
+        space.execute(RateCard.__table__.delete())
+        space.execute(Contract.__table__.delete())
+        space.commit()
+    with session_factory(door.registry)() as registry:
+        registry.execute(
+            update(RebaseEngagement)
+            .where(RebaseEngagement.match_id == match_id)
+            .values(contract_id=None)
+        )
+        registry.commit()
+
+    again = door.service().ensure(match_id, _upsert())
+
+    assert again.contract_id is None and again.deal_id == first.deal_id
+    with _space(door, "ada-lovelace") as space:
+        assert space.scalar(select(func.count()).select_from(Contract)) == 0
+        assert space.get(Deal, first.deal_id) is not None
 
 
 def test_a_space_the_freelancer_already_owned_gets_no_profile_from_the_door(door: Door) -> None:
