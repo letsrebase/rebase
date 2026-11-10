@@ -276,12 +276,14 @@ class IvaSettlementService:
         actor: Actor,
         *,
         legal_entity_id: UUID | None = None,
+        commit: bool = True,
     ) -> IvaSettlementRead | None:
         """Computes the settlement of `period` (a month or a quarter by the legal entity's
         frequency) with every earlier period back to the first one settled, stores them and
         writes the due item of each that comes to a payment. `None` when the entity's pack has
         no periodic IVA (a flat-rate entity has none). An administrator's act: the figures are
-        the fiscal position."""
+        the fiscal position. `commit=False` leaves the commit to the caller, which owns the
+        transaction the settlement is one step of (closing the period, REB-1036)."""
         actor.require_admin("settle_iva_period")
         legal_entity = LegalEntityService(self.session).require_single(
             legal_entity_id, entity=ENTITY
@@ -314,8 +316,9 @@ class IvaSettlementService:
         assert target is not None  # noqa: S101 - the target year has a law and a period
         # Who settled it and when; never the amounts, which are the fiscal position.
         self.activities.record(ENTITY, target.id, "iva_period_settled", actor)
-        self.session.commit()
-        self.session.refresh(target)
+        if commit:
+            self.session.commit()
+            self.session.refresh(target)
         return self._read(target)
 
     def settle_elapsed_periods(

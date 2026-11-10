@@ -121,6 +121,7 @@ class InvoiceEmission:
         issue_date = data.issue_date or today
         year = issue_date.year
         check_issue_date(issue_date, today)
+        ctx.iva_locks.assert_writable(ENTITY, "issue_date", source.legal_entity_id, issue_date)
         from_proforma = source.type == "proforma"
         check_issuable(source, from_proforma=from_proforma)
 
@@ -355,6 +356,13 @@ class InvoiceEmission:
         actor.require_admin("annul_invoice")
         ctx = self.ctx
         invoice = ctx.require_locked(invoice_id)
+        if invoice.status == "issued":
+            # Only a numbered invoice is in the sales register: a draft, a proforma or one
+            # already annulled gets the status refusal below. The advisory lock waits behind a
+            # close in progress, which holds nothing this row lock needs.
+            ctx.iva_locks.assert_writable(
+                ENTITY, "issue_date", invoice.legal_entity_id, invoice.issue_date
+            )
         if invoice.status != "issued":
             raise Conflict(
                 ENTITY,

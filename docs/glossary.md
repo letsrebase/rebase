@@ -74,6 +74,7 @@ This file is the single mapping from the Italian word to the English identifier.
 | scissione dei pagamenti | `split_payment` | The VAT is paid to the tax office and not to the supplier |
 | liquidazione IVA | `settlement` (`IvaSettlement`, `iva_settlements`) | The period's IVA computed from its two registers: sales VAT less deductible purchase VAT, less the credit carried in |
 | esigibilità | `exigibility` (`immediate`, `split_payment`) | When a sale's VAT falls due; on a split-payment sale it is not owed by the seller |
+| chiusura del periodo IVA | `IvaPeriodLock` (`iva_period_locks`, `close_iva_period`, `reopen_iva_period`) | A period a person closed after settling it: no document that changes its registers is written until it is reopened (REB-1036); not the monthly `period_locks` of hours and costs |
 | registro vendite, registro acquisti | sales register, purchase register (`IvaRegisterService`) | The documents behind a settlement line, read by period and legal entity, never a second copy |
 | ricavi | revenue |  |
 | preventivato | budgeted | Estimated in the offer (`ore_preventivate` is `budgeted_hours`) |

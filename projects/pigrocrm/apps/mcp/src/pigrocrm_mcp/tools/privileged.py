@@ -69,9 +69,14 @@ from pigrocrm.core.contracts.fee_billing import FeeBillingService
 from pigrocrm.core.contracts.fee_schemas import FeeBillRequest
 from pigrocrm.core.errors import ValidationFailed
 from pigrocrm.core.fiscal.declared import DeclaredTaxFigureService
+from pigrocrm.core.fiscal.iva_lock import IvaPeriodLockService
 from pigrocrm.core.fiscal.iva_register import IvaRegisterService
 from pigrocrm.core.fiscal.iva_settlement import IvaSettlementService
-from pigrocrm.core.fiscal.schemas import DeclaredTax, DeclaredTaxFigureSet
+from pigrocrm.core.fiscal.schemas import (
+    DeclaredTax,
+    DeclaredTaxFigureSet,
+    IvaPeriodLockCreate,
+)
 from pigrocrm.core.gmail.attachment_text import GmailAttachmentService
 from pigrocrm.core.gmail.sync import GmailSyncService
 from pigrocrm.core.gmail.tokens import GoogleTokenClient
@@ -672,7 +677,8 @@ def register(
         """The IVA periods of a company's year (months or quarters, by its frequency), each with its
         ladder: sales VAT, deductible purchase VAT, the credit carried in and the result (positive
         is owed, negative a credit), the state (`open` runs until its last day, its figures are
-        running) and the payment date. With several companies pass `legal_entity_id`.
+        running), whether it is `closed`, and the payment date. With several companies pass
+        `legal_entity_id`.
         """
 
         periods = IvaRegisterService(context.session).list_periods(
@@ -705,6 +711,40 @@ def register(
         return service.read_purchase_register(
             year, number, context.actor, legal_entity_id=parsed, limit=limit, offset=offset
         ).model_dump(mode="json")
+
+    @mcp.tool(annotations=ADDITIVE)
+    @guard
+    def close_iva_period(
+        year: int, number: int, legal_entity_id: str | None = None
+    ) -> dict[str, Any]:
+        """Closes an IVA period that has ended, once the accountant agrees: it is settled, then
+        locked. Until `reopen_iva_period` no purchase invoice or credit note in it (by `iva_period`)
+        and no sales invoice dated in it (issue date) can be written; a payment can. `number` is the
+        month or the quarter. With several companies pass `legal_entity_id`.
+        """
+        return (
+            IvaPeriodLockService(context.session)
+            .close_iva_period(
+                IvaPeriodLockCreate(
+                    year=year, number=number, legal_entity_id=parse_legal_entity_id(legal_entity_id)
+                ),
+                context.actor,
+            )
+            .model_dump(mode="json")
+        )
+
+    @mcp.tool(annotations=ADDITIVE)
+    @guard
+    def reopen_iva_period(
+        year: int, number: int, legal_entity_id: str | None = None
+    ) -> dict[str, str]:
+        """Reopens a closed IVA period and leaves a trace: documents dated in it can be written
+        again. With several companies pass `legal_entity_id`.
+        """
+        IvaPeriodLockService(context.session).reopen_iva_period(
+            year, number, context.actor, legal_entity_id=parse_legal_entity_id(legal_entity_id)
+        )
+        return {"outcome": f"IVA period {year}-{number:02d} reopened"}
 
     @mcp.tool(annotations=DESTRUCTIVE)
     @guard

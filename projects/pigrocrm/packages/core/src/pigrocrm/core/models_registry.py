@@ -43,6 +43,7 @@ from pigrocrm.core.fiscal.models import (  # noqa: F401
     DeclaredTaxFigure,
     FiscalEstimateReading,
     FiscalProfile,
+    IvaPeriodLock,
     IvaSettlement,
 )
 from pigrocrm.core.gmail.models import (  # noqa: F401

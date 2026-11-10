@@ -40,9 +40,11 @@ export const PAYMENT_TONES: Record<NonNullable<IvaPeriod['payment_state']>, Stat
   settled: 'ink',
 }
 
-/** The pill a period wears: «Aperto» while it runs, then what became of its result (the payment
- *  state of its due item when it owes, the outcome otherwise). A period nothing settled yet says so. */
+/** The pill a period wears: «Chiuso» once a person closed it (REB-1036), «Aperto» while it runs,
+ *  then what became of its result (the payment state of its due item when it owes, the outcome
+ *  otherwise). A period nothing settled yet says so. */
 export function periodPill(period: IvaPeriod): { tone: StatusTone; label: string } {
+  if (period.closed) return { tone: 'ink', label: 'Chiuso' }
   if (period.state === 'open' || period.state === 'future') {
     return { tone: STATE_TONES[period.state], label: STATE_LABELS[period.state] }
   }
@@ -70,3 +72,5 @@ export const NOT_THIS_ENTITY_SENTENCE =
   'L’azienda scelta nella barra laterale non liquida l’IVA per periodo.'
 export const EVERY_ENTITY_SENTENCE = 'L’IVA non si somma tra aziende.'
 export const PACK_SOURCE = 'dal pacchetto fiscale'
+export const SCOPED_CANNOT_CLOSE_SENTENCE =
+  'Solo un amministratore senza limiti all’azienda può chiudere il periodo.'

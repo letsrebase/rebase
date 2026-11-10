@@ -838,3 +838,41 @@ def test_a_register_rule_conflict_mid_batch_is_reported_and_the_rest_still_lands
     assert _invoice_count(db_session) == 1
     # The session must still answer a query after the mid-batch Conflict.
     assert len(db_session.execute(select(Invoice)).scalars().all()) == 1
+
+
+def test_an_invoice_dated_in_a_closed_iva_period_is_a_conflict_row_naming_the_period(
+    db_session: Session, local_storage: LocalFileStorage
+) -> None:
+    """REB-1036: the register write would turn the refusal into a bare conflict, so the lock is
+    checked first and its sentence is the invoice's note. Reopening lets the same file in."""
+    from datetime import UTC, datetime
+
+    from pigrocrm.core.fiscal.models import IvaPeriodLock
+
+    service = _svc(db_session, local_storage)
+    legal_entity = LegalEntityRepository(db_session).default()
+    assert legal_entity is not None
+    lock = IvaPeriodLock(
+        legal_entity_id=legal_entity.id,
+        frequency="quarterly",
+        year=2026,
+        period_number=1,
+        period_start=date(2026, 1, 1),
+        period_end=date(2026, 3, 31),
+        closed_at=datetime.now(UTC),
+    )
+    db_session.add(lock)
+    db_session.flush()
+    customer = make_customer_with_address(db_session, vat_number=CUSTOMER_VAT_NUMBER)
+    document_id = _document(db_session, local_storage, _fixture(CONSULTING), owner=customer)
+
+    [row] = service.confirm_import(document_id, ADMIN)
+
+    assert row.outcome == "conflict"
+    assert row.note is not None and "il periodo IVA 1° trimestre 2026 è chiuso" in row.note
+    assert _invoice_count(db_session) == 0
+
+    db_session.delete(lock)
+    db_session.flush()
+    [again] = service.confirm_import(document_id, ADMIN)
+    assert again.outcome == "imported"

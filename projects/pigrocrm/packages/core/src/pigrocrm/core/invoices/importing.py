@@ -14,6 +14,7 @@ from pydantic import ValidationError as PydanticValidationError
 
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.errors import Conflict, NotFound, ValidationFailed
+from pigrocrm.core.invoices.constants import ENTITY
 from pigrocrm.core.invoices.context import InvoiceContext
 from pigrocrm.core.invoices.import_classification import classify_parsed_invoice
 from pigrocrm.core.invoices.import_confirm import (
@@ -253,6 +254,7 @@ class InvoiceImporter:
                 existing_organization_id=row.existing_organization_id,
                 invoice=row.invoice,
                 undeclared_gaps=row.undeclared_gaps,
+                note=row.note,
             )
             for row in self._confirm_content(
                 content,
@@ -469,6 +471,12 @@ class InvoiceImporter:
             # invoice of the request (each of those is committed) nor the caller's other
             # pending work.
             with ctx.session.begin_nested():
+                # A closed IVA period refuses it, and the sentence names the period (REB-1036):
+                # the `Conflict` below carries it as this invoice's note, where `_write` would
+                # turn it into a bare conflict.
+                ctx.iva_locks.assert_writable(
+                    ENTITY, "issue_date", legal_entity.id, invoice.issue_date
+                )
                 if customer_id is None:
                     customer_id = cached_id
                 if customer_id is None:

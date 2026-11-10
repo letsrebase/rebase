@@ -7,7 +7,9 @@ from sqlalchemy import (
     Boolean,
     CheckConstraint,
     Date,
+    DateTime,
     ForeignKey,
+    Index,
     Integer,
     Numeric,
     String,
@@ -242,6 +244,52 @@ class IvaSettlement(Base, PrimaryKeyMixin, TimestampMixin):
     outcome: Mapped[str] = mapped_column(String(10), nullable=False)
     # The day the pack's calendar says this period is paid, after a non-working day moves it.
     payment_due_on: Mapped[dt.date] = mapped_column(Date, nullable=False)
+
+
+class IvaPeriodLock(Base, PrimaryKeyMixin):
+    """A closed IVA period of one legal entity (REB-1036, suppliers design § 6): while the row
+    exists, no document that changes the period's two registers is written, over REST and MCP.
+
+    A switch, not a record: reopening deletes the row and the history is the timeline, which hangs
+    on `id`. The id is derived from the legal entity, the frequency, the year and the number
+    (`iva_lock.lock_id`), so every close and reopen of one period reads as one sequence. The
+    unique constraint is the database's own guard against a second close of the same period.
+    `period_start` and `period_end` are the days the lock covers, stored so a write dated on a
+    day finds its lock without knowing the frequency: a year keeps the frequency it was first
+    settled in, and a later one starts the year after. Monthly and quarterly rows of one legal
+    entity never overlap (`IvaPeriodLockService.close_iva_period` refuses it).
+
+    Separate from `period_locks` (`timetracking/locks.py`), which is global, by month, and
+    governs hours and the cost side of purchases; neither implies the other.
+    """
+
+    __tablename__ = "iva_period_locks"
+    __table_args__ = (
+        UniqueConstraint(
+            "legal_entity_id",
+            "frequency",
+            "year",
+            "period_number",
+            name="uq_iva_period_locks_period",
+        ),
+        CheckConstraint(f"frequency IN {IVA_FREQUENCIES!r}", name="ck_iva_period_locks_frequency"),
+        CheckConstraint(
+            "(frequency = 'monthly' AND period_number BETWEEN 1 AND 12) OR "
+            "(frequency = 'quarterly' AND period_number BETWEEN 1 AND 4)",
+            name="ck_iva_period_locks_period_number",
+        ),
+        CheckConstraint("period_start <= period_end", name="ck_iva_period_locks_period_order"),
+        Index("ix_iva_period_locks_days", "legal_entity_id", "period_start", "period_end"),
+    )
+
+    legal_entity_id: Mapped[UUID] = mapped_column(ForeignKey("legal_entities.id"), nullable=False)
+    frequency: Mapped[str] = mapped_column(String(10), nullable=False)
+    year: Mapped[int] = mapped_column(Integer, nullable=False)
+    period_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    period_start: Mapped[dt.date] = mapped_column(Date, nullable=False)
+    period_end: Mapped[dt.date] = mapped_column(Date, nullable=False)
+    closed_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    closed_by: Mapped[UUID | None] = mapped_column(ForeignKey("users.id"), default=None)
 
 
 class DeclaredTaxFigure(Base, PrimaryKeyMixin, TimestampMixin):

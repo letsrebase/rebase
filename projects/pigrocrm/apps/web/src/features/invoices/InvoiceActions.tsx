@@ -306,7 +306,12 @@ export function InvoiceActions({
                 Rigenera documenti
               </Button>
             ) : null}
-            {mayAnnul ? (
+            {mayAnnul && invoice.iva_period_closed ? (
+              <p role="note" className="text-sm text-muted-foreground">
+                Periodo IVA chiuso: non si può modificare.
+              </p>
+            ) : null}
+            {mayAnnul && !invoice.iva_period_closed ? (
               <Button variant="destructive" onClick={() => setAnnulOpen(true)}>
                 <Ban className="mr-2 size-4" />
                 Annulla

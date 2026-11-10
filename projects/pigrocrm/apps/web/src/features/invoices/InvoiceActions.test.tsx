@@ -250,6 +250,12 @@ describe('InvoiceActions', () => {
     expect(screen.getByRole('button', { name: /annulla/i })).toBeInTheDocument()
   })
 
+  it('says the period is closed in place of «Annulla» on an invoice in a closed IVA period', () => {
+    wrap(<InvoiceActions invoice={{ ...ISSUED, iva_period_closed: true } as Invoice} />)
+    expect(screen.getByText('Periodo IVA chiuso: non si può modificare.')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^annulla$/i })).not.toBeInTheDocument()
+  })
+
   it('says annulment keeps the number, rather than offering a delete', async () => {
     wrap(<InvoiceActions invoice={ISSUED} />)
     expect(screen.queryByRole('button', { name: /elimina/i })).not.toBeInTheDocument()

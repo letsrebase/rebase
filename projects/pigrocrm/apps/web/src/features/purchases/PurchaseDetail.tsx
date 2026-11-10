@@ -289,7 +289,12 @@ export function PurchaseDetail() {
             <StatusPill tone={PURCHASE_STATUS_TONE[row.status]}>
               {PURCHASE_STATUS_LABELS[row.status]}
             </StatusPill>
-            {canUpdate && !cancelled && (
+            {row.iva_period_closed && (
+              <p role="note" className="text-sm text-muted-foreground">
+                Periodo IVA chiuso: non si può modificare.
+              </p>
+            )}
+            {canUpdate && !cancelled && !row.iva_period_closed && (
               <Button variant="outline" asChild>
                 <Link to="/app/purchases/edit/$purchaseId" params={{ purchaseId: row.id }}>
                   <Pencil className="mr-2 size-4" />
@@ -297,12 +302,12 @@ export function PurchaseDetail() {
                 </Link>
               </Button>
             )}
-            {canCancel && !cancelled && (
+            {canCancel && !cancelled && !row.iva_period_closed && (
               <Button variant="outline" onClick={annul} disabled={busy}>
                 Annulla acquisto
               </Button>
             )}
-            {canDelete && (
+            {canDelete && !row.iva_period_closed && (
               <Button variant="destructive" onClick={archive} disabled={busy}>
                 Elimina
               </Button>

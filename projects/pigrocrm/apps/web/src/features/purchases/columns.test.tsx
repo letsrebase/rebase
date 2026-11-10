@@ -58,6 +58,7 @@ const PURCHASE: Purchase = {
   custom_fields: {},
   created_at: '2026-03-05T00:00:00Z',
   updated_at: '2026-03-05T00:00:00Z',
+  iva_period_closed: false,
 }
 
 /**

@@ -1,4 +1,4 @@
-import { useInfiniteQuery, useQuery } from '@tanstack/react-query'
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, unwrap } from '@/lib/api'
 import type { components } from '@/lib/api-types'
 import { useAuth } from '@/lib/auth'
@@ -15,6 +15,7 @@ export type IvaSalesRegister = components['schemas']['IvaSalesRegisterRead']
 export type IvaSalesRow = components['schemas']['IvaSalesRowRead']
 export type IvaPurchaseRegister = components['schemas']['IvaPurchaseRegisterRead']
 export type IvaPurchaseRow = components['schemas']['IvaPurchaseRowRead']
+export type IvaPeriodLock = components['schemas']['IvaPeriodLockRead']
 
 /** A register is read 50 rows at a time (the brief: «Mostra altri»). */
 export const REGISTER_PAGE_SIZE = 50
@@ -150,4 +151,39 @@ export function usePurchaseRegister(
     loadMore: () => void query.fetchNextPage(),
     retry: () => void query.refetch(),
   }
+}
+
+/**
+ * Closes a period that has ended (`POST /api/iva-period-locks`): the server settles it and locks it
+ * in one transaction. The periods are read again after it, since the closed state, the pill and the
+ * ladder all come from the server.
+ */
+export function useCloseIvaPeriod() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (body: { year: number; number: number; legalEntityId: string }) =>
+      unwrap(
+        api.POST('/api/iva-period-locks', {
+          body: { year: body.year, number: body.number, legal_entity_id: body.legalEntityId },
+        }),
+      ),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.ivaPeriodsAll() }),
+  })
+}
+
+/** Reopens a closed period (`DELETE /api/iva-period-locks/{year}/{number}`), leaving a trace. */
+export function useReopenIvaPeriod() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (target: { year: number; number: number; legalEntityId: string }) =>
+      unwrap(
+        api.DELETE('/api/iva-period-locks/{year}/{number}', {
+          params: {
+            path: { year: target.year, number: target.number },
+            query: { legal_entity_id: target.legalEntityId },
+          },
+        }),
+      ),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.ivaPeriodsAll() }),
+  })
 }

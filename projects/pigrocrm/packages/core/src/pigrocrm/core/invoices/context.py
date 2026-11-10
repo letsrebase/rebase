@@ -23,6 +23,7 @@ from pigrocrm.core.documents.service import DocumentService
 from pigrocrm.core.drive.reader import DriveReader
 from pigrocrm.core.errors import Conflict, NotFound, ValidationFailed
 from pigrocrm.core.fields.service import FieldDefinitionService
+from pigrocrm.core.fiscal.iva_lock import IvaPeriodLockService
 from pigrocrm.core.fiscal.pack import PACK_NON_IT
 from pigrocrm.core.fiscal.regime import RegimeStrategy, resolve_regime
 from pigrocrm.core.fiscal.schemas import FiscalSnapshot
@@ -56,6 +57,9 @@ class InvoiceContext:
         self.fields = FieldDefinitionService(session)
         self.activities = ActivityService(session)
         self.fiscal = FiscalProfileService(session)
+        # The closed IVA periods (REB-1036): an issue, an annulment or an import dated in one is
+        # refused, since the sales register places a sale by its issue date.
+        self.iva_locks = IvaPeriodLockService(session)
         self.legal_entity = LegalEntityService(session)
         self.documents = DocumentService(session, storage, self.settings)
         # The same session as everything else here (REB-367, design §7 item 5): a
@@ -247,5 +251,9 @@ class InvoiceContext:
         not spent on a date nothing on that page prints."""
         invoice = self.require(invoice_id)
         return self.read(invoice).model_copy(
-            update={"expected_due_date": self.expected_due_date(invoice)}
+            update={
+                "expected_due_date": self.expected_due_date(invoice),
+                "iva_period_closed": invoice.status == "issued"
+                and self.iva_locks.is_closed(invoice.legal_entity_id, invoice.issue_date),
+            }
         )

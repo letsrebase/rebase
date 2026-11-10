@@ -203,6 +203,11 @@ FULL_ACCESS_ACTIONS: frozenset[str] = frozenset(
         # The IVA periods and the registers behind them (REB-1024): the same position.
         "list_iva_periods",
         "get_iva_register",
+        # Closing an IVA period against writes to its registers, and reopening it (REB-1036):
+        # as `close_period` is, an act on the whole space, so an administrator's token with
+        # `full_access`; the service asks for an unscoped administrator.
+        "close_iva_period",
+        "reopen_iva_period",
         # The space's profile and which modules are on (spec 2026-11-09, B1): what the whole
         # team sees changes. An administrator's token with `full_access`, nothing less; the
         # generic `update_space_settings` stays person-only below.
@@ -494,6 +499,8 @@ ACTION_LABELS: dict[str, str] = {
     "list_iva_settlements": "leggere le liquidazioni IVA",
     "list_iva_periods": "leggere i periodi IVA con la loro liquidazione",
     "get_iva_register": "leggere il registro IVA vendite o acquisti di un periodo",
+    "close_iva_period": "chiudere un periodo IVA",
+    "reopen_iva_period": "riaprire un periodo IVA",
     "set_payroll_pay_day": "impostare il giorno di paga dell'azienda",
     "record_staff_payslip": "registrare le cifre di un cedolino",
     "correct_staff_payslip": "correggere il cedolino di una persona",

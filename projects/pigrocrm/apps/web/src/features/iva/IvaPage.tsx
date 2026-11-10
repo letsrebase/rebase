@@ -1,5 +1,5 @@
 import { Percent } from 'lucide-react'
-import type { ReactNode } from 'react'
+import { useEffect, type ReactNode } from 'react'
 import { LoadingState } from '@/components/LoadingState'
 import { PageHeader } from '@/components/PageHeader'
 import { QueryErrorBanner } from '@/components/QueryErrorBanner'
@@ -19,6 +19,8 @@ import {
 import { TabsContent, TabsList, TabsTrigger, Tabs } from '@rebase/ui/tabs'
 import { useMediaQuery } from '@rebase/ui/use-media-query'
 import { Ladder } from './Ladder'
+import { lockMode } from './lock'
+import { ClosedBand, PeriodLockButton, PhoneLockBar, ScopedNote } from './PeriodLock'
 import {
   EVERY_ENTITY_SENTENCE,
   LOADING_SENTENCE,
@@ -57,11 +59,11 @@ const OUTCOME_WORDS: Record<NonNullable<IvaPeriod['ladder']>['outcome'], string>
  *  came to; a period the server cannot figure says so, and one still running says «in corso». */
 function periodOption(period: IvaPeriod): string {
   if (period.ladder === null) {
-    return `${period.label} · ${period.state === 'future' ? 'non ancora iniziato' : NOT_COMPUTABLE}`
+    return `${period.label} · ${period.state === 'future' ? 'non ancora iniziato' : NOT_COMPUTABLE}${period.closed ? ' · chiuso' : ''}`
   }
   const paid = period.ladder.outcome === 'due' && period.payment_state === 'settled'
   const words = period.state === 'open' ? 'in corso' : paid ? 'versato' : OUTCOME_WORDS[period.ladder.outcome]
-  return `${period.label} · ${formatMoneyValue(period.ladder.result)} · ${words}`
+  return `${period.label} · ${formatMoneyValue(period.ladder.result)} · ${words}${period.closed ? ' · chiuso' : ''}`
 }
 
 /** The period the page opens on: the one running now, else the last one that ended, else the first. */
@@ -101,14 +103,38 @@ function IvaBody({
 }) {
   const wide = useMediaQuery(TABLE)
   const beside = useMediaQuery(BESIDE)
+  const canLock = useCan('close_iva_period')
+  const { scoped } = useLegalEntity()
   const periods = useIvaPeriods(year, entityId)
   const list = periods.data ?? []
-  const period = list.find((candidate) => candidate.number === search.period) ?? defaultPeriod(list)
+  // A number is a period only with its frequency (REB-1036): the sidebar's legal entity can change
+  // under the URL, and a quarterly `3` must not open March of a monthly one.
+  const asked = list.find(
+    (candidate) => candidate.number === search.period && candidate.frequency === search.frequency,
+  )
+  const period = asked ?? defaultPeriod(list)
   const number = period?.number ?? null
+  const stale = search.period !== undefined && list.length > 0 && asked === undefined
+  useEffect(() => {
+    // The URL never claims a period the page is not showing.
+    if (stale) onSearch({ period: undefined, frequency: undefined })
+  }, [stale, onSearch])
   const sales = useSalesRegister(year, number, entityId)
   const purchases = usePurchaseRegister(year, number, entityId)
 
   const pill = period === undefined ? null : periodPill(period)
+  const mode = period === undefined ? 'none' : lockMode(period, canLock, scoped)
+  const lockButton =
+    period !== undefined && (mode === 'close' || mode === 'reopen') ? (
+      <PeriodLockButton
+        key={`${period.year}-${period.number}-${mode}`}
+        period={period}
+        mode={mode}
+        entityId={entityId}
+        entityName={entityName}
+        block={!wide}
+      />
+    ) : null
   const header = (
     <PageHeader
       icon={Percent}
@@ -129,9 +155,10 @@ function IvaBody({
             <PeriodSelect
               periods={list}
               value={period.number}
-              onChange={(next) => onSearch({ period: next })}
+              onChange={(next) => onSearch({ period: next.number, frequency: next.frequency })}
             />
           )}
+          {wide && lockButton}
         </>
       }
     />
@@ -185,6 +212,11 @@ function IvaBody({
   return (
     <>
       {header}
+      {(period.closed || mode === 'scoped') && (
+        <div className="px-8 pt-2">
+          {period.closed ? <ClosedBand period={period} /> : <ScopedNote />}
+        </div>
+      )}
       <div className={beside ? 'flex items-start gap-6 px-8 pb-8 pt-2' : 'space-y-6 px-8 pb-8 pt-2'}>
         {!beside && ladder}
         <Tabs
@@ -208,6 +240,7 @@ function IvaBody({
         </Tabs>
         {beside && <div className="w-80 shrink-0">{ladder}</div>}
       </div>
+      {!wide && lockButton !== null && <PhoneLockBar>{lockButton}</PhoneLockBar>}
     </>
   )
 }
@@ -219,14 +252,14 @@ function PeriodSelect({
 }: {
   periods: readonly IvaPeriod[]
   value: number
-  onChange: (next: number) => void
+  onChange: (next: IvaPeriod) => void
 }) {
   return (
     <Select
       value={String(value)}
       onValueChange={(next) => {
         const picked = periods.find((candidate) => String(candidate.number) === next)
-        if (picked !== undefined) onChange(picked.number)
+        if (picked !== undefined) onChange(picked)
       }}
     >
       <SelectTrigger aria-label="Periodo" className="min-w-0 flex-1 basis-56 md:w-auto md:flex-none md:basis-auto md:min-w-96">
@@ -301,7 +334,7 @@ export function IvaPage({
       {everyEntity && (
         <Select
           value={entity.legal_entity_id}
-          onValueChange={(next) => onSearch({ entity: next, period: undefined })}
+          onValueChange={(next) => onSearch({ entity: next, period: undefined, frequency: undefined })}
         >
           <SelectTrigger aria-label="Azienda" className="w-full sm:w-56">
             <SelectValue />
@@ -319,7 +352,7 @@ export function IvaPage({
         value={String(year)}
         onValueChange={(next) => {
           const picked = years.find((candidate) => String(candidate) === next)
-          if (picked !== undefined) onSearch({ year: picked, period: undefined })
+          if (picked !== undefined) onSearch({ year: picked, period: undefined, frequency: undefined })
         }}
       >
         <SelectTrigger aria-label="Anno" className="w-28">

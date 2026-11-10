@@ -228,6 +228,11 @@ export const MIN_ROLE = {
   get_export_download_url: 'admin',
   // The IVA periods and the registers behind them (REB-1024), the same position again.
   list_iva_periods: 'admin',
+  // Closing an IVA period and reopening it (REB-1036): an administrator's, and only one with the
+  // whole space in view (the service asks `require_unscoped_admin`); `useLegalEntity().scoped` is
+  // the second half of the check.
+  close_iva_period: 'admin',
+  reopen_iva_period: 'admin',
   create_cost_category: 'admin',
   update_cost_category: 'admin',
   archive_cost_category: 'admin',

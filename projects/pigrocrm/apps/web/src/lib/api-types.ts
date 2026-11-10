@@ -2685,6 +2685,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/iva-period-locks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Close Iva Period
+         * @description Closes a period that has ended: it is settled first, then locked, in one transaction.
+         */
+        post: operations["close_iva_period_api_iva_period_locks_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/iva-period-locks/{year}/{number}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Reopen Iva Period
+         * @description Reopens a closed period and leaves a trace: writes dated in it are allowed again.
+         */
+        delete: operations["reopen_iva_period_api_iva_period_locks__year___number__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/legal-entities": {
         parameters: {
             query?: never;
@@ -8154,6 +8194,8 @@ export interface components {
             invoice?: components["schemas"]["InvoiceRead"] | null;
             /** Undeclared Gaps */
             undeclared_gaps?: number[] | null;
+            /** Note */
+            note?: string | null;
         };
         /**
          * ContactPointIn
@@ -12833,6 +12875,11 @@ export interface components {
             snapshot_version: number | null;
             /** Expected Due Date */
             expected_due_date?: string | null;
+            /**
+             * Iva Period Closed
+             * @default false
+             */
+            iva_period_closed: boolean;
             /** Customer Legal Name */
             customer_legal_name?: string | null;
             /** Custom Fields */
@@ -12962,6 +13009,64 @@ export interface components {
             outcome: "due" | "carried" | "credit" | "nil";
         };
         /**
+         * IvaPeriodLockCreate
+         * @description Close one period of one legal entity's IVA cycle (REB-1036). `legal_entity_id` is required
+         *     when the space has more than one legal entity.
+         */
+        IvaPeriodLockCreate: {
+            /** Year */
+            year: number;
+            /** Number */
+            number: number;
+            /** Legal Entity Id */
+            legal_entity_id?: string | null;
+        };
+        /**
+         * IvaPeriodLockRead
+         * @description A closed IVA period: while it is closed no document that changes its registers is written.
+         *     `closed_by` is the person who closed it (the owner of the token, for an agent).
+         */
+        IvaPeriodLockRead: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Legal Entity Id
+             * Format: uuid
+             */
+            legal_entity_id: string;
+            /**
+             * Frequency
+             * @enum {string}
+             */
+            frequency: "monthly" | "quarterly";
+            /** Year */
+            year: number;
+            /** Number */
+            number: number;
+            /** Label */
+            label: string;
+            /**
+             * Period Start
+             * Format: date
+             */
+            period_start: string;
+            /**
+             * Period End
+             * Format: date
+             */
+            period_end: string;
+            /**
+             * Closed At
+             * Format: date-time
+             */
+            closed_at: string;
+            /** Closed By */
+            closed_by: string | null;
+        };
+        /**
          * IvaPeriodRead
          * @description One period of a legal entity's IVA cycle (REB-1024). `ladder` is the stored settlement's
          *     when `settled`, otherwise the running figures of the period computed with the same code
@@ -12969,7 +13074,9 @@ export interface components {
          *     period that has not started, or one whose previous period is not settled while an earlier one
          *     is (its carry-over would be a guess). `state` is `open` until the period's last day
          *     included. The payment date is the pack's calendar's and `payment_state` the due item's;
-         *     `carry_forward_limit` is the pack's limit under which a small debit waits.
+         *     `carry_forward_limit` is the pack's limit under which a small debit waits. `closed` is whether
+         *     a person closed the period (REB-1036): no document that changes its registers is written
+         *     until it is reopened, and `closed_at` and `closed_by` say when and by whom.
          */
         IvaPeriodRead: {
             /**
@@ -13016,6 +13123,12 @@ export interface components {
             registers_changed: boolean;
             /** Carry Forward Limit */
             carry_forward_limit: string | null;
+            /** Closed */
+            closed: boolean;
+            /** Closed At */
+            closed_at: string | null;
+            /** Closed By */
+            closed_by: string | null;
         };
         /** IvaPurchaseGroupRead */
         IvaPurchaseGroupRead: {
@@ -16026,6 +16139,11 @@ export interface components {
              * Format: date-time
              */
             updated_at: string;
+            /**
+             * Iva Period Closed
+             * @default false
+             */
+            iva_period_closed: boolean;
         };
         /**
          * PurchaseUpdate
@@ -40026,6 +40144,249 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["IvaPurchaseRegisterRead"];
                 };
+            };
+            /** @description Permission denied: the actor does not have the required role. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The requested resource does not exist or was removed. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The request conflicts with the current state of the resource. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    close_iva_period_api_iva_period_locks_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["IvaPeriodLockCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IvaPeriodLockRead"];
+                };
+            };
+            /** @description Permission denied: the actor does not have the required role. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The requested resource does not exist or was removed. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The request conflicts with the current state of the resource. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reopen_iva_period_api_iva_period_locks__year___number__delete: {
+        parameters: {
+            query?: {
+                /** @description The legal entity: required when the space has more than one (a 422 response names `legal_entity_id`), otherwise it is the only one. */
+                legal_entity_id?: string | null;
+            };
+            header?: never;
+            path: {
+                year: number;
+                /** @description The month or the quarter */
+                number: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Permission denied: the actor does not have the required role. */
             403: {

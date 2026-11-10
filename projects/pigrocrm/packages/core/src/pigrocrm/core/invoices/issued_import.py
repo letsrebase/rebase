@@ -170,6 +170,7 @@ class IssuedInvoiceImporter:
             else ctx.legal_entity_of_parent(customer, data.deal_id)
         )
         check_import_customer(ctx, data.customer_id, legal_entity, customer.legal_name)
+        ctx.iva_locks.assert_writable(ENTITY, "issue_date", legal_entity.id, data.issue_date)
         _, profile = ctx.regime(legal_entity.id)
         snapshot = build_snapshot(ctx, data.customer_id, profile, actor, legal_entity.id)
         counter = ctx.repo.lock_counter(legal_entity.id, data.year)
