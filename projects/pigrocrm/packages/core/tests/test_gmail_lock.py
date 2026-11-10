@@ -20,6 +20,7 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from threading import Barrier, Event
+from time import monotonic, sleep
 from typing import Any
 from uuid import UUID, uuid4
 
@@ -274,9 +275,16 @@ def test_a_connection_that_cannot_unlock_is_invalidated_and_never_raises(
 
     assert events == ["unlock failed", "invalidated"]
     monkeypatch.undo()
-    # Invalidated, not unlocked: the backend is gone and with it the lock.
+    # Invalidated, not unlocked: the backend is gone and with it the lock. The server frees
+    # the lock when it *notices* the closed connection, which is its own moment and not the
+    # client's close(), so the test waits for it, bounded, instead of asking once.
+    deadline = monotonic() + 10
     with Session(db_session.get_bind().engine) as other:
-        assert GmailRepository(other).try_sync_lock(account.id) is True
+        while not GmailRepository(other).try_sync_lock(account.id):
+            assert monotonic() < deadline, (
+                "the server never freed the lock of the closed connection"
+            )
+            sleep(0.05)
         GmailRepository(other).release_sync_lock(account.id)
 
 
