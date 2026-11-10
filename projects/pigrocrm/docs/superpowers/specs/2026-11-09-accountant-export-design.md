@@ -221,3 +221,15 @@ downloads each ZIP, from the approved brief `docs/design/2026-11-10-accountant-e
 `GET /exports` with the list answering `items` and `total_count`, and the `cause` (`module` or `pack`) of each omitted part in the
 index snapshot, so the page names a part the pack left out and never one a module did. The share link, Drive delivery, the readiness
 checklist and the payroll parts are not drawn until their own data cards exist.
+
+### Built (REB-1047)
+
+An export is handed over. `POST /api/accountant-export/exports/{id}/share-links` makes a share link (an admin whose scope covers the entity, or
+the tool `create_export_share_link` of a `full_access` token): 256 random bits stored only as a SHA-256, 7 days by default and 30 at most, shown once
+in the answer, revocable (`POST /share-links/{id}/revoke`), with a download count and one audit row per opening (when, client address, which ZIP),
+read by `GET /share-links` and `GET /share-links/{id}`. The public door is `POST /api/accountant-export/shared/describe` and `/download`, with the
+token in the body and not in any address; an unknown token is a 404 and an expired or a revoked link a 410 with its own code. The page an accountant
+opens is `/app/shared-export?t=`. `POST /exports/{id}/drive-writes` copies the ZIPs to the space's Drive under
+`commercialista/<entity-slug>/<period>/<timestamp>/`, only where the storage is Drive and a person asks (`GET /drive` says whether it is, and why
+not); the copy goes with the export at 13 months. Payroll parts do not exist yet, so the plain-link refusal and the link with a one-time code are
+left to the payroll card; `get_export_checklist` stays with the readiness checklist card.

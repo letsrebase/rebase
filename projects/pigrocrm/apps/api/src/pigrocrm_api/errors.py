@@ -30,6 +30,11 @@ STATUS_BY_CODE: dict[str, int] = {
     "invitation_expired": 410,
     "invitation_revoked": 410,
     "invitation_used": 410,
+    # A share link of an export (REB-1047): unknown is a 404 like any address that is not there;
+    # an expired or a revoked one existed and ended, 410 Gone, told apart by `code`.
+    "export_link_unknown": 404,
+    "export_link_expired": 410,
+    "export_link_revoked": 410,
     # REB-292: about the state of the space's admins, not the caller (who is an admin).
     "last_active_admin": 409,
     "self_account_change": 409,
@@ -58,6 +63,9 @@ TITLE_BY_CODE: dict[str, str] = {
     "invitation_expired": "Invito scaduto",
     "invitation_revoked": "Invito revocato",
     "invitation_used": "Invito già usato",
+    "export_link_unknown": "Link non trovato",
+    "export_link_expired": "Link scaduto",
+    "export_link_revoked": "Link revocato",
     "last_active_admin": "Amministratore insufficiente",
     "self_account_change": "Modifica non consentita sul proprio account",
     "module_off": "Modulo spento",
@@ -207,6 +215,10 @@ INVITE_GONE_RESPONSE = _problem_response(
     "the three cases apart (`invitation_expired`, `invitation_revoked`, `invitation_used`)."
 )
 INVITE_NOT_FOUND_RESPONSE = _problem_response("No invitation carries this link.")
+EXPORT_LINK_GONE_RESPONSE = _problem_response(
+    "The share link existed and is over: expired or revoked. `code` tells the two cases apart "
+    "(`export_link_expired`, `export_link_revoked`)."
+)
 
 
 def ensure_validation_error_schemas_are_declared(schema: dict[str, Any]) -> dict[str, Any]:

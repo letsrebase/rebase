@@ -130,9 +130,11 @@ DEFAULT_BUDGET_BYTES = 109_900
 # full-access administrator's: a movement with its ranked candidates, and a proposal of a list of
 # items), measured at 138,315.
 # REB-1045: 138.9 KB, up from 138.4 KB, for `close_payroll_month` (a full-access administrator's).
-# REB-1046: 142.3 KB, up from 138.9 KB, for the two default tools and `approve_expense_note`,
+# REB-1047: 139.65 KB, up from 138.9 KB, for `create_export_share_link` (a full-access
+# administrator's: an export and a number of days) and its docstring, about 660 bytes.
+# REB-1046: 142.9 KB, up from 139.65 KB, for the two default tools and `approve_expense_note`,
 # `reject_expense_note` and `reimburse_expense_note` (a full-access administrator's).
-FULL_ACCESS_BUDGET_BYTES = 142_300
+FULL_ACCESS_BUDGET_BYTES = 142_950
 
 # A name starting with one of these reads. The tools that read without such a name are
 # listed, so adding one is a decision somebody wrote down.

@@ -285,6 +285,7 @@ export function FieldsPanel() {
 
       <DataTable
         label="Campi personalizzati"
+        phone="stack"
         columns={columns}
         data={fields.data ?? []}
         isLoading={fields.isLoading}

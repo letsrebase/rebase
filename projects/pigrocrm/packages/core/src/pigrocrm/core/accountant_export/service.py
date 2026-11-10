@@ -36,6 +36,7 @@ from uuid import UUID
 from sqlalchemy import Select, extract, func, select
 from sqlalchemy.orm import Session
 
+from pigrocrm.core.accountant_export.access import visible_export
 from pigrocrm.core.accountant_export.index import (
     INDEX_FILE,
     ExportIndex,
@@ -65,6 +66,7 @@ from pigrocrm.core.activities.service import ActivityService
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.config import Settings, get_settings
 from pigrocrm.core.db.base import uuid7
+from pigrocrm.core.db.clock import today_local
 from pigrocrm.core.documents.schemas import SIZE_MAX
 from pigrocrm.core.errors import DomainError, NotFound, ValidationFailed
 from pigrocrm.core.fiscal.pack import PACK_IT_FLAT_RATE
@@ -347,7 +349,7 @@ class AccountantExportService:
             ):
                 raise NotFound(LEGAL_ENTITY, legal_entity_id)
             entities = [self.legal_entities.require_single(legal_entity_id, entity=ENTITY)]
-        today = dt.datetime.now(dt.UTC).date()
+        today = today_local()
         contexts = [
             self._context(actor, Period(today, today), entity, all_entities=all_entities)
             for entity in entities
@@ -373,18 +375,7 @@ class AccountantExportService:
     # -- storage -------------------------------------------------------------
 
     def _visible(self, export_id: UUID, actor: Actor, action: str) -> AccountantExportRow:
-        actor.require_admin(action)
-        row = self.session.get(AccountantExportRow, export_id)
-        if row is None or (
-            row.legal_entity_id is not None
-            and actor.legal_entities is not None
-            and row.legal_entity_id not in actor.legal_entities
-        ):
-            # The scope hides an export of another entity, as it hides the entity itself.
-            raise NotFound(ENTITY, export_id)
-        if row.scope == "all_entities":
-            actor.require_unscoped_admin(action)
-        return row
+        return visible_export(self.session, export_id, actor, action)
 
     @staticmethod
     def _read(row: AccountantExportRow) -> ExportRead:

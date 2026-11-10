@@ -252,6 +252,7 @@ ENTITY_NOUN: dict[str, tuple[str, str]] = {
     "recurring_expense": ("spesa ricorrente", "a"),
     "legal_entity": ("azienda", "a"),
     "accountant_export": ("esportazione per il commercialista", "a"),
+    "accountant_export_link": ("link di condivisione", "o"),
     "declared_tax_figure": ("cifra dichiarata", "a"),
     "monthly_report": ("rendiconto mensile", "o"),
     "note": ("nota", "a"),

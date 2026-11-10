@@ -1,4 +1,5 @@
 import type { ColumnDef } from '@tanstack/react-table'
+import type { ReactNode } from 'react'
 import { DateCell, MoneyCell } from '@/components/cells'
 import type { DataTableFeatures } from '@/components/DataTable'
 import type { LegalEntityRecord } from '@/lib/legalEntity'
@@ -65,6 +66,53 @@ function accrualPeriod(row: Invoice): string {
 /** The causale, or the dash. */
 function description(row: Invoice): string {
   return textOrDash(row.memo)
+}
+
+/**
+ * The invoice as a card, for the phone (REB-1057): nine columns do not fit 390 pixels and a
+ * table that scrolls sideways hides the state and the total. The number and the total on a
+ * line, whose it is, the causale, then what the table's «Stato», «Pagamento», «Data» and
+ * «Competenza» columns say, as a row of chips. Same options as the columns, for the same
+ * reasons: the customer only where rows of several customers mix, the legal entity only when
+ * there are several.
+ */
+export function buildInvoiceCard(
+  options: InvoiceColumnOptions = {},
+): (row: Invoice) => ReactNode {
+  const legalEntityName = new Map((options.legal_entities ?? []).map((a) => [a.id, a.name]))
+  return (invoice) => {
+    const entity = legalEntityName.get(invoice.legal_entity_id)
+    const memo = description(invoice)
+    const period = accrualPeriod(invoice)
+    return (
+      <div className="space-y-1">
+        <div className="flex items-start justify-between gap-3">
+          <span className="min-w-0 break-words font-medium">
+            {formatInvoiceNumber(invoice)}
+            {entity !== undefined && <span className="font-normal text-muted-foreground"> · {entity}</span>}
+          </span>
+          <span className="shrink-0">
+            <MoneyCell>{formatMoney(invoice.total)}</MoneyCell>
+          </span>
+        </div>
+        {options.customer && <p className="break-words text-sm">{customerName(invoice)}</p>}
+        {memo !== EMPTY && <p className="line-clamp-2 break-words text-sm text-muted-foreground">{memo}</p>}
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 pt-1 text-sm">
+          <span className="text-muted-foreground">
+            {INVOICE_TYPE_LABELS[invoice.type as keyof typeof INVOICE_TYPE_LABELS]}
+          </span>
+          <InvoiceStateBadge invoice={invoice} imported={false} />
+          {invoice.type !== 'proforma' && (
+            <StatusPill tone={PAYMENT_STATE_TONE[invoice.payment_status as PaymentStatus]}>
+              {PAYMENT_STATE_LABELS[invoice.payment_status as PaymentStatus]}
+            </StatusPill>
+          )}
+          <DateCell value={invoice.issue_date} />
+          {period !== EMPTY && <span className="text-muted-foreground">{period}</span>}
+        </div>
+      </div>
+    )
+  }
 }
 
 export function buildInvoiceColumns(

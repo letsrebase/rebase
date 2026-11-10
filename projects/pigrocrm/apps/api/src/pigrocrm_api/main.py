@@ -66,6 +66,7 @@ from pigrocrm_api.routers import (
     scheduled_jobs,
     schema,
     search,
+    shared_export,
     slack,
     space_modules,
     space_settings,
@@ -207,6 +208,8 @@ def create_app() -> FastAPI:
         ai_model,
         # REB-1011: the period bundle for the accountant.
         accountant_export,
+        # REB-1047: the door of an export's share link, with no login: the token is the credential.
+        shared_export,
         # REB-1022: the recurrence rules that forecast money going out, `purchases` module.
         recurring_expenses,
         # REB-1025: bank accounts, statements and movements, behind the `cash` module.

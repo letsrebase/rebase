@@ -1,6 +1,6 @@
 import subprocess
 from collections.abc import Callable, Iterator
-from datetime import date
+from datetime import UTC, date, datetime
 from decimal import Decimal
 from typing import Any
 from uuid import UUID, uuid4
@@ -8,11 +8,11 @@ from uuid import UUID, uuid4
 import pytest
 from sqlalchemy import Connection, Engine, text
 from sqlalchemy.orm import Session
-from tax_period import TODAY
 
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.auth.models import User
 from pigrocrm.core.config import Settings
+from pigrocrm.core.db import clock as db_clock
 from pigrocrm.core.db import create_engine_from_settings, session_factory
 from pigrocrm.core.deals.models import Deal
 from pigrocrm.core.fiscal.repository import FiscalProfileRepository
@@ -20,6 +20,16 @@ from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.pipeline.models import PipelineStage
 from pigrocrm.core.storage.local import LocalFileStorage
 from pigrocrm.core.timetracking.models import CostCategory, TimeEntry
+
+# One day for the whole run. Many test modules compute `TODAY = today_local()` at import while the
+# code under test reads `today_local()` at call time, so a run that collects before Rome's
+# midnight and executes after it disagrees with itself (REB-1058). `db.clock._now` is the only
+# place the product reads the wall clock: freezing it at the instant the run starts gives both
+# sides the same day. A test that needs another instant pins its own with `monkeypatch`.
+_RUN_STARTED = datetime.now(UTC)
+db_clock._now = lambda: _RUN_STARTED
+
+from tax_period import TODAY  # noqa: E402
 
 
 @pytest.fixture(scope="session")

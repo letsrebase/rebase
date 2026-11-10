@@ -4349,6 +4349,30 @@ def test_0103_adds_payslip_proposals_closed_payroll_months_and_the_payslip_readi
         assert _table_shape(url, "payroll_month_closures")[0] is True
 
 
+def test_0104_creates_the_export_share_link_tables_under_the_scope_policy(
+    pigrocrm_postgres: Any,
+) -> None:
+    """REB-1047: three new tables under the row policy of every table that reaches a legal entity,
+    nothing backfilled; it reverses and comes back."""
+    tables = (
+        "accountant_export_links",
+        "accountant_export_link_openings",
+        "accountant_export_drive_writes",
+    )
+    with pigrocrm_postgres.fresh_container() as container:
+        url = container.get_connection_url()
+        config = _alembic_config(url)
+        upgrade(config, "0103")
+        assert all(_table_shape(url, table)[0] is False for table in tables)
+        upgrade(config, "0104")
+        for table in tables:
+            assert _table_shape(url, table) == (True, True, {"legal_entity_scope"})
+        downgrade(config, "0103")
+        assert all(_table_shape(url, table)[0] is False for table in tables)
+        upgrade(config, "0104")
+        assert _table_shape(url, "accountant_export_links")[0] is True
+
+
 def _purchase_kinds_and_staff_column(url: str) -> tuple[bool, str]:
     engine = create_engine(url)
     try:
@@ -4372,7 +4396,7 @@ def _purchase_kinds_and_staff_column(url: str) -> tuple[bool, str]:
         engine.dispose()
 
 
-def test_0104_creates_expense_notes_and_teaches_purchases_the_expense_note_kind(
+def test_0105_creates_expense_notes_and_teaches_purchases_the_expense_note_kind(
     pigrocrm_postgres: Any,
 ) -> None:
     """REB-1046: one new table under the row policy, a new purchase kind and the staff member it
@@ -4380,17 +4404,17 @@ def test_0104_creates_expense_notes_and_teaches_purchases_the_expense_note_kind(
     with pigrocrm_postgres.fresh_container() as container:
         url = container.get_connection_url()
         config = _alembic_config(url)
-        upgrade(config, "0103")
+        upgrade(config, "0104")
         assert _table_shape(url, "expense_notes")[0] is False
         column, kind_check = _purchase_kinds_and_staff_column(url)
         assert column is False and "expense_note" not in kind_check
-        upgrade(config, "0104")
+        upgrade(config, "0105")
         assert _table_shape(url, "expense_notes") == (True, True, {"legal_entity_scope"})
         column, kind_check = _purchase_kinds_and_staff_column(url)
         assert column is True and "expense_note" in kind_check
-        downgrade(config, "0103")
+        downgrade(config, "0104")
         assert _table_shape(url, "expense_notes")[0] is False
         column, kind_check = _purchase_kinds_and_staff_column(url)
         assert column is False and "expense_note" not in kind_check
-        upgrade(config, "0104")
+        upgrade(config, "0105")
         assert _table_shape(url, "expense_notes")[0] is True

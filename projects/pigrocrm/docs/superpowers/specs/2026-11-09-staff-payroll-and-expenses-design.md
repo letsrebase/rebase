@@ -199,7 +199,7 @@ person types the figures.
 - Names avoid the existing `contract_expenses`: the table is `expense_notes`, the tools
   `submit_expense_note` and `approve_expense_note`.
 
-**As built (REB-1046).** `core/expense_notes/`, table `expense_notes` (migration 0104), REST under
+**As built (REB-1046).** `core/expense_notes/`, table `expense_notes` (migration 0105), REST under
 `/api/expense-notes` and the tools `submit_expense_note`, `list_expense_notes` (every token's, the
 owner's own notes) and `approve_expense_note`, `reject_expense_note`, `reimburse_expense_note`
 (`full_access`), all behind `staff` **and** `purchases` (the module keeps `requires=()`: with

@@ -163,6 +163,7 @@ CORE_TOOLS = frozenset(
         "export_invoice_xml",
         "build_accountant_export",
         "get_export_download_url",
+        "create_export_share_link",
         "review_invoice_import",
         "confirm_invoice_import",
         "import_issued_invoice",

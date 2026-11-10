@@ -168,6 +168,11 @@ _FORBIDDEN: dict[Method, str] = {
         "design § 5); the tool is on a `full_access` token's surface only"
     ),
     ("AccountantExportService", "get_export_download_url"): "REB-1012: same as the build",
+    ("ExportShareService", "create_export_share_link"): (
+        "REB-1047: a link anybody holding it opens with no account is the credential itself "
+        "(accountant export design § 3 and § 5); the tool is on a `full_access` token's surface "
+        "only, and answers the link, never the file"
+    ),
     ("DeclaredTaxFigureService", "set_declared_tax_figure"): (
         "REB-1006: the accountant's declared tax figures are the most sensitive data the "
         "product holds (taxes design § 5); the tool is on a `full_access` token's surface only"
@@ -1012,6 +1017,20 @@ _COVERED_OR_HUMAN: dict[Method, str] = {
         "REB-1028: the export page lists the parts a build would hold before it is made; an agent "
         "reads the index of the export it built, which names every part and every omission"
     ),
+    ("ExportShareService", "list_export_share_links"): (
+        "REB-1047: who holds a link and when it was opened is read by a person on the export "
+        "page; the agent that made a link has its answer"
+    ),
+    ("ExportShareService", "get_export_share_link"): "REB-1047: same as `list_export_share_links`",
+    ("ExportShareService", "revoke_export_share_link"): (
+        "REB-1047: ending a link is a person's act, from the export page, in one click; "
+        "`Actor.require_admin` refuses every agent credential for it, over REST too"
+    ),
+    ("ExportDriveService", "write_export_to_drive"): (
+        "REB-1047: writing an export to the space's Drive is a person's act (accountant export "
+        "design § 5): no tool, and `require_admin` refuses every agent credential, over REST too"
+    ),
+    ("ExportDriveService", "list_drive_writes"): "REB-1047: the export page's Drive copies",
     ("MovementMatchService", "confirm"): (
         "REB-1042: confirming settles the items with the movement as evidence, a person's act "
         "like `accept_proposal`: the token that proposed it, or read the bank's text, must not "

@@ -1,7 +1,7 @@
 """expense notes: a staff member's receipt from submission to reimbursement
 
-Revision ID: 0104
-Revises: 0103
+Revision ID: 0105
+Revises: 0104
 
 REB-1046 (spec 2026-11-09, staff, payroll and expenses, § 3 and § 4). One new table and two
 changes to `purchases`, nothing backfilled.
@@ -35,8 +35,8 @@ from collections.abc import Sequence
 import sqlalchemy as sa
 from alembic import op
 
-revision: str = "0104"
-down_revision: str | Sequence[str] | None = "0103"
+revision: str = "0105"
+down_revision: str | Sequence[str] | None = "0104"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

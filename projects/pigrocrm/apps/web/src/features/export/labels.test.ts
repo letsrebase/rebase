@@ -67,4 +67,10 @@ describe('the URL of the page', () => {
     expect(validateExportSearch({ tab: 'nonsense', export: '' })).toEqual({ tab: 'prepare' })
     expect(validateExportSearch({ tab: 'exports', export: 'e1' })).toEqual({ tab: 'exports', export: 'e1' })
   })
+
+  it('keeps an export on «Esportazioni» and a link on «Link condivisi», and drops the other', () => {
+    expect(validateExportSearch({ tab: 'links', link: 'l1' })).toEqual({ tab: 'links', link: 'l1' })
+    expect(validateExportSearch({ tab: 'links', export: 'e1' })).toEqual({ tab: 'links' })
+    expect(validateExportSearch({ tab: 'exports', link: 'l1' })).toEqual({ tab: 'exports' })
+  })
 })

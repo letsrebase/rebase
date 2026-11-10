@@ -343,4 +343,38 @@ describe('RatesPanel', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('database non raggiungibile')
     expect(screen.queryByText('Tariffe delle persone')).not.toBeInTheDocument()
   })
+
+  /**
+   * REB-1057: four columns of inputs scrolled sideways on a phone and took «Salva» off the
+   * screen, so below 768px a person is a card: the name, each field under its label, «Salva».
+   */
+  it('draws a person as a card on a phone, with Salva under the fields and the same save', async () => {
+    vi.stubGlobal('matchMedia', (query: string) => ({
+      matches: query.includes('max-width: 767px'),
+      media: query,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+    }))
+    try {
+      respond([IVAN], [])
+      vi.mocked(api.PUT).mockReturnValue(ok(IVAN))
+      renderPanel()
+
+      const rate = await screen.findByLabelText('Tariffa oraria di Ivan')
+      expect(screen.queryByRole('table')).not.toBeInTheDocument()
+      const card = rate.closest('li')
+      if (!card) throw new Error('the rate is not in a card')
+      expect(within(card).getByText('Ivan')).toBeInTheDocument()
+      expect(within(card).getByText('Costo orario (€/h)')).toBeInTheDocument()
+
+      await userEvent.click(within(card).getByRole('button', { name: 'Salva' }))
+      await waitFor(() => expect(api.PUT).toHaveBeenCalledTimes(1))
+      expect(bodyOfCall(0)).toEqual({
+        default_hourly_rate: '80.000000',
+        default_hourly_cost: '35.000000',
+      })
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
 })
