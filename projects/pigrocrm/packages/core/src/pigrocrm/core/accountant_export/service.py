@@ -43,6 +43,7 @@ from pigrocrm.core.errors import NotFound, ValidationFailed
 from pigrocrm.core.fiscal.pack import PACK_IT_FLAT_RATE
 from pigrocrm.core.fiscal.repository import FiscalProfileRepository
 from pigrocrm.core.legal_entities.models import LegalEntity
+from pigrocrm.core.legal_entities.service import ENTITY as LEGAL_ENTITY
 from pigrocrm.core.legal_entities.service import LegalEntityService
 from pigrocrm.core.storage.base import DocumentStorage
 
@@ -116,7 +117,7 @@ class AccountantExportService:
                 and legal_entity_id not in actor.legal_entities
             ):
                 # Not told apart from an entity that does not exist: the scope hides it.
-                raise NotFound("legal_entities", legal_entity_id)
+                raise NotFound(LEGAL_ENTITY, legal_entity_id)
             entities = [
                 self.legal_entities.require_single(legal_entity_id, entity=ENTITY),
             ]
