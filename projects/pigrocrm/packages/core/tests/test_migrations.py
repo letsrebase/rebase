@@ -3601,3 +3601,21 @@ def test_0087_wraps_every_google_account_in_a_mailbox_and_renames_the_sync_job(
                 assert connection.execute(text("SELECT count(*) FROM mailboxes")).scalar_one() == 1
         finally:
             engine.dispose()
+
+
+def test_0088_creates_the_declared_tax_figures_table_under_the_scope_policy(
+    pigrocrm_postgres: Any,
+) -> None:
+    """REB-1006: a new table with the row policy of every table that reaches a legal entity,
+    forced; nothing is backfilled, so both ways are a pure create and drop."""
+    with pigrocrm_postgres.fresh_container() as container:
+        url = container.get_connection_url()
+        config = _alembic_config(url)
+        upgrade(config, "0087")
+        assert _table_shape(url, "declared_tax_figures")[0] is False
+        upgrade(config, "0088")
+        assert _table_shape(url, "declared_tax_figures") == (True, True, {"legal_entity_scope"})
+        downgrade(config, "0087")
+        assert _table_shape(url, "declared_tax_figures")[0] is False
+        upgrade(config, "0088")
+        assert _table_shape(url, "declared_tax_figures")[0] is True

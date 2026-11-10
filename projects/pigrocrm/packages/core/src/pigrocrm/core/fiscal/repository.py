@@ -1,3 +1,4 @@
+from decimal import Decimal
 from typing import Any
 from uuid import UUID
 
@@ -5,7 +6,7 @@ from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
-from pigrocrm.core.fiscal.models import FiscalEstimateReading, FiscalProfile
+from pigrocrm.core.fiscal.models import DeclaredTaxFigure, FiscalEstimateReading, FiscalProfile
 
 
 class FiscalProfileRepository:
@@ -79,3 +80,51 @@ class FiscalEstimateRepository:
                 set_={**values, "updated_at": func.now()},
             )
         )
+
+
+class DeclaredTaxFigureRepository:
+    """The accountant's typed figures of `declared_tax_figures`. Never commits."""
+
+    def __init__(self, session: Session) -> None:
+        self.session = session
+
+    def for_year(self, legal_entity_id: UUID, tax_year: int) -> list[DeclaredTaxFigure]:
+        return list(
+            self.session.execute(
+                select(DeclaredTaxFigure)
+                .where(
+                    DeclaredTaxFigure.legal_entity_id == legal_entity_id,
+                    DeclaredTaxFigure.tax_year == tax_year,
+                )
+                .order_by(DeclaredTaxFigure.tax)
+            ).scalars()
+        )
+
+    def save(
+        self,
+        legal_entity_id: UUID,
+        tax: str,
+        tax_year: int,
+        *,
+        tax_due: Decimal | None,
+        balance: Decimal | None,
+        advances: Decimal | None,
+        source: str,
+    ) -> DeclaredTaxFigure:
+        """One row per legal entity, tax and year, replaced whole by the next typing. An
+        upsert, so two administrators typing the same figure at once both land and the
+        second one stands."""
+        values = {"tax_due": tax_due, "balance": balance, "advances": advances, "source": source}
+        row_id = self.session.execute(
+            pg_insert(DeclaredTaxFigure)
+            .values(legal_entity_id=legal_entity_id, tax=tax, tax_year=tax_year, **values)
+            .on_conflict_do_update(
+                constraint="uq_declared_tax_figures",
+                set_={**values, "updated_at": func.now()},
+            )
+            .returning(DeclaredTaxFigure.id)
+        ).scalar_one()
+        row = self.session.get(DeclaredTaxFigure, row_id)
+        assert row is not None
+        self.session.refresh(row)
+        return row

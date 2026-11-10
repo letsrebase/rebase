@@ -32,6 +32,8 @@ from pigrocrm.core.analytics.schemas import (
     YearOverview,
 )
 from pigrocrm.core.analytics.service import AnalyticsService
+from pigrocrm.core.fiscal.declared import DeclaredTaxFigureService
+from pigrocrm.core.fiscal.schemas import DeclaredTaxFigureRead, DeclaredTaxFigureSet
 from pigrocrm.core.modules import enabled_modules, require_modules
 from pigrocrm_api.deps import ActorDep, SessionDep, SettingsDep, get_actor, module_guard
 from pigrocrm_api.downloads import attachment_response
@@ -172,6 +174,26 @@ def fiscal_estimate(
     (§11's exclusion list), so the check has to live where both adapters share it."""
     return AnalyticsService(session).get_fiscal_estimate(
         year, actor, legal_entity_id=legal_entity_id
+    )
+
+
+@router.put(
+    "/fiscal/declared",
+    response_model=DeclaredTaxFigureRead,
+    dependencies=[module_guard("taxes")],
+)
+def set_declared_tax_figure(
+    data: DeclaredTaxFigureSet,
+    session: SessionDep,
+    actor: ActorDep,
+    legal_entity_id: LegalEntityRequired = None,
+) -> DeclaredTaxFigureRead:
+    """The figures of the tax return as the accountant computed them, for one tax and year;
+    typing them again replaces the three together. `admin`, enforced by the service. They are
+    never computed and a newer estimate leaves them alone: `/fiscal` shows them beside the
+    estimate and says the year's reading is declared."""
+    return DeclaredTaxFigureService(session).set_declared_tax_figure(
+        data, actor, legal_entity_id=legal_entity_id
     )
 
 

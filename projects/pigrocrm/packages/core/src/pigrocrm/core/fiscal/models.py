@@ -165,3 +165,40 @@ class FiscalEstimateReading(Base, PrimaryKeyMixin, TimestampMixin):
     __table_args__ = (
         UniqueConstraint("legal_entity_id", "tax_year", name="uq_fiscal_estimates_year"),
     )
+
+
+class DeclaredTaxFigure(Base, PrimaryKeyMixin, TimestampMixin):
+    """The figures of a tax return as the accountant computed them, typed by an administrator
+    (REB-1006, taxes design § 2). One row per legal entity, tax and tax year.
+
+    Never computed and never replaced by an estimate: `fiscal_estimates` and this table are
+    written by different paths, and a year with a row here reads as declared whatever the
+    estimate says afterwards. `tax_due` and `advances` are never negative; `balance` is signed
+    (a credit is negative). Whichever of the three the accountant did not give stays `NULL`,
+    and at least one is present. `source` is `typed` until a figure read from a document and
+    accepted by a person exists.
+    """
+
+    __tablename__ = "declared_tax_figures"
+
+    legal_entity_id: Mapped[UUID] = mapped_column(ForeignKey("legal_entities.id"), nullable=False)
+    tax: Mapped[str] = mapped_column(String(30), nullable=False)
+    tax_year: Mapped[int] = mapped_column(Integer, nullable=False)
+    tax_due: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), default=None)
+    balance: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), default=None)
+    advances: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), default=None)
+    source: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="typed", server_default=text("'typed'")
+    )
+
+    __table_args__ = (
+        UniqueConstraint("legal_entity_id", "tax", "tax_year", name="uq_declared_tax_figures"),
+        CheckConstraint(
+            "tax_due IS NOT NULL OR balance IS NOT NULL OR advances IS NOT NULL",
+            name="ck_declared_tax_figures_one_figure",
+        ),
+        CheckConstraint(
+            "(tax_due IS NULL OR tax_due >= 0) AND (advances IS NULL OR advances >= 0)",
+            name="ck_declared_tax_figures_not_negative",
+        ),
+    )

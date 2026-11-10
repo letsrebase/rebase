@@ -982,3 +982,30 @@ def test_the_days_route_answers_by_month_and_state_and_takes_one_legal_entity(
     half = logged_in.get("/api/analytics/days", params={"from": DA})
     assert half.status_code == 422
     assert half.json()["field"] == "to"
+
+
+def test_an_admin_types_a_declared_figure_and_the_fiscal_report_shows_it_beside_the_estimate(
+    logged_in: TestClient, fiscal_profile: dict[str, Any]
+) -> None:
+    put = logged_in.put(
+        "/api/analytics/fiscal/declared",
+        json={"tax": "substitute_tax", "year": YEAR, "balance": "-120.50", "tax_due": "800"},
+    )
+    assert put.status_code == 200, put.text
+    assert put.json()["reading"] == "declared"
+    report = logged_in.get("/api/analytics/fiscal", params={"year": YEAR}).json()
+    assert report["estimate"] is True
+    assert report["reading"] == "declared"
+    assert [(f["tax"], f["tax_due"], f["balance"], f["advances"]) for f in report["declared"]] == [
+        ("substitute_tax", "800.00", "-120.50", None)
+    ]
+
+
+def test_a_declared_figure_needs_an_admin_and_one_amount(
+    logged_in: TestClient, fiscal_profile: dict[str, Any]
+) -> None:
+    collaborator = _second_actor(logged_in, "collaborator")
+    body = {"tax": "irpef", "year": YEAR, "balance": "10"}
+    assert collaborator.put("/api/analytics/fiscal/declared", json=body).status_code == 403
+    empty = logged_in.put("/api/analytics/fiscal/declared", json={"tax": "irpef", "year": YEAR})
+    assert empty.status_code == 422

@@ -189,7 +189,6 @@ nothing of accounts or dedup, and `import_statement` does the rest and never com
 `dedup_key` (`dedup.py`) is the bank's reference when it has one, otherwise date, amount, description
 hash and the occurrence index within the file, unique per account, so the same movement in two
 statements is one row and two identical same-day payments are two. The covered period is the file's
-<<<<<<< HEAD
 or the one a person sets; it is never guessed. `bank/__init__.py` registers the readers: `banco_bpm_xlsx` (`banco_bpm_xlsx.py`, YouWeb's «Saldo e movimenti» export: no account, period, balance or reference, so the key is the reference-less one; a `-da contab` card payment is left out until booked; the SEPA `END TO END ID` of a description is kept in `bank_movements.end_to_end_id`, never as a dedup key since payers reuse it). And `camt053` (`camt053.py`, `.001.02` and `.001.08`, one `Stmt` per file: `AcctSvcrRef` is the bank reference, `EndToEndId` goes to `end_to_end_id`, `NOTPROVIDED` is none). The tables are the `cash` module's data and no tool or
 
 **The engagements door writes a contract beside the deal (REB-1001).** When a match turns active, the freelancer's space gets rebase as a customer, the letter's deal (the hub still reads the deal and its hours; its `PUT` answer needs `deal_id`) and an `active` contract titled like the deal with one rate card from the letter's `fee_unit` (`day` is `daily`, `hour` is `hourly`, `flat` is `one_off`, valid for the letter's dates; the forecast `expected_quantity` is the expected days, or hours at `HOURS_PER_DAY`, with `delivery_period` `one_off`). `rebase_engagements.contract_id` records it with `deal_id`; a row with a deal and no contract is a space set up before this, and keeps its deal and hours alone. The registry has no migrations: `ensure_tenants_database` adds the column itself at boot (`ALTER TABLE ... ADD COLUMN IF NOT EXISTS`, before the missing-column refusal), and a later column on a registry table goes in the same list (`REGISTRY_COLUMN_UPGRADES`). Dropping the deal for new matches waits for the hub to read days from work units.
@@ -231,6 +230,15 @@ table's CHECKs say so; a rate left out is «not stated», never a default, becau
 The legal entity's pay day is REST only and person-only (`set_payroll_pay_day`); a member's own override is a field
 of `update_staff_member`. Nothing is deleted: `end_date` is how someone leaves. The estimate, the payslips and the
 screens are later cards.
+**A declared tax figure is typed, never computed, and it outranks the estimate (REB-1006).**
+`declared_tax_figures` holds, per legal entity, tax (`DeclaredTax`: `irpef`, `substitute_tax`, `ires`, `irap`, `inps`)
+and year, what the accountant's return says: tax due, balance (signed) and advances, any of which may be left out
+(never read as zero). `DeclaredTaxFigureService.set_declared_tax_figure` is the only writer: an administrator, or a
+token with `full_access` (REST `PUT /api/analytics/fiscal/declared` and the privileged MCP tool of the same name), and
+typing again replaces the row whole. `AnalyticsService.get_fiscal_estimate` answers the figures beside the estimate
+(`declared`) and says the year's `reading` (`declared` as soon as one exists), so a newer estimate, which is written by
+another path, never touches them; a «what if» with a supplied revenue carries none. Reading a figure from a document and
+the advances and due items that follow are their own cards.
 
 **The tax calendar is pack data keyed by the calendar year a date falls in (REB-1004).** `FiscalPack.calendars`
 holds `TaxCalendarLaw` entries (`fiscal/law.py`), each a list of `TaxDateRule` with the nominal days and the primary

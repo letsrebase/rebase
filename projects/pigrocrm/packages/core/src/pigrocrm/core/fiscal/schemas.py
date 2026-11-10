@@ -318,6 +318,53 @@ class FiscalProfileRead(BaseModel):
     updated_at: datetime
 
 
+# The taxes a declared figure may be typed for: the design's own names (taxes design § 1 and
+# § 2). Validated here, in code, like the due items' source kinds.
+DeclaredTax = Literal["irpef", "substitute_tax", "ires", "irap", "inps"]
+DECLARED_TAXES: tuple[str, ...] = get_args(DeclaredTax)
+# How a declared figure came to be: typed by an administrator today; a figure read from a
+# document and accepted by a person is a later card.
+DeclaredSource = Literal["typed"]
+
+
+class DeclaredTaxFigureSet(BaseModel):
+    """What an administrator types: the figures of the tax return as the accountant computed
+    them. Whatever is left out is recorded as not given (never as zero), and typing the same
+    tax and year again replaces the three together. `tax_due` and `advances` are never
+    negative; `balance` is signed, a credit being negative."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    tax: DeclaredTax
+    year: int = Field(ge=2000, le=2200)
+    tax_due: Decimal | None = Field(default=None, ge=0, max_digits=14, decimal_places=2)
+    balance: Decimal | None = Field(default=None, max_digits=14, decimal_places=2)
+    advances: Decimal | None = Field(default=None, ge=0, max_digits=14, decimal_places=2)
+
+    @model_validator(mode="after")
+    def _at_least_one_figure(self) -> "DeclaredTaxFigureSet":
+        if self.tax_due is None and self.balance is None and self.advances is None:
+            raise ValueError("indica almeno una cifra: imposta dovuta, saldo o acconti")
+        return self
+
+
+class DeclaredTaxFigureRead(BaseModel):
+    """A declared figure as stored. `reading` says which of the three readings of a year it
+    is (estimate, declared, paid), so a screen never presents it as an estimate."""
+
+    model_config = ConfigDict(from_attributes=True, populate_by_name=True)
+
+    reading: Literal["declared"] = "declared"
+    legal_entity_id: UUID
+    tax: str
+    year: int = Field(validation_alias="tax_year")
+    tax_due: Decimal | None
+    balance: Decimal | None
+    advances: Decimal | None
+    source: str
+    updated_at: datetime
+
+
 __all__ = [
     "REGIME_CODE_ORDINARY",
     "REGIME_CODE_RE",
@@ -329,6 +376,11 @@ __all__ = [
     "DEFAULT_STAMP_DUTY_AMOUNT",
     "DEFAULT_LEGAL_REFERENCE",
     "DEFAULT_STAMP_DUTY_THRESHOLD",
+    "DECLARED_TAXES",
+    "DeclaredSource",
+    "DeclaredTax",
+    "DeclaredTaxFigureRead",
+    "DeclaredTaxFigureSet",
     "FiscalProfileRead",
     "FiscalProfileUpsert",
     "FiscalSnapshot",

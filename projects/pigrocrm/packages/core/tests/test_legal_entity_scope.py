@@ -78,6 +78,7 @@ POLICIED = {
     "legal_entities",
     "fiscal_profile",
     "fiscal_estimates",
+    "declared_tax_figures",
     "invoice_counters",
     "invoice_register_gaps",
     "organizations",

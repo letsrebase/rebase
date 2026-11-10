@@ -88,7 +88,9 @@ DEFAULT_BUDGET_BYTES = 104_800
 # REB-1004: 120.2 KB, up from 119.7 KB, for `get_tax_calendar` (a full-access administrator\'s,
 # 477 bytes).
 # REB-993: 123.3 KB, up from 120.2 KB, the seven purchase tools (+3.0 KB net of the cost tools).
-FULL_ACCESS_BUDGET_BYTES = 123_300
+# REB-1006: 124.1 KB, up from 123.3 KB, for `set_declared_tax_figure` (a full-access
+# administrator's, three amounts, a tax and a year).
+FULL_ACCESS_BUDGET_BYTES = 124_100
 
 # A name starting with one of these reads. The tools that read without such a name are
 # listed, so adding one is a decision somebody wrote down.

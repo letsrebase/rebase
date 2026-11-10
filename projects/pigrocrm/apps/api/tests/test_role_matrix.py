@@ -162,6 +162,13 @@ ROWS: list[Row] = [
         admin_only=True,
         body={"pay_day": 27, "pay_month_offset": 0},
     ),
+    # --- declared tax figures (REB-1006): admin, before any lookup -------------------------
+    Row(
+        "PUT",
+        "/api/analytics/fiscal/declared",
+        admin_only=True,
+        body={"tax": "irpef", "year": 2025, "balance": "100.00"},
+    ),
     # --- cost categories: admin on every method (timetracking/categories.py) --------
     Row("POST", "/api/cost-categories", admin_only=True, body={"name": "matrice-cat"}),
     Row("POST", "/api/cost-categories/seed", admin_only=True),
