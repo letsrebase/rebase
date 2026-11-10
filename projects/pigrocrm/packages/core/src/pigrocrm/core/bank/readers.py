@@ -45,6 +45,15 @@ class ParsedStatement:
     opening_balance: Decimal | None = None
     closing_balance: Decimal | None = None
 
+    def balance_difference(self) -> Decimal | None:
+        """Stated closing balance minus opening balance plus the movements, or `None` when the
+        file does not state both. Zero is a statement that adds up; the reconcile alert of a
+        later card reads the same figure."""
+        if self.opening_balance is None or self.closing_balance is None:
+            return None
+        total = sum((m.amount for m in self.movements), Decimal("0.00"))
+        return self.closing_balance - (self.opening_balance + total)
+
 
 StatementReader = Callable[[bytes], ParsedStatement]
 
