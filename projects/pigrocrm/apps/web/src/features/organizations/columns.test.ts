@@ -95,5 +95,7 @@ describe('the «Azienda» column (REB-625)', () => {
     }
     expect(legal_entity.accessorFn({ ...BASE_CUSTOMER, legal_entity_id: 'a-2' }, 0)).toBe('rebase')
     expect(legal_entity.accessorFn({ ...BASE_CUSTOMER, legal_entity_id: 'gone' }, 0)).toBe('—')
+    // An organization shared across the legal entities has none of its own (REB-970).
+    expect(legal_entity.accessorFn({ ...BASE_CUSTOMER, legal_entity_id: null }, 0)).toBe('Tutte')
   })
 })

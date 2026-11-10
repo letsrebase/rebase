@@ -208,9 +208,14 @@ class InvoiceService:
         *,
         customer_id: UUID | None = None,
         create_organization: bool = False,
+        share_organization: bool = False,
     ) -> list[ConfirmedInvoiceRead]:
         return self.importer.confirm_import(
-            document_id, actor, customer_id=customer_id, create_organization=create_organization
+            document_id,
+            actor,
+            customer_id=customer_id,
+            create_organization=create_organization,
+            share_organization=share_organization,
         )
 
     def review_upload(

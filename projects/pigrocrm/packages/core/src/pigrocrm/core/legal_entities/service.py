@@ -186,12 +186,13 @@ class LegalEntityService:
                 return abroad[0]
         return self.resolve(None)
 
-    def inherited(self, legal_entity_id: UUID, entity: str) -> UUID:
+    def inherited(self, legal_entity_id: UUID | None, entity: str) -> UUID:
         """The legal entity a new deal, contract, document or invoice takes from its parent
         (REB-623, spec §1.7 and §3): the parent's, and never a deactivated one. The
         history of a closed legal entity stays readable, but nothing new is born on it; the
         answer is to move the customer first, and the message says so. `entity` is the
-        thing being created, so the refusal names the field of that request."""
+        thing being created, so the refusal names the field of that request. `None`, the legal
+        entity of an organization shared across the space (REB-970), is the default one."""
         legal_entity = self.resolve(legal_entity_id)
         if not legal_entity.active:
             raise ValidationFailed(

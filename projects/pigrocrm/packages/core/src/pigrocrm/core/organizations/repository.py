@@ -1,7 +1,7 @@
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import Select, column, func, or_, select, table, text
+from sqlalchemy import ColumnElement, Select, column, func, or_, select, table, text
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.contact_points.models import ContactPoint
@@ -20,6 +20,13 @@ _IMPORT_LOCK_KEY = 1
 # The columns of `deals` this repository reads, without importing the model (see
 # `count_active_deals`).
 _DEALS = table("deals", column("customer_id"), column("deleted_at"))
+
+
+def _of_legal_entity(legal_entity_id: UUID) -> ColumnElement[bool]:
+    """One legal entity's organizations: its own and the ones shared across the space."""
+    return or_(
+        Organization.legal_entity_id == legal_entity_id, Organization.legal_entity_id.is_(None)
+    )
 
 
 class OrganizationRepository:
@@ -82,7 +89,7 @@ class OrganizationRepository:
         stmt = select(Organization).where(Organization.deleted_at.is_(None), or_(*conditions))
         stmt = self._with_role(stmt, role)
         if legal_entity_id is not None:
-            stmt = stmt.where(Organization.legal_entity_id == legal_entity_id)
+            stmt = stmt.where(_of_legal_entity(legal_entity_id))
         return self.session.execute(stmt).scalars().first()
 
     def find_by_name(
@@ -154,7 +161,7 @@ class OrganizationRepository:
         if query.status:
             stmt = stmt.where(Organization.status == query.status)
         if query.legal_entity_id:
-            stmt = stmt.where(Organization.legal_entity_id == query.legal_entity_id)
+            stmt = stmt.where(_of_legal_entity(query.legal_entity_id))
         if query.custom:
             # JSONB containment, served by the GIN index.
             stmt = stmt.where(Organization.custom_fields.contains(query.custom))

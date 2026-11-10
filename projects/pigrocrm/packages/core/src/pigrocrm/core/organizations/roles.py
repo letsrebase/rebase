@@ -36,6 +36,13 @@ CUSTOMER_KINDS: tuple[str, ...] = get_args(CustomerKind)
 VAT_NUMBER_MAX_LENGTH = 20
 
 VAT_UNIQUE_INDEX = "uq_organizations_country_vat"
+# The rows the unique index covers: live, with a number that is something once its punctuation
+# is gone (a stored `''` or a placeholder like `-` is nobody's number, and would otherwise be
+# one group of duplicates).
+VAT_INDEX_PREDICATE = (
+    "deleted_at IS NULL AND vat_number IS NOT NULL "
+    "AND regexp_replace(upper(vat_number), '[^0-9A-Z]', '', 'g') <> ''"
+)
 _NOT_ALPHANUMERIC = re.compile(r"[^0-9A-Z]")
 
 

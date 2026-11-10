@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.errors import Conflict, PermissionDenied, ValidationFailed
 from pigrocrm.core.gmail.roster import AddressRoster, address_key
+from pigrocrm.core.legal_entities.models import LegalEntity
 from pigrocrm.core.organizations.duplicates import duplicate_vat_groups, ensure_vat_index
 from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.organizations.repository import OrganizationRepository
@@ -394,3 +395,142 @@ def test_the_gmail_roster_holds_customers_only(db_session: Session) -> None:
     assert {(ref.entity_type, ref.entity_id) for ref in resolved["hello@both.example"]} == {
         ("organization", both.id)
     }
+
+
+# -- the unchanged key is not asked again, a race is named, placeholders are nobody's number ----
+
+
+def test_saving_a_row_of_a_legacy_pair_unchanged_is_not_refused(db_session: Session) -> None:
+    """A form resends the number and the country it loaded. On a space whose rows already
+    collide neither row of the pair may become uneditable: only a change of the key is checked."""
+    _without_the_index(db_session)
+    first = Organization(legal_name="Beta", vat_number="12345678901", country="IT")
+    second = Organization(legal_name="Beta twin", vat_number="12345678901", country="IT")
+    db_session.add_all([first, second])
+    db_session.flush()
+    service = OrganizationService(db_session)
+
+    renamed = service.update(
+        second.id,
+        OrganizationUpdate(legal_name="Beta twin srl", vat_number="12345678901", country="it"),
+        ADMIN,
+    )
+    assert renamed.legal_name == "Beta twin srl"
+    # Writing the same number in another form is the same key too.
+    assert service.update(first.id, OrganizationUpdate(vat_number="12345678901"), ADMIN)
+    # A change of the key into a taken one is still refused.
+    third = _create(db_session, "Third", vat_number="10987654321")
+    with pytest.raises(Conflict):
+        service.update(third.id, OrganizationUpdate(vat_number="12345678901"), ADMIN)
+
+
+def test_a_race_on_an_update_is_a_conflict_that_names_the_row_and_keeps_the_transaction(
+    db_session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The index refuses what the service's own look missed. The answer is the Italian
+    conflict even when the row had no number before, and the rest of the transaction stands."""
+    holder = _create(db_session, "Holder", vat_number="12345678901")
+    earlier = _create(db_session, "Earlier write")
+    mine = _create(db_session, "Mine")
+    monkeypatch.setattr(OrganizationService, "_check_vat_free", lambda *args, **kwargs: None)
+
+    with pytest.raises(Conflict) as exc:
+        OrganizationService(db_session).update(
+            mine.id, OrganizationUpdate(vat_number="12345678901"), ADMIN
+        )
+
+    assert exc.value.details["existing_id"] == str(holder.id)
+    assert db_session.get(Organization, earlier.id) is not None, "the transaction was not undone"
+    db_session.expire_all()
+    assert db_session.get_one(Organization, mine.id).vat_number is None
+
+
+@pytest.mark.parametrize("placeholder", ["", "-", "/", " . "])
+def test_a_number_that_is_only_punctuation_is_nobodys_and_never_blocks_the_index(
+    db_session: Session, placeholder: str
+) -> None:
+    _without_the_index(db_session)
+    db_session.add_all(
+        [
+            Organization(legal_name="One", vat_number=placeholder),
+            Organization(legal_name="Two", vat_number=placeholder),
+        ]
+    )
+    db_session.flush()
+
+    assert duplicate_vat_groups(db_session) == []
+    assert ensure_vat_index(db_session) == "created"
+    # And the index it built takes the placeholder twice, as it takes no number twice.
+    db_session.add(Organization(legal_name="Three", vat_number=placeholder))
+    db_session.flush()
+
+
+def test_a_vat_number_holds_ascii_only(db_session: Session) -> None:
+    """Python and Postgres fold the case of a letter like ß differently, so the comparison key
+    would depend on which of them computed it."""
+    with pytest.raises(ValidationFailed) as exc:
+        OrganizationService(db_session).create(
+            OrganizationCreate(legal_name="Straße", vat_number="DE12ß456789", country="DE"), ADMIN
+        )
+    assert exc.value.details["field"] == "vat_number"
+    assert "ASCII" in exc.value.message
+
+
+# -- shared across the legal entities -----------------------------------------------------------
+
+
+def _second_legal_entity(session: Session) -> LegalEntity:
+    other = LegalEntity(legal_name="Second Ltd", country="IE", is_default=False)
+    session.add(other)
+    session.flush()
+    return other
+
+
+def test_a_shared_organization_belongs_to_every_legal_entitys_list(db_session: Session) -> None:
+    other = _second_legal_entity(db_session)
+    own = _create(db_session, "Own")
+    shared = _create(db_session, "Shared")
+    elsewhere = Organization(legal_name="Elsewhere", legal_entity_id=other.id)
+    db_session.add(elsewhere)
+    db_session.flush()
+
+    service = OrganizationService(db_session)
+    assert service.share(shared.id, ADMIN).legal_entity_id is None
+    assert _names(db_session, legal_entity_id=own.legal_entity_id) == {"Own", "Shared"}
+    assert _names(db_session, legal_entity_id=other.id) == {"Elsewhere", "Shared"}
+    # Sharing twice is the same row, and says it once on the timeline.
+    service.share(shared.id, ADMIN)
+    entries = db_session.execute(
+        text("SELECT count(*) FROM activities WHERE entity_id = :id AND kind = 'updated'"),
+        {"id": shared.id},
+    ).scalar_one()
+    assert entries == 1
+
+
+def test_sharing_is_an_administrators_and_an_update_with_a_null_legal_entity_is_sharing(
+    db_session: Session,
+) -> None:
+    acme = _create(db_session, "Acme")
+    service = OrganizationService(db_session)
+    with pytest.raises(PermissionDenied):
+        service.share(acme.id, COLLAB)
+    with pytest.raises(PermissionDenied):
+        service.update(acme.id, OrganizationUpdate(legal_entity_id=None), COLLAB)
+    assert (
+        service.update(acme.id, OrganizationUpdate(legal_entity_id=None), ADMIN).legal_entity_id
+        is None
+    )
+    # Said again on a shared row, nothing is written.
+    assert (
+        service.update(acme.id, OrganizationUpdate(legal_entity_id=None), ADMIN).legal_entity_id
+        is None
+    )
+
+
+def test_what_is_born_under_a_shared_organization_takes_the_default_legal_entity(
+    db_session: Session,
+) -> None:
+    from pigrocrm.core.legal_entities.service import LegalEntityService
+
+    service = LegalEntityService(db_session)
+    assert service.inherited(None, "deal") == service.resolve(None).id

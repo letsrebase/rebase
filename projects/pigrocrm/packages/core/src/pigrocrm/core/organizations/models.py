@@ -14,6 +14,7 @@ from pigrocrm.core.organizations.roles import (
     SUPPLIER_AREAS,
     SUPPLIER_KINDS,
     SUPPLIER_SUPPLIES,
+    VAT_INDEX_PREDICATE,
     VAT_NUMBER_MAX_LENGTH,
     VAT_UNIQUE_INDEX,
     country_key,
@@ -103,7 +104,7 @@ class Organization(Base, PrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
             country_key(text("country")),
             vat_key(text("vat_number")),
             unique=True,
-            postgresql_where=text("deleted_at IS NULL AND vat_number IS NOT NULL"),
+            postgresql_where=text(VAT_INDEX_PREDICATE),
         ),
         CheckConstraint(
             "cardinality(roles) >= 1 AND roles <@ ARRAY["
@@ -135,9 +136,14 @@ class Organization(Base, PrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
     # contract, document and invoice born under the customer from then on; changing it
     # moves nothing already created (§1.7). The column default is the space's default
     # legal entity, for a row built without one; the service always names it.
-    legal_entity_id: Mapped[UUID] = mapped_column(
+    #
+    # `NULL` means shared across the legal entities of the space, as a cost's is (design
+    # 2026-11-09 suppliers § 1, «Scope», REB-970): one company used by two of them is one row,
+    # visible in every scope, and what is born under it takes the legal entity its own
+    # request names, the default one otherwise.
+    legal_entity_id: Mapped[UUID | None] = mapped_column(
         ForeignKey("legal_entities.id"),
-        nullable=False,
+        nullable=True,
         index=True,
         default=default_legal_entity_id,
     )

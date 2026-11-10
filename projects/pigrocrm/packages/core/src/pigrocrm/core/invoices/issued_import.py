@@ -38,15 +38,22 @@ IMPORT_ACTION = "import_issued_invoice"
 
 
 def check_import_customer(
-    ctx: InvoiceContext, customer_id: UUID, legal_entity: LegalEntity, name: str
+    ctx: InvoiceContext,
+    customer_id: UUID,
+    legal_entity: LegalEntity,
+    name: str,
+    *,
+    sharing: bool = False,
 ) -> None:
     """The customer an imported invoice is attached to (REB-783, REB-784) has to be one
     it can be written for: on the legal entity whose register it lands on, and not archived.
     `name` is the counterparty the message names. The dialog lists only such organizations,
     but the server is the contract: without this an invoice would land on one legal entity's
     register for another's customer, a state `legal_entity_of_parent` derives away on every
-    other path. It runs for the FatturaPA confirmation and for `import_issued` itself, so
-    the hand-declared import is held to it too. An unknown id stays `NotFound`."""
+    other path. `sharing` is the decision to make an organization of another legal entity shared
+    (REB-970), which lifts that one refusal. It runs for the FatturaPA confirmation and for
+    `import_issued` itself, so the hand-declared import is held to it too. An unknown id stays
+    `NotFound`."""
     customer = ctx.session.get(Organization, customer_id)
     if customer is None:
         return
@@ -57,7 +64,13 @@ def check_import_customer(
             f"il cliente «{name}» è archiviato",
             expected="un cliente non archiviato",
         )
-    if customer.legal_entity_id != legal_entity.id:
+    # A shared organization (no legal entity of its own, REB-970) is one every legal entity's
+    # register can be written for.
+    if (
+        not sharing
+        and customer.legal_entity_id is not None
+        and customer.legal_entity_id != legal_entity.id
+    ):
         raise ValidationFailed(
             ENTITY,
             "customer_id",

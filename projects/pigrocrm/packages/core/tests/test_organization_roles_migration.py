@@ -118,6 +118,23 @@ def test_the_revision_gives_every_row_the_customer_role_and_builds_the_index_bot
         assert "gin" in _scalar(
             engine, "SELECT indexdef FROM pg_indexes WHERE indexname = 'ix_organizations_roles'"
         )
+        # An organization can be shared (no legal entity of its own), and its policy says who
+        # sees it; the two functions that read the column know it.
+        with engine.begin() as connection:
+            connection.execute(
+                text(f"UPDATE organizations SET legal_entity_id = NULL WHERE id = '{ACME}'")
+            )
+        assert "legal_entity_id IS NULL" in _scalar(
+            engine,
+            "SELECT qual FROM pg_policies WHERE tablename = 'organizations' "
+            "AND policyname = 'legal_entity_scope'",
+        )
+        assert "legal_entity_id IS NULL" in _scalar(
+            engine, "SELECT prosrc FROM pg_proc WHERE proname = 'organization_visible'"
+        )
+        assert "legal_entity_id IS NULL" in _scalar(
+            engine, "SELECT prosrc FROM pg_proc WHERE proname = 'person_visible'"
+        )
         # A foreign number fits, and the index refuses the same number twice.
         with engine.begin() as connection:
             connection.execute(
@@ -169,6 +186,17 @@ def test_rows_that_already_collide_do_not_fail_the_revision_and_the_index_waits_
         upgrade(config, before)
         engine = create_engine(url)
         _plant(engine, duplicate=True)
+        # Placeholders are nobody's number: they are neither a duplicate group nor a reason to
+        # leave the index unbuilt.
+        with engine.begin() as connection:
+            for placeholder in ("-", "-", ""):
+                connection.execute(
+                    text(
+                        "INSERT INTO organizations (id, legal_name, vat_number, country, "
+                        f"legal_entity_id, custom_fields) VALUES (gen_random_uuid(), 'blank', "
+                        f"'{placeholder}', 'IT', '{ENTITY}', '{{}}')"
+                    )
+                )
 
         upgrade(config, revision)
         assert "duplicate-organizations" in capfd.readouterr().err
@@ -178,7 +206,7 @@ def test_rows_that_already_collide_do_not_fail_the_revision_and_the_index_waits_
             )
             == 0
         )
-        assert _scalar(engine, "SELECT count(*) FROM organizations") == 3
+        assert _scalar(engine, "SELECT count(*) FROM organizations") == 6
 
         with Session(engine) as session:
             (group,) = duplicate_vat_groups(session)

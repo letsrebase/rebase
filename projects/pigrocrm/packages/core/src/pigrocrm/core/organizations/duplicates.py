@@ -31,7 +31,7 @@ class DuplicateRow:
     legal_name: str
     vat_number: str
     roles: tuple[str, ...]
-    legal_entity_id: UUID
+    legal_entity_id: UUID | None
     created_at: datetime
 
 
@@ -50,7 +50,11 @@ def duplicate_vat_groups(session: Session) -> list[DuplicateGroup]:
     can be built."""
     country = country_key(Organization.country)
     key = vat_key(Organization.vat_number)
-    live = (Organization.deleted_at.is_(None), Organization.vat_number.is_not(None))
+    live = (
+        Organization.deleted_at.is_(None),
+        Organization.vat_number.is_not(None),
+        key != "",
+    )
     shared = (
         select(country, key).where(*live).group_by(country, key).having(func.count() > 1)
     ).subquery()

@@ -564,6 +564,44 @@ def test_a_session_with_nothing_bound_sees_nothing(world: World) -> None:
         assert _count(session, "activities") == 1
 
 
+def test_a_shared_organization_is_seen_by_every_scope_that_has_a_legal_entity_and_by_no_other(
+    world: World,
+) -> None:
+    """REB-970: `legal_entity_id` NULL is an organization shared across the legal entities, as
+    a cost's is. Every scope with a legal entity in it reads the row and its people, one
+    legal entity's scope as well as another's, and the closed default stands for a session with
+    nothing bound or with no legal entity left."""
+    with session_factory(world.engine)() as session:
+        shared = Organization(legal_name=f"{_PREFIX} shared", country="IT", custom_fields={})
+        session.add(shared)
+        session.flush()
+        shared.legal_entity_id = None  # explicit `None` at insert would take the column default
+        session.add(
+            Person(first_name=f"{_PREFIX} shared contatto", customer_id=shared.id, custom_fields={})
+        )
+        session.commit()
+
+    def names(session: Session, table: str, column: str) -> set[str]:
+        sql = f"SELECT {column} FROM {table} WHERE {column} LIKE '{_PREFIX} shared%'"  # noqa: S608
+        return set(session.execute(text(sql)).scalars())
+
+    for legal_entities in ((world.studio,), (world.foreign,), (world.studio, world.foreign)):
+        with _scoped(world, *legal_entities) as session:
+            assert names(session, "organizations", "legal_name") == {f"{_PREFIX} shared"}
+            assert names(session, "people", "first_name") == {f"{_PREFIX} shared contatto"}
+    with _scoped(world) as session:
+        assert names(session, "organizations", "legal_name") == set()
+        assert names(session, "people", "first_name") == set()
+    with session_factory(world.app)() as session:
+        assert names(session, "organizations", "legal_name") == set()
+    with _scoped(world, world.studio) as session:
+        visible = session.execute(
+            text("SELECT organization_visible(id) FROM organizations WHERE legal_name = :name"),
+            {"name": f"{_PREFIX} shared"},
+        ).scalar_one()
+        assert visible is True
+
+
 def test_to_scope_with_no_legal_entity_left_sees_nothing_either(world: World) -> None:
     with _scoped(world) as session:
         assert _count(session, "organizations") == 0

@@ -30,7 +30,7 @@ from decimal import Decimal
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import ColumnElement, Select, Subquery, func, literal, select
+from sqlalchemy import ColumnElement, Select, Subquery, func, literal, or_, select
 from sqlalchemy.orm import Session, aliased
 
 from pigrocrm.core.contact_points.models import ContactPoint
@@ -144,7 +144,12 @@ Scope = tuple[ColumnElement[bool], ...]
 
 
 def _own(model: Any, legal_entity_id: UUID | None) -> Scope:
-    return () if legal_entity_id is None else (model.legal_entity_id == legal_entity_id,)
+    if legal_entity_id is None:
+        return ()
+    if model is Organization:
+        # An organization shared across the legal entities belongs to each of them (REB-970).
+        return (or_(model.legal_entity_id == legal_entity_id, model.legal_entity_id.is_(None)),)
+    return (model.legal_entity_id == legal_entity_id,)
 
 
 @dataclass(frozen=True)
@@ -295,7 +300,7 @@ class SearchRepository:
         if legal_entity_id is not None:
             scope = (
                 Person.customer_id.in_(
-                    select(Organization.id).where(Organization.legal_entity_id == legal_entity_id)
+                    select(Organization.id).where(*_own(Organization, legal_entity_id))
                 ),
             )
         return self._group(

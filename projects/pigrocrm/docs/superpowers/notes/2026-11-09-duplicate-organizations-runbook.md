@@ -29,7 +29,22 @@ installation. An administrator of the whole space reads the same groups with
 ## Resolving them (a person)
 
 Nothing here merges or deletes: the merge (rewriting every foreign key and the polymorphic rows)
-is its own card. Until it exists, keep the row that carries the history, move what belongs on it
-by hand, and **archive** the other (`archive_organization`; it refuses while the row has active
-deals), or correct the number if one of them was a typo. Give the surviving row the roles of both
-(`update_organization`, `roles`). The next boot builds the index.
+is its own card. Read each group by the `legal_entity_id` of its rows, which the report prints,
+and decide what the pair is:
+
+- **One company that two legal entities bill** (the rows sit under different legal entities):
+  do not archive either. **Share it**: an administrator sets the row's `legal_entity_id` to
+  `null` (`update_organization` with `legal_entity_id: null`, or `share_organization` in an
+  invoice import), which makes the organization visible to every legal entity. Then move what
+  hangs on the other row by hand until the merge tool exists, and archive that one (it refuses
+  while it has active deals). One row per company is the rule the index holds; two rows for
+  one company used by two legal entities is the state to leave.
+- **A real duplicate under one legal entity**: keep the row that carries the history, move what
+  belongs on it by hand, and **archive** the other (`archive_organization`).
+- **A typo**: correct the number on the wrong row.
+
+Give the surviving row the roles of both (`update_organization`, `roles`). The next boot
+builds the index.
+
+A shared organization has no legal entity of its own, so what is created under it (a deal, a
+contract, a document) takes the legal entity its own request names, the default one otherwise.

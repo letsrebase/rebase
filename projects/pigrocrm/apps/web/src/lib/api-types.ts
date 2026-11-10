@@ -1618,7 +1618,9 @@ export interface paths {
          *     that classifies `"ready"`: never a second, independently-maintained write
          *     path. `create_organization` (REB-367) creates the matched party as a new
          *     `Organization` inside that same write when no `customer_id` is given and no
-         *     exact tax-id match exists.
+         *     exact tax-id match exists. `share_organization` (REB-970) makes the organization another
+         *     legal entity bills, which the row names in `existing_organization_id`, shared across the
+         *     legal entities and attaches the invoice to it.
          */
         post: operations["confirm_import_api_invoices_import_confirm_post"];
         delete?: never;
@@ -1667,8 +1669,8 @@ export interface paths {
          *     now, never from the review, and written by the same code `/import/confirm` runs. A
          *     single-invoice file's XML is archived as a document of the invoice's customer.
          *     `decisioni` is the JSON `{"clienti": {"<party_key>": {"create_organization": true}}}`:
-         *     per customer, a `customer_id` to attach or `create_organization`, as on
-         *     `/import/confirm`.
+         *     per customer, a `customer_id` to attach, `create_organization` or `share_organization`,
+         *     as on `/import/confirm`.
          */
         post: operations["confirm_import_upload_api_invoices_import_upload_confirm_post"];
         delete?: never;
@@ -6020,6 +6022,8 @@ export interface components {
             outcome: "imported" | "already_present" | "conflict" | "incoming_skipped" | "needs_customer_confirmation" | "unclaimed";
             /** Legal Entity Id */
             legal_entity_id?: string | null;
+            /** Existing Organization Id */
+            existing_organization_id?: string | null;
             invoice?: components["schemas"]["InvoiceRead"] | null;
             /** Undeclared Gaps */
             undeclared_gaps?: number[] | null;
@@ -8169,11 +8173,8 @@ export interface components {
             vat_number: string;
             /** Roles */
             roles: string[];
-            /**
-             * Legal Entity Id
-             * Format: uuid
-             */
-            legal_entity_id: string;
+            /** Legal Entity Id */
+            legal_entity_id: string | null;
             /**
              * Created At
              * Format: date-time
@@ -9406,6 +9407,11 @@ export interface components {
              * @default false
              */
             create_organization: boolean;
+            /**
+             * Share Organization
+             * @default false
+             */
+            share_organization: boolean;
         };
         /** InvoiceConfirmResult */
         InvoiceConfirmResult: {
@@ -10549,11 +10555,8 @@ export interface components {
              * Format: uuid
              */
             id: string;
-            /**
-             * Legal Entity Id
-             * Format: uuid
-             */
-            legal_entity_id: string;
+            /** Legal Entity Id */
+            legal_entity_id: string | null;
             /** Owner Id */
             owner_id: string | null;
             /** Legal Name */
@@ -12324,6 +12327,8 @@ export interface components {
             legal_entity_id?: string | null;
             /** Matched Customer Id */
             matched_customer_id?: string | null;
+            /** Existing Organization Id */
+            existing_organization_id?: string | null;
             /** Days Mappings */
             days_mappings?: (components["schemas"]["WorkUnitDayMappingProposal"] | null)[] | null;
         };
@@ -13514,6 +13519,8 @@ export interface components {
             reason?: string | null;
             /** Legal Entity Id */
             legal_entity_id?: string | null;
+            /** Existing Organization Id */
+            existing_organization_id?: string | null;
             invoice?: components["schemas"]["InvoiceRead"] | null;
             /** Undeclared Gaps */
             undeclared_gaps?: number[] | null;
@@ -13551,6 +13558,8 @@ export interface components {
             legal_entity_id?: string | null;
             /** Matched Customer Id */
             matched_customer_id?: string | null;
+            /** Existing Organization Id */
+            existing_organization_id?: string | null;
             /** Days Mappings */
             days_mappings?: (components["schemas"]["WorkUnitDayMappingProposal"] | null)[] | null;
         };
@@ -26900,7 +26909,7 @@ export interface operations {
                 "multipart/form-data": {
                     /** @description FatturaPA XML files or ZIPs of them, one part each. */
                     file: string[];
-                    /** @description On the confirmation: `{"clienti": {"<party_key>": {"create_organization": true}}}`. */
+                    /** @description On the confirmation: `{"clienti": {"<party_key>": {"create_organization": true}}}`, or `share_organization`. */
                     decisioni?: string;
                 };
             };
@@ -27026,7 +27035,7 @@ export interface operations {
                 "multipart/form-data": {
                     /** @description FatturaPA XML files or ZIPs of them, one part each. */
                     file: string[];
-                    /** @description On the confirmation: `{"clienti": {"<party_key>": {"create_organization": true}}}`. */
+                    /** @description On the confirmation: `{"clienti": {"<party_key>": {"create_organization": true}}}`, or `share_organization`. */
                     decisioni?: string;
                 };
             };

@@ -63,7 +63,12 @@ export function buildOrganizationColumns(
           id: 'legal_entity',
           // The dash for an id the active list does not carry: a customer of a
           // deactivated azienda keeps its rows and its history (spec §1.8).
-          accessorFn: (row) => legalEntityName.get(row.legal_entity_id) ?? EMPTY,
+          // «Tutte» for an organization shared across the legal entities (none of its own,
+          // REB-970).
+          accessorFn: (row) =>
+            row.legal_entity_id === null
+              ? 'Tutte'
+              : (legalEntityName.get(row.legal_entity_id) ?? EMPTY),
         },
       ]
     : []

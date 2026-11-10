@@ -482,7 +482,9 @@ function ReviewTableRow({
     ? 'Il cliente non viene creato: questa fattura non viene importata.'
     : attached !== undefined
       ? `Va al cliente «${attached.name}», già in anagrafica: non ne viene creato un altro.`
-      : row.outcome === 'unclaimed' && row.reason
+      : row.outcome === 'needs_customer_confirmation' && row.existing_organization_id != null
+        ? "Il cliente è già in anagrafica con un'altra azienda: viene condiviso fra le aziende, non ne viene creato un altro."
+        : row.outcome === 'unclaimed' && row.reason
       ? `Sembra una fattura FatturaPA ma non si legge: ${row.reason}`
       : REVIEW_OUTCOME_NOTES[row.outcome]
   return (

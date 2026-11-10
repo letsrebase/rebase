@@ -210,6 +210,7 @@ class UploadedInvoiceReviewRead(BaseModel):
     reason: str | None = None
     legal_entity_id: UUID | None = None
     matched_customer_id: UUID | None = None
+    existing_organization_id: UUID | None = None
     days_mappings: list[WorkUnitDayMappingProposal | None] | None = None
 
 
@@ -232,6 +233,7 @@ class UploadedInvoiceConfirmRead(BaseModel):
     party_key: str | None = None
     reason: str | None = None
     legal_entity_id: UUID | None = None
+    existing_organization_id: UUID | None = None
     invoice: InvoiceRead | None = None
     undeclared_gaps: list[int] | None = None
 
@@ -254,6 +256,10 @@ class UploadedPartyDecision(BaseModel):
     customer_id: UUID | None = None
     create_organization: bool = False
     skip: bool = False
+    # REB-970: the customer is one organization that another legal entity also bills, so it is
+    # made shared (visible to every legal entity) and the invoice attached to it, where
+    # `create_organization` would be refused as a second row for one VAT number.
+    share_organization: bool = False
 
 
 class UploadedInvoiceDecisions(BaseModel):

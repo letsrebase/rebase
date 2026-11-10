@@ -152,7 +152,8 @@ class OrganizationRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
-    legal_entity_id: UUID
+    # `None`: shared across the legal entities of the space.
+    legal_entity_id: UUID | None
     owner_id: UUID | None
     legal_name: str
     vat_number: str | None
@@ -287,7 +288,7 @@ class DuplicateOrganizationRead(BaseModel):
     legal_name: str
     vat_number: str
     roles: list[str]
-    legal_entity_id: UUID
+    legal_entity_id: UUID | None
     created_at: datetime
 
 
