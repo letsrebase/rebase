@@ -1,7 +1,9 @@
 """The sales register of the period: issued invoices and credit notes with their VAT, then
 the numbers that were annulled or never used (spec accountant export § 1, C3 § 6).
 
-Rows are placed by the date printed on the document, which for a sale is its IVA period.
+Rows are placed by the date printed on the document. That is a placement, not a ruling on
+the IVA period of a sale: which date governs it (issue or operation) is still «to verify» in
+the frame's A5 register, and the export neither computes nor names it.
 One row per invoice and per `(rate, nature)` group, the grouping and the rounding the XML
 carries (`build_recap`), so an invoice's rows add up to its taxable amount and its VAT. The
 row prints the document type the invoice stored. An invoice whose stored totals differ from

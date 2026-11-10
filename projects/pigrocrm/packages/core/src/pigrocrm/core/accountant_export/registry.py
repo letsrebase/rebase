@@ -21,7 +21,7 @@ PARTS: tuple[PartDefinition, ...] = (
         key="sales_register",
         folder="vendite",
         label="Registro delle vendite",
-        date_rule="per periodo IVA (data di emissione)",
+        date_rule="per data di emissione",
         build=build_sales_register,
         # No IVA register for a company outside Italy (§ 1, « Which parts exist »).
         not_for_packs=(PACK_NON_IT,),

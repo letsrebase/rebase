@@ -172,6 +172,7 @@ removes its row from `UNAVAILABLE`, and the ZIP and the index carry it. Today: t
 register with VAT columns, the annulled and unused numbers, the issued invoices' files, the
 received invoices' files, the receipts and expenses with their files, the open due items at
 the period's end and the payments booked in it. Everything else in § 1 is listed in the index
-as «non disponibile». A sale is placed by its issue date (its IVA period); a declared gap in
+as «non disponibile». A sale is placed by its issue date, which is not called an IVA period
+until the frame's A5 row on the IVA period date for sales is verified; a declared gap in
 the period that holds the next number after it. Storage, retention, the checklist, the share
 link and the MCP tools stay their own cards.
