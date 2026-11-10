@@ -23,10 +23,10 @@ It has three jobs:
   an accepted payslip's gross where there is one, with no person behind it. The caller decides
   who may read it.
 
-Refreshes happen when the inputs, the pay day or a payslip change, for the months from two back
-to twelve ahead of that day. Nothing moves the window on by itself yet: a space whose staff
-nobody edits for a year sees its horizon shrink, and the aggregate leaves out a forecast whose
-date passed. A scheduled refresh is a later step.
+Refreshes happen when the inputs, the pay day or a payslip change, and every day in the
+automations pass (`AutomationPass._roll_payroll`), for the months from two back to twelve ahead
+of that day. The aggregate leaves out a forecast whose date passed, in case a day's pass is late.
+A payslip cannot be corrected once recorded: a correction is a later card.
 
 Every payroll due item is of the restricted source kind `payroll`, so the schedule shows it to
 administrators and everyone else sees the aggregate «Stipendi» line

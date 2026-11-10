@@ -189,7 +189,7 @@ class DueItemRepository:
                 DueItem.state.in_(OPEN_STATES),
                 DueItem.due_date.is_not(None),
                 # A forecast whose date passed is an estimate that nothing replaced: it is
-                # no longer money to come (a refresh drops it, and none runs by itself yet).
+                # no longer money to come (the daily refresh drops it).
                 or_(DueItem.state == "expected", DueItem.due_date >= today_local()),
             )
             .group_by(DueItem.due_date)

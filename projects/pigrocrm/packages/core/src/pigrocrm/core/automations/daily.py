@@ -119,6 +119,8 @@ class PassReport:
     # failure is counted and never stops the pass).
     payroll_refreshed: int = 0
     payroll_failed: int = 0
+    # The class name of each failure, never a message: a message can quote a figure.
+    payroll_failures: tuple[str, ...] = ()
 
     @property
     def open(self) -> int:
@@ -178,12 +180,18 @@ class AutomationPass:
             for rule in TASK_RULES
             if set(RULE_MODULES.get(rule, ())) <= modules_on
         )
-        refreshed = failed = 0
+        refreshed = 0
+        failed: tuple[str, ...] = ()
         if "staff" in modules_on:
             refreshed, failed = self._roll_payroll(dry_run=dry_run)
-        return PassReport(rules=rules, payroll_refreshed=refreshed, payroll_failed=failed)
+        return PassReport(
+            rules=rules,
+            payroll_refreshed=refreshed,
+            payroll_failed=len(failed),
+            payroll_failures=failed,
+        )
 
-    def _roll_payroll(self, *, dry_run: bool) -> tuple[int, int]:
+    def _roll_payroll(self, *, dry_run: bool) -> tuple[int, tuple[str, ...]]:
         """Rolls the payroll forecast window of every legal entity that has staff (REB-1008):
         the estimate only refreshes when staff change, so without this the horizon shrinks.
         Each legal entity is its own savepoint and its own commit, so one that fails is
@@ -196,18 +204,19 @@ class AutomationPass:
         entities = list(
             self.session.execute(select(StaffMember.legal_entity_id).distinct()).scalars()
         )
-        done = failed = 0
+        done = 0
+        failed: list[str] = []
         for entity in entities:
             try:
                 with self.session.begin_nested():
                     PayrollService(self.session).refresh_payroll_forecasts(entity)
-            except Exception:
-                failed += 1
+            except Exception as exc:  # noqa: BLE001 - counted and reported, the pass goes on
+                failed.append(type(exc).__name__)
                 continue
             done += 1
             if not dry_run:
                 self.session.commit()
-        return done, failed
+        return done, tuple(failed)
 
     # -- one rule -----------------------------------------------------------------
 

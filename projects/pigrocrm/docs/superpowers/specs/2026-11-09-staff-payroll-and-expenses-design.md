@@ -102,6 +102,9 @@ hours at the hourly cost, as an allocation to the deal.
   two months back to twelve ahead, as `forecast` out items of the `payroll` source. An unchanged
   one is left alone, a changed one is dropped and rewritten, and one whose date passed is
   dropped: a forecast is never settled, a document replaces it.
+  The daily automations pass rolls the window for every legal entity with staff, each in its own
+  savepoint; a failure is reported on stderr and makes the command exit 1. A recorded payslip
+  cannot be corrected yet: a correction is a later card.
 - The period P&L's `personnel` is the sum of those costs over the window (by days of each month),
   `null` for a reader who may not read pay and with the module off; where it is read, the hours
   of a user linked to a staff member of the same legal entity leave the deals' labour. Everyone

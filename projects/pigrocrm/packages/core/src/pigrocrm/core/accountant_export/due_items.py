@@ -71,8 +71,20 @@ SETTLEMENT_COLUMNS = (
 )
 
 
+_PAYROLL_TAX = {
+    "payroll_withholding": "Ritenute IRPEF",
+    "payroll_inps": "INPS",
+    "payroll_inail": "INAIL",
+}
+
+
 def _counterparty(item: DueItem, organization_name: str | None) -> str:
-    return text_cell(organization_name if organization_name is not None else item.tax)
+    if item.counterparty_type == "staff_member":
+        # Never the person's name: pay is an administrator's, and this part has no consent for it.
+        return text_cell("Dipendente")
+    if organization_name is None and item.tax is not None:
+        return text_cell(_PAYROLL_TAX.get(item.tax, item.tax))
+    return text_cell(organization_name)
 
 
 def _origin(item: DueItem) -> str:

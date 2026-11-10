@@ -231,7 +231,13 @@ def estimate_month(
     # ---- what the cash needs -----------------------------------------------------------------
     # A month has cash to speak of when the member is paid in it or, for an employee, when it is
     # the month INAIL's yearly premium falls in (the employee having started by then).
-    inail_month = employee and _inail_month(law, month) and member.start_date <= _last_of(month)
+    inail_month = (
+        employee
+        and _inail_month(law, month)
+        and member.start_date <= _last_of(month)
+        # Someone who left before last year has no premium left to settle.
+        and (member.end_date is None or member.end_date >= dt.date(month.year - 1, 1, 1))
+    )
     pays = in_service or payslip is not None
     if ratios is None and (pays or inail_month):
         missing.append("accepted_payslip")
