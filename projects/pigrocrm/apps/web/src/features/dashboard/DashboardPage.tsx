@@ -3,6 +3,7 @@ import type { ReactNode } from 'react'
 import { PageHeader } from '@/components/PageHeader'
 import { Tabs, TabsList, TabsTrigger } from '@rebase/ui/tabs'
 import { LoadingState } from '@/components/LoadingState'
+import { HomeTaxDates } from '@/features/taxes/TaxDates'
 import { TAB_MODULES, useModules } from '@/lib/modules'
 import { CommercialTab } from './CommercialTab'
 import { DaFareBand } from './DaFareBand'
@@ -64,7 +65,13 @@ export function DashboardPage({
         }
         // The late and due-today tasks (REB-874): the first thing under the title, with
         // the analysis tabs starting under it.
-        aboveTabs={<DaFareBand />}
+        // The next two tax dates sit under it (REB-1026), on every tab.
+        aboveTabs={
+          <>
+            <DaFareBand />
+            <HomeTaxDates variant="band" />
+          </>
+        }
         tabs={
           <TabsList variant="line">
             {availableTabs(modules).map((candidate) => (

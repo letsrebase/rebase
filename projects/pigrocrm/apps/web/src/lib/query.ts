@@ -17,6 +17,17 @@ export const queryClient = new QueryClient({
   },
 })
 
+/**
+ * For a read whose «not found» is an answer (a legal entity with no fiscal profile): a 404 is
+ * terminal and the page says what to do, instead of showing «loading» through the library's two
+ * retries; anything else, except 401 and 403 as above, gets them.
+ */
+export function retryUnlessMissing(failureCount: number, error: unknown): boolean {
+  const status = (error as { status?: number }).status
+  if (status === 401 || status === 403 || status === 404) return false
+  return failureCount < 2
+}
+
 /** The id the history of a space-wide setting is read and invalidated under: `slack` and
  *  `reminder_defaults` have one history each and no row to name (REB-828). */
 export const SETTINGS_TIMELINE_ID = 'space'
@@ -151,6 +162,9 @@ export const queryKeys = {
   // «tutte» the economic tab holds one entry per legal entity at once.
   fiscalEstimate: (year: number, legalEntityId: string | null = null) =>
     ['fiscal-estimate', year, legalEntityId] as const,
+  // The tax calendar is one legal entity's and one calendar year's (REB-1026).
+  taxCalendar: (year: number, legalEntityId: string | null = null) =>
+    ['tax-calendar', year, legalEntityId] as const,
   // The ceilings and the year register are one azienda's as well (REB-755, REB-757), and
   // the simulation is keyed on everything typed: the same deal against another date is
   // another answer.

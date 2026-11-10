@@ -188,6 +188,8 @@ export const MIN_ROLE = {
   upsert_legal_entities: 'admin',
   update_fiscal_profile: 'admin',
   get_fiscal_estimate: 'admin',
+  // The tax calendar (REB-1004) is the same fiscal position as the estimate: an administrator's.
+  get_tax_calendar: 'admin',
   create_cost_category: 'admin',
   update_cost_category: 'admin',
   archive_cost_category: 'admin',

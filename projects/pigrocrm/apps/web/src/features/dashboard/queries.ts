@@ -3,7 +3,7 @@ import { toast } from '@rebase/ui/sonner'
 import { api, unwrap } from '@/lib/api'
 import type { components } from '@/lib/api-types'
 import { useLegalEntity } from '@/lib/legalEntity'
-import { queryKeys } from '@/lib/query'
+import { queryKeys, retryUnlessMissing } from '@/lib/query'
 import type { Period } from './period'
 import type { CashBase } from './search'
 
@@ -121,6 +121,8 @@ export function useFiscalEstimate(year: number, legalEntityId?: string | null, e
     queryKey: queryKeys.fiscalEstimate(year, legal_entity),
     queryFn: () => unwrap(api.GET('/api/analytics/fiscal', { params: { query } })),
     enabled: enabled && (legal_entity !== null || loaded),
+    // A legal entity with no fiscal profile answers 404, and the card says so at once.
+    retry: retryUnlessMissing,
   })
 }
 

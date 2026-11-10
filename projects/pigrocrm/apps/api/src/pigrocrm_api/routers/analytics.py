@@ -28,6 +28,7 @@ from pigrocrm.core.analytics.schemas import (
     PeriodPnl,
     PeriodPnlQuery,
     RevenueBase,
+    TaxCalendar,
     UnbilledBacklog,
     YearOverview,
 )
@@ -175,6 +176,20 @@ def fiscal_estimate(
     return AnalyticsService(session).get_fiscal_estimate(
         year, actor, legal_entity_id=legal_entity_id
     )
+
+
+@router.get("/fiscal/calendar", response_model=TaxCalendar, dependencies=[module_guard("taxes")])
+def tax_calendar(
+    session: SessionDep,
+    actor: ActorDep,
+    year: Annotated[int, Query(ge=2000, le=2200)],
+    legal_entity_id: LegalEntityRequired = None,
+) -> TaxCalendar:
+    """The tax dates of calendar `year` for one legal entity, from its fiscal pack, each with
+    its source and the day it falls due once a weekend or holiday is moved forward (REB-1004).
+    `admin`, enforced by the service. An empty `dates` is a pack with no calendar for the year:
+    it says nothing about whether something is owed."""
+    return AnalyticsService(session).get_tax_calendar(year, actor, legal_entity_id=legal_entity_id)
 
 
 @router.put(

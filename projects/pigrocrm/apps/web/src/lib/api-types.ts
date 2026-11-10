@@ -2355,6 +2355,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/analytics/fiscal/calendar": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Tax Calendar
+         * @description The tax dates of calendar `year` for one legal entity, from its fiscal pack, each with
+         *     its source and the day it falls due once a weekend or holiday is moved forward (REB-1004).
+         *     `admin`, enforced by the service. An empty `dates` is a pack with no calendar for the year:
+         *     it says nothing about whether something is owed.
+         */
+        get: operations["tax_calendar_api_analytics_fiscal_calendar_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/analytics/fiscal/declared": {
         parameters: {
             query?: never;
@@ -9976,6 +9999,7 @@ export interface components {
             reading: "estimate" | "declared";
             /** Declared */
             declared?: components["schemas"]["DeclaredTaxFigureRead"][];
+            readings?: components["schemas"]["TaxReadings"] | null;
         };
         /** FiscalProfileRead */
         FiscalProfileRead: {
@@ -15488,6 +15512,114 @@ export interface components {
              * @default false
              */
             reference_to_remove: boolean;
+        };
+        /**
+         * TaxCalendar
+         * @description The tax dates of calendar `year` for one legal entity, from its pack (REB-1004). The dates
+         *     are «salvo proroghe»: a decree that moves one is a new entry of the pack. An empty `dates`
+         *     with a `pack_id` is a pack that has no calendar for that year.
+         */
+        TaxCalendar: {
+            /** Year */
+            year: number;
+            /**
+             * Legal Entity Id
+             * Format: uuid
+             */
+            legal_entity_id: string;
+            /** Pack Id */
+            pack_id: string;
+            /** Pack Version */
+            pack_version: string;
+            /** Dates */
+            dates: components["schemas"]["TaxCalendarEntry"][];
+        };
+        /**
+         * TaxCalendarEntry
+         * @description One date of a legal entity's tax calendar (REB-1004): what falls due, on which day and
+         *     where the date comes from. `nominal_date` is the day the pack states; `due_date` is the
+         *     day it falls once a Saturday, a Sunday or a national holiday is moved forward.
+         */
+        TaxCalendarEntry: {
+            /**
+             * Nominal Date
+             * Format: date
+             */
+            nominal_date: string;
+            /**
+             * Due Date
+             * Format: date
+             */
+            due_date: string;
+            /**
+             * Tax
+             * @enum {string}
+             */
+            tax: "iva" | "income_tax" | "substitute_tax";
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "periodic_payment" | "quarterly_payment" | "annual_balance" | "advance" | "balance_and_first_advance" | "second_advance" | "instalments_end";
+            /** Cadence */
+            cadence: ("monthly" | "quarterly") | null;
+            /** Covers */
+            covers: string;
+            /** Source */
+            source: string;
+        };
+        /**
+         * TaxReadingLine
+         * @description One tax of the year with its three readings (REB-1026, `fiscal/readings.py`). A figure
+         *     that does not exist is `None` and a screen draws it as «no reading yet» or «not
+         *     computable», never as zero. `declared` is the tax due of the typed return; its balance and
+         *     advances stay on the declared rows beside it.
+         */
+        TaxReadingLine: {
+            /**
+             * Tax
+             * @enum {string}
+             */
+            tax: "irpef" | "substitute_tax" | "ires" | "irap" | "inps";
+            /** Estimable */
+            estimable: boolean;
+            /** Estimate */
+            estimate: string | null;
+            /** Declared */
+            declared: string | null;
+            /** Paid */
+            paid?: string | null;
+            /** Counts */
+            counts: ("estimate" | "declared" | "paid") | null;
+        };
+        /**
+         * TaxReadingTotals
+         * @description A total per column, each adding readings of one kind only: the lines with no figure of
+         *     that kind are left out of it and counted in `*_left_out`, so a screen says «does not
+         *     include N lines». A total is `None` when no line has a figure of its kind.
+         */
+        TaxReadingTotals: {
+            /** Estimate */
+            estimate: string | null;
+            /** Estimate Left Out */
+            estimate_left_out: number;
+            /** Declared */
+            declared: string | null;
+            /** Declared Left Out */
+            declared_left_out: number;
+            /** Paid */
+            paid: string | null;
+            /** Paid Left Out */
+            paid_left_out: number;
+        };
+        /**
+         * TaxReadings
+         * @description The year's taxes of one legal entity, as the pack lists them, with their readings.
+         */
+        TaxReadings: {
+            /** Lines */
+            lines: components["schemas"]["TaxReadingLine"][];
+            totals: components["schemas"]["TaxReadingTotals"];
         };
         /**
          * TeamPatRead
@@ -35491,6 +35623,127 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["FiscalEstimate"];
+                };
+            };
+            /** @description Permission denied: the actor does not have the required role. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The requested resource does not exist or was removed. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The request conflicts with the current state of the resource. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    tax_calendar_api_analytics_fiscal_calendar_get: {
+        parameters: {
+            query: {
+                year: number;
+                /** @description The legal entity to compute for: required when the space has more than one (a 422 response names `legal_entity_id`), otherwise it is the only one and can be omitted. */
+                legal_entity_id?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaxCalendar"];
                 };
             };
             /** @description Permission denied: the actor does not have the required role. */

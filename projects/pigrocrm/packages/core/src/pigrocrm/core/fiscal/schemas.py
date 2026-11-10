@@ -14,6 +14,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from pigrocrm.core.fiscal.law import DeclaredTax
 from pigrocrm.core.fiscal.pack import (
     PACK_IT_COMPANY,
     PACK_IT_FLAT_RATE,
@@ -328,8 +329,7 @@ class FiscalProfileRead(BaseModel):
 
 # The taxes a declared figure may be typed for: the design's own names (taxes design § 1 and
 # § 2). Validated here, in code, like the due items' source kinds.
-DeclaredTax = Literal["irpef", "substitute_tax", "ires", "irap", "inps"]
-DECLARED_TAXES: tuple[str, ...] = get_args(DeclaredTax)
+DECLARED_TAXES: tuple[DeclaredTax, ...] = get_args(DeclaredTax)
 # How a declared figure came to be: typed by an administrator today; a figure read from a
 # document and accepted by a person is a later card.
 DeclaredSource = Literal["typed"]
@@ -373,6 +373,55 @@ class DeclaredTaxFigureRead(BaseModel):
     updated_at: datetime
 
 
+# Which of a tax line's readings counts: the highest stage that exists, never the latest one.
+ReadingStage = Literal["estimate", "declared", "paid"]
+
+
+class TaxReadingLine(BaseModel):
+    """One tax of the year with its three readings (REB-1026, `fiscal/readings.py`). A figure
+    that does not exist is `None` and a screen draws it as «no reading yet» or «not
+    computable», never as zero. `declared` is the tax due of the typed return; its balance and
+    advances stay on the declared rows beside it."""
+
+    model_config = ConfigDict(frozen=True)
+
+    tax: DeclaredTax
+    # Whether the code has an estimate for this tax in this year. When it has and `estimate` is
+    # `None`, a profile parameter is missing; when it has none (IRPEF, IRES, IRAP, the
+    # ordinary regime's INPS: their rules are «to verify»), `estimate` is `None` for good.
+    estimable: bool
+    estimate: Decimal | None
+    declared: Decimal | None
+    # No source writes a paid figure yet: always `None` until the F24 due items exist.
+    paid: Decimal | None = None
+    # The reading that counts for this tax, `None` when none of the three exists.
+    counts: ReadingStage | None
+
+
+class TaxReadingTotals(BaseModel):
+    """A total per column, each adding readings of one kind only: the lines with no figure of
+    that kind are left out of it and counted in `*_left_out`, so a screen says «does not
+    include N lines». A total is `None` when no line has a figure of its kind."""
+
+    model_config = ConfigDict(frozen=True)
+
+    estimate: Decimal | None
+    estimate_left_out: int
+    declared: Decimal | None
+    declared_left_out: int
+    paid: Decimal | None
+    paid_left_out: int
+
+
+class TaxReadings(BaseModel):
+    """The year's taxes of one legal entity, as the pack lists them, with their readings."""
+
+    model_config = ConfigDict(frozen=True)
+
+    lines: list[TaxReadingLine]
+    totals: TaxReadingTotals
+
+
 __all__ = [
     "REGIME_CODE_ORDINARY",
     "REGIME_CODE_RE",
@@ -389,6 +438,10 @@ __all__ = [
     "DeclaredTax",
     "DeclaredTaxFigureRead",
     "DeclaredTaxFigureSet",
+    "ReadingStage",
+    "TaxReadingLine",
+    "TaxReadingTotals",
+    "TaxReadings",
     "FiscalProfileRead",
     "FiscalProfileUpsert",
     "FiscalSnapshot",

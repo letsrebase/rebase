@@ -8,6 +8,7 @@ import {
   FileInput,
   Handshake,
   Inbox,
+  Landmark,
   LayoutDashboard,
   ListChecks,
   Receipt,
@@ -34,7 +35,7 @@ export const HOME = { to: '/app', label: 'Home', icon: LayoutDashboard, exact: t
  * tasks (late ones counted beside it), the calendar that draws the dated ones by day,
  * the reminders still unread (REB-734), the files that arrived and wait for a person
  * («In arrivo», REB-984) and the proposals an agent left for a decision (REB-750). «Amministrazione» reads in the order the money is supposed to move: the
- * register, the hours the next invoice is built from, the contract days (REB-745). None of
+ * register, the hours the next invoice is built from, the contract days (REB-745), then the taxes (REB-1026), which every role sees and only an administrator reads. None of
  * it is admin-gated: every write behind these pages is gated at the service, where the
  * refusal belongs. The Payment reminders page left the menu on 2026-09-09 at Ivan's request; its
  * API and MCP tools remain.
@@ -67,6 +68,7 @@ export const SECTIONS = [
       { to: '/app/invoices', label: 'Fatture', icon: Receipt },
       { to: '/app/hours', label: 'Ore', icon: Clock },
       { to: '/app/days', label: 'Giornate', icon: CalendarCheck },
+      { to: '/app/taxes', label: 'Tasse', icon: Landmark },
     ],
   },
 ] as const

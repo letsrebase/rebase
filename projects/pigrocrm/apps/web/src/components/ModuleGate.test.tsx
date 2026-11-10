@@ -56,6 +56,7 @@ describe('ModuleGate (REB-953)', () => {
     ['/app/approvals/new', ['contracts'], 'Contratti'],
     ['/app/hours', ['time'], 'Ore'],
     ['/app/settings/cost-categories', ['purchases'], 'Acquisti'],
+    ['/app/taxes', ['taxes'], 'Tasse'],
   ] as const)('turns %s away when %j is off', (pathname, off, label) => {
     route.pathname = pathname
     renderGate(off)

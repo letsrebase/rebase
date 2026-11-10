@@ -294,6 +294,18 @@ empty list), never another year's. A date enters a pack only after its row in th
 «verified» with the source. `get_tax_calendar` (`AnalyticsService`, registered in `tools/privileged.py`, module
 `taxes`) is an administrator's and a `full_access` token's, as `get_fiscal_estimate` is.
 
+**«Tasse» draws what the server says and adds nothing (REB-1026).** `GET /api/analytics/fiscal` answers `readings`
+(`fiscal/readings.py`): one line per tax the pack lists for the year (`TaxYearLaw.taxes`, taxes design § 1), each with its
+`estimate`, `declared` (the typed return's tax due) and `paid` (no source writes one yet, so always `null`), the reading that
+`counts` (paid over declared over estimate, by stage, never by time) and the totals of each column, which add one kind of
+reading only and say how many lines they leave out. A figure that does not exist is `null`, never zero, and `estimable` tells a
+tax the code has no estimate for (its rule is «to verify») from one whose profile parameter is missing. The dates are
+`GET /api/analytics/fiscal/calendar` (an administrator's, module `taxes`). `features/taxes/` holds the page (`/app/taxes`,
+tabs «Imposte» and «Scadenze», one light page with no tabs for a solo flat-rate space) and the Home's next two dates
+(`HomeTaxDates`: a block after «Quando arrivano i soldi» on the solo Home, under its first figure on a phone, and a band under «Da fare» on the company Home at every width); the folder
+is under `no-browser-arithmetic.test.ts`, so nothing there parses an amount. «Rate», the F24 chip and the date's state pill wait
+for the due items and plans that would drive them, and typing a declared figure is its own screen.
+
 **A router authenticates with `dependencies=[Depends(get_actor)]`, not per handler.** A
 handler that never names the actor is still behind it, and `test_routes_authenticate.py`
 asks every route of the OpenAPI document once with no credential. The open routes are the
