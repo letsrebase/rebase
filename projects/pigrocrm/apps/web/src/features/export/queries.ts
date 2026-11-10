@@ -60,6 +60,8 @@ export function useExportTotal() {
 /** One export, read on its own so a link to one that is not on the first page still opens. */
 export function useExport(id: string) {
   return useQuery({
+    // A link to an export that is not there is an answer, not a blip to retry through.
+    retry: retryUnlessMissing,
     queryKey: [...ROOT, 'one', id] as const,
     queryFn: () =>
       unwrap(
@@ -132,7 +134,9 @@ export function useBuildExport() {
           },
         }),
       ),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ROOT }),
+    // On a failure too: a request that dropped after the server stored the export would otherwise
+    // leave the list without it.
+    onSettled: () => queryClient.invalidateQueries({ queryKey: ROOT }),
   })
 }
 

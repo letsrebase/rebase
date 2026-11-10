@@ -235,7 +235,7 @@ describe('«Prepara»', () => {
     expect(await screen.findByRole('combobox', { name: 'Azienda' })).toHaveTextContent('Rebase Ltd')
   })
 
-  it('offers a scoped admin only their companies, and a pinned one as a label', async () => {
+  it('offers a scoped admin only their companies, with no «Tutte le aziende»', async () => {
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
     page({ legal: { ...SEVERAL, scoped: true } })
     await user.click(await screen.findByRole('combobox', { name: 'Azienda' }))
@@ -265,10 +265,38 @@ describe('«Prepara»', () => {
     expect(await screen.findByRole('status', { name: 'Controllo il periodo…' })).toBeInTheDocument()
   })
 
-  it('leaves the button off for a role that may not build, which the entry never shows', async () => {
+  it('gives a role that may not build no form, only the server’s sentence, which the entry never leads to', async () => {
     session.role = 'collaborator'
+    partsAnswer = refused(403, {
+      code: 'permission_denied',
+      detail: 'x',
+      actual_role: 'collaborator',
+      required_roles: ['admin'],
+    })
     page()
-    expect(await screen.findByRole('button', { name: 'Crea esportazione' })).toBeDisabled()
+    expect(await screen.findByRole('alert')).toHaveTextContent(/collaboratore/)
+    expect(screen.queryByRole('button', { name: 'Crea esportazione' })).toBeNull()
+  })
+
+  it('waits for the IVA frequency before it lets the build go, since the period depends on it', async () => {
+    vi.mocked(api.GET).mockImplementation(((path: string) =>
+      path === '/api/legal-entities/{legal_entity_id}/fiscal-profile'
+        ? new Promise(() => {})
+        : path === '/api/accountant-export/parts'
+          ? ok(PARTS)
+          : ok({ items: [], total_count: 0 })) as never)
+    page()
+    await screen.findByText('Registro delle vendite')
+    expect(screen.getByRole('button', { name: 'Crea esportazione' })).toBeDisabled()
+  })
+
+  it('asks for the build once however many times the button is pressed', async () => {
+    vi.mocked(api.POST).mockReturnValue(new Promise(() => {}) as never)
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+    page()
+    await screen.findByText('dal 01/10/2026 al 31/10/2026')
+    await user.dblClick(screen.getByRole('button', { name: 'Crea esportazione' }))
+    expect(posted()).toHaveLength(1)
   })
 })
 
@@ -310,7 +338,7 @@ describe('«Esportazioni»', () => {
     const rows = await screen.findAllByRole('row')
     expect(rows).toHaveLength(4)
     const [open, complete, deleted] = rows.slice(1)
-    expect(within(open as HTMLElement).getByText('1 aperti').closest('[data-tone]')).toHaveAttribute('data-tone', 'gold')
+    expect(within(open as HTMLElement).getByText('1 aperto').closest('[data-tone]')).toHaveAttribute('data-tone', 'gold')
     expect(within(complete as HTMLElement).getByText('Completa').closest('[data-tone]')).toHaveAttribute('data-tone', 'ink')
     expect(within(deleted as HTMLElement).getByText('Eliminata').closest('[data-tone]')).toHaveAttribute('data-tone', 'muted')
     expect(within(deleted as HTMLElement).getByText('Oltre i 13 mesi')).toBeInTheDocument()
@@ -353,6 +381,27 @@ describe('«Esportazioni»', () => {
       .filter(([path, init]) => path === '/api/accountant-export/exports' && init.params.query.limit === 50)
       .map(([, init]) => init.params.query.offset)
     expect(offsets).toEqual([0, 2])
+  })
+
+  it('keeps the rows when a later page fails, and says so under them', async () => {
+    exportsList = Array.from({ length: 2 }, (_, i) => stored({ id: `e-${i}` }))
+    vi.mocked(api.GET).mockImplementation(((path: string, init?: { params?: { query?: { offset?: number } } }) => {
+      if (path !== '/api/accountant-export/exports') return ok(undefined)
+      const offset = init?.params?.query?.offset ?? 0
+      return offset === 0
+        ? ok({ items: exportsList, total_count: 120 })
+        : refused(500, { code: 'internal', detail: 'Non riesco a leggere le altre.' })
+    }) as never)
+    page({ tab: 'exports' })
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+    await user.click(await screen.findByRole('button', { name: 'Mostra altri' }))
+    expect(await screen.findByText('Non riesco a leggere le altre.')).toBeInTheDocument()
+    expect(screen.getAllByRole('row')).toHaveLength(3)
+  })
+
+  it('names no company in the empty sentence of a space that has one', async () => {
+    page({ tab: 'exports' })
+    expect(await screen.findByText(/scegli il periodo\./)).toBeInTheDocument()
   })
 
   it('filters by year, and by company only when the space has several', async () => {
@@ -440,10 +489,16 @@ describe('the open export', () => {
     expect(downloadFromApi).toHaveBeenCalledWith('/api/accountant-export/exports/e-1/parts/2')
   })
 
-  it('names who made it: a colleague by name, the space for a job, you for yourself', async () => {
-    exportsList = [stored({ built_by: 'u-2' })]
+  it.each([
+    ['u-2', 'da Carla Neri'],
+    ['u-1', 'da te'],
+    [null, 'dallo spazio'],
+  ])('names who made it (%s) as a person, you or the space', async (builtBy, tail) => {
+    exportsList = [stored({ built_by: builtBy })]
     page({ tab: 'exports', item: 'e-1' })
-    expect(await screen.findByText('Creata il 12/10/2026 11:40 da Carla Neri')).toBeInTheDocument()
+    const panel = await screen.findByRole('complementary', { name: 'Esportazione aperta' })
+    // The time is the reader's own zone: only the sentence's tail is the claim here.
+    expect(await within(panel).findByText(/Creata il /)).toHaveTextContent(new RegExp(`${tail}$`))
   })
 
   it('keeps an export past its 13 months as a trace: no delivery, no download', async () => {
@@ -530,6 +585,28 @@ describe('a build in progress and one that failed', () => {
     expect(screen.queryByText('Non riuscita')).toBeNull()
     expect(posted()).toHaveLength(2)
     expect(posted()[1]).toEqual(posted()[0])
+  })
+
+  it('does not open a finished build over the form or over another export', async () => {
+    let resolve: (value: unknown) => void = () => {}
+    vi.mocked(api.POST).mockReturnValue(
+      new Promise<unknown>((done) => {
+        resolve = done
+      }) as never,
+    )
+    exportsList = [stored({ id: 'e-new' }), stored({ id: 'e-other' })]
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+    followed()
+    await ask(user)
+    await screen.findByText('In preparazione')
+    // The admin opens another export while it is made: the new one does not take its place.
+    await user.click((await screen.findAllByText('3° trimestre 2026 · 1 parte'))[1] as HTMLElement)
+    expect(await screen.findByRole('complementary', { name: 'Esportazione aperta' })).toBeInTheDocument()
+    resolve({ data: stored({ id: 'e-new' }), response: new Response(null, { status: 201 }) })
+    await waitFor(() => expect(screen.queryByText('In preparazione')).toBeNull())
+    const calls = vi.mocked(api.GET).mock.calls.map((call) => call as unknown as [string, { params?: { path?: { export_id?: string } } }])
+    const opened = calls.filter(([path]) => path === '/api/accountant-export/exports/{export_id}').map(([, init]) => init.params?.path?.export_id)
+    expect(opened).not.toContain('e-new')
   })
 
   it('lets a refusal be closed', async () => {

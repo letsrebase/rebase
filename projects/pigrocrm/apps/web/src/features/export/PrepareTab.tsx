@@ -1,4 +1,4 @@
-import { useMemo, useState, type CSSProperties } from 'react'
+import { useId, useMemo, useState, type CSSProperties } from 'react'
 import { ChevronDown } from 'lucide-react'
 import { FilterChip } from '@/components/FilterRow'
 import { LoadingState } from '@/components/LoadingState'
@@ -48,6 +48,8 @@ export function PrepareTab({ onCreate }: { onCreate: (target: BuildTarget) => vo
   const { legal_entities, several, scoped, pinned, loaded, selected } = entities
   const phone = useMediaQuery(PHONE)
   const mayBuild = useCan('build_accountant_export')
+  const listId = useId()
+  const [sent, setSent] = useState(false)
   const [companyChoice, setCompanyChoice] = useState<string | null>(null)
   const [kindChoice, setKindChoice] = useState<PeriodKind | null>(null)
   const [periodChoice, setPeriodChoice] = useState<string | null>(null)
@@ -66,6 +68,9 @@ export function PrepareTab({ onCreate }: { onCreate: (target: BuildTarget) => vo
   const company = allChosen ? null : (chosenId ?? selected ?? legal_entities[0]?.id ?? null)
 
   const frequency = useIvaFrequency(company)
+  // The period the form opens on follows the company's IVA frequency, which is read first: a press
+  // before it arrives would build the month the form is about to leave.
+  const frequencyPending = company !== null && frequency.isPending
   const kind = kindChoice ?? (frequency.data === 'quarterly' ? 'quarter' : 'month')
   const options = useMemo(() => periodsOf(kind, now), [kind, now])
   const period = options.find((option) => option.value === periodChoice) ?? defaultPeriod(options)
@@ -76,7 +81,8 @@ export function PrepareTab({ onCreate }: { onCreate: (target: BuildTarget) => vo
     : (legal_entities.find((entity) => entity.id === company)?.name ?? '')
 
   function submit() {
-    if (period === undefined) return
+    if (period === undefined || sent) return
+    setSent(true)
     onCreate({
       request: {
         date_from: period.from,
@@ -85,8 +91,22 @@ export function PrepareTab({ onCreate }: { onCreate: (target: BuildTarget) => vo
         all_entities: allChosen,
       },
       company: companyName,
-      period: period.label.replace(' (in corso)', ''),
+      period: period.name,
     })
+  }
+
+  // A role that may not build is not given a form: the page answers with the server's own sentence
+  // (an administrator's page reached on a stale link), which the parts read already carries.
+  if (!mayBuild) {
+    return (
+      <div className="max-w-3xl px-8 pb-6 pt-4">
+        {parts.isError ? (
+          <QueryErrorBanner error={parts.error} />
+        ) : (
+          <LoadingState label="Controllo il periodo…" className="py-8" />
+        )}
+      </div>
+    )
   }
 
   const partsList = parts.isError ? (
@@ -94,7 +114,7 @@ export function PrepareTab({ onCreate }: { onCreate: (target: BuildTarget) => vo
   ) : parts.isPending ? (
     <LoadingState label="Controllo il periodo…" className="py-1" />
   ) : (
-    <ul aria-label="Cosa contiene" className="divide-y border">
+    <ul id={listId} aria-label="Cosa contiene" className="divide-y border">
       {parts.data.map((part) => (
         <li key={part.key} className="px-3 py-2 text-sm">
           <p className="font-medium">{part.label}</p>
@@ -199,6 +219,7 @@ export function PrepareTab({ onCreate }: { onCreate: (target: BuildTarget) => vo
                   <button
                     type="button"
                     aria-expanded={partsOpen}
+                    aria-controls={listId}
                     onClick={() => setPartsOpen((open) => !open)}
                     className="flex min-h-12 w-full items-center justify-between gap-2 border bg-background px-3 text-left text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                   >
@@ -226,7 +247,7 @@ export function PrepareTab({ onCreate }: { onCreate: (target: BuildTarget) => vo
         }
         className="sticky bottom-(--phone-bar) z-10 flex justify-end border-t bg-card py-3 sm:bottom-0"
       >
-        <Button type="submit" disabled={!mayBuild || !loaded || period === undefined} className="w-full sm:w-auto">
+        <Button type="submit" disabled={!loaded || frequencyPending || period === undefined || sent} className="w-full sm:w-auto">
           Crea esportazione
         </Button>
       </div>

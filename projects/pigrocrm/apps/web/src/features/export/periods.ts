@@ -25,6 +25,8 @@ export interface PeriodOption {
   from: string
   to: string
   label: string
+  /** The period as it is named once it is made, with no «(in corso)». */
+  name: string
   /** The period holds today: the picker tags it «(in corso)» and never defaults to it. */
   current: boolean
 }
@@ -53,7 +55,7 @@ function option(
   today: string,
 ): PeriodOption {
   const current = from <= today && today <= to
-  return { value, from, to, label: current ? `${label} (in corso)` : label, current }
+  return { value, from, to, label: current ? `${label} (in corso)` : label, name: label, current }
 }
 
 /** The periods of `kind` from the one that holds `today` back, newest first. */

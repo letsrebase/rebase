@@ -41,6 +41,12 @@ export function ExportPage({
   // A build outlives the page: the admin may leave while it runs, and finding the export done is
   // the list's job. Opening its panel is not: it only happens while this page is still the place.
   const here = useRef(true)
+  // Where the admin is when a build ends: a finished build opens its panel only for someone looking
+  // at the list with nothing open, never over the form or another export.
+  const where = useRef({ tab, item })
+  useEffect(() => {
+    where.current = { tab, item }
+  }, [tab, item])
   useEffect(() => {
     here.current = true
     return () => {
@@ -54,11 +60,13 @@ export function ExportPage({
     counter.current += 1
     const key = `attempt-${counter.current}`
     setAttempts((previous) => [{ key, target, status: 'building', reason: null }, ...previous])
-    onTabChange('exports')
+    if (where.current.tab !== 'exports') onTabChange('exports')
     build.mutateAsync(target.request).then(
       (created) => {
         setAttempts((previous) => previous.filter((other) => other.key !== key))
-        if (here.current) onItemChange(created.id)
+        if (here.current && where.current.tab === 'exports' && where.current.item === null) {
+          onItemChange(created.id)
+        }
       },
       (error: unknown) =>
         setAttempts((previous) =>

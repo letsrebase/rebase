@@ -60,7 +60,8 @@ export const CONTROL_TONES: Record<ControlState, StatusTone> = {
 }
 
 export function controlLabel(state: ControlState, open: number): string {
-  return state === 'complete' ? 'Completa' : `${open} aperti`
+  if (state === 'complete') return 'Completa'
+  return open === 1 ? '1 aperto' : `${open} aperti`
 }
 
 export function statusOf(item: StoredExport): ExportStatus {

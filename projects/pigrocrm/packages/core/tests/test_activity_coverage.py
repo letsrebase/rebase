@@ -107,6 +107,8 @@ _READS: dict[Method, str] = {
     ("AccountantExportService", "get_export_download_url"): "reads where a stored export is",
     ("AccountantExportService", "download_part"): "reads one stored ZIP",
     ("AccountantExportService", "list_exports"): "reads the stored exports",
+    ("AccountantExportService", "count_exports"): "reads how many stored exports there are",
+    ("AccountantExportService", "describe_parts"): "reads which parts a build would hold",
     ("AnalyticsService", "economic_overview"): "a figure; nothing is written for the person",
     ("AnalyticsService", "get_fiscal_estimate"): "a figure computed from the profile",
     ("AnalyticsService", "get_tax_calendar"): "reads the pack's dates, writes nothing",

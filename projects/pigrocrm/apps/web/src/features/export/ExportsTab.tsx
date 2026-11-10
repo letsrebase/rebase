@@ -51,8 +51,11 @@ const INLINE_PANEL = '(min-width: 1024px)'
 const ANY = 'all'
 const YEARS_SHOWN = 5
 
-const EMPTY_TEXT =
-  'Qui trovi gli archivi creati per il commercialista: da qui li scarichi. Per crearne uno, scegli l’azienda e il periodo.'
+/** «Azienda» is a word only a space with several companies sees. */
+const emptyText = (several: boolean) =>
+  `Qui trovi gli archivi creati per il commercialista: da qui li scarichi. Per crearne uno, scegli ${
+    several ? 'l’azienda e il periodo' : 'il periodo'
+  }.`
 
 /** The name of a company on a row: ellipsised at the column's width, the whole name on hover. */
 function Company({ name }: { name: string }) {
@@ -204,7 +207,8 @@ export function ExportsTab({
   const subtitle = (row: StoredExport) =>
     `${periodName(row.period_from, row.period_to)} · ${partsWord(partCount(readIndex(row.checklist)))}`
 
-  const body = list.isError ? (
+  // A page that failed to load after others did keeps the rows and says so under them.
+  const body = list.isError && !list.isFetchNextPageError ? (
     <div className="space-y-3">
       <QueryErrorBanner error={list.error} onRetry={() => void list.refetch()} />
     </div>
@@ -214,7 +218,7 @@ export function ExportsTab({
     <div className="border border-dashed px-6 py-12 text-center">
       <p className="text-base font-semibold">{filtered ? 'Nessuna esportazione qui' : 'Nessuna esportazione'}</p>
       <p className="mx-auto mt-2 max-w-md text-sm text-muted-foreground">
-        {filtered ? 'Nessuna esportazione corrisponde ai filtri.' : EMPTY_TEXT}
+        {filtered ? 'Nessuna esportazione corrisponde ai filtri.' : emptyText(several)}
       </p>
       {filtered ? null : (
         <Button className="mt-4" onClick={onPrepare}>
@@ -333,8 +337,8 @@ export function ExportsTab({
           label="Mostra altri"
           message={`Mostrate ${items.length} di ${total} esportazioni.`}
           isFetchingMore={list.isFetchingNextPage}
-          hasError={false}
-          error={null}
+          hasError={list.isFetchNextPageError}
+          error={list.error}
           onLoadMore={() => void list.fetchNextPage()}
         />
       ) : null}

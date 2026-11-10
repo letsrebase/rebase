@@ -60,7 +60,7 @@ function Contents({ index }: { index: ExportIndex }) {
                 <p className="font-medium">{part.label}</p>
                 {part.omitted ? (
                   <p className="text-xs text-muted-foreground">
-                    Non si applica a questa azienda.
+                    Non si applica al regime fiscale.
                   </p>
                 ) : (
                   part.entries.map((entry) => (
