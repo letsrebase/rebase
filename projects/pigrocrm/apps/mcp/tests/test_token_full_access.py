@@ -26,7 +26,7 @@ from pigrocrm.core.storage import LocalFileStorage
 from pigrocrm_mcp.server import build_server
 
 OPEN = Settings(_env_file=None, mcp_full_access=True, module_collaborators=True)  # type: ignore[call-arg]
-CLOSED = Settings(_env_file=None)  # type: ignore[call-arg]
+CLOSED = Settings(_env_file=None, module_collaborators=True)  # type: ignore[call-arg]
 WITHOUT_GMAIL = set(FORBIDDEN) - FORBIDDEN_NEEDING_GMAIL
 
 
