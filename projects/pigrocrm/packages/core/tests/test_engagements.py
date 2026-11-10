@@ -429,6 +429,20 @@ def test_a_retry_writes_the_contract_once_and_resumes_one_left_without_its_card(
     assert door.service().ensure(match_id, _upsert()).contract_id == first.contract_id
 
 
+def test_booting_against_a_registry_without_contract_id_adds_the_column(door: Door) -> None:
+    with door.registry.begin() as connection:
+        connection.execute(text("ALTER TABLE rebase_engagements DROP COLUMN contract_id"))
+
+    again = ensure_tenants_database(door.settings)
+    try:
+        columns = {c["name"] for c in inspect(again).get_columns("rebase_engagements")}
+        assert "contract_id" in columns
+        # A second boot finds it there and changes nothing.
+        ensure_tenants_database(door.settings).dispose()
+    finally:
+        again.dispose()
+
+
 def test_a_row_written_before_contracts_keeps_its_deal_and_gains_no_contract(
     door: Door,
 ) -> None:
