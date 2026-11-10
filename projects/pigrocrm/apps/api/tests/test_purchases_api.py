@@ -165,6 +165,40 @@ def test_a_purchase_is_cancelled_over_http_and_leaves_the_registered_list(
     )
 
 
+def test_the_list_says_how_many_match_and_their_total_whatever_the_page(
+    logged_in: TestClient,
+) -> None:
+    category_id = _seed_category(logged_in)
+    for day, amount in (
+        ("2026-03-01", "100.00"),
+        ("2026-03-02", "50.50"),
+        ("2026-04-01", "-20.25"),
+    ):
+        created = logged_in.post(
+            "/api/purchases",
+            json={
+                "category_id": category_id,
+                "date": day,
+                "amount": amount,
+                "description": "x",
+            },
+        )
+        assert created.status_code == 201, created.text
+
+    everything = logged_in.get("/api/purchases", params={"limit": 1}).json()
+    assert len(everything["items"]) == 1
+    assert everything["total_count"] == 3
+    assert everything["total_amount"] == "130.25"
+
+    march = logged_in.get(
+        "/api/purchases", params={"from": "2026-03-01", "to": "2026-03-31"}
+    ).json()
+    assert march["total_count"] == 2 and march["total_amount"] == "150.50"
+
+    none = logged_in.get("/api/purchases", params={"from": "2027-01-01"}).json()
+    assert none["items"] == [] and none["total_count"] == 0 and none["total_amount"] == "0.00"
+
+
 def test_a_purchase_has_a_timeline_and_an_unknown_one_is_a_404(logged_in: TestClient) -> None:
     category_id = _seed_category(logged_in)
     created = logged_in.post(
