@@ -158,6 +158,34 @@ class User(Base, PrimaryKeyMixin, TimestampMixin):
     # else. Never a chain: a merge repoints whoever pointed at the row it absorbs.
     merged_into_id: Mapped[UUID | None] = mapped_column(ForeignKey("users.id"), default=None)
 
+    # Whether the address is the person's (REB-911, migration 0051). A form takes any
+    # address, so a campaign reaches it only once somebody proved it: `email_confirmed_at`
+    # is the confirmation link followed, and any row in `logins` proves it as well. The
+    # rest is the one confirmation mail: asked for when a campaign left the person out
+    # (`confirmation_requested_at`), sent once (`confirmation_sent_at`, set whenever the
+    # provider may have accepted it),
+    # tried at most a few times (`confirmation_attempts`, one a day), and its link's sha256
+    # with a deadline.
+    email_confirmed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), default=None
+    )
+    confirmation_requested_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), default=None
+    )
+    confirmation_sent_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), default=None
+    )
+    confirmation_attempts: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
+    confirmation_attempted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), default=None
+    )
+    confirmation_token_hash: Mapped[str | None] = mapped_column(String(64), default=None)
+    confirmation_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), default=None
+    )
+
     # The person's extra ways to be reached (REB-943), in display order. Read-only here:
     # `ContactPointService.replace` is the one writer, and expires the attribute after it.
     # Loaded when read, one statement for one person; a list that shows every person's phone
@@ -208,6 +236,7 @@ class User(Base, PrimaryKeyMixin, TimestampMixin):
             postgresql_ops={"email": "gin_trgm_ops"},
         ),
         Index("uq_users_referral_code", "referral_code", unique=True),
+        Index("uq_users_confirmation_token_hash", "confirmation_token_hash", unique=True),
         # One person per LinkedIn profile (REB-800), the same fact `uq_users_email_lower`
         # states for the address, for personal profiles only (`linkedin_key`). Migration 0035
         # creates it only when no two rows share a profile yet; otherwise

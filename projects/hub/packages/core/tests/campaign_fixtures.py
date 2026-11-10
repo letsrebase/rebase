@@ -44,8 +44,18 @@ def person(
     role: str = "member",
     logins: int = 0,
     status: str = "new",
+    confirmed: bool = True,
 ) -> Freelancer:
-    user = User(email=email, first_name=first_name, last_name="Lovelace", role=role)
+    """A card. Its address is confirmed unless `confirmed=False` (REB-911): the rule that
+    leaves an unproved address out of campaigns has its own tests, and every other test
+    here is about something else."""
+    user = User(
+        email=email,
+        first_name=first_name,
+        last_name="Lovelace",
+        role=role,
+        email_confirmed_at=T0 if confirmed else None,
+    )
     session.add(user)
     session.flush()
     card = Freelancer(
@@ -77,10 +87,22 @@ def lead(session: Session, email: str, first_name: str | None = "giulia") -> Sig
     return row
 
 
-def company(session: Session, email: str, *, status: str = "new", deleted: bool = False) -> Company:
+def company(
+    session: Session,
+    email: str,
+    *,
+    status: str = "new",
+    deleted: bool = False,
+    confirmed: bool = True,
+) -> Company:
     user = session.query(User).filter(User.email == email).one_or_none()
     if user is None:
-        user = User(email=email, first_name="Ciro", last_name="Aurelio")
+        user = User(
+            email=email,
+            first_name="Ciro",
+            last_name="Aurelio",
+            email_confirmed_at=T0 if confirmed else None,
+        )
         session.add(user)
         session.flush()
     row = Company(

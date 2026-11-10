@@ -5,6 +5,9 @@ from functools import lru_cache
 from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+# What the campaign reserve keeps free for mails nobody counts: the test mails, the logins.
+RESERVE_TEST_ROOM = 5
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="REBASE_", env_file=".env", extra="ignore")
@@ -131,6 +134,11 @@ class Settings(BaseSettings):
     # it: a login link is asked for by its owner and capped per person
     # (`magic_link_daily_per_user`). It must fit the reserve.
     public_mail_daily_budget: int = Field(default=10, ge=1)
+    # The confirmation mails (REB-911) a campaign's tick may attempt in a Rome day, one per
+    # address that was left out of a campaign for not being confirmed, and how long the
+    # link in them works. They spend the same reserve as the wizard's mails.
+    confirmation_mail_daily_budget: int = Field(default=5, ge=1)
+    confirmation_link_days: int = Field(default=30, ge=1)
     # Login links one person may ask for in a Rome day, from the login page or the wizard
     # (an admin is never refused, and an admin's promotion or the command line are not
     # counted). Past it the request is answered like any other and no mail is sent.
@@ -195,6 +203,17 @@ class Settings(BaseSettings):
         if self.public_mail_daily_budget > self.campaign_daily_reserve:
             raise ValueError(
                 "REBASE_PUBLIC_MAIL_DAILY_BUDGET must fit REBASE_CAMPAIGN_DAILY_RESERVE"
+            )
+        # The reserve is shared by the magic links, the member mails and the campaign test
+        # mails too: the two budgets that spend it unasked leave `RESERVE_TEST_ROOM` of it
+        # (REB-911).
+        if (
+            self.public_mail_daily_budget + self.confirmation_mail_daily_budget + RESERVE_TEST_ROOM
+            > self.campaign_daily_reserve
+        ):
+            raise ValueError(
+                "REBASE_PUBLIC_MAIL_DAILY_BUDGET plus REBASE_CONFIRMATION_MAIL_DAILY_BUDGET "
+                f"must leave {RESERVE_TEST_ROOM} of REBASE_CAMPAIGN_DAILY_RESERVE free"
             )
         return self
 

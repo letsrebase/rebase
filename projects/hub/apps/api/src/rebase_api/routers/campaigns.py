@@ -9,6 +9,7 @@ from fastapi import APIRouter, HTTPException, Query, status
 from fastapi.responses import RedirectResponse
 
 from rebase_api.deps import AdminDep, CampaignSenderDep, SessionDep, SettingsDep
+from rebase_core.campaigns.confirmation import confirm
 from rebase_core.campaigns.optouts import TOKEN_MAX_LENGTH, OptoutService
 from rebase_core.campaigns.schemas import (
     AudiencePreview,
@@ -53,6 +54,20 @@ def unsubscribe(t: Token, session: SessionDep) -> Ack:
     sixth opt-out of a minute into a 429, silently lost. Nothing here needs it: the
     token is 256 random bits, so guessing is pointless, and the write is idempotent."""
     OptoutService(session).unsubscribe(t)
+    return Ack()
+
+
+CONFIRM_REFUSED = "Il link non è valido o è scaduto."
+
+
+@public.post("/confirm", response_model=Ack)
+def confirm_address(t: Token, session: SessionDep) -> Ack:
+    """The confirmation page's button (REB-911). A GET never confirms, since a mail scanner
+    opens every link: the page posts the token. A link that is not ours or is past its
+    deadline is a 410 with the sentence the page shows; the same link again is the same
+    answer as the first time."""
+    if not confirm(session, t):
+        raise HTTPException(status.HTTP_410_GONE, CONFIRM_REFUSED)
     return Ack()
 
 

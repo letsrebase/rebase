@@ -682,7 +682,7 @@ checkout, was wiped this way on 24/09. A wave's own scripts belong in the reposi
 they are worth keeping) or outside `/opt/hub` entirely, the same rule `REBASE_DATA_DIR`
 follows for Postgres's own files.
 
-**Five rules keep an address out of a campaign, and only one of them is an opt-out.**
+**Six rules keep an address out of a campaign, and only one of them is an opt-out.**
 `exclusions()` (`rebase_core.campaigns.audience`) runs when the list is shown, when it
 is frozen and again right before each mail, and leaves out, with the reason on screen:
 an admin, by `User.role == "admin"` (`REASON_ADMIN`, no row needed); a person whose card
@@ -693,10 +693,22 @@ which is how the team goes in rather than relying on the role check; an address 
 hard-bounced on any earlier campaign (`campaign_recipients.bounced_at`, no optout
 row); and an address another campaign reached in the last `REBASE_CAMPAIGN_GAP_DAYS`
 (3), the gap rule that also turns several campaigns scheduled for the same minute into
-one mail per person. There is no rule for an address nobody has confirmed (a stranger can
-type any address into the wizard): excluding every card with no `logins` row would also drop
-the people who gave their own address and never opened the area, so it is Lorenzo's call
-(REB-889, deferred). Before each mail the tick also checks whether the action is
+one mail per person. The sixth is REB-911's: a person with a `users` row whose address nobody
+proved (no `logins` row ever, no `users.email_confirmed_at`) is left out with
+«indirizzo non confermato» (`REASON_UNCONFIRMED`), since the wizard takes any address
+(finding HCORE-13, Lorenzo's option C of 2026-11-10). A signup with no card has no `users` row
+and is not held back. `CampaignService.schedule` asks for the one confirmation mail for whoever
+it left out for that reason (`confirmation.request`, `users.confirmation_requested_at`; the
+preview asks for nothing), and `campaigns-tick` sends it (`confirmation.send_pending`, from
+`REBASE_MAIL_FROM`, at most `REBASE_CONFIRMATION_MAIL_DAILY_BUDGET` (5) attempts a Rome day,
+inside the campaign reserve, which the two unasked budgets must leave 5 of free): once per
+person for good, since `confirmation_sent_at` is set on any answer the provider may have
+accepted (a timeout, a 5xx); a definite refusal is tried again the next day, three times in
+all. Whoever logged in, opted out or bounced since stops being owed and never holds a place.
+Its link, `{hub_url}/confirm?t=`, is 256 random bits kept as a sha256 with a deadline
+(`REBASE_CONFIRMATION_LINK_DAYS`, 30); the page posts it (`POST /api/hub/campaigns/confirm`), a
+GET confirms nothing, and a forged or expired one is a 410. A confirmed address joins the
+campaigns scheduled from then on. Before each mail the tick also checks whether the action is
 already done (`done_at`) and, for a list built from a state or from filters, whether
 the person is still on it. That list is rebuilt once per pass, since it is a query over
 every card (the state is filtered in SQL, `states._journey_state`, held to `card_state` by a

@@ -48,6 +48,7 @@ const AdminReferrals = lazyRouteComponent(() => import('@/pages/admin/Referrals'
 const AdminTeamProposals = lazyRouteComponent(() => import('@/pages/admin/TeamProposals'), 'AdminTeamProposals')
 const AdminTeamRequest = lazyRouteComponent(() => import('@/pages/admin/TeamRequest'), 'AdminTeamRequest')
 const AdminTeamRequests = lazyRouteComponent(() => import('@/pages/admin/TeamRequests'), 'AdminTeamRequests')
+const ConfirmAddress = lazyRouteComponent(() => import('@/pages/ConfirmAddress'), 'ConfirmAddress')
 const Unsubscribe = lazyRouteComponent(() => import('@/pages/Unsubscribe'), 'Unsubscribe')
 const AdminCompanies = lazyRouteComponent(() => import('@/pages/admin/companies/CompanyList'), 'AdminCompanies')
 const AdminCompanyDetail = lazyRouteComponent(() => import('@/pages/admin/companies/CompanyDetail'), 'AdminCompanyDetail')
@@ -274,6 +275,13 @@ const verifyRedirect = createRoute({
   beforeLoad: ({ search }) => {
     throw redirect({ to: '/verify', search: () => search as never })
   },
+})
+
+const confirmAddress = createRoute({
+  getParentRoute: () => publicLayout,
+  path: '/confirm',
+  validateSearch: (search: Record<string, unknown>): { t: string } => ({ t: typeof search.t === 'string' ? search.t : '' }),
+  component: ConfirmAddress,
 })
 
 const unsubscribe = createRoute({
@@ -624,6 +632,7 @@ export const routeTree = root.addChildren([
     loginRedirect,
     verify,
     verifyRedirect,
+    confirmAddress,
     unsubscribe,
     unsubscribeRedirect,
     teamAnswerRedirect,

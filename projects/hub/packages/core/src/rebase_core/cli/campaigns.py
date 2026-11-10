@@ -50,6 +50,7 @@ def campaigns_tick() -> int:
     sends nothing and says so, and exits 0 so the loop keeps running."""
     from rebase_core.campaigns.sender import campaign_sender_from_settings
     from rebase_core.campaigns.tick import run_tick
+    from rebase_core.mail import sender_from_settings
 
     settings = get_settings()
     sender = campaign_sender_from_settings(settings)
@@ -58,14 +59,17 @@ def campaigns_tick() -> int:
         return 0
     session = open_session(settings)()
     try:
-        result = run_tick(session, sender, settings)
+        result = run_tick(session, sender, settings, mailer=sender_from_settings(settings))
     finally:
         session.close()
-    print(
+    line = (
         f"{result.campaigns} campaigns, {result.sent} sent, "
         f"{result.skipped} skipped, {result.failed} failed, "
         f"{result.stamped} outcomes recorded"
     )
+    if result.confirmations:
+        line += f", {result.confirmations} confirmation mails"
+    print(line)
     return 0
 
 
