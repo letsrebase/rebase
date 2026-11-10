@@ -1,4 +1,5 @@
-"""`pigrocrm gmail-sync`: one cycle per connected mailbox, for cron."""
+"""`pigrocrm mail-sync`: one cycle per connected mailbox, for cron. `gmail-sync` is the old name of
+the same command and stays an alias until the hosts' crontabs say `mail-sync` (REB-1014)."""
 
 import sys
 import traceback
@@ -22,7 +23,8 @@ from pigrocrm.core.gmail.sync import GmailSyncService
 from pigrocrm.core.gmail.tokens import GoogleTokenClient
 from pigrocrm.core.gmail.transport import GmailTransport
 from pigrocrm.core.labels import USER_ROLE, label
-from pigrocrm.core.reminders.jobs import GMAIL_SYNC_JOB
+from pigrocrm.core.mailboxes.repository import MailboxRepository
+from pigrocrm.core.reminders.jobs import MAIL_SYNC_JOB
 from pigrocrm.core.tenants import SpaceRegistry
 
 # What `_sync_mailbox` answers for a cycle another run holds: neither a completed cycle nor a
@@ -30,8 +32,8 @@ from pigrocrm.core.tenants import SpaceRegistry
 _CYCLE_RUNNING = "cycle running"
 
 
-def gmail_sync(settings: Settings, email: str | None) -> int:
-    """`pigrocrm gmail-sync [--email casella@dove.it]`: one cycle per connected mailbox of
+def mail_sync(settings: Settings, email: str | None) -> int:
+    """`pigrocrm mail-sync [--email casella@dove.it]`: one cycle per connected mailbox of
     the root installation and of every space in the registry, for cron.
 
     There is no daemon and no queue in this product (see `gmail/sync.py`), so the
@@ -82,7 +84,7 @@ def gmail_sync(settings: Settings, email: str | None) -> int:
     if walk.unreadable is not None:
         # Not a `return`: the root is not in the registry and is still synced.
         print(
-            f"{_now()} gmail-sync: space registry unreachable ({walk.unreadable})",
+            f"{_now()} mail-sync: space registry unreachable ({walk.unreadable})",
             file=sys.stderr,
         )
 
@@ -90,6 +92,7 @@ def gmail_sync(settings: Settings, email: str | None) -> int:
     settings_of = SpaceRegistry(settings)
     connected: list[str] = []
     attempted = 0
+    others = 0
     for target in walk.targets:
         label = target.label
         with space_engine(target.url) as engine:
@@ -104,16 +107,17 @@ def gmail_sync(settings: Settings, email: str | None) -> int:
                         for account in GmailRepository(session).all_accounts()
                         if account.status != "disconnected"
                     ]
+                    others += MailboxRepository(session).count_connected_without_account()
             except Exception as exc:  # noqa: BLE001 - one space must not stop the others
                 print(
-                    f"{_now()} gmail-sync {label}: skipped ({type(exc).__name__})", file=sys.stderr
+                    f"{_now()} mail-sync {label}: skipped ({type(exc).__name__})", file=sys.stderr
                 )
                 # Which read failed, the space's settings or its mailboxes: the frames say
                 # it and the type alone does not. The message stays out.
                 traceback.print_tb(exc.__traceback__, file=sys.stderr)
                 failed = unread = True
                 if email is None:
-                    record_job(engine, GMAIL_SYNC_JOB, label, type(exc).__name__, quiet=True)
+                    record_job(engine, MAIL_SYNC_JOB, label, type(exc).__name__, quiet=True)
                 continue
             connected.extend(address for _, address in mailboxes)
             if email is not None:
@@ -153,14 +157,14 @@ def gmail_sync(settings: Settings, email: str | None) -> int:
             if (
                 email is None
                 and (refusals or not skipped)
-                and not record_job(engine, GMAIL_SYNC_JOB, label, refusals[0] if refusals else None)
+                and not record_job(engine, MAIL_SYNC_JOB, label, refusals[0] if refusals else None)
             ):
                 failed = True
 
-    if not attempted:
-        reason = _nothing_to_sync(email, len(connected), unread=unread)
+    if not attempted and not (email is None and others):
+        reason = _nothing_to_sync(email, len(connected) + others, unread=unread)
         if reason is not None:
-            print(f"{_now()} gmail-sync: {reason}", file=sys.stderr)
+            print(f"{_now()} mail-sync: {reason}", file=sys.stderr)
         failed = True
     return 1 if failed else 0
 
@@ -168,13 +172,13 @@ def gmail_sync(settings: Settings, email: str | None) -> int:
 def _nothing_to_sync(email: str | None, connected: int, *, unread: bool) -> str | None:
     """What a run that synchronised nothing says about it, or `None` when it cannot say.
 
-    «no Google mailbox connected» is a claim about every installation, and with the
+    «no mailbox connected» is a claim about every installation, and with the
     registry or a space unread the mailbox may be exactly in the part that was not read:
     that line has already said what went wrong, and a second one guessing the rest
     would send the operator to connect a mailbox that may well be connected. An
     `--email` that matched nothing is the same claim narrowed to one address."""
     if email is None:
-        return None if unread else "no Google mailbox connected"
+        return None if unread else "no mailbox connected"
     if unread:
         return (
             f"{email} is not among the mailboxes of the spaces read ({connected} connected): "
@@ -182,7 +186,7 @@ def _nothing_to_sync(email: str | None, connected: int, *, unread: bool) -> str 
         )
     if connected:
         return f"{email} is not a connected mailbox ({connected} connected)"
-    return "no Google mailbox connected"
+    return "no mailbox connected"
 
 
 def _sync_mailbox(
@@ -214,18 +218,18 @@ def _sync_mailbox(
                 session, settings=settings, transport=transport, tokens=tokens
             ).sync(actor)
     except DomainError as exc:
-        print(f"{_now()} gmail-sync {label}: {_reason(exc)}", file=sys.stderr)
+        print(f"{_now()} mail-sync {label}: {_reason(exc)}", file=sys.stderr)
         # The class and not the sentence: the clock is read by every admin and by agents.
         # The panel words each class.
         return type(exc).__name__
     except Exception as exc:  # noqa: BLE001 - one mailbox must not stop the others
-        print(f"{_now()} gmail-sync {label}: skipped ({type(exc).__name__})", file=sys.stderr)
+        print(f"{_now()} mail-sync {label}: skipped ({type(exc).__name__})", file=sys.stderr)
         traceback.print_tb(exc.__traceback__, file=sys.stderr)
         return type(exc).__name__
     # `flush`: under `docker compose exec -T` stdout is a pipe, so Python buffers it by
     # the block while stderr goes out at once, and `2>&1` in the cron line would put every
     # failure of the run ahead of the root's line in the log.
-    print(f"{_now()} gmail-sync {label}: {_outcome(report)}", flush=True)
+    print(f"{_now()} mail-sync {label}: {_outcome(report)}", flush=True)
     return _CYCLE_RUNNING if report.already_running else None
 
 

@@ -1,4 +1,4 @@
-"""`pigrocrm gmail-sync`: the cron's way in, on the root installation alone.
+"""`pigrocrm mail-sync`: the cron's way in, on the root installation alone.
 
 There is no daemon in this product and no queue (see `gmail/sync.py`), so "every
 fifteen minutes" is somebody else's job -- cron's. This command is the whole of the
@@ -37,7 +37,7 @@ from sqlalchemy.engine import make_url
 from sqlalchemy.orm import Session
 
 import pigrocrm.core.cli as cli
-import pigrocrm.core.cli.gmail as gmail_cli
+import pigrocrm.core.cli.mail as gmail_cli
 from pigrocrm.core.auth.models import User
 from pigrocrm.core.config import Settings
 from pigrocrm.core.db import session_factory
@@ -136,7 +136,7 @@ def _correspondent(engine: Engine) -> None:
 
 
 def _run(*args: str) -> int:
-    return cli.main(["gmail-sync", *args])
+    return cli.main(["mail-sync", *args])
 
 
 def test_gmail_sync_runs_a_cycle_and_says_so_in_one_line(
@@ -150,7 +150,7 @@ def test_gmail_sync_runs_a_cycle_and_says_so_in_one_line(
     assert out.count("\n") == 0
     # The installation first, as `pigrocrm digest` names it, then the mailbox: with the
     # spaces in the same log, an address alone no longer says whose database it is.
-    assert f"gmail-sync {ROOT_LABEL} " in out
+    assert f"mail-sync {ROOT_LABEL} " in out
     # The counters, which are the only thing a cron log has to say. No subject, no
     # address of a correspondent, no body: a `SyncReport` has no room for one.
     assert "0 new messages" in out
@@ -182,7 +182,7 @@ def test_gmail_sync_on_an_installation_with_no_mailbox_fails_with_a_sentence(
 ) -> None:
     assert _run() == 1
     captured = capsys.readouterr()
-    assert "no Google mailbox connected" in captured.err
+    assert "no mailbox connected" in captured.err
     assert captured.out == ""
 
 
@@ -221,8 +221,8 @@ def test_two_mailboxes_and_no_email_are_both_synchronised_one_line_each(
     assert captured.err == ""
     lines = captured.out.strip().splitlines()
     assert len(lines) == 2
-    assert f"gmail-sync {ROOT_LABEL} " in lines[0]
-    assert f"gmail-sync {ROOT_LABEL} " in lines[1]
+    assert f"mail-sync {ROOT_LABEL} " in lines[0]
+    assert f"mail-sync {ROOT_LABEL} " in lines[1]
     with db_engine.connect() as connection:
         watermarks = connection.execute(
             text(
@@ -271,7 +271,7 @@ def test_a_cycle_already_running_is_reported_and_is_not_a_failure(
     with db_engine.connect() as connection:
         assert (
             connection.execute(
-                text("select count(*) from reminder_job_run where job = 'gmail-sync'")
+                text("select count(*) from reminder_job_run where job = 'mail-sync'")
             ).scalar_one()
             == 0
         )
@@ -280,10 +280,47 @@ def test_a_cycle_already_running_is_reported_and_is_not_a_failure(
     with db_engine.connect() as connection:
         assert (
             connection.execute(
-                text("select ran_at is not null from reminder_job_run where job = 'gmail-sync'")
+                text("select ran_at is not null from reminder_job_run where job = 'mail-sync'")
             ).scalar_one()
             is True
         )
+
+
+def test_the_old_name_gmail_sync_runs_the_same_cycle_and_keeps_the_same_clock(
+    cli_gmail: FakeGmail, db_engine: Engine, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """REB-1014: the hosts' crontabs say `gmail-sync` until somebody changes the line, and the
+    command must keep working, line and clock under the new name."""
+    _connect(db_engine, email_address="cron@example.it")
+
+    assert cli.main(["gmail-sync"]) == 0
+
+    assert f"mail-sync {ROOT_LABEL} " in capsys.readouterr().out
+    with db_engine.connect() as connection:
+        jobs = connection.execute(text("select job from reminder_job_run")).scalars().all()
+    assert jobs == ["mail-sync"]
+
+
+def test_a_space_with_only_a_mailbox_that_is_not_gmail_neither_fails_nor_prints(
+    cli_gmail: FakeGmail, db_engine: Engine, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """REB-1014: an IMAP-only space is configured. The run has no Google mailbox to read and
+    says nothing, and the exit is 0 where «no mailbox connected» is 1."""
+    with db_engine.begin() as connection:
+        connection.execute(
+            text(
+                "insert into mailboxes (id, provider, status) "
+                "values (gen_random_uuid(), 'imap', 'active')"
+            )
+        )
+    try:
+        assert _run() == 0
+        captured = capsys.readouterr()
+        assert (captured.out, captured.err) == ("", "")
+        assert _run("--email", "nobody@example.it") == 1, "an address that matches is still asked"
+    finally:
+        with db_engine.begin() as connection:
+            connection.execute(text("delete from mailboxes"))
 
 
 def test_the_cron_does_not_act_for_a_deactivated_owner(
@@ -328,7 +365,7 @@ def test_a_disconnected_mailbox_is_not_listed_as_connected(
 ) -> None:
     """One active mailbox and one somebody unhooked is not an ambiguous installation.
     Listing the disconnected one would name, as connected, a mailbox that answers
-    «no Google mailbox connected» one line later."""
+    «no mailbox connected» one line later."""
     _connect(db_engine, email_address="attiva@example.it")
     _connect(db_engine, email_address="scollegata@example.it", status="disconnected")
 
@@ -345,7 +382,7 @@ def test_the_error_line_carries_the_sentence_and_not_the_entity_prefix(
     says nothing they can act on -- and the runbook prints these lines bare."""
     assert _run() == 1
     err = capsys.readouterr().err.strip()
-    assert err.endswith("gmail-sync: no Google mailbox connected")
+    assert err.endswith("mail-sync: no mailbox connected")
 
 
 def test_gmail_not_configured_is_one_sentence_and_not_a_traceback(
@@ -437,10 +474,10 @@ def test_a_session_that_cannot_be_opened_costs_one_mailbox_and_not_the_run(
     assert _run() == 1
 
     captured = capsys.readouterr()
-    assert f"gmail-sync {ROOT_LABEL} " in captured.err
+    assert f"mail-sync {ROOT_LABEL} " in captured.err
     assert "skipped (RuntimeError)" in captured.err
     # The frames of the traceback follow the line, for whoever has to find where it
     # broke; its message does not.
     assert 'File "' in captured.err
     assert refusal not in captured.err
-    assert f"gmail-sync {ROOT_LABEL} " in captured.out
+    assert f"mail-sync {ROOT_LABEL} " in captured.out

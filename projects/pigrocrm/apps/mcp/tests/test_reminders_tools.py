@@ -134,7 +134,7 @@ async def test_an_admins_agent_reads_how_the_scheduled_jobs_went(mcp_session: Se
         described = _payload(await client.call_tool("describe_scheduled_jobs", {}))
 
     jobs = {job["key"]: job for job in described["jobs"]}
-    assert list(jobs) == ["gmail-sync", "reminders", "automations", "digest"]
+    assert list(jobs) == ["mail-sync", "reminders", "automations", "digest"]
     assert jobs["reminders"]["state"] == "ok"
     assert jobs["automations"]["state"] == "never_run"
 

@@ -1,7 +1,7 @@
 """The scheduled jobs, what each last did, and how that reads (REB-764).
 
 PigroCRM has no daemon and no queue: four host cron commands walk the root installation and
-every space (`pigrocrm gmail-sync`, `digest`, `reminders`, `automations`). Each leaves one
+every space (`pigrocrm mail-sync`, `digest`, `reminders`, `automations`). Each leaves one
 row per space in `reminder_job_run`, the reminder pass's clock since 0054, written by
 `JobClock` and read here, by `job_late` and by Impostazioni → Esecuzioni. There is no second
 record: the table kept its name when the other three commands started writing it.
@@ -38,10 +38,10 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.actor import Actor
-from pigrocrm.core.gmail.models import GoogleAccount
+from pigrocrm.core.mailboxes.repository import MailboxRepository
 from pigrocrm.core.reminders.models import ReminderJobRun
 
-GMAIL_SYNC_JOB: Final = "gmail-sync"
+MAIL_SYNC_JOB: Final = "mail-sync"
 DIGEST_JOB: Final = "digest"
 REMINDER_PASS_JOB: Final = "reminders"
 AUTOMATIONS_JOB: Final = "automations"
@@ -74,9 +74,9 @@ class ScheduledJob:
 # one that only reads. Each runbook is `docs/superpowers/notes/`.
 SCHEDULED_JOBS: Final[tuple[ScheduledJob, ...]] = (
     ScheduledJob(
-        GMAIL_SYNC_JOB,
-        "Sincronizzazione Gmail",
-        "pigrocrm gmail-sync",
+        MAIL_SYNC_JOB,
+        "Sincronizzazione delle caselle email",
+        "pigrocrm mail-sync",
         "ogni 15 minuti",
         stale_after_minutes=30,
     ),
@@ -112,7 +112,7 @@ JOBS_BY_KEY: Final = {job.key: job for job in SCHEDULED_JOBS}
 
 
 class ScheduledJobRead(BaseModel):
-    key: str = Field(description="The command name: `gmail-sync`, `reminders`, ...")
+    key: str = Field(description="The command name: `mail-sync`, `reminders`, ...")
     label: str = Field(description="What it is called in the app")
     command: str = Field(description="The line the cron launches")
     schedule: str = Field(description="How often it must run")
@@ -120,8 +120,8 @@ class ScheduledJobRead(BaseModel):
         description=(
             "`ok`: the last run finished and is not old. `failed`: the last attempt failed "
             "(`failure` says why). `late`: no run finished for too long. `never_run`: it has "
-            "never run in this space. `not_configured`: nothing to do here, for example no Gmail "
-            "mailbox linked."
+            "never run in this space. `not_configured`: nothing to do here, for example no "
+            "mailbox connected."
         )
     )
     last_run_at: datetime | None = Field(
@@ -152,7 +152,7 @@ def failure_text(detail: str) -> str:
 
 class JobClock:
     """Writes a job's clock. The commands record per space, in a transaction of their own
-    (`gmail-sync`, `digest`, `automations`) or in the reminder pass's own one, which is why
+    (`mail-sync`, `digest`, `automations`) or in the reminder pass's own one, which is why
     nothing here commits."""
 
     def __init__(self, session: Session) -> None:
@@ -222,16 +222,11 @@ class ScheduledJobService:
         actor.require_admin("read_scheduled_jobs")
         moment = now or datetime.now(UTC)
         rows = {row.job: row for row in self.session.scalars(select(ReminderJobRun))}
-        mailbox = (
-            self.session.scalar(
-                select(GoogleAccount.id).where(GoogleAccount.status != "disconnected").limit(1)
-            )
-            is not None
-        )
+        mailbox = MailboxRepository(self.session).any_connected()
         jobs: list[ScheduledJobRead] = []
         for job in SCHEDULED_JOBS:
             row = rows.get(job.key)
-            state = job_state(row, job, moment, configured=mailbox or job.key != GMAIL_SYNC_JOB)
+            state = job_state(row, job, moment, configured=mailbox or job.key != MAIL_SYNC_JOB)
             failed = row is not None and row.failed_at is not None
             jobs.append(
                 ScheduledJobRead(

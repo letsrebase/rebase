@@ -13624,7 +13624,7 @@ export interface components {
         ScheduledJobRead: {
             /**
              * Key
-             * @description The command name: `gmail-sync`, `reminders`, ...
+             * @description The command name: `mail-sync`, `reminders`, ...
              */
             key: string;
             /**
@@ -13644,7 +13644,7 @@ export interface components {
             schedule: string;
             /**
              * State
-             * @description `ok`: the last run finished and is not old. `failed`: the last attempt failed (`failure` says why). `late`: no run finished for too long. `never_run`: it has never run in this space. `not_configured`: nothing to do here, for example no Gmail mailbox linked.
+             * @description `ok`: the last run finished and is not old. `failed`: the last attempt failed (`failure` says why). `late`: no run finished for too long. `never_run`: it has never run in this space. `not_configured`: nothing to do here, for example no mailbox connected.
              * @enum {string}
              */
             state: "ok" | "failed" | "late" | "never_run" | "not_configured";

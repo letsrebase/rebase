@@ -1,6 +1,6 @@
 # Runbook: the reminder pass (`pigrocrm reminders`)
 
-The third job in the deploy user's crontab, after `gmail-sync` and `digest` (their runbook
+The third job in the deploy user's crontab, after `mail-sync` and `digest` (their runbook
 is `2026-09-09-gmail-cron-runbook.md`, and everything it says about the four details of the
 line, `cd`, `--env-file ../../.env`, `exec -T api` and `uv run --no-sync`, holds here word
 for word). There is no daemon and no queue: the pass is a command that starts, walks the
@@ -113,7 +113,7 @@ All of it in the space's own database, nothing across spaces (spec §9.3):
   (`2026-10-27-reminder-channels-runbook.md`), Slack with its own card.
 - `reminder_ack`, `reminder_snooze`: what each person did, ended with the occurrence.
 - `reminder_job_run`: one row per scheduled job, and since REB-764 all four commands write
-  it (`gmail-sync`, `reminders`, `automations`, `digest`; their runbooks say when). The
+  it (`mail-sync`, `reminders`, `automations`, `digest`; their runbooks say when). The
   `reminders` row is rewritten at the end of every real pass (not by a rehearsal, and not by
   a pass that failed, since it is written in the same transaction as the ledger), and a pass
   that failed writes the exception's type in `failed_at` and `failure` from outside that

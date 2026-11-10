@@ -1,4 +1,4 @@
-"""`pigrocrm gmail-sync` walks the registry: every connected mailbox of every space.
+"""`pigrocrm mail-sync` walks the registry: every connected mailbox of every space.
 
 REB-404. With the root's Google client lent to the spaces (REB-394) a space can connect
 Gmail, and until this card its mailbox synchronised only when somebody pressed
@@ -34,7 +34,7 @@ from sqlalchemy.engine import make_url
 from sqlalchemy.orm import Session
 
 import pigrocrm.core.cli as cli
-import pigrocrm.core.cli.gmail as gmail_cli
+import pigrocrm.core.cli.mail as gmail_cli
 from pigrocrm.core.auth.models import User
 from pigrocrm.core.config import Settings
 from pigrocrm.core.crypto import seal
@@ -215,7 +215,7 @@ def _watermark(settings: Settings, slug: str | None) -> object:
 
 
 def _clock(settings: Settings, slug: str | None) -> tuple[bool, str | None] | None:
-    """The space's `gmail-sync` row as `(it has run, its failure)`, `None` for no row: what
+    """The space's `mail-sync` row as `(it has run, its failure)`, `None` for no row: what
     Settings → Runs reads (REB-764)."""
     engine = _engine(settings, slug)
     try:
@@ -223,7 +223,7 @@ def _clock(settings: Settings, slug: str | None) -> tuple[bool, str | None] | No
             row = connection.execute(
                 text(
                     "select ran_at, failed_at, failure from reminder_job_run "
-                    "where job = 'gmail-sync'"
+                    "where job = 'mail-sync'"
                 )
             ).one_or_none()
     finally:
@@ -245,11 +245,11 @@ def _refresh_tokens(fake: FakeGmail) -> set[str]:
 
 def _line(label: str, slug: str | None) -> str:
     # The account id follows the label, never the address (B-16).
-    return f"gmail-sync {label} "
+    return f"mail-sync {label} "
 
 
 def _run(*args: str) -> int:
-    return cli.main(["gmail-sync", *args])
+    return cli.main(["mail-sync", *args])
 
 
 # --- the walk ------------------------------------------------------------------------
@@ -300,7 +300,7 @@ def test_a_space_with_no_mailbox_says_nothing(
 def test_a_revoked_mailbox_is_its_own_line_and_the_next_space_still_runs(
     settings: Settings, cron: FakeGmail, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A consent revoked or expired is a state, not a crash: the sentence `gmail-sync`
+    """A consent revoked or expired is a state, not a crash: the sentence `mail-sync`
     has always printed for the root, on stderr, now with the space in front of it; the
     space after it is synchronised in the same run, and the exit status says that one
     mailbox could not be."""
@@ -357,9 +357,7 @@ def test_a_space_whose_schema_lags_is_skipped_on_its_own_line(
 
     captured = capsys.readouterr()
     skipped = (
-        f"gmail-sync {ONE}: skipped (ProgrammingError)"
-        if where == "space"
-        else f"{_line(ONE, ONE)}"
+        f"mail-sync {ONE}: skipped (ProgrammingError)" if where == "space" else f"{_line(ONE, ONE)}"
     )
     assert skipped in captured.err
     # The frames follow the line in both places, and they name the read that failed:
@@ -399,7 +397,7 @@ def test_a_space_whose_database_is_gone_does_not_take_the_others_with_it(
     assert _run() == 1
 
     captured = capsys.readouterr()
-    assert f"gmail-sync {ONE}: skipped (OperationalError)" in captured.err
+    assert f"mail-sync {ONE}: skipped (OperationalError)" in captured.err
     assert 'File "' in captured.err
     assert _line(TWO, TWO) in captured.out
     assert _watermark(settings, TWO) is not None
@@ -423,7 +421,7 @@ def test_an_unreachable_registry_still_synchronises_the_root(
     assert _run() == 1
 
     captured = capsys.readouterr()
-    assert captured.err.strip().endswith("gmail-sync: space registry unreachable (RuntimeError)")
+    assert captured.err.strip().endswith("mail-sync: space registry unreachable (RuntimeError)")
     assert "hunter2" not in captured.err
     assert _line(ROOT_LABEL, None) in captured.out
 
@@ -454,7 +452,7 @@ def test_no_mailbox_is_not_claimed_while_a_space_could_not_be_read(
     capsys: pytest.CaptureFixture[str],
     unread: str,
 ) -> None:
-    """«no Google mailbox connected» is a claim about every installation, and a run
+    """«no mailbox connected» is a claim about every installation, and a run
     that could not read the registry, or one space, cannot make it: the mailbox may be
     in the part it did not read. Its own line has said what went wrong already."""
     import pigrocrm.core.cli.spaces_walk as tenants_database
@@ -481,8 +479,8 @@ def test_no_mailbox_is_not_claimed_while_a_space_could_not_be_read(
     captured = capsys.readouterr()
     assert captured.out == ""
     # One line of log; a space's read that failed is followed by its frames.
-    assert len([line for line in captured.err.splitlines() if "gmail-sync" in line]) == 1
-    assert "no Google mailbox connected" not in captured.err
+    assert len([line for line in captured.err.splitlines() if "mail-sync" in line]) == 1
+    assert "no mailbox connected" not in captured.err
 
 
 def test_an_unmatched_email_says_the_match_may_be_incomplete(
@@ -603,7 +601,7 @@ def test_a_space_with_a_good_and_a_refused_mailbox_records_the_refusal_and_keeps
             connection.execute(
                 text(
                     "insert into reminder_job_run (id, job, ran_at) "
-                    "values (gen_random_uuid(), 'gmail-sync', :at)"
+                    "values (gen_random_uuid(), 'mail-sync', :at)"
                 ),
                 {"at": datetime(2026, 10, 1, tzinfo=UTC)},
             )
@@ -633,7 +631,7 @@ def test_a_space_with_a_good_and_a_refused_mailbox_records_the_refusal_and_keeps
     try:
         with engine.connect() as connection:
             row = connection.execute(
-                text("select ran_at, failure from reminder_job_run where job = 'gmail-sync'")
+                text("select ran_at, failure from reminder_job_run where job = 'mail-sync'")
             ).one()
     finally:
         engine.dispose()

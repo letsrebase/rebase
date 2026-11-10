@@ -83,7 +83,7 @@ describe('jobLine', () => {
       'Non ha ancora girato in questo spazio.',
     )
     expect(
-      jobLine(job({ state: 'not_configured', key: 'gmail-sync', last_run_at: null }), NOW),
-    ).toBe('Nessuna casella Gmail collegata: qui non c’è niente da sincronizzare.')
+      jobLine(job({ state: 'not_configured', key: 'mail-sync', last_run_at: null }), NOW),
+    ).toBe('Nessuna casella email collegata: qui non c’è niente da sincronizzare.')
   })
 })

@@ -179,7 +179,7 @@ class ReminderSummaryRun(Base, PrimaryKeyMixin, TimestampMixin):
 
 
 class ReminderJobRun(Base, PrimaryKeyMixin, TimestampMixin):
-    """One row per scheduled job (`pigrocrm gmail-sync`, `digest`, `reminders`,
+    """One row per scheduled job (`pigrocrm mail-sync`, `digest`, `reminders`,
     `automations`): when it last ran to the end, and how its latest attempt went if that
     attempt failed (REB-764). The table kept the reminder pass's name when the other three
     commands started writing it; renaming it would have been a migration for a word.

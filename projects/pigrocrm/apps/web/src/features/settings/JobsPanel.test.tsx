@@ -27,9 +27,9 @@ const BASE = {
 const JOBS = [
   {
     ...BASE,
-    key: 'gmail-sync',
-    label: 'Sincronizzazione Gmail',
-    command: 'pigrocrm gmail-sync',
+    key: 'mail-sync',
+    label: 'Sincronizzazione delle caselle email',
+    command: 'pigrocrm mail-sync',
     schedule: 'ogni 15 minuti',
     state: 'not_configured',
     last_run_at: null,
@@ -97,9 +97,9 @@ describe('JobsPanel', () => {
   it('lists the four jobs with their command and schedule, in the API’s order', async () => {
     renderPanel()
 
-    expect(await screen.findByRole('heading', { name: 'Sincronizzazione Gmail' })).toBeVisible()
+    expect(await screen.findByRole('heading', { name: 'Sincronizzazione delle caselle email' })).toBeVisible()
     expect(screen.getAllByRole('heading', { level: 3 }).map((h) => h.textContent)).toEqual([
-      'Sincronizzazione Gmail',
+      'Sincronizzazione delle caselle email',
       'Passaggio dei promemoria',
       'Automazioni',
       'Riepilogo settimanale',
@@ -128,9 +128,9 @@ describe('JobsPanel', () => {
     expect(failed.getByText(/errore RuntimeError/)).toBeVisible()
     expect(failed.getByText(/Non è ancora finito nessun giro\./)).toBeVisible()
 
-    const none = within(card('gmail-sync'))
+    const none = within(card('mail-sync'))
     expect(none.getByText('Non configurata')).toBeVisible()
-    expect(none.getByText(/Nessuna casella Gmail collegata/)).toBeVisible()
+    expect(none.getByText(/Nessuna casella email collegata/)).toBeVisible()
   })
 
   it('shows the loader while it loads and never a list of zero jobs', async () => {

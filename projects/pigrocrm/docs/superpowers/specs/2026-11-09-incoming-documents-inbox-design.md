@@ -246,6 +246,36 @@ deletion of its synced messages, as today's offer does (`gmail/oauth.py:48-76`);
 inbox items and no attachment bytes. The items of a space mailbox belong to the space and
 stay when the mailbox is disconnected.
 
+**As built (REB-1014, the model and the rename).** Choices the design left to the builder:
+
+- **Tables.** `mailboxes` (`core/mailboxes/models.py`, migration 0087) holds the owner
+  (`owner_user_id`, null for the space), the provider (`gmail` or `imap`) and, for Gmail,
+  `google_account_id`, unique: the account is wrapped 1:1 and keeps its credential, consent window,
+  status, last error and the unique-per-user and Drive-sibling rules, so the Gmail tests did not
+  change. A Gmail mailbox holds nothing its account holds; `status` is stored only for a mailbox
+  with no account (IMAP, REB-1015), and a check keeps the two apart. A person has one Gmail
+  mailbox (a partial unique index) and a Gmail mailbox is always personal.
+- **Wrapping at the insert.** An `after_insert` listener on `GoogleAccount` makes the mailbox and
+  its `correspondence` purpose, so no way of creating an account leaves one unwrapped; migration
+  0087 wraps the existing ones. Rows go with the account (`ON DELETE CASCADE`).
+- **One watermark per mailbox and purpose** is `mailbox_purposes.sync_watermark`, except that the
+  `correspondence` watermark of a Gmail mailbox is still `GoogleAccount.sync_watermark`, which the
+  Gmail sync reads and writes; its purpose row's own is null. `MailboxRepository.purpose_watermark`
+  is the one place that knows it.
+- **`billing` on a personal mailbox is impossible in the schema.** `mailboxes.space_owned` is
+  generated from the owner and copied onto the purpose row through a composite foreign key, and a
+  check refuses `billing` where the copy is false. `MailboxRepository.inbox_sources` is the
+  mailboxes holding `billing`; no personal mailbox can be one (REB-960).
+- **Health.** `mailboxes/health.py` maps Gmail's statuses onto `active`, `failing`, `auth_failed`
+  and `disconnected` (`expired` and `revoked` to `auth_failed`); Gmail records no transient state, so
+  a Gmail mailbox is never `failing`. The Gmail banner keeps its four reasons.
+- **The job.** `gmail-sync` is `mail-sync`: `SCHEDULED_JOBS`, the `reminder_job_run` row (renamed by
+  0087, so a space keeps its last run), the log lines, the panel and the runbooks. `pigrocrm
+  gmail-sync` stays as an alias of the same command, writing the `mail-sync` clock, until the hosts'
+  crontabs say `mail-sync`. A space with a mailbox that is not Gmail reads «configured» and a run
+  that found only those exits 0. Reading anything but Gmail is REB-1015 and the `billing` read is
+  REB-1016: this change creates no IMAP mailbox and reads none.
+
 ### 2.3 Intermediaries, the «Cassetto fiscale» and the SdI
 
 - **An intermediary** that holds the SdI recipient code (Fiscozen, Aruba, Fatture in Cloud

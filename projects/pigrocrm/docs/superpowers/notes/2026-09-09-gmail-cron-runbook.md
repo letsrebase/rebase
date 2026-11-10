@@ -9,7 +9,7 @@ I §§1–3 sono il sync Gmail, deciso insieme al banner del consenso perché in
 rispondono alla stessa domanda dell'operatore («la casella si sincronizza da sola, e se
 smette me ne accorgo?»):
 
-1. `pigrocrm gmail-sync`, un comando che esegue **un ciclo** di sincronizzazione e
+1. `pigrocrm mail-sync` (già `gmail-sync`, ancora valido come alias), un comando che esegue **un ciclo** di sincronizzazione e
    termina. Non è un demone, quindi i quindici minuti li tiene cron.
 2. Il banner di scadenza del consenso, che ora esiste **solo** finché il progetto OAuth
    è in Testing.
@@ -25,8 +25,17 @@ sull'ambiente (la radice del checkout del repository su quel server). The line i
 production's; on the preview it is `-p pigrocrm-preview` (the details below say why):
 
 ```
-*/15 * * * * cd $DEPLOY_PATH/projects/pigrocrm && docker compose -p pigrocrm --env-file ../../.env exec -T api uv run --no-sync pigrocrm gmail-sync >> /var/log/pigrocrm-gmail-sync.log 2>&1
+*/15 * * * * cd $DEPLOY_PATH/projects/pigrocrm && docker compose -p pigrocrm --env-file ../../.env exec -T api uv run --no-sync pigrocrm mail-sync >> /var/log/pigrocrm-gmail-sync.log 2>&1
 ```
+
+**Il nome (REB-1014).** Il comando si chiamava `pigrocrm gmail-sync`, prima che uno spazio
+potesse collegare una casella che non è Gmail. `gmail-sync` resta come alias dello stesso
+comando: la riga di un host che non è ancora passata al nome nuovo continua a funzionare,
+e scrive la stessa riga di stato (`mail-sync`) e le stesse righe di log. Per passare basta
+sostituire `gmail-sync` con `mail-sync` nella riga; il file di log
+`/var/log/pigrocrm-gmail-sync.log` e la sua rotazione non cambiano. Un ambiente con sole
+caselle IMAP non legge più «non configurato» e il comando non esce con 1 solo perché non
+c'è una casella Google.
 
 Quattro dettagli della riga non sono decorativi:
 
@@ -58,7 +67,7 @@ synchronised, the registry or a space that could not be read, or no connected ma
 found. Every line is printed either way.
 
 ```
-cd $DEPLOY_PATH/projects/pigrocrm && docker compose -p pigrocrm --env-file ../../.env exec -T api uv run --no-sync pigrocrm gmail-sync; echo "uscita: $?"
+cd $DEPLOY_PATH/projects/pigrocrm && docker compose -p pigrocrm --env-file ../../.env exec -T api uv run --no-sync pigrocrm mail-sync; echo "uscita: $?"
 ```
 
 Since REB-404 the one line synchronises **every** connected mailbox, of the root
@@ -77,7 +86,7 @@ slug (see «Every space» below), then the mailbox.
 Ciclo eseguito, su `stdout`, uscita `0`:
 
 ```
-2026-09-09T03:15:02+00:00 gmail-sync root 01a19e3c-72ff-7ca0-89df-3ce108097aff: 4 messaggi nuovi, 11 già presenti, 3 conversazioni lette, 6 collegamenti, 0 invii riconciliati (2 query)
+2026-09-09T03:15:02+00:00 mail-sync root 01a19e3c-72ff-7ca0-89df-3ce108097aff: 4 messaggi nuovi, 11 già presenti, 3 conversazioni lette, 6 collegamenti, 0 invii riconciliati (2 query)
 ```
 
 - **messaggi nuovi / già presenti**: la finestra si sovrappone di proposito a quella del
@@ -95,7 +104,7 @@ Ciclo già in corso (un altro cron, o qualcuno che ha premuto Sincronizza), semp
 `stdout`, uscita **`0`**:
 
 ```
-2026-09-09T03:15:02+00:00 gmail-sync root 01a19e3c-72ff-7ca0-89df-3ce108097aff: già in corso da 2026-09-09T03:14:58+00:00
+2026-09-09T03:15:02+00:00 mail-sync root 01a19e3c-72ff-7ca0-89df-3ce108097aff: già in corso da 2026-09-09T03:14:58+00:00
 ```
 
 Non è un errore: è il lucchetto che fa il suo mestiere, il secondo chiamante non ha
@@ -105,7 +114,7 @@ il modo migliore per insegnare all'operatore a ignorare il log.
 Guasto, su `stderr`, uscita **`1`**:
 
 ```
-2026-09-09T03:15:02+00:00 gmail-sync root 01a19e3c-72ff-7ca0-89df-3ce108097aff: il consenso Google della casella è stato revocato: ricollega la casella da Impostazioni → Gmail
+2026-09-09T03:15:02+00:00 mail-sync root 01a19e3c-72ff-7ca0-89df-3ce108097aff: il consenso Google della casella è stato revocato: ricollega la casella da Impostazioni → Gmail
 ```
 
 Le frasi che si possono leggere qui, e cosa fare:
@@ -131,7 +140,7 @@ the cycle runs in the `pigrocrm` process that `docker compose exec` starts, not 
 uvicorn. The frames name the file, the line and the function that failed. A space whose
 settings or mailboxes could not be read before any cycle (`studio-rossi: saltato (…)`)
 gets its frames the same way, so the log says which read failed. The
-exception's message is withheld on purpose, and running `pigrocrm gmail-sync` again by
+exception's message is withheld on purpose, and running `pigrocrm mail-sync` again by
 hand does not show it either, since it takes the same path: a psycopg or SQLAlchemy
 message can carry the database URL or a statement's parameters (a correspondent's
 address), which this log promises never to hold.
@@ -194,8 +203,8 @@ Every line names the installation before the mailbox: `root` for the root instal
 whatever `PIGROCRM_ROOT_SLUG` says, and the slug for a space.
 
 ```
-2026-09-28T15:45:03+00:00 gmail-sync root 01a19e3c-72ff-7ca0-89df-3ce108097aff: 0 messaggi nuovi, 4 già presenti, 2 conversazioni lette, 0 collegamenti, 0 invii riconciliati (2 query)
-2026-09-28T15:45:04+00:00 gmail-sync studio-rossi 01a19e3c-7b24-7df2-842a-2685ebd75d4e: 3 messaggi nuovi, 0 già presenti, 3 conversazioni lette, 3 collegamenti, 0 invii riconciliati (1 query)
+2026-09-28T15:45:03+00:00 mail-sync root 01a19e3c-72ff-7ca0-89df-3ce108097aff: 0 messaggi nuovi, 4 già presenti, 2 conversazioni lette, 0 collegamenti, 0 invii riconciliati (2 query)
+2026-09-28T15:45:04+00:00 mail-sync studio-rossi 01a19e3c-7b24-7df2-842a-2685ebd75d4e: 3 messaggi nuovi, 0 già presenti, 3 conversazioni lette, 3 collegamenti, 0 invii riconciliati (1 query)
 ```
 
 A space with no connected mailbox prints nothing: most never connect one, and a line for
@@ -223,7 +232,7 @@ essere lì` rather than `… non è una casella collegata (N collegate)` (a coun
 ### The space's clock (REB-764)
 
 After the mailboxes of a space have each had their cycle, the run writes one row in that
-space's own database, `reminder_job_run`, job `gmail-sync`: the time of the last run that
+space's own database, `reminder_job_run`, job `mail-sync`: the time of the last run that
 ended, or, when a mailbox refused its cycle, the name of the exception that stopped it
 (`CredentialRevoked`, `ConsentExpired`, ...: never the sentence the `stderr` line carries,
 which names the mailbox) and the time of the attempt; the last good time stays where it was. Impostazioni → Esecuzioni

@@ -22,8 +22,8 @@ def test_an_admin_reads_the_four_jobs_and_what_the_clock_holds(
 
     assert response.status_code == 200, response.text
     jobs = {job["key"]: job for job in response.json()["jobs"]}
-    assert list(jobs) == ["gmail-sync", "reminders", "automations", "digest"]
-    assert jobs["gmail-sync"]["state"] == "not_configured", "no mailbox in this space"
+    assert list(jobs) == ["mail-sync", "reminders", "automations", "digest"]
+    assert jobs["mail-sync"]["state"] == "not_configured", "no mailbox in this space"
     assert jobs["reminders"]["state"] == "ok"
     assert jobs["digest"]["state"] == "late"
     assert jobs["automations"]["state"] == "failed"
