@@ -9,6 +9,7 @@ from pigrocrm.core.activities.service import ActivityService
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.deals.repository import DealRepository
 from pigrocrm.core.documents.repository import DocumentRepository
+from pigrocrm.core.due_items.forecast import ForecastService
 from pigrocrm.core.errors import Conflict, NotFound, ValidationFailed
 from pigrocrm.core.fields.custom import merge_custom
 from pigrocrm.core.fields.schemas import EntityType
@@ -229,6 +230,18 @@ class PurchaseService:
         if profile is None:
             return None, None, None
         return profile.pack_id, profile.pack_version, profile.regime_code
+
+    def _refresh_recurring(self, *supplier_ids: UUID | None) -> None:
+        """The recurrence rules of these suppliers read again, in this transaction: a purchase
+        of the period replaces the forecast of a recurring expense (due items design, § 1.2),
+        and one that moves, is cancelled or is archived gives it back."""
+        suppliers = {supplier_id for supplier_id in supplier_ids if supplier_id is not None}
+        if not suppliers:
+            return
+        self.session.flush()
+        forecasts = ForecastService(self.session)
+        for supplier_id in sorted(suppliers, key=str):
+            forecasts.refresh_supplier_rules(supplier_id)
 
     def _validated_custom(self, values: dict[str, Any]) -> dict[str, Any]:
         return validate_custom_fields(ENTITY, self.fields.specs_for(ENTITY), values)
@@ -499,6 +512,7 @@ class PurchaseService:
                 **values,
             )
         )
+        self._refresh_recurring(purchase.supplier_id)
         self.activities.record(
             ENTITY,
             purchase.id,
@@ -524,6 +538,7 @@ class PurchaseService:
     def update(self, purchase_id: UUID, data: PurchaseUpdate, actor: Actor) -> PurchaseRead:
         actor.require_write("update_purchase")
         purchase = self._require(purchase_id)
+        supplier_before = purchase.supplier_id
         if purchase.status == "cancelled":
             raise Conflict(ENTITY, "un acquisto annullato non si modifica", id=str(purchase_id))
         changes = supplied_changes(data, exclude={"custom_fields", "vat_lines"})
@@ -622,6 +637,7 @@ class PurchaseService:
             file_as_purchase(
                 self.session, newly_linked, purchase.id, actor, purchase.legal_entity_id
             )
+        self._refresh_recurring(supplier_before, purchase.supplier_id)
         self.activities.record(
             ENTITY,
             purchase.id,
@@ -642,6 +658,7 @@ class PurchaseService:
             raise Conflict(ENTITY, "l'acquisto è già annullato", id=str(purchase_id))
         self.locks.assert_writable(ENTITY, "date", purchase.date)
         purchase.status = "cancelled"
+        self._refresh_recurring(purchase.supplier_id)
         self.activities.record(ENTITY, purchase.id, "cancelled", actor)
         self.session.commit()
         return PurchaseRead.model_validate(purchase)
@@ -651,6 +668,7 @@ class PurchaseService:
         purchase = self._require(purchase_id)
         self.locks.assert_writable(ENTITY, "date", purchase.date)
         purchase.deleted_at = datetime.now(UTC)
+        self._refresh_recurring(purchase.supplier_id)
         self.activities.record(ENTITY, purchase.id, "deleted", actor)
         self.session.commit()
 
@@ -661,6 +679,7 @@ class PurchaseService:
         was_deleted = purchase.deleted_at is not None
         purchase.deleted_at = None
         if was_deleted:
+            self._refresh_recurring(purchase.supplier_id)
             self.activities.record(ENTITY, purchase.id, "restored", actor)
         self.session.commit()
         return PurchaseRead.model_validate(purchase)

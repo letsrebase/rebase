@@ -92,6 +92,16 @@ RULE_KINDS: tuple[str, ...] = (
     "on_settlement",
 )
 
+# The cadences of a recurring expense, by the months between two of its due dates (§ 1.2).
+CADENCE_MONTHS: dict[str, int] = {
+    "monthly": 1,
+    "bimonthly": 2,
+    "quarterly": 3,
+    "semiannual": 6,
+    "annual": 12,
+}
+CADENCES: tuple[str, ...] = tuple(CADENCE_MONTHS)
+
 CURRENCY_PATTERN = "^[A-Z]{3}$"
 TEXT_MAX_LENGTH = 255
 LATEST_DAY_OF_MONTH = 28
@@ -284,3 +294,39 @@ class DueItemSettlement(Base, PrimaryKeyMixin, TimestampMixin):
     reversed_by_id: Mapped[UUID | None] = mapped_column(default=None)
     reversed_by_type: Mapped[str | None] = mapped_column(String(10), default=None)
     reversal_reason: Mapped[str | None] = mapped_column(String(TEXT_MAX_LENGTH), default=None)
+
+
+class RecurringExpense(Base, PrimaryKeyMixin, TimestampMixin):
+    """A recurrence rule owned by due items (spec 2026-11-09, § 1.2): a supplier that bills the
+    same amount every `cadence`, from the due date `first_due_date`. The daily pass and every
+    change to the rule write one **forecast out** (source kind `recurring_expense`) for each
+    occurrence inside the horizon; the purchase of that period replaces it, never adds to it.
+
+    `amount` is the total a payment carries, in euro, VAT included. A rule is stopped, never
+    deleted: `stopped_on` is the day it stopped and the forecasts it had are dropped, while the
+    due items its past occurrences became stay where they are. `ends_on` is the last due date a
+    rule with an end produces.
+    """
+
+    __tablename__ = "recurring_expenses"
+    __table_args__ = (
+        CheckConstraint("amount > 0", name="ck_recurring_expenses_amount_positive"),
+        CheckConstraint(f"cadence IN {CADENCES!r}", name="ck_recurring_expenses_cadence"),
+        CheckConstraint(
+            "ends_on IS NULL OR ends_on >= first_due_date", name="ck_recurring_expenses_ends_on"
+        ),
+        Index("ix_recurring_expenses_supplier", "supplier_id"),
+        Index("ix_recurring_expenses_active", "legal_entity_id", "stopped_on"),
+    )
+
+    legal_entity_id: Mapped[UUID] = mapped_column(
+        ForeignKey("legal_entities.id"), nullable=False, index=True
+    )
+    supplier_id: Mapped[UUID] = mapped_column(ForeignKey("organizations.id"), nullable=False)
+    category_id: Mapped[UUID] = mapped_column(ForeignKey("cost_categories.id"), nullable=False)
+    description: Mapped[str] = mapped_column(String(TEXT_MAX_LENGTH), nullable=False)
+    amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
+    cadence: Mapped[str] = mapped_column(String(12), nullable=False)
+    first_due_date: Mapped[dt.date] = mapped_column(Date, nullable=False)
+    ends_on: Mapped[dt.date | None] = mapped_column(Date, default=None)
+    stopped_on: Mapped[dt.date | None] = mapped_column(Date, default=None)

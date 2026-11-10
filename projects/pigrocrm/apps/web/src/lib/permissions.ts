@@ -83,6 +83,8 @@ export const MIN_ROLE = {
   cancel_purchase: 'collaborator',
   delete_purchase: 'collaborator',
   restore_purchase: 'collaborator',
+  create_recurring_expense: 'collaborator',
+  stop_recurring_expense: 'collaborator',
   create_work_unit: 'collaborator',
   transition_work_unit: 'collaborator',
   create_approval: 'collaborator',

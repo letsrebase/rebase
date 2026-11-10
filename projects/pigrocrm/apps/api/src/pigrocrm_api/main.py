@@ -53,6 +53,7 @@ from pigrocrm_api.routers import (
     proposals,
     purchases,
     push,
+    recurring_expenses,
     reminders,
     scheduled_jobs,
     schema,
@@ -189,6 +190,8 @@ def create_app() -> FastAPI:
         ai_model,
         # REB-1011: the period bundle for the accountant.
         accountant_export,
+        # REB-1022: the recurrence rules that forecast money going out, `purchases` module.
+        recurring_expenses,
     ):
         app.include_router(module.router)
 

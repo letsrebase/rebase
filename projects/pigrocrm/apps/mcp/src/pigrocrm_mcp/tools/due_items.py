@@ -10,6 +10,8 @@ from decimal import Decimal, InvalidOperation
 from typing import Any
 from uuid import UUID
 
+from pigrocrm.core.due_items.recurring import RecurringExpenseService
+from pigrocrm.core.due_items.recurring_schemas import Cadence, RecurringExpenseCreate
 from pigrocrm.core.due_items.schemas import (
     Direction,
     DueItemListQuery,
@@ -137,6 +139,49 @@ def reverse_settlement(
         context.actor,
     )
     return item.model_dump(mode="json")
+
+
+def list_recurring_expenses(
+    context: McpContext, include_stopped: bool, legal_entity_id: str | None
+) -> dict[str, Any]:
+    rules = RecurringExpenseService(context.session).list_recurring_expenses(
+        context.actor,
+        include_stopped=include_stopped,
+        legal_entity_id=parse_legal_entity_id(legal_entity_id),
+    )
+    return {"recurring_expenses": [rule.model_dump(mode="json") for rule in rules]}
+
+
+def create_recurring_expense(
+    context: McpContext,
+    supplier_id: str,
+    category_id: str,
+    description: str,
+    amount: float | str,
+    cadence: str,
+    first_due_date: str,
+    ends_on: str | None,
+    legal_entity_id: str | None,
+) -> dict[str, Any]:
+    data = RecurringExpenseCreate(
+        supplier_id=_required_uuid("supplier_id", supplier_id),
+        category_id=_required_uuid("category_id", category_id),
+        description=description,
+        amount=_required_decimal("amount", amount),
+        cadence=literal_arg("cadence", cadence, Cadence),
+        first_due_date=required_iso_date(first_due_date, "first_due_date"),
+        ends_on=iso_date(ends_on, "ends_on"),
+        legal_entity_id=parse_legal_entity_id(legal_entity_id),
+    )
+    rule = RecurringExpenseService(context.session).create_recurring_expense(data, context.actor)
+    return rule.model_dump(mode="json")
+
+
+def stop_recurring_expense(context: McpContext, recurring_expense_id: str) -> dict[str, Any]:
+    rule = RecurringExpenseService(context.session).stop_recurring_expense(
+        _required_uuid("recurring_expense_id", recurring_expense_id), context.actor
+    )
+    return rule.model_dump(mode="json")
 
 
 def _required_uuid(name: str, value: str) -> UUID:

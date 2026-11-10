@@ -5,7 +5,7 @@ from typing import Any, cast
 
 from mcp.server import MCPServer
 
-from pigrocrm_mcp.annotations import ADDITIVE, READ_ONLY
+from pigrocrm_mcp.annotations import ADDITIVE, DESTRUCTIVE, READ_ONLY
 from pigrocrm_mcp.context import McpContext
 from pigrocrm_mcp.tools import due_items
 from pigrocrm_mcp.tools.params import BoundedLimit, IsoDateStr, MoneyArg
@@ -91,3 +91,45 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
         permission as `settle_due_item` for that item.
         """
         return due_items.reverse_settlement(context, settlement_id, reason)
+
+    @mcp.tool(annotations=READ_ONLY)
+    @guard
+    def list_recurring_expenses(
+        include_stopped: bool = False, legal_entity_id: str | None = None
+    ) -> dict[str, Any]:
+        """List recurring expense rules; each forecasts a payment out per due date."""
+        return due_items.list_recurring_expenses(context, include_stopped, legal_entity_id)
+
+    @mcp.tool(annotations=ADDITIVE)
+    @guard
+    def create_recurring_expense(
+        supplier_id: str,
+        category_id: str,
+        description: str,
+        amount: MoneyArg,
+        cadence: str,
+        first_due_date: str,
+        ends_on: IsoDateStr = None,
+        legal_entity_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Forecast a supplier's fixed bill: `amount` (VAT included) every `cadence` (`monthly`,
+        `bimonthly`, `quarterly`, `semiannual`, `annual`) from `first_due_date`. A purchase of that
+        supplier in the same period replaces the forecast.
+        """
+        return due_items.create_recurring_expense(
+            context,
+            supplier_id,
+            category_id,
+            description,
+            amount,
+            cadence,
+            first_due_date,
+            ends_on,
+            legal_entity_id,
+        )
+
+    @mcp.tool(annotations=DESTRUCTIVE)
+    @guard
+    def stop_recurring_expense(recurring_expense_id: str) -> dict[str, Any]:
+        """Stop a recurring expense and drop its forecasts; it cannot be resumed."""
+        return due_items.stop_recurring_expense(context, recurring_expense_id)

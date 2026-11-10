@@ -1,4 +1,7 @@
-"""The forecasts of money in (spec 2026-11-09, due items, § 1.2, the first three rows).
+"""The forecasts of money in (spec 2026-11-09, due items, § 1.2, the first three rows), and of
+the recurring expenses going out (the fourth, REB-1022, `refresh_recurring_expense`: one forecast
+out per due date of a `RecurringExpense` rule, replaced by the supplier's purchase of that
+period).
 
 A forecast is a **stored** due item in the state `forecast`: nothing says what is about to be
 invoiced until the contract, its worked days and the drafts are read as due items too. Three
@@ -65,10 +68,10 @@ from pigrocrm.core.contracts.projection import (
     generate_recurring_fee_occurrences,
 )
 from pigrocrm.core.contracts.repository import RateCardRepository
-from pigrocrm.core.db.clock import add_months, today_local
-from pigrocrm.core.due_items.models import DueItem
+from pigrocrm.core.db.clock import add_months, stepped_dates, today_local
+from pigrocrm.core.due_items.models import CADENCE_MONTHS, DueItem, RecurringExpense
 from pigrocrm.core.due_items.repository import DueItemRepository
-from pigrocrm.core.due_items.schemas import DueItemCreate
+from pigrocrm.core.due_items.schemas import Direction, DueItemCreate
 from pigrocrm.core.due_items.service import DueItemService
 from pigrocrm.core.errors import NotFound, ValidationFailed
 from pigrocrm.core.fiscal.regime import RegimeStrategy, resolve_regime
@@ -82,6 +85,7 @@ from pigrocrm.core.invoices.schemas import CURRENCY, InvoiceLineIn
 from pigrocrm.core.invoices.totals import build_recap, sum_totals
 from pigrocrm.core.legal_entities.models import LegalEntity
 from pigrocrm.core.organizations.models import Organization
+from pigrocrm.core.purchases.models import Purchase
 from pigrocrm.core.work_units.gathering import gather, line_in, ordered, quantity_of
 
 CONTRACT_OCCURRENCE = "contract_occurrence"
@@ -90,6 +94,8 @@ SALES_DRAFT = "sales_draft"
 RULE_RECURRING_FEE = "contract_recurring_fee"
 RULE_WORKED_DAYS = "contract_worked_days"
 RULE_DRAFT_INVOICE = "draft_invoice"
+RULE_RECURRING_EXPENSE = "recurring_expense"
+RECURRING_EXPENSE = "recurring_expense"
 CONTRACT_RULES: frozenset[str] = frozenset({RULE_RECURRING_FEE, RULE_WORKED_DAYS})
 
 # How far ahead the occurrences of a fee are materialised: wider than the thirteen weeks the
@@ -128,7 +134,7 @@ class ForecastReport:
 
 
 @dataclass(frozen=True)
-class _Want:
+class Want:
     """One forecast the rules produce now."""
 
     key: UUID
@@ -137,6 +143,7 @@ class _Want:
     own_date: date | None
     description: str
     organization_id: UUID
+    direction: Direction = "in"
 
 
 class _Terms:
@@ -197,6 +204,16 @@ class ForecastService:
             report += self._isolated(partial(self._lock_and_sync_draft, invoice_id, day))
             if commit:
                 self.session.commit()
+        # The recurring expenses: money going out, from a rule of due items' own (§ 1.2).
+        rule_ids = set(
+            self.session.scalars(
+                select(RecurringExpense.id).where(RecurringExpense.stopped_on.is_(None))
+            )
+        ) | set(self.repo.source_ids_with_live_forecasts(RECURRING_EXPENSE))
+        for rule_id in sorted(rule_ids, key=str):
+            report += self._isolated(partial(self.refresh_recurring_expense, rule_id, today=day))
+            if commit:
+                self.session.commit()
         return report
 
     def _lock_and_sync_draft(self, invoice_id: UUID, today: date) -> ForecastReport:
@@ -230,7 +247,7 @@ class ForecastService:
             select(Contract).where(Contract.id == contract_id).with_for_update(),
             execution_options={"populate_existing": True},
         ).scalar_one_or_none()
-        wants: dict[UUID, _Want] = {}
+        wants: dict[UUID, Want] = {}
         replaced: set[UUID] = set()
         if contract is not None:
             wants, replaced = self._contract_wants(contract, day)
@@ -240,7 +257,7 @@ class ForecastService:
             if item.source_rule in CONTRACT_RULES
         ]
         legal_entity_id = contract.legal_entity_id if contract is not None else None
-        return self._apply(
+        return self.apply(
             live,
             wants,
             replaced,
@@ -251,7 +268,7 @@ class ForecastService:
 
     def _contract_wants(
         self, contract: Contract, today: date
-    ) -> tuple[dict[UUID, _Want], set[UUID]]:
+    ) -> tuple[dict[UUID, Want], set[UUID]]:
         if (
             contract.deleted_at is not None
             or contract.status != ACTIVE
@@ -262,7 +279,7 @@ class ForecastService:
         if pricing is None:
             return {}, set()
         profile, strategy, customer = pricing
-        wants: dict[UUID, _Want] = {}
+        wants: dict[UUID, Want] = {}
         replaced: set[UUID] = set()
         self._fee_wants(contract, profile, strategy, customer, today, wants, replaced)
         self._day_wants(contract, profile, strategy, customer, today, wants)
@@ -275,7 +292,7 @@ class ForecastService:
         strategy: RegimeStrategy,
         customer: Organization,
         today: date,
-        wants: dict[UUID, _Want],
+        wants: dict[UUID, Want],
         replaced: set[UUID],
     ) -> None:
         cards = [
@@ -319,7 +336,7 @@ class ForecastService:
                 )
                 if total is None:
                     continue
-                wants[key] = _Want(
+                wants[key] = Want(
                     key,
                     RULE_RECURRING_FEE,
                     total,
@@ -335,7 +352,7 @@ class ForecastService:
         strategy: RegimeStrategy,
         customer: Organization,
         today: date,
-        wants: dict[UUID, _Want],
+        wants: dict[UUID, Want],
     ) -> None:
         groups, _uncovered, cards = gather(self.session, contract.id, None, None)
         if not groups:
@@ -362,7 +379,7 @@ class ForecastService:
             # its forecast is undated («senza scadenza»), never a date made up.
             due = self._due_on(max(end, today), customer.id, profile) if end is not None else None
             key = forecast_key(CONTRACT_OCCURRENCE, contract.id, start)
-            wants[key] = _Want(
+            wants[key] = Want(
                 key,
                 RULE_WORKED_DAYS,
                 total,
@@ -438,7 +455,7 @@ class ForecastService:
             select(Invoice).where(Invoice.id == invoice_id),
             execution_options={"populate_existing": True},
         ).scalar_one_or_none()
-        wants: dict[UUID, _Want] = {}
+        wants: dict[UUID, Want] = {}
         if invoice is not None:
             want = self._draft_want(invoice, today)
             if want is not None:
@@ -453,7 +470,7 @@ class ForecastService:
             if invoice is None or invoice.status in DRAFT_STATUSES
             else {item.forecast_key for item in live if item.forecast_key is not None}
         )
-        return self._apply(
+        return self.apply(
             live,
             wants,
             replaced,
@@ -462,7 +479,7 @@ class ForecastService:
             legal_entity_id=invoice.legal_entity_id if invoice is not None else None,
         )
 
-    def _draft_want(self, invoice: Invoice, today: date) -> _Want | None:
+    def _draft_want(self, invoice: Invoice, today: date) -> Want | None:
         if (
             invoice.deleted_at is not None
             or invoice.status not in DRAFT_STATUSES
@@ -480,7 +497,7 @@ class ForecastService:
         if due < today:
             return None
         proforma = invoice.type == "proforma"
-        return _Want(
+        return Want(
             forecast_key(SALES_DRAFT, invoice.id),
             RULE_DRAFT_INVOICE,
             invoice.total,
@@ -489,6 +506,101 @@ class ForecastService:
             + (f" {invoice.reference}" if invoice.reference else ""),
             customer.id,
         )
+
+    # ---- recurring expenses -----------------------------------------------------------------
+
+    def refresh_recurring_expense(
+        self, rule_id: UUID, *, today: date | None = None
+    ) -> ForecastReport:
+        """Brings the live forecasts of one recurrence rule to what it produces now: one forecast
+        out for each due date inside the horizon that no purchase of its period has replaced.
+        Called by the daily job, by the rule's own writes and by every purchase of its supplier,
+        in that change's transaction; the rule row is locked first, so they serialise."""
+        day = today if today is not None else today_local()
+        rule = self.session.execute(
+            select(RecurringExpense).where(RecurringExpense.id == rule_id).with_for_update(),
+            execution_options={"populate_existing": True},
+        ).scalar_one_or_none()
+        wants: dict[UUID, Want] = {}
+        replaced: set[UUID] = set()
+        if rule is not None:
+            wants, replaced = self._recurring_wants(rule, day)
+        return self.apply(
+            self.repo.live_forecasts(RECURRING_EXPENSE, rule_id),
+            wants,
+            replaced,
+            source_kind=RECURRING_EXPENSE,
+            source_id=rule_id,
+            legal_entity_id=rule.legal_entity_id if rule is not None else None,
+        )
+
+    def _recurring_wants(
+        self, rule: RecurringExpense, today: date
+    ) -> tuple[dict[UUID, Want], set[UUID]]:
+        if rule.stopped_on is not None:
+            return {}, set()
+        legal_entity = self.session.get(LegalEntity, rule.legal_entity_id)
+        supplier = self.session.get(Organization, rule.supplier_id)
+        if (
+            legal_entity is None
+            or not legal_entity.active
+            or supplier is None
+            or supplier.deleted_at is not None
+        ):
+            return {}, set()
+        months = CADENCE_MONTHS[rule.cadence]
+        last = today + dt.timedelta(days=HORIZON_DAYS)
+        if rule.ends_on is not None:
+            last = min(last, rule.ends_on)
+        bought = self._purchase_dates(rule)
+        wants: dict[UUID, Want] = {}
+        replaced: set[UUID] = set()
+        for occurrence in stepped_dates(rule.first_due_date, last, months):
+            key = forecast_key(RECURRING_EXPENSE, rule.id, occurrence)
+            # The purchase of the period: the calendar month, bimonth, quarter, half-year or
+            # year the due date falls in, as a contract's billing periods are cut.
+            start, end = period_start(months, occurrence), period_end(months, occurrence)
+            if any(start <= day <= end for day in bought):
+                replaced.add(key)
+            elif occurrence >= today:
+                wants[key] = Want(
+                    key,
+                    RULE_RECURRING_EXPENSE,
+                    rule.amount,
+                    occurrence,
+                    f"{rule.description}, scadenza {occurrence.strftime('%d/%m/%Y')}",
+                    rule.supplier_id,
+                    direction="out",
+                )
+        return wants, replaced
+
+    def _purchase_dates(self, rule: RecurringExpense) -> list[date]:
+        """The dates of the registered purchases that can replace this rule's forecasts: the
+        supplier's own, in euro or not, of the rule's company (or shared across them), leaving
+        out a cancelled or archived one and a credit note or refund, which pay nothing."""
+        return list(
+            self.session.scalars(
+                select(Purchase.date).where(
+                    Purchase.supplier_id == rule.supplier_id,
+                    Purchase.status == "registered",
+                    Purchase.deleted_at.is_(None),
+                    Purchase.amount > 0,
+                    (Purchase.legal_entity_id == rule.legal_entity_id)
+                    | Purchase.legal_entity_id.is_(None),
+                )
+            )
+        )
+
+    def refresh_supplier_rules(self, supplier_id: UUID, *, today: date | None = None) -> None:
+        """Every rule of a supplier read again: a purchase of that supplier was registered,
+        changed, cancelled or archived, and with it the periods it covers."""
+        rule_ids = self.session.scalars(
+            select(RecurringExpense.id).where(
+                RecurringExpense.supplier_id == supplier_id, RecurringExpense.stopped_on.is_(None)
+            )
+        ).all()
+        for rule_id in sorted(rule_ids, key=str):
+            self.refresh_recurring_expense(rule_id, today=today)
 
     # ---- the shared half --------------------------------------------------------------------
 
@@ -533,10 +645,10 @@ class ForecastService:
         total = sum_totals(build_recap(computed))[2]
         return total if total > 0 else None
 
-    def _apply(
+    def apply(
         self,
         live: list[DueItem],
-        wants: dict[UUID, _Want],
+        wants: dict[UUID, Want],
         replaced: set[UUID],
         *,
         source_kind: str,
@@ -579,9 +691,7 @@ class ForecastService:
                 )
         return ForecastReport(created, revised, dropped)
 
-    def _create(
-        self, want: _Want, source_kind: str, source_id: UUID, legal_entity_id: UUID
-    ) -> bool:
+    def _create(self, want: Want, source_kind: str, source_id: UUID, legal_entity_id: UUID) -> bool:
         """The forecast, unless another writer holds the key: the unique index is the net
         under the contract's lock, and its loser is the same answer, not an error."""
         try:
@@ -589,7 +699,7 @@ class ForecastService:
                 self.items.create(
                     DueItemCreate(
                         legal_entity_id=legal_entity_id,
-                        direction="in",
+                        direction=want.direction,
                         organization_id=want.organization_id,
                         amount=want.amount,
                         description=want.description[:255],
@@ -634,6 +744,7 @@ def refresh_forecasts(
 __all__ = [
     "CONTRACT_OCCURRENCE",
     "HORIZON_DAYS",
+    "RECURRING_EXPENSE",
     "SALES_DRAFT",
     "ForecastReport",
     "ForecastService",
