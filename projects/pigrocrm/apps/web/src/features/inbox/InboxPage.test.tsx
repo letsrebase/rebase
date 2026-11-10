@@ -51,28 +51,27 @@ const OLDER = item({
 interface Serving {
   byState?: Partial<Record<string, InboxItem[]>>
   model?: boolean
-  pendingProposals?: unknown[]
   unread?: InboxItem[]
 }
 
-function serving({ byState = {}, model = false, pendingProposals = [], unread = [] }: Serving = {}) {
+function serving({ byState = {}, model = false, unread = [] }: Serving = {}) {
   vi.mocked(api.GET).mockImplementation(((path: string, init?: { params?: { query?: Record<string, unknown>; path?: Record<string, string> } }) => {
     const query = init?.params?.query ?? {}
     if (path === '/api/inbox/items') {
-      if (query.classified === false) return Promise.resolve(ok({ items: unread, next_cursor: null }))
+      if (query.classified === false) return Promise.resolve(ok({ items: unread, next_cursor: null, total: unread.length }))
       const all = byState[String(query.state)] ?? []
       const cursor = query.cursor
+      const total = all.length
       if (cursor === undefined && all.length > 50) {
-        return Promise.resolve(ok({ items: all.slice(0, 50), next_cursor: all[49]?.id }))
+        return Promise.resolve(ok({ items: all.slice(0, 50), next_cursor: all[49]?.id, total }))
       }
-      return Promise.resolve(ok({ items: cursor === undefined ? all : all.slice(50), next_cursor: null }))
+      return Promise.resolve(ok({ items: cursor === undefined ? all : all.slice(50), next_cursor: null, total }))
     }
     if (path === '/api/inbox/items/{item_id}') {
       const id = init?.params?.path?.item_id
       if (id === 'zip1') return Promise.resolve(ok(detail({ id: 'zip1', original_name: 'lotto.zip', file_type: 'zip' })))
       return Promise.resolve(ok(detail({ id })))
     }
-    if (path === '/api/proposals') return Promise.resolve(ok({ items: pendingProposals }))
     if (path === '/api/settings/ai-model') return Promise.resolve(ok({ enabled: model }))
     return Promise.resolve(ok(undefined))
   }) as never)
@@ -83,11 +82,15 @@ function askedPaths(): unknown[] {
   return vi.mocked(api.GET).mock.calls.map((call) => (call as unknown as [string])[0])
 }
 
-/** The `state` of every `GET /api/inbox/items` made so far. */
+/** The `state` of every page of the list asked for so far (the counts of one item are not pages). */
 function askedStates(): unknown[] {
   return vi.mocked(api.GET).mock.calls.flatMap((call) => {
-    const [path, init] = call as unknown as [string, { params?: { query?: { state?: unknown } } }?]
-    return path === '/api/inbox/items' ? [init?.params?.query?.state] : []
+    const [path, init] = call as unknown as [
+      string,
+      { params?: { query?: { state?: unknown; limit?: number } } }?,
+    ]
+    const query = init?.params?.query
+    return path === '/api/inbox/items' && query?.limit === 50 ? [query.state] : []
   })
 }
 
@@ -141,6 +144,14 @@ describe('the list of «In arrivo»', () => {
     expect(asked).not.toContain('new')
   })
 
+  it('wears each tab’s total, from the API and not from what is loaded', async () => {
+    serving({ byState: { new: [NEW_RECEIPT], proposed: [PROPOSED], filed: [], duplicate: [OLDER], discarded: [OLDER, OLDER] } })
+    page()
+    expect(await screen.findByRole('tab', { name: /Da gestire\s*2/ })).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: /Scartati e doppioni\s*3/ })).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: 'Archiviati' })).toBeInTheDocument()
+  })
+
   it('moves to another tab through the router’s callback', async () => {
     serving()
     const { onTabChange } = page()
@@ -155,10 +166,9 @@ describe('the list of «In arrivo»', () => {
     expect(screen.getAllByRole('row')).toHaveLength(2)
   })
 
-  it('shows the amount a proposal read, and nothing for an item with none', async () => {
+  it('shows the amount an item states, and nothing for an item with none', async () => {
     serving({
-      byState: { proposed: [PROPOSED], new: [NEW_RECEIPT] },
-      pendingProposals: [{ id: 'p1', inbox_item_id: PROPOSED.id, proposed_fields: { total: '1464.00', currency: 'EUR' } }],
+      byState: { proposed: [{ ...PROPOSED, amount: '1464.00', currency: 'EUR' }], new: [NEW_RECEIPT] },
     })
     page()
     expect(await screen.findByText('1.464,00 €')).toBeInTheDocument()
@@ -215,7 +225,7 @@ describe('the list of «In arrivo»', () => {
     page()
     await screen.findByText('doc-0.pdf')
     expect(screen.getAllByRole('row')).toHaveLength(51)
-    await userEvent.click(screen.getByRole('button', { name: 'Mostra altri' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Mostra altri (60 in tutto)' }))
     await waitFor(() => expect(screen.getAllByRole('row')).toHaveLength(61))
   })
 

@@ -3,6 +3,7 @@ a sales XML waits in the issued review, and the model is off until an administra
 The model is `ScriptedModel` (conftest), never a provider."""
 
 import json
+from decimal import Decimal
 from typing import Any
 
 from fastapi.testclient import TestClient
@@ -188,3 +189,41 @@ def test_the_test_button_makes_one_call_and_reports_what_it_cost(
     assert (body["ok"], body["input_tokens"], body["output_tokens"]) == (True, 12, 2)
     assert logged_in.get("/api/settings/ai-model").json()["spent_today_eur"] != "0.000000"
     assert len(model_call.requests) == 1
+
+
+def test_the_list_carries_the_total_of_the_filter_and_each_amount_that_is_known(
+    logged_in: TestClient, model_call: ScriptedModel, api_session: Session
+) -> None:
+    """REB-991: `total` counts what the filter matches whatever the page holds, and an item states
+    its amount when a waiting proposal read one or a FatturaPA says it."""
+    api_session.add(LegalEntity(legal_name="Chiara Bianchi", vat_number=SELLER_VAT, country="IT"))
+    api_session.flush()
+    _switch_on(logged_in)
+    model_call.say(json.dumps(RECEIPT_ANSWER))
+    receipt = _upload(logged_in, ("scontrino.pdf", _pdf("Totale 48,00")))[0]
+    invoice = _upload(logged_in, ("fattura.xml", INVOICE))[0]
+    plain = _upload(logged_in, ("estratto.csv", b"data;importo\n2026-10-01;10,00\n"))[0]
+
+    page = logged_in.get("/api/inbox/items", params={"limit": 2}).json()
+    assert (len(page["items"]), page["total"]) == (2, 3)
+    assert (
+        logged_in.get(
+            "/api/inbox/items", params={"limit": 2, "cursor": page["next_cursor"]}
+        ).json()["total"]
+        == 3
+    )
+    assert logged_in.get("/api/inbox/items", params={"state": "proposed"}).json()["total"] == 1
+    assert logged_in.get("/api/inbox/items", params={"kind": "receipt"}).json()["total"] == 1
+
+    by_id = {i["id"]: i for i in logged_in.get("/api/inbox/items").json()["items"]}
+    assert (Decimal(by_id[receipt["id"]]["amount"]), by_id[receipt["id"]]["currency"]) == (
+        Decimal("48"),
+        "EUR",
+    )
+    assert (Decimal(by_id[invoice["id"]]["amount"]), by_id[invoice["id"]]["currency"]) == (
+        Decimal("1000.00"),
+        "EUR",
+    )
+    assert by_id[plain["id"]]["amount"] is None
+    detail = logged_in.get(f"/api/inbox/items/{invoice['id']}").json()
+    assert Decimal(detail["amount"]) == Decimal("1000.00")

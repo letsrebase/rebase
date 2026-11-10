@@ -54,8 +54,11 @@ export function useInboxList(tab: InboxTab, kind: InboxKind | null) {
     .flatMap((query) => query.data?.pages.flatMap((page) => page.items) ?? [])
     .sort((a, b) => (a.id < b.id ? 1 : a.id > b.id ? -1 : 0))
   const failed = lists.find((query) => query.isError)
+  // What the filter matches in all: each state's own total, read off the page last fetched.
+  const total = lists.reduce((sum, query) => sum + (query.data?.pages.at(-1)?.total ?? 0), 0)
   return {
     items,
+    total,
     isLoading: lists.some((query) => query.isPending),
     isError: failed !== undefined,
     error: failed?.error,
@@ -71,27 +74,33 @@ export function useInboxList(tab: InboxTab, kind: InboxKind | null) {
 }
 
 /**
- * How many items wait for a person: the number beside «In arrivo» in the sidebar and in «Altro».
- * The API answers only what the reader may see, so the count is theirs too. Two reads of one
- * page (new and proposed), refreshed every minute.
+ * How many items each state holds, as the API counts them (`total` of a one-item page, REB-991):
+ * the number the tabs wear and the sidebar's count is made of. The reader's own, refreshed every
+ * minute; a failed read draws nothing and is asked again on the next tick.
  */
-export function useWaitingCount(): number {
+export function useStateTotals(): Partial<Record<InboxState, number>> {
   const { data } = useQuery({
     queryKey: queryKeys.inboxCount,
     staleTime: 30_000,
     refetchInterval: 60_000,
-    // A count is a nicety: a failure draws nothing and is asked again on the next tick.
     retry: false,
     queryFn: async () => {
-      const [fresh, proposed] = await Promise.all(
-        (['new', 'proposed'] as const).map((state) =>
-          unwrap(api.GET('/api/inbox/items', { params: { query: { state, limit: COUNT_LIMIT } } })),
+      const states: readonly InboxState[] = ['new', 'proposed', 'filed', 'duplicate', 'discarded']
+      const pages = await Promise.all(
+        states.map((state) =>
+          unwrap(api.GET('/api/inbox/items', { params: { query: { state, limit: 1 } } })),
         ),
       )
-      return (fresh?.items.length ?? 0) + (proposed?.items.length ?? 0)
+      return Object.fromEntries(states.map((state, index) => [state, pages[index]?.total ?? 0]))
     },
   })
-  return data ?? 0
+  return data ?? {}
+}
+
+/** How many items wait for a person: the number beside «In arrivo» in the sidebar and in «Altro». */
+export function useWaitingCount(): number {
+  const totals = useStateTotals()
+  return (totals.new ?? 0) + (totals.proposed ?? 0)
 }
 
 /** How many items nobody has said what they are yet: what «Leggi i documenti in attesa» would read. */

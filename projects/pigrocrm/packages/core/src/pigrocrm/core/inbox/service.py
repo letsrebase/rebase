@@ -3,6 +3,8 @@ MCP, and a read answers metadata only). Writing is `uploads.InboxUploads`, readi
 is `classifier.InboxClassifier`."""
 
 from collections.abc import Sequence
+from decimal import Decimal, InvalidOperation
+from typing import Any
 from uuid import UUID
 
 from sqlalchemy import select, update
@@ -34,6 +36,7 @@ DUPLICATE_ACTION = "mark_inbox_item_duplicate"
 KIND_ACTION = "set_inbox_item_kind"
 
 _WAITING = ("new", "proposed")
+_INVOICE_KINDS = ("sales_invoice", "supplier_invoice", "credit_note")
 _STATEMENT_FILES = ("csv", "xls", "xlsx", "camt053")
 _CERTAIN_KIND = "il tipo l'ha letto il file stesso, con dati certi: non si cambia"
 _WITHDRAWN = "Il documento e' stato rivisto da una persona"
@@ -56,20 +59,79 @@ def _text(value: UUID | None) -> str | None:
     return None if value is None else str(value)
 
 
+def _decimal(value: object) -> Decimal | None:
+    """A figure a reader or a file wrote, as the decimal it names; `None` for anything else."""
+    if isinstance(value, bool) or not isinstance(value, int | float | str):
+        return None
+    try:
+        return Decimal(str(value))
+    except InvalidOperation:
+        return None
+
+
+def _invoices_amount(parsed: dict[str, Any] | None) -> tuple[Decimal, str] | None:
+    """The sum of a FatturaPA's invoices, when they are all in one currency."""
+    invoices = parsed.get("invoices") if isinstance(parsed, dict) else None
+    if not isinstance(invoices, list) or not invoices:
+        return None
+    totals = [_decimal(invoice.get("total")) for invoice in invoices if isinstance(invoice, dict)]
+    currencies = {invoice.get("currency") for invoice in invoices if isinstance(invoice, dict)}
+    if None in totals or len(totals) != len(invoices) or len(currencies) != 1:
+        return None
+    currency = next(iter(currencies))
+    return sum((t for t in totals if t is not None), Decimal(0)), str(currency or "EUR")
+
+
 def attach_proposals(session: Session, reads: Sequence[InboxItemRead]) -> list[InboxItemRead]:
     """Each item of `reads` with the proposal waiting for a person on it, when it has one (an
-    item in `proposed` links to its proposal, design § 3.5). The item was read by somebody who
-    may see it, and so is its proposal."""
+    item in `proposed` links to its proposal, design § 3.5), and with the amount it states when
+    that is known: the total that proposal read, or the sum of a FatturaPA's invoices (REB-991).
+    The item was read by somebody who may see it, and so is its proposal."""
     ids = [read.id for read in reads if read.state == "proposed"]
-    pending: dict[UUID, UUID] = {}
+    pending: dict[UUID, tuple[UUID, Decimal | None, str | None]] = {}
     if ids:
         rows = session.execute(
-            select(Proposal.inbox_item_id, Proposal.id).where(
+            select(Proposal.inbox_item_id, Proposal.id, Proposal.proposed_fields).where(
                 Proposal.inbox_item_id.in_(ids), Proposal.status == "pending"
             )
         )
-        pending = {item_id: proposal_id for item_id, proposal_id in rows if item_id is not None}
-    return [read.model_copy(update={"proposal_id": pending.get(read.id)}) for read in reads]
+        for item_id, proposal_id, fields in rows:
+            if item_id is None:
+                continue
+            read_fields = fields if isinstance(fields, dict) else {}
+            currency = read_fields.get("currency")
+            pending[item_id] = (
+                proposal_id,
+                _decimal(read_fields.get("total")),
+                str(currency) if currency else "EUR",
+            )
+    certain_ids = [
+        read.id
+        for read in reads
+        if read.file_type in ("xml", "p7m") and read.kind in _INVOICE_KINDS and read.state == "new"
+    ]
+    parsed: dict[UUID, tuple[Decimal, str]] = {}
+    if certain_ids:
+        for item_id, fields in session.execute(
+            select(InboxItem.id, InboxItem.parsed_fields).where(InboxItem.id.in_(certain_ids))
+        ):
+            amount = _invoices_amount(fields)
+            if amount is not None:
+                parsed[item_id] = amount
+    out = []
+    for read in reads:
+        changes: dict[str, Any] = {}
+        if read.id in pending:
+            proposal_id, total, currency = pending[read.id]
+            changes = {
+                "proposal_id": proposal_id,
+                "amount": total,
+                "currency": currency if total is not None else None,
+            }
+        elif read.id in parsed:
+            changes = {"amount": parsed[read.id][0], "currency": parsed[read.id][1]}
+        out.append(read.model_copy(update=changes))
+    return out
 
 
 class InboxService:
@@ -80,8 +142,13 @@ class InboxService:
     def get(self, item_id: UUID, actor: Actor) -> InboxItemDetail:
         item = visible_item(self.session, item_id, actor)
         read = InboxItemDetail.model_validate(item)
+        attached = attach_proposals(self.session, [read])[0]
         return read.model_copy(
-            update={"proposal_id": attach_proposals(self.session, [read])[0].proposal_id}
+            update={
+                "proposal_id": attached.proposal_id,
+                "amount": attached.amount,
+                "currency": attached.currency,
+            }
         )
 
     # ---- what a person (or an agent) says about an item (design § 6, «classify») ----------
@@ -267,4 +334,5 @@ class InboxService:
         return InboxItemPage(
             items=attach_proposals(self.session, [InboxItemRead.model_validate(i) for i in items]),
             next_cursor=items[-1].id if len(rows) > query.limit and items else None,
+            total=self.repo.count(query, visible_to(actor)),
         )

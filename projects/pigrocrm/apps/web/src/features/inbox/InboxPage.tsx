@@ -30,7 +30,6 @@ import {
 } from '@rebase/ui/table'
 import { useMediaQuery } from '@rebase/ui/use-media-query'
 import { formatAmount } from '@/features/proposals/fields'
-import { useProposals } from '@/features/proposals/queries'
 import { toProblem } from '@/lib/api'
 import { useAuth, useCanWrite, useIsAdmin } from '@/lib/auth'
 import { useLegalEntity } from '@/lib/legalEntity'
@@ -50,6 +49,7 @@ import {
   whyLine,
   type InboxItem,
   type InboxKind,
+  type InboxState,
   type InboxTab,
 } from './labels'
 import {
@@ -59,6 +59,7 @@ import {
   useInboxList,
   useModelReads,
   useSetKind,
+  useStateTotals,
   useUnreadCount,
 } from './queries'
 import { useUploader, type UploadRow } from './useUploader'
@@ -115,6 +116,19 @@ function Document({ item, me, admin }: { item: InboxItem; me: string | null; adm
       </div>
     </div>
   )
+}
+
+/** The amount an item states, in euros as the API sent it («1.464,00 €»), or nothing. */
+function amountOf(item: InboxItem): string {
+  return item.amount == null ? '' : (formatAmount(item.amount, item.currency) ?? '')
+}
+
+/** What a tab holds in all: the totals of the states it lists. */
+function tabCount(
+  states: readonly InboxState[],
+  totals: Partial<Record<InboxState, number>>,
+): number {
+  return states.reduce((sum, state) => sum + (totals[state] ?? 0), 0)
 }
 
 function StateCell({ item }: { item: InboxItem }) {
@@ -186,20 +200,13 @@ export function InboxPage({
   const picker = useRef<HTMLInputElement>(null)
 
   const list = useInboxList(tab, kind)
-  const pending = useProposals('pending', { enabled: tab === 'pending' })
+  const totals = useStateTotals()
   const modelReads = useModelReads()
   const unread = useUnreadCount(modelReads)
   const classify = useClassifyPending()
   const uploader = useUploader()
   const discard = useDiscardItem()
   const assign = useSetKind()
-
-  const amounts = new Map<string, string>()
-  for (const proposal of pending.data?.items ?? []) {
-    if (proposal.inbox_item_id === null) continue
-    const total = formatAmount(proposal.proposed_fields.total, proposal.proposed_fields.currency)
-    if (total !== null) amounts.set(proposal.inbox_item_id, total)
-  }
 
   const items = list.items.filter(
     (candidate) =>
@@ -289,6 +296,11 @@ export function InboxPage({
           {TABS.map((candidate) => (
             <TabsTrigger key={candidate.id} value={candidate.id}>
               {candidate.label}
+              {tabCount(candidate.states, totals) > 0 ? (
+                <span className="ml-2 tabular-nums text-muted-foreground">
+                  {tabCount(candidate.states, totals)}
+                </span>
+              ) : null}
             </TabsTrigger>
           ))}
         </TabsList>
@@ -462,7 +474,7 @@ export function InboxPage({
                   </TableCell>
                   <TableCell className="whitespace-nowrap">{kindWord(row)}</TableCell>
                   <TableCell className="whitespace-nowrap text-right tabular-nums">
-                    {amounts.get(row.id) ?? ''}
+                    {amountOf(row)}
                   </TableCell>
                   <TableCell>
                     <StateCell item={row} />
@@ -484,7 +496,7 @@ export function InboxPage({
                 <Document item={row} me={me} admin={admin} />
                 <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
                   <span>{kindWord(row)}</span>
-                  <span className="tabular-nums">{amounts.get(row.id) ?? ''}</span>
+                  <span className="tabular-nums">{amountOf(row)}</span>
                 </div>
                 <StateCell item={row} />
               </button>
@@ -495,8 +507,8 @@ export function InboxPage({
 
       {list.hasMore ? (
         <LoadMore
-          label="Mostra altri"
-          message={`Mostrati ${documents(list.items.length)}, ce ne sono altri.`}
+          label={`Mostra altri (${list.total} in tutto)`}
+          message={`Mostrati ${list.items.length} di ${documents(list.total)}.`}
           isFetchingMore={list.isFetchingMore}
           hasError={false}
           error={null}
