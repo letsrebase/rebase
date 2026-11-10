@@ -20,11 +20,14 @@ from pigrocrm.core.inbox.classifier import InboxClassifier
 from pigrocrm.core.inbox.filetypes import ACCEPTED_DESCRIPTION
 from pigrocrm.core.inbox.issued import InboxIssuedImport
 from pigrocrm.core.inbox.schemas import (
+    InboxDiscard,
+    InboxDuplicate,
     InboxItemDetail,
     InboxItemKind,
     InboxItemPage,
     InboxItemRead,
     InboxItemState,
+    InboxKindSet,
     InboxListQuery,
     InboxUploadResult,
 )
@@ -162,6 +165,35 @@ def list_items(
 @router.get("/items/{item_id}", response_model=InboxItemDetail)
 def get_item(item_id: UUID, session: SessionDep, actor: ActorDep) -> InboxItemDetail:
     return InboxService(session).get(item_id, actor)
+
+
+@router.post("/items/{item_id}/discard", response_model=InboxItemRead)
+def discard_item(
+    item_id: UUID, data: InboxDiscard, session: SessionDep, actor: ActorDep
+) -> InboxItemRead:
+    """Puts an item that waits aside, with the reason. It stays in the inbox, readable, with
+    its file; a proposal waiting on it is rejected. Answers the item as it is when it was
+    already discarded; 409 for one that was filed or is a duplicate."""
+    return InboxService(session).discard(item_id, data, actor)
+
+
+@router.post("/items/{item_id}/duplicate", response_model=InboxItemRead)
+def mark_item_duplicate(
+    item_id: UUID, data: InboxDuplicate, session: SessionDep, actor: ActorDep
+) -> InboxItemRead:
+    """Says an item that waits is a copy of `original_id`, an item the caller sees that is not a
+    duplicate itself. Answers the item as it is when it already was that copy's."""
+    return InboxService(session).mark_duplicate(item_id, data, actor)
+
+
+@router.post("/items/{item_id}/kind", response_model=InboxItemRead)
+def set_item_kind(
+    item_id: UUID, data: InboxKindSet, session: SessionDep, actor: ActorDep
+) -> InboxItemRead:
+    """Says what an item that waits is, and for which legal entity. Nothing becomes a record:
+    the item waits for the module that files that kind. A kind that a FatturaPA decided by
+    itself is not changed (409), and a proposal waiting on the item is rejected."""
+    return InboxService(session).set_kind(item_id, data, actor)
 
 
 @router.post("/items/{item_id}/classify", response_model=InboxItemRead)

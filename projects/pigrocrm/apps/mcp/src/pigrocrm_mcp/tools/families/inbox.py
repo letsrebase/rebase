@@ -8,9 +8,14 @@ from uuid import UUID
 
 from mcp.server import MCPServer
 
-from pigrocrm.core.inbox.schemas import InboxItemKind, InboxItemState, InboxListQuery
+from pigrocrm.core.inbox.schemas import (
+    InboxItemKind,
+    InboxItemState,
+    InboxListQuery,
+    InboxPickableKind,
+)
 from pigrocrm.core.proposals.schemas import InboxProposalTargetType
-from pigrocrm_mcp.annotations import ADDITIVE, READ_ONLY
+from pigrocrm_mcp.annotations import ADDITIVE, DESTRUCTIVE, READ_ONLY
 from pigrocrm_mcp.context import McpContext
 from pigrocrm_mcp.tools import inbox
 from pigrocrm_mcp.tools.params import BoundedLimit, Confidence, literal_arg
@@ -74,3 +79,36 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
                 "proposed_fields": fields,
             },
         )
+
+    @mcp.tool(annotations=ADDITIVE)
+    @guard
+    def set_inbox_item_kind(
+        item_id: str, kind: str | None = None, legal_entity_id: str | None = None
+    ) -> dict[str, Any]:
+        """Say what a waiting inbox item is and for which legal entity (one of the two at least):
+        nothing is filed. `kind`: sales_invoice (an XML), supplier_invoice, credit_note, receipt,
+        bank_statement, contract, tax_document, payslip, other. A kind read from a FatturaPA's
+        data does not change; a proposal waiting on the item makes a kind change fail.
+        """
+        return inbox.set_kind(
+            context,
+            item_id,
+            literal_arg("kind", kind, InboxPickableKind),
+            legal_entity_id,
+        )
+
+    @mcp.tool(annotations=DESTRUCTIVE)
+    @guard
+    def discard_inbox_item(item_id: str, reason: str) -> dict[str, Any]:
+        """Put a waiting inbox item aside with the reason. It stays readable; there is no way back
+        from here. The same file uploaded again is a duplicate of it.
+        """
+        return inbox.discard(context, item_id, reason)
+
+    @mcp.tool(annotations=DESTRUCTIVE)
+    @guard
+    def mark_inbox_item_duplicate(item_id: str, original_id: str) -> dict[str, Any]:
+        """Say a waiting inbox item is a copy of `original_id`, an item that is not a copy itself.
+        There is no way back from here.
+        """
+        return inbox.mark_duplicate(context, item_id, original_id)

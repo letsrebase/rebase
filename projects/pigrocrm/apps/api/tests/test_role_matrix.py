@@ -594,6 +594,10 @@ ROWS: list[Row] = [
     # --- reading what arrived (REB-972): it spends the model, so a token needs `full_access` ---
     Row("POST", "/api/inbox/classify"),
     Row("POST", "/api/inbox/items/{item_id}/classify"),
+    # --- what a person says about an item that waits (REB-984): `require_write`; agents too ---
+    Row("POST", "/api/inbox/items/{item_id}/discard", body={"reason": "matrice"}),
+    Row("POST", "/api/inbox/items/{item_id}/duplicate", body={"original_id": "__FAKE__"}),
+    Row("POST", "/api/inbox/items/{item_id}/kind", body={"kind": "other"}),
     # --- a sales invoice of the inbox written on the register: the import's own gate ---
     Row("POST", "/api/inbox/items/{item_id}/issued-import", admin_only=True, body={}),
     Row(
@@ -1095,6 +1099,9 @@ AGENT_REACHABLE: frozenset[tuple[str, str]] = frozenset(
         ("POST", "/api/invoices"),
         ("POST", "/api/invoices/{invoice_id}/artifacts"),
         ("POST", "/api/invoices/{invoice_id}/confirm"),
+        ("POST", "/api/inbox/items/{item_id}/discard"),
+        ("POST", "/api/inbox/items/{item_id}/duplicate"),
+        ("POST", "/api/inbox/items/{item_id}/kind"),
         ("POST", "/api/people"),
         ("POST", "/api/people/{person_id}/restore"),
         ("POST", "/api/proposals"),

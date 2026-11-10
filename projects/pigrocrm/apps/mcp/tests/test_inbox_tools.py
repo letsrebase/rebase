@@ -287,3 +287,102 @@ async def test_a_proposal_from_the_inbox_is_refused_in_words_when_it_does_not_ho
     assert wrong_kind.is_error and "supplier_invoice" in wrong_kind.content[0].text
     assert no_total.is_error and "total" in no_total.content[0].text
     assert not_hers.is_error and "non trovato" in not_hers.content[0].text
+
+
+async def test_the_three_tools_that_say_something_about_an_item_are_annotated_and_take_no_bytes(
+    server: Any,
+) -> None:
+    async with Client(server) as client:
+        tools = {tool.name: tool for tool in (await client.list_tools()).tools}
+    assert tools["set_inbox_item_kind"].annotations.destructive_hint is False  # type: ignore[union-attr]
+    for name in ("discard_inbox_item", "mark_inbox_item_duplicate"):
+        assert tools[name].annotations.destructive_hint is True  # type: ignore[union-attr]
+    for name in ("set_inbox_item_kind", "discard_inbox_item", "mark_inbox_item_duplicate"):
+        assert not {"content", "data", "file", "bytes", "base64"} & set(
+            tools[name].input_schema.get("properties", {})
+        )
+
+
+async def test_an_agent_says_what_an_item_is_discards_one_and_marks_a_copy(
+    mcp_session: Session, marco: User, uploaded: list[dict[str, Any]], tmp_path: Path
+) -> None:
+    xml, copy, pdf = uploaded
+    async with Client(_server_of(mcp_session, marco, tmp_path)) as client:
+        kind = await client.call_tool(
+            "set_inbox_item_kind", {"item_id": pdf["id"], "kind": "bank_statement"}
+        )
+        discarded = await client.call_tool(
+            "discard_inbox_item", {"item_id": pdf["id"], "reason": "Estratto di un altro conto"}
+        )
+        again = await client.call_tool(
+            "discard_inbox_item", {"item_id": pdf["id"], "reason": "Estratto di un altro conto"}
+        )
+        no_reason = await client.call_tool(
+            "discard_inbox_item", {"item_id": xml["id"], "reason": "  "}
+        )
+        wrong_kind = await client.call_tool(
+            "set_inbox_item_kind", {"item_id": xml["id"], "kind": "archive"}
+        )
+        already_copy = await client.call_tool(
+            "mark_inbox_item_duplicate", {"item_id": copy["id"], "original_id": xml["id"]}
+        )
+        other = await client.call_tool(
+            "mark_inbox_item_duplicate", {"item_id": copy["id"], "original_id": pdf["id"]}
+        )
+    assert _payload(kind)["kind"] == "bank_statement"
+    assert (_payload(discarded)["state"], _payload(discarded)["reason"]) == (
+        "discarded",
+        "Estratto di un altro conto",
+    )
+    assert _payload(again)["state"] == "discarded"
+    assert no_reason.is_error
+    assert wrong_kind.is_error and "supplier_invoice" in wrong_kind.content[0].text
+    assert not already_copy.is_error  # idempotent for the same original
+    assert other.is_error  # already the copy of another file
+
+
+async def test_an_agent_leaves_an_item_with_a_proposal_to_a_person(
+    mcp_session: Session, marco: User, unread: dict[str, Any], tmp_path: Path
+) -> None:
+    async with Client(_server_of(mcp_session, marco, tmp_path)) as client:
+        proposed = await client.call_tool(
+            "propose_inbox_item",
+            {
+                "item_id": unread["id"],
+                "kind": "receipt",
+                "excerpt": "Scontrino 42 totale 48,00",
+                "confidence": 0.8,
+                "fields": {"issue_date": "2026-11-03", "total": 48},
+            },
+        )
+        assert not proposed.is_error, proposed.content[0].text
+        refused = [
+            await client.call_tool("discard_inbox_item", {"item_id": unread["id"], "reason": "No"}),
+            await client.call_tool(
+                "set_inbox_item_kind", {"item_id": unread["id"], "kind": "supplier_invoice"}
+            ),
+        ]
+        after = _payload(await client.call_tool("get_inbox_item", {"item_id": unread["id"]}))
+    for result in refused:
+        assert result.is_error and "proposta in attesa" in result.content[0].text
+    assert (after["state"], after["kind"]) == ("proposed", "receipt")
+
+
+async def test_another_member_cannot_say_anything_about_an_item_they_do_not_see(
+    mcp_session: Session, giulia: User, uploaded: list[dict[str, Any]], tmp_path: Path
+) -> None:
+    async with Client(_server_of(mcp_session, giulia, tmp_path)) as client:
+        results = [
+            await client.call_tool(
+                "discard_inbox_item", {"item_id": uploaded[2]["id"], "reason": "x"}
+            ),
+            await client.call_tool(
+                "set_inbox_item_kind", {"item_id": uploaded[2]["id"], "kind": "receipt"}
+            ),
+            await client.call_tool(
+                "mark_inbox_item_duplicate",
+                {"item_id": uploaded[2]["id"], "original_id": uploaded[0]["id"]},
+            ),
+        ]
+    for result in results:
+        assert result.is_error and "non trovato" in result.content[0].text
