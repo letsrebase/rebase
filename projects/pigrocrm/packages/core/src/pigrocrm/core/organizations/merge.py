@@ -50,6 +50,7 @@ from pigrocrm.core.notes.models import Note
 from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.people.models import Person
 from pigrocrm.core.proposals.models import Proposal
+from pigrocrm.core.purchases.models import Purchase
 from pigrocrm.core.tasks.models import Task
 
 ENTITY = "organization"
@@ -77,6 +78,7 @@ REFERENCES: tuple[Reference, ...] = (
     Reference("people", _col(Person, "customer_id")),
     Reference("documents", _col(Document, "customer_id")),
     Reference("due_items", _col(DueItem, "organization_id")),
+    Reference("purchases", _col(Purchase, "supplier_id")),
     Reference("engagements_freelancer", _col(Engagement, "freelancer_id")),
     Reference("engagements_client", _col(Engagement, "client_organization_id")),
 )
