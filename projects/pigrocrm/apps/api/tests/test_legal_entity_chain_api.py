@@ -177,7 +177,7 @@ def test_every_list_route_narrows_to_one_legal_entity(
     me = str(logged_in.get("/api/auth/me").json()["id"])
     for deal, day in ((deal_a, "2026-03-02"), (deal_b, "2026-03-03")):
         cost = logged_in.post(
-            "/api/costs",
+            "/api/purchases",
             json={
                 "deal_id": deal,
                 "category_id": category,
@@ -199,7 +199,7 @@ def test_every_list_route_narrows_to_one_legal_entity(
         )
         assert hours.status_code == 201, hours.text
     shared = logged_in.post(
-        "/api/costs",
+        "/api/purchases",
         json={
             "category_id": category,
             "date": "2026-03-04",
@@ -216,7 +216,7 @@ def test_every_list_route_narrows_to_one_legal_entity(
         "/api/contracts",
         "/api/documents",
         "/api/invoices",
-        "/api/costs",
+        "/api/purchases",
         "/api/time-entries",
     ):
         on_default = _ids(logged_in, path, legal_entity_id=default)
@@ -228,8 +228,8 @@ def test_every_list_route_narrows_to_one_legal_entity(
         assert _ids(logged_in, path, legal_entity_id=str(uuid4())) == set(), path
         assert logged_in.get(path, params={"legal_entity_id": "non-un-id"}).status_code == 422, path
     # The shared cost is in the whole list and in neither azienda's.
-    assert shared.json()["id"] in _ids(logged_in, "/api/costs")
-    assert shared.json()["id"] not in _ids(logged_in, "/api/costs", legal_entity_id=default)
+    assert shared.json()["id"] in _ids(logged_in, "/api/purchases")
+    assert shared.json()["id"] not in _ids(logged_in, "/api/purchases", legal_entity_id=default)
 
     # The calendar: the hours through their deal, the activities untouched.
     whole = logged_in.get("/api/calendar", params={"month": "2026-03", "all": "true"}).json()
@@ -260,7 +260,7 @@ def test_the_openapi_document_declares_the_legal_entity_on_every_list_and_the_pr
         "/api/contracts",
         "/api/documents",
         "/api/invoices",
-        "/api/costs",
+        "/api/purchases",
         "/api/time-entries",
         "/api/calendar",
         "/api/search",
@@ -268,5 +268,5 @@ def test_the_openapi_document_declares_the_legal_entity_on_every_list_and_the_pr
         names = {p["name"] for p in schema["paths"][path]["get"].get("parameters", [])}
         assert "legal_entity_id" in names, path
     assert "get" in schema["paths"]["/api/legal-entities/suggestion"]
-    for model in ("OrganizationRead", "DealRead", "ContractRead", "DocumentRead", "CostRead"):
+    for model in ("OrganizationRead", "DealRead", "ContractRead", "DocumentRead", "PurchaseRead"):
         assert "legal_entity_id" in schema["components"]["schemas"][model]["properties"], model

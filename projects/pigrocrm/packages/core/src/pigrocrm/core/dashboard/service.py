@@ -99,7 +99,7 @@ _BUSINESS_ENTITIES: frozenset[str] = frozenset(
         "approval",
         "proposal",
         "time_entry",
-        "cost",
+        "purchase",
     }
 )
 # Slice 8 §2.1's six buckets, labelled once here: the code is the contract, the label is
@@ -135,7 +135,7 @@ _MODULE_ENTITIES: dict[str, frozenset[str]] = {
     "deals": frozenset({"deal"}),
     "contracts": frozenset({"contract", "contract_expense", "work_unit", "approval"}),
     "time": frozenset({"time_entry"}),
-    "costs": frozenset({"cost"}),
+    "purchases": frozenset({"purchase"}),
     "staff": frozenset({"staff_member", "payroll_settings"}),
     "collaborators": frozenset({"engagement"}),
 }

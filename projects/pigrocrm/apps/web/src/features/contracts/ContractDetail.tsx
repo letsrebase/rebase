@@ -176,8 +176,8 @@ export function ContractDetail() {
               />
             </div>
             {/* The expenses pick their category from the cost categories: a surface of the
-                contracts and of the costs, drawn only when both are on (REB-953). */}
-            {modules.on('costs') && (
+                contracts and of the purchases, drawn only when both are on (REB-953). */}
+            {modules.on('purchases') && (
               <div className="lg:col-span-2">
                 <ExpensesSection contractId={row.id} currency={row.currency} />
               </div>

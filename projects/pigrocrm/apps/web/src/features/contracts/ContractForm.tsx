@@ -77,7 +77,7 @@ const DRAWN_FIELDS = [
 
 /**
  * One dialog behind both «Nuovo contratto» and «Modifica». It owns its mutations, like
- * `CostForm`, so the caller's handler and the form's own `mutate` can never both fire a
+ * `PurchaseForm`, so the caller's handler and the form's own `mutate` can never both fire a
  * POST. The state is not a field here: it moves through its own action on the page
  * (`ContractStateActions`), one named act and one row in the timeline.
  */

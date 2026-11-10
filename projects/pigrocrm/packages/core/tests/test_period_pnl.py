@@ -16,14 +16,11 @@ from pigrocrm.core.analytics.schemas import PeriodPnlQuery
 from pigrocrm.core.analytics.service import AnalyticsService
 from pigrocrm.core.deals.models import Deal
 from pigrocrm.core.errors import ValidationFailed
+from pigrocrm.core.purchases.schemas import PurchaseCreate
+from pigrocrm.core.purchases.service import PurchaseService
 from pigrocrm.core.storage.local import LocalFileStorage
-from pigrocrm.core.timetracking.costs import CostService
 from pigrocrm.core.timetracking.locks import PeriodLockService
-from pigrocrm.core.timetracking.schemas import (
-    CostCreate,
-    PeriodLockCreate,
-    TimeEntryCreate,
-)
+from pigrocrm.core.timetracking.schemas import PeriodLockCreate, TimeEntryCreate
 from pigrocrm.core.timetracking.service import TimeEntryService
 
 READER = Actor(id=None, type="user", role="readonly")
@@ -114,8 +111,8 @@ def test_a_general_expense_has_its_own_row_and_touches_no_deal(
     assert before.closed.gross_margin == Decimal("1800.00")
     assert before.in_progress.gross_margin == Decimal("-550.00")
 
-    CostService(db_session).create(
-        CostCreate(
+    PurchaseService(db_session).create(
+        PurchaseCreate(
             deal_id=None,
             category_id=seeded_category_id,
             date=TODAY,
@@ -138,8 +135,8 @@ def test_a_customer_filter_excludes_general_expenses_entirely(
 ) -> None:
     """A general expense belongs to no customer by definition, so scoping to one must not
     show a share of it -- which would be apportionment through the back door."""
-    CostService(db_session).create(
-        CostCreate(
+    PurchaseService(db_session).create(
+        PurchaseCreate(
             deal_id=None,
             category_id=seeded_category_id,
             date=TODAY,
@@ -170,7 +167,7 @@ def test_each_quantity_is_attributed_by_its_own_date(
     seeded_user_id: UUID,
     seeded_category_id: UUID,
 ) -> None:
-    """Revenue by `invoices.issue_date`, costs by `costs.date`, labour cost by
+    """Revenue by `invoices.issue_date`, costs by `purchases.date`, labour cost by
     `time_entries.date`. Not by the deal's date, which does not exist, and not by one
     common date, which none of the three has.
 
@@ -203,8 +200,8 @@ def test_each_quantity_is_attributed_by_its_own_date(
         ),
         WRITER,
     )
-    CostService(db_session).create(
-        CostCreate(
+    PurchaseService(db_session).create(
+        PurchaseCreate(
             deal_id=seeded_deal_id,
             category_id=seeded_category_id,
             date=DAY_BEFORE,
@@ -215,8 +212,8 @@ def test_each_quantity_is_attributed_by_its_own_date(
     )
     # A general expense one day before the window, so `general_expenses` is subject to the
     # same boundary as every other row rather than to the whole table.
-    CostService(db_session).create(
-        CostCreate(
+    PurchaseService(db_session).create(
+        PurchaseCreate(
             deal_id=None,
             category_id=seeded_category_id,
             date=DAY_BEFORE,
@@ -442,8 +439,8 @@ def test_by_accrual_period_the_revenue_lands_in_the_month_the_work_belongs_to(
     figure in it would be revenue silently dropped. Costs keep their own date, so a cost
     dated today stays in this month under both readings."""
     deal_id = _won_deal_with_period_invoice(db_session, local_storage)
-    CostService(db_session).create(
-        CostCreate(
+    PurchaseService(db_session).create(
+        PurchaseCreate(
             deal_id=deal_id,
             category_id=seeded_category_id,
             date=TODAY,
@@ -510,7 +507,7 @@ def test_without_the_time_module_the_report_has_no_labour_and_no_hours(
     db_session: Session, open_deal_with_hours: UUID, closed_deal_with_invoice: UUID
 ) -> None:
     service = AnalyticsService(db_session)
-    everything = frozenset({"deals", "contracts", "time", "costs", "taxes"})
+    everything = frozenset({"deals", "contracts", "time", "purchases", "taxes"})
     on = service.period_pnl(PERIOD, READER, everything)
     off = service.period_pnl(PERIOD, READER, everything - {"time"})
 

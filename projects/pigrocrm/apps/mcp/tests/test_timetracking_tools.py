@@ -215,3 +215,64 @@ async def test_the_timer_is_the_agents_clock_too(
             "get_timeline", {"entity_type": "time_entry", "entity_id": entry["id"]}
         )
         assert timeline.structured_content["entries"][0]["actor_type"] == "mcp"
+
+
+async def test_purchase_tools_replace_the_cost_tools(server, mcp_session: Session) -> None:
+    """REB-993: a purchase of every kind is registered, read, cancelled and archived over MCP,
+    and no cost tool is left registered."""
+    from pigrocrm.core.organizations.schemas import OrganizationCreate
+    from pigrocrm.core.organizations.service import OrganizationService
+    from pigrocrm.core.timetracking.models import CostCategory
+
+    category = CostCategory(name="Software acquisti MCP", position=0)
+    mcp_session.add(category)
+    mcp_session.flush()
+    supplier = OrganizationService(mcp_session).create(
+        OrganizationCreate(legal_name="Vendor MCP Srl", roles=["supplier"]), HUMAN_ACTOR
+    )
+    async with Client(server) as client:
+        names = {tool.name for tool in (await client.list_tools()).tools}
+        assert {
+            "create_purchase",
+            "update_purchase",
+            "cancel_purchase",
+            "archive_purchase",
+            "restore_purchase",
+            "get_purchase",
+            "list_purchases",
+        } <= names
+        assert not {name for name in names if name.endswith("_cost") or name.endswith("_costs")}
+
+        invoice = (
+            await client.call_tool(
+                "create_purchase",
+                {
+                    "purchase": {
+                        "kind": "invoice",
+                        "supplier_id": str(supplier.id),
+                        "category_id": str(category.id),
+                        "date": "2026-03-10",
+                        "amount": "122.00",
+                        "description": "Licenza",
+                        "vat_lines": [
+                            {"rate": "22.00", "taxable_amount": "100.00", "vat_amount": "22.00"}
+                        ],
+                    }
+                },
+            )
+        ).structured_content
+        assert invoice["kind"] == "invoice" and invoice["vat_lines"][0]["rate"] == "22.00"
+
+        read = (
+            await client.call_tool("get_purchase", {"purchase_id": invoice["id"]})
+        ).structured_content
+        assert read["number"] is None and read["cost_amount"] == "122.00"
+        listed = (
+            await client.call_tool("list_purchases", {"supplier_id": str(supplier.id)})
+        ).structured_content
+        assert [item["id"] for item in listed["items"]] == [invoice["id"]]
+
+        cancelled = (
+            await client.call_tool("cancel_purchase", {"purchase_id": invoice["id"]})
+        ).structured_content
+        assert cancelled["status"] == "cancelled"

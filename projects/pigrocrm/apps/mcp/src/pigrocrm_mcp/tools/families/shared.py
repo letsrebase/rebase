@@ -56,7 +56,7 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
         count; if `total_is_minimum` is true the count is a minimum and the rest is in the
         entity's own list. `legal_entity_id` restricts organizations, people (via the
         customer), deals, documents and invoices to that company, but not tasks, which have
-        none; if omitted, it searches the whole space. It does not search contracts, costs,
+        none; if omitted, it searches the whole space. It does not search contracts, purchases,
         proposals or mail.
         """
         # `term` is a bare `str` with no `Annotated` bound, following the

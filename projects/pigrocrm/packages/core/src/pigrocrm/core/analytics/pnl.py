@@ -177,7 +177,7 @@ def period_pnl(
     """Aggregated over a date window, optionally scoped to one customer.
 
     Each quantity is attributed to the period by **its own** date: revenue by
-    `invoices.issue_date`, costs by `costs.date`, labour cost by
+    `invoices.issue_date`, costs by `purchases.date`, labour cost by
     `time_entries.date`. Not by the deal's date, which does not exist, and not by one
     common date, which none of the three has. `query.base` offers a second reading
     of the revenue alone (ORB-61): by the accrual period the invoice declares,

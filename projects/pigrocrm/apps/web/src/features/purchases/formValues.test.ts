@@ -1,0 +1,229 @@
+import { describe, expect, it } from 'vitest'
+import {
+  cleanVatLines,
+  defaultPurchaseFormValues,
+  fieldsFor,
+  isForeignCurrency,
+  isZeroRate,
+  purchaseToFormValues,
+  toPurchaseRequestBody,
+  type PurchaseFormValues,
+} from './formValues'
+import type { Purchase } from './queries'
+
+const KEEP_ALL = () => true
+
+function values(native: Record<string, unknown>): PurchaseFormValues {
+  const base = defaultPurchaseFormValues(new Date(2026, 2, 5))
+  return { ...base, native: { ...base.native, ...native } }
+}
+
+describe('the fields each kind draws', () => {
+  const keys = (kind: Parameters<typeof fieldsFor>[0], foreign = false) =>
+    fieldsFor(kind, foreign).map((field) => field.key)
+
+  it('gives an invoice and a credit note the document fields and the recap flags', () => {
+    for (const kind of ['invoice', 'credit_note'] as const) {
+      expect(keys(kind)).toEqual(
+        expect.arrayContaining(['number', 'iva_period', 'stamp_duty', 'withholding_rate', 'fund_rate', 'split_payment', 'reverse_charge']),
+      )
+      expect(keys(kind)).not.toContain('merchant_name')
+    }
+  })
+
+  it('gives a receipt and an expense the total only', () => {
+    for (const kind of ['receipt', 'expense'] as const) {
+      expect(keys(kind)).toContain('merchant_name')
+      expect(keys(kind)).not.toContain('iva_period')
+      expect(keys(kind)).not.toContain('stamp_duty')
+      expect(keys(kind)).not.toContain('split_payment')
+    }
+  })
+
+  it('adds the foreign block only for a foreign currency', () => {
+    expect(keys('expense')).not.toContain('exchange_rate')
+    expect(keys('expense', true)).toEqual(
+      expect.arrayContaining(['currency_amount', 'exchange_rate', 'exchange_rate_date']),
+    )
+    expect(isForeignCurrency('EUR')).toBe(false)
+    expect(isForeignCurrency('')).toBe(false)
+    expect(isForeignCurrency(' usd ')).toBe(true)
+  })
+})
+
+describe('the VAT recap', () => {
+  it('reads a zero rate off its digits', () => {
+    expect(['0', '0.00', '00', '.0'].map(isZeroRate)).toEqual([true, true, true, true])
+    expect(['', '22', '4.00', '0.5', 'x'].map(isZeroRate)).toEqual([false, false, false, false, false])
+  })
+
+  it('drops blank rows and sends the nature on a zero rate only', () => {
+    expect(
+      cleanVatLines([
+        { rate: '22', nature: 'N1', taxable_amount: '100', vat_amount: '22', deductible_share: '100' },
+        { rate: '0', nature: ' N2.2 ', taxable_amount: '50', vat_amount: '0', deductible_share: '' },
+        { rate: '22', nature: '', taxable_amount: '', vat_amount: '', deductible_share: '100' },
+      ]),
+    ).toEqual([
+      { rate: '22', taxable_amount: '100', vat_amount: '22', deductible_share: '100' },
+      { rate: '0', nature: 'N2.2', taxable_amount: '50', vat_amount: '0', deductible_share: '100' },
+    ])
+  })
+})
+
+describe('toPurchaseRequestBody', () => {
+  it('sends the kind on create and the recap of a document, as typed', () => {
+    const body = toPurchaseRequestBody(
+      values({
+        kind: 'invoice',
+        supplier_id: 's1',
+        category_id: 'cat1',
+        amount: '122.00',
+        description: 'Hosting',
+        vat_lines: [
+          { rate: '22', nature: '', taxable_amount: '100.00', vat_amount: '22.00', deductible_share: '100' },
+        ],
+      }),
+      { isRenderedCustomKey: KEEP_ALL },
+    )
+    expect(body).toMatchObject({
+      kind: 'invoice',
+      supplier_id: 's1',
+      amount: '122.00',
+      vat_lines: [{ rate: '22', taxable_amount: '100.00', vat_amount: '22.00', deductible_share: '100' }],
+    })
+    expect(typeof (body.amount as unknown)).toBe('string')
+  })
+
+  it('leaves the supplier, the recap and the document fields out of an expense', () => {
+    const body = toPurchaseRequestBody(
+      values({
+        kind: 'expense',
+        supplier_id: 's1',
+        stamp_duty: '2.00',
+        iva_period: '2026-03-01',
+        merchant_name: 'Bar Roma',
+        vat_lines: [{ rate: '22', nature: '', taxable_amount: '1', vat_amount: '1', deductible_share: '100' }],
+      }),
+      { isRenderedCustomKey: KEEP_ALL },
+    )
+    expect(body).toMatchObject({ kind: 'expense', merchant_name: 'Bar Roma' })
+    for (const key of ['supplier_id', 'stamp_duty', 'iva_period', 'vat_lines']) {
+      expect(body).not.toHaveProperty(key)
+    }
+  })
+
+  it('names the credit-note correction only on a credit note', () => {
+    const native = { supplier_id: 's1', corrects_purchase_id: 'inv1' }
+    expect(
+      toPurchaseRequestBody(values({ ...native, kind: 'credit_note' }), { isRenderedCustomKey: KEEP_ALL }),
+    ).toMatchObject({ corrects_purchase_id: 'inv1' })
+    expect(
+      toPurchaseRequestBody(values({ ...native, kind: 'invoice' }), { isRenderedCustomKey: KEEP_ALL }),
+    ).not.toHaveProperty('corrects_purchase_id')
+  })
+
+  it('sends the foreign block upper-cased for a foreign currency, and none of it in euro', () => {
+    const foreign = toPurchaseRequestBody(
+      values({ currency: 'usd', currency_amount: '110', exchange_rate: '1.10', exchange_rate_date: '2026-03-05' }),
+      { isRenderedCustomKey: KEEP_ALL },
+    )
+    expect(foreign).toMatchObject({ currency: 'USD', currency_amount: '110', exchange_rate: '1.10', exchange_rate_date: '2026-03-05' })
+
+    const euro = toPurchaseRequestBody(
+      values({ currency: 'EUR', currency_amount: '110', exchange_rate: '1.10' }),
+      { isRenderedCustomKey: KEEP_ALL },
+    )
+    expect(euro).not.toHaveProperty('currency_amount')
+    expect(euro).not.toHaveProperty('exchange_rate')
+  })
+})
+
+describe('editing an existing purchase', () => {
+  const PURCHASE = {
+    id: 'p1',
+    kind: 'invoice',
+    status: 'registered',
+    deal_id: 'd1',
+    legal_entity_id: null,
+    category_id: 'cat1',
+    supplier_id: 's1',
+    merchant_name: null,
+    number: 'F-1',
+    date: '2026-03-05',
+    received_on: null,
+    iva_period: null,
+    description: 'Hosting',
+    amount: '122.00',
+    currency: 'EUR',
+    currency_amount: null,
+    exchange_rate: null,
+    exchange_rate_date: null,
+    cost_amount: '100.00',
+    vat_lines: [
+      { rate: '22.00', nature: null, taxable_amount: '100.00', vat_amount: '22.00', deductible_share: '100.00', position: 0 },
+    ],
+    stamp_duty: null,
+    withholding_rate: null,
+    withholding_base: null,
+    withholding_amount: null,
+    fund_rate: null,
+    fund_amount: null,
+    split_payment: false,
+    reverse_charge: false,
+    corrects_purchase_id: null,
+    custom_fields: {},
+  } as unknown as Purchase
+
+  it('seeds the form from the row without the keys the update refuses', () => {
+    const seeded = purchaseToFormValues(PURCHASE)
+    expect(seeded.native).not.toHaveProperty('id')
+    expect(seeded.native).not.toHaveProperty('status')
+    expect(seeded.native).not.toHaveProperty('deal_id')
+    expect(seeded.native).not.toHaveProperty('cost_amount')
+    expect(seeded.native.vat_lines).toEqual([
+      { rate: '22.00', nature: '', taxable_amount: '100.00', vat_amount: '22.00', deductible_share: '100.00' },
+    ])
+  })
+
+  it('sends neither the kind nor an unchanged recap, and the edited column', () => {
+    const initial = purchaseToFormValues(PURCHASE)
+    const edited = { ...initial, native: { ...initial.native, description: 'Hosting 2026' } }
+    const body = toPurchaseRequestBody(edited, { initial, isRenderedCustomKey: KEEP_ALL })
+    expect(body).toMatchObject({ description: 'Hosting 2026', supplier_id: 's1' })
+    expect(body).not.toHaveProperty('kind')
+    expect(body).not.toHaveProperty('vat_lines')
+  })
+
+  it('clears the foreign block of a purchase that moves back to euro', () => {
+    const initial = purchaseToFormValues({
+      ...PURCHASE,
+      currency: 'USD',
+      currency_amount: '110.00',
+      exchange_rate: '1.100000',
+      exchange_rate_date: '2026-03-05',
+    })
+    const body = toPurchaseRequestBody(
+      { ...initial, native: { ...initial.native, currency: 'EUR' } },
+      { initial, isRenderedCustomKey: KEEP_ALL },
+    )
+    expect(body).toMatchObject({
+      currency: 'EUR',
+      currency_amount: null,
+      exchange_rate: null,
+      exchange_rate_date: null,
+    })
+  })
+
+  it('replaces the recap when a row changed', () => {
+    const initial = purchaseToFormValues(PURCHASE)
+    const lines = [{ ...(initial.native.vat_lines as object[])[0]!, vat_amount: '21.00' }]
+    const body = toPurchaseRequestBody(
+      { ...initial, native: { ...initial.native, vat_lines: lines } },
+      { initial, isRenderedCustomKey: KEEP_ALL },
+    )
+    expect(body.vat_lines).toEqual([
+      { rate: '22.00', taxable_amount: '100.00', vat_amount: '21.00', deductible_share: '100.00' },
+    ])
+  })
+})

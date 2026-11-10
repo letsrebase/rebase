@@ -131,7 +131,7 @@ def test_the_operational_dashboard_drops_the_signals_of_a_module_that_is_off(
     everything = codes(None)
     assert {"invoiced_unwon", "won_to_invoice", "overdue_unpaid"} <= set(everything)
 
-    assert codes(frozenset({"contracts", "costs", "taxes"})) == [
+    assert codes(frozenset({"contracts", "purchases", "taxes"})) == [
         "overdue_unpaid",
         "concentration_above_threshold",
     ]
@@ -170,7 +170,7 @@ def test_the_operational_dashboard_leaves_out_what_a_module_that_is_off_owns(
         return {a.entity_type for a in read.recent_activity if a.kind == kind}
 
     try:
-        everything = frozenset({"deals", "contracts", "time", "costs", "taxes"})
+        everything = frozenset({"deals", "contracts", "time", "purchases", "taxes"})
         on = board(everything)
         assert on.week is not None and on.backlog.billable_uninvoiced_hours is not None
         assert mine(on) == {"deal", "time_entry", "contract", "organization"}
@@ -199,7 +199,7 @@ def test_the_catalogue_and_the_preferences_list_only_the_types_a_space_can_recei
     from pigrocrm.core.reminders.preferences import ReminderPreferenceService
 
     actor = Actor(id=None, type="system", role="admin")
-    every_module = frozenset({"deals", "contracts", "time", "costs", "taxes"})
+    every_module = frozenset({"deals", "contracts", "time", "purchases", "taxes"})
     assert off_types(None) == off_types(every_module) == frozenset()
 
     off = off_types(every_module - {"deals", "time", "taxes"})

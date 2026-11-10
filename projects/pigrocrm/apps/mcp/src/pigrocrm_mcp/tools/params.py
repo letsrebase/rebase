@@ -31,10 +31,41 @@ from pigrocrm.core.deals.schemas import DealUpdate, DealValueLineIn
 from pigrocrm.core.errors import ValidationFailed
 from pigrocrm.core.organizations.schemas import OrganizationUpdate
 from pigrocrm.core.people.schemas import PersonUpdate
+from pigrocrm.core.purchases.schemas import PurchaseCreate, PurchaseUpdate
 from pigrocrm.core.search.schemas import PER_CLASS_LIMIT
 from pigrocrm.core.staff.schemas import StaffMemberUpdate
 from pigrocrm.core.tasks.schemas import TaskUpdate
-from pigrocrm.core.timetracking.schemas import YEAR_MAX, YEAR_MIN, CostUpdate, TimeEntryUpdate
+from pigrocrm.core.timetracking.schemas import YEAR_MAX, YEAR_MIN, TimeEntryUpdate
+
+
+def compact(schema: dict[str, Any]) -> dict[str, Any]:
+    """`schema` (already `self_contained`) with what an agent reads as noise left out: the
+    `null` branch of an optional field (a field that is not required is optional), a `null`
+    default, the `pattern` of a decimal and its numeric twin (a money value is a decimal string,
+    `"122.00"`), and the numeric bounds a core schema checks again. The listing is paid for in
+    bytes (`test_mcp_tool_annotations`) and a purchase's schemas are the widest in it."""
+
+    def shrink(node: Any) -> Any:
+        if isinstance(node, list):
+            return [shrink(item) for item in node]
+        if not isinstance(node, dict):
+            return node
+        alternatives = node.get("anyOf")
+        if isinstance(alternatives, list):
+            kept = [a for a in alternatives if a != {"type": "null"}]
+            if len(kept) == 2 and {a.get("type") for a in kept} == {"number", "string"}:
+                node = {k: v for k, v in node.items() if k != "anyOf"} | {"type": "string"}
+            elif len(kept) == 1:
+                node = {k: v for k, v in node.items() if k != "anyOf"} | kept[0]
+        return {
+            key: shrink(value)
+            for key, value in node.items()
+            if not (key == "default" and value is None)
+            and key not in ("pattern", "maxLength", "minimum", "maximum", "exclusiveMinimum")
+        }
+
+    shrunk: dict[str, Any] = shrink(schema)
+    return shrunk
 
 
 def self_contained(schema: dict[str, Any]) -> dict[str, Any]:
@@ -118,7 +149,12 @@ ContractExpenseChanges = Annotated[
     dict[str, Any], WithJsonSchema(ContractExpenseUpdate.model_json_schema())
 ]
 TimeEntryChanges = Annotated[dict[str, Any], WithJsonSchema(TimeEntryUpdate.model_json_schema())]
-CostChanges = Annotated[dict[str, Any], WithJsonSchema(CostUpdate.model_json_schema())]
+PurchaseData = Annotated[
+    dict[str, Any], WithJsonSchema(compact(self_contained(PurchaseCreate.model_json_schema())))
+]
+PurchaseChanges = Annotated[
+    dict[str, Any], WithJsonSchema(compact(self_contained(PurchaseUpdate.model_json_schema())))
+]
 TaskChanges = Annotated[dict[str, Any], WithJsonSchema(TaskUpdate.model_json_schema())]
 EngagementChanges = Annotated[
     dict[str, Any], WithJsonSchema(self_contained(EngagementUpdate.model_json_schema()))

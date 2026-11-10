@@ -28,7 +28,7 @@ EXPECTED = (
     "document",
     "invoice",
     "time_entry",
-    "cost",
+    "purchase",
     # Slice 10 (2026-09-09). A commitment carries custom fields for the reason
     # everything else does: whoever runs the installation knows what they need to record
     # about one, and the alternative is a `note` field holding a form.
@@ -51,7 +51,7 @@ def test_native_fields_names_this_slice_columns() -> None:
     """The names A13 (Task 4A-2) has to defend. Asserted here so that renaming a
     column without revisiting the guard's own test still trips something."""
     assert {"hours", "date", "description"} <= set(native_fields("time_entry"))
-    assert {"amount", "date", "description"} <= set(native_fields("cost"))
+    assert {"amount", "date", "description"} <= set(native_fields("purchase"))
     # REB-358, Greptile-flagged: `status`/`previous_contract_id` are real
     # `contracts` columns `ContractCreate` deliberately does not declare, so they
     # must be reserved here or an administrator could slugify a custom field onto

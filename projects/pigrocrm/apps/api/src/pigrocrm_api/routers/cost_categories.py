@@ -16,7 +16,7 @@ router = APIRouter(
     prefix="/api/cost-categories",
     tags=["cost-categories"],
     responses=PROBLEM_RESPONSES,
-    dependencies=[Depends(get_actor), module_guard("costs")],
+    dependencies=[Depends(get_actor), module_guard("purchases")],
 )
 
 

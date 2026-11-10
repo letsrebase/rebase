@@ -303,7 +303,7 @@ class FiscalEstimate(BaseModel):
 class CashMonth(BaseModel):
     """One month of the cash view: what came in, what is still owed, what sits in
     drafts and proformas, what went out. Amounts are `total` (VAT included: money in
-    the bank), costs are `amount`.
+    the bank), costs are what each purchase costs (`cost_amount`).
 
     `quote` are the same four amounts as a share of the tallest month of their chart, in
     [0, 1], computed here: the browser scales a bar with them and never turns an amount

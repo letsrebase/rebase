@@ -27,7 +27,7 @@ from pigrocrm.core.tenants import (
 from pigrocrm.core.tenants.database import tenant_database_name, tenant_database_url
 from pigrocrm.core.tenants.service import migrate_to_head
 
-ALL_ON = {f"module_{key}": "true" for key in ("deals", "contracts", "time", "costs", "taxes")}
+ALL_ON = {f"module_{key}": "true" for key in ("deals", "contracts", "time", "purchases", "taxes")}
 # `staff` and `collaborators` are on «when the onboarding says so» and nothing asks yet, so a
 # profile reads them as off.
 STAFF_OFF = {"module_staff": "false", "module_collaborators": "false"}
@@ -37,7 +37,7 @@ SOLO = {
     "module_deals": "true",
     "module_contracts": "true",
     "module_time": "false",
-    "module_costs": "true",
+    "module_purchases": "true",
     "module_taxes": "true",
 }
 SHAPE_SQL = text(

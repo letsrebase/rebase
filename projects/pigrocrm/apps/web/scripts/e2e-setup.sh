@@ -98,7 +98,7 @@ with session_factory(engine)() as session:
     # what these two lines do (see `cli.seed_templates` and `routers/cost_categories.
     # seed`), and a second process plus an HTTP round trip would only add two more ways
     # for this step to fail. The cost categories come along because the deal's «Ore» tab
-    # renders `CostsPanel`, whose category picker is empty without them.
+    # renders `PurchasesPanel`, whose category picker is empty without them.
     TemplateService(session).seed_defaults(Actor.system())
     CostCategoryService(session).seed_defaults(Actor.system())
     # The letterhead every rendered PDF carries. `DocumentService.create_from_template`

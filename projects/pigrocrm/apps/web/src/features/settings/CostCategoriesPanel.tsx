@@ -15,7 +15,7 @@ import {
 } from '@rebase/ui/dialog'
 import { Input } from '@rebase/ui/input'
 import { Label } from '@rebase/ui/label'
-import { useCostCategories, type CostCategory } from '@/features/costs/queries'
+import { useCostCategories, type CostCategory } from '@/features/purchases/queries'
 import { fieldErrorFrom, toProblem, type ProblemDetail } from '@/lib/api'
 import {
   useArchiveCostCategory,

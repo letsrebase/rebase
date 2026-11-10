@@ -46,7 +46,7 @@ HAND_MAINTAINED_INDEXES = {
     # column, one of the two shapes autogenerate is known to silently omit.
     "uq_cost_categories_code",
     "ix_time_entries_custom_fields",
-    "ix_costs_custom_fields",
+    "ix_purchases_custom_fields",
     # Same shape as `uq_users_email_lower`: a functional unique index over lower(name).
     "uq_cost_categories_name",
     # Slice 6, migration 0021. A *partial* GIN index over an operator class is a fourth
@@ -171,7 +171,7 @@ def test_every_table_the_slice_needs_exists() -> None:
         "invoice_lines",
         "invoice_counters",
         "time_entries",
-        "costs",
+        "purchases",
         "cost_categories",
         "period_locks",
         "google_accounts",
@@ -220,7 +220,7 @@ def test_hand_maintained_indexes_survive_the_migration(pigrocrm_postgres: Any) -
         "ix_people_custom_fields",
         "ix_deals_custom_fields",
         "ix_time_entries_custom_fields",
-        "ix_costs_custom_fields",
+        "ix_purchases_custom_fields",
     ):
         assert "USING gin" in indexes[gin_index], f"{gin_index} was not created as a GIN index"
 
@@ -3312,3 +3312,212 @@ def test_0085_adds_the_end_to_end_id_column_and_downgrade_removes_it(
         assert _end_to_end_column(url) is False
         upgrade(config, "0085")
         assert _end_to_end_column(url) is True
+
+
+_ENTITY_VISIBLE_DEF = text(
+    "SELECT pg_get_functiondef('entity_visible(text, uuid, boolean)'::regprocedure)"
+)
+
+
+def test_0086_turns_every_cost_into_an_expense_and_downgrade_turns_them_back(
+    pigrocrm_postgres: Any,
+) -> None:
+    """REB-993: the table is renamed with its rows, so a cost keeps its id, `created_at`,
+    description, custom fields and soft delete, and its history, its custom-field definitions
+    and the space's module switch follow it into the new names. What a cost counted is
+    `cost_amount` from the first day."""
+    cost_ids = {
+        "live": "00000000-0000-7000-8000-0000000000f1",
+        "archived": "00000000-0000-7000-8000-0000000000f2",
+        "refund": "00000000-0000-7000-8000-0000000000f3",
+    }
+    category = "00000000-0000-7000-8000-00000000000a"
+    with pigrocrm_postgres.fresh_container() as container:
+        url = container.get_connection_url()
+        config = _alembic_config(url)
+        upgrade(config, "0085")
+        engine = create_engine(url)
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    "INSERT INTO cost_categories (id, name, position, archived, created_at, "
+                    "updated_at) VALUES (:category, 'Viaggi', 0, false, now(), now())"
+                ),
+                {"category": category},
+            )
+            for key, cost_id in cost_ids.items():
+                connection.execute(
+                    text(
+                        "INSERT INTO costs (id, category_id, date, amount, description, supplier, "
+                        "custom_fields, created_at, updated_at, deleted_at) VALUES (:id, "
+                        ":category, '2026-03-01', :amount, :description, 'Trenitalia', "
+                        "CAST(:custom AS jsonb), '2026-03-05T10:00:00+00', now(), "
+                        "CASE WHEN :archived THEN now() END)"
+                    ),
+                    {
+                        "id": cost_id,
+                        "category": category,
+                        "amount": Decimal("-5.00") if key == "refund" else Decimal("10.50"),
+                        "description": f"cost {key}",
+                        "custom": '{"project": "alpha"}',
+                        "archived": key == "archived",
+                    },
+                )
+                connection.execute(
+                    text(
+                        "INSERT INTO activities (id, entity_type, entity_id, kind, actor_type, "
+                        "payload, occurred_at) VALUES (gen_random_uuid(), 'cost', :id, "
+                        "'created', 'user', '{}', now())"
+                    ),
+                    {"id": cost_id},
+                )
+            connection.execute(
+                text(
+                    "INSERT INTO field_definitions (id, entity_type, key, label, field_type, "
+                    "options, required, position, archived, created_at, updated_at) VALUES "
+                    "(gen_random_uuid(), 'cost', 'project', 'Progetto', 'text', '[]', false, 0, "
+                    "false, now(), now())"
+                )
+            )
+            connection.execute(
+                text(
+                    "INSERT INTO space_settings (key, value, updated_at) "
+                    "VALUES ('module_costs', 'false', now())"
+                )
+            )
+        engine.dispose()
+
+        upgrade(config, "0086")
+
+        engine = create_engine(url)
+        with engine.connect() as connection:
+            rows = {
+                row.id: row
+                for row in connection.execute(
+                    text(
+                        "SELECT id::text AS id, kind, status, merchant_name, description, amount, "
+                        "cost_amount, currency, custom_fields, created_at, deleted_at, supplier_id "
+                        "FROM purchases"
+                    )
+                )
+            }
+            assert set(rows) == set(cost_ids.values())
+            for key, cost_id in cost_ids.items():
+                row = rows[cost_id]
+                assert (row.kind, row.status, row.currency) == ("expense", "registered", "EUR")
+                assert row.merchant_name == "Trenitalia"
+                assert row.description == f"cost {key}"
+                assert row.cost_amount == row.amount
+                assert row.custom_fields == {"project": "alpha"}
+                assert row.created_at.isoformat().startswith("2026-03-05T10:00:00")
+                assert (row.deleted_at is not None) == (key == "archived")
+                assert row.supplier_id is None
+            assert rows[cost_ids["refund"]].amount == Decimal("-5.00")
+            assert not connection.execute(text("SELECT to_regclass('public.costs')")).scalar_one()
+            history = connection.execute(
+                text(
+                    "SELECT count(*) FROM activities WHERE entity_type = 'purchase' "
+                    "AND entity_id::text = ANY(:ids)"
+                ),
+                {"ids": list(cost_ids.values())},
+            ).scalar_one()
+            assert history == 3
+            assert (
+                connection.execute(
+                    text("SELECT count(*) FROM activities WHERE entity_type = 'cost'")
+                ).scalar_one()
+                == 0
+            )
+            assert (
+                connection.execute(
+                    text("SELECT entity_type FROM field_definitions WHERE key = 'project'")
+                ).scalar_one()
+                == "purchase"
+            )
+            assert (
+                connection.execute(
+                    text("SELECT key FROM space_settings WHERE value = 'false'")
+                ).scalar_one()
+                == "module_purchases"
+            )
+            body = connection.execute(_ENTITY_VISIBLE_DEF).scalar_one()
+            assert "WHEN 'purchase'" in body and "FROM purchases c" in body
+            assert "'cost'" not in body and "FROM costs" not in body
+            names = {
+                row[0]
+                for row in connection.execute(
+                    text("SELECT conname FROM pg_constraint WHERE conrelid = 'purchases'::regclass")
+                )
+            }
+            assert {
+                "purchases_pkey",
+                "ck_purchases_amount_not_zero",
+                "purchases_category_id_fkey",
+                "purchases_deal_id_fkey",
+            } <= names
+            assert not [name for name in names if "costs" in name]
+        assert _tables_shape(url, {"purchases", "purchase_vat_lines"}) == (
+            {"purchases", "purchase_vat_lines"},
+            {"purchases", "purchase_vat_lines"},
+            {"purchases", "purchase_vat_lines"},
+        )
+
+        supplier = "00000000-0000-7000-8000-0000000000e1"
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    "INSERT INTO organizations (id, legal_name, country, custom_fields, roles) "
+                    "VALUES (:id, 'Acme Srl', 'IT', '{}', ARRAY['supplier']::varchar[])"
+                ),
+                {"id": supplier},
+            )
+        insert = text(
+            "INSERT INTO purchases (id, kind, category_id, supplier_id, date, amount, "
+            "cost_amount, description, custom_fields) VALUES (gen_random_uuid(), :kind, "
+            ":category, :supplier, '2026-03-02', :amount, :amount, 'x', '{}')"
+        )
+        ok = {"kind": "invoice", "category": category, "supplier": supplier, "amount": 122}
+        with engine.begin() as connection:
+            connection.execute(insert, ok)
+        for bad in (
+            {**ok, "supplier": None},  # an invoice names its supplier
+            {**ok, "amount": -122},  # an invoice is positive
+            {**ok, "kind": "credit_note", "amount": 122},  # a credit note is negative
+            {**ok, "kind": "bill"},  # not a kind
+        ):
+            with pytest.raises(IntegrityError), engine.begin() as connection:
+                connection.execute(insert, bad)
+        engine.dispose()
+
+        downgrade(config, "0085")
+
+        engine = create_engine(url)
+        with engine.connect() as connection:
+            costs = {
+                row.id: row
+                for row in connection.execute(
+                    text("SELECT id::text AS id, supplier, amount, deleted_at FROM costs")
+                )
+            }
+            assert set(cost_ids.values()) <= set(costs)
+            # The supplier's invoice, with no free-text name, stands under the organization's.
+            assert {row.supplier for row in costs.values()} == {"Trenitalia", "Acme Srl"}
+            assert (
+                connection.execute(
+                    text("SELECT entity_type FROM field_definitions WHERE key = 'project'")
+                ).scalar_one()
+                == "cost"
+            )
+            assert (
+                connection.execute(
+                    text("SELECT key FROM space_settings WHERE value = 'false'")
+                ).scalar_one()
+                == "module_costs"
+            )
+            assert not connection.execute(
+                text("SELECT to_regclass('public.purchase_vat_lines')")
+            ).scalar_one()
+            assert "WHEN 'cost'" in connection.execute(_ENTITY_VISIBLE_DEF).scalar_one()
+        engine.dispose()
+        upgrade(config, "0086")
+        assert _tables_shape(url, {"purchases"})[0] == {"purchases"}

@@ -44,7 +44,7 @@ TIMELINE_TABLES = (
     "invoices",
     "contracts",
     "tasks",
-    "costs",
+    "purchases",
     "time_entries",
     "templates",
     "users",

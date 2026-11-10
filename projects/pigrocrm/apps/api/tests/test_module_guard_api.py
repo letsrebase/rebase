@@ -74,7 +74,7 @@ def test_a_space_with_no_profile_has_every_module_on(logged_in: TestClient) -> N
         "deals",
         "contracts",
         "time",
-        "costs",
+        "purchases",
         "taxes",
         "staff",
         "collaborators",
@@ -150,7 +150,7 @@ def test_a_stale_credential_is_still_a_401_not_a_leak_of_which_modules_are_on(
     ("module", "paths"),
     [
         ("contracts", ["/api/contracts", "/api/work-units", "/api/analytics/days"]),
-        ("costs", ["/api/costs", "/api/cost-categories"]),
+        ("purchases", ["/api/purchases", "/api/cost-categories"]),
         ("taxes", ["/api/analytics/fiscal", "/api/analytics/ceilings", "/api/analytics/year"]),
     ],
 )
@@ -173,10 +173,10 @@ def test_a_route_across_modules_exists_only_with_all_of_them_on(logged_in: TestC
     assert proposal.status_code == 404
     assert proposal.json()["code"] == "module_off"
     assert logged_in.post(f"/api/deals/{deal['id']}/contract", json={}).status_code == 404
-    # P&L of a deal needs deals, time and costs.
-    assert _switch(logged_in, on=["contracts"], off=["costs"]).status_code == 200
+    # P&L of a deal needs deals, time and purchases.
+    assert _switch(logged_in, on=["contracts"], off=["purchases"]).status_code == 200
     assert logged_in.get(f"/api/deals/{deal['id']}/pnl").status_code == 404
-    assert _switch(logged_in, on=["costs"]).status_code == 200
+    assert _switch(logged_in, on=["purchases"]).status_code == 200
     assert logged_in.get(f"/api/deals/{deal['id']}/pnl").status_code == 200
 
 
@@ -209,7 +209,7 @@ def test_a_module_with_records_is_switched_off_only_when_the_call_names_it(
     assert _by_key(logged_in)["deals"]["enabled"] is True
     assert _by_key(logged_in)["deals"]["records"] == 1
     # A module that holds nothing needs no confirmation.
-    assert _switch(logged_in, off=["costs"]).status_code == 200
+    assert _switch(logged_in, off=["purchases"]).status_code == 200
 
 
 def test_a_module_cannot_be_on_while_one_it_needs_is_off(logged_in: TestClient) -> None:
@@ -304,14 +304,14 @@ def test_a_contracts_expenses_and_proposals_need_the_contracts_module(
     # Reading and rejecting the queue stay: they touch nothing of the module's.
     assert logged_in.get("/api/proposals").status_code == 200
 
-    assert _switch(logged_in, on=["contracts"], off=["costs"]).status_code == 200
+    assert _switch(logged_in, on=["contracts"], off=["purchases"]).status_code == 200
     expenses = logged_in.get(f"/api/contracts/{ghost}/expenses")
     assert expenses.status_code == 404
     assert expenses.json()["code"] == "module_off"
 
 
 def test_confirm_off_must_name_a_module_that_is_being_switched_off(logged_in: TestClient) -> None:
-    refused = _switch(logged_in, off=["costs"], confirm_off=["deals"])
+    refused = _switch(logged_in, off=["purchases"], confirm_off=["deals"])
 
     assert refused.status_code == 422, refused.text
 
@@ -354,7 +354,7 @@ def test_confirming_a_profile_writes_a_row_for_every_module_and_touches_no_recor
         "deals": False,
         "contracts": True,
         "time": False,
-        "costs": True,
+        "purchases": True,
         "taxes": True,
         "staff": False,
         "collaborators": False,
@@ -363,7 +363,7 @@ def test_confirming_a_profile_writes_a_row_for_every_module_and_touches_no_recor
         "deals": False,
         "contracts": True,
         "time": False,
-        "costs": True,
+        "purchases": True,
         "taxes": True,
         "staff": False,
         "collaborators": False,
@@ -462,7 +462,7 @@ def test_the_onboarding_is_skipped_by_a_full_access_token_and_not_by_one_without
 def test_a_collaborator_cannot_write_modules_or_the_profile(
     collaborator_client: TestClient,
 ) -> None:
-    modules = collaborator_client.put("/api/settings/modules", json={"off": ["costs"]})
+    modules = collaborator_client.put("/api/settings/modules", json={"off": ["purchases"]})
     profile = collaborator_client.put(
         "/api/settings/modules/profile", json={"profile": "solo", "confirm": True}
     )
@@ -477,18 +477,18 @@ def test_an_admin_token_without_full_access_is_refused_and_one_with_it_is_not(
     closed = _agent(logged_in, full_access=False)
     opened = _agent(logged_in, full_access=True)
 
-    refused = closed.put("/api/settings/modules", json={"off": ["costs"]})
+    refused = closed.put("/api/settings/modules", json={"off": ["purchases"]})
     refused_profile = closed.put(
         "/api/settings/modules/profile", json={"profile": "solo", "confirm": True}
     )
     assert refused.status_code == 403 and refused.json()["code"] == "agent_forbidden"
     assert refused_profile.status_code == 403
     assert refused_profile.json()["code"] == "agent_forbidden"
-    assert _by_key(logged_in)["costs"]["enabled"] is True
+    assert _by_key(logged_in)["purchases"]["enabled"] is True
 
-    allowed = opened.put("/api/settings/modules", json={"off": ["costs"]})
+    allowed = opened.put("/api/settings/modules", json={"off": ["purchases"]})
     assert allowed.status_code == 200, allowed.text
-    assert _by_key(logged_in)["costs"]["enabled"] is False
+    assert _by_key(logged_in)["purchases"]["enabled"] is False
     diff = opened.put("/api/settings/modules/profile", json={"profile": "company"})
     assert diff.status_code == 200, diff.text
     assert diff.json()["applied"] is False
@@ -506,7 +506,7 @@ def test_a_collaborators_full_access_token_is_still_refused(
     agent = TestClient(collaborator_client.app, base_url="https://testserver")
     agent.headers["Authorization"] = f"Bearer {made.json()['token']}"
 
-    refused = agent.put("/api/settings/modules", json={"off": ["costs"]})
+    refused = agent.put("/api/settings/modules", json={"off": ["purchases"]})
 
     assert refused.status_code == 403, refused.text
     assert refused.json()["code"] == "permission_denied"

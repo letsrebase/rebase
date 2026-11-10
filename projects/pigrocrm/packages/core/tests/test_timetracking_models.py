@@ -10,12 +10,13 @@ from sqlalchemy import Engine, inspect, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from pigrocrm.core.timetracking.models import Cost, CostCategory, PeriodLock, TimeEntry
+from pigrocrm.core.purchases.models import Purchase
+from pigrocrm.core.timetracking.models import CostCategory, PeriodLock, TimeEntry
 
 
 def test_the_four_tables_exist_with_the_expected_columns(db_engine: Engine) -> None:
     inspector = inspect(db_engine)
-    assert {"time_entries", "costs", "cost_categories", "period_locks"} <= set(
+    assert {"time_entries", "purchases", "cost_categories", "period_locks"} <= set(
         inspector.get_table_names()
     )
     entry_columns = {c["name"] for c in inspector.get_columns("time_entries")}
@@ -50,7 +51,7 @@ def test_numeric_precision_is_the_three_scales_and_never_float(db_engine: Engine
                     "SELECT table_name || '.' || column_name, "
                     "       numeric_precision || ',' || numeric_scale "
                     "FROM information_schema.columns "
-                    "WHERE table_name IN ('time_entries','costs','deals','users') "
+                    "WHERE table_name IN ('time_entries','purchases','deals','users') "
                     "  AND data_type = 'numeric'"
                 )
             ).all()
@@ -58,7 +59,7 @@ def test_numeric_precision_is_the_three_scales_and_never_float(db_engine: Engine
     assert rows["time_entries.hours"] == "8,2"
     assert rows["time_entries.applied_rate"] == "12,6"
     assert rows["time_entries.applied_cost"] == "12,6"
-    assert rows["costs.amount"] == "12,2"
+    assert rows["purchases.amount"] == "12,2"
     assert rows["deals.hourly_rate"] == "12,6"
     assert rows["users.default_hourly_rate"] == "12,6"
     assert rows["users.default_hourly_cost"] == "12,6"
@@ -67,7 +68,7 @@ def test_numeric_precision_is_the_three_scales_and_never_float(db_engine: Engine
         floats = conn.execute(
             text(
                 "SELECT count(*) FROM information_schema.columns "
-                "WHERE table_name IN ('time_entries','costs','cost_categories') "
+                "WHERE table_name IN ('time_entries','purchases','cost_categories') "
                 "  AND data_type IN ('double precision','real')"
             )
         ).scalar_one()
@@ -92,11 +93,11 @@ def test_the_partial_indexes_this_slice_queries_by_exist(db_engine: Engine) -> N
         cost_definitions = {
             name: definition
             for name, definition in conn.execute(
-                text("SELECT indexname, indexdef FROM pg_indexes WHERE tablename = 'costs'")
+                text("SELECT indexname, indexdef FROM pg_indexes WHERE tablename = 'purchases'")
             ).all()
         }
-    assert "deleted_at IS NULL" in cost_definitions["ix_costs_deal_date"]
-    assert "deleted_at IS NULL" in cost_definitions["ix_costs_date"]
+    assert "deleted_at IS NULL" in cost_definitions["ix_purchases_deal_date"]
+    assert "deleted_at IS NULL" in cost_definitions["ix_purchases_date"]
 
 
 def test_a_billed_entry_cannot_be_soft_deleted_even_in_raw_sql(
@@ -161,7 +162,7 @@ def test_cost_amount_may_be_negative_but_never_zero(
     `type` column that multiplies the cases in every sum. Zero is refused, because it
     is neither a cost nor a correction."""
     db_session.add(
-        Cost(
+        Purchase(
             deal_id=seeded_deal_id,
             category_id=seeded_category_id,
             date=date(2026, 3, 1),
@@ -171,7 +172,7 @@ def test_cost_amount_may_be_negative_but_never_zero(
     )
     db_session.flush()
     db_session.add(
-        Cost(
+        Purchase(
             deal_id=None,
             category_id=seeded_category_id,
             date=date(2026, 3, 1),
@@ -181,7 +182,7 @@ def test_cost_amount_may_be_negative_but_never_zero(
     )
     with pytest.raises(IntegrityError) as excinfo:
         db_session.flush()
-    assert "ck_costs_amount_not_zero" in str(excinfo.value)
+    assert "ck_purchases_amount_not_zero" in str(excinfo.value)
     db_session.rollback()
 
 

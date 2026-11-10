@@ -18,9 +18,9 @@ from pigrocrm.core.contracts.models import Contract
 from pigrocrm.core.invoices.schemas import PaymentState
 from pigrocrm.core.invoices.service import InvoiceService
 from pigrocrm.core.organizations.models import Organization
+from pigrocrm.core.purchases.schemas import PurchaseCreate
+from pigrocrm.core.purchases.service import PurchaseService
 from pigrocrm.core.storage.local import LocalFileStorage
-from pigrocrm.core.timetracking.costs import CostService
-from pigrocrm.core.timetracking.schemas import CostCreate
 
 ADMIN = Actor(id=None, type="system", role="admin")
 COLLABORATOR = Actor(id=None, type="mcp", role="collaborator")
@@ -57,8 +57,8 @@ def test_the_year_adds_up_month_by_month_and_costs_are_not_revenue(
     paid = service.set_payment_state(
         invoice_id, PaymentState(payment_status="paid", payment_date=TODAY), ADMIN
     )
-    CostService(db_session).create(
-        CostCreate(
+    PurchaseService(db_session).create(
+        PurchaseCreate(
             category_id=cost_category_id,
             date=TODAY,
             amount=Decimal("120.00"),
@@ -537,7 +537,7 @@ def test_the_estimate_is_not_computed_while_taxes_is_off(
         ADMIN,
     )
     service = AnalyticsService(db_session)
-    every_module = frozenset({"deals", "contracts", "time", "costs", "taxes"})
+    every_module = frozenset({"deals", "contracts", "time", "purchases", "taxes"})
 
     on = service.economic_overview(TODAY.year, ADMIN, modules=every_module)
     off = service.economic_overview(TODAY.year, ADMIN, modules=every_module - {"taxes"})

@@ -44,11 +44,11 @@ interface EntityDetailLayoutProps {
    */
   hours?: ReactNode
   /**
-   * The Costi tab's contents, for a deal whose Ore tab is not there (the `time` module is
-   * off while `costs` is on, REB-953): the costs of a deal sit under Ore, and this is where
+   * The Acquisti tab's contents, for a deal whose Ore tab is not there (the `time` module is
+   * off while `purchases` is on, REB-953): the purchases of a deal sit under Ore, and this is where
    * they are reached when it is gone. Absent means no tab, like every slot above.
    */
-  costs?: ReactNode
+  purchases?: ReactNode
   /**
    * The Economia tab's contents -- a Deal's own profit and loss, or an Organization's as the
    * sum of their deals. Filled by slice 4B; absent for the whole of 4A, which is why it
@@ -104,7 +104,7 @@ export function EntityDetailLayout({
   invoices,
   contracts,
   hours,
-  costs,
+  purchases,
   economics,
   emails,
   tasks,
@@ -129,7 +129,7 @@ export function EntityDetailLayout({
             {invoices && <TabsTrigger value="invoices">Fatture</TabsTrigger>}
             {contracts && <TabsTrigger value="contracts">Contratti</TabsTrigger>}
             {hours && <TabsTrigger value="hours">Ore</TabsTrigger>}
-            {costs && <TabsTrigger value="costs">Costi</TabsTrigger>}
+            {purchases && <TabsTrigger value="purchases">Acquisti</TabsTrigger>}
             {economics && <TabsTrigger value="economics">Economia</TabsTrigger>}
             {/* Before the Email and the Timeline tabs: those two are a record of what
                 already happened, and this is what is still to be done. */}
@@ -167,9 +167,9 @@ export function EntityDetailLayout({
             {hours}
           </TabsContent>
         )}
-        {costs && (
-          <TabsContent value="costs" className="mt-6">
-            {costs}
+        {purchases && (
+          <TabsContent value="purchases" className="mt-6">
+            {purchases}
           </TabsContent>
         )}
         {economics && (

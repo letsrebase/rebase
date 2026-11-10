@@ -43,7 +43,7 @@ function state(over: { deals?: Record<string, unknown>; time?: Record<string, un
       module('deals', 'Deal', { holds_data: true, records: 4, ...over.deals }),
       module('contracts', 'Contratti'),
       module('time', 'Ore', { requires: ['deals'], holds_data: true, records: 12, ...over.time }),
-      module('costs', 'Costi'),
+      module('purchases', 'Acquisti'),
       module('taxes', 'Tasse'),
     ],
   }
@@ -104,9 +104,9 @@ describe('ModulesPanel', () => {
     mockGet.mockReturnValue(ok(state()))
     mockPut.mockReturnValue(ok(state()))
     renderPanel()
-    await user.click(await screen.findByRole('checkbox', { name: 'Costi' }))
+    await user.click(await screen.findByRole('checkbox', { name: 'Acquisti' }))
     await waitFor(() =>
-      expect(mockPut).toHaveBeenCalledWith('/api/settings/modules', { body: { off: ['costs'] } }),
+      expect(mockPut).toHaveBeenCalledWith('/api/settings/modules', { body: { off: ['purchases'] } }),
     )
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   })

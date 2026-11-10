@@ -8,8 +8,8 @@ place that decides *whether* a module is on; each surface asks it and never read
 settings keys itself. Which routes, tools, tabs and jobs belong to a module is each
 surface's own table, in the adapter that owns the surface, since core knows no adapter.
 
-A module that is not built is not listed here: `purchases` and `cash` become rows when the
-card that builds them ships.
+A module that is not built is not listed here: `cash` becomes a row when the card that builds
+it ships.
 """
 
 from collections.abc import Iterable, Mapping
@@ -19,7 +19,7 @@ from typing import Literal, Protocol
 
 from pigrocrm.core.errors import ModuleOff
 
-ModuleKey = Literal["deals", "contracts", "time", "costs", "taxes", "staff", "collaborators"]
+ModuleKey = Literal["deals", "contracts", "time", "purchases", "taxes", "staff", "collaborators"]
 Profile = Literal["solo", "company"]
 
 PROFILES: tuple[Profile, ...] = ("solo", "company")
@@ -73,9 +73,10 @@ MODULES: tuple[Module, ...] = (
         {"solo": False, "company": True},
     ),
     Module(
-        "costs",
-        "Costi",
-        "Costi e categorie di costo.",
+        "purchases",
+        "Acquisti",
+        "Acquisti di ogni tipo con il loro fornitore: fatture, note di credito, ricevute e "
+        "spese, e le categorie di costo.",
         (),
         {"solo": True, "company": True},
     ),
@@ -133,7 +134,7 @@ class _Shaped(Protocol):
     module_deals: bool | None
     module_contracts: bool | None
     module_time: bool | None
-    module_costs: bool | None
+    module_purchases: bool | None
     module_taxes: bool | None
     module_staff: bool | None
     module_collaborators: bool | None

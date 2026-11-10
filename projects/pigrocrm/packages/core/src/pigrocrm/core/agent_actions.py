@@ -84,7 +84,7 @@ AGENT_ALLOWED_ACTIONS: frozenset[str] = frozenset(
         "update_clause_note",
         "set_renewal_assumption",
         "renew_contract",
-        # Time and costs.
+        # Time and purchases.
         "log_time",
         "update_time_entry",
         "delete_time_entry",
@@ -93,10 +93,11 @@ AGENT_ALLOWED_ACTIONS: frozenset[str] = frozenset(
         "stop_timer",
         "update_timer",
         "discard_timer",
-        "create_cost",
-        "update_cost",
-        "delete_cost",
-        "restore_cost",
+        "create_purchase",
+        "update_purchase",
+        "cancel_purchase",
+        "delete_purchase",
+        "restore_purchase",
         # Invoices up to, and not including, the fiscal acts.
         "create_invoice",
         "update_invoice",

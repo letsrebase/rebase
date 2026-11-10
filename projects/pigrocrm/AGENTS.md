@@ -142,7 +142,7 @@ reads is a label in `ACTION_LABELS`. `apps/api/tests/test_role_matrix.py` walks 
 route with an administrator's token and lists the ones it reaches (`AGENT_REACHABLE`).
 
 **A module that is off is guarded once per surface, never by an `if` in a handler (REB-953).**
-`core/modules/registry.py` decides whether `deals`, `contracts`, `time`, `costs` or `taxes` is on
+`core/modules/registry.py` decides whether `deals`, `contracts`, `time`, `purchases` or `taxes` is on
 (a stored `module_*` row over the profile's default, then the dependency `time` -> `deals`);
 each surface asks it in one place. REST: `module_guard(...)` from `pigrocrm_api.deps`, listed
 after `get_actor` on a router or on one route (a route across modules lists all of them), which
@@ -158,6 +158,8 @@ sections. A core read that spans modules (search, the calendar, the customer car
 `describe_space` and `GET /api/settings/modules` answer `onboarding` as `pending`, `skipped` or
 `done`, and choosing a profile is what makes it `done`); the web gate is `OnboardingGate` in
 `routes/app.tsx`, and `e2e-setup.sh` answers it for the seeded space.
+
+**A purchase is anything the space pays for, and `cost_amount` is the only number a reader sums (REB-993).** `core/purchases/` replaced the cost: the table `purchases` is the old `costs` table renamed with its rows (an old cost is kind `expense`, its free-text supplier `merchant_name`, `cost_amount = amount`), plus `purchase_vat_lines` for the VAT recap of an `invoice` or `credit_note`. `PurchaseService` is the one writer: it checks the document (supplier role, a recap that adds up to the total, a credit note negative and linked to an invoice of the same supplier, withholding refused to a flat-rate buyer, which is not a withholding agent, the foreign currency's rate) and **freezes what the purchase costs** from the buyer's pack (`purchases/cost.py`, the one function: ordinary buyer = total less deductible VAT, flat-rate buyer = total plus the integrated VAT on a reverse charge, shared or `non-it` = total) with the pack and regime. The profit and loss, the deal's profit and loss, the cash picture and the late-entry count read `cost_amount` of registered, live rows (`status = 'registered'`), by the document `date`; cancelled and archived rows count nowhere. The monthly `PeriodLock` governs `date` as it governed a cost's. The activity feed and the custom-field definitions say `purchase`, the module switch is `module_purchases`, and `entity_visible`'s branch and the policy follow the rename (`0086_purchases.py`; the test template applies its `rewrite()` to every earlier revision's statements, as it does for `0077`). A fiscal rule the code uses is in the frame's A5 register as verified with its source; one that is not stays out of the code.
 
 **A due item is written by `DueItemService` and nothing else (REB-967).** `due_items` and
 `due_item_settlements` are core, never behind a module: an amount owed or to be received, in or

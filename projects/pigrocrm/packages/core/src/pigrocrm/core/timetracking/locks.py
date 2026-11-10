@@ -169,7 +169,7 @@ class PeriodLockService:
         `None`, meaning "unchanged", not "the epoch".
 
         Takes `entity` and `field` rather than hard-coding them so the `Conflict` names
-        the caller's own table (`time_entry` or `cost`), which is what makes the
+        the caller's own table (`time_entry` or `purchase`), which is what makes the
         problem document actionable on the right screen.
 
         Each month checked is held shared until the caller's transaction ends

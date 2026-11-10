@@ -12,6 +12,22 @@ const MATCHES = 8
 
 export type PickedOrganization = Pick<Organization, 'id' | 'legal_name'>
 
+/** The role the matches are drawn from, and the words the list says it with. Customers when
+ *  none is asked for, which is every caller but the purchase form's supplier. */
+type PickerRole = 'customer' | 'supplier'
+const ROLE_WORDS: Record<PickerRole, { list: string; none: string; more: string }> = {
+  customer: {
+    list: 'Clienti',
+    none: 'Nessun cliente.',
+    more: 'Ci sono altri clienti: scrivi per restringere l’elenco.',
+  },
+  supplier: {
+    list: 'Fornitori',
+    none: 'Nessun fornitore.',
+    more: 'Ci sono altri fornitori: scrivi per restringere l’elenco.',
+  },
+}
+
 /**
  * Picks one customer by asking the server for the ones that match what was typed.
  *
@@ -34,6 +50,7 @@ export function OrganizationPicker({
   onChange,
   selectedName,
   legalEntityId,
+  role,
   placeholder = 'Cerca un cliente per ragione sociale, P.IVA o email…',
   ariaLabel = 'Cerca un cliente',
   disabled = false,
@@ -43,6 +60,7 @@ export function OrganizationPicker({
   onChange: (customer: PickedOrganization | null) => void
   selectedName?: string
   legalEntityId?: string | null
+  role?: PickerRole
   placeholder?: string
   ariaLabel?: string
   disabled?: boolean
@@ -54,7 +72,12 @@ export function OrganizationPicker({
   const settled = useDebounced(typed, SEARCH_DEBOUNCE_MS)
   const chosen = value !== null && value !== ''
   const matches = useOrganizations(
-    { search: settled || undefined, limit: MATCHES, legal_entity_id: legalEntityId ?? undefined },
+    {
+      search: settled || undefined,
+      limit: MATCHES,
+      legal_entity_id: legalEntityId ?? undefined,
+      role,
+    },
     // A chosen customer needs no list of matches.
     { enabled: !chosen },
   )
@@ -85,6 +108,7 @@ export function OrganizationPicker({
   }
 
   const items = matches.data?.items ?? []
+  const words = ROLE_WORDS[role ?? 'customer']
   return (
     <div className="space-y-2">
       <Input
@@ -95,14 +119,14 @@ export function OrganizationPicker({
         disabled={disabled}
         onChange={(event) => setTerm(event.target.value)}
       />
-      <ul aria-label="Clienti" className="max-h-44 divide-y overflow-y-auto border text-sm">
+      <ul aria-label={words.list} className="max-h-44 divide-y overflow-y-auto border text-sm">
         {matches.isError ? (
           <li className="px-3 py-2 text-destructive">La ricerca non è disponibile.</li>
         ) : matches.data === undefined ? (
           <li className="px-3 py-2 text-muted-foreground">Ricerca in corso…</li>
         ) : items.length === 0 ? (
           <li className="px-3 py-2 text-muted-foreground">
-            {settled === '' ? 'Nessun cliente.' : `Nessun risultato per «${settled}»`}
+            {settled === '' ? words.none : `Nessun risultato per «${settled}»`}
           </li>
         ) : (
           items.map((customer) => (
@@ -125,7 +149,7 @@ export function OrganizationPicker({
       </ul>
       {matches.data?.next_cursor != null && (
         <p className="text-xs text-muted-foreground">
-          Ci sono altri clienti: scrivi per restringere l’elenco.
+          {words.more}
         </p>
       )}
     </div>

@@ -189,7 +189,7 @@ async def test_with_every_module_on_every_tool_is_listed(
 ) -> None:
     on = await _names(_server(mcp_session, tmp_path, _settings(), full_access=False))
 
-    assert {"create_deal", "get_deal", "log_time", "create_cost", "get_contract"} <= on
+    assert {"create_deal", "get_deal", "log_time", "create_purchase", "get_contract"} <= on
     assert {"convert_deal_to_contract", "get_deal_pnl", "get_year_overview"} <= on
 
 
@@ -224,9 +224,11 @@ async def test_a_tool_across_modules_exists_only_with_all_of_them_on(
     assert "convert_deal_to_contract" not in only_contracts_off
     assert "preview_deal_contract" not in only_contracts_off
 
-    only_costs_off = await _names(_server(mcp_session, tmp_path, _settings(module_costs=False)))
-    assert {"get_deal", "log_time"} <= only_costs_off
-    assert "get_deal_pnl" not in only_costs_off
+    only_purchases_off = await _names(
+        _server(mcp_session, tmp_path, _settings(module_purchases=False))
+    )
+    assert {"get_deal", "log_time"} <= only_purchases_off
+    assert "get_deal_pnl" not in only_purchases_off
 
     only_time_off = await _names(_server(mcp_session, tmp_path, _settings(module_time=False)))
     assert "get_deal_time_summary" not in only_time_off
@@ -242,7 +244,7 @@ async def test_the_profile_decides_what_a_space_with_no_switch_of_its_own_lists(
     unchosen = await _names(_server(mcp_session, tmp_path, _settings()))
 
     assert not solo & _tools_of("deals") and not solo & _tools_of("time")
-    assert solo >= {"create_contract", "create_cost", "get_year_overview"}
+    assert solo >= {"create_contract", "create_purchase", "get_year_overview"}
     assert "convert_deal_to_contract" not in solo
     assert company == unchosen
     # An explicit switch outranks the profile.
@@ -332,13 +334,13 @@ async def test_set_space_modules_by_an_admin_token_switches_and_a_collaborators_
     collaborator = _server(mcp_session, tmp_path, settings, role="collaborator", full_access=True)
 
     async with Client(collaborator) as client:
-        refused = await client.call_tool("set_space_modules", {"off": ["costs"]})
+        refused = await client.call_tool("set_space_modules", {"off": ["purchases"]})
     assert refused.is_error
     async with Client(admin) as client:
-        switched = await client.call_tool("set_space_modules", {"off": ["costs"]})
+        switched = await client.call_tool("set_space_modules", {"off": ["purchases"]})
         assert not switched.is_error, switched.content
         described = (await client.call_tool("describe_space", {})).structured_content or {}
-    assert {m["key"]: m["enabled"] for m in described["modules"]}["costs"] is False
+    assert {m["key"]: m["enabled"] for m in described["modules"]}["purchases"] is False
 
 
 async def test_skip_space_onboarding_marks_it_skipped_and_is_a_no_op_once_there_is_a_profile(
@@ -383,7 +385,7 @@ async def test_set_space_profile_answers_the_diff_and_applies_nothing_without_co
     assert unchanged["profile"] is None
     assert applied["applied"] is True
     assert after["profile"] == "solo"
-    assert {m["key"]: m["stored"] for m in after["modules"]}["costs"] is True
+    assert {m["key"]: m["stored"] for m in after["modules"]}["purchases"] is True
 
 
 async def test_set_space_modules_refuses_a_module_with_data_the_call_does_not_name(
@@ -408,11 +410,11 @@ async def test_set_space_modules_refuses_a_module_with_data_the_call_does_not_na
 
 
 def test_the_resolver_reads_a_stored_switch_over_the_profile_and_a_dependency_over_both() -> None:
-    assert enabled_modules(_settings(space_profile="solo")) == {"contracts", "costs", "taxes"}
+    assert enabled_modules(_settings(space_profile="solo")) == {"contracts", "purchases", "taxes"}
     assert enabled_modules(_settings(space_profile="solo", module_deals=True)) == {
         "deals",
         "contracts",
-        "costs",
+        "purchases",
         "taxes",
     }
     # A hand-written row cannot make `time` live without `deals`.
@@ -579,7 +581,7 @@ async def test_a_contracts_expense_tools_need_costs_as_well(
 ) -> None:
     expense_tools = {"create_contract_expense", "update_contract_expense", "list_contract_expenses"}
     assert expense_tools <= await _names(_server(mcp_session, tmp_path, _settings()))
-    for off in ("module_costs", "module_contracts"):
+    for off in ("module_purchases", "module_contracts"):
         names = await _names(_server(mcp_session, tmp_path, _settings(**{off: False})))
         assert not expense_tools & names, off
 
@@ -602,7 +604,7 @@ async def test_the_deal_resource_prints_no_economics_while_costs_is_off(
     assert "Direct costs" in on
     assert "## Hours" in on
 
-    async with Client(_server(mcp_session, tmp_path, _settings(module_costs=False))) as client:
+    async with Client(_server(mcp_session, tmp_path, _settings(module_purchases=False))) as client:
         off = (await client.read_resource(uri)).contents[0].text  # type: ignore[union-attr]
     assert "Direct costs" not in off
     assert "## Economics" not in off

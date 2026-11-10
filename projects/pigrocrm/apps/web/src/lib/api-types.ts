@@ -2058,25 +2058,25 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/costs": {
+    "/api/purchases": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        /** List Costs */
-        get: operations["list_costs_api_costs_get"];
+        /** List Purchases */
+        get: operations["list_purchases_api_purchases_get"];
         put?: never;
         /** Create */
-        post: operations["create_api_costs_post"];
+        post: operations["create_api_purchases_post"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/costs/{cost_id}": {
+    "/api/purchases/{purchase_id}": {
         parameters: {
             query?: never;
             header?: never;
@@ -2084,18 +2084,35 @@ export interface paths {
             cookie?: never;
         };
         /** Get */
-        get: operations["get_api_costs__cost_id__get"];
+        get: operations["get_api_purchases__purchase_id__get"];
         put?: never;
         post?: never;
         /** Soft Delete */
-        delete: operations["soft_delete_api_costs__cost_id__delete"];
+        delete: operations["soft_delete_api_purchases__purchase_id__delete"];
         options?: never;
         head?: never;
         /** Update */
-        patch: operations["update_api_costs__cost_id__patch"];
+        patch: operations["update_api_purchases__purchase_id__patch"];
         trace?: never;
     };
-    "/api/costs/{cost_id}/restore": {
+    "/api/purchases/{purchase_id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Cancel */
+        post: operations["cancel_api_purchases__purchase_id__cancel_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/purchases/{purchase_id}/restore": {
         parameters: {
             query?: never;
             header?: never;
@@ -2105,7 +2122,7 @@ export interface paths {
         get?: never;
         put?: never;
         /** Restore */
-        post: operations["restore_api_costs__cost_id__restore_post"];
+        post: operations["restore_api_purchases__purchase_id__restore_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -6241,7 +6258,7 @@ export interface components {
          * CashMonth
          * @description One month of the cash view: what came in, what is still owed, what sits in
          *     drafts and proformas, what went out. Amounts are `total` (VAT included: money in
-         *     the bank), costs are `amount`.
+         *     the bank), costs are what each purchase costs (`cost_amount`).
          *
          *     `quote` are the same four amounts as a share of the tallest month of their chart, in
          *     [0, 1], computed here: the browser scales a bar with them and never turns an amount
@@ -7518,112 +7535,6 @@ export interface components {
             name?: string | null;
             /** Position */
             position?: number | null;
-        };
-        /** CostCreate */
-        CostCreate: {
-            /** Deal Id */
-            deal_id?: string | null;
-            /** Legal Entity Id */
-            legal_entity_id?: string | null;
-            /**
-             * Category Id
-             * Format: uuid
-             */
-            category_id: string;
-            /**
-             * Date
-             * Format: date
-             */
-            date: string;
-            /** Amount */
-            amount: number | string;
-            /** Description */
-            description: string;
-            /** Supplier */
-            supplier?: string | null;
-            /** Document Id */
-            document_id?: string | null;
-            /**
-             * Custom Fields
-             * @default {}
-             */
-            custom_fields: {
-                [key: string]: unknown;
-            };
-        };
-        /** CostPage */
-        CostPage: {
-            /** Items */
-            items: components["schemas"]["CostRead"][];
-            /** Next Cursor */
-            next_cursor: string | null;
-        };
-        /** CostRead */
-        CostRead: {
-            /**
-             * Id
-             * Format: uuid
-             */
-            id: string;
-            /** Deal Id */
-            deal_id: string | null;
-            /** Legal Entity Id */
-            legal_entity_id: string | null;
-            /**
-             * Category Id
-             * Format: uuid
-             */
-            category_id: string;
-            /**
-             * Date
-             * Format: date
-             */
-            date: string;
-            /** Amount */
-            amount: string;
-            /** Description */
-            description: string;
-            /** Supplier */
-            supplier: string | null;
-            /** Document Id */
-            document_id: string | null;
-            /** Custom Fields */
-            custom_fields: {
-                [key: string]: unknown;
-            };
-            /**
-             * Created At
-             * Format: date-time
-             */
-            created_at: string;
-            /**
-             * Updated At
-             * Format: date-time
-             */
-            updated_at: string;
-        };
-        /** CostUpdate */
-        CostUpdate: {
-            /** Deal Id */
-            deal_id?: string | null;
-            /** Legal Entity Id */
-            legal_entity_id?: string | null;
-            /** Category Id */
-            category_id?: string | null;
-            /** Date */
-            date?: string | null;
-            /** Amount */
-            amount?: number | string | null;
-            /** Description */
-            description?: string | null;
-            /** Supplier */
-            supplier?: string | null;
-            /** Document Id */
-            document_id?: string | null;
-            /** Custom Fields */
-            custom_fields?: {
-                [key: string]: unknown;
-            } | null;
         };
         /** CreateTokenRequest */
         CreateTokenRequest: {
@@ -9383,7 +9294,7 @@ export interface components {
              * Entity Type
              * @enum {string}
              */
-            entity_type: "organization" | "person" | "deal" | "document" | "invoice" | "time_entry" | "cost" | "task" | "contract";
+            entity_type: "organization" | "person" | "deal" | "document" | "invoice" | "time_entry" | "purchase" | "task" | "contract";
             /** Key */
             key: string;
             /** Label */
@@ -9420,7 +9331,7 @@ export interface components {
              * Entity Type
              * @enum {string}
              */
-            entity_type: "organization" | "person" | "deal" | "document" | "invoice" | "time_entry" | "cost" | "task" | "contract";
+            entity_type: "organization" | "person" | "deal" | "document" | "invoice" | "time_entry" | "purchase" | "task" | "contract";
             /** Key */
             key: string;
             /** Label */
@@ -11242,7 +11153,7 @@ export interface components {
              * Module
              * @enum {string}
              */
-            module: "deals" | "contracts" | "time" | "costs" | "taxes" | "staff" | "collaborators";
+            module: "deals" | "contracts" | "time" | "purchases" | "taxes" | "staff" | "collaborators";
             /** Label */
             label: string;
             /**
@@ -11267,7 +11178,7 @@ export interface components {
              * Key
              * @enum {string}
              */
-            key: "deals" | "contracts" | "time" | "costs" | "taxes" | "staff" | "collaborators";
+            key: "deals" | "contracts" | "time" | "purchases" | "taxes" | "staff" | "collaborators";
             /**
              * Label
              * @description The module's name as a person reads it (Italian)
@@ -11282,7 +11193,7 @@ export interface components {
              * Requires
              * @description Modules that must be on for this one to be on: `time` needs `deals`
              */
-            requires: ("deals" | "contracts" | "time" | "costs" | "taxes" | "staff" | "collaborators")[];
+            requires: ("deals" | "contracts" | "time" | "purchases" | "taxes" | "staff" | "collaborators")[];
             /**
              * Enabled
              * @description Whether the space has the module on right now
@@ -12718,6 +12629,265 @@ export interface components {
             /** Expected Quantity */
             expected_quantity?: string | null;
         };
+        /** PurchaseCreate */
+        PurchaseCreate: {
+            /**
+             * Kind
+             * @default expense
+             * @enum {string}
+             */
+            kind: "invoice" | "credit_note" | "receipt" | "expense";
+            /** Deal Id */
+            deal_id?: string | null;
+            /** Legal Entity Id */
+            legal_entity_id?: string | null;
+            /**
+             * Category Id
+             * Format: uuid
+             */
+            category_id: string;
+            /** Supplier Id */
+            supplier_id?: string | null;
+            /** Merchant Name */
+            merchant_name?: string | null;
+            /** Number */
+            number?: string | null;
+            /**
+             * Date
+             * Format: date
+             */
+            date: string;
+            /** Received On */
+            received_on?: string | null;
+            /** Iva Period */
+            iva_period?: string | null;
+            /** Description */
+            description: string;
+            /** Amount */
+            amount: number | string;
+            /**
+             * Currency
+             * @default EUR
+             */
+            currency: string;
+            /** Currency Amount */
+            currency_amount?: number | string | null;
+            /** Exchange Rate */
+            exchange_rate?: number | string | null;
+            /** Exchange Rate Date */
+            exchange_rate_date?: string | null;
+            /** Vat Lines */
+            vat_lines?: components["schemas"]["VatLine"][];
+            /** Stamp Duty */
+            stamp_duty?: number | string | null;
+            /** Withholding Rate */
+            withholding_rate?: number | string | null;
+            /** Withholding Base */
+            withholding_base?: number | string | null;
+            /** Withholding Amount */
+            withholding_amount?: number | string | null;
+            /** Fund Rate */
+            fund_rate?: number | string | null;
+            /** Fund Amount */
+            fund_amount?: number | string | null;
+            /**
+             * Split Payment
+             * @default false
+             */
+            split_payment: boolean;
+            /**
+             * Reverse Charge
+             * @default false
+             */
+            reverse_charge: boolean;
+            /** Corrects Purchase Id */
+            corrects_purchase_id?: string | null;
+            /** Inbox Item Id */
+            inbox_item_id?: string | null;
+            /** Document Id */
+            document_id?: string | null;
+            /**
+             * Custom Fields
+             * @default {}
+             */
+            custom_fields: {
+                [key: string]: unknown;
+            };
+        };
+        /** PurchasePage */
+        PurchasePage: {
+            /** Items */
+            items: components["schemas"]["PurchaseRead"][];
+            /** Next Cursor */
+            next_cursor: string | null;
+        };
+        /** PurchaseRead */
+        PurchaseRead: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "invoice" | "credit_note" | "receipt" | "expense";
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "registered" | "cancelled";
+            /** Deal Id */
+            deal_id: string | null;
+            /** Legal Entity Id */
+            legal_entity_id: string | null;
+            /**
+             * Category Id
+             * Format: uuid
+             */
+            category_id: string;
+            /** Supplier Id */
+            supplier_id: string | null;
+            /** Merchant Name */
+            merchant_name: string | null;
+            /** Number */
+            number: string | null;
+            /**
+             * Date
+             * Format: date
+             */
+            date: string;
+            /** Received On */
+            received_on: string | null;
+            /** Iva Period */
+            iva_period: string | null;
+            /** Description */
+            description: string;
+            /** Amount */
+            amount: string;
+            /** Currency */
+            currency: string;
+            /** Currency Amount */
+            currency_amount: string | null;
+            /** Exchange Rate */
+            exchange_rate: string | null;
+            /** Exchange Rate Date */
+            exchange_rate_date: string | null;
+            /** Cost Amount */
+            cost_amount: string;
+            /** Vat Lines */
+            vat_lines: components["schemas"]["VatLineRead"][];
+            /** Stamp Duty */
+            stamp_duty: string | null;
+            /** Withholding Rate */
+            withholding_rate: string | null;
+            /** Withholding Base */
+            withholding_base: string | null;
+            /** Withholding Amount */
+            withholding_amount: string | null;
+            /** Fund Rate */
+            fund_rate: string | null;
+            /** Fund Amount */
+            fund_amount: string | null;
+            /** Split Payment */
+            split_payment: boolean;
+            /** Reverse Charge */
+            reverse_charge: boolean;
+            /** Corrects Purchase Id */
+            corrects_purchase_id: string | null;
+            /** Inbox Item Id */
+            inbox_item_id: string | null;
+            /** Document Id */
+            document_id: string | null;
+            /** Buyer Pack Id */
+            buyer_pack_id: string | null;
+            /** Buyer Pack Version */
+            buyer_pack_version: string | null;
+            /** Buyer Regime Code */
+            buyer_regime_code: string | null;
+            /** Custom Fields */
+            custom_fields: {
+                [key: string]: unknown;
+            };
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /**
+         * PurchaseUpdate
+         * @description A partial update. `vat_lines`, when sent, replaces the whole recap; the frozen cost is
+         *     recomputed whenever the amount, the recap or a flag changes.
+         */
+        PurchaseUpdate: {
+            /** Kind */
+            kind?: ("invoice" | "credit_note" | "receipt" | "expense") | null;
+            /** Deal Id */
+            deal_id?: string | null;
+            /** Legal Entity Id */
+            legal_entity_id?: string | null;
+            /** Category Id */
+            category_id?: string | null;
+            /** Supplier Id */
+            supplier_id?: string | null;
+            /** Merchant Name */
+            merchant_name?: string | null;
+            /** Number */
+            number?: string | null;
+            /** Date */
+            date?: string | null;
+            /** Received On */
+            received_on?: string | null;
+            /** Iva Period */
+            iva_period?: string | null;
+            /** Description */
+            description?: string | null;
+            /** Amount */
+            amount?: number | string | null;
+            /** Currency */
+            currency?: string | null;
+            /** Currency Amount */
+            currency_amount?: number | string | null;
+            /** Exchange Rate */
+            exchange_rate?: number | string | null;
+            /** Exchange Rate Date */
+            exchange_rate_date?: string | null;
+            /** Vat Lines */
+            vat_lines?: components["schemas"]["VatLine"][] | null;
+            /** Stamp Duty */
+            stamp_duty?: number | string | null;
+            /** Withholding Rate */
+            withholding_rate?: number | string | null;
+            /** Withholding Base */
+            withholding_base?: number | string | null;
+            /** Withholding Amount */
+            withholding_amount?: number | string | null;
+            /** Fund Rate */
+            fund_rate?: number | string | null;
+            /** Fund Amount */
+            fund_amount?: number | string | null;
+            /** Split Payment */
+            split_payment?: boolean | null;
+            /** Reverse Charge */
+            reverse_charge?: boolean | null;
+            /** Corrects Purchase Id */
+            corrects_purchase_id?: string | null;
+            /** Inbox Item Id */
+            inbox_item_id?: string | null;
+            /** Document Id */
+            document_id?: string | null;
+            /** Custom Fields */
+            custom_fields?: {
+                [key: string]: unknown;
+            } | null;
+        };
         /**
          * PushConfigRead
          * @description What the app needs to offer push: whether this installation can send it at all and
@@ -13789,17 +13959,17 @@ export interface components {
              * On
              * @description Modules to switch on
              */
-            on?: ("deals" | "contracts" | "time" | "costs" | "taxes" | "staff" | "collaborators")[];
+            on?: ("deals" | "contracts" | "time" | "purchases" | "taxes" | "staff" | "collaborators")[];
             /**
              * Off
              * @description Modules to switch off
              */
-            off?: ("deals" | "contracts" | "time" | "costs" | "taxes" | "staff" | "collaborators")[];
+            off?: ("deals" | "contracts" | "time" | "purchases" | "taxes" | "staff" | "collaborators")[];
             /**
              * Confirm Off
              * @description The modules in `off` that hold records and that the caller agrees to switch off: one that holds data and is not named here is refused. Their data stays
              */
-            confirm_off?: ("deals" | "contracts" | "time" | "costs" | "taxes" | "staff" | "collaborators")[];
+            confirm_off?: ("deals" | "contracts" | "time" | "purchases" | "taxes" | "staff" | "collaborators")[];
         };
         /** SpaceProfileProposal */
         SpaceProfileProposal: {
@@ -14947,6 +15117,44 @@ export interface components {
             one_off_value: string | null;
             /** Monthly Recurring Value */
             monthly_recurring_value: string | null;
+        };
+        /**
+         * VatLine
+         * @description One VAT recap group: a rate, its nature when the rate is zero, the taxable amount, the
+         *     VAT and the share of it that is deductible (100 unless a rule says otherwise).
+         */
+        VatLine: {
+            /** Rate */
+            rate: number | string;
+            /** Nature */
+            nature?: string | null;
+            /** Taxable Amount */
+            taxable_amount: number | string;
+            /** Vat Amount */
+            vat_amount: number | string;
+            /**
+             * Deductible Share
+             * @default 100.00
+             */
+            deductible_share: number | string;
+        };
+        /** VatLineRead */
+        VatLineRead: {
+            /** Rate */
+            rate: string;
+            /** Nature */
+            nature?: string | null;
+            /** Taxable Amount */
+            taxable_amount: string;
+            /** Vat Amount */
+            vat_amount: string;
+            /**
+             * Deductible Share
+             * @default 100.00
+             */
+            deductible_share: string;
+            /** Position */
+            position: number;
         };
         /**
          * WeekHours
@@ -21527,7 +21735,7 @@ export interface operations {
     list_fields_api_field_definitions_get: {
         parameters: {
             query: {
-                entity_type: "organization" | "person" | "deal" | "document" | "invoice" | "time_entry" | "cost" | "task" | "contract";
+                entity_type: "organization" | "person" | "deal" | "document" | "invoice" | "time_entry" | "purchase" | "task" | "contract";
                 include_archived?: boolean;
             };
             header?: never;
@@ -24874,7 +25082,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                entity_type: "organization" | "person" | "deal" | "document" | "invoice" | "time_entry" | "cost" | "task" | "contract";
+                entity_type: "organization" | "person" | "deal" | "document" | "invoice" | "time_entry" | "purchase" | "task" | "contract";
             };
             cookie?: never;
         };
@@ -31914,7 +32122,7 @@ export interface operations {
             };
         };
     };
-    list_costs_api_costs_get: {
+    list_purchases_api_purchases_get: {
         parameters: {
             query?: {
                 /** @description Filter on custom fields (JSONB), repeatable for several keys: */
@@ -31922,11 +32130,14 @@ export interface operations {
                 limit?: number;
                 cursor?: string | null;
                 deal_id?: string | null;
-                /** @description Only this legal entity's costs; omitted, all, general ones included */
+                /** @description Only this legal entity's purchases; omitted, all, general ones included */
                 legal_entity_id?: string | null;
                 /** @description Only general expenses, that is, without a deal (§7.4) */
                 only_general?: boolean;
                 category_id?: string | null;
+                supplier_id?: string | null;
+                kind?: ("invoice" | "credit_note" | "receipt" | "expense") | null;
+                status?: ("registered" | "cancelled") | null;
                 from?: string | null;
                 to?: string | null;
             };
@@ -31942,7 +32153,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["CostPage"];
+                    "application/json": components["schemas"]["PurchasePage"];
                 };
             };
             /** @description Permission denied: the actor does not have the required role. */
@@ -32044,7 +32255,7 @@ export interface operations {
             };
         };
     };
-    create_api_costs_post: {
+    create_api_purchases_post: {
         parameters: {
             query?: never;
             header?: never;
@@ -32053,7 +32264,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["CostCreate"];
+                "application/json": components["schemas"]["PurchaseCreate"];
             };
         };
         responses: {
@@ -32063,7 +32274,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["CostRead"];
+                    "application/json": components["schemas"]["PurchaseRead"];
                 };
             };
             /** @description Permission denied: the actor does not have the required role. */
@@ -32165,12 +32376,12 @@ export interface operations {
             };
         };
     };
-    get_api_costs__cost_id__get: {
+    get_api_purchases__purchase_id__get: {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                cost_id: string;
+                purchase_id: string;
             };
             cookie?: never;
         };
@@ -32182,7 +32393,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["CostRead"];
+                    "application/json": components["schemas"]["PurchaseRead"];
                 };
             };
             /** @description Permission denied: the actor does not have the required role. */
@@ -32284,12 +32495,12 @@ export interface operations {
             };
         };
     };
-    soft_delete_api_costs__cost_id__delete: {
+    soft_delete_api_purchases__purchase_id__delete: {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                cost_id: string;
+                purchase_id: string;
             };
             cookie?: never;
         };
@@ -32401,18 +32612,18 @@ export interface operations {
             };
         };
     };
-    update_api_costs__cost_id__patch: {
+    update_api_purchases__purchase_id__patch: {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                cost_id: string;
+                purchase_id: string;
             };
             cookie?: never;
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["CostUpdate"];
+                "application/json": components["schemas"]["PurchaseUpdate"];
             };
         };
         responses: {
@@ -32422,7 +32633,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["CostRead"];
+                    "application/json": components["schemas"]["PurchaseRead"];
                 };
             };
             /** @description Permission denied: the actor does not have the required role. */
@@ -32524,12 +32735,12 @@ export interface operations {
             };
         };
     };
-    restore_api_costs__cost_id__restore_post: {
+    cancel_api_purchases__purchase_id__cancel_post: {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                cost_id: string;
+                purchase_id: string;
             };
             cookie?: never;
         };
@@ -32541,7 +32752,126 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["CostRead"];
+                    "application/json": components["schemas"]["PurchaseRead"];
+                };
+            };
+            /** @description Permission denied: the actor does not have the required role. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The requested resource does not exist or was removed. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The request conflicts with the current state of the resource. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    restore_api_purchases__purchase_id__restore_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                purchase_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PurchaseRead"];
                 };
             };
             /** @description Permission denied: the actor does not have the required role. */

@@ -117,7 +117,7 @@ _TEMPLATE = "pigrocrm_template"
 
 
 def _legal_entity_scope_statements() -> list[str]:
-    """`statements()` of revisions 0068 (REB-898), 0070, 0073 to 0076, 0078 to 0081, 0084,
+    """`statements()` of revisions 0068 (REB-898), 0070, 0073 to 0076, 0078 to 0081, 0084, 0086,
     loaded from the files: a revision is a script in `versions/`, not a module on the path. It
     carries the final functions, the policies, `ENABLE`/`FORCE` and the hardening of the definer
     functions, so the template and production cannot disagree on a predicate; the earlier
@@ -135,6 +135,15 @@ def _legal_entity_scope_statements() -> list[str]:
     assert renaming_spec is not None and renaming_spec.loader is not None
     renaming_module = importlib.util.module_from_spec(renaming_spec)
     renaming_spec.loader.exec_module(renaming_module)
+    # REB-993: the same for the table that `costs` became; 0086 says the statements of the
+    # revisions before it in the new names through its `rewrite()`, after the one above.
+    (purchasing,) = versions.glob("*_purchases.py")
+    purchasing_spec = importlib.util.spec_from_file_location(
+        "pigrocrm_migration_purchases", purchasing
+    )
+    assert purchasing_spec is not None and purchasing_spec.loader is not None
+    purchasing_module = importlib.util.module_from_spec(purchasing_spec)
+    purchasing_spec.loader.exec_module(purchasing_module)
     out: list[str] = []
     # 0068 carries the final functions and policies; later revisions that add a table add
     # their own policy statements after it.
@@ -150,12 +159,16 @@ def _legal_entity_scope_statements() -> list[str]:
         ("pigrocrm_migration_0080", "0080_inbox_classification.py"),
         ("pigrocrm_migration_0081", "0081_collaborators.py"),
         ("pigrocrm_migration_0084", "0084_bank_accounts_statements_movements.py"),
+        ("pigrocrm_migration_0086", "0086_purchases.py"),
     ):
         spec = importlib.util.spec_from_file_location(name, versions / file)
         assert spec is not None and spec.loader is not None
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
-        out.extend(renaming_module.rewrite(statement) for statement in module.statements())
+        out.extend(
+            purchasing_module.rewrite(renaming_module.rewrite(statement))
+            for statement in module.statements()
+        )
     return out
 
 

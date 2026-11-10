@@ -10,7 +10,7 @@ import { queryKeys } from '@/lib/query'
  * slice 4's `CostCategoryService`, `PeriodLockService` and the two rate setters on
  * `TimeEntryService`, all of which call `actor.require_admin` and are all deliberately
  * absent from the MCP surface. The read side people share with the rest of the app
- * (`useCostCategories`) already lives in `features/costs/queries.ts` and is imported
+ * (`useCostCategories`) already lives in `features/purchases/queries.ts` and is imported
  * from there, exactly as `PipelinePanel` imports `useStages` from the deals feature.
  */
 export type PeriodLock = components['schemas']['PeriodLockRead']
@@ -109,7 +109,7 @@ export function usePeriodLocks(year?: number) {
 function invalidateAfterLockChange(queryClient: QueryClient) {
   void queryClient.invalidateQueries({ queryKey: ['period-locks'] })
   void queryClient.invalidateQueries({ queryKey: queryKeys.timeEntries() })
-  void queryClient.invalidateQueries({ queryKey: queryKeys.costs() })
+  void queryClient.invalidateQueries({ queryKey: queryKeys.purchases() })
 }
 
 export function useClosePeriod() {

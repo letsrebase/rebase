@@ -17,9 +17,10 @@ from sqlalchemy.orm import Session
 
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.analytics.service import AnalyticsService
+from pigrocrm.core.purchases.schemas import PurchaseCreate
+from pigrocrm.core.purchases.service import PurchaseService
 from pigrocrm.core.storage.local import LocalFileStorage
-from pigrocrm.core.timetracking.costs import CostService
-from pigrocrm.core.timetracking.schemas import CostCreate, TimeEntryCreate
+from pigrocrm.core.timetracking.schemas import TimeEntryCreate
 from pigrocrm.core.timetracking.service import TimeEntryService
 
 READER = Actor(id=None, type="user", role="readonly")
@@ -93,10 +94,10 @@ def test_the_whole_pl_reconciles_with_independent_sql(
             ),
             WRITER,
         )
-    costs = CostService(db_session)
+    costs = PurchaseService(db_session)
     for amount in (Decimal("412.90"), Decimal("77.05")):
         costs.create(
-            CostCreate(
+            PurchaseCreate(
                 deal_id=deal_id,
                 category_id=seeded_category_id,
                 date=date(2026, 3, 1),
@@ -118,7 +119,8 @@ def test_the_whole_pl_reconciles_with_independent_sql(
     ).scalar_one()
     costs = db_session.execute(
         text(
-            "SELECT COALESCE(SUM(amount), 0) FROM costs WHERE deal_id = :id AND deleted_at IS NULL"
+            "SELECT COALESCE(SUM(cost_amount), 0) FROM purchases "
+            "WHERE deal_id = :id AND deleted_at IS NULL AND status = 'registered'"
         ),
         {"id": deal_id},
     ).scalar_one()

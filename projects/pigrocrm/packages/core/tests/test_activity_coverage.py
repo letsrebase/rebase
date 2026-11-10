@@ -50,6 +50,8 @@ from pigrocrm.core.organizations.schemas import OrganizationCreate, Organization
 from pigrocrm.core.organizations.service import OrganizationService
 from pigrocrm.core.people.schemas import PersonCreate, PersonUpdate
 from pigrocrm.core.people.service import PersonService
+from pigrocrm.core.purchases.schemas import PurchaseCreate, PurchaseUpdate
+from pigrocrm.core.purchases.service import PurchaseService
 from pigrocrm.core.reminders.preferences import (
     SPACE_DEFAULTS_ENTITY,
     SPACE_DEFAULTS_ID,
@@ -58,13 +60,7 @@ from pigrocrm.core.reminders.preferences import (
 from pigrocrm.core.reminders.schemas import GENERAL, ReminderPreferenceWrite
 from pigrocrm.core.tasks.schemas import TaskCreate, TaskUpdate
 from pigrocrm.core.tasks.service import TaskService
-from pigrocrm.core.timetracking.costs import CostService
-from pigrocrm.core.timetracking.schemas import (
-    CostCreate,
-    CostUpdate,
-    TimeEntryCreate,
-    TimeEntryUpdate,
-)
+from pigrocrm.core.timetracking.schemas import TimeEntryCreate, TimeEntryUpdate
 from pigrocrm.core.timetracking.service import TimeEntryService
 
 CORE_DIR = Path(__file__).resolve().parents[1] / "src" / "pigrocrm" / "core"
@@ -425,9 +421,9 @@ def _time_entry(session: Session, actor: Actor, ctx: dict[str, UUID]) -> tuple[s
 
 
 def _cost(session: Session, actor: Actor, ctx: dict[str, UUID]) -> tuple[str, UUID]:
-    service = CostService(session)
+    service = PurchaseService(session)
     cost = service.create(
-        CostCreate(
+        PurchaseCreate(
             deal_id=ctx["seed_deal"],
             category_id=ctx["category"],
             date=date(2026, 3, 10),
@@ -436,10 +432,10 @@ def _cost(session: Session, actor: Actor, ctx: dict[str, UUID]) -> tuple[str, UU
         ),
         actor,
     )
-    service.update(cost.id, CostUpdate(description="Licenza annuale"), actor)
+    service.update(cost.id, PurchaseUpdate(description="Licenza annuale"), actor)
     service.soft_delete(cost.id, actor)
     service.restore(cost.id, actor)
-    return "cost", cost.id
+    return "purchase", cost.id
 
 
 def _reminder_defaults(session: Session, actor: Actor, ctx: dict[str, UUID]) -> tuple[str, UUID]:

@@ -17,7 +17,7 @@ router = APIRouter(
     prefix="/api/contracts",
     tags=["contract-expenses"],
     responses=PROBLEM_RESPONSES,
-    dependencies=[Depends(get_actor), module_guard("contracts", "costs")],
+    dependencies=[Depends(get_actor), module_guard("contracts", "purchases")],
 )
 
 

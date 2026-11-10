@@ -37,7 +37,8 @@ from pigrocrm.core.invoices.models import Invoice, InvoiceLine
 from pigrocrm.core.legal_entities.models import LegalEntity
 from pigrocrm.core.money import ZERO_MONEY, line_value, round_money, share, sum_hours, sum_money
 from pigrocrm.core.organizations.models import Organization
-from pigrocrm.core.timetracking.models import Cost, TimeEntry
+from pigrocrm.core.purchases.models import Purchase
+from pigrocrm.core.timetracking.models import TimeEntry
 from pigrocrm.core.work_units.models import WORK_UNIT_COMMITTED_STATUSES, WorkUnit
 
 
@@ -90,8 +91,10 @@ class AnalyticsRepository:
         return round_money(
             Decimal(
                 self.session.execute(
-                    select(func.coalesce(func.sum(Cost.amount), 0)).where(
-                        Cost.deal_id == deal_id, Cost.deleted_at.is_(None)
+                    select(func.coalesce(func.sum(Purchase.cost_amount), 0)).where(
+                        Purchase.deal_id == deal_id,
+                        Purchase.deleted_at.is_(None),
+                        Purchase.status == "registered",
                     )
                 ).scalar_one()
             )
@@ -115,8 +118,8 @@ class AnalyticsRepository:
         """A deal-keyed table narrowed to one legal entity through its deal (REB-630): an
         hour's legal entity is the deal's, so the predicate is the same subquery
         `TimeEntryRepository.list` uses rather than a column that table would copy. A
-        cost has its own `legal_entity_id` (equal to its deal's by `CostService`, indexed)
-        and every cost read in this file uses that column instead."""
+        purchase has its own `legal_entity_id` (equal to its deal's by `PurchaseService`,
+        indexed) and every cost read in this file uses that column instead."""
         if legal_entity_id is None:
             return stmt
         return stmt.where(
@@ -169,7 +172,8 @@ class AnalyticsRepository:
         customer_id: UUID | None,
         legal_entity_id: UUID | None = None,
     ) -> tuple[dict[UUID, Decimal], Decimal]:
-        """`({deal_id: total}, general_expenses)`. Costs are attributed by `costs.date`.
+        """`({deal_id: total}, general_expenses)`. Costs are what each purchase costs
+        (`purchases.cost_amount`, frozen from the buyer's pack), attributed by `purchases.date`.
 
         General expenses -- `deal_id IS NULL` -- come back separately and are never
         distributed: any apportionment key would make a deal's margin move when a
@@ -180,32 +184,34 @@ class AnalyticsRepository:
         """
         per_deal: dict[UUID, Decimal] = {}
         stmt = (
-            select(Cost.deal_id, func.coalesce(func.sum(Cost.amount), 0))
+            select(Purchase.deal_id, func.coalesce(func.sum(Purchase.cost_amount), 0))
             .where(
-                Cost.deal_id.isnot(None),
-                Cost.date >= date_from,
-                Cost.date <= date_to,
-                Cost.deleted_at.is_(None),
+                Purchase.deal_id.isnot(None),
+                Purchase.date >= date_from,
+                Purchase.date <= date_to,
+                Purchase.deleted_at.is_(None),
+                Purchase.status == "registered",
             )
-            .group_by(Cost.deal_id)
+            .group_by(Purchase.deal_id)
         )
-        stmt = self._customer_scope(stmt, customer_id, Cost.deal_id)
+        stmt = self._customer_scope(stmt, customer_id, Purchase.deal_id)
         if legal_entity_id is not None:
-            stmt = stmt.where(Cost.legal_entity_id == legal_entity_id)
+            stmt = stmt.where(Purchase.legal_entity_id == legal_entity_id)
         for deal_id, total in self.session.execute(stmt).all():
             if deal_id is not None:  # restates the `WHERE` for the type checker, as above
                 per_deal[deal_id] = Decimal(total)
 
         if customer_id is not None:
             return per_deal, ZERO_MONEY
-        general_costs = select(func.coalesce(func.sum(Cost.amount), 0)).where(
-            Cost.deal_id.is_(None),
-            Cost.date >= date_from,
-            Cost.date <= date_to,
-            Cost.deleted_at.is_(None),
+        general_costs = select(func.coalesce(func.sum(Purchase.cost_amount), 0)).where(
+            Purchase.deal_id.is_(None),
+            Purchase.date >= date_from,
+            Purchase.date <= date_to,
+            Purchase.deleted_at.is_(None),
+            Purchase.status == "registered",
         )
         if legal_entity_id is not None:
-            general_costs = general_costs.where(Cost.legal_entity_id == legal_entity_id)
+            general_costs = general_costs.where(Purchase.legal_entity_id == legal_entity_id)
         general = round_money(Decimal(self.session.execute(general_costs).scalar_one()))
         return per_deal, general
 
@@ -437,16 +443,17 @@ class AnalyticsRepository:
         hours = self._legal_entity_scope(hours, legal_entity_id, TimeEntry.deal_id)
         expenses = (
             select(func.count())
-            .select_from(Cost)
+            .select_from(Purchase)
             .where(
-                Cost.date >= date_from,
-                Cost.date <= date_to,
-                Cost.deleted_at.is_(None),
-                Cost.created_at >= day_after(date_to),
+                Purchase.date >= date_from,
+                Purchase.date <= date_to,
+                Purchase.deleted_at.is_(None),
+                Purchase.status == "registered",
+                Purchase.created_at >= day_after(date_to),
             )
         )
         if legal_entity_id is not None:
-            expenses = expenses.where(Cost.legal_entity_id == legal_entity_id)
+            expenses = expenses.where(Purchase.legal_entity_id == legal_entity_id)
         entries = self.session.execute(hours).scalar_one()
         costs = self.session.execute(expenses).scalar_one()
         return int(entries) + int(costs)
@@ -561,17 +568,21 @@ class AnalyticsRepository:
         return {int(m): round_money(Decimal(total)) for m, total in rows}
 
     def monthly_costs(self, year: int, legal_entity_id: UUID | None = None) -> dict[int, Decimal]:
-        """`Σ importo` of costs by the month they were incurred, deal or no deal. Under
-        one legal entity, the costs that carry its id: a cost with a deal copied the deal's,
+        """`Σ cost_amount` of purchases by the month they were incurred, deal or no deal. Under
+        one legal entity, the purchases that carry its id: one with a deal copied the deal's,
         a shared one (`NULL`) is nobody's and shows only in «tutte» (REB-630, §1.7)."""
-        month = func.extract("month", Cost.date)
+        month = func.extract("month", Purchase.date)
         stmt = (
-            select(month, func.sum(Cost.amount))
-            .where(Cost.deleted_at.is_(None), *in_year(Cost.date, year))
+            select(month, func.sum(Purchase.cost_amount))
+            .where(
+                Purchase.deleted_at.is_(None),
+                Purchase.status == "registered",
+                *in_year(Purchase.date, year),
+            )
             .group_by(month)
         )
         if legal_entity_id is not None:
-            stmt = stmt.where(Cost.legal_entity_id == legal_entity_id)
+            stmt = stmt.where(Purchase.legal_entity_id == legal_entity_id)
         rows = self.session.execute(stmt).all()
         return {int(m): round_money(Decimal(total)) for m, total in rows}
 
@@ -744,11 +755,12 @@ class AnalyticsRepository:
                 Invoice.deal_id.isnot(None), when >= date_from, when <= date_to, *revenue_filter()
             )
             .union(
-                select(Cost.deal_id.label("deal_id")).where(
-                    Cost.deal_id.isnot(None),
-                    Cost.date >= date_from,
-                    Cost.date <= date_to,
-                    Cost.deleted_at.is_(None),
+                select(Purchase.deal_id.label("deal_id")).where(
+                    Purchase.deal_id.isnot(None),
+                    Purchase.date >= date_from,
+                    Purchase.date <= date_to,
+                    Purchase.deleted_at.is_(None),
+                    Purchase.status == "registered",
                 ),
                 select(TimeEntry.deal_id.label("deal_id")).where(
                     TimeEntry.date >= date_from,

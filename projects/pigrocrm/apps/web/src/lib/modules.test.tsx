@@ -29,7 +29,7 @@ describe('modulesOfPath', () => {
     expect(modulesOfPath('/app/days/new')).toEqual(['contracts'])
     expect(modulesOfPath('/app/approvals/new')).toEqual(['contracts'])
     expect(modulesOfPath('/app/hours')).toEqual(['time'])
-    expect(modulesOfPath('/app/settings/cost-categories')).toEqual(['costs'])
+    expect(modulesOfPath('/app/settings/cost-categories')).toEqual(['purchases'])
     expect(modulesOfPath('/app/settings/rates')).toEqual(['time'])
     expect(modulesOfPath('/app/settings/pipeline')).toEqual(['deals'])
     for (const core of ['/app', '/app/organizations', '/app/invoices', '/app/settings/fiscal']) {
@@ -46,19 +46,19 @@ describe('modulesOfPath', () => {
 describe('moduleAccess', () => {
   it('has every module on while the answer is not known', () => {
     const access = moduleAccess(undefined, true)
-    expect(access.on('deals', 'contracts', 'time', 'costs', 'taxes')).toBe(true)
+    expect(access.on('deals', 'contracts', 'time', 'purchases', 'taxes')).toBe(true)
     expect(access.firstOff('deals')).toBeUndefined()
     expect(access.loading).toBe(true)
   })
 
   it('reads the switches, names the first off and uses the server’s label', () => {
-    const data = spaceModules(['costs'])
-    data.modules[3]!.label = 'Spese'
+    const data = spaceModules(['purchases'])
+    data.modules[3]!.label = 'Acquisti e fatture'
     const access = moduleAccess(data)
     expect(access.on('deals')).toBe(true)
-    expect(access.on('deals', 'costs')).toBe(false)
-    expect(access.firstOff('deals', 'costs', 'taxes')).toBe('costs')
-    expect(access.label('costs')).toBe('Spese')
+    expect(access.on('deals', 'purchases')).toBe(false)
+    expect(access.firstOff('deals', 'purchases', 'taxes')).toBe('purchases')
+    expect(access.label('purchases')).toBe('Acquisti e fatture')
     expect(access.loading).toBe(false)
   })
 })
@@ -72,7 +72,7 @@ describe('useModules', () => {
     await waitFor(() => expect(result.current.on('deals')).toBe(false))
     // `time` needs `deals`, and the server already reports it off.
     expect(result.current.on('time')).toBe(false)
-    expect(result.current.on('contracts', 'costs', 'taxes')).toBe(true)
+    expect(result.current.on('contracts', 'purchases', 'taxes')).toBe(true)
     expect(GET).toHaveBeenCalledWith('/api/settings/modules')
   })
 
@@ -80,6 +80,6 @@ describe('useModules', () => {
     GET.mockResolvedValue({ data: [], response: { status: 200 } })
     const { result } = renderHook(() => useModules(), { wrapper })
     await waitFor(() => expect(result.current.loading).toBe(false))
-    expect(result.current.on('deals', 'contracts', 'time', 'costs', 'taxes')).toBe(true)
+    expect(result.current.on('deals', 'contracts', 'time', 'purchases', 'taxes')).toBe(true)
   })
 })

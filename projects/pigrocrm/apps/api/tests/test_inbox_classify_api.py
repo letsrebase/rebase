@@ -15,7 +15,7 @@ from test_inbox_api import INVOICE, _listed, _login_as, _upload
 from pigrocrm.core.documents.models import Document
 from pigrocrm.core.invoices.models import Invoice
 from pigrocrm.core.legal_entities.models import LegalEntity
-from pigrocrm.core.timetracking.models import Cost
+from pigrocrm.core.purchases.models import Purchase
 
 SELLER_VAT = "01234567890"
 RECEIPT_ANSWER = {
@@ -73,7 +73,7 @@ def _switch_on(client: TestClient) -> None:
 def _counts(session: Session) -> tuple[int, int, int]:
     return tuple(  # type: ignore[return-value]
         session.execute(select(func.count()).select_from(t)).scalar_one()
-        for t in (Document, Cost, Invoice)
+        for t in (Document, Purchase, Invoice)
     )
 
 

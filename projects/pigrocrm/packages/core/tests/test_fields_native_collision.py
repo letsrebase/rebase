@@ -34,8 +34,8 @@ def admin() -> Actor:
         ("time_entry", "Hours", "hours"),
         ("time_entry", "Date", "date"),
         ("time_entry", "Description", "description"),
-        ("cost", "Amount", "amount"),
-        ("cost", "Date", "date"),
+        ("purchase", "Amount", "amount"),
+        ("purchase", "Date", "date"),
         ("deal", "Name", "name"),
         ("organization", "Legal name", "legal_name"),
         # `note` is no column since the notes thread (REB-879), but a Create takes it as the
@@ -85,12 +85,12 @@ def test_nothing_is_written_when_the_guard_fires(db_session: Session, admin: Act
     with pytest.raises(ValidationFailed):
         service.create(
             FieldDefinitionCreate(
-                entity_type="cost", key="Amount", label="Amount", field_type="currency"
+                entity_type="purchase", key="Amount", label="Amount", field_type="currency"
             ),
             admin,
         )
     db_session.rollback()
-    assert service.repo.get_by_key("cost", "amount") is None
+    assert service.repo.get_by_key("purchase", "amount") is None
 
 
 def test_field_definition_update_has_no_key_to_collide(db_session: Session) -> None:

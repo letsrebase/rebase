@@ -11,8 +11,8 @@ from pigrocrm.core.deals.models import Deal
 from pigrocrm.core.errors import ValidationFailed
 from pigrocrm.core.money import ZERO_HOURS, round_hours, sum_hours
 from pigrocrm.core.pipeline.models import PipelineStage
-from pigrocrm.core.timetracking.models import Cost, TimeEntry
-from pigrocrm.core.timetracking.schemas import CostListQuery, TimeEntryListQuery
+from pigrocrm.core.timetracking.models import TimeEntry
+from pigrocrm.core.timetracking.schemas import TimeEntryListQuery
 
 
 def won_with_unbilled_hours_predicate() -> tuple[ColumnElement[bool], ...]:
@@ -242,66 +242,5 @@ class TimeEntryRepository:
         return list(
             self.session.execute(
                 stmt.order_by(TimeEntry.date.desc(), TimeEntry.id.desc()).limit(query.limit + 1)
-            ).scalars()
-        )
-
-
-class CostRepository:
-    def __init__(self, session: Session) -> None:
-        self.session = session
-
-    def get(self, cost_id: UUID, *, include_deleted: bool = False) -> Cost | None:
-        cost = self.session.get(Cost, cost_id)
-        if cost is None:
-            return None
-        if cost.deleted_at is not None and not include_deleted:
-            return None
-        return cost
-
-    def add(self, cost: Cost) -> Cost:
-        self.session.add(cost)
-        self.session.flush()
-        return cost
-
-    def for_deal(self, deal_id: UUID) -> list[Cost]:
-        return list(
-            self.session.execute(
-                select(Cost).where(Cost.deal_id == deal_id, Cost.deleted_at.is_(None))
-            ).scalars()
-        )
-
-    # `list` stays the last method in this class.
-    def list(self, query: CostListQuery) -> list[Cost]:
-        stmt = select(Cost).where(Cost.deleted_at.is_(None))
-        if query.only_general:
-            # `deal_id IS NULL` is a general expense (§7.4). A separate flag is needed
-            # because `deal_id=None` on the query already means "do not filter".
-            stmt = stmt.where(Cost.deal_id.is_(None))
-        elif query.deal_id is not None:
-            stmt = stmt.where(Cost.deal_id == query.deal_id)
-        if query.legal_entity_id is not None:
-            # A shared cost (`NULL`) is nobody's in particular: it answers only the
-            # view over every legal entity (REB-623, spec §1.7).
-            stmt = stmt.where(Cost.legal_entity_id == query.legal_entity_id)
-        if query.category_id is not None:
-            stmt = stmt.where(Cost.category_id == query.category_id)
-        if query.date_from is not None:
-            stmt = stmt.where(Cost.date >= query.date_from)
-        if query.date_to is not None:
-            stmt = stmt.where(Cost.date <= query.date_to)
-        if query.custom:
-            stmt = stmt.where(Cost.custom_fields.contains(query.custom))
-        if query.cursor is not None:
-            anchor = self.session.get(Cost, query.cursor)
-            if anchor is None:
-                raise ValidationFailed(
-                    "cost", "cursor", "cursore sconosciuto", expected="il cursore di una pagina"
-                )
-            stmt = stmt.where(
-                (Cost.date < anchor.date) | ((Cost.date == anchor.date) & (Cost.id < anchor.id))
-            )
-        return list(
-            self.session.execute(
-                stmt.order_by(Cost.date.desc(), Cost.id.desc()).limit(query.limit + 1)
             ).scalars()
         )

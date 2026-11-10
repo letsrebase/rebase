@@ -7,8 +7,9 @@ from pigrocrm.core.activities.service import ActivityService
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.db.transactions import savepoint
 from pigrocrm.core.errors import Conflict, NotFound, ValidationFailed
+from pigrocrm.core.purchases.models import Purchase
 from pigrocrm.core.schemas import reject_cleared_columns, supplied_changes
-from pigrocrm.core.timetracking.models import Cost, CostCategory
+from pigrocrm.core.timetracking.models import CostCategory
 from pigrocrm.core.timetracking.schemas import (
     CostCategoryCreate,
     CostCategoryRead,
@@ -58,12 +59,12 @@ class CostCategoryRepository:
         self.session.flush()
         return category
 
-    def count_costs(self, category_id: UUID) -> int:
+    def count_purchases(self, category_id: UUID) -> int:
         return int(
             self.session.execute(
                 select(func.count())
-                .select_from(Cost)
-                .where(Cost.category_id == category_id, Cost.deleted_at.is_(None))
+                .select_from(Purchase)
+                .where(Purchase.category_id == category_id, Purchase.deleted_at.is_(None))
             ).scalar_one()
         )
 
@@ -145,7 +146,11 @@ class CostCategoryService:
         category = self._require(category_id)
         category.archived = True
         self.activities.record(
-            ENTITY, category.id, "archived", actor, {"costs": self.repo.count_costs(category.id)}
+            ENTITY,
+            category.id,
+            "archived",
+            actor,
+            {"purchases": self.repo.count_purchases(category.id)},
         )
         self.session.commit()
         return CostCategoryRead.model_validate(category)
@@ -182,7 +187,7 @@ class CostCategoryService:
         return created
 
     def require_active(self, category_id: UUID) -> CostCategory:
-        """What `CostService` calls on create and update. `ValidationFailed`, not
+        """What `PurchaseService` calls on create and update. `ValidationFailed`, not
         `NotFound`, for an archived category: the row exists and the caller can see it
         in the archived list -- what is wrong is choosing it for a new cost, which is a
         validation problem naming the field."""

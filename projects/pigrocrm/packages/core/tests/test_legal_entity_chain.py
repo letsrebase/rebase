@@ -38,16 +38,12 @@ from pigrocrm.core.organizations.schemas import (
     OrganizationUpdate,
 )
 from pigrocrm.core.organizations.service import OrganizationService
+from pigrocrm.core.purchases.schemas import PurchaseCreate, PurchaseListQuery, PurchaseUpdate
+from pigrocrm.core.purchases.service import PurchaseService
 from pigrocrm.core.search.schemas import SearchQuery
 from pigrocrm.core.search.service import SearchService
 from pigrocrm.core.storage.local import LocalFileStorage
-from pigrocrm.core.timetracking.costs import CostService
-from pigrocrm.core.timetracking.schemas import (
-    CostCreate,
-    CostListQuery,
-    CostUpdate,
-    TimeEntryListQuery,
-)
+from pigrocrm.core.timetracking.schemas import TimeEntryListQuery
 from pigrocrm.core.timetracking.service import TimeEntryService
 
 ADMIN = Actor(id=None, type="system", role="admin")
@@ -249,9 +245,9 @@ def test_to_cost_takes_its_deals_legal_entity_and_to_shared_one_has_none(
         DealCreate(name="Rebase", customer_id=customer_id, pipeline_stage_id=seeded_open_stage_id),
         ADMIN,
     )
-    costs = CostService(db_session)
+    costs = PurchaseService(db_session)
     on_deal = costs.create(
-        CostCreate(
+        PurchaseCreate(
             deal_id=deal.id,
             category_id=seeded_category_id,
             date=date(2026, 3, 1),
@@ -262,7 +258,7 @@ def test_to_cost_takes_its_deals_legal_entity_and_to_shared_one_has_none(
     )
     assert on_deal.legal_entity_id == second.id
     shared = costs.create(
-        CostCreate(
+        PurchaseCreate(
             category_id=seeded_category_id,
             date=date(2026, 3, 2),
             amount=Decimal("20.00"),
@@ -272,7 +268,7 @@ def test_to_cost_takes_its_deals_legal_entity_and_to_shared_one_has_none(
     )
     assert shared.legal_entity_id is None
     own = costs.create(
-        CostCreate(
+        PurchaseCreate(
             category_id=seeded_category_id,
             date=date(2026, 3, 3),
             amount=Decimal("30.00"),
@@ -284,7 +280,7 @@ def test_to_cost_takes_its_deals_legal_entity_and_to_shared_one_has_none(
     assert own.legal_entity_id == default.id
     with pytest.raises(ValidationFailed) as refused:
         costs.create(
-            CostCreate(
+            PurchaseCreate(
                 deal_id=deal.id,
                 legal_entity_id=default.id,
                 category_id=seeded_category_id,
@@ -296,16 +292,19 @@ def test_to_cost_takes_its_deals_legal_entity_and_to_shared_one_has_none(
         )
     assert refused.value.details["field"] == "legal_entity_id"
     # Off the deal, the cost is shared unless a legal entity is named; onto it, the deal's.
-    assert costs.update(on_deal.id, CostUpdate(deal_id=None), ADMIN).legal_entity_id is None
-    assert costs.update(on_deal.id, CostUpdate(deal_id=deal.id), ADMIN).legal_entity_id == second.id
+    assert costs.update(on_deal.id, PurchaseUpdate(deal_id=None), ADMIN).legal_entity_id is None
     assert (
-        costs.update(shared.id, CostUpdate(legal_entity_id=default.id), ADMIN).legal_entity_id
+        costs.update(on_deal.id, PurchaseUpdate(deal_id=deal.id), ADMIN).legal_entity_id
+        == second.id
+    )
+    assert (
+        costs.update(shared.id, PurchaseUpdate(legal_entity_id=default.id), ADMIN).legal_entity_id
         == default.id
     )
 
-    listed = costs.list(CostListQuery(legal_entity_id=second.id), ADMIN).items
+    listed = costs.list(PurchaseListQuery(legal_entity_id=second.id), ADMIN).items
     assert [c.id for c in listed] == [on_deal.id]
-    everything = costs.list(CostListQuery(), ADMIN).items
+    everything = costs.list(PurchaseListQuery(), ADMIN).items
     assert {c.id for c in everything} >= {on_deal.id, shared.id, own.id}
 
 
@@ -474,9 +473,9 @@ def test_a_cost_of_an_archived_deal_can_still_be_edited(
         DealCreate(name="Vecchio", customer_id=customer_id, pipeline_stage_id=seeded_open_stage_id),
         ADMIN,
     )
-    costs = CostService(db_session)
+    costs = PurchaseService(db_session)
     cost = costs.create(
-        CostCreate(
+        PurchaseCreate(
             deal_id=deal.id,
             category_id=seeded_category_id,
             date=date(2026, 3, 1),
@@ -488,7 +487,7 @@ def test_a_cost_of_an_archived_deal_can_still_be_edited(
     DealService(db_session).soft_delete(deal.id, ADMIN)
     edited = costs.update(
         cost.id,
-        CostUpdate(description="Treno regionale", legal_entity_id=deal.legal_entity_id),
+        PurchaseUpdate(description="Treno regionale", legal_entity_id=deal.legal_entity_id),
         ADMIN,
     )
     assert (edited.description, edited.legal_entity_id) == ("Treno regionale", deal.legal_entity_id)
@@ -500,9 +499,9 @@ def test_to_new_general_cost_is_refused_on_to_deactivated_legal_entity_and_an_ol
     """Spec §3 for the one record that names its legal entity directly: nothing new is filed
     under a closed legal entity, but a cost already there can still be edited in place."""
     closed = _legal_entity(db_session, "rebase")
-    costs = CostService(db_session)
+    costs = PurchaseService(db_session)
     old = costs.create(
-        CostCreate(
+        PurchaseCreate(
             category_id=seeded_category_id,
             date=date(2026, 3, 1),
             amount=Decimal("10.00"),
@@ -515,7 +514,7 @@ def test_to_new_general_cost_is_refused_on_to_deactivated_legal_entity_and_an_ol
     db_session.flush()
     with pytest.raises(ValidationFailed) as refused:
         costs.create(
-            CostCreate(
+            PurchaseCreate(
                 category_id=seeded_category_id,
                 date=date(2026, 3, 2),
                 amount=Decimal("5.00"),
@@ -526,16 +525,16 @@ def test_to_new_general_cost_is_refused_on_to_deactivated_legal_entity_and_an_ol
         )
     assert refused.value.details["field"] == "legal_entity_id"
     kept = costs.update(
-        old.id, CostUpdate(description="Licenza annuale", legal_entity_id=closed.id), ADMIN
+        old.id, PurchaseUpdate(description="Licenza annuale", legal_entity_id=closed.id), ADMIN
     )
     assert (kept.description, kept.legal_entity_id) == ("Licenza annuale", closed.id)
     # `deal_id: null` echoed on a cost that never had a deal is no move: it keeps A.
-    echoed = costs.update(old.id, CostUpdate(deal_id=None, description="Licenza"), ADMIN)
+    echoed = costs.update(old.id, PurchaseUpdate(deal_id=None, description="Licenza"), ADMIN)
     assert echoed.legal_entity_id == closed.id
     # Off the closed legal entity, onto an active one or to shared, is a move and allowed.
-    moved = costs.update(old.id, CostUpdate(legal_entity_id=_default(db_session).id), ADMIN)
+    moved = costs.update(old.id, PurchaseUpdate(legal_entity_id=_default(db_session).id), ADMIN)
     assert moved.legal_entity_id == _default(db_session).id
-    assert costs.update(old.id, CostUpdate(legal_entity_id=None), ADMIN).legal_entity_id is None
+    assert costs.update(old.id, PurchaseUpdate(legal_entity_id=None), ADMIN).legal_entity_id is None
 
 
 def test_to_new_cost_on_to_deal_of_to_deactivated_legal_entity_is_refused_and_an_old_one_stays(
@@ -549,9 +548,9 @@ def test_to_new_cost_on_to_deal_of_to_deactivated_legal_entity_is_refused_and_an
         DealCreate(name="Vecchio", customer_id=customer_id, pipeline_stage_id=seeded_open_stage_id),
         ADMIN,
     )
-    costs = CostService(db_session)
+    costs = PurchaseService(db_session)
     old = costs.create(
-        CostCreate(
+        PurchaseCreate(
             deal_id=deal.id,
             category_id=seeded_category_id,
             date=date(2026, 3, 1),
@@ -564,7 +563,7 @@ def test_to_new_cost_on_to_deal_of_to_deactivated_legal_entity_is_refused_and_an
     db_session.flush()
     with pytest.raises(ValidationFailed) as refused:
         costs.create(
-            CostCreate(
+            PurchaseCreate(
                 deal_id=deal.id,
                 category_id=seeded_category_id,
                 date=date(2026, 3, 2),
@@ -574,14 +573,14 @@ def test_to_new_cost_on_to_deal_of_to_deactivated_legal_entity_is_refused_and_an
             ADMIN,
         )
     assert "sposta prima il cliente" in str(refused.value)
-    kept = costs.update(old.id, CostUpdate(description="Treno regionale"), ADMIN)
+    kept = costs.update(old.id, PurchaseUpdate(description="Treno regionale"), ADMIN)
     assert (kept.description, kept.legal_entity_id) == ("Treno regionale", closed.id)
     assert (
-        costs.update(old.id, CostUpdate(legal_entity_id=closed.id), ADMIN).legal_entity_id
+        costs.update(old.id, PurchaseUpdate(legal_entity_id=closed.id), ADMIN).legal_entity_id
         == closed.id
     )
     # The same deal sent back, as a client echoing the row does, is no move either.
-    echoed = costs.update(old.id, CostUpdate(deal_id=deal.id, legal_entity_id=closed.id), ADMIN)
+    echoed = costs.update(old.id, PurchaseUpdate(deal_id=deal.id, legal_entity_id=closed.id), ADMIN)
     assert (echoed.deal_id, echoed.legal_entity_id) == (deal.id, closed.id)
     # A move onto another deal of the closed legal entity is a new assignment, and refused.
     # Built by row: the customer is on the closed legal entity, so the service would refuse.
@@ -595,4 +594,4 @@ def test_to_new_cost_on_to_deal_of_to_deactivated_legal_entity_is_refused_and_an
     db_session.add(sibling)
     db_session.flush()
     with pytest.raises(ValidationFailed):
-        costs.update(old.id, CostUpdate(deal_id=sibling.id), ADMIN)
+        costs.update(old.id, PurchaseUpdate(deal_id=sibling.id), ADMIN)

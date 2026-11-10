@@ -58,7 +58,7 @@ describe('visibleSections (REB-953)', () => {
       'Persone',
       'Fatture',
     ]
-    expect(labels(['deals', 'contracts', 'time', 'costs', 'taxes'])).toEqual(core)
+    expect(labels(['deals', 'contracts', 'time', 'purchases', 'taxes'])).toEqual(core)
   })
 
   it('drops a section left with no entry', () => {

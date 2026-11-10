@@ -5,38 +5,39 @@ import { QueryErrorBanner } from '@/components/QueryErrorBanner'
 import { Button } from '@rebase/ui/button'
 import { useCanWrite } from '@/lib/auth'
 import { useEntitySchema } from '@/lib/schema'
-import { CostForm } from './CostForm'
-import { buildCostColumns } from './columns'
-import { costToFormValues } from './formValues'
-import { useCostCategories, useCosts, type Cost } from './queries'
+import { PurchaseForm } from './PurchaseForm'
+import { buildPurchaseColumns } from './columns'
+import { purchaseToFormValues } from './formValues'
+import { useCostCategories, usePurchases, type Purchase } from './queries'
 
 /**
- * The deal's direct costs, mounted under the hours table on the Ore tab.
+ * The deal's purchases (invoices, credit notes, receipts and expenses), mounted under the
+ * hours table on the Ore tab.
  *
  * They sit there in 4A rather than on an «Economia» tab because that tab does not exist
- * until 4B, and a cost with nowhere to be entered is a cost nobody records.
+ * until 4B, and a purchase with nowhere to be entered is a purchase nobody records.
  *
- * `dealId` is optional: without one this is the general-expenses list (§7.4), and a new
- * cost composed here is filed with `deal_id: null` rather than against some default
+ * `dealId` is optional: without one this is the general-purchases list (§7.4), and a new
+ * purchase composed here is filed with `deal_id: null` rather than against some default
  * deal.
  */
-export function CostsPanel({ dealId }: { dealId?: string }) {
-  const costs = useCosts(dealId === undefined ? { only_general: true } : { deal_id: dealId })
+export function PurchasesPanel({ dealId }: { dealId?: string }) {
+  const purchases = usePurchases(dealId === undefined ? { only_general: true } : { deal_id: dealId })
   // Archived categories included, deliberately: a row filed under one before it was
   // archived must still show its name, and the picker below is the place that keeps
-  // them out of *new* costs.
+  // them out of *new* purchases.
   const categories = useCostCategories(true)
-  const schema = useEntitySchema('cost')
+  const schema = useEntitySchema('purchase')
   const canWrite = useCanWrite()
   const [creating, setCreating] = useState(false)
-  const [editing, setEditing] = useState<Cost | null>(null)
+  const [editing, setEditing] = useState<Purchase | null>(null)
 
   // A failed request is "we do not actually know", which is a different claim from
   // "there is nothing here" -- and not this component's to make on the caller's behalf.
   // The category list is in the check too: without it every row's Categoria column
   // would read as a dash, which looks like data rather than like a failure.
-  if (costs.isError || categories.isError) {
-    return <QueryErrorBanner error={costs.error ?? categories.error} />
+  if (purchases.isError || categories.isError) {
+    return <QueryErrorBanner error={purchases.error ?? categories.error} />
   }
 
   const customFields = schema.data?.custom_fields ?? []
@@ -47,58 +48,58 @@ export function CostsPanel({ dealId }: { dealId?: string }) {
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h2 className="font-semibold">Costi diretti</h2>
+          <h2 className="font-semibold">Acquisti</h2>
           <p className="text-sm text-muted-foreground">
             {dealId === undefined
-              ? 'Le spese che non appartengono a nessun deal.'
-              : 'Le spese sostenute per questo deal.'}{' '}
-            Un importo negativo è un rimborso o una nota di credito ricevuta, non un errore.
+              ? 'Gli acquisti che non appartengono a nessun deal.'
+              : 'Gli acquisti fatti per questo deal.'}{' '}
+            Un totale negativo è un rimborso o una nota di credito, non un errore.
           </p>
         </div>
         {canWrite && (
           <Button onClick={() => setCreating(true)}>
             <Plus className="mr-2 size-4" />
-            Registra costo
+            Registra acquisto
           </Button>
         )}
       </div>
 
       <DataTable
-        label="Costi"
-        columns={buildCostColumns(all, customFields)}
-        data={costs.data?.items ?? []}
-        isLoading={costs.isLoading}
+        label="Acquisti"
+        columns={buildPurchaseColumns(all, customFields)}
+        data={purchases.data?.items ?? []}
+        isLoading={purchases.isLoading}
         emptyMessage={
           dealId === undefined
-            ? 'Nessuna spesa generale registrata.'
-            : 'Nessun costo registrato su questo deal.'
+            ? 'Nessun acquisto generale registrato.'
+            : 'Nessun acquisto registrato su questo deal.'
         }
         onRowClick={canWrite ? (row) => setEditing(row) : undefined}
       />
 
-      <CostForm
+      <PurchaseForm
         open={creating}
         onOpenChange={setCreating}
         dealId={dealId}
         categories={active}
         customFields={customFields}
-        title="Registra costo"
+        title="Registra acquisto"
       />
 
       {/* Mounted only while a row is selected, and keyed on that row: the dialog seeds
           its state once, when `open` flips, so reusing one instance across two different
           rows would show the first row's values on the second. */}
       {editing && (
-        <CostForm
+        <PurchaseForm
           key={editing.id}
           open
           onOpenChange={() => setEditing(null)}
           dealId={dealId}
           categories={active}
           customFields={customFields}
-          initial={costToFormValues(editing)}
-          costId={editing.id}
-          title="Modifica costo"
+          initial={purchaseToFormValues(editing)}
+          purchase={editing}
+          title="Modifica acquisto"
           onSaved={() => setEditing(null)}
         />
       )}

@@ -43,7 +43,7 @@ CHANGES_TOOLS: list[tuple[str, dict[str, str]]] = [
     ("update_clause_note", _ids("contract_id", "note_id")),
     ("update_contract_expense", _ids("contract_id", "expense_id")),
     ("update_time_entry", _ids("entry_id")),
-    ("update_cost", _ids("cost_id")),
+    ("update_purchase", _ids("purchase_id")),
     ("update_task", _ids("task_id")),
 ]
 
@@ -372,23 +372,27 @@ async def test_clearing_a_cost_and_a_time_entry_field_is_reported(
         )
         cost = await _create(
             client,
-            "create_cost",
+            "create_purchase",
             {
-                "category_id": str(category.id),
-                "date": "2026-03-10",
-                "amount": "50.00",
-                "description": "Licenza",
-                "supplier": "Acme",
+                "purchase": {
+                    "category_id": str(category.id),
+                    "date": "2026-03-10",
+                    "amount": "50.00",
+                    "description": "Licenza",
+                    "merchant_name": "Acme",
+                }
             },
         )
         cleared_cost = await _create(
-            client, "update_cost", {"cost_id": cost["id"], "changes": {"supplier": None}}
+            client,
+            "update_purchase",
+            {"purchase_id": cost["id"], "changes": {"merchant_name": None}},
         )
 
     assert cleared_entry["changed"] == ["internal_notes"]
     assert cleared_entry["cleared"] == {"internal_notes": "da rivedere"}
-    assert cleared_cost["changed"] == ["supplier"]
-    assert cleared_cost["cleared"] == {"supplier": "Acme"}
+    assert cleared_cost["changed"] == ["merchant_name"]
+    assert cleared_cost["cleared"] == {"merchant_name": "Acme"}
 
 
 async def test_the_same_amount_written_with_another_scale_is_not_a_change(

@@ -10,7 +10,7 @@ import { PeriodsPanel } from './PeriodsPanel'
  * adding it would not help anyway: `lib/api.ts` builds one openapi-fetch client at
  * import time, so a handler installed on `globalThis.fetch` afterwards intercepts
  * nothing. Spying on the client's own verbs is what every other query-backed test in
- * this codebase does (`features/costs/queries.test.tsx`, `EmitterPanel.test.tsx`), and
+ * this codebase does (`features/purchases/queries.test.tsx`, `EmitterPanel.test.tsx`), and
  * it is what actually runs the panel's real hooks.
  */
 const mockGet = vi.spyOn(api, 'GET')
@@ -129,7 +129,7 @@ describe('PeriodsPanel', () => {
     // Not just that some confirmation ran: the caller's own sentence, so a menu item that
     // skipped the guard (or asked something else) still fails here.
     expect(mockConfirm).toHaveBeenCalledWith(
-      'Riaprire marzo 2026? Le ore e i costi di quel mese tornano modificabili, e la riapertura viene registrata.',
+      'Riaprire marzo 2026? Le ore e gli acquisti di quel mese tornano modificabili, e la riapertura viene registrata.',
     )
     await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent(/requires one of/i))
   })

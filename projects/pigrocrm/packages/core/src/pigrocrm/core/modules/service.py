@@ -42,9 +42,10 @@ from pigrocrm.core.modules.schemas import (
     SpaceProfileProposal,
     SpaceProfileSet,
 )
+from pigrocrm.core.purchases.models import Purchase
 from pigrocrm.core.space_settings.service import ENTITY, SETTINGS_ID, SpaceSettingsService
 from pigrocrm.core.staff.models import StaffMember
-from pigrocrm.core.timetracking.models import Cost, TimeEntry
+from pigrocrm.core.timetracking.models import TimeEntry
 
 SET_PROFILE = "set_space_profile"
 SET_MODULES = "set_space_modules"
@@ -59,14 +60,14 @@ _RECORDS: dict[
     type[Deal]
     | type[Contract]
     | type[TimeEntry]
-    | type[Cost]
+    | type[Purchase]
     | type[StaffMember]
     | type[Engagement],
 ] = {
     "deals": Deal,
     "contracts": Contract,
     "time": TimeEntry,
-    "costs": Cost,
+    "purchases": Purchase,
     "staff": StaffMember,
     "collaborators": Engagement,
 }
@@ -76,7 +77,7 @@ def _live(
     model: type[Deal]
     | type[Contract]
     | type[TimeEntry]
-    | type[Cost]
+    | type[Purchase]
     | type[StaffMember]
     | type[Engagement],
 ) -> ColumnElement[bool]:
