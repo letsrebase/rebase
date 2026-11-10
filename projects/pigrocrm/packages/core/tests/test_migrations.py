@@ -4196,6 +4196,10 @@ def test_0099_adds_the_message_columns_to_inbox_items_and_downgrade_keeps_the_it
             with engine.connect() as connection:
                 sources = connection.execute(text("SELECT source FROM inbox_items")).scalars().all()
             assert sources == ["upload"]
+            upgrade(config, "0099")
+        finally:
+            engine.dispose()
+
 
 def test_0100_adds_the_signature_columns_and_downgrade_removes_them(
     pigrocrm_postgres: Any,
