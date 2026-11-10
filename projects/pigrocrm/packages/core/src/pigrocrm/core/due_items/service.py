@@ -18,6 +18,7 @@ reads the ordinary kinds, only an administrator the fiscal ones.
 """
 
 import datetime as dt
+from collections.abc import Sequence
 from decimal import Decimal
 from typing import Any
 from uuid import UUID
@@ -26,6 +27,7 @@ from sqlalchemy.orm import Session
 
 from pigrocrm.core.activities.service import ActivityService
 from pigrocrm.core.actor import Actor
+from pigrocrm.core.bank.models import BankMovement
 from pigrocrm.core.db import today_local
 from pigrocrm.core.due_items.models import (
     OPEN_STATES,
@@ -410,7 +412,9 @@ class DueItemService:
             # Only a call that really flips a collected invoice back reverses what was paid.
             # An invoice that is already unpaid keeps its partial payments: «unpaid» is what
             # the projection says about it.
-            for settlement in self.repo.live_settlements(item.id):
+            live = self.repo.live_settlements(item.id)
+            self._refuse_evidenced(live)
+            for settlement in live:
                 self._reverse(settlement, "incasso annullato", actor)
             item.state = "expected"
         self.session.flush()
@@ -468,6 +472,7 @@ class DueItemService:
             if last == paid_on:
                 return
             moved = [row for row in self.repo.live_settlements(item.id) if row.settled_on == last]
+            self._refuse_evidenced(moved)
             for settlement in moved:
                 self._reverse(settlement, "data dell'incasso corretta", actor)
             self._add_settlement(item, sum((row.amount for row in moved), ZERO), paid_on, actor)
@@ -514,17 +519,16 @@ class DueItemService:
         invoice.payment_date = self.repo.totals(item.id).last_settled_on if paid else None
         self.session.flush()
 
-    # ---- the surface's half: an actor, a commit -------------------------------------------
-
-    def settle(self, item_id: UUID, data: SettlementCreate, actor: Actor) -> DueItemDetail:
-        """Records a payment, partial or full. Partly paid, an item stays `expected` with what
-        remains; paid in full it reads `settled`. A payment beyond what remains is refused."""
-        # The gate that needs no item first: a reader, or a credential no action reaches,
-        # is refused before the lookup says whether the item exists. What the item's
-        # direction and source add comes after it.
-        actor.require_write("settle_due_item")
-        item = self._locked(item_id)
-        _require_settle_permission(actor, item, undo=False)
+    def _record_payment(
+        self,
+        item: DueItem,
+        data: SettlementCreate,
+        actor: Actor,
+        *,
+        bank_movement_id: UUID | None = None,
+    ) -> DueItemSettlement:
+        """The checks and the write of one payment against a locked item, shared by `settle` and
+        by the matching of a bank movement. Flushes and projects, never commits."""
         if item.state == "forecast":
             raise Conflict(
                 ENTITY,
@@ -567,6 +571,7 @@ class DueItemService:
                 account_currency=data.account_currency,
                 settled_on=data.settled_on,
                 value_date=data.value_date,
+                bank_movement_id=bank_movement_id,
                 note=data.note,
                 recorded_by_id=actor.id,
                 recorded_by_type=actor.type,
@@ -579,6 +584,87 @@ class DueItemService:
         self._follow(item)
         self._project(item)
         self._record("due_item_settled", item, settlement, actor)
+        return settlement
+
+    # ---- the bank matching's half: an actor, no commit ------------------------------------
+    #
+    # `MovementMatchService` has asked for a person before it calls these and commits after
+    # them; what each asks again is the item's own permission, which depends on the record
+    # (an outgoing or fiscal item is an administrator's).
+
+    def settle_from_movement(
+        self, item_id: UUID, amount: Decimal, movement: BankMovement, actor: Actor
+    ) -> DueItemSettlement:
+        """Settles `amount` (in the item's currency and sign) of an item, dated on the movement's
+        booking date, with the movement as its evidence. Flushes, does not commit."""
+        item = self._locked(item_id)
+        _require_settle_permission(actor, item, undo=False)
+        data = SettlementCreate(
+            amount=amount, settled_on=movement.booking_date, value_date=movement.value_date
+        )
+        return self._record_payment(item, data, actor, bank_movement_id=movement.id)
+
+    def adopt_for_movement(
+        self, item_id: UUID, movement: BankMovement, actor: Actor
+    ) -> DueItemSettlement:
+        """Attaches the movement to the payment already marked by hand for the same amount, so
+        the movement does not make a second one (spec § 3). Refuses when the item has no
+        live payment of that amount without evidence. Flushes, does not commit."""
+        item = self._locked(item_id)
+        _require_settle_permission(actor, item, undo=False)
+        if item.state not in ("expected", "settled"):
+            raise Conflict(ENTITY, "la scadenza non e' piu' aperta ne' saldata", id=str(item.id))
+        magnitude = abs(movement.amount)
+        for settlement in self.repo.live_settlements(item.id):
+            if settlement.bank_movement_id is None and abs(settlement.amount) == magnitude:
+                settlement.bank_movement_id = movement.id
+                self.session.flush()
+                self._record("due_item_settlement_evidenced", item, settlement, actor)
+                return settlement
+        raise Conflict(
+            ENTITY,
+            "nessun pagamento segnato a mano per questo importo da collegare al movimento",
+            id=str(item.id),
+        )
+
+    def release_for_movement(
+        self, settlement_id: UUID, *, adopted: bool, reason: str | None, actor: Actor
+    ) -> None:
+        """Takes back what a match did to one payment: a payment the match wrote is reversed
+        (the row stays, stamped, with its evidence), one it adopted only loses the evidence and
+        stays as the person marked it. Flushes, does not commit."""
+        settlement = self.repo.get_settlement(settlement_id)
+        if settlement is None:
+            raise NotFound(SETTLEMENT_ENTITY, settlement_id)
+        item = self._locked(settlement.due_item_id)
+        _require_settle_permission(actor, item, undo=True)
+        self.session.refresh(settlement)
+        if adopted:
+            settlement.bank_movement_id = None
+            self.session.flush()
+            self._record("due_item_settlement_evidence_removed", item, settlement, actor)
+            return
+        if settlement.reversed_at is not None:
+            return
+        self._reverse(settlement, reason or "abbinamento annullato", actor)
+        if item.state == "settled":
+            item.state = "expected"
+        self.session.flush()
+        self._follow(item)
+        self._project(item)
+
+    # ---- the surface's half: an actor, a commit -------------------------------------------
+
+    def settle(self, item_id: UUID, data: SettlementCreate, actor: Actor) -> DueItemDetail:
+        """Records a payment, partial or full. Partly paid, an item stays `expected` with what
+        remains; paid in full it reads `settled`. A payment beyond what remains is refused."""
+        # The gate that needs no item first: a reader, or a credential no action reaches,
+        # is refused before the lookup says whether the item exists. What the item's
+        # direction and source add comes after it.
+        actor.require_write("settle_due_item")
+        item = self._locked(item_id)
+        _require_settle_permission(actor, item, undo=False)
+        self._record_payment(item, data, actor)
         self.session.commit()
         return self._detail(item)
 
@@ -597,6 +683,12 @@ class DueItemService:
         if settlement.reversed_at is not None:
             raise Conflict(
                 SETTLEMENT_ENTITY, "il pagamento e' gia' stato annullato", id=str(settlement.id)
+            )
+        if settlement.bank_movement_id is not None:
+            raise Conflict(
+                SETTLEMENT_ENTITY,
+                "il pagamento risulta da un movimento in banca: annulla l'abbinamento",
+                id=str(settlement.id),
             )
         settlement.reversed_at = _now()
         settlement.reversed_by_id = actor.id
@@ -668,7 +760,21 @@ class DueItemService:
         }
         if item.direction == "in" and not _is_fiscal(item):
             payload["amount"] = str(settlement.amount)
+        if settlement.bank_movement_id is not None:
+            payload["bank_movement_id"] = str(settlement.bank_movement_id)
         self.activities.record("legal_entity", item.legal_entity_id, kind, actor, payload)
+
+    @staticmethod
+    def _refuse_evidenced(settlements: Sequence[DueItemSettlement]) -> None:
+        """A payment a bank movement proves is taken back through its match, which keeps the
+        match and the movement's state in step; every other door refuses it."""
+        for settlement in settlements:
+            if settlement.bank_movement_id is not None:
+                raise Conflict(
+                    SETTLEMENT_ENTITY,
+                    "il pagamento risulta da un movimento in banca: annulla l'abbinamento",
+                    id=str(settlement.id),
+                )
 
     def _locked(self, item_id: UUID) -> DueItem:
         """The item under its lock, the invoice's own row first when it is a sales item: the

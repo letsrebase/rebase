@@ -10,7 +10,7 @@ import datetime as dt
 from dataclasses import dataclass
 from uuid import UUID
 
-from sqlalchemy import delete, exists, select
+from sqlalchemy import delete, exists, or_, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
@@ -20,6 +20,7 @@ from pigrocrm.core.bank.models import (
     BankAccount,
     BankMovement,
     BankStatement,
+    MovementMatch,
     OrganizationIban,
     StatementMovement,
 )
@@ -37,6 +38,8 @@ class ImportResult:
     statement: BankStatement
     added: int
     duplicates: int
+    # The movements this import stored, the ones nothing has looked at yet (REB-1042).
+    new_movement_ids: tuple[UUID, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -147,6 +150,7 @@ class BankStatementService:
         # movement keep one row. The ids are read back by key, so a movement that was already
         # there and one just stored are linked the same way.
         stored = 0
+        new_ids: tuple[UUID, ...] = ()
         if by_key:
             inserted = self.session.execute(
                 insert(BankMovement)
@@ -155,6 +159,7 @@ class BankStatementService:
                 .returning(BankMovement.id)
             ).all()
             stored = len(inserted)
+            new_ids = tuple(row[0] for row in inserted)
             ids = self.session.execute(
                 select(BankMovement.id).where(
                     BankMovement.bank_account_id == account.id,
@@ -174,7 +179,9 @@ class BankStatementService:
                 )
             )
         self.session.flush()
-        return ImportResult(statement, added=stored, duplicates=len(keys) - stored)
+        return ImportResult(
+            statement, added=stored, duplicates=len(keys) - stored, new_movement_ids=new_ids
+        )
 
     def revert_statement(self, statement_id: UUID) -> RevertResult:
         """Undoes an import: the statement becomes `reverted`, its links to movements go, and
@@ -203,8 +210,20 @@ class BankStatementService:
             StatementMovement.statement_id == statement.id
         )
         only_here = (BankMovement.id.in_(carried_here), ~exists(other_carrier))
+        # A movement a person matched and then unmatched is `unmatched` again but keeps its trace
+        # (a payment's evidence points at it), so it blocks the revert as well.
+        traced = (
+            select(MovementMatch.id)
+            .where(
+                MovementMatch.bank_movement_id == BankMovement.id,
+                MovementMatch.state.in_(("confirmed", "undone")),
+            )
+            .correlate(BankMovement)
+        )
         decided = self.session.scalar(
-            select(exists().where(*only_here, BankMovement.state != "unmatched"))
+            select(
+                exists().where(*only_here, or_(BankMovement.state != "unmatched", exists(traced)))
+            )
         )
         if decided:
             raise Conflict(

@@ -9,6 +9,7 @@ returned as they are.
 
 import datetime as dt
 from collections.abc import Iterable, Sequence
+from collections.abc import Set as AbstractSet
 from decimal import Decimal
 from uuid import UUID
 
@@ -20,26 +21,25 @@ from pigrocrm.core.actor import Actor
 from pigrocrm.core.bank import banco_bpm_xlsx as xlsx_reader
 from pigrocrm.core.bank import camt053 as camt053_reader
 from pigrocrm.core.bank import readers
-from pigrocrm.core.bank.constants import UNMATCHED_OLD_DAYS
+from pigrocrm.core.bank.matching import MovementMatchService
 from pigrocrm.core.bank.models import (
     BankAccount,
     BankMovement,
     BankStatement,
     StatementMovement,
 )
+from pigrocrm.core.bank.movement_reads import movement_reads
 from pigrocrm.core.bank.schemas import (
     PAGE_LIMIT_DEFAULT,
     PAGE_LIMIT_MAX,
     MovementFilter,
     MovementPage,
-    MovementRead,
     StatementCheck,
     StatementImportResult,
     StatementPage,
     StatementRead,
 )
 from pigrocrm.core.bank.service import BankStatementService
-from pigrocrm.core.db.clock import today_local
 from pigrocrm.core.db.sort import (
     SortSpec,
     decode_cursor,
@@ -145,19 +145,6 @@ class _Shapes:
             )
         return reads
 
-    def _movement_reads(self, movements: Sequence[BankMovement]) -> list[MovementRead]:
-        if not movements:
-            return []
-        today = today_local()
-        by_movement: dict[UUID, list[UUID]] = {m.id: [] for m in movements}
-        for movement_id, statement_id in self.session.execute(
-            select(StatementMovement.movement_id, StatementMovement.statement_id)
-            .where(StatementMovement.movement_id.in_(list(by_movement)))
-            .order_by(StatementMovement.statement_id)
-        ):
-            by_movement[movement_id].append(statement_id)
-        return [_movement_read(m, by_movement[m.id], today) for m in movements]
-
 
 class BankStatementReadService(_Shapes):
     """The statements and the movements of an account, as an administrator reads them."""
@@ -230,7 +217,7 @@ class BankStatementReadService(_Shapes):
         rows = list(self.session.scalars(stmt.limit(limit + 1)))
         page = rows[:limit]
         return MovementPage(
-            items=self._movement_reads(page),
+            items=movement_reads(self.session, page),
             next_cursor=(
                 encode_cursor(_MOVEMENT_SORT, page[-1].booking_date, page[-1].id)
                 if len(rows) > limit
@@ -258,10 +245,13 @@ class StatementImportService(_Shapes):
         *,
         period_from: dt.date | None = None,
         period_to: dt.date | None = None,
+        modules: AbstractSet[str] | None = None,
     ) -> StatementImportResult:
         """Reads a statement file into the account: the reader is chosen by what the file
         holds, the movements it already knows are linked and not stored again. The period is
-        the file's, else the one passed (both or none)."""
+        the file's, else the one passed (both or none). Each new movement that fits one open due
+        item beyond doubt is proposed to it (`MovementMatchService.propose_for_import`); nothing
+        is settled. `modules` is what the space has on."""
         actor.require_admin("import_statement")
         if len(content) > STATEMENT_SIZE_MAX:
             raise ValidationFailed(
@@ -283,6 +273,9 @@ class StatementImportService(_Shapes):
         result = self.writer.import_statement(
             account_id, parsed, period_from=period_from, period_to=period_to
         )
+        proposed = MovementMatchService(self.session).propose_for_import(
+            result.new_movement_ids, modules=modules
+        )
         self.activities.record(
             STATEMENT,
             result.statement.id,
@@ -295,6 +288,7 @@ class StatementImportService(_Shapes):
                 "period_to": result.statement.period_to.isoformat(),
                 "added": result.added,
                 "duplicates": result.duplicates,
+                "proposed": proposed,
             },
         )
         self.session.commit()
@@ -302,11 +296,12 @@ class StatementImportService(_Shapes):
             statement=self._statement_reads(account_id, [result.statement])[0],
             added=result.added,
             duplicates=result.duplicates,
+            proposed=proposed,
         )
 
     def revert_statement(self, statement_id: UUID, actor: Actor) -> StatementRead:
-        """Removes the statement's movements and the automatic matches they carried (none exist
-        yet): the statement stays, as `reverted`."""
+        """Removes the statement's movements and the proposals they carried: the statement stays,
+        as `reverted`. A movement a person matched, or matched and unmatched, blocks it."""
         actor.require_admin("revert_statement")
         result = self.writer.revert_statement(statement_id)
         self.activities.record(
@@ -346,27 +341,3 @@ def _check(
     if opening is not None and closing is not None:
         return StatementCheck(ok=True, difference=_ZERO, kind=None)
     return None
-
-
-def _movement_read(
-    movement: BankMovement, statement_ids: list[UUID], today: dt.date
-) -> MovementRead:
-    unmatched_days = (
-        max((today - movement.booking_date).days, 0) if movement.state == "unmatched" else None
-    )
-    return MovementRead(
-        id=movement.id,
-        bank_account_id=movement.bank_account_id,
-        booking_date=movement.booking_date,
-        value_date=movement.value_date,
-        amount=movement.amount,
-        currency=movement.currency,
-        counterparty_name=movement.counterparty_name,
-        description=movement.description,
-        bank_reference=movement.bank_reference,
-        state=movement.state,  # type: ignore[arg-type]
-        ignored_reason=movement.ignored_reason,
-        unmatched_days=unmatched_days,
-        is_overdue_unmatched=unmatched_days is not None and unmatched_days >= UNMATCHED_OLD_DAYS,
-        statement_ids=statement_ids,
-    )

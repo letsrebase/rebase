@@ -173,6 +173,9 @@ class SettlementRead(BaseModel):
     account_currency: str | None
     settled_on: dt.date
     value_date: dt.date | None
+    bank_movement_id: UUID | None = Field(
+        description="The bank movement that proves this payment; null for one marked by hand"
+    )
     note: str | None
     recorded_by_id: UUID | None
     recorded_by_type: str
