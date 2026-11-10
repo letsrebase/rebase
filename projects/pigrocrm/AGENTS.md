@@ -416,7 +416,7 @@ period of the current year, which recomputes every earlier one, and keeps the pr
 pack's annual-return date. It is idempotent, isolated per legal entity (savepoint, failure counted by class name,
 stderr, exit 1), and a period whose due item already has a payment is reported on stderr and left as it was, not
 raised. `GET /api/iva-settlements?year=` and the MCP tool `list_iva_settlements` (`full_access`) read what it wrote;
-`settle_iva_period` stays a service call. Not here: the December advance, the IVA period lock, cash-basis IVA,
+`settle_iva_period` stays a service call (closing a period calls it, below). Not here: the December advance, cash-basis IVA,
 the srl's IVA dates (the `it-company` pack carries a calendar but no `iva` law, so it has no periodic settlement).
 
 **«IVA» draws what the server reads and adds nothing (REB-1024).** `IvaRegisterService` (`core/fiscal/iva_register.py`) is
@@ -433,9 +433,31 @@ period of the invoice before it, and a split-payment sale is listed with its VAT
 (`full_access` for a token) under the `purchases` module. The page is `/app/vat` (`features/iva/`, under
 `no-browser-arithmetic.test.ts`): it opens on the period running now, one legal entity at a time (the page's own «Azienda»
 select under «Tutte le aziende» with several), the sidebar entry is drawn by a `NavGate` (`useNavGates`: an administrator,
-`purchases` on, at least one eligible entity) and a figure the server did not send reads «non calcolabile». Closing and
-reopening a period, and the «Integrazioni» chip, wait for the IVA period lock and the integration documents, which do
-not exist: the page has no control for them.
+`purchases` on, at least one eligible entity) and a figure the server did not send reads «non calcolabile». The «Integrazioni» chip waits for the integration
+documents, which do not exist. A period is read with its lock (`closed`, `closed_at`, `closed_by`).
+
+**A closed IVA period refuses every write that changes its registers (REB-1036).** `IvaPeriodLockService`
+(`core/fiscal/iva_lock.py`, table `iva_period_locks`, migration 0101): an unscoped administrator, or a token with
+`full_access`, closes a period that has ended (`close_iva_period`, `POST /api/iva-period-locks`, tool `close_iva_period`)
+and reopens it (`reopen_iva_period`, `DELETE /api/iva-period-locks/{year}/{number}`, tool `reopen_iva_period`). Closing
+settles the period first, in the same transaction (`settle_iva_period(commit=False)`), so what is frozen is what the
+registers add up to now, and a settlement a payment froze that would change refuses the close. The row is a switch: the
+id is a uuid5 of the legal entity, the frequency, the year and the number, so the timeline of the period
+(`iva_period_closed`, `iva_period_reopened`) is one sequence across any number of closes, and reopening deletes the row.
+`period_start` and `period_end` are stored so a write finds its lock by the day it is dated, whatever the frequency. The
+checks are `assert_writable` calls, in the service that owns each write: `PurchaseService` (an invoice or credit note,
+by its `iva_period`, the old and the new one: create, update, cancel, delete and restore; a receipt or an expense is in
+no register) and `InvoiceEmission.issue` and `annul` and `IssuedInvoiceImporter.import_issued` (by the issue date, which
+is how the sales register places a sale). The refusal is a 409 whose sentence names the period («il periodo IVA 1°
+trimestre 2026 è chiuso: riaprilo...»), the same over REST and MCP. A payment, `mark_transmitted_externally`, a draft
+or a proforma and the settlement itself are not refused, since none changes a register. A write holds a shared advisory
+lock on its legal entity's year of locks and a close or a reopen an exclusive one (a period with no row has nothing to
+`FOR SHARE`, as `PeriodLockRepository.lock_month` says), so a close never commits between a write's check and the write.
+It is separate from the monthly `period_locks` of `timetracking/locks.py`, which stays the hours' and the cost side of
+purchases', and neither implies the other. The page's «Chiudi il periodo» and «Riapri» are an unscoped administrator's
+(`lockMode` in `features/iva/PeriodLock.tsx`; a scoped one is told why), each behind its question, and the period in the
+URL is `?period=` **with** `?frequency=`: a number is a period only with its frequency, so the sidebar's legal entity
+cannot turn a quarterly `3` into March.
 
 **An IMAP or PEC mailbox is `mailboxes/imap_*` and its password is sealed with its own key (REB-1015).**
 `ImapReader` (`imap_client.py`) is the only code that opens an IMAP socket: TLS or STARTTLS only, the host
