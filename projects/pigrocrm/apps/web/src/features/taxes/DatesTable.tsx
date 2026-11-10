@@ -4,7 +4,7 @@ import { cn } from '@rebase/ui/cn'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@rebase/ui/table'
 import { NOT_COMPUTABLE } from '@/features/analytics/format'
 import { formatIsoDateItalian } from '@/lib/dates'
-import { dateLabel, distanceLabel, taxOfDate, type DueDay } from './dates'
+import { NAMES_ITSELF, dateLabel, distanceLabel, taxOfDate, type DueDay } from './dates'
 
 /** Past this many rows the list says «Mostra altri» (brief, «Many»): a year holds a few dozen at
  *  most. */
@@ -18,7 +18,7 @@ function Lines({ day, past }: { day: DueDay; past: boolean }) {
       {day.entries.map((entry) => (
         <p key={`${entry.tax}-${entry.kind}`} className={cn('text-sm', past && 'text-muted-foreground')}>
           {dateLabel(entry)}
-          {entry.tax === 'iva' ? null : (
+          {NAMES_ITSELF.has(entry.tax) ? null : (
             <span className="text-xs text-muted-foreground"> · {taxOfDate(entry)}</span>
           )}
         </p>

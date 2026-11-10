@@ -681,7 +681,18 @@ class AnalyticsService:
         )
         profile = FiscalProfileService(self.session).get(actor, legal_entity.id)
         pack = resolve_pack(profile.pack_id, profile.pack_version)
-        dates = tax_calendar(pack, year) or []
+        dates = (
+            tax_calendar(
+                pack,
+                year,
+                calendar_year_end=(
+                    legal_entity.fiscal_year_end_month,
+                    legal_entity.fiscal_year_end_day,
+                )
+                == (12, 31),
+            )
+            or []
+        )
         return TaxCalendar(
             year=year,
             legal_entity_id=legal_entity.id,

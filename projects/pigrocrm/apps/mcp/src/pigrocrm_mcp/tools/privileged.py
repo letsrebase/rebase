@@ -594,8 +594,8 @@ def register(
     @mcp.tool(annotations=READ_ONLY)
     @guard
     def get_tax_calendar(year: int, legal_entity_id: str | None = None) -> dict[str, Any]:
-        """The tax dates of a calendar year for a company, from its fiscal pack (IVA payments, the
-        December advance, income or substitute tax), each with its source and the day it falls due.
+        """The tax dates of a calendar year for a company, from its fiscal pack (IVA, income or
+        substitute tax, IRES, IRAP, withholding, chamber fee), each with its source and due day.
         With several companies pass `legal_entity_id`. An empty list: no dates for that year.
         """
 

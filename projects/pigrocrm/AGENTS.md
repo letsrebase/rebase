@@ -300,7 +300,7 @@ empty list), never another year's. A date enters a pack only after its row in th
 `counts` (paid over declared over estimate, by stage, never by time) and the totals of each column, which add one kind of
 reading only and say how many lines they leave out. A figure that does not exist is `null`, never zero, and `estimable` tells a
 tax the code has no estimate for (its rule is «to verify») from one whose profile parameter is missing. The dates are
-`GET /api/analytics/fiscal/calendar` (an administrator's, module `taxes`). `features/taxes/` holds the page (`/app/taxes`,
+`GET /api/analytics/fiscal/calendar` (an administrator's, module `taxes`). The `it-company` pack carries its own calendar (REB-1033): IVA as the ordinary regime's, IRES and IRAP balance and advances, withholding on pay to others, the chamber of commerce fee date; the income-tax and fee dates are `calendar_year_only` rules, and `tax_calendar(pack, year, calendar_year_end=...)` is the one function any caller reads a pack's dates through (the tax-calendar read passes the legal entity's year end), so a legal entity with another year end gets no date that is wrong. `features/taxes/` holds the page (`/app/taxes`,
 tabs «Imposte» and «Scadenze», one light page with no tabs for a solo flat-rate space) and the Home's next two dates
 (`HomeTaxDates`: a block after «Quando arrivano i soldi» on the solo Home, under its first figure on a phone, and a band under «Da fare» on the company Home at every width); the folder
 is under `no-browser-arithmetic.test.ts`, so nothing there parses an amount. «Rate», the F24 chip and the date's state pill wait

@@ -342,6 +342,109 @@ _IT_STANDARD_CALENDAR_2026 = TaxCalendarLaw(
     ),
 )
 
+# A company's calendar (REB-1033, taxes design § 1 and § 3). IVA is the same settlement as the
+# ordinary regime's (the Agenzia's pages address every taxpayer), so it reuses the rules above.
+# IRES and IRAP follow the company's fiscal year: the balance and first advance on the last day
+# of the sixth month after the year end, the second advance on the last day of the eleventh
+# (Agenzia, «Imposte sui redditi (Irpef, Ires)», section on companies). The dates below are for
+# a calendar-year company that approves its financial statements within 120 days, the case the
+# Agenzia's deadline calendar lists, so they are marked `calendar_year_only`; another year end,
+# a late approval and the ISA postponement to 20 July are not modelled. The annual chamber of
+# commerce fee falls on the day of the first advance (art. 17 c. 3 lett. a DPR 435/2001); its
+# amount is TO VERIFY (A5) and not in the pack. Withholding on pay to others (code 1040 for
+# professionals) is due by the 16th of the month after the payment, the same day as IVA's, and
+# the deadline calendar moves it to 20 August in 2026 as it does IVA (the deferral of a payment
+# of 100 euro or less is not modelled). Payroll withholding and contributions are the staff
+# project's dates (`PayrollLaw`).
+_SRC_IRES = (
+    "Agenzia delle Entrate, «Imposte sui redditi (Irpef, Ires)» (società di capitali) and "
+    "Scadenzario fiscale, «Soggetti Ires: versamento saldo 2025 e primo acconto 2026 dell'Ires» "
+    "(30 June 2026)"
+)
+_SRC_IRES_SECOND = (
+    "Agenzia delle Entrate, «Imposte sui redditi (Irpef, Ires)» (società di capitali) and Fisco "
+    "Oggi, Scadenzario, «Versamenti da dichiarazioni – Acconto 2026» (30 November 2026)"
+)
+_SRC_IRAP = (
+    "Agenzia delle Entrate, Scadenzario fiscale, «Soggetti Ires: versamento saldo 2025 e primo "
+    "acconto 2026 dell'Irap» (30 June 2026)"
+)
+_SRC_IRAP_SECOND = (
+    "Fisco Oggi, Scadenzario, «Versamenti da dichiarazioni – Acconto 2026» (codice tributo 3813, "
+    "30 November 2026)"
+)
+_SRC_WITHHOLDING = (
+    "Agenzia delle Entrate, «F24 Ritenute reddito lavoro autonomo - Come e quando si versa»; "
+    "Scadenzario fiscale, «Sostituti d'imposta: versamento ritenute operate nel mese precedente» "
+    "(codice tributo 1040, 20 August 2026)"
+)
+_SRC_CHAMBER_FEE = (
+    "Camere di commercio, «Termini di versamento» del diritto annuale (art. 17 c. 3 lett. a DPR "
+    "435/2001; ordinary deadline 30 June 2026 at dirittoannuale.camcom.it)"
+)
+
+_WITHHOLDING_DATES = tuple(MonthDay(month=m, day=20 if m == 8 else 16) for m in range(1, 13))
+
+_IT_COMPANY_CALENDAR_2026 = TaxCalendarLaw(
+    from_year=2026,
+    rules=(
+        *_IVA_RULES_2026,
+        TaxDateRule(
+            tax="ires",
+            kind="balance_and_first_advance",
+            cadence=None,
+            dates=(MonthDay(month=6, day=30),),
+            covers="the IRES balance of the year before and the first advance of the year",
+            source=_SRC_IRES,
+            calendar_year_only=True,
+        ),
+        TaxDateRule(
+            tax="ires",
+            kind="second_advance",
+            cadence=None,
+            dates=(MonthDay(month=11, day=30),),
+            covers="the second or only IRES advance of the year",
+            source=_SRC_IRES_SECOND,
+            calendar_year_only=True,
+        ),
+        TaxDateRule(
+            tax="irap",
+            kind="balance_and_first_advance",
+            cadence=None,
+            dates=(MonthDay(month=6, day=30),),
+            covers="the IRAP balance of the year before and the first advance of the year",
+            source=_SRC_IRAP,
+            calendar_year_only=True,
+        ),
+        TaxDateRule(
+            tax="irap",
+            kind="second_advance",
+            cadence=None,
+            dates=(MonthDay(month=11, day=30),),
+            covers="the second or only IRAP advance of the year",
+            source=_SRC_IRAP_SECOND,
+            calendar_year_only=True,
+        ),
+        TaxDateRule(
+            tax="chamber_fee",
+            kind="annual_fee",
+            cadence=None,
+            dates=(MonthDay(month=6, day=30),),
+            covers="the annual fee to the chamber of commerce, with the first advance",
+            source=_SRC_CHAMBER_FEE,
+            calendar_year_only=True,
+        ),
+        TaxDateRule(
+            tax="withholding",
+            kind="withholding_payment",
+            cadence=None,
+            dates=_WITHHOLDING_DATES,
+            covers="the withholding on pay to others of the month before",
+            source=_SRC_WITHHOLDING,
+        ),
+    ),
+)
+
 # The flat-rate regime has no periodic IVA settlement (suppliers design § 6), so no IVA date.
 # Its substitute tax falls on the same two days as the income tax; the split and the thresholds
 # of its advances, and its instalments, are TO VERIFY in A5 and not in the calendar.
@@ -542,6 +645,7 @@ IT_COMPANY_PACK = FiscalPack(
             payroll=ITALIAN_PAYROLL,
         ),
     ),
+    calendars=(_IT_COMPANY_CALENDAR_2026,),
 )
 
 _PACKS: dict[tuple[str, str], FiscalPack] = {

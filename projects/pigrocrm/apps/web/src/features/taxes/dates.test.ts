@@ -44,6 +44,20 @@ describe('dateLabel', () => {
     )
   })
 
+  it('says the company dates: withholding by the month it covers, the fee, IRES and IRAP', () => {
+    const base = entry({ cadence: null })
+    expect(
+      dateLabel({ ...base, tax: 'withholding', kind: 'withholding_payment', nominal_date: '2026-08-20' }),
+    ).toBe('Ritenute di luglio')
+    expect(dateLabel({ ...base, tax: 'chamber_fee', kind: 'annual_fee' })).toBe(
+      'Diritto annuale CCIAA 2026',
+    )
+    expect(taxOfDate({ ...base, tax: 'ires' })).toBe('IRES')
+    expect(taxOfDate({ ...base, tax: 'irap' })).toBe('IRAP')
+    expect(taxOfDate({ ...base, tax: 'withholding' })).toBe('Ritenute')
+    expect(taxOfDate({ ...base, tax: 'chamber_fee' })).toBe('Camera di commercio')
+  })
+
   it('names the tax a date belongs to', () => {
     expect(taxOfDate(entry({ tax: 'substitute_tax' }))).toBe('Imposta sostitutiva')
     expect(taxOfDate(entry({ tax: 'iva' }))).toBe('IVA')

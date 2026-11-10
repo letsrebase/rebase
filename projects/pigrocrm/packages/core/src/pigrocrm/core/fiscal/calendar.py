@@ -67,9 +67,16 @@ def next_working_day(day: date) -> date:
     return day
 
 
-def tax_calendar(pack: FiscalPack, year: int) -> list[CalendarDate] | None:
+def tax_calendar(
+    pack: FiscalPack, year: int, *, calendar_year_end: bool = True
+) -> list[CalendarDate] | None:
     """Every date of `pack`'s calendar that falls in calendar year `year`, oldest first;
-    `None` when the pack carries no dates for that year (never a guess)."""
+    `None` when the pack carries no dates for that year (never a guess).
+
+    `calendar_year_end` says whether the legal entity's fiscal year ends on 31 December. A rule
+    marked `calendar_year_only` is left out for any other year end: its dates would be wrong, and
+    the pack does not state the ones that are right. Any pack's calendar is read through this
+    one function, by the tax-calendar read and by whatever writes due items on its dates."""
     law = pack.calendar_for(year)
     if law is None:
         return None
@@ -84,6 +91,7 @@ def tax_calendar(pack: FiscalPack, year: int) -> list[CalendarDate] | None:
             source=rule.source,
         )
         for rule in law.rules
+        if calendar_year_end or not rule.calendar_year_only
         for nominal in (date(year, point.month, point.day) for point in rule.dates)
     ]
     return sorted(dates, key=lambda entry: (entry.nominal_date, entry.tax, entry.kind))
