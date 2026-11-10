@@ -203,7 +203,7 @@ nothing of accounts or dedup, and `import_statement` does the rest and never com
 hash and the occurrence index within the file, unique per account, so the same movement in two
 statements is one row and two identical same-day payments are two. The covered period is the file's
 or the one a person sets; it is never guessed. `bank/__init__.py` registers the readers: `banco_bpm_xlsx` (`banco_bpm_xlsx.py`, YouWeb's «Saldo e movimenti» export: no account, period, balance or reference, so the key is the reference-less one; a `-da contab` card payment is left out until booked; the SEPA `END TO END ID` of a description is kept in `bank_movements.end_to_end_id`, never as a dedup key since payers reuse it). And `camt053` (`camt053.py`, `.001.02` and `.001.08`, one `Stmt` per file: `AcctSvcrRef` is the bank reference, `EndToEndId` goes to `end_to_end_id`, `NOTPROVIDED` is none). The tables are the `cash` module's data (REB-1025). `cash` (key `cash`, «Cassa»,
-default on for both profiles, `requires=()`) guards `/api/bank-accounts*` and `/api/bank-statements/*` and the six bank
+default on for both profiles, `requires=()`) guards `/api/bank-accounts*`, `/api/bank-statements/*` and `/api/bank-movements/*` and the eight bank
 tools; the schedule and the payables are core and answer without balances while it is off. Every method is an administrator's
 (`require_admin`) and, for a token, `full_access`'s: `BankAccountService` (create, update, archive, read; an account is
 never deleted, an archived one leaves the list and every balance, and its IBAN, currency and legal entity freeze with its
@@ -218,7 +218,7 @@ accounts with no anchor have none) and `is_stale`, `coverage.py` is the twelve m
 previous statement's closing (`gap`). A revert drops the movements only that statement carries and refuses (409) while one of
 them is no longer `unmatched`. The tools are registered in `tools/privileged.py` (full access only) with one action key each;
 the upload, the revert and the coverage are REST only, and a movement's description and counterparty are the bank's free text.
-Matching a movement to a due item, PDF statements and the proposal to confirm one are later cards. Nothing here is scheduled.
+Matching a movement to a due item is `core/bank/matching.py` (REB-1042, below); PDF statements and the transfer, ignore and «new expense» outcomes are later cards. Nothing here is scheduled.
 
 **The engagements door writes a contract beside the deal (REB-1001).** When a match turns active, the freelancer's space gets rebase as a customer, the letter's deal (the hub still reads the deal and its hours; its `PUT` answer needs `deal_id`) and an `active` contract titled like the deal with one rate card from the letter's `fee_unit` (`day` is `daily`, `hour` is `hourly`, `flat` is `one_off`, valid for the letter's dates; the forecast `expected_quantity` is the expected days, or hours at `HOURS_PER_DAY`, with `delivery_period` `one_off`). `rebase_engagements.contract_id` records it with `deal_id`; a row with a deal and no contract is a space set up before this, and keeps its deal and hours alone. The registry has no migrations: `ensure_tenants_database` adds the column itself at boot (`ALTER TABLE ... ADD COLUMN IF NOT EXISTS`, before the missing-column refusal), and a later column on a registry table goes in the same list (`REGISTRY_COLUMN_UPGRADES`). Dropping the deal for new matches waits for the hub to read days from work units. **A retry is answered the row's ids, never what the deal points at now** (`test_second_call_answers_the_same_ids_and_creates_nothing` re-points the deal by hand and pins it), so `EngagementService._recorded` must not read the customer from the deal: a fact in the registry that a change in a space makes stale is written by that change (a merge of the customer points `customer_id` at the survivor, REB-1031, below).
 
@@ -339,7 +339,24 @@ and the one-line band both use (`CashBand`). Every figure is the server's string
 `no-browser-arithmetic.test.ts`'s roots, so a `Number()` on an amount fails the suite. The browser keeps no constant the
 server owns: the horizon options, `stale_days`, `unmatched_days`, `is_overdue_unmatched`, the grace and `oldest_days` are read
 from the response. A balance the viewer may not read is `null` in the response and absent on screen, never «0,00 €».
-The matching of a movement to a due item is not built (its card comes next): movements are a read-only queue.
+**A bank movement is matched to the due items it pays by `MovementMatchService` (REB-1042).** `core/bank/matching.py`,
+`match_rank.py` (the pure ranking), `match_reads.py` and `match_schemas.py`; the routes are `/api/bank-movements/*` (module `cash`,
+administrator) and the tools `get_bank_movement` and `propose_movement_match`, both `full_access` and **nothing more**: an agent proposes
+and reads, and `confirm_movement_match` and `undo_movement_match` are `PERSON_ONLY_ACTIONS` (`Actor.require_person`, then `require_admin`).
+Three tables carry it: `movement_matches` (one row per proposal or decision: `proposed`, `confirmed`, `dismissed`, `undone`, who and why;
+at most one live row per movement by a partial unique index), `movement_match_items` (the items and the part of the movement each takes) and
+`due_item_settlements.bank_movement_id`, the **evidence** of a payment. A proposal is ranked by the amount (`exact_amount`, `items_total` for
+a split of one counterparty's items that adds up), the document's number in the bank's text (`document_number`: an invoice's `2026/35` as
+`2026/35` or `35/2026`, a purchase's own number), an accepted counterparty IBAN (`known_iban`, which only ranks) and the counterparty's name;
+`StatementImportService.import_file` writes a `system` proposal only for the one fit that has evidence besides the amount and nothing beside
+it, and **never settles**. Confirming settles each item through `DueItemService.settle_from_movement` (dated on the booking date, the item's
+own permission, an outgoing or fiscal item is an administrator's act, the month lock does not apply), or, when the item was already marked
+paid by hand for the same amount (within `ADOPT_WINDOW_DAYS`), attaches the movement to that payment instead of making a second one
+(`adopt_for_movement`). The selection has to cover the movement exactly (a last item paid in part needs `accept_partial`); the same currency,
+company and direction only. A payment a movement proves is taken back only through its match (`reverse_settlement` and «segna come non
+pagata» refuse it); undoing reverses what the match wrote (the row stays, stamped) or only detaches what it adopted, and the match stays as
+`undone`. A statement whose movement was ever confirmed cannot be reverted. Every figure of a candidate or a preview (`allocated`,
+`difference`, `partial`) is the server's.
 
 **«Fattura il canone» bills one occurrence of a recurring fee as a draft (REB-1032).** `contracts/fee_billing.py`:
 `bill` makes the draft invoice with the card's fee on one line, `rate_card_id` and `period_start` (the

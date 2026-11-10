@@ -116,6 +116,7 @@ This file is the single mapping from the Italian word to the English identifier.
 | conto (bancario) | bank_account | One of the space's bank accounts (`bank_accounts`, `BankAccount`), always a legal entity's; archived, never deleted |
 | estratto conto | bank_statement | One file read for an account (`bank_statements`, `BankStatement`): the period it covers, the balances it states, its `state` (`proposed`, `imported`, `reverted`) |
 | movimento (bancario) | bank_movement | One line of an account (`bank_movements`, `BankMovement`), held once per account whatever the number of statements that carry it |
+| abbinamento (di un movimento) | movement match (`MovementMatch`, `movement_matches`, `MovementMatchService`) | A movement proposed to, confirmed against or undone from the due items it pays; the payment it writes carries the movement as `bank_movement_id`, its evidence |
 | saldo (di un conto) | balance | What an account holds, computed by the server from the latest closing balance (or the opening one) and the movements booked after it; never summed by the browser |
 
 ## Fiscal and legal terms
