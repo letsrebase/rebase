@@ -648,9 +648,12 @@ class PurchaseService:
         rows = self.repo.list(query)
         has_more = len(rows) > query.limit
         items = rows[: query.limit]
+        total_count, total_amount = self.repo.totals(query)
         return PurchasePage(
             items=[PurchaseRead.model_validate(row) for row in items],
             next_cursor=items[-1].id if has_more and items else None,
+            total_count=total_count,
+            total_amount=total_amount,
         )
 
 

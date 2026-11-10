@@ -13689,6 +13689,10 @@ export interface components {
             items: components["schemas"]["PurchaseRead"][];
             /** Next Cursor */
             next_cursor: string | null;
+            /** Total Count */
+            total_count: number;
+            /** Total Amount */
+            total_amount: string;
         };
         /** PurchaseRead */
         PurchaseRead: {

@@ -217,3 +217,8 @@ class PurchaseListQuery(BaseModel):
 class PurchasePage(BaseModel):
     items: list[PurchaseRead]
     next_cursor: UUID | None
+    # What the filters select as a whole, whatever page was asked for: the count, and the sum
+    # of the document totals in euro (signed, so a credit note subtracts). Summed here because
+    # no screen adds money up itself.
+    total_count: int
+    total_amount: Decimal
