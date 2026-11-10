@@ -120,12 +120,18 @@ describe('the search box debounces before it reaches the API and the URL (REB-28
     await screen.findByRole('heading', { name: 'Talenti' })
     spy.mockClear()
 
-    await userEvent.type(screen.getByLabelText('Cerca'), 'ada')
+    // One burst: `delay: null` leaves no turn of the event loop between two keystrokes, so
+    // the 300 ms debounce cannot expire inside it however slow the machine is (REB-1029).
+    await userEvent.setup({ delay: null }).type(screen.getByLabelText('Cerca'), 'ada')
+    const talentCalls = () =>
+      spy.mock.calls.map((call) => String(call[0])).filter((url) => url.includes('/api/hub/talent'))
+    // The search crosses the debounce, the URL and the query before it is a request: wait
+    // for that request, not for a fixed time that a starved machine overruns.
+    await vi.waitFor(() => expect(talentCalls()).toHaveLength(1))
+    // Then give a second request, one per keystroke, the time to show up.
     await settle()
-
-    const calls = spy.mock.calls.map((call) => String(call[0])).filter((url) => url.includes('/api/hub/talent'))
-    expect(calls).toHaveLength(1)
-    expect(calls[0]).toContain('q=ada')
+    expect(talentCalls()).toHaveLength(1)
+    expect(talentCalls()[0]).toContain('q=ada')
   })
 })
 

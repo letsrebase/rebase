@@ -387,12 +387,16 @@ describe('the Match list (REB-413)', () => {
     await screen.findByRole('heading', { name: 'Match' })
     spy.mockClear()
 
-    await userEvent.type(screen.getByLabelText('Cerca'), 'ada')
+    // One burst (`delay: null`), so the 300 ms debounce cannot expire inside it however slow
+    // the machine is; then wait for the request, and once more for a second one that a
+    // keystroke-by-keystroke search would have sent (REB-1029).
+    await userEvent.setup({ delay: null }).type(screen.getByLabelText('Cerca'), 'ada')
+    const matchCalls = () =>
+      spy.mock.calls.map((call) => String(call[0])).filter((url) => url.includes('/api/hub/matches'))
+    await waitFor(() => expect(matchCalls()).toHaveLength(1))
     await settle()
-
-    const calls = spy.mock.calls.map((call) => String(call[0])).filter((url) => url.includes('/api/hub/matches'))
-    expect(calls).toHaveLength(1)
-    expect(calls[0]).toContain('q=ada')
+    expect(matchCalls()).toHaveLength(1)
+    expect(matchCalls()[0]).toContain('q=ada')
     expect(router.state.location.search).toMatchObject({ q: 'ada' })
   })
 

@@ -27,7 +27,9 @@ const DRAFT = {
 const AUDIENCE = { lines: [{ email: 'ada@studio.it', name: 'Ada', kind: 'freelancer', excluded: null }], included: 1, excluded: 0 }
 const ME = { email: 'ivan@rebase.it', name: 'Ivan', role: 'admin' }
 const COUNTS_EMPTY = { recipients: 0, queued: 0, sent: 0, skipped: 0, failed: 0, delivered: 0, bounced: 0 }
-const SAVED = { timeout: 3000 }
+/** The draft saves itself 600 ms after the last change, on top of the request and the render:
+ *  as long as the 10 s a query gets everywhere else, since a starved machine overruns 3 s (REB-1029). */
+const SAVED = { timeout: 10_000 }
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
@@ -125,9 +127,13 @@ describe('«Un link» (REB-530)', () => {
     expect(patches(calls, 'c1')).toEqual([])
 
     await userEvent.clear(field)
-    await userEvent.type(field, LUMA)
-    await vi.waitFor(() => expect(patches(calls, 'c1')).toHaveLength(1), SAVED)
-    expect(patches(calls, 'c1')[0]).toMatchObject({ button_meta: 'link', button_url: LUMA, action: 'click' })
+    // One burst, so no save can fall between two keystrokes of the address; then wait for the
+    // save that carries it, not for the first one that happens to exist.
+    await userEvent.setup({ delay: null }).type(field, LUMA)
+    await vi.waitFor(
+      () => expect(patches(calls, 'c1').at(-1)).toMatchObject({ button_meta: 'link', button_url: LUMA, action: 'click' }),
+      SAVED,
+    )
     expect(await screen.findByText(/Bozza salvata alle/, {}, SAVED)).toBeInTheDocument()
     // The preview prints the address under the button, as the mail does, and opens it.
     expect(preview().getByText('Se il bottone non si apre, copia questo indirizzo nel browser:')).toBeInTheDocument()
@@ -140,9 +146,8 @@ describe('«Un link» (REB-530)', () => {
     await pick('Dove porta', 'La sua area')
     expect(screen.queryByLabelText('Indirizzo del link')).not.toBeInTheDocument()
     expect(screen.getByText('Ha caricato il CV')).toBeInTheDocument()
-    await vi.waitFor(() => expect(patches(calls, 'c1')).toHaveLength(2), SAVED)
-    expect(patches(calls, 'c1')[1]).toMatchObject({ button_meta: 'area', action: 'cv' })
-    expect(patches(calls, 'c1')[1]).not.toHaveProperty('button_url')
+    await vi.waitFor(() => expect(patches(calls, 'c1').at(-1)).toMatchObject({ button_meta: 'area', action: 'cv' }), SAVED)
+    expect(patches(calls, 'c1').at(-1)).not.toHaveProperty('button_url')
     expect(preview().queryByRole('link')).not.toBeInTheDocument()
   })
 
