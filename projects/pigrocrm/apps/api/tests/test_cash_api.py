@@ -132,6 +132,7 @@ def test_the_schedule_is_money_as_strings_by_the_week_with_its_own_constants(
         "currency": "EUR",
         "as_of": TODAY.isoformat(),
         "excluded_currencies": [],
+        "accounts_without_balance": 0,
     }
     assert [(a["name"], a["balance"], a["currency"]) for a in body["accounts"]] == [
         ("Conto operativo", "1000.00", "EUR")

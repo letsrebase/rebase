@@ -62,6 +62,9 @@ class TotalBalance(BaseModel):
     currency: Literal["EUR"] = "EUR"
     as_of: dt.date | None
     excluded_currencies: list[str]
+    # EUR accounts with no balance yet (no opening balance and no statement): they are not in
+    # `amount`, and the browser says so instead of presenting a partial sum as the balance.
+    accounts_without_balance: int
 
 
 class LateFigure(BaseModel):

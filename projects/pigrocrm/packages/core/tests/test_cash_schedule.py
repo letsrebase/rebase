@@ -335,6 +335,8 @@ def test_the_account_cards_say_where_each_balance_stands(world: CashWorld) -> No
     assert (cards["C conto"].balance, cards["C conto"].balance_as_of) == (None, None)
     assert page.total_balance is not None and page.total_balance.amount == Decimal("105.00")
     assert page.total_balance.as_of == world.today - dt.timedelta(days=3)
+    # The account with no balance is not in the sum, and the answer says one was left out.
+    assert page.total_balance.accounts_without_balance == 1
 
 
 def test_an_account_in_another_currency_is_listed_and_not_added(world: CashWorld) -> None:

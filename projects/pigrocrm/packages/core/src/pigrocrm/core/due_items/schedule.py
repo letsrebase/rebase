@@ -353,6 +353,7 @@ class CashScheduleService:
         cards: list[CashAccountCard] = []
         counted: list[AccountBalance] = []
         excluded: set[str] = set()
+        without_balance = 0
         for account, entity_name in accounts:
             balance = found[account.id]
             cards.append(
@@ -370,6 +371,8 @@ class CashScheduleService:
                 )
             )
             if balance.amount is None:
+                if account.currency == SCHEDULE_CURRENCY:
+                    without_balance += 1
                 continue
             if account.currency == SCHEDULE_CURRENCY:
                 counted.append(balance)
@@ -383,6 +386,7 @@ class CashScheduleService:
                 amount=amount,
                 as_of=min(dates) if dates else None,
                 excluded_currencies=sorted(excluded),
+                accounts_without_balance=without_balance,
             )
         return _Balances(cards, total, {account.id for account, _ in accounts})
 
