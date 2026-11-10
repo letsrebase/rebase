@@ -40,10 +40,11 @@ const COMPANY: CashSummary = {
   cash_enabled: true,
   show_outgoing: true,
   balance_today: '18420.50',
+  balance_below_zero: false,
   balance_as_of: '2026-11-09',
   receivable: { total: '123456.00', late_total: '3660.00', late_count: 3 },
   payable: { total: '9800.00', late_total: '1200.00', late_count: 1 },
-  next_7_days: { in_total: '4100.00', out_total: '2500.00' },
+  next_7_days: { in_total: '4100.00', in_forecast: '0.00', out_total: '2500.00', out_forecast: '0.00' },
   alert: {
     kind: 'below_zero',
     week_start: '2026-11-30',
@@ -109,10 +110,20 @@ describe('PhoneCashFigures', () => {
     expect(await screen.findByText('Manca l’estratto conto di ottobre per Conto operativo')).toBeTruthy()
   })
 
-  it('says how long a balance has gone without news', async () => {
+  it('says how long a balance has gone without news, in the singular for one day', async () => {
     answer({ ...COMPANY, alert: { kind: 'stale_balance', account_name: 'Conto USD', days: 41 } })
-    renderFigures()
+    const { unmount } = renderFigures()
     expect(await screen.findByText('Il saldo di Conto USD non si aggiorna da 41 giorni')).toBeTruthy()
+    unmount()
+    answer({ ...COMPANY, alert: { kind: 'stale_balance', account_name: 'Conto USD', days: 1 } })
+    renderFigures()
+    expect(await screen.findByText('Il saldo di Conto USD non si aggiorna da 1 giorno')).toBeTruthy()
+  })
+
+  it('names the year of a missing statement that is not this year’s', async () => {
+    answer({ ...COMPANY, alert: { kind: 'missing_statement', account_name: 'Conto operativo', period_from: '2025-10-01', period_to: '2025-10-31' } })
+    renderFigures()
+    expect(await screen.findByText('Manca l’estratto conto di ottobre 2025 per Conto operativo')).toBeTruthy()
   })
 
   it('draws a solo space with entrano only and no payable', async () => {
@@ -121,7 +132,7 @@ describe('PhoneCashFigures', () => {
       show_outgoing: false,
       payable: null,
       alert: null,
-      next_7_days: { in_total: '900.00', out_total: null },
+      next_7_days: { in_total: '900.00', in_forecast: '0.00', out_total: null, out_forecast: null },
     })
     renderFigures()
     expect(await screen.findByText('Saldo oggi')).toBeTruthy()
@@ -177,13 +188,64 @@ describe('PhoneCashFigures', () => {
   })
 })
 
-describe('PhoneCashFigures, a negative balance', () => {
-  it('draws it in the danger text with its sign', async () => {
+describe('PhoneCashFigures, a balance below zero', () => {
+  it('draws it in the danger text with the words «sotto zero», from the server’s flag', async () => {
     setPhone(true)
     legalEntity.selected = null
-    answer({ ...COMPANY, balance_today: '-120.00' })
+    answer({ ...COMPANY, balance_today: '-120.00', balance_below_zero: true })
     renderFigures()
     const figure = await screen.findByText(/-120,00/)
     expect(figure.className).toContain('text-destructive')
+    expect(within(figure).getByText('sotto zero')).toBeTruthy()
+  })
+
+  it('draws no such words for a balance the server does not flag', async () => {
+    setPhone(true)
+    legalEntity.selected = null
+    answer({ ...COMPANY, balance_below_zero: false })
+    renderFigures()
+    await screen.findByText('Saldo oggi')
+    expect(screen.queryByText('sotto zero')).toBeNull()
+  })
+})
+
+describe('PhoneCashFigures, where a figure leads', () => {
+  beforeEach(() => {
+    vi.mocked(api.GET).mockReset()
+    legalEntity.selected = null
+    setPhone(true)
+  })
+
+  it('leads to Cassa with the module on', async () => {
+    answer(COMPANY)
+    renderFigures()
+    expect((await screen.findByText('Prossimi 7 giorni')).closest('a')?.getAttribute('href')).toBe('/app/cash')
+  })
+
+  it('leads to the tab «Scadenziario» of the Home with the module off, the page being gated', async () => {
+    answer({ ...COMPANY, cash_enabled: false, balance_today: null, balance_as_of: null, alert: null })
+    renderFigures()
+    for (const label of ['Da incassare', 'Da pagare', 'Prossimi 7 giorni']) {
+      const href = (await screen.findByText(label)).closest('a')?.getAttribute('href') ?? ''
+      expect(href, label).toContain('/app?')
+      expect(href, label).toContain('tab=receivables')
+      expect(href, label).not.toContain('/app/cash')
+    }
+  })
+})
+
+describe('PhoneCashFigures, the forecast part of the next seven days', () => {
+  beforeEach(() => {
+    vi.mocked(api.GET).mockReset()
+    legalEntity.selected = null
+    setPhone(true)
+  })
+
+  it('draws it lighter with the word «previsti», and nothing when there is none', async () => {
+    answer({ ...COMPANY, next_7_days: { in_total: '4100.00', in_forecast: '600.00', out_total: '2500.00', out_forecast: '0.00' } })
+    renderFigures()
+    const part = await screen.findByText(/di cui 600,00.*previsti/)
+    expect(part.className).toContain('italic')
+    expect(screen.getAllByText(/previsti/)).toHaveLength(1)
   })
 })

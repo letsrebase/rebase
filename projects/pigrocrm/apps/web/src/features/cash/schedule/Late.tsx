@@ -1,4 +1,5 @@
 import { cn } from '@rebase/ui/cn'
+import { daysCount } from '@/features/cash/days'
 import { money } from '@/features/dashboard/format'
 import { LATE_NOTE, itemsCount } from './labels'
 import type { LateFigure } from './queries'
@@ -16,7 +17,7 @@ function LateCard({ label, figure }: { label: string; figure: LateFigure }) {
       </p>
       <p className={cn('mt-1 text-xs', late ? 'text-destructive' : 'text-muted-foreground')}>
         {late
-          ? `${itemsCount(figure.count)}${figure.oldest_days === null ? '' : `, la più vecchia da ${figure.oldest_days} giorni`}`
+          ? `${itemsCount(figure.count)}${figure.oldest_days === null ? '' : `, la più vecchia da ${daysCount(figure.oldest_days)}`}`
           : 'Niente in ritardo'}
       </p>
     </div>

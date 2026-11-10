@@ -7,19 +7,17 @@ import { StatusPill } from '@/components/StatusPill'
 import { Button } from '@rebase/ui/button'
 import { cn } from '@rebase/ui/cn'
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from '@rebase/ui/sheet'
+import { moneyIn } from '@/features/cash/money'
 import { useCan } from '@/lib/auth'
 import { formatIsoDateItalian } from '@/lib/dates'
 import { useLegalEntity } from '@/lib/legalEntity'
-import { useModules } from '@/lib/modules'
 import {
   ITEM_STATE_TONE,
-  SOURCES,
   counterpartyName,
   estimatedSentence,
   itemPillLabel,
   itemWhat,
   itemsCount,
-  moneyIn,
   settlesAsAdmin,
   sourceLabel,
   sourcePage,
@@ -199,12 +197,11 @@ function Group({
 /**
  * One week's items (up to 50 with «Mostra altri»), from `GET /api/due-items` over the week's own
  * dates. The current week starts today: the days of it before today are late and live in the
- * late figures. Only kinds whose module is on are drawn; outgoing items form their own group
- * only when the schedule has an outgoing side.
+ * late figures. Outgoing items form their own group only when the schedule has an outgoing
+ * side.
  */
 export function WeekPanel({ schedule, week }: { schedule: CashSchedule; week: CashWeek }) {
   const [openId, setOpenId] = useState<string | null>(null)
-  const modules = useModules()
   const { several, selected, byId } = useLegalEntity()
   const items = useWeekItems({
     from: week.is_current ? schedule.today : week.start,
@@ -212,11 +209,9 @@ export function WeekPanel({ schedule, week }: { schedule: CashSchedule; week: Ca
     ...(schedule.show_outgoing ? {} : { direction: 'in' as const }),
   })
 
-  const all = (items.data?.pages ?? []).flatMap((page) => page.items)
-  const shown = all.filter((item) => {
-    const source = SOURCES[item.source_kind]
-    return source !== undefined && modules.on(...source.modules)
-  })
+  // Every row the server sent is drawn: which kinds a viewer sees (their module, their role) is
+  // the server's call, and a kind this build does not know reads «Altra voce».
+  const shown = (items.data?.pages ?? []).flatMap((page) => page.items)
   const open = shown.find((item) => item.id === openId) ?? null
   const showEntity = several && selected === null
   const entityOf = (item: DueItem) => (showEntity ? (byId(item.legal_entity_id)?.name ?? null) : null)
@@ -263,7 +258,7 @@ export function WeekPanel({ schedule, week }: { schedule: CashSchedule; week: Ca
           </div>
         )}
       </div>
-      {open !== null && <ItemFoot item={open} today={schedule.today} />}
+      {open !== null && <ItemFoot key={open.id} item={open} today={schedule.today} />}
     </div>
   )
 }

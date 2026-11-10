@@ -8,14 +8,14 @@ const DOT = { danger: 'bg-watermelon', gold: 'bg-royal-gold' } as const
  * statement that is late) and the sentence, which carries the meaning without the colour.
  * Shared by the phone Home and the schedule.
  */
-export function CashBand({ alert, className }: { alert: CashAlert; className?: string }) {
+export function CashBand({ alert, today, className }: { alert: CashAlert; today: string; className?: string }) {
   return (
     <div
       role="status"
       className={cn('flex items-start gap-2 border border-border bg-card px-3 py-2 text-sm', className)}
     >
       <span aria-hidden className={cn('mt-1.5 size-2 shrink-0 rounded-full', DOT[ALERT_DOT[alert.kind]])} />
-      <span className="min-w-0">{cashAlertSentence(alert)}</span>
+      <span className="min-w-0">{cashAlertSentence(alert, today)}</span>
     </div>
   )
 }

@@ -377,6 +377,16 @@ export function EconomicTab({
       ) : (
         <FiscalPanel year={year} />
       )}
+
+      {modules.on('cash') && (
+        <p className="text-sm text-muted-foreground">
+          Questa vista conta quando il lavoro è maturato; «Cassa» conta quando i soldi entrano ed escono, e lo
+          stesso mese può leggersi in modo diverso nelle due.{' '}
+          <Link to="/app/cash" className="underline underline-offset-4">
+            Apri Cassa
+          </Link>
+        </p>
+      )}
     </div>
   )
 }

@@ -16,6 +16,7 @@ vi.mock('@/lib/auth', async () => {
 import { EconomicTab } from './EconomicTab'
 import type { CashMonth } from './queries'
 import { api } from '@/lib/api'
+import { seedModules } from '@/lib/modules.testing'
 
 vi.mock('@/lib/api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/api')>()
@@ -664,5 +665,31 @@ describe('EconomicTab, with several aziende', () => {
     expect(queriesSentTo('/api/analytics/fiscal')).toEqual([{ year: 2026, legal_entity_id: 'a-1' }])
     // One legal entity on screen: no per-legal-entity headings anywhere.
     expect(screen.queryByRole('heading', { name: 'humancraft' })).not.toBeInTheDocument()
+  })
+})
+
+describe('EconomicTab, the way back to «Cassa»', () => {
+  function renderWithModules(off: Parameters<typeof seedModules>[1]) {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    seedModules(client, off)
+    return render(
+      <QueryClientProvider client={client}>
+        <EconomicTab period={PERIOD} base="accrual" onBaseChange={vi.fn()} />
+      </QueryClientProvider>,
+    )
+  }
+
+  it('says how the two views differ and links to «Cassa» when the module is on', async () => {
+    vi.mocked(api.GET).mockImplementation(byPath(RESPONSE) as never)
+    renderWithModules([])
+    const link = await screen.findByRole('link', { name: 'Apri Cassa' })
+    expect(link).toHaveAttribute('href', '/app/cash')
+  })
+
+  it('draws no link to a page that is not there with the module off', async () => {
+    vi.mocked(api.GET).mockImplementation(byPath(RESPONSE) as never)
+    renderWithModules(['cash'])
+    await screen.findByText(/Vista economica/)
+    expect(screen.queryByRole('link', { name: 'Apri Cassa' })).not.toBeInTheDocument()
   })
 })

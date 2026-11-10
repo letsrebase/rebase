@@ -10,7 +10,7 @@ import { money } from '@/features/dashboard/format'
 import { useReceivablesDashboard, type BandDueDate } from '@/features/dashboard/queries'
 import { formatIsoDateItalian } from '@/lib/dates'
 import { LATE_LISTS_ID } from './Late'
-import { lateLabel } from './labels'
+import { ROW_TONE, lateLabel } from './labels'
 import { usePayablesDashboard } from './queries'
 
 /** The overdue band is the one outcome among six steps: the destructive tint the pipeline card
@@ -139,7 +139,7 @@ export function ReceivablesSection() {
                   </TableCell>
                   <TableCell className="tabular-nums">{formatIsoDateItalian(row.due_date)}</TableCell>
                   <TableCell>
-                    <StatusPill tone="danger">{lateLabel(row.days_of_delay)}</StatusPill>
+                    <StatusPill tone={ROW_TONE.overdue}>{lateLabel(row.days_of_delay)}</StatusPill>
                   </TableCell>
                   <TableCell className="text-right tabular-nums">{money(row.amount)}</TableCell>
                   <TableCell>{reminders(row.sent_payment_reminders, row.last_payment_reminder_at)}</TableCell>
@@ -199,7 +199,7 @@ export function PayablesSection() {
                   </TableCell>
                   <TableCell className="tabular-nums">{formatIsoDateItalian(row.due_date)}</TableCell>
                   <TableCell>
-                    <StatusPill tone="danger">{lateLabel(row.days_of_delay)}</StatusPill>
+                    <StatusPill tone={ROW_TONE.overdue}>{lateLabel(row.days_of_delay)}</StatusPill>
                   </TableCell>
                   <TableCell className="text-right tabular-nums">{money(row.amount)}</TableCell>
                 </TableRow>

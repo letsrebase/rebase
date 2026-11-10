@@ -63,7 +63,6 @@ export function WeeksTable({
                 <button
                   type="button"
                   aria-pressed={open}
-                  aria-label={`Settimana dal ${weekLabel(week)}`}
                   className="text-left outline-none focus-visible:underline"
                   onClick={(event) => {
                     event.stopPropagation()
@@ -101,12 +100,13 @@ export function WeeksTable({
   )
 }
 
+/** One labelled figure of a card. Spans, not a description list: a button holds phrasing content. */
 function Line({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <div className="flex items-start justify-between gap-3">
-      <dt className="text-sm text-muted-foreground">{label}</dt>
-      <dd className="text-sm">{children}</dd>
-    </div>
+    <span className="flex items-start justify-between gap-3">
+      <span className="text-sm text-muted-foreground">{label}</span>
+      <span className="text-sm">{children}</span>
+    </span>
   )
 }
 
@@ -125,13 +125,12 @@ export function WeekCards({
         <li key={week.start}>
           <button
             type="button"
-            aria-label={`Settimana dal ${weekLabel(week)}`}
             aria-current={week.is_current ? 'date' : undefined}
             onClick={() => onSelect(week.start)}
             className="block w-full min-w-0 border border-border bg-card p-4 text-left"
           >
             <WeekName week={week} />
-            <dl className="mt-3 space-y-2">
+            <span className="mt-3 block space-y-2">
               <Line label="Entrate">
                 <Flow expected={week.in_expected} forecast={week.in_forecast} />
               </Line>
@@ -145,7 +144,7 @@ export function WeekCards({
                   <Balance value={week.balance_end} belowZero={week.below_zero} />
                 </Line>
               )}
-            </dl>
+            </span>
           </button>
         </li>
       ))}

@@ -2,11 +2,13 @@ import { Link } from '@tanstack/react-router'
 import { useState } from 'react'
 import { Button } from '@rebase/ui/button'
 import { cn } from '@rebase/ui/cn'
+import { daysCount } from '@/features/cash/days'
+import { moneyIn } from '@/features/cash/money'
 import { money } from '@/features/dashboard/format'
 import { AccountDialog } from '@/features/cash/account/AccountDialog'
 import { formatIsoDateItalian } from '@/lib/dates'
 import { useLegalEntity } from '@/lib/legalEntity'
-import { NO_ACCOUNT_SENTENCE, moneyIn } from './labels'
+import { NO_ACCOUNT_SENTENCE, NO_ACCOUNT_SOLO_SENTENCE } from './labels'
 import type { CashAccountCard, CashSchedule } from './queries'
 
 /** Four account cards, then «Tutti i conti (N)» (the brief's «Many» row). */
@@ -22,7 +24,7 @@ function AsOf({ account }: { account: CashAccountCard }) {
       {account.is_stale && (
         <>
           <span aria-hidden="true" className="size-2 shrink-0 rounded-full bg-royal-gold" />
-          <span>{account.stale_days === null ? 'non aggiornato' : `da ${account.stale_days} giorni`}</span>
+          <span>{account.stale_days === null ? 'non aggiornato' : `da ${daysCount(account.stale_days)}`}</span>
         </>
       )}
     </p>
@@ -41,12 +43,18 @@ function AccountCard({ account, entity }: { account: CashAccountCard; entity: bo
       </p>
       <p className="truncate text-xs text-muted-foreground">{account.bank}</p>
       {entity && <p className="truncate text-xs text-muted-foreground">{account.legal_entity_name}</p>}
-      <p className="mt-2 break-words text-xl font-semibold tabular-nums">
+      <p
+        className={cn(
+          'mt-2 break-words text-xl font-semibold tabular-nums',
+          account.below_zero && 'text-destructive',
+        )}
+      >
         {account.balance === null ? (
           <span className="text-sm font-normal text-muted-foreground">Saldo non ancora noto</span>
         ) : (
           moneyIn(account.balance, account.currency)
         )}
+        {account.below_zero && <span className="ml-2 text-sm font-medium">sotto zero</span>}
       </p>
       <AsOf account={account} />
     </Link>
@@ -70,7 +78,9 @@ export function Balances({ schedule }: { schedule: CashSchedule }) {
   if (accounts.length === 0) {
     return (
       <section aria-label="Saldo oggi" className={cn(CARD, 'space-y-3')}>
-        <p className="text-sm">{NO_ACCOUNT_SENTENCE}</p>
+        <p className="text-sm">
+          {schedule.show_outgoing ? NO_ACCOUNT_SENTENCE : NO_ACCOUNT_SOLO_SENTENCE}
+        </p>
         <Button variant="outline" size="sm" onClick={() => setAdding(true)}>
           Aggiungi un conto
         </Button>
@@ -88,7 +98,15 @@ export function Balances({ schedule }: { schedule: CashSchedule }) {
         {total !== null && (
           <div role="group" aria-label={entity ? 'Saldo oggi, tutte le aziende' : 'Saldo oggi'} className={cn(CARD, 'sm:col-span-2 lg:col-span-1')}>
             <p className="text-sm text-muted-foreground">{entity ? 'Saldo oggi, tutte le aziende' : 'Saldo oggi'}</p>
-            <p className="mt-1.5 break-words text-[26px] font-semibold leading-tight tabular-nums">{money(total.amount)}</p>
+            <p
+              className={cn(
+                'mt-1.5 break-words text-2xl font-semibold leading-tight tabular-nums',
+                total.below_zero && 'text-destructive',
+              )}
+            >
+              {money(total.amount)}
+              {total.below_zero && <span className="ml-2 text-sm font-medium">sotto zero</span>}
+            </p>
             {total.as_of !== null && (
               <p className="mt-1 text-xs text-muted-foreground">al {formatIsoDateItalian(total.as_of)}</p>
             )}

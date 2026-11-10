@@ -25,12 +25,12 @@ const INLINE_PANEL = '(min-width: 1024px)'
 
 /** The band at the head of the schedule: the worst alert, one line, «e N altre» for the rest,
  *  and no way to close it (the mailbox band of REB-973 has none either). */
-function Band({ alerts }: { alerts: Schedule['alerts'] }) {
+function Band({ alerts, today }: { alerts: Schedule['alerts']; today: string }) {
   const [worst, ...rest] = alerts
   if (worst === undefined) return null
   return (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-      <CashBand alert={worst} className="min-w-0 flex-1" />
+      <CashBand alert={worst} today={today} className="min-w-0 flex-1" />
       {rest.length > 0 && (
         <span className="text-sm text-muted-foreground">{rest.length === 1 ? 'e 1 altra' : `e ${rest.length} altre`}</span>
       )}
@@ -111,7 +111,7 @@ export function CashSchedule() {
 
   return (
     <div className="space-y-6">
-      <Band alerts={schedule.alerts} />
+      <Band alerts={schedule.alerts} today={schedule.today} />
       <Balances schedule={schedule} />
 
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2">

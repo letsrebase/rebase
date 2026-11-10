@@ -1,7 +1,7 @@
-import { money } from '@/features/dashboard/format'
+import { daysCount } from '@/features/cash/days'
+import { moneyIn } from '@/features/cash/money'
 import { TAX_LABELS } from '@/features/taxes/labels'
 import { formatIsoDayMonth } from '@/lib/dates'
-import type { ModuleKey } from '@/lib/modules'
 import type { StatusTone } from '@/components/StatusPill'
 import type { DueItem, CashWeek } from './queries'
 
@@ -14,6 +14,9 @@ import type { DueItem, CashWeek } from './queries'
 export const LOADING_SENTENCE = 'Leggo le scadenze…'
 export const NO_ACCOUNT_SENTENCE =
   'Nessun conto collegato. Aggiungi un conto per vedere il saldo di oggi e quello delle prossime settimane. Le scadenze delle fatture si vedono già.'
+/** A solo space has today's balance only: it has no projected balance to promise. */
+export const NO_ACCOUNT_SOLO_SENTENCE =
+  'Nessun conto collegato. Aggiungi un conto per vedere il saldo di oggi. Le scadenze delle fatture si vedono già.'
 export const NO_ITEMS_SENTENCE = (weeks: number) =>
   `Niente da incassare né da pagare nelle prossime ${weeks} settimane.`
 export const LATE_NOTE = 'Il saldo non conta ciò che è già scaduto'
@@ -24,23 +27,6 @@ export function isZero(value: string): boolean {
   return /^-?0*(\.0*)?$/.test(value)
 }
 
-const formatters = new Map<string, Intl.NumberFormat>()
-
-/** An amount in its own currency: euro as everywhere (`1.464,00 €`), another one with its code
- *  («1.350,00 USD»), the string going into the formatter verbatim. */
-export function moneyIn(value: string, currency: string): string {
-  if (currency === 'EUR') return money(value)
-  try {
-    let format = formatters.get(currency)
-    if (!format) {
-      format = new Intl.NumberFormat('it-IT', { style: 'currency', currency, useGrouping: 'always' })
-      formatters.set(currency, format)
-    }
-    return format.format(value as `${number}`)
-  } catch {
-    return `${value.replace('.', ',')} ${currency}`
-  }
-}
 
 /** «09/11 al 15/11»: a week as the server's `start` and `end` read. */
 export function weekLabel(week: Pick<CashWeek, 'start' | 'end'>): string {
@@ -84,8 +70,11 @@ export function itemPillLabel(item: DueItem): string {
 
 /** The pill of a late row: «Scaduto da 12 giorni», the days being the server's. */
 export function lateLabel(days: number): string {
-  return days === 1 ? 'Scaduto da 1 giorno' : `Scaduto da ${days} giorni`
+  return `Scaduto da ${daysCount(days)}`
 }
+
+/** The tone of the rows that are not an item's own state: a late row is `danger`. */
+export const ROW_TONE = { overdue: 'danger' } as const satisfies Record<string, StatusTone>
 
 /** The sentence under a date that follows another item (design § 1.3). */
 export function estimatedSentence(direction: DueItem['direction']): string {
@@ -98,28 +87,25 @@ type Page = 'invoice' | 'purchase'
 
 interface SourceInfo {
   label: string
-  /** The modules that must all be on for the kind to be drawn (a kind of a module that is off
-   *  or not built is absent from the schedule). */
-  modules: readonly ModuleKey[]
   /** Where the source has a page. */
   page?: Page
 }
 
-/** Every kind the server may send, with the module that owns it. A kind that is not here is
- *  not drawn. */
+/** The kinds this build names. Which of them a viewer sees is the server's call (the module that
+ *  owns a kind, the role): a row of a kind that is not here is drawn all the same. */
 export const SOURCES: Record<string, SourceInfo> = {
-  sales_invoice: { label: 'Fattura emessa', modules: [], page: 'invoice' },
-  sales_draft: { label: 'Bozza di fattura', modules: [] },
-  purchase: { label: 'Acquisto', modules: ['purchases'], page: 'purchase' },
-  recurring_expense: { label: 'Spesa ricorrente', modules: ['purchases'] },
-  contract_occurrence: { label: 'Contratto', modules: ['contracts'] },
-  integration_vat: { label: 'Integrazione IVA', modules: ['taxes'] },
-  iva_settlement: { label: 'Liquidazione IVA', modules: ['taxes'] },
-  withholding: { label: 'Ritenute', modules: ['taxes'] },
-  tax_instalment: { label: 'Imposte', modules: ['taxes'] },
-  cash_basis_vat: { label: 'IVA per cassa', modules: ['taxes'] },
-  payroll: { label: 'Stipendi', modules: ['staff'] },
-  engagement: { label: 'Collaboratore', modules: ['collaborators'] },
+  sales_invoice: { label: 'Fattura emessa', page: 'invoice' },
+  sales_draft: { label: 'Bozza di fattura' },
+  purchase: { label: 'Acquisto', page: 'purchase' },
+  recurring_expense: { label: 'Spesa ricorrente' },
+  contract_occurrence: { label: 'Contratto' },
+  integration_vat: { label: 'Integrazione IVA' },
+  iva_settlement: { label: 'Liquidazione IVA' },
+  withholding: { label: 'Ritenute' },
+  tax_instalment: { label: 'Imposte' },
+  cash_basis_vat: { label: 'IVA per cassa' },
+  payroll: { label: 'Stipendi' },
+  engagement: { label: 'Collaboratore' },
 }
 
 /** Kinds that only an administrator reads and settles (`RESTRICTED_SOURCE_KINDS` in the core):
@@ -139,8 +125,10 @@ export function settlesAsAdmin(item: Pick<DueItem, 'direction' | 'source_kind'>)
   return item.direction === 'out' || RESTRICTED_KINDS[item.source_kind] === true
 }
 
+/** The kind of document an item comes from; a kind this build does not know reads «Altra voce»
+ *  and is still drawn, with its own description (the server decides which kinds a viewer sees). */
 export function sourceLabel(kind: string): string {
-  return SOURCES[kind]?.label ?? kind
+  return SOURCES[kind]?.label ?? 'Altra voce'
 }
 
 export function sourcePage(item: Pick<DueItem, 'source_kind' | 'source_id'>): Page | null {

@@ -105,6 +105,7 @@ describe('no number is born in the browser', () => {
     expect(files.some((path) => path.endsWith(join('features', 'dashboard', 'charts.tsx')))).toBe(true)
     expect(files.some((path) => path.endsWith(join('routes', 'app', 'index.tsx')))).toBe(true)
     expect(files.some((path) => path.endsWith(join('features', 'taxes', 'labels.ts')))).toBe(true)
+    expect(files.some((path) => path.endsWith(join('features', 'cash', 'schedule', 'labels.ts')))).toBe(true)
   })
 
   it('never coerces an API value to a JS number in a dashboard module', () => {

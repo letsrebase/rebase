@@ -1,5 +1,4 @@
 import {
-  keepPreviousData,
   useInfiniteQuery,
   useMutation,
   useQuery,
@@ -7,9 +6,11 @@ import {
 } from '@tanstack/react-query'
 import { toast } from '@rebase/ui/sonner'
 import { DASHBOARD_STALE_MS } from '@/features/dashboard/queries'
+import { useInvoiceInvalidation } from '@/features/invoices/queries'
 import { api, unwrap } from '@/lib/api'
 import type { components } from '@/lib/api-types'
 import { useLegalEntity } from '@/lib/legalEntity'
+import { queryKeys } from '@/lib/query'
 
 export type CashSchedule = components['schemas']['CashSchedule']
 export type CashWeek = components['schemas']['CashWeek']
@@ -17,8 +18,6 @@ export type CashAccountCard = components['schemas']['CashAccountCard']
 export type CashAlert = components['schemas']['CashAlert']
 export type LateFigure = components['schemas']['LateFigure']
 export type SoloTaxRow = components['schemas']['SoloTaxRow']
-export type PayablesDashboard = components['schemas']['PayablesDashboard']
-export type PayableRow = components['schemas']['PayableRow']
 export type DueItem = components['schemas']['DueItemRead']
 
 /** How many items a week's panel asks for at a time; «Mostra altri» asks for the next page. */
@@ -44,8 +43,9 @@ const DUE_ITEMS = 'cash-due-items'
 /**
  * The schedule: weeks, balances, late figures, alerts. `weeks` is the horizon the person chose,
  * `null` for the server's own default (the answer says which it is: `horizon_weeks`), so the
- * default is never a number in a component. The previous answer stays on screen while a new
- * horizon is read, so changing it does not flash the page back to its wait.
+ * default is never a number in a component. The previous answer stays on screen while another
+ * horizon is read, but never across a change of legal entity: the figures of one azienda are not
+ * shown under the name of another.
  */
 export function useCashSchedule(weeks: number | null) {
   const scope = useLegalEntityParam()
@@ -54,7 +54,10 @@ export function useCashSchedule(weeks: number | null) {
     queryKey: ['dashboard', SCHEDULE, { ...scope, weeks: weeks === null ? 'default' : String(weeks) }],
     queryFn: () => unwrap(api.GET('/api/cash/schedule', { params: { query } })),
     staleTime: DASHBOARD_STALE_MS,
-    placeholderData: keepPreviousData,
+    placeholderData: (previous, previousQuery) => {
+      const before = previousQuery?.queryKey[2] as { legal_entity_id?: string } | undefined
+      return before?.legal_entity_id === scope.legal_entity_id ? previous : undefined
+    },
   })
 }
 
@@ -102,6 +105,7 @@ export function useWeekItems(range: { from: string; to: string; direction?: 'in'
  */
 export function useSettleDueItem() {
   const client = useQueryClient()
+  const invalidateInvoice = useInvoiceInvalidation()
   return useMutation({
     mutationFn: ({ item, today }: { item: DueItem; today: string }) =>
       unwrap(
@@ -111,11 +115,15 @@ export function useSettleDueItem() {
         }),
       ),
     onSuccess: (_data, { item }) => {
-      void client.invalidateQueries({ queryKey: ['dashboard'] })
-      void client.invalidateQueries({ queryKey: ['invoices'] })
-      void client.invalidateQueries({ queryKey: ['invoice'] })
-      void client.invalidateQueries({ queryKey: ['purchases'] })
-      void client.invalidateQueries({ queryKey: ['purchase'] })
+      // Every dashboard read: the schedule, the payables, the receivables, the Home's summary.
+      void client.invalidateQueries({ queryKey: queryKeys.dashboardAll })
+      if (item.source_kind === 'sales_invoice') {
+        // The invoice's own set: the lists, the year's register, the ceilings, the invoice itself.
+        invalidateInvoice(item.source_id ?? undefined)
+      } else if (item.source_kind === 'purchase') {
+        void client.invalidateQueries({ queryKey: queryKeys.purchases() })
+        if (item.source_id) void client.invalidateQueries({ queryKey: queryKeys.purchase(item.source_id) })
+      }
       toast.success(item.direction === 'in' ? 'Incasso registrato' : 'Pagamento registrato')
     },
   })
