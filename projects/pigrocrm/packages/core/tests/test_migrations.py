@@ -4023,4 +4023,3 @@ def test_0099_adds_the_engagement_monthly_reports_table_and_downgrade_removes_it
         assert _tables_shape(url, tables) == (set(), set(), set())
         upgrade(config, "0099")
         assert _tables_shape(url, tables)[0] == tables
-

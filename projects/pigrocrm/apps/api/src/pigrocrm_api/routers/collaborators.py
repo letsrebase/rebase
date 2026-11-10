@@ -13,8 +13,8 @@ from fastapi import APIRouter, Depends, Path, Query, Request, Response, status
 from pydantic import BaseModel, Field
 from sqlalchemy import Engine
 
-from pigrocrm.core.collaborators.letter_service import LetterService
 from pigrocrm.core.collaborators.days_report import DaysReportService
+from pigrocrm.core.collaborators.letter_service import LetterService
 from pigrocrm.core.collaborators.monthly_reports import MonthlyReportService
 from pigrocrm.core.collaborators.schemas import (
     AVAILABILITY_MAX_WEEKS,
