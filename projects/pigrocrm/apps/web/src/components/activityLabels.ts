@@ -63,6 +63,10 @@ const KIND_LABELS: Record<string, string> = {
   'slack.workspace_disconnected': 'Workspace Slack scollegato',
   // A contract's days (REB-781): the day's own ledger keeps the transitions by id, and these
   // are the same moves with the member's name and the channel.
+  // «In arrivo» (REB-984): what a person or an agent said about a file that arrived.
+  discarded: 'Documento scartato',
+  marked_duplicate: 'Documento segnato come doppione',
+  kind_set: 'Tipo del documento indicato',
   day_created: 'Giornata registrata',
   day_state_changed: 'Giornata cambiata di stato',
   // The hub's company requests (REB-866): a request filed as a new deal, and one linked by
