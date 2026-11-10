@@ -142,8 +142,8 @@ function ReminderRow({ reminder }: { reminder: Reminder }) {
   const subject = subjectOf(reminder)
 
   return (
-    <li className="flex flex-wrap items-start gap-x-4 gap-y-3 border-b px-2 py-4">
-      <div className="min-w-0 flex-1 space-y-1">
+    <li className="flex flex-col gap-3 border-b px-2 py-4 md:flex-row md:items-start md:gap-x-4">
+      <div className="min-w-0 md:flex-1 space-y-1">
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
           {severity && <StatusPill tone={severity.tone}>{severity.single}</StatusPill>}
           <span>{reminder.label}</span>
@@ -178,7 +178,7 @@ function ReminderActions({ reminder }: { reminder: Reminder }) {
   const fail = (error: unknown) => toast.error(toProblem(error).detail)
 
   return (
-    <div className="flex shrink-0 items-center gap-2">
+    <div className="flex items-center gap-2 md:shrink-0">
       <Button
         variant="outline"
         size="sm"

@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
+import { useMediaQuery } from '@rebase/ui/use-media-query'
 import { toast } from '@rebase/ui/sonner'
 import { QueryErrorBanner } from '@/components/QueryErrorBanner'
 import { Button } from '@rebase/ui/button'
@@ -83,49 +84,145 @@ function FieldMessage({ text }: { text: string }) {
   return <p className="mt-1 text-sm text-destructive">{text}</p>
 }
 
+/** The frame of either rates table: the table with its header, or a column of cards on a phone. */
+function RateTable({
+  phone,
+  label,
+  heads,
+  children,
+}: {
+  phone: boolean
+  label: string
+  heads: string[]
+  children: ReactNode
+}) {
+  if (phone) {
+    return (
+      <ul aria-label={label} className="grid grid-cols-1 gap-3">
+        {children}
+      </ul>
+    )
+  }
+  return (
+    <Table scrollLabel={label}>
+      <TableHeader>
+        <TableRow>
+          {heads.map((head) => (
+            <TableHead key={head}>{head}</TableHead>
+          ))}
+          <TableHead />
+        </TableRow>
+      </TableHeader>
+      <TableBody>{children}</TableBody>
+    </Table>
+  )
+}
+
+/**
+ * One row of either rates table: a table row on a wide screen and, on a phone, a card with
+ * each input under its label and «Salva» under them, because four columns of inputs scrolled
+ * sideways off the screen and took «Salva» with them (REB-1057).
+ */
+function RateRow({
+  phone,
+  name,
+  fields,
+  action,
+}: {
+  phone: boolean
+  name: string
+  fields: { label: string; node: ReactNode }[]
+  action: ReactNode
+}) {
+  if (phone) {
+    return (
+      <li className="space-y-3 border border-border bg-card p-4">
+        <p className="break-words font-medium">{name}</p>
+        {fields.map((field) => (
+          <label key={field.label} className="block space-y-1.5">
+            <span className="text-sm text-muted-foreground">{field.label}</span>
+            {field.node}
+          </label>
+        ))}
+        {action}
+      </li>
+    )
+  }
+  return (
+    <TableRow>
+      <TableCell>{name}</TableCell>
+      {fields.map((field) => (
+        <TableCell key={field.label}>{field.node}</TableCell>
+      ))}
+      <TableCell>{action}</TableCell>
+    </TableRow>
+  )
+}
+
 /**
  * One row per user, its own component: `useSetUserRates(id)` is built from the row's id,
  * and calling it inside the parent's `.map` would be a variable number of hooks in a
  * variable order.
  */
-function UserRateRow({ user, onProblem }: { user: UserRecord; onProblem: OnProblem }) {
+function UserRateRow({
+  user,
+  onProblem,
+  phone,
+}: {
+  user: UserRecord
+  onProblem: OnProblem
+  phone: boolean
+}) {
   const [rate, setRate] = useState(user.default_hourly_rate ?? '')
   const [cost, setCost] = useState(user.default_hourly_cost ?? '')
   const save = useSetUserRates(user.id)
   const { fieldError, begin, fail } = useRowProblem(onProblem)
 
   return (
-    <TableRow>
-      <TableCell>{user.name}</TableCell>
-      <TableCell>
-        <Input
-          type="number"
-          step="0.000001"
-          aria-label={`Tariffa oraria di ${user.name}`}
-          aria-invalid={fieldError?.field === 'default_hourly_rate'}
-          value={rate}
-          onChange={(event) => setRate(event.target.value)}
-          className="w-32"
-        />
-        {fieldError?.field === 'default_hourly_rate' && (
-          <FieldMessage text={fieldError.message} />
-        )}
-      </TableCell>
-      <TableCell>
-        <Input
-          type="number"
-          step="0.000001"
-          aria-label={`Costo orario di ${user.name}`}
-          aria-invalid={fieldError?.field === 'default_hourly_cost'}
-          value={cost}
-          onChange={(event) => setCost(event.target.value)}
-          className="w-32"
-        />
-        {fieldError?.field === 'default_hourly_cost' && (
-          <FieldMessage text={fieldError.message} />
-        )}
-      </TableCell>
-      <TableCell>
+    <RateRow
+      phone={phone}
+      name={user.name}
+      fields={[
+        {
+          label: 'Tariffa oraria (€/h)',
+          node: (
+            <>
+              <Input
+                type="number"
+                step="0.000001"
+                aria-label={`Tariffa oraria di ${user.name}`}
+                aria-invalid={fieldError?.field === 'default_hourly_rate'}
+                value={rate}
+                onChange={(event) => setRate(event.target.value)}
+                className="w-full sm:w-32"
+              />
+              {fieldError?.field === 'default_hourly_rate' && (
+                <FieldMessage text={fieldError.message} />
+              )}
+            </>
+          ),
+        },
+        {
+          label: 'Costo orario (€/h)',
+          node: (
+            <>
+              <Input
+                type="number"
+                step="0.000001"
+                aria-label={`Costo orario di ${user.name}`}
+                aria-invalid={fieldError?.field === 'default_hourly_cost'}
+                value={cost}
+                onChange={(event) => setCost(event.target.value)}
+                className="w-full sm:w-32"
+              />
+              {fieldError?.field === 'default_hourly_cost' && (
+                <FieldMessage text={fieldError.message} />
+              )}
+            </>
+          ),
+        },
+      ]}
+      action={
         <Button
           size="sm"
           disabled={save.isPending}
@@ -147,32 +244,48 @@ function UserRateRow({ user, onProblem }: { user: UserRecord; onProblem: OnProbl
         >
           Salva
         </Button>
-      </TableCell>
-    </TableRow>
+      }
+    />
   )
 }
 
-function DealRateRow({ deal, onProblem }: { deal: Deal; onProblem: OnProblem }) {
+function DealRateRow({
+  deal,
+  onProblem,
+  phone,
+}: {
+  deal: Deal
+  onProblem: OnProblem
+  phone: boolean
+}) {
   const [rate, setRate] = useState(deal.hourly_rate ?? '')
   const save = useSetDealRate(deal.id)
   const { fieldError, begin, fail } = useRowProblem(onProblem)
 
   return (
-    <TableRow>
-      <TableCell>{deal.name}</TableCell>
-      <TableCell>
-        <Input
-          type="number"
-          step="0.000001"
-          aria-label={`Tariffa oraria del deal ${deal.name}`}
-          aria-invalid={fieldError?.field === 'hourly_rate'}
-          value={rate}
-          onChange={(event) => setRate(event.target.value)}
-          className="w-32"
-        />
-        {fieldError?.field === 'hourly_rate' && <FieldMessage text={fieldError.message} />}
-      </TableCell>
-      <TableCell>
+    <RateRow
+      phone={phone}
+      name={deal.name}
+      fields={[
+        {
+          label: 'Tariffa oraria (€/h)',
+          node: (
+            <>
+              <Input
+                type="number"
+                step="0.000001"
+                aria-label={`Tariffa oraria del deal ${deal.name}`}
+                aria-invalid={fieldError?.field === 'hourly_rate'}
+                value={rate}
+                onChange={(event) => setRate(event.target.value)}
+                className="w-full sm:w-32"
+              />
+              {fieldError?.field === 'hourly_rate' && <FieldMessage text={fieldError.message} />}
+            </>
+          ),
+        },
+      ]}
+      action={
         <Button
           size="sm"
           disabled={save.isPending}
@@ -188,14 +301,15 @@ function DealRateRow({ deal, onProblem }: { deal: Deal; onProblem: OnProblem }) 
         >
           Salva
         </Button>
-      </TableCell>
-    </TableRow>
+      }
+    />
   )
 }
 
 export function RatesPanel() {
   const users = useUsers()
   const deals = useDeals()
+  const phone = useMediaQuery('(max-width: 767px)')
   const [problem, setProblem] = useState<string | null>(null)
   const [newDeal, setNewDeal] = useState('')
   const [newRate, setNewRate] = useState('')
@@ -230,23 +344,17 @@ export function RatesPanel() {
           all&apos;azienda, e serve solo al margine. Lasciare un campo vuoto significa
           «nessuna tariffa», che non è la stessa cosa di zero.
         </p>
-        <Table scrollLabel="Tariffe delle persone">
-          <TableHeader>
-            <TableRow>
-              <TableHead>Persona</TableHead>
-              <TableHead>Tariffa oraria (€/h)</TableHead>
-              <TableHead>Costo orario (€/h)</TableHead>
-              <TableHead />
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {(users.data ?? []).map((user) => (
-              // Keyed on the id so a rename never remounts the row and discards a
-              // half-typed rate.
-              <UserRateRow key={user.id} user={user} onProblem={setProblem} />
-            ))}
-          </TableBody>
-        </Table>
+        <RateTable
+          phone={phone}
+          label="Tariffe delle persone"
+          heads={['Persona', 'Tariffa oraria (€/h)', 'Costo orario (€/h)']}
+        >
+          {(users.data ?? []).map((user) => (
+            // Keyed on the id so a rename never remounts the row and discards a
+            // half-typed rate.
+            <UserRateRow key={user.id} user={user} onProblem={setProblem} phone={phone} />
+          ))}
+        </RateTable>
       </section>
 
       <section className="space-y-3">
@@ -256,20 +364,11 @@ export function RatesPanel() {
           La tariffa del deal vince su quella della persona: è la regola che permette di
           concordare un prezzo con un cliente senza toccare le tariffe di nessuno.
         </p>
-        <Table scrollLabel="Tariffe dei deal">
-          <TableHeader>
-            <TableRow>
-              <TableHead>Deal</TableHead>
-              <TableHead>Tariffa oraria (€/h)</TableHead>
-              <TableHead />
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {withRate.map((deal) => (
-              <DealRateRow key={deal.id} deal={deal} onProblem={setProblem} />
-            ))}
-          </TableBody>
-        </Table>
+        <RateTable phone={phone} label="Tariffe dei deal" heads={['Deal', 'Tariffa oraria (€/h)']}>
+          {withRate.map((deal) => (
+            <DealRateRow key={deal.id} deal={deal} onProblem={setProblem} phone={phone} />
+          ))}
+        </RateTable>
         {withRate.length === 0 && !deals.isLoading && (
           <p className="text-sm text-muted-foreground">
             Nessun deal ha una tariffa propria: si usa quella della persona.

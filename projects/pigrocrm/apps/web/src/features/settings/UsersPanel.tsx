@@ -294,6 +294,7 @@ export function UsersPanel() {
 
       <DataTable
         label="Utenti"
+        phone="stack"
         columns={columns}
         data={users.data ?? []}
         isLoading={users.isLoading}
@@ -306,6 +307,7 @@ export function UsersPanel() {
         <h3 className="mb-2 font-semibold">Inviti in attesa</h3>
         <DataTable
           label="Inviti in attesa"
+          phone="stack"
           columns={inviteColumns}
           data={invites.data ?? []}
           isLoading={invites.isLoading}

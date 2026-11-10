@@ -1,7 +1,7 @@
 import { useNavigate } from '@tanstack/react-router'
 import type { ReactNode } from 'react'
 import { DataTable } from '@/components/DataTable'
-import { buildInvoiceColumns } from './columns'
+import { buildInvoiceCard, buildInvoiceColumns } from './columns'
 import { LoadMoreInvoices } from './LoadMoreInvoices'
 import { useInvoicesForOwner, type InvoiceOwner } from './queries'
 
@@ -27,6 +27,7 @@ export function InvoicesTab({ owner, actions }: { owner: InvoiceOwner; actions?:
     <>
       <DataTable
         label="Fatture"
+        phone={buildInvoiceCard()}
         columns={buildInvoiceColumns()}
         data={invoices.items}
         isLoading={invoices.isLoading}

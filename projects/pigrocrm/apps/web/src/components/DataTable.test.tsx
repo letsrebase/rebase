@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { DataTable, type DataTableFeatures } from './DataTable'
@@ -281,5 +281,83 @@ describe('DataTable scroll region', () => {
     act(() => notify())
 
     expect(screen.getByRole('region', { name: 'Clienti' })).toHaveAttribute('tabindex', '0')
+  })
+
+  /**
+   * REB-1057: below 768px more columns than the screen is wide scrolled sideways and hid the
+   * last of them, so a table that says what it becomes there is a column of cards.
+   */
+  describe('on a phone', () => {
+    function phone(matches: boolean) {
+      vi.stubGlobal('matchMedia', (query: string) => ({
+        matches: matches && query.includes('max-width: 767px'),
+        media: query,
+        addEventListener: () => {},
+        removeEventListener: () => {},
+      }))
+    }
+    const WITH_ACTIONS: ColumnDef<DataTableFeatures, Row>[] = [
+      { accessorKey: 'name', header: 'Nome' },
+      { accessorKey: 'id', header: 'ID', cell: (info) => `#${info.getValue()}` },
+      { id: 'actions', header: '', cell: () => <button type="button">Azioni</button> },
+    ]
+
+    it('stacks each row: the first column titles the card, the rest are label and value lines', () => {
+      phone(true)
+      render(<DataTable label="Clienti" columns={WITH_ACTIONS} data={DATA} phone="stack" />)
+      expect(screen.queryByRole('table')).not.toBeInTheDocument()
+      const cards = within(screen.getByRole('list', { name: 'Clienti' })).getAllByRole('listitem')
+      expect(cards).toHaveLength(2)
+      const first = within(cards.at(0) as HTMLElement)
+      expect(first.getByText('ACME Srl')).toBeInTheDocument()
+      expect(first.getByText('ID')).toBeInTheDocument()
+      expect(first.getByText('#1')).toBeInTheDocument()
+      // The column with no header is the row's actions, not a line with no label.
+      expect(first.getByRole('button', { name: 'Azioni' })).toBeInTheDocument()
+      expect(first.getAllByRole('term')).toHaveLength(1)
+    })
+
+    it('takes the title from the column that asks for it', () => {
+      phone(true)
+      const columns: ColumnDef<DataTableFeatures, Row>[] = [
+        { accessorKey: 'id', header: 'ID' },
+        { accessorKey: 'name', header: 'Nome', meta: { title: true } },
+      ]
+      render(<DataTable label="Clienti" columns={columns} data={[ACME]} phone="stack" />)
+      expect(screen.getByRole('listitem').firstElementChild).toHaveTextContent('ACME Srl')
+    })
+
+    it('lets the caller draw the card, and opens the row from it', async () => {
+      phone(true)
+      const onRowClick = vi.fn()
+      render(
+        <DataTable
+          label="Clienti"
+          columns={COLUMNS}
+          data={DATA}
+          onRowClick={onRowClick}
+          phone={(row) => <span>Carta di {row.name}</span>}
+        />,
+      )
+      await userEvent.click(screen.getByText('Carta di Beta SpA'))
+      expect(onRowClick).toHaveBeenCalledWith(BETA)
+    })
+
+    it('says an empty list is empty, in the same words', () => {
+      phone(true)
+      render(<DataTable label="Clienti" columns={COLUMNS} data={[]} phone="stack" emptyMessage="Nessun cliente." />)
+      expect(screen.getByText('Nessun cliente.')).toBeInTheDocument()
+      expect(screen.queryByRole('table')).not.toBeInTheDocument()
+      expect(screen.queryByRole('list')).not.toBeInTheDocument()
+    })
+
+    it('stays a table on a wide screen and when the caller gave no phone shape', () => {
+      phone(false)
+      const { rerender } = render(<DataTable label="Clienti" columns={COLUMNS} data={DATA} phone="stack" />)
+      expect(screen.getByRole('table')).toBeInTheDocument()
+      phone(true)
+      rerender(<DataTable label="Clienti" columns={COLUMNS} data={DATA} />)
+      expect(screen.getByRole('table')).toBeInTheDocument()
+    })
   })
 })
