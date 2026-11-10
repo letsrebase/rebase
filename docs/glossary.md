@@ -67,6 +67,11 @@ This file is the single mapping from the Italian word to the English identifier.
 | spesa | expense | A purchase of kind `expense` (anything paid with no invoice), or a contract expense (`contract_expenses`) |
 | periodo IVA | `iva_period` | A day inside the IVA register period a purchase invoice is annotated in |
 | ritenuta | withholding | `withholding_rate`, `withholding_base`, `withholding_amount` on a purchase |
+| esercente | `merchant_name` | The shop or payee of a purchase that is not a supplier of the space (a till receipt); «Esercente» on the phone «Spesa» sheet and on a receipt or expense |
+| quota detraibile | `deductible_share` | The percent of a VAT line the buyer may deduct, as the pack and the category decide; shown, never computed, on a purchase's page |
+| costo imputato | `cost_amount` | What a purchase costs once the VAT it recovers is out, frozen when it is registered |
+| inversione contabile | `reverse_charge` | The buyer accounts for the VAT; a person decides it for a foreign supplier |
+| scissione dei pagamenti | `split_payment` | The VAT is paid to the tax office and not to the supplier |
 | ricavi | revenue |  |
 | preventivato | budgeted | Estimated in the offer (`ore_preventivate` is `budgeted_hours`) |
 | previsto | expected | Forecast (`valore_previsto` is `expected_value`) |

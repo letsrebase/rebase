@@ -12375,6 +12375,11 @@ export interface components {
             items: components["schemas"]["OrganizationRead"][];
             /** Next Cursor */
             next_cursor: string | null;
+            /**
+             * Total
+             * @description How many organizations the filters match in all, cursor and limit left out
+             */
+            total: number;
         };
         /** OrganizationRead */
         OrganizationRead: {
@@ -18205,6 +18210,8 @@ export interface operations {
                 status?: string | null;
                 /** @description One role (customer, supplier, freelancer), or `any` for the registry across roles. Customers only when omitted. */
                 role?: "customer" | "supplier" | "freelancer" | "any";
+                /** @description Only suppliers of this fiscal kind (company, professional, flat_rate, occasional, foreign) */
+                supplier_kind?: string | null;
                 /** @description Only this legal entity's rows; omitted, all of them */
                 legal_entity_id?: string | null;
             };

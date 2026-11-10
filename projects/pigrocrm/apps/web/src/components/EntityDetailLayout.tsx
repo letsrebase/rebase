@@ -16,6 +16,8 @@ interface EntityDetailLayoutProps {
   icon: LucideIcon
   title: string
   subtitle?: string
+  /** What sits under the title and is not text, such as the roles of an organization as chips. */
+  titleAddon?: ReactNode
   actions?: ReactNode
   overview: ReactNode
   links?: ReactNode
@@ -97,6 +99,7 @@ export function EntityDetailLayout({
   icon,
   title,
   subtitle,
+  titleAddon,
   actions,
   overview,
   links,
@@ -121,6 +124,7 @@ export function EntityDetailLayout({
         icon={icon}
         title={title}
         description={subtitle}
+        titleAddon={titleAddon}
         actions={actions}
         tabs={
           <TabsList variant="line">

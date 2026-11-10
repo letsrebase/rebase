@@ -20,6 +20,7 @@ import {
   useOrganizationDeals,
   useOrganizationPeople,
   useDeleteOrganization,
+  useAddOrganizationRole,
   useUpdateOrganization,
   type Organization,
   type RelatedDeal,
@@ -36,6 +37,20 @@ import { NotesSection } from '@/features/notes/NotesSection'
 import { toProblem, type ProblemDetail } from '@/lib/api'
 import { useCanWrite } from '@/lib/auth'
 import { useModules } from '@/lib/modules'
+import { RowActions } from '@/components/RowActions'
+import { RoleChips } from '@/features/organizations/RoleChips'
+import { SupplierPurchases } from '@/features/organizations/SupplierPurchases'
+import {
+  ROLE_LABELS,
+  SUPPLIER_AREA_LABELS,
+  SUPPLIER_SUPPLIES_LABELS,
+  customerKindText,
+  orderedRoles,
+  supplierKindText,
+  supplierTermsLong,
+  type SupplierArea,
+  type SupplierSupplies,
+} from '@/features/organizations/roles'
 import { useEntitySchema } from '@/lib/schema'
 
 const EMPTY = '—'
@@ -114,6 +129,8 @@ export function OrganizationDetail() {
   // without Google gets no Email tab at all rather than a permanently empty one.
   const gmailConfigured = useGmailConfigured()
   const owners = useOrganizationOwners()
+  const addRole = useAddOrganizationRole()
+  const purchasesOn = modules.on('purchases')
 
   if (isLoading) return <LoadingState className="m-8" />
   // A failed fetch and a genuine 404 both leave `customer` undefined once loading
@@ -172,12 +189,26 @@ export function OrganizationDetail() {
     })
   }
 
+  // The supplier's tab and facts exist for a supplier while `purchases` is on.
+  const roles = customer.roles
+  const suppliersOn = roles.includes('supplier') && purchasesOn
+
+  function addRoleTo(role: 'customer' | 'supplier') {
+    addRole.mutate(
+      { id: customerId, roles: orderedRoles([...roles, role]) },
+      {
+        onSuccess: () => toast.success(`Ruolo ${ROLE_LABELS[role]} aggiunto`),
+        onError: (failed) => toast.error(toProblem(failed).detail),
+      },
+    )
+  }
+
   return (
     <>
       <EntityDetailLayout
         icon={Building2}
         title={customer.legal_name}
-        subtitle="Cliente"
+        titleAddon={<RoleChips roles={roles} />}
         entityType="organization"
         entityId={customerId}
         documents={<DocumentsTab owner={{ customerId }} />}
@@ -189,6 +220,7 @@ export function OrganizationDetail() {
           />
         }
         contracts={contractsOn ? <ContractsTab customerId={customerId} /> : undefined}
+        purchases={suppliersOn ? <SupplierPurchases supplierId={customerId} /> : undefined}
         economics={<EconomicsTab customerId={customerId} />}
         tasks={<EntityTask link={{ kind: 'organization', id: customerId }} />}
         emails={
@@ -217,6 +249,17 @@ export function OrganizationDetail() {
                 <Trash2 className="mr-2 size-4" />
                 Archivia
               </Button>
+              <RowActions
+                label="Altre azioni"
+                items={[
+                  ...(purchasesOn && !roles.includes('supplier')
+                    ? [{ label: 'Aggiungi il ruolo Fornitore', onSelect: () => addRoleTo('supplier') }]
+                    : []),
+                  ...(!roles.includes('customer')
+                    ? [{ label: 'Aggiungi il ruolo Cliente', onSelect: () => addRoleTo('customer') }]
+                    : []),
+                ]}
+              />
             </>
           )
         }
@@ -233,7 +276,6 @@ export function OrganizationDetail() {
                 <h2 className="mb-3 font-semibold">Dati fiscali</h2>
                 <Row label="P.IVA" value={displayNative(customer.vat_number)} />
                 <Row label="Codice fiscale" value={displayNative(customer.tax_code)} />
-                <Row label="Codice SDI" value={displayNative(customer.sdi_code)} />
                 <Row label="PEC" value={displayNative(customer.certified_email)} />
                 <Row
                   label="Indirizzo"
@@ -244,7 +286,6 @@ export function OrganizationDetail() {
                   }
                 />
                 <Row label="Nazione" value={displayNative(customer.country)} />
-                <Row label="Termini di pagamento" value={paymentTerms(customer)} />
               </CardContent>
             </Card>
 
@@ -257,6 +298,53 @@ export function OrganizationDetail() {
               </CardContent>
             </Card>
 
+            {/* One group of facts per role it has: what it is to us as a customer, and what we
+                owe it as a supplier. The supplier group goes with the `purchases` module. */}
+            {roles.includes('customer') && (
+              <Card>
+                <CardContent className="pt-6">
+                  <h2 className="mb-3 font-semibold">Come cliente</h2>
+                  <Row label="Tipo di cliente" value={customerKindText(customer)} />
+                  <Row label="Sostituto d'imposta" value={customer.is_withholding_agent ? 'Sì' : 'No'} />
+                  <Row
+                    label={customer.customer_kind === 'public_body' ? 'Codice IPA' : 'Codice destinatario'}
+                    value={displayNative(customer.sdi_code)}
+                  />
+                  <Row label="Termini di pagamento" value={paymentTerms(customer)} />
+                </CardContent>
+              </Card>
+            )}
+
+            {suppliersOn && (
+              <Card>
+                <CardContent className="pt-6">
+                  <h2 className="mb-3 font-semibold">Come fornitore</h2>
+                  <Row
+                    label="Tipo fiscale"
+                    value={supplierKindText({
+                      supplier_kind: customer.supplier_kind,
+                      supplier_area: null,
+                      supplier_supplies: null,
+                    })}
+                  />
+                  {customer.supplier_kind === 'foreign' && (
+                    <>
+                      <Row
+                        label="Area"
+                        value={SUPPLIER_AREA_LABELS[customer.supplier_area as SupplierArea] ?? EMPTY}
+                      />
+                      <Row
+                        label="Fornitura"
+                        value={
+                          SUPPLIER_SUPPLIES_LABELS[customer.supplier_supplies as SupplierSupplies] ?? EMPTY
+                        }
+                      />
+                    </>
+                  )}
+                  <Row label="Termini concessi" value={supplierTermsLong(customer)} />
+                </CardContent>
+              </Card>
+            )}
             {custom.length > 0 && (
               <Card className="lg:col-span-2">
                 <CardContent className="pt-6">
@@ -314,12 +402,19 @@ export function OrganizationDetail() {
       />
 
       <OrganizationForm
-        title="Modifica cliente"
+        title="Modifica anagrafica"
         open={editing}
         onOpenChange={setEditing}
         customFields={custom}
         owners={owners.canChange ? owners.options : undefined}
         initial={organizationToFormValues(customer)}
+        organizationId={customerId}
+        onOpenExisting={(existing) =>
+          void navigate({
+            to: '/app/organizations/$organizationId',
+            params: { organizationId: existing.id },
+          })
+        }
         problem={problem}
         busy={update.isPending}
         onSubmit={(values) => {
@@ -327,7 +422,7 @@ export function OrganizationDetail() {
           update.mutate(values, {
             onSuccess: () => {
               setEditing(false)
-              toast.success('Cliente aggiornato')
+              toast.success('Anagrafica aggiornata')
             },
             onError: (error) => setProblem(toProblem(error)),
           })

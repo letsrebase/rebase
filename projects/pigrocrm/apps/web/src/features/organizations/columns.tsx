@@ -5,6 +5,9 @@ import { renderFieldValue } from '@/components/DynamicFieldRenderer'
 import type { LegalEntityRecord } from '@/lib/legalEntity'
 import type { FieldDefinition } from '@/lib/schema'
 import type { Organization } from './queries'
+import { RoleChips } from './RoleChips'
+import { supplierKindText, supplierTermsShort } from './roles'
+import type { RegistryRole } from './search'
 
 const EMPTY = '—'
 
@@ -49,12 +52,15 @@ export interface OrganizationColumnOptions {
    * the same thing on every row.
    */
   legal_entities?: LegalEntityRecord[]
+  /** The registry's view the columns are for; «Clienti» (today's columns) when left out. */
+  role?: RegistryRole
 }
 
 export function buildOrganizationColumns(
   customFields: FieldDefinition[],
   options: OrganizationColumnOptions = {},
 ): ColumnDef<DataTableFeatures, Organization>[] {
+  const role = options.role ?? 'customer'
   const legalEntityName = new Map((options.legal_entities ?? []).map((a) => [a.id, a.name]))
   const legal_entity: ColumnDef<DataTableFeatures, Organization>[] = options.legal_entities
     ? [
@@ -72,21 +78,65 @@ export function buildOrganizationColumns(
         },
       ]
     : []
+  // The row *is* a company, so the first cell carries its identity: an initials chip beside
+  // the name (design spec §4). The accessor stays the bare name, so the table still has one
+  // plain text value per cell to sort or export; `cell` only adds the chip on top of it, the
+  // same shape «Azienda» in `features/people/columns.tsx` already uses. A long name truncates
+  // in the cell and says itself in full as the title.
+  const name: ColumnDef<DataTableFeatures, Organization> = {
+    header: 'Ragione sociale',
+    accessorKey: 'legal_name',
+    cell: ({ row }) => (
+      <span title={row.original.legal_name} className="block max-w-sm">
+        <EntityCell name={row.original.legal_name} />
+      </span>
+    ),
+  }
+  // «Tutte»: the same cell with the roles beside it.
+  const namedWithRoles: ColumnDef<DataTableFeatures, Organization> = {
+    ...name,
+    cell: ({ row }) => (
+      <div className="flex items-center gap-3">
+        <span title={row.original.legal_name} className="block min-w-0 max-w-sm">
+          <EntityCell name={row.original.legal_name} />
+        </span>
+        <span className="flex flex-wrap gap-1.5">
+          <RoleChips roles={row.original.roles} />
+        </span>
+      </div>
+    ),
+  }
+  const vat: ColumnDef<DataTableFeatures, Organization> = {
+    header: 'P.IVA',
+    id: 'vat_number',
+    accessorFn: (row) => displayNative(row.vat_number),
+  }
+  const city: ColumnDef<DataTableFeatures, Organization> = {
+    header: 'Comune',
+    id: 'city',
+    accessorFn: (row) => displayNative(row.city),
+  }
+  const email: ColumnDef<DataTableFeatures, Organization> = {
+    header: 'Email',
+    id: 'email',
+    accessorFn: (row) => displayNative(row.email),
+  }
+  const kind: ColumnDef<DataTableFeatures, Organization> = {
+    header: 'Tipo fiscale',
+    id: 'supplier_kind',
+    accessorFn: (row) => supplierKindText(row),
+  }
+  const terms: ColumnDef<DataTableFeatures, Organization> = {
+    header: 'Pagamento',
+    id: 'supplier_payment',
+    accessorFn: (row) => supplierTermsShort(row),
+  }
   const native: ColumnDef<DataTableFeatures, Organization>[] = [
-    {
-      header: 'Ragione sociale',
-      accessorKey: 'legal_name',
-      // The row *is* a company, so the first cell carries its identity: an initials
-      // chip beside the name (design spec §4). The accessor stays the bare name, so
-      // the table still has one plain text value per cell to sort or export; `cell`
-      // only adds the chip on top of it, the same shape «Azienda» in
-      // `features/people/columns.tsx` already uses.
-      cell: ({ row }) => <EntityCell name={row.original.legal_name} />,
-    },
+    name,
     ...legal_entity,
-    { header: 'P.IVA', id: 'vat_number', accessorFn: (row) => displayNative(row.vat_number) },
-    { header: 'Comune', id: 'city', accessorFn: (row) => displayNative(row.city) },
-    { header: 'Email', id: 'email', accessorFn: (row) => displayNative(row.email) },
+    vat,
+    city,
+    email,
     { header: 'Telefono', id: 'phone', accessorFn: (row) => displayNative(row.phone) },
   ]
 
@@ -105,5 +155,9 @@ export function buildOrganizationColumns(
     accessorFn: (row) => renderFieldValue(field, row.custom_fields[field.key]),
   }))
 
+  // The supplier and the all-roles views keep their own short lists (the approved brief of
+  // 2026-11-10); a tenant's custom fields are the customer's.
+  if (role === 'supplier') return [name, ...legal_entity, vat, kind, terms]
+  if (role === 'any') return [namedWithRoles, ...legal_entity, vat, city, email]
   return [...native, ...custom]
 }

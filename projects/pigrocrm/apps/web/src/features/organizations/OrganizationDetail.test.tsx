@@ -8,9 +8,10 @@ import { api } from '@/lib/api'
 import { spaceModules } from '@/lib/modules.testing'
 import type { ModuleKey } from '@/lib/modules'
 
+const nav = vi.hoisted(() => ({ navigate: vi.fn() }))
 vi.mock('@tanstack/react-router', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@tanstack/react-router')>()
-  return { ...actual, useParams: () => ({ organizationId: 'c1' }), useNavigate: () => vi.fn() }
+  return { ...actual, useParams: () => ({ organizationId: 'c1' }), useNavigate: () => nav.navigate }
 })
 
 // Hoisted so a single test can flip it: everything below is about what the page draws
@@ -39,6 +40,7 @@ vi.mock('@/lib/auth', () => ({
 // harmless empty success, since none of it is ever read before the isError/404
 // guard under test here returns.
 const mockGet = vi.spyOn(api, 'GET')
+const mockPatch = vi.spyOn(api, 'PATCH')
 
 function ok(data: unknown) {
   return Promise.resolve({ data, response: new Response(null, { status: 200 }) }) as never
@@ -64,6 +66,8 @@ function mockOrganizationFetch(result: ReturnType<typeof ok> | ReturnType<typeof
 
 beforeEach(() => {
   mockGet.mockReset()
+  mockPatch.mockReset()
+  nav.navigate.mockReset()
   auth.canWrite = false
   auth.admin = false
   auth.user = null
@@ -74,6 +78,7 @@ beforeEach(() => {
 const CUSTOMER = {
   id: 'c1',
   legal_name: 'ACME Srl',
+  roles: ['customer'],
   contact_points: [],
   custom_fields: {},
 } as never
@@ -358,5 +363,223 @@ describe('OrganizationDetail with modules off', () => {
     expect(await screen.findByRole('tab', { name: 'Fatture' }, { timeout: 10_000 })).toBeInTheDocument()
     await waitFor(() => expect(mockGet).toHaveBeenCalledWith('/api/settings/modules'))
     await waitFor(() => expect(screen.queryByRole('tab', { name: 'Contratti' })).toBeNull())
+  })
+})
+
+/** The roles of an organization (the approved brief of 2026-11-10): chips in the title, one
+ *  group of facts per role, «Acquisti» for a supplier and «Aggiungi il ruolo» for a writer. */
+describe('OrganizationDetail and the roles', () => {
+  const SUPPLIER = {
+    ...(CUSTOMER as object),
+    roles: ['supplier'],
+    supplier_kind: 'foreign',
+    supplier_area: 'extra_eu',
+    supplier_supplies: 'services',
+    supplier_payment_days: 30,
+    supplier_payment_end_of_month: true,
+  }
+
+  function mockOrganization(organization: unknown, off: readonly ModuleKey[] = []) {
+    mockGet.mockImplementation(
+      ((path: string) =>
+        path === '/api/settings/modules'
+          ? ok(spaceModules(off))
+          : path === '/api/organizations/{organization_id}'
+            ? ok(organization)
+            : path === NOTES_PATH
+              ? ok([])
+              : path === '/api/purchases'
+                ? ok({ items: [], next_cursor: null })
+                : path === '/api/cost-categories'
+                  ? ok([])
+                  : ok({ items: [] })) as never,
+    )
+  }
+
+  it('carries the roles in the title as outlined chips, in the order of the registry', async () => {
+    mockOrganization({ ...(CUSTOMER as object), roles: ['supplier', 'customer'] })
+    renderWithClient(<OrganizationDetail />)
+    const heading = await screen.findByRole('heading', { level: 1, name: 'ACME Srl' })
+    const chips = heading.parentElement!.querySelectorAll('[data-slot="badge"]')
+    expect([...chips].map((chip) => chip.textContent)).toEqual(['Cliente', 'Fornitore'])
+    for (const chip of chips) expect(chip).toHaveAttribute('data-variant', 'outline')
+  })
+
+  it('draws «Come cliente» for a customer and no supplier group, tab or menu entry for a reader', async () => {
+    mockOrganization(CUSTOMER)
+    renderWithClient(<OrganizationDetail />)
+    expect(await screen.findByRole('heading', { name: 'Come cliente' })).toBeInTheDocument()
+    expect(screen.getByText('Tipo di cliente')).toBeInTheDocument()
+    expect(screen.getByText('Sostituto d\'imposta')).toBeInTheDocument()
+    expect(screen.getByText('Codice destinatario')).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Come fornitore' })).toBeNull()
+    expect(screen.queryByRole('tab', { name: 'Acquisti' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Altre azioni' })).toBeNull()
+  })
+
+  it('names the public body\'s code «Codice IPA»', async () => {
+    mockOrganization({ ...(CUSTOMER as object), customer_kind: 'public_body', sdi_code: 'UFABC1' })
+    renderWithClient(<OrganizationDetail />)
+    expect(await screen.findByText('Codice IPA')).toBeInTheDocument()
+    expect(screen.getByText('Ente pubblico')).toBeInTheDocument()
+  })
+
+  it('draws «Come fornitore» with the kind, the area, the supply and the terms it grants', async () => {
+    mockOrganization(SUPPLIER)
+    renderWithClient(<OrganizationDetail />)
+    expect(await screen.findByRole('heading', { name: 'Come fornitore' })).toBeInTheDocument()
+    expect(screen.getByText('Estero')).toBeInTheDocument()
+    expect(screen.getByText('extra UE')).toBeInTheDocument()
+    expect(screen.getByText('servizi')).toBeInTheDocument()
+    expect(screen.getByText('30 giorni data fattura fine mese')).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Come cliente' })).toBeNull()
+    expect(await screen.findByRole('tab', { name: 'Acquisti' })).toBeInTheDocument()
+  })
+
+  it('hides the supplier group and the «Acquisti» tab with the purchases module off', async () => {
+    mockOrganization(SUPPLIER, ['purchases'])
+    renderWithClient(<OrganizationDetail />)
+    await screen.findByRole('tab', { name: 'Fatture' }, { timeout: 10_000 })
+    await waitFor(() => expect(mockGet).toHaveBeenCalledWith('/api/settings/modules'))
+    await waitFor(() => expect(screen.queryByRole('tab', { name: 'Acquisti' })).toBeNull())
+    expect(screen.queryByRole('heading', { name: 'Come fornitore' })).toBeNull()
+    expect(mockGet).not.toHaveBeenCalledWith('/api/purchases', expect.anything())
+  })
+
+  describe('the «Acquisti» tab', () => {
+    const PURCHASE = {
+      id: 'p1',
+      kind: 'invoice',
+      status: 'active',
+      supplier_id: 'c1',
+      merchant_name: null,
+      number: '2026/0418',
+      date: '2026-11-02',
+      category_id: 'k1',
+      description: 'Ponteggio',
+      amount: '1464.00',
+      cost_amount: '1200.00',
+      document_id: null,
+      custom_fields: {},
+    }
+
+    function mockPurchases() {
+      mockGet.mockImplementation(
+        ((path: string) =>
+          path === '/api/organizations/{organization_id}'
+            ? ok(SUPPLIER)
+            : path === NOTES_PATH
+              ? ok([])
+              : path === '/api/purchases'
+                ? ok({ items: [PURCHASE], next_cursor: null })
+                : path === '/api/cost-categories'
+                  ? ok([{ id: 'k1', name: 'Servizi', archived: false }])
+                  : ok({ items: [] })) as never,
+      )
+    }
+
+    it('lists the purchases of this supplier and opens one on its own page', async () => {
+      mockPurchases()
+      renderWithClient(<OrganizationDetail />)
+      await userEvent.click(await screen.findByRole('tab', { name: 'Acquisti' }))
+      expect(mockGet).toHaveBeenCalledWith(
+        '/api/purchases',
+        expect.objectContaining({
+          params: { query: expect.objectContaining({ supplier_id: 'c1' }) },
+        }),
+      )
+      await userEvent.click(await screen.findByText('2026/0418'))
+      expect(nav.navigate).toHaveBeenCalledWith({
+        to: '/app/purchases/$purchaseId',
+        params: { purchaseId: 'p1' },
+      })
+    })
+
+    it('offers «Nuovo acquisto» to a writer, with the supplier already chosen, and none to a reader', async () => {
+      auth.canWrite = true
+      mockPurchases()
+      const { unmount } = renderWithClient(<OrganizationDetail />)
+      await userEvent.click(await screen.findByRole('tab', { name: 'Acquisti' }))
+      await userEvent.click(await screen.findByRole('button', { name: 'Nuovo acquisto' }))
+      expect(nav.navigate).toHaveBeenCalledWith({
+        to: '/app/purchases/new',
+        search: { supplier_id: 'c1' },
+      })
+      unmount()
+
+      auth.canWrite = false
+      renderWithClient(<OrganizationDetail />)
+      await userEvent.click(await screen.findByRole('tab', { name: 'Acquisti' }))
+      await screen.findByText('2026/0418')
+      expect(screen.queryByRole('button', { name: 'Nuovo acquisto' })).toBeNull()
+    })
+
+    it('says so when the supplier has none', async () => {
+      mockOrganization(SUPPLIER)
+      renderWithClient(<OrganizationDetail />)
+      await userEvent.click(await screen.findByRole('tab', { name: 'Acquisti' }))
+      expect(await screen.findByText('Nessun acquisto da questo fornitore.')).toBeInTheDocument()
+    })
+  })
+
+  describe('«Aggiungi il ruolo»', () => {
+    function patched(roles: string[]) {
+      mockPatch.mockImplementation((() =>
+        Promise.resolve({
+          data: { ...(CUSTOMER as object), roles },
+          response: new Response(null, { status: 200 }),
+        })) as never)
+    }
+
+    it('adds the supplier role to a customer-only organization, for a writer', async () => {
+      auth.canWrite = true
+      mockOrganization(CUSTOMER)
+      patched(['customer', 'supplier'])
+      renderWithClient(<OrganizationDetail />)
+      await userEvent.click(await screen.findByRole('button', { name: 'Altre azioni' }))
+      expect(screen.queryByRole('menuitem', { name: 'Aggiungi il ruolo Cliente' })).toBeNull()
+      await userEvent.click(screen.getByRole('menuitem', { name: 'Aggiungi il ruolo Fornitore' }))
+      await waitFor(() =>
+        expect(mockPatch).toHaveBeenCalledWith('/api/organizations/{organization_id}', {
+          params: { path: { organization_id: 'c1' } },
+          body: { roles: ['customer', 'supplier'] },
+        }),
+      )
+    })
+
+    it('adds the customer role to a supplier-only organization', async () => {
+      auth.canWrite = true
+      mockOrganization(SUPPLIER)
+      patched(['customer', 'supplier'])
+      renderWithClient(<OrganizationDetail />)
+      await userEvent.click(await screen.findByRole('button', { name: 'Altre azioni' }))
+      expect(screen.queryByRole('menuitem', { name: 'Aggiungi il ruolo Fornitore' })).toBeNull()
+      await userEvent.click(screen.getByRole('menuitem', { name: 'Aggiungi il ruolo Cliente' }))
+      await waitFor(() =>
+        expect(mockPatch).toHaveBeenCalledWith(
+          '/api/organizations/{organization_id}',
+          expect.objectContaining({ body: { roles: ['customer', 'supplier'] } }),
+        ),
+      )
+    })
+
+    it('does not offer the supplier role with the purchases module off', async () => {
+      auth.canWrite = true
+      mockOrganization(CUSTOMER, ['purchases'])
+      renderWithClient(<OrganizationDetail />)
+      await screen.findByRole('tab', { name: 'Panoramica' })
+      await waitFor(() => expect(mockGet).toHaveBeenCalledWith('/api/settings/modules'))
+      // Nothing is left to add: a customer with no supplier role to offer has no menu.
+      await waitFor(() => expect(screen.queryByRole('button', { name: 'Altre azioni' })).toBeNull())
+    })
+
+    it('never draws a way to take a role away', async () => {
+      auth.canWrite = true
+      mockOrganization({ ...(CUSTOMER as object), roles: ['customer', 'supplier'] })
+      renderWithClient(<OrganizationDetail />)
+      await screen.findByRole('tab', { name: 'Panoramica' })
+      expect(screen.queryByRole('button', { name: 'Altre azioni' })).toBeNull()
+      expect(screen.queryByText(/togli il ruolo|rimuovi il ruolo/i)).toBeNull()
+    })
   })
 })
