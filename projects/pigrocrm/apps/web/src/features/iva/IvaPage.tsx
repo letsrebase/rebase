@@ -59,7 +59,8 @@ function periodOption(period: IvaPeriod): string {
   if (period.ladder === null) {
     return `${period.label} · ${period.state === 'future' ? 'non ancora iniziato' : NOT_COMPUTABLE}`
   }
-  const words = period.state === 'open' ? 'in corso' : OUTCOME_WORDS[period.ladder.outcome]
+  const paid = period.ladder.outcome === 'due' && period.payment_state === 'settled'
+  const words = period.state === 'open' ? 'in corso' : paid ? 'versato' : OUTCOME_WORDS[period.ladder.outcome]
   return `${period.label} · ${formatMoneyValue(period.ladder.result)} · ${words}`
 }
 
@@ -205,7 +206,7 @@ function IvaBody({
             <PurchaseRegisterView view={purchases} wide={wide} />
           </TabsContent>
         </Tabs>
-        {beside && <div className="w-88 shrink-0">{ladder}</div>}
+        {beside && <div className="w-80 shrink-0">{ladder}</div>}
       </div>
     </>
   )
@@ -228,7 +229,7 @@ function PeriodSelect({
         if (picked !== undefined) onChange(picked.number)
       }}
     >
-      <SelectTrigger aria-label="Periodo" className="w-full md:w-auto md:min-w-96">
+      <SelectTrigger aria-label="Periodo" className="min-w-0 flex-1 basis-56 md:w-auto md:flex-none md:basis-auto md:min-w-96">
         <SelectValue />
       </SelectTrigger>
       <SelectContent>
@@ -321,7 +322,7 @@ export function IvaPage({
           if (picked !== undefined) onSearch({ year: picked, period: undefined })
         }}
       >
-        <SelectTrigger aria-label="Anno" className="w-full sm:w-28">
+        <SelectTrigger aria-label="Anno" className="w-28">
           <SelectValue />
         </SelectTrigger>
         <SelectContent>

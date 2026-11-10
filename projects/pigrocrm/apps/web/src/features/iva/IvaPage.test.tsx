@@ -295,7 +295,8 @@ describe('«IVA» on a desk', () => {
     const user = userEvent.setup()
     await user.click(await screen.findByRole('combobox', { name: 'Periodo' }))
 
-    expect(await screen.findByRole('option', { name: /^1° trimestre 2026 · 880,00\s€ · da versare$/ })).toBeInTheDocument()
+    expect(await screen.findByRole('option', { name: /^1° trimestre 2026 · 880,00\s€ · versato$/ })).toBeInTheDocument()
+    expect(screen.getByRole('option', { name: /^3° trimestre 2026 · 1\.860,00\s€ · da versare$/ })).toBeInTheDocument()
     expect(screen.getByRole('option', { name: /^2° trimestre 2026 · -310,00\s€ · a credito$/ })).toBeInTheDocument()
     expect(screen.getByRole('option', { name: /^4° trimestre 2026 · 121,20\s€ · in corso$/ })).toBeInTheDocument()
     await user.click(screen.getByRole('option', { name: /2° trimestre 2026/ }))
@@ -316,7 +317,7 @@ describe('«IVA» on a desk', () => {
   it('shows the pill of a paid period and its payment date from the pack', async () => {
     answering()
     renderPage({ period: 1 })
-    expect(await screen.findByText('Versato')).toBeInTheDocument()
+    expect((await screen.findAllByText('Versato')).length).toBeGreaterThan(0)
     expect(await screen.findByText(/Scadenza del versamento: 18\/05\/2026 · dal pacchetto fiscale/)).toBeInTheDocument()
   })
 
@@ -361,7 +362,7 @@ describe('«IVA» on a desk', () => {
     const totals = rows.at(-1) as HTMLElement
     expect(within(totals).getByText('Totale del periodo')).toBeInTheDocument()
     expect(within(totals).getByText('3.200,00 €')).toBeInTheDocument()
-    expect(within(totals).getByText('Esigibile 396,00 €')).toBeInTheDocument()
+    expect(screen.getByText('IVA esigibile del periodo').nextSibling).toHaveTextContent('396,00')
     // The summary by rate, from the server.
     const summary = screen.getByRole('region', { name: 'Riepilogo per aliquota' })
     expect(within(summary).getByText('N2.1')).toBeInTheDocument()
@@ -426,7 +427,7 @@ describe('«IVA» on a desk', () => {
       expect.objectContaining({ year: 2026, number: 4, legal_entity_id: ENTITY, limit: 50, offset: 0 }),
       expect.objectContaining({ offset: 50 }),
     ])
-    expect(screen.getByText('Esigibile 396,00 €')).toBeInTheDocument()
+    expect(screen.getByText('IVA esigibile del periodo').nextSibling).toHaveTextContent('396,00')
   })
 })
 
@@ -506,5 +507,8 @@ describe('«IVA» on a phone', () => {
     const cards = await screen.findByRole('list', { name: 'Registro vendite' })
     expect(within(cards).getAllByRole('listitem')).toHaveLength(5)
     expect(screen.getByText('IVA esigibile del periodo')).toBeInTheDocument()
+    // The summary is one card per rate on a phone, with the same figures.
+    const summary = screen.getByRole('region', { name: 'Riepilogo per aliquota' })
+    expect(within(summary).getAllByRole('listitem')).toHaveLength(2)
   })
 })

@@ -1,8 +1,7 @@
-import { StatusPill } from '@/components/StatusPill'
 import { NOT_COMPUTABLE } from '@/features/analytics/format'
 import { formatMoneyValue } from '@/features/time/columns'
 import { formatIsoDateItalian } from '@/lib/dates'
-import { OUTCOME_LABELS, PACK_SOURCE, periodPill } from './labels'
+import { OUTCOME_LABELS, PACK_SOURCE } from './labels'
 import type { IvaLadder, IvaPeriod } from './queries'
 
 /** `"0.00"` is what `Numeric(12, 2)` sends for zero, so a line that is zero is told by the string. */
@@ -83,14 +82,10 @@ function Figure({ period, ladder }: { period: IvaPeriod; ladder: IvaLadder | nul
  */
 export function Ladder({ period }: { period: IvaPeriod }) {
   const ladder = period.ladder
-  const pill = periodPill(period)
   return (
     <section aria-label="Liquidazione" className="border bg-card">
       <div className="space-y-1 p-4">
         <Figure period={period} ladder={ladder} />
-        <div className="pt-2">
-          <StatusPill tone={pill.tone}>{pill.label}</StatusPill>
-        </div>
       </div>
       {ladder !== null && (
         <dl className="border-t">

@@ -50,28 +50,80 @@ function Under({ children }: { children: ReactNode }) {
   return <p className="text-sm text-muted-foreground">{children}</p>
 }
 
+/** One line of a summary: the rate and what sets it apart (the exigibility of a sale, the
+ *  deductible share of a purchase), then the amounts the server added up for it. */
+interface SummaryRow {
+  key: string
+  rate: string
+  extra: string
+  amounts: ReadonlyArray<readonly [label: string, value: string]>
+}
+
 /** The summary under a table: one line per rate (and nature, share or exigibility), from the
- *  server, which adds the whole period and not the pages on screen. */
+ *  server, which adds the whole period and not the pages on screen. A table from `md` up; on a
+ *  phone one card per line, so no column is cut. */
 function Summary({
-  label,
-  head,
-  children,
+  extraHead,
+  rows,
+  wide,
 }: {
-  label: string
-  head: ReactNode
-  children: ReactNode
+  extraHead: string
+  rows: readonly SummaryRow[]
+  wide: boolean
 }) {
+  const label = 'Riepilogo per aliquota'
+  const labels = rows[0]?.amounts.map(([name]) => name) ?? []
   return (
     <section aria-label={label} className="mt-6 space-y-2">
       <h2 className="text-sm font-semibold">{label}</h2>
-      <div className="border bg-card">
-        <Table aria-label={label} scrollLabel={label}>
-          <TableHeader>
-            <TableRow>{head}</TableRow>
-          </TableHeader>
-          <TableBody>{children}</TableBody>
-        </Table>
-      </div>
+      {wide ? (
+        <div className="border bg-card">
+          <Table aria-label={label} scrollLabel={label}>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Aliquota</TableHead>
+                <TableHead>{extraHead}</TableHead>
+                {labels.map((name) => (
+                  <TableHead key={name} className="text-right">
+                    {name}
+                  </TableHead>
+                ))}
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {rows.map((row) => (
+                <TableRow key={row.key}>
+                  <TableCell>{row.rate}</TableCell>
+                  <TableCell>{row.extra}</TableCell>
+                  {row.amounts.map(([name, value]) => (
+                    <TableCell key={name} className={NUMERIC}>
+                      {value}
+                    </TableCell>
+                  ))}
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      ) : (
+        <ul className="space-y-3">
+          {rows.map((row) => (
+            <li key={row.key} className="space-y-1 border bg-card p-4">
+              <p className="font-medium">
+                {row.rate} <span className="text-sm font-normal text-muted-foreground">· {row.extra}</span>
+              </p>
+              <dl className="space-y-0.5 text-sm">
+                {row.amounts.map(([name, value]) => (
+                  <div key={name} className="flex items-baseline justify-between gap-3">
+                    <dt className="text-muted-foreground">{name}</dt>
+                    <dd className="tabular-nums">{value}</dd>
+                  </div>
+                ))}
+              </dl>
+            </li>
+          ))}
+        </ul>
+      )}
     </section>
   )
 }
@@ -167,19 +219,17 @@ function SalesTable({ rows, totals }: { rows: IvaSalesRow[]; totals: IvaSalesReg
                 </TableCell>
                 <TableCell className="whitespace-nowrap">
                   <SalesDocument row={row} />
-                  {row.status === 'cancelled' && (
-                    <div className="pt-1">
-                      <StatusPill tone="muted">Annullata</StatusPill>
-                    </div>
-                  )}
-                  {row.document_type === 'TD04' && (
-                    <div className="pt-1">
-                      <Badge variant="outline">Nota di credito</Badge>
-                    </div>
-                  )}
                 </TableCell>
-                <TableCell className="max-w-64 truncate" title={row.customer_name ?? undefined}>
-                  {row.customer_name}
+                <TableCell className="max-w-40">
+                  <p className="truncate" title={row.customer_name ?? undefined}>
+                    {row.customer_name}
+                  </p>
+                  {(row.status === 'cancelled' || row.document_type === 'TD04') && (
+                    <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                      {row.status === 'cancelled' && <StatusPill tone="muted">Annullata</StatusPill>}
+                      {row.document_type === 'TD04' && <Badge variant="outline">Nota di credito</Badge>}
+                    </div>
+                  )}
                 </TableCell>
                 <TableCell className={NUMERIC}>{formatMoneyValue(row.taxable_amount)}</TableCell>
                 <TableCell className="whitespace-nowrap">{groupsLabel(row.groups)}</TableCell>
@@ -204,9 +254,7 @@ function SalesTable({ rows, totals }: { rows: IvaSalesRow[]; totals: IvaSalesReg
             <TableCell className={cn(NUMERIC, 'font-semibold')}>
               {formatMoneyValue(totals.vat_amount)}
             </TableCell>
-            <TableCell className="text-sm text-muted-foreground">
-              Esigibile {formatMoneyValue(totals.vat_due)}
-            </TableCell>
+            <TableCell />
             <TableCell className={cn(NUMERIC, 'font-semibold')}>
               {formatMoneyValue(totals.total)}
             </TableCell>
@@ -267,39 +315,32 @@ export function SalesRegisterView({
         (wide ? (
           <SalesTable rows={view.rows} totals={view.totals} />
         ) : (
-          <>
-            <ul aria-label="Registro vendite" className="space-y-3">
-              {view.rows.map((row) => (
-                <SalesCard key={row.invoice_id ?? `gap-${row.number}`} row={row} />
-              ))}
-            </ul>
-            <dl className="mt-3 flex items-baseline justify-between gap-3 border bg-card p-4 text-sm">
-              <dt className="font-semibold">IVA esigibile del periodo</dt>
-              <dd className="font-semibold tabular-nums">{formatMoneyValue(view.totals.vat_due)}</dd>
-            </dl>
-          </>
+          <ul aria-label="Registro vendite" className="space-y-3">
+            {view.rows.map((row) => (
+              <SalesCard key={row.invoice_id ?? `gap-${row.number}`} row={row} />
+            ))}
+          </ul>
         ))}
+      {view.totals !== undefined && (
+        <dl className="mt-3 flex items-baseline justify-between gap-3 border bg-card p-4 text-sm">
+          <dt className="font-semibold">IVA esigibile del periodo</dt>
+          <dd className="font-semibold tabular-nums">{formatMoneyValue(view.totals.vat_due)}</dd>
+        </dl>
+      )}
       {view.summary !== undefined && view.summary.length > 0 && (
         <Summary
-          label="Riepilogo per aliquota"
-          head={
-            <>
-              <TableHead>Aliquota</TableHead>
-              <TableHead>Esigibilità</TableHead>
-              <TableHead className="text-right">Imponibile</TableHead>
-              <TableHead className="text-right">IVA</TableHead>
-            </>
-          }
-        >
-          {view.summary.map((line) => (
-            <TableRow key={`${line.rate}-${line.nature}-${line.exigibility}`}>
-              <TableCell>{rateLabel(line.rate, line.nature)}</TableCell>
-              <TableCell>{SALES_EXIGIBILITY_LABELS[line.exigibility]}</TableCell>
-              <TableCell className={NUMERIC}>{formatMoneyValue(line.taxable_amount)}</TableCell>
-              <TableCell className={NUMERIC}>{formatMoneyValue(line.vat_amount)}</TableCell>
-            </TableRow>
-          ))}
-        </Summary>
+          extraHead="Esigibilità"
+          wide={wide}
+          rows={view.summary.map((line) => ({
+            key: `${line.rate}-${line.nature}-${line.exigibility}`,
+            rate: rateLabel(line.rate, line.nature),
+            extra: SALES_EXIGIBILITY_LABELS[line.exigibility],
+            amounts: [
+              ['Imponibile', formatMoneyValue(line.taxable_amount)],
+              ['IVA', formatMoneyValue(line.vat_amount)],
+            ],
+          }))}
+        />
       )}
     </Frame>
   )
@@ -323,7 +364,7 @@ function PurchaseDocument({ row }: { row: IvaPurchaseRow }) {
       <Link
         to="/app/purchases/$purchaseId"
         params={{ purchaseId: row.purchase_id }}
-        className="block max-w-72 truncate font-medium underline-offset-4 hover:underline"
+        className="block max-w-56 truncate font-medium underline-offset-4 hover:underline"
         title={row.supplier_name ?? undefined}
       >
         {row.supplier_name}
@@ -450,20 +491,20 @@ export function PurchaseRegisterView({
         (wide ? (
           <PurchaseTable rows={view.rows} totals={view.totals} />
         ) : (
-          <>
-            <ul aria-label="Registro acquisti" className="space-y-3">
-              {view.rows.map((row) => (
-                <PurchaseCard key={row.purchase_id} row={row} />
-              ))}
-            </ul>
-            <dl className="mt-3 flex items-baseline justify-between gap-3 border bg-card p-4 text-sm">
-              <dt className="font-semibold">IVA detraibile del periodo</dt>
-              <dd className="font-semibold tabular-nums">
-                {formatMoneyValue(view.totals.deductible_vat)}
-              </dd>
-            </dl>
-          </>
+          <ul aria-label="Registro acquisti" className="space-y-3">
+            {view.rows.map((row) => (
+              <PurchaseCard key={row.purchase_id} row={row} />
+            ))}
+          </ul>
         ))}
+      {view.totals !== undefined && !wide && (
+        <dl className="mt-3 flex items-baseline justify-between gap-3 border bg-card p-4 text-sm">
+          <dt className="font-semibold">IVA detraibile del periodo</dt>
+          <dd className="font-semibold tabular-nums">
+            {formatMoneyValue(view.totals.deductible_vat)}
+          </dd>
+        </dl>
+      )}
       {view.totals !== undefined && view.totals.reverse_charge_vat !== '0.00' && (
         <p className="mt-3 text-sm text-muted-foreground">
           IVA dovuta per inversione contabile nel periodo:{' '}
@@ -472,27 +513,19 @@ export function PurchaseRegisterView({
       )}
       {view.summary !== undefined && view.summary.length > 0 && (
         <Summary
-          label="Riepilogo per aliquota"
-          head={
-            <>
-              <TableHead>Aliquota</TableHead>
-              <TableHead className="text-right">Quota</TableHead>
-              <TableHead className="text-right">Imponibile</TableHead>
-              <TableHead className="text-right">IVA</TableHead>
-              <TableHead className="text-right">IVA detraibile</TableHead>
-            </>
-          }
-        >
-          {view.summary.map((line) => (
-            <TableRow key={`${line.rate}-${line.nature}-${line.deductible_share}`}>
-              <TableCell>{rateLabel(line.rate, line.nature)}</TableCell>
-              <TableCell className={NUMERIC}>{formatPercent(line.deductible_share)}</TableCell>
-              <TableCell className={NUMERIC}>{formatMoneyValue(line.taxable_amount)}</TableCell>
-              <TableCell className={NUMERIC}>{formatMoneyValue(line.vat_amount)}</TableCell>
-              <TableCell className={NUMERIC}>{formatMoneyValue(line.deductible_vat)}</TableCell>
-            </TableRow>
-          ))}
-        </Summary>
+          extraHead="Quota"
+          wide={wide}
+          rows={view.summary.map((line) => ({
+            key: `${line.rate}-${line.nature}-${line.deductible_share}`,
+            rate: rateLabel(line.rate, line.nature),
+            extra: `quota ${formatPercent(line.deductible_share)}`,
+            amounts: [
+              ['Imponibile', formatMoneyValue(line.taxable_amount)],
+              ['IVA', formatMoneyValue(line.vat_amount)],
+              ['IVA detraibile', formatMoneyValue(line.deductible_vat)],
+            ],
+          }))}
+        />
       )}
     </Frame>
   )
