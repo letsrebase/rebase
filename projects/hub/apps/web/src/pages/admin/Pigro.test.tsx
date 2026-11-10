@@ -88,10 +88,12 @@ describe('the Istanze Pigro page', () => {
     spy.mockResolvedValueOnce(answer(200, { total: 1, items: [BOB], next_cursor: null }))
     mount()
     await screen.findByRole('link', { name: 'studio-ada' })
-    const user = userEvent.setup()
+    // One burst (`delay: null`), so the 300 ms debounce cannot expire between two keystrokes
+    // however slow the machine is, and the wait is the default, not a fixed 2 s (REB-1029).
+    const user = userEvent.setup({ delay: null })
     await user.type(screen.getByLabelText('Cerca istanze'), 'bob@example')
     // No request fires per keystroke; one fires once typing settles.
-    await waitFor(() => expect(spy).toHaveBeenCalledTimes(2), { timeout: 2000 })
+    await waitFor(() => expect(spy).toHaveBeenCalledTimes(2))
     expect(spy.mock.calls[1]![0]).toBe('/api/hub/pigro/instances?q=bob%40example')
     await waitFor(() => expect(screen.queryByRole('link', { name: 'studio-ada' })).toBeNull())
     expect(screen.getByText('bob@example.org')).toBeInTheDocument()

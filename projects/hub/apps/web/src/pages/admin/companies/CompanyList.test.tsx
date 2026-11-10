@@ -14,12 +14,16 @@ describe('the search box debounces before it reaches the API and the URL (REB-28
     await screen.findByRole('heading', { name: 'Aziende' })
     spy.mockClear()
 
-    await userEvent.type(screen.getByLabelText('Cerca'), 'rossi')
+    // One burst (`delay: null`), so the 300 ms debounce cannot expire inside it however slow
+    // the machine is; then wait for the request, and once more for a second one that a
+    // keystroke-by-keystroke search would have sent (REB-1029).
+    await userEvent.setup({ delay: null }).type(screen.getByLabelText('Cerca'), 'rossi')
+    const companyCalls = () =>
+      spy.mock.calls.map((call) => String(call[0])).filter((url) => url.includes('/api/hub/companies'))
+    await waitFor(() => expect(companyCalls()).toHaveLength(1))
     await settle()
-
-    const calls = spy.mock.calls.map((call) => String(call[0])).filter((url) => url.includes('/api/hub/companies'))
-    expect(calls).toHaveLength(1)
-    expect(calls[0]).toContain('q=rossi')
+    expect(companyCalls()).toHaveLength(1)
+    expect(companyCalls()[0]).toContain('q=rossi')
   })
 })
 

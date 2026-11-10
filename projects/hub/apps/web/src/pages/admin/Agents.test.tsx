@@ -99,9 +99,11 @@ describe('the Agenti page (REB-213)', () => {
     spy.mockResolvedValueOnce(answer(200, page([ACTIVE])))
     mount()
     await screen.findByText('Vecchio')
-    const user = userEvent.setup()
+    // One burst (`delay: null`), so the 300 ms debounce cannot expire between two keystrokes
+    // however slow the machine is, and the wait is the default, not a fixed 2 s (REB-1029).
+    const user = userEvent.setup({ delay: null })
     await user.type(screen.getByLabelText('Cerca token'), 'Claude')
-    await waitFor(() => expect(spy).toHaveBeenCalledTimes(2), { timeout: 2000 })
+    await waitFor(() => expect(spy).toHaveBeenCalledTimes(2))
     expect(spy.mock.calls[1]![0]).toBe('/api/hub/tokens?q=Claude')
     await waitFor(() => expect(screen.queryByText('Vecchio')).toBeNull())
     expect(screen.getByText('Claude Code', { selector: 'td p' })).toBeInTheDocument()

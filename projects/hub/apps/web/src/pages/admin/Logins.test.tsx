@@ -76,9 +76,11 @@ describe('the Accessi page', () => {
     )
     mount()
     await screen.findByText('ada@studio.it')
-    const user = userEvent.setup()
+    // One burst (`delay: null`), so the 300 ms debounce cannot expire between two keystrokes
+    // however slow the machine is, and the wait is the default, not a fixed 2 s (REB-1029).
+    const user = userEvent.setup({ delay: null })
     await user.type(screen.getByLabelText('Cerca accessi'), 'Bob')
-    await waitFor(() => expect(spy).toHaveBeenCalledTimes(2), { timeout: 2000 })
+    await waitFor(() => expect(spy).toHaveBeenCalledTimes(2))
     expect(spy.mock.calls[1]![0]).toBe('/api/hub/logins?q=Bob')
     await waitFor(() => expect(screen.queryByText('ada@studio.it')).toBeNull())
     expect(screen.getByText('bob@otherco.it')).toBeInTheDocument()

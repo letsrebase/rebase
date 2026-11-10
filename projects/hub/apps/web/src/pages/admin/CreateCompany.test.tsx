@@ -24,20 +24,28 @@ function mount() {
   )
 }
 
+/** One field, filled by pasting: a keystroke is a render and a turn of the event loop, and
+ *  the wizard has some 150 of them, which a starved machine spends more than the 20 s a test
+ *  gets (REB-1029). A paste is one change event, and the form sees the same value. */
+async function put(user: ReturnType<typeof userEvent.setup>, field: HTMLElement, text: string) {
+  await user.click(field)
+  await user.paste(text)
+}
+
 async function fill(user: ReturnType<typeof userEvent.setup>, deal: string) {
-  await user.type(await screen.findByLabelText('Azienda'), 'Studio Rossi Srl')
-  await user.type(screen.getByLabelText('Figura richiesta'), 'Backend developer')
-  await user.type(screen.getByLabelText('Nome del referente'), 'Maria')
-  await user.type(screen.getByLabelText('Cognome del referente'), 'Verdi')
-  await user.type(screen.getByLabelText('Email'), 'maria@studiorossi.it')
-  await user.type(screen.getByLabelText('Telefono'), '+39 345 1234567')
-  await user.type(screen.getByLabelText('Progetto'), 'Un backend developer per tre mesi.')
+  await put(user, await screen.findByLabelText('Azienda'), 'Studio Rossi Srl')
+  await put(user, screen.getByLabelText('Figura richiesta'), 'Backend developer')
+  await put(user, screen.getByLabelText('Nome del referente'), 'Maria')
+  await put(user, screen.getByLabelText('Cognome del referente'), 'Verdi')
+  await put(user, screen.getByLabelText('Email'), 'maria@studiorossi.it')
+  await put(user, screen.getByLabelText('Telefono'), '+39 345 1234567')
+  await put(user, screen.getByLabelText('Progetto'), 'Un backend developer per tre mesi.')
   await user.type(screen.getByLabelText('Inizio desiderato'), '2026-12-01')
-  await user.type(screen.getByLabelText('Durata'), '3 mesi')
-  await user.type(screen.getByLabelText('Budget giornaliero (€)'), '500')
+  await put(user, screen.getByLabelText('Durata'), '3 mesi')
+  await put(user, screen.getByLabelText('Budget giornaliero (€)'), '500')
   await user.click(screen.getByRole('combobox', { name: 'Modalità' }))
   await user.click(await screen.findByRole('option', { name: 'Da remoto' }))
-  if (deal) await user.type(screen.getByLabelText('Deal nel CRM'), deal)
+  if (deal) await put(user, screen.getByLabelText('Deal nel CRM'), deal)
 }
 
 afterEach(() => vi.restoreAllMocks())

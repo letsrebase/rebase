@@ -53,9 +53,9 @@ const AUDIENCE_TWO = {
 const ME = { email: 'ivan@rebase.it', name: 'Ivan', role: 'admin' }
 const COUNTS_EMPTY = { recipients: 0, queued: 0, sent: 0, skipped: 0, failed: 0, delivered: 0, bounced: 0 }
 
-/** The draft saves itself 600 ms after the last change: anything that waits on a save
- *  waits longer than Testing Library's default second. */
-const SAVED = { timeout: 3000 }
+/** The draft saves itself 600 ms after the last change, on top of the request and the render:
+ *  as long as the 10 s a query gets everywhere else, since a starved machine overruns 3 s (REB-1029). */
+const SAVED = { timeout: 10_000 }
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
@@ -584,13 +584,16 @@ describe('filters (REB-472, carried over)', () => {
     await userEvent.click(await screen.findByRole('button', { name: 'Filtri' }))
     await userEvent.click(screen.getByRole('button', { name: 'Altri filtri' }))
     await pick('Stato', 'Attivo')
-    await userEvent.type(screen.getByLabelText('Cerca'), 'react')
-    await userEvent.type(screen.getByLabelText('Posizione'), 'Frontend')
+    // Each field typed as one burst, so no save falls inside a word and the test spends no
+    // turn of the event loop per keystroke; the wait below is for the save that carries it all.
+    const burst = userEvent.setup({ delay: null })
+    await burst.type(screen.getByLabelText('Cerca'), 'react')
+    await burst.type(screen.getByLabelText('Posizione'), 'Frontend')
     await pick('Da remoto', 'Ibrido')
-    await userEvent.type(screen.getByLabelText('Tariffa min (€/giorno)'), '300')
-    await userEvent.type(screen.getByLabelText('Tariffa max (€/giorno)'), '500')
-    await userEvent.type(screen.getByLabelText('Pagina di provenienza'), 'home')
-    await userEvent.type(screen.getByLabelText('UTM source'), 'linkedin')
+    await burst.type(screen.getByLabelText('Tariffa min (€/giorno)'), '300')
+    await burst.type(screen.getByLabelText('Tariffa max (€/giorno)'), '500')
+    await burst.type(screen.getByLabelText('Pagina di provenienza'), 'home')
+    await burst.type(screen.getByLabelText('UTM source'), 'linkedin')
     await pick('Ha un CV', 'Sì')
     await pick('Ha fatto accesso', 'No')
     day('Creato dal', '2026-01-01')
