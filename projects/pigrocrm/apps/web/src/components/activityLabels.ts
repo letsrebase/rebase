@@ -24,6 +24,7 @@ const KIND_LABELS: Record<string, string> = {
   merged_into: "Unita in un'altra anagrafica",
   stage_changed: 'Cambio stato',
   state_changed: 'Cambio stato',
+  stopped: 'Terminata',
   // Slice 9's invoice import. Named here rather than left to `humanize`, which would
   // render the English "Imported" on an Italian timeline, and phrased as what happened
   // to the document -- it was issued elsewhere and registered here -- without naming the

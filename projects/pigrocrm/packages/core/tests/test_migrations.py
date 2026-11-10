@@ -4141,6 +4141,7 @@ def test_0097_adds_the_imap_connection_to_mailboxes_and_downgrade_removes_it(
         finally:
             engine.dispose()
 
+
 def test_0098_creates_the_recurring_expenses_table_under_the_row_policy(
     pigrocrm_postgres: Any,
 ) -> None:
