@@ -234,7 +234,27 @@ describe('SoloHome', () => {
     expect(within(section).getByText('senza scadenza')).toBeInTheDocument()
   })
 
+  function wideScreen() {
+    window.matchMedia = ((query: string) => ({
+      matches: true,
+      media: query,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+    })) as unknown as typeof window.matchMedia
+  }
+
+  it('puts the tax dates under the first figure on a phone, before the rest (REB-1026)', async () => {
+    Reflect.deleteProperty(window, 'matchMedia')
+    renderHome()
+    const first = await screen.findByRole('group', { name: 'Da incassare' })
+    const taxes = await screen.findByRole('heading', { name: 'Prossime tasse' })
+    const second = screen.getByRole('group', { name: 'Di cui scaduto' })
+    expect(first.compareDocumentPosition(taxes) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(taxes.compareDocumentPosition(second) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
   it('puts the next tax dates right after «Quando arrivano i soldi» (REB-1026)', async () => {
+    wideScreen()
     vi.useFakeTimers({ toFake: ['Date'] })
     vi.setSystemTime(new Date(2026, 10, 9, 12, 0))
     renderHome()
@@ -244,6 +264,9 @@ describe('SoloHome', () => {
     expect(money.compareDocumentPosition(taxes) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(taxes.compareDocumentPosition(contracts) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(await screen.findByText('30/11/2026 · tra 21 giorni')).toBeInTheDocument()
+    // Out of the money section on a wide screen, not inside it.
+    expect(money.closest('section')?.contains(taxes)).toBe(false)
+    Reflect.deleteProperty(window, 'matchMedia')
   })
 
   it('draws the ceilings and the tax estimate on the flat-rate pack', async () => {

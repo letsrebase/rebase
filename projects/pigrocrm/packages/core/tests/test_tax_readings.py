@@ -11,6 +11,7 @@ from pigrocrm.core.actor import Actor
 from pigrocrm.core.analytics.service import AnalyticsService
 from pigrocrm.core.fiscal.declared import DeclaredTaxFigureService
 from pigrocrm.core.fiscal.models import FiscalProfile
+from pigrocrm.core.fiscal.repository import FiscalEstimateRepository
 from pigrocrm.core.fiscal.schemas import DeclaredTaxFigureSet, TaxReadings
 from pigrocrm.core.legal_entities.models import LegalEntity
 
@@ -145,6 +146,38 @@ def test_a_regime_with_no_taxes_has_no_lines(db_session: Session) -> None:
     readings = _readings(db_session, abroad)
     assert readings.lines == []
     assert readings.totals.estimate is None
+
+
+def test_a_frozen_year_keeps_the_lines_of_the_pack_it_was_computed_under(
+    db_session: Session,
+) -> None:
+    entity = _entity(
+        db_session,
+        "it-flat-rate",
+        "RF19",
+        profitability_coefficient=Decimal("78.00"),
+        substitute_tax_rate=Decimal("5.00"),
+        social_security_rate=Decimal("26.07"),
+    )
+    frozen = AnalyticsService(db_session).get_fiscal_estimate(2025, ADMIN, legal_entity_id=entity)
+    FiscalEstimateRepository(db_session).save(
+        entity,
+        2025,
+        pack_id="it-flat-rate",
+        pack_version="1",
+        law_from_year=2015,
+        parameters={},
+        figures=frozen.model_dump(mode="json"),
+    )
+    # The entity moves to the company pack, which has no law for 2025: the year is served as it
+    # was and so are its lines, not the company pack's (and not an empty list).
+    profile = db_session.query(FiscalProfile).filter_by(legal_entity_id=entity).one()
+    profile.pack_id = "it-company"
+    db_session.flush()
+    after = AnalyticsService(db_session).get_fiscal_estimate(2025, ADMIN, legal_entity_id=entity)
+    assert after.frozen is True
+    assert after.readings is not None
+    assert [line.tax for line in after.readings.lines] == ["substitute_tax", "inps"]
 
 
 def test_a_what_if_revenue_carries_no_readings(db_session: Session) -> None:

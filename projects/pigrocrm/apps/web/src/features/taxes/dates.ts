@@ -62,6 +62,12 @@ export function taxOfDate(entry: TaxCalendarEntry): string {
   return TAX_NAMES[entry.tax]
 }
 
+/** What a line says on the Home, where there is no column for the tax: the label, then the tax
+ *  it belongs to unless the label already says IVA. */
+export function lineText(entry: TaxCalendarEntry): string {
+  return entry.tax === 'iva' ? dateLabel(entry) : `${dateLabel(entry)} · ${taxOfDate(entry)}`
+}
+
 /** One day on which something falls due, with the lines it holds. */
 export interface DueDay {
   date: string

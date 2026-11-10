@@ -9,6 +9,7 @@ import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { api } from '@/lib/api'
+import { LegalEntityContext, type LegalEntityValue } from '@/lib/legalEntity'
 import { spaceModules } from '@/lib/modules.testing'
 import { queryKeys } from '@/lib/query'
 import { TaxesPage } from './TaxesPage'
@@ -152,16 +153,54 @@ function failed(status: number, detail: string) {
   }) as never
 }
 
+const ONE: LegalEntityValue = {
+  legal_entities: [],
+  selected: null,
+  select: () => {},
+  several: false,
+  scoped: false,
+  pinned: false,
+  loaded: true,
+  byId: () => undefined,
+}
+
 function renderPage(
-  { tab = 'taxes', profile = 'company', year }: { tab?: TaxesTab; profile?: 'solo' | 'company'; year?: number } = {},
+  {
+    tab = 'taxes',
+    profile = 'company',
+    year,
+    legal = ONE,
+    retry = false,
+  }: {
+    tab?: TaxesTab
+    profile?: 'solo' | 'company'
+    year?: number
+    legal?: LegalEntityValue
+    retry?: boolean
+  } = {},
 ) {
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  const client = new QueryClient({
+    defaultOptions: { queries: retry ? { retryDelay: 0 } : { retry: false } },
+  })
   client.setQueryData(queryKeys.modules, spaceModules([], profile))
   return render(
     <QueryClientProvider client={client}>
-      <TaxesPage tab={tab} year={year} onTabChange={vi.fn()} onYearChange={vi.fn()} />
+      <LegalEntityContext.Provider value={legal}>
+        <TaxesPage tab={tab} year={year} onTabChange={vi.fn()} onYearChange={vi.fn()} />
+      </LegalEntityContext.Provider>
     </QueryClientProvider>,
   )
+}
+
+const entityRecord = (id: string, name: string, day: number, month: number) =>
+  ({ id, name, fiscal_year_end_day: day, fiscal_year_end_month: month }) as unknown as LegalEntityValue['legal_entities'][number]
+
+/** The requests the page made to one path, with their query. */
+function requests(path: string) {
+  const calls = vi.mocked(api.GET).mock.calls as unknown as Array<
+    [string, { params: { query: { year: number; legal_entity_id?: string } } }]
+  >
+  return calls.filter(([called]) => called === path).map(([, options]) => options.params.query)
 }
 
 function wide() {
@@ -283,6 +322,22 @@ describe('«Tasse»: Imposte', () => {
     expect(within(panel).queryByRole('button', { name: /Accetta/ })).not.toBeInTheDocument()
   })
 
+  it('draws the fiscal year end of the entity the figures are for, not the first one listed', async () => {
+    answers['/api/analytics/fiscal'] = { ...COMPANY, legal_entity_id: 'le-2' }
+    wide()
+    const entities = [entityRecord('le-1', 'Rossi', 31, 12), entityRecord('le-2', 'Bianchi', 30, 6)]
+    renderPage({
+      legal: {
+        ...ONE,
+        legal_entities: entities,
+        byId: (id) => entities.find((candidate) => candidate.id === id),
+      },
+    })
+    await userEvent.click(await screen.findByRole('row', { name: /IRES/ }))
+    const panel = await screen.findByRole('complementary', { name: 'Imposta aperta' })
+    expect(within(panel).getByText('Fine dell’esercizio: 30/06.')).toBeInTheDocument()
+  })
+
   it('says a frozen year’s figures are as they were', async () => {
     answers['/api/analytics/fiscal'] = estimate({ frozen: true })
     renderPage()
@@ -326,6 +381,23 @@ describe('«Tasse»: Imposte', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('Il server non risponde.')
     expect(screen.getByRole('button', { name: 'Riprova' })).toBeInTheDocument()
     expect(screen.queryByRole('table')).not.toBeInTheDocument()
+  })
+
+  it('draws one card per tax and no table on a phone, and opens a tax full screen', async () => {
+    answers['/api/analytics/fiscal'] = COMPANY
+    renderPage()
+    expect(await screen.findByRole('list', { name: 'Imposte dell’anno' })).toBeInTheDocument()
+    expect(screen.queryByRole('table')).not.toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: /IRES/ }))
+    const sheet = await screen.findByRole('dialog', { name: 'Imposta aperta' })
+    expect(within(sheet).getByRole('heading', { name: 'IRES 2026' })).toBeInTheDocument()
+  })
+
+  it('asks no second time for a legal entity that has no fiscal profile', async () => {
+    answers['/api/analytics/fiscal'] = failed(404, 'Profilo fiscale non trovato')
+    renderPage({ retry: true })
+    expect(await screen.findByText(/Profilo fiscale non configurato/)).toBeInTheDocument()
+    expect(requests('/api/analytics/fiscal')).toHaveLength(1)
   })
 
   it('opens on «Imposte» with «Scadenze» beside it, and no «F24» tab', async () => {
@@ -412,6 +484,24 @@ describe('«Tasse»: a solo flat-rate space', () => {
     renderPage({ profile: 'solo' })
     await screen.findByText(WARNING)
     expect(screen.getAllByRole('tab')).toHaveLength(2)
+  })
+})
+
+describe('«Tasse»: Tutte le aziende', () => {
+  it('draws one block per legal entity under its name and sums none of them', async () => {
+    answers['/api/analytics/fiscal'] = COMPANY
+    renderPage({
+      legal: {
+        ...ONE,
+        several: true,
+        legal_entities: [entityRecord('le-1', 'Rossi', 31, 12), entityRecord('le-2', 'Bianchi', 31, 12)],
+      },
+    })
+    expect(await screen.findByRole('heading', { name: 'Rossi' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'Bianchi' })).toBeInTheDocument()
+    await waitFor(() => expect(screen.getAllByText('Totale')).toHaveLength(2))
+    const asked = requests('/api/analytics/fiscal').map((query) => query.legal_entity_id)
+    expect(asked.sort()).toEqual(['le-1', 'le-2'])
   })
 })
 

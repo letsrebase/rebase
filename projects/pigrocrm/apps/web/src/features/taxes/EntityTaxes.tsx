@@ -206,7 +206,7 @@ export function EntityTaxes({
     const panel =
       chosen === 'taxes' && openTax ? (
         <Detail inline={inline} label="Imposta aperta" onClose={() => setOpen(null)}>
-          <TaxPanel line={openTax} year={year} estimate={data} legalEntityId={legalEntityId} />
+          <TaxPanel line={openTax} year={year} estimate={data} />
         </Detail>
       ) : chosen === 'dates' && openDay ? (
         <Detail inline={inline} label="Scadenza aperta" onClose={() => setOpen(null)}>

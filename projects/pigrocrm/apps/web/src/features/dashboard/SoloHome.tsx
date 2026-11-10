@@ -15,6 +15,7 @@ import { toProblem } from '@/lib/api'
 import { useLegalEntity } from '@/lib/legalEntity'
 import { useModules } from '@/lib/modules'
 import { Loader } from '@rebase/ui/loader'
+import { useMediaQuery } from '@rebase/ui/use-media-query'
 import { BarRows, BigNumber, type BarRow } from './charts'
 import { CeilingPanel } from './CeilingPanel'
 import { FiscalPanel } from './FiscalPanel'
@@ -168,10 +169,26 @@ function ToInvoice({ contracts }: { contracts: Contract[] }) {
  * Scadenziario tab draws (one endpoint, one cache entry), cut to what a freelancer checks
  * first: what is owed, what is late, and the month each due date falls in.
  */
-function MoneyIn() {
+function MoneyIn({ afterFirstFigure }: { afterFirstFigure?: ReactNode }) {
   const query = useReceivablesDashboard()
-  if (query.isError) return <QueryErrorBanner error={query.error} />
-  if (query.isPending || !query.data) return <Loading />
+  // The tax dates do not wait on the receivables: with the read still on its way or failed they
+  // follow its state instead of going missing.
+  if (query.isError) {
+    return (
+      <div className="space-y-4">
+        <QueryErrorBanner error={query.error} />
+        {afterFirstFigure}
+      </div>
+    )
+  }
+  if (query.isPending || !query.data) {
+    return (
+      <div className="space-y-4">
+        <Loading />
+        {afterFirstFigure}
+      </div>
+    )
+  }
 
   const data = query.data
   const expired = data.bands.find((row) => row.code === 'expired')
@@ -186,6 +203,7 @@ function MoneyIn() {
     <div className="space-y-4">
       <div className="grid gap-4 sm:grid-cols-2">
         <BigNumber label="Da incassare" value={money(data.total)} tone="accent" />
+        {afterFirstFigure}
         <BigNumber
           label="Di cui scaduto"
           value={money(expired?.amount ?? '0.00')}
@@ -290,6 +308,9 @@ export function SoloHome({ notice }: { notice?: ReactNode }) {
   const active = useActiveContracts(selected, contractsOn)
   const year = new Date().getFullYear()
   const perLegalEntity = several && selected === null
+  // On a phone the first figure leads and the next tax dates come right under it, before the rest
+  // (brief, «The Home's tax dates»); from `sm` they are a block of their own after the money.
+  const phone = !useMediaQuery('(min-width: 640px)')
 
   return (
     <div>
@@ -308,10 +329,10 @@ export function SoloHome({ notice }: { notice?: ReactNode }) {
           </Section>
         )}
         <Section title="Quando arrivano i soldi" hint="Fatture emesse e non incassate, per scadenza.">
-          <MoneyIn />
+          <MoneyIn afterFirstFigure={phone ? <HomeTaxDates variant="block" /> : undefined} />
         </Section>
         {/* Money in, then money out (REB-1026): the next two tax dates, a block of their own. */}
-        <HomeTaxDates variant="block" />
+        {phone ? null : <HomeTaxDates variant="block" />}
         {contractsOn && (
           <Section title="Contratti attivi">
             {active.isError ? (

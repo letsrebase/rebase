@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react'
 import { cn } from '@rebase/ui/cn'
 import { money } from '@/features/dashboard/format'
-import { formatIsoDateItalian } from '@/lib/dates'
+import { formatIsoDateItalian, toIsoDate } from '@/lib/dates'
 import { useLegalEntity } from '@/lib/legalEntity'
 import { dateLabel, taxOfDate, type DueDay } from './dates'
 import {
@@ -44,15 +44,14 @@ export function TaxPanel({
   line,
   year,
   estimate,
-  legalEntityId,
 }: {
   line: TaxReadingLine
   year: number
   estimate: FiscalEstimate
-  legalEntityId?: string
 }) {
-  const { legal_entities } = useLegalEntity()
-  const entity = legal_entities.find((candidate) => candidate.id === legalEntityId) ?? legal_entities[0]
+  const { byId } = useLegalEntity()
+  // The entity the figures were computed for, whoever the sidebar has selected.
+  const entity = byId(estimate.legal_entity_id)
   const figure = (estimate.declared ?? []).find((candidate) => candidate.tax === line.tax)
   const pack = packLine(estimate)
   return (
@@ -81,7 +80,7 @@ export function TaxPanel({
             <Fact label="Acconti">{given(figure.advances)}</Fact>
           </dl>
           <p className="text-xs text-muted-foreground">
-            Digitato a mano il {formatIsoDateItalian(figure.updated_at.slice(0, 10))}. Un
+            Digitato a mano il {formatIsoDateItalian(toIsoDate(new Date(figure.updated_at)))}. Un
             dichiarato letto da un documento si accetta in Proposte.
           </p>
         </section>

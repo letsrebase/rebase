@@ -99,7 +99,7 @@ describe('HomeTaxDates', () => {
     renderBlock()
     expect(await screen.findByText('30/11/2026 · tra 20 giorni')).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Prossime tasse' })).toBeInTheDocument()
-    expect(screen.getByText('Secondo acconto 2026')).toBeInTheDocument()
+    expect(screen.getByText('Secondo acconto 2026 · Imposta sostitutiva')).toBeInTheDocument()
     expect(screen.getByText('16/12/2026 · tra 36 giorni')).toBeInTheDocument()
     expect(screen.queryByText(/30\/06\/2026/)).not.toBeInTheDocument()
     // No date carries a net amount yet: a word, never a zero.
@@ -117,7 +117,7 @@ describe('HomeTaxDates', () => {
         : ok(calendar(2027, [entry('2027-06-30', 'balance_and_first_advance')]))) as never)
     renderBlock()
     expect(await screen.findByText('30/11/2026 · tra 20 giorni')).toBeInTheDocument()
-    expect(await screen.findByText('Saldo 2026 e primo acconto 2027')).toBeInTheDocument()
+    expect(await screen.findByText('Saldo 2026 e primo acconto 2027 · Imposta sostitutiva')).toBeInTheDocument()
   })
 
   it('draws nothing when the pack carries no dates, and says nothing about it', async () => {

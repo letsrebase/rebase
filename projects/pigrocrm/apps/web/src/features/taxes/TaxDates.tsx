@@ -9,7 +9,7 @@ import { formatIsoDateItalian } from '@/lib/dates'
 import { useLegalEntity } from '@/lib/legalEntity'
 import { useModules } from '@/lib/modules'
 import { NOT_COMPUTABLE } from '@/features/analytics/format'
-import { dateLabel, distanceLabel } from './dates'
+import { distanceLabel, lineText } from './dates'
 import { LOADING_SENTENCE, NOTHING_DUE } from './labels'
 import { useNextTaxDates } from './queries'
 
@@ -73,7 +73,7 @@ export function TaxDatesBlock({
             {next.days.map((day) => (
               <li key={day.date} className="flex items-baseline justify-between gap-4 px-4 py-3">
                 <div className="min-w-0 space-y-0.5">
-                  <p className="text-[13px] font-medium">
+                  <p className="text-sm font-medium">
                     {formatIsoDateItalian(day.date)} · {distanceLabel(next.today, day.date)}
                   </p>
                   {day.entries.map((entry) => (
@@ -81,11 +81,11 @@ export function TaxDatesBlock({
                       key={`${entry.tax}-${entry.kind}`}
                       className="text-xs text-muted-foreground"
                     >
-                      {dateLabel(entry)}
+                      {lineText(entry)}
                     </p>
                   ))}
                 </div>
-                <span className="shrink-0 text-[13px] text-muted-foreground tabular-nums">
+                <span className="shrink-0 text-sm text-muted-foreground tabular-nums">
                   {NOT_COMPUTABLE}
                 </span>
               </li>

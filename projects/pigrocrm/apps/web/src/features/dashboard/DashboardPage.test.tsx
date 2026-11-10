@@ -310,7 +310,7 @@ describe('DashboardPage, the page intestazione', () => {
     const tab = screen.getByRole('tab', { name: 'Scadenziario' })
     expect(daFare.compareDocumentPosition(band) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(band.compareDocumentPosition(tab) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-    expect(await screen.findAllByText('Secondo acconto ' + (new Date().getFullYear() + 1))).toHaveLength(2)
+    expect(await screen.findAllByText('Secondo acconto ' + (new Date().getFullYear() + 1) + ' · Imposte sui redditi')).toHaveLength(2)
   })
 
   it('draws no tax dates and asks for none for a collaborator', async () => {

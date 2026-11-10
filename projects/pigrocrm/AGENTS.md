@@ -302,7 +302,7 @@ reading only and say how many lines they leave out. A figure that does not exist
 tax the code has no estimate for (its rule is «to verify») from one whose profile parameter is missing. The dates are
 `GET /api/analytics/fiscal/calendar` (an administrator's, module `taxes`). `features/taxes/` holds the page (`/app/taxes`,
 tabs «Imposte» and «Scadenze», one light page with no tabs for a solo flat-rate space) and the Home's next two dates
-(`HomeTaxDates`: a block after «Quando arrivano i soldi» on the solo Home, a band under «Da fare» on the company Home); the folder
+(`HomeTaxDates`: a block after «Quando arrivano i soldi» on the solo Home, under its first figure on a phone, and a band under «Da fare» on the company Home at every width); the folder
 is under `no-browser-arithmetic.test.ts`, so nothing there parses an amount. «Rate», the F24 chip and the date's state pill wait
 for the due items and plans that would drive them, and typing a declared figure is its own screen.
 

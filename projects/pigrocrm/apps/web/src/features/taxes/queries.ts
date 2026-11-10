@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 import { useLegalEntity } from '@/lib/legalEntity'
 import { api, unwrap } from '@/lib/api'
 import { useCan } from '@/lib/auth'
-import { queryKeys } from '@/lib/query'
+import { queryKeys, retryUnlessMissing } from '@/lib/query'
 import { toIsoDate } from '@/lib/dates'
 import { nextDays, type DueDay } from './dates'
 
@@ -24,6 +24,7 @@ export function useTaxCalendar(year: number, legalEntityId?: string | null, enab
     queryKey: queryKeys.taxCalendar(year, legal_entity),
     queryFn: () => unwrap(api.GET('/api/analytics/fiscal/calendar', { params: { query } })),
     enabled: enabled && (legal_entity !== null || loaded),
+    retry: retryUnlessMissing,
   })
 }
 
