@@ -1,7 +1,7 @@
 """engagement letters: the template regime, the letter number, the letter's links, the signer
 
 Revision ID: 0099
-Revises: 0085
+Revises: 0088
 
 REB-1018, § 1 «The documents» of `2026-11-09-collaborators-in-the-crm-design.md`. Everything is
 nullable or new and nothing is backfilled.
@@ -27,7 +27,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = "0099"
-down_revision: str | Sequence[str] | None = "0085"
+down_revision: str | Sequence[str] | None = "0088"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

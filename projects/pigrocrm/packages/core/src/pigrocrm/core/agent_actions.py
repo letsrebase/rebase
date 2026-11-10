@@ -143,7 +143,6 @@ AGENT_ALLOWED_ACTIONS: frozenset[str] = frozenset(
         # What a letter or framework agreement would say now: a read, with the free text of the
         # texts and of the engagement in it.
         "preview_engagement",
-        "preview_framework_agreement",
     }
 )
 
