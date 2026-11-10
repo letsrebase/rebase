@@ -64,6 +64,10 @@ const KIND_LABELS: Record<string, string> = {
   'slack.channel_removed': 'Canale Slack tolto',
   'slack.workspace_connected': 'Workspace Slack collegato',
   'slack.workspace_disconnected': 'Workspace Slack scollegato',
+  // An IMAP or PEC mailbox (REB-1015): who connected it, changed its password or disconnected it.
+  'mailbox.connected': 'Casella email collegata',
+  'mailbox.password_changed': 'Password della casella email cambiata',
+  'mailbox.disconnected': 'Casella email scollegata',
   // A contract's days (REB-781): the day's own ledger keeps the transitions by id, and these
   // are the same moves with the member's name and the channel.
   // «In arrivo» (REB-984): what a person or an agent said about a file that arrived.

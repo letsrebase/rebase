@@ -19,6 +19,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from pigrocrm.core.activities.service import ActivityService
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.config import Settings
 from pigrocrm.core.errors import Conflict, NotFound, ValidationFailed
@@ -51,6 +52,7 @@ class ImapMailboxService:
         self.session = session
         self.settings = settings
         self.repo = MailboxRepository(session)
+        self.activities = ActivityService(session)
         self._resolve = resolve
         self._context = context
 
@@ -109,6 +111,20 @@ class ImapMailboxService:
             raise Conflict(MAILBOX_ENTITY, _ALREADY) from None
         for purpose in dict.fromkeys(data.purposes):
             self.repo.add_purpose(mailbox, purpose)
+        # Who connected it, with what it reads and how; never the password or its ciphertext.
+        self.activities.record(
+            MAILBOX_ENTITY,
+            mailbox.id,
+            "mailbox.connected",
+            actor,
+            {
+                "address": mailbox.address,
+                "host": mailbox.imap_host,
+                "security": mailbox.imap_security,
+                "purposes": list(dict.fromkeys(data.purposes)),
+                "space_owned": mailbox.space_owned,
+            },
+        )
         self.session.commit()
         return self._read(mailbox)
 
@@ -134,6 +150,13 @@ class ImapMailboxService:
         mailbox.last_error_at = None
         mailbox.failing_since = None
         mailbox.disconnected_at = None
+        self.activities.record(
+            MAILBOX_ENTITY,
+            mailbox.id,
+            "mailbox.password_changed",
+            actor,
+            {"address": mailbox.address},
+        )
         self.session.commit()
         return self._read(mailbox)
 
@@ -147,6 +170,9 @@ class ImapMailboxService:
         mailbox.password_nonce = None
         mailbox.disconnected_at = datetime.now(UTC)
         mailbox.failing_since = None
+        self.activities.record(
+            MAILBOX_ENTITY, mailbox.id, "mailbox.disconnected", actor, {"address": mailbox.address}
+        )
         self.session.commit()
         return self._read(mailbox)
 
