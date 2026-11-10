@@ -137,3 +137,74 @@ describe('what a purchase row adds to the old cost row', () => {
     expect(ids).toEqual(expect.arrayContaining(['date', 'kind', 'supplier', 'number', 'amount', 'cost_amount']))
   })
 })
+
+describe('the register columns of «Acquisti»', () => {
+  function renderRegister(id: string, purchase: Purchase, legalEntities?: never[]) {
+    const column = buildPurchaseColumns(CATEGORIES, [], {
+      withSupplierDocument: true,
+      legal_entities: legalEntities,
+    }).find((candidate) => candidate.id === id)
+    if (column === undefined || typeof column.cell !== 'function') throw new Error(`no cell for ${id}`)
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    return render(
+      <QueryClientProvider client={client}>
+        {column.cell({ row: { original: purchase } } as never) as ReactElement}
+      </QueryClientProvider>,
+    )
+  }
+
+  it('has no payment column and the Azienda one only when asked', () => {
+    const plain = buildPurchaseColumns(CATEGORIES, [], { withSupplierDocument: true }).map((c) => c.id)
+    expect(plain).toEqual(['supplier_document', 'category_id', 'date', 'amount'])
+    const named = buildPurchaseColumns(CATEGORIES, [], {
+      withSupplierDocument: true,
+      legal_entities: [],
+    }).map((c) => c.id)
+    expect(named).toContain('legal_entity')
+  })
+
+  it('keeps the old call signature: two arguments give the old columns', () => {
+    const ids = buildPurchaseColumns(CATEGORIES, []).map((column) => column.id)
+    expect(ids).toContain('kind')
+    expect(ids).not.toContain('supplier_document')
+  })
+
+  it('puts the supplier over the document with a chip for what is special', () => {
+    renderRegister('supplier_document', {
+      ...PURCHASE,
+      kind: 'invoice',
+      number: '2026/0418',
+      reverse_charge: true,
+      merchant_name: 'Studio Rossi',
+    })
+    expect(screen.getByText('Studio Rossi')).toBeInTheDocument()
+    expect(screen.getByText('Fattura 2026/0418')).toBeInTheDocument()
+    expect(screen.getByText('Inversione contabile')).toHaveAttribute('data-variant', 'outline')
+  })
+
+  it('truncates a long supplier with its full name as the title', () => {
+    const name = 'Società di consulenza e servizi professionali associati '.padEnd(60, 'x')
+    renderRegister('supplier_document', { ...PURCHASE, merchant_name: name })
+    expect(screen.getByTitle(name).className).toContain('truncate')
+  })
+
+  it('marks a cancelled row with a muted pill and a credit note with its chip, never a payment pill', () => {
+    renderRegister('supplier_document', { ...PURCHASE, kind: 'credit_note', status: 'cancelled' })
+    expect(screen.getByText('Annullato')).toHaveAttribute('data-tone', 'muted')
+    expect(screen.getByText('Nota di credito', { selector: '[data-variant="outline"]' })).toBeInTheDocument()
+    expect(screen.queryByText(/pagata|da pagare|scadut/i)).not.toBeInTheDocument()
+  })
+
+  it('shows a foreign amount and the withholding under the euro amount, as stored', () => {
+    renderRegister('amount', {
+      ...PURCHASE,
+      amount: '497.12',
+      currency: 'USD',
+      currency_amount: '540.00',
+      withholding_amount: '270.00',
+    })
+    expect(screen.getByText(/497,12/)).toBeInTheDocument()
+    expect(screen.getByText('USD 540,00')).toBeInTheDocument()
+    expect(screen.getByText(/ritenuta 270,00/)).toBeInTheDocument()
+  })
+})

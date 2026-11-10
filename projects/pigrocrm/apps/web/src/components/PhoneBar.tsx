@@ -192,7 +192,7 @@ function More({
   const unread = useUnreadCount()
   const waiting = useWaitingCount()
   const { location } = useRouterState()
-  const registryRole = (location.search as { role?: string }).role
+  const registryRole = (location.search as { role?: string } | undefined)?.role
   const items: readonly NavItem[] = [
     ...phoneMoreItems(modules),
     { to: Agents.to, label: Agents.label, icon: Agents.icon },

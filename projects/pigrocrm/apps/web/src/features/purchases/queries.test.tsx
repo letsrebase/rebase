@@ -8,6 +8,7 @@ import {
   useCostCategories,
   useCreatePurchase,
   useDeletePurchase,
+  usePurchaseList,
   usePurchases,
   useRestorePurchase,
   useUpdatePurchase,
@@ -56,6 +57,41 @@ describe('usePurchases', () => {
   })
 })
 
+describe('usePurchaseList', () => {
+  it('asks for 50 at a time and carries the totals of the whole selection', async () => {
+    const { wrapper } = harness()
+    mockGet.mockReturnValueOnce(
+      ok({ items: [{ id: 'a' }], next_cursor: 'c2', total_count: 212, total_amount: '1464.00' }),
+    )
+    const { result } = renderHook(() => usePurchaseList({ status: 'registered' }), { wrapper })
+    await waitFor(() => expect(result.current.totalCount).toBe(212))
+    expect(result.current.totalAmount).toBe('1464.00')
+    expect(result.current.hasMore).toBe(true)
+    expect(mockGet).toHaveBeenCalledWith(
+      '/api/purchases',
+      expect.objectContaining({
+        params: { query: { status: 'registered', limit: 50, cursor: undefined } },
+      }),
+    )
+  })
+
+  it('follows the cursor and appends the next page', async () => {
+    const { wrapper } = harness()
+    mockGet
+      .mockReturnValueOnce(ok({ items: [{ id: 'a' }], next_cursor: 'c2', total_count: 2, total_amount: '2.00' }))
+      .mockReturnValueOnce(ok({ items: [{ id: 'b' }], next_cursor: null, total_count: 2, total_amount: '2.00' }))
+    const { result } = renderHook(() => usePurchaseList(), { wrapper })
+    await waitFor(() => expect(result.current.items).toHaveLength(1))
+    result.current.loadMore()
+    await waitFor(() => expect(result.current.items).toHaveLength(2))
+    expect(mockGet).toHaveBeenLastCalledWith(
+      '/api/purchases',
+      expect.objectContaining({ params: { query: expect.objectContaining({ cursor: 'c2' }) } }),
+    )
+    expect(result.current.hasMore).toBe(false)
+  })
+})
+
 describe('useCostCategories', () => {
   it('hides archived categories unless asked', async () => {
     const { wrapper } = harness()
@@ -98,7 +134,9 @@ describe('useCreatePurchase', () => {
     result.current.mutate({ amount: '10.00' })
     await waitFor(() => expect(result.current.isSuccess).toBe(true))
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ['purchases', {}] })
-    expect(invalidate).toHaveBeenCalledTimes(1)
+    // The lists and the page of a purchase (`['purchase']`), and no deal summary.
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ['purchase'] })
+    expect(invalidate).toHaveBeenCalledTimes(2)
   })
 })
 

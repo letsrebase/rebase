@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  carriesWithholding,
   cleanVatLines,
   defaultPurchaseFormValues,
   fieldsFor,
@@ -29,6 +30,22 @@ describe('the fields each kind draws', () => {
       )
       expect(keys(kind)).not.toContain('merchant_name')
     }
+  })
+
+  it('leaves the withholding block out when the supplier carries none, and keeps the flags', () => {
+    const drawn = fieldsFor('invoice', false, false).map((field) => field.key)
+    for (const key of ['stamp_duty', 'withholding_rate', 'withholding_base', 'withholding_amount', 'fund_rate', 'fund_amount']) {
+      expect(drawn).not.toContain(key)
+    }
+    expect(drawn).toEqual(expect.arrayContaining(['split_payment', 'reverse_charge', 'iva_period']))
+  })
+
+  it('names the supplier kinds that carry a withholding', () => {
+    expect(carriesWithholding('professional')).toBe(true)
+    expect(carriesWithholding('occasional')).toBe(true)
+    expect(carriesWithholding('company')).toBe(false)
+    expect(carriesWithholding(null)).toBe(false)
+    expect(carriesWithholding(undefined)).toBe(false)
   })
 
   it('gives a receipt and an expense the total only', () => {
@@ -113,6 +130,15 @@ describe('toPurchaseRequestBody', () => {
     }
   })
 
+  it('does not send a withholding column that was not drawn', () => {
+    const body = toPurchaseRequestBody(
+      values({ kind: 'invoice', supplier_id: 's1', withholding_rate: '20', stamp_duty: '2' }),
+      { isRenderedCustomKey: KEEP_ALL, withholding: false },
+    )
+    expect(body).not.toHaveProperty('withholding_rate')
+    expect(body).not.toHaveProperty('stamp_duty')
+  })
+
   it('names the credit-note correction only on a credit note', () => {
     const native = { supplier_id: 's1', corrects_purchase_id: 'inv1' }
     expect(
@@ -190,9 +216,40 @@ describe('editing an existing purchase', () => {
     const initial = purchaseToFormValues(PURCHASE)
     const edited = { ...initial, native: { ...initial.native, description: 'Hosting 2026' } }
     const body = toPurchaseRequestBody(edited, { initial, isRenderedCustomKey: KEEP_ALL })
-    expect(body).toMatchObject({ description: 'Hosting 2026', supplier_id: 's1' })
+    expect(body).toMatchObject({ description: 'Hosting 2026' })
+    // What was not touched is not echoed: the server would read it as a possible move.
+    expect(body).not.toHaveProperty('supplier_id')
+    expect(body).not.toHaveProperty('amount')
+    expect(body).not.toHaveProperty('category_id')
     expect(body).not.toHaveProperty('kind')
     expect(body).not.toHaveProperty('vat_lines')
+  })
+
+  it('sends nothing but an empty custom_fields for an edit that changed nothing', () => {
+    const initial = purchaseToFormValues(PURCHASE)
+    expect(toPurchaseRequestBody(initial, { initial, isRenderedCustomKey: KEEP_ALL })).toEqual({
+      custom_fields: {},
+    })
+  })
+
+  it('keeps the currency and its foreign block together when one of them moves', () => {
+    const initial = purchaseToFormValues({
+      ...PURCHASE,
+      currency: 'USD',
+      currency_amount: '110.00',
+      exchange_rate: '1.100000',
+      exchange_rate_date: '2026-03-05',
+    })
+    const body = toPurchaseRequestBody(
+      { ...initial, native: { ...initial.native, currency_amount: '120.00' } },
+      { initial, isRenderedCustomKey: KEEP_ALL },
+    )
+    expect(body).toMatchObject({
+      currency: 'USD',
+      currency_amount: '120.00',
+      exchange_rate: '1.100000',
+      exchange_rate_date: '2026-03-05',
+    })
   })
 
   it('clears the foreign block of a purchase that moves back to euro', () => {

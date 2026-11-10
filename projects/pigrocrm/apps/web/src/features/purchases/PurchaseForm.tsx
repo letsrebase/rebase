@@ -1,15 +1,7 @@
+import { Link } from '@tanstack/react-router'
 import { useState } from 'react'
-import { toast } from '@rebase/ui/sonner'
 import { DynamicForm } from '@/components/DynamicForm'
-import { OrganizationPicker } from '@/features/organizations/OrganizationPicker'
 import { Button } from '@rebase/ui/button'
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@rebase/ui/dialog'
 import { Label } from '@rebase/ui/label'
 import {
   Select,
@@ -18,31 +10,36 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@rebase/ui/select'
+import { toast } from '@rebase/ui/sonner'
+import { useDeal } from '@/features/deals/queries'
+import { OrganizationPicker } from '@/features/organizations/OrganizationPicker'
+import { useOrganization } from '@/features/organizations/queries'
 import { formatMoneyValue } from '@/features/time/columns'
 import { fieldErrorFrom, toProblem, type ProblemDetail } from '@/lib/api'
 import { formatIsoDateItalian } from '@/lib/dates'
 import { useLegalEntity } from '@/lib/legalEntity'
+import { useModules } from '@/lib/modules'
 import type { FieldDefinition } from '@/lib/schema'
+import type { NewPurchaseSearch } from './formSearch'
 import { VatLinesEditor } from './VatLinesEditor'
 import {
   KINDS,
   KIND_LABELS,
   PICKER_KEYS,
-  defaultPurchaseFormValues,
+  carriesWithholding,
   emptyVatLine,
   fieldsFor,
   isDocumentKind,
   isForeignCurrency,
+  newPurchaseFormValues,
+  purchaseToFormValues,
   toPurchaseRequestBody,
   type PurchaseFormValues,
   type VatLineDraft,
 } from './formValues'
 import {
-  useCancelPurchase,
   useCreatePurchase,
-  useDeletePurchase,
   usePurchases,
-  useRestorePurchase,
   useUpdatePurchase,
   type CostCategory,
   type Purchase,
@@ -50,22 +47,19 @@ import {
 } from './queries'
 
 export interface PurchaseFormProps {
-  open: boolean
-  onOpenChange: (open: boolean) => void
-  /** Absent means a general purchase (§7.4): one that belongs to the business and to
-   *  no deal. Never defaulted to some deal to keep the body simple -- that is exactly
-   *  how a general purchase would silently become one client's cost. */
-  dealId?: string
+  /** The purchase being edited. Absent means «Nuovo acquisto»: the mode is derived from this
+   *  and from nothing else, so «which mode» and «what is seeded» can never disagree. */
+  purchase?: Purchase
+  /** What a new purchase opens with; ignored when editing. `deal_id` is not a control: it comes
+   *  from here, and a purchase with none is a general one (`null`, never some default deal). */
+  defaults?: NewPurchaseSearch
+  /** Every category, archived ones included: an archived one is offered only while it is the
+   *  purchase's own, so nothing new is filed under it and the edit still names it. */
   categories: CostCategory[]
   customFields: FieldDefinition[]
-  /** Absent means "compose a new purchase". Derived rather than a separate boolean prop,
-   *  as `DealForm` and `TimeEntryForm` both do it, so "which mode" and "what is seeded"
-   *  can never disagree. */
-  initial?: PurchaseFormValues
-  /** The purchase being edited, for its id and its status. */
-  purchase?: Purchase
-  title: string
-  onSaved?: () => void
+  /** Called with the purchase the server answered, after the toast. */
+  onSaved: (purchase: Purchase) => void
+  onCancel: () => void
 }
 
 /** The picker's value for a shared purchase: the body carries no `legal_entity_id`, or `null`
@@ -77,6 +71,14 @@ const NO_INVOICE = 'nessuna'
 /** A key the form draws a control of its own for: a problem on it is shown there and kept out
  *  of `DynamicForm`, which would print it a second time as a raw banner. */
 const hasOwnControl = (key: string) => (PICKER_KEYS as readonly string[]).includes(key)
+
+function Required() {
+  return (
+    <span className="ml-1 text-destructive" aria-hidden="true">
+      *
+    </span>
+  )
+}
 
 /** The invoices of one supplier, for the credit note that corrects one of them. */
 function CorrectedInvoicePicker({
@@ -109,44 +111,52 @@ function CorrectedInvoicePicker({
   )
 }
 
+/** The deal a purchase belongs to, read-only: it is set by where the form was opened from and
+ *  is never moved here. Gone with the `deals` module. */
+function DealLine({ dealId }: { dealId: string }) {
+  const deal = useDeal(dealId)
+  return (
+    <div className="space-y-2">
+      <Label>Deal</Label>
+      <p className="border px-3 py-2 text-sm">{deal.data?.name ?? 'Caricamento…'}</p>
+    </div>
+  )
+}
+
 /**
- * The one dialog behind both «Registra acquisto» and «Modifica acquisto».
+ * The body of the purchase page: the fields, the VAT recap and the action bar, for
+ * «Nuovo acquisto», for registering a file from «In arrivo» and for editing. The page
+ * (`PurchaseFormPage`) draws the header and the file beside it; nothing here opens a dialog.
  *
  * It owns its mutations rather than taking an `onSubmit`, for the same reason
- * `TimeEntryForm` does: with both, the caller's handler and this component's own
- * `mutate` each fire a POST and the same purchase is recorded twice.
+ * `TimeEntryForm` does: with both, the caller's handler and this component's own `mutate`
+ * each fire a request and the same purchase is recorded twice.
+ *
+ * No fiscal rule is computed here. What the server decides stays the server's: the withholding
+ * block is drawn for a supplier whose kind carries one, a foreign supplier gets the sentence
+ * that the reverse charge is the person's call (it is never preselected), and a refusal is
+ * shown in the server's words, on its field when it names one.
  */
 export function PurchaseForm({
-  open,
-  onOpenChange,
-  dealId,
+  purchase,
+  defaults,
   categories,
   customFields,
-  initial,
-  purchase,
-  title,
   onSaved,
+  onCancel,
 }: PurchaseFormProps) {
-  const [values, setValues] = useState<PurchaseFormValues>(initial ?? defaultPurchaseFormValues())
+  const isCreate = purchase === undefined
+  const [initial] = useState<PurchaseFormValues | undefined>(() =>
+    purchase === undefined ? undefined : purchaseToFormValues(purchase),
+  )
+  const [values, setValues] = useState<PurchaseFormValues>(
+    () => initial ?? newPurchaseFormValues(defaults),
+  )
   const [problem, setProblem] = useState<ProblemDetail | null>(null)
-  const isCreate = initial === undefined
   const create = useCreatePurchase()
   const update = useUpdatePurchase(purchase?.id ?? '')
-  const remove = useDeletePurchase()
-  const restore = useRestorePurchase()
-  const cancel = useCancelPurchase()
-
-  // Same "reset synchronously when `open` toggles" pattern as OrganizationForm/DealForm/
-  // TimeEntryForm: this component stays mounted across dialog opens, so a plain
-  // useState initializer would only ever run once.
-  const [wasOpen, setWasOpen] = useState(open)
-  if (open !== wasOpen) {
-    setWasOpen(open)
-    if (open) {
-      setValues(initial ?? defaultPurchaseFormValues())
-      setProblem(null)
-    }
-  }
+  const modules = useModules()
+  const legal_entity = useLegalEntity()
 
   const isRenderedCustomKey = (key: string) => customFields.some((field) => field.key === key)
 
@@ -164,30 +174,93 @@ export function PurchaseForm({
     setValues((previous) => ({ ...previous, native: { ...previous.native, ...patch } }))
   }
 
+  const kind = (values.native.kind as PurchaseKind | undefined) ?? 'expense'
+  const document = isDocumentKind(kind)
+  const categoryId = (values.native.category_id as string | undefined) ?? ''
+  const supplierId = (values.native.supplier_id as string | null | undefined) ?? null
+  const correctsId = (values.native.corrects_purchase_id as string | null | undefined) ?? null
+  const vatLines = (values.native.vat_lines as VatLineDraft[] | undefined) ?? []
+  const currency = values.native.currency
+  const foreignCurrency = isForeignCurrency(currency)
+
+  // The supplier is read for two facts the server owns and the form only shows: whether its
+  // kind carries a withholding, and whether it is a foreign one (the reverse charge is then the
+  // person's decision, said in words and never preselected).
+  const supplier = useOrganization(supplierId ?? '', { enabled: document && supplierId !== null })
+  const withholding = document && carriesWithholding(supplier.data?.supplier_kind)
+  const country = supplier.data?.country.trim().toUpperCase() ?? ''
+  const foreignSupplier = document && country !== '' && country !== 'IT'
+
+  // The rate and its date are the API's, not typed, once a purchase holds them in the currency
+  // it still has: shown as a sentence. A new foreign purchase, or one whose currency moved,
+  // has nowhere else to say them, so they are typed (the API takes all four or none).
+  const heldRate =
+    purchase !== undefined &&
+    purchase.exchange_rate !== null &&
+    purchase.exchange_rate_date !== null &&
+    foreignCurrency &&
+    purchase.currency === String(currency).trim().toUpperCase()
+      ? { rate: purchase.exchange_rate, date: purchase.exchange_rate_date }
+      : null
+
+  const dealId = isCreate ? defaults?.deal_id : (purchase.deal_id ?? undefined)
+  // «Azienda» only for a purchase with no deal and from the second legal entity on (REB-626,
+  // spec §1.7): a purchase on a deal is that deal's azienda's and the server would refuse
+  // another, while a general purchase is shared («Condivisa», `null`) unless one legal entity
+  // owns it.
+  const legalEntityId = (values.native.legal_entity_id as string | null | undefined) ?? SHARED
+  const offered = categories.filter((category) => !category.archived || category.id === categoryId)
+
+  const fields = [
+    ...fieldsFor(kind, foreignCurrency, withholding).filter(
+      (field) => !(heldRate !== null && (field.key === 'exchange_rate' || field.key === 'exchange_rate_date')),
+    ),
+    ...customFields,
+  ]
+  // Kept out of the flattened values, like the customer form does: a custom field a tenant
+  // named `legal_entity_id` would otherwise display the picker's id as its own value.
+  const flat = Object.fromEntries(
+    Object.entries(values.native).filter(([key]) => !hasOwnControl(key)),
+  )
+
+  const fieldError = problem ? fieldErrorFrom(problem) : null
+  // Where a refusal is shown: on its own control, on a `DynamicForm` field, or, when it names
+  // nothing drawn (a closed period, a 409), in the bar beside the buttons so it is on screen
+  // when «Registra» was pressed.
+  const onOwnControl = fieldError !== null && hasOwnControl(fieldError.field)
+  const onDynamicField = fieldError !== null && fields.some((field) => field.key === fieldError.field)
+  const errorOn = (key: string) =>
+    fieldError?.field === key ? (
+      <p className="text-sm text-destructive">{fieldError.message}</p>
+    ) : null
+
   function changeKind(next: PurchaseKind) {
-    const lines = (values.native.vat_lines as VatLineDraft[] | undefined) ?? []
     // A document needs a recap: open it with one row, so the first thing the form shows is
     // where the VAT goes.
     setNative({
       kind: next,
-      ...(isDocumentKind(next) && lines.length === 0 ? { vat_lines: [emptyVatLine()] } : {}),
+      ...(isDocumentKind(next) && vatLines.length === 0 ? { vat_lines: [emptyVatLine()] } : {}),
     })
   }
 
   function submit() {
-    const body = toPurchaseRequestBody(values, { initial, isRenderedCustomKey })
+    const body = toPurchaseRequestBody(values, { initial, isRenderedCustomKey, withholding })
     setProblem(null)
-    if (isCreate) {
-      // `deal_id` comes from the route, never from a control. `?? null` rather than an
-      // omitted key: `null` is the API's own spelling of "acquisto generale", and leaving
-      // it out would be indistinguishable from forgetting it.
+    if (purchase === undefined) {
+      // `deal_id` comes from the route, never from a control. `?? null` rather than an omitted
+      // key: `null` is the API's own spelling of «acquisto generale», and leaving it out would
+      // be indistinguishable from forgetting it. The file of «In arrivo» rides with it, so the
+      // purchase says where it came from.
       create.mutate(
-        { ...body, deal_id: dealId ?? null },
         {
-          onSuccess: () => {
-            onOpenChange(false)
-            onSaved?.()
+          ...body,
+          deal_id: defaults?.deal_id ?? null,
+          ...(defaults?.inbox_item_id === undefined ? {} : { inbox_item_id: defaults.inbox_item_id }),
+        },
+        {
+          onSuccess: (saved) => {
             toast.success('Acquisto registrato')
+            onSaved(saved)
           },
           onError: (error) => setProblem(toProblem(error)),
         },
@@ -195,81 +268,19 @@ export function PurchaseForm({
       return
     }
     update.mutate(body, {
-      onSuccess: () => {
-        onSaved?.()
+      onSuccess: (saved) => {
         toast.success('Acquisto aggiornato')
+        onSaved(saved)
       },
       onError: (error) => setProblem(toProblem(error)),
     })
   }
 
-  function archive() {
-    // The same cheap misclick guard the other forms use, and the wording says what
-    // actually happens: `soft_delete` sets `deleted_at`, so nothing is lost.
-    const confirmed = window.confirm(
-      'Eliminare questo acquisto? Sparisce dagli elenchi e dai conti del deal, ma il dato resta e l’operazione è reversibile.',
-    )
-    if (!confirmed || purchase === undefined) return
-    const id = purchase.id
-    remove.mutate(id, {
-      onSuccess: () => {
-        onSaved?.()
-        toast.success('Acquisto eliminato', {
-          action: { label: 'Ripristina', onClick: () => restore.mutate(id) },
-        })
-      },
-      // A closed period refuses the delete with its own sentence: shown here rather
-      // than swallowed, for the same reason a failed save is.
-      onError: (error) => setProblem(toProblem(error)),
-    })
-  }
-
-  function annul() {
-    const confirmed = window.confirm(
-      'Annullare questo acquisto? Resta nel registro come annullato e non conta più nei costi.',
-    )
-    if (!confirmed || purchase === undefined) return
-    cancel.mutate(purchase.id, {
-      onSuccess: () => {
-        onSaved?.()
-        toast.success('Acquisto annullato')
-      },
-      onError: (error) => setProblem(toProblem(error)),
-    })
-  }
-
-  const busy =
-    create.isPending || update.isPending || remove.isPending || restore.isPending || cancel.isPending
-  const fieldError = problem ? fieldErrorFrom(problem) : null
-  const kind = (values.native.kind as PurchaseKind | undefined) ?? 'expense'
-  const document = isDocumentKind(kind)
-  const categoryId = (values.native.category_id as string | undefined) ?? ''
-  const supplierId = (values.native.supplier_id as string | null | undefined) ?? null
-  const correctsId = (values.native.corrects_purchase_id as string | null | undefined) ?? null
-  const vatLines = (values.native.vat_lines as VatLineDraft[] | undefined) ?? []
-  // «Azienda» only for a purchase with no deal and from the second legal entity on (REB-626,
-  // spec §1.7): a purchase on a deal is that deal's azienda's and the server would refuse
-  // another, while a general purchase is shared («Condivisa», `null`) unless one legal entity
-  // owns it.
-  const legal_entity = useLegalEntity()
-  const legalEntityId = (values.native.legal_entity_id as string | null | undefined) ?? SHARED
-  // Kept out of the flattened values, like the customer form does: a custom field a
-  // tenant named `legal_entity_id` would otherwise display the picker's id as its own value.
-  const flat = Object.fromEntries(
-    Object.entries(values.native).filter(([key]) => !hasOwnControl(key)),
-  )
-  const errorOn = (key: string) =>
-    fieldError?.field === key ? (
-      <p className="text-sm text-destructive">{fieldError.message}</p>
-    ) : null
+  const busy = create.isPending || update.isPending
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-3xl">
-        <DialogHeader>
-          <DialogTitle>{title}</DialogTitle>
-        </DialogHeader>
-
+    <div className="space-y-6">
+      <div className="grid gap-5 md:grid-cols-2">
         <div className="space-y-2">
           <Label htmlFor="purchase-kind">Tipo</Label>
           {/* Fixed once registered: a receipt does not become an invoice by editing, it is
@@ -300,22 +311,44 @@ export function PurchaseForm({
 
         {document && (
           <div className="space-y-2">
-            <Label htmlFor="purchase-supplier">Fornitore</Label>
+            <Label htmlFor="purchase-supplier">
+              Fornitore
+              <Required />
+            </Label>
             <OrganizationPicker
               id="purchase-supplier"
               role="supplier"
               value={supplierId}
-              onChange={(supplier) =>
+              onChange={(picked) =>
                 setNative({
-                  supplier_id: supplier?.id ?? null,
+                  supplier_id: picked?.id ?? null,
                   // The invoice a credit note corrects is the supplier's: another supplier,
                   // another list.
-                  ...(supplier?.id === supplierId ? {} : { corrects_purchase_id: null }),
+                  ...(picked?.id === supplierId ? {} : { corrects_purchase_id: null }),
                 })
               }
               placeholder="Cerca un fornitore per ragione sociale, P.IVA o email…"
               ariaLabel="Cerca un fornitore"
             />
+            {supplierId === null && (
+              <p className="text-sm text-muted-foreground">
+                Non lo trovi? Aggiungilo tra i fornitori, poi torna qui:{' '}
+                <Link
+                  to="/app/organizations"
+                  search={{ role: 'supplier' }}
+                  className="underline underline-offset-2"
+                >
+                  Anagrafiche, Fornitori
+                </Link>
+                .
+              </p>
+            )}
+            {foreignSupplier && (
+              <p className="text-sm text-muted-foreground">
+                Lo decidi tu: il fornitore è estero. Spunta «Inversione contabile» solo se vale per
+                questo acquisto.
+              </p>
+            )}
             {errorOn('supplier_id')}
           </div>
         )}
@@ -331,20 +364,51 @@ export function PurchaseForm({
             {errorOn('corrects_purchase_id')}
           </div>
         )}
+      </div>
 
+      <DynamicForm
+        fields={fields}
+        // Flattened for rendering only -- one control per key is all a form can draw. The state
+        // behind it stays split, so `toPurchaseRequestBody` still knows which namespace each
+        // value came from.
+        values={{ ...flat, ...values.custom }}
+        onChange={change}
+        // Only a problem this form draws on one of its own fields: the rest is shown in the bar
+        // below, once, and never as a second banner in the middle of the page.
+        problem={onDynamicField && !onOwnControl ? problem : null}
+        mode={isCreate ? 'create' : 'edit'}
+      />
+
+      {heldRate !== null && (
+        <p className="text-sm text-muted-foreground">
+          Cambio {heldRate.rate.replace(/0+$/, '').replace(/\.$/, '').replace('.', ',')} del{' '}
+          {formatIsoDateItalian(heldRate.date)}
+        </p>
+      )}
+
+      {document && (
+        <VatLinesEditor
+          lines={vatLines}
+          onChange={(lines) => setNative({ vat_lines: lines })}
+          error={fieldError?.field === 'vat_lines' ? fieldError.message : undefined}
+        />
+      )}
+
+      <div className="grid gap-5 md:grid-cols-2">
         <div className="space-y-2">
-          <Label htmlFor="purchase-category">Categoria</Label>
+          <Label htmlFor="purchase-category">
+            Categoria
+            <Required />
+          </Label>
           {/* Its own control rather than a `select` field handed to `DynamicForm`: that
               renderer submits the option string itself, and this value has to be the
-              category's UUID so a later rename does not orphan the purchase. Only the
-              active categories are offered -- an archived one is still shown on rows
-              that already reference it, but nothing new should be filed under it. */}
+              category's UUID so a later rename does not orphan the purchase. */}
           <Select value={categoryId} onValueChange={(value) => change('category_id', value)}>
             <SelectTrigger id="purchase-category" className="w-full">
               <SelectValue placeholder="Seleziona…" />
             </SelectTrigger>
             <SelectContent>
-              {categories.map((category) => (
+              {offered.map((category) => (
                 <SelectItem key={category.id} value={category.id}>
                   {category.name}
                 </SelectItem>
@@ -377,47 +441,29 @@ export function PurchaseForm({
           </div>
         ) : null}
 
-        <DynamicForm
-          fields={[...fieldsFor(kind, isForeignCurrency(values.native.currency)), ...customFields]}
-          // Flattened for rendering only -- one control per key is all a form can draw.
-          // The state behind it stays split, so `toPurchaseRequestBody` still knows which
-          // namespace each value came from.
-          values={{ ...flat, ...values.custom }}
-          onChange={change}
-          // Withheld when the server blamed a key that has no control inside
-          // `DynamicForm`: it would render the message a second time as a raw
-          // `key: ...` banner next to the line already shown on its own control.
-          problem={fieldError !== null && hasOwnControl(fieldError.field) ? null : problem}
-          mode={isCreate ? 'create' : 'edit'}
-        />
+        {dealId !== undefined && !modules.loading && modules.on('deals') ? <DealLine dealId={dealId} /> : null}
+      </div>
 
-        {document && (
-          <VatLinesEditor
-            lines={vatLines}
-            onChange={(lines) => setNative({ vat_lines: lines })}
-            error={fieldError?.field === 'vat_lines' ? fieldError.message : undefined}
-          />
+      {/* The action bar, bottom right; sticky so «Annulla» and «Registra» stay in reach on a
+          phone, where the form is long. */}
+      <div className="sticky bottom-0 z-10 space-y-2 border-t bg-background py-3">
+        {problem !== null && !onOwnControl && !onDynamicField && (
+          <p
+            role="alert"
+            className="border border-destructive/50 bg-destructive/10 px-3 py-2 text-sm text-destructive"
+          >
+            {fieldError === null ? problem.detail : `${fieldError.field}: ${fieldError.message}`}
+          </p>
         )}
-
-        <DialogFooter>
-          {!isCreate && (
-            <Button variant="destructive" className="mr-auto" onClick={archive} disabled={busy}>
-              Elimina
-            </Button>
-          )}
-          {purchase !== undefined && purchase.status === 'registered' && (
-            <Button variant="outline" onClick={annul} disabled={busy}>
-              Annulla acquisto
-            </Button>
-          )}
-          <Button variant="ghost" onClick={() => onOpenChange(false)}>
-            Chiudi
+        <div className="flex justify-end gap-2">
+          <Button type="button" variant="ghost" onClick={onCancel} disabled={busy}>
+            Annulla
           </Button>
-          <Button onClick={submit} disabled={busy}>
-            {busy ? 'Salvataggio…' : 'Salva'}
+          <Button type="button" onClick={submit} disabled={busy}>
+            {busy ? 'Salvataggio…' : isCreate ? 'Registra' : 'Salva'}
           </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        </div>
+      </div>
+    </div>
   )
 }

@@ -46,7 +46,10 @@ export function NavLeaf({
       // carries a search of its own, so with the default an entry stopped being active
       // the moment its page put anything in the URL -- and Home, whose dashboard writes
       // its tab and period there on load, was never highlighted at all.
-      activeOptions={{ exact, includeSearch: false }}
+      // An entry whose caller decides (`active`) must not also be marked by the router, which
+      // marks every entry that opens the registry's path: the exact match with the search is
+      // the one case where the router and the caller agree.
+      activeOptions={active === undefined ? { exact, includeSearch: false } : { exact: true, includeSearch: true }}
       {...(active === undefined
         ? { activeProps: { 'aria-current': 'page' as const } }
         : { 'aria-current': active ? ('page' as const) : undefined })}
