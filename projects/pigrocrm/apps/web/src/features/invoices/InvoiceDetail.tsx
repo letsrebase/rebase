@@ -119,9 +119,11 @@ export function InvoiceDetail() {
             {/* While the document can still change, its dates are inputs (ORB-61, ORB-63)
                 and the list below states only what nobody can edit here; once frozen, the
                 same facts come back as rows. Stated or asked, never both. */}
-            {readOnly ? null : <InvoiceHeaderEditor invoice={row} />}
-            {/* key: moving to another invoice must not carry this one's draft along */}
-            {readOnly ? null : <PurchaseOrderEditor key={row.id} invoice={row} />}
+            {/* key on all three editors (REB-694): each seeds its draft once, and the
+                route component stays mounted when only `invoiceId` changes, so without
+                it (the two siblings get distinct keys, React refuses a shared one) the next invoice would show, and could save, this one's draft. */}
+            {readOnly ? null : <InvoiceHeaderEditor key={`header-${row.id}`} invoice={row} />}
+            {readOnly ? null : <PurchaseOrderEditor key={`order-${row.id}`} invoice={row} />}
 
             <dl className="grid max-w-lg grid-cols-2 gap-2 text-sm">
               {readOnly ? (
@@ -188,7 +190,7 @@ export function InvoiceDetail() {
               {lines.isError ? (
                 <QueryErrorBanner error={lines.error} />
               ) : (
-                <InvoiceLinesEditor invoice={row} lines={lines.data ?? []} readOnly={readOnly} />
+                <InvoiceLinesEditor key={row.id} invoice={row} lines={lines.data ?? []} readOnly={readOnly} />
               )}
             </section>
 
