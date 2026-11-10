@@ -980,6 +980,19 @@ _COVERED_OR_HUMAN: dict[Method, str] = {
         "and creating the customer, contact and deal is what `create_organization`, "
         "`create_person` and `create_deal` already are for an agent"
     ),
+    ("MonthlyReportService", "request"): (
+        "REB-1002: recording that a month's report reached rebase starts the clock after which it "
+        "counts as approved: a person's act (`record_monthly_report` is person-only), never an "
+        "agent's"
+    ),
+    ("MonthlyReportService", "approve"): (
+        "REB-1002: approving a month's report is what makes its days payable, a person's act "
+        "(collaborators design § 4, frame A4): no tool, with or without `full_access`"
+    ),
+    ("MonthlyReportService", "for_engagement"): (
+        "REB-1002: the list of an engagement's monthly reports; `get_engagement_report` reads "
+        "each month's report with the days it makes payable"
+    ),
     ("EngagementService", "report"): (
         "reads a match's hours back for the same hub door (spec 2026-09-25 §2.4), never "
         "for an agent in the space: the deal's own hours are already `list_time_entries`, "
