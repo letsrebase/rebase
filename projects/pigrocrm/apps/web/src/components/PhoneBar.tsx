@@ -5,6 +5,7 @@ import { cn } from '@rebase/ui/cn'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@rebase/ui/sheet'
 import { useEngagementsToDoCount } from '@/features/engagements/queries'
 import { useWaitingCount } from '@/features/inbox/queries'
+import { useNotesToApproveCount } from '@/features/expense-notes/queries'
 import { useNavGates } from '@/features/iva/queries'
 import { useUnreadCount } from '@/features/reminders/queries'
 import { useOverdueCount } from '@/features/tasks/queries'
@@ -14,6 +15,7 @@ import { LegalEntitySelect } from './LegalEntitySelect'
 import {
   Agents,
   ENGAGEMENTS_PATH,
+  EXPENSE_NOTES_PATH,
   INBOX_PATH,
   REGISTRY_PATH,
   SETTINGS,
@@ -198,6 +200,7 @@ function More({
   const unread = useUnreadCount()
   const waiting = useWaitingCount()
   const engagements = useEngagementsToDoCount(modules.on('collaborators'))
+  const notesToApprove = useNotesToApproveCount(modules.on('staff', 'purchases'))
   const { location } = useRouterState()
   const registryRole = useRegistryView()
   const items: readonly NavItem[] = [
@@ -277,6 +280,12 @@ function More({
                   <span className="bg-sidebar-primary px-1.5 text-xs font-medium tabular-nums text-sidebar-primary-foreground">
                     <span aria-hidden="true">{engagements > 99 ? '99+' : engagements}</span>
                     <span className="sr-only">{`, ${engagements} da fare`}</span>
+                  </span>
+                ) : null}
+                {to === EXPENSE_NOTES_PATH && notesToApprove > 0 ? (
+                  <span className="bg-sidebar-primary px-1.5 text-xs font-medium tabular-nums text-sidebar-primary-foreground">
+                    <span aria-hidden="true">{notesToApprove > 99 ? '99+' : notesToApprove}</span>
+                    <span className="sr-only">{`, ${notesToApprove} da approvare`}</span>
                   </span>
                 ) : null}
               </Link>

@@ -50,6 +50,10 @@ const SCOPED_ROOTS = [
   join(__dirname, '..', 'features', 'export'),
   // «IVA» (REB-1024): every figure, rate, share and date is a field the server sent.
   join(__dirname, '..', 'features', 'iva'),
+  // «Note spese» (REB-1046): every amount and total is the server's string, and the only
+  // arithmetic is the sum of one person's notes through `lib/decimal.ts`; kilometres times the
+  // typed rate is the server's product, never previewed here.
+  join(__dirname, '..', 'features', 'expense-notes'),
 ]
 const SCOPED_FILES = [join(__dirname, '..', 'routes', 'app', 'index.tsx')]
 const FORBIDDEN_CALLS = new Set(['Number', 'parseFloat', 'parseInt'])
@@ -110,6 +114,7 @@ describe('no number is born in the browser', () => {
     expect(files.some((path) => path.endsWith(join('routes', 'app', 'index.tsx')))).toBe(true)
     expect(files.some((path) => path.endsWith(join('features', 'taxes', 'labels.ts')))).toBe(true)
     expect(files.some((path) => path.endsWith(join('features', 'cash', 'schedule', 'labels.ts')))).toBe(true)
+    expect(files.some((path) => path.endsWith(join('features', 'expense-notes', 'labels.ts')))).toBe(true)
   })
 
   it('never coerces an API value to a JS number in a dashboard module', () => {

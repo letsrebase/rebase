@@ -121,6 +121,15 @@ export const MIN_ROLE = {
   correct_staff_payslip: 'admin',
   propose_staff_hourly_cost: 'admin',
   adopt_staff_hourly_cost: 'admin',
+  // Expense notes (REB-1046, design § 3 and § 4): the staff member (a collaborator) or an
+  // administrator for them submits; an administrator reads every note in scope, approves,
+  // rejects and reimburses, and not on their own note, which the server answers per note
+  // (`can_decide`), not by role. A readonly member submits nothing.
+  submit_expense_note: 'collaborator',
+  read_all_expense_notes: 'admin',
+  approve_expense_note: 'admin',
+  reject_expense_note: 'admin',
+  reimburse_expense_note: 'admin',
   // Engagements with freelancers (REB-976): every read and write is an administrator's, as the
   // hub's matches were. «Incarichi», the engagement page and the registry's block consult them
   // (REB-1035); `read_rebase_engagement` is the freelancer's own card, read in their own space

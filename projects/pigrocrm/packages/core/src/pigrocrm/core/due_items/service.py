@@ -58,6 +58,8 @@ from pigrocrm.core.errors import (
     PermissionDenied,
     ValidationFailed,
 )
+from pigrocrm.core.expense_notes.access import require_may_pay_item
+from pigrocrm.core.expense_notes.projection import project_reimbursement
 from pigrocrm.core.invoices.models import Invoice
 from pigrocrm.core.legal_entities.models import LegalEntity
 
@@ -65,6 +67,7 @@ ENTITY = "due_item"
 SETTLEMENT_ENTITY = "due_item_settlement"
 ZERO = Decimal("0.00")
 SALES_INVOICE = "sales_invoice"
+PURCHASE_SOURCE = "purchase"
 
 
 def _is_fiscal(item: DueItem) -> bool:
@@ -509,6 +512,11 @@ class DueItemService:
         when nothing remains, dated by the latest live settlement. This is the only place that
         writes the two columns of an issued invoice (§ 1.1). A dropped item (an annulled
         invoice) leaves them as they were."""
+        if item.source_kind == PURCHASE_SOURCE and item.source_id is not None:
+            # An expense note's item (`expense_notes/projection.py`): the note reads reimbursed
+            # when its item is settled in full.
+            project_reimbursement(self.session, item, self.repo.totals(item.id).last_settled_on)
+            return
         if item.source_kind != SALES_INVOICE or item.source_id is None or item.state == "dropped":
             return
         invoice = self.session.get(Invoice, item.source_id)
@@ -599,10 +607,26 @@ class DueItemService:
         booking date, with the movement as its evidence. Flushes, does not commit."""
         item = self._locked(item_id)
         _require_settle_permission(actor, item, undo=False)
+        self._require_may_pay_note(item, actor)
         data = SettlementCreate(
             amount=amount, settled_on=movement.booking_date, value_date=movement.value_date
         )
         return self._record_payment(item, data, actor, bank_movement_id=movement.id)
+
+    def settle_remaining(
+        self, item_id: UUID, settled_on: dt.date, note: str, actor: Actor
+    ) -> DueItemSettlement:
+        """Settles what remains of an item, dated `settled_on` or today when that day has not
+        come (a payment is never dated in the future). The writer's half for a source that pays
+        its own item (an expense note reimbursed by a transfer already made, or by the payslip
+        that paid it): the caller has asked for an administrator first. Flushes, does not
+        commit."""
+        item = self._locked(item_id)
+        remaining = item.amount - self.repo.totals(item.id).settled
+        data = SettlementCreate(
+            amount=remaining, settled_on=min(settled_on, today_local()), note=note
+        )
+        return self._record_payment(item, data, actor)
 
     def adopt_for_movement(
         self, item_id: UUID, movement: BankMovement, actor: Actor
@@ -674,6 +698,7 @@ class DueItemService:
         actor.require_write("settle_due_item")
         item = self._locked(item_id)
         _require_settle_permission(actor, item, undo=False)
+        self._require_may_pay_note(item, actor)
         self._record_payment(item, data, actor)
         self.session.commit()
         return self._detail(item)
@@ -773,6 +798,12 @@ class DueItemService:
         if settlement.bank_movement_id is not None:
             payload["bank_movement_id"] = str(settlement.bank_movement_id)
         self.activities.record("legal_entity", item.legal_entity_id, kind, actor, payload)
+
+    def _require_may_pay_note(self, item: DueItem, actor: Actor) -> None:
+        """Paying an expense note's item is reimbursing the note: not the author's to do
+        (`expense_notes/access.py`)."""
+        if item.source_kind == PURCHASE_SOURCE and item.staff_member_id is not None:
+            require_may_pay_item(self.session, item.id, actor)
 
     @staticmethod
     def _refuse_evidenced(settlements: Sequence[DueItemSettlement]) -> None:

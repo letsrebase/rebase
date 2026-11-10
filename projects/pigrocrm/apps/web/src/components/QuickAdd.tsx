@@ -1,8 +1,9 @@
-import { useRouterState } from '@tanstack/react-router'
+import { useNavigate, useRouterState } from '@tanstack/react-router'
 import {
   CalendarPlus,
   Clock,
   FileInput,
+  HandCoins,
   ListChecks,
   Receipt,
   StickyNote,
@@ -10,6 +11,8 @@ import {
 } from 'lucide-react'
 import { useState } from 'react'
 import { DayForm } from '@/features/days/DayForm'
+import { NewNote } from '@/features/expense-notes/NewNote'
+import { useExpenseSummary } from '@/features/expense-notes/queries'
 import { QuickUpload } from '@/features/inbox/QuickUpload'
 import { QuickExpense } from '@/features/purchases/QuickExpense'
 import { TaskDialog } from '@/features/tasks/TaskDialog'
@@ -31,13 +34,15 @@ import { useModules } from '@/lib/modules'
 import { QuickHours } from './QuickHours'
 import { QuickNote } from './QuickNote'
 
-type Action = 'task' | 'note' | 'day' | 'hours' | 'expense' | 'document'
+type Action = 'task' | 'note' | 'day' | 'hours' | 'expense' | 'expense-note' | 'document'
 
 /**
  * «+» of the phone's bottom bar (spec 2026-11-09 B6, REB-959): what can be added from
  * anywhere, without navigating. An activity and a note always; a worked day with `contracts`
- * on; hours with `time` on; an expense with `purchases` on. An entry of a module the space has
- * off is not drawn, the same question (`useModules().on`) the sidebar and the route guard ask.
+ * on; hours with `time` on; an expense with `purchases` on; an expense note (REB-1046) with `staff`
+ * and `purchases` on, for a user who may submit and is linked to a staff member. An entry of a
+ * module the space has off is not drawn, the same question (`useModules().on`) the sidebar and the
+ * route guard ask.
  *
  * The sheet only chooses. Each choice opens the dialog of the thing itself, the one the rest
  * of the app already uses, and the sheet closes behind it. The choice is remembered with the
@@ -51,6 +56,10 @@ export function QuickAdd({
   onOpenChange: (open: boolean) => void
 }) {
   const modules = useModules()
+  const navigate = useNavigate()
+  const notesOn = modules.on('staff', 'purchases')
+  const summary = useExpenseSummary(notesOn)
+  const canSendNote = notesOn && summary.data?.can_submit === true && (summary.data.staff_member_id ?? null) !== null
   const { location } = useRouterState()
   const [adding, setAdding] = useState<{ action: Action; at: string } | null>(null)
   // A dialog does not outlive the page it was opened on: coming back to that path later
@@ -84,6 +93,18 @@ export function QuickAdd({
             label: 'Spesa',
             hint: 'Uno scontrino o una spesa, in due tocchi',
             icon: Receipt,
+          },
+        ]
+      : []),
+    // A note for the person's own expenses (the brief, «Note spese»): shown to a user linked to a
+    // staff member who may write, with both modules on.
+    ...(canSendNote
+      ? [
+          {
+            action: 'expense-note' as const,
+            label: 'Nota spese',
+            hint: 'Una spesa o dei chilometri da farti rimborsare',
+            icon: HandCoins,
           },
         ]
       : []),
@@ -143,6 +164,11 @@ export function QuickAdd({
       </Dialog>
       <QuickHours open={action === 'hours'} onOpenChange={(next) => !next && close()} />
       <QuickExpense open={action === 'expense'} onOpenChange={(next) => !next && close()} />
+      <NewNote
+        open={action === 'expense-note'}
+        onOpenChange={(next) => !next && close()}
+        onSent={() => void navigate({ to: '/app/expense-notes' })}
+      />
       <QuickUpload open={action === 'document'} onOpenChange={(next) => !next && close()} />
     </>
   )

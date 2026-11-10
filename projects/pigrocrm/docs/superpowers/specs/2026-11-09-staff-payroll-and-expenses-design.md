@@ -166,6 +166,23 @@ person types the figures.
 - Names avoid the existing `contract_expenses`: the table is `expense_notes`, the tools
   `submit_expense_note` and `approve_expense_note`.
 
+**As built (REB-1046).** `core/expense_notes/`, table `expense_notes` (migration 0103), REST under
+`/api/expense-notes` and the tools `submit_expense_note`, `list_expense_notes` (every token's, the
+owner's own notes) and `approve_expense_note`, `reject_expense_note`, `reimburse_expense_note`
+(`full_access`), all behind `staff` **and** `purchases` (the module keeps `requires=()`: with
+`purchases` off «Note spese» is gone and «Persone dell'azienda» stays, brief). Two kinds, `expense`
+and `mileage` (kilometres times a typed rate, the amount written by the service); the trip with lines
+and the flat allowance are the travel card. A note is `submitted`, `approved`, `rejected` (final, with
+a reason) or `reimbursed`. **Approving** writes the purchase of kind `expense_note` (with
+`purchases.staff_member_id`; it costs its total, like a receipt) and the one outgoing due item to the
+person (source `purchase`), and links the receipt's inbox item. **Reimbursing** is its own, once: a
+`transfer` dates the item (and settles it when `paid`), otherwise it is settled like any item and
+`projection.py` turns the note `reimbursed`; in a `payslip` the item is dated by the pay day of the
+chosen month and `record_staff_payslip` settles it, so no second due item exists. Who decides: not on
+an own note (the staff member is the deciding user, or the user typed it in), except the space's only
+active administrator, whose approval is `self_approved`; never an agent. Who reads: a staff member
+their own, an administrator and a `full_access` token the entity scope's.
+
 ## 4. Privacy and permissions
 
 Pay is the most personal data the product would hold. «A member with the collaborator role»

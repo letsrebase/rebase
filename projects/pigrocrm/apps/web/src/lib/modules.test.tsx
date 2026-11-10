@@ -30,6 +30,8 @@ describe('modulesOfPath', () => {
     expect(modulesOfPath('/app/approvals/new')).toEqual(['contracts'])
     expect(modulesOfPath('/app/hours')).toEqual(['time'])
     expect(modulesOfPath('/app/taxes')).toEqual(['taxes'])
+    expect(modulesOfPath('/app/staff')).toEqual(['staff'])
+    expect(modulesOfPath('/app/expense-notes')).toEqual(['staff', 'purchases'])
     expect(modulesOfPath('/app/settings/cost-categories')).toEqual(['purchases'])
     expect(modulesOfPath('/app/settings/rates')).toEqual(['time'])
     expect(modulesOfPath('/app/settings/pipeline')).toEqual(['deals'])

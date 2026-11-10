@@ -16,9 +16,15 @@ export const KIND_LABELS: Record<PurchaseKind, string> = {
   credit_note: 'Nota di credito',
   receipt: 'Ricevuta',
   expense: 'Spesa',
+  expense_note: 'Nota spese',
 }
 
-export const KINDS = Object.keys(KIND_LABELS) as PurchaseKind[]
+/** The kinds a person registers by hand. An expense note is written by its approval (REB-1046) and
+ *  never typed, so the form does not offer it. */
+export const KINDS: readonly PurchaseKind[] = ['invoice', 'credit_note', 'receipt', 'expense']
+
+/** The kinds the list can be filtered by: every one a purchase can be, an expense note included. */
+export const FILTER_KINDS = Object.keys(KIND_LABELS) as PurchaseKind[]
 
 /** An invoice or a credit note: a fiscal document with a supplier and a VAT recap. A
  *  receipt or an expense has its total only. */

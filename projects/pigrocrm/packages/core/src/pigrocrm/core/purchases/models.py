@@ -3,14 +3,17 @@ the IVA cycle, § 2).
 
 A **purchase** replaces the old cost: the same row, kept with its id, its `created_at`, its
 custom fields, its soft delete and its history, now with a kind and the fields a supplier's
-document carries. The four kinds:
+document carries. The kinds:
 
 - `invoice` and `credit_note` come from a supplier and name it; their VAT is split into recap
   lines (`PurchaseVatLine`), one per rate and nature, each with the share that is deductible;
 - `receipt` (a till receipt, an occasional worker's receipt, a ticket) and `expense` (anything
   else paid) carry the total only. VAT on a retail receipt is not deductible without an
   invoice (art. 19 c. 1 and art. 22 DPR 633/72, A5), so a receipt has no lines: the day the
-  shop issues an invoice, that is a purchase of kind `invoice`.
+  shop issues an invoice, that is a purchase of kind `invoice`;
+- `expense_note` is what a staff member spent and the company pays back: only the approval of
+  an expense note writes one (`expense_notes/service.py`), with the staff member who paid in
+  `staff_member_id`, and it carries the total only, like a receipt.
 
 A row that was a cost is an `expense` with the free-text supplier in `merchant_name`; nothing
 about what it says or counts changed (`cost_amount = amount`).
@@ -50,7 +53,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from pigrocrm.core.db import Base, PrimaryKeyMixin, SoftDeleteMixin, TimestampMixin
 
-KINDS: tuple[str, ...] = ("invoice", "credit_note", "receipt", "expense")
+KINDS: tuple[str, ...] = ("invoice", "credit_note", "receipt", "expense", "expense_note")
 # The kinds whose VAT is split into recap lines, and that a supplier issues.
 VAT_KINDS: tuple[str, ...] = ("invoice", "credit_note")
 STATUSES: tuple[str, ...] = ("registered", "cancelled")
@@ -113,6 +116,11 @@ class Purchase(Base, PrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
             "fund_amount IS NOT NULL)",
             name="ck_purchases_fund_together",
         ),
+        # An expense note names the staff member who paid and nothing else does.
+        CheckConstraint(
+            "(kind = 'expense_note') = (staff_member_id IS NOT NULL)",
+            name="ck_purchases_expense_note_staff",
+        ),
         # What only a supplier's invoice or credit note carries.
         CheckConstraint(
             "kind IN ('invoice', 'credit_note') OR (NOT split_payment AND NOT reverse_charge "
@@ -152,6 +160,10 @@ class Purchase(Base, PrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
         ForeignKey("organizations.id"), default=None, index=True
     )
     merchant_name: Mapped[str | None] = mapped_column(String(200), default=None)
+    # The staff member an expense note pays back: set on a purchase of kind `expense_note` only.
+    staff_member_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("staff_members.id"), default=None, index=True
+    )
     # The number on the supplier's document.
     number: Mapped[str | None] = mapped_column(String(50), default=None)
     # The document's date: the date every reader attributes the purchase to.

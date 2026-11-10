@@ -109,6 +109,12 @@ TOOL_MODULES: Mapping[str, tuple[ModuleKey, ...]] = {
     "get_iva_register": ("purchases",),
     "close_iva_period": ("purchases",),
     "reopen_iva_period": ("purchases",),
+    # expense notes: a staff member's receipts become purchases, so both modules.
+    "submit_expense_note": ("staff", "purchases"),
+    "list_expense_notes": ("staff", "purchases"),
+    "approve_expense_note": ("staff", "purchases"),
+    "reject_expense_note": ("staff", "purchases"),
+    "reimburse_expense_note": ("staff", "purchases"),
     # taxes: the estimate, the ceilings and the year.
     "get_ceiling_headroom": ("taxes",),
     "get_year_overview": ("taxes",),

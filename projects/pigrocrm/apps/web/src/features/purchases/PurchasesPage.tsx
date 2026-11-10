@@ -28,7 +28,7 @@ import { useCanWrite } from '@/lib/auth'
 import { useLegalEntitiesToName } from '@/lib/legalEntity'
 import { useEntitySchema } from '@/lib/schema'
 import { buildPurchaseColumns } from './columns'
-import { KINDS, KIND_LABELS } from './formValues'
+import { FILTER_KINDS, KIND_LABELS } from './formValues'
 import { documentLine, foreignAmount, specialChips } from './labels'
 import {
   useCostCategories,
@@ -159,7 +159,7 @@ function KindSelect({
       </SelectTrigger>
       <SelectContent>
         <SelectItem value={ANY}>Tutti i tipi</SelectItem>
-        {KINDS.map((kind) => (
+        {FILTER_KINDS.map((kind) => (
           <SelectItem key={kind} value={kind}>
             {KIND_LABELS[kind]}
           </SelectItem>

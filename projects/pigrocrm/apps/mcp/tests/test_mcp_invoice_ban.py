@@ -128,6 +128,11 @@ FORBIDDEN = (
     "get_staff_member",
     "list_staff",
     "get_payroll_month",
+    # Deciding on an expense note and paying it back (REB-1046): an administrator's token with
+    # `full_access`, and never on its own note.
+    "approve_expense_note",
+    "reject_expense_note",
+    "reimburse_expense_note",
     # The first that is not fiscal: asking Gmail who at a customer's
     # domain the owner has corresponded with. Not irreversible -- it stores nothing --
     # but it spends the owner's Gmail quota under the owner's OAuth consent, which is
@@ -298,6 +303,10 @@ FULL_ACCESS_BY_THE_RECORD: dict[str, tuple[str, ...]] = {
     # REB-976: the hub's id of a freelancer is their identity, set through the same tool by an
     # administrator's token with `full_access`.
     "set_organization_hub_freelancer": ("update_organization",),
+    # REB-1046: the expense notes are every token's own, and an administrator's token with
+    # `full_access` lists every note in scope: the service decides, so the tool stays on the
+    # default surface.
+    "read_all_expense_notes": ("list_expense_notes",),
 }
 
 # The tools above that exist only on an installation where Google is configured as well:
@@ -354,6 +363,10 @@ FORBIDDEN_SERVICE_CALLS = (
     "get_staff_member",
     "list_staff",
     "get_payroll_month",
+    # `ExpenseNoteService`'s three decisions, behind the tools of the same name (REB-1046).
+    "approve_expense_note",
+    "reject_expense_note",
+    "reimburse_expense_note",
     # `BankAccountService`'s four and the two reads of `BankStatementReadService`, named uniquely
     # for this scan (REB-1025).
     "list_bank_accounts",
