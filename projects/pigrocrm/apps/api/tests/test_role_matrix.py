@@ -763,6 +763,9 @@ ROWS: list[Row] = [
     # --- period locks: closing a period freezes the register: admin ------------------
     Row("POST", "/api/period-locks", admin_only=True, body={"year": 2020, "month": 1}),
     Row("DELETE", "/api/period-locks/{year}/{month}", admin_only=True),
+    # --- IVA period locks (REB-1036): closing one freezes the registers: admin ----------
+    Row("POST", "/api/iva-period-locks", admin_only=True, body={"year": 2020, "number": 1}),
+    Row("DELETE", "/api/iva-period-locks/{year}/{number}", admin_only=True),
     # --- pipeline: configuration, admin (pipeline/service.py) -------------------------
     Row("POST", "/api/pipeline-stages", admin_only=True, body={"name": "Matrice", "position": 99}),
     Row("POST", "/api/pipeline-stages/seed", admin_only=True),

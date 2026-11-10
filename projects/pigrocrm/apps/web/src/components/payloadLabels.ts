@@ -108,6 +108,7 @@ export const PAYLOAD_KEY_LABELS: Record<string, string> = {
   fields: 'Campi',
   first_name: 'Nome',
   format: 'Formato',
+  frequency: 'Cadenza',
   from: 'Da',
   opening_balance: 'Saldo iniziale',
   opening_balance_date: 'Data del saldo iniziale',

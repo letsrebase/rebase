@@ -440,6 +440,29 @@ class IvaPeriod(BaseModel):
     number: int = Field(ge=1, le=12)
 
 
+class IvaPeriodLockCreate(IvaPeriod):
+    """Close one period of one legal entity's IVA cycle (REB-1036). `legal_entity_id` is required
+    when the space has more than one legal entity."""
+
+    legal_entity_id: UUID | None = None
+
+
+class IvaPeriodLockRead(BaseModel):
+    """A closed IVA period: while it is closed no document that changes its registers is written.
+    `closed_by` is the person who closed it (the owner of the token, for an agent)."""
+
+    id: UUID
+    legal_entity_id: UUID
+    frequency: IvaFrequency
+    year: int
+    number: int
+    label: str
+    period_start: date
+    period_end: date
+    closed_at: datetime
+    closed_by: UUID | None
+
+
 class IvaSettlementRead(BaseModel):
     """A period's settlement as stored (REB-1021). Positive `result` is owed, negative is a
     credit carried forward; `due_item_id` is the item written for an `outcome` of `due`."""
@@ -503,7 +526,9 @@ class IvaPeriodRead(BaseModel):
     period that has not started, or one whose previous period is not settled while an earlier one
     is (its carry-over would be a guess). `state` is `open` until the period's last day
     included. The payment date is the pack's calendar's and `payment_state` the due item's;
-    `carry_forward_limit` is the pack's limit under which a small debit waits."""
+    `carry_forward_limit` is the pack's limit under which a small debit waits. `closed` is whether
+    a person closed the period (REB-1036): no document that changes its registers is written
+    until it is reopened, and `closed_at` and `closed_by` say when and by whom."""
 
     legal_entity_id: UUID
     frequency: IvaFrequency
@@ -521,6 +546,9 @@ class IvaPeriodRead(BaseModel):
     # A settled period whose registers now add up to other lines than the stored ones.
     registers_changed: bool
     carry_forward_limit: Decimal | None
+    closed: bool
+    closed_at: datetime | None
+    closed_by: UUID | None
 
 
 class IvaRateGroupRead(BaseModel):

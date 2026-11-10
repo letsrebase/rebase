@@ -121,6 +121,11 @@ _FORBIDDEN: dict[Method, str] = {
     ),
     ("PeriodLockService", "close_period"): "chiusura di periodo (slice 4 §11)",
     ("PeriodLockService", "reopen_period"): "riapertura di periodo (slice 4 §11)",
+    ("IvaPeriodLockService", "close_iva_period"): (
+        "REB-1036: `close_iva_period`, as `close_period` is: an act on the whole space, so a "
+        "`full_access` token's"
+    ),
+    ("IvaPeriodLockService", "reopen_iva_period"): "REB-1036: `reopen_iva_period`, as above",
     ("AnalyticsService", "get_fiscal_estimate"): "posizione fiscale del titolare (slice 4 §11)",
     (
         "IvaSettlementService",
@@ -361,6 +366,7 @@ _INTERNE: dict[Method, str] = {
     ),
     ("PeriodLockService", "assert_writable"): "guardia invocata dagli altri servizi",
     ("PeriodLockService", "is_closed"): "guardia invocata dagli altri servizi",
+    ("IvaPeriodLockService", "assert_writable"): "guardia invocata dagli altri servizi",
     ("PipelineService", "default_stage"): "risolve lo stage iniziale di un nuovo deal",
     ("TemplateService", "declared_variables"): "parsing interno usato da describe",
     ("EmailDraftService", "repo_draft"): "restituisce la riga ORM al percorso di invio "

@@ -44,7 +44,7 @@ from pigrocrm.core.fiscal.iva_settlement import (
     sales_vat,
 )
 from pigrocrm.core.fiscal.law import IvaSettlementLaw
-from pigrocrm.core.fiscal.models import FiscalProfile, IvaSettlement
+from pigrocrm.core.fiscal.models import FiscalProfile, IvaPeriodLock, IvaSettlement
 from pigrocrm.core.fiscal.pack import FiscalPack, resolve_pack
 from pigrocrm.core.fiscal.repository import FiscalProfileRepository
 from pigrocrm.core.fiscal.schemas import (
@@ -91,12 +91,15 @@ class _Cycle:
         law: IvaSettlementLaw,
         frequency: str,
         stored: dict[int, IvaSettlement],
+        closed: dict[int, IvaPeriodLock],
     ) -> None:
         self.legal_entity_id = legal_entity_id
         self.pack = pack
         self.law = law
         self.frequency = frequency
         self.stored = stored
+        # The periods of the year a person closed, by number, in the year's frequency.
+        self.closed = closed
 
     @property
     def last_number(self) -> int:
@@ -285,13 +288,18 @@ class IvaRegisterService:
                 )
             )
         }
-        return _Cycle(
-            legal_entity.id,
-            pack,
-            law.iva,
-            self._frequency(profile, stored),
-            stored,
-        )
+        frequency = self._frequency(profile, stored)
+        closed = {
+            row.period_number: row
+            for row in self.session.scalars(
+                select(IvaPeriodLock).where(
+                    IvaPeriodLock.legal_entity_id == legal_entity.id,
+                    IvaPeriodLock.year == year,
+                    IvaPeriodLock.frequency == frequency,
+                )
+            )
+        }
+        return _Cycle(legal_entity.id, pack, law.iva, frequency, stored, closed)
 
     @staticmethod
     def _frequency(profile: FiscalProfile, stored: dict[int, IvaSettlement]) -> str:
@@ -352,7 +360,15 @@ class IvaRegisterService:
             payment_state=None,
             registers_changed=False,
             carry_forward_limit=cycle.law.carry_forward_limit if number in carry_periods else None,
+            closed=False,
+            closed_at=None,
+            closed_by=None,
         )
+        lock = cycle.closed.get(number)
+        if lock is not None:
+            read.closed = True
+            read.closed_at = lock.closed_at
+            read.closed_by = lock.closed_by
         row = cycle.stored.get(number)
         if row is not None:
             read.settled = True
@@ -373,8 +389,8 @@ class IvaRegisterService:
 
     def _registers_changed(self, legal_entity_id: UUID, bounds: Bounds, row: IvaSettlement) -> bool:
         """Whether the registers now add up to other lines than the ones the settlement stored:
-        a document registered or changed in the period since (nothing locks a period yet), which
-        the daily pass has not reached or a recorded payment froze."""
+        a document registered or changed in the period since it was settled, which the daily pass
+        has not reached or a recorded payment froze. A closed period changes no register."""
         sales = sales_vat(self.session, legal_entity_id, bounds)
         reverse_charge, deductible = purchase_vat(self.session, legal_entity_id, bounds)
         return (sales, reverse_charge, deductible) != (

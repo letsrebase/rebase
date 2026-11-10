@@ -130,6 +130,8 @@ const KIND_LABELS: Record<string, string> = {
   accountant_export_built: 'Esportazione per il commercialista preparata',
   accountant_export_deleted: 'Esportazione per il commercialista eliminata',
   iva_period_settled: 'IVA del periodo liquidata',
+  iva_period_closed: 'Periodo IVA chiuso',
+  iva_period_reopened: 'Periodo IVA riaperto',
   pat_first_used: 'Token usato per la prima volta',
   pat_revoked: 'Token revocato',
   pat_used_after_revocation: 'Token usato dopo la revoca',

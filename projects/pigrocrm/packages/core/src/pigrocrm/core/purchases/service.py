@@ -15,6 +15,7 @@ from pigrocrm.core.fields.custom import merge_custom
 from pigrocrm.core.fields.schemas import EntityType
 from pigrocrm.core.fields.service import FieldDefinitionService
 from pigrocrm.core.fields.validator import validate_custom_fields
+from pigrocrm.core.fiscal.iva_lock import IvaPeriodLockService
 from pigrocrm.core.fiscal.pack import PACK_IT_FLAT_RATE
 from pigrocrm.core.fiscal.repository import FiscalProfileRepository
 from pigrocrm.core.inbox.filing import file_as_purchase, resolve_original
@@ -101,6 +102,7 @@ class PurchaseService:
         self.fiscal = FiscalProfileRepository(session)
         self.categories = CostCategoryService(session)
         self.locks = PeriodLockService(session)
+        self.iva_locks = IvaPeriodLockService(session)
         self.fields = FieldDefinitionService(session)
         self.activities = ActivityService(session)
 
@@ -472,6 +474,15 @@ class PurchaseService:
         if values["kind"] in VAT_KINDS and values["iva_period"] is None:
             values["iva_period"] = values["received_on"] or values["date"]
 
+    def _assert_register_writable(self, purchase: Purchase) -> None:
+        """Refuses a write to a purchase that is in the purchase register of a closed IVA period
+        (REB-1036): a registered invoice or credit note, placed by its `iva_period`. One that is
+        cancelled, or has no VAT (a receipt, an expense), is in no register."""
+        if purchase.status == "registered":
+            self.iva_locks.assert_writable(
+                ENTITY, "iva_period", purchase.legal_entity_id, purchase.iva_period
+            )
+
     # --- writes -------------------------------------------------------------------------
 
     def create(self, data: PurchaseCreate, actor: Actor) -> PurchaseRead:
@@ -491,6 +502,7 @@ class PurchaseService:
         pack_id, pack_version, regime_code = self._buyer_pack(legal_entity_id)
         values = {name: getattr(data, name) for name in _DOCUMENT_FIELDS}
         self._default_iva_period(values)
+        self.iva_locks.assert_writable(ENTITY, "iva_period", legal_entity_id, values["iva_period"])
         self._check_document(values, data.vat_lines, pack_id=pack_id, own_id=None)
 
         purchase = self.repo.add(
@@ -604,6 +616,10 @@ class PurchaseService:
             else [VatLine.model_validate(line, from_attributes=True) for line in purchase.vat_lines]
         )
         self._default_iva_period(values)
+        # The register it is in and the one it is going to: leaving a closed period is a write
+        # into it as much as arriving in one.
+        self._assert_register_writable(purchase)
+        self.iva_locks.assert_writable(ENTITY, "iva_period", legal_entity_id, values["iva_period"])
         self._check_document(
             values, lines, pack_id=pack[0], own_id=purchase.id, kept_supplier=purchase.supplier_id
         )
@@ -657,6 +673,7 @@ class PurchaseService:
         if purchase.status == "cancelled":
             raise Conflict(ENTITY, "l'acquisto è già annullato", id=str(purchase_id))
         self.locks.assert_writable(ENTITY, "date", purchase.date)
+        self._assert_register_writable(purchase)
         purchase.status = "cancelled"
         self._refresh_recurring(purchase.supplier_id)
         self.activities.record(ENTITY, purchase.id, "cancelled", actor)
@@ -667,6 +684,7 @@ class PurchaseService:
         actor.require_write("delete_purchase")
         purchase = self._require(purchase_id)
         self.locks.assert_writable(ENTITY, "date", purchase.date)
+        self._assert_register_writable(purchase)
         purchase.deleted_at = datetime.now(UTC)
         self._refresh_recurring(purchase.supplier_id)
         self.activities.record(ENTITY, purchase.id, "deleted", actor)
@@ -677,6 +695,8 @@ class PurchaseService:
         purchase = self._require(purchase_id, include_deleted=True)
         self.locks.assert_writable(ENTITY, "date", purchase.date)
         was_deleted = purchase.deleted_at is not None
+        if was_deleted:
+            self._assert_register_writable(purchase)
         purchase.deleted_at = None
         if was_deleted:
             self._refresh_recurring(purchase.supplier_id)

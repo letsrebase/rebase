@@ -104,6 +104,9 @@ FORBIDDEN = (
     "list_iva_settlements",
     "list_iva_periods",
     "get_iva_register",
+    # Closing and reopening an IVA period (REB-1036), as `close_period` is.
+    "close_iva_period",
+    "reopen_iva_period",
     # The accountant's declared tax figures (REB-1006): an administrator's token with
     # `full_access` and no other.
     "set_declared_tax_figure",
@@ -330,6 +333,9 @@ FORBIDDEN_SERVICE_CALLS = (
     "unarchive_cost_category",
     "close_period",
     "reopen_period",
+    # `IvaPeriodLockService`'s two (REB-1036), behind the tools of the same name.
+    "close_iva_period",
+    "reopen_iva_period",
     "bind_to_invoice",
     "get_fiscal_estimate",
     "get_tax_calendar",

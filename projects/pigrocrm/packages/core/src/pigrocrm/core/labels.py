@@ -244,6 +244,7 @@ ENTITY_NOUN: dict[str, tuple[str, str]] = {
     "invitation": ("invito", "o"),
     "invoice": ("fattura", "a"),
     "invoice_artifact": ("file della fattura", "o"),
+    "iva_period_lock": ("chiusura del periodo IVA", "a"),
     "iva_settlement": ("liquidazione IVA", "a"),
     "recurring_expense": ("spesa ricorrente", "a"),
     "legal_entity": ("azienda", "a"),

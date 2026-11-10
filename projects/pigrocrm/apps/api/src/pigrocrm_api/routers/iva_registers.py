@@ -4,8 +4,8 @@ read only.
 The periods carry the settlement's ladder (stored, or the running figures of an open period) and
 the registers list the documents behind it; nothing here computes, and `admin` is enforced by the
 service: the figures are the fiscal position, and a router containing an authorisation `if` is a
-router the MCP adapter cannot reuse. Closing a period is not here: the IVA period lock has no
-table yet.
+router the MCP adapter cannot reuse. Each period says whether it is closed; closing and reopening
+it is `routers/iva_period_locks.py`.
 """
 
 from typing import Annotated
