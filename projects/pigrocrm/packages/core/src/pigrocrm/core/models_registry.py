@@ -11,6 +11,13 @@ from pigrocrm.core.auth.models import User, UserLegalEntity  # noqa: F401
 from pigrocrm.core.auth.pat_models import PersonalAccessToken  # noqa: F401
 from pigrocrm.core.auth.refresh_models import RefreshToken  # noqa: F401
 from pigrocrm.core.automations.models import AutomationConfig  # noqa: F401
+from pigrocrm.core.bank.models import (  # noqa: F401
+    BankAccount,
+    BankMovement,
+    BankStatement,
+    OrganizationIban,
+    StatementMovement,
+)
 from pigrocrm.core.collaborators.models import Engagement  # noqa: F401
 from pigrocrm.core.contact_points.models import ContactPoint  # noqa: F401
 from pigrocrm.core.contract_emails.models import ContractEmailTemplate  # noqa: F401

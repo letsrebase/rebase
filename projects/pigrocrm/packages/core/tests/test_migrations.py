@@ -3252,3 +3252,30 @@ def test_0081_adds_the_hub_freelancer_id_and_the_engagements_table_and_downgrade
         assert _collaborators_shape(url) == (False, False, False)
         upgrade(config, "0081")
         assert _collaborators_shape(url)[0] is True
+
+
+_BANK_TABLES = {
+    "bank_accounts",
+    "bank_statements",
+    "bank_movements",
+    "statement_movements",
+    "organization_ibans",
+}
+
+
+def test_0084_adds_the_bank_tables_with_row_security_and_downgrade_removes_them(
+    pigrocrm_postgres: Any,
+) -> None:
+    """REB-998: five new tables, each with the row-level policy forced; nothing is backfilled,
+    so both ways are a pure create and drop."""
+    with pigrocrm_postgres.fresh_container() as container:
+        url = container.get_connection_url()
+        config = _alembic_config(url)
+        upgrade(config, "0081")
+        assert _tables_shape(url, _BANK_TABLES) == (set(), set(), set())
+        upgrade(config, "0084")
+        assert _tables_shape(url, _BANK_TABLES) == (_BANK_TABLES, _BANK_TABLES, _BANK_TABLES)
+        downgrade(config, "0081")
+        assert _tables_shape(url, _BANK_TABLES) == (set(), set(), set())
+        upgrade(config, "0084")
+        assert _tables_shape(url, _BANK_TABLES)[0] == _BANK_TABLES

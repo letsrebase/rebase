@@ -176,6 +176,19 @@ and a dependent share the legal entity of their item by composite foreign key, s
 tables is the plain `legal_entity_visible(legal_entity_id)`. A source kind is a string validated in
 code (`SOURCE_KINDS`), never a CHECK.
 
+**Bank accounts, statements and movements are written by `BankStatementService` (REB-998).**
+`core/bank/` holds `bank_accounts` (ours, always a legal entity), `bank_statements`, `bank_movements`
+and `statement_movements` (which statement carries which movement), plus `organization_ibans`, the
+counterparties' account list (`OrganizationIbanService`; a movement's proposal waits `proposed`).
+A statement and a movement share their account's legal entity by composite foreign key. A reader is
+a function from bytes to `ParsedStatement` registered with `readers.register_reader`; it knows
+nothing of accounts or dedup, and `import_statement` does the rest and never commits. A movement's
+`dedup_key` (`dedup.py`) is the bank's reference when it has one, otherwise date, amount, description
+hash and the occurrence index within the file, unique per account, so the same movement in two
+statements is one row and two identical same-day payments are two. The covered period is the file's
+or the one a person sets; it is never guessed. The tables are the `cash` module's data and no tool or
+route reads them yet.
+
 **Engagements with freelancers are the `collaborators` module and every read and write is an administrator's (REB-976).** `core/collaborators/` holds the `engagements` table (the CRM's name for the hub's match; `hub_match_id` is the import's idempotency key), the freelancer's identity (`organizations.hub_freelancer_id`, unique, only on an organization with the role `freelancer`, set by an admin and never changed; the fiscal kind is `supplier_kind` limited to `professional`, `flat_rate` and `occasional`) and `FreelancerService` (availability, `set_tax_data`). The module is **off** unless the space switches it on or already holds engagements (`Module.asks_onboarding`: an answer the onboarding does not ask yet reads as off even with no profile); `ensure-space-defaults` writes it off for every profile, and the release that moves the hub's matches is the one that writes it on for rebase's own space. `days_per_week` is 0.5 to 5 in half steps and null only on an imported engagement; availability counts **active** engagements only, a week touched by one with no `days_per_week` is `unknown` («sconosciuta») and never `free`, and a part-week counts in full. A new engagement is saved with a warning, never refused, when it overlaps a live one of the same freelancer (`overlap`, and `over_capacity` above five days a week). The payment rule is `fixed_term` (`payment_days` 1 to 60, 30 from month end) or `on_collection` (`collection_days` 1 to 60 and **no** fixed term: the printed clause names no floor); the schema holds both, and the due-date arithmetic and the letter are later cards. States and edges are `rules.TRANSITIONS`; once an engagement is out for signature only `days_per_week` and its client, deal and contract change. Cancelling, closing, creating and the tax data are `FULL_ACCESS_ACTIONS`; the signature that makes an engagement `active` is `activate_engagement`, a person's act. The table has no legal entity of its own: reads join the freelancer's organization so its row policy hides an engagement from a scoped admin.
 
 **An issued invoice's due item is the truth, and the invoice's `payment_status` and `payment_date`
