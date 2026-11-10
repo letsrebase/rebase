@@ -159,6 +159,8 @@ CORE_TOOLS = frozenset(
         "annul_invoice",
         "mark_invoice_transmitted",
         "export_invoice_xml",
+        "build_accountant_export",
+        "get_export_download_url",
         "review_invoice_import",
         "confirm_invoice_import",
         "import_issued_invoice",

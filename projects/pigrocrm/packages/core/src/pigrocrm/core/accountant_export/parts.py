@@ -7,8 +7,10 @@ source is not built yet, so the index says so instead of staying silent about th
 """
 
 import datetime as dt
+import itertools
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Literal
 
 from sqlalchemy.orm import Session
@@ -32,6 +34,43 @@ class Period:
 
 
 @dataclass(frozen=True)
+class BundleFile:
+    """One file of the ZIP, `path` relative to the part's folder. Small generated files (CSVs)
+    hold their `data`; an original file out of the storage sits on disk in the build's spool
+    (`source`) and is read in chunks when the ZIP is written, so a year of PDFs is never in
+    memory at once."""
+
+    path: str
+    data: bytes = b""
+    source: Path | None = None
+    size: int = -1
+
+    def __post_init__(self) -> None:
+        if self.size < 0:
+            object.__setattr__(
+                self, "size", self.source.stat().st_size if self.source else len(self.data)
+            )
+
+    def under(self, folder: str) -> "BundleFile":
+        return BundleFile(f"{folder}{self.path}", self.data, self.source, self.size)
+
+
+class Spool:
+    """A directory for the files a build holds on disk instead of in memory. The caller owns
+    it (a temporary directory that goes with the build); a part asks it to keep a file and
+    gets back the `BundleFile` that points at it."""
+
+    def __init__(self, directory: Path) -> None:
+        self.directory = directory
+        self._numbers = itertools.count()
+
+    def keep(self, path: str, data: bytes) -> BundleFile:
+        target = self.directory / f"{next(self._numbers):08d}"
+        target.write_bytes(data)
+        return BundleFile(path, source=target, size=len(data))
+
+
+@dataclass(frozen=True)
 class PartContext:
     """What a builder reads. `legal_entity` is `None` only for a `shared` part."""
 
@@ -46,14 +85,12 @@ class PartContext:
     # The purchases of no legal entity belong to this entity's export: the space has only one
     # legal entity and no all-entities export is being built, so «shared» can only mean it.
     owns_shared_purchases: bool = False
+    # Where the original files of the bundle wait on disk; `None` keeps them in memory.
+    spool: Spool | None = None
 
-
-@dataclass(frozen=True)
-class BundleFile:
-    """One file of the ZIP, `path` relative to the part's folder."""
-
-    path: str
-    data: bytes
+    def attach(self, path: str, data: bytes) -> BundleFile:
+        """An original file for the bundle: on the spool when there is one."""
+        return self.spool.keep(path, data) if self.spool else BundleFile(path, data)
 
 
 @dataclass(frozen=True)

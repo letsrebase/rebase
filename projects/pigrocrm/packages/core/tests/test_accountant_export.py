@@ -13,13 +13,17 @@ import csv
 import datetime as dt
 import io
 import zipfile
+from dataclasses import dataclass
 from decimal import Decimal
+from typing import Any
 from uuid import UUID, uuid4
 
 import pytest
 from sqlalchemy.orm import Session
 
 from conftest import _invoice_service
+from pigrocrm.core.accountant_export.index import ExportIndex
+from pigrocrm.core.accountant_export.models import AccountantExportRow
 from pigrocrm.core.accountant_export.parts import (
     BundleFile,
     IndexEntry,
@@ -27,9 +31,18 @@ from pigrocrm.core.accountant_export.parts import (
     PartDefinition,
     PartOutput,
     Period,
+    Spool,
 )
 from pigrocrm.core.accountant_export.registry import PARTS, UNAVAILABLE
+from pigrocrm.core.accountant_export.retention import (
+    RETENTION_MONTHS,
+    ExportRetention,
+    RetentionReport,
+    add_months,
+)
+from pigrocrm.core.accountant_export.schemas import ExportRead
 from pigrocrm.core.accountant_export.service import AccountantExportService
+from pigrocrm.core.activities.models import Activity
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.config import get_settings
 from pigrocrm.core.documents.service import DocumentService
@@ -72,9 +85,33 @@ def invoices(db_session: Session, local_storage: LocalFileStorage) -> InvoiceSer
     return service
 
 
+@dataclass
+class Built:
+    """What a build stored, read back: the ZIP when it is one, the index it wrote and the
+    export row's answer."""
+
+    filename: str
+    content: bytes
+    index: ExportIndex
+    stored: ExportRead
+
+
+class Exports:
+    """The service, reading each single-ZIP export back from the storage so a test can open it."""
+
+    def __init__(self, service: AccountantExportService) -> None:
+        self.service = service
+
+    def build(self, *args: Any, **kwargs: Any) -> Built:
+        stored = self.service.build_accountant_export(*args, **kwargs)
+        assert len(stored.export.parts) == 1
+        data, _, filename = self.service.download_part(stored.export.id, 1, ADMIN)
+        return Built(filename, data, stored.index, stored.export)
+
+
 @pytest.fixture
-def exports(db_session: Session, local_storage: LocalFileStorage) -> AccountantExportService:
-    return AccountantExportService(db_session, local_storage, get_settings())
+def exports(db_session: Session, local_storage: LocalFileStorage) -> Exports:
+    return Exports(AccountantExportService(db_session, local_storage, get_settings()))
 
 
 def _customer(session: Session, name: str = "Acme S.r.l.") -> Organization:
@@ -140,7 +177,7 @@ def _text(archive: zipfile.ZipFile, name: str) -> str:
 
 
 def test_a_quarter_carries_every_built_part_and_an_index_that_names_each_one(
-    db_session: Session, invoices: InvoiceService, exports: AccountantExportService
+    db_session: Session, invoices: InvoiceService, exports: Exports
 ) -> None:
     acme = _customer(db_session)
     first = _issue(invoices, acme, "1000.00", D(2026, 2, 10))
@@ -149,7 +186,11 @@ def test_a_quarter_carries_every_built_part_and_an_index_that_names_each_one(
 
     export = exports.build(Q1, ADMIN, now=NOW)
 
-    assert export.filename == "commercialista-studio-rossi-2026-01-01_2026-03-31.zip"
+    assert (
+        export.filename
+        == "commercialista-studio-rossi-2026-01-01_2026-03-31-20260402t093000z-"
+        + (export.stored.id.hex[-8:] + ".zip")
+    )
     archive = _open(export.content)
     names = archive.namelist()
     assert "indice.csv" in names
@@ -172,7 +213,7 @@ def test_a_quarter_carries_every_built_part_and_an_index_that_names_each_one(
 
 
 def test_the_index_is_a_csv_with_the_row_counts_and_the_reasons(
-    db_session: Session, invoices: InvoiceService, exports: AccountantExportService
+    db_session: Session, invoices: InvoiceService, exports: Exports
 ) -> None:
     acme = _customer(db_session)
     _issue(invoices, acme, "1000.00", D(2026, 2, 10))
@@ -194,7 +235,7 @@ def test_the_index_is_a_csv_with_the_row_counts_and_the_reasons(
 
 
 def test_the_sales_register_has_the_vat_columns_and_totals(
-    db_session: Session, invoices: InvoiceService, exports: AccountantExportService
+    db_session: Session, invoices: InvoiceService, exports: Exports
 ) -> None:
     acme = _customer(db_session)
     _issue(invoices, acme, "1000.00", D(2026, 2, 10))
@@ -229,7 +270,7 @@ def test_the_sales_register_has_the_vat_columns_and_totals(
 
 
 def test_a_vat_invoice_gets_a_row_per_rate_with_the_vat_of_each(
-    db_session: Session, invoices: InvoiceService, exports: AccountantExportService
+    db_session: Session, invoices: InvoiceService, exports: Exports
 ) -> None:
     """The recap the XML carries: a row per `(rate, nature)`, the VAT rounded from the group."""
     from pigrocrm.core.invoices.models import InvoiceLine
@@ -289,7 +330,7 @@ def test_a_vat_invoice_gets_a_row_per_rate_with_the_vat_of_each(
 
 
 def test_annulled_numbers_and_declared_gaps_are_listed_between_the_numbers_of_the_period(
-    db_session: Session, invoices: InvoiceService, exports: AccountantExportService
+    db_session: Session, invoices: InvoiceService, exports: Exports
 ) -> None:
     acme = _customer(db_session)
     _issue(invoices, acme, "100.00", D(2026, 2, 1))
@@ -333,7 +374,7 @@ def test_annulled_numbers_and_declared_gaps_are_listed_between_the_numbers_of_th
 
 
 def test_a_row_lands_in_the_period_by_its_own_date_rule(
-    db_session: Session, invoices: InvoiceService, exports: AccountantExportService
+    db_session: Session, invoices: InvoiceService, exports: Exports
 ) -> None:
     """A monthly export carries the invoices dated in the month and no others."""
     acme = _customer(db_session)
@@ -349,7 +390,7 @@ def test_a_row_lands_in_the_period_by_its_own_date_rule(
 
 
 def test_an_invoice_with_no_stored_file_is_listed_by_number_in_the_index(
-    db_session: Session, invoices: InvoiceService, exports: AccountantExportService
+    db_session: Session, invoices: InvoiceService, exports: Exports
 ) -> None:
     acme = _customer(db_session)
     _issue(invoices, acme, "100.00", D(2026, 2, 1))
@@ -367,7 +408,7 @@ def test_an_invoice_with_no_stored_file_is_listed_by_number_in_the_index(
 
 
 def test_the_open_items_are_those_of_the_period_end_and_the_payments_those_booked_in_it(
-    db_session: Session, invoices: InvoiceService, exports: AccountantExportService
+    db_session: Session, invoices: InvoiceService, exports: Exports
 ) -> None:
     acme = _customer(db_session)
     paid_in_period = _issue(invoices, acme, "1000.00", D(2026, 1, 10), files=False)
@@ -410,7 +451,7 @@ def _items_of(session: Session):
 
 
 def test_the_sales_register_is_omitted_for_a_company_outside_italy_and_the_index_says_why(
-    db_session: Session, invoices: InvoiceService, exports: AccountantExportService
+    db_session: Session, invoices: InvoiceService, exports: Exports
 ) -> None:
     entity = LegalEntityRepository(db_session).default()
     assert entity is not None
@@ -475,7 +516,7 @@ def _second_entity(session: Session) -> LegalEntity:
 
 
 def test_an_all_entities_export_has_a_folder_per_entity_and_one_index(
-    db_session: Session, invoices: InvoiceService, exports: AccountantExportService
+    db_session: Session, invoices: InvoiceService, exports: Exports
 ) -> None:
     acme = _customer(db_session)
     _issue(invoices, acme, "100.00", D(2026, 2, 1))
@@ -484,7 +525,7 @@ def test_an_all_entities_export_has_a_folder_per_entity_and_one_index(
     export = exports.build(Q1, ADMIN, all_entities=True, now=NOW)
     names = _open(export.content).namelist()
 
-    assert export.filename == "commercialista-tutte-le-aziende-2026-01-01_2026-03-31.zip"
+    assert export.filename.startswith("commercialista-tutte-le-aziende-2026-01-01_2026-03-31-")
     assert "studio-rossi/vendite/registro-vendite.csv" in names
     assert "rebase-ltd/pagamenti/pagamenti.csv" in names
     assert names.count("indice.csv") == 1
@@ -492,9 +533,7 @@ def test_an_all_entities_export_has_a_folder_per_entity_and_one_index(
     assert sections == {"Studio Rossi", "Rebase Ltd", "Acquisti condivisi"}
 
 
-def test_a_space_with_two_entities_asks_which_one(
-    db_session: Session, exports: AccountantExportService
-) -> None:
+def test_a_space_with_two_entities_asks_which_one(db_session: Session, exports: Exports) -> None:
     other = _second_entity(db_session)
 
     with pytest.raises(ValidationFailed):
@@ -504,12 +543,12 @@ def test_a_space_with_two_entities_asks_which_one(
 
 
 @pytest.mark.parametrize("actor", [COLLABORATOR, Actor(id=uuid4(), type="user", role="readonly")])
-def test_only_an_admin_builds_an_export(exports: AccountantExportService, actor: Actor) -> None:
+def test_only_an_admin_builds_an_export(exports: Exports, actor: Actor) -> None:
     with pytest.raises(PermissionDenied):
         exports.build(Q1, actor, now=NOW)
 
 
-def test_an_agent_needs_full_access(exports: AccountantExportService) -> None:
+def test_an_agent_needs_full_access(exports: Exports) -> None:
     with pytest.raises(AgentForbidden):
         exports.build(Q1, Actor(id=uuid4(), type="mcp", role="admin"), now=NOW)
     full = Actor(id=uuid4(), type="mcp", role="admin", full_access=True)
@@ -517,7 +556,7 @@ def test_an_agent_needs_full_access(exports: AccountantExportService) -> None:
 
 
 def test_a_scoped_admin_cannot_export_an_entity_outside_their_scope_or_all_of_them(
-    db_session: Session, exports: AccountantExportService
+    db_session: Session, exports: Exports
 ) -> None:
     default = LegalEntityRepository(db_session).default()
     assert default is not None
@@ -532,7 +571,7 @@ def test_a_scoped_admin_cannot_export_an_entity_outside_their_scope_or_all_of_th
 
 
 def test_all_entities_and_one_entity_are_not_asked_together(
-    db_session: Session, exports: AccountantExportService
+    db_session: Session, exports: Exports
 ) -> None:
     default = LegalEntityRepository(db_session).default()
     assert default is not None
@@ -545,18 +584,18 @@ def test_all_entities_and_one_entity_are_not_asked_together(
     [(D(2026, 3, 31), D(2026, 1, 1)), (D(2026, 1, 1), D(2027, 1, 2))],
 )
 def test_a_period_is_ordered_and_no_longer_than_a_year(
-    exports: AccountantExportService, date_from: dt.date, date_to: dt.date
+    exports: Exports, date_from: dt.date, date_to: dt.date
 ) -> None:
     with pytest.raises(ValidationFailed):
         exports.build(Period(date_from, date_to), ADMIN, now=NOW)
 
 
-def test_a_whole_year_is_one_period(exports: AccountantExportService) -> None:
+def test_a_whole_year_is_one_period(exports: Exports) -> None:
     exports.build(Period(D(2028, 1, 1), D(2028, 12, 31)), ADMIN, now=NOW)  # a leap year
 
 
 def test_equal_inputs_make_the_same_bytes(
-    db_session: Session, invoices: InvoiceService, exports: AccountantExportService
+    db_session: Session, invoices: InvoiceService, exports: Exports
 ) -> None:
     _issue(invoices, _customer(db_session), "100.00", D(2026, 2, 1))
 
@@ -614,7 +653,7 @@ def _buy(
 def test_receipts_and_expenses_are_listed_with_their_files_and_received_invoices_are_filed(
     db_session: Session,
     local_storage: LocalFileStorage,
-    exports: AccountantExportService,
+    exports: Exports,
     seeded_category_id: UUID,
 ) -> None:
     entity = LegalEntityRepository(db_session).default()
@@ -677,7 +716,7 @@ def test_receipts_and_expenses_are_listed_with_their_files_and_received_invoices
 
 def test_a_shared_purchase_is_in_the_all_entities_export_only(
     db_session: Session,
-    exports: AccountantExportService,
+    exports: Exports,
     seeded_category_id: UUID,
 ) -> None:
     entity = LegalEntityRepository(db_session).default()
@@ -707,7 +746,7 @@ def test_a_shared_purchase_is_in_the_all_entities_export_only(
 
 def test_a_cancelled_purchase_counts_nowhere(
     db_session: Session,
-    exports: AccountantExportService,
+    exports: Exports,
     seeded_category_id: UUID,
 ) -> None:
     entity = LegalEntityRepository(db_session).default()
@@ -726,7 +765,9 @@ def test_the_purchase_parts_are_omitted_when_the_purchases_module_is_off(
     db_session: Session, local_storage: LocalFileStorage
 ) -> None:
     settings = get_settings().model_copy(update={"module_purchases": False})
-    export = AccountantExportService(db_session, local_storage, settings).build(Q1, ADMIN, now=NOW)
+    export = Exports(AccountantExportService(db_session, local_storage, settings)).build(
+        Q1, ADMIN, now=NOW
+    )
 
     omitted = {line.key: line.reason for line in export.index.parts if line.status == "omitted"}
     assert omitted == {
@@ -737,7 +778,7 @@ def test_the_purchase_parts_are_omitted_when_the_purchases_module_is_off(
 
 
 def test_each_declared_gap_is_listed_in_exactly_one_of_two_monthly_exports(
-    db_session: Session, exports: AccountantExportService
+    db_session: Session, exports: Exports
 ) -> None:
     acme = _customer(db_session)
     entity = LegalEntityRepository(db_session).default()
@@ -773,7 +814,7 @@ def test_each_declared_gap_is_listed_in_exactly_one_of_two_monthly_exports(
 
 
 def test_an_open_item_is_read_as_of_the_period_end_whatever_happened_to_it_after(
-    db_session: Session, invoices: InvoiceService, exports: AccountantExportService
+    db_session: Session, invoices: InvoiceService, exports: Exports
 ) -> None:
     from pigrocrm.core.due_items.schemas import DueItemCreate
 
@@ -819,7 +860,7 @@ def test_an_open_item_is_read_as_of_the_period_end_whatever_happened_to_it_after
 
 
 def test_in_a_space_with_one_legal_entity_the_shared_purchases_are_that_entitys(
-    db_session: Session, exports: AccountantExportService, seeded_category_id: UUID
+    db_session: Session, exports: Exports, seeded_category_id: UUID
 ) -> None:
     """`PurchaseService` leaves a receipt with no deal and no entity «shared», and with one
     legal entity that can only mean it: its export carries the receipt, and the all-entities
@@ -837,7 +878,7 @@ def test_in_a_space_with_one_legal_entity_the_shared_purchases_are_that_entitys(
 def test_two_received_invoices_with_one_number_and_one_title_keep_both_files(
     db_session: Session,
     local_storage: LocalFileStorage,
-    exports: AccountantExportService,
+    exports: Exports,
     seeded_category_id: UUID,
 ) -> None:
     entity = LegalEntityRepository(db_session).default()
@@ -869,3 +910,296 @@ def test_two_received_invoices_with_one_number_and_one_title_keep_both_files(
 
     assert len(set(names)) == len(names)
     assert len([name for name in names if name.startswith("fatture-ricevute/")]) == 2
+
+
+# --- stored exports (REB-1012) ---------------------------------------------------------
+
+
+def _stored(export: Built) -> list[str]:
+    return [part.download_url for part in export.stored.parts]
+
+
+def test_building_the_same_period_twice_keeps_both_exports(
+    db_session: Session,
+    invoices: InvoiceService,
+    exports: Exports,
+    local_storage: LocalFileStorage,
+) -> None:
+    _issue(invoices, _customer(db_session), "100.00", D(2026, 2, 1))
+
+    first = exports.build(Q1, ADMIN, now=NOW)
+    second = exports.build(Q1, ADMIN, now=NOW)
+
+    assert first.stored.id != second.stored.id
+    assert first.filename != second.filename
+    keys = {row.prefix: row.parts[0]["key"] for row in db_session.query(AccountantExportRow).all()}
+    assert len(keys) == 2
+    for key in keys.values():
+        assert local_storage.get(key).startswith(b"PK")
+    assert first.content == second.content
+    # The prefix is the one the Drive delivery names: entity, period, then the moment.
+    assert all(
+        prefix.startswith("commercialista/studio-rossi/2026-01-01_2026-03-31/20260402t093000z-")
+        for prefix in keys
+    )
+
+
+def test_a_build_leaves_a_trace_and_a_snapshot_of_its_index(
+    db_session: Session, invoices: InvoiceService, exports: Exports
+) -> None:
+    _issue(invoices, _customer(db_session), "100.00", D(2026, 2, 1))
+
+    built = exports.build(Q1, ADMIN, now=NOW)
+
+    row = db_session.get(AccountantExportRow, built.stored.id)
+    assert row is not None
+    assert row.expires_at == dt.datetime(2027, 5, 2, 9, 30, tzinfo=dt.UTC)
+    assert {line["key"] for line in row.checklist["parts"]} >= {"sales_register"}
+    kinds = [a.kind for a in db_session.query(Activity).filter_by(entity_id=row.id)]
+    assert kinds == ["accountant_export_built"]
+
+
+def test_a_bundle_over_the_ceiling_comes_out_in_parts_that_each_open_alone(
+    db_session: Session,
+    invoices: InvoiceService,
+    local_storage: LocalFileStorage,
+    exports: Exports,
+) -> None:
+    customer = _customer(db_session)
+    for day in range(1, 6):
+        _issue(invoices, customer, "100.00", D(2026, 2, day))
+    whole = exports.build(Q1, ADMIN, now=NOW)
+    sizes = {name: info.file_size for name, info in _sizes(whole.content).items()}
+    ceiling = max(sizes.values()) + 1
+    assert sum(sizes.values()) > 2 * ceiling
+
+    service = AccountantExportService(db_session, local_storage, get_settings())
+    service.part_limit = ceiling
+    stored = service.build_accountant_export(Q1, ADMIN, now=NOW)
+
+    parts = stored.export.parts
+    assert len(parts) > 1
+    assert [p.filename.split("-part-")[1] for p in parts] == [
+        f"{n}-of-{len(parts)}.zip" for n in range(1, len(parts) + 1)
+    ]
+    members: list[str] = []
+    for part in parts:
+        data, _, _ = service.download_part(stored.export.id, part.part, ADMIN)
+        archive = _open(data)
+        assert archive.testzip() is None
+        members.extend(archive.namelist())
+        # a part is never over the ceiling unless one file alone is
+        body = [i for i in archive.infolist() if i.filename != "indice.csv"]
+        assert sum(i.file_size for i in body) <= ceiling
+    assert sorted(members) == sorted(whole_names := _open(whole.content).namelist())
+    assert whole_names.count("indice.csv") == 1
+    index = _text(_open(service.download_part(stored.export.id, 1, ADMIN)[0]), "indice.csv")
+    assert "Archivio" in index and parts[1].filename in index
+
+
+def _sizes(content: bytes) -> dict[str, zipfile.ZipInfo]:
+    return {info.filename: info for info in _open(content).infolist()}
+
+
+def test_originals_wait_on_disk_while_the_bundle_is_built(
+    db_session: Session,
+    invoices: InvoiceService,
+    exports: Exports,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _issue(invoices, _customer(db_session), "100.00", D(2026, 2, 1))
+    kept: list[str] = []
+    original = Spool.keep
+
+    def keep(self: Spool, path: str, data: bytes) -> BundleFile:
+        file = original(self, path, data)
+        assert file.source is not None and file.source.read_bytes() == data
+        kept.append(path)
+        return file
+
+    monkeypatch.setattr(Spool, "keep", keep)
+
+    built = exports.build(Q1, ADMIN, now=NOW)
+
+    assert len(kept) == 2  # the invoice's XML and PDF
+    names = _open(built.content).namelist()
+    assert all(any(n.endswith(path) for n in names) for path in kept)
+
+
+def test_a_failed_put_leaves_no_row_and_no_file(
+    db_session: Session, invoices: InvoiceService, local_storage: LocalFileStorage
+) -> None:
+    _issue(invoices, _customer(db_session), "100.00", D(2026, 2, 1))
+
+    class Failing:
+        def __init__(self) -> None:
+            self.put_keys: list[str] = []
+            self.deleted: list[str] = []
+
+        def put(self, key: str, data: bytes, content_type: str) -> None:
+            self.put_keys.append(key)
+            if len(self.put_keys) == 2:
+                raise OSError("disk full")
+            local_storage.put(key, data, content_type)
+
+        def get(self, key: str) -> bytes:
+            return local_storage.get(key)
+
+        def delete(self, key: str) -> None:
+            self.deleted.append(key)
+            local_storage.delete(key)
+
+        def signed_url(self, key: str, ttl: dt.timedelta) -> str | None:
+            return None
+
+    storage = Failing()
+    service = AccountantExportService(db_session, storage, get_settings())
+    service.part_limit = 1  # one file a part: more than one part
+
+    with pytest.raises(OSError):
+        service.build_accountant_export(Q1, ADMIN, now=NOW)
+
+    assert db_session.query(AccountantExportRow).count() == 0
+    assert storage.deleted == storage.put_keys[:1]
+
+
+def test_an_export_is_deleted_after_thirteen_months_and_leaves_a_trace(
+    db_session: Session,
+    invoices: InvoiceService,
+    exports: Exports,
+    local_storage: LocalFileStorage,
+) -> None:
+    _issue(invoices, _customer(db_session), "100.00", D(2026, 2, 1))
+    built = exports.build(Q1, ADMIN, now=NOW)
+    key = db_session.get(AccountantExportRow, built.stored.id).parts[0]["key"]  # type: ignore[union-attr]
+    retention = ExportRetention(db_session, lambda: local_storage)
+
+    early = retention.run(now=dt.datetime(2027, 5, 1, tzinfo=dt.UTC), dry_run=False)
+    assert early == RetentionReport(deleted=0)
+    assert local_storage.get(key).startswith(b"PK")
+
+    later = dt.datetime(2027, 5, 3, tzinfo=dt.UTC)
+    assert retention.run(now=later, dry_run=True) == RetentionReport(deleted=1)
+    assert local_storage.get(key).startswith(b"PK")
+    assert retention.run(now=later, dry_run=False) == RetentionReport(deleted=1)
+
+    with pytest.raises(NotFound):
+        local_storage.get(key)
+    row = db_session.get(AccountantExportRow, built.stored.id)
+    assert row is not None and row.deleted_at == later
+    kinds = [
+        a.kind for a in db_session.query(Activity).filter_by(entity_id=row.id).order_by(Activity.id)
+    ]
+    assert kinds == ["accountant_export_built", "accountant_export_deleted"]
+    # Nothing left to fetch, and it is said so; a second pass finds nothing.
+    service = AccountantExportService(db_session, local_storage, get_settings())
+    assert service.get_export_download_url(row.id, ADMIN).parts == []
+    with pytest.raises(NotFound):
+        service.download_part(row.id, 1, ADMIN)
+    assert retention.run(now=later, dry_run=False) == RetentionReport(deleted=0)
+
+
+def test_an_export_whose_files_cannot_be_deleted_is_kept_for_the_next_pass(
+    db_session: Session, invoices: InvoiceService, exports: Exports
+) -> None:
+    _issue(invoices, _customer(db_session), "100.00", D(2026, 2, 1))
+    built = exports.build(Q1, ADMIN, now=NOW)
+
+    class Stuck:
+        def delete(self, key: str) -> None:
+            raise OSError("read only")
+
+    report = ExportRetention(db_session, lambda: Stuck()).run(  # type: ignore[arg-type,return-value]
+        now=dt.datetime(2027, 6, 1, tzinfo=dt.UTC), dry_run=False
+    )
+
+    assert report == RetentionReport(deleted=0, failed=1)
+    row = db_session.get(AccountantExportRow, built.stored.id)
+    assert row is not None and row.deleted_at is None
+
+
+@pytest.mark.parametrize(
+    ("start", "expected"),
+    [
+        (dt.datetime(2026, 4, 2, tzinfo=dt.UTC), dt.datetime(2027, 5, 2, tzinfo=dt.UTC)),
+        (dt.datetime(2026, 12, 31, tzinfo=dt.UTC), dt.datetime(2028, 1, 31, tzinfo=dt.UTC)),
+        (dt.datetime(2027, 1, 31, tzinfo=dt.UTC), dt.datetime(2028, 2, 29, tzinfo=dt.UTC)),
+        (dt.datetime(2026, 11, 30, tzinfo=dt.UTC), dt.datetime(2027, 12, 30, tzinfo=dt.UTC)),
+    ],
+)
+def test_thirteen_months_are_calendar_months(start: dt.datetime, expected: dt.datetime) -> None:
+    assert add_months(start, RETENTION_MONTHS) == expected
+
+
+def test_who_may_fetch_a_stored_export(
+    db_session: Session, exports: Exports, local_storage: LocalFileStorage
+) -> None:
+    default = LegalEntityRepository(db_session).default()
+    assert default is not None
+    other = _second_entity(db_session)
+    built = exports.build(Q1, ADMIN, other.id, now=NOW)
+    everything = exports.build(Q1, ADMIN, all_entities=True, now=NOW)
+    service = AccountantExportService(db_session, local_storage, get_settings())
+    scoped = Actor(id=uuid4(), type="user", role="admin", legal_entities=(default.id,))
+
+    with pytest.raises(NotFound):
+        service.get_export_download_url(built.stored.id, scoped)
+    with pytest.raises(ScopedAdmin):
+        service.get_export_download_url(everything.stored.id, scoped)
+    with pytest.raises(PermissionDenied):
+        service.get_export_download_url(built.stored.id, COLLABORATOR)
+    with pytest.raises(AgentForbidden):
+        service.get_export_download_url(
+            built.stored.id, Actor(id=uuid4(), type="mcp", role="admin")
+        )
+    full = Actor(id=uuid4(), type="mcp", role="admin", full_access=True)
+    read = service.get_export_download_url(built.stored.id, full)
+    assert read.parts[0].download_url == f"/api/accountant-export/exports/{read.id}/parts/1"
+    assert {e.id for e in service.list_exports(ADMIN)} == {built.stored.id, everything.stored.id}
+
+
+@pytest.mark.parametrize("name", ["Studio " + "Rossi e Bianchi " * 4, "Aux", "!!!"])
+def test_a_long_or_reserved_entity_name_still_makes_a_storable_key(
+    db_session: Session, exports: Exports, local_storage: LocalFileStorage, name: str
+) -> None:
+    entity = LegalEntityRepository(db_session).default()
+    assert entity is not None
+    entity.name = name[:80]
+    db_session.flush()
+
+    stored = exports.service.build_accountant_export(Q1, ADMIN, now=NOW)
+
+    key = db_session.get(AccountantExportRow, stored.export.id).parts[0]["key"]  # type: ignore[union-attr]
+    assert len(key) <= 255
+    assert local_storage.get(key).startswith(b"PK")
+
+
+def test_a_partly_deleted_export_is_finished_by_the_next_pass(
+    db_session: Session,
+    invoices: InvoiceService,
+    local_storage: LocalFileStorage,
+) -> None:
+    _issue(invoices, _customer(db_session), "100.00", D(2026, 2, 1))
+    service = AccountantExportService(db_session, local_storage, get_settings())
+    service.part_limit = 1
+    stored = service.build_accountant_export(Q1, ADMIN, now=NOW)
+    keys = [
+        part["key"]
+        for part in db_session.get(AccountantExportRow, stored.export.id).parts  # type: ignore[union-attr]
+    ]
+    assert len(keys) > 1
+
+    class FirstOnly:
+        def delete(self, key: str) -> None:
+            if key != keys[0]:
+                raise OSError("read only")
+            local_storage.delete(key)
+
+    later = dt.datetime(2027, 6, 1, tzinfo=dt.UTC)
+    first = ExportRetention(db_session, lambda: FirstOnly()).run(now=later, dry_run=False)  # type: ignore[arg-type,return-value]
+    assert first == RetentionReport(deleted=0, failed=1)
+    second = ExportRetention(db_session, lambda: local_storage).run(now=later, dry_run=False)
+    assert second == RetentionReport(deleted=1)
+    for key in keys:
+        with pytest.raises(NotFound):
+            local_storage.get(key)

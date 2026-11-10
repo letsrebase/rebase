@@ -120,7 +120,7 @@ class Row:
 # period/year shapes the paths ask for; every gate that runs after them is admin-gated,
 # so their values never matter -- but they must parse or FastAPI answers 422 and the
 # assertion goes vacuous.
-PATH_VALUES = {"year": "2026", "month": "1", "number": "1", "collection": "deals"}
+PATH_VALUES = {"year": "2026", "month": "1", "number": "1", "collection": "deals", "part": "1"}
 
 ROWS: list[Row] = [
     # --- notes thread of a deal, a customer, a person: `require_write` (notes/service.py) --
@@ -780,13 +780,16 @@ ROWS: list[Row] = [
     Row("PUT", "/api/users/{user_id}/rates", admin_only=True, body={}),
     # --- the fiscal estimate: the one *read* admin gates (analytics/service.py:552) --
     Row("GET", "/api/analytics/fiscal", admin_only=True, params={"year": 2026}),
-    # --- the accountant's period bundle: every fiscal figure of an entity (REB-1011) --
+    # --- the accountant's period bundle: every fiscal figure of an entity (REB-1011, REB-1012) --
     Row(
-        "GET",
-        "/api/accountant-export",
+        "POST",
+        "/api/accountant-export/exports",
         admin_only=True,
-        params={"date_from": "2026-01-01", "date_to": "2026-03-31"},
+        body={"date_from": "2026-01-01", "date_to": "2026-03-31"},
     ),
+    Row("GET", "/api/accountant-export/exports", admin_only=True),
+    Row("GET", "/api/accountant-export/exports/{export_id}", admin_only=True),
+    Row("GET", "/api/accountant-export/exports/{export_id}/parts/{part}", admin_only=True),
 ]
 
 # The routes the sweep never calls, each open on purpose. Every entry is a

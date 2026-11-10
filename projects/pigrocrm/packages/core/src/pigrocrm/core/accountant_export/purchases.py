@@ -90,7 +90,7 @@ def _file(
     short_id = _short_id(purchase)
     reference = f"{_safe(purchase.number)}-{short_id}" if purchase.number else short_id
     name = f"{purchase.date.isoformat()}-{reference}-{_safe(filename)}"
-    output.files.append(BundleFile(name, data))
+    output.files.append(ctx.attach(name, data))
     return name
 
 

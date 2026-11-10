@@ -13,7 +13,6 @@ Files are placed by the document date, the date printed on the invoice.
 from pydantic import ValidationError as PydanticValidationError
 
 from pigrocrm.core.accountant_export.parts import (
-    BundleFile,
     IndexEntry,
     MissingFile,
     PartContext,
@@ -51,6 +50,6 @@ def build_invoice_files(ctx: PartContext) -> PartOutput:
             except PydanticValidationError:
                 output.missing.append(MissingFile(label, kind.upper(), FROZEN_UNREADABLE))
             else:
-                output.files.append(BundleFile(filename, data))
+                output.files.append(ctx.attach(filename, data))
     output.entries.append(IndexEntry("", len(output.files), "files"))
     return output

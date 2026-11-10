@@ -33,6 +33,17 @@ next one (an entity a save refuses is a `fiscal packs not moved <n>` line on `st
 the pack can be changed by hand in the settings. A rehearsal of the day, `pigrocrm automations
 --dry-run --date YYYY-01-01`, counts what would move and writes nothing.
 
+## The accountant exports past 13 months (REB-1012)
+
+The same pass deletes the stored accountant exports older than 13 months
+(`accountant_export/retention.py`): their ZIP files leave the space's storage, the row in
+`accountant_exports` stays with `deleted_at`, and the activities carry
+`accountant_export_deleted`. A space with nothing due prints nothing; otherwise one line,
+`<slug>: accountant exports deleted <n>`. An export whose files the storage refuses to delete
+is a `accountant exports not deleted <n>` line on `stderr`, an exit status of 1, and a retry
+the next day. The storage is only opened when an export is due, so a space on Drive costs
+nothing on the 364 other days. `--dry-run` counts what would be deleted and writes nothing.
+
 ## 1. Installing the line (operator, on the server)
 
 Once a day, in `crontab -e` of the user that owns the deploy. Production's `DEPLOY_PATH` is

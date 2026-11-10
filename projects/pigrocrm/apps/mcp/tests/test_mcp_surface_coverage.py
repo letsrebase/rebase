@@ -138,6 +138,11 @@ _FORBIDDEN: dict[Method, str] = {
         "della quota e del consenso del titolare, e ne restituisce il testo senza "
         "archiviare niente; l'installazione puo' aprirla con `mcp_full_access`"
     ),
+    ("AccountantExportService", "build_accountant_export"): (
+        "REB-1012: every fiscal figure of an entity in one stored export (accountant export "
+        "design § 5); the tool is on a `full_access` token's surface only"
+    ),
+    ("AccountantExportService", "get_export_download_url"): "REB-1012: same as the build",
     ("DeclaredTaxFigureService", "set_declared_tax_figure"): (
         "REB-1006: the accountant's declared tax figures are the most sensitive data the "
         "product holds (taxes design § 5); the tool is on a `full_access` token's surface only"
@@ -796,7 +801,7 @@ _CONFIGURATION: dict[Method, str] = {
 #    the artefact out of the storage layer that versions and audits it.
 _BYTE: dict[Method, str] = {
     ("AnalyticsService", "build_year_csv"): "l'MCP restituisce URL, mai byte",
-    ("AccountantExportService", "build"): "l'MCP restituisce URL, mai byte",
+    ("AccountantExportService", "download_part"): "l'MCP restituisce URL, mai byte",
     ("DocumentService", "download"): "l'MCP restituisce URL, mai byte",
     ("InvoiceService", "download"): "l'MCP restituisce URL, mai byte",
     ("ContractRegisterService", "build_csv"): "l'MCP restituisce URL, mai byte",
@@ -854,6 +859,11 @@ _BYTE: dict[Method, str] = {
 #    survive being asked why, and the only way to keep that true is to delete the ones
 #    that do not the moment the tool is written.
 _COVERED_OR_HUMAN: dict[Method, str] = {
+    ("AccountantExportService", "list_exports"): (
+        "REB-1012: the export page lists the stored exports; an agent gets the id of the one it "
+        "needs from `build_accountant_export`, and the download path from "
+        "`get_export_download_url`"
+    ),
     ("ProposalService", "accept"): "REB-806: deciding a proposal is a person's act. The "
     "token that read the mail (text written by somebody else) would also have proposed it, "
     "and proposing then accepting in one turn closes the chain. `Actor.require_person` "

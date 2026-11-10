@@ -20,10 +20,11 @@ What they share, and the reason each differs from `gmail-sync`:
 """
 
 import sys
-from datetime import date, datetime, time
+from datetime import UTC, date, datetime, time
 from zoneinfo import ZoneInfo
 
 from pigrocrm.core import telemetry
+from pigrocrm.core.accountant_export.retention import ExportRetention, RetentionReport
 from pigrocrm.core.automations.daily import AutomationPass, PassReport
 from pigrocrm.core.cli.spaces_walk import (
     read_spaces,
@@ -43,6 +44,7 @@ from pigrocrm.core.reminders.jobs import AUTOMATIONS_JOB, DIGEST_JOB, REMINDER_P
 from pigrocrm.core.reminders.push import push_sender_from_settings
 from pigrocrm.core.reminders.run import ReminderOutcome, ReminderRun
 from pigrocrm.core.slack.client import slack_client_for
+from pigrocrm.core.storage.factory import storage_from_settings
 
 # Both forms of the same module, deliberately. `telemetry` as a module is what
 # `digest` calls `shutdown()` through, so the call resolves the attribute at run time and
@@ -262,7 +264,9 @@ def automations(settings: Settings, *, slug: str | None, day: date | None, dry_r
     On 1 January the pass also moves the active srl entities still on `it-standard` to `it-company`
     (`FiscalYearRoll`, REB-1005), one line per space; a rehearsal counts and writes nothing. A
     refusal there is its own line and an exit status, and leaves the rules' own report and
-    clock alone.
+    clock alone. Every day it also deletes the accountant exports older than 13 months
+    (`ExportRetention`, REB-1012): their files leave the storage and the export stays as the
+    trace; a space with none due prints nothing.
 
     `AutomationPass.run` decides; `--dry-run` runs it and rolls back, so the counters of a
     rehearsal are the real ones, and `--date` evaluates another day only with `--dry-run`:
@@ -279,6 +283,23 @@ def automations(settings: Settings, *, slug: str | None, day: date | None, dry_r
 
     for target in walk.targets:
         with space_engine(target.url) as engine:
+            # First, and apart from the rules: a space whose rules failed today still has its
+            # expired exports deleted, and is tried again tomorrow either way.
+            retention: RetentionReport | None = None
+            try:
+                with session_factory(engine)() as space:
+                    retention = ExportRetention(
+                        space,
+                        lambda: storage_from_settings(
+                            settings, session_factory=session_factory(engine)
+                        ),
+                    ).run(now=datetime.now(UTC), dry_run=dry_run)
+            except Exception as exc:  # noqa: BLE001 - reported below, the pass goes on
+                print(
+                    f"{target.label}: accountant exports not deleted ({type(exc).__name__})",
+                    file=sys.stderr,
+                )
+                failed = True
             try:
                 with session_factory(engine)() as space:
                     report = AutomationPass(space, settings).run(today=day, dry_run=dry_run)
@@ -290,6 +311,8 @@ def automations(settings: Settings, *, slug: str | None, day: date | None, dry_r
             except Exception as exc:  # noqa: BLE001 - one space must not stop the others
                 print(f"{target.label}: skipped ({type(exc).__name__})", file=sys.stderr)
                 failed = True
+                if retention is not None:
+                    _print_export_retention(target.label, retention, dry_run=dry_run)
                 if not dry_run:
                     record_job(
                         engine, AUTOMATIONS_JOB, target.label, type(exc).__name__, quiet=True
@@ -318,9 +341,24 @@ def automations(settings: Settings, *, slug: str | None, day: date | None, dry_r
                 file=sys.stderr,
             )
             failed = True
+        if retention is not None:
+            failed = _print_export_retention(target.label, retention, dry_run=dry_run) or failed
         if roll is not None:
             failed = _print_year_roll(target.label, roll, dry_run=dry_run) or failed
     return 1 if failed else 0
+
+
+def _print_export_retention(slug: str, report: RetentionReport, *, dry_run: bool) -> bool:
+    """The accountant exports past 13 months (REB-1012): a line only when there was something
+    to delete, so the log of a daily pass does not grow a line that is almost always zero. An
+    export whose files the storage would not delete goes to `stderr` as a count and an exit
+    status, and is tried again the next day."""
+    if report.deleted:
+        suffix = " (dry run)" if dry_run else ""
+        print(f"{slug}: accountant exports deleted {report.deleted}{suffix}")
+    if report.failed:
+        print(f"{slug}: accountant exports not deleted {report.failed}", file=sys.stderr)
+    return report.failed > 0
 
 
 def _print_year_roll(slug: str, roll: YearRollReport, *, dry_run: bool) -> bool:

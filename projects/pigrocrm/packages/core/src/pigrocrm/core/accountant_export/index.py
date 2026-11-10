@@ -3,12 +3,12 @@ attach. A CSV like the others (`csv_cells`), so the accountant opens it the same
 
 Three tables separated by a blank line: who and when, the parts (one line per file or
 folder, one line for a part left out), and the documents a part expected to attach and did
-not find.
+not find. A bundle cut into several archives adds a fourth: which archive holds each file.
 """
 
 import datetime as dt
 from dataclasses import dataclass, field
-from typing import Literal
+from typing import Any, Literal
 
 from pigrocrm.core.accountant_export.parts import IndexEntry, MissingFile, Period
 from pigrocrm.core.csv_cells import BOM, row_line, text_cell
@@ -34,6 +34,7 @@ PART_COLUMNS = (
     "Motivo",
 )
 MISSING_COLUMNS = ("Sezione", "Documento", "File", "Motivo")
+ARCHIVE_COLUMNS = ("File", "Archivio")
 
 
 @dataclass(frozen=True)
@@ -62,6 +63,36 @@ class ExportIndex:
     built_at: dt.datetime
     parts: list[PartLine] = field(default_factory=list)
     missing: list[MissingLine] = field(default_factory=list)
+    # Which archive holds each file, filled in only when the bundle is cut into several.
+    archives: dict[str, str] = field(default_factory=dict)
+
+    def snapshot(self) -> dict[str, Any]:
+        """The index as data, kept on the stored export (its checklist snapshot)."""
+        return {
+            "parts": [
+                {
+                    "section": line.section,
+                    "key": line.key,
+                    "label": line.label,
+                    "status": line.status,
+                    "date_rule": line.date_rule,
+                    "reason": line.reason,
+                    "path": line.entry.path if line.entry else None,
+                    "count": line.entry.count if line.entry else None,
+                    "unit": line.entry.unit if line.entry else None,
+                }
+                for line in self.parts
+            ],
+            "missing": [
+                {
+                    "section": item.section,
+                    "document": item.missing.document,
+                    "kind": item.missing.kind,
+                    "reason": item.missing.reason,
+                }
+                for item in self.missing
+            ],
+        }
 
     def render(self) -> str:
         out = [
@@ -112,4 +143,9 @@ class ExportIndex:
                     ]
                 )
             )
+        if len(set(self.archives.values())) > 1:
+            out.append("\r\n")
+            out.append(row_line([text_cell(column) for column in ARCHIVE_COLUMNS]))
+            for path, archive in self.archives.items():
+                out.append(row_line([text_cell(path), text_cell(archive)]))
         return "".join(out)
