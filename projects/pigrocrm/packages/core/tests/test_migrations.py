@@ -3279,3 +3279,36 @@ def test_0084_adds_the_bank_tables_with_row_security_and_downgrade_removes_them(
         assert _tables_shape(url, _BANK_TABLES) == (set(), set(), set())
         upgrade(config, "0084")
         assert _tables_shape(url, _BANK_TABLES)[0] == _BANK_TABLES
+
+
+def _end_to_end_column(url: str) -> bool:
+    engine = create_engine(url)
+    try:
+        with engine.connect() as connection:
+            return bool(
+                connection.execute(
+                    text(
+                        "SELECT count(*) > 0 FROM information_schema.columns WHERE "
+                        "table_name = 'bank_movements' AND column_name = 'end_to_end_id'"
+                    )
+                ).scalar_one()
+            )
+    finally:
+        engine.dispose()
+
+
+def test_0085_adds_the_end_to_end_id_column_and_downgrade_removes_it(
+    pigrocrm_postgres: Any,
+) -> None:
+    """REB-1017: one nullable column and its index, nothing backfilled."""
+    with pigrocrm_postgres.fresh_container() as container:
+        url = container.get_connection_url()
+        config = _alembic_config(url)
+        upgrade(config, "0084")
+        assert _end_to_end_column(url) is False
+        upgrade(config, "0085")
+        assert _end_to_end_column(url) is True
+        downgrade(config, "0084")
+        assert _end_to_end_column(url) is False
+        upgrade(config, "0085")
+        assert _end_to_end_column(url) is True

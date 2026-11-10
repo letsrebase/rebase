@@ -131,6 +131,7 @@ class BankStatementService:
                     ),
                     "description": movement.description,
                     "bank_reference": movement.bank_reference or None,
+                    "end_to_end_id": movement.end_to_end_id or None,
                     "balance_after": movement.balance_after,
                     "dedup_key": key,
                     "state": "unmatched",

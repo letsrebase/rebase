@@ -48,6 +48,8 @@ CURRENCY_PATTERN = "^[A-Z]{3}$"
 NAME_MAX_LENGTH = 255
 SENDER_MAX_LENGTH = 320
 BALANCE_PRECISION = 14
+# ISO 20022 `Max35Text`.
+END_TO_END_ID_LENGTH = 35
 
 
 def _in(column: str, values: tuple[str, ...]) -> str:
@@ -180,6 +182,8 @@ class BankMovement(Base, PrimaryKeyMixin, TimestampMixin):
             postgresql_where=text("state = 'unmatched'"),
         ),
         Index("ix_bank_movements_counterparty_iban", "counterparty_iban"),
+        # Matching looks a payment up by the id the payer gave it.
+        Index("ix_bank_movements_end_to_end_id", "end_to_end_id"),
     )
 
     bank_account_id: Mapped[UUID] = mapped_column(nullable=False)
@@ -192,6 +196,7 @@ class BankMovement(Base, PrimaryKeyMixin, TimestampMixin):
     counterparty_iban: Mapped[str | None] = mapped_column(String(34), default=None)
     description: Mapped[str | None] = mapped_column(String(1000), default=None)
     bank_reference: Mapped[str | None] = mapped_column(String(NAME_MAX_LENGTH), default=None)
+    end_to_end_id: Mapped[str | None] = mapped_column(String(END_TO_END_ID_LENGTH), default=None)
     balance_after: Mapped[Decimal | None] = mapped_column(
         Numeric(BALANCE_PRECISION, 2), default=None
     )
