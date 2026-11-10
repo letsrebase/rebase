@@ -1,7 +1,7 @@
 import { Link } from '@tanstack/react-router'
 import { ChevronRight } from 'lucide-react'
 import { QueryErrorBanner } from '@/components/QueryErrorBanner'
-import { Skeleton } from '@rebase/ui/skeleton'
+import { LoadingState } from '@/components/LoadingState'
 import { formatIsoDateItalian } from '@/lib/dates'
 import { DayStatePill } from './DayStatePill'
 import { quantityLabel, type WorkUnitRow } from './labels'
@@ -28,13 +28,7 @@ export function DayRows({
   if (days.isError) return <QueryErrorBanner error={days.error} />
   if (days.isPending && days.fetchStatus === 'idle') return null
   if (days.isPending) {
-    return (
-      <div className="space-y-3" role="status" aria-label="Caricamento giornate">
-        {Array.from({ length: 3 }, (_, index) => (
-          <Skeleton key={index} className="h-16 w-full" />
-        ))}
-      </div>
-    )
+    return <LoadingState label="Caricamento giornate…" />
   }
   const rows = days.data.items
   if (rows.length === 0) {

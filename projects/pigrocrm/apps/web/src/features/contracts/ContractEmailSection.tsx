@@ -4,7 +4,7 @@ import { QueryErrorBanner } from '@/components/QueryErrorBanner'
 import { StatusPill } from '@/components/StatusPill'
 import { Button } from '@rebase/ui/button'
 import { Card, CardContent } from '@rebase/ui/card'
-import { Skeleton } from '@rebase/ui/skeleton'
+import { LoadingState } from '@/components/LoadingState'
 import { useCan } from '@/lib/auth'
 import { EmailTemplateDialog } from './EmailTemplateDialog'
 import { SendInvoiceDialog } from './SendInvoiceDialog'
@@ -68,7 +68,7 @@ export function ContractEmailSection({
         </div>
 
         {templates.isLoading ? (
-          <Skeleton className="h-16 w-full" />
+          <LoadingState />
         ) : templates.isError ? (
           <QueryErrorBanner error={templates.error} />
         ) : (templates.data ?? []).length === 0 ? (

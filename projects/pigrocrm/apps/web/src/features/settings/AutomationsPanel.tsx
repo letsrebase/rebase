@@ -1,5 +1,5 @@
 import { QueryErrorBanner } from '@/components/QueryErrorBanner'
-import { Skeleton } from '@rebase/ui/skeleton'
+import { LoadingState } from '@/components/LoadingState'
 import {
   useAutomations,
   useUpdateAutomationConfig,
@@ -144,7 +144,7 @@ export function AutomationsPanel() {
   // `data` is still undefined, so a single `isPending || !data` guard would answer a failed
   // read with a spinner that never resolves.
   if (query.isError) return <QueryErrorBanner error={query.error} />
-  if (query.isPending || !query.data) return <Skeleton className="h-64 w-full" />
+  if (query.isPending || !query.data) return <LoadingState />
 
   const data = query.data
 

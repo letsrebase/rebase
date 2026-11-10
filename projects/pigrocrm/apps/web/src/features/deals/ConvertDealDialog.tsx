@@ -20,7 +20,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@rebase/ui/select'
-import { Skeleton } from '@rebase/ui/skeleton'
+import { LoadingState } from '@/components/LoadingState'
 import {
   CADENCES,
   EXPENSE_POLICY_KINDS,
@@ -89,7 +89,7 @@ export function ConvertDealDialog({ dealId, open, onOpenChange }: Props) {
             valore.
           </DialogDescription>
         </DialogHeader>
-        {proposal.isLoading && <Skeleton className="h-64" />}
+        {proposal.isLoading && <LoadingState />}
         {proposal.isError && (
           <p className="text-sm text-destructive">{toProblem(proposal.error).detail}</p>
         )}

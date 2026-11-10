@@ -5,7 +5,7 @@ import { toast } from '@rebase/ui/sonner'
 import { PageHeader } from '@/components/PageHeader'
 import { QueryErrorBanner } from '@/components/QueryErrorBanner'
 import { Button } from '@rebase/ui/button'
-import { Skeleton } from '@rebase/ui/skeleton'
+import { LoadingState } from '@/components/LoadingState'
 import { DealForm } from '@/features/deals/DealForm'
 import { KanbanBoard } from '@/features/deals/KanbanBoard'
 import { useMemberDirectory } from '@/features/users/directory'
@@ -49,7 +49,7 @@ function DealsKanban() {
   const create = useCreateDeal()
   const directory = useMemberDirectory()
 
-  if (stages.isLoading || deals.isLoading) return <Skeleton className="m-8 h-96" />
+  if (stages.isLoading || deals.isLoading) return <LoadingState className="m-8" />
 
   // `KanbanBoard` has no `DataTable` underneath it to fall back on, so it needs
   // its own version of the same check `DataTable`'s own `isError` prop makes:

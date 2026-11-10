@@ -2,7 +2,7 @@ import { Plus } from 'lucide-react'
 import { useState } from 'react'
 import { Badge } from '@rebase/ui/badge'
 import { Button } from '@rebase/ui/button'
-import { Skeleton } from '@rebase/ui/skeleton'
+import { LoadingState } from '@/components/LoadingState'
 import { QueryErrorBanner } from '@/components/QueryErrorBanner'
 import { LegalEntityPanel } from './LegalEntityPanel'
 import { FiscalPanel } from './FiscalPanel'
@@ -27,7 +27,7 @@ export function LegalEntitiesPanel() {
   const [creating, setCreating] = useState(false)
 
   if (legal_entities.isError) return <QueryErrorBanner error={legal_entities.error} />
-  if (legal_entities.isLoading || !legal_entities.data) return <Skeleton className="h-64 w-full" />
+  if (legal_entities.isLoading || !legal_entities.data) return <LoadingState />
 
   const list = legal_entities.data
   // The default first, which `GET /api/aziende` already guarantees; a selection that

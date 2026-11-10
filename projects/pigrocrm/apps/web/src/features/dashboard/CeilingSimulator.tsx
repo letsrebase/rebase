@@ -8,7 +8,7 @@ import { Button } from '@rebase/ui/button'
 import { Input } from '@rebase/ui/input'
 import { Label } from '@rebase/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@rebase/ui/select'
-import { Skeleton } from '@rebase/ui/skeleton'
+import { LoadingState } from '@/components/LoadingState'
 import { Verdict } from './CeilingVerdict'
 import { money } from './format'
 import { useCeilingSimulation } from './queries'
@@ -61,7 +61,7 @@ function DealPicker({
   if (deals.isError) return <QueryErrorBanner error={deals.error} />
   if (stages.isError) return <QueryErrorBanner error={stages.error} />
   if (deals.isPending || stages.isPending || !deals.data || !stages.data) {
-    return <Skeleton className="h-9 w-full" />
+    return <LoadingState />
   }
   const open = new Set(stages.data.filter((stage) => stage.type === 'open').map((stage) => stage.id))
   const candidates = deals.data.items.filter((deal) => open.has(deal.pipeline_stage_id))
@@ -373,7 +373,7 @@ export function Simulator({
       <div role="status" aria-live="polite">
         {simulation.isError && asked !== null ? <QueryErrorBanner error={simulation.error} /> : null}
         {simulation.isFetching && asked !== null && !simulation.data ? (
-          <Skeleton className="h-24 w-full" />
+          <LoadingState />
         ) : null}
         {simulation.data && asked !== null ? <Verdict simulation={simulation.data} /> : null}
       </div>

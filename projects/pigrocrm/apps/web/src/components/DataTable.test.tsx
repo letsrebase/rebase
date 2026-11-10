@@ -48,14 +48,14 @@ describe('DataTable', () => {
     expect(screen.queryByText('Nessun risultato.')).not.toBeInTheDocument()
   })
 
-  /** A different shape, deliberately -- but not a different *size*: bars shorter than
-   *  the rows they stand in for, in no container, made the table jump the moment the
-   *  request landed. */
-  it('loads inside the same container as the table, at the height of a real row', () => {
-    render(<DataTable label="Clienti" columns={COLUMNS} data={[]} isLoading />)
-    const container = screen.getByRole('status')
-    expect(container.className).toContain('border-border')
-    expect(container.querySelector('.h-12')).not.toBeNull()
+  /** A different shape, deliberately -- the brand loader, no header -- but the same
+   *  container, so the table does not change width the moment the request lands. */
+  it('shows the brand loader inside the same container as the table', () => {
+    const { container } = render(<DataTable label="Clienti" columns={COLUMNS} data={[]} isLoading />)
+    const frame = container.querySelector('[data-slot="data-table"]')
+    expect(frame?.className).toContain('border-border')
+    expect(frame?.querySelector('[data-slot="loader"]')).not.toBeNull()
+    expect(screen.getByRole('status')).toBeInTheDocument()
   })
 
   it('shows an honest empty state -- the full table chrome, one row saying so -- once loading is over', () => {

@@ -133,12 +133,12 @@ describe('JobsPanel', () => {
     expect(none.getByText(/Nessuna casella Gmail collegata/)).toBeVisible()
   })
 
-  it('shows a skeleton while it loads and never a list of zero jobs', async () => {
+  it('shows the loader while it loads and never a list of zero jobs', async () => {
     vi.mocked(api.GET).mockReturnValue(new Promise(() => {}) as never)
 
     renderPanel()
 
-    expect(screen.getByRole('status', { name: 'Caricamento esecuzioni' })).toBeVisible()
+    expect(screen.getByRole('status', { name: 'Caricamento esecuzioni…' })).toBeVisible()
     expect(screen.queryByRole('heading', { level: 3 })).toBeNull()
   })
 

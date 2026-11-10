@@ -22,7 +22,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@rebase/ui/select'
-import { Skeleton } from '@rebase/ui/skeleton'
+import { LoadingState } from '@/components/LoadingState'
 import { formatDate, formatQuantity } from '@/features/invoices/format'
 import { fieldErrorFrom, toProblem, type ProblemDetail } from '@/lib/api'
 import { useCan } from '@/lib/auth'
@@ -484,7 +484,7 @@ export function RateCardsSection({ contractId, currency }: { contractId: string;
         </div>
 
         {cards.isLoading ? (
-          <Skeleton className="h-16 w-full" />
+          <LoadingState />
         ) : cards.isError ? (
           <QueryErrorBanner error={cards.error} />
         ) : (cards.data ?? []).length === 0 ? (

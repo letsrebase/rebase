@@ -3,7 +3,7 @@ import { useEffect, useRef } from 'react'
 import { QueryErrorBanner } from '@/components/QueryErrorBanner'
 import { isMissingFile, toProblem } from '@/lib/api'
 import { useCan } from '@/lib/auth'
-import { Skeleton } from '@rebase/ui/skeleton'
+import { LoadingState } from '@/components/LoadingState'
 import { useInvoicePdf, type Invoice } from './queries'
 
 /**
@@ -56,10 +56,7 @@ export function InvoicePdfPreview({ invoice }: { invoice: Invoice }) {
           </div>
         )
       ) : !blob ? (
-        <>
-          <p className="sr-only">Caricamento del PDF…</p>
-          <Skeleton className="m-4 flex-1" />
-        </>
+        <LoadingState label="Caricamento del PDF…" className="m-4" />
       ) : !isPdf(blob) ? (
         <NotPdf invoice={invoice} />
       ) : (

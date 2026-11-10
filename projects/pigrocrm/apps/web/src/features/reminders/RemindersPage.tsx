@@ -11,7 +11,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@rebase/ui/dropdown-menu'
-import { Skeleton } from '@rebase/ui/skeleton'
+import { LoadingState } from '@/components/LoadingState'
 import { toast } from '@rebase/ui/sonner'
 import { toProblem } from '@/lib/api'
 import { useLegalEntity } from '@/lib/legalEntity'
@@ -57,11 +57,7 @@ export function RemindersPage() {
         {reminders.isError ? (
           <QueryErrorBanner error={reminders.error} />
         ) : reminders.isLoading ? (
-          <div className="space-y-3" role="status" aria-label="Caricamento avvisi">
-            {Array.from({ length: 3 }, (_, index) => (
-              <Skeleton key={index} className="h-20 w-full" />
-            ))}
-          </div>
+          <LoadingState label="Caricamento avvisi…" />
         ) : (
           <>
             {open.length === 0 ? (

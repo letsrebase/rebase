@@ -1,7 +1,7 @@
 import type { CSSProperties } from 'react'
 import { QueryErrorBanner } from '@/components/QueryErrorBanner'
 import { statusLabel } from '@/features/days/labels'
-import { Skeleton } from '@rebase/ui/skeleton'
+import { LoadingState } from '@/components/LoadingState'
 import {
   ScrollRegion,
   Table,
@@ -282,12 +282,7 @@ export function DaysTab({ period }: { period: Period }) {
   const query = useDaysAnalysis(period)
   if (query.isError) return <QueryErrorBanner error={query.error} />
   if (query.isPending || !query.data) {
-    return (
-      <div className="space-y-4">
-        <Skeleton className="h-24 w-full" />
-        <Skeleton className="h-64 w-full" />
-      </div>
-    )
+    return <LoadingState />
   }
   return <Days analysis={query.data} />
 }

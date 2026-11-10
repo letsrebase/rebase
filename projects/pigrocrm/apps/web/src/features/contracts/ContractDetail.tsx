@@ -6,7 +6,7 @@ import { QueryErrorBanner } from '@/components/QueryErrorBanner'
 import { StatusPill } from '@/components/StatusPill'
 import { Button } from '@rebase/ui/button'
 import { Card, CardContent } from '@rebase/ui/card'
-import { Skeleton } from '@rebase/ui/skeleton'
+import { LoadingState } from '@/components/LoadingState'
 import { ClauseNotesSection } from '@/features/contracts/ClauseNotesSection'
 import { ContractDealLink } from '@/features/contracts/ContractDealLink'
 import { ContractForm } from '@/features/contracts/ContractForm'
@@ -72,7 +72,7 @@ export function ContractDetail() {
   const customer = useOrganization(contract.data?.customer_id ?? '')
   const modules = useModules()
 
-  if (contract.isLoading) return <Skeleton className="m-8 h-96" />
+  if (contract.isLoading) return <LoadingState className="m-8" />
   if (contract.isError) {
     if (toProblem(contract.error).status === 404) return <p className="p-8">Contratto non trovato.</p>
     return (

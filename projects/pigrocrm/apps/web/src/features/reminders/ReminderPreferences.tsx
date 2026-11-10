@@ -5,7 +5,7 @@ import { Checkbox } from '@rebase/ui/checkbox'
 import { Input } from '@rebase/ui/input'
 import { Label } from '@rebase/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@rebase/ui/select'
-import { Skeleton } from '@rebase/ui/skeleton'
+import { LoadingState } from '@/components/LoadingState'
 import { toast } from '@rebase/ui/sonner'
 import { fieldErrorFrom, toProblem } from '@/lib/api'
 import { useIsAdmin } from '@/lib/auth'
@@ -75,13 +75,7 @@ export function ReminderPreferences({ scope }: { scope: Scope }) {
 
   if (preferences.isError) return <QueryErrorBanner error={preferences.error} />
   if (preferences.isLoading || !preferences.data) {
-    return (
-      <div className="space-y-3" role="status" aria-label="Caricamento impostazioni dei promemoria">
-        {Array.from({ length: 3 }, (_, index) => (
-          <Skeleton key={index} className="h-24 w-full" />
-        ))}
-      </div>
-    )
+    return <LoadingState label="Caricamento impostazioni dei promemoria…" />
   }
   const data = preferences.data
   const groups = groupTypes(visibleTypes(data.types, scope, isAdmin))

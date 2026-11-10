@@ -22,7 +22,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@rebase/ui/select'
-import { Skeleton } from '@rebase/ui/skeleton'
+import { LoadingState } from '@/components/LoadingState'
 import { useCostCategories } from '@/features/costs/queries'
 import { formatDate } from '@/features/invoices/format'
 import { fieldErrorFrom, toProblem, type ProblemDetail } from '@/lib/api'
@@ -291,7 +291,7 @@ export function ExpensesSection({ contractId, currency }: { contractId: string; 
         </div>
 
         {expenses.isLoading ? (
-          <Skeleton className="h-16 w-full" />
+          <LoadingState />
         ) : expenses.isError ? (
           <QueryErrorBanner error={expenses.error} />
         ) : (expenses.data ?? []).length === 0 ? (

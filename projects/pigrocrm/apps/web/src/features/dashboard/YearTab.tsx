@@ -5,7 +5,7 @@ import { useLegalEntity } from '@/lib/legalEntity'
 import { toProblem } from '@/lib/api'
 import { formatIsoDateItalian } from '@/lib/dates'
 import { DownloadButton } from '@/components/DownloadButton'
-import { Skeleton } from '@rebase/ui/skeleton'
+import { LoadingState } from '@/components/LoadingState'
 import {
   Table,
   TableBody,
@@ -188,12 +188,7 @@ export function YearPanel({
     return <QueryErrorBanner error={query.error} />
   }
   if (query.isPending || !query.data) {
-    return (
-      <div className="space-y-4">
-        <Skeleton className="h-24 w-full" />
-        <Skeleton className="h-64 w-full" />
-      </div>
-    )
+    return <LoadingState />
   }
   const overview = query.data
   // The azienda the file is of: the block's own, else the one the sidebar selected. The

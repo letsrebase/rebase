@@ -7,7 +7,7 @@ import { Button } from '@rebase/ui/button'
 import { Card, CardContent } from '@rebase/ui/card'
 import { Label } from '@rebase/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@rebase/ui/select'
-import { Skeleton } from '@rebase/ui/skeleton'
+import { LoadingState } from '@/components/LoadingState'
 import { formatDate } from '@/features/invoices/format'
 import { useCan } from '@/lib/auth'
 import { formatIsoMonthYear } from '@/lib/dates'
@@ -63,7 +63,7 @@ export function DaysToInvoiceSection({ contractId, currency }: { contractId: str
         <h2 className="mb-3 font-semibold">Giornate da fatturare</h2>
 
         {overview.isLoading || chosen.isLoading ? (
-          <Skeleton className="h-16 w-full" />
+          <LoadingState />
         ) : overview.isError ? (
           <QueryErrorBanner error={overview.error} />
         ) : chosen.isError ? (

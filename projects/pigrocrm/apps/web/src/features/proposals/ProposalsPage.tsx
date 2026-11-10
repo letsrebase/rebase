@@ -2,7 +2,7 @@ import { Link } from '@tanstack/react-router'
 import { ChevronRight, Inbox } from 'lucide-react'
 import { QueryErrorBanner } from '@/components/QueryErrorBanner'
 import { PageHeader } from '@/components/PageHeader'
-import { Skeleton } from '@rebase/ui/skeleton'
+import { LoadingState } from '@/components/LoadingState'
 import { Tabs, TabsList, TabsTrigger } from '@rebase/ui/tabs'
 import { formatOccurredAt } from '@/components/activityLabels'
 import { Confidence, ProposalStatusPill, ProposalSubject, TargetBadge } from './ProposalBits'
@@ -80,11 +80,7 @@ export function ProposalsPage({
         {proposals.isError ? (
           <QueryErrorBanner error={proposals.error} />
         ) : proposals.isLoading ? (
-          <div className="space-y-3" role="status" aria-label="Caricamento proposte">
-            {Array.from({ length: 3 }, (_, index) => (
-              <Skeleton key={index} className="h-24 w-full" />
-            ))}
-          </div>
+          <LoadingState label="Caricamento proposte…" />
         ) : rows.length === 0 ? (
           <div className="border border-dashed px-6 py-12 text-center">
             <h2 className="font-semibold">{EMPTY[status].title}</h2>

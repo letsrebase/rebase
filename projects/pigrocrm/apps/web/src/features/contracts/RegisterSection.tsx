@@ -8,7 +8,7 @@ import { DownloadButton } from '@/components/DownloadButton'
 import { Card, CardContent } from '@rebase/ui/card'
 import { Input } from '@rebase/ui/input'
 import { Label } from '@rebase/ui/label'
-import { Skeleton } from '@rebase/ui/skeleton'
+import { LoadingState } from '@/components/LoadingState'
 import {
   Table,
   TableBody,
@@ -107,7 +107,7 @@ export function RegisterSection({ contractId }: { contractId: string }) {
         {render.isError && <QueryErrorBanner error={render.error} />}
 
         {register.isLoading ? (
-          <Skeleton className="h-16 w-full" />
+          <LoadingState />
         ) : register.isError ? (
           <QueryErrorBanner error={register.error} />
         ) : register.data === undefined ? null : register.data.entries.length === 0 ? (

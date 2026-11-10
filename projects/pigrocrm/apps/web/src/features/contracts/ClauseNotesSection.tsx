@@ -13,7 +13,7 @@ import {
 } from '@rebase/ui/dialog'
 import { Input } from '@rebase/ui/input'
 import { Label } from '@rebase/ui/label'
-import { Skeleton } from '@rebase/ui/skeleton'
+import { LoadingState } from '@/components/LoadingState'
 import { Textarea } from '@rebase/ui/textarea'
 import { fieldErrorFrom, toProblem, type ProblemDetail } from '@/lib/api'
 import { useCan } from '@/lib/auth'
@@ -248,7 +248,7 @@ export function ClauseNotesSection({ contractId }: { contractId: string }) {
         </div>
 
         {notes.isLoading ? (
-          <Skeleton className="h-16 w-full" />
+          <LoadingState />
         ) : notes.isError ? (
           <QueryErrorBanner error={notes.error} />
         ) : (notes.data ?? []).length === 0 ? (

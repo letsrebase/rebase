@@ -4,7 +4,7 @@ import { QueryErrorBanner } from '@/components/QueryErrorBanner'
 import { Badge } from '@rebase/ui/badge'
 import { Button } from '@rebase/ui/button'
 import { Card, CardContent } from '@rebase/ui/card'
-import { Skeleton } from '@rebase/ui/skeleton'
+import { LoadingState } from '@/components/LoadingState'
 import { useIsAdmin } from '@/lib/auth'
 import { toIsoDate } from '@/lib/dates'
 import { dealStatusLabel } from '@/lib/dealStatus'
@@ -30,7 +30,7 @@ function DealEconomics({ dealId }: { dealId: string }) {
   // The banner and nothing else: a conto economico rendered under a failed read would
   // show a screenful of dashes that look like real zeroes.
   if (pnl.isError) return <QueryErrorBanner error={pnl.error} />
-  if (pnl.isLoading || !pnl.data) return <Skeleton className="h-64 w-full" />
+  if (pnl.isLoading || !pnl.data) return <LoadingState />
 
   // The string the API sent, compared as a string. `Number(...) > 0` on a decimal field
   // is exactly the accidental arithmetic `lib/no-float-money.test.ts` exists to catch,
@@ -126,7 +126,7 @@ function OrganizationEconomics({ customerId }: { customerId: string }) {
           // would show a screenful of dashes that look like real zeroes.
           <QueryErrorBanner error={pnl.error} />
         ) : pnl.isLoading || !pnl.data ? (
-          <Skeleton className="h-48 w-full" />
+          <LoadingState />
         ) : (
           <PeriodTotals pnl={pnl.data} base={base} />
         )}
