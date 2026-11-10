@@ -242,6 +242,7 @@ describe('AppShell', () => {
       'Ore',
       'Giornate',
       'Tasse',
+      'Cassa',
       'Agenti',
     ])
     expect(nav.getAllByRole('group').map((group) => group.getAttribute('aria-label'))).toEqual([
@@ -268,6 +269,7 @@ describe('AppShell', () => {
       'Ore',
       'Giornate',
       'Tasse',
+      'Cassa',
     ])
     // Agents and Settings come after every section, Settings last.
     const lastLink = nav.getByRole('link', { name: 'Agenti' })
@@ -689,6 +691,7 @@ describe('AppShell', () => {
       'Ore',
       'Giornate',
       'Tasse',
+      'Cassa',
       'Agenti',
     ]) {
       expect(nav.getByRole('link', { name: label })).toBeInTheDocument()

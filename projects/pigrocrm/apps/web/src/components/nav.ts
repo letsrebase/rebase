@@ -15,6 +15,7 @@ import {
   Settings,
   ShoppingCart,
   Users,
+  Wallet,
   type LucideIcon,
 } from 'lucide-react'
 import { SETTINGS_GROUPS, type SettingsTabValue } from '@/features/settings/tabs'
@@ -83,6 +84,9 @@ export const SECTIONS = [
       { to: '/app/hours', label: 'Ore', icon: Clock },
       { to: '/app/days', label: 'Giornate', icon: CalendarCheck },
       { to: '/app/taxes', label: 'Tasse', icon: Landmark },
+      // The cash schedule and the bank accounts (the approved brief, 2026-11-10): the last place
+      // the money reaches, after the register, the hours, the days and the taxes.
+      { to: '/app/cash', label: 'Cassa', icon: Wallet },
     ],
   },
 ] as const

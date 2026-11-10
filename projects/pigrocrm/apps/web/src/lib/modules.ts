@@ -35,6 +35,7 @@ export const MODULE_LABELS: Record<ModuleKey, string> = {
   taxes: 'Tasse',
   staff: "Persone dell'azienda",
   collaborators: 'Collaboratori',
+  cash: 'Cassa',
 }
 
 /**
@@ -64,6 +65,9 @@ export const ROUTE_MODULES: ReadonlyArray<{ path: string; modules: readonly Modu
   // purchases: the purchases register, its pages and the cost categories. A deal's own
   // «Acquisti» block stays on its Ore tab, `time` and `purchases` together.
   { path: '/app/purchases', modules: ['purchases'] },
+  // cash: the schedule's page and the bank accounts under it (REB-1025). The tab «Scadenziario»
+  // is the core's and has no row in `TAB_MODULES`.
+  { path: '/app/cash', modules: ['cash'] },
   { path: '/app/settings/cost-categories', modules: ['purchases'] },
 ]
 

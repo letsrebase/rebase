@@ -28,6 +28,7 @@ describe('visibleSections (REB-953)', () => {
       'Ore',
       'Giornate',
       'Tasse',
+      'Cassa',
     ]
     expect(labels([])).toEqual(everything)
     expect(visibleSections(moduleAccess(undefined)).flatMap((s) => s.items.map((i) => i.label))).toEqual(
@@ -60,6 +61,7 @@ describe('visibleSections (REB-953)', () => {
       'Ore',
       'Giornate',
       'Tasse',
+      'Cassa',
     ])
     expect(sections.find((section) => section.id === 'vendite')?.items[0]?.label).toBe('Clienti')
   })
@@ -88,6 +90,14 @@ describe('visibleSections (REB-953)', () => {
     expect(shown).toContain('Fatture')
   })
 
+  it('drops «Cassa» with cash off and nothing else (REB-1025)', () => {
+    expect(labels([])).toContain('Cassa')
+    const shown = labels(['cash'])
+    expect(shown).not.toContain('Cassa')
+    expect(shown).toContain('Tasse')
+    expect(shown).toContain('Fatture')
+  })
+
   it('keeps the entries of the core whatever is off', () => {
     const core = [
       'Attività',
@@ -99,15 +109,15 @@ describe('visibleSections (REB-953)', () => {
       'Persone',
       'Fatture',
     ]
-    expect(labels(['deals', 'contracts', 'time', 'purchases', 'taxes'])).toEqual(core)
+    expect(labels(['deals', 'contracts', 'time', 'purchases', 'taxes', 'cash'])).toEqual(core)
   })
 
   it('drops a section left with no entry', () => {
     // Vendite keeps its organizations and people, so it stays; it is Amministrazione that
-    // loses two of its four, and keeps «Fatture» and «Tasse».
+    // loses two of its four, and keeps «Fatture», «Tasse» and «Cassa».
     const sections = visibleSections(moduleAccess(spaceModules(['deals', 'contracts'])))
     expect(sections.map((section) => section.id)).toEqual(['da-fare', 'vendite', 'amministrazione'])
-    expect(sections[2]?.items.map((item) => item.label)).toEqual(['Fatture', 'Fornitori', 'Acquisti', 'Tasse'])
+    expect(sections[2]?.items.map((item) => item.label)).toEqual(['Fatture', 'Fornitori', 'Acquisti', 'Tasse', 'Cassa'])
   })
 })
 
@@ -143,6 +153,7 @@ describe('the phone bar (REB-959)', () => {
       'Acquisti',
       'Ore',
       'Tasse',
+      'Cassa',
     ])
     expect(more(['deals', 'time'], 'company')).toEqual([
       'In arrivo',
@@ -155,6 +166,7 @@ describe('the phone bar (REB-959)', () => {
       'Fornitori',
       'Acquisti',
       'Tasse',
+      'Cassa',
     ])
   })
 })
