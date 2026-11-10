@@ -14,6 +14,17 @@ DEFAULT_DATABASE_NAME = "pigrocrm_tenants"
 TENANT_DATABASE_PREFIX = "pigro_t_"
 
 
+# Columns added to a registry table after it existed: `create_all` never alters a table, and the
+# registry has no migrations, so each is added here, idempotently, at every boot.
+REGISTRY_COLUMN_UPGRADES: tuple[tuple[str, str, str], ...] = (
+    (
+        "rebase_engagements",
+        "contract_id",
+        "ALTER TABLE rebase_engagements ADD COLUMN IF NOT EXISTS contract_id uuid",
+    ),
+)
+
+
 def tenants_database_url(settings: Settings) -> URL:
     return sidecar_url(settings, settings.tenants_database_url, DEFAULT_DATABASE_NAME)
 
@@ -34,7 +45,9 @@ def ensure_tenants_database(settings: Settings) -> Engine:
     `Base`). The two module-level imports above are this function's own equivalent,
     kept beside the one function that actually calls `create_all` against this
     metadata."""
-    return ensure_sidecar_database(settings, tenants_database_url(settings), TenantsBase.metadata)
+    return ensure_sidecar_database(
+        settings, tenants_database_url(settings), TenantsBase.metadata, REGISTRY_COLUMN_UPGRADES
+    )
 
 
 def tenant_database_name(slug: str) -> str:

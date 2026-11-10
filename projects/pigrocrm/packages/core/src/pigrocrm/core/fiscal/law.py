@@ -41,10 +41,9 @@ class IncomeTaxAdvanceLaw:
     under which the advance is not due or is paid once, the deferral and the instalments.
 
     Source of every figure unless a comment says otherwise: Agenzia delle Entrate, «Imposte
-    sui redditi (Irpef, Ires)» (A5 rows «Income tax advance 100%...», «Balance and first
-    advance payable in monthly instalments...», «IRPEF: no advance due at or below
-    €51.65...», «0.40% added for paying within 30 days after the deadline», «Income-tax
-    dates are salvo proroghe»), all verified. The company rows of that page (the IRES
+    sui redditi (Irpef, Ires)» (A5 rows «Income tax advance 100%...», «IRPEF: no advance due
+    at or below €51.65...», «0.40% added for paying within 30 days after the deadline»), all
+    verified. The company rows of that page (the IRES
     split above €103, the dates that follow the fiscal year end) belong to a company pack
     and are not carried by a pack that has no company.
     """
@@ -63,14 +62,57 @@ class IncomeTaxAdvanceLaw:
     # Paying within `deferral_window_days` after a deadline adds this percentage.
     deferral_surcharge_percent: Decimal
     deferral_window_days: int
-    # The balance and the first advance may be paid in monthly instalments up to this
-    # date; the November advance is paid in one payment.
-    instalments_until: MonthDay
-    # The months are verified (June and November); the day of the month is TO VERIFY (A5
-    # row «Income-tax dates: the day of the month»), and the dates are «salvo proroghe»:
-    # a decree that moves them is a new `TaxYearLaw`, never a branch in a service.
-    balance_and_first_advance_date: MonthDay
-    second_advance_date: MonthDay
+    # The dates of the advances and of the instalments are the pack's tax calendar
+    # (`TaxCalendarLaw`), not repeated here.
+
+
+# What a date of the calendar is the date of, and which tax it belongs to.
+TaxName = Literal["iva", "income_tax", "substitute_tax"]
+DateKind = Literal[
+    "periodic_payment",
+    "quarterly_payment",
+    "annual_balance",
+    "advance",
+    "balance_and_first_advance",
+    "second_advance",
+    "instalments_end",
+]
+# The IVA settlement cadence a date belongs to; `None` for a date that is no IVA settlement's.
+Cadence = Literal["monthly", "quarterly"]
+
+
+@dataclass(frozen=True)
+class TaxDateRule:
+    """One deadline, or one deadline per month, of the tax calendar.
+
+    `dates` are the nominal days of the deadline in the calendar year the calendar entry is
+    keyed by (an IVA rule repeated every month lists twelve). `covers` says in English what
+    the payment settles. `source` names the primary source the date was verified against
+    (the frame's A5 register row says the same)."""
+
+    tax: TaxName
+    kind: DateKind
+    cadence: Cadence | None
+    dates: tuple[MonthDay, ...]
+    covers: str
+    source: str
+
+
+@dataclass(frozen=True)
+class TaxCalendarLaw:
+    """The tax dates that govern the calendar years from `from_year` until the next entry
+    of the same pack (REB-1004, taxes design § 2, suppliers design § 6).
+
+    Keyed by the calendar year a date FALLS in, because that is what a decree moves: a decree
+    that moves a date of 2027 is a `TaxCalendarLaw(from_year=2027, ...)`, never a branch in a
+    service. The dates are «salvo proroghe» (A5, verified). Separate from `TaxYearLaw`, whose
+    `from_year` is a frozen reading's law year and the estimate's own history; a date that was
+    not read for an earlier year has no entry for it, and `FiscalPack.calendar_for` answers
+    `None` there.
+    """
+
+    from_year: int
+    rules: tuple[TaxDateRule, ...]
 
 
 @dataclass(frozen=True)
@@ -90,4 +132,14 @@ class TaxYearLaw:
         return self.contribution_base is not None
 
 
-__all__ = ["ContributionBase", "IncomeTaxAdvanceLaw", "MonthDay", "TaxYearLaw"]
+__all__ = [
+    "Cadence",
+    "ContributionBase",
+    "DateKind",
+    "IncomeTaxAdvanceLaw",
+    "MonthDay",
+    "TaxCalendarLaw",
+    "TaxDateRule",
+    "TaxName",
+    "TaxYearLaw",
+]
