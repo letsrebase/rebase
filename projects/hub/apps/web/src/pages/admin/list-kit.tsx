@@ -4,6 +4,7 @@ import { Button } from '@rebase/ui/button'
 import { cn } from '@rebase/ui/cn'
 import { Input } from '@rebase/ui/input'
 import { Label } from '@rebase/ui/label'
+import { Loader } from '@rebase/ui/loader'
 import { AMOUNT_PROBLEM, amountFilter } from '@/lib/amount'
 import { STATE_LABELS, TEAM_BUILDER_ORIGIN_LABEL, VETTED_LABEL } from '@/lib/format'
 
@@ -182,7 +183,14 @@ export function LoadMore({
   return (
     <div ref={sentinel} className="flex flex-wrap items-center gap-3 px-6 py-4">
       <Button type="button" variant="outline" size="sm" onClick={onLoadMore} disabled={isFetchingMore}>
-        {isFetchingMore ? 'Caricamento…' : 'Mostra altri'}
+        {isFetchingMore ? (
+          <>
+            <Loader className="mr-2 size-4" />
+            Caricamento…
+          </>
+        ) : (
+          'Mostra altri'
+        )}
       </Button>
       <span role="status" className="text-sm text-muted-foreground">
         {label}
@@ -193,6 +201,24 @@ export function LoadMore({
 
 export function Empty({ children }: { children: React.ReactNode }) {
   return <p className="px-6 py-10 text-center text-sm text-muted-foreground">{children}</p>
+}
+
+/** The wait of a list, a record or a panel: the brand `Loader` with a `role="status"`
+ *  sentence beside it (`docs/design/DECISIONS.md`, REB-973 and REB-982), never a bare
+ *  «Caricamento…» line. `Loader` is decorative, so the sentence is what a screen reader
+ *  hears. Centred like `Empty`, which it stands in for; pass a `className` to sit left in
+ *  a smaller place. */
+export function LoadingState({ label = 'Caricamento…', className }: { label?: string; className?: string }) {
+  return (
+    <div
+      role="status"
+      aria-label={label}
+      className={cn('flex items-center justify-center gap-2 px-6 py-10 text-sm text-muted-foreground', className)}
+    >
+      <Loader className="size-4" />
+      {label}
+    </div>
+  )
 }
 
 /** One number on a stats page («La guida», «Accessi»), inside a `<dl>`. */

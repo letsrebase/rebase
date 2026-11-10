@@ -3,6 +3,7 @@ import { Button } from '@rebase/ui/button'
 import { cn } from '@rebase/ui/cn'
 import { Input } from '@rebase/ui/input'
 import { Label } from '@rebase/ui/label'
+import { Loader } from '@rebase/ui/loader'
 import { SEARCH_DEBOUNCE_MS, pageItems, useCursorList, useDebounce } from '@/lib/adminList'
 import { admin, type Company, type FiscalData, type Regime } from '@/lib/api'
 import {
@@ -17,6 +18,7 @@ import {
 import { formatDate } from '@/lib/format'
 import { keys } from '@/lib/query-keys'
 import { FiscalFields } from '../contracts/Fiscal'
+import { LoadingState } from '../list-kit'
 import { StepFooter } from './StepFooter'
 
 const COMPANIES_PAGE = 50
@@ -59,7 +61,7 @@ function CompanyList({
   })
   let list: ReactNode
   if (companies.isError) list = <p className="text-sm text-destructive">Non riesco a leggere le richieste.</p>
-  else if (companies.isPending) list = <p className="text-sm text-muted-foreground">Caricamento…</p>
+  else if (companies.isPending) list = <LoadingState label="Caricamento…" className="justify-start p-0" />
   else if (items.length === 0) list = <p className="text-sm text-muted-foreground">Nessuna richiesta trovata.</p>
   else
     list = (
@@ -115,7 +117,14 @@ function CompanyList({
           onClick={() => void companies.fetchNextPage()}
           disabled={companies.isFetchingNextPage}
         >
-          {companies.isFetchingNextPage ? 'Caricamento…' : 'Mostra altre'}
+          {companies.isFetchingNextPage ? (
+            <>
+              <Loader className="mr-2 size-4" />
+              Caricamento…
+            </>
+          ) : (
+            'Mostra altre'
+          )}
         </Button>
       )}
     </>

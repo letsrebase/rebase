@@ -28,7 +28,7 @@ import { ACTION_LABELS } from '@/lib/format'
 import { keys } from '@/lib/query-keys'
 import { FrameworkCard, MatchCards, type ActionHandles } from './contracts/Cards'
 import { FiscalSection } from './contracts/Fiscal'
-import { Empty, Header } from './list-kit'
+import { Empty, Header, LoadingState } from './list-kit'
 
 /** A framework agreement's actions belong to its regime's card (REB-687), a match's to
  *  the matches. */
@@ -223,7 +223,7 @@ export function AdminContracts() {
   const actions = [send, cancel, close, resend, update, cancelFramework, recordNotice, linkPigro]
 
   if (contracts.isError) return <Empty>Non riesco a leggere i contratti di questa persona.</Empty>
-  if (contracts.isPending) return <Empty>Caricamento…</Empty>
+  if (contracts.isPending) return <LoadingState />
   const data = contracts.data
   const frameworks = [data.framework, data.occasional_framework].filter(
     (document): document is ContractDocument => document != null,

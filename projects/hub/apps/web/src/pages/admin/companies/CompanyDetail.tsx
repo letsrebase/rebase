@@ -12,7 +12,7 @@ import { formatMoney } from '@rebase/ui/format'
 import { keys } from '@/lib/query-keys'
 import { AuditTrail } from '../AuditTrail'
 import { CrmLink } from '../CrmLink'
-import { Empty, Header, Row, StatePill, StatusEditor, TeamBuilderPill } from '../list-kit'
+import { Empty, Header, LoadingState, Row, StatePill, StatusEditor, TeamBuilderPill } from '../list-kit'
 import { Notes } from '../Notes'
 import { CompanyOverrideDialog, RecordLifecycle } from '../Override'
 import { TalentCloudDoor } from './TalentCloudDoor'
@@ -100,7 +100,7 @@ export function AdminCompanyDetail() {
   const openCloud = useMutation({ mutationFn: () => admin.openTalentCloud(id), onSuccess: setGrant })
   const revokeCloud = useMutation({ mutationFn: () => admin.revokeTalentCloud(id), onSuccess: () => setGrant(null) })
   if (row.isError) return <Empty>Richiesta non trovata.</Empty>
-  if (row.isPending) return <Empty>Caricamento…</Empty>
+  if (row.isPending) return <LoadingState />
   const c = row.data
   const overrideFailure = failureMessage(override.error, 'Non riesco a salvare la richiesta.')
   const lifecycleFailure = failureMessage(del.error ?? restore.error, 'Non riesco a completare l’operazione.')

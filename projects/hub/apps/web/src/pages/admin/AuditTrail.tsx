@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Badge } from '@rebase/ui/badge'
 import { Button } from '@rebase/ui/button'
+import { LoadingState } from './list-kit'
 import { ApiError, admin, type AdminAction, type ThreadKind } from '@/lib/api'
 import { FILLED_BY_LABELS, REMOTE_LABELS, STATE_LABELS, formatDateTime, formatSmallEuro } from '@/lib/format'
 import { noteSourceLabel, regenerationReason } from '@/lib/notes'
@@ -178,7 +179,7 @@ export function AuditTrail({
       {trail.isError ? (
         <p className="text-sm text-destructive">Non riesco a leggere il registro delle modifiche.</p>
       ) : trail.isPending ? (
-        <p className="text-sm text-muted-foreground">Carico…</p>
+        <LoadingState label="Carico…" className="justify-start p-0" />
       ) : trail.data.length === 0 ? (
         <p className="text-sm text-muted-foreground">Nessuna modifica registrata.</p>
       ) : (

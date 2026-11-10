@@ -5,7 +5,7 @@ import { admin, type TeamRequestListItem, type TeamRequestsFilters } from '@/lib
 import { isFilterActive, pageItems, useCursorList } from '@/lib/adminList'
 import { TEAM_ORIGIN_LABELS, TEAM_REQUEST_STATES, TEAM_REQUEST_STATE_LABELS, formatDate } from '@/lib/format'
 import { keys } from '@/lib/query-keys'
-import { Empty, Header, LoadMore, StateFilter } from './list-kit'
+import { Empty, Header, LoadingState, LoadMore, StateFilter } from './list-kit'
 
 function RequestRow({ item }: { item: TeamRequestListItem }) {
   return (
@@ -67,7 +67,7 @@ export function AdminTeamRequests() {
       {list.isError ? (
         <Empty>Non riesco a leggere la lista.</Empty>
       ) : list.isPending ? (
-        <Empty>Caricamento…</Empty>
+        <LoadingState />
       ) : items.length === 0 ? (
         <Empty>{isFilterActive(search) ? 'Nessun risultato per questi filtri.' : 'Ancora nessuna richiesta di team.'}</Empty>
       ) : (

@@ -18,7 +18,7 @@ import {
 } from '@/lib/format'
 import { formatMoney } from '@rebase/ui/format'
 import { keys } from '@/lib/query-keys'
-import { Empty, Header, LoadMore, StateFilter } from './list-kit'
+import { Empty, Header, LoadingState, LoadMore, StateFilter } from './list-kit'
 
 const STATES: readonly RewardStatus[] = ['to_confirm', 'confirmed', 'paid']
 const STATE_LABELS: Record<string, string> = { ...REFERRAL_STATE_LABELS, pending: 'In attesa' }
@@ -404,7 +404,7 @@ export function AdminReferrals() {
       {list.isError ? (
         <Empty>Non riesco a leggere il registro.</Empty>
       ) : list.isPending ? (
-        <Empty>Caricamento…</Empty>
+        <LoadingState />
       ) : items.length === 0 ? (
         <Empty>{status ? 'Nessun referral in questo stato.' : 'Nessun referral ancora.'}</Empty>
       ) : (
