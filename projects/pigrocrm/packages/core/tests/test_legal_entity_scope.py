@@ -19,7 +19,7 @@ from datetime import UTC, date, datetime
 from decimal import Decimal
 from pathlib import Path
 from typing import NamedTuple
-from uuid import NAMESPACE_URL, UUID, uuid5
+from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
 
 import pytest
 from fakes.legal_entity_fixtures import committed_default_legal_entity, remove_legal_entity
@@ -1388,6 +1388,60 @@ def test_a_scoped_member_reads_the_inbox_items_of_their_legal_entities_and_their
         assert _count(session, "inbox_items") == 1
     with session_factory(world.app)() as session:  # nothing bound: nothing
         assert _count(session, "inbox_items") == 0
+
+
+def test_a_copy_the_member_cannot_see_still_follows_an_item_that_becomes_a_copy(
+    world: World,
+) -> None:
+    """REB-985: marking an item as a copy re-points the copies it had, and the update runs over
+    every legal entity: a copy of another company's, which the member's scope hides, would
+    otherwise keep pointing at an item that is now a copy. The member is told nothing of it."""
+    from pigrocrm.core.inbox.schemas import InboxDuplicate
+    from pigrocrm.core.inbox.service import InboxService
+
+    ids = {name: uuid4() for name in ("original", "middle", "hidden_copy")}
+    insert = (
+        "INSERT INTO inbox_items (id, source, original_name, size_bytes, sha256, content_sha256, "
+        "state, legal_entity_id, duplicate_of_id) "
+        "VALUES (:id, 'upload', :name, 1, :hash, :hash, :state, :entity, :of)"
+    )
+    rows = [
+        ("original", "new", world.foreign, None),
+        ("middle", "new", world.foreign, None),
+        ("hidden_copy", "duplicate", world.studio, "middle"),
+    ]
+    with session_factory(world.engine)() as admin_session:
+        for name, state, entity, of in rows:
+            admin_session.execute(
+                text(insert),
+                {
+                    "id": ids[name],
+                    "name": f"{_PREFIX} {name}.pdf",
+                    "hash": name,
+                    "state": state,
+                    "entity": entity,
+                    "of": ids[of] if of else None,
+                },
+            )
+        admin_session.commit()
+    actor = Actor(
+        id=world.user_id, type="user", role="collaborator", legal_entities=(world.foreign,)
+    )
+    try:
+        with _scoped(world, world.foreign) as session:
+            assert session.get(InboxItem, ids["hidden_copy"]) is None  # not theirs to see
+            InboxService(session).mark_duplicate(
+                ids["middle"], InboxDuplicate(original_id=ids["original"]), actor
+            )
+            # And the scope is the member's again after it: the hidden copy is still hidden.
+            assert session.get(InboxItem, ids["hidden_copy"]) is None
+        with session_factory(world.engine)() as admin_session:
+            copy = admin_session.get(InboxItem, ids["hidden_copy"])
+            assert copy is not None and copy.duplicate_of_id == ids["original"]
+    finally:
+        with session_factory(world.engine)() as admin_session:
+            admin_session.execute(delete(InboxItem).where(InboxItem.id.in_(list(ids.values()))))
+            admin_session.commit()
 
 
 def test_a_scoped_member_makes_and_reads_the_proposals_of_the_items_they_may_see(

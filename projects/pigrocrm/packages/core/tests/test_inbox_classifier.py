@@ -1133,3 +1133,79 @@ def test_the_dashboard_feed_hides_the_activity_of_a_proposal_the_viewer_may_not_
     row.owner_user_id = mine.id
     db_session.flush()
     assert feed(admin) == [] and feed(mine) == [proposal.id]
+
+
+# ---- a person acts while the model reads (REB-985) -------------------------------------------
+
+
+class ActingModel(FakeModel):
+    """A model whose reading takes long enough for a person to act on the item: `during` runs
+    inside the call, where the real network would be, and then the model answers."""
+
+    def __init__(self, during: Any) -> None:
+        super().__init__()
+        self.during = during
+
+    def __call__(self, request: ModelRequest) -> ModelAnswer:
+        self.during()
+        return super().__call__(request)
+
+
+def _slow_classifier(
+    db_session: Session, storage: LocalFileStorage, during: Any
+) -> tuple[InboxClassifier, ActingModel]:
+    model = ActingModel(during)
+    return InboxClassifier(db_session, storage, ModelGateway(db_session, SETTINGS, model)), model
+
+
+@pytest.mark.parametrize("act", ["discard", "duplicate", "kind"])
+@pytest.mark.parametrize("answer", ["receipt", "unusable", "other", "outage"])
+def test_what_the_model_reads_after_a_person_acted_changes_nothing(
+    act: str,
+    answer: str,
+    db_session: Session,
+    storage: LocalFileStorage,
+    inbox: InboxUploads,
+    admin: Actor,
+) -> None:
+    from pigrocrm.core.inbox.schemas import InboxDiscard, InboxDuplicate, InboxKindSet
+
+    original, target = (
+        item.id
+        for item in inbox.upload(
+            [("a.pdf", _receipt()), ("b.pdf", _receipt() + b"%b")], admin
+        ).items
+    )
+    service = InboxService(db_session)
+    acts = {
+        "discard": lambda: service.discard(target, InboxDiscard(reason="Non è nostro"), admin),
+        "duplicate": lambda: service.mark_duplicate(
+            target, InboxDuplicate(original_id=original), admin
+        ),
+        "kind": lambda: service.set_kind(target, InboxKindSet(kind="contract"), admin),
+    }
+    classifier, model = _slow_classifier(db_session, storage, acts[act])
+    _switch_on(db_session, model, admin)
+    model.answers.append(
+        {
+            "receipt": ModelAnswer(json.dumps(RECEIPT_ANSWER), 1000, 200),
+            "unusable": ModelAnswer("not json at all", 1000, 200),
+            "other": ModelAnswer(
+                json.dumps({"kind": "other", "reason": "Boh", "fields": {}}), 1, 1
+            ),
+            "outage": ModelUnavailable("il fornitore del modello non risponde"),
+        }[answer]
+    )
+
+    classifier.classify(target, admin)
+
+    row = db_session.get(InboxItem, target)
+    assert row is not None
+    db_session.refresh(row)
+    expected = {
+        "discard": ("discarded", None, "Non è nostro"),
+        "duplicate": ("duplicate", None, row.reason),
+        "kind": ("new", "contract", row.reason),
+    }[act]
+    assert (row.state, row.kind, row.reason) == expected
+    assert _count(db_session, Proposal) == 0

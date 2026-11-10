@@ -18,6 +18,8 @@ transaction on that session.
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+from contextlib import contextmanager
 from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import event, text
@@ -80,6 +82,21 @@ def bind_scope(session: Session, actor: Actor) -> None:
                 _apply(connection, *bound)
 
 
+@contextmanager
+def widened(session: Session) -> Iterator[None]:
+    """Run a statement over every legal entity inside the same transaction, and put the actor's
+    scope back after it: for the maintenance of rows a caller's scope hides but whose
+    consistency the caller's own act depends on (REB-985: the copies of an item that becomes a
+    copy). It reveals nothing, since the caller gets no row back, and the scope the session
+    carried is restored even if the statement raises."""
+    previous = session.info.get(_BOUND, (EVERY_LEGAL_ENTITY, ""))
+    _apply(session.connection(), EVERY_LEGAL_ENTITY, previous[1])
+    try:
+        yield
+    finally:
+        _apply(session.connection(), *previous)
+
+
 # SQLSTATE of `insufficient_privilege`, and the sentence Postgres puts in front of a
 # row-level policy's refusal. A missing grant answers the same SQLSTATE with another
 # sentence («permission denied for table ...»), and that one is a deploy defect, not a
@@ -107,4 +124,5 @@ __all__ = [
     "bind_scope",
     "is_policy_refusal",
     "scope_value",
+    "widened",
 ]

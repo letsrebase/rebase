@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from pigrocrm.core.activities.service import ActivityService
 from pigrocrm.core.actor import Actor
+from pigrocrm.core.db.scope import widened
 from pigrocrm.core.errors import Conflict, NotFound, ValidationFailed
 from pigrocrm.core.inbox.access import ENTITY, visible_item, visible_to
 from pigrocrm.core.inbox.models import InboxItem
@@ -194,11 +195,15 @@ class InboxService:
         item.duplicate_of_id = original.id
         item.reason = f"Doppione di {original.original_name}, indicato {_by(actor)}"
         item.read_started_at = None
-        self.session.execute(
-            update(InboxItem)
-            .where(InboxItem.duplicate_of_id == item.id)
-            .values(duplicate_of_id=original.id)
-        )
+        # Every copy follows, the ones the caller cannot see included: a copy left pointing at
+        # an item that is now a copy would break «an original is never a copy». Run over every
+        # legal entity and answering nothing, so it reveals no row.
+        with widened(self.session):
+            self.session.execute(
+                update(InboxItem)
+                .where(InboxItem.duplicate_of_id == item.id)
+                .values(duplicate_of_id=original.id)
+            )
         ActivityService(self.session).record(
             ENTITY, item.id, "marked_duplicate", actor, {"original_id": str(original.id)}
         )
@@ -238,6 +243,7 @@ class InboxService:
             self._withdraw_proposals(item, actor)
             item.kind = data.kind
             item.state = "new"
+            item.read_started_at = None
             item.reason = f"Tipo indicato {_by(actor)}"
         item.legal_entity_id = legal_entity_id
         ActivityService(self.session).record(
