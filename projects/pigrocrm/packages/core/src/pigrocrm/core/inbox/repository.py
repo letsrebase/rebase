@@ -27,6 +27,23 @@ class InboxRepository:
         self.session.flush()
         return item
 
+    def mail_seen(self, mailbox_id: UUID, uidvalidity: int, uid: int) -> bool:
+        """Whether a file of this message is already an item, whatever became of it. The `billing`
+        read hands a boundary message over again until a newer one arrives, and a message whose
+        files all ended as items is one it has already taken."""
+        return (
+            self.session.scalar(
+                select(InboxItem.id)
+                .where(
+                    InboxItem.mailbox_id == mailbox_id,
+                    InboxItem.mail_uidvalidity == uidvalidity,
+                    InboxItem.mail_uid == uid,
+                )
+                .limit(1)
+            )
+            is not None
+        )
+
     def get(self, item_id: UUID) -> InboxItem | None:
         return self.session.get(InboxItem, item_id)
 

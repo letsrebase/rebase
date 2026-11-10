@@ -4158,3 +4158,44 @@ def test_0098_creates_the_recurring_expenses_table_under_the_row_policy(
         assert _table_shape(url, "recurring_expenses")[0] is False
         upgrade(config, "0098")
         assert _table_shape(url, "recurring_expenses")[0] is True
+
+
+def test_0099_adds_the_message_columns_to_inbox_items_and_downgrade_keeps_the_items(
+    pigrocrm_postgres: Any,
+) -> None:
+    """REB-1016: a file that came by mail says which message, one that did not says nothing of
+    one, and downgrade leaves the items as uploads."""
+    with pigrocrm_postgres.fresh_container() as container:
+        url = container.get_connection_url()
+        config = _alembic_config(url)
+        upgrade(config, "0098")
+        upgrade(config, "0099")
+        engine = create_engine(url)
+        base = (
+            "INSERT INTO inbox_items (id, source, original_name, size_bytes, sha256, "
+            "content_sha256, state{cols}) VALUES (gen_random_uuid(), '{source}', 'a.xml', 1, "
+            "'a', 'a', 'new'{vals})"
+        )
+        try:
+            with engine.begin() as connection:
+                connection.execute(
+                    text(
+                        base.format(
+                            cols=", mail_uid, mail_uidvalidity", source="mailbox", vals=", 5, 7"
+                        )
+                    )
+                )
+            for source, cols, vals in (
+                ("mailbox", "", ""),  # a message-less mailbox item
+                ("upload", ", mail_uid, mail_uidvalidity", ", 5, 7"),  # an upload with a message
+                ("other", "", ""),
+            ):
+                with pytest.raises(IntegrityError), engine.begin() as connection:
+                    connection.execute(text(base.format(cols=cols, source=source, vals=vals)))
+            downgrade(config, "0098")
+            with engine.connect() as connection:
+                sources = connection.execute(text("SELECT source FROM inbox_items")).scalars().all()
+            assert sources == ["upload"]
+            upgrade(config, "0099")
+        finally:
+            engine.dispose()

@@ -311,6 +311,32 @@ stay when the mailbox is disconnected.
 - **The job.** `mail-sync` reads IMAP mailboxes beside Gmail ones: a space with IMAP only is
   «configured» and is read. An `auth_failed` mailbox is a refusal line each cycle.
 
+**As built (REB-1016, the `billing` read).** Choices the design left to the builder:
+
+- **Where it lives.** `inbox/mail_intake.py::BillingSink` is the sink `ImapSyncService` hands a
+  `billing` mailbox's headers to, and the one place a part of a message is fetched
+  (`ImapReader.fetch_part`, `BODY.PEEK[n]`, decoded from base64 or quoted-printable). The files go
+  through `InboxUploads.upload(..., origin=MailOrigin, commit=False)`, so type and signature checks,
+  ZIP opening, `.p7m` reading, dedup and the `_MT_` rule are the upload's, not a second copy.
+- **What is taken.** A part with a name whose extension is in the inbox's allowlist, decided from
+  BODYSTRUCTURE before anything is fetched. Not taken, and never downloaded: a part of another kind or
+  with no name, an inline part (inline disposition, or a Content-ID with no disposition), an image under
+  10 KiB, and the mailbox's own sent mail (sender equals the mailbox address). The body never is.
+- **Caps.** A part over 12 MiB encoded is not fetched, a message holds at most 20 parts and 40 MiB; what
+  is not taken, or whose bytes disagree with its name, is kept as a discarded item with its reason and no
+  bytes. All of a message's parts are fetched before any item is written, so a dropped connection
+  leaves nothing of it behind.
+- **Items.** `inbox_items.source` is `mailbox` and the item keeps the mailbox, the message (UIDVALIDITY
+  and UID, `mail_seen` makes a message read twice one message), its sender, subject and date. No body
+  column exists. `uploaded_by_id` is null (the system), so an unclassified item is an unscoped
+  administrator's. They belong to the space: disconnecting a mailbox leaves them and their files.
+- **Transaction.** The sink never commits: the cycle's advisory lock lasts to its commit. A sink that
+  breaks rolls the cycle back and `discard` deletes the bytes it wrote.
+- **Not done.** The PEC envelope (`postacert.eml` unwrapped, `daticert.xml` ignored) is **to verify**
+  (A5) and is not read: a signed invoice attached to the message itself is taken like any attachment.
+  Classification is the existing one (`POST /api/inbox/classify`); the cron does not call the model.
+  The late-arriving message (an INTERNALDATE older than the watermark) has no design and is unchanged.
+
 ### 2.3 Intermediaries, the «Cassetto fiscale» and the SdI
 
 - **An intermediary** that holds the SdI recipient code (Fiscozen, Aruba, Fatture in Cloud

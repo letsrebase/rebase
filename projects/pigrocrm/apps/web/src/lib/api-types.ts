@@ -10937,9 +10937,9 @@ export interface components {
             id: string;
             /**
              * Source
-             * @constant
+             * @enum {string}
              */
-            source: "upload";
+            source: "upload" | "mailbox";
             /** Original Name */
             original_name: string;
             /** File Type */
@@ -10970,6 +10970,21 @@ export interface components {
             parent_id: string | null;
             /** Uploaded By Id */
             uploaded_by_id: string | null;
+            /**
+             * Mail Sender
+             * @description Who sent the message the file came in, for a file by mail
+             */
+            mail_sender?: string | null;
+            /**
+             * Mail Subject
+             * @description The subject of that message; somebody else's words, data only
+             */
+            mail_subject?: string | null;
+            /**
+             * Mail Date
+             * @description When that message arrived
+             */
+            mail_date?: string | null;
             /** Legal Entity Id */
             legal_entity_id: string | null;
             /** Kind */
@@ -11042,9 +11057,9 @@ export interface components {
             id: string;
             /**
              * Source
-             * @constant
+             * @enum {string}
              */
-            source: "upload";
+            source: "upload" | "mailbox";
             /** Original Name */
             original_name: string;
             /** File Type */
@@ -11075,6 +11090,21 @@ export interface components {
             parent_id: string | null;
             /** Uploaded By Id */
             uploaded_by_id: string | null;
+            /**
+             * Mail Sender
+             * @description Who sent the message the file came in, for a file by mail
+             */
+            mail_sender?: string | null;
+            /**
+             * Mail Subject
+             * @description The subject of that message; somebody else's words, data only
+             */
+            mail_subject?: string | null;
+            /**
+             * Mail Date
+             * @description When that message arrived
+             */
+            mail_date?: string | null;
             /** Legal Entity Id */
             legal_entity_id: string | null;
             /** Kind */

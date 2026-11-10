@@ -43,6 +43,17 @@ class Part:
     literal: bool = False
     # What the structure says it is, when a test wants an attachment that has a Content-ID.
     disposition: str | None = None
+    # The part's bytes, served (base64, as the structure says) when a test asks for them. When
+    # given, `size` is the encoded size.
+    content: bytes | None = None
+
+    @property
+    def encoded(self) -> bytes | None:
+        return None if self.content is None else base64.b64encode(self.content)
+
+    @property
+    def wire_size(self) -> int:
+        return len(self.encoded) if self.encoded is not None else self.size
 
 
 @dataclass
@@ -80,12 +91,13 @@ class Msg:
                 extra = f'("{kind.upper()}" NIL)'
             if main == "TEXT":
                 leaves.append(
-                    f'("{main}" "{sub}" ("CHARSET" "utf-8") {cid} NIL "7BIT" {part.size} 4 NIL '
-                    f"{extra} NIL)"
+                    f'("{main}" "{sub}" ("CHARSET" "utf-8") {cid} NIL "7BIT" '
+                    f"{part.wire_size} 4 NIL {extra} NIL)"
                 )
             else:
                 leaves.append(
-                    f'("{main}" "{sub}" {params} {cid} NIL "BASE64" {part.size} NIL {extra} NIL)'
+                    f'("{main}" "{sub}" {params} {cid} NIL "BASE64" {part.wire_size} NIL '
+                    f"{extra} NIL)"
                 )
         if len(leaves) == 1:
             return leaves[0]
@@ -233,7 +245,11 @@ class _Handler(socketserver.StreamRequestHandler):
             self.wfile.write(state.fetch_raw)
             self.wfile.flush()
             return
-        wanted_set, _, _items = tail.partition(" ")
+        wanted_set, _, items = tail.partition(" ")
+        section = re.search(r"BODY\.PEEK\[(\d+(?:\.\d+)*)\]", items)
+        if section is not None:
+            self._fetch_part(tag, int(wanted_set), section.group(1))
+            return
         wanted = {int(u) for u in wanted_set.split(",")}
         for index, msg in enumerate(state.messages, start=1):
             if msg.uid not in wanted:
@@ -250,6 +266,18 @@ class _Handler(socketserver.StreamRequestHandler):
                 + headers
                 + b")\r\n"
             )
+        self.wfile.flush()
+        self._say(f"{tag} OK done")
+
+    def _fetch_part(self, tag: str, uid: int, path: str) -> None:
+        state = self.server.state
+        msg = next((m for m in state.messages if m.uid == uid), None)
+        index = int(path.split(".")[0]) - 1
+        part = msg.parts[index] if msg is not None and index < len(msg.parts) else None
+        data = (part.encoded if part is not None else None) or b""
+        self.wfile.write(
+            f"* 1 FETCH (UID {uid} BODY[{path}] {{{len(data)}}}\r\n".encode() + data + b")\r\n"
+        )
         self.wfile.flush()
         self._say(f"{tag} OK done")
 

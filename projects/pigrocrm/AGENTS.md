@@ -399,6 +399,13 @@ reason and «Riprova» (which makes a new export, since an export is never repla
 list so an admin who left finds it done. The share link, the Drive copy, the readiness checklist, the payroll parts and the tab
 «Link condivisi» have no data yet and are drawn nowhere; each joins with its own card. The folder is under `no-browser-arithmetic.test.ts`.
 
+**A space mailbox's attachments reach the inbox through `BillingSink` and nothing else (REB-1016).** `inbox/mail_intake.py`
+decides from BODYSTRUCTURE which parts to fetch (an accepted extension, not inline, not a small image, not the
+mailbox's own mail), fetches them with `ImapReader.fetch_part` and files them with `InboxUploads.upload(origin=...,
+commit=False)`: the items are `source = 'mailbox'` with the message's sender, subject and date and never its body, and
+they stay when the mailbox is disconnected. A personal mailbox cannot hold `billing` and the sink refuses one anyway.
+A sink never commits and `discard` undoes its bytes; the tests use the fake IMAP server with `Part(content=...)`.
+
 **A router authenticates with `dependencies=[Depends(get_actor)]`, not per handler.** A
 handler that never names the actor is still behind it, and `test_routes_authenticate.py`
 asks every route of the OpenAPI document once with no credential. The open routes are the

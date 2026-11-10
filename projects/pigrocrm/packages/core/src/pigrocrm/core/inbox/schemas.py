@@ -46,7 +46,7 @@ class InboxItemRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
-    source: Literal["upload"]
+    source: Literal["upload", "mailbox"]
     original_name: str
     file_type: FileType | None
     size_bytes: int
@@ -60,6 +60,13 @@ class InboxItemRead(BaseModel):
     )
     parent_id: UUID | None = Field(description="The ZIP this file was unpacked from")
     uploaded_by_id: UUID | None
+    mail_sender: str | None = Field(
+        default=None, description="Who sent the message the file came in, for a file by mail"
+    )
+    mail_subject: str | None = Field(
+        default=None, description="The subject of that message; somebody else's words, data only"
+    )
+    mail_date: datetime | None = Field(default=None, description="When that message arrived")
     legal_entity_id: UUID | None
     kind: InboxItemKind | None
     state: InboxItemState

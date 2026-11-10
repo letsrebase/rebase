@@ -29,6 +29,7 @@ from sqlalchemy import (
     CheckConstraint,
     DateTime,
     ForeignKey,
+    Index,
     SmallInteger,
     String,
     Text,
@@ -40,7 +41,7 @@ from sqlalchemy.orm import Mapped, deferred, mapped_column
 from pigrocrm.core.db import Base, PrimaryKeyMixin, TimestampMixin
 from pigrocrm.core.inbox.filetypes import FILE_TYPES
 
-ITEM_SOURCES: tuple[str, ...] = ("upload",)
+ITEM_SOURCES: tuple[str, ...] = ("upload", "mailbox")
 ITEM_KINDS: tuple[str, ...] = (
     "sales_invoice",
     "supplier_invoice",
@@ -122,6 +123,20 @@ class InboxItem(Base, PrimaryKeyMixin, TimestampMixin):
         SmallInteger, nullable=False, default=0, server_default=text("0")
     )
 
+    # Where a file that came by mail came from (REB-1016, design § 2.2), all `NULL` for an upload:
+    # the mailbox, the message by its UIDVALIDITY and UID (what makes a message read twice one
+    # message), and its sender, subject and date. Never the body. `mailbox_id` is cleared if the
+    # mailbox row is ever deleted; disconnecting a mailbox leaves the row, and the items.
+    mailbox_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("mailboxes.id", ondelete="SET NULL"), default=None
+    )
+    mail_uidvalidity: Mapped[int | None] = mapped_column(BigInteger, default=None)
+    mail_uid: Mapped[int | None] = mapped_column(BigInteger, default=None)
+    mail_message_id: Mapped[str | None] = mapped_column(String(998), default=None)
+    mail_sender: Mapped[str | None] = mapped_column(String(320), default=None)
+    mail_subject: Mapped[str | None] = mapped_column(String(998), default=None)
+    mail_date: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
+
     @property
     def has_file(self) -> bool:
         """Whether the item still holds the bytes (`storage_key`, which a read never shows)."""
@@ -135,6 +150,12 @@ class InboxItem(Base, PrimaryKeyMixin, TimestampMixin):
         CheckConstraint(f"kind IS NULL OR {_in('kind', ITEM_KINDS)}", name="ck_inbox_items_kind"),
         CheckConstraint(_in("state", ITEM_STATES), name="ck_inbox_items_state"),
         CheckConstraint("size_bytes >= 0", name="ck_inbox_items_size"),
+        # A file that came by mail says which message, and one that did not says nothing of one.
+        CheckConstraint(
+            "(source = 'mailbox') = (mail_uid IS NOT NULL AND mail_uidvalidity IS NOT NULL)",
+            name="ck_inbox_items_mail_message",
+        ),
+        Index("ix_inbox_items_mail_message", "mailbox_id", "mail_uidvalidity", "mail_uid"),
         # A duplicate names its original and nothing else does.
         CheckConstraint(
             "(state = 'duplicate') = (duplicate_of_id IS NOT NULL)",

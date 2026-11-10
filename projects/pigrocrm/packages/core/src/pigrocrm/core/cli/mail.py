@@ -22,10 +22,12 @@ from pigrocrm.core.gmail.schemas import SyncReport
 from pigrocrm.core.gmail.sync import GmailSyncService
 from pigrocrm.core.gmail.tokens import GoogleTokenClient
 from pigrocrm.core.gmail.transport import GmailTransport
+from pigrocrm.core.inbox.mail_intake import BillingSink
 from pigrocrm.core.labels import USER_ROLE, label
 from pigrocrm.core.mailboxes.imap_sync import ImapSyncService
 from pigrocrm.core.mailboxes.repository import MailboxRepository
 from pigrocrm.core.reminders.jobs import MAIL_SYNC_JOB
+from pigrocrm.core.storage.factory import storage_from_settings
 from pigrocrm.core.tenants import SpaceRegistry
 
 # What `_sync_mailbox` answers for a cycle another run holds: neither a completed cycle nor a
@@ -216,11 +218,24 @@ def _sync_imap(
     that could not be read is a refusal whatever the reason, and the line says which state it is
     in; a password the server refused stays one line a cycle until a person types a new one.
 
-    No sink is registered yet (the `billing` read is REB-1016), so the cycle logs in, opens the
-    inbox read-only and updates the mailbox's health, which is what a person sees."""
+    The one sink is `BillingSink` (REB-1016): a mailbox holding the `billing` purpose has its
+    attachments of an accepted type filed as inbox items. A mailbox with no `billing` purpose
+    has no purpose that is read, so the cycle logs in, opens the inbox read-only and updates the
+    mailbox's health, which is what a person sees."""
     try:
         with factory() as session:
-            report = ImapSyncService(session, settings=settings).sync(mailbox_id)
+            # The system's scope, as every cron job binds one: the inbox is under row-level
+            # security, and a system item has neither an entity nor an uploader.
+            bind_scope(session, Actor.system())
+            report = ImapSyncService(
+                session,
+                settings=settings,
+                sinks=[
+                    BillingSink(
+                        session, lambda: storage_from_settings(settings, session_factory=factory)
+                    )
+                ],
+            ).sync(mailbox_id)
     except DomainError as exc:
         print(f"{_now()} mail-sync {label}: {_reason(exc)}", file=sys.stderr)
         return type(exc).__name__

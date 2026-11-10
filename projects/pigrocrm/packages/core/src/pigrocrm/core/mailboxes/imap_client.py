@@ -19,8 +19,11 @@
   no address and no password.
 """
 
+import base64
+import binascii
 import contextlib
 import imaplib
+import quopri
 import re
 import socket
 import ssl
@@ -73,6 +76,11 @@ _MONTHS: Final = (
 )
 
 
+class PartUnreadable(Exception):
+    """A part that arrived and could not be decoded. The sentence is Italian and is the reason
+    of the discarded item it becomes."""
+
+
 class ImapFailure(Exception):
     """A connection or a login that did not work. `kind` is what the health state follows and
     `reason` is the sentence a person reads: Italian, and free of anything the server said."""
@@ -106,6 +114,8 @@ class BodyPart:
     size: int
     disposition: str | None
     content_id: str | None
+    # The transfer encoding, lower case: what `fetch_part` undoes.
+    encoding: str = "7bit"
 
     @property
     def inline(self) -> bool:
@@ -361,6 +371,34 @@ class ImapReader:
                     yield head
             self._check_time()
 
+    def fetch_part(self, uid: int, part: BodyPart) -> bytes:
+        """The decoded bytes of one part of one message, and nothing else of it. The caller has
+        chosen the part from BODYSTRUCTURE (type, name and size), so this is the only place a
+        body leaves the server, and it is for the `billing` purpose alone. `PEEK` sets no flag.
+        A part whose encoding is not one a mail uses, or that does not decode, is a failure of
+        that part and not of the connection."""
+        imap = self._need()
+        self._check_time()
+        try:
+            status, data = imap.uid("FETCH", str(uid), f"(BODY.PEEK[{part.path}])")
+        except (imaplib.IMAP4.error, OSError, EOFError) as exc:
+            raise ImapFailure("transient", "la connessione si è interrotta") from exc
+        if status != "OK":
+            raise ImapFailure("transient", "il server non restituisce l'allegato")
+        raw = next((item[1] for item in data if isinstance(item, tuple)), None)
+        if raw is None:
+            # An answer with no literal: the message went (expunged since the search) or the
+            # server does not map this section. That part is lost, the connection is not.
+            raise PartUnreadable("il server non restituisce l'allegato")
+        try:
+            if part.encoding == "base64":
+                return base64.b64decode(raw, validate=False)
+            if part.encoding == "quoted-printable":
+                return quopri.decodestring(raw)
+        except (binascii.Error, ValueError) as exc:
+            raise PartUnreadable("l'allegato non è codificato correttamente") from exc
+        return bytes(raw)
+
     def _need(self) -> imaplib.IMAP4:
         if self._imap is None:
             raise ImapFailure("transient", "la connessione è chiusa")
@@ -608,5 +646,6 @@ def _walk(node: list[Node], path: str, parts: list[BodyPart], *, top: bool = Fal
             size=size,
             disposition=disposition,
             content_id=content_id,
+            encoding=_text(node[5]).lower() or "7bit",
         )
     )
