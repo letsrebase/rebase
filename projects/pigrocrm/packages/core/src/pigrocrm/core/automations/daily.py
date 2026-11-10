@@ -115,6 +115,10 @@ class RuleReport:
 @dataclass(frozen=True)
 class PassReport:
     rules: tuple[RuleReport, ...]
+    # Legal entities whose payroll forecast window was rolled, and the ones that failed (a
+    # failure is counted and never stops the pass).
+    payroll_refreshed: int = 0
+    payroll_failed: int = 0
 
     @property
     def open(self) -> int:
@@ -169,13 +173,41 @@ class AutomationPass:
             # that a rule's own failure cannot take it away.
             self.session.commit()
         modules_on = enabled_modules(SpaceSettingsService(self.session, self.settings).effective())
-        return PassReport(
-            rules=tuple(
-                self._run_rule(rule, config, day, dry_run=dry_run)
-                for rule in TASK_RULES
-                if set(RULE_MODULES.get(rule, ())) <= modules_on
-            )
+        rules = tuple(
+            self._run_rule(rule, config, day, dry_run=dry_run)
+            for rule in TASK_RULES
+            if set(RULE_MODULES.get(rule, ())) <= modules_on
         )
+        refreshed = failed = 0
+        if "staff" in modules_on:
+            refreshed, failed = self._roll_payroll(dry_run=dry_run)
+        return PassReport(rules=rules, payroll_refreshed=refreshed, payroll_failed=failed)
+
+    def _roll_payroll(self, *, dry_run: bool) -> tuple[int, int]:
+        """Rolls the payroll forecast window of every legal entity that has staff (REB-1008):
+        the estimate only refreshes when staff change, so without this the horizon shrinks.
+        Each legal entity is its own savepoint and its own commit, so one that fails is
+        counted and the rest, and the rules above, are not stopped."""
+        from sqlalchemy import select
+
+        from pigrocrm.core.staff.models import StaffMember
+        from pigrocrm.core.staff.payroll import PayrollService
+
+        entities = list(
+            self.session.execute(select(StaffMember.legal_entity_id).distinct()).scalars()
+        )
+        done = failed = 0
+        for entity in entities:
+            try:
+                with self.session.begin_nested():
+                    PayrollService(self.session).refresh_payroll_forecasts(entity)
+            except Exception:
+                failed += 1
+                continue
+            done += 1
+            if not dry_run:
+                self.session.commit()
+        return done, failed
 
     # -- one rule -----------------------------------------------------------------
 

@@ -224,8 +224,16 @@ def test_the_13th_14th_and_the_yearly_inail_are_forecast_in_their_months(
     _, member = _world(db_session)
     StaffService(db_session).record_staff_payslip(member, _payslip(), ADMIN)
     rules = {i.source_rule: i for i in _payroll_items(db_session, state="forecast")}
-    december = [r for r in rules if r and r.startswith("payroll_extra_pay:") and r.split(":")[1].endswith("-12")]
-    june = [r for r in rules if r and r.startswith("payroll_extra_pay:") and r.split(":")[1].endswith("-06")]
+    december = [
+        r
+        for r in rules
+        if r and r.startswith("payroll_extra_pay:") and r.split(":")[1].endswith("-12")
+    ]
+    june = [
+        r
+        for r in rules
+        if r and r.startswith("payroll_extra_pay:") and r.split(":")[1].endswith("-06")
+    ]
     assert december and june
     assert all(rules[r].counterparty_type == "staff_member" for r in december + june)
     # The 13th leaves in December and the 14th in June, on the pay day's day.
@@ -467,3 +475,32 @@ def test_a_forecast_whose_date_passed_is_not_in_the_aggregate(db_session: Sessio
         PayrollTotalsQuery(legal_entity_id=entity), COLLABORATOR
     )
     assert TODAY - dt.timedelta(days=3) not in {line.due_date for line in lines.items}
+
+
+def test_the_daily_pass_rolls_the_payroll_window_and_a_failing_entity_does_not_stop_it(
+    db_session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from pigrocrm.core.automations.daily import AutomationPass
+
+    entity, member = _world(db_session)
+    StaffService(db_session).record_staff_payslip(member, _payslip(), ADMIN)
+    # The window has run out: every forecast is gone, as after a year of nobody editing staff.
+    for item in _payroll_items(db_session, state="forecast"):
+        DueItemService(db_session).drop(item.id, "finestra scaduta")
+    assert not _payroll_items(db_session, state="forecast")
+
+    report = AutomationPass(db_session).run()
+    assert report.payroll_failed == 0 and report.payroll_refreshed >= 1
+    assert _payroll_items(db_session, state="forecast")
+
+    other, _ = _world(db_session)
+    real = PayrollService.refresh_payroll_forecasts
+
+    def flaky(self: PayrollService, legal_entity_id: UUID) -> None:
+        if legal_entity_id == other:
+            raise RuntimeError("boom")
+        real(self, legal_entity_id)
+
+    monkeypatch.setattr(PayrollService, "refresh_payroll_forecasts", flaky)
+    again = AutomationPass(db_session).run()
+    assert again.payroll_failed == 1 and again.payroll_refreshed >= 1

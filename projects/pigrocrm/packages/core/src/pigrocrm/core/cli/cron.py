@@ -335,3 +335,8 @@ def _print_automation_report(slug: str, report: PassReport, *, dry_run: bool) ->
             print(
                 f"{slug}: {rule.rule} opened {rule.open}, already open {rule.already_open}{suffix}"
             )
+    if report.payroll_refreshed or report.payroll_failed:
+        print(
+            f"{slug}: payroll forecasts refreshed {report.payroll_refreshed}, "
+            f"failed {report.payroll_failed}{suffix}"
+        )
