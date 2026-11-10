@@ -118,6 +118,12 @@ export const CARD_TALENT = {
   // REB-558: a card's own day rate and work mode.
   daily_rate: '450.00',
   remote: 'remote',
+  // REB-823: what the anonymous card says; empty for a card without one and for a lead.
+  role: null,
+  seniority: null,
+  experience_years: null,
+  skills: [] as string[],
+  location: null,
   // REB-800: the other live cards that may be the same person; empty for almost everyone.
   duplicate_possible_of: [],
 }
@@ -136,6 +142,12 @@ export const LEAD_TALENT = {
   created_at: '2026-09-08T10:00:00Z',
   daily_rate: null,
   remote: null,
+  // REB-823: what the anonymous card says; empty for a card without one and for a lead.
+  role: null,
+  seniority: null,
+  experience_years: null,
+  skills: [] as string[],
+  location: null,
   duplicate_possible_of: [],
 }
 
@@ -239,6 +251,15 @@ export function mount(path: string, duplicates: Record<string, unknown> | (() =>
             : undefined,
       created_from: strParam(search.created_from),
       created_to: strParam(search.created_to),
+      skills: strParam(search.skills),
+      location: strParam(search.location),
+      seniority: strParam(search.seniority),
+      min_years: strParam(search.min_years),
+      max_years: strParam(search.max_years),
+      industries: strParam(search.industries),
+      languages: strParam(search.languages),
+      card: strParam(search.card),
+      sort: strParam(search.sort),
     }),
   })
   const talentLead = createRoute({

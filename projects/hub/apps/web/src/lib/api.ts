@@ -398,6 +398,34 @@ export interface TalentsFilters {
   with_logins?: boolean
   created_from?: string
   created_to?: string
+  /** REB-823, what the card says (the fields MCP's `list_talents` takes). `skills`,
+   *  `industries` and `languages` are what an admin types, terms split by commas, and
+   *  every term must be named; `seniority` is one level (`junior`, `mid`, `senior`,
+   *  `lead`); the years are whole numbers; `card` is `present`, `failed` or `absent`;
+   *  `sort` is `rate_asc`, `rate_desc`, `experience_years_asc` or `experience_years_desc`,
+   *  newest first when left out. */
+  skills?: string
+  location?: string
+  seniority?: string
+  min_years?: string
+  max_years?: string
+  industries?: string
+  languages?: string
+  card?: string
+  sort?: string
+}
+
+/** The comma-separated terms an admin typed, as the list the API takes: blanks dropped,
+ *  `undefined` when nothing is left. */
+export function terms(value: string | undefined): string[] | undefined {
+  const list = (value ?? '').split(',').map((term) => term.trim()).filter(Boolean)
+  return list.length > 0 ? list : undefined
+}
+
+/** A whole number of years as typed, or `undefined` for anything else: a filter the API
+ *  cannot take narrows nothing. */
+export function yearsFilter(value: string | undefined): number | undefined {
+  return value !== undefined && /^[0-9]{1,2}$/.test(value.trim()) ? Number(value) : undefined
 }
 
 /** What `GET /api/hub/companies` takes beside `limit` (REB-285/286): the shape
@@ -820,8 +848,19 @@ export const admin = {
    *  its per-field narrowing, REB-286's own filter row sends straight through; `limit`
    *  is the one override `AdminTalentLead` needs to see every lead at once rather
    *  than the server's own default page. */
-  talent: (filters: TalentsFilters & { cursor?: string; limit?: number } = {}) =>
-    unwrap(client.GET('/api/hub/talent', { params: { query: filled(filters) } }), reading<TalentList>()),
+  talent: (filters: TalentsFilters & { cursor?: string; limit?: number } = {}) => {
+    const { skills, seniority, min_years, max_years, industries, languages, ...rest } = filters
+    const query = filled({
+      ...rest,
+      skills: terms(skills),
+      industries: terms(industries),
+      languages: terms(languages),
+      seniority: seniority ? [seniority] : undefined,
+      min_years: yearsFilter(min_years),
+      max_years: yearsFilter(max_years),
+    })
+    return unwrap(client.GET('/api/hub/talent', { params: { query } }), reading<TalentList>())
+  },
   /** Who is on the list twice (REB-800): the pairs that share a LinkedIn profile
    *  (`mergeable`) and the ones that only share a name or a number (`to_review`). */
   duplicates: () => unwrap(client.GET('/api/hub/talent/duplicates'), reading<DuplicateList>()),

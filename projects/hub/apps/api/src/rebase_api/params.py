@@ -10,6 +10,7 @@ clamps to (`LIST_LIMIT_MAX`, 500), declared here too so OpenAPI shows it.
 from typing import Annotated
 
 from fastapi import Query
+from pydantic import StringConstraints
 
 from rebase_core.pagination import CURSOR_MAX_LENGTH
 from rebase_core.search import SEARCH_MAX_LENGTH
@@ -21,3 +22,10 @@ Limit = Annotated[int, Query(ge=1, le=LIST_LIMIT_MAX)]
 Offset = Annotated[int, Query(ge=0)]
 SearchQ = Annotated[str | None, Query(max_length=SEARCH_MAX_LENGTH)]
 Cursor = Annotated[str | None, Query(max_length=CURSOR_MAX_LENGTH)]
+# A repeated term filter of the Talenti list (`?skills=LLM&skills=Python`): a few terms, each short.
+TALENT_TERMS_MAX = 20
+TALENT_TERM_MAX_LENGTH = 100
+TalentTerms = Annotated[
+    list[Annotated[str, StringConstraints(max_length=TALENT_TERM_MAX_LENGTH)]] | None,
+    Query(max_length=TALENT_TERMS_MAX),
+]
