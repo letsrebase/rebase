@@ -759,6 +759,13 @@ ROWS: list[Row] = [
     Row("PUT", "/api/users/{user_id}/rates", admin_only=True, body={}),
     # --- the fiscal estimate: the one *read* admin gates (analytics/service.py:552) --
     Row("GET", "/api/analytics/fiscal", admin_only=True, params={"year": 2026}),
+    # --- the accountant's period bundle: every fiscal figure of an entity (REB-1011) --
+    Row(
+        "GET",
+        "/api/accountant-export",
+        admin_only=True,
+        params={"date_from": "2026-01-01", "date_to": "2026-03-31"},
+    ),
 ]
 
 # The routes the sweep never calls, each open on purpose. Every entry is a

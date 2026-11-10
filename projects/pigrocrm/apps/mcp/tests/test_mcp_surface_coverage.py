@@ -766,6 +766,7 @@ _CONFIGURATION: dict[Method, str] = {
 #    the artefact out of the storage layer that versions and audits it.
 _BYTE: dict[Method, str] = {
     ("AnalyticsService", "build_year_csv"): "l'MCP restituisce URL, mai byte",
+    ("AccountantExportService", "build"): "l'MCP restituisce URL, mai byte",
     ("DocumentService", "download"): "l'MCP restituisce URL, mai byte",
     ("InvoiceService", "download"): "l'MCP restituisce URL, mai byte",
     ("ContractRegisterService", "build_csv"): "l'MCP restituisce URL, mai byte",

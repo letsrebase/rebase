@@ -151,6 +151,9 @@ FULL_ACCESS_ACTIONS: frozenset[str] = frozenset(
         "annul_invoice",
         "mark_transmitted_externally",
         "export_invoice_xml",
+        # The accountant's period bundle: every fiscal figure of an entity in one file
+        # (accountant export design § 5).
+        "build_accountant_export",
         # Rates, cost categories and period locks: configuration, or rewriting what a
         # quarter's work was worth (slice 4 §11).
         "recalculate_rates",
@@ -384,6 +387,7 @@ ACTION_LABELS: dict[str, str] = {
     "create_staff_member": "registrare una persona dell'azienda con il suo compenso",
     "update_staff_member": "modificare una persona dell'azienda o il suo compenso",
     "get_staff_member": "leggere il compenso di una persona dell'azienda",
+    "build_accountant_export": "preparare l'esportazione per il commercialista",
     "list_staff": "leggere l'elenco delle persone dell'azienda e i loro compensi",
     "set_declared_tax_figure": "registrare le cifre della dichiarazione dei redditi",
     "set_payroll_pay_day": "impostare il giorno di paga dell'azienda",

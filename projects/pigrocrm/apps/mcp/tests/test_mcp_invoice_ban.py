@@ -227,6 +227,11 @@ REST_ONLY_FORBIDDEN = frozenset(
         # there is no tool; a token with `full_access` reaches it over REST for a script that
         # feeds the inbox, and a default token does not.
         "upload_inbox_file",
+        # REB-1011: the accountant's period bundle. Bytes never travel over MCP (accountant
+        # export design § 5): its tool arrives with the MCP card and returns a download path,
+        # which moves the name to `FORBIDDEN`; until then only the REST route reaches it, and
+        # a token without `full_access` is refused there.
+        "build_accountant_export",
         # REB-972: reading an item spends the space's model; an agent proposes with
         # `propose_inbox_item` and reads nothing itself, and a full-access token may over REST.
         "classify_inbox_item",
