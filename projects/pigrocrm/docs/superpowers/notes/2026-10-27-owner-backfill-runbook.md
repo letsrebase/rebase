@@ -28,7 +28,7 @@ prints**: the plan is the same lines both times.
 
 ```
 cd /opt/pigrocrm/projects/pigrocrm
-docker compose --env-file ../../.env exec -T api uv run --no-sync pigrocrm owner-backfill --slug <space> [--generic-account <email> ...]
+docker compose -p pigrocrm --env-file ../../.env exec -T api uv run --no-sync pigrocrm owner-backfill --slug <space> [--generic-account <email> ...]
 ```
 
 Read the plan, then run the same line again with `--apply`. `--slug root` is the root

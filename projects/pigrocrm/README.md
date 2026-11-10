@@ -154,10 +154,12 @@ from the network inside a production container already running, on every single 
 There is no daemon and no queue: the Gmail sync is a loop that starts, does its work and
 ends. The fifteen minutes are cron's, one line in the `crontab` of the user that owns the
 deploy. `$DEPLOY_PATH` below is the deploy directory configured in the environment (the
-root of this repository's checkout on the server):
+root of this repository's checkout on the server), and `-p` is that environment's compose
+project, `pigrocrm` on production and `pigrocrm-preview` on the preview: without it compose
+takes the directory's name, which is `pigrocrm` in both checkouts (REB-980):
 
 ```
-*/15 * * * * cd $DEPLOY_PATH/projects/pigrocrm && docker compose --env-file ../../.env exec -T api uv run --no-sync pigrocrm gmail-sync >> /var/log/pigrocrm-gmail-sync.log 2>&1
+*/15 * * * * cd $DEPLOY_PATH/projects/pigrocrm && docker compose -p pigrocrm --env-file ../../.env exec -T api uv run --no-sync pigrocrm gmail-sync >> /var/log/pigrocrm-gmail-sync.log 2>&1
 ```
 
 Every run synchronises every connected mailbox of the root installation and of every
@@ -175,7 +177,7 @@ never stops the next.
 Same shape for the weekly report, one line for `pigrocrm digest` at eight on Monday:
 
 ```
-0 8 * * 1 cd $DEPLOY_PATH/projects/pigrocrm && docker compose --env-file ../../.env exec -T api uv run --no-sync pigrocrm digest >> /var/log/pigrocrm-digest.log 2>&1
+0 8 * * 1 cd $DEPLOY_PATH/projects/pigrocrm && docker compose -p pigrocrm --env-file ../../.env exec -T api uv run --no-sync pigrocrm digest >> /var/log/pigrocrm-digest.log 2>&1
 ```
 
 Every run prints one line per space: `inviato a N`, `empty`, `già inviato`, `nessun
@@ -187,8 +189,8 @@ And one for the reminder pass (REB-736), every fifteen minutes, on production an
 preview, each with its own `DEPLOY_PATH` and its own log:
 
 ```
-*/15 * * * * cd /opt/pigrocrm/projects/pigrocrm && docker compose --env-file ../../.env exec -T api uv run --no-sync pigrocrm reminders >> /var/log/pigrocrm-reminders.log 2>&1
-*/15 * * * * cd /opt/pigrocrm-preview/projects/pigrocrm && docker compose --env-file ../../.env exec -T api uv run --no-sync pigrocrm reminders >> /var/log/pigrocrm-preview-reminders.log 2>&1
+*/15 * * * * cd /opt/pigrocrm/projects/pigrocrm && docker compose -p pigrocrm --env-file ../../.env exec -T api uv run --no-sync pigrocrm reminders >> /var/log/pigrocrm-reminders.log 2>&1
+*/15 * * * * cd /opt/pigrocrm-preview/projects/pigrocrm && docker compose -p pigrocrm-preview --env-file ../../.env exec -T api uv run --no-sync pigrocrm reminders >> /var/log/pigrocrm-preview-reminders.log 2>&1
 ```
 
 It walks the root installation and every space, puts each reminder in the lists of the

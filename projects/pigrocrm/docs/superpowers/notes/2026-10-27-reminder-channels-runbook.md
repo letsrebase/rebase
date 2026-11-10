@@ -64,14 +64,17 @@ subscription made on the preview never answers to production's key). The command
 nothing: it prints the line for the `.env`, and a comment with the public half for reference.
 
 ```
-cd /opt/pigrocrm/projects/pigrocrm && docker compose --env-file ../../.env exec -T api uv run --no-sync pigrocrm vapid-keys
+cd /opt/pigrocrm/projects/pigrocrm && docker compose -p pigrocrm --env-file ../../.env exec -T api uv run --no-sync pigrocrm vapid-keys
+cd /opt/pigrocrm-preview/projects/pigrocrm && docker compose -p pigrocrm-preview --env-file ../../.env exec -T api uv run --no-sync pigrocrm vapid-keys
 ```
 
 Put `PIGROCRM_VAPID_PRIVATE_KEY=<the value>` in that environment's `.env`, then recreate the
-container so it reads it (a restart does not re-read a changed `.env`):
+container so it reads it (a restart does not re-read a changed `.env`). `--no-deps` keeps the
+database out of it, and `-p` keeps each line on its own stack (REB-980):
 
 ```
-cd /opt/pigrocrm/projects/pigrocrm && docker compose --env-file ../../.env up -d api
+cd /opt/pigrocrm/projects/pigrocrm && docker compose -p pigrocrm --env-file ../../.env up -d --no-deps api
+cd /opt/pigrocrm-preview/projects/pigrocrm && docker compose -p pigrocrm-preview --env-file ../../.env up -d --no-deps api
 ```
 
 **Check it took:** open Impostazioni, Notifiche on a deployed space. «Notifiche su questo
@@ -92,7 +95,7 @@ Never rotate it to «tidy up».
   long list of old overdue invoices it is a first mail with all of them. Try it first:
 
   ```
-  cd /opt/pigrocrm/projects/pigrocrm && docker compose --env-file ../../.env exec -T api uv run --no-sync pigrocrm reminders --dry-run
+  cd /opt/pigrocrm/projects/pigrocrm && docker compose -p pigrocrm --env-file ../../.env exec -T api uv run --no-sync pigrocrm reminders --dry-run
   ```
 
   The line ends with `, email 3 (prova)` when three mails would go, and writes nothing.
