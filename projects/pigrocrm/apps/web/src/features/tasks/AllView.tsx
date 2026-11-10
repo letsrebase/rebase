@@ -253,8 +253,7 @@ export function AllView({
           )
         }
       >
-        {/* Under the tab strip's rule now, so it gets the air the title row has above it. */}
-        <FilterRow className="pt-4">
+        <FilterRow>
           <FilterChips
             label="Stato"
             allLabel="Tutti gli stati"
