@@ -24,7 +24,7 @@ outage) has no kind and is read again by the next run.
 import logging
 import time
 from collections.abc import Callable, Sequence
-from datetime import timedelta
+from datetime import date, timedelta
 from decimal import Decimal
 from typing import Any
 from uuid import UUID
@@ -36,8 +36,9 @@ from sqlalchemy.orm import Session
 
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.ai.gateway import ModelCapReached, ModelGateway, ModelOff
-from pigrocrm.core.ai.reader import DocumentReader, Unreadable
+from pigrocrm.core.ai.reader import DocumentRead, DocumentReader, Unreadable
 from pigrocrm.core.ai.transport import IMAGE_TYPES, PDF_TYPE, Attachment, ModelUnavailable
+from pigrocrm.core.auth.models import User
 from pigrocrm.core.errors import DomainError, ValidationFailed
 from pigrocrm.core.inbox.access import visible_item, visible_to
 from pigrocrm.core.inbox.models import (
@@ -56,6 +57,7 @@ from pigrocrm.core.legal_entities.models import LegalEntity
 from pigrocrm.core.legal_entities.repository import LegalEntityRepository
 from pigrocrm.core.proposals.schemas import ProposalCreate
 from pigrocrm.core.proposals.service import ProposalService
+from pigrocrm.core.staff.matching import match_staff_member
 from pigrocrm.core.storage.base import DocumentStorage
 from pigrocrm.core.text import file_text
 
@@ -414,6 +416,7 @@ class InboxClassifier:
                 text=text,
                 attachments=attachments,
                 inbox_item_id=item.id,
+                payslips=self._reads_payslips(item, actor),
             )
         except Unreadable as exc:
             self._unread(item, str(exc))
@@ -434,6 +437,9 @@ class InboxClassifier:
             item.read_started_at = None
             self.session.commit()
             return
+        if read.kind == "payslip":
+            self._payslip(item, read, actor)
+            return
         item.read_started_at = None  # released by the commit of the proposal below
         try:
             ProposalService(self.session).create(
@@ -451,6 +457,74 @@ class InboxClassifier:
         except (ValidationError, IntegrityError):
             # What the model wrote does not fit (a character a text column refuses, a field the
             # schema bounds): the sentence says so and carries none of it.
+            self._unread_after_rollback(item.id, INVALID_READING_REASON)
+        except DomainError as exc:
+            self._unread_after_rollback(item.id, str(exc.details.get("reason") or exc.message))
+
+    def _reads_payslips(self, item: InboxItem, actor: Actor) -> bool:
+        """Whether this reading may ask the model for a payslip's figures: the space switched the
+        model on and the reading of payslips on (staff design § 2), whoever asked may read pay,
+        and so did whoever uploaded the file. A file a collaborator uploaded is read as before, a
+        payslip being «other» to it, even when an administrator runs the reading: its figures are
+        never sent to the model for a member who may not see them. A file with no uploader (a
+        mailbox's) follows the actor."""
+        config = self.gateway.config()
+        if not (config and config.enabled and config.read_payslips and actor.reads_pay):
+            return False
+        if item.uploaded_by_id is None:
+            return True
+        uploader = self.session.get(User, item.uploaded_by_id)
+        return uploader is not None and uploader.role == "admin"
+
+    def _payslip(self, item: InboxItem, read: DocumentRead, actor: Actor) -> None:
+        """A payslip the model read: the item is a payslip (visible to whoever may read pay,
+        nobody else) and, when the person it names is one of the staff and every figure was read,
+        a proposal for a person to accept. Never accepted here (frame § A4). Without the person or
+        a figure it waits as a payslip with the sentence saying what is missing."""
+        fields = read.fields
+        raw_period = fields.get("period")
+        period = date.fromisoformat(raw_period) if isinstance(raw_period, str) else None
+        member = match_staff_member(self.session, fields.get("employee_name"), period)
+        item.read_started_at = None
+        if member is None or period is None:
+            item.kind = "payslip"
+            item.reason = (
+                "Cedolino: non trovo a quale persona dell'azienda e a quale mese appartiene. "
+                "Scrivi le cifre dalla pagina della persona, o indicalo al tuo agente"
+            )
+            self.session.commit()
+            return
+        missing = [name for name in ("gross", "net", "withholding") if name not in fields]
+        if missing:
+            item.kind = "payslip"
+            item.legal_entity_id = member.legal_entity_id
+            item.reason = (
+                f"Cedolino di {member.name}: non riesco a leggere {', '.join(missing)}. "
+                "Scrivi le cifre a mano dalla pagina della persona"
+            )
+            self.session.commit()
+            return
+        try:
+            ProposalService(self.session).create(
+                ProposalCreate(
+                    inbox_item_id=item.id,
+                    target_type="payslip",
+                    proposed_fields={
+                        "staff_member_id": str(member.id),
+                        "period": period.isoformat(),
+                        "gross": fields["gross"],
+                        "net": fields["net"],
+                        "withholding": fields["withholding"],
+                        "employee_name": fields.get("employee_name"),
+                    },
+                    excerpt=read.excerpt or item.original_name,
+                    excerpt_type=read.excerpt_type,
+                    confidence=Decimal(read.confidence),
+                    confidence_reason=read.confidence_reason,
+                ),
+                actor,
+            )
+        except (ValidationError, IntegrityError):
             self._unread_after_rollback(item.id, INVALID_READING_REASON)
         except DomainError as exc:
             self._unread_after_rollback(item.id, str(exc.details.get("reason") or exc.message))

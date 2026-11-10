@@ -1,4 +1,6 @@
+import { FileText, Lock } from 'lucide-react'
 import { useState, type ReactNode } from 'react'
+import { DownloadButton } from '@/components/DownloadButton'
 import { LoadingState } from '@/components/LoadingState'
 import { StatusPill } from '@/components/StatusPill'
 import { Button } from '@rebase/ui/button'
@@ -6,23 +8,35 @@ import { Input } from '@rebase/ui/input'
 import { Label } from '@rebase/ui/label'
 import { toast } from '@rebase/ui/sonner'
 import { formatMoneyValue } from '@/features/time/columns'
+import { RejectProposalDialog } from '@/features/proposals/RejectProposalDialog'
+import { formatConfidence } from '@/features/proposals/fields'
+import { useAcceptProposal } from '@/features/proposals/queries'
 import { toProblem } from '@/lib/api'
 import { formatItalianQuantity } from '@/lib/decimal'
 import { Absent, Figure } from './Amounts'
 import {
   CASH_LABELS,
   STATE_LABELS,
-  STATE_LINES,
   STATE_TONES,
   euroInput,
   formatDay,
   missingReason,
   monthName,
   reasonOf,
+  stateLine,
   stateOf,
   termsLine,
 } from './labels'
-import { useAdoptHourlyCost, useCorrectPayslip, useHourlyCost, useRecordPayslip, type MemberMonth, type StaffMember } from './queries'
+import {
+  useAdoptHourlyCost,
+  useCorrectPayslip,
+  useHourlyCost,
+  useRecordPayslip,
+  type MemberMonth,
+  type PayrollClosure,
+  type PayslipProposal,
+  type StaffMember,
+} from './queries'
 
 function Section({ title, tag, children }: { title: string; tag?: string; children: ReactNode }) {
   return (
@@ -232,10 +246,20 @@ function PayslipCorrectionForm({ member, payslip, monthKey, onDone }: { member: 
 
 /** The recorded payslip of the month and «Correggi il cedolino», a person's act like recording it:
  *  an agent credential is refused by the server. */
-function PayslipRecorded({ member, payslip, monthKey }: { member: StaffMember; payslip: Payslip; monthKey: string }) {
+function PayslipRecorded({
+  member,
+  payslip,
+  monthKey,
+  closed,
+}: {
+  member: StaffMember
+  payslip: Payslip
+  monthKey: string
+  closed: boolean
+}) {
   const [editing, setEditing] = useState(false)
   return (
-    <Section title="Cedolino" tag="Registrato">
+    <Section title="Cedolino" tag={closed ? 'Chiuso' : 'Registrato'}>
       <Rows
         rows={[
           { label: 'Lordo', value: formatMoneyValue(payslip.gross) },
@@ -243,13 +267,102 @@ function PayslipRecorded({ member, payslip, monthKey }: { member: StaffMember; p
           { label: 'Ritenute IRPEF', value: formatMoneyValue(payslip.withholding) },
         ]}
       />
-      {editing ? (
+      {closed ? (
+        <p className="text-sm text-muted-foreground">Il mese è chiuso: il cedolino non si corregge più.</p>
+      ) : editing ? (
         <PayslipCorrectionForm member={member} payslip={payslip} monthKey={monthKey} onDone={() => setEditing(false)} />
       ) : (
         <Button variant="outline" onClick={() => setEditing(true)} className="w-full sm:w-auto">
           Correggi il cedolino
         </Button>
       )}
+      {payslip.inbox_item_id == null ? null : <OpenPdf itemId={payslip.inbox_item_id} />}
+    </Section>
+  )
+}
+
+/** «Apri il PDF»: the file of the payslip, the inbox item's own, downloaded from there. */
+function OpenPdf({ itemId }: { itemId: string }) {
+  return (
+    <DownloadButton variant="outline" path={`/api/inbox/items/${itemId}/file`} className="w-full sm:w-auto">
+      <FileText aria-hidden className="mr-2 size-4" />
+      Apri il PDF
+    </DownloadButton>
+  )
+}
+
+/** «Accetta il cedolino»: the proposal's own accept, the same call as in «Proposte», and only a
+ *  person's: the server refuses any credential of an agent. What it refuses (a month closed
+ *  meanwhile, a person not in service) is shown in its own words. */
+export function AcceptPayslipButton({ proposalId, className }: { proposalId: string; className?: string }) {
+  const accept = useAcceptProposal(proposalId)
+  return (
+    <Button
+      className={className}
+      disabled={accept.isPending}
+      onClick={() =>
+        accept.mutate(
+          {},
+          {
+            onSuccess: () => toast.success('Cedolino accettato: prende il posto della stima'),
+            onError: (error) => toast.error(toProblem(error).detail),
+          },
+        )
+      }
+    >
+      {accept.isPending ? 'Accetto…' : 'Accetta il cedolino'}
+    </Button>
+  )
+}
+
+/** A payslip the inbox read and nobody accepted: the estimate beside it, line by line, with
+ *  «Accetta il cedolino», «Rifiuta…» and «Apri il PDF» (brief REB-1010). Rejecting keeps the
+ *  document and the estimate. */
+function PayslipReceived({ month, received, monthKey }: { month: MemberMonth; received: PayslipProposal; monthKey: string }) {
+  const [rejecting, setRejecting] = useState(false)
+  const estimatedNet = month.cash.find((item) => item.kind === 'net_pay')
+  const estimatedWithholding = month.cash.find((item) => item.kind === 'withholding')
+  const lines: { label: string; estimate: string | undefined; payslip: string }[] = [
+    { label: 'Lordo', estimate: month.cost?.gross, payslip: received.gross },
+    { label: 'Netto', estimate: estimatedNet?.amount, payslip: received.net },
+    { label: 'Ritenute IRPEF', estimate: estimatedWithholding?.amount, payslip: received.withholding },
+  ]
+  return (
+    <Section title="Cedolino ricevuto" tag="Da accettare">
+      <p className="text-sm text-muted-foreground">
+        È arrivato il cedolino di {monthName(monthKey)}: confrontalo con la stima. Lo accetti tu; finché non lo fai, la stima resta.
+      </p>
+      <div role="group" aria-label="Stima e cedolino a confronto" className="grid grid-cols-[1fr_auto_auto] gap-x-3 border-t text-sm">
+        <span />
+        <span className="border-b py-2 text-right text-xs text-muted-foreground underline decoration-dotted underline-offset-2">Stima</span>
+        <span className="border-b py-2 text-right text-xs font-medium">Cedolino</span>
+        {lines.map((line) => (
+          <div key={line.label} className="contents">
+            <span className="border-b py-2 text-muted-foreground">{line.label}</span>
+            <span className="border-b py-2 text-right tabular-nums">{line.estimate === undefined ? '—' : formatMoneyValue(line.estimate)}</span>
+            <span className="border-b py-2 text-right font-semibold tabular-nums">{formatMoneyValue(line.payslip)}</span>
+          </div>
+        ))}
+      </div>
+      <p className="text-xs text-muted-foreground">
+        Lettura: confidenza {formatConfidence(received.confidence)}
+        {received.confidence_reason === null ? '' : `, ${received.confidence_reason}`}.
+      </p>
+      <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+        <AcceptPayslipButton proposalId={received.proposal_id} className="w-full sm:w-auto" />
+        <Button variant="outline" className="w-full sm:w-auto" onClick={() => setRejecting(true)}>
+          Rifiuta…
+        </Button>
+        {received.inbox_item_id === null ? null : <OpenPdf itemId={received.inbox_item_id} />}
+      </div>
+      <RejectProposalDialog
+        proposalId={received.proposal_id}
+        open={rejecting}
+        onOpenChange={setRejecting}
+        onRejected={() => toast.success('Cedolino rifiutato: resta la stima')}
+        description="Non viene registrato niente: il cedolino resta in «In arrivo» e la stima di questo mese resta quella di adesso. Il motivo resta nella cronologia."
+        placeholder="Per esempio: le cifre non sono quelle del cedolino."
+      />
     </Section>
   )
 }
@@ -349,22 +462,27 @@ function HourlyCost({ member }: { member: StaffMember }) {
 }
 
 /** The panel of one person: the month's figures, the payslip beside the estimate, the terms
- *  (administrators only, which the whole page is), the hourly cost. */
+ *  (administrators only, which the whole page is), the hourly cost. A closed month shows no
+ *  «Accetta» and no edit of the payslip, and says so with a lock. */
 export function StaffPanel({
   member,
   month,
   monthKey,
+  closed,
   onEdit,
   showEdit,
 }: {
   member: StaffMember
   month: MemberMonth | undefined
   monthKey: string
+  /** Set when a person closed the month. */
+  closed: PayrollClosure | null
   onEdit: () => void
   /** The button sits in the panel on a wide screen; on the phone the sheet's sticky bar carries it. */
   showEdit: boolean
 }) {
-  const state = stateOf(month)
+  const state = stateOf(month, closed !== null)
+  const received = month?.received ?? null
   return (
     <div className="space-y-5 p-4">
       <div className="space-y-1">
@@ -374,18 +492,33 @@ export function StaffPanel({
           <p className="text-sm text-muted-foreground">Non in servizio in {monthName(monthKey)}.</p>
         ) : (
           <div className="flex flex-wrap items-center gap-2">
-            <StatusPill tone={STATE_TONES[state]}>{STATE_LABELS[state]}</StatusPill>
-            <span className="text-sm text-muted-foreground">{STATE_LINES[state]}</span>
+            <StatusPill tone={STATE_TONES[state]}>
+              {state === 'closed' ? <Lock aria-hidden className="mr-1 inline size-3" /> : null}
+              {STATE_LABELS[state]}
+            </StatusPill>
+            <span className="text-sm text-muted-foreground">
+              {closed === null
+                ? stateLine(month, state)
+                : `Chiuso il ${formatDay(closed.closed_at.slice(0, 10))}${closed.closed_by === null ? '' : ` da ${closed.closed_by}`}`}
+            </span>
           </div>
         )}
       </div>
 
       {month === undefined ? null : <MonthFigures month={month} />}
-      {month !== undefined && month.source === 'estimate' ? (
+      {month !== undefined && closed === null && month.source === 'estimate' && received !== null ? (
+        <PayslipReceived key={`${member.id}:${monthKey}`} month={month} received={received} monthKey={monthKey} />
+      ) : null}
+      {month !== undefined && closed === null && month.source === 'estimate' && received === null ? (
         <PayslipForm key={`${member.id}:${monthKey}`} member={member} month={month} monthKey={monthKey} />
       ) : null}
       {month !== undefined && month.source === 'payslip' && month.payslip != null ? (
-        <PayslipRecorded key={`${member.id}:${monthKey}`} member={member} payslip={month.payslip} monthKey={monthKey} />
+        <PayslipRecorded key={`${member.id}:${monthKey}`} member={member} payslip={month.payslip} monthKey={monthKey} closed={closed !== null} />
+      ) : null}
+      {month !== undefined && closed !== null && month.source === 'estimate' ? (
+        <Section title="Cedolino" tag="Chiuso">
+          <p className="text-sm text-muted-foreground">Il mese è chiuso senza un cedolino accettato: le cifre restano la stima.</p>
+        </Section>
       ) : null}
 
       <Section title="Condizioni" tag="Solo amministratori">

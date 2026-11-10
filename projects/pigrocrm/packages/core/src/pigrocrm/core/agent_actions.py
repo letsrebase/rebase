@@ -285,6 +285,9 @@ FULL_ACCESS_ACTIONS: frozenset[str] = frozenset(
         "list_staff",
         # The month's estimate per staff member (REB-1008): cost and cash, so pay.
         "get_payroll_month",
+        # Closing a payroll month locks its payslips and its estimates (staff design § 4): an
+        # administrator's act and, for an agent, a `full_access` token's.
+        "close_payroll_month",
         # Engagements: creating one draws a letter number a cancellation never gives back,
         # ending or sending one acts on a legal document, and the tax data is personal data
         # printed on contracts (collaborators design § 6). The hub id is a freelancer's identity.
@@ -418,8 +421,12 @@ PERSON_ONLY_ACTIONS: frozenset[str] = frozenset(
         # override of their own (staff design § 4: its tools are the four of `FULL_ACCESS`).
         "set_payroll_pay_day",
         # The figures of an accepted payslip: accepting is a person's act (frame § A4), so a
-        # person types them (REB-1008); the inbox's proposal is the other way in, later.
+        # person types them (REB-1008); the inbox's proposal is the other way in (REB-1045).
         "record_staff_payslip",
+        # Accepting what the inbox read of a payslip (REB-1045): the same act as typing its
+        # figures, so the same door. `accept_proposal` is person-only already; this is the
+        # staff service's own check on the way in.
+        "accept_payslip_proposal",
         # Correcting one already recorded (REB-1030): the same act, so the same door.
         "correct_staff_payslip",
         # What an hour costs, from what a person costs, and its adoption as the linked
@@ -529,6 +536,8 @@ ACTION_LABELS: dict[str, str] = {
     "propose_staff_hourly_cost": "proporre il costo orario di una persona",
     "adopt_staff_hourly_cost": "adottare il costo orario di una persona",
     "get_payroll_month": "leggere la stima del mese per le persone dell'azienda",
+    "close_payroll_month": "chiudere un mese di paga",
+    "accept_payslip_proposal": "accettare un cedolino letto da «In arrivo»",
     "list_bank_accounts": "leggere i conti bancari",
     "get_bank_account_coverage": "leggere gli estratti conto che mancano a un conto",
     "list_statements": "leggere gli estratti conto di un conto",

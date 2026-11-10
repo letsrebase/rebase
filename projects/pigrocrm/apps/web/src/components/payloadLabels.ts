@@ -351,6 +351,7 @@ export const PAYLOAD_KEY_LABELS: Record<string, string> = {
   person_id: 'Persona',
   pipeline_stage_id: 'Stato della pipeline',
   proposal_id: 'Proposta',
+  payslip_id: 'Cedolino',
   queries_issued: 'Ricerche eseguite',
   quiet_hours: 'Ore di silenzio',
   rebase_refs: 'Riferimenti rebase',

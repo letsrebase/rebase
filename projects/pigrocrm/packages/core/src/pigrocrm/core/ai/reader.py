@@ -23,9 +23,13 @@ from pydantic import ValidationError
 from pigrocrm.core.ai.gateway import ModelGateway
 from pigrocrm.core.ai.transport import Attachment
 from pigrocrm.core.proposals.schemas import ReadDocumentFields
+from pigrocrm.core.staff.schemas import ReadPayslipFields
 
-ReadKind = Literal["supplier_invoice", "receipt", "bank_statement", "other"]
+ReadKind = Literal["supplier_invoice", "receipt", "bank_statement", "payslip", "other"]
 READ_KINDS: tuple[str, ...] = ("supplier_invoice", "receipt", "bank_statement", "other")
+PAYSLIP_KINDS: tuple[str, ...] = (*READ_KINDS, "payslip")
+""""payslip" is a kind only when the space switched the reading of payslips on (staff design § 2):
+otherwise a payslip is «other», as it always was, and its figures are not asked for."""
 MAX_OUTPUT_TOKENS = 1500
 EXCERPT_MAX = 300
 _WHITESPACE = re.compile(r"\s+")
@@ -66,6 +70,21 @@ number with a dot and no currency sign, or null,
 }
 Use null for what the document does not state. Never invent a value. For a bank statement fill \
 the period, the iban and the balances; for a receipt fill the date, the total and the issuer."""
+
+PAYSLIP_ADDENDUM = """One more kind is allowed for this document, and it overrides what "other" \
+says about payslips: "payslip", a payslip («cedolino», «busta paga») of an employee or a \
+director. \
+For a payslip, "fields" is this object and nothing else:
+{
+  "employee_name": the person's name as printed, or null,
+  "period": "YYYY-MM-DD", any day of the month the payslip pays (the month worked), or null,
+  "gross": a decimal number with a dot and no currency sign, the total gross pay of the month \
+(«totale competenze», «lordo»), or null,
+  "net": a decimal number, the net pay («netto in busta», «netto a pagare»), or null,
+  "withholding": a decimal number, the income tax (IRPEF) withheld in the month, or null
+}
+"confidence" is how sure you are of those figures. Never guess a figure: null for what the \
+document does not state."""
 
 
 class Unreadable(Exception):
@@ -113,10 +132,10 @@ def _object(raw: str) -> dict[str, Any]:
     return data
 
 
-def parse_answer(raw: str, source_text: str | None) -> DocumentRead:
+def parse_answer(raw: str, source_text: str | None, *, payslips: bool = False) -> DocumentRead:
     data = _object(raw)
     kind = data.get("kind")
-    if kind not in READ_KINDS:
+    if kind not in (PAYSLIP_KINDS if payslips else READ_KINDS):
         raise Unreadable("il modello non ha detto che documento e'")
     reason_raw = data.get("reason")
     reason = reason_raw.replace("\x00", "") if isinstance(reason_raw, str) else None
@@ -135,9 +154,11 @@ def parse_answer(raw: str, source_text: str | None) -> DocumentRead:
         if not isinstance(fields_raw, dict):
             raise Unreadable("il modello non ha letto nessun campo del documento")
         try:
-            fields = ReadDocumentFields.model_validate(
-                {k: v for k, v in fields_raw.items() if v is not None}
-            ).model_dump(mode="json", exclude_none=True)
+            fields = (
+                (ReadPayslipFields if kind == "payslip" else ReadDocumentFields)
+                .model_validate({k: v for k, v in fields_raw.items() if v is not None})
+                .model_dump(mode="json", exclude_none=True)
+            )
         except ValidationError as exc:
             raise Unreadable("i campi letti dal modello non sono validi") from exc
     return DocumentRead(
@@ -166,19 +187,22 @@ class DocumentReader:
         text: str | None,
         attachments: Sequence[Attachment],
         inbox_item_id: UUID,
+        payslips: bool = False,
     ) -> DocumentRead:
         """`text` is what the file carries as text, `attachments` the files the model reads as
-        they are (an image, a PDF with no text layer). Raises the gateway's refusals and
-        `ModelUnavailable` as they are, and `Unreadable` for an answer that cannot be used."""
+        they are (an image, a PDF with no text layer). `payslips` is whether the space switched the
+        reading of payslips on: only then is a payslip a kind of its own and its figures asked
+        for. Raises the gateway's refusals and `ModelUnavailable` as they are, and `Unreadable`
+        for an answer that cannot be used."""
         # The name and the text are somebody else's words: neither can close the block they sit
         # in, so a document cannot end its own data and start talking.
         prompt = f'<document name="{_enclosed(name)}">\n{_enclosed(text or "")}\n</document>'
         spend = self.gateway.run(
             task="read_document",
-            system=SYSTEM_PROMPT,
+            system=f"{SYSTEM_PROMPT}\n\n{PAYSLIP_ADDENDUM}" if payslips else SYSTEM_PROMPT,
             text_input=prompt,
             attachments=attachments,
             max_output_tokens=MAX_OUTPUT_TOKENS,
             inbox_item_id=inbox_item_id,
         )
-        return parse_answer(spend.answer.text, text)
+        return parse_answer(spend.answer.text, text, payslips=payslips)

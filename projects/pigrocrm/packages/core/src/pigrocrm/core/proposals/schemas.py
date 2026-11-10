@@ -32,9 +32,9 @@ from pigrocrm.core.work_units.schemas import (
 )
 
 ProposalTargetType = Literal[
-    "contract", "work_unit", "supplier_invoice", "receipt", "bank_statement"
+    "contract", "work_unit", "supplier_invoice", "receipt", "bank_statement", "payslip"
 ]
-InboxProposalTargetType = Literal["supplier_invoice", "receipt", "bank_statement"]
+InboxProposalTargetType = Literal["supplier_invoice", "receipt", "bank_statement", "payslip"]
 ProposalExcerptType = Literal["quoted", "transcribed"]
 ProposalStatus = Literal["pending", "accepted", "rejected"]
 ProposalOrder = Literal["arrival", "decision"]

@@ -144,6 +144,7 @@ _WHAT = {
     "work_unit": "La giornata proposta",
     "supplier_invoice": "La fattura di acquisto letta",
     "receipt": "La ricevuta letta",
+    "payslip": "Il cedolino letto",
     "bank_statement": "L'estratto conto letto",
 }
 
@@ -186,7 +187,7 @@ def detect_pending(ctx: DetectorContext) -> list[Detection]:
         # (and read again), and the sentence does not ask for what cannot be done.
         ask = (
             "nessun modulo la archivia ancora, rifiutala per farla rileggere"
-            if proposal.inbox_item_id is not None
+            if proposal.inbox_item_id is not None and proposal.target_type != "payslip"
             else "accettala o rifiutala"
         )
         found.append(

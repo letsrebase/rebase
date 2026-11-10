@@ -1,7 +1,7 @@
 """accountant export: share links, their openings and the copies written to Drive
 
-Revision ID: 0103
-Revises: 0102
+Revision ID: 0104
+Revises: 0103
 
 REB-1047, § 3 of `2026-11-09-accountant-export-design.md`. Three new tables, nothing backfilled:
 no export was shared or written to Drive before.
@@ -31,8 +31,8 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql
 
-revision: str = "0103"
-down_revision: str | Sequence[str] | None = "0102"
+revision: str = "0104"
+down_revision: str | Sequence[str] | None = "0103"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

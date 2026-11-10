@@ -24,12 +24,14 @@ Pay is the most personal data the product holds (§ 4): both tables carry the pl
 
 import datetime as dt
 from decimal import Decimal
+from typing import Any
 from uuid import UUID
 
 from sqlalchemy import (
     Boolean,
     CheckConstraint,
     Date,
+    DateTime,
     ForeignKey,
     Index,
     Integer,
@@ -38,6 +40,7 @@ from sqlalchemy import (
     UniqueConstraint,
     text,
 )
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from pigrocrm.core.db import Base, PrimaryKeyMixin, TimestampMixin
@@ -246,6 +249,11 @@ class StaffPayslip(Base, PrimaryKeyMixin, TimestampMixin):
     gross: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
     net: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
     withholding: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
+    # The inbox item the payslip was read from, when it was accepted from a proposal (REB-1045):
+    # its file is the payslip's PDF. `NULL` for figures a person typed.
+    inbox_item_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("inbox_items.id"), default=None, index=True
+    )
 
 
 class PayrollSettings(Base, PrimaryKeyMixin, TimestampMixin):
@@ -264,3 +272,28 @@ class PayrollSettings(Base, PrimaryKeyMixin, TimestampMixin):
     legal_entity_id: Mapped[UUID] = mapped_column(ForeignKey("legal_entities.id"), nullable=False)
     pay_day: Mapped[int] = mapped_column(Integer, nullable=False)
     pay_month_offset: Mapped[int] = mapped_column(Integer, nullable=False)
+
+
+class PayrollMonthClosure(Base, PrimaryKeyMixin, TimestampMixin):
+    """A payroll month a person closed (spec § 4, REB-1045): while the row exists no payslip of
+    the legal entity is recorded or corrected for `month`, and the month's estimates are what
+    `snapshot` says, however the staff's pay inputs change afterwards. `snapshot` is the month
+    as `PayrollService.get_payroll_month` answered when it was closed (a `PayrollMonthRead`),
+    so closing fixes what the page showed. `month` is the first day of the month worked.
+
+    Nothing is deleted: a closed month stays closed, and reopening is not offered.
+    """
+
+    __tablename__ = "payroll_month_closures"
+    __table_args__ = (
+        UniqueConstraint("legal_entity_id", "month", name="uq_payroll_month_closures_month"),
+        CheckConstraint("extract(day FROM month) = 1", name="ck_payroll_month_closures_month"),
+    )
+
+    legal_entity_id: Mapped[UUID] = mapped_column(
+        ForeignKey("legal_entities.id"), nullable=False, index=True
+    )
+    month: Mapped[dt.date] = mapped_column(Date, nullable=False)
+    closed_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    closed_by_id: Mapped[UUID | None] = mapped_column(ForeignKey("users.id"), default=None)
+    snapshot: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)

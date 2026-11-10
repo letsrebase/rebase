@@ -58,6 +58,14 @@ class Actor(BaseModel):
         return self.role in ADMIN_ROLES
 
     @property
+    def reads_pay(self) -> bool:
+        """Whether this actor may read what pay is in (payslips, and the inbox items and
+        proposals that carry them, staff design § 4): an administrator, and for an agent
+        credential only one with `full_access`. Never a member with the collaborator or
+        readonly role."""
+        return self.can_administer and (self.type != "mcp" or self.full_access)
+
+    @property
     def scoped(self) -> bool:
         return self.legal_entities is not None
 
@@ -117,6 +125,15 @@ class Actor(BaseModel):
         self._refuse_if_agent(action)
         if not self.can_administer:
             raise PermissionDenied(action, list(ADMIN_ROLES), self.role)
+
+    def require_pay_reader(self, action: str) -> None:
+        """`require_admin`, and for an agent credential `full_access` as well: what the action
+        touches is pay, which a default token never reads (staff design § 4). `action` is
+        classified as an action every token may reach (it is not pay by itself: it is pay
+        only for the item or record it is aimed at), so the second half is checked here."""
+        self.require_admin(action)
+        if self.type == "mcp" and not self.full_access:
+            raise AgentForbidden(action)
 
     def require_unscoped_admin(self, action: str) -> None:
         """`require_admin`, and the whole space in view (spec 2026-10-03 §1.11): the

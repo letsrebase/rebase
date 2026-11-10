@@ -12,6 +12,8 @@ export type PayDay = components['schemas']['PayDayRead']
 export type EmployeeBody = components['schemas']['EmployeeCreate']
 export type DirectorBody = components['schemas']['DirectorCreate']
 export type StaffUpdateBody = components['schemas']['StaffMemberUpdate']
+export type PayslipProposal = components['schemas']['PayslipProposalRead']
+export type PayrollClosure = components['schemas']['PayrollClosureRead']
 export type PayslipBody = components['schemas']['PayslipFigures']
 export type PayslipCorrectionBody = components['schemas']['PayslipCorrection']
 
@@ -132,6 +134,22 @@ export function useCorrectPayslip(id: string, payslipId: string) {
         api.PATCH('/api/staff/{staff_member_id}/payslips/{payslip_id}', {
           params: { path: { staff_member_id: id, payslip_id: payslipId } },
           body,
+        }),
+      ),
+    onSuccess: refresh,
+  })
+}
+
+/** Closes a payroll month of the legal entity: locks its payslips and its estimates. The server
+ *  refuses a month that has not ended (422) and one already closed (409), in its own words. */
+export function useCloseMonth(entity: string) {
+  const refresh = useRefresh()
+  return useMutation({
+    mutationFn: (month: string) =>
+      unwrap(
+        api.POST('/api/staff/payroll/{legal_entity_id}/closures', {
+          params: { path: { legal_entity_id: entity } },
+          body: { month: `${month}-01` },
         }),
       ),
     onSuccess: refresh,

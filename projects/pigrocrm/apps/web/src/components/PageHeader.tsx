@@ -14,6 +14,14 @@ import { cn } from '@rebase/ui/cn'
  * not to a tab (the Home's «Da fare» band, REB-874), then `tabs` on a row of their own
  * closed by a rule, then `children` for whatever a page needs between its header and its
  * content -- a filter row, most often.
+ *
+ * What follows a tab rule is never flush against it (REB-1055). The page's body, a sibling of
+ * this header inside the `Tabs` root, starts 32px under the rule: the root's `gap-2` plus its own
+ * `py-6`. `children` sit *inside* the header, where that gap does not reach them, so with `tabs`
+ * they are given the same 32px here, once, and a page no longer adds a top margin of its own
+ * (`Anagrafiche` and `In arrivo` had none, `Attività` and `Incarichi` each patched it with a
+ * `pt-4` of their own).
+ * Without `tabs` the title row's own bottom padding is the gap, as before.
  * `actions` is where a page's primary button goes (§5: one strong thing per screen, top
  * right); everything else on the screen is quieter than it.
  */
@@ -79,7 +87,9 @@ export function PageHeader({
       {/* Scrolls sideways inside the panel: thirteen settings tabs are wider than a
           phone, and the alternative is a page that scrolls horizontally as a whole. */}
       {tabs && <div className="overflow-x-auto border-b px-8">{tabs}</div>}
-      {children}
+      {/* `pt-8` is `gap-2` (the Tabs root's, between this header and the body) plus the body's
+          `py-6`: the same 32px under the rule whichever slot the content is in. */}
+      {children && <div className={cn(tabs && 'pt-8')}>{children}</div>}
     </header>
   )
 }

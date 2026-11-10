@@ -10,11 +10,14 @@ from pathlib import Path
 from typing import Any
 from uuid import UUID, uuid4
 
+import pytest
 from mcp import Client
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.actor import Actor, Role
+from pigrocrm.core.auth.models import User
 from pigrocrm.core.config import Settings
+from pigrocrm.core.errors import Conflict
 from pigrocrm.core.fiscal.models import FiscalProfile
 from pigrocrm.core.legal_entities.models import LegalEntity
 from pigrocrm.core.staff.schemas import EmployeeCreate, PayslipFigures
@@ -28,6 +31,7 @@ TOOLS = {
     "get_staff_member",
     "list_staff",
     "get_payroll_month",
+    "close_payroll_month",
 }
 
 
@@ -274,3 +278,73 @@ async def test_the_months_estimate_never_carries_the_payslip_a_person_corrects(
         row = _payload(month)["members"][0]
         assert row["source"] == "payslip" and row["cost"]["gross"] == "2500.00"
         assert "payslip" not in row
+
+
+async def test_a_full_access_admin_closes_a_payroll_month_once_and_a_payslip_for_it_is_refused(
+    mcp_session: Session, tmp_path: Path
+) -> None:
+    """REB-1045: `close_payroll_month` closes a month that has ended, for an administrator's
+    token with `full_access` and nobody else's; then a payslip for it is a refusal."""
+    entity = _entity(mcp_session, "it-standard")
+    owner = User(email=f"{uuid4()}@example.test", password_hash="x", name="Owner", role="admin")
+    mcp_session.add(owner)
+    mcp_session.commit()
+    member = StaffService(mcp_session).create_staff_member(
+        EmployeeCreate(
+            legal_entity_id=entity,
+            name="Giulia Bianchi",
+            start_date=dt.date(2026, 1, 1),
+            gross_annual_pay=Decimal("30000.00"),
+            monthly_payments=14,
+        ),
+        Actor(id=owner.id, type="user", role="admin"),
+    )
+    server = build_server(
+        lambda: mcp_session,
+        lambda: Actor(id=owner.id, type="mcp", role="admin", full_access=True),
+        LocalFileStorage(tmp_path),
+        Settings(_env_file=None, mcp_full_access=True),  # type: ignore[call-arg]
+    )
+    async with Client(server) as client:
+        closed = await client.call_tool(
+            "close_payroll_month", {"legal_entity_id": str(entity), "month": "2026-01-15"}
+        )
+        assert not closed.is_error, closed.content
+        assert _payload(closed)["month"] == "2026-01-01"
+        assert _payload(closed)["closed_by"] == "Owner"
+        again = await client.call_tool(
+            "close_payroll_month", {"legal_entity_id": str(entity), "month": "2026-01-01"}
+        )
+        assert again.is_error and "chiuso" in str(again.content)
+        future = await client.call_tool(
+            "close_payroll_month", {"legal_entity_id": str(entity), "month": "2999-01-01"}
+        )
+        assert future.is_error
+        month = await client.call_tool(
+            "get_payroll_month", {"legal_entity_id": str(entity), "month": "2026-01-10"}
+        )
+        assert not month.is_error, month.content
+        assert _payload(month)["closed"]["month"] == "2026-01-01"
+        assert "received" not in _payload(month)["members"][0]
+    admin = Actor(id=owner.id, type="user", role="admin")
+    with pytest.raises(Conflict) as refused_payslip:
+        StaffService(mcp_session).record_staff_payslip(
+            member.id,
+            PayslipFigures(
+                period=dt.date(2026, 1, 1),
+                gross=Decimal("2500.00"),
+                net=Decimal("1850.00"),
+                withholding=Decimal("300.00"),
+            ),
+            admin,
+        )
+    assert "chiuso" in str(refused_payslip.value)
+    async with Client(_server(mcp_session, tmp_path, role="collaborator")) as client:
+        result = await client.call_tool(
+            "close_payroll_month", {"legal_entity_id": str(entity), "month": "2026-02-01"}
+        )
+        assert result.is_error and "Unknown tool" not in str(result.content)
+    plain = {
+        tool.name for tool in await _server(mcp_session, tmp_path, full_access=False).list_tools()
+    }
+    assert "close_payroll_month" not in plain

@@ -65,6 +65,11 @@ class AiModelConfig(Base, PrimaryKeyMixin, TimestampMixin):
     privacy_acknowledged_by_id: Mapped[UUID | None] = mapped_column(
         ForeignKey("users.id"), default=None
     )
+    # The second switch the staff design asks for before the model reads a payslip's figures
+    # (§ 2, REB-1045): off by default, and meaningful only while the model itself is on.
+    read_payslips: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=text("false")
+    )
 
     __table_args__ = (
         CheckConstraint("singleton", name="ck_ai_model_config_singleton"),

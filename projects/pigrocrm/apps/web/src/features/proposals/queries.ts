@@ -104,6 +104,8 @@ function useDecisionCache(proposalId: string) {
       void queryClient.invalidateQueries({ queryKey: ['proposals'] })
       // A proposal read from «In arrivo» moves its item: rejected, it waits to be read again.
       void queryClient.invalidateQueries({ queryKey: queryKeys.inbox })
+      // A payslip proposal moves a person's month on «Persone dell'azienda».
+      void queryClient.invalidateQueries({ queryKey: ['staff'] })
       if (decided.status === 'accepted') {
         void queryClient.invalidateQueries({ queryKey: queryKeys.documents() })
         void queryClient.invalidateQueries({ queryKey: ['document'] })

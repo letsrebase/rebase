@@ -12,6 +12,8 @@ from pigrocrm.core.staff.schemas import (
     Kind,
     PayDayRead,
     PayDayWrite,
+    PayrollClosureRead,
+    PayrollMonthClose,
     PayrollMonthRead,
     PayslipCorrection,
     PayslipFigures,
@@ -88,6 +90,21 @@ def get_payroll_month(
     cost and each cash item with its date, apart. Without an accepted payslip a person has no
     net pay and no withholding, and no F24 line of any kind."""
     return PayrollService(session).get_payroll_month(legal_entity_id, month, actor)
+
+
+@router.post(
+    "/payroll/{legal_entity_id}/closures",
+    response_model=PayrollClosureRead,
+    status_code=status.HTTP_201_CREATED,
+)
+def close_payroll_month(
+    legal_entity_id: UUID, data: PayrollMonthClose, session: SessionDep, actor: ActorDep
+) -> PayrollClosureRead:
+    """Closes a payroll month that has ended: its accepted payslips and its estimates are
+    locked, so no payslip is recorded or corrected for it and the month reads as it was closed.
+    An administrator's act and, for an agent, a `full_access` token's. 409 if the month is
+    already closed; 422 if it has not ended."""
+    return StaffService(session).close_payroll_month(legal_entity_id, data, actor)
 
 
 @router.post(

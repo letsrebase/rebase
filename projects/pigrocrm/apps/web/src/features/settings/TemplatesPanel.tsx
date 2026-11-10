@@ -257,8 +257,8 @@ export function TemplatesPanel() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <div>
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <div className="min-w-64 flex-1">
           <h2 className="text-lg font-medium">Template</h2>
           <p className="text-muted-foreground text-sm">
             I documenti si generano da questi template. Le variabili sono dichiarate qui: il form di

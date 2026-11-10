@@ -6319,6 +6319,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/staff/payroll/{legal_entity_id}/closures": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Close Payroll Month
+         * @description Closes a payroll month that has ended: its accepted payslips and its estimates are
+         *     locked, so no payslip is recorded or corrected for it and the month reads as it was closed.
+         *     An administrator's act and, for an agent, a `full_access` token's. 409 if the month is
+         *     already closed; 422 if it has not ended.
+         */
+        post: operations["close_payroll_month_api_staff_payroll__legal_entity_id__closures_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/staff/{staff_member_id}/payslips": {
         parameters: {
             query?: never;
@@ -7262,6 +7285,16 @@ export interface components {
              * @description What the model receives, in the words a person reads
              */
             privacy_notice: string;
+            /**
+             * Read Payslips
+             * @description Whether the model also reads payslips
+             */
+            read_payslips: boolean;
+            /**
+             * Payslip Notice
+             * @description What reading a payslip sends, in the words a person reads
+             */
+            payslip_notice: string;
         };
         /** AiModelTestResult */
         AiModelTestResult: {
@@ -7307,6 +7340,11 @@ export interface components {
              * @default false
              */
             privacy_acknowledged: boolean;
+            /**
+             * Read Payslips
+             * @description Whether the model also reads the figures of a payslip (default off). Switching it on needs `privacy_acknowledged` in the same request: the notice names what a payslip sends
+             */
+            read_payslips?: boolean | null;
         };
         /**
          * ApprovalDetail
@@ -14389,6 +14427,7 @@ export interface components {
             /** Not Estimated */
             not_estimated: string[];
             payslip?: components["schemas"]["PayslipRead"] | null;
+            received?: components["schemas"]["PayslipProposalRead"] | null;
         };
         /**
          * MemberQuestion
@@ -15813,6 +15852,29 @@ export interface components {
             payroll_month: string;
         };
         /**
+         * PayrollClosureRead
+         * @description A payroll month a person closed: when and by whom (the name as it is now).
+         */
+        PayrollClosureRead: {
+            /**
+             * Legal Entity Id
+             * Format: uuid
+             */
+            legal_entity_id: string;
+            /**
+             * Month
+             * Format: date
+             */
+            month: string;
+            /**
+             * Closed At
+             * Format: date-time
+             */
+            closed_at: string;
+            /** Closed By */
+            closed_by: string | null;
+        };
+        /**
          * PayrollCostRead
          * @description A month's cost: the gross pay and the employer's contributions that could be estimated
          *     (`None` where the rate is not stated), and their total.
@@ -15826,6 +15888,17 @@ export interface components {
             employer_inail: string | null;
             /** Total */
             total: string;
+        };
+        /**
+         * PayrollMonthClose
+         * @description What closes: any day of the month worked.
+         */
+        PayrollMonthClose: {
+            /**
+             * Month
+             * Format: date
+             */
+            month: string;
         };
         /** PayrollMonthRead */
         PayrollMonthRead: {
@@ -15845,6 +15918,7 @@ export interface components {
             cost_total: string;
             /** Cash Total */
             cash_total: string;
+            closed?: components["schemas"]["PayrollClosureRead"] | null;
         };
         /**
          * PayrollTotalLine
@@ -15905,6 +15979,36 @@ export interface components {
              */
             period: string;
         };
+        /**
+         * PayslipProposalRead
+         * @description A payslip the inbox read and nobody accepted yet: what makes a person's month «Ricevuto».
+         *     The decision is the proposal's own (`POST /api/proposals/{proposal_id}/accept` and
+         *     `/reject`), the same call wherever it is drawn.
+         */
+        PayslipProposalRead: {
+            /**
+             * Proposal Id
+             * Format: uuid
+             */
+            proposal_id: string;
+            /** Inbox Item Id */
+            inbox_item_id: string | null;
+            /** Gross */
+            gross: string;
+            /** Net */
+            net: string;
+            /** Withholding */
+            withholding: string;
+            /** Confidence */
+            confidence: string;
+            /** Confidence Reason */
+            confidence_reason: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+        };
         /** PayslipRead */
         PayslipRead: {
             /**
@@ -15933,6 +16037,8 @@ export interface components {
             net: string;
             /** Withholding */
             withholding: string;
+            /** Inbox Item Id */
+            inbox_item_id?: string | null;
             /**
              * Created At
              * Format: date-time
@@ -16336,7 +16442,7 @@ export interface components {
              * Target Type
              * @enum {string}
              */
-            target_type: "contract" | "work_unit" | "supplier_invoice" | "receipt" | "bank_statement";
+            target_type: "contract" | "work_unit" | "supplier_invoice" | "receipt" | "bank_statement" | "payslip";
             /** Proposed Fields */
             proposed_fields: {
                 [key: string]: unknown;
@@ -55710,7 +55816,7 @@ export interface operations {
         parameters: {
             query?: {
                 status?: ("pending" | "accepted" | "rejected") | null;
-                target_type?: ("contract" | "work_unit" | "supplier_invoice" | "receipt" | "bank_statement") | null;
+                target_type?: ("contract" | "work_unit" | "supplier_invoice" | "receipt" | "bank_statement" | "payslip") | null;
                 document_id?: string | null;
                 contract_id?: string | null;
                 order?: "arrival" | "decision";
@@ -65969,6 +66075,129 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PayrollMonthRead"];
+                };
+            };
+            /** @description Permission denied: the actor does not have the required role. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The requested resource does not exist or was removed. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The request conflicts with the current state of the resource. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    close_payroll_month_api_staff_payroll__legal_entity_id__closures_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                legal_entity_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PayrollMonthClose"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PayrollClosureRead"];
                 };
             };
             /** @description Permission denied: the actor does not have the required role. */

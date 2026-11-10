@@ -1,6 +1,6 @@
 import { formatMoney as formatEuro } from '@rebase/ui/format'
 import { formatOccurredAt } from '@/components/activityLabels'
-import { formatIsoDateItalian } from '@/lib/dates'
+import { formatIsoDateItalian, formatIsoMonthYear } from '@/lib/dates'
 import type { components } from '@/lib/api-types'
 
 /**
@@ -21,7 +21,13 @@ import type { components } from '@/lib/api-types'
 
 export type Proposal = components['schemas']['ProposalRead']
 export type ProposalStatus = 'pending' | 'accepted' | 'rejected'
-export type ProposalTargetType = 'contract' | 'work_unit' | 'supplier_invoice' | 'receipt' | 'bank_statement'
+export type ProposalTargetType =
+  | 'contract'
+  | 'work_unit'
+  | 'supplier_invoice'
+  | 'receipt'
+  | 'bank_statement'
+  | 'payslip'
 
 /** The three kinds read out of an «In arrivo» item: they have no contract and no archived document. */
 export const INBOX_TARGET_TYPES: readonly string[] = ['supplier_invoice', 'receipt', 'bank_statement']
@@ -44,6 +50,7 @@ export const TARGET_LABELS: Record<string, string> = {
   supplier_invoice: 'Fattura di acquisto',
   receipt: 'Ricevuta',
   bank_statement: 'Estratto conto',
+  payslip: 'Cedolino',
 }
 
 const RENEWAL_LABELS: Record<string, string> = {
@@ -411,6 +418,30 @@ function readDocumentGroups(
   }
 }
 
+/** A payslip read out of an inbox item (`PayslipProposalFields`): for whom, the month and the three
+ *  figures it prints. The person is the name the document carries; the proposal itself names the
+ *  staff member by id, which a reader of «Proposte» has no use for. */
+function payslipGroups(fields: Record<string, unknown>): { title: string; groups: FieldGroup[] } {
+  const period = text(fields.period)
+  const month = period === null ? null : formatIsoMonthYear(period)
+  const name = text(fields.employee_name)
+  return {
+    title: ['Cedolino', month, name].filter((part) => part !== null).join(' · '),
+    groups: [
+      {
+        title: 'Cedolino',
+        rows: rows(
+          row('Persona', name),
+          row('Mese', month),
+          row('Lordo', formatAmount(fields.gross, 'EUR')),
+          row('Netto', formatAmount(fields.net, 'EUR')),
+          row('Ritenute IRPEF', formatAmount(fields.withholding, 'EUR')),
+        ),
+      },
+    ],
+  }
+}
+
 /**
  * The proposal's fields, grouped and worded for a reader: what was proposed while it
  * waits and when it was refused, and what was **accepted** once it was, since that is what
@@ -425,6 +456,10 @@ export function describeProposal(
   if (proposal.target_type === 'contract') {
     const { title, groups, customerId } = contractGroups(fields)
     return { title, groups: groups.filter((group) => group.rows.length > 0), customerId, contractId: null }
+  }
+  if (proposal.target_type === 'payslip') {
+    const { title, groups } = payslipGroups(fields)
+    return { title, groups: groups.filter((group) => group.rows.length > 0), customerId: null, contractId: null }
   }
   if (INBOX_TARGET_TYPES.includes(proposal.target_type)) {
     const { title, groups } = readDocumentGroups(proposal.target_type, fields)
