@@ -190,6 +190,9 @@ FULL_ACCESS_ACTIONS: frozenset[str] = frozenset(
         # entity's fiscal position, so an administrator's token with `full_access`.
         "settle_iva_period",
         "list_iva_settlements",
+        # The IVA periods and the registers behind them (REB-1024): the same position.
+        "list_iva_periods",
+        "get_iva_register",
         # The space's profile and which modules are on (spec 2026-11-09, B1): what the whole
         # team sees changes. An administrator's token with `full_access`, nothing less; the
         # generic `update_space_settings` stays person-only below.
@@ -440,6 +443,8 @@ ACTION_LABELS: dict[str, str] = {
     "stop_recurring_expense": "terminare una spesa ricorrente",
     "settle_iva_period": "liquidare l'IVA di un periodo",
     "list_iva_settlements": "leggere le liquidazioni IVA",
+    "list_iva_periods": "leggere i periodi IVA con la loro liquidazione",
+    "get_iva_register": "leggere il registro IVA vendite o acquisti di un periodo",
     "set_payroll_pay_day": "impostare il giorno di paga dell'azienda",
     "record_staff_payslip": "registrare le cifre di un cedolino",
     "propose_staff_hourly_cost": "proporre il costo orario di una persona",

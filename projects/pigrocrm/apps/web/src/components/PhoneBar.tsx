@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { cn } from '@rebase/ui/cn'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@rebase/ui/sheet'
 import { useWaitingCount } from '@/features/inbox/queries'
+import { useNavGates } from '@/features/iva/queries'
 import { useUnreadCount } from '@/features/reminders/queries'
 import { useOverdueCount } from '@/features/tasks/queries'
 import { useAuth, useCanWrite } from '@/lib/auth'
@@ -190,12 +191,13 @@ function More({
 }) {
   const modules = useModules()
   const { user } = useAuth()
+  const gates = useNavGates()
   const unread = useUnreadCount()
   const waiting = useWaitingCount()
   const { location } = useRouterState()
   const registryRole = (location.search as { role?: string } | undefined)?.role
   const items: readonly NavItem[] = [
-    ...phoneMoreItems(modules, user?.role),
+    ...phoneMoreItems(modules, user?.role, gates),
     { to: Agents.to, label: Agents.label, icon: Agents.icon },
     { to: SETTINGS_PATHS.profile, label: SETTINGS.label, icon: SETTINGS.icon },
   ]

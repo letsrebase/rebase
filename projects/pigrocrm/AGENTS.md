@@ -349,8 +349,26 @@ period of the current year, which recomputes every earlier one, and keeps the pr
 pack's annual-return date. It is idempotent, isolated per legal entity (savepoint, failure counted by class name,
 stderr, exit 1), and a period whose due item already has a payment is reported on stderr and left as it was, not
 raised. `GET /api/iva-settlements?year=` and the MCP tool `list_iva_settlements` (`full_access`) read what it wrote;
-`settle_iva_period` stays a service call. Not here: the December advance, the IVA period lock, cash-basis IVA, the
-page, the srl's IVA dates (the `it-company` pack has no calendar yet).
+`settle_iva_period` stays a service call. Not here: the December advance, the IVA period lock, cash-basis IVA,
+the srl's IVA dates (the `it-company` pack carries a calendar but no `iva` law, so it has no periodic settlement).
+
+**«IVA» draws what the server reads and adds nothing (REB-1024).** `IvaRegisterService` (`core/fiscal/iva_register.py`) is
+the read: `list_periods` answers a year's periods with the ladder (the stored settlement, or for a period not settled
+yet the running figures from `compute_figures` and the previous period's stored result, `null` when that carry-over is
+unknown: the previous period is not stored while an earlier one is) and the state (`open` to the last day included),
+and `read_sales_register` and `read_purchase_register` list one period's documents, 50 at a time by `offset`, with the
+summary by rate and the period's totals. The registers select with `iva_settlement.sales_conditions` and
+`purchase_conditions` and total with `sales_vat` and `purchase_vat`, the settlement's own, so a register adds up to its
+line to the cent; a sale is placed by its issue date, a purchase by its `iva_period`, a declared register gap sits in the
+period of the invoice before it, and a split-payment sale is listed with its VAT and counted as `vat_due` zero. REST is
+`GET /api/iva-periods`, `/api/iva-periods/entities` (the legal entities whose pack settles IVA by period) and
+`/api/iva-registers/{sales,purchases}`, the MCP tools `list_iva_periods` and `get_iva_register`; all an administrator's
+(`full_access` for a token) under the `purchases` module. The page is `/app/vat` (`features/iva/`, under
+`no-browser-arithmetic.test.ts`): it opens on the period running now, one legal entity at a time (the page's own «Azienda»
+select under «Tutte le aziende» with several), the sidebar entry is drawn by a `NavGate` (`useNavGates`: an administrator,
+`purchases` on, at least one eligible entity) and a figure the server did not send reads «non calcolabile». Closing and
+reopening a period, and the «Integrazioni» chip, wait for the IVA period lock and the integration documents, which do
+not exist: the page has no control for them.
 
 **An IMAP or PEC mailbox is `mailboxes/imap_*` and its password is sealed with its own key (REB-1015).**
 `ImapReader` (`imap_client.py`) is the only code that opens an IMAP socket: TLS or STARTTLS only, the host

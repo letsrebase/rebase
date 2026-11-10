@@ -2603,6 +2603,88 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/iva-periods/entities": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Iva Entities
+         * @description The legal entities whose pack settles IVA by period: the ones that have registers.
+         */
+        get: operations["list_iva_entities_api_iva_periods_entities_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/iva-periods": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Iva Periods
+         * @description Every period of `year` with its ladder and state; empty when the entity's pack settles no
+         *     IVA by period in that year.
+         */
+        get: operations["list_iva_periods_api_iva_periods_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/iva-registers/sales": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read Sales Register
+         * @description One period's sales register, by number, with the summary by rate and the period's totals.
+         */
+        get: operations["read_sales_register_api_iva_registers_sales_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/iva-registers/purchases": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read Purchase Register
+         * @description One period's purchase register at each group's deductible share, with the summary by
+         *     rate and the period's totals.
+         */
+        get: operations["read_purchase_register_api_iva_registers_purchases_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/legal-entities": {
         parameters: {
             query?: never;
@@ -11703,6 +11785,310 @@ export interface components {
             custom_fields?: {
                 [key: string]: unknown;
             } | null;
+        };
+        /**
+         * IvaEntityRead
+         * @description A legal entity whose pack settles IVA by period, so it has registers (REB-1024).
+         */
+        IvaEntityRead: {
+            /**
+             * Legal Entity Id
+             * Format: uuid
+             */
+            legal_entity_id: string;
+            /** Name */
+            name: string;
+            /**
+             * Frequency
+             * @enum {string}
+             */
+            frequency: "monthly" | "quarterly";
+        };
+        /**
+         * IvaLadderRead
+         * @description The settlement's figures, as `IvaSettlementRead` carries them. A positive `result` is
+         *     owed, a negative one is a credit carried forward.
+         */
+        IvaLadderRead: {
+            /** Sales Vat */
+            sales_vat: string;
+            /** Reverse Charge Vat */
+            reverse_charge_vat: string;
+            /** Purchase Vat */
+            purchase_vat: string;
+            /** Credit In */
+            credit_in: string;
+            /** Debit In */
+            debit_in: string;
+            /** Surcharge */
+            surcharge: string;
+            /** Result */
+            result: string;
+            /**
+             * Outcome
+             * @enum {string}
+             */
+            outcome: "due" | "carried" | "credit" | "nil";
+        };
+        /**
+         * IvaPeriodRead
+         * @description One period of a legal entity's IVA cycle (REB-1024). `ladder` is the stored settlement's
+         *     when `settled`, otherwise the running figures of the period computed with the same code
+         *     from the previous period's stored result, and `None` when the server cannot know them: a
+         *     period that has not started, or one whose previous period is not settled while an earlier one
+         *     is (its carry-over would be a guess). `state` is `open` until the period's last day
+         *     included. The payment date is the pack's calendar's and `payment_state` the due item's;
+         *     `carry_forward_limit` is the pack's limit under which a small debit waits.
+         */
+        IvaPeriodRead: {
+            /**
+             * Legal Entity Id
+             * Format: uuid
+             */
+            legal_entity_id: string;
+            /**
+             * Frequency
+             * @enum {string}
+             */
+            frequency: "monthly" | "quarterly";
+            /** Year */
+            year: number;
+            /** Number */
+            number: number;
+            /** Label */
+            label: string;
+            /**
+             * Period Start
+             * Format: date
+             */
+            period_start: string;
+            /**
+             * Period End
+             * Format: date
+             */
+            period_end: string;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "future" | "open" | "ended";
+            /** Settled */
+            settled: boolean;
+            ladder: components["schemas"]["IvaLadderRead"] | null;
+            /** Payment Due On */
+            payment_due_on: string | null;
+            /** Due Item Id */
+            due_item_id: string | null;
+            /** Payment State */
+            payment_state: ("expected" | "settled") | null;
+            /** Registers Changed */
+            registers_changed: boolean;
+            /** Carry Forward Limit */
+            carry_forward_limit: string | null;
+        };
+        /** IvaPurchaseGroupRead */
+        IvaPurchaseGroupRead: {
+            /** Rate */
+            rate: string;
+            /** Nature */
+            nature: string | null;
+            /** Taxable Amount */
+            taxable_amount: string;
+            /** Vat Amount */
+            vat_amount: string;
+            /** Deductible Share */
+            deductible_share: string;
+            /** Deductible Vat */
+            deductible_vat: string;
+        };
+        /** IvaPurchaseRegisterRead */
+        IvaPurchaseRegisterRead: {
+            /** Items */
+            items: components["schemas"]["IvaPurchaseRowRead"][];
+            /** Total Count */
+            total_count: number;
+            /** Next Offset */
+            next_offset: number | null;
+            /** Summary */
+            summary: components["schemas"]["IvaPurchaseSummaryLine"][];
+            totals: components["schemas"]["IvaPurchaseTotals"];
+        };
+        /**
+         * IvaPurchaseRowRead
+         * @description A line of the purchase register: a registered invoice or credit note placed in the period
+         *     by its `iva_period`, with its groups at their deductible share.
+         */
+        IvaPurchaseRowRead: {
+            /**
+             * Purchase Id
+             * Format: uuid
+             */
+            purchase_id: string;
+            /**
+             * Registered On
+             * Format: date
+             */
+            registered_on: string;
+            /**
+             * Document Date
+             * Format: date
+             */
+            document_date: string;
+            /** Number */
+            number: string | null;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "invoice" | "credit_note";
+            /** Supplier Id */
+            supplier_id: string | null;
+            /** Supplier Name */
+            supplier_name: string | null;
+            /** Reverse Charge */
+            reverse_charge: boolean;
+            /** Split Payment */
+            split_payment: boolean;
+            /** Groups */
+            groups: components["schemas"]["IvaPurchaseGroupRead"][];
+            /** Taxable Amount */
+            taxable_amount: string;
+            /** Vat Amount */
+            vat_amount: string;
+            /** Deductible Vat */
+            deductible_vat: string;
+            /** Total */
+            total: string;
+        };
+        /** IvaPurchaseSummaryLine */
+        IvaPurchaseSummaryLine: {
+            /** Rate */
+            rate: string;
+            /** Nature */
+            nature: string | null;
+            /** Deductible Share */
+            deductible_share: string;
+            /** Taxable Amount */
+            taxable_amount: string;
+            /** Vat Amount */
+            vat_amount: string;
+            /** Deductible Vat */
+            deductible_vat: string;
+        };
+        /**
+         * IvaPurchaseTotals
+         * @description The period's. `deductible_vat` and `reverse_charge_vat` are the settlement's lines.
+         */
+        IvaPurchaseTotals: {
+            /** Taxable Amount */
+            taxable_amount: string;
+            /** Vat Amount */
+            vat_amount: string;
+            /** Deductible Vat */
+            deductible_vat: string;
+            /** Reverse Charge Vat */
+            reverse_charge_vat: string;
+            /** Total */
+            total: string;
+        };
+        /**
+         * IvaRateGroupRead
+         * @description One VAT recap group of a document: a rate (and its nature at zero), the taxable amount
+         *     and the VAT.
+         */
+        IvaRateGroupRead: {
+            /** Rate */
+            rate: string;
+            /** Nature */
+            nature: string | null;
+            /** Taxable Amount */
+            taxable_amount: string;
+            /** Vat Amount */
+            vat_amount: string;
+        };
+        /** IvaSalesRegisterRead */
+        IvaSalesRegisterRead: {
+            /** Items */
+            items: components["schemas"]["IvaSalesRowRead"][];
+            /** Total Count */
+            total_count: number;
+            /** Next Offset */
+            next_offset: number | null;
+            /** Summary */
+            summary: components["schemas"]["IvaSalesSummaryLine"][];
+            totals: components["schemas"]["IvaSalesTotals"];
+        };
+        /**
+         * IvaSalesRowRead
+         * @description A line of the sales register: an issued or annulled invoice, or a number the legal
+         *     entity declared its register will never carry (`kind` `gap`, with its reason). The VAT of
+         *     a document under split payment is shown and is not owed (`exigibility`).
+         */
+        IvaSalesRowRead: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "invoice" | "gap";
+            /** Invoice Id */
+            invoice_id: string | null;
+            /** Year */
+            year: number;
+            /** Number */
+            number: number;
+            /** Issue Date */
+            issue_date: string | null;
+            /** Customer Id */
+            customer_id: string | null;
+            /** Customer Name */
+            customer_name: string | null;
+            /** Status */
+            status: ("issued" | "cancelled") | null;
+            /** Document Type */
+            document_type: string | null;
+            /** Exigibility */
+            exigibility: ("immediate" | "split_payment") | null;
+            /** Groups */
+            groups: components["schemas"]["IvaRateGroupRead"][];
+            /** Taxable Amount */
+            taxable_amount: string | null;
+            /** Vat Amount */
+            vat_amount: string | null;
+            /** Total */
+            total: string | null;
+            /** Gap Reason */
+            gap_reason: string | null;
+        };
+        /** IvaSalesSummaryLine */
+        IvaSalesSummaryLine: {
+            /** Rate */
+            rate: string;
+            /** Nature */
+            nature: string | null;
+            /**
+             * Exigibility
+             * @enum {string}
+             */
+            exigibility: "immediate" | "split_payment";
+            /** Taxable Amount */
+            taxable_amount: string;
+            /** Vat Amount */
+            vat_amount: string;
+        };
+        /**
+         * IvaSalesTotals
+         * @description The period's, over every issued document and not the page's. `vat_due` is the sales VAT
+         *     of the settlement: the VAT of the documents not under split payment.
+         */
+        IvaSalesTotals: {
+            /** Taxable Amount */
+            taxable_amount: string;
+            /** Vat Amount */
+            vat_amount: string;
+            /** Vat Due */
+            vat_due: string;
+            /** Total */
+            total: string;
         };
         /**
          * IvaSettlementRead
@@ -37531,6 +37917,494 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["IvaSettlementRead"][];
+                };
+            };
+            /** @description Permission denied: the actor does not have the required role. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The requested resource does not exist or was removed. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The request conflicts with the current state of the resource. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_iva_entities_api_iva_periods_entities_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IvaEntityRead"][];
+                };
+            };
+            /** @description Permission denied: the actor does not have the required role. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The requested resource does not exist or was removed. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The request conflicts with the current state of the resource. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_iva_periods_api_iva_periods_get: {
+        parameters: {
+            query: {
+                year: number;
+                /** @description The legal entity to read: required when the space has more than one (a 422 response names `legal_entity_id`), otherwise it is the only one. */
+                legal_entity_id?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IvaPeriodRead"][];
+                };
+            };
+            /** @description Permission denied: the actor does not have the required role. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The requested resource does not exist or was removed. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The request conflicts with the current state of the resource. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    read_sales_register_api_iva_registers_sales_get: {
+        parameters: {
+            query: {
+                year: number;
+                /** @description The month or the quarter, by the entity's frequency */
+                number: number;
+                /** @description The legal entity to read: required when the space has more than one (a 422 response names `legal_entity_id`), otherwise it is the only one. */
+                legal_entity_id?: string | null;
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IvaSalesRegisterRead"];
+                };
+            };
+            /** @description Permission denied: the actor does not have the required role. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The requested resource does not exist or was removed. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The request conflicts with the current state of the resource. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    read_purchase_register_api_iva_registers_purchases_get: {
+        parameters: {
+            query: {
+                year: number;
+                /** @description The month or the quarter, by the entity's frequency */
+                number: number;
+                /** @description The legal entity to read: required when the space has more than one (a 422 response names `legal_entity_id`), otherwise it is the only one. */
+                legal_entity_id?: string | null;
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IvaPurchaseRegisterRead"];
                 };
             };
             /** @description Permission denied: the actor does not have the required role. */

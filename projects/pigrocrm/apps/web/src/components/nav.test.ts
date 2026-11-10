@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { moduleAccess } from '@/lib/modules'
 import { spaceModules } from '@/lib/modules.testing'
 import type { ModuleKey } from '@/lib/modules'
-import { isNavItemActive, phoneMoreItems, phoneThirdPlace, visibleSections } from './nav'
+import { isNavItemActive, phoneMoreItems, phoneThirdPlace, visibleSections, type NavGate } from './nav'
 
 /** The labels the sidebar draws for a space whose modules in `off` are switched off. */
 function labels(off: readonly ModuleKey[]) {
@@ -33,6 +33,28 @@ describe('visibleSections (REB-953)', () => {
     expect(labels([])).toEqual(everything)
     expect(visibleSections(moduleAccess(undefined), 'admin').flatMap((s) => s.items.map((i) => i.label))).toEqual(
       everything,
+    )
+  })
+
+  it('draws «IVA» after «Acquisti» only when its gate holds, and drops it with purchases off (REB-1024)', () => {
+    const gates = new Set<NavGate>(['iva'])
+    const shown = (open: ReadonlySet<NavGate>, off: readonly ModuleKey[] = []) =>
+      visibleSections(moduleAccess(spaceModules(off)), 'admin', open).flatMap((section) =>
+        section.items.map((item) => item.label),
+      )
+    expect(shown(new Set())).not.toContain('IVA')
+    const open = shown(gates)
+    expect(open.slice(open.indexOf('Acquisti'), open.indexOf('Acquisti') + 3)).toEqual([
+      'Acquisti',
+      'IVA',
+      'Ore',
+    ])
+    expect(shown(gates, ['purchases'])).not.toContain('IVA')
+    expect(
+      phoneMoreItems(moduleAccess(spaceModules([])), 'admin', gates).map((item) => item.label),
+    ).toContain('IVA')
+    expect(phoneMoreItems(moduleAccess(spaceModules([])), 'admin').map((item) => item.label)).not.toContain(
+      'IVA',
     )
   })
 

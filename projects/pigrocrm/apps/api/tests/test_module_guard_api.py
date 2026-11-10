@@ -157,6 +157,8 @@ def test_a_stale_credential_is_still_a_401_not_a_leak_of_which_modules_are_on(
                 "/api/cost-categories",
                 "/api/iva-settlements",
                 "/api/recurring-expenses",
+                "/api/iva-periods",
+                "/api/iva-periods/entities",
             ],
         ),
         (

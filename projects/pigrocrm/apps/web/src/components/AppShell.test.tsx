@@ -413,6 +413,57 @@ describe('AppShell', () => {
     expect(links).toContain('Fatture')
   })
 
+  /** REB-1024: «IVA» follows «Acquisti», for an administrator whose space has a legal entity that settles IVA by period. */
+  describe('«IVA» (REB-1024)', () => {
+    const ENTITY = { legal_entity_id: 'a1', name: 'Lumen Studio S.r.l.', frequency: 'quarterly' }
+    const answer = (entities: unknown[]) =>
+      GET.mockImplementation(async (path: string) =>
+        path === '/api/iva-periods/entities'
+          ? { data: entities, response: { status: 200 } }
+          : { data: [], response: { status: 200 } },
+      )
+
+    it('sits after «Acquisti» in «Amministrazione» once the server names a legal entity with registers', async () => {
+      answer([ENTITY])
+      renderShell(<div />, undefined, [])
+      // Waits for the entry itself: the answer reaches the sidebar through a query and two renders.
+      await sidebar().findByRole('link', { name: 'IVA' })
+      const links = within(sidebar().getByRole('group', { name: 'Amministrazione' }))
+        .getAllByRole('link')
+        .map((link) => link.textContent)
+      expect(links.slice(links.indexOf('Acquisti'), links.indexOf('Acquisti') + 3)).toEqual([
+        'Acquisti',
+        'IVA',
+        'Ore',
+      ])
+      expect(sidebar().getByRole('link', { name: 'IVA' })).toHaveAttribute('href', '/app/vat')
+    })
+
+    it('is not drawn when no legal entity settles IVA by period, so a flat-rate space has no entry', async () => {
+      answer([])
+      renderShell(<div />, undefined, [])
+      await settle()
+      expect(sidebar().queryByRole('link', { name: 'IVA' })).toBeNull()
+    })
+
+    it('is not drawn to a collaborator, who makes no request for it', async () => {
+      mockAuth.role = 'collaborator'
+      answer([ENTITY])
+      renderShell(<div />, undefined, [])
+      await settle()
+      expect(sidebar().queryByRole('link', { name: 'IVA' })).toBeNull()
+      expect(GET).not.toHaveBeenCalledWith('/api/iva-periods/entities', expect.anything())
+    })
+
+    it('is not drawn with purchases off, and asks for nothing', async () => {
+      answer([ENTITY])
+      renderShell(<div />, undefined, ['purchases'])
+      await settle()
+      expect(sidebar().queryByRole('link', { name: 'IVA' })).toBeNull()
+      expect(GET).not.toHaveBeenCalledWith('/api/iva-periods/entities', expect.anything())
+    })
+  })
+
   it('keeps a sub-item marked while its list carries a filter in the URL', () => {
     mockRoute.pathname = '/app/organizations'
     mockRoute.search = '?q=acme'

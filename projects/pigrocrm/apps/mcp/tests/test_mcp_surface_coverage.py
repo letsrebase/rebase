@@ -126,6 +126,18 @@ _FORBIDDEN: dict[Method, str] = {
         "IvaSettlementService",
         "list_iva_settlements",
     ): "REB-1021: the tax position, as `get_tax_calendar`",
+    (
+        "IvaRegisterService",
+        "list_periods",
+    ): "REB-1024: the tax position, as `list_iva_settlements`",
+    (
+        "IvaRegisterService",
+        "read_sales_register",
+    ): "REB-1024: the tax position, as `list_iva_settlements`",
+    (
+        "IvaRegisterService",
+        "read_purchase_register",
+    ): "REB-1024: the tax position, as `list_iva_settlements`",
     ("AnalyticsService", "get_tax_calendar"): "REB-1004: tax position, like the estimate",
     ("GmailSyncService", "discover"): (
         "interroga Gmail sul dominio del cliente a carico della quota e del consenso "

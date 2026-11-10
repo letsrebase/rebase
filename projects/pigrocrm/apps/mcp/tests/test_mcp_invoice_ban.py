@@ -102,6 +102,8 @@ FORBIDDEN = (
     "get_fiscal_estimate",
     "get_tax_calendar",
     "list_iva_settlements",
+    "list_iva_periods",
+    "get_iva_register",
     # The accountant's declared tax figures (REB-1006): an administrator's token with
     # `full_access` and no other.
     "set_declared_tax_figure",
@@ -369,7 +371,15 @@ FORBIDDEN_SERVICE_CALLS = (
 # rather than parametrising into a skip.
 # `InvoiceService.issue` is the bare half of `issue_and_render`, the one name a tool calls: a
 # tool reaching `issue` directly would skip the render step, so the pair is banned too.
-FORBIDDEN_QUALIFIED_CALLS: tuple[tuple[str, str], ...] = (("InvoiceService", "issue"),)
+FORBIDDEN_QUALIFIED_CALLS: tuple[tuple[str, str], ...] = (
+    ("InvoiceService", "issue"),
+    # REB-1024: the IVA registers are the legal entity's fiscal position, so only a `full_access`
+    # token reads them, from `tools/privileged.py`. `list_periods` and the two registers are
+    # names other services may use, which is why they are qualified here.
+    ("IvaRegisterService", "list_periods"),
+    ("IvaRegisterService", "read_sales_register"),
+    ("IvaRegisterService", "read_purchase_register"),
+)
 
 _REASON = (
     "e' un'operazione esclusa dalla superficie MCP per costruzione (slice 3 §11 per "

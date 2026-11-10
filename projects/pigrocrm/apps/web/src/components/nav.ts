@@ -12,6 +12,7 @@ import {
   LayoutDashboard,
   ListChecks,
   PackageOpen,
+  Percent,
   Receipt,
   Settings,
   ShoppingCart,
@@ -83,6 +84,9 @@ export const SECTIONS = [
         icon: Building2,
       },
       { to: '/app/purchases', label: 'Acquisti', icon: ShoppingCart },
+      // After «Acquisti», the order the money moves (the approved brief, 2026-11-10): shown to an
+      // administrator whose space has a legal entity that settles IVA by period (`gate`).
+      { to: '/app/vat', label: 'IVA', icon: Percent, action: 'list_iva_periods', gate: 'iva' },
       { to: '/app/hours', label: 'Ore', icon: Clock },
       { to: '/app/days', label: 'Giornate', icon: CalendarCheck },
       { to: '/app/taxes', label: 'Tasse', icon: Landmark },
@@ -103,6 +107,9 @@ export const SECTIONS = [
  *  `action` hides it from a role that may not do it, and `id` tells apart two entries that open the same page. */
 export interface NavItem {
   readonly id?: string
+  /** A condition the module table cannot say: the entry is drawn only when the caller's gate
+   *  set holds it (`useNavGates`). */
+  readonly gate?: NavGate
   readonly to: LinkTo
   readonly search?: { readonly role: 'supplier' }
   readonly modules?: readonly ModuleKey[]
@@ -112,6 +119,12 @@ export interface NavItem {
   readonly label: string
   readonly icon: LucideIcon
 }
+
+/** What an entry may ask beyond its module: `iva` is an administrator's, with at least one
+ *  legal entity whose pack settles IVA by period (REB-1024). */
+export type NavGate = 'iva'
+
+const NO_GATES: ReadonlySet<NavGate> = new Set()
 
 /** The registry's page, which two entries open (`?role=` tells them apart). */
 export const REGISTRY_PATH = '/app/organizations'
@@ -138,13 +151,18 @@ export function isNavItemActive(item: NavItem, pathname: string, role: string | 
  * so a link and the page it leads to cannot disagree. An entry that names an `action` is gone
  * for a role that may not do it (REB-1028); while the role is not known, it is gone too.
  */
-export function visibleSections(access: ModuleAccess, role: Role | undefined) {
+export function visibleSections(
+  access: ModuleAccess,
+  role: Role | undefined,
+  gates: ReadonlySet<NavGate> = NO_GATES,
+) {
   return SECTIONS.map((section) => ({
     ...section,
     items: (section.items as readonly NavItem[]).filter(
       (item) =>
         access.on(...(item.modules ?? modulesOfPath(item.to))) &&
-        (item.action === undefined || (role !== undefined && can(role, item.action))),
+        (item.action === undefined || (role !== undefined && can(role, item.action))) &&
+        (item.gate === undefined || gates.has(item.gate)),
     ),
   })).filter((section) => section.items.length > 0)
 }
@@ -167,9 +185,13 @@ export function phoneThirdPlace(access: ModuleAccess): typeof PHONE_DEALS | type
  * What «Altro» lists: every place the space has on that the bar itself does not draw. The
  * same `visibleSections` the sidebar reads, so a module that is off is gone from both.
  */
-export function phoneMoreItems(access: ModuleAccess, role: Role | undefined) {
+export function phoneMoreItems(
+  access: ModuleAccess,
+  role: Role | undefined,
+  gates: ReadonlySet<NavGate> = NO_GATES,
+) {
   const drawn = new Set<string>([HOME.to, '/app/activities', phoneThirdPlace(access)?.to ?? ''])
-  const items = visibleSections(access, role).flatMap((section) =>
+  const items = visibleSections(access, role, gates).flatMap((section) =>
     section.items.filter((item) => !drawn.has(item.to)),
   )
   // «In arrivo» leads «Altro» (the inbox brief, REB-973): the phone has no sidebar to carry its

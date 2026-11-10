@@ -72,6 +72,9 @@ This file is the single mapping from the Italian word to the English identifier.
 | costo imputato | `cost_amount` | What a purchase costs once the VAT it recovers is out, frozen when it is registered |
 | inversione contabile | `reverse_charge` | The buyer accounts for the VAT; a person decides it for a foreign supplier |
 | scissione dei pagamenti | `split_payment` | The VAT is paid to the tax office and not to the supplier |
+| liquidazione IVA | `settlement` (`IvaSettlement`, `iva_settlements`) | The period's IVA computed from its two registers: sales VAT less deductible purchase VAT, less the credit carried in |
+| esigibilità | `exigibility` (`immediate`, `split_payment`) | When a sale's VAT falls due; on a split-payment sale it is not owed by the seller |
+| registro vendite, registro acquisti | sales register, purchase register (`IvaRegisterService`) | The documents behind a settlement line, read by period and legal entity, never a second copy |
 | ricavi | revenue |  |
 | preventivato | budgeted | Estimated in the offer (`ore_preventivate` is `budgeted_hours`) |
 | previsto | expected | Forecast (`valore_previsto` is `expected_value`) |

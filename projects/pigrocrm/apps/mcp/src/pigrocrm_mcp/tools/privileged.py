@@ -44,7 +44,7 @@ decoration: it is the only warning an agent reads.
 from collections.abc import Callable
 from dataclasses import asdict
 from datetime import date
-from typing import Any, cast
+from typing import Any, Literal, cast
 from uuid import UUID
 
 from mcp.server import MCPServer
@@ -58,6 +58,7 @@ from pigrocrm.core.auth.models import User
 from pigrocrm.core.config import Settings, gmail_configured
 from pigrocrm.core.errors import ValidationFailed
 from pigrocrm.core.fiscal.declared import DeclaredTaxFigureService
+from pigrocrm.core.fiscal.iva_register import IvaRegisterService
 from pigrocrm.core.fiscal.iva_settlement import IvaSettlementService
 from pigrocrm.core.fiscal.schemas import DeclaredTax, DeclaredTaxFigureSet
 from pigrocrm.core.gmail.attachment_text import GmailAttachmentService
@@ -620,6 +621,46 @@ def register(
             year, context.actor, legal_entity_id=parse_legal_entity_id(legal_entity_id)
         )
         return {"settlements": [row.model_dump(mode="json") for row in settlements]}
+
+    @mcp.tool(annotations=READ_ONLY)
+    @guard
+    def list_iva_periods(year: int, legal_entity_id: str | None = None) -> dict[str, Any]:
+        """The IVA periods of a company's year (months or quarters, by its frequency), each with its
+        ladder: sales VAT, deductible purchase VAT, the credit carried in and the result (positive
+        is owed, negative a credit), the state (`open` runs until its last day, its figures are
+        running) and the payment date. With several companies pass `legal_entity_id`.
+        """
+
+        periods = IvaRegisterService(context.session).list_periods(
+            year, context.actor, legal_entity_id=parse_legal_entity_id(legal_entity_id)
+        )
+        return {"periods": [row.model_dump(mode="json") for row in periods]}
+
+    @mcp.tool(annotations=READ_ONLY)
+    @guard
+    def get_iva_register(
+        year: int,
+        number: int,
+        register: Literal["sales", "purchases"],
+        legal_entity_id: str | None = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> dict[str, Any]:
+        """One IVA period's sales or purchase register: the documents with their VAT groups
+        (the purchase register at each group's deductible share), a summary by rate and the totals
+        of the whole period, `limit` rows from `offset`. `number` is the month or the quarter.
+        With several companies pass `legal_entity_id`.
+        """
+
+        service = IvaRegisterService(context.session)
+        parsed = parse_legal_entity_id(legal_entity_id)
+        if register == "sales":
+            return service.read_sales_register(
+                year, number, context.actor, legal_entity_id=parsed, limit=limit, offset=offset
+            ).model_dump(mode="json")
+        return service.read_purchase_register(
+            year, number, context.actor, legal_entity_id=parsed, limit=limit, offset=offset
+        ).model_dump(mode="json")
 
     @mcp.tool(annotations=DESTRUCTIVE)
     @guard
