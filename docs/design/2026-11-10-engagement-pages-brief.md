@@ -1,7 +1,8 @@
 # Brief: «Incarichi» and the pages of an engagement (PigroCRM)
 
-Status: awaiting Lorenzo's answers on the artifact `pigrocrm-engagement-pages`; draft
-2026-11-10. Card: REB-1020. Design:
+Status: approved by Lorenzo on 2026-11-10, on the artifact `pigrocrm-engagement-pages`
+(«Lorenzo, 2026-11-10, approved the recommendations»: A on 1, 2 and 6, B on 3, 4 and 5, no notes).
+Card: REB-1020. Design:
 `projects/pigrocrm/docs/superpowers/specs/2026-11-09-collaborators-in-the-crm-design.md`
 (REB-963) § 1, § 3 to § 6 and § 9 (it has no section on screens, see Open points), and for the
 payments the due-items design
@@ -10,12 +11,12 @@ payments the due-items design
 that falls due, proposals, the register of fiscal rules «to verify»), § A7 (every new surface
 passes this gate) and § B4 to § B6 (navigation, Home, the phone shell). Code read for this brief:
 `projects/pigrocrm/packages/core/src/pigrocrm/core/collaborators/` and `.../engagements/`, the
-open PR #827 (REB-1002: the live days report and the monthly «Rendiconto», read-only),
+PR #827 (REB-1002, now merged: the live days report and the monthly «Rendiconto»),
 `apps/web/src/components/nav.ts`, `lib/permissions.ts`, `lib/modules.ts`, the contracts and days
 features, and the hub screens this replaces
 (`projects/hub/apps/web/src/pages/admin/{Matches,MatchReport,Contracts,CreateMatch}.tsx`, the
-member `Contracts.tsx`). No answer exists yet: nothing here is approved, and no row has been
-written in `docs/design/DECISIONS.md`.
+member `Contracts.tsx`). The rule this brief creates is the last row of `docs/design/DECISIONS.md`
+dated 2026-11-10; the build cards read this file and that row, never the artifact, which is closed.
 
 Everything here is drawn on `shared/ui/tokens.css` and the primitives of `@rebase/ui`: squared,
 1px ink lines, Outfit, Prussian sidebar, Watermelon Deep only on the primary action and on errors
@@ -46,7 +47,7 @@ A question already answered is a defect to ask again. These were not in the ques
 | The same element on every page | `PageHeader`, `StatusPill`, `MoneyCell`, `DateCell`, `LoadingState`, `QueryErrorBanner`, tabs as «Proposte» draws them | taste 2026-10-21; inbox brief |
 | Italian strings | 20% longer than English: draw the long label | taste, standing rules |
 | A module that is off | Gone from the sidebar, the phone bar, «Altro», the «+» and the registry; the route answers with a sentence naming the module; the data stays | frame § A2 |
-| Who sees engagements | Administrators only, every read and write: a collaborator or a read-only member has no entry, no page, no count and no amount (widening it would expose the freelancer's hours and invoice numbers) | design § 6; `lib/permissions.ts:110-124` |
+| Who sees engagements | Administrators only, every read and write: a collaborator or a read-only member has no entry, no page, no count and no amount (widening it would expose the freelancer's hours and invoice numbers) | design § 6; `lib/permissions.ts:110-125` |
 | Who approves a «Rendiconto» | A person, an administrator; no MCP tool exists for it, with or without `full_access` | design § 4 and § 6; frame § A4; PR #827 (`agent_actions.py`) |
 | What makes a day payable | Only a day in an approved «Rendiconto» (decided by a person, or counted as approved when nobody objected within seven working days), inside the engagement's dates, counted by the freelancer's ledger and not held; a contested part is held while the rest is paid | design § 4; PR #827 (`ReportDay.payable`) |
 | What a payment is | A due item out of source kind `engagement`: «Previsto» (forecast) until the freelancer's invoice, registered as a purchase, replaces it, never beside it; dated by the letter's rule; a date that follows the client's payment reads «circa» and «in attesa dell'incasso» | design § 4; due-items design § 1 (:167-176); cash brief (pills: `muted`, `gold`, `danger`) |
@@ -56,20 +57,20 @@ A question already answered is a defect to ask again. These were not in the ques
 | The fiscal rules | Cited or «to verify»; a screen draws labels and data the server supplies, never a rule | frame § A5; DECISIONS 2026-11-09 (REB-952) |
 | What the hub keeps | The member's «Contratti» page (letters, signing link, signed PDF, read through the door), the referral reward and talent search: not redrawn here | design § 5 (:307-380) |
 
-## Questions for Lorenzo
+## Questions for Lorenzo, answered
 
 Six questions, each with exactly two options, drawn at the same scale on the artifact: the desktop
-page and the phone for each option. Each one is a structural choice that the sources above leave
-open.
+page and the phone for each option. Lorenzo, 2026-11-10: «approved the recommendations», so each
+one below is decided as recommended.
 
-| # | Question | A | B | Recommendation |
-|---|---|---|---|---|
-| 1 | What is the list behind the engagement entry: engagements, or freelancers? | «Incarichi» in «Amministrazione», one row per engagement, the count of what waits for a person on the entry. Optimises the work that recurs per engagement (send a letter, decide a month) across every freelancer, as the hub's «Match» list did. Costs two doors to one freelancer (this list and their page in the registry) and one row per engagement. | «Freelance» in «Amministrazione», a role view of the registry beside «Fornitori», one row per freelancer, with a strip of availability and a «Da fare» column. Optimises one record per organisation and the answer to «is she free?» in the row. Costs a list across freelancers of what waits for a person, and the engagement itself is one click deeper. | A: the recurring work is per engagement; availability stays one tab away on the freelancer's page (design § 3) |
-| 2 | How is one engagement's page organised? | One page: figures, the letter as a block, then a table of months, each row holding days, «Rendiconto», amount and payment; a month opens in the 330 px panel. Optimises following one month from its days to the date the money leaves. Costs the letter and the rule as a block and not a page of their own. | Tabs «Lettera», «Giorni e rendiconti», «Pagamenti». Optimises one subject at a time and a full payments list with the rule and the invoices. Costs the same month on two tabs. | A: approving the month is what makes a day payable and dates the payment, so decision and consequence belong in one row |
-| 3 | How is a «Rendiconto» approved when the client contests some days? | One decision: the days are in the panel with a box each, a shared reason, and a button that reads «Approva trattenendo 2 giorni». Optimises seeing what is held before deciding. Costs a column of boxes on every approval, and 18 tap targets on the phone. | Two verbs: «Approva il mese» is one click; «Contesta dei giorni…» opens a dialog (a screen on the phone) that holds the days with a reason and approves the rest. Optimises the common case being one deliberate click. Costs a second route to the same state, and the days to hold are one step away. | B: most months are approved whole; the phone gets a short list and a two-verb bar |
-| 4 | Does a freelancer see their own month and payment state in their own space? | Nothing new: the contract, the rate card and the days the door already wrote. Optimises no new door read and nothing of rebase's cash timing or a client's objection leaving rebase's space. Costs the freelancer asking by mail whether the month was approved and when they are paid. | A read-only card «Il tuo incarico con rebase» on their contract: letter and signature, the months with «Rendiconto» state, held days, and the payment date once their invoice is registered (never a forecast). Optimises answering the two things they ask in the product where they record days. Costs one more door read, in the opposite direction to the existing one, and a timing to maintain. | B: it is the engagement's output for them, and the card shows only their own fee and dates |
-| 5 | Does the phone's centre «+» get «Rendiconto ricevuto»? | Yes: an item of the «+» for an admin of a space with the module on; a sheet with the engagement, the month and the date received; a toast with the tacit date. Optimises recording the arrival from anywhere, in two taps. Costs a rare, admin-only item on the sheet for daily adds. | No: the arrival is recorded on the engagement's month card («Registra l'arrivo»), the same button as on the desktop; the date is typed. Optimises a stable «+». Costs four taps from elsewhere and the risk of forgetting while the clock runs. | B: it happens a few times a month and the date is typed, so a late entry keeps the true date |
-| 6 | How is availability drawn, in the form and on the freelancer's page? | A strip: one cell per week, 12 weeks, the committed days as the figure, «?» hatched for «sconosciuta», the week's Monday under each cell. Optimises a glance in the little room a form or a registry row has. Costs the engagements behind a week being a step away. | A list: one row per week with status word, days and the engagement numbers. Optimises words and the engagements in view. Costs height: twelve rows do not fit a dialog or a table cell, so the form shows five. | A: the answer needed in a form is a shape (a free gap, an overlap); the list can live on the freelancer's page |
+| # | Question | A | B | Recommendation | Decision (Lorenzo, 2026-11-10) |
+|---|---|---|---|---|---|
+| 1 | What is the list behind the engagement entry: engagements, or freelancers? | «Incarichi» in «Amministrazione», one row per engagement, the count of what waits for a person on the entry. Optimises the work that recurs per engagement (send a letter, decide a month) across every freelancer, as the hub's «Match» list did. Costs two doors to one freelancer (this list and their page in the registry) and one row per engagement. | «Freelance» in «Amministrazione», a role view of the registry beside «Fornitori», one row per freelancer, with a strip of availability and a «Da fare» column. Optimises one record per organisation and the answer to «is she free?» in the row. Costs a list across freelancers of what waits for a person, and the engagement itself is one click deeper. | A: the recurring work is per engagement; availability stays one tab away on the freelancer's page (design § 3) | **A.** «Incarichi», one row per engagement |
+| 2 | How is one engagement's page organised? | One page: figures, the letter as a block, then a table of months, each row holding days, «Rendiconto», amount and payment; a month opens in the 330 px panel. Optimises following one month from its days to the date the money leaves. Costs the letter and the rule as a block and not a page of their own. | Tabs «Lettera», «Giorni e rendiconti», «Pagamenti». Optimises one subject at a time and a full payments list with the rule and the invoices. Costs the same month on two tabs. | A: approving the month is what makes a day payable and dates the payment, so decision and consequence belong in one row | **A.** one page, a table of months |
+| 3 | How is a «Rendiconto» approved when the client contests some days? | One decision: the days are in the panel with a box each, a shared reason, and a button that reads «Approva trattenendo 2 giorni». Optimises seeing what is held before deciding. Costs a column of boxes on every approval, and 18 tap targets on the phone. | Two verbs: «Approva il mese» is one click; «Contesta dei giorni…» opens a dialog (a screen on the phone) that holds the days with a reason and approves the rest. Optimises the common case being one deliberate click. Costs a second route to the same state, and the days to hold are one step away. | B: most months are approved whole; the phone gets a short list and a two-verb bar | **B.** «Approva il mese» and «Contesta dei giorni…» apart |
+| 4 | Does a freelancer see their own month and payment state in their own space? | Nothing new: the contract, the rate card and the days the door already wrote. Optimises no new door read and nothing of rebase's cash timing or a client's objection leaving rebase's space. Costs the freelancer asking by mail whether the month was approved and when they are paid. | A read-only card «Il tuo incarico con rebase» on their contract: letter and signature, the months with «Rendiconto» state, held days, and the payment date once their invoice is registered (never a forecast). Optimises answering the two things they ask in the product where they record days. Costs one more door read, in the opposite direction to the existing one, and a timing to maintain. | B: it is the engagement's output for them, and the card shows only their own fee and dates | **B.** the read-only card «Il tuo incarico con rebase» |
+| 5 | Does the phone's centre «+» get «Rendiconto ricevuto»? | Yes: an item of the «+» for an admin of a space with the module on; a sheet with the engagement, the month and the date received; a toast with the tacit date. Optimises recording the arrival from anywhere, in two taps. Costs a rare, admin-only item on the sheet for daily adds. | No: the arrival is recorded on the engagement's month card («Registra l'arrivo»), the same button as on the desktop; the date is typed. Optimises a stable «+». Costs four taps from elsewhere and the risk of forgetting while the clock runs. | B: it happens a few times a month and the date is typed, so a late entry keeps the true date | **B.** no «+» item; «Registra l'arrivo» on the month card |
+| 6 | How is availability drawn, in the form and on the freelancer's page? | A strip: one cell per week, 12 weeks, the committed days as the figure, «?» hatched for «sconosciuta», the week's Monday under each cell. Optimises a glance in the little room a form or a registry row has. Costs the engagements behind a week being a step away. | A list: one row per week with status word, days and the engagement numbers. Optimises words and the engagements in view. Costs height: twelve rows do not fit a dialog or a table cell, so the form shows five. | A: the answer needed in a form is a shape (a free gap, an overlap); the list can live on the freelancer's page | **A.** a strip of 12 weeks |
 
 Not asked, because a source answers it or there is nothing to draw: who sees what, the
 two-step receipt and decision of a «Rendiconto» (the clock needs the receipt first), whether a
@@ -108,14 +109,13 @@ Non-goals    The hub's referral columns and its «Pigro» link state (the hub ke
 ```
 
 **Desktop.** The entry «Incarichi» (icon `BriefcaseBusiness`, which `nav.ts` does not use) sits in
-«Amministrazione» after «Giornate», with the count of engagements that wait for a person (question
-1). `PageHeader` with the icon, the title, one sentence («Le lettere di incarico dei freelance:
+«Amministrazione» after «Giornate», with the count of engagements that wait for a person. `PageHeader` with the icon, the title, one sentence («Le lettere di incarico dei freelance:
 dalla bozza alla firma, i giorni e i pagamenti.») and the one strong button, «Nuovo incarico»: a
 dense two-column dialog with the freelancer, the client and the deal or contract it serves, the
 role, the dates, «Giorni a settimana», the fee and its unit, the expected days, the letter type
 (from the freelancer's fiscal kind), the payment rule (a fixed term with its days and the month-end
 option, or «a incasso» with its days), then the server's overlap and over-capacity sentences in a
-band and the availability block (question 6), and «Crea la bozza». It opens prefilled when the hub's
+band and the availability block (a strip of 12 weeks, one cell per week, the committed days as the figure, «?» hatched for a week that cannot be said, the week's Monday under each cell), and «Crea la bozza». It opens prefilled when the hub's
 «Crea match» sends the request, with the freelancer chosen by the hub id (design § 5). Tabs, as
 «Proposte» draws them, disjoint: «Da fare» (with its count: a draft whose letter is not created or
 not sent, a month received and undecided, a missing `days_per_week` or client link), «In corso» (out
@@ -123,7 +123,7 @@ for signature, or active with nothing waiting) and «Chiusi» (concluded and can
 «Freelance», «Cliente», «Stato». Columns: «Freelance e incarico» (name over «ruolo · cliente»),
 «Lettera» (number over the dates), «Compenso» (fee over «al giorno · 4 giorni a settimana»),
 «Stato» (the pill over its sentence). A row opens the engagement's own page; 50 at a time with
-«Mostra altri». The freelancer's page in the registry, whatever the answer to question 1, gains a
+«Mostra altri». The freelancer's page in the registry gains a
 tab «Incarichi» (the same columns without the name), a block «Contratto quadro» (its state, «Crea
 il contratto quadro», «Invia per la firma»: it goes first, design § 2) and the «Disponibilità»
 block.
@@ -132,8 +132,7 @@ block.
 In corso / Chiusi»; a card holds the name and the pill, «ruolo · cliente» and what it waits for; it
 opens full screen. «Nuovo incarico» is the sticky button of the list: it is not on the «+», because
 an engagement is born from a request or at a desk, and the dialog becomes one column. No bulk
-action. With question 1 B the same cards sit under the registry's segmented control, with the strip
-in the card.
+action.
 
 | State | What is drawn |
 |---|---|
@@ -180,7 +179,7 @@ Non-goals    Configuring Documenso (deploy work, design § 2); editing the lette
              PigroCRM (due-items design § 8); computing a withholding or a net; the referral.
 ```
 
-**Desktop (question 2 A).** `PageHeader`: the icon, «Giulia Martini · Backend developer», one
+**Desktop.** `PageHeader`: the icon, «Giulia Martini · Backend developer», one
 line («Alfa Logistica S.r.l. · lettera n. 2026-014») and the pill; the actions «Modifica» (a
 draft changes freely, a signed one only the days a week and the client links, design § 1) and
 «Chiudi l'incarico…» (it asks for the end date; before the start date the action is «Annulla
@@ -197,7 +196,7 @@ page prints), «Invia per la firma», then «Rimanda la mail» and «Aggiorna lo
 first, from the start to the current month, then one row «Da dicembre 2026 a febbraio 2027: 3 mesi
 previsti». A row opens the month in the 330 px panel: the «Rendiconto» (received on, the tacit date,
 decided by and on), the days (date, quantity, what, and «Trattenuto» on a held one), the actions of
-question 3 (B: «Approva il mese» and «Contesta dei giorni…»; the button «Registra l'arrivo» when a
+the decision (two verbs: «Approva il mese» is one click, «Contesta dei giorni…» opens a dialog that holds the days with a reason and approves the rest; the button «Registra l'arrivo» when a
 finished month has no «Rendiconto»), and the month's payments: each item with its state, its date
 and its sentence, linking to the purchase of the freelancer's invoice and to the due item in
 «Cassa» when it is on. The page settles nothing: marking a payment paid is the due item's and the
@@ -232,8 +231,8 @@ payment); the sticky bar holds the strong action of the state: «Decidi il rendi
 
 ```
 Subject      The freelancer's contract with rebase, in the freelancer's own PigroCRM space (a
-             `solo` space the door opened): the contract page they already have, and, if
-             question 4 says B, a read-only card with the state of their engagement.
+             `solo` space the door opened): the contract page they already have, with a
+             read-only card on it with the state of their engagement.
 Audience     A freelancer, alone in their own space, who records days and invoices rebase. They
              do not know the engagement, the due items or the cash schedule of rebase.
 The job      Know whether the month was received and approved, and when they will be paid,
@@ -254,13 +253,12 @@ Non-goals    Any edit of the engagement; the hub's member «Contratti» page (it
 ```
 
 **Desktop.** The card «Il tuo incarico con rebase» sits at the top of their contract page
-(question 4 B), above «Termini», «Tariffe» and «Giorni da fare». Three facts (the letter's number and
+above «Termini», «Tariffe» and «Giorni da fare». Three facts (the letter's number and
 signature, the fee with the days a week, the payment rule in the words the letter prints) and a
 table of months: «Mese», «Rendiconto» (the pill and the date; a held day is named by date), «Pagamento»
 (the date and «Fattura 12/2026»). **Phone.** The same facts as one card at the top of the contract
 screen of the `solo` bar («Giornate» in the third place, `phoneThirdPlace`), the months as two
-lines each. With question 4 A nothing is added: the screens are the ones the contract and the days
-pages already draw.
+lines each.
 
 | State | What is drawn |
 |---|---|
@@ -275,8 +273,8 @@ pages already draw.
 
 ## What a component can violate
 
-Rules that do not depend on the answers; each is checkable by a test or a render. The rule each
-answer creates is written in `docs/design/DECISIONS.md` once Lorenzo has answered.
+Each rule is checkable by a test or a render. The last six follow Lorenzo's answers of 2026-11-10
+(see the questions table).
 
 - No engagement figure (a fee, a rate, an amount, a payable quantity, a due item) is rendered for
   a collaborator or a read-only member, in a page, a panel, a toast or a count; the entry,
@@ -299,6 +297,19 @@ answer creates is written in `docs/design/DECISIONS.md` once Lorenzo has answere
 - The page settles no payment: it links to the purchase and the due item.
 - A list is a gridded table on desktop and a column of cards on the phone, with no bulk action
   there; a loading state is `LoadingState`, never a `Skeleton`.
+- The list behind «Incarichi» is one row per engagement, with the count of what waits for a person on the
+  entry and a tab «Da fare»; a freelancer is a row only on the registry's own page (question 1).
+- An engagement's page is one page with a table of months: each row holds days, «Rendiconto», amount and
+  payment, and the month opens in the 330 px panel; the letter is a block above the table (question 2).
+- «Approva il mese» is one deliberate action; contesting is a separate «Contesta dei giorni…» that asks
+  for the reason and holds the days; on the phone it is a screen of its own (question 3).
+- A freelancer's own space shows a read-only card «Il tuo incarico con rebase» on their contract, with
+  their own months and a payment date only once their invoice is registered; nothing else of rebase's
+  (question 4).
+- The phone's «+» has no item for a received «Rendiconto»: it is recorded on the month card with a typed
+  date, the same button as on the desktop (question 5).
+- Availability is a strip of 12 weeks, the committed days as the figure in each cell, «?» for «sconosciuta»
+  with a legend; a list of weeks may live on the freelancer's page (question 6).
 - No emoji, no hex, no illustration; money `1.464,00 €`, dates `02/11/2026`, strings from locale keys
   with `en` and `it` identical.
 
@@ -310,8 +321,8 @@ back on any.
 - Routes `/app/engagements` and `/app/engagements/$engagementId` (English, as `/app/inbox`);
   `ROUTE_MODULES` gains `/app/engagements` for `collaborators`; the entry is «Incarichi» while the
   module's label is «Collaboratori» (`lib/modules.ts:37`); icon `BriefcaseBusiness`.
-- The entry sits in «Amministrazione» after «Giornate» (question 1 A), and is the first sidebar entry
-  gated by role: `nav.ts` says none is (`nav.ts:38`), so the build adds the role to the entry table.
+- The entry sits in «Amministrazione» after «Giornate» and is the first sidebar entry
+  gated by role: `nav.ts` says none is (`nav.ts:39`), so the build adds the role to the entry table.
 - The engagement's state labels are the hub's (`Da inviare`, `In attesa di firma`, `Attivo`,
   `Concluso`, `Annullato`, `projects/hub/apps/web/src/lib/format.ts:86-92`), with the tones above.
 - «Rendiconto» tones: `muted` for «Non ancora» and «Non ricevuto», `gold` «Ricevuto», `ink` «Approvato» and
@@ -324,7 +335,7 @@ back on any.
 - The new-engagement form is a dialog, as the staff dialogs are; the letter's own free-text fields are
   typed in the letter block of the page, once the draft exists (`LetterRequest`).
 - The freelancer's registry page gains the tab «Incarichi», the block «Contratto quadro» and
-  «Disponibilità» whichever answer question 1 gets (design § 2 and § 3 place them on the freelancer).
+  «Disponibilità» (design § 2 and § 3 place them on the freelancer).
 - The words and pieces the design does not name: «Registra l'arrivo», «Approva il mese», «Contesta dei
   giorni…», «Approva trattenendo 2 giorni», «Trattieni 2 giorni e approva il resto», «Il tuo incarico con
   rebase», «Non ancora», «Non ricevuto», «Approvazione tacita», «Ritenuta e netto: da definire», «Chiudi
@@ -341,81 +352,83 @@ back on any.
 ## Open points
 
 Gaps, contradictions and unresolved items found while writing the brief, so that the cards for
-the pages inherit them. None was shown to Lorenzo as a question.
+the pages inherit them. None was shown to Lorenzo as a question. File and line references are to main
+at the rebase of this brief (PR #827 and PR #834 merged).
 
 1. The design has no section on screens: its headings are «Why», «Decisions taken», § 1 to § 9, the
    rows and the cards (`2026-11-09-collaborators-in-the-crm-design.md:14-526`). What it says about the
    UI is scattered: availability on the freelancer's page and in the form (`:181-187`), the
    «Rendiconto» as an approval request (`:193-203`), the reserved area (`:158-161`), and self-service
    out of scope (`:503-505`); the last card line names «the brief for the engagement pages; those
-   pages» (`:526`). The card REB-1020 itself could not be read in this run (no Linear tool in the
-   session): the scope is the assignment's.
-2. Question 4 B needs a read of rebase's space from the freelancer's space, the opposite direction to
-   the in-process read of the days report, which is refused outside the space `PIGROCRM_LEADS_SPACE`
-   names (design `:174-180`; PR #827, `routers/collaborators.py`, the docstring of `engagement_report`);
-   § 9 excludes self-service beyond recording days (`:503-505`) and § 5 lists the door's reads, all the
-   hub's (`:355-370`).
-3. Outside the leads space the days read is refused with a conflict naming `PIGROCRM_LEADS_SPACE` (PR #827,
-   `days_report.py`, `is_leads_space`; `available: false` is a different case: the freelancer's space is
-   not set up yet). Only `DaysReportService` makes that check: the routes that record and approve a
-   month do not, so in any other company space a month can be approved with no day to look at.
-4. No signature state is served: `EngagementRead` has no signed date or document state
-   (`collaborators/schemas.py:105-139`), `LetterRead` only the document (`:247-256`), and no
-   Documenso code exists on main (a search of `packages/core/src` and `apps/api/src` finds none). The
-   mockups' «Firmata il 28/08/2026» and «La firma aspetta dal 06/11/2026» have no source until the
-   signature card; the states move by hand today (`routers/collaborators.py:110-118`,
-   `activate_engagement` is «registrare la firma»).
-5. The list needs what the API does not return: `EngagementRead` carries ids and no freelancer or
-   client name (`schemas.py:105-139`); `EngagementListQuery` has no search, no «waits for a person»
-   filter and no count (`:142-149`); the monthly reports are listed per engagement only (PR #827,
-   `GET /api/engagements/{id}/monthly-reports`). The count on the entry and the tab «Da fare» need a
-   server query.
-6. `DueItemListQuery` filters by organisation, source kind and dates, not by `source_id`
-   (`core/due_items/schemas.py:232-244`), while an engagement forecast stores the engagement there
-   (`collaborators/forecast.py:106-107`): the page can ask a freelancer's `engagement` items and filter
-   by source on the client, or the query gains `source_id`.
-7. A leak: the source kind `engagement` is not in `RESTRICTED_SOURCE_KINDS`
-   (`core/due_items/models.py:72-79`), so `list_due_items`, guarded by `require_agent_allowed` only
-   (`service.py:617-628`), answers a collaborator or a read-only member the freelancer's name, amount
-   and date, although every engagement read is an administrator's so as not to expose the freelancer's
-   hours and invoice numbers (design `:409-411`). The cash brief gives a collaborator every item outside the
-   restricted kinds (its «Permissions» row), so the same items would reach the schedule; the surface
-   rule above only covers these pages.
-8. No withholding or net exists on any API: the forecast amount is the gross fee times days
-   (`collaborators/payments.py:78-110`), `payable_amount` is quantity times fee (PR #827,
-   `days_report.py`, `_amount`), and the withholding's second due item and the net (design `:287-302`)
-   are not written yet; the «gestione separata» share and the stamp duty are «to verify» (`:298-302`).
-   The page draws «Ritenuta e netto: da definire» until the server returns them.
-9. A flat fee: `payable_amount` is none (PR #827, `_amount`) and the forecast bills once, at the end of the
-   month `ends_on` falls in (`payments.py:82-87`); the design does not say what a «Rendiconto» approves
-   for a flat fee (framework 6.1 speaks of the month's report). The page draws one row and the same
-   decision, which is a reading.
-10. Who tells the CRM that a «Rendiconto» arrived: framework 6.1 has the freelancer send it, nothing in
-    the CRM carries it (§ 9 excludes self-service), so `POST .../monthly-reports` is an administrator's
-    note of a mail; nothing alerts when a month ended and no report came (frame § A4 names alerts for
-    missing documents, not this one).
-11. Availability reads active engagements only (`collaborators/service.py:437-445`) while the overlap
-    warning counts draft and out-for-signature ones too (`:344-386`, `LIVE_STATES` in `models.py`): the
-    strip in the form can show 4 days a week and the band say 6, until the new engagement is active. The
-    mockup draws exactly that.
-12. PR #827's migration `0099_engagement_monthly_reports.py` has `down_revision = "0093"` while main's head is
-    `0094_accountant_exports.py` (`down_revision = "0093"`, `:31-32`): two heads until it is rebased (head
-    `45d0509` when read).
-13. `lib/permissions.ts:110-124` has the rows for the engagement reads and writes («No screen consults them
-    yet»), `ROUTE_MODULES` has no row for the route (`lib/modules.ts:50-65`), and a role-gated sidebar
-    entry has no mechanism (`nav.ts:38`, `visibleSections` at `:80` takes the module access only): the
-    build adds all three, as the staff brief's cards do.
-14. «Giorno lavorativo» is not defined in the framework agreement; the tacit date counts without
-    Saturdays, Sundays and the national holidays of `fiscal.calendar` (PR #827, `rules.add_working_days`),
-    flagged there for the contracts' legal review. The page shows the server's date; «entro il terzo
-    giorno lavorativo» (framework 6.1) is text without a computed date.
-15. The hub list shows referral columns and the «Pigro» link state (`Matches.tsx`); the CRM list drops both
-    (the hub keeps referrals, design `:340-347`). The hub's day and week hours views
+   pages» (`:526`). The card REB-1020 itself could not be read when this brief was written (no Linear
+   tool in the session): the scope is the assignment's.
+2. The freelancer's card (question 4 B) needs a read of rebase's space from the freelancer's space, the
+   opposite direction to the in-process read of the days report, which is refused outside the space
+   `PIGROCRM_LEADS_SPACE` names (design `:174-180`; `collaborators/rules.py:372-390`); § 9 excludes
+   self-service beyond recording days (`:503-505`) and § 5 lists the door's reads, all the hub's
+   (`:355-370`). The design needs a paragraph for it.
+3. Fixed in #834: outside the leads space the days read was refused while the routes that record and
+   approve a month had no such check; `require_leads_space` now guards both
+   (`collaborators/monthly_reports.py:100` and `:176`).
+4. Fixed in #834: the source kind `engagement` was not in `RESTRICTED_SOURCE_KINDS`, so `list_due_items`
+   served a collaborator or a read-only member the freelancer's name, amount and date, against design
+   `:409-411`; it is restricted now (`core/due_items/models.py:73-85`).
+5. No withholding or net exists on any API: the forecast amount is the gross fee times days
+   (`collaborators/payments.py:78-110`), `payable_amount` is quantity times fee
+   (`collaborators/days_report.py:326-331`), and the withholding's second due item and the net (design
+   `:287-302`) are not written yet; the «gestione separata» share and the stamp duty are «to verify»
+   (`:298-302`). The page draws «Ritenuta e netto: da definire» until the server returns them.
+6. A flat fee: `payable_amount` is none (`days_report.py:326-331`) and the forecast bills once, at the end
+   of the month `ends_on` falls in (`payments.py:82-87`); the design does not say what a «Rendiconto»
+   approves for a flat fee (framework 6.1 speaks of the month's report). The page draws one row and the
+   same decision, which is a reading.
+7. Who tells the CRM that a «Rendiconto» arrived: framework 6.1 has the freelancer send it, nothing in
+   the CRM carries it (§ 9 excludes self-service), so `POST .../monthly-reports` is an administrator's
+   note of a mail (question 5 B records it on the month card); nothing alerts when a month ended and no
+   report came (frame § A4 names alerts for missing documents, not this one).
+8. `lib/permissions.ts:113-125` has the rows for the engagement reads and writes («No screen consults
+   them yet»), `ROUTE_MODULES` has no row for the route (`lib/modules.ts:50`), the module's label is
+   «Collaboratori» where the entry is «Incarichi» (`lib/modules.ts:37`), and a role-gated sidebar entry
+   has no mechanism (`nav.ts:39`, `visibleSections` at `:82` takes the module access only): the build
+   adds all of them, as the staff brief's cards do.
+9. «Giorno lavorativo» is not defined in the framework agreement; the tacit date counts without
+   Saturdays, Sundays and the national holidays of `fiscal.calendar` (`collaborators/rules.py:315`),
+   flagged in PR #827 for the contracts' legal review. The page shows the server's date; «entro il terzo
+   giorno lavorativo» (framework 6.1) is text without a computed date.
+10. The hub list shows referral columns and the «Pigro» link state (`Matches.tsx`); the CRM list drops
+    both (the hub keeps referrals, design `:340-347`). The hub's day and week hours views
     (`MatchReport.tsx`) become month rows and a days list.
-16. Not verified: no `axe` run or dark-theme render of the artifact (one light scheme); the desktop frames
+11. Not verified: no `axe` run or dark-theme render of the artifact (one light scheme); the desktop frames
     scroll sideways inside their box at 390 px; the Italian copy had no native read; the states
-    «Concluso», «Nascosto», «Ore», a flat fee and a held day on the freelancer's card are described here and not drawn on the artifact; every
-    figure in the mockups is invented.
+    «Concluso», «Nascosto», «Ore», a flat fee and a held day on the freelancer's card are described here
+    and not drawn on the artifact; every figure in the mockups is invented.
+
+### Needs code before the page can be built
+
+Each of these is something the pages read that no API on main returns yet; the build card for the
+page waits for them or adds them first.
+
+- **Names in the engagements list API.** `EngagementRead` carries ids and no freelancer or client name
+  (`collaborators/schemas.py:105-139`), so the list cannot draw «Freelance e incarico».
+- **The «waits for a person» count and filter.** `EngagementListQuery` has no search, no such filter and
+  no count (`schemas.py:142-149`), and the monthly reports are listed per engagement only
+  (`GET /api/engagements/{id}/monthly-reports`, `routers/collaborators.py`): the entry's count and the
+  tab «Da fare» need a server query.
+- **A `source_id` filter on due items.** `DueItemListQuery` filters by organisation, source kind and
+  dates (`core/due_items/schemas.py:232-244`) while an engagement forecast stores the engagement as
+  `source_id` (`collaborators/forecast.py:106-107`): the page's «Pagamenti» need
+  `source_kind=engagement` with a `source_id`.
+- **A signed date on an engagement or its letter.** `EngagementRead` has no signed date or document
+  state (`schemas.py:105-139`), `LetterRead` only the document (`:247-256`), and no Documenso code
+  exists on main; the states move by hand (`routers/collaborators.py:110-118`). «Firmata il 28/08/2026»
+  and «La firma aspetta dal 06/11/2026» have no source until the signature card.
+- **Availability and the overlap warning counting the same engagements.** Availability reads active
+  engagements only (`collaborators/service.py:437-445`, the `("active",)` read at `:488`) while the
+  warning counts draft and out-for-signature ones too (`:344-386`, `LIVE_STATES` in `models.py`): the
+  strip in the form can show 4 days a week while the band says 6, until the new engagement is active.
+- **A read for the freelancer's card** (open point 2): the door answers the freelancer's own engagement
+  in their space, with the fields of the card and nothing else.
+- **The withholding and the net** (open point 5): the page draws none until the server returns them.
 
 ## Not in this brief
 
