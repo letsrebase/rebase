@@ -453,7 +453,7 @@ describe('the letter and the months of a draft', () => {
     expect(screen.getByText(/Resta in bianco nella lettera: luogo/)).toBeInTheDocument()
     expect(api.POST).toHaveBeenCalledWith('/api/engagements/{engagement_id}/letter/preview', {
       params: { path: { engagement_id: 'e1' } },
-      body: { variables: { attivita: 'Sviluppo API' } },
+      body: { variables: { 'attivita': 'Sviluppo API' } },
     })
   })
 
