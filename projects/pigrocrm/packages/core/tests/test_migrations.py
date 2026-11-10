@@ -4226,3 +4226,21 @@ def test_0100_adds_the_signature_columns_and_downgrade_removes_them(
             upgrade(config, "0100")
         finally:
             engine.dispose()
+
+
+def test_0101_creates_the_iva_period_locks_table_under_the_row_policy(
+    pigrocrm_postgres: Any,
+) -> None:
+    """REB-1036: a new table under the row policy of every table that reaches a legal entity;
+    it reverses and comes back."""
+    with pigrocrm_postgres.fresh_container() as container:
+        url = container.get_connection_url()
+        config = _alembic_config(url)
+        upgrade(config, "0100")
+        assert _table_shape(url, "iva_period_locks")[0] is False
+        upgrade(config, "0101")
+        assert _table_shape(url, "iva_period_locks") == (True, True, {"legal_entity_scope"})
+        downgrade(config, "0100")
+        assert _table_shape(url, "iva_period_locks")[0] is False
+        upgrade(config, "0101")
+        assert _table_shape(url, "iva_period_locks")[0] is True

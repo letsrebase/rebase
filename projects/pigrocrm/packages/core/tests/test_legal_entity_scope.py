@@ -81,6 +81,7 @@ POLICIED = {
     "declared_tax_figures",
     "accountant_exports",
     "iva_settlements",
+    "iva_period_locks",
     "recurring_expenses",
     "invoice_counters",
     "invoice_register_gaps",
