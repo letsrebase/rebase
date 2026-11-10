@@ -15,7 +15,7 @@ from pigrocrm.core.tenants.models import TenantsBase
 
 class RebaseEngagement(TenantsBase, PrimaryKeyMixin):
     """One row per hub match (spec 2026-09-25 § 2.2): which space, which customer and
-    which deal the door set up for it. `match_id` is the hub's id and the idempotency
+    which deal and contract the door set up for it. `match_id` is the hub's id and the idempotency
     key; `deal_id` stays NULL between step 3 and step 6 of `EngagementService.ensure`.
     `space_created` says the space was opened for this match (or its missing admin
     created for it): the call that completes the row sends the welcome and answers
@@ -27,6 +27,10 @@ class RebaseEngagement(TenantsBase, PrimaryKeyMixin):
     tenant_id: Mapped[UUID] = mapped_column(ForeignKey("tenants.id"), nullable=False, index=True)
     customer_id: Mapped[UUID | None] = mapped_column(default=None)
     deal_id: Mapped[UUID | None] = mapped_column(default=None)
+    # The contract the letter became in the freelancer's space (REB-1001), written with
+    # `deal_id` in the call's last step. NULL on a row written before it existed: that
+    # space keeps its deal and its hours, and no contract is written behind it.
+    contract_id: Mapped[UUID | None] = mapped_column(default=None)
     space_created: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default=text("false")
     )

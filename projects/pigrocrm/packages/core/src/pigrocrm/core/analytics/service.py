@@ -28,6 +28,8 @@ from pigrocrm.core.analytics.schemas import (
     PeriodPnl,
     PeriodPnlQuery,
     RevenueByCustomer,
+    TaxCalendar,
+    TaxCalendarEntry,
     UnbilledBacklog,
     YearOverview,
 )
@@ -40,6 +42,7 @@ from pigrocrm.core.db.clock import month_bounds
 from pigrocrm.core.deals.repository import DealRepository
 from pigrocrm.core.deals.value import ValueTerm, line_term, share_in
 from pigrocrm.core.errors import NotFound, ValidationFailed
+from pigrocrm.core.fiscal.calendar import tax_calendar
 from pigrocrm.core.fiscal.ceiling import (
     CeilingStatus,
     evaluate_ceiling,
@@ -627,6 +630,34 @@ class AnalyticsService:
         # computed from three nulls, which reads as "you owe nothing".
         profile = FiscalProfileService(self.session).get(actor, legal_entity.id)
         return self._estimate_year(year, legal_entity, profile, revenue)
+
+    def get_tax_calendar(
+        self, year: int, actor: Actor, *, legal_entity_id: UUID | None = None
+    ) -> TaxCalendar:
+        """Every tax date of calendar `year` for one legal entity, from the pack its profile
+        points at, each with its source (REB-1004, taxes design § 2 and § 5).
+
+        `admin`, and behind `full_access` over MCP, as `get_fiscal_estimate` is: the dates
+        say which taxes the legal entity owes, which is its tax position. The dates are
+        the pack's and the pack is law: nothing here is computed from the legal entity's
+        figures, and a pack with no calendar for `year` answers an empty list, never dates
+        borrowed from another year. `NotFound("fiscal_profile")` without a profile, as the
+        estimate answers.
+        """
+        actor.require_admin("get_tax_calendar")
+        legal_entity = LegalEntityService(self.session).require_single(
+            legal_entity_id, entity=ENTITY
+        )
+        profile = FiscalProfileService(self.session).get(actor, legal_entity.id)
+        pack = resolve_pack(profile.pack_id, profile.pack_version)
+        dates = tax_calendar(pack, year) or []
+        return TaxCalendar(
+            year=year,
+            legal_entity_id=legal_entity.id,
+            pack_id=pack.id,
+            pack_version=pack.version,
+            dates=[TaxCalendarEntry.model_validate(entry, from_attributes=True) for entry in dates],
+        )
 
     def freeze_fiscal_estimates(self, actor: Actor, legal_entity_id: UUID) -> None:
         """Keep, for every year the legal entity issued in, the estimate its pack computes

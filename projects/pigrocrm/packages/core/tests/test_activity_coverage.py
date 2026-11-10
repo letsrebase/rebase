@@ -104,6 +104,7 @@ _GATES = frozenset({"require_write", "require_admin", "require_unscoped_admin"})
 _READS: dict[Method, str] = {
     ("AnalyticsService", "economic_overview"): "a figure; nothing is written for the person",
     ("AnalyticsService", "get_fiscal_estimate"): "a figure computed from the profile",
+    ("AnalyticsService", "get_tax_calendar"): "reads the pack's dates, writes nothing",
     ("AutomationConfigService", "describe_automations"): "reads the rules",
     ("EngagementService", "get"): "reads an engagement; an administrator's read",
     ("EngagementService", "list"): "reads engagements; an administrator's read",

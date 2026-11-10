@@ -167,6 +167,8 @@ FULL_ACCESS_ACTIONS: frozenset[str] = frozenset(
         "bind_time_to_invoice",
         "bill_contract_days",
         "get_fiscal_estimate",
+        # The dates of the taxes a legal entity owes (REB-1004): its tax position, as the estimate.
+        "get_tax_calendar",
         # The space's profile and which modules are on (spec 2026-11-09, B1): what the whole
         # team sees changes. An administrator's token with `full_access`, nothing less; the
         # generic `update_space_settings` stays person-only below.

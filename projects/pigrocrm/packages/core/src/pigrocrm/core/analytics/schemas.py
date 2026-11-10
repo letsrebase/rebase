@@ -19,6 +19,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field
 
 from pigrocrm.core.contracts.schemas import ContractCapSimulation
+from pigrocrm.core.fiscal.law import Cadence, DateKind, TaxName
 from pigrocrm.core.fiscal.pack import CeilingConsequence
 
 # Mirrors `Deal`'s own Numeric(p, s) column widths (`deals/models.py`), the same
@@ -232,6 +233,36 @@ class BudgetPage(BaseModel):
     revenue_total: Decimal
     budgeted_deals: int
     unbudgeted_deals: int
+
+
+class TaxCalendarEntry(BaseModel):
+    """One date of a legal entity's tax calendar (REB-1004): what falls due, on which day and
+    where the date comes from. `nominal_date` is the day the pack states; `due_date` is the
+    day it falls once a Saturday, a Sunday or a national holiday is moved forward."""
+
+    model_config = ConfigDict(frozen=True)
+
+    nominal_date: dt.date
+    due_date: dt.date
+    tax: TaxName
+    kind: DateKind
+    cadence: Cadence | None
+    covers: str
+    source: str
+
+
+class TaxCalendar(BaseModel):
+    """The tax dates of calendar `year` for one legal entity, from its pack (REB-1004). The dates
+    are «salvo proroghe»: a decree that moves one is a new entry of the pack. An empty `dates`
+    with a `pack_id` is a pack that has no calendar for that year."""
+
+    model_config = ConfigDict(frozen=True)
+
+    year: int
+    legal_entity_id: UUID
+    pack_id: str
+    pack_version: str
+    dates: list[TaxCalendarEntry]
 
 
 class FiscalEstimate(BaseModel):
@@ -688,5 +719,7 @@ __all__ = [
     "PeriodPnl",
     "PeriodPnlQuery",
     "PnlTotals",
+    "TaxCalendar",
+    "TaxCalendarEntry",
     "UnbilledBacklog",
 ]

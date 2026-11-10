@@ -200,8 +200,9 @@ The register as of today, from the conversation:
 | Company dates: balance and first advance on the last day of the sixth month after the fiscal year end (or of the month after a late approval of the financial statements); second advance in the eleventh month | verified | same |
 | Forecast (previsionale) advance method exists | verified | same |
 | Conditions of the forecast method; interest and penalties on a shortfall | to verify | |
-| Income-tax dates: the day of the month (30 June for the balance and the first advance, 30 November for the second) | to verify | |
-| Advances of the flat-rate regime's substitute tax: dates, split and thresholds | to verify | |
+| Income-tax dates: 30 June for the balance and the first advance (or within 30 days with 0.40%), 30 November for the second or only advance, for a person | verified 2026-11-10 | Agenzia, «Imposte sui redditi (Irpef, Ires)» (updated 30 September 2026), «I versamenti delle persone fisiche» |
+| Flat-rate substitute tax: balance and first advance on 30 June, second or only advance on 30 November (2026) | verified 2026-11-10 | Agenzia, Scadenzario fiscale, «Regime forfetario agevolato: versamento imposta sostitutiva» (30 June and 30 November 2026) |
+| Advances of the flat-rate regime's substitute tax: split and thresholds, and instalments (the dates are verified above) | to verify | |
 | Instalment rule and interest for an srl | to verify | |
 | 5% substitute rate on start-up conditions, 15% otherwise; profitability coefficients | to verify | |
 | Flat-rate contribution base: whether INPS contributions are deducted before the substitute tax | to verify | |
@@ -218,13 +219,20 @@ The register as of today, from the conversation:
 | TD17, TD18, TD19 integrate foreign purchases through the SdI | verified | Agenzia, FatturaPA guide v1.10, April 2025 |
 | Legal deadline of the 15th of the following month for TD17, TD18, TD19 | to verify | |
 | Intrastat for services | to verify | |
-| Periodic IVA settlement, LIPE, December IVA advance | to verify | |
+| Monthly IVA: settlement and payment by the 16th of the following month | verified 2026-11-10 | Agenzia, «F24 IVA Periodica - Come e quando si versa» and «Come pagare l'Iva» (updated 20 September 2024) |
+| Quarterly IVA: payment on 16 May, 20 August and 16 November for the first three quarters; the fourth with the annual settlement by 16 March | verified 2026-11-10 | Agenzia, «F24 IVA Periodica - Come e quando si versa» |
+| The July monthly IVA payment falls on 20 August (2026) | verified 2026-11-10 | Agenzia, Scadenzario fiscale, scadenze per Iva del 20-08-2026 |
+| December IVA advance by 27 December, for the December payment (monthly) or the fourth quarter (quarterly) | verified 2026-11-10 | Agenzia, «Come pagare l'Iva», «Acconto Iva» |
+| A deadline that falls on a Saturday or a holiday moves to the next working day | verified 2026-11-10 | decree-law 70/2011 art. 7 comma 1 lett. h) and l), text published by the Agenzia |
+| National holidays: Sundays, 1 and 6 January, Easter Monday, 25 April, 1 May, 2 June, 15 August, 1 November, 8, 25 and 26 December; patron saints are local and excluded | verified 2026-11-10 | legge 260/1949 art. 2 as amended by legge 54/1977, DPR 792/1985 and legge 336/2000, Camera dei deputati, «Le festività nazionali» |
+| LIPE: the communication of periodic settlements, its dates | to verify | |
+| Deadlines in the August window (1 to 20 August) move to 20 August every year, not only in 2026 | to verify | |
 | Withholding paid to the tax office by the 16th of the month after the payment | to verify | |
 | A flat-rate buyer owes VAT on a reverse-charge purchase from abroad, and cannot deduct it | verified | L. 190/2014, art. 1 c. 58 lett. e-bis (pays the VAT on purchases under art. 17 DPR 633/72 «compresi quelli intracomunitari», by the 16th of the second month after each quarter; no deduction), normattiva.it, read 2026-11-10 (REB-993) |
 | ECB rate reference date for a foreign-currency document | to verify | |
 | TD16 integrates a domestic reverse-charge purchase | to verify | |
-| Quarterly settlement surcharge of 1% and the minimum below which a periodic payment is carried forward | to verify | |
-| Eligibility thresholds for quarterly settlement | to verify | |
+| Quarterly settlement surcharge of 1%, and the 100 euro below which a periodic payment is carried forward to the next month (by 16 December at the latest) | verified 2026-11-10 | Agenzia, «F24 IVA Periodica - Come e quando si versa»; Scadenzario fiscale, scadenze per Iva del 20-08-2026 |
+| Eligibility thresholds for quarterly settlement: 500,000 euro of turnover for services and professionals, 800,000 for other activities, in the previous year | verified 2026-11-10 | Agenzia, «F24 IVA Periodica - Come e quando si versa» |
 | Split payment exclusions: professionals whose fees are subject to withholding | to verify | |
 | Cash-basis IVA conditions: eligibility ceiling, one-year backstop, buyer-side deduction timing, invoice annotation | to verify | |
 | VAT on a retail receipt is not deductible without an invoice | verified | DPR 633/72, art. 19 c. 1 (only the tax «addebitata a titolo di rivalsa» is deductible) and art. 22 (in retail an invoice is not compulsory unless the customer asks before the operation), normattiva.it, read 2026-11-10 (REB-993). An invoice, a simplified one (art. 21-bis) included, is a purchase of kind `invoice`, not a receipt |

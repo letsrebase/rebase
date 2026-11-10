@@ -8,6 +8,8 @@ asks, with a `MetaData` of its own that `create_all` is the honest size of tool 
 neither of these is the CRM schema.
 """
 
+from collections.abc import Sequence
+
 from sqlalchemy import Engine, MetaData, create_engine, inspect, text
 from sqlalchemy.engine import URL, make_url
 from sqlalchemy.exc import ProgrammingError
@@ -111,13 +113,27 @@ def _assert_columns(engine: Engine, metadata: MetaData) -> None:
             )
 
 
-def ensure_sidecar_database(settings: Settings, target: URL, metadata: MetaData) -> Engine:
+def ensure_sidecar_database(
+    settings: Settings,
+    target: URL,
+    metadata: MetaData,
+    upgrades: Sequence[tuple[str, str, str]] = (),
+) -> Engine:
     """Idempotent. Returns an engine bound to a database that exists and has the tables,
-    with every column the code declares (`SidecarSchemaOutdated` otherwise)."""
+    with every column the code declares (`SidecarSchemaOutdated` otherwise). `upgrades` are
+    `(table, column, statement)` triples: the statement (`ALTER TABLE ... ADD COLUMN IF NOT
+    EXISTS`) runs after `create_all` and before the column check, only when the column is
+    missing (an `ALTER` takes an exclusive lock even when it changes nothing), so a column
+    added to an existing table arrives with the boot instead of by hand."""
     create_database_if_missing(settings, target)
     engine = create_engine(target, pool_pre_ping=True, future=True)
     try:
         metadata.create_all(engine)
+        inspector = inspect(engine)
+        for table, column, statement in upgrades:
+            if column not in {c["name"] for c in inspector.get_columns(table)}:
+                with engine.begin() as connection:
+                    connection.execute(text(statement))
         _assert_columns(engine, metadata)
     except Exception:
         engine.dispose()
