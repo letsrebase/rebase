@@ -142,6 +142,15 @@ describe('the page of a purchase', () => {
     expect(screen.getByRole('button', { name: 'Elimina' })).toBeInTheDocument()
   })
 
+  it('says the period is closed in place of «Modifica», «Annulla acquisto» and «Elimina»', async () => {
+    answering(ok({ ...PURCHASE, iva_period_closed: true }))
+    renderWithQuery(<PurchaseDetail />)
+    expect(await screen.findByText('Periodo IVA chiuso: non si può modificare.')).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: /Modifica/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Annulla acquisto' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Elimina' })).not.toBeInTheDocument()
+  })
+
   it('offers nothing to change to a read-only member', async () => {
     writer = false
     answering(ok(PURCHASE))

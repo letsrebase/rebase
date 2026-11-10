@@ -539,6 +539,9 @@ class InvoiceRead(BaseModel):
     # terms and the profile, two more statements a list page (which prints no forecast)
     # must not pay per page.
     expected_due_date: dt.date | None = None
+    # Set on the detail read: the invoice is in the sales register of a closed IVA period, so it
+    # cannot be annulled (REB-1036).
+    iva_period_closed: bool = False
     # The customer's `legal_name`, denormalised onto the read shape exactly as
     # `DealRead.customer_legal_name` is (ORB-98): the name lives on `organizations` and
     # renaming a customer must not need a second write here. `InvoiceService._read`

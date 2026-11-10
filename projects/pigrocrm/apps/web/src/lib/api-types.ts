@@ -8170,6 +8170,8 @@ export interface components {
             invoice?: components["schemas"]["InvoiceRead"] | null;
             /** Undeclared Gaps */
             undeclared_gaps?: number[] | null;
+            /** Note */
+            note?: string | null;
         };
         /**
          * ContactPointIn
@@ -12849,6 +12851,11 @@ export interface components {
             snapshot_version: number | null;
             /** Expected Due Date */
             expected_due_date?: string | null;
+            /**
+             * Iva Period Closed
+             * @default false
+             */
+            iva_period_closed: boolean;
             /** Customer Legal Name */
             customer_legal_name?: string | null;
             /** Custom Fields */
@@ -16094,6 +16101,11 @@ export interface components {
              * Format: date-time
              */
             updated_at: string;
+            /**
+             * Iva Period Closed
+             * @default false
+             */
+            iva_period_closed: boolean;
         };
         /**
          * PurchaseUpdate

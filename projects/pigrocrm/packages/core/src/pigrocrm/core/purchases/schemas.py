@@ -192,6 +192,9 @@ class PurchaseRead(BaseModel):
     custom_fields: dict[str, Any]
     created_at: datetime
     updated_at: datetime
+    # Set by `PurchaseService.get`: the purchase is in the register of a closed IVA period, so
+    # no write to it is accepted (REB-1036).
+    iva_period_closed: bool = False
 
 
 class PurchaseListQuery(BaseModel):

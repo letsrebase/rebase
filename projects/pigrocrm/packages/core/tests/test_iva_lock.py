@@ -407,3 +407,20 @@ def test_an_invoice_imported_with_a_date_in_a_closed_period_is_refused(
     with pytest.raises(Conflict) as refused:
         invoices.import_issued(data, SYSTEM)
     assert "1° trimestre 2026" in refused.value.details["reason"]
+
+
+def test_the_detail_reads_say_when_a_purchase_or_an_invoice_is_in_a_closed_period(
+    db_session: Session, invoices: InvoiceService, entity: UUID, admin: Actor, category: UUID
+) -> None:
+    service = PurchaseService(db_session)
+    purchase = _purchase(service, category, _supplier(db_session), D(2026, 2, 10))
+    outside = _purchase(service, category, _supplier(db_session), D(2026, 5, 10), number="FA/13")
+    issued = _issue(invoices, _customer(db_session), D(2026, 2, 10))
+    assert not service.get(purchase.id, SYSTEM).iva_period_closed
+    assert not invoices.get(issued.id, SYSTEM).iva_period_closed
+
+    _close(db_session, admin, entity)
+
+    assert service.get(purchase.id, SYSTEM).iva_period_closed
+    assert not service.get(outside.id, SYSTEM).iva_period_closed
+    assert invoices.get(issued.id, SYSTEM).iva_period_closed

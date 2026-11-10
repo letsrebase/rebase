@@ -108,6 +108,9 @@ class ConfirmedInvoiceRead(BaseModel):
     existing_organization_id: UUID | None = None
     invoice: InvoiceRead | None = None
     undeclared_gaps: list[int] | None = None
+    # Why a `conflict` row was refused when the refusal has a sentence of its own: a closed IVA
+    # period names itself (REB-1036).
+    note: str | None = None
 
 
 class InvoiceConfirmRequest(BaseModel):

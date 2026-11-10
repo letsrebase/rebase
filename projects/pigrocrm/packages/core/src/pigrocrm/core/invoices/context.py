@@ -251,5 +251,9 @@ class InvoiceContext:
         not spent on a date nothing on that page prints."""
         invoice = self.require(invoice_id)
         return self.read(invoice).model_copy(
-            update={"expected_due_date": self.expected_due_date(invoice)}
+            update={
+                "expected_due_date": self.expected_due_date(invoice),
+                "iva_period_closed": invoice.status == "issued"
+                and self.iva_locks.is_closed(invoice.legal_entity_id, invoice.issue_date),
+            }
         )

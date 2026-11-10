@@ -705,7 +705,13 @@ class PurchaseService:
         return PurchaseRead.model_validate(purchase)
 
     def get(self, purchase_id: UUID, actor: Actor) -> PurchaseRead:
-        return PurchaseRead.model_validate(self._require(purchase_id))
+        purchase = self._require(purchase_id)
+        read = PurchaseRead.model_validate(purchase)
+        if purchase.status == "registered":
+            read.iva_period_closed = self.iva_locks.is_closed(
+                purchase.legal_entity_id, purchase.iva_period
+            )
+        return read
 
     # `list` stays the last method in this class -- the unconditional project rule.
     def list(self, query: PurchaseListQuery, actor: Actor) -> PurchasePage:

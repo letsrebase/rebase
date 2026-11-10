@@ -254,6 +254,7 @@ class InvoiceImporter:
                 existing_organization_id=row.existing_organization_id,
                 invoice=row.invoice,
                 undeclared_gaps=row.undeclared_gaps,
+                note=row.note,
             )
             for row in self._confirm_content(
                 content,

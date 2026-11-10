@@ -107,6 +107,13 @@ class IvaPeriodLockService:
             )
         ).first()
 
+    def is_closed(self, legal_entity_id: UUID | None, day: dt.date | None) -> bool:
+        """Whether `day` is in a period `legal_entity_id` closed: a read for a page, which takes no
+        lock (a write asks `assert_writable`)."""
+        if legal_entity_id is None or day is None:
+            return False
+        return self._covering(legal_entity_id, day) is not None
+
     def assert_writable(
         self, entity: str, field: str, legal_entity_id: UUID | None, *days: dt.date | None
     ) -> None:
