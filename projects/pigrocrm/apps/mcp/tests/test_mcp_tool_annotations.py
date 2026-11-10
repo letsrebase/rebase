@@ -120,9 +120,10 @@ DEFAULT_BUDGET_BYTES = 108_200
 # `update_bank_account` lists them by name and type) and `get_cash_schedule` (every token's, 453
 # bytes), measured at 132,491.
 # REB-1025 after the merge with main: 135.9 KB, measured at 135,815.
-# REB-1036: 132.9 KB, up from 131.75 KB, for `close_iva_period` and `reopen_iva_period` (a
-# full-access administrator's), measured at 132,884.
-FULL_ACCESS_BUDGET_BYTES = 136_000
+# REB-1036: 137.1 KB, up from 136.0 KB after the merge with main, for `close_iva_period` and
+# `reopen_iva_period` (a full-access administrator's) and the `closed` words of `list_iva_periods`,
+# measured at 137,072.
+FULL_ACCESS_BUDGET_BYTES = 137_100
 
 # A name starting with one of these reads. The tools that read without such a name are
 # listed, so adding one is a decision somebody wrote down.
