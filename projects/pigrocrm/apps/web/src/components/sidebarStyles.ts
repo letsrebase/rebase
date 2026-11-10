@@ -21,3 +21,8 @@ export const ITEM =
 export const ACTIVE =
   'data-[status=active]:before:bg-sidebar-primary data-[status=active]:bg-sidebar-accent data-[status=active]:text-sidebar-accent-foreground data-[status=active]:font-medium'
 export const QUIET = 'text-sidebar-foreground/70 hover:bg-sidebar-accent/60 hover:text-sidebar-foreground'
+
+/** `ACTIVE` for an entry whose caller decides it is current and says so with `aria-current`,
+ *  because the router's own match cannot tell it from the entry that opens the same page. */
+export const ACTIVE_BY_ARIA =
+  'aria-[current=page]:before:bg-sidebar-primary aria-[current=page]:bg-sidebar-accent aria-[current=page]:text-sidebar-accent-foreground aria-[current=page]:font-medium'

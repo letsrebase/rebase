@@ -2,7 +2,7 @@ import { Link } from '@tanstack/react-router'
 import type { LucideIcon } from 'lucide-react'
 import { cn } from '@rebase/ui/cn'
 import type { LinkTo } from './nav'
-import { ACTIVE, FOCUS, ITEM, QUIET } from './sidebarStyles'
+import { ACTIVE, ACTIVE_BY_ARIA, FOCUS, ITEM, QUIET } from './sidebarStyles'
 
 /**
  * A leaf entry: an icon and a label expanded, an icon alone in the rail. A `count` above
@@ -13,6 +13,8 @@ import { ACTIVE, FOCUS, ITEM, QUIET } from './sidebarStyles'
  */
 export function NavLeaf({
   to,
+  search,
+  active,
   label,
   icon: Icon,
   rail,
@@ -22,6 +24,11 @@ export function NavLeaf({
   overdue,
 }: {
   to: LinkTo
+  /** The view an entry opens its page on (`?role=supplier`). */
+  search?: { role: 'supplier' }
+  /** Given by an entry the path alone cannot tell from its sibling (the registry's two
+   *  doors): the caller decides whether it is the current one, and the link follows. */
+  active?: boolean
   label: string
   icon: LucideIcon
   rail: boolean
@@ -34,13 +41,22 @@ export function NavLeaf({
   return (
     <Link
       to={to}
+      search={search}
       // `includeSearch: false`, because TanStack defaults it to true: none of these links
       // carries a search of its own, so with the default an entry stopped being active
       // the moment its page put anything in the URL -- and Home, whose dashboard writes
       // its tab and period there on load, was never highlighted at all.
       activeOptions={{ exact, includeSearch: false }}
-      activeProps={{ 'aria-current': 'page' }}
-      className={cn(ITEM, QUIET, ACTIVE, FOCUS, rail && 'justify-center px-0')}
+      {...(active === undefined
+        ? { activeProps: { 'aria-current': 'page' as const } }
+        : { 'aria-current': active ? ('page' as const) : undefined })}
+      className={cn(
+        ITEM,
+        QUIET,
+        active === undefined ? ACTIVE : ACTIVE_BY_ARIA,
+        FOCUS,
+        rail && 'justify-center px-0',
+      )}
     >
       <Icon className="size-4 shrink-0" aria-hidden="true" />
       <span className={cn('truncate', rail && 'sr-only')}>{label}</span>

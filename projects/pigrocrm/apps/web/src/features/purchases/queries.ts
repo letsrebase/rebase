@@ -40,6 +40,20 @@ export function usePurchases(params: PurchasesListParams = {}, options: { enable
   })
 }
 
+/** One purchase, for its own page and for the form that edits it. Empty id: no request. */
+export function usePurchase(purchaseId: string) {
+  return useQuery({
+    enabled: purchaseId !== '',
+    queryKey: queryKeys.purchase(purchaseId),
+    queryFn: () =>
+      unwrap(
+        api.GET('/api/purchases/{purchase_id}', {
+          params: { path: { purchase_id: purchaseId } },
+        }),
+      ),
+  })
+}
+
 export function useCostCategories(includeArchived = false) {
   return useQuery({
     queryKey: queryKeys.costCategories(includeArchived),
@@ -57,6 +71,8 @@ export function useCostCategories(includeArchived = false) {
  *  summary alone. */
 function invalidatePurchases(queryClient: QueryClient, dealId?: string | null) {
   void queryClient.invalidateQueries({ queryKey: queryKeys.purchases() })
+  // The page of a purchase reads it by its own key, which a list's prefix does not reach.
+  void queryClient.invalidateQueries({ queryKey: ['purchase'] })
   if (dealId) {
     void queryClient.invalidateQueries({ queryKey: queryKeys.dealTimeSummary(dealId) })
   }
