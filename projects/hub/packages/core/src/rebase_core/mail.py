@@ -16,7 +16,7 @@ import base64
 import json
 import logging
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Literal, Protocol
 
 from rebase_core.config import Settings
 from rebase_core.http import HttpCall, urllib_call
@@ -53,6 +53,24 @@ class EmailSender(Protocol):
         ...
 
 
+Delivery = Literal["accepted", "uncertain", "refused"]
+"""What a send can tell: the provider took the mail; it may have (no answer, an outage: a
+second send could be a second mail); it did not (a 4xx, a 429, a refused key)."""
+
+
+def delivery_of(sender: EmailSender, mail: Mail) -> Delivery:
+    """`sender.deliver` when it has one, which says more than a bool; otherwise the bool,
+    where a `False` is taken as «refused». A sender that raises is «uncertain»."""
+    try:
+        deliver = getattr(sender, "deliver", None)
+        if deliver is not None:
+            outcome: Delivery = deliver(mail)
+            return outcome
+        return "accepted" if sender.send(mail) else "refused"
+    except Exception:  # noqa: BLE001 - the contract is "never raises", and a break says nothing
+        return "uncertain"
+
+
 class RecordingSender:
     """Keeps every mail in a list. For tests, and for reading the link in development."""
 
@@ -73,6 +91,9 @@ class ResendSender:
         self.http = http or urllib_call
 
     def send(self, mail: Mail) -> bool:
+        return self.deliver(mail) == "accepted"
+
+    def deliver(self, mail: Mail) -> Delivery:
         body: dict[str, object] = {
             "from": self.sender,
             "to": [mail.to],
@@ -99,14 +120,15 @@ class ResendSender:
             status, _ = self.http("POST", RESEND_URL, headers, payload)
         except Exception as error:  # noqa: BLE001 - the seam's contract is "never raises"
             _log.warning("Resend unreachable: %s", type(error).__name__)
-            return False
+            return "uncertain"
         if 200 <= status < 300:
-            return True
+            return "accepted"
         # The status alone: Resend's body may name the domain or the key's id. A 401/403
         # is a key or a domain to fix, a 429 the day's quota spent, a 5xx their outage;
         # all of them are one line the operator can tell apart.
         _log.warning("Resend refused the mail: status %s (%s)", status, _meaning(status))
-        return False
+        # A 5xx or a timeout may have been taken before it failed; a 4xx never was.
+        return "uncertain" if status >= 500 or status == 408 else "refused"
 
 
 def _meaning(status: int) -> str:

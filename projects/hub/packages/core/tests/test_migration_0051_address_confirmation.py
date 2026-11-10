@@ -16,6 +16,8 @@ COLUMNS = {
     "email_confirmed_at",
     "confirmation_requested_at",
     "confirmation_sent_at",
+    "confirmation_attempts",
+    "confirmation_attempted_at",
     "confirmation_token_hash",
     "confirmation_expires_at",
 }

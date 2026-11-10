@@ -834,3 +834,19 @@ def test_to_monthly_share_says_so(clean: Session) -> None:  # noqa: F811  (fixtu
 def test_to_reserve_that_takes_the_whole_share_is_refused_at_start_up() -> None:
     with pytest.raises(ValueError, match="REBASE_CAMPAIGN_DAILY_RESERVE"):
         SETTINGS.model_validate({**SETTINGS.model_dump(), "resend_daily_quota": 10})
+
+
+def test_the_unasked_mail_budgets_must_leave_room_for_the_test_mails() -> None:
+    """REB-911: the wizard's and the confirmation mails spend the reserve nobody asked for;
+    what is left of it is for the test mails and the logins."""
+    assert SETTINGS.public_mail_daily_budget + SETTINGS.confirmation_mail_daily_budget + 5 <= (
+        SETTINGS.campaign_daily_reserve
+    )
+    with pytest.raises(ValueError, match="CONFIRMATION_MAIL_DAILY_BUDGET"):
+        SETTINGS.model_validate(
+            {
+                **SETTINGS.model_dump(),
+                "public_mail_daily_budget": 10,
+                "confirmation_mail_daily_budget": 6,
+            }
+        )

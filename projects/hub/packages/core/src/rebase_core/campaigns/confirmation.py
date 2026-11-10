@@ -16,17 +16,22 @@ from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from time import sleep
 
-from sqlalchemy import ColumnElement, exists, func, select, update
+from sqlalchemy import ColumnElement, exists, func, or_, select, update
 from sqlalchemy.orm import Session
 
 from rebase_core.config import Settings
-from rebase_core.mail import EmailSender
+from rebase_core.mail import EmailSender, delivery_of
 from rebase_core.mail_member import confirmation_mail
 from rebase_core.models import Login, User
 from rebase_core.team_caps import rome_midnight
 
 TOKEN_MAX_LENGTH = 64
 SEND_INTERVAL_SECONDS = 1.0
+# A person Resend definitely refused is tried again the next Rome day, this many times in all.
+MAX_ATTEMPTS = 3
+# How many owed people one pass looks at: ineligible ones are cleared as it goes, so the
+# next pass reaches the rest.
+QUEUE_WINDOW = 200
 _log = logging.getLogger(__name__)
 
 
@@ -69,12 +74,14 @@ def request(session: Session, emails: list[str], *, now: datetime) -> int:
     return len(marked.scalars().all())
 
 
-def sent_today(session: Session, now: datetime) -> int:
+def attempted_today(session: Session, now: datetime) -> int:
+    """The confirmation mails tried since midnight in Rome, refused ones too: the budget
+    counts what was spent asking Resend, not what arrived."""
     return (
         session.scalar(
             select(func.count())
             .select_from(User)
-            .where(User.confirmation_sent_at >= rome_midnight(now))
+            .where(User.confirmation_attempted_at >= rome_midnight(now))
         )
         or 0
     )
@@ -88,42 +95,67 @@ def send_pending(
     clock: Callable[[], datetime] = lambda: datetime.now(UTC),
     pause: Callable[[float], None] = sleep,
 ) -> int:
-    """Sends the confirmation mails that are owed, as many as the day's budget leaves.
-    Each person is claimed by a conditional update (`confirmation_sent_at` still empty)
-    and committed before the mail leaves, so two passes never send two; a mail the
-    provider refuses gives the claim back and is tried again next pass. Returns how many
-    went. Whoever opted out, bounced, was discarded or confirmed since the request is not
-    written to: `exclusions` is read again, and only «not confirmed» alone lets a mail go."""
+    """Tries the confirmation mails that are owed, as many as the day's budget leaves, and
+    returns how many the provider took or may have taken.
+
+    The queue is read in order and walked until the budget is spent, not cut to the budget
+    first: whoever is no longer owed a mail (discarded, opted out, bounced, confirmed by a
+    login) stops being owed, `confirmation_requested_at` cleared, and never holds a place.
+
+    Each try is claimed by a conditional update (attempt counted, link written) and
+    committed before the mail leaves, so two passes never send two. What comes back decides
+    the rest: `accepted` or `uncertain` (a timeout, a 5xx: the provider may have taken it)
+    both set `confirmation_sent_at`, so the person is never mailed again and the link they
+    may hold keeps working; `refused` (a 4xx, a quota) leaves it empty and the person is
+    tried again from the next Rome day, `MAX_ATTEMPTS` times in all, so an address Resend
+    will never take does not stay at the head of the queue."""
     from rebase_core.campaigns.audience import REASON_UNCONFIRMED, exclusions
 
-    room = settings.confirmation_mail_daily_budget - sent_today(session, clock())
+    room = settings.confirmation_mail_daily_budget - attempted_today(session, clock())
     if room <= 0:
         return 0
+    midnight = rome_midnight(clock())
     owed = session.scalars(
-        select(User)
+        select(User.id)
         .where(
             User.confirmation_requested_at.is_not(None),
             User.confirmation_sent_at.is_(None),
+            User.confirmation_attempts < MAX_ATTEMPTS,
+            or_(
+                User.confirmation_attempted_at.is_(None), User.confirmation_attempted_at < midnight
+            ),
             unconfirmed(),
         )
         .order_by(User.confirmation_requested_at, User.id)
-        .limit(room)
+        .limit(QUEUE_WINDOW)
     ).all()
     sent = 0
-    for user in owed:
+    for user_id in owed:
+        if room <= 0:
+            break
+        user = session.get(User, user_id, populate_existing=True)
+        if user is None:
+            continue
         email = user.email.lower()
         now = clock()
         reason = exclusions(
             session, [email], campaign_id=None, now=now, gap_days=settings.campaign_gap_days
         ).get(email)
         if reason != REASON_UNCONFIRMED:
+            user.confirmation_requested_at = None
+            session.commit()
             continue
         raw = secrets.token_urlsafe(32)
         claimed = session.execute(
             update(User)
-            .where(User.id == user.id, User.confirmation_sent_at.is_(None))
+            .where(
+                User.id == user.id,
+                User.confirmation_sent_at.is_(None),
+                User.confirmation_attempts < MAX_ATTEMPTS,
+            )
             .values(
-                confirmation_sent_at=now,
+                confirmation_attempts=User.confirmation_attempts + 1,
+                confirmation_attempted_at=now,
                 confirmation_token_hash=_hash(raw),
                 confirmation_expires_at=now + timedelta(days=settings.confirmation_link_days),
             )
@@ -133,28 +165,23 @@ def send_pending(
             session.rollback()
             continue
         session.commit()
+        room -= 1
         link = f"{settings.hub_url.rstrip('/')}/confirm?t={raw}"
-        try:
-            delivered = mailer.send(
-                confirmation_mail(user.email, link, settings.confirmation_link_days)
-            )
-        except Exception as exc:  # the loop must go on: the claim is given back below
-            _log.error("confirmation mail not sent: %s", type(exc).__name__)
-            delivered = False
-        if delivered:
-            sent += 1
-            pause(SEND_INTERVAL_SECONDS)
-            continue
-        session.execute(
-            update(User)
-            .where(User.id == user.id)
-            .values(
-                confirmation_sent_at=None,
-                confirmation_token_hash=None,
-                confirmation_expires_at=None,
-            )
+        outcome = delivery_of(
+            mailer, confirmation_mail(user.email, link, settings.confirmation_link_days)
         )
+        if outcome == "refused":
+            _log.warning("confirmation mail refused")
+            session.execute(
+                update(User)
+                .where(User.id == user.id)
+                .values(confirmation_token_hash=None, confirmation_expires_at=None)
+            )
+        else:
+            sent += 1
+            session.execute(update(User).where(User.id == user.id).values(confirmation_sent_at=now))
         session.commit()
+        pause(SEND_INTERVAL_SECONDS)
     return sent
 
 

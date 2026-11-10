@@ -162,8 +162,10 @@ class User(Base, PrimaryKeyMixin, TimestampMixin):
     # address, so a campaign reaches it only once somebody proved it: `email_confirmed_at`
     # is the confirmation link followed, and any row in `logins` proves it as well. The
     # rest is the one confirmation mail: asked for when a campaign left the person out
-    # (`confirmation_requested_at`), sent once (`confirmation_sent_at`, never cleared by
-    # a later request), and its link's sha256 with a deadline.
+    # (`confirmation_requested_at`), sent once (`confirmation_sent_at`, set whenever the
+    # provider may have accepted it),
+    # tried at most a few times (`confirmation_attempts`, one a day), and its link's sha256
+    # with a deadline.
     email_confirmed_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), default=None
     )
@@ -171,6 +173,12 @@ class User(Base, PrimaryKeyMixin, TimestampMixin):
         DateTime(timezone=True), default=None
     )
     confirmation_sent_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), default=None
+    )
+    confirmation_attempts: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
+    confirmation_attempted_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), default=None
     )
     confirmation_token_hash: Mapped[str | None] = mapped_column(String(64), default=None)

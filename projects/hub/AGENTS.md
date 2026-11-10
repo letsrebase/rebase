@@ -700,9 +700,11 @@ proved (no `logins` row ever, no `users.email_confirmed_at`) is left out with
 and is not held back. `CampaignService.schedule` asks for the one confirmation mail for whoever
 it left out for that reason (`confirmation.request`, `users.confirmation_requested_at`; the
 preview asks for nothing), and `campaigns-tick` sends it (`confirmation.send_pending`, from
-`REBASE_MAIL_FROM`, at most `REBASE_CONFIRMATION_MAIL_DAILY_BUDGET` (10) a Rome day, inside the
-campaign reserve): once per person for good (`confirmation_sent_at` is never cleared except
-when the provider refuses the mail), and not to whoever logged in, opted out or bounced since.
+`REBASE_MAIL_FROM`, at most `REBASE_CONFIRMATION_MAIL_DAILY_BUDGET` (5) attempts a Rome day,
+inside the campaign reserve, which the two unasked budgets must leave 5 of free): once per
+person for good, since `confirmation_sent_at` is set on any answer the provider may have
+accepted (a timeout, a 5xx); a definite refusal is tried again the next day, three times in
+all. Whoever logged in, opted out or bounced since stops being owed and never holds a place.
 Its link, `{hub_url}/confirm?t=`, is 256 random bits kept as a sha256 with a deadline
 (`REBASE_CONFIRMATION_LINK_DAYS`, 30); the page posts it (`POST /api/hub/campaigns/confirm`), a
 GET confirms nothing, and a forged or expired one is a 410. A confirmed address joins the

@@ -8,10 +8,13 @@ the campaign audiences without anyone confirming it. A person whose address neve
 session and never followed a confirmation link is now left out of campaigns until it does,
 and gets one confirmation mail.
 
-Five nullable columns on `users`, the address's own facts: `email_confirmed_at` (the link
-was followed), `confirmation_requested_at` (a campaign was prepared and left the person out),
-`confirmation_sent_at` (the one mail went, never reset once set), and the link's
-`confirmation_token_hash` (sha256, unique) with its `confirmation_expires_at`. A login
+Seven columns on `users`, the address's own facts: `email_confirmed_at` (the link was
+followed), `confirmation_requested_at` (a campaign was prepared and left the person out),
+`confirmation_sent_at` (the one mail went, or may have: a timeout is not a refusal; never
+reset once set), `confirmation_attempts` and `confirmation_attempted_at` (every try counts
+against the day's budget, a definitely refused one is tried again the next day, up to a
+small number of times), and the link's `confirmation_token_hash` (sha256, unique) with its
+`confirmation_expires_at`. A login
 confirms the address without any of them: `logins` is the evidence, read by the audience.
 
 Existing rows start unconfirmed on purpose: whoever never logged in is exactly the
@@ -33,6 +36,8 @@ _COLUMNS = (
     ("email_confirmed_at", "TIMESTAMPTZ"),
     ("confirmation_requested_at", "TIMESTAMPTZ"),
     ("confirmation_sent_at", "TIMESTAMPTZ"),
+    ("confirmation_attempts", "INTEGER NOT NULL DEFAULT 0"),
+    ("confirmation_attempted_at", "TIMESTAMPTZ"),
     ("confirmation_token_hash", "VARCHAR(64)"),
     ("confirmation_expires_at", "TIMESTAMPTZ"),
 )

@@ -19,12 +19,13 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from rebase_core.campaigns.audience import REASON_UNCONFIRMED, build_audience
-from rebase_core.campaigns.confirmation import confirm, request, send_pending
+from rebase_core.campaigns.confirmation import MAX_ATTEMPTS, confirm, request, send_pending
+from rebase_core.campaigns.optouts import OptoutService
 from rebase_core.campaigns.schemas import ScheduleRequest
 from rebase_core.campaigns.sender import RecordingCampaignSender
 from rebase_core.campaigns.service import CampaignService
 from rebase_core.campaigns.tick import run_tick
-from rebase_core.mail import RecordingSender
+from rebase_core.mail import Delivery, Mail, RecordingSender
 from rebase_core.models import Campaign, CampaignRecipient, Login, User
 
 ADDRESS = "ada@acme.it"
@@ -150,25 +151,123 @@ def test_an_expired_or_forged_link_confirms_nothing(clean: Session) -> None:  # 
     assert user_of(clean, ADDRESS).email_confirmed_at is None
 
 
-def test_a_refused_mail_is_tried_again_and_a_login_cancels_it(clean: Session) -> None:  # noqa: F811  (fixture)
+class Scripted:
+    """A sender with an answer per address, keeping every mail it was asked to send."""
+
+    def __init__(self, answers: dict[str, Delivery]) -> None:
+        self.answers = answers
+        self.sent: list[Mail] = []
+
+    def send(self, mail: Mail) -> bool:
+        return self.deliver(mail) == "accepted"
+
+    def deliver(self, mail: Mail) -> Delivery:
+        self.sent.append(mail)
+        return self.answers.get(mail.to, "accepted")
+
+
+def never_waits(_seconds: float) -> None:
+    return None
+
+
+def test_a_login_before_the_mail_cancels_it(clean: Session) -> None:  # noqa: F811  (fixture)
     person(clean, ADDRESS, confirmed=False)
     person(clean, "bruno@acme.it", confirmed=False)
     clock = Clock(NOW)
-
-    class Refusing:
-        def send(self, mail: object) -> bool:
-            return False
-
     request(clean, [ADDRESS, "bruno@acme.it"], now=clock())
     clean.commit()
-    assert send_pending(clean, Refusing(), SETTINGS, clock=clock, pause=lambda _s: None) == 0  # type: ignore[arg-type]
-    assert user_of(clean, ADDRESS).confirmation_sent_at is None
-    # Bruno logs in before the retry: nobody asks him to confirm what a login proved.
+    # Bruno logs in before the pass: nobody asks him to confirm what a login proved.
     clean.add(Login(user_id=user_of(clean, "bruno@acme.it").id))
     clean.commit()
     mailer = RecordingSender()
-    assert send_pending(clean, mailer, SETTINGS, clock=clock, pause=lambda _s: None) == 1
+    assert send_pending(clean, mailer, SETTINGS, clock=clock, pause=never_waits) == 1
     assert [m.to for m in mailer.sent] == [ADDRESS]
+
+
+def test_people_who_stopped_being_owed_do_not_hold_the_places_of_the_rest(
+    clean: Session,  # noqa: F811  (fixture)
+) -> None:
+    budget = SETTINGS.confirmation_mail_daily_budget
+    clock = Clock(NOW)
+    gone = [f"gone{n}@acme.it" for n in range(budget + 5)]
+    for address in gone:
+        person(clean, address, confirmed=False)
+    person(clean, ADDRESS, confirmed=False)
+    request(clean, gone, now=clock() - timedelta(hours=1))
+    request(clean, [ADDRESS], now=clock())
+    for address in gone:
+        OptoutService(clean).never_write(address)
+    clean.commit()
+    mailer = RecordingSender()
+    assert send_pending(clean, mailer, SETTINGS, clock=clock, pause=never_waits) == 1
+    assert [m.to for m in mailer.sent] == [ADDRESS]
+    assert all(user_of(clean, a).confirmation_requested_at is None for a in gone)
+
+
+def test_an_address_the_provider_always_refuses_blocks_nobody_and_is_given_up(
+    clean: Session,  # noqa: F811  (fixture)
+) -> None:
+    person(clean, "bad@acme.it", confirmed=False)
+    person(clean, ADDRESS, confirmed=False)
+    clock = Clock(NOW)
+    request(clean, ["bad@acme.it"], now=clock() - timedelta(hours=1))
+    request(clean, [ADDRESS], now=clock())
+    clean.commit()
+    mailer = Scripted({"bad@acme.it": "refused"})
+    assert send_pending(clean, mailer, SETTINGS, clock=clock, pause=never_waits) == 1
+    assert [m.to for m in mailer.sent] == ["bad@acme.it", ADDRESS]
+    bad = user_of(clean, "bad@acme.it")
+    assert bad.confirmation_sent_at is None and bad.confirmation_token_hash is None
+    # Not again the same day, whatever the budget; once a day after that, then never.
+    assert send_pending(clean, mailer, SETTINGS, clock=clock, pause=never_waits) == 0
+    for _ in range(5):
+        clock.at += timedelta(days=1)
+        send_pending(clean, mailer, SETTINGS, clock=clock, pause=never_waits)
+    assert [m.to for m in mailer.sent].count("bad@acme.it") == MAX_ATTEMPTS
+    assert [m.to for m in mailer.sent].count(ADDRESS) == 1
+    assert user_of(clean, "bad@acme.it").confirmation_attempts == MAX_ATTEMPTS
+
+
+def test_a_timeout_is_not_sent_twice_and_its_link_still_works(clean: Session) -> None:  # noqa: F811  (fixture)
+    person(clean, ADDRESS, confirmed=False)
+    clock = Clock(NOW)
+    request(clean, [ADDRESS], now=clock())
+    clean.commit()
+    mailer = Scripted({ADDRESS: "uncertain"})
+    assert send_pending(clean, mailer, SETTINGS, clock=clock, pause=never_waits) == 1
+    assert user_of(clean, ADDRESS).confirmation_sent_at is not None
+    for _ in range(3):
+        clock.at += timedelta(days=1)
+        assert send_pending(clean, mailer, SETTINGS, clock=clock, pause=never_waits) == 0
+    assert len(mailer.sent) == 1
+    assert confirm(clean, link_in(mailer), now=clock()) is True
+
+
+def test_a_sender_that_raises_is_treated_as_uncertain(clean: Session) -> None:  # noqa: F811  (fixture)
+    person(clean, ADDRESS, confirmed=False)
+    clock = Clock(NOW)
+    request(clean, [ADDRESS], now=clock())
+    clean.commit()
+
+    class Breaking:
+        def send(self, mail: Mail) -> bool:
+            raise RuntimeError("boom")
+
+    assert send_pending(clean, Breaking(), SETTINGS, clock=clock, pause=never_waits) == 1  # type: ignore[arg-type]
+    assert user_of(clean, ADDRESS).confirmation_sent_at is not None
+
+
+def test_every_attempt_spends_the_budget_whatever_it_answers(clean: Session) -> None:  # noqa: F811  (fixture)
+    for n in range(3):
+        person(clean, f"p{n}@acme.it", confirmed=False)
+    clock = Clock(NOW)
+    small = SETTINGS.model_copy(update={"confirmation_mail_daily_budget": 2})
+    request(clean, [f"p{n}@acme.it" for n in range(3)], now=clock())
+    clean.commit()
+    mailer = Scripted({"p0@acme.it": "refused", "p1@acme.it": "refused"})
+    send_pending(clean, mailer, small, clock=clock, pause=never_waits)
+    assert [m.to for m in mailer.sent] == ["p0@acme.it", "p1@acme.it"]
+    assert send_pending(clean, mailer, small, clock=clock, pause=never_waits) == 0
 
 
 def test_the_day_budget_holds_the_rest_until_tomorrow(clean: Session) -> None:  # noqa: F811  (fixture)
