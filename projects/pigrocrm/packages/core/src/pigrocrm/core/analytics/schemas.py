@@ -21,7 +21,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from pigrocrm.core.contracts.schemas import ContractCapSimulation
 from pigrocrm.core.fiscal.law import Cadence, DateKind, TaxName
 from pigrocrm.core.fiscal.pack import CeilingConsequence
-from pigrocrm.core.fiscal.schemas import DeclaredTaxFigureRead
+from pigrocrm.core.fiscal.schemas import DeclaredTaxFigureRead, TaxReadings
 
 # Mirrors `Deal`'s own Numeric(p, s) column widths (`deals/models.py`), the same
 # reasoning `deals/schemas.py`'s own constants give for existing at all: a value
@@ -312,6 +312,10 @@ class FiscalEstimate(BaseModel):
     # caller supplied, which is about no real year.
     reading: Literal["estimate", "declared"] = "estimate"
     declared: list[DeclaredTaxFigureRead] = Field(default_factory=list)
+    # REB-1026: the year's taxes as the pack lists them, each with its estimate, declared and
+    # paid readings, the one that counts and the totals of each column (`fiscal/readings.py`).
+    # Empty for a «what if» with a revenue the caller supplied, as `declared` is.
+    readings: TaxReadings | None = None
 
 
 class CashMonth(BaseModel):

@@ -1001,6 +1001,57 @@ def test_an_admin_types_a_declared_figure_and_the_fiscal_report_shows_it_beside_
     ]
 
 
+def test_the_fiscal_report_lists_the_pack_taxes_with_three_readings_and_the_server_s_totals(
+    logged_in: TestClient, fiscal_profile: dict[str, Any]
+) -> None:
+    """REB-1026: the page of «Tasse» reads lines, the reading that counts and column totals
+    from the report, and adds nothing itself."""
+    before = logged_in.get("/api/analytics/fiscal", params={"year": YEAR}).json()["readings"]
+    assert [
+        (line["tax"], line["declared"], line["paid"], line["counts"]) for line in before["lines"]
+    ] == [
+        ("substitute_tax", None, None, "estimate"),
+        ("inps", None, None, "estimate"),
+    ]
+    assert before["totals"]["declared"] is None
+    assert before["totals"]["paid"] is None
+
+    logged_in.put(
+        "/api/analytics/fiscal/declared",
+        json={"tax": "substitute_tax", "year": YEAR, "tax_due": "800"},
+    )
+    after = logged_in.get("/api/analytics/fiscal", params={"year": YEAR}).json()["readings"]
+    first, second = after["lines"]
+    assert (first["declared"], first["counts"], second["counts"]) == (
+        "800.00",
+        "declared",
+        "estimate",
+    )
+    assert after["totals"]["declared"] == "800.00"
+    assert after["totals"]["declared_left_out"] == 1
+
+
+def test_the_tax_calendar_is_the_packs_dates_and_an_admin_s(
+    logged_in: TestClient, fiscal_profile: dict[str, Any]
+) -> None:
+    response = logged_in.get("/api/analytics/fiscal/calendar", params={"year": 2026})
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["pack_id"] == "it-flat-rate"
+    assert [(entry["nominal_date"], entry["tax"]) for entry in body["dates"]] == [
+        ("2026-06-30", "substitute_tax"),
+        ("2026-11-30", "substitute_tax"),
+    ]
+    # A year the pack has no entry for answers an empty list, never another year's dates.
+    assert (
+        logged_in.get("/api/analytics/fiscal/calendar", params={"year": 2025}).json()["dates"] == []
+    )
+    collaborator = _second_actor(logged_in, "collaborator")
+    assert (
+        collaborator.get("/api/analytics/fiscal/calendar", params={"year": 2026}).status_code == 403
+    )
+
+
 def test_a_declared_figure_needs_an_admin_and_one_amount(
     logged_in: TestClient, fiscal_profile: dict[str, Any]
 ) -> None:

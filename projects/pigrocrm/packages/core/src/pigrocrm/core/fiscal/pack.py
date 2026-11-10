@@ -432,6 +432,7 @@ IT_FLAT_RATE_PACK = FiscalPack(
             # 33/2025), so the entry does not wait for 2026. A reading frozen under this entry
             # keeps its `law_year` of 2015, which a second entry would have moved.
             payroll=ITALIAN_PAYROLL,
+            taxes=("substitute_tax", "inps"),
         ),
     ),
     calendars=(_IT_FLAT_RATE_CALENDAR_2026,),
@@ -470,6 +471,7 @@ IT_STANDARD_PACK = FiscalPack(
     laws=(
         TaxYearLaw(
             from_year=2026,
+            taxes=("irpef", "inps"),
             advances=IncomeTaxAdvanceLaw(
                 advance_percent_of_base=Decimal("100"),
                 first_advance_percent=Decimal("40"),
@@ -504,6 +506,7 @@ IT_COMPANY_PACK = FiscalPack(
     laws=(
         TaxYearLaw(
             from_year=2026,
+            taxes=("ires", "irap"),
             company_tax=CompanyTaxLaw(
                 # D.P.R. 917/1986 (TUIR), art. 77 c. 1, read on Normattiva on 2026-11-10 (A5).
                 ires_rate=Decimal("24.00"),

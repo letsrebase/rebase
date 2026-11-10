@@ -50,9 +50,11 @@ from pigrocrm.core.fiscal.ceiling import (
     taxable_revenue,
 )
 from pigrocrm.core.fiscal.declared import DeclaredTaxFigureService, reading_for_year
+from pigrocrm.core.fiscal.law import DeclaredTax
 from pigrocrm.core.fiscal.pack import resolve_pack
+from pigrocrm.core.fiscal.readings import build_tax_readings
 from pigrocrm.core.fiscal.repository import FiscalEstimateRepository
-from pigrocrm.core.fiscal.schemas import FiscalProfileRead
+from pigrocrm.core.fiscal.schemas import DeclaredTaxFigureRead, FiscalProfileRead, TaxReadings
 from pigrocrm.core.fiscal.service import FiscalProfileService
 from pigrocrm.core.invoices.models import InvoiceLine
 from pigrocrm.core.legal_entities.models import LegalEntity
@@ -635,8 +637,30 @@ class AnalyticsService:
             return estimate
         declared = DeclaredTaxFigureService(self.session).declared_for_year(legal_entity.id, year)
         return estimate.model_copy(
-            update={"declared": declared, "reading": reading_for_year(declared)}
+            update={
+                "declared": declared,
+                "reading": reading_for_year(declared),
+                "readings": self._tax_readings(year, estimate, declared),
+            }
         )
+
+    def _tax_readings(
+        self, year: int, estimate: FiscalEstimate, declared: list[DeclaredTaxFigureRead]
+    ) -> TaxReadings:
+        """The year's lines from the law of the pack the estimate was computed under (the
+        frozen one for a frozen year), so a year keeps the lines it had."""
+        law = (
+            resolve_pack(estimate.pack_id, estimate.pack_version).law_for(year)
+            if estimate.pack_id is not None and estimate.pack_version is not None
+            else None
+        )
+        # The two lines the estimate computes, only in a year whose law carries the estimate.
+        estimates: dict[DeclaredTax, Decimal | None] = (
+            {"substitute_tax": estimate.substitute_tax, "inps": estimate.contributions}
+            if law is not None and law.has_income_estimate
+            else {}
+        )
+        return build_tax_readings(law, estimates, declared)
 
     def get_tax_calendar(
         self, year: int, actor: Actor, *, legal_entity_id: UUID | None = None

@@ -66,6 +66,11 @@ class IncomeTaxAdvanceLaw:
     # (`TaxCalendarLaw`), not repeated here.
 
 
+# The taxes and contributions of one legal entity's year, by the design's own names (taxes
+# design § 1 and § 2): what a pack lists for a year (`TaxYearLaw.taxes`) and what a declared
+# figure may be typed for.
+DeclaredTax = Literal["irpef", "substitute_tax", "ires", "irap", "inps"]
+
 # What a date of the calendar is the date of, and which tax it belongs to.
 TaxName = Literal["iva", "income_tax", "substitute_tax"]
 DateKind = Literal[
@@ -180,6 +185,12 @@ class TaxYearLaw:
     # The payroll dates of an employer in this regime (`PayrollLaw`): `None` where the pack
     # has not verified them, and the estimate then dates no F24 line.
     payroll: PayrollLaw | None = None
+    # The lines of the year's taxes page, in the order they are drawn: the taxes and
+    # contributions the regime owes (taxes design § 1 table). Which lines exist is the pack's;
+    # whether a figure can be computed for one is not: a line with no estimate reads «not
+    # computable» and never zero. IVA, withholdings and payroll are not lines: they are dates
+    # and due items (taxes design § 3).
+    taxes: tuple[DeclaredTax, ...] = ()
 
     @property
     def has_income_estimate(self) -> bool:
@@ -191,6 +202,7 @@ __all__ = [
     "CompanyTaxLaw",
     "ContributionBase",
     "DateKind",
+    "DeclaredTax",
     "IncomeTaxAdvanceLaw",
     "MonthDay",
     "PayrollLaw",
