@@ -139,12 +139,12 @@ export function FiscalForm({ legalEntityId, profile }: { legalEntityId: string; 
       })
       return
     }
-    if (regime === 'RF01') {
-      // The ordinary regime taxes every line: no VAT nature, no declaration, no stamp duty, and a
+    if (regime === 'RF01' || regime === 'company') {
+      // The ordinary regime, an srl's too, taxes every line: no VAT nature, no declaration, no stamp duty, and a
       // zero rate is refused, so the flat-rate regime's 0.00 becomes the standard 22.00.
       const zeroRate = !/[1-9]/.test(values.default_vat_rate)
       change({
-        pack_id: 'it-standard',
+        pack_id: PACK_OF[regime],
         regime_code: 'RF01',
         default_vat_nature: '',
         legal_reference: '',

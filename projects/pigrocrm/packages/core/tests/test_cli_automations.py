@@ -22,10 +22,14 @@ from sqlalchemy.engine import make_url
 from sqlalchemy.orm import Session
 
 import pigrocrm.core.cli as cli
+from pigrocrm.core.actor import Actor
 from pigrocrm.core.automations.daily import AutomationPass
 from pigrocrm.core.config import Settings
 from pigrocrm.core.db import session_factory, today_local
+from pigrocrm.core.db.scope import bind_scope
 from pigrocrm.core.db.sidecar import create_database_if_missing, drop_database
+from pigrocrm.core.fiscal.schemas import FiscalProfileUpsert
+from pigrocrm.core.fiscal.service import FiscalProfileService
 from pigrocrm.core.invoices.models import Invoice
 from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.tasks.models import Task
@@ -287,6 +291,38 @@ def test_a_switched_off_rule_is_reported_and_opens_nothing(
 
     assert f"{FIRST_SPACE}: overdue_invoice disabled" in capsys.readouterr().out
     assert _count(settings, FIRST_SPACE) == 0
+
+
+def test_the_first_of_january_moves_an_srl_off_it_standard_and_says_so(
+    settings: Settings, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """REB-1005: the year boundary rides the daily pass. Only 1 January says anything; a
+    rehearsal counts the srl entities still on `it-standard` and moves none."""
+    with _engine(_url(settings, FIRST_SPACE)) as engine, session_factory(engine)() as session:
+        bind_scope(session, Actor.system())
+        session.execute(text("update legal_entities set legal_name = 'Studio Uno S.r.l.'"))
+        FiscalProfileService(session).upsert(
+            FiscalProfileUpsert(pack_id="it-standard"), Actor.system()
+        )
+    try:
+        for day in ("2030-12-31", "2031-01-02"):
+            code = cli.main(["automations", "--dry-run", "--slug", FIRST_SPACE, "--date", day])
+            assert code == 0
+            assert "fiscal packs" not in capsys.readouterr().out
+
+        code = cli.main(["automations", "--dry-run", "--slug", FIRST_SPACE, "--date", "2031-01-01"])
+        assert code == 0
+        out = capsys.readouterr().out
+        assert f"{FIRST_SPACE}: fiscal packs moved to it-company 1 (dry run)" in out
+        assert _packs(settings) == ["it-standard"]
+    finally:
+        with _engine(_url(settings, FIRST_SPACE)) as engine, engine.begin() as connection:
+            connection.execute(text("delete from fiscal_profile"))
+
+
+def _packs(settings: Settings) -> list[str]:
+    with _engine(_url(settings, FIRST_SPACE)) as engine, engine.begin() as connection:
+        return list(connection.execute(text("select pack_id from fiscal_profile")).scalars())
 
 
 def test_another_day_is_only_a_rehearsal(

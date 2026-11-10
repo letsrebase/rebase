@@ -10,7 +10,12 @@ from pigrocrm.core.activities.service import ActivityService
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.errors import Conflict, NotFound, ValidationFailed
 from pigrocrm.core.fiscal.models import FiscalProfile
-from pigrocrm.core.fiscal.pack import PACK_IT_FLAT_RATE, PACK_IT_STANDARD, PACK_NON_IT
+from pigrocrm.core.fiscal.pack import (
+    PACK_IT_COMPANY,
+    PACK_IT_FLAT_RATE,
+    PACK_IT_STANDARD,
+    PACK_NON_IT,
+)
 from pigrocrm.core.fiscal.regime import resolve_regime
 from pigrocrm.core.fiscal.repository import FiscalProfileRepository
 from pigrocrm.core.fiscal.schemas import FiscalProfileRead, FiscalProfileUpsert, FiscalSnapshot
@@ -158,7 +163,7 @@ class FiscalProfileService:
         resolve_regime(payload["regime_code"], payload["pack_id"])
         pack_id = payload["pack_id"]
         abroad = pack_id == PACK_NON_IT
-        if pack_id == PACK_IT_STANDARD and payload["default_vat_rate"] <= ZERO:
+        if pack_id in (PACK_IT_STANDARD, PACK_IT_COMPANY) and payload["default_vat_rate"] <= ZERO:
             # The ordinary regime taxes every operation: `ORDINARY.resolve_line_vat`
             # refuses a zero rate, so a zero default would leave a profile whose every
             # invoice is refused at the first line.

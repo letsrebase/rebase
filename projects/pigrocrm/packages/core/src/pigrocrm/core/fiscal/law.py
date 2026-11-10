@@ -116,6 +116,24 @@ class TaxCalendarLaw:
 
 
 @dataclass(frozen=True)
+class CompanyTaxLaw:
+    """What a company (an srl, the `it-company` pack) owes on its income, by rate.
+
+    Both rates are verified (A5 rows «IRES rate» and «IRAP ordinary rate»; the IRAP region
+    rules row stays to verify). They are percentages, like the rest of this module's rates.
+    Nothing computes a tax from them yet: that is the estimate card's.
+    """
+
+    # IRES, art. 77 c. 1 of D.P.R. 917/1986: on the net total income.
+    ires_rate: Decimal
+    # IRAP's ordinary rate, art. 16 c. 1 of D.Lgs. 446/1997, on the net value of production.
+    irap_ordinary_rate: Decimal
+    # A region may vary it by up to this many points (art. 16 c. 3). Which region's rate
+    # applies to a company is the legal entity's region and the IRAP region rules: TO VERIFY.
+    irap_regional_variation_max_points: Decimal
+
+
+@dataclass(frozen=True)
 class TaxYearLaw:
     """The law that governs the tax years from `from_year` until the next entry of the
     same pack. `None` for a section means the pack's regime has nothing of that kind."""
@@ -126,6 +144,8 @@ class TaxYearLaw:
     # (REB-760). «To verify» (A5 row «Flat-rate contribution base...», REB-975).
     contribution_base: ContributionBase | None = None
     advances: IncomeTaxAdvanceLaw | None = None
+    # A company's own taxes, for the pack that has a company (`it-company`).
+    company_tax: CompanyTaxLaw | None = None
 
     @property
     def has_income_estimate(self) -> bool:
@@ -134,6 +154,7 @@ class TaxYearLaw:
 
 __all__ = [
     "Cadence",
+    "CompanyTaxLaw",
     "ContributionBase",
     "DateKind",
     "IncomeTaxAdvanceLaw",

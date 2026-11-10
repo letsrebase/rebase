@@ -22,6 +22,17 @@ Each rule has its switch in Impostazioni → Automazioni (admin only; the MCP su
 reads them, `describe_automations`). A switched-off rule opens nothing and the log says
 `disattivata` for it.
 
+## The year boundary of the fiscal packs (REB-1005)
+
+The same daily pass also moves the active entities on `it-standard` whose name says srl
+(`S.r.l.`, `srl` or the form in full) to `it-company` on 1 January, and on no other day
+(`fiscal/year_roll.py`). On 1 January it
+prints one line per space, `<slug>: fiscal packs moved to it-company <n>`; the other 364
+days it prints nothing about it. If the host was down on 1 January, nothing moves until the
+next one (an entity a save refuses is a `fiscal packs not moved <n>` line on `stderr` and a non-zero exit, and waits for the next one too): the entity keeps invoicing as RF01 on `it-standard`, which is the same invoice, and
+the pack can be changed by hand in the settings. A rehearsal of the day, `pigrocrm automations
+--dry-run --date YYYY-01-01`, counts what would move and writes nothing.
+
 ## 1. Installing the line (operator, on the server)
 
 Once a day, in `crontab -e` of the user that owns the deploy. Production's `DEPLOY_PATH` is

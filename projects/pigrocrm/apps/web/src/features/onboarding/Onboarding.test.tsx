@@ -192,7 +192,7 @@ describe('Onboarding', () => {
     await user.click(screen.getByRole('button', { name: 'Conferma' }))
     await waitFor(() => expect(fiscalCalls()).toHaveLength(1))
     expect(fiscalCalls()[0]![1]).toMatchObject({
-      body: { pack_id: 'it-standard', regime_code: 'RF01', default_vat_rate: '22.00' },
+      body: { pack_id: 'it-company', regime_code: 'RF01', default_vat_rate: '22.00' },
     })
   })
 

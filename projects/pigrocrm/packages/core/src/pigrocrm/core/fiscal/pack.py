@@ -41,6 +41,7 @@ from decimal import Decimal
 from typing import Final, Literal
 
 from pigrocrm.core.fiscal.law import (
+    CompanyTaxLaw,
     IncomeTaxAdvanceLaw,
     MonthDay,
     TaxCalendarLaw,
@@ -52,6 +53,7 @@ from pigrocrm.core.fiscal.law import (
 # (`fiscal/schemas.py::PackId`) and a profile cannot point at a pack that does not exist.
 PACK_IT_FLAT_RATE: Final = "it-flat-rate"
 PACK_IT_STANDARD: Final = "it-standard"
+PACK_IT_COMPANY: Final = "it-company"
 PACK_NON_IT: Final = "non-it"
 
 # The only basis this pack's ceilings use today -- mastro's `cash_received_calendar_year`
@@ -437,7 +439,45 @@ IT_STANDARD_PACK = FiscalPack(
     calendars=(_IT_STANDARD_CALENDAR_2026,),
 )
 
+# An srl (REB-1005, taxes design § 1). It invoices exactly like `it-standard`: `RF01`, the
+# same regime strategy (`fiscal/regime.py::ORDINARY`), no ceiling, no statutory charge. It
+# differs in what it owes: IRES and IRAP, whose rates are the two verified ones below. The
+# rest of what the design lists for it stays a label until its figure is verified and its
+# card lands: IVA is C3's, the annual chamber of commerce fee is TO VERIFY (A5), the payroll
+# and director rows are C7's, and the company's advance and instalment rules are the
+# estimate card's. No income estimate: `contribution_base` is the flat-rate regime's.
+# The entry starts in 2026, the year the rates below were read; an earlier year has no law in
+# this pack yet, and asks for none.
+IT_COMPANY_PACK = FiscalPack(
+    id=PACK_IT_COMPANY,
+    version="1",
+    ceilings=(),
+    charges=(),
+    laws=(
+        TaxYearLaw(
+            from_year=2026,
+            company_tax=CompanyTaxLaw(
+                # D.P.R. 917/1986 (TUIR), art. 77 c. 1, read on Normattiva on 2026-11-10 (A5).
+                ires_rate=Decimal("24.00"),
+                # D.Lgs. 446/1997, art. 16 c. 1: 3.90%, as the Ministry of Economy and
+                # Finance (Dipartimento delle Finanze, «IRAP: disciplina del tributo») and the
+                # regions' 2026 tables state it, read on 2026-11-10 (A5). Normattiva's text
+                # of the article prints 3,50 under notes (44) and (47), which say that
+                # D.L. 66/2014's change was repealed by L. 190/2014 art. 1 c. 22, so that
+                # figure is not the rate. The rate
+                # a company pays is its region's: art. 16 c. 3 lets a region vary it by up to
+                # the points below, c. 1-bis and the D.L. 21/2026 set other rates for other
+                # subjects, and which one applies is the IRAP region rules row, TO VERIFY
+                # (A5), so no figure is computed from this one until that row is verified.
+                irap_ordinary_rate=Decimal("3.90"),
+                irap_regional_variation_max_points=Decimal("0.92"),
+            ),
+        ),
+    ),
+)
+
 _PACKS: dict[tuple[str, str], FiscalPack] = {
+    (IT_COMPANY_PACK.id, IT_COMPANY_PACK.version): IT_COMPANY_PACK,
     (IT_FLAT_RATE_PACK.id, IT_FLAT_RATE_PACK.version): IT_FLAT_RATE_PACK,
     (IT_STANDARD_PACK.id, IT_STANDARD_PACK.version): IT_STANDARD_PACK,
     (NON_IT_PACK.id, NON_IT_PACK.version): NON_IT_PACK,
@@ -464,9 +504,11 @@ def known_charge_markers() -> frozenset[str]:
 
 
 __all__ = [
+    "IT_COMPANY_PACK",
     "IT_FLAT_RATE_PACK",
     "IT_STANDARD_PACK",
     "NON_IT_PACK",
+    "PACK_IT_COMPANY",
     "PACK_IT_FLAT_RATE",
     "PACK_IT_STANDARD",
     "PACK_NON_IT",

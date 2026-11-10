@@ -36,6 +36,7 @@ from pigrocrm.core.db import session_factory
 from pigrocrm.core.db.clock import today_local
 from pigrocrm.core.digest.run import DigestOutcome, DigestRun
 from pigrocrm.core.digest.service import previous_week, week_containing
+from pigrocrm.core.fiscal.year_roll import FiscalYearRoll, YearRollReport
 from pigrocrm.core.mail import sender_from_settings
 from pigrocrm.core.reminders.jobs import AUTOMATIONS_JOB, DIGEST_JOB, REMINDER_PASS_JOB
 from pigrocrm.core.reminders.push import push_sender_from_settings
@@ -257,6 +258,11 @@ def automations(settings: Settings, *, slug: str | None, day: date | None, dry_r
     (`clock not written`): the ping should not say a space is fine when its own
     database refuses a write.
 
+    On 1 January the pass also moves the active srl entities still on `it-standard` to `it-company`
+    (`FiscalYearRoll`, REB-1005), one line per space; a rehearsal counts and writes nothing. A
+    refusal there is its own line and an exit status, and leaves the rules' own report and
+    clock alone.
+
     `AutomationPass.run` decides; `--dry-run` runs it and rolls back, so the counters of a
     rehearsal are the real ones, and `--date` evaluates another day only with `--dry-run`:
     a real pass for another day would open task due on days that are not today."""
@@ -285,8 +291,37 @@ def automations(settings: Settings, *, slug: str | None, day: date | None, dry_r
                         engine, AUTOMATIONS_JOB, target.label, type(exc).__name__, quiet=True
                     )
                 continue
+            # After the rules, and apart from them: a refusal on the year boundary must not
+            # take the rules' report away or record the automations' own clock as failed.
+            roll: YearRollReport | None = None
+            try:
+                with session_factory(engine)() as space:
+                    roll = FiscalYearRoll(space).run(
+                        today=day if day is not None else today_local(settings), dry_run=dry_run
+                    )
+            except Exception as exc:  # noqa: BLE001 - reported below, the pass goes on
+                print(
+                    f"{target.label}: fiscal packs not moved ({type(exc).__name__})",
+                    file=sys.stderr,
+                )
+                failed = True
         _print_automation_report(target.label, report, dry_run=dry_run)
+        if roll is not None:
+            failed = _print_year_roll(target.label, roll, dry_run=dry_run) or failed
     return 1 if failed else 0
+
+
+def _print_year_roll(slug: str, roll: YearRollReport, *, dry_run: bool) -> bool:
+    """The year boundary's line (REB-1005), on 1 January only: the other 364 days it has
+    nothing to say, so the log of a daily pass does not grow a line that never changes. An
+    entity a save refused goes to `stderr` as a count, and the answer is `True`: the exit
+    status must say it, since nothing moves it again before the next 1 January."""
+    if roll.due:
+        suffix = " (dry run)" if dry_run else ""
+        print(f"{slug}: fiscal packs moved to it-company {roll.moved}{suffix}")
+    if roll.failed:
+        print(f"{slug}: fiscal packs not moved {roll.failed}", file=sys.stderr)
+    return roll.failed > 0
 
 
 def _print_automation_report(slug: str, report: PassReport, *, dry_run: bool) -> None:

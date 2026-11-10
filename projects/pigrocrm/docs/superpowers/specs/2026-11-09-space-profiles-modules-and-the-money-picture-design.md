@@ -69,7 +69,7 @@ Two facts from the code make the gap concrete:
   (`2026-10-03-several-aziende-in-one-space-design.md` § 0: the humancraft case, a
   flat-rate professional, an srl and a foreign company working the same customers).
 - **A legal entity is who invoices**: its own register, fiscal pack and regime
-  (`fiscal/pack.py`: `it-flat-rate`, `it-standard`, `non-it`), its own taxes. Taxes are
+  (`fiscal/pack.py`: `it-flat-rate`, `it-standard`, `it-company`, `non-it`), its own taxes. Taxes are
   never summed across entities; money in and out is summed, with a filter per entity.
 - **The profile belongs to the space**: `solo` or `company`, or not chosen yet. It decides
   the default modules and the layout of Home and of the phone. It is not a fiscal fact.
@@ -208,7 +208,10 @@ The register as of today, from the conversation:
 | Flat-rate contribution base: whether INPS contributions are deducted before the substitute tax | to verify | |
 | The flat-rate regime exists from 1 January 2015 (L. 190/2014, art. 1, commi 54-89) and the income estimate's arithmetic is the same in every year | to verify | |
 | «Gestione separata» and «artigiani e commercianti» rates, minimums and quarterly dates | to verify | |
-| IRPEF brackets, regional and municipal surcharges; IRES and IRAP rates; IRAP region rules | to verify | |
+| IRES rate: 24% of the net total income | verified | D.P.R. 917/1986 (TUIR), art. 77 c. 1, Normattiva, read 2026-11-10 (REB-1005) |
+| IRAP ordinary rate: 3.90% of the net value of production; a region may vary it by up to 0.92 points (art. 16 c. 3); other rates apply to the subjects of c. 1-bis and to those the D.L. 20 February 2026 n. 21 names. Normattiva's printed text of art. 16 c. 1 reads 3,50 under notes that say D.L. 66/2014's reduction was repealed by L. 190/2014 art. 1 c. 22, so it is not the rate | verified | Dipartimento delle Finanze, «IRAP: disciplina del tributo» (3,90% and the 0.92 points), and the regions' 2026 rate tables (Emilia-Romagna: 3,90 ordinary), read 2026-11-10 (REB-1005) |
+| The denomination of an srl contains «società a responsabilità limitata» | verified | Codice civile art. 2463 n. 2, Gazzetta Ufficiale text, read 2026-11-10 (REB-1005) |
+| IRPEF brackets, regional and municipal surcharges; IRAP region rules (which rate a company's region and activity put it under) | to verify | |
 | Annual chamber of commerce fee | to verify | |
 | Cash or accrual basis of the ordinary person's and the srl's income | to verify | |
 | Flat-rate basis: collected revenue minus the INPS surcharge lines (cash principle) | to verify | |
@@ -360,9 +363,9 @@ Part B is project 1 of the eight; Part C numbers the other seven C2 to C8.
   1. «Come lavori?»: da solo, con partita IVA / come azienda.
   2. The regime of the first legal entity: flat-rate or ordinary for `solo`, srl for
      `company` (other forms marked «presto»). This writes the fiscal pack of the first
-     legal entity, the step «Primi passi» already asks for first (2026-09-12 row). There is
-     no company pack yet: an ordinary `solo` and an srl both map to `it-standard` (RF01),
-     which already governs invoicing correctly for both; the srl's own taxes come with C6.
+     legal entity, the step «Primi passi» already asks for first (2026-09-12 row). An ordinary
+     `solo` maps to `it-standard` (RF01) and an srl to `it-company` (RF01 too, REB-1005),
+     which invoices the same way and owes the company's own taxes (C6).
   3. For `company` only: «Lavori con freelance o collaboratori esterni?» and «Hai
      dipendenti o amministratori con un compenso?», which switch `collaborators` and
      `staff` once those modules exist. Until then the step asks nothing it cannot act on.
